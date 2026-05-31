@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"fmt"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/clock"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/events"
@@ -13,7 +15,12 @@ type Foundation struct {
 
 func Bootstrap(cfg *configs.Config, mode AppMode) (App, error) {
 	foundation := buildFoundation()
-	subsystems := buildSubsystems(cfg, mode, foundation)
+
+	subsystems, err := buildSubsystems(cfg, mode, foundation)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: %w", err)
+	}
+
 	return &app{
 		mode:       mode,
 		subsystems: subsystems,
@@ -27,17 +34,13 @@ func buildFoundation() Foundation {
 	}
 }
 
-func buildSubsystems(cfg *configs.Config, mode AppMode, _ Foundation) []Subsystem {
-	_ = cfg // será consumido pelos subsistemas reais nas tarefas 4.0–6.0
-
+func buildSubsystems(cfg *configs.Config, mode AppMode, _ Foundation) ([]Subsystem, error) {
 	switch mode {
 	case ModeServer:
-		// Tarefas 4.0–6.0 registrarão: observability, database, http server.
-		return []Subsystem{}
+		return []Subsystem{newLazyServerSubsystem(cfg)}, nil
 	case ModeWorker:
-		// Tarefas 4.0 e 7.0 registrarão: observability, eventbus worker.
-		return []Subsystem{}
+		return []Subsystem{}, nil
 	default:
-		return []Subsystem{}
+		return []Subsystem{}, nil
 	}
 }
