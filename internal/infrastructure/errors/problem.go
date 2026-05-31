@@ -23,8 +23,7 @@ type ProblemDetails struct {
 	Extensions map[string]string `json:"extensions,omitempty"`
 }
 
-// ToProblemDetails mapeia erros sentinel conhecidos para ProblemDetails com o status HTTP adequado.
-// Nunca expõe stack trace, SQL ou paths internos ao caller (R-SEC-001).
+// ToProblemDetails maps known sentinel errors to ProblemDetails — never leaks stack, SQL, or paths (R-SEC-001).
 func ToProblemDetails(err error) (ProblemDetails, int) {
 	switch {
 	case errors.Is(err, database.ErrConnection):
@@ -35,7 +34,7 @@ func ToProblemDetails(err error) (ProblemDetails, int) {
 
 	default:
 		var ve validator.ValidationErrors
-		if errors.As(err, &ve) {
+		if errors.As(err, &ve) { //nolint:errorsastype
 			return validationProblem(ve), http.StatusBadRequest
 		}
 
@@ -43,7 +42,7 @@ func ToProblemDetails(err error) (ProblemDetails, int) {
 	}
 }
 
-func problem(status int, problemType, detail string) ProblemDetails {
+func problem(status int, _ string, detail string) ProblemDetails {
 	return ProblemDetails{
 		Type:      "https://httpstatuses.com/" + strconv.Itoa(status),
 		Title:     http.StatusText(status),
