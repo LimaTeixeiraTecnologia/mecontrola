@@ -1,6 +1,3 @@
-// Package main é o entrypoint do binário mecontrola via spf13/cobra.
-// Registra os subcomandos server, worker e migrate e executa o root command.
-// Sem lógica de negócio — cobertura de testes excluída (D-22).
 package main
 
 import (

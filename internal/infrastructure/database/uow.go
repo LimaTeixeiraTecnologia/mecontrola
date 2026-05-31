@@ -14,16 +14,12 @@ import (
 // Callers can override by passing a context with their own deadline.
 const defaultUoWTimeout = 5 * time.Second
 
-// UnitOfWork[T] executes a transactional function and returns a typed result.
-// It wraps devkit-go's uow.UnitOfWork[T] adding a mandatory 5-second default
-// timeout on every Do call (caller can override by providing a context with
-// a stricter deadline).
-// Reference: ADR-002, techspec §Design de Implementação.
+// UnitOfWork[T] wraps devkit-go's uow.UnitOfWork[T] adding a mandatory 5-second
+// default timeout on every Do call (caller can override via context deadline).
 type UnitOfWork[T any] struct {
 	inner devkituow.UnitOfWork[T]
 }
 
-// NewUnitOfWork creates a UnitOfWork[T] backed by the provided Manager.
 func NewUnitOfWork[T any](m *Manager) *UnitOfWork[T] {
 	return &UnitOfWork[T]{
 		inner: devkituow.New[T](m.inner),

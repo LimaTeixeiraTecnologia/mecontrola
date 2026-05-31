@@ -14,11 +14,6 @@ import (
 
 // RunMigrations applies all pending up-migrations using the embedded SQL files.
 // It is idempotent: golang-migrate ErrNoChange is treated as success.
-// Reference: ADR-007, RF-03, RF-12.
-//
-// Usage (from cmd/migrate/cmd.go):
-//
-//	if err := database.RunMigrations(ctx, mgr); err != nil { ... }
 func RunMigrations(ctx context.Context, m *Manager) error {
 	_ = ctx // reserved for future cancellation support
 
@@ -42,7 +37,6 @@ func RunMigrations(ctx context.Context, m *Manager) error {
 	return nil
 }
 
-// RunMigrationsDown reverts all applied migrations (used in tests and runbook).
 func RunMigrationsDown(ctx context.Context, m *Manager) error {
 	_ = ctx
 

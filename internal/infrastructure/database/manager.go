@@ -9,9 +9,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
 
-// Manager wraps devkit-go's manager.Manager adding application-level helpers.
-// It is created once in the composition root and injected into all modules.
-// Reference: ADR-002 (single shared pool, D-08).
 type Manager struct {
 	inner devkitmanager.Manager
 	// dsn stores the pgx5-scheme DSN used by RunMigrations (golang-migrate requires it).
@@ -19,10 +16,6 @@ type Manager struct {
 	dsn string
 }
 
-// NewManager creates a new Manager from the application configuration.
-// It establishes the pgx pool, performs the initial ping and, if migrations
-// are embedded via RunMigrations, they should be called after this.
-// Pool size: up to 30 connections as documented in the discovery (D-08).
 func NewManager(cfg *configs.Config) (*Manager, error) {
 	pgCfg := postgres.PostgresConfig{
 		Host:         cfg.DBConfig.Host,
@@ -40,13 +33,11 @@ func NewManager(cfg *configs.Config) (*Manager, error) {
 		return nil, fmt.Errorf("%w: %w", ErrConnection, err)
 	}
 
-	// Build the pgx5:// DSN used by golang-migrate.
 	dsn := buildMigrationDSN(pgCfg)
 
 	return &Manager{inner: inner, dsn: dsn}, nil
 }
 
-// buildMigrationDSN constructs the pgx5:// DSN required by golang-migrate/pgx/v5.
 func buildMigrationDSN(cfg postgres.PostgresConfig) string {
 	if cfg.DSN != "" {
 		return normalizeToPgx5(cfg.DSN)
@@ -68,7 +59,6 @@ func buildMigrationDSN(cfg postgres.PostgresConfig) string {
 	)
 }
 
-// normalizeToPgx5 replaces postgres:// or postgresql:// prefix with pgx5://.
 func normalizeToPgx5(dsn string) string {
 	switch {
 	case len(dsn) > 11 && dsn[:11] == "postgres://":
@@ -80,14 +70,10 @@ func normalizeToPgx5(dsn string) string {
 	}
 }
 
-// Inner returns the underlying devkit-go manager for use by the UoW factory
-// and any component that needs direct manager access.
 func (m *Manager) Inner() devkitmanager.Manager {
 	return m.inner
 }
 
-// HealthCheck verifies the database connection by performing a SELECT from
-// the health_probe table. Returns ErrConnection if the check fails.
 func (m *Manager) HealthCheck(ctx context.Context) error {
 	dbtx := m.inner.DBTX(ctx)
 	row := dbtx.QueryRowContext(ctx, "SELECT note FROM health_probe LIMIT 1")
@@ -100,7 +86,6 @@ func (m *Manager) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-// Shutdown gracefully closes the underlying connection pool.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	return m.inner.Shutdown(ctx)
 }

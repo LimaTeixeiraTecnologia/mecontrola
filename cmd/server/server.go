@@ -1,5 +1,3 @@
-// Package server define o subcomando `mecontrola server`.
-// Sobe o servidor HTTP MeControla e o scheduler placeholder via runtime.Bootstrap.
 package server
 
 import (
@@ -8,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// New retorna o comando cobra para `mecontrola server`.
 func New() *cobra.Command {
 	return &cobra.Command{
 		Use:   "server",

@@ -1,5 +1,3 @@
-// Package worker define o subcomando `mecontrola worker`.
-// Sobe o runtime worker idle — placeholder até PRDs futuros registrarem jobs.
 package worker
 
 import (
@@ -8,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// New retorna o comando cobra para `mecontrola worker`.
 func New() *cobra.Command {
 	return &cobra.Command{
 		Use:   "worker",

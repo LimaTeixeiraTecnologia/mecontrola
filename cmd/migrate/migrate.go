@@ -1,6 +1,3 @@
-// Package migrate define o subcomando `mecontrola migrate`.
-// Aplica as migrations pendentes via golang-migrate e termina.
-// Não sobe servidor HTTP nem worker.
 package migrate
 
 import (
@@ -13,7 +10,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/database"
 )
 
-// New retorna o comando cobra para `mecontrola migrate`.
 func New() *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate",
@@ -41,7 +37,6 @@ func New() *cobra.Command {
 	}
 }
 
-// NewDown retorna o comando cobra para `mecontrola migrate-down`.
 func NewDown() *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate-down",
