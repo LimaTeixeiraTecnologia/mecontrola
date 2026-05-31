@@ -6,7 +6,7 @@ app            = "mecontrola"
 primary_region = "gru"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "deployment/docker/Dockerfile"
 
 [processes]
   app    = "/mecontrola server"

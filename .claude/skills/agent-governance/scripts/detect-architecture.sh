@@ -38,7 +38,7 @@ detect_architecture_type() {
   fi
 
   # Microservico: Dockerfile + sinais de deploy isolado
-  if file_exists "Dockerfile"; then
+  if file_exists "Dockerfile" || file_exists "deployment/docker/Dockerfile"; then
     if has_any_files "deployments" || has_any_files "k8s" || has_any_files "helm" || file_exists "skaffold.yaml" || file_exists "kustomization.yaml"; then
       printf 'microservico'
       return

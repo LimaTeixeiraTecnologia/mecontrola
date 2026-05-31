@@ -10,7 +10,7 @@ set -eu
 APP_NAME="${APP_NAME:-mecontrola}"
 IMAGE_TAG="${IMAGE_TAG:-dev}"
 REGISTRY="${REGISTRY:-}"
-DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+DOCKERFILE="${DOCKERFILE:-deployment/docker/Dockerfile}"
 BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
 
 # VERSION via git, fallback para "dev"
