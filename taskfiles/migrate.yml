@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Gerenciamento de migrations do banco de dados via golang-migrate.
+
+tasks:
+  up:
+    desc: Aplica todas as migrations pendentes.
+    dotenv: ['.env']
+    cmds:
+      - go run ./cmd/... migrate
+
+  down:
+    desc: Reverte a ultima migration aplicada.
+    dotenv: ['.env']
+    cmds:
+      - 'echo "Para reverter manualmente: migrate -database DSN -path migrations down 1"'
+
+  create:
+    desc: Cria um novo arquivo de migration (uso task migrate:create -- nome).
+    cmds:
+      - migrate create -ext sql -dir migrations -seq {{.CLI_ARGS}}

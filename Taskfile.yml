@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Orquestrador fino. Toda a logica fica isolada em taskfiles/ para nao
+# conflitar com o codigo-fonte da aplicacao (cmd/, internal/, src/...).
+
+includes:
+  build:
+    taskfile: ./taskfiles/build.yml
+  test:
+    taskfile: ./taskfiles/test.yml
+  lint:
+    taskfile: ./taskfiles/lint.yml
+  security:
+    taskfile: ./taskfiles/security.yml
+  mocks:
+    taskfile: ./taskfiles/mocks.yml
+  migrate:
+    taskfile: ./taskfiles/migrate.yml
+  ci:
+    taskfile: ./taskfiles/ci.yml
+
+silent: true
+
+vars:
+  APP_NAME: '{{.APP_NAME | default "mecontrola"}}'
+  BIN_DIR: '{{.BIN_DIR | default "bin"}}'
+  TASK_VERSION: v3.51.1
+
+tasks:
+  default:
+    desc: Lista todas as tarefas disponiveis.
+    cmds:
+      - task --list-all
+
+  setup:
+    desc: Instala pre-commit hooks, gitsign e ferramentas pinadas.
+    cmds:
+      - echo "==> Instalando ferramentas pinadas..."
+      - cmd: pip3 install pre-commit --quiet || pip install pre-commit --quiet
+        ignore_error: true
+      - cmd: brew install gitsign 2>/dev/null || go install github.com/sigstore/gitsign@latest 2>/dev/null || true
+        platforms: [darwin]
+      - cmd: go install github.com/sigstore/gitsign@latest 2>/dev/null || true
+        platforms: [linux]
+      - echo "==> Instalando pre-commit hooks..."
+      - pre-commit install --install-hooks
+      - pre-commit install --hook-type commit-msg
+      - echo "==> Configurando gitsign para assinatura de commits..."
+      - git config gpg.format x509
+      - git config gpg.x509.program gitsign
+      - git config commit.gpgsign true
+      - echo "==> Setup concluido com sucesso!"
+
+  run:
+    desc: Compila e executa o servidor da aplicacao localmente.
+    deps: [build:build]
+    cmds:
+      - '{{.BIN_DIR}}/{{.APP_NAME}} server'
+
+  check:
+    desc: Validacao local rapida (lint + testes unitarios + seguranca).
+    cmds:
+      - task: lint:run
+      - task: test:unit
+      - task: security:vulncheck
+
+  build:
+    desc: Alias de alto nivel para compilar o binario da aplicacao.
+    cmds:
+      - task: build:build
+
+  lint:
+    desc: Alias de alto nivel para executar o linter estatico.
+    cmds:
+      - task: lint:run
+
+  ci:
+    desc: Pipeline completa usada na esteira (lint, testes, seguranca, build).
+    cmds:
+      - task: ci:pipeline

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Versoes pinadas das ferramentas de desenvolvimento (ADR-014).
+# Atualize via Dependabot ou manualmente; mantenha identico em local e CI.
+
+vars:
+  TASK_VERSION: v3.51.1
+  GOLANGCI_LINT_VERSION: v1.64.8
+  MOCKERY_VERSION: v2.53.3
+  GOVULNCHECK_VERSION: v1.1.4
+  TRIVY_VERSION: v0.62.1
+  COSIGN_VERSION: v2.4.3
+  GITSIGN_VERSION: v0.12.0
+  MIGRATE_VERSION: v4.18.3
+  PRE_COMMIT_VERSION: "4.2.0"

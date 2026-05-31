@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Verificacao de vulnerabilidades (govulncheck + trivy) e auditoria de dependencias.
+
+vars:
+  GOVULNCHECK_VERSION: '{{.GOVULNCHECK_VERSION | default "latest"}}'
+  TRIVY_VERSION: '{{.TRIVY_VERSION | default "latest"}}'
+
+tasks:
+  vulncheck:
+    desc: Verifica vulnerabilidades conhecidas no codigo e dependencias (govulncheck + trivy fs).
+    preconditions:
+      - sh: command -v govulncheck >/dev/null 2>&1
+        msg: "govulncheck ausente. Instale: go install golang.org/x/vuln/cmd/govulncheck@latest"
+    cmds:
+      - govulncheck ./...
+      - cmd: >-
+          command -v trivy >/dev/null 2>&1 &&
+          trivy fs --severity HIGH,CRITICAL --exit-code 1 . || true
+        platforms: [linux, darwin]
+
+  audit:
+    desc: Audita modulos e checa atualizacoes de seguranca.
+    cmds:
+      - go list -m -u all
+      - go mod verify
+
+  scan:
+    desc: Roda toda a verificacao de seguranca (vulncheck + audit).
+    cmds:
+      - task: vulncheck
+      - task: audit

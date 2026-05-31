@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Pipeline agregada usada pela esteira CI/CD. Reaproveita as tarefas de
+# dominio para nao duplicar comandos no YAML do CI.
+
+tasks:
+  pipeline:
+    desc: Executa o fluxo completo de qualidade e build (lint + testes + seguranca + build).
+    cmds:
+      - task: :lint:run
+      - task: :lint:fmt:check
+      - task: :test:unit
+      - task: :test:integration
+      - task: :security:vulncheck
+      - task: :build:build
+
+  fast:
+    desc: Subconjunto rapido para feedback em pull request (lint + testes unitarios).
+    cmds:
+      - task: :lint:run
+      - task: :test:unit
