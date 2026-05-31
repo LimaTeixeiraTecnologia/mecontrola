@@ -1,33 +1,127 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: '3'
 
-# Verificacao de vulnerabilidades (govulncheck + trivy) e auditoria de dependencias.
+# Supply chain scan: govulncheck + trivy fs/image + SBOM + cosign sign/verify
+# ADR-012 (scan + Dependabot) + ADR-013 (cosign keyless + SBOM)
+#
+# Tarefas executáveis localmente (sem OIDC):
+#   security:vulncheck  — govulncheck + trivy fs
+#
+# Tarefas que requerem OIDC (GitHub Actions) ou imagem no GHCR:
+#   security:image-scan, security:sbom, security:sign-image, security:verify-image
 
 vars:
   GOVULNCHECK_VERSION: '{{.GOVULNCHECK_VERSION | default "latest"}}'
   TRIVY_VERSION: '{{.TRIVY_VERSION | default "latest"}}'
+  COSIGN_VERSION: '{{.COSIGN_VERSION | default "latest"}}'
+  IMAGE_REPO: 'ghcr.io/limateixeiratecnologia/mecontrola'
+  IMAGE_SHA: '{{.IMAGE_SHA | default "dev"}}'
+  IMAGE_REF: '{{.IMAGE_REPO}}:{{.IMAGE_SHA}}'
+  SBOM_FILE: '{{.SBOM_FILE | default "sbom.spdx.json"}}'
+  PROVENANCE_FILE: '{{.PROVENANCE_FILE | default "provenance.json"}}'
 
 tasks:
+  # ── Local scan (govulncheck + trivy fs) ─────────────────────────────────────
   vulncheck:
-    desc: Verifica vulnerabilidades conhecidas no codigo e dependencias (govulncheck + trivy fs).
+    desc: >-
+      Verifica vulnerabilidades em dependências Go (govulncheck) e no filesystem/Dockerfile
+      (trivy fs). Roda localmente sem OIDC. Exit 1 se CVE HIGH/CRITICAL encontrada.
     preconditions:
       - sh: command -v govulncheck >/dev/null 2>&1
-        msg: "govulncheck ausente. Instale: go install golang.org/x/vuln/cmd/govulncheck@latest"
+        msg: "govulncheck ausente. Instale: go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}"
     cmds:
       - govulncheck ./...
       - cmd: >-
           command -v trivy >/dev/null 2>&1 &&
-          trivy fs --severity HIGH,CRITICAL --exit-code 1 . || true
+          trivy fs --severity HIGH,CRITICAL --exit-code 1 . ||
+          echo "trivy ausente — instalação recomendada: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
         platforms: [linux, darwin]
 
+  # ── Image scan (trivy image) ─────────────────────────────────────────────────
+  image-scan:
+    desc: >-
+      Varre a imagem Docker publicada no GHCR para CVEs HIGH/CRITICAL.
+      Requer IMAGE_SHA e acesso ao GHCR. Exit 1 se CVE encontrada.
+      Uso: task security:image-scan IMAGE_SHA=<sha-ou-tag>
+    preconditions:
+      - sh: command -v trivy >/dev/null 2>&1
+        msg: "trivy ausente. Instale: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
+      - sh: '[ "{{.IMAGE_SHA}}" != "dev" ]'
+        msg: "IMAGE_SHA obrigatório. Uso: task security:image-scan IMAGE_SHA=<sha-ou-tag>"
+    cmds:
+      - trivy image --severity HIGH,CRITICAL --exit-code 1 {{.IMAGE_REF}}
+
+  # ── SBOM ────────────────────────────────────────────────────────────────────
+  sbom:
+    desc: >-
+      Gera SBOM no formato SPDX-JSON a partir da imagem Docker publicada no GHCR.
+      Requer IMAGE_SHA. Saída em sbom.spdx.json (configurável via SBOM_FILE).
+      Uso: task security:sbom IMAGE_SHA=<sha-ou-tag>
+    preconditions:
+      - sh: command -v trivy >/dev/null 2>&1
+        msg: "trivy ausente. Instale: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
+      - sh: '[ "{{.IMAGE_SHA}}" != "dev" ]'
+        msg: "IMAGE_SHA obrigatório. Uso: task security:sbom IMAGE_SHA=<sha-ou-tag>"
+    cmds:
+      - trivy image --format spdx-json --output {{.SBOM_FILE}} {{.IMAGE_REF}}
+      - echo "SBOM gerado em {{.SBOM_FILE}}"
+
+  # ── cosign sign + attest ─────────────────────────────────────────────────────
+  sign-image:
+    desc: >-
+      Assina a imagem no GHCR via cosign keyless (OIDC GitHub Actions) e gera
+      atestados SBOM (spdxjson) e provenance (slsaprovenance).
+      Requer IMAGE_REF (ex: ghcr.io/org/app:tag) e IMAGE_SHA como digest @sha256:...
+      OIDC obrigatório (GitHub Actions). Sem fallback silencioso para tag.
+      Uso: task security:sign-image IMAGE_REF=ghcr.io/org/app:tag IMAGE_SHA=sha256:<digest>
+    requires:
+      vars: [IMAGE_REF, IMAGE_SHA]
+    preconditions:
+      - sh: command -v cosign >/dev/null 2>&1
+        msg: "cosign ausente. Instale: https://docs.sigstore.dev/cosign/installation/"
+      - sh: '[ "{{.IMAGE_SHA}}" != "dev" ]'
+        msg: "IMAGE_SHA obrigatório e deve ser um digest sha256. Uso: task security:sign-image IMAGE_REF=... IMAGE_SHA=sha256:<digest>"
+      - sh: 'echo "{{.IMAGE_SHA}}" | grep -qE "^sha256:[a-f0-9]{64}$"'
+        msg: "IMAGE_SHA deve ser um digest sha256 (sha256:<64 hex chars>), nao uma tag. Obtenha via: crane digest ghcr.io/org/app:tag"
+      - sh: '[ -f "{{.SBOM_FILE}}" ]'
+        msg: "{{.SBOM_FILE}} ausente. Execute: task security:sbom IMAGE_SHA={{.IMAGE_SHA}}"
+      - sh: '[ -f "{{.PROVENANCE_FILE}}" ]'
+        msg: "{{.PROVENANCE_FILE}} ausente. Gere o provenance via GitHub Actions SLSA antes de assinar."
+    cmds:
+      # 1. Assinar imagem (keyless via OIDC; registra em Rekor transparency log)
+      - cosign sign --yes {{.IMAGE_REF}}@{{.IMAGE_SHA}}
+      # 2. Atestar SBOM (predicate spdxjson)
+      - cosign attest --predicate {{.SBOM_FILE}} --type spdxjson --yes {{.IMAGE_REF}}@{{.IMAGE_SHA}}
+      # 3. Atestar provenance SLSA (predicate slsaprovenance)
+      - cosign attest --predicate {{.PROVENANCE_FILE}} --type slsaprovenance --yes {{.IMAGE_REF}}@{{.IMAGE_SHA}}
+
+  # ── cosign verify ────────────────────────────────────────────────────────────
+  verify-image:
+    desc: >-
+      Verifica assinatura cosign da imagem no GHCR usando identidade GitHub OIDC.
+      Uso: task security:verify-image IMAGE_SHA=<sha-ou-tag>
+    preconditions:
+      - sh: command -v cosign >/dev/null 2>&1
+        msg: "cosign ausente. Instale: https://docs.sigstore.dev/cosign/installation/"
+      - sh: '[ "{{.IMAGE_SHA}}" != "dev" ]'
+        msg: "IMAGE_SHA obrigatório. Uso: task security:verify-image IMAGE_SHA=<sha-ou-tag>"
+    cmds:
+      - >-
+        cosign verify
+        --certificate-identity-regexp '^https://github\.com/LimaTeixeiraTecnologia/mecontrola/'
+        --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+        {{.IMAGE_REF}}
+
+  # ── audit ────────────────────────────────────────────────────────────────────
   audit:
     desc: Audita modulos e checa atualizacoes de seguranca.
     cmds:
       - go list -m -u all
       - go mod verify
 
+  # ── scan (alias completo local) ──────────────────────────────────────────────
   scan:
-    desc: Roda toda a verificacao de seguranca (vulncheck + audit).
+    desc: Roda toda a verificacao de seguranca local (vulncheck + audit).
     cmds:
       - task: vulncheck
       - task: audit

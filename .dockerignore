@@ -1,0 +1,44 @@
+# .dockerignore — exclusões para build Docker
+# Reduz contexto de build e evita incluir artefatos locais desnecessários
+
+# Build artifacts
+bin/
+dist/
+*.exe
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+sbom.spdx.json
+provenance.json
+
+# Development tools
+.task/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git and CI metadata
+.git/
+.github/
+.agents/
+.claude/
+.codex/
+.gemini/
+.specs/
+docs/
+scripts/
+
+# Environment files (nunca incluir .env no container)
+.env
+.env.*
+!.env.example
+
+# Local tool binaries
+tools.go
+.pre-commit-config.yaml
+
+# Logs
+*.log

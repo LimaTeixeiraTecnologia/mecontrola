@@ -1,0 +1,22 @@
+# .trivyignore — Supressões de CVE para trivy fs e trivy image
+# ADR-012: política de supressão
+#
+# PROCESSO DE SUPRESSÃO:
+#   Cada entrada DEVE conter:
+#     - CVE-ID (ex: CVE-2024-12345)
+#     - Data de inclusão (YYYY-MM-DD)
+#     - Justificativa clara e auditável
+#     - Data de revisão obrigatória (≤ 7 dias para Critical; ≤ 30 dias para High)
+#
+# FORMATO:
+#   # CVE-YYYY-NNNNN | Data: YYYY-MM-DD | Revisão: YYYY-MM-DD | Justificativa: <texto>
+#   CVE-YYYY-NNNNN
+#
+# EXEMPLO (não remover — serve de referência):
+#   # CVE-2024-00001 | Data: 2026-01-15 | Revisão: 2026-01-22 | Justificativa: FP confirmado pelo vendor; fix aguardado na próxima release
+#   # CVE-2024-00001
+#
+# REGRAS:
+#   1. Nunca suprimir Critical sem aprovação explícita do CODEOWNER (@JailtonJunior94).
+#   2. Data de revisão é obrigatória; entrada expirada deve ser removida ou renovada.
+#   3. PRs que adicionam supressão são revisados manualmente (não auto-merged pelo Dependabot).

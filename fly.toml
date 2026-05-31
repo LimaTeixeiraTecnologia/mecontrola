@@ -1,0 +1,46 @@
+# fly.toml — MeControla Fly.io deployment config
+# ADR-011: 2 processes (app = server HTTP + worker = background jobs placeholder)
+# Região: gru (São Paulo)
+
+app            = "mecontrola"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app    = "/mecontrola server"
+  worker = "/mecontrola worker"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "256mb"
+
+# HTTP service apenas para o process "app"; worker não recebe ingress
+[[services]]
+  protocol   = "tcp"
+  internal_port = 8080
+  processes  = ["app"]
+
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type       = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  # Health checks para o process "app"
+  [[services.http_checks]]
+    interval      = "10s"
+    timeout       = "5s"
+    grace_period  = "15s"
+    method        = "GET"
+    path          = "/ready"
+    protocol      = "http"
+    restart_limit = 0
