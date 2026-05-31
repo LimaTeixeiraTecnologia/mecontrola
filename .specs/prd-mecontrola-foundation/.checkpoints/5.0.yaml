@@ -1,0 +1,9 @@
+status: done
+report_path: .specs/prd-mecontrola-foundation/5.0_execution_report.md
+summary: >
+  Implementado internal/infrastructure/database com Manager, UnitOfWork[T] (timeout 5s default),
+  sentinels ErrConnection/ErrMigration/ErrDeadlineExceeded, migrations embarcadas via //go:embed
+  (package migrations na raiz), RunMigrations/RunMigrationsDown via golang-migrate/source/iofs.
+  Integration tests com testcontainers postgres:16-alpine validando pool startup, migrate up/down,
+  HealthCheck, UoW commit/rollback. cmd/migrate concretizado. Todos testes unit e integration passando.
+timestamp: "2026-05-31T18:45:00Z"

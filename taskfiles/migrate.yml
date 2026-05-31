@@ -11,10 +11,10 @@ tasks:
       - go run ./cmd/... migrate
 
   down:
-    desc: Reverte a ultima migration aplicada.
+    desc: Reverte todas as migrations aplicadas.
     dotenv: ['.env']
     cmds:
-      - 'echo "Para reverter manualmente: migrate -database DSN -path migrations down 1"'
+      - go run ./cmd/... migrate-down
 
   create:
     desc: Cria um novo arquivo de migration (uso task migrate:create -- nome).

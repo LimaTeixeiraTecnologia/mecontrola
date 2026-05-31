@@ -16,7 +16,7 @@
 | 2.0 | `configs/` — Viper + grupos + Validate + DSN/SafeDSN + .env.example | done | 1.0 | Não | — |
 | 3.0 | `cmd/` cobra root + subcomandos `server`/`worker`/`migrate` + `internal/infrastructure/runtime` | done | 2.0 | Com 4.0, 5.0, 7.0 | — |
 | 4.0 | `internal/infrastructure/observability` — OTel OTLP + slog + redaction de PII | pending | 2.0 | Com 3.0, 5.0, 7.0 | `otel-grafana-dashboards` |
-| 5.0 | `internal/infrastructure/database` — Manager + UnitOfWork[T] + migrations //go:embed + sentinels | pending | 2.0 | Com 3.0, 4.0, 7.0 | — |
+| 5.0 | `internal/infrastructure/database` — Manager + UnitOfWork[T] + migrations //go:embed + sentinels | done | 2.0 | Com 3.0, 4.0, 7.0 | — |
 | 6.0 | `internal/infrastructure/http` — server + middleware stack + health endpoints + Problem Details mapper | pending | 4.0, 5.0 | Não | — |
 | 7.0 | `internal/infrastructure/events` — typed eventbus via generics + `internal/infrastructure/clock` | pending | 2.0 | Com 3.0, 4.0, 5.0 | — |
 | 8.0 | Esqueletos dos 6 módulos de domínio (`identity`, `conversation`, `agent`, `finance`, `notifications`, `telemetry`) + depguard fronteiras hexagonais | pending | 1.0 | Com 9.0 | — |
