@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-foundation/3.0_execution_report.md
+summary: "cmd/ cobra root (server/worker/migrate) + internal/infrastructure/runtime (AppMode VO, Bootstrap, App interface) implementados com 100% de cobertura unitária"
+timestamp: 2026-05-31T00:00:00Z

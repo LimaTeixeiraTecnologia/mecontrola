@@ -14,7 +14,7 @@
 |---|--------|--------|-------------|---------------|--------|
 | 1.0 | Bootstrap — Taskfile production + governança + hooks + tooling pinning + CODEOWNERS + SECURITY.md | done | — | — | `taskfile-production` |
 | 2.0 | `configs/` — Viper + grupos + Validate + DSN/SafeDSN + .env.example | done | 1.0 | Não | — |
-| 3.0 | `cmd/` cobra root + subcomandos `server`/`worker`/`migrate` + `internal/infrastructure/runtime` | pending | 2.0 | Com 4.0, 5.0, 7.0 | — |
+| 3.0 | `cmd/` cobra root + subcomandos `server`/`worker`/`migrate` + `internal/infrastructure/runtime` | done | 2.0 | Com 4.0, 5.0, 7.0 | — |
 | 4.0 | `internal/infrastructure/observability` — OTel OTLP + slog + redaction de PII | pending | 2.0 | Com 3.0, 5.0, 7.0 | `otel-grafana-dashboards` |
 | 5.0 | `internal/infrastructure/database` — Manager + UnitOfWork[T] + migrations //go:embed + sentinels | pending | 2.0 | Com 3.0, 4.0, 7.0 | — |
 | 6.0 | `internal/infrastructure/http` — server + middleware stack + health endpoints + Problem Details mapper | pending | 4.0, 5.0 | Não | — |
