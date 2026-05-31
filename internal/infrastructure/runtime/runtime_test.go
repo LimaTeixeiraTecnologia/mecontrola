@@ -5,92 +5,23 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------------------
-// ParseAppMode — table-driven
-// ---------------------------------------------------------------------------
-
-func TestParseAppMode(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		input   string
-		want    AppMode
-		wantErr bool
-	}{
-		{
-			name:    "server válido",
-			input:   "server",
-			want:    ModeServer,
-			wantErr: false,
-		},
-		{
-			name:    "worker válido",
-			input:   "worker",
-			want:    ModeWorker,
-			wantErr: false,
-		},
-		{
-			name:    "vazio inválido",
-			input:   "",
-			wantErr: true,
-		},
-		{
-			name:    "maiúsculas inválido",
-			input:   "Server",
-			wantErr: true,
-		},
-		{
-			name:    "all inválido (removido na v6)",
-			input:   "all",
-			wantErr: true,
-		},
-		{
-			name:    "migrate inválido (não é AppMode)",
-			input:   "migrate",
-			wantErr: true,
-		},
-		{
-			name:    "caractere especial inválido",
-			input:   "server!",
-			wantErr: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := ParseAppMode(tc.input)
-			if tc.wantErr {
-				require.Error(t, err)
-				assert.ErrorContains(t, err, "app mode inválido")
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-		})
-	}
+type RuntimeSuite struct {
+	suite.Suite
+	ctx context.Context
 }
 
-// ---------------------------------------------------------------------------
-// AppMode.String
-// ---------------------------------------------------------------------------
-
-func TestAppModeString(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "server", ModeServer.String())
-	assert.Equal(t, "worker", ModeWorker.String())
+func TestRuntime(t *testing.T) {
+	suite.Run(t, new(RuntimeSuite))
 }
 
-// ---------------------------------------------------------------------------
-// mockSubsystem — double para testar App
-// ---------------------------------------------------------------------------
+func (s *RuntimeSuite) SetupTest() {
+	s.ctx = context.Background()
+}
 
 type mockSubsystem struct {
 	name       string
@@ -112,26 +43,89 @@ func (m *mockSubsystem) Stop(_ context.Context) error {
 	return m.stopErr
 }
 
-// ---------------------------------------------------------------------------
-// app.Run — table-driven
-// ---------------------------------------------------------------------------
+func (s *RuntimeSuite) TestParseAppMode() {
+	scenarios := []struct {
+		name    string
+		input   string
+		want    AppMode
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:  "deve retornar ModeServer para entrada server",
+			input: "server",
+			want:  ModeServer,
+		},
+		{
+			name:  "deve retornar ModeWorker para entrada worker",
+			input: "worker",
+			want:  ModeWorker,
+		},
+		{
+			name:    "deve retornar erro quando entrada vazia",
+			input:   "",
+			wantErr: true,
+			errMsg:  "app mode inválido",
+		},
+		{
+			name:    "deve retornar erro quando entrada em maiúsculas",
+			input:   "Server",
+			wantErr: true,
+			errMsg:  "app mode inválido",
+		},
+		{
+			name:    "deve retornar erro para modo all removido na v6",
+			input:   "all",
+			wantErr: true,
+			errMsg:  "app mode inválido",
+		},
+		{
+			name:    "deve retornar erro para migrate que não é AppMode",
+			input:   "migrate",
+			wantErr: true,
+			errMsg:  "app mode inválido",
+		},
+		{
+			name:    "deve retornar erro para entrada com caractere especial",
+			input:   "server!",
+			wantErr: true,
+			errMsg:  "app mode inválido",
+		},
+	}
 
-func TestAppRun(t *testing.T) {
-	t.Parallel()
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			got, err := ParseAppMode(sc.input)
+			if sc.wantErr {
+				s.Error(err)
+				s.ErrorContains(err, sc.errMsg)
+				return
+			}
+			s.NoError(err)
+			s.Equal(sc.want, got)
+		})
+	}
+}
 
-	tests := []struct {
+func (s *RuntimeSuite) TestAppModeString() {
+	s.Equal("server", ModeServer.String())
+	s.Equal("worker", ModeWorker.String())
+}
+
+func (s *RuntimeSuite) TestAppRun() {
+	scenarios := []struct {
 		name        string
 		subsystems  []*mockSubsystem
 		wantErr     bool
 		errContains string
 	}{
 		{
-			name:       "sem subsistemas — sucesso",
+			name:       "deve executar com sucesso sem subsistemas",
 			subsystems: nil,
 			wantErr:    false,
 		},
 		{
-			name: "dois subsistemas saudáveis — sucesso",
+			name: "deve executar dois subsistemas saudáveis com sucesso",
 			subsystems: []*mockSubsystem{
 				{name: "alpha"},
 				{name: "beta"},
@@ -139,7 +133,7 @@ func TestAppRun(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "segundo subsistema falha — retorna erro",
+			name: "deve retornar erro quando segundo subsistema falha ao iniciar",
 			subsystems: []*mockSubsystem{
 				{name: "alpha"},
 				{name: "beta", startErr: errors.New("beta boom")},
@@ -149,155 +143,129 @@ func TestAppRun(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			ctx := context.Background()
-
-			subs := make([]Subsystem, len(tc.subsystems))
-			for i, s := range tc.subsystems {
-				subs[i] = s
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			subs := make([]Subsystem, len(sc.subsystems))
+			for i, sub := range sc.subsystems {
+				subs[i] = sub
 			}
 			a := &app{mode: ModeServer, subsystems: subs}
 
-			err := a.Run(ctx)
-			if tc.wantErr {
-				require.Error(t, err)
-				assert.ErrorContains(t, err, tc.errContains)
+			err := a.Run(s.ctx)
+			if sc.wantErr {
+				s.Error(err)
+				s.ErrorContains(err, sc.errContains)
 				return
 			}
-			require.NoError(t, err)
-			for _, s := range tc.subsystems {
-				assert.Equal(t, 1, s.startCalls, "Start deve ser chamado exatamente uma vez em %s", s.name)
+			s.NoError(err)
+			for _, sub := range sc.subsystems {
+				s.Equal(1, sub.startCalls)
 			}
 		})
 	}
 }
 
-// ---------------------------------------------------------------------------
-// app.Shutdown — ordem inversa + acumulação de erros
-// ---------------------------------------------------------------------------
-
-func TestAppShutdown_OrderInverse(t *testing.T) {
-	t.Parallel()
-
-	order := make([]string, 0, 3)
-	ctx := context.Background()
-
-	type recordingSubsystem struct {
-		mockSubsystem
-		orderRef *[]string
+func (s *RuntimeSuite) TestAppShutdownOrdemInversa() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve chamar Stop em cada subsistema exatamente uma vez"},
 	}
 
-	alpha := &recordingSubsystem{mockSubsystem: mockSubsystem{name: "alpha"}, orderRef: &order}
-	beta := &recordingSubsystem{mockSubsystem: mockSubsystem{name: "beta"}, orderRef: &order}
-	gamma := &recordingSubsystem{mockSubsystem: mockSubsystem{name: "gamma"}, orderRef: &order}
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			alpha := &mockSubsystem{name: "alpha"}
+			beta := &mockSubsystem{name: "beta"}
+			gamma := &mockSubsystem{name: "gamma"}
 
-	// Sobrescreve Stop para registrar ordem.
-	stopFn := func(s *recordingSubsystem) func(context.Context) error {
-		return func(_ context.Context) error {
-			*s.orderRef = append(*s.orderRef, s.name)
-			return nil
-		}
+			a := &app{
+				mode:       ModeServer,
+				subsystems: []Subsystem{alpha, beta, gamma},
+			}
+
+			s.Require().NoError(a.Run(s.ctx))
+			s.Require().NoError(a.Shutdown(s.ctx))
+
+			s.Equal(1, alpha.stopCalls)
+			s.Equal(1, beta.stopCalls)
+			s.Equal(1, gamma.stopCalls)
+		})
 	}
-
-	_ = stopFn // usaremos o mockSubsystem padrão via Subsystem interface
-
-	a := &app{
-		mode:       ModeServer,
-		subsystems: []Subsystem{alpha, beta, gamma},
-	}
-
-	// Executa Run primeiro para garantir todos iniciados.
-	require.NoError(t, a.Run(ctx))
-
-	// Para verificar ordem inversa sem sobrescrever Stop, usamos subsistemas que
-	// registram as chamadas de Stop no slice de ordem via wrapper.
-	// Simplificação: verificamos apenas que stopCalls == 1 em cada.
-	require.NoError(t, a.Shutdown(ctx))
-
-	assert.Equal(t, 1, alpha.stopCalls)
-	assert.Equal(t, 1, beta.stopCalls)
-	assert.Equal(t, 1, gamma.stopCalls)
 }
 
-func TestAppShutdown_AccumulatesErrors(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	alpha := &mockSubsystem{name: "alpha", stopErr: errors.New("alpha stop fail")}
-	beta := &mockSubsystem{name: "beta", stopErr: errors.New("beta stop fail")}
-
-	a := &app{
-		mode:       ModeServer,
-		subsystems: []Subsystem{alpha, beta},
+func (s *RuntimeSuite) TestAppShutdownAcumulaErros() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve acumular erros de shutdown e chamar Stop em todos os subsistemas"},
 	}
 
-	err := a.Shutdown(ctx)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "erros durante shutdown")
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			alpha := &mockSubsystem{name: "alpha", stopErr: errors.New("alpha stop fail")}
+			beta := &mockSubsystem{name: "beta", stopErr: errors.New("beta stop fail")}
 
-	// Ambos os subsistemas devem ter tido Stop chamado mesmo com falha no primeiro.
-	assert.Equal(t, 1, alpha.stopCalls)
-	assert.Equal(t, 1, beta.stopCalls)
+			a := &app{
+				mode:       ModeServer,
+				subsystems: []Subsystem{alpha, beta},
+			}
+
+			err := a.Shutdown(s.ctx)
+			s.Error(err)
+			s.ErrorContains(err, "erros durante shutdown")
+			s.Equal(1, alpha.stopCalls)
+			s.Equal(1, beta.stopCalls)
+		})
+	}
 }
 
-// ---------------------------------------------------------------------------
-// Bootstrap
-// ---------------------------------------------------------------------------
+func (s *RuntimeSuite) TestBootstrap() {
+	cfg := minimalValidConfig()
 
-func TestBootstrap(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
+	scenarios := []struct {
 		name    string
 		mode    AppMode
 		wantErr bool
 	}{
-		{name: "mode server", mode: ModeServer},
-		{name: "mode worker", mode: ModeWorker},
+		{name: "deve inicializar com modo server com sucesso", mode: ModeServer},
+		{name: "deve inicializar com modo worker com sucesso", mode: ModeWorker},
 	}
 
-	cfg := minimalValidConfig()
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := Bootstrap(cfg, tc.mode)
-			if tc.wantErr {
-				require.Error(t, err)
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			got, err := Bootstrap(cfg, sc.mode)
+			if sc.wantErr {
+				s.Error(err)
 				return
 			}
-			require.NoError(t, err)
-			require.NotNil(t, got)
+			s.NoError(err)
+			s.NotNil(got)
 
-			// App deve ser executável sem erro em contexto cancellado.
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(s.ctx)
 			cancel()
 
-			runErr := got.Run(ctx)
-			// Subsistemas são placeholders; Run deve retornar nil (lista vazia).
-			assert.NoError(t, runErr)
-
-			shutdownErr := got.Shutdown(context.Background())
-			assert.NoError(t, shutdownErr)
+			s.NoError(got.Run(ctx))
+			s.NoError(got.Shutdown(context.Background()))
 		})
 	}
 }
 
-// ---------------------------------------------------------------------------
-// buildSubsystems — cobertura do default branch
-// ---------------------------------------------------------------------------
+func (s *RuntimeSuite) TestBuildSubsystemsDefaultBranch() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve retornar lista vazia para AppMode inválido"},
+	}
 
-func TestBuildSubsystems_DefaultBranch(t *testing.T) {
-	t.Parallel()
-	cfg := minimalValidConfig()
-	// Usa um AppMode inválido diretamente para exercitar o default case.
-	subs := buildSubsystems(cfg, AppMode("invalid"), Foundation{})
-	assert.Empty(t, subs)
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			cfg := minimalValidConfig()
+			subs := buildSubsystems(cfg, AppMode("invalid"), Foundation{})
+			s.Empty(subs)
+		})
+	}
 }
 
-// minimalValidConfig retorna uma Config mínima válida para testes unitários.
 func minimalValidConfig() *configs.Config {
 	return &configs.Config{
 		AppConfig: configs.AppConfig{

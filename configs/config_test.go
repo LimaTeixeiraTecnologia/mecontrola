@@ -1,35 +1,43 @@
 package configs_test
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------------------
-// Testes de Validate()
-// ---------------------------------------------------------------------------
+type ConfigSuite struct {
+	suite.Suite
+	ctx context.Context
+}
 
-func TestValidate_TableDriven(t *testing.T) {
-	t.Parallel()
+func TestConfig(t *testing.T) {
+	suite.Run(t, new(ConfigSuite))
+}
 
+func (s *ConfigSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *ConfigSuite) TestValidate() {
 	prod := "production"
 	local := "local"
 
-	tests := []struct {
+	scenarios := []struct {
 		name    string
 		cfg     *configs.Config
 		wantErr bool
 		errMsg  string
 	}{
 		{
-			name: "config válida local",
+			name: "deve validar config local com sucesso",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local, AppMode: "server"},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -39,7 +47,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "environment inválido",
+			name: "deve retornar erro quando environment inválido",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: "dev", AppMode: "server"},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -49,7 +57,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "ENVIRONMENT inválido",
 		},
 		{
-			name: "environment vazio",
+			name: "deve retornar erro quando environment vazio",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: "", AppMode: "server"},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -59,7 +67,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "ENVIRONMENT inválido",
 		},
 		{
-			name: "port zero",
+			name: "deve retornar erro quando port zero",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 0},
@@ -69,7 +77,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "PORT inválido",
 		},
 		{
-			name: "port acima de 65535",
+			name: "deve retornar erro quando port acima de 65535",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 65536},
@@ -79,7 +87,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "PORT inválido",
 		},
 		{
-			name: "port mínimo válido (1)",
+			name: "deve aceitar port mínimo válido igual a 1",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 1},
@@ -88,7 +96,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "port máximo válido (65535)",
+			name: "deve aceitar port máximo válido igual a 65535",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 65535},
@@ -97,7 +105,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "TraceSampleRate negativo",
+			name: "deve retornar erro quando TraceSampleRate negativo",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -107,7 +115,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "OTEL_TRACE_SAMPLE_RATE inválido",
 		},
 		{
-			name: "TraceSampleRate acima de 1",
+			name: "deve retornar erro quando TraceSampleRate acima de 1",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -117,7 +125,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "OTEL_TRACE_SAMPLE_RATE inválido",
 		},
 		{
-			name: "TraceSampleRate zero válido",
+			name: "deve aceitar TraceSampleRate zero como válido",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -126,7 +134,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "TraceSampleRate um válido",
+			name: "deve aceitar TraceSampleRate um como válido",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: local},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -135,7 +143,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "production com senha curta (< 16 chars)",
+			name: "deve retornar erro quando production com senha curta",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: prod},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -146,7 +154,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "DB_PASSWORD deve ter ao menos 16 caracteres",
 		},
 		{
-			name: "production com senha com exatamente 16 chars (válida)",
+			name: "deve aceitar production com senha de exatamente 16 chars",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: prod},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -156,7 +164,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "production com placeholder CHANGE_ME na senha",
+			name: "deve retornar erro quando production com placeholder CHANGE_ME na senha",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: prod},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -167,7 +175,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "placeholder inseguro",
 		},
 		{
-			name: "production com your_secret_key na senha",
+			name: "deve retornar erro quando production com your_secret_key na senha",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: prod},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -178,7 +186,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "placeholder inseguro",
 		},
 		{
-			name: "production com financial@password na senha",
+			name: "deve retornar erro quando production com financial@password na senha",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: prod},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -189,7 +197,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			errMsg:  "placeholder inseguro",
 		},
 		{
-			name: "staging não exige senha longa",
+			name: "deve validar staging sem exigir senha longa",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: "staging"},
 				HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -199,7 +207,7 @@ func TestValidate_TableDriven(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "múltiplos erros acumulados",
+			name: "deve acumular múltiplos erros de validação",
 			cfg: &configs.Config{
 				AppConfig:  configs.AppConfig{Environment: "invalid"},
 				HTTPConfig: configs.HTTPConfig{Port: 0},
@@ -210,103 +218,77 @@ func TestValidate_TableDriven(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			err := tt.cfg.Validate()
-
-			if tt.wantErr {
-				require.Error(t, err, "esperava erro mas Validate() retornou nil")
-				if tt.errMsg != "" {
-					assert.Contains(t, err.Error(), tt.errMsg,
-						"mensagem de erro não contém %q", tt.errMsg)
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			err := sc.cfg.Validate()
+			if sc.wantErr {
+				s.Error(err)
+				if sc.errMsg != "" {
+					s.Contains(err.Error(), sc.errMsg)
 				}
 			} else {
-				assert.NoError(t, err, "não esperava erro mas Validate() retornou: %v", err)
+				s.NoError(err)
 			}
 		})
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Testes de LoadConfig()
-// ---------------------------------------------------------------------------
-
-func TestLoadConfig_DevWithValidEnvFile(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestLoadConfigComArquivoValido() {
 	cfg, err := configs.LoadConfig("./testdata/valid")
 
-	require.NoError(t, err)
-	require.NotNil(t, cfg)
-	assert.Equal(t, "local", cfg.AppConfig.Environment)
-	assert.Equal(t, 8080, cfg.HTTPConfig.Port)
-	assert.Equal(t, "localhost", cfg.DBConfig.Host)
-	assert.Equal(t, 1.0, cfg.O11yConfig.TraceSampleRate)
+	s.NoError(err)
+	s.NotNil(cfg)
+	s.Equal("local", cfg.AppConfig.Environment)
+	s.Equal(8080, cfg.HTTPConfig.Port)
+	s.Equal("localhost", cfg.DBConfig.Host)
+	s.Equal(1.0, cfg.O11yConfig.TraceSampleRate)
 }
 
-func TestLoadConfig_DevWithoutEnvFile_ReturnsError(t *testing.T) {
-	t.Parallel()
-
-	// Diretório sem .env — simula dev sem arquivo
-	dir := t.TempDir()
+func (s *ConfigSuite) TestLoadConfigSemArquivoEnvRetornaErro() {
+	dir := s.T().TempDir()
 
 	cfg, err := configs.LoadConfig(dir)
 
-	require.Error(t, err, "esperava erro ao ausência de .env em dev")
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), ".env não encontrado")
+	s.Error(err)
+	s.Nil(cfg)
+	s.Contains(err.Error(), ".env não encontrado")
 }
 
-func TestLoadConfig_ProdWithoutEnvFile_UsesEnvVars(t *testing.T) {
-	// Configura env vars que simulam Fly secrets
-	t.Setenv("ENVIRONMENT", "production")
-	t.Setenv("PORT", "8080")
-	t.Setenv("DB_HOST", "db.fly.internal")
-	t.Setenv("DB_PORT", "5432")
-	t.Setenv("DB_USER", "mecontrola")
-	t.Setenv("DB_PASSWORD", "productionStrongPassword123!")
-	t.Setenv("DB_NAME", "mecontrola_db")
-	t.Setenv("DB_SSL_MODE", "require")
-	t.Setenv("OTEL_TRACE_SAMPLE_RATE", "0.2")
-	t.Setenv("SERVICE_NAME_API", "mecontrola-api")
+func (s *ConfigSuite) TestLoadConfigProductionSemArquivoUsaEnvVars() {
+	s.T().Setenv("ENVIRONMENT", "production")
+	s.T().Setenv("PORT", "8080")
+	s.T().Setenv("DB_HOST", "db.fly.internal")
+	s.T().Setenv("DB_PORT", "5432")
+	s.T().Setenv("DB_USER", "mecontrola")
+	s.T().Setenv("DB_PASSWORD", "productionStrongPassword123!")
+	s.T().Setenv("DB_NAME", "mecontrola_db")
+	s.T().Setenv("DB_SSL_MODE", "require")
+	s.T().Setenv("OTEL_TRACE_SAMPLE_RATE", "0.2")
+	s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
 
-	// Diretório sem .env — em production deve funcionar via env vars
-	dir := t.TempDir()
+	dir := s.T().TempDir()
 
 	cfg, err := configs.LoadConfig(dir)
 
-	require.NoError(t, err, "production sem .env deve usar env vars")
-	require.NotNil(t, cfg)
-	assert.Equal(t, "production", cfg.AppConfig.Environment)
-	assert.Equal(t, "db.fly.internal", cfg.DBConfig.Host)
+	s.NoError(err)
+	s.NotNil(cfg)
+	s.Equal("production", cfg.AppConfig.Environment)
+	s.Equal("db.fly.internal", cfg.DBConfig.Host)
 }
 
-func TestLoadConfig_InsecureProd_ReturnsError(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestLoadConfigProductionInseguroRetornaErro() {
 	cfg, err := configs.LoadConfig("./testdata/insecure-prod")
 
-	require.Error(t, err, "esperava erro com placeholder inseguro em production")
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "placeholder inseguro")
+	s.Error(err)
+	s.Nil(cfg)
+	s.Contains(err.Error(), "placeholder inseguro")
 }
 
-// ---------------------------------------------------------------------------
-// Testes de DSN() e SafeDSN()
-// ---------------------------------------------------------------------------
-
-func TestSafeDSN_NeverContainsPassword(t *testing.T) {
-	t.Parallel()
-
-	// 5 senhas distintas geradas aleatoriamente
+func (s *ConfigSuite) TestSafeDSNNuncaContemSenha() {
 	passwords := generateRandomPasswords(5)
 
 	for i, pwd := range passwords {
-		t.Run(fmt.Sprintf("senha_%d", i+1), func(t *testing.T) {
-			t.Parallel()
-
+		s.Run(fmt.Sprintf("senha_%d", i+1), func() {
 			db := &configs.DBConfig{
 				Host:     "localhost",
 				Port:     5432,
@@ -318,17 +300,13 @@ func TestSafeDSN_NeverContainsPassword(t *testing.T) {
 
 			safeDSN := db.SafeDSN()
 
-			assert.NotContains(t, safeDSN, pwd,
-				"SafeDSN() não deve conter a senha real %q", pwd)
-			assert.Contains(t, safeDSN, "***",
-				"SafeDSN() deve mascarar a senha com ***")
+			s.NotContains(safeDSN, pwd)
+			s.Contains(safeDSN, "***")
 		})
 	}
 }
 
-func TestDSN_ContainsPassword(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestDSNContemSenha() {
 	db := &configs.DBConfig{
 		Host:     "db.example.com",
 		Port:     5432,
@@ -340,13 +318,11 @@ func TestDSN_ContainsPassword(t *testing.T) {
 
 	dsn := db.DSN()
 
-	assert.Contains(t, dsn, "supersecretpassword", "DSN() deve conter a senha")
-	assert.Contains(t, dsn, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require")
+	s.Contains(dsn, "supersecretpassword")
+	s.Contains(dsn, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require")
 }
 
-func TestSafeDSN_Format(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestSafeDSNFormato() {
 	db := &configs.DBConfig{
 		Host:     "db.example.com",
 		Port:     5432,
@@ -358,24 +334,14 @@ func TestSafeDSN_Format(t *testing.T) {
 
 	safeDSN := db.SafeDSN()
 
-	expected := "postgres://mecontrola:***@db.example.com:5432/mecontrola_db?sslmode=require"
-	assert.Equal(t, expected, safeDSN, "SafeDSN() deve seguir o formato esperado")
+	s.Equal("postgres://mecontrola:***@db.example.com:5432/mecontrola_db?sslmode=require", safeDSN)
 }
 
-// ---------------------------------------------------------------------------
-// Testes de InsecurePlaceholders
-// ---------------------------------------------------------------------------
-
-func TestInsecurePlaceholders_NotEmpty(t *testing.T) {
-	t.Parallel()
-
-	assert.NotEmpty(t, configs.InsecurePlaceholders,
-		"InsecurePlaceholders não deve estar vazio")
+func (s *ConfigSuite) TestInsecurePlaceholdersNaoVazio() {
+	s.NotEmpty(configs.InsecurePlaceholders)
 }
 
-func TestInsecurePlaceholders_ContainsKnownValues(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestInsecurePlaceholdersContemValoresConhecidos() {
 	known := []string{
 		"CHANGE_ME_USE_STRONG_PASSWORD",
 		"CHANGE_ME_GENERATE_SECURE_SECRET_KEY_MIN_64_CHARS",
@@ -384,19 +350,15 @@ func TestInsecurePlaceholders_ContainsKnownValues(t *testing.T) {
 	}
 
 	for _, v := range known {
-		assert.Contains(t, configs.InsecurePlaceholders, v,
-			"InsecurePlaceholders deve conter %q", v)
+		s.Contains(configs.InsecurePlaceholders, v)
 	}
 }
 
-func TestValidate_ProductionInsecureUser(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestValidateProductionUsuarioInseguro() {
 	cfg := &configs.Config{
 		AppConfig:  configs.AppConfig{Environment: "production"},
 		HTTPConfig: configs.HTTPConfig{Port: 8080},
 		DBConfig: configs.DBConfig{
-			// Senha longa válida mas usuário com placeholder inseguro
 			Password: "productionStrongPassword123!",
 			User:     "your_secret_key",
 		},
@@ -404,13 +366,11 @@ func TestValidate_ProductionInsecureUser(t *testing.T) {
 	}
 
 	err := cfg.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "DB_USER contém placeholder inseguro")
+	s.Error(err)
+	s.Contains(err.Error(), "DB_USER contém placeholder inseguro")
 }
 
-func TestValidate_ProductionInsecureOTLPHeaders(t *testing.T) {
-	t.Parallel()
-
+func (s *ConfigSuite) TestValidateProductionOTLPHeadersInseguro() {
 	cfg := &configs.Config{
 		AppConfig:  configs.AppConfig{Environment: "production"},
 		HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -425,20 +385,45 @@ func TestValidate_ProductionInsecureOTLPHeaders(t *testing.T) {
 	}
 
 	err := cfg.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro")
+	s.Error(err)
+	s.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro")
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+func (s *ConfigSuite) TestLoadConfigPortInvalidaRetornaErro() {
+	s.T().Setenv("ENVIRONMENT", "local")
+	s.T().Setenv("PORT", "99999")
+
+	dir := s.T().TempDir()
+	envContent := "ENVIRONMENT=local\nPORT=99999\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+
+	s.Error(err)
+	s.Nil(cfg)
+	s.Contains(err.Error(), "PORT inválido")
+}
+
+func (s *ConfigSuite) TestLoadConfigTraceSampleRateInvalidoRetornaErro() {
+	dir := s.T().TempDir()
+	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=2.5\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+
+	s.Error(err)
+	s.Nil(cfg)
+	s.Contains(err.Error(), "OTEL_TRACE_SAMPLE_RATE inválido")
+}
 
 const passwordChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 
 func generateRandomPasswords(n int) []string {
 	passwords := make([]string, n)
 	for i := range passwords {
-		length := 20 + rand.Intn(20) //nolint:gosec // não é criptografia
+		length := 20 + rand.Intn(20) //nolint:gosec
 		var sb strings.Builder
 		for j := 0; j < length; j++ {
 			sb.WriteByte(passwordChars[rand.Intn(len(passwordChars))]) //nolint:gosec
@@ -446,40 +431,4 @@ func generateRandomPasswords(n int) []string {
 		passwords[i] = sb.String()
 	}
 	return passwords
-}
-
-// ---------------------------------------------------------------------------
-// Testes de configuração com variáveis de ambiente
-// ---------------------------------------------------------------------------
-
-func TestLoadConfig_InvalidPortFromEnv(t *testing.T) {
-	t.Setenv("ENVIRONMENT", "local")
-	t.Setenv("PORT", "99999")
-
-	// Cria um .env mínimo no diretório temp para passar a detecção do arquivo
-	dir := t.TempDir()
-	envContent := "ENVIRONMENT=local\nPORT=99999\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	require.NoError(t, err)
-
-	cfg, err := configs.LoadConfig(dir)
-
-	require.Error(t, err)
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "PORT inválido")
-}
-
-func TestLoadConfig_InvalidTraceSampleRateFromFile(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=2.5\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	require.NoError(t, err)
-
-	cfg, err := configs.LoadConfig(dir)
-
-	require.Error(t, err)
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "OTEL_TRACE_SAMPLE_RATE inválido")
 }

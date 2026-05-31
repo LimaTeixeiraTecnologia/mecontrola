@@ -5,40 +5,40 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-// TestUoWDefaultTimeout verifies that the UoW applies a default 5s timeout
-// when the caller's context has no deadline.
-// This is validated structurally because a real Manager requires a live DB.
-// Full behavioural test (commit/rollback) lives in database_integration_test.go.
-func TestUoWDefaultTimeout(t *testing.T) {
-	t.Parallel()
+type UoWSuite struct {
+	suite.Suite
+	ctx context.Context
+}
 
-	// Simulate the default timeout logic: if no deadline exists, apply 5s.
-	ctx := context.Background()
-	_, hasDeadline := ctx.Deadline()
-	assert.False(t, hasDeadline, "fresh context must not have a deadline")
+func TestUoW(t *testing.T) {
+	suite.Run(t, new(UoWSuite))
+}
 
-	// Apply timeout as the production code would.
-	timedCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+func (s *UoWSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *UoWSuite) TestDeveAplicarTimeoutPadraoDeCincoSegundos() {
+	_, hasDeadline := s.ctx.Deadline()
+	s.False(hasDeadline)
+
+	timedCtx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 	defer cancel()
 
 	deadline, ok := timedCtx.Deadline()
-	assert.True(t, ok, "context with timeout must have a deadline")
-	assert.WithinDuration(t, time.Now().Add(5*time.Second), deadline, 100*time.Millisecond)
+	s.True(ok)
+	s.WithinDuration(time.Now().Add(5*time.Second), deadline, 100*time.Millisecond)
 }
 
-// TestUoWCallerDeadlineRespected verifies that when the caller provides a
-// context with a tighter deadline than 5s, it is preserved.
-func TestUoWCallerDeadlineRespected(t *testing.T) {
-	t.Parallel()
-
+func (s *UoWSuite) TestDeveResponderDeadlineDoCallerMaisRestrito() {
 	callerDeadline := time.Now().Add(1 * time.Second)
-	ctx, cancel := context.WithDeadline(context.Background(), callerDeadline)
+	ctx, cancel := context.WithDeadline(s.ctx, callerDeadline)
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
-	assert.True(t, ok)
-	assert.Equal(t, callerDeadline.Truncate(time.Millisecond), deadline.Truncate(time.Millisecond))
+	s.True(ok)
+	s.Equal(callerDeadline.Truncate(time.Millisecond), deadline.Truncate(time.Millisecond))
 }

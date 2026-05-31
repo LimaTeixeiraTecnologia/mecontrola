@@ -10,47 +10,60 @@ import (
 	"time"
 
 	devkitdb "github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	dbpkg "github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/database"
 )
 
-// startPostgres starts an ephemeral postgres:16-alpine container and returns
-// a *configs.Config pointing to it. The container is automatically stopped
-// when the test ends.
-func startPostgres(t *testing.T) *configs.Config {
-	t.Helper()
+type DatabaseIntegrationSuite struct {
+	suite.Suite
+	ctx context.Context
+	cfg *configs.Config
+	mgr *dbpkg.Manager
+}
 
-	ctx := context.Background()
+func TestDatabaseIntegration(t *testing.T) {
+	suite.Run(t, new(DatabaseIntegrationSuite))
+}
 
-	container, err := tcpostgres.Run(ctx,
+func (s *DatabaseIntegrationSuite) SetupTest() {
+	s.ctx = context.Background()
+	s.cfg = s.startPostgres()
+
+	mgr, err := dbpkg.NewManager(s.cfg)
+	s.Require().NoError(err)
+	s.mgr = mgr
+}
+
+func (s *DatabaseIntegrationSuite) TearDownTest() {
+	_ = s.mgr.Shutdown(context.Background())
+}
+
+func (s *DatabaseIntegrationSuite) startPostgres() *configs.Config {
+	container, err := tcpostgres.Run(s.ctx,
 		"postgres:16-alpine",
 		tcpostgres.WithDatabase("testdb"),
 		tcpostgres.WithUsername("testuser"),
 		tcpostgres.WithPassword("testpassword"),
 		tcpostgres.BasicWaitStrategies(),
 	)
-	require.NoError(t, err)
-	t.Cleanup(func() {
+	s.Require().NoError(err)
+	s.T().Cleanup(func() {
 		_ = container.Terminate(context.Background())
 	})
 
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
+	host, err := container.Host(s.ctx)
+	s.Require().NoError(err)
 
-	mappedPort, err := container.MappedPort(ctx, "5432")
-	require.NoError(t, err)
-
-	// Port.Num() returns the uint16 port number.
-	port := int(mappedPort.Num())
+	mappedPort, err := container.MappedPort(s.ctx, "5432")
+	s.Require().NoError(err)
 
 	return &configs.Config{
 		DBConfig: configs.DBConfig{
 			Host:     host,
-			Port:     port,
+			Port:     int(mappedPort.Num()),
 			User:     "testuser",
 			Password: "testpassword",
 			Name:     "testdb",
@@ -61,151 +74,135 @@ func startPostgres(t *testing.T) *configs.Config {
 	}
 }
 
-// TestIntegration_PoolStartup verifies that NewManager successfully connects to
-// the Postgres container and that Ping succeeds.
-func TestIntegration_PoolStartup(t *testing.T) {
-	t.Parallel()
+func (s *DatabaseIntegrationSuite) TestPoolStartup() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve conectar ao postgres e responder ao ping com sucesso"},
+	}
 
-	cfg := startPostgres(t)
-	mgr, err := dbpkg.NewManager(cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+			defer cancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	err = mgr.Inner().Ping(ctx)
-	assert.NoError(t, err)
+			err := s.mgr.Inner().Ping(ctx)
+			s.NoError(err)
+		})
+	}
 }
 
-// TestIntegration_MigrateUpDown verifies that RunMigrations and RunMigrationsDown
-// apply and revert the 0001_init migration without error, and that ErrNoChange
-// is tolerated on idempotent calls.
-func TestIntegration_MigrateUpDown(t *testing.T) {
-	t.Parallel()
+func (s *DatabaseIntegrationSuite) TestMigrateUpDown() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve aplicar e reverter migrations sem erro e tolerar chamadas idempotentes"},
+	}
 
-	cfg := startPostgres(t)
-	mgr, err := dbpkg.NewManager(cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			err := dbpkg.RunMigrations(s.ctx, s.mgr)
+			s.NoError(err)
 
-	ctx := context.Background()
+			err = dbpkg.RunMigrations(s.ctx, s.mgr)
+			s.NoError(err)
 
-	// First up: must create health_probe.
-	err = dbpkg.RunMigrations(ctx, mgr)
-	require.NoError(t, err, "RunMigrations up should succeed")
+			err = dbpkg.RunMigrationsDown(s.ctx, s.mgr)
+			s.NoError(err)
 
-	// Idempotent up: ErrNoChange must be swallowed.
-	err = dbpkg.RunMigrations(ctx, mgr)
-	require.NoError(t, err, "RunMigrations up (idempotent) should not error")
-
-	// Down: must drop health_probe.
-	err = dbpkg.RunMigrationsDown(ctx, mgr)
-	require.NoError(t, err, "RunMigrationsDown should succeed")
-
-	// Idempotent down: ErrNoChange must be swallowed.
-	err = dbpkg.RunMigrationsDown(ctx, mgr)
-	require.NoError(t, err, "RunMigrationsDown (idempotent) should not error")
+			err = dbpkg.RunMigrationsDown(s.ctx, s.mgr)
+			s.NoError(err)
+		})
+	}
 }
 
-// TestIntegration_HealthCheck verifies Manager.HealthCheck returns nil after
-// migrations are applied and ErrConnection after migrations are reverted.
-func TestIntegration_HealthCheck(t *testing.T) {
-	t.Parallel()
+func (s *DatabaseIntegrationSuite) TestHealthCheck() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve retornar nil com tabela health_probe presente e ErrConnection após remoção"},
+	}
 
-	cfg := startPostgres(t)
-	mgr, err := dbpkg.NewManager(cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+			defer cancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+			s.Require().NoError(dbpkg.RunMigrations(ctx, s.mgr))
 
-	// Apply migrations so health_probe table exists.
-	require.NoError(t, dbpkg.RunMigrations(ctx, mgr))
+			err := s.mgr.HealthCheck(ctx)
+			s.NoError(err)
 
-	// HealthCheck must succeed.
-	err = mgr.HealthCheck(ctx)
-	assert.NoError(t, err, "HealthCheck should return nil when DB is healthy")
+			s.Require().NoError(dbpkg.RunMigrationsDown(ctx, s.mgr))
 
-	// Revert migrations: health_probe table disappears.
-	require.NoError(t, dbpkg.RunMigrationsDown(ctx, mgr))
-
-	// HealthCheck must fail with ErrConnection wrapping.
-	err = mgr.HealthCheck(ctx)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, dbpkg.ErrConnection),
-		"expected ErrConnection after table removal, got: %v", err)
+			err = s.mgr.HealthCheck(ctx)
+			s.Error(err)
+			s.True(errors.Is(err, dbpkg.ErrConnection))
+		})
+	}
 }
 
-// TestIntegration_UoWCommit verifies that a UoW transaction is committed and
-// the data is visible after the Do call.
-func TestIntegration_UoWCommit(t *testing.T) {
-	t.Parallel()
+func (s *DatabaseIntegrationSuite) TestUoWCommit() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve commitar transação e tornar dados visíveis"},
+	}
 
-	cfg := startPostgres(t)
-	mgr, err := dbpkg.NewManager(cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			s.Require().NoError(dbpkg.RunMigrations(s.ctx, s.mgr))
 
-	ctx := context.Background()
-	require.NoError(t, dbpkg.RunMigrations(ctx, mgr))
+			uow := dbpkg.NewUnitOfWork[string](s.mgr)
 
-	uow := dbpkg.NewUnitOfWork[string](mgr)
+			result, err := uow.Do(s.ctx, func(ctx context.Context, tx devkitdb.DBTX) (string, error) {
+				row := tx.QueryRowContext(ctx, "SELECT note FROM health_probe LIMIT 1")
+				var note string
+				if scanErr := row.Scan(&note); scanErr != nil {
+					return "", fmt.Errorf("scan: %w", scanErr)
+				}
+				return note, nil
+			})
 
-	result, err := uow.Do(ctx, func(ctx context.Context, tx devkitdb.DBTX) (string, error) {
-		row := tx.QueryRowContext(ctx, "SELECT note FROM health_probe LIMIT 1")
-		var note string
-		if err := row.Scan(&note); err != nil {
-			return "", fmt.Errorf("scan: %w", err)
-		}
-		return note, nil
-	})
-
-	require.NoError(t, err)
-	assert.Equal(t, "ok", result)
+			s.NoError(err)
+			s.Equal("ok", result)
+		})
+	}
 }
 
-// TestIntegration_UoWRollback verifies that when a UoW fn returns an error,
-// the transaction is rolled back. We insert a row and then return an error;
-// the row must not be visible afterwards.
-func TestIntegration_UoWRollback(t *testing.T) {
-	t.Parallel()
+func (s *DatabaseIntegrationSuite) TestUoWRollback() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve reverter INSERT quando função retorna erro"},
+	}
 
-	cfg := startPostgres(t)
-	mgr, err := dbpkg.NewManager(cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = mgr.Shutdown(context.Background()) })
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			s.Require().NoError(dbpkg.RunMigrations(s.ctx, s.mgr))
 
-	ctx := context.Background()
-	require.NoError(t, dbpkg.RunMigrations(ctx, mgr))
+			rowsBefore := s.countHealthProbeRows()
 
-	// Count rows before the attempted insert.
-	rowsBefore := countHealthProbeRows(ctx, t, mgr)
+			uow := dbpkg.NewUnitOfWork[struct{}](s.mgr)
 
-	uow := dbpkg.NewUnitOfWork[struct{}](mgr)
+			_, err := uow.Do(s.ctx, func(ctx context.Context, tx devkitdb.DBTX) (struct{}, error) {
+				if _, execErr := tx.ExecContext(ctx, "INSERT INTO health_probe (note) VALUES ($1)", "rollback-test"); execErr != nil {
+					return struct{}{}, fmt.Errorf("insert: %w", execErr)
+				}
+				return struct{}{}, errors.New("rollback intencional")
+			})
+			s.Error(err)
+			s.EqualError(err, "rollback intencional")
 
-	// Insert and then force rollback by returning an error.
-	_, err = uow.Do(ctx, func(ctx context.Context, tx devkitdb.DBTX) (struct{}, error) {
-		if _, execErr := tx.ExecContext(ctx, "INSERT INTO health_probe (note) VALUES ($1)", "rollback-test"); execErr != nil {
-			return struct{}{}, fmt.Errorf("insert: %w", execErr)
-		}
-		// Return an error to trigger rollback.
-		return struct{}{}, errors.New("intentional rollback")
-	})
-	require.Error(t, err)
-	assert.EqualError(t, err, "intentional rollback")
-
-	// Rows after rollback must equal rows before.
-	rowsAfter := countHealthProbeRows(ctx, t, mgr)
-	assert.Equal(t, rowsBefore, rowsAfter, "rollback must revert the INSERT")
+			rowsAfter := s.countHealthProbeRows()
+			s.Equal(rowsBefore, rowsAfter)
+		})
+	}
 }
 
-// countHealthProbeRows is a test helper that counts rows in the health_probe table.
-func countHealthProbeRows(ctx context.Context, t *testing.T, mgr *dbpkg.Manager) int {
-	t.Helper()
-	row := mgr.Inner().DBTX(ctx).QueryRowContext(ctx, "SELECT COUNT(*) FROM health_probe")
+func (s *DatabaseIntegrationSuite) countHealthProbeRows() int {
+	row := s.mgr.Inner().DBTX(s.ctx).QueryRowContext(s.ctx, "SELECT COUNT(*) FROM health_probe")
 	var n int
-	require.NoError(t, row.Scan(&n))
+	s.Require().NoError(row.Scan(&n))
 	return n
 }
