@@ -19,7 +19,7 @@
 | 5.0 | `internal/infrastructure/database` — Manager + UnitOfWork[T] + migrations //go:embed + sentinels | done | 2.0 | Com 3.0, 4.0, 7.0 | — |
 | 6.0 | `internal/infrastructure/http` — server + middleware stack + health endpoints + Problem Details mapper | pending | 4.0, 5.0 | Não | — |
 | 7.0 | `internal/infrastructure/events` — typed eventbus via generics + `internal/infrastructure/clock` | pending | 2.0 | Com 3.0, 4.0, 5.0 | — |
-| 8.0 | Esqueletos dos 6 módulos de domínio (`identity`, `conversation`, `agent`, `finance`, `notifications`, `telemetry`) + depguard fronteiras hexagonais | pending | 1.0 | Com 9.0 | — |
+| 8.0 | Esqueletos dos 6 módulos de domínio (`identity`, `conversation`, `agent`, `finance`, `notifications`, `telemetry`) + depguard fronteiras hexagonais | done | 1.0 | Com 9.0 | — |
 | 9.0 | Dockerfile distroless + `fly.toml` 2 processes + cosign keyless + Dependabot + supply chain scan tarefas | pending | 1.0 | Com 8.0 | — |
 | 10.0 | CI/CD workflows + cmd_integration_test + coverage PR comment + runbooks + README + branch protection | pending | 3.0, 6.0, 7.0, 8.0, 9.0 | Não | `pull-request`, `semantic-commit` |
 

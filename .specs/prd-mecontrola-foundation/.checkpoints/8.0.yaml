@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-foundation/8.0_execution_report.md
+summary: "Esqueletos dos 6 módulos de domínio criados com doc.go + README scaffold pattern + AGENTS.md; .golangci.yml migrado para v2 com 5 regras depguard RF-09 verificadas"
+timestamp: "2026-05-31T00:00:00Z"
