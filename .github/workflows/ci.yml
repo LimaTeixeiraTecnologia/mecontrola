@@ -1,0 +1,244 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      task-version: ${{ steps.vars.outputs.task-version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract TASK_VERSION from vars.yml
+        id: vars
+        run: |
+          VERSION=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          echo "task-version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ steps.vars.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache .task/
+        uses: actions/cache@v4
+        with:
+          path: .task/
+          key: task-${{ runner.os }}-${{ hashFiles('Taskfile.yml', 'taskfiles/**') }}
+
+      - name: Cache mockery artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/golangci-lint
+          key: golangci-${{ runner.os }}-${{ hashFiles('.golangci.yml') }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ needs.setup.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install golangci-lint
+        run: |
+          VERSION=$(grep 'GOLANGCI_LINT_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin "${VERSION}"
+
+      - run: task lint:run
+      - run: task lint:fmt:check
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ needs.setup.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: task test:unit
+
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: coverage/unit.out
+          retention-days: 1
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ needs.setup.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create .env for integration tests
+        run: |
+          cat > .env.test << 'EOF'
+          ENVIRONMENT=local
+          APP_MODE=server
+          PORT=8080
+          SERVICE_NAME_API=mecontrola-api
+          CORS_ALLOWED_ORIGINS=http://localhost:3000
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_USER=mecontrola
+          DB_PASSWORD=mecontrola_password
+          DB_NAME=mecontrola_db
+          DB_SSL_MODE=disable
+          LOG_LEVEL=info
+          LOG_FORMAT=json
+          OTEL_TRACE_SAMPLE_RATE=0
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+          EOF
+
+      - run: task test:integration
+
+      - name: Upload integration coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-coverage
+          path: coverage/integration.out
+          retention-days: 1
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ needs.setup.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install govulncheck
+        run: |
+          VERSION=$(grep 'GOVULNCHECK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
+
+      - run: task security:vulncheck
+
+  governance:
+    name: Governance
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ needs.setup.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: JailtonJunior94/orchestrator/.github/actions/setup-ai-spec@setup-action-v1
+        continue-on-error: true
+
+      - name: Validate Taskfile
+        run: |
+          if command -v python3 >/dev/null 2>&1 && [ -f taskfiles/scripts/validate-taskfile.py ]; then
+            python3 taskfiles/scripts/validate-taskfile.py
+          else
+            echo "validate-taskfile.py not found or python3 unavailable — skipping"
+          fi
+
+      - name: Check conventional commits
+        run: |
+          if [ -f taskfiles/scripts/check-conventional-commit.sh ]; then
+            bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+          else
+            echo "check-conventional-commit.sh not found — skipping"
+          fi
+
+      - name: ai-spec doctor
+        run: |
+          if command -v ai-spec >/dev/null 2>&1; then
+            ai-spec doctor || true
+            ai-spec lint || true
+          else
+            echo "ai-spec not available — skipping governance checks"
+          fi
+
+  coverage-comment:
+    name: Coverage Comment
+    runs-on: ubuntu-latest
+    needs: [unit, integration]
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download unit coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-coverage
+          path: coverage/
+
+      - name: Post coverage comment
+        uses: fgrosse/go-coverage-report@v1
+        with:
+          coverage-artifact-name: unit-coverage
+          coverage-file-name: coverage/unit.out
