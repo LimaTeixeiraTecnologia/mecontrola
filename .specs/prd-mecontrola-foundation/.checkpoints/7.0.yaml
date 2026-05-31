@@ -1,0 +1,9 @@
+task_id: "7.0"
+title: "internal/infrastructure/events — typed eventbus via generics + internal/infrastructure/clock"
+status: done
+commit_sha: a35eb136bd46f2f835320fe7329e4bc675973fa5
+branch: feat/foundation-execute
+completed_at: "2026-05-31"
+report: .specs/prd-mecontrola-foundation/7.0_execution_report.md
+tests: pass
+lint: pass
