@@ -187,8 +187,8 @@ jobs:
           version: ${{ needs.setup.outputs.task-version }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: JailtonJunior94/orchestrator/.github/actions/setup-ai-spec@setup-action-v1
-        continue-on-error: true
+      - name: Setup ai-spec (optional)
+        run: echo "ai-spec setup via action skipped — install manually if needed"
 
       - name: Validate Taskfile
         run: |
