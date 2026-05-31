@@ -1,3 +1,4 @@
+diff_sha: "943521b711fc635171a05373c387f09999fd7971"
 status: done
 report_path: .specs/prd-mecontrola-foundation/10.0_execution_report.md
 summary: "CI/CD workflows + cmd_integration_test + coverage PR comment + runbooks + README criados; DinD removido, assertion real adicionada em TestWorkerStartsIdle, runbooks movidos para deployment/runbooks/"
