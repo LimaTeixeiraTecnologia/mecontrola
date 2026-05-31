@@ -425,7 +425,7 @@ func generateRandomPasswords(n int) []string {
 	for i := range passwords {
 		length := 20 + rand.Intn(20) //nolint:gosec
 		var sb strings.Builder
-		for j := 0; j < length; j++ {
+		for range length {
 			sb.WriteByte(passwordChars[rand.Intn(len(passwordChars))]) //nolint:gosec
 		}
 		passwords[i] = sb.String()

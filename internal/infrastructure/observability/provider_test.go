@@ -285,7 +285,6 @@ func (s *ObservabilityProviderSuite) TestPIIHandlerMasks() {
 
 	s.Run("deve mascarar todos os campos declarados em PIIFields", func() {
 		for _, field := range infrao11y.PIIFields {
-			field := field
 			s.Run(field, func() {
 				var buf bytes.Buffer
 				inner := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
