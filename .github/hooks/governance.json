@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "bash .github/hooks/validate-preload.sh"
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "bash .github/hooks/validate-governance.sh"
+      }
+    ],
+    "stop": [
+      {
+        "type": "command",
+        "bash": "bash .github/hooks/subagent-stop-wrapper.sh"
+      }
+    ]
+  }
+}

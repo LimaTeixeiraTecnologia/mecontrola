@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "azure-devops-epic-stories": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-devops-epic-stories/SKILL.md",
+      "computedHash": "bee67c9b97ef6fae0e45836a74569f1c3672cb948330b6f7cd46ba98d8777891"
+    },
+    "prompt-enricher": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/prompt-enricher/SKILL.md",
+      "computedHash": "82b5b202db856a08c6a84cfde534a639648fb37aa910ea84c14fbcb5cc929bd7"
+    },
+    "taskfile-production": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/taskfile-production/SKILL.md",
+      "computedHash": "94ab79ba929f0a934c23c5c4de71061918de655e3091ce63ad95193de6b08222"
+    },
+    "technical-discovery-production": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/technical-discovery-production/SKILL.md",
+      "computedHash": "ef007d1bd844e6824294d69875d846ebb76f0032450dcabe5da9cca4be440043"
+    },
+    "tracker-to-prd": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/tracker-to-prd/SKILL.md",
+      "computedHash": "59bb6eade09e9c74881b6850cec4096e53135d6cb9cf7432c3b400dcef7f39ce"
+    }
+  }
+}
