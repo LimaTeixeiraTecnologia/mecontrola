@@ -21,7 +21,7 @@ RUN go build \
       -trimpath \
       -ldflags="-s -w -X main.version=${VERSION}" \
       -o /out/mecontrola \
-      ./cmd/...
+      ./cmd
 
 # ---- runtime ----
 FROM gcr.io/distroless/static-debian12:nonroot
