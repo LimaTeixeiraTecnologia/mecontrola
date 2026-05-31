@@ -1,0 +1,27 @@
+status: done
+report_path: .specs/prd-mecontrola-foundation/2.0_execution_report.md
+summary: "configs/ criado com Viper v1.21.0, Config struct + LoadConfig + Validate() + DSN()/SafeDSN() + testes table-driven (Validate 100% coverage) + .golangci.yml com forbidigo; go.mod inicializado com github.com/LimaTeixeiraTecnologia/mecontrola"
+timestamp: 2026-05-31T20:00:00Z
+artifacts:
+  - configs/config.go
+  - configs/insecure.go
+  - configs/config_test.go
+  - configs/testdata/valid/.env
+  - configs/testdata/insecure-prod/.env
+  - .env.example
+  - .golangci.yml
+  - go.mod
+  - go.sum
+validations:
+  - "go build ./configs/... → OK"
+  - "go test ./configs/... → OK (98.2% total, Validate 100%)"
+  - "go vet ./configs/... → limpo"
+  - "go build ./... → OK"
+criteria_met:
+  - "go build ./configs/..."
+  - "Validate() 100% cobertura"
+  - "TestSafeDSN_NeverContainsPassword com 5 senhas"
+  - "LoadConfig('./testdata/valid') sem erro"
+  - "dev sem .env → erro explícito"
+  - "prod sem .env → ok via env vars"
+  - "RF-04 coberto integralmente"

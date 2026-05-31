@@ -1,0 +1,88 @@
+# golangci-lint configuration para o projeto MeControla.
+# Referências: ADR-009 (forbidigo), RF-09 (depguard fronteiras hexagonais),
+#              techspec §Object Calisthenics (revive, cyclomatic)
+run:
+  timeout: 5m
+  tests: true
+  go: "1.26"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - revive
+    - forbidigo
+    - depguard
+    - misspell
+    - unconvert
+    - godot
+    - whitespace
+
+linters-settings:
+  # forbidigo bloqueia uso de .DSN() fora dos pacotes autorizados.
+  # DSN() expõe a senha em texto claro; só SafeDSN() é permitido em logs.
+  # Pacotes autorizados: configs/ (definição) e internal/infrastructure/database/ (uso interno).
+  forbidigo:
+    forbid:
+      - pattern: '\.DSN\(\)'
+        msg: "Use SafeDSN() para logs. DSN() expõe a senha em texto claro e é proibido fora de configs/ e internal/infrastructure/database/."
+        exclude_godoc_examples: false
+    analyze-types: true
+
+  depguard:
+    rules:
+      # Regra: domain não importa adapters, application, infrastructure ou configs.
+      domain-no-adapters:
+        files:
+          - "**/domain/**/*.go"
+        deny:
+          - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/**/adapters"
+            desc: "domain não pode importar adapters (hexagonal boundary violation)"
+          - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/**/application"
+            desc: "domain não pode importar application (hexagonal boundary violation)"
+          - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure"
+            desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+          - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+            desc: "domain não pode importar configs (Domain puro não conhece config)"
+          - pkg: "github.com/spf13/viper"
+            desc: "domain não pode importar viper"
+      # Regra: application não importa adapters.
+      application-no-adapters:
+        files:
+          - "**/application/**/*.go"
+        deny:
+          - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/**/adapters"
+            desc: "application não pode importar adapters (hexagonal boundary violation)"
+
+  revive:
+    rules:
+      - name: cyclomatic
+        arguments: [10]
+      - name: function-length
+        arguments: [40, 0]
+      - name: exported
+        disabled: false
+
+  goimports:
+    local-prefixes: github.com/LimaTeixeiraTecnologia/mecontrola
+
+issues:
+  exclude-rules:
+    # Permite uso de .DSN() dentro de configs/ (é a definição do método)
+    # e internal/infrastructure/database/ (uso legítimo para conexão DB).
+    - path: "configs/.*\\.go"
+      linters:
+        - forbidigo
+    - path: "internal/infrastructure/database/.*\\.go"
+      linters:
+        - forbidigo
+    # Testes podem ser mais relaxados em comprimento de função.
+    - path: "_test\\.go"
+      linters:
+        - revive
