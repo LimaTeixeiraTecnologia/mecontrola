@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	chiserver "github.com/JailtonJunior94/devkit-go/pkg/http_server/chi_server"
@@ -51,7 +52,7 @@ func (h *lazyServerSubsystem) Start(ctx context.Context) error {
 
 	go func() {
 		if err := srv.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			_ = err
+			slog.ErrorContext(ctx, "http server stopped unexpectedly", "error", err)
 		}
 	}()
 
