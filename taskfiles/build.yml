@@ -17,7 +17,7 @@ tasks:
     desc: Compila o binario da aplicacao para o SO atual.
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - CGO_ENABLED=0 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BUILD_OUTPUT}} ./cmd/...
+      - CGO_ENABLED=0 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BUILD_OUTPUT}} ./cmd
     sources:
       - '**/*.go'
       - go.mod
@@ -34,7 +34,21 @@ tasks:
           CGO_ENABLED=0 GOOS={{.ITEM.GOOS}} GOARCH={{.ITEM.GOARCH}}
           go build -trimpath -ldflags '{{.LDFLAGS}}'
           -o {{.BIN_DIR}}/{{.APP_NAME}}_{{.ITEM.GOOS}}_{{.ITEM.GOARCH}}{{if eq .ITEM.GOOS "windows"}}.exe{{end}}
-          ./cmd/...
+          ./cmd
+
+  docker:build:
+    desc: >-
+      Constrói a imagem Docker multi-stage (builder alpine + runtime distroless nonroot).
+      ADR-011: imagem ≤ 30 MB; USER nonroot (UID 65532).
+      Variáveis opcionais: IMAGE_TAG (default=dev), REGISTRY, VERSION.
+    vars:
+      IMAGE_TAG: '{{.IMAGE_TAG | default "dev"}}'
+    env:
+      APP_NAME: '{{.APP_NAME}}'
+      IMAGE_TAG: '{{.IMAGE_TAG}}'
+      VERSION: '{{.VERSION}}'
+    cmds:
+      - sh taskfiles/scripts/build-image.sh
 
   clean:
     desc: Remove artefatos de build e cache do Task.

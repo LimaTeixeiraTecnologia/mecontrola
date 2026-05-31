@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
+
+	"github.com/spf13/cobra"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/runtime"
-	"github.com/spf13/cobra"
 )
 
 func New() *cobra.Command {
@@ -26,7 +29,9 @@ func New() *cobra.Command {
 				return err
 			}
 
-			return application.Shutdown(cmd.Context())
+			<-cmd.Context().Done()
+
+			return application.Shutdown(context.Background())
 		},
 	}
 }

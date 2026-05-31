@@ -244,14 +244,15 @@ func (s *ConfigSuite) TestLoadConfigComArquivoValido() {
 	s.Equal(1.0, cfg.O11yConfig.TraceSampleRate)
 }
 
-func (s *ConfigSuite) TestLoadConfigSemArquivoEnvRetornaErro() {
+func (s *ConfigSuite) TestLoadConfigSemArquivoEnvUsaDefaultsEEnvVars() {
 	dir := s.T().TempDir()
 
 	cfg, err := configs.LoadConfig(dir)
 
-	s.Error(err)
-	s.Nil(cfg)
-	s.Contains(err.Error(), ".env não encontrado")
+	s.NoError(err)
+	s.NotNil(cfg)
+	s.Equal("local", cfg.AppConfig.Environment)
+	s.Equal(8080, cfg.HTTPConfig.Port)
 }
 
 func (s *ConfigSuite) TestLoadConfigProductionSemArquivoUsaEnvVars() {

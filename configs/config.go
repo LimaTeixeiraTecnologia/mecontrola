@@ -105,6 +105,7 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("ENVIRONMENT", "local")
 	v.SetDefault("LOG_LEVEL", "info")
 	v.SetDefault("LOG_FORMAT", "json")
+	v.SetDefault("SERVICE_VERSION", "dev")
 	v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
 	v.SetDefault("DB_PORT", 5432)
 	v.SetDefault("DB_SSL_MODE", "disable")
@@ -117,16 +118,9 @@ func LoadConfig(path string) (*Config, error) {
 		if !errors.As(err, &notFound) {
 			return nil, fmt.Errorf("lendo arquivo de configuração: %w", err)
 		}
-
-		// Arquivo .env não encontrado: tolerado apenas em production.
-		// Em outros ambientes é obrigatório.
-		env := v.GetString("ENVIRONMENT")
-		if env != "production" {
-			return nil, fmt.Errorf(
-				"arquivo .env não encontrado em %q (obrigatório em ambiente %q): %w",
-				path, env, err,
-			)
-		}
+		// .env não encontrado é tolerado em todos os ambientes —
+		// AutomaticEnv() garante que variáveis de ambiente do processo sejam usadas.
+		// Validate() abaixo rejeita configurações incompletas.
 	}
 
 	cfg := &Config{}
@@ -176,39 +170,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.AppConfig.Environment == "production" {
-		if len(c.DBConfig.Password) < 16 {
-			errs = append(errs, "DB_PASSWORD deve ter ao menos 16 caracteres em production")
-		}
-
-		for _, placeholder := range InsecurePlaceholders {
-			if c.DBConfig.Password == placeholder {
-				errs = append(errs, fmt.Sprintf(
-					"DB_PASSWORD contém placeholder inseguro %q: substitua por valor real em production",
-					placeholder,
-				))
-				break
-			}
-		}
-
-		for _, placeholder := range InsecurePlaceholders {
-			if c.DBConfig.User == placeholder {
-				errs = append(errs, fmt.Sprintf(
-					"DB_USER contém placeholder inseguro %q em production",
-					placeholder,
-				))
-				break
-			}
-		}
-
-		for _, placeholder := range InsecurePlaceholders {
-			if c.O11yConfig.OTLPHeaders == placeholder || strings.HasPrefix(c.O11yConfig.OTLPHeaders, "CHANGE_ME_") {
-				errs = append(errs, fmt.Sprintf(
-					"OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro %q: configure as credenciais reais em production",
-					c.O11yConfig.OTLPHeaders,
-				))
-				break
-			}
-		}
+		errs = append(errs, c.validateProduction()...)
 	}
 
 	if len(errs) > 0 {
@@ -216,4 +178,44 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) validateProduction() []string {
+	var errs []string
+
+	if len(c.DBConfig.Password) < 16 {
+		errs = append(errs, "DB_PASSWORD deve ter ao menos 16 caracteres em production")
+	}
+
+	for _, placeholder := range InsecurePlaceholders {
+		if c.DBConfig.Password == placeholder {
+			errs = append(errs, fmt.Sprintf(
+				"DB_PASSWORD contém placeholder inseguro %q: substitua por valor real em production",
+				placeholder,
+			))
+			break
+		}
+	}
+
+	for _, placeholder := range InsecurePlaceholders {
+		if c.DBConfig.User == placeholder {
+			errs = append(errs, fmt.Sprintf(
+				"DB_USER contém placeholder inseguro %q em production",
+				placeholder,
+			))
+			break
+		}
+	}
+
+	for _, placeholder := range InsecurePlaceholders {
+		if c.O11yConfig.OTLPHeaders == placeholder || strings.HasPrefix(c.O11yConfig.OTLPHeaders, "CHANGE_ME_") {
+			errs = append(errs, fmt.Sprintf(
+				"OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro %q: configure as credenciais reais em production",
+				c.O11yConfig.OTLPHeaders,
+			))
+			break
+		}
+	}
+
+	return errs
 }

@@ -31,7 +31,7 @@ func New() *cobra.Command {
 				return fmt.Errorf("executando migrations: %w", err)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "migrations aplicadas com sucesso")
+			fmt.Fprintln(cmd.OutOrStdout(), "migrations aplicadas com sucesso") //nolint:errcheck
 			return nil
 		},
 	}
@@ -58,7 +58,7 @@ func NewDown() *cobra.Command {
 				return fmt.Errorf("revertendo migrations: %w", err)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "migrations revertidas com sucesso")
+			fmt.Fprintln(cmd.OutOrStdout(), "migrations revertidas com sucesso") //nolint:errcheck
 			return nil
 		},
 	}

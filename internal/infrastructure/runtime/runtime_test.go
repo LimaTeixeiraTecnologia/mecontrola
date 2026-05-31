@@ -197,7 +197,9 @@ func (s *RuntimeSuite) TestAppShutdownAcumulaErros() {
 	scenarios := []struct {
 		name string
 	}{
-		{name: "deve acumular erros de shutdown e chamar Stop em todos os subsistemas"},
+		{
+			name: "deve acumular erros de shutdown e chamar Stop em todos os subsistemas",
+		},
 	}
 
 	for _, sc := range scenarios {

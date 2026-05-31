@@ -1,16 +1,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/cobra"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/cmd/migrate"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/cmd/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/cmd/worker"
-	"github.com/spf13/cobra"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
 	root := &cobra.Command{
 		Use:   "mecontrola",
 		Short: "MeControla — agente financeiro conversacional",
@@ -23,6 +30,7 @@ Utilize um dos subcomandos para iniciar a aplicação:
 		SilenceUsage: true,
 	}
 
+	root.SetContext(ctx)
 	root.AddCommand(
 		server.New(),
 		worker.New(),
@@ -30,8 +38,8 @@ Utilize um dos subcomandos para iniciar a aplicação:
 		migrate.NewDown(),
 	)
 
-	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := root.ExecuteContext(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err) //nolint:errcheck
 		os.Exit(1)
 	}
 }

@@ -16,7 +16,7 @@ type HealthResponse struct {
 }
 
 // HealthHandler responde 200 sempre que o processo está vivo.
-// GET /health
+// GET /health.
 func HealthHandler(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -26,7 +26,7 @@ func HealthHandler(version string) http.HandlerFunc {
 }
 
 // LiveHandler implementa liveness puro: retorna 200 se o processo está em pé.
-// GET /live
+// GET /live.
 func LiveHandler(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -41,7 +41,7 @@ type HealthChecker interface {
 }
 
 // ReadyHandler executa database.Manager.HealthCheck; responde 200 se OK, 503 com ProblemDetails se não.
-// GET /ready
+// GET /ready.
 func ReadyHandler(mgr *database.Manager) http.HandlerFunc {
 	return ReadyHandlerFn(mgr.HealthCheck)
 }

@@ -1,9 +1,13 @@
 package worker
 
 import (
+	"context"
+	"log/slog"
+
+	"github.com/spf13/cobra"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/runtime"
-	"github.com/spf13/cobra"
 )
 
 func New() *cobra.Command {
@@ -26,7 +30,11 @@ func New() *cobra.Command {
 				return err
 			}
 
-			return application.Shutdown(cmd.Context())
+			slog.InfoContext(cmd.Context(), "worker idle — aguardando jobs")
+
+			<-cmd.Context().Done()
+
+			return application.Shutdown(context.Background())
 		},
 	}
 }

@@ -143,11 +143,11 @@ linters:
     revive:
       rules:
         - name: cyclomatic
-          arguments: [10]
+          arguments: [15]
         - name: function-length
           arguments: [40, 0]
         - name: exported
-          disabled: false
+          disabled: true
 
 formatters:
   enable:

@@ -14,15 +14,6 @@ import (
 	infrahttp "github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/http"
 )
 
-// stubManager implementa apenas o necessário para testar sem conexão real.
-type stubManager struct {
-	healthErr error
-}
-
-func (m *stubManager) HealthCheck(_ context.Context) error {
-	return m.healthErr
-}
-
 type ServerSuite struct {
 	suite.Suite
 	ctx context.Context

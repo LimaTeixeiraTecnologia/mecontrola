@@ -6,6 +6,7 @@ import (
 
 	devkitmanager "github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
 
