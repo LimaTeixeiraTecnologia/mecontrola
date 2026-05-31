@@ -12,4 +12,3 @@ Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 6. Carregar referencias adicionais apenas quando a tarefa exigir.
 7. Preservar estilo, arquitetura e fronteiras existentes antes de propor mudancas.
 8. Validar mudancas com comandos proporcionais ao risco.
-

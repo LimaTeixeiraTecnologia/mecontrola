@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Revisa um diff de código quanto a correção, segurança, regressões e testes faltantes usando regras específicas do 
+description: Revisa um diff de código quanto a correção, segurança, regressões e testes faltantes usando regras específicas do
 skills:
   - review
 ---

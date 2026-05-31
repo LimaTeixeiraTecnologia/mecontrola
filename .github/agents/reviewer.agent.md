@@ -1,6 +1,6 @@
 ---
 name: Revisor
-description: Revisa um diff de código quanto a correção, segurança, regressões e testes faltantes usando regras específicas do 
+description: Revisa um diff de código quanto a correção, segurança, regressões e testes faltantes usando regras específicas do
 ---
 
 Use a habilidade `review` como processo canonico.
