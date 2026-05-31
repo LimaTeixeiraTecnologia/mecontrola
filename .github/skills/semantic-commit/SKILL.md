@@ -17,7 +17,7 @@ description: Cria commits semanticos no padrao Conventional Commits (feat, fix, 
 
 **Etapa 2: Compor a mensagem**
 1. Formato: `<tipo>(<escopo>): <descricao em imperativo>`
-2. Descricao: ≤72 caracteres, sem ponto final, em ingles ou portugues conforme padrao.
+2. Descricao: ≤72 caracteres, sem ponto final, sempre em portugues.
 3. Body opcional: separado por linha em branco, explicando *por que* (nao *o que*).
 4. Footer: `BREAKING CHANGE:` quando houver quebra de compatibilidade; `Closes #nn` para issues.
 

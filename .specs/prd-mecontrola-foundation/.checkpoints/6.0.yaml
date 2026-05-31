@@ -1,0 +1,5 @@
+status: done
+report_path: .specs/prd-mecontrola-foundation/6.0_execution_report.md
+summary: "HTTP server + CORS allowlist + health endpoints + Problem Details mapper implementados e testados (unit + integration); bootstrap wiring concretizado"
+timestamp: "2026-05-31T00:00:00Z"
+diff_sha: 80a9de7

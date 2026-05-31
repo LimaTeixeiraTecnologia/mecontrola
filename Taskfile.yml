@@ -25,7 +25,7 @@ silent: true
 vars:
   APP_NAME: '{{.APP_NAME | default "mecontrola"}}'
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
-  TASK_VERSION: v3.51.1
+  TASK_VERSION: 3.51.1
 
 tasks:
   default:
