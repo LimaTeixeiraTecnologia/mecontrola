@@ -32,7 +32,7 @@ type subscription struct {
 	closed atomic.Bool
 }
 
-// safeSend tenta enviar val para ch de forma não-bloqueante.
+// safeSend tenta enviar val para s.ch de forma não-bloqueante.
 // Retorna:
 //   - "sent"    true  — evento entregue no buffer.
 //   - "sent"    false, pânico recuperado — canal fechado (corrida TOCTOU Publish+Close).
@@ -41,7 +41,7 @@ type subscription struct {
 // O recover protege contra o pânico de envio num canal já fechado,
 // que pode ocorrer na janela entre a cópia da lista de subs (com RLock) e
 // o envio, quando Close fecha o canal concorrentemente.
-func safeSend(ch chan dispatch, val dispatch) (sent bool, dropped bool) {
+func (s *subscription) safeSend(val dispatch) (sent bool, dropped bool) {
 	defer func() {
 		if recover() != nil {
 			sent = false
@@ -49,7 +49,7 @@ func safeSend(ch chan dispatch, val dispatch) (sent bool, dropped bool) {
 		}
 	}()
 	select {
-	case ch <- val:
+	case s.ch <- val:
 		return true, false
 	default:
 		return false, true
@@ -118,7 +118,7 @@ func Publish[E Event](b *Bus, ctx context.Context, evt E) error {
 
 	d := dispatch{ctx: ctx, evt: evt}
 	for _, sub := range subs {
-		sent, dropped := safeSend(sub.ch, d)
+		sent, dropped := sub.safeSend(d)
 		if dropped {
 			slog.WarnContext(ctx, "events: buffer cheio, evento descartado",
 				slog.String("event_name", fmt.Sprintf("%v", evt.Name())),

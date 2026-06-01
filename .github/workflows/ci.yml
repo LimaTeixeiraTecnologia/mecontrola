@@ -171,6 +171,11 @@ jobs:
           VERSION=$(grep 'GOVULNCHECK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
           go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
 
+      - name: Install Trivy
+        run: |
+          VERSION=$(grep 'TRIVY_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "${VERSION}"
+
       - run: task security:vulncheck
 
   governance:
@@ -187,33 +192,24 @@ jobs:
           version: ${{ needs.setup.outputs.task-version }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup ai-spec (optional)
-        run: echo "ai-spec setup via action skipped — install manually if needed"
+      - name: Setup ai-spec
+        uses: JailtonJunior94/orchestrator/.github/actions/setup-ai-spec@setup-action-v1
 
       - name: Validate Taskfile
-        run: |
-          if command -v python3 >/dev/null 2>&1 && [ -f taskfiles/scripts/validate-taskfile.py ]; then
-            python3 taskfiles/scripts/validate-taskfile.py
-          else
-            echo "validate-taskfile.py not found or python3 unavailable — skipping"
-          fi
+        run: python3 .agents/skills/taskfile-production/scripts/validate-taskfile.py Taskfile.yml
 
-      - name: Check conventional commits
-        run: |
-          if [ -f taskfiles/scripts/check-conventional-commit.sh ]; then
-            bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
-          else
-            echo "check-conventional-commit.sh not found — skipping"
-          fi
+      - name: Check conventional commits (pull request)
+        if: github.event_name == 'pull_request'
+        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+
+      - name: Check conventional commits (push)
+        if: github.event_name == 'push'
+        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.before }}" "${{ github.sha }}"
 
       - name: ai-spec doctor
         run: |
-          if command -v ai-spec >/dev/null 2>&1; then
-            ai-spec doctor || true
-            ai-spec lint || true
-          else
-            echo "ai-spec not available — skipping governance checks"
-          fi
+          ai-spec doctor
+          ai-spec lint
 
   coverage-comment:
     name: Coverage Comment

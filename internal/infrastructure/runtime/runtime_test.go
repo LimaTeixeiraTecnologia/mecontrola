@@ -221,6 +221,60 @@ func (s *RuntimeSuite) TestAppShutdownAcumulaErros() {
 	}
 }
 
+func (s *RuntimeSuite) TestLazyServerSubsystemStopFechaDependencias() {
+	scenarios := []struct {
+		name              string
+		databaseErr       error
+		providerErr       error
+		wantErr           bool
+		wantErrContains   string
+		wantDatabaseCalls int
+		wantProviderCalls int
+	}{
+		{
+			name:              "deve fechar database e observability mesmo sem servidor inicializado",
+			wantDatabaseCalls: 1,
+			wantProviderCalls: 1,
+		},
+		{
+			name:              "deve acumular erros de shutdown das dependências",
+			databaseErr:       errors.New("db close fail"),
+			providerErr:       errors.New("otel close fail"),
+			wantErr:           true,
+			wantErrContains:   "database shutdown",
+			wantDatabaseCalls: 1,
+			wantProviderCalls: 1,
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			databaseCalls := 0
+			providerCalls := 0
+			subsystem := &lazyServerSubsystem{
+				shutdownDatabase: func(context.Context) error {
+					databaseCalls++
+					return sc.databaseErr
+				},
+				shutdownProvider: func(context.Context) error {
+					providerCalls++
+					return sc.providerErr
+				},
+			}
+
+			err := subsystem.Stop(s.ctx)
+			if sc.wantErr {
+				s.Error(err)
+				s.ErrorContains(err, sc.wantErrContains)
+			} else {
+				s.NoError(err)
+			}
+			s.Equal(sc.wantDatabaseCalls, databaseCalls)
+			s.Equal(sc.wantProviderCalls, providerCalls)
+		})
+	}
+}
+
 func (s *RuntimeSuite) TestBootstrap() {
 	scenarios := []struct {
 		name        string
@@ -279,7 +333,7 @@ func (s *RuntimeSuite) TestBuildSubsystemsDefaultBranch() {
 	for _, sc := range scenarios {
 		s.Run(sc.name, func() {
 			cfg := minimalValidConfig()
-			subs, err := buildSubsystems(cfg, AppMode("invalid"), Foundation{})
+			subs, err := (&bootstrapper{}).buildSubsystems(cfg, AppMode("invalid"), Foundation{})
 			s.NoError(err)
 			s.Empty(subs)
 		})

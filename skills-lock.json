@@ -7,6 +7,12 @@
       "skillPath": "skills/azure-devops-epic-stories/SKILL.md",
       "computedHash": "bee67c9b97ef6fae0e45836a74569f1c3672cb948330b6f7cd46ba98d8777891"
     },
+    "decision-brainstorming": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/decision-brainstorming/SKILL.md",
+      "computedHash": "9e1a5794b20d19e29c9be9663cb6b84e25fcb5fd107c8e8d1467f5cec292adbe"
+    },
     "prompt-enricher": {
       "source": "JailtonJunior94/skills",
       "sourceType": "github",

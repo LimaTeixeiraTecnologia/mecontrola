@@ -33,7 +33,7 @@ func (h *piiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h *piiHandler) Handle(ctx context.Context, r slog.Record) error {
 	sanitized := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 	r.Attrs(func(a slog.Attr) bool {
-		sanitized.AddAttrs(redactAttr(a))
+		sanitized.AddAttrs(h.redactAttr(a))
 		return true
 	})
 	return h.inner.Handle(ctx, sanitized)
@@ -42,7 +42,7 @@ func (h *piiHandler) Handle(ctx context.Context, r slog.Record) error {
 func (h *piiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	redactedAttrs := make([]slog.Attr, len(attrs))
 	for i, a := range attrs {
-		redactedAttrs[i] = redactAttr(a)
+		redactedAttrs[i] = h.redactAttr(a)
 	}
 	return &piiHandler{inner: h.inner.WithAttrs(redactedAttrs)}
 }
@@ -53,27 +53,26 @@ func (h *piiHandler) WithGroup(name string) slog.Handler {
 
 // redactAttr substitui o valor de um atributo cujo nome seja PII por "[REDACTED]".
 // Grupos são processados recursivamente.
-func redactAttr(a slog.Attr) slog.Attr {
-	// Resolve o valor (pode ser um LogValuer)
+func (h *piiHandler) redactAttr(a slog.Attr) slog.Attr {
 	a.Value = a.Value.Resolve()
 
 	if a.Value.Kind() == slog.KindGroup {
 		group := a.Value.Group()
 		redactedGroup := make([]slog.Attr, len(group))
 		for i, child := range group {
-			redactedGroup[i] = redactAttr(child)
+			redactedGroup[i] = h.redactAttr(child)
 		}
-		return slog.Group(a.Key, attrsToAny(redactedGroup)...)
+		return slog.Group(a.Key, h.attrsToAny(redactedGroup)...)
 	}
 
-	if isPIIKey(a.Key) {
+	if h.isPIIKey(a.Key) {
 		return slog.String(a.Key, redacted)
 	}
 	return a
 }
 
 // isPIIKey verifica se key (case-insensitive) corresponde a algum campo de PIIFields.
-func isPIIKey(key string) bool {
+func (h *piiHandler) isPIIKey(key string) bool {
 	lower := strings.ToLower(key)
 	for _, field := range PIIFields {
 		if strings.ToLower(field) == lower {
@@ -84,7 +83,7 @@ func isPIIKey(key string) bool {
 }
 
 // attrsToAny converte []slog.Attr para []any para uso com slog.Group.
-func attrsToAny(attrs []slog.Attr) []any {
+func (h *piiHandler) attrsToAny(attrs []slog.Attr) []any {
 	result := make([]any, len(attrs))
 	for i, a := range attrs {
 		result[i] = a

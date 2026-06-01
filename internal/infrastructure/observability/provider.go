@@ -34,6 +34,33 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	return p.inner.Shutdown(ctx)
 }
 
+// providerBuilder constrói a configuração OTel a partir de configs.Config.
+// Separado de Provider para que NewProvider inicialize Provider em uma única expressão.
+type providerBuilder struct {
+	cfg *configs.Config
+}
+
+// buildOtelConfig mapeia configs.Config para otel.Config do devkit-go.
+func (b *providerBuilder) buildOtelConfig() *otel.Config {
+	otelCfg := otel.DefaultConfig("mecontrola")
+
+	otelCfg.ServiceVersion = b.cfg.O11yConfig.ServiceVersion
+	otelCfg.Environment = b.cfg.AppConfig.Environment
+	otelCfg.OTLPEndpoint = b.cfg.O11yConfig.OTLPEndpoint
+	otelCfg.OTLPProtocol = otel.ProtocolGRPC
+	otelCfg.Insecure = b.cfg.AppConfig.Environment != "production"
+	otelCfg.TraceSampleRate = b.cfg.O11yConfig.TraceSampleRate
+	otelCfg.LogLevel = observability.LogLevel(b.cfg.O11yConfig.LogLevel)
+	otelCfg.LogFormat = observability.LogFormat(b.cfg.O11yConfig.LogFormat)
+
+	// Redaction de PII obrigatória: Sanitize=true ativa mascaramento de campos sensíveis
+	// (password, token, card_number, etc.) no otelLogger do devkit-go.
+	// PIIFields adicionais são registrados no ResourceAttributes para rastreabilidade.
+	otelCfg.Sanitize = true
+
+	return otelCfg
+}
+
 // NewProvider constrói e inicializa o provider OTel com os exporters OTLP gRPC configurados.
 //
 // Resource attributes obrigatórios derivados do cfg:
@@ -57,7 +84,7 @@ func NewProvider(cfg *configs.Config) (*Provider, func(context.Context) error, e
 		return nil, nil, fmt.Errorf("observability: OTEL_EXPORTER_OTLP_ENDPOINT é obrigatório")
 	}
 
-	otelCfg := buildOtelConfig(cfg)
+	otelCfg := (&providerBuilder{cfg: cfg}).buildOtelConfig()
 
 	inner, err := otel.NewProvider(context.Background(), otelCfg)
 	if err != nil {
@@ -67,28 +94,5 @@ func NewProvider(cfg *configs.Config) (*Provider, func(context.Context) error, e
 	slog.SetDefault(slog.New(NewRedactingSlogHandler(slog.Default().Handler())))
 
 	provider := &Provider{inner: inner}
-	shutdown := provider.Shutdown
-
-	return provider, shutdown, nil
-}
-
-// buildOtelConfig mapeia configs.Config para otel.Config do devkit-go.
-func buildOtelConfig(cfg *configs.Config) *otel.Config {
-	otelCfg := otel.DefaultConfig("mecontrola")
-
-	otelCfg.ServiceVersion = cfg.O11yConfig.ServiceVersion
-	otelCfg.Environment = cfg.AppConfig.Environment
-	otelCfg.OTLPEndpoint = cfg.O11yConfig.OTLPEndpoint
-	otelCfg.OTLPProtocol = otel.ProtocolGRPC
-	otelCfg.Insecure = cfg.AppConfig.Environment != "production"
-	otelCfg.TraceSampleRate = cfg.O11yConfig.TraceSampleRate
-	otelCfg.LogLevel = observability.LogLevel(cfg.O11yConfig.LogLevel)
-	otelCfg.LogFormat = observability.LogFormat(cfg.O11yConfig.LogFormat)
-
-	// Redaction de PII obrigatória: Sanitize=true ativa mascaramento de campos sensíveis
-	// (password, token, card_number, etc.) no otelLogger do devkit-go.
-	// PIIFields adicionais são registrados no ResourceAttributes para rastreabilidade.
-	otelCfg.Sanitize = true
-
-	return otelCfg
+	return provider, provider.Shutdown, nil
 }

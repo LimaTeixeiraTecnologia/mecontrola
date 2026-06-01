@@ -12,3 +12,16 @@ Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 6. Carregar referencias adicionais apenas quando a tarefa exigir.
 7. Preservar estilo, arquitetura e fronteiras existentes antes de propor mudancas.
 8. Validar mudancas com comandos proporcionais ao risco.
+
+## Contrato Go
+
+Em qualquer tarefa que envolva codigo Go, carregar obrigatoriamente:
+
+1. `AGENTS.md`
+2. `.agents/skills/agent-governance/SKILL.md`
+3. `.agents/skills/go-implementation/SKILL.md`
+
+Esta regra e `[HARD]` para criacao, edicao, refatoracao, revisao, correcao ou validacao que
+toque `.go`, `go.mod`, `go.sum`, testes Go, mocks, build, lint, CI ou configuracao Go.
+Verificar fatos locais antes de assumir versao, dependencia, ferramenta, framework ou padrao.
+Carregar referencias da skill Go apenas sob demanda e adaptar exemplos ao contexto real.

@@ -29,13 +29,11 @@ tasks:
     preconditions:
       - sh: command -v govulncheck >/dev/null 2>&1
         msg: "govulncheck ausente. Instale: go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}"
+      - sh: command -v trivy >/dev/null 2>&1
+        msg: "trivy ausente. Instale: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
     cmds:
       - govulncheck ./...
-      - cmd: >-
-          command -v trivy >/dev/null 2>&1 &&
-          trivy fs --severity HIGH,CRITICAL --exit-code 1 . ||
-          echo "trivy ausente — instalação recomendada: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
-        platforms: [linux, darwin]
+      - trivy fs --severity HIGH,CRITICAL --exit-code 1 .
 
   # ── Image scan (trivy image) ─────────────────────────────────────────────────
   image-scan:

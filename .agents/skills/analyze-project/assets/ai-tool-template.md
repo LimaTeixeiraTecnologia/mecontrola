@@ -20,10 +20,14 @@ Antes de editar codigo, confirmar que estes arquivos foram lidos na sessao:
 1. `AGENTS.md` — regras de arquitetura, modo de trabalho e restricoes.
 2. `.agents/skills/agent-governance/SKILL.md` — governanca, DDD, erros, seguranca e testes sob demanda.
 3. A skill de linguagem correspondente quando a tarefa alterar codigo:
-   - Go: `.agents/skills/go-implementation/SKILL.md`
+   - Go: `.agents/skills/go-implementation/SKILL.md` obrigatoria para `.go`, `go.mod`, `go.sum`, testes Go, mocks, build, lint, CI ou configuracao Go.
    - Node/TypeScript: `.agents/skills/node-implementation/SKILL.md`
    - Python: `.agents/skills/python-implementation/SKILL.md`
    - .NET/C#: `.agents/skills/dotnet-csharp-implementation/SKILL.md`
+
+Para Go, verificar fatos locais antes de assumir versao, dependencia, ferramenta, framework ou
+padrao. Carregar referencias internas da skill apenas sob demanda e adaptar exemplos ao contexto
+real.
 
 ## Validacao
 

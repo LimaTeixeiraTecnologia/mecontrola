@@ -19,11 +19,13 @@ import (
 // não no momento do Bootstrap. Isso permite que Bootstrap seja chamado em testes
 // sem um banco real disponível.
 type lazyServerSubsystem struct {
-	cfg    *configs.Config
-	server *chiserver.Server
+	cfg              *configs.Config
+	server           *chiserver.Server
+	shutdownDatabase func(context.Context) error
+	shutdownProvider func(context.Context) error
 }
 
-func newLazyServerSubsystem(cfg *configs.Config) *lazyServerSubsystem {
+func (b *bootstrapper) newServerSubsystem(cfg *configs.Config) *lazyServerSubsystem {
 	return &lazyServerSubsystem{cfg: cfg}
 }
 
@@ -34,17 +36,22 @@ func (h *lazyServerSubsystem) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("http subsystem: database: %w", err)
 	}
+	h.shutdownDatabase = mgr.Shutdown
 
-	prov, _, err := observability.NewProvider(h.cfg)
+	prov, shutdownProvider, err := observability.NewProvider(h.cfg)
 	if err != nil {
+		_ = mgr.Shutdown(context.Background())
 		return fmt.Errorf("http subsystem: observability: %w", err)
 	}
+	h.shutdownProvider = shutdownProvider
 
 	srv, err := infrahttp.NewServer(h.cfg, infrahttp.Deps{
 		DB:       mgr,
 		Provider: prov,
 	})
 	if err != nil {
+		_ = mgr.Shutdown(context.Background())
+		_ = shutdownProvider(context.Background())
 		return fmt.Errorf("http subsystem: criando servidor: %w", err)
 	}
 
@@ -60,12 +67,28 @@ func (h *lazyServerSubsystem) Start(ctx context.Context) error {
 }
 
 func (h *lazyServerSubsystem) Stop(ctx context.Context) error {
-	if h.server == nil {
-		return nil
+	var errs []error
+
+	if h.server != nil {
+		if err := h.server.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("http subsystem: shutdown: %w", err))
+		}
 	}
 
-	if err := h.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("http subsystem: shutdown: %w", err)
+	if h.shutdownDatabase != nil {
+		if err := h.shutdownDatabase(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("http subsystem: database shutdown: %w", err))
+		}
+	}
+
+	if h.shutdownProvider != nil {
+		if err := h.shutdownProvider(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("http subsystem: observability shutdown: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil

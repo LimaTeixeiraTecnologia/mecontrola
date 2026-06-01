@@ -140,7 +140,22 @@ Para tarefas que alteram codigo, carregar a skill:
 
 - `.agents/skills/agent-governance/SKILL.md`
 
+Para tarefas que alteram codigo Go, carregar tambem, de forma obrigatoria e inegociavel:
 
+- `.agents/skills/go-implementation/SKILL.md`
+
+Regra `[HARD]`: esta exigencia se aplica a qualquer criacao, edicao, refatoracao, revisao,
+correcao ou validacao que toque `.go`, `go.mod`, `go.sum`, testes Go, mocks, build, lint, CI
+ou configuracao diretamente ligada a stack Go.
+
+Antes de decidir ou implementar em Go, verificar fatos locais em vez de assumir: `go.mod`,
+arquivos afetados, `Taskfile.yml`, `.golangci.yml`, `mockery.yml` quando existir e comandos
+de validacao disponiveis. Se a informacao nao existir no repositorio, registrar a ausencia
+explicitamente em vez de inventar versao, dependencia, ferramenta, framework ou padrao.
+
+Carregar referencias internas de `go-implementation/references/` apenas sob demanda, conforme
+os gatilhos do proprio `SKILL.md`. Exemplos da skill sao guias adaptaveis ao contexto real,
+nunca material para copia cega.
 
 Para tarefas de correcao de bugs com remediacao e teste de regressao, carregar tambem:
 
@@ -197,9 +212,10 @@ Seguir Etapa 4 de `.agents/skills/agent-governance/SKILL.md` como base canonica.
 ## Restricoes
 
 1. Nao inventar contexto ausente.
-2. Nao assumir versao de linguagem, framework ou runtime sem verificar.
+2. Nao assumir versao de linguagem, framework, runtime, dependencia, comando ou ferramenta sem verificar.
 3. Nao alterar comportamento publico sem deixar isso explicito.
 4. Nao usar exemplos como copia cega; adaptar ao contexto real.
+5. Quando houver duvida factual, buscar evidencia no repositorio primeiro; se a evidencia nao existir, registrar a lacuna explicitamente.
 
 
 ### Controle de profundidade de invocacao

@@ -13,10 +13,33 @@ type Foundation struct {
 	Clock clock.Clock
 }
 
-func Bootstrap(cfg *configs.Config, mode AppMode) (App, error) {
-	foundation := buildFoundation()
+// bootstrapper encapsula a lógica de construção de Foundation e Subsystems.
+// Separado de App para que Bootstrap não precise de funções standalone.
+type bootstrapper struct{}
 
-	subsystems, err := buildSubsystems(cfg, mode, foundation)
+func (b *bootstrapper) buildFoundation() Foundation {
+	return Foundation{
+		Bus:   events.NewBus(),
+		Clock: clock.NewSystemClock(),
+	}
+}
+
+func (b *bootstrapper) buildSubsystems(cfg *configs.Config, mode AppMode, _ Foundation) ([]Subsystem, error) {
+	switch mode {
+	case ModeServer:
+		return []Subsystem{b.newServerSubsystem(cfg)}, nil
+	case ModeWorker:
+		return []Subsystem{}, nil
+	default:
+		return []Subsystem{}, nil
+	}
+}
+
+func Bootstrap(cfg *configs.Config, mode AppMode) (App, error) {
+	b := &bootstrapper{}
+	foundation := b.buildFoundation()
+
+	subsystems, err := b.buildSubsystems(cfg, mode, foundation)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap: %w", err)
 	}
@@ -25,22 +48,4 @@ func Bootstrap(cfg *configs.Config, mode AppMode) (App, error) {
 		mode:       mode,
 		subsystems: subsystems,
 	}, nil
-}
-
-func buildFoundation() Foundation {
-	return Foundation{
-		Bus:   events.NewBus(),
-		Clock: clock.NewSystemClock(),
-	}
-}
-
-func buildSubsystems(cfg *configs.Config, mode AppMode, _ Foundation) ([]Subsystem, error) {
-	switch mode {
-	case ModeServer:
-		return []Subsystem{newLazyServerSubsystem(cfg)}, nil
-	case ModeWorker:
-		return []Subsystem{}, nil
-	default:
-		return []Subsystem{}, nil
-	}
 }

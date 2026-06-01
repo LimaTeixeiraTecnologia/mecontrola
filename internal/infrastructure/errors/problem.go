@@ -23,26 +23,11 @@ type ProblemDetails struct {
 	Extensions map[string]string `json:"extensions,omitempty"`
 }
 
-// ToProblemDetails maps known sentinel errors to ProblemDetails — never leaks stack, SQL, or paths (R-SEC-001).
-func ToProblemDetails(err error) (ProblemDetails, int) {
-	switch {
-	case errors.Is(err, database.ErrConnection):
-		return problem(http.StatusServiceUnavailable, "database-unavailable", "serviço de banco de dados indisponível"), http.StatusServiceUnavailable
+// problemFactory constrói ProblemDetails a partir de status HTTP ou erros de validação.
+// Separado de ProblemDetails para que ToProblemDetails não precise de funções standalone.
+type problemFactory struct{}
 
-	case errors.Is(err, context.DeadlineExceeded):
-		return problem(http.StatusGatewayTimeout, "timeout", "a operação excedeu o tempo limite"), http.StatusGatewayTimeout
-
-	default:
-		var ve validator.ValidationErrors
-		if errors.As(err, &ve) { //nolint:errorsastype
-			return validationProblem(ve), http.StatusBadRequest
-		}
-
-		return problem(http.StatusInternalServerError, "internal-error", "erro interno do servidor"), http.StatusInternalServerError
-	}
-}
-
-func problem(status int, _ string, detail string) ProblemDetails {
+func (f problemFactory) create(status int, detail string) ProblemDetails {
 	return ProblemDetails{
 		Type:      "https://httpstatuses.com/" + strconv.Itoa(status),
 		Title:     http.StatusText(status),
@@ -52,13 +37,34 @@ func problem(status int, _ string, detail string) ProblemDetails {
 	}
 }
 
-func validationProblem(ve validator.ValidationErrors) ProblemDetails {
+func (f problemFactory) fromValidation(ve validator.ValidationErrors) ProblemDetails {
 	extensions := make(map[string]string, len(ve))
 	for _, fe := range ve {
 		extensions[fe.Field()] = fe.Tag()
 	}
 
-	pd := problem(http.StatusBadRequest, "invalid-request", "a requisição contém campos inválidos")
+	pd := f.create(http.StatusBadRequest, "a requisição contém campos inválidos")
 	pd.Extensions = extensions
 	return pd
+}
+
+// ToProblemDetails maps known sentinel errors to ProblemDetails — never leaks stack, SQL, or paths (R-SEC-001).
+func ToProblemDetails(err error) (ProblemDetails, int) {
+	f := problemFactory{}
+
+	switch {
+	case errors.Is(err, database.ErrConnection):
+		return f.create(http.StatusServiceUnavailable, "serviço de banco de dados indisponível"), http.StatusServiceUnavailable
+
+	case errors.Is(err, context.DeadlineExceeded):
+		return f.create(http.StatusGatewayTimeout, "a operação excedeu o tempo limite"), http.StatusGatewayTimeout
+
+	default:
+		var ve validator.ValidationErrors
+		if errors.As(err, &ve) { //nolint:errorsastype
+			return f.fromValidation(ve), http.StatusBadRequest
+		}
+
+		return f.create(http.StatusInternalServerError, "erro interno do servidor"), http.StatusInternalServerError
+	}
 }

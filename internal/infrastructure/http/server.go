@@ -27,6 +27,48 @@ type Deps struct {
 	Provider *observability.Provider
 }
 
+// serverBuilder constrói as opções do servidor Chi a partir de cfg e DB.
+// Separado de Deps para que NewServer não precise de funções standalone.
+type serverBuilder struct {
+	cfg *configs.Config
+	db  *database.Manager
+}
+
+// buildOptions monta o slice de opções Chi com timeouts, middlewares e health checks.
+func (b *serverBuilder) buildOptions() []chiserver.Option {
+	port := fmt.Sprintf(":%d", b.cfg.HTTPConfig.Port)
+
+	opts := []chiserver.Option{
+		chiserver.WithPort(port),
+		chiserver.WithServiceName(b.cfg.HTTPConfig.ServiceNameAPI),
+		chiserver.WithServiceVersion(b.cfg.O11yConfig.ServiceVersion),
+		chiserver.WithEnvironment(b.cfg.AppConfig.Environment),
+		chiserver.WithReadTimeout(defaultTimeout),
+		chiserver.WithWriteTimeout(defaultTimeout),
+		chiserver.WithBodyLimit(defaultBodyLimit),
+		chiserver.WithTracing(),
+		chiserver.WithOTelMetrics(),
+		chiserver.WithHealthChecks(b.buildHealthChecks()),
+	}
+
+	if origins := strings.TrimSpace(b.cfg.HTTPConfig.CORSAllowedOrigins); origins != "" {
+		opts = append(opts, chiserver.WithCORS(origins))
+	}
+
+	return opts
+}
+
+// buildHealthChecks mapeia os checks de health das dependências injetadas.
+func (b *serverBuilder) buildHealthChecks() map[string]common.HealthCheckFunc {
+	checks := make(map[string]common.HealthCheckFunc)
+
+	if b.db != nil {
+		checks["database"] = b.db.HealthCheck
+	}
+
+	return checks
+}
+
 // NewServer constrói o servidor HTTP com o stack completo de middlewares (ADR-008):
 // RequestID, Recovery, Timeout (25s), BodyLimit (1 MiB), SecurityHeaders, CORS estrito, OTel.
 // Registra os health endpoints /health, /live e /ready consumindo deps.DB.HealthCheck.
@@ -36,47 +78,14 @@ func NewServer(cfg *configs.Config, deps Deps) (*chiserver.Server, error) {
 	}
 
 	o11y := deps.Provider.Observability()
+	builder := &serverBuilder{cfg: cfg, db: deps.DB}
 
-	opts := buildOptions(cfg, deps.DB)
-	srv, err := chiserver.New(o11y, opts...)
+	srv, err := chiserver.New(o11y, builder.buildOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("http: inicializando servidor: %w", err)
 	}
 
 	return srv, nil
-}
-
-func buildOptions(cfg *configs.Config, mgr *database.Manager) []chiserver.Option {
-	port := fmt.Sprintf(":%d", cfg.HTTPConfig.Port)
-
-	opts := []chiserver.Option{
-		chiserver.WithPort(port),
-		chiserver.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
-		chiserver.WithServiceVersion(cfg.O11yConfig.ServiceVersion),
-		chiserver.WithEnvironment(cfg.AppConfig.Environment),
-		chiserver.WithReadTimeout(defaultTimeout),
-		chiserver.WithWriteTimeout(defaultTimeout),
-		chiserver.WithBodyLimit(defaultBodyLimit),
-		chiserver.WithTracing(),
-		chiserver.WithOTelMetrics(),
-		chiserver.WithHealthChecks(buildHealthChecks(mgr)),
-	}
-
-	if origins := strings.TrimSpace(cfg.HTTPConfig.CORSAllowedOrigins); origins != "" {
-		opts = append(opts, chiserver.WithCORS(origins))
-	}
-
-	return opts
-}
-
-func buildHealthChecks(mgr *database.Manager) map[string]common.HealthCheckFunc {
-	checks := make(map[string]common.HealthCheckFunc)
-
-	if mgr != nil {
-		checks["database"] = mgr.HealthCheck
-	}
-
-	return checks
 }
 
 // WriteJSON escreve uma resposta JSON com o status e o payload fornecidos.

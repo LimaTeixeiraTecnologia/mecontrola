@@ -17,50 +17,36 @@ type Manager struct {
 	dsn string
 }
 
-func NewManager(cfg *configs.Config) (*Manager, error) {
-	pgCfg := postgres.PostgresConfig{
-		Host:         cfg.DBConfig.Host,
-		Port:         cfg.DBConfig.Port,
-		User:         cfg.DBConfig.User,
-		Password:     cfg.DBConfig.Password,
-		Database:     cfg.DBConfig.Name,
-		SSLMode:      cfg.DBConfig.SSLMode,
-		MaxOpenConns: 30,
-		MaxIdleConns: cfg.DBConfig.MinConns,
-	}
-
-	inner, err := devkitmanager.New(pgCfg)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrConnection, err)
-	}
-
-	dsn := buildMigrationDSN(pgCfg)
-
-	return &Manager{inner: inner, dsn: dsn}, nil
+// managerBuilder constrói o DSN de migração a partir de postgres.PostgresConfig.
+// Separado de Manager para que NewManager inicialize Manager em uma única expressão.
+type managerBuilder struct {
+	pgCfg postgres.PostgresConfig
 }
 
-func buildMigrationDSN(cfg postgres.PostgresConfig) string {
-	if cfg.DSN != "" {
-		return normalizeToPgx5(cfg.DSN)
+// buildDSN retorna o DSN no esquema pgx5 para uso com golang-migrate.
+func (b *managerBuilder) buildDSN() string {
+	if b.pgCfg.DSN != "" {
+		return b.normalizeToPgx5(b.pgCfg.DSN)
 	}
 
-	port := cfg.Port
+	port := b.pgCfg.Port
 	if port == 0 {
 		port = postgres.DefaultPort
 	}
 
-	sslMode := cfg.SSLMode
+	sslMode := b.pgCfg.SSLMode
 	if sslMode == "" {
 		sslMode = postgres.DefaultSSLMode
 	}
 
 	return fmt.Sprintf(
 		"pgx5://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.User, cfg.Password, cfg.Host, port, cfg.Database, sslMode,
+		b.pgCfg.User, b.pgCfg.Password, b.pgCfg.Host, port, b.pgCfg.Database, sslMode,
 	)
 }
 
-func normalizeToPgx5(dsn string) string {
+// normalizeToPgx5 converte DSNs com esquema postgres:// ou postgresql:// para pgx5://.
+func (b *managerBuilder) normalizeToPgx5(dsn string) string {
 	switch {
 	case len(dsn) > 11 && dsn[:11] == "postgres://":
 		return "pgx5" + dsn[8:]
@@ -69,6 +55,34 @@ func normalizeToPgx5(dsn string) string {
 	default:
 		return dsn
 	}
+}
+
+func NewManager(cfg *configs.Config) (*Manager, error) {
+	maxConns := cfg.DBConfig.MaxConns
+	if maxConns == 0 {
+		maxConns = 30
+	}
+
+	pgCfg := postgres.PostgresConfig{
+		Host:         cfg.DBConfig.Host,
+		Port:         cfg.DBConfig.Port,
+		User:         cfg.DBConfig.User,
+		Password:     cfg.DBConfig.Password,
+		Database:     cfg.DBConfig.Name,
+		SSLMode:      cfg.DBConfig.SSLMode,
+		MaxOpenConns: maxConns,
+		MaxIdleConns: cfg.DBConfig.MinConns,
+	}
+
+	inner, err := devkitmanager.New(pgCfg)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrConnection, err)
+	}
+
+	return &Manager{
+		inner: inner,
+		dsn:   (&managerBuilder{pgCfg: pgCfg}).buildDSN(),
+	}, nil
 }
 
 func (m *Manager) Inner() devkitmanager.Manager {

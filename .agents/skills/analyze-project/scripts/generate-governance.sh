@@ -377,7 +377,10 @@ build_language_rules() {
   local output=""
 
   if should_include_go; then
-    output+="Para tarefas que alteram codigo Go, carregar tambem:\n\n- \`.agents/skills/go-implementation/SKILL.md\`\n"
+    output+="Para tarefas que alteram codigo Go, carregar tambem, de forma obrigatoria e inegociavel:\n\n- \`.agents/skills/go-implementation/SKILL.md\`\n"
+    output+="\nRegra \`[HARD]\`: esta exigencia se aplica a qualquer criacao, edicao, refatoracao, revisao, correcao ou validacao que toque \`.go\`, \`go.mod\`, \`go.sum\`, testes Go, mocks, build, lint, CI ou configuracao diretamente ligada a stack Go.\n"
+    output+="\nAntes de decidir ou implementar em Go, verificar fatos locais em vez de assumir: \`go.mod\`, arquivos afetados, \`Taskfile.yml\`, \`.golangci.yml\`, \`mockery.yml\` quando existir e comandos de validacao disponiveis. Se a informacao nao existir no repositorio, registrar a ausencia explicitamente em vez de inventar versao, dependencia, ferramenta, framework ou padrao.\n"
+    output+="\nCarregar referencias internas de \`go-implementation/references/\` apenas sob demanda, conforme os gatilhos do proprio \`SKILL.md\`. Exemplos da skill sao guias adaptaveis ao contexto real, nunca material para copia cega.\n"
     output+="\nPara tarefas de revisao ou refatoracao incremental de design em Go guiadas por heuristicas de object calisthenics, carregar tambem:\n\n- \`.agents/skills/object-calisthenics-go/SKILL.md\`\n"
   fi
 

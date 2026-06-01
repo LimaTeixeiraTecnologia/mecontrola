@@ -244,15 +244,15 @@ func (s *ConfigSuite) TestLoadConfigComArquivoValido() {
 	s.Equal(1.0, cfg.O11yConfig.TraceSampleRate)
 }
 
-func (s *ConfigSuite) TestLoadConfigSemArquivoEnvUsaDefaultsEEnvVars() {
+func (s *ConfigSuite) TestLoadConfigLocalSemArquivoEnvRetornaErro() {
+	s.T().Setenv("ENVIRONMENT", "local")
 	dir := s.T().TempDir()
 
 	cfg, err := configs.LoadConfig(dir)
 
-	s.NoError(err)
-	s.NotNil(cfg)
-	s.Equal("local", cfg.AppConfig.Environment)
-	s.Equal(8080, cfg.HTTPConfig.Port)
+	s.Error(err)
+	s.Nil(cfg)
+	s.Contains(err.Error(), "arquivo .env obrigatório não encontrado")
 }
 
 func (s *ConfigSuite) TestLoadConfigProductionSemArquivoUsaEnvVars() {
@@ -388,6 +388,64 @@ func (s *ConfigSuite) TestValidateProductionOTLPHeadersInseguro() {
 	err := cfg.Validate()
 	s.Error(err)
 	s.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro")
+}
+
+func (s *ConfigSuite) TestValidateProductionOTLPHeadersCurto() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "production"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		DBConfig: configs.DBConfig{
+			Password: "productionStrongPassword123!",
+			User:     "mecontrola",
+		},
+		O11yConfig: configs.O11yConfig{
+			TraceSampleRate: 0.2,
+			OTLPHeaders:     "Authorization=Basic short",
+		},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS deve ter ao menos 64 caracteres")
+}
+
+func (s *ConfigSuite) TestValidatePoolTunablesInvalidos() {
+	scenarios := []struct {
+		name   string
+		db     configs.DBConfig
+		errMsg string
+	}{
+		{
+			name:   "max conns zero quando tunables configurados",
+			db:     configs.DBConfig{MaxConns: 0, MinConns: 1, MaxIdleConns: 1},
+			errMsg: "DB_MAX_CONNS deve ser maior que zero",
+		},
+		{
+			name:   "min conns maior que max conns",
+			db:     configs.DBConfig{MaxConns: 2, MinConns: 3, MaxIdleConns: 1},
+			errMsg: "DB_MIN_CONNS não pode ser maior que DB_MAX_CONNS",
+		},
+		{
+			name:   "max idle maior que max conns",
+			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 3},
+			errMsg: "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS",
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			cfg := &configs.Config{
+				AppConfig:  configs.AppConfig{Environment: "local"},
+				HTTPConfig: configs.HTTPConfig{Port: 8080},
+				DBConfig:   sc.db,
+				O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+			}
+
+			err := cfg.Validate()
+			s.Error(err)
+			s.Contains(err.Error(), sc.errMsg)
+		})
+	}
 }
 
 func (s *ConfigSuite) TestLoadConfigPortInvalidaRetornaErro() {

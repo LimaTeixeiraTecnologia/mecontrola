@@ -55,6 +55,10 @@ Para tarefas que alteram codigo, carregar a skill:
 
 {{REGRAS_LINGUAGEM}}
 
+Antes de decidir ou implementar, verificar fatos locais em vez de assumir versao, dependencia,
+ferramenta, framework, comando ou padrao. Se a informacao nao existir no repositorio, registrar
+a ausencia explicitamente em vez de inventar substituto.
+
 Para tarefas de correcao de bugs com remediacao e teste de regressao, carregar tambem:
 
 - `.agents/skills/bugfix/SKILL.md`
@@ -95,8 +99,9 @@ Antes de concluir uma alteracao:
 ## Restricoes
 
 1. Nao inventar contexto ausente.
-2. Nao assumir versao de linguagem, framework ou runtime sem verificar.
+2. Nao assumir versao de linguagem, framework, runtime, dependencia, comando ou ferramenta sem verificar.
 3. Nao alterar comportamento publico sem deixar isso explicito.
 4. Nao usar exemplos como copia cega; adaptar ao contexto real.
+5. Quando houver duvida factual, buscar evidencia no repositorio primeiro; se a evidencia nao existir, registrar a lacuna explicitamente.
 
 {{RESTRICOES_ARQUITETURA}}

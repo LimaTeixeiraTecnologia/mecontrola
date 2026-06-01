@@ -67,24 +67,25 @@ type O11yConfig struct {
 	ServiceVersion  string  `mapstructure:"SERVICE_VERSION"`
 }
 
-// LoadConfig carrega configuração do arquivo .env em path e de env vars do processo.
-//
-// Pipeline Viper:
-//  1. SetConfigName(".env") + SetConfigType("env")
-//  2. AddConfigPath(path)
-//  3. AutomaticEnv() captura env vars do processo
-//  4. SetEnvKeyReplacer(".", "_") para compatibilidade com nomes compostos
-//  5. ReadInConfig — obrigatório em local/staging; tolerado em production
-//  6. Unmarshal para *Config
-//  7. Validate() fail-fast
-func LoadConfig(path string) (*Config, error) {
-	v := viper.New()
+// configLoader encapsula o pipeline Viper de carregamento de configuração.
+// Separado de Config para que LoadConfig não precise de funções standalone.
+type configLoader struct {
+	v    *viper.Viper
+	path string
+}
 
-	v.SetConfigName(".env")
-	v.SetConfigType("env")
-	v.AddConfigPath(path)
-	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+// requiresLocalEnvFile retorna true quando o ambiente exige o arquivo .env local.
+func (l *configLoader) requiresLocalEnvFile() bool {
+	return l.v.GetString("ENVIRONMENT") != "production"
+}
+
+// load executa o pipeline completo: bind, defaults, ReadInConfig, Unmarshal, Validate.
+func (l *configLoader) load() (*Config, error) {
+	l.v.SetConfigName(".env")
+	l.v.SetConfigType("env")
+	l.v.AddConfigPath(l.path)
+	l.v.AutomaticEnv()
+	l.v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	// Bind env vars explicitamente para garantir que AutomaticEnv() funcione com Unmarshal.
 	// Necessário porque mapstructure não chama os getters do Viper automaticamente.
@@ -97,34 +98,34 @@ func LoadConfig(path string) (*Config, error) {
 		"OTEL_TRACE_SAMPLE_RATE", "LOG_LEVEL", "LOG_FORMAT", "SERVICE_VERSION",
 	}
 	for _, key := range envKeys {
-		_ = v.BindEnv(key)
+		_ = l.v.BindEnv(key)
 	}
 
-	v.SetDefault("PORT", 8080)
-	v.SetDefault("APP_MODE", "server")
-	v.SetDefault("ENVIRONMENT", "local")
-	v.SetDefault("LOG_LEVEL", "info")
-	v.SetDefault("LOG_FORMAT", "json")
-	v.SetDefault("SERVICE_VERSION", "dev")
-	v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
-	v.SetDefault("DB_PORT", 5432)
-	v.SetDefault("DB_SSL_MODE", "disable")
-	v.SetDefault("DB_MAX_CONNS", 10)
-	v.SetDefault("DB_MIN_CONNS", 2)
-	v.SetDefault("DB_MAX_IDLE_CONNS", 5)
+	l.v.SetDefault("PORT", 8080)
+	l.v.SetDefault("APP_MODE", "server")
+	l.v.SetDefault("ENVIRONMENT", "local")
+	l.v.SetDefault("LOG_LEVEL", "info")
+	l.v.SetDefault("LOG_FORMAT", "json")
+	l.v.SetDefault("SERVICE_VERSION", "dev")
+	l.v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
+	l.v.SetDefault("DB_PORT", 5432)
+	l.v.SetDefault("DB_SSL_MODE", "disable")
+	l.v.SetDefault("DB_MAX_CONNS", 10)
+	l.v.SetDefault("DB_MIN_CONNS", 2)
+	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
 
-	if err := v.ReadInConfig(); err != nil {
+	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
 		if !errors.As(err, &notFound) {
 			return nil, fmt.Errorf("lendo arquivo de configuração: %w", err)
 		}
-		// .env não encontrado é tolerado em todos os ambientes —
-		// AutomaticEnv() garante que variáveis de ambiente do processo sejam usadas.
-		// Validate() abaixo rejeita configurações incompletas.
+		if l.requiresLocalEnvFile() {
+			return nil, fmt.Errorf("arquivo .env obrigatório não encontrado em %q para ENVIRONMENT=%s", l.path, l.v.GetString("ENVIRONMENT"))
+		}
 	}
 
 	cfg := &Config{}
-	if err := v.Unmarshal(cfg); err != nil {
+	if err := l.v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("deserializando configuração: %w", err)
 	}
 
@@ -133,6 +134,20 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// LoadConfig carrega configuração do arquivo .env em path e de env vars do processo.
+//
+// Pipeline Viper:
+//  1. SetConfigName(".env") + SetConfigType("env")
+//  2. AddConfigPath(path)
+//  3. AutomaticEnv() captura env vars do processo
+//  4. SetEnvKeyReplacer(".", "_") para compatibilidade com nomes compostos
+//  5. ReadInConfig — obrigatório em local/staging; tolerado em production
+//  6. Unmarshal para *Config
+//  7. Validate() fail-fast
+func LoadConfig(path string) (*Config, error) {
+	return (&configLoader{v: viper.New(), path: path}).load()
 }
 
 // Validate executa verificações fail-fast antes de qualquer subsistema inicializar.
@@ -169,6 +184,8 @@ func (c *Config) Validate() error {
 		))
 	}
 
+	errs = append(errs, c.validatePoolTunables()...)
+
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
 	}
@@ -178,6 +195,36 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) validatePoolTunables() []string {
+	var errs []string
+
+	if c.DBConfig.MaxConns == 0 && c.DBConfig.MinConns == 0 && c.DBConfig.MaxIdleConns == 0 {
+		return nil
+	}
+
+	if c.DBConfig.MaxConns < 1 {
+		errs = append(errs, "DB_MAX_CONNS deve ser maior que zero")
+	}
+
+	if c.DBConfig.MinConns < 0 {
+		errs = append(errs, "DB_MIN_CONNS não pode ser negativo")
+	}
+
+	if c.DBConfig.MaxIdleConns < 0 {
+		errs = append(errs, "DB_MAX_IDLE_CONNS não pode ser negativo")
+	}
+
+	if c.DBConfig.MaxConns > 0 && c.DBConfig.MinConns > c.DBConfig.MaxConns {
+		errs = append(errs, "DB_MIN_CONNS não pode ser maior que DB_MAX_CONNS")
+	}
+
+	if c.DBConfig.MaxConns > 0 && c.DBConfig.MaxIdleConns > c.DBConfig.MaxConns {
+		errs = append(errs, "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS")
+	}
+
+	return errs
 }
 
 func (c *Config) validateProduction() []string {
@@ -215,6 +262,10 @@ func (c *Config) validateProduction() []string {
 			))
 			break
 		}
+	}
+
+	if c.O11yConfig.OTLPHeaders != "" && len(c.O11yConfig.OTLPHeaders) < 64 {
+		errs = append(errs, "OTEL_EXPORTER_OTLP_HEADERS deve ter ao menos 64 caracteres em production quando configurado")
 	}
 
 	return errs
