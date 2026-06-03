@@ -25,7 +25,7 @@ description: Gera e atualiza dashboards Grafana para servicos instrumentados com
 1. Gerar JSON compativel com Grafana 9+ usando o schema de dashboard.
 2. Usar variaveis de template (`$datasource`, `$job`, `$instance`) para reutilizacao.
 3. Incluir anotacoes para deploys e incidentes quando disponíveis.
-4. Salvar em `deployment/grafana/<service-name>.json`.
+4. Salvar em `dashboards/<service-name>.json`.
 
 **Etapa 4: Validar e documentar**
 1. Verificar que as queries PromQL/LogQL/TraceQL sao sintaticamente corretas.

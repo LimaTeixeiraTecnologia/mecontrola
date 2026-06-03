@@ -4,17 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/spf13/viper"
 )
 
 // Config incorpora grupos via mapstructure:",squash" para que as env vars
 // sejam mapeadas diretamente sem prefixo de grupo.
 type Config struct {
-	AppConfig  AppConfig  `mapstructure:",squash"`
-	HTTPConfig HTTPConfig `mapstructure:",squash"`
-	DBConfig   DBConfig   `mapstructure:",squash"`
-	O11yConfig O11yConfig `mapstructure:",squash"`
+	AppConfig    AppConfig    `mapstructure:",squash"`
+	HTTPConfig   HTTPConfig   `mapstructure:",squash"`
+	DBConfig     DBConfig     `mapstructure:",squash"`
+	O11yConfig   O11yConfig   `mapstructure:",squash"`
+	OutboxConfig OutboxConfig `mapstructure:",squash"`
 }
 
 type AppConfig struct {
@@ -67,6 +70,23 @@ type O11yConfig struct {
 	ServiceVersion  string  `mapstructure:"SERVICE_VERSION"`
 }
 
+// OutboxConfig agrupa todas as configuracoes do Outbox Transacional (RF-26 / D-03).
+// Todas as chaves usam o prefixo OUTBOX_ em SCREAMING_SNAKE_CASE.
+// Defaults aplicados em configLoader.load() e validacao em Config.Validate().
+type OutboxConfig struct {
+	DispatcherEnabled         bool          `mapstructure:"OUTBOX_DISPATCHER_ENABLED"`
+	DispatcherTickInterval    time.Duration `mapstructure:"OUTBOX_DISPATCHER_TICK_INTERVAL"`
+	DispatcherBatchSize       int           `mapstructure:"OUTBOX_DISPATCHER_BATCH_SIZE"`
+	DispatcherHandlerTimeout  time.Duration `mapstructure:"OUTBOX_DISPATCHER_HANDLER_TIMEOUT"`
+	RetryMaxAttempts          int           `mapstructure:"OUTBOX_RETRY_MAX_ATTEMPTS"`
+	RetryBaseBackoff          time.Duration `mapstructure:"OUTBOX_RETRY_BASE_BACKOFF"`
+	RetryMaxBackoff           time.Duration `mapstructure:"OUTBOX_RETRY_MAX_BACKOFF"`
+	HousekeepingRetentionDays int           `mapstructure:"OUTBOX_HOUSEKEEPING_RETENTION_DAYS"`
+	HousekeepingSchedule      string        `mapstructure:"OUTBOX_HOUSEKEEPING_SCHEDULE"`
+	ReaperInterval            string        `mapstructure:"OUTBOX_REAPER_INTERVAL"`
+	ReaperStuckAfter          time.Duration `mapstructure:"OUTBOX_REAPER_STUCK_AFTER"`
+}
+
 // configLoader encapsula o pipeline Viper de carregamento de configuração.
 // Separado de Config para que LoadConfig não precise de funções standalone.
 type configLoader struct {
@@ -96,6 +116,17 @@ func (l *configLoader) load() (*Config, error) {
 		"DB_MAX_CONNS", "DB_MIN_CONNS", "DB_MAX_IDLE_CONNS",
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS",
 		"OTEL_TRACE_SAMPLE_RATE", "LOG_LEVEL", "LOG_FORMAT", "SERVICE_VERSION",
+		"OUTBOX_DISPATCHER_ENABLED",
+		"OUTBOX_DISPATCHER_TICK_INTERVAL",
+		"OUTBOX_DISPATCHER_BATCH_SIZE",
+		"OUTBOX_DISPATCHER_HANDLER_TIMEOUT",
+		"OUTBOX_RETRY_MAX_ATTEMPTS",
+		"OUTBOX_RETRY_BASE_BACKOFF",
+		"OUTBOX_RETRY_MAX_BACKOFF",
+		"OUTBOX_HOUSEKEEPING_RETENTION_DAYS",
+		"OUTBOX_HOUSEKEEPING_SCHEDULE",
+		"OUTBOX_REAPER_INTERVAL",
+		"OUTBOX_REAPER_STUCK_AFTER",
 	}
 	for _, key := range envKeys {
 		_ = l.v.BindEnv(key)
@@ -113,6 +144,8 @@ func (l *configLoader) load() (*Config, error) {
 	l.v.SetDefault("DB_MAX_CONNS", 10)
 	l.v.SetDefault("DB_MIN_CONNS", 2)
 	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
+
+	l.setOutboxDefaults()
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -134,6 +167,21 @@ func (l *configLoader) load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// setOutboxDefaults registra os defaults do Outbox Transacional (D-03) no Viper.
+func (l *configLoader) setOutboxDefaults() {
+	l.v.SetDefault("OUTBOX_DISPATCHER_ENABLED", true)
+	l.v.SetDefault("OUTBOX_DISPATCHER_TICK_INTERVAL", 500*time.Millisecond)
+	l.v.SetDefault("OUTBOX_DISPATCHER_BATCH_SIZE", 50)
+	l.v.SetDefault("OUTBOX_DISPATCHER_HANDLER_TIMEOUT", 10*time.Second)
+	l.v.SetDefault("OUTBOX_RETRY_MAX_ATTEMPTS", 15)
+	l.v.SetDefault("OUTBOX_RETRY_BASE_BACKOFF", 2*time.Second)
+	l.v.SetDefault("OUTBOX_RETRY_MAX_BACKOFF", 5*time.Minute)
+	l.v.SetDefault("OUTBOX_HOUSEKEEPING_RETENTION_DAYS", 90)
+	l.v.SetDefault("OUTBOX_HOUSEKEEPING_SCHEDULE", "@daily")
+	l.v.SetDefault("OUTBOX_REAPER_INTERVAL", "@every 1m")
+	l.v.SetDefault("OUTBOX_REAPER_STUCK_AFTER", 5*time.Minute)
 }
 
 // LoadConfig carrega configuração do arquivo .env em path e de env vars do processo.
@@ -185,6 +233,7 @@ func (c *Config) Validate() error {
 	}
 
 	errs = append(errs, c.validatePoolTunables()...)
+	errs = append(errs, c.validateOutbox()...)
 
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
@@ -222,6 +271,58 @@ func (c *Config) validatePoolTunables() []string {
 
 	if c.DBConfig.MaxConns > 0 && c.DBConfig.MaxIdleConns > c.DBConfig.MaxConns {
 		errs = append(errs, "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS")
+	}
+
+	return errs
+}
+
+func (c *Config) validateOutbox() []string {
+	var errs []string
+	o := c.OutboxConfig
+
+	// Quando todos os campos numericos sao zero, OutboxConfig nao foi configurado
+	// (ex.: testes que usam Config{} sem setar OutboxConfig). Pulamos a validacao.
+	if o.RetryMaxAttempts == 0 && o.DispatcherBatchSize == 0 && o.HousekeepingRetentionDays == 0 {
+		return nil
+	}
+
+	if o.RetryMaxAttempts < 1 || o.RetryMaxAttempts > 50 {
+		errs = append(errs, fmt.Sprintf(
+			"OUTBOX_RETRY_MAX_ATTEMPTS inválido %d: deve estar no intervalo [1..50]",
+			o.RetryMaxAttempts,
+		))
+	}
+
+	if o.DispatcherBatchSize < 1 || o.DispatcherBatchSize > 500 {
+		errs = append(errs, fmt.Sprintf(
+			"OUTBOX_DISPATCHER_BATCH_SIZE inválido %d: deve estar no intervalo [1..500]",
+			o.DispatcherBatchSize,
+		))
+	}
+
+	if o.HousekeepingRetentionDays < 1 || o.HousekeepingRetentionDays > 3650 {
+		errs = append(errs, fmt.Sprintf(
+			"OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido %d: deve estar no intervalo [1..3650]",
+			o.HousekeepingRetentionDays,
+		))
+	}
+
+	if o.HousekeepingSchedule != "" {
+		if _, err := cron.ParseStandard(o.HousekeepingSchedule); err != nil {
+			errs = append(errs, fmt.Sprintf(
+				"OUTBOX_HOUSEKEEPING_SCHEDULE inválido %q: %v",
+				o.HousekeepingSchedule, err,
+			))
+		}
+	}
+
+	if o.ReaperInterval != "" {
+		if _, err := cron.ParseStandard(o.ReaperInterval); err != nil {
+			errs = append(errs, fmt.Sprintf(
+				"OUTBOX_REAPER_INTERVAL inválido %q: %v",
+				o.ReaperInterval, err,
+			))
+		}
 	}
 
 	return errs

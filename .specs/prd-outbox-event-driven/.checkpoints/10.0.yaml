@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-outbox-event-driven/10.0_execution_report.md
+summary: "Dashboard Grafana com 10 métricas OTel, runbook 5 procedimentos, ADR-016, AGENTS.md/CLAUDE.md atualizados, outbox/AGENTS.md e .github/PULL_REQUEST_TEMPLATE.md criados"
+timestamp: "2026-06-02T00:00:00Z"

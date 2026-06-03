@@ -20,6 +20,23 @@ tasks:
     generates:
       - '**/mocks/**/*.go'
 
+  mocks:
+    desc: Gera mocks usando mockery.yml na raiz do projeto.
+    preconditions:
+      - sh: command -v mockery >/dev/null 2>&1
+        msg: "mockery ausente. Instale: go install github.com/vektra/mockery/v2@latest"
+      - sh: test -f mockery.yml
+        msg: "mockery.yml ausente na raiz do projeto"
+    cmds:
+      - mockery --config mockery.yml
+    sources:
+      - mockery.yml
+      - '**/*.go'
+      - exclude: '**/mocks/**'
+      - exclude: '**/*_test.go'
+    generates:
+      - '**/mocks/**/*.go'
+
   clean:
     desc: Remove mocks gerados.
     cmds:

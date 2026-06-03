@@ -7,17 +7,20 @@ Este diretorio centraliza regras para uso com agentes de IA em tarefas reais de 
 
 Use estas instrucoes para manter consistencia, seguranca e qualidade ao trabalhar com codigo, configuracao, validacao e evolucao de sistemas.
 
-## Arquitetura: monolito
+## Arquitetura: monolito modular
 
-O projeto aparenta ser um monolito unico. A governanca deve privilegiar coesao local, limites de pacote claros e crescimento incremental da estrutura.
+O projeto aparenta ser um monolito modular, com separacao relevante por modulos, dominios ou componentes internos. A governanca deve proteger essas fronteiras e evitar dependencias circulares.
 
-Stack detectada: stack principal nao detectada automaticamente.
-Frameworks detectados: nenhum framework dominante identificado.
+Stack detectada: Go.
+Frameworks detectados: Fiber, gRPC.
 
 ## Estrutura de Pastas
 
 ```
 .
+.ai_spec_harness.json
+.editorconfig
+.env.example
 .github
 .github/agents
 .github/agents/bugfix.agent.md
@@ -28,6 +31,8 @@ Frameworks detectados: nenhum framework dominante identificado.
 .github/agents/task-executor.agent.md
 .github/agents/task-planner.agent.md
 .github/agents/technical-specification-writer.agent.md
+.github/copilot-instructions.md
+.github/dependabot.yml
 .github/hooks
 .github/hooks/governance.json
 .github/hooks/post-execute-task.sh
@@ -70,6 +75,9 @@ Frameworks detectados: nenhum framework dominante identificado.
 .github/skills/analyze-project/assets/ai-tool-template.md
 .github/skills/analyze-project/scripts
 .github/skills/analyze-project/scripts/generate-governance.sh
+.github/skills/analyze-project/scripts/lib
+.github/skills/analyze-project/scripts/lib/codex-config.sh
+.github/skills/analyze-project/scripts/lib/find-manifests.sh
 .github/skills/bugfix
 .github/skills/bugfix/SKILL.md
 .github/skills/bugfix/assets
@@ -89,24 +97,17 @@ Frameworks detectados: nenhum framework dominante identificado.
 .github/skills/create-tasks/assets
 .github/skills/create-tasks/assets/task-template.md
 .github/skills/create-tasks/assets/tasks-template.md
-.github/skills/create-technical-specification
-.github/skills/create-technical-specification/SKILL.md
-.github/skills/create-technical-specification/assets
-.github/skills/create-technical-specification/assets/adr-template.md
-.github/skills/create-technical-specification/assets/techspec-template.md
-.github/skills/execute-all-tasks
-.github/skills/execute-all-tasks/SKILL.md
-.github/skills/execute-all-tasks/assets
 ```
 
 ## Padrao Arquitetural
 
-Padrao arquitetural nao inferido com alta confianca; assumir composicao simples e dependencias explicitas.
+Predominio de packages internos coesos, com estrutura orientada por dominio ou componente.
 
 ### Fluxo de Dependencias
 
-- Dependencias devem apontar de bordas externas para o nucleo do negocio.
-- Detalhes de framework, IO e persistencia nao devem vazar para o centro do sistema.
+- Transporte e adapters devem depender de casos de uso ou servicos explicitos, nao do contrario.
+- Dominio nao deve conhecer detalhes de HTTP, banco, filas, serializacao ou drivers.
+- Infraestrutura pode implementar contratos consumidos pela aplicacao, preservando dependencia para dentro.
 
 ## Modo de trabalho
 
@@ -130,9 +131,9 @@ Padrao arquitetural nao inferido com alta confianca; assumir composicao simples 
 
 ## Regras por Arquitetura
 
-1. Preservar coesao local e dependencia unidirecional entre packages.
-2. Evitar helpers transversais que escondam regra de negocio ou IO.
-3. Crescer a estrutura apenas quando o codigo atual ja nao comportar a mudanca com clareza.
+1. Respeitar fronteiras entre modulos e bounded contexts.
+2. Evitar dependencia circular entre packages internos.
+3. Nao extrair shared helpers sem demanda comprovada de mais de um modulo.
 
 ## Regras por Linguagem
 
@@ -140,22 +141,13 @@ Para tarefas que alteram codigo, carregar a skill:
 
 - `.agents/skills/agent-governance/SKILL.md`
 
-Para tarefas que alteram codigo Go, carregar tambem, de forma obrigatoria e inegociavel:
+Para tarefas que alteram codigo Go, carregar tambem:
 
 - `.agents/skills/go-implementation/SKILL.md`
 
-Regra `[HARD]`: esta exigencia se aplica a qualquer criacao, edicao, refatoracao, revisao,
-correcao ou validacao que toque `.go`, `go.mod`, `go.sum`, testes Go, mocks, build, lint, CI
-ou configuracao diretamente ligada a stack Go.
+Para tarefas de revisao ou refatoracao incremental de design em Go guiadas por heuristicas de object calisthenics, carregar tambem:
 
-Antes de decidir ou implementar em Go, verificar fatos locais em vez de assumir: `go.mod`,
-arquivos afetados, `Taskfile.yml`, `.golangci.yml`, `mockery.yml` quando existir e comandos
-de validacao disponiveis. Se a informacao nao existir no repositorio, registrar a ausencia
-explicitamente em vez de inventar versao, dependencia, ferramenta, framework ou padrao.
-
-Carregar referencias internas de `go-implementation/references/` apenas sob demanda, conforme
-os gatilhos do proprio `SKILL.md`. Exemplos da skill sao guias adaptaveis ao contexto real,
-nunca material para copia cega.
+- `.agents/skills/object-calisthenics-go/SKILL.md`
 
 Para tarefas de correcao de bugs com remediacao e teste de regressao, carregar tambem:
 
@@ -208,14 +200,36 @@ Antes de concluir uma alteracao:
 
 Seguir Etapa 4 de `.agents/skills/agent-governance/SKILL.md` como base canonica.
 
+Comandos detectados no projeto (Go):
+1. Rodar fmt: `gofmt -w .`.
+2. Rodar test: `go test ./...`.
+3. Rodar lint: `golangci-lint run`.
+
+## Outbox vs events.Bus
+
+<!-- RF-38 / ADR-016 — contrato do outbox.Publisher -->
+
+Use `outbox.Publisher` (`internal/infrastructure/outbox`) para side-effects **criticos** que precisam ser entregues mesmo apos crash, deploy ou reinicio do worker: notificacoes, projecoes persistentes, integracoes externas disparadas pos-commit. O Publisher garante at-least-once escrevendo atomicamente na transacao do agregado.
+
+Use `events.Bus` (ADR-003) para sinais **volateis** in-process que podem ser perdidos sem impacto ao produto: telemetria em tempo real, propagacao de cache local, triggers de UI. O Bus descarta mensagens quando o canal do subscriber esta cheio — comportamento intencional.
+
+**Regra obrigatoria de idempotencia:** Todo `outbox.Handler` DEVE ser idempotente por `event.ID`. O Dispatcher entrega at-least-once; o handler e responsavel por evitar duplicacao via upsert ou tabela de deduplicacao.
+
+Criterio de escolha resumido (ver ADR-016 para detalhes):
+
+| Precisa sobreviver a restart? | Tem side-effect externo? | Publisher escolhido |
+|---|---|---|
+| Sim | Sim | `outbox.Publisher` |
+| Nao | Nao | `events.Bus` |
+
+Ambos coexistem; um nao substitui o outro. Documentar no godoc do handler qual foi escolhido e por que (RF-38).
 
 ## Restricoes
 
 1. Nao inventar contexto ausente.
-2. Nao assumir versao de linguagem, framework, runtime, dependencia, comando ou ferramenta sem verificar.
+2. Nao assumir versao de linguagem, framework ou runtime sem verificar.
 3. Nao alterar comportamento publico sem deixar isso explicito.
 4. Nao usar exemplos como copia cega; adaptar ao contexto real.
-5. Quando houver duvida factual, buscar evidencia no repositorio primeiro; se a evidencia nao existir, registrar a lacuna explicitamente.
 
 
 ### Controle de profundidade de invocacao

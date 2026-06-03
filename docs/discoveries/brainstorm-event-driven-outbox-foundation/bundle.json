@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "slug": "event-driven-outbox-foundation",
+  "title": "Fundação Event-Driven com Outbox Transacional no Postgres",
+  "created_at": "2026-06-02T00:06:17Z",
+  "language": "pt-BR",
+  "status": "done",
+  "decision_brief": {
+    "file": "decision-brief.md",
+    "title": "Fundação Event-Driven com Outbox Transacional no Postgres"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "assumptions": {
+    "file": "assumptions.md"
+  },
+  "option_scorecard": {
+    "file": "option-scorecard.md"
+  },
+  "alternatives": [
+    "Alternativa 1 - Polling Single-Table com fan-out agregado",
+    "Alternativa 2 - Polling Two-Table (events + deliveries)",
+    "Alternativa 3 - LISTEN/NOTIFY com Polling Fallback two-table",
+    "Alternativa 4 - Polling Particionado por hash de partition_key"
+  ],
+  "recommended_alternative": "Alternativa 2 - Polling Two-Table (events + deliveries)",
+  "decisions": [
+    "Adotar Alternativa 2 (Polling Two-Table) como fundação canônica de mensageria interna reativa.",
+    "Schema two-table com outbox_events imutável e outbox_deliveries por handler, payload JSONB e metadados genéricos.",
+    "Dispatcher e cron como goroutines do cmd/worker existente, sem novo binário.",
+    "robfig/cron/v3 apenas para housekeeping @daily e reaper @every 1m; dispatcher usa time.Ticker próprio de 250ms.",
+    "Coordenação multi-instância via SELECT FOR UPDATE SKIP LOCKED em outbox_deliveries, sem leader election externo.",
+    "Retry policy global: 8 tentativas, backoff exponencial com jitter (base 1s, cap 5min), depois dead_letter.",
+    "Retenção 90d via housekeeping diário, condicionada à validação prévia com Legal sobre compliance.",
+    "SLO: latência de entrega p95 < 1s; p99 ocasional 1-2s aceitável; degradação consistente do p99 dispara evolução para LISTEN/NOTIFY.",
+    "Idempotência de handler é regra obrigatória; chave canônica = event_id.",
+    "Fora do MVP: broker externo, HTTP/webhooks externos, CDC, LISTEN/NOTIFY, ordenação global FIFO, schema registry, particionamento por advisory lock.",
+    "Próxima skill recomendada: technical-discovery-production para detalhar arquitetura, interfaces Go, schema SQL final, ADRs, métricas OTel, testes e runbook."
+  ],
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  }
+}

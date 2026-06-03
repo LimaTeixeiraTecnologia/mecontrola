@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 
@@ -340,6 +341,196 @@ func (s *ConfigSuite) TestSafeDSNFormato() {
 
 func (s *ConfigSuite) TestInsecurePlaceholdersNaoVazio() {
 	s.NotEmpty(configs.InsecurePlaceholders)
+}
+
+func (s *ConfigSuite) TestOutboxConfigDefaults() {
+	dir := s.T().TempDir()
+
+	// Ambiente local requer .env — criar um minimo valido
+	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+
+	o := cfg.OutboxConfig
+	s.True(o.DispatcherEnabled, "OUTBOX_DISPATCHER_ENABLED default deve ser true")
+	s.Equal(500*time.Millisecond, o.DispatcherTickInterval, "OUTBOX_DISPATCHER_TICK_INTERVAL default deve ser 500ms")
+	s.Equal(50, o.DispatcherBatchSize, "OUTBOX_DISPATCHER_BATCH_SIZE default deve ser 50")
+	s.Equal(10*time.Second, o.DispatcherHandlerTimeout, "OUTBOX_DISPATCHER_HANDLER_TIMEOUT default deve ser 10s")
+	s.Equal(15, o.RetryMaxAttempts, "OUTBOX_RETRY_MAX_ATTEMPTS default deve ser 15")
+	s.Equal(2*time.Second, o.RetryBaseBackoff, "OUTBOX_RETRY_BASE_BACKOFF default deve ser 2s")
+	s.Equal(5*time.Minute, o.RetryMaxBackoff, "OUTBOX_RETRY_MAX_BACKOFF default deve ser 5m")
+	s.Equal(90, o.HousekeepingRetentionDays, "OUTBOX_HOUSEKEEPING_RETENTION_DAYS default deve ser 90")
+	s.Equal("@daily", o.HousekeepingSchedule, "OUTBOX_HOUSEKEEPING_SCHEDULE default deve ser @daily")
+	s.Equal("@every 1m", o.ReaperInterval, "OUTBOX_REAPER_INTERVAL default deve ser @every 1m")
+	s.Equal(5*time.Minute, o.ReaperStuckAfter, "OUTBOX_REAPER_STUCK_AFTER default deve ser 5m")
+}
+
+func (s *ConfigSuite) TestOutboxConfigOverrideViaEnv() {
+	s.T().Setenv("OUTBOX_DISPATCHER_ENABLED", "false")
+	s.T().Setenv("OUTBOX_DISPATCHER_BATCH_SIZE", "100")
+	s.T().Setenv("OUTBOX_RETRY_MAX_ATTEMPTS", "10")
+	s.T().Setenv("OUTBOX_HOUSEKEEPING_RETENTION_DAYS", "30")
+	s.T().Setenv("OUTBOX_HOUSEKEEPING_SCHEDULE", "@weekly")
+	s.T().Setenv("OUTBOX_REAPER_INTERVAL", "@every 5m")
+
+	dir := s.T().TempDir()
+	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+
+	o := cfg.OutboxConfig
+	s.False(o.DispatcherEnabled)
+	s.Equal(100, o.DispatcherBatchSize)
+	s.Equal(10, o.RetryMaxAttempts)
+	s.Equal(30, o.HousekeepingRetentionDays)
+	s.Equal("@weekly", o.HousekeepingSchedule)
+	s.Equal("@every 5m", o.ReaperInterval)
+}
+
+func (s *ConfigSuite) TestOutboxConfigValidacaoRanges() {
+	base := func() *configs.Config {
+		return &configs.Config{
+			AppConfig:  configs.AppConfig{Environment: "local"},
+			HTTPConfig: configs.HTTPConfig{Port: 8080},
+			O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+			OutboxConfig: configs.OutboxConfig{
+				RetryMaxAttempts:          15,
+				DispatcherBatchSize:       50,
+				HousekeepingRetentionDays: 90,
+				HousekeepingSchedule:      "@daily",
+				ReaperInterval:            "@every 1m",
+			},
+		}
+	}
+
+	scenarios := []struct {
+		name    string
+		mutate  func(*configs.Config)
+		errMsg  string
+		wantErr bool
+	}{
+		{
+			name:    "deve aceitar valores validos dentro dos ranges",
+			mutate:  func(_ *configs.Config) {},
+			wantErr: false,
+		},
+		{
+			name: "deve rejeitar RetryMaxAttempts zero",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.RetryMaxAttempts = 0
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_RETRY_MAX_ATTEMPTS inválido",
+		},
+		{
+			name: "deve rejeitar RetryMaxAttempts acima de 50",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.RetryMaxAttempts = 51
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_RETRY_MAX_ATTEMPTS inválido",
+		},
+		{
+			name: "deve aceitar RetryMaxAttempts igual a 1",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.RetryMaxAttempts = 1
+			},
+			wantErr: false,
+		},
+		{
+			name: "deve aceitar RetryMaxAttempts igual a 50",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.RetryMaxAttempts = 50
+			},
+			wantErr: false,
+		},
+		{
+			name: "deve rejeitar DispatcherBatchSize zero",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.DispatcherBatchSize = 0
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_DISPATCHER_BATCH_SIZE inválido",
+		},
+		{
+			name: "deve rejeitar DispatcherBatchSize acima de 500",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.DispatcherBatchSize = 501
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_DISPATCHER_BATCH_SIZE inválido",
+		},
+		{
+			name: "deve rejeitar HousekeepingRetentionDays zero",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.HousekeepingRetentionDays = 0
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido",
+		},
+		{
+			name: "deve rejeitar HousekeepingRetentionDays acima de 3650",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.HousekeepingRetentionDays = 3651
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido",
+		},
+		{
+			name: "deve rejeitar HousekeepingSchedule invalido",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.HousekeepingSchedule = "nao-e-cron"
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_HOUSEKEEPING_SCHEDULE inválido",
+		},
+		{
+			name: "deve aceitar HousekeepingSchedule @weekly valido",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.HousekeepingSchedule = "@weekly"
+			},
+			wantErr: false,
+		},
+		{
+			name: "deve rejeitar ReaperInterval invalido",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.ReaperInterval = "invalido"
+			},
+			wantErr: true,
+			errMsg:  "OUTBOX_REAPER_INTERVAL inválido",
+		},
+		{
+			name: "deve aceitar ReaperInterval @every 5m valido",
+			mutate: func(c *configs.Config) {
+				c.OutboxConfig.ReaperInterval = "@every 5m"
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			cfg := base()
+			sc.mutate(cfg)
+			err := cfg.Validate()
+			if sc.wantErr {
+				s.Error(err)
+				if sc.errMsg != "" {
+					s.Contains(err.Error(), sc.errMsg)
+				}
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
 }
 
 func (s *ConfigSuite) TestInsecurePlaceholdersContemValoresConhecidos() {

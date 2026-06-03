@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "slug": "outbox-event-driven-foundation",
+  "title": "MeControla — Fundação Transactional Outbox para mensageria interna at-least-once",
+  "created_at": "2026-06-02T09:46:52Z",
+  "language": "pt-BR",
+  "status": "done",
+  "discovery": {
+    "file": "discovery.md",
+    "title": "MeControla — Fundação Transactional Outbox para mensageria interna at-least-once"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  },
+  "planned_epics": [
+    "Epic 01 - Schema e fundação de persistência do Outbox",
+    "Epic 02 - Publisher transacional e Registry de subscriptions",
+    "Epic 03 - Dispatcher com polling, retry, DLQ e coordenação multi-instância",
+    "Epic 04 - Housekeeping e reaper via robfig/cron/v3",
+    "Epic 05 - Observabilidade OpenTelemetry, logs estruturados e tracing",
+    "Epic 06 - Bootstrap no cmd/worker, feature flag e rollout"
+  ]
+}

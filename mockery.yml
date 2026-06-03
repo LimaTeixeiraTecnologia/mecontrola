@@ -1,0 +1,10 @@
+with-expecter: true
+mockname: "{{.InterfaceName}}"
+outpkg: "mocks"
+filename: "{{.InterfaceName | snakecase}}.go"
+dir: "{{.InterfaceDir}}/mocks"
+packages:
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/outbox:
+    interfaces:
+      Storage:
+      Registry:

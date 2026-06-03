@@ -24,12 +24,12 @@ func (b *bootstrapper) buildFoundation() Foundation {
 	}
 }
 
-func (b *bootstrapper) buildSubsystems(cfg *configs.Config, mode AppMode, _ Foundation) ([]Subsystem, error) {
+func (b *bootstrapper) buildSubsystems(cfg *configs.Config, mode AppMode, found Foundation) ([]Subsystem, error) {
 	switch mode {
 	case ModeServer:
 		return []Subsystem{b.newServerSubsystem(cfg)}, nil
 	case ModeWorker:
-		return []Subsystem{}, nil
+		return []Subsystem{b.newOutboxSubsystem(cfg, found)}, nil
 	default:
 		return []Subsystem{}, nil
 	}

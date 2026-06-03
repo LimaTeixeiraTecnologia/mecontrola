@@ -13,6 +13,10 @@ Use `AGENTS.md` como instrucao principal deste repositorio.
 7. Preservar estilo, arquitetura e fronteiras existentes antes de propor mudancas.
 8. Validar mudancas com comandos proporcionais ao risco.
 
+## Stack
+
+- Projeto com contexto Go detectado: carregar `.agents/skills/go-implementation/SKILL.md` ao alterar codigo Go.
+- Validar a versao declarada em `go.mod` antes de introduzir APIs da linguagem ou novas dependencias.
 
 
 ## Orientacoes Especificas para Copilot

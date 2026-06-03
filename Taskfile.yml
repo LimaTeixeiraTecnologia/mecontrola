@@ -75,7 +75,17 @@ tasks:
     cmds:
       - task: lint:run
 
+  mocks:
+    desc: Alias de alto nivel para gerar mocks via mockery.yml.
+    cmds:
+      - task: mocks:mocks
+
   ci:
     desc: Pipeline completa usada na esteira (lint, testes, seguranca, build).
     cmds:
       - task: ci:pipeline
+
+  bench:outbox:
+    desc: Executa benchmarks do pacote outbox e captura baseline em docs/benchmarks/outbox-baseline.md.
+    cmds:
+      - go test -bench=BenchmarkPublisher -benchmem -count=5 -run=^$ ./internal/infrastructure/outbox/...

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-outbox-event-driven/3.0_execution_report.md
+summary: "Porta Storage + PgxStorage + 6 cenarios de integracao + mocks gerados — todos os testes PASS em 2.1s"
+timestamp: 2026-06-02T21:48:00Z

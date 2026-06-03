@@ -13,15 +13,11 @@ Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 7. Preservar estilo, arquitetura e fronteiras existentes antes de propor mudancas.
 8. Validar mudancas com comandos proporcionais ao risco.
 
-## Contrato Go
+## Stack
 
-Em qualquer tarefa que envolva codigo Go, carregar obrigatoriamente:
+- Projeto com contexto Go detectado: carregar `.agents/skills/go-implementation/SKILL.md` ao alterar codigo Go.
+- Validar a versao declarada em `go.mod` antes de introduzir APIs da linguagem ou novas dependencias.
 
-1. `AGENTS.md`
-2. `.agents/skills/agent-governance/SKILL.md`
-3. `.agents/skills/go-implementation/SKILL.md`
+## Outbox vs events.Bus
 
-Esta regra e `[HARD]` para criacao, edicao, refatoracao, revisao, correcao ou validacao que
-toque `.go`, `go.mod`, `go.sum`, testes Go, mocks, build, lint, CI ou configuracao Go.
-Verificar fatos locais antes de assumir versao, dependencia, ferramenta, framework ou padrao.
-Carregar referencias da skill Go apenas sob demanda e adaptar exemplos ao contexto real.
+Ver secao "Outbox vs events.Bus" em `AGENTS.md` para o contrato completo do `outbox.Publisher`, regra obrigatoria de idempotencia por `event_id` e criterio de escolha entre `events.Bus` (volatil) e `outbox.Publisher` (persistente).
