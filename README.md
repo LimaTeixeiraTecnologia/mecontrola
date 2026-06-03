@@ -71,7 +71,7 @@ internal/
 ### Infraestrutura
 
 ```
-internal/infrastructure/
+internal/platform/
   database/        Manager + UnitOfWork[T] + migrations embed
   http/            Servidor Chi + middlewares + health endpoints
   observability/   OTel traces/metrics/logs + redaction PII

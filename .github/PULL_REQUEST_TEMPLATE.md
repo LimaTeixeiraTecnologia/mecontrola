@@ -26,7 +26,7 @@
 
 ## Outbox / Event Handler
 
-<!-- Preencher esta seção APENAS se a PR toca `internal/infrastructure/outbox`, registra um `outbox.Handler`, adiciona um `events.Bus` subscriber, ou altera comportamento transacional de publicação de eventos. Caso contrário, remover esta seção. -->
+<!-- Preencher esta seção APENAS se a PR toca `internal/platform/outbox`, registra um `outbox.Handler`, adiciona um `events.Bus` subscriber, ou altera comportamento transacional de publicação de eventos. Caso contrário, remover esta seção. -->
 
 - [ ] O Handler é idempotente por `event.ID` (upsert ou tabela de deduplicação — RF-04/RF-38)
 - [ ] `event.ID` é usado como chave de deduplicação (não `aggregate_id` isolado)

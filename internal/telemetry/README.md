@@ -8,7 +8,7 @@ Este módulo segue o **layout hexagonal canônico** do MeControla:
 internal/telemetry/
 ├── domain/       # Regras de negócio puras (sem IO)
 ├── application/  # Casos de uso + ports (interfaces)
-└── adapters/     # Implementações concretas (Postgres, HTTP, eventbus)
+└── infrastructure/ # Implementações concretas (Postgres, HTTP, eventbus)
 ```
 
 ---
@@ -79,7 +79,7 @@ func (e EventName) String() string { return e.value }
 // internal/telemetry/application/repository.go
 
 // ProductEventRepository define o contrato de persistência para o agregado ProductEvent.
-// A implementação concreta vive em adapters/.
+// A implementação concreta vive em infrastructure/.
 type ProductEventRepository interface {
     FindByID(ctx context.Context, id domain.ProductEventID) (*domain.ProductEvent, error)
     Save(ctx context.Context, event *domain.ProductEvent) error
@@ -93,7 +93,7 @@ type ProductEventRepository interface {
 // internal/telemetry/application/event_publisher.go
 
 // EventPublisher define o contrato de publicação de domain events.
-// A implementação concreta vive em adapters/ e delega ao eventbus de infrastructure.
+// A implementação concreta vive em infrastructure/ e delega ao eventbus compartilhado.
 type EventPublisher interface {
     Publish(ctx context.Context, events []domain.DomainEvent) error
 }
@@ -188,9 +188,9 @@ ai-spec changelog
 
 | Pacote | Pode importar | Proibido |
 |--------|--------------|---------|
-| `domain` | stdlib, VOs próprios | `application`, `adapters`, `infrastructure/*`, `configs/*`, `viper` |
-| `application` | `domain` | `adapters`, bibliotecas de IO concretas |
-| `adapters` | `domain`, `application`, `infrastructure/*` | cross-module direto (ex: `identity/adapters`) |
+| `domain` | stdlib, VOs próprios | `application`, `infrastructure`, `internal/platform/*`, `configs/*`, `viper` |
+| `application` | `domain` | `infrastructure`, bibliotecas de IO concretas |
+| `infrastructure` | `domain`, `application`, `internal/platform/*` | cross-module direto (ex: `identity/infrastructure`) |
 
 Cross-module: comunicação SOMENTE via interface declarada em `application` do consumidor
-ou via Domain Event publicado no `internal/infrastructure/events`.
+ou via Domain Event publicado no `internal/platform/events`.

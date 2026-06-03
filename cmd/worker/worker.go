@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure/runtime"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/runtime"
 )
 
 func New() *cobra.Command {

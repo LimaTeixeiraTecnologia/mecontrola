@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-foundation/9.0_execution_report.md
-summary: "fix [medium] sign-image: removido subshell docker inspect; adicionado requires.vars + precondition sha256 format; task security:vulncheck exit 0; RF-07 coberto integralmente"
-timestamp: "2026-05-31T00:00:00Z"

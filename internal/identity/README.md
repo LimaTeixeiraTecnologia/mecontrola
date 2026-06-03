@@ -8,7 +8,7 @@ Este módulo segue o **layout hexagonal canônico** do MeControla:
 internal/identity/
 ├── domain/       # Regras de negócio puras (sem IO)
 ├── application/  # Casos de uso + ports (interfaces)
-└── adapters/     # Implementações concretas (Postgres, HTTP, eventbus)
+└── infrastructure/ # Implementações concretas (Postgres, HTTP, eventbus)
 ```
 
 ---
@@ -77,7 +77,7 @@ func (e Email) String() string { return e.value }
 // internal/identity/application/repository.go
 
 // UserRepository define o contrato de persistência para o agregado User.
-// A implementação concreta vive em adapters/.
+// A implementação concreta vive em infrastructure/.
 type UserRepository interface {
     FindByID(ctx context.Context, id domain.UserID) (*domain.User, error)
     Save(ctx context.Context, user *domain.User) error
@@ -90,7 +90,7 @@ type UserRepository interface {
 // internal/identity/application/event_publisher.go
 
 // EventPublisher define o contrato de publicação de domain events.
-// A implementação concreta vive em adapters/ e delega ao eventbus de infrastructure.
+// A implementação concreta vive em infrastructure/ e delega ao eventbus compartilhado.
 type EventPublisher interface {
     Publish(ctx context.Context, events []domain.DomainEvent) error
 }
@@ -178,9 +178,9 @@ ai-spec changelog
 
 | Pacote | Pode importar | Proibido |
 |--------|--------------|---------|
-| `domain` | stdlib, VOs próprios | `application`, `adapters`, `infrastructure/*`, `configs/*`, `viper` |
-| `application` | `domain` | `adapters`, bibliotecas de IO concretas |
-| `adapters` | `domain`, `application`, `infrastructure/*` | cross-module direto (ex: `finance/adapters`) |
+| `domain` | stdlib, VOs próprios | `application`, `infrastructure`, `internal/platform/*`, `configs/*`, `viper` |
+| `application` | `domain` | `infrastructure`, bibliotecas de IO concretas |
+| `infrastructure` | `domain`, `application`, `internal/platform/*` | cross-module direto (ex: `finance/infrastructure`) |
 
 Cross-module: comunicação SOMENTE via interface declarada em `application` do consumidor
-ou via Domain Event publicado no `internal/infrastructure/events`.
+ou via Domain Event publicado no `internal/platform/events`.

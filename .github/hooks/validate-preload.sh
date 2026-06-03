@@ -1,59 +1,71 @@
 #!/usr/bin/env bash
-# Hook de pre-execucao para GitHub Copilot CLI: bloqueia execucao sem preload de
-# governanca E sem skill de linguagem instalada (gate de descoberta cirurgical).
+# Hook PreToolUse: validates observable governance prerequisites and emits
+# surgical guidance before code edits.
 #
-# Uso: registrar como preToolUse hook em .github/hooks/governance.json.
-#
-# Lifecycle:
-#   1. Le file_path do JSON stdin (best-effort, formato comum PreToolUse).
-#   2. Invoca .agents/scripts/hook-prereq-gate.sh — bloqueia se skill ausente,
-#      emite em stderr a lista cirurgica de references a carregar.
-#   3. Mantem check legado de GOVERNANCE_PRELOAD_CONFIRMED.
-#
-# Unlock: exportar GOVERNANCE_PRELOAD_CONFIRMED=1 na sessao atual.
-# Consulte AGENTS.md para instrucoes completas de preload.
+# The hook cannot prove that an agent has read AGENTS.md in the current model
+# context. Blocking on an environment variable by default creates permanent
+# false positives in fresh sessions. Use GOVERNANCE_PRELOAD_MODE=fail when a
+# caller explicitly wants that manual confirmation gate.
 
 set -euo pipefail
 
+GOVERNANCE_PRELOAD_MODE="${GOVERNANCE_PRELOAD_MODE:-warn}"
+GOVERNANCE_PRELOAD_CONFIRMED="${GOVERNANCE_PRELOAD_CONFIRMED:-0}"
+
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Respeita AGENTS_ROOT externo (E2E ou install em outro CWD); default = ancestor do hook.
-PROJECT_ROOT="${AGENTS_ROOT:-$(cd "$HOOK_DIR/../.." && pwd)}"
+if [[ -n "${AGENTS_ROOT:-}" ]]; then
+  PROJECT_ROOT="$AGENTS_ROOT"
+else
+  PROJECT_ROOT="$(git -C "$HOOK_DIR/../.." rev-parse --show-toplevel 2>/dev/null || true)"
+  [[ -n "$PROJECT_ROOT" ]] || PROJECT_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+fi
+
+parse_lib=""
+for candidate in \
+  "$PROJECT_ROOT/.agents/lib/parse-hook-input.sh" \
+  "$PROJECT_ROOT/scripts/lib/parse-hook-input.sh"
+do
+  if [[ -r "$candidate" ]]; then
+    parse_lib="$candidate"
+    break
+  fi
+done
+[[ -n "$parse_lib" ]] || { echo "AVISO: parse-hook-input.sh nao encontrado" >&2; exit 0; }
+# shellcheck source=/dev/null
+source "$parse_lib"
 
 _stdin=""
-file_path=""
 if [[ ! -t 0 ]]; then
   _stdin="$(cat)"
-  file_path="$(printf '%s' "$_stdin" | awk 'match($0,/"file_path"[[:space:]]*:[[:space:]]*"[^"]*"/){
-    s=substr($0,RSTART,RLENGTH); sub(/.*"file_path"[[:space:]]*:[[:space:]]*"/, "", s); sub(/".*/, "", s); print s; exit
-  }')"
 fi
 
-if [[ -n "$file_path" ]]; then
-  PREREQ_GATE="$PROJECT_ROOT/.agents/scripts/hook-prereq-gate.sh"
-  if [[ ! -f "$PREREQ_GATE" ]]; then
-    PREREQ_GATE="$(cd "$HOOK_DIR/../.." && pwd)/.agents/scripts/hook-prereq-gate.sh"
+file_path="${1:-}"
+if [[ -z "$file_path" && -n "$_stdin" ]]; then
+  file_path="$(printf '%s' "$_stdin" | parse_file_path)"
+fi
+
+[[ -n "$file_path" ]] || exit 0
+
+prereq_gate="$PROJECT_ROOT/.agents/scripts/hook-prereq-gate.sh"
+if [[ -f "$prereq_gate" ]]; then
+  if ! printf '%s' "$_stdin" | AGENTS_ROOT="$PROJECT_ROOT" bash "$prereq_gate" "$file_path"; then
+    exit 1
   fi
-  if [[ -f "$PREREQ_GATE" ]]; then
-    if ! printf '%s' "$_stdin" | AGENTS_ROOT="$PROJECT_ROOT" bash "$PREREQ_GATE" "$file_path"; then
+fi
+
+case "$file_path" in
+  *.go|*.py|*.ts|*.js|*.tsx|*.jsx|*.mjs|*.cjs|*.cs|*.csproj)
+    if [[ "$GOVERNANCE_PRELOAD_CONFIRMED" == "1" ]]; then
+      exit 0
+    fi
+
+    echo "LEMBRETE: confirme que AGENTS.md e as skills obrigatorias foram carregadas para editar $file_path." >&2
+    if [[ "$GOVERNANCE_PRELOAD_MODE" == "fail" ]]; then
+      echo "GOVERNANCE_PRELOAD_MODE=fail: bloqueando edicao ate confirmacao explicita." >&2
+      echo "Para prosseguir: export GOVERNANCE_PRELOAD_CONFIRMED=1" >&2
       exit 1
     fi
-  fi
-fi
-
-if [[ "${GOVERNANCE_PRELOAD_CONFIRMED:-}" != "1" ]]; then
-  case "$file_path" in
-    *.go|*.py|*.ts|*.js|*.tsx|*.jsx|*.cs|"")
-      if [[ -z "$file_path" ]]; then
-        echo "ERRO: governanca nao carregada." >&2
-        echo "Execute: export GOVERNANCE_PRELOAD_CONFIRMED=1" >&2
-        echo "Consulte AGENTS.md para instrucoes completas." >&2
-        exit 1
-      fi
-      echo "ERRO: governanca nao carregada para edicao de codigo ($file_path)." >&2
-      echo "Execute: export GOVERNANCE_PRELOAD_CONFIRMED=1" >&2
-      exit 1
-      ;;
-  esac
-fi
+    ;;
+esac
 
 exit 0

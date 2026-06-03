@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-foundation/1.0_execution_report.md
-summary: Bootstrap do chassi operacional concluído — Taskfile production-ready, pre-commit hooks, tooling pinning, CODEOWNERS, SECURITY.md, tools.go, .editorconfig, .gitignore todos criados e validados com sucesso.
-timestamp: 2026-05-31T18:15:00Z

@@ -2,6 +2,8 @@
 
 Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 
+Claude deve respeitar TODAS as regras, skills, references, validacoes, restricoes de arquitetura, economia de contexto e politicas de comentarios definidas em `AGENTS.md` de forma igualitaria ao Codex. Isso e obrigatorio e inegociavel.
+
 ## Instrucoes
 
 1. Ler `AGENTS.md` no inicio da sessao.
@@ -12,11 +14,13 @@ Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 6. Carregar referencias adicionais apenas quando a tarefa exigir.
 7. Preservar estilo, arquitetura e fronteiras existentes antes de propor mudancas.
 8. Validar mudancas com comandos proporcionais ao risco.
+9. Nao flexibilizar nenhuma regra por diferenca de ferramenta, hook, agente pre-carregado ou conveniencia operacional.
 
 ## Stack
 
 - Projeto com contexto Go detectado: carregar `.agents/skills/go-implementation/SKILL.md` ao alterar codigo Go.
 - Validar a versao declarada em `go.mod` antes de introduzir APIs da linguagem ou novas dependencias.
+- Seguir obrigatoriamente os exemplos e regras de `go-implementation`, carregando somente as referencias necessarias pelos gatilhos e pela complexidade da tarefa.
 
 ## Outbox vs events.Bus
 

@@ -105,9 +105,79 @@ Predominio de packages internos coesos, com estrutura orientada por dominio ou c
 
 ### Fluxo de Dependencias
 
-- Transporte e adapters devem depender de casos de uso ou servicos explicitos, nao do contrario.
+- Transporte e infrastructure devem depender de casos de uso ou servicos explicitos, nao do contrario.
 - Dominio nao deve conhecer detalhes de HTTP, banco, filas, serializacao ou drivers.
 - Infraestrutura pode implementar contratos consumidos pela aplicacao, preservando dependencia para dentro.
+
+### Layout Obrigatorio por Modulo
+
+Novos modulos, novas features e refatoracoes estruturais em bounded contexts DEVEM usar separacao fisica clara por responsabilidade:
+
+```text
+internal/<modulo>/
+  application/
+    dtos/
+      input/
+      output/
+    usecases/
+    interfaces/
+  domain/
+    entities/
+    valueobjects/
+    services/
+    interfaces/
+  infrastructure/
+    messaging/
+      kafka/
+        producers/
+        consumers/
+      rabbit/
+        producers/
+        consumers/
+      nats/
+        producers/
+        consumers/
+    repositories/
+      postgres/
+      mssql/
+    http/
+      server/
+      client/
+```
+
+Responsabilidades obrigatorias:
+
+1. `application/`: orquestracao de use cases, DTOs de entrada em `dtos/input`, DTOs de saida em `dtos/output` e interfaces/contratos consumidos pela aplicacao. Nao pode conter IO concreto, drivers, SDKs externos, SQL, brokers ou handlers HTTP.
+2. `domain/`: entidades, value objects, domain services stateless, invariantes e interfaces/contratos que pertencem a linguagem ubiqua do dominio. Nao pode conhecer application, infrastructure, serializacao, banco, HTTP, filas ou configuracao.
+3. `infrastructure/`: implementacoes concretas de IO e integracoes por tecnologia. Implementa contratos definidos em `application/` ou `domain/`, sem vazar tipos concretos para dentro do dominio.
+4. `infrastructure/messaging/<broker>/producers`: publicacao/envio de mensagens para Kafka, Rabbit ou NATS.
+5. `infrastructure/messaging/<broker>/consumers`: consumo/processamento de mensagens vindas de Kafka, Rabbit ou NATS.
+6. `infrastructure/repositories/postgres` e `infrastructure/repositories/mssql`: persistencia concreta por banco.
+7. `infrastructure/http/server`: entrada servida pelo modulo, como handlers, controllers e rotas HTTP/gRPC.
+8. `infrastructure/http/client`: consumo de APIs externas ou servicos remotos.
+
+### Plataforma Tecnica Compartilhada
+
+Capacidades tecnicas reutilizaveis por mais de um modulo DEVEM viver em `internal/platform/`, mantendo visibilidade privada do monolito e evitando `pkg/` sem necessidade de consumo externo.
+
+```text
+internal/platform/
+  clock/
+  database/
+  errors/
+  events/
+  http/
+  observability/
+  outbox/
+  runtime/
+  secrets/
+```
+
+`internal/platform/` nao e modulo de negocio e nao pode importar `internal/<modulo>/...`. Modulos podem consumir `internal/platform/` apenas nas camadas em que a dependencia tecnica seja permitida pela fronteira arquitetural; `domain` permanece puro e nao pode importar `platform`, banco, HTTP, filas, serializacao, configuracao ou drivers.
+
+Os modulos ativos devem usar `infrastructure/` como camada fisica de implementacoes concretas. Nao criar diretorios alternativos para a mesma responsabilidade.
+
+Fluxo permitido: `infrastructure -> application -> domain`. `application` pode importar `domain`, mas nao pode importar `infrastructure`. `domain` nao pode importar nenhuma camada externa. Comunicacao cross-module deve ocorrer apenas por interface declarada pelo consumidor, domain event/outbox ou contrato explicito.
 
 ## Modo de trabalho
 
@@ -128,6 +198,8 @@ Predominio de packages internos coesos, com estrutura orientada por dominio ou c
 5. Estabeleca contratos, testes e comandos de validacao cedo quando eles ainda nao existirem.
 6. Considere risco de regressao como restricao principal.
 7. Evite overengineering disfarcado de arquitetura futura.
+8. Elimine comentarios por padrao. Comentarios so devem existir quando forem extremamente relevantes para explicar decisao, invariante, risco, contrato publico ou comportamento nao obvio.
+9. Proiba comentarios mecanicos, redundantes ou que apenas repitam nomes de funcoes, structs, campos ou fluxo evidente.
 
 ## Regras por Arquitetura
 
@@ -144,6 +216,8 @@ Para tarefas que alteram codigo, carregar a skill:
 Para tarefas que alteram codigo Go, carregar tambem:
 
 - `.agents/skills/go-implementation/SKILL.md`
+
+O uso de `.agents/skills/go-implementation/SKILL.md` e mandatorio para qualquer alteracao em codigo Go. Seguir seus exemplos como referencia de padrao, adaptando ao contexto real do modulo e sem copia cega. Aplicar economia de contexto: carregar somente referencias necessarias pelos gatilhos e pela complexidade da tarefa, preferindo TL;DR quando suficiente.
 
 Para tarefas de revisao ou refatoracao incremental de design em Go guiadas por heuristicas de object calisthenics, carregar tambem:
 
@@ -168,6 +242,14 @@ Cada skill lista suas proprias referencias em `references/` com gatilhos de carr
 - **Codex**: le `AGENTS.md` como instrucao de sessao. Entradas em `.codex/config.toml` sao metadados para `upgrade.sh`, nao spec oficial do Codex CLI. O agente deve seguir as instrucoes de `AGENTS.md` para descobrir e carregar skills.
 - **Copilot**: `.github/copilot-instructions.md` como instrucao principal. `.github/agents/` sao wrappers. Sem hooks nativos — compliance depende do modelo seguir as instrucoes.
 
+### Obrigatoriedade por Ferramenta
+
+Codex e Claude DEVEM respeitar TODAS as regras, skills, references, validacoes, restricoes de arquitetura, regras de economia de contexto e politicas de comentarios de forma igualitaria. Isso e obrigatorio e inegociavel.
+
+Nenhuma ferramenta pode flexibilizar regras por ausencia de enforcement automatico, diferenca de runtime, hooks, agentes pre-carregados ou conveniencia operacional. Quando uma ferramenta nao tiver enforcement programatico, a compliance deve ser procedural e igualmente obrigatoria.
+
+Se houver divergencia entre arquivos especificos de ferramenta e `AGENTS.md`, prevalece `AGENTS.md`. Arquivos como `CLAUDE.md`, `GEMINI.md` e `.github/copilot-instructions.md` so podem reforcar ou apontar para a fonte canonica, nunca enfraquecer regras.
+
 ### Matrix de Enforcement
 
 | Capacidade | Claude Code | Gemini CLI | Codex | Copilot |
@@ -178,7 +260,7 @@ Cada skill lista suas proprias referencias em `references/` com gatilhos de carr
 | Enforcement programatico | sim (hooks) | nao | nao | nao |
 | Validacao de evidencias | script | procedural | procedural | procedural |
 
-Ferramentas sem enforcement programatico dependem do modelo seguir instrucoes procedurais. A compliance nessas ferramentas e best-effort.
+Ferramentas sem enforcement programatico dependem do modelo seguir instrucoes procedurais. A compliance nessas ferramentas continua obrigatoria.
 
 ## Economia de Contexto
 
@@ -209,7 +291,7 @@ Comandos detectados no projeto (Go):
 
 <!-- RF-38 / ADR-016 — contrato do outbox.Publisher -->
 
-Use `outbox.Publisher` (`internal/infrastructure/outbox`) para side-effects **criticos** que precisam ser entregues mesmo apos crash, deploy ou reinicio do worker: notificacoes, projecoes persistentes, integracoes externas disparadas pos-commit. O Publisher garante at-least-once escrevendo atomicamente na transacao do agregado.
+Use `outbox.Publisher` (`internal/platform/outbox`) para side-effects **criticos** que precisam ser entregues mesmo apos crash, deploy ou reinicio do worker: notificacoes, projecoes persistentes, integracoes externas disparadas pos-commit. O Publisher garante at-least-once escrevendo atomicamente na transacao do agregado.
 
 Use `events.Bus` (ADR-003) para sinais **volateis** in-process que podem ser perdidos sem impacto ao produto: telemetria em tempo real, propagacao de cache local, triggers de UI. O Bus descarta mensagens quando o canal do subscriber esta cheio — comportamento intencional.
 

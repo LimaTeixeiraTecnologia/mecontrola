@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-outbox-event-driven/9.0_execution_report.md
-summary: "log_fields.go allowlist + sampler 1:100 atômico + safety test AST + benchmarks Publisher/Dispatcher + docs/benchmarks + task bench:outbox — lint zero issues, testes PASS"
-timestamp: "2026-06-02T23:02:29Z"

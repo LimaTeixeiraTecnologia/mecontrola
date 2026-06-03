@@ -26,34 +26,36 @@ linters:
   settings:
     # forbidigo bloqueia uso de .DSN() fora dos pacotes autorizados.
     # DSN() expõe a senha em texto claro; só SafeDSN() é permitido em logs.
-    # Pacotes autorizados: configs/ (definição) e internal/infrastructure/database/ (uso interno).
+    # Pacotes autorizados: configs/ (definição) e internal/platform/database/ (uso interno).
     forbidigo:
       forbid:
         - pattern: '\.DSN\(\)'
-          msg: "Use SafeDSN() para logs. DSN() expõe a senha em texto claro e é proibido fora de configs/ e internal/infrastructure/database/."
+          msg: "Use SafeDSN() para logs. DSN() expõe a senha em texto claro e é proibido fora de configs/ e internal/platform/database/."
 
     depguard:
       rules:
-        # Regra 1+3+4: domain não importa adapters, application, infrastructure ou configs.
+        # Regra 1+3+4: domain não importa infrastructure do módulo, application, platform ou configs.
         # Cobre RF-09 (a), (c), (d) — Domain puro.
         # Aplica a TODOS os arquivos; domain packages identificados pelo path do módulo.
-        domain-no-adapters:
+        domain-no-infrastructure:
           files:
             - "**internal/**/domain/*.go"
             - "**internal/**/domain/**/*.go"
           deny:
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/adapters"
-              desc: "domain não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation/adapters"
-              desc: "domain não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/adapters"
-              desc: "domain não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/adapters"
-              desc: "domain não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/notifications/adapters"
-              desc: "domain não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/telemetry/adapters"
-              desc: "domain não pode importar adapters (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/notifications/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/telemetry/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure"
+              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
               desc: "domain não pode importar application (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation/application"
@@ -66,30 +68,54 @@ linters:
               desc: "domain não pode importar application (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/telemetry/application"
               desc: "domain não pode importar application (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/infrastructure"
-              desc: "domain não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application"
+              desc: "domain não pode importar application (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform"
+              desc: "domain não pode importar platform (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/configs"
               desc: "domain não pode importar configs (Domain puro não conhece config)"
             - pkg: "github.com/spf13/viper"
               desc: "domain não pode importar viper"
-        # Regra 2: application não importa adapters. Cobre RF-09 (b).
-        application-no-adapters:
+        # Regra 2: application não importa infrastructure. Cobre RF-09 (b).
+        application-no-infrastructure:
           files:
             - "**internal/**/application/*.go"
             - "**internal/**/application/**/*.go"
           deny:
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/adapters"
-              desc: "application não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation/adapters"
-              desc: "application não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/adapters"
-              desc: "application não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/adapters"
-              desc: "application não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/notifications/adapters"
-              desc: "application não pode importar adapters (hexagonal boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/telemetry/adapters"
-              desc: "application não pode importar adapters (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/notifications/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/telemetry/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+        # Platform é fundação técnica compartilhada e não pode depender de módulos de negócio.
+        platform-no-business-modules:
+          files:
+            - "**/internal/platform/*.go"
+            - "**/internal/platform/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
+              desc: "platform não pode importar módulos de negócio"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation"
+              desc: "platform não pode importar módulos de negócio"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
+              desc: "platform não pode importar módulos de negócio"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance"
+              desc: "platform não pode importar módulos de negócio"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/notifications"
+              desc: "platform não pode importar módulos de negócio"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/telemetry"
+              desc: "platform não pode importar módulos de negócio"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
+              desc: "platform não pode importar módulos de negócio"
         # Regra 5 (cross-module): identity não importa finance diretamente.
         # Comunicação cross-module apenas via interface (application) ou Domain Event.
         identity-no-finance:
@@ -102,7 +128,7 @@ linters:
               desc: "identity não pode importar finance diretamente (cross-module boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/application"
               desc: "identity não pode importar finance diretamente (cross-module boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/adapters"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
               desc: "identity não pode importar finance diretamente (cross-module boundary violation)"
         # Regra 5 (cross-module): finance não importa identity diretamente.
         finance-no-identity:
@@ -115,7 +141,7 @@ linters:
               desc: "finance não pode importar identity diretamente (cross-module boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
               desc: "finance não pode importar identity diretamente (cross-module boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/adapters"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
               desc: "finance não pode importar identity diretamente (cross-module boundary violation)"
         # Regra 5 (cross-module): conversation não importa finance diretamente.
         conversation-no-finance:
@@ -126,7 +152,7 @@ linters:
               desc: "conversation não pode importar finance diretamente (cross-module boundary violation — use interface em application ou Domain Event)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/application"
               desc: "conversation não pode importar finance diretamente (cross-module boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/adapters"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
               desc: "conversation não pode importar finance diretamente (cross-module boundary violation)"
         # Regra 5 (cross-module): agent não importa finance diretamente.
         agent-no-finance:
@@ -137,7 +163,7 @@ linters:
               desc: "agent não pode importar finance diretamente (cross-module boundary violation — use interface em application ou Domain Event)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/application"
               desc: "agent não pode importar finance diretamente (cross-module boundary violation)"
-            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/adapters"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
               desc: "agent não pode importar finance diretamente (cross-module boundary violation)"
 
     revive:
@@ -160,11 +186,11 @@ formatters:
 exclusions:
   rules:
     # Permite uso de .DSN() dentro de configs/ (é a definição do método)
-    # e internal/infrastructure/database/ (uso legítimo para conexão DB).
+    # e internal/platform/database/ (uso legítimo para conexão DB).
     - path: "configs/.*\\.go"
       linters:
         - forbidigo
-    - path: "internal/infrastructure/database/.*\\.go"
+    - path: "internal/platform/database/.*\\.go"
       linters:
         - forbidigo
     # Testes podem ser mais relaxados em comprimento de função.

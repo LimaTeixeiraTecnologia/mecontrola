@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-outbox-event-driven/8.0_execution_report.md
-summary: "Subsystem agregador criado com Dispatcher+Cron, bootstrap ModeWorker atualizado, integration e concorrência (4838 deliveries/s, 0 double-processing) verdes"
-timestamp: 2026-06-02T22:55:00Z

@@ -1,9 +1,0 @@
-task_id: "4.0"
-title: "internal/infrastructure/observability — OTel OTLP + slog + redaction de PII"
-status: done
-commit_sha: d570ed1200212e89827b371313dce1c89b6b3b90
-branch: feat/foundation-execute
-completed_at: "2026-05-31"
-report: .specs/prd-mecontrola-foundation/4.0_execution_report.md
-tests: pass
-lint: pass

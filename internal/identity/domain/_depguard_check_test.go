@@ -18,10 +18,10 @@
 //
 // Exemplo de import ilegal que DEVE ser bloqueado pelo depguard:
 //
-//	import _ "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/adapters"
+//	import _ "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
 //
 // Regras validadas:
-//   - domain NÃO importa adapters         (Regra 1 — RF-09a)
+//   - domain NÃO importa infrastructure   (Regra 1 — RF-09a)
 //   - domain NÃO importa application      (Regra 1 — RF-09a)
 //   - domain NÃO importa infrastructure/* (Regra 3 — RF-09c)
 //   - domain NÃO importa configs/*        (Regra 4 — RF-09d)
