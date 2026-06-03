@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "slug": "consolidacao-core",
+  "title": "Consolidação de Arquitetura Core — Identity, Billing & Onboarding",
+  "created_at": "2026-06-03T14:43:46Z",
+  "language": "pt-BR",
+  "status": "done",
+  "decision_brief": {
+    "file": "decision-brief.md",
+    "title": "Consolidação de Arquitetura Core — Identity, Billing & Onboarding"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "assumptions": {
+    "file": "assumptions.md"
+  },
+  "option_scorecard": {
+    "file": "option-scorecard.md"
+  },
+  "alternatives": [
+    "α Dossiê monolítico + roadmap único",
+    "β Dossiê modular + 3 épicos paralelizáveis com internal/billing/ separado",
+    "γ Dossiê thin + walking skeleton primeiro",
+    "δ Identity + módulo subscription unificado englobando billing + onboarding + entitlement"
+  ],
+  "recommended_alternative": "β Dossiê modular + 3 épicos paralelizáveis com internal/billing/ separado",
+  "decisions": [
+    "Adotar Alt β: dossiê modular + 3 épicos paralelizáveis (E1 Identity bloqueador, E2 Billing e E3 Onboarding em paralelo após E1, E4 hardening pós-MVP)",
+    "Criar internal/billing/ como módulo independente, separado de internal/finance/ (que continua sendo controle financeiro pessoal)",
+    "EntitlementService dividido: função pura IsEntitled(sub, now) bool em internal/identity/domain; cache Redis + I/O em internal/billing/application",
+    "Eliminar drift em internal/identity/domain/doc.go (remover 'JWT/refresh, RBAC e audit de acesso') já no Épico E1; atualizar README.md e AGENTS.md dos módulos",
+    "WhatsAppNumber como Value Object imutável; construtor único NewWhatsAppNumber(input) (WhatsAppNumber, error) encapsula normalização E.164 BR; APIs internas trafegam WhatsAppNumber, nunca string",
+    "Sem RBAC no MVP, sem JWT, sem sessions: is_admin bool em users resolve admin; regra inegociável '1 user = 1 subscription ativa'; plano família/equipe abre PRD novo precedido de brainstorm próprio",
+    "Webhook Kiwify: idempotência por (provider, external_event_id) + reconciliação horária inegociáveis no MVP; sweep diário full vai para Épico E4 pós-MVP",
+    "Cache de entitlement: TTL = min(period_end - now, 1h) + negative cache 5min para 'sem subscription'; invalidação síncrona após commit no BillingEventProcessor (Postgres → cache → notificação)",
+    "Gate LLM único antes da chamada do modelo com whitelist explícita de comandos administrativos (ATIVAR <token>, /ajuda, /cancelar, /contato); rate limit por usuário vai para backlog",
+    "Subscription carrega period_length por plano (mensal=30d, trimestral=90d, anual=365d); sem constante hardcoded",
+    "Outbox transacional é a única forma de durabilidade para webhooks Kiwify, mudanças de estado de subscription, signup_token.paid e invalidação de cache; events.Bus permanece volátil para fan-out best-effort intra-processo",
+    "Próximo passo: create-prd para Épico E1 (identity-foundation); após aprovação, abrir create-prd para E2 e E3 em paralelo consumindo este bundle como insumo de Arquitetura Inegociável"
+  ],
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  }
+}
