@@ -34,7 +34,17 @@ func (s *OutboxSubsystemSuite) TestStopWithNilSubsystem() {
 	s.NoError(err)
 }
 
-func (s *OutboxSubsystemSuite) TestStopClosersInReverseOrder() {
+type mockOutboxStopper struct {
+	err   error
+	calls int
+}
+
+func (m *mockOutboxStopper) Stop(_ context.Context) error {
+	m.calls++
+	return m.err
+}
+
+func (s *OutboxSubsystemSuite) TestBuildOutboxStopFnClosersInReverseOrder() {
 	scenarios := []struct {
 		name    string
 		wantErr bool
@@ -57,24 +67,25 @@ func (s *OutboxSubsystemSuite) TestStopClosersInReverseOrder() {
 				closerErr = errors.New("closer error")
 			}
 
-			sub := &lazyOutboxSubsystem{
-				closers: []func(context.Context) error{
-					func(_ context.Context) error {
-						order = append(order, 1)
-						return nil
-					},
-					func(_ context.Context) error {
-						order = append(order, 2)
-						return closerErr
-					},
-					func(_ context.Context) error {
-						order = append(order, 3)
-						return nil
-					},
+			closers := []func(context.Context) error{
+				func(_ context.Context) error {
+					order = append(order, 1)
+					return nil
+				},
+				func(_ context.Context) error {
+					order = append(order, 2)
+					return closerErr
+				},
+				func(_ context.Context) error {
+					order = append(order, 3)
+					return nil
 				},
 			}
 
-			err := sub.closeAll(s.ctx)
+			mock := &mockOutboxStopper{}
+			stopFn := buildOutboxStopFn(mock, closers)
+
+			err := stopFn(s.ctx)
 			if sc.wantErr {
 				s.Error(err)
 				s.ErrorContains(err, "closer error")
@@ -83,6 +94,7 @@ func (s *OutboxSubsystemSuite) TestStopClosersInReverseOrder() {
 			}
 			// Ordem inversa: 3, 2, 1
 			s.Equal([]int{3, 2, 1}, order)
+			s.Equal(1, mock.calls)
 		})
 	}
 }

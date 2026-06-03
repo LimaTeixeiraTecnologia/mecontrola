@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -25,13 +26,22 @@ func New() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("conectando ao banco: %w", err)
 			}
-			defer func() { _ = mgr.Shutdown(context.Background()) }()
 
 			if err := database.RunMigrations(cmd.Context(), mgr); err != nil {
-				return fmt.Errorf("executando migrations: %w", err)
+				runErr := fmt.Errorf("executando migrations: %w", err)
+				if shutdownErr := mgr.Shutdown(context.Background()); shutdownErr != nil {
+					return errors.Join(runErr, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
+				}
+				return runErr
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "migrations aplicadas com sucesso") //nolint:errcheck
+			if err := mgr.Shutdown(context.Background()); err != nil {
+				return fmt.Errorf("encerrando conexao com banco: %w", err)
+			}
+
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "migrations aplicadas com sucesso"); err != nil {
+				return fmt.Errorf("escrevendo saida do comando migrate: %w", err)
+			}
 			return nil
 		},
 	}
@@ -52,13 +62,22 @@ func NewDown() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("conectando ao banco: %w", err)
 			}
-			defer func() { _ = mgr.Shutdown(context.Background()) }()
 
 			if err := database.RunMigrationsDown(cmd.Context(), mgr); err != nil {
-				return fmt.Errorf("revertendo migrations: %w", err)
+				runErr := fmt.Errorf("revertendo migrations: %w", err)
+				if shutdownErr := mgr.Shutdown(context.Background()); shutdownErr != nil {
+					return errors.Join(runErr, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
+				}
+				return runErr
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "migrations revertidas com sucesso") //nolint:errcheck
+			if err := mgr.Shutdown(context.Background()); err != nil {
+				return fmt.Errorf("encerrando conexao com banco: %w", err)
+			}
+
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "migrations revertidas com sucesso"); err != nil {
+				return fmt.Errorf("escrevendo saida do comando migrate-down: %w", err)
+			}
 			return nil
 		},
 	}

@@ -19,10 +19,8 @@ import (
 // não no momento do Bootstrap. Isso permite que Bootstrap seja chamado em testes
 // sem um banco real disponível.
 type lazyServerSubsystem struct {
-	cfg              *configs.Config
-	server           *chiserver.Server
-	shutdownDatabase func(context.Context) error
-	shutdownProvider func(context.Context) error
+	cfg  *configs.Config
+	stop func(context.Context) error
 }
 
 func (b *bootstrapper) newServerSubsystem(cfg *configs.Config) *lazyServerSubsystem {
@@ -36,26 +34,36 @@ func (h *lazyServerSubsystem) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("http subsystem: database: %w", err)
 	}
-	h.shutdownDatabase = mgr.Shutdown
 
 	prov, shutdownProvider, err := observability.NewProvider(h.cfg)
 	if err != nil {
-		_ = mgr.Shutdown(context.Background())
-		return fmt.Errorf("http subsystem: observability: %w", err)
+		startErr := fmt.Errorf("http subsystem: observability: %w", err)
+		if shutdownErr := mgr.Shutdown(context.Background()); shutdownErr != nil {
+			return errors.Join(startErr, fmt.Errorf("http subsystem: database shutdown: %w", shutdownErr))
+		}
+		return startErr
 	}
-	h.shutdownProvider = shutdownProvider
 
 	srv, err := infrahttp.NewServer(h.cfg, infrahttp.Deps{
 		DB:       mgr,
 		Provider: prov,
 	})
 	if err != nil {
-		_ = mgr.Shutdown(context.Background())
-		_ = shutdownProvider(context.Background())
-		return fmt.Errorf("http subsystem: criando servidor: %w", err)
+		startErr := fmt.Errorf("http subsystem: criando servidor: %w", err)
+		var shutdownErrs []error
+		if databaseErr := mgr.Shutdown(context.Background()); databaseErr != nil {
+			shutdownErrs = append(shutdownErrs, fmt.Errorf("http subsystem: database shutdown: %w", databaseErr))
+		}
+		if providerErr := shutdownProvider(context.Background()); providerErr != nil {
+			shutdownErrs = append(shutdownErrs, fmt.Errorf("http subsystem: observability shutdown: %w", providerErr))
+		}
+		if len(shutdownErrs) > 0 {
+			return errors.Join(append([]error{startErr}, shutdownErrs...)...)
+		}
+		return startErr
 	}
 
-	h.server = srv
+	h.stop = buildServerStopFn(srv, mgr, shutdownProvider)
 
 	go func() {
 		if err := srv.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -67,29 +75,28 @@ func (h *lazyServerSubsystem) Start(ctx context.Context) error {
 }
 
 func (h *lazyServerSubsystem) Stop(ctx context.Context) error {
-	var errs []error
+	if h.stop == nil {
+		return nil
+	}
+	return h.stop(ctx)
+}
 
-	if h.server != nil {
-		if err := h.server.Shutdown(ctx); err != nil {
+func buildServerStopFn(
+	srv *chiserver.Server,
+	mgr *database.Manager,
+	shutdownProvider func(context.Context) error,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		var errs []error
+		if err := srv.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("http subsystem: shutdown: %w", err))
 		}
-	}
-
-	if h.shutdownDatabase != nil {
-		if err := h.shutdownDatabase(ctx); err != nil {
+		if err := mgr.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("http subsystem: database shutdown: %w", err))
 		}
-	}
-
-	if h.shutdownProvider != nil {
-		if err := h.shutdownProvider(ctx); err != nil {
+		if err := shutdownProvider(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("http subsystem: observability shutdown: %w", err))
 		}
-	}
-
-	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-
-	return nil
 }

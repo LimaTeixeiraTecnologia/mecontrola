@@ -39,7 +39,9 @@ Utilize um dos subcomandos para iniciar a aplicação:
 	)
 
 	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err) //nolint:errcheck
+		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
+			os.Exit(1)
+		}
 		os.Exit(1)
 	}
 }

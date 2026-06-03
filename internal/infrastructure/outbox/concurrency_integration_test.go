@@ -42,7 +42,9 @@ func (s *ConcurrencyIntegrationSuite) SetupSuite() {
 }
 
 func (s *ConcurrencyIntegrationSuite) TearDownSuite() {
-	_ = s.mgr.Shutdown(context.Background())
+	if s.mgr != nil {
+		s.Require().NoError(s.mgr.Shutdown(context.Background()))
+	}
 }
 
 func (s *ConcurrencyIntegrationSuite) SetupTest() {

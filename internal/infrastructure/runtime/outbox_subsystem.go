@@ -16,14 +16,10 @@ import (
 // lazyOutboxSubsystem constrói as dependências (DB + OTel + Subsystem) no momento do Start,
 // não no momento do Bootstrap. Isso permite que Bootstrap seja chamado em testes
 // sem um banco real disponível.
-//
-// closers são fechados em ordem inversa no Stop, garantindo que a ordem de deinit
-// seja o inverso da ordem de init (D-15 / techspec "Pontos de Integração").
 type lazyOutboxSubsystem struct {
-	cfg     *configs.Config
-	found   Foundation
-	sub     *outbox.Subsystem
-	closers []func(context.Context) error
+	cfg   *configs.Config
+	found Foundation
+	stop  func(context.Context) error
 }
 
 func (b *bootstrapper) newOutboxSubsystem(cfg *configs.Config, f Foundation) *lazyOutboxSubsystem {
@@ -34,30 +30,38 @@ func (b *bootstrapper) newOutboxSubsystem(cfg *configs.Config, f Foundation) *la
 func (s *lazyOutboxSubsystem) Name() string { return "outbox" }
 
 // Start constrói Manager → Provider → Registry → Storage → Metrics → Subsystem em sequência.
-// Em caso de erro em qualquer etapa, fecha os recursos já abertos via closers em ordem inversa.
+// Em caso de erro em qualquer etapa, fecha os recursos já abertos via closers locais em ordem inversa.
 func (s *lazyOutboxSubsystem) Start(ctx context.Context) error {
+	var closers []func(context.Context) error
+
+	closeAll := func() {
+		for i := len(closers) - 1; i >= 0; i-- {
+			_ = closers[i](context.Background())
+		}
+	}
+
 	mgr, err := database.NewManager(s.cfg)
 	if err != nil {
 		return fmt.Errorf("outbox subsystem: database: %w", err)
 	}
-	s.closers = append(s.closers, mgr.Shutdown)
+	closers = append(closers, mgr.Shutdown)
 
 	prov, shutProv, err := observability.NewProvider(s.cfg)
 	if err != nil {
-		_ = s.closeAll(context.Background())
+		closeAll()
 		return fmt.Errorf("outbox subsystem: observability: %w", err)
 	}
-	s.closers = append(s.closers, shutProv)
+	closers = append(closers, shutProv)
 
 	registry := outbox.NewRegistry()
 	if err := registerSubscriptions(registry); err != nil {
-		_ = s.closeAll(context.Background())
+		closeAll()
 		return fmt.Errorf("outbox subsystem: registry: %w", err)
 	}
 
 	metrics, err := outbox.NewOutboxMetrics(prov.Observability())
 	if err != nil {
-		_ = s.closeAll(context.Background())
+		closeAll()
 		return fmt.Errorf("outbox subsystem: metrics: %w", err)
 	}
 
@@ -71,43 +75,42 @@ func (s *lazyOutboxSubsystem) Start(ctx context.Context) error {
 		InstanceID: outbox.NewInstanceID(),
 	})
 	if err != nil {
-		_ = s.closeAll(context.Background())
+		closeAll()
 		return fmt.Errorf("outbox subsystem: build: %w", err)
 	}
-	s.sub = sub
+
+	s.stop = buildOutboxStopFn(sub, closers)
 
 	return sub.Start(ctx)
 }
 
-// Stop para o Subsystem e fecha todos os closers em ordem inversa à criação.
+// Stop para o Subsystem e fecha todos os recursos em ordem inversa à criação.
 func (s *lazyOutboxSubsystem) Stop(ctx context.Context) error {
-	var errs []error
-	if s.sub != nil {
-		if err := s.sub.Stop(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("outbox shutdown: %w", err))
-		}
+	if s.stop == nil {
+		return nil
 	}
-	if err := s.closeAll(ctx); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
+	return s.stop(ctx)
 }
 
-// closeAll fecha os closers em ordem inversa à criação.
-func (s *lazyOutboxSubsystem) closeAll(ctx context.Context) error {
-	var errs []error
-	for i := len(s.closers) - 1; i >= 0; i-- {
-		if err := s.closers[i](ctx); err != nil {
-			errs = append(errs, err)
+type outboxStopper interface {
+	Stop(ctx context.Context) error
+}
+
+// buildOutboxStopFn cria o closure de shutdown capturando sub e closers em ordem inversa.
+// closers são fechados após o sub para garantir que o subsistema pare antes dos recursos.
+func buildOutboxStopFn(sub outboxStopper, closers []func(context.Context) error) func(context.Context) error {
+	return func(ctx context.Context) error {
+		var errs []error
+		if err := sub.Stop(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("outbox shutdown: %w", err))
 		}
-	}
-	if len(errs) > 0 {
+		for i := len(closers) - 1; i >= 0; i-- {
+			if err := closers[i](ctx); err != nil {
+				errs = append(errs, err)
+			}
+		}
 		return errors.Join(errs...)
 	}
-	return nil
 }
 
 // registerSubscriptions registra as subscriptions no registry do worker.

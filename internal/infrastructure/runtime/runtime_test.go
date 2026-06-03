@@ -223,42 +223,32 @@ func (s *RuntimeSuite) TestAppShutdownAcumulaErros() {
 
 func (s *RuntimeSuite) TestLazyServerSubsystemStopFechaDependencias() {
 	scenarios := []struct {
-		name              string
-		databaseErr       error
-		providerErr       error
-		wantErr           bool
-		wantErrContains   string
-		wantDatabaseCalls int
-		wantProviderCalls int
+		name            string
+		stopErr         error
+		wantErr         bool
+		wantErrContains string
+		wantStopCalls   int
 	}{
 		{
-			name:              "deve fechar database e observability mesmo sem servidor inicializado",
-			wantDatabaseCalls: 1,
-			wantProviderCalls: 1,
+			name:          "deve delegar stop quando inicializado",
+			wantStopCalls: 1,
 		},
 		{
-			name:              "deve acumular erros de shutdown das dependências",
-			databaseErr:       errors.New("db close fail"),
-			providerErr:       errors.New("otel close fail"),
-			wantErr:           true,
-			wantErrContains:   "database shutdown",
-			wantDatabaseCalls: 1,
-			wantProviderCalls: 1,
+			name:            "deve propagar erro do stop",
+			stopErr:         errors.New("database shutdown: db close fail"),
+			wantErr:         true,
+			wantErrContains: "database shutdown",
+			wantStopCalls:   1,
 		},
 	}
 
 	for _, sc := range scenarios {
 		s.Run(sc.name, func() {
-			databaseCalls := 0
-			providerCalls := 0
+			stopCalls := 0
 			subsystem := &lazyServerSubsystem{
-				shutdownDatabase: func(context.Context) error {
-					databaseCalls++
-					return sc.databaseErr
-				},
-				shutdownProvider: func(context.Context) error {
-					providerCalls++
-					return sc.providerErr
+				stop: func(context.Context) error {
+					stopCalls++
+					return sc.stopErr
 				},
 			}
 
@@ -269,10 +259,14 @@ func (s *RuntimeSuite) TestLazyServerSubsystemStopFechaDependencias() {
 			} else {
 				s.NoError(err)
 			}
-			s.Equal(sc.wantDatabaseCalls, databaseCalls)
-			s.Equal(sc.wantProviderCalls, providerCalls)
+			s.Equal(sc.wantStopCalls, stopCalls)
 		})
 	}
+}
+
+func (s *RuntimeSuite) TestLazyServerSubsystemStopComNilNaoRetornaErro() {
+	subsystem := &lazyServerSubsystem{}
+	s.NoError(subsystem.Stop(s.ctx))
 }
 
 func (s *RuntimeSuite) TestBootstrap() {
@@ -319,7 +313,7 @@ func (s *RuntimeSuite) TestBootstrap() {
 				s.Error(runErr)
 			}
 
-			_ = got.Shutdown(context.Background())
+			s.NoError(got.Shutdown(context.Background()))
 		})
 	}
 }

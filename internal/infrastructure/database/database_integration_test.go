@@ -38,7 +38,9 @@ func (s *DatabaseIntegrationSuite) SetupTest() {
 }
 
 func (s *DatabaseIntegrationSuite) TearDownTest() {
-	_ = s.mgr.Shutdown(context.Background())
+	if s.mgr != nil {
+		s.Require().NoError(s.mgr.Shutdown(context.Background()))
+	}
 }
 
 func (s *DatabaseIntegrationSuite) startPostgres() *configs.Config {

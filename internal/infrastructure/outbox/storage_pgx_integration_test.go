@@ -44,7 +44,9 @@ func (s *StoragePgxIntegrationSuite) SetupSuite() {
 }
 
 func (s *StoragePgxIntegrationSuite) TearDownSuite() {
-	_ = s.mgr.Shutdown(context.Background())
+	if s.mgr != nil {
+		s.Require().NoError(s.mgr.Shutdown(context.Background()))
+	}
 }
 
 func (s *StoragePgxIntegrationSuite) SetupTest() {

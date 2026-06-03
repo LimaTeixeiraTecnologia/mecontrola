@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "slug": "modulo-de-identidade-assinaturas-e-rbac",
+  "title": "Módulo de identidade, assinaturas e RBAC",
+  "created_at": "2026-06-03T00:39:01Z",
+  "language": "pt-BR",
+  "status": "done",
+  "discovery": {
+    "file": "discovery.md",
+    "title": "Módulo de identidade, assinaturas e RBAC do MeControla — viabilizar jornada cadastro→pagamento Pix→ativação no backend Go canônico"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "readiness": {
+    "status": "done",
+    "blockers": [
+      "Aprovação Meta Business + Display Name para WhatsApp Cloud API bloqueia release v1.1.",
+      "Saída do sandbox do AWS SES bloqueia release v1 público.",
+      "Work item 29 do Azure DevOps não consultado nesta sessão por MCP exigir login interativo.",
+      "Confirmação da tabela vigente de tarifas Mercado Pago Pix antes do v1.",
+      "Nomeação formal do DPO e publicação da política de privacidade em mecontrola.app.br antes do v1."
+    ]
+  },
+  "planned_epics": [
+    "Epic 01 - Bootstrap de infraestrutura AWS via Terraform",
+    "Epic 02 - Identidade e autenticação OIDC",
+    "Epic 03 - Planos, assinaturas e cobrança Pix",
+    "Epic 04 - RBAC tabular e ownership por owner_user_id",
+    "Epic 05 - Auditoria, LGPD e observabilidade",
+    "Epic 06 - Notificações por e-mail (SES)",
+    "Epic 07 - Vinculação WhatsApp via Cloud API (v1.1)"
+  ]
+}

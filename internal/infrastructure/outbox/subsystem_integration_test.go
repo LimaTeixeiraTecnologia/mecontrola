@@ -42,7 +42,9 @@ func (s *SubsystemIntegrationSuite) SetupSuite() {
 }
 
 func (s *SubsystemIntegrationSuite) TearDownSuite() {
-	_ = s.mgr.Shutdown(context.Background())
+	if s.mgr != nil {
+		s.Require().NoError(s.mgr.Shutdown(context.Background()))
+	}
 }
 
 func (s *SubsystemIntegrationSuite) SetupTest() {
