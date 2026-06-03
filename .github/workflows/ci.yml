@@ -172,6 +172,8 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
 
       - name: Install Trivy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(grep 'TRIVY_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "${VERSION}"

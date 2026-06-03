@@ -30,7 +30,6 @@ tasks:
 
   integration:
     desc: Executa testes de integracao (requer Docker para testcontainers).
-    dotenv: ['.env.test', '.env']
     preconditions:
       - sh: docker info >/dev/null 2>&1
         msg: "Docker nao esta disponivel; suba as dependencias antes dos testes de integracao."

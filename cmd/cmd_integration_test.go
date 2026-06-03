@@ -124,8 +124,10 @@ func (s *CmdIntegrationSuite) TestMigrateApplied() {
 	port, err := s.pgContainer.MappedPort(s.ctx, "5432")
 	s.Require().NoError(err)
 
+	dbPort := int(port.Num())
 	cmd := exec.CommandContext(s.ctx, s.binaryPath, "migrate")
-	cmd.Dir = s.configDir(host, int(port.Num()), 18080)
+	cmd.Dir = s.configDir(host, dbPort, 18080)
+	cmd.Env = s.configEnv(host, dbPort, 18080)
 
 	out, err := cmd.CombinedOutput()
 	s.Require().NoError(err, "migrate command failed: %s", string(out))
@@ -147,13 +149,18 @@ func (s *CmdIntegrationSuite) TestServerHealthEndpoints() {
 	port, err := s.pgContainer.MappedPort(s.ctx, "5432")
 	s.Require().NoError(err)
 
+	dbPort := int(port.Num())
+	configDir := s.configDir(host, dbPort, 18081)
+	configEnv := s.configEnv(host, dbPort, 18081)
+
 	migrateCmd := exec.CommandContext(s.ctx, s.binaryPath, "migrate")
-	configDir := s.configDir(host, int(port.Num()), 18081)
 	migrateCmd.Dir = configDir
+	migrateCmd.Env = configEnv
 	_, _ = migrateCmd.CombinedOutput()
 
 	serverCmd := exec.CommandContext(s.ctx, s.binaryPath, "server")
 	serverCmd.Dir = configDir
+	serverCmd.Env = configEnv
 	s.Require().NoError(serverCmd.Start())
 
 	defer func() {
@@ -194,8 +201,10 @@ func (s *CmdIntegrationSuite) TestWorkerStartsIdle() {
 	port, err := s.pgContainer.MappedPort(s.ctx, "5432")
 	s.Require().NoError(err)
 
+	dbPort := int(port.Num())
 	workerCmd := exec.CommandContext(ctx, s.binaryPath, "worker")
-	workerCmd.Dir = s.configDir(host, int(port.Num()), 18082)
+	workerCmd.Dir = s.configDir(host, dbPort, 18082)
+	workerCmd.Env = s.configEnv(host, dbPort, 18082)
 
 	var sb strings.Builder
 	workerCmd.Stdout = &sb
@@ -238,6 +247,29 @@ func (s *CmdIntegrationSuite) configDir(dbHost string, dbPort int, httpPort int)
 	s.Require().NoError(err)
 
 	return dir
+}
+
+// configEnv retorna os env vars explícitos para o processo filho, sobrescrevendo
+// quaisquer vars herdados do processo pai que possam contaminar a configuração.
+func (s *CmdIntegrationSuite) configEnv(dbHost string, dbPort int, httpPort int) []string {
+	overrides := []string{
+		"ENVIRONMENT=local",
+		"APP_MODE=server",
+		fmt.Sprintf("PORT=%d", httpPort),
+		"SERVICE_NAME_API=mecontrola-test",
+		"CORS_ALLOWED_ORIGINS=http://localhost:3000",
+		fmt.Sprintf("DB_HOST=%s", dbHost),
+		fmt.Sprintf("DB_PORT=%d", dbPort),
+		"DB_USER=mecontrola",
+		"DB_PASSWORD=mecontrola_password",
+		"DB_NAME=mecontrola_db",
+		"DB_SSL_MODE=disable",
+		"LOG_LEVEL=info",
+		"LOG_FORMAT=json",
+		"OTEL_TRACE_SAMPLE_RATE=0",
+		"OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317",
+	}
+	return append(os.Environ(), overrides...)
 }
 
 func projectRoot() string {
