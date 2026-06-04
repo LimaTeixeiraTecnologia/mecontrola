@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
@@ -52,14 +55,44 @@ func Run() error {
 		return fmt.Errorf("run: failed to create observability provider: %w", err)
 	}
 
+	postgresConfig := postgres.PostgresConfig{
+		DSN:          cfg.DBConfig.DSN(),
+		MaxOpenConns: cfg.DBConfig.MaxConns,
+		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
+		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
+		ConnMaxIdle:  cfg.DBConfig.ConnMaxIdleTime,
+	}
+	dbManager, err := manager.New(
+		postgresConfig,
+		manager.WithObservability(o11y),
+		manager.WithShutdownTimeout(10*time.Second),
+		manager.WithPoolStatsInterval(30*time.Second),
+	)
+	if err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return errors.Join(
+			fmt.Errorf("run: erro ao inicializar database manager: %w", err),
+			o11y.Shutdown(shutdownCtx),
+		)
+	}
+
+	o11y.Logger().Info(ctx, "database manager initialized",
+		observability.String("service", cfg.HTTPConfig.ServiceNameAPI),
+		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
+	)
 	o11y.Logger().Info(ctx, "server bootstrap completed", observability.String("service", cfg.HTTPConfig.ServiceNameAPI))
 	<-ctx.Done()
-	o11y.Logger().Info(context.Background(), "shutdown signal received, draining observability")
+	o11y.Logger().Info(context.Background(), "shutdown signal received, draining")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := o11y.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("run: error during o11y shutdown: %w", err)
+	var shutdownErrs []error
+	if err := dbManager.Shutdown(shutdownCtx); err != nil {
+		shutdownErrs = append(shutdownErrs, fmt.Errorf("run: erro ao encerrar database manager: %w", err))
 	}
-	return nil
+	if err := o11y.Shutdown(shutdownCtx); err != nil {
+		shutdownErrs = append(shutdownErrs, fmt.Errorf("run: erro durante shutdown de observabilidade: %w", err))
+	}
+	return errors.Join(shutdownErrs...)
 }
