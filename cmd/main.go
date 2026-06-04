@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -15,9 +12,6 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-
 	root := &cobra.Command{
 		Use:   "mecontrola",
 		Short: "MeControla — agente financeiro conversacional",
@@ -30,7 +24,6 @@ Utilize um dos subcomandos para iniciar a aplicação:
 		SilenceUsage: true,
 	}
 
-	root.SetContext(ctx)
 	root.AddCommand(
 		server.New(),
 		worker.New(),
@@ -38,7 +31,7 @@ Utilize um dos subcomandos para iniciar a aplicação:
 		migrate.NewDown(),
 	)
 
-	if err := root.ExecuteContext(ctx); err != nil {
+	if err := root.Execute(); err != nil {
 		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
 			os.Exit(1)
 		}

@@ -75,6 +75,7 @@ type AppConfig struct {
 type HTTPConfig struct {
 	Port               int    `mapstructure:"PORT"`
 	ServiceNameAPI     string `mapstructure:"SERVICE_NAME_API"`
+	ServiceNameWorker  string `mapstructure:"SERVICE_NAME_WORKER"`
 	CORSAllowedOrigins string `mapstructure:"CORS_ALLOWED_ORIGINS"`
 }
 
@@ -112,12 +113,13 @@ func (d *DBConfig) SafeDSN() string {
 }
 
 type O11yConfig struct {
-	OTLPEndpoint    string  `mapstructure:"OTEL_EXPORTER_OTLP_ENDPOINT"`
-	OTLPHeaders     string  `mapstructure:"OTEL_EXPORTER_OTLP_HEADERS"`
-	TraceSampleRate float64 `mapstructure:"OTEL_TRACE_SAMPLE_RATE"`
-	LogLevel        string  `mapstructure:"LOG_LEVEL"`
-	LogFormat       string  `mapstructure:"LOG_FORMAT"`
-	ServiceVersion  string  `mapstructure:"SERVICE_VERSION"`
+	ServiceVersion   string  `mapstructure:"OTEL_SERVICE_VERSION"`
+	ExporterEndpoint string  `mapstructure:"OTEL_EXPORTER_OTLP_ENDPOINT"`
+	ExporterProtocol string  `mapstructure:"OTEL_EXPORTER_OTLP_PROTOCOL"`
+	ExporterInsecure bool    `mapstructure:"OTEL_EXPORTER_OTLP_INSECURE"`
+	TraceSampleRate  float64 `mapstructure:"OTEL_TRACE_SAMPLE_RATE"`
+	LogLevel         string  `mapstructure:"LOG_LEVEL"`
+	LogFormat        string  `mapstructure:"LOG_FORMAT"`
 }
 
 // OutboxConfig agrupa todas as configuracoes do Outbox Transacional (RF-26 / D-03).
@@ -165,8 +167,9 @@ func (l *configLoader) load() (*Config, error) {
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSL_MODE",
 		"DB_MAX_CONNS", "DB_MIN_CONNS", "DB_MAX_IDLE_CONNS",
 		"DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
-		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS",
-		"OTEL_TRACE_SAMPLE_RATE", "LOG_LEVEL", "LOG_FORMAT", "SERVICE_VERSION",
+		"OTEL_SERVICE_VERSION", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL",
+		"OTEL_EXPORTER_OTLP_INSECURE", "OTEL_TRACE_SAMPLE_RATE", "LOG_LEVEL", "LOG_FORMAT",
+		"SERVICE_NAME_WORKER",
 		"OUTBOX_DISPATCHER_ENABLED",
 		"OUTBOX_DISPATCHER_TICK_INTERVAL",
 		"OUTBOX_DISPATCHER_BATCH_SIZE",
@@ -206,8 +209,10 @@ func (l *configLoader) load() (*Config, error) {
 	l.v.SetDefault("ENVIRONMENT", "local")
 	l.v.SetDefault("LOG_LEVEL", "info")
 	l.v.SetDefault("LOG_FORMAT", "json")
-	l.v.SetDefault("SERVICE_VERSION", "dev")
+	l.v.SetDefault("OTEL_SERVICE_VERSION", "dev")
 	l.v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
+	l.v.SetDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+	l.v.SetDefault("OTEL_EXPORTER_OTLP_INSECURE", true)
 	l.v.SetDefault("DB_PORT", 5432)
 	l.v.SetDefault("DB_SSL_MODE", "disable")
 	l.v.SetDefault("DB_MAX_CONNS", 10)
@@ -471,20 +476,6 @@ func (c *Config) validateProduction() []string {
 			))
 			break
 		}
-	}
-
-	for _, placeholder := range InsecurePlaceholders {
-		if c.O11yConfig.OTLPHeaders == placeholder || strings.HasPrefix(c.O11yConfig.OTLPHeaders, "CHANGE_ME_") {
-			errs = append(errs, fmt.Sprintf(
-				"OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro %q: configure as credenciais reais em production",
-				c.O11yConfig.OTLPHeaders,
-			))
-			break
-		}
-	}
-
-	if c.O11yConfig.OTLPHeaders != "" && len(c.O11yConfig.OTLPHeaders) < 64 {
-		errs = append(errs, "OTEL_EXPORTER_OTLP_HEADERS deve ter ao menos 64 caracteres em production quando configurado")
 	}
 
 	errs = append(errs, c.validateProductionKiwify()...)

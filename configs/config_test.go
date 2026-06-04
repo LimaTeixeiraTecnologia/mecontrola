@@ -578,7 +578,7 @@ func (s *ConfigSuite) TestValidateProductionUsuarioInseguro() {
 	s.Contains(err.Error(), "DB_USER contém placeholder inseguro")
 }
 
-func (s *ConfigSuite) TestValidateProductionOTLPHeadersInseguro() {
+func (s *ConfigSuite) TestValidateProductionPassValid() {
 	cfg := &configs.Config{
 		AppConfig:  configs.AppConfig{Environment: "production"},
 		HTTPConfig: configs.HTTPConfig{Port: 8080},
@@ -588,32 +588,11 @@ func (s *ConfigSuite) TestValidateProductionOTLPHeadersInseguro() {
 		},
 		O11yConfig: configs.O11yConfig{
 			TraceSampleRate: 0.2,
-			OTLPHeaders:     "CHANGE_ME_GENERATE_SECURE_SECRET_KEY_MIN_64_CHARS",
 		},
 	}
 
 	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS contém placeholder inseguro")
-}
-
-func (s *ConfigSuite) TestValidateProductionOTLPHeadersCurto() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "production"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		DBConfig: configs.DBConfig{
-			Password: "productionStrongPassword123!",
-			User:     "mecontrola",
-		},
-		O11yConfig: configs.O11yConfig{
-			TraceSampleRate: 0.2,
-			OTLPHeaders:     "Authorization=Basic short",
-		},
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS deve ter ao menos 64 caracteres")
+	s.NoError(err)
 }
 
 func (s *ConfigSuite) TestValidatePoolTunablesInvalidos() {
