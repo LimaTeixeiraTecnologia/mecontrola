@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
+	httpserver "github.com/JailtonJunior94/devkit-go/pkg/http_server/chi_server"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
@@ -77,22 +80,47 @@ func Run() error {
 		)
 	}
 
-	o11y.Logger().Info(ctx, "database manager initialized",
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := dbManager.Shutdown(shutdownCtx); err != nil {
+			slog.Error("database manager shutdown failed", "error", err)
+		}
+	}()
+
+	srv, err := httpserver.New(
+		o11y,
+		httpserver.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
+		httpserver.WithServiceVersion(cfg.O11yConfig.ServiceVersion),
+		httpserver.WithEnvironment(cfg.AppConfig.Environment),
+		httpserver.WithPort(strconv.Itoa(cfg.HTTPConfig.Port)),
+		httpserver.WithCORS(resolveCORSOrigins(cfg)),
+		httpserver.WithMetrics(),
+		httpserver.WithTracing(),
+		httpserver.WithOTelMetrics(),
+		httpserver.WithHealthChecks(map[string]httpserver.HealthCheckFunc{
+			"database": dbManager.Ping,
+		}),
+		httpserver.WithShutdownTimeout(15*time.Second),
+	)
+	if err != nil {
+		return fmt.Errorf("run: failed to create http server: %w", err)
+	}
+
+	o11y.Logger().Info(ctx, "http server bootstrap completed",
 		observability.String("service", cfg.HTTPConfig.ServiceNameAPI),
 		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
 	)
-	o11y.Logger().Info(ctx, "server bootstrap completed", observability.String("service", cfg.HTTPConfig.ServiceNameAPI))
-	<-ctx.Done()
-	o11y.Logger().Info(context.Background(), "shutdown signal received, draining")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	var shutdownErrs []error
-	if err := dbManager.Shutdown(shutdownCtx); err != nil {
-		shutdownErrs = append(shutdownErrs, fmt.Errorf("run: erro ao encerrar database manager: %w", err))
+	if err := srv.Start(ctx); err != nil {
+		return fmt.Errorf("run: http server stopped with error: %w", err)
 	}
-	if err := o11y.Shutdown(shutdownCtx); err != nil {
-		shutdownErrs = append(shutdownErrs, fmt.Errorf("run: erro durante shutdown de observabilidade: %w", err))
+	return nil
+}
+
+func resolveCORSOrigins(cfg *configs.Config) string {
+	if origins := cfg.HTTPConfig.CORSAllowedOrigins; origins != "" {
+		return origins
 	}
-	return errors.Join(shutdownErrs...)
+	return "*"
 }

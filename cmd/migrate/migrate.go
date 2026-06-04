@@ -22,65 +22,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
 )
 
-type runtime struct {
-	cfg       *configs.Config
-	o11y      observability.Observability
-	dbManager manager.Manager
-}
-
-func (r *runtime) shutdown(ctx context.Context) error {
-	return errors.Join(
-		r.dbManager.Shutdown(ctx),
-		r.o11y.Shutdown(ctx),
-	)
-}
-
-func bootstrap(ctx context.Context) (*runtime, error) {
-	cfg, err := configs.LoadConfig(".")
-	if err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
-
-	o11yConfig := &otel.Config{
-		Environment:     cfg.AppConfig.Environment,
-		ServiceName:     cfg.HTTPConfig.ServiceNameAPI,
-		ServiceVersion:  cfg.O11yConfig.ServiceVersion,
-		TraceSampleRate: cfg.O11yConfig.TraceSampleRate,
-		OTLPEndpoint:    cfg.O11yConfig.ExporterEndpoint,
-		Insecure:        cfg.O11yConfig.ExporterInsecure,
-		LogLevel:        observability.LogLevel(cfg.O11yConfig.LogLevel),
-		OTLPProtocol:    otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
-		LogFormat:       observability.LogFormat(cfg.O11yConfig.LogFormat),
-	}
-	o11y, err := otel.NewProvider(ctx, o11yConfig)
-	if err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
-
-	postgresConfig := postgres.PostgresConfig{
-		DSN:          cfg.DBConfig.DSN(),
-		MaxOpenConns: cfg.DBConfig.MaxConns,
-		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
-		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
-		ConnMaxIdle:  cfg.DBConfig.ConnMaxIdleTime,
-	}
-	dbManager, err := manager.New(
-		postgresConfig,
-		manager.WithObservability(o11y),
-		manager.WithShutdownTimeout(10*time.Second),
-	)
-	if err != nil {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return nil, errors.Join(
-			fmt.Errorf("migrate: erro ao inicializar database manager: %w", err),
-			o11y.Shutdown(shutdownCtx),
-		)
-	}
-
-	return &runtime{cfg: cfg, o11y: o11y, dbManager: dbManager}, nil
-}
-
 func New() *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate",
@@ -198,4 +139,63 @@ func RunDown(writer io.Writer, steps int) (retErr error) {
 	)
 	_, err = fmt.Fprintf(writer, "migrations reverted (steps=%d)\n", steps)
 	return err
+}
+
+type runtime struct {
+	cfg       *configs.Config
+	o11y      observability.Observability
+	dbManager manager.Manager
+}
+
+func (r *runtime) shutdown(ctx context.Context) error {
+	return errors.Join(
+		r.dbManager.Shutdown(ctx),
+		r.o11y.Shutdown(ctx),
+	)
+}
+
+func bootstrap(ctx context.Context) (*runtime, error) {
+	cfg, err := configs.LoadConfig(".")
+	if err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
+	o11yConfig := &otel.Config{
+		Environment:     cfg.AppConfig.Environment,
+		ServiceName:     cfg.HTTPConfig.ServiceNameAPI,
+		ServiceVersion:  cfg.O11yConfig.ServiceVersion,
+		TraceSampleRate: cfg.O11yConfig.TraceSampleRate,
+		OTLPEndpoint:    cfg.O11yConfig.ExporterEndpoint,
+		Insecure:        cfg.O11yConfig.ExporterInsecure,
+		LogLevel:        observability.LogLevel(cfg.O11yConfig.LogLevel),
+		OTLPProtocol:    otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
+		LogFormat:       observability.LogFormat(cfg.O11yConfig.LogFormat),
+	}
+	o11y, err := otel.NewProvider(ctx, o11yConfig)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
+	postgresConfig := postgres.PostgresConfig{
+		DSN:          cfg.DBConfig.DSN(),
+		MaxOpenConns: cfg.DBConfig.MaxConns,
+		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
+		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
+		ConnMaxIdle:  cfg.DBConfig.ConnMaxIdleTime,
+	}
+	dbManager, err := manager.New(
+		postgresConfig,
+		manager.WithObservability(o11y),
+		manager.WithShutdownTimeout(10*time.Second),
+	)
+	if err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return nil, errors.Join(
+			fmt.Errorf("migrate: erro ao inicializar database manager: %w", err),
+			o11y.Shutdown(shutdownCtx),
+		)
+	}
+
+	return &runtime{cfg: cfg, o11y: o11y, dbManager: dbManager}, nil
 }
