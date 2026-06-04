@@ -197,7 +197,12 @@ internal/<modulo>/
     services/
     interfaces/
   infrastructure/
+    jobs/
+      handlers/
     messaging/
+      database/
+        producers/
+        consumers/
       kafka/
         producers/
         consumers/
@@ -220,11 +225,31 @@ Responsabilidades obrigatorias:
 1. `application/`: orquestracao de use cases, DTOs de entrada em `dtos/input`, DTOs de saida em `dtos/output` e interfaces/contratos consumidos pela aplicacao. Nao pode conter IO concreto, drivers, SDKs externos, SQL, brokers ou handlers HTTP.
 2. `domain/`: entidades, value objects, domain services stateless, invariantes e interfaces/contratos que pertencem a linguagem ubiqua do dominio. Nao pode conhecer application, infrastructure, serializacao, banco, HTTP, filas ou configuracao.
 3. `infrastructure/`: implementacoes concretas de IO e integracoes por tecnologia. Implementa contratos definidos em `application/` ou `domain/`, sem vazar tipos concretos para dentro do dominio.
-4. `infrastructure/messaging/<broker>/producers`: publicacao/envio de mensagens para Kafka, Rabbit ou NATS.
-5. `infrastructure/messaging/<broker>/consumers`: consumo/processamento de mensagens vindas de Kafka, Rabbit ou NATS.
-6. `infrastructure/repositories/postgres` e `infrastructure/repositories/mssql`: persistencia concreta por banco.
-7. `infrastructure/http/server`: entrada servida pelo modulo, como handlers, controllers e rotas HTTP/gRPC.
-8. `infrastructure/http/client`: consumo de APIs externas ou servicos remotos.
+4. `infrastructure/http/client`: toda e qualquer chamada HTTP outbound para APIs externas. Deve usar `internal/platform/httpclient`.
+5. `infrastructure/http/server`: rotas e handlers HTTP/gRPC inbound providos pelo modulo.
+6. `infrastructure/jobs/handlers`: handlers de jobs registrados pelo modulo via `internal/platform/worker/job`.
+7. `infrastructure/messaging/database/consumers`: consumers do transporte local persistido registrados via `internal/platform/worker/consumer`.
+8. `infrastructure/messaging/database/producers`: producers/event dispatchers internos usando `internal/platform/events`.
+9. `infrastructure/messaging/<broker>/producers`: publicacao/envio de mensagens para Kafka, Rabbit ou NATS quando houver broker externo.
+10. `infrastructure/messaging/<broker>/consumers`: consumo/processamento de mensagens vindas de Kafka, Rabbit ou NATS quando houver broker externo.
+11. `infrastructure/repositories/postgres` e `infrastructure/repositories/mssql`: persistencia concreta por banco.
+
+### Padrao Obrigatorio de Modulo
+
+`internal/identity` e `internal/billing` DEVEM seguir DI manual explicita em `module.go`, no estilo `InvoiceModule`: construtor direto, struct concreta e campos nomeados para os artefatos reais do bounded context.
+
+Regras obrigatorias:
+
+1. O construtor deve ser nomeado pelo modulo, como `NewIdentityModule(...) IdentityModule` ou `NewBillingModule(...) BillingModule`.
+2. A struct do modulo deve expor apenas dependencias reais necessarias ao bootstrap ou a outros modulos, como routers, providers, adapters, jobs e consumers.
+3. O wiring deve seguir a ordem concreta `repository/client -> use case -> handler -> router/job/consumer/producer`, adaptada ao contexto real.
+4. Routers devem implementar `Register(router chi.Router)` e ser registrados no servidor central apenas quando existirem rotas reais.
+5. Jobs e consumers devem ser entregues ao `WorkerManager` como `worker.Job` e `worker.Consumer`, sempre passando por `internal/platform/worker/job` e `internal/platform/worker/consumer`.
+6. Proibido criar campos, handlers, routers, jobs, consumers, adapters ou providers ficticios para preencher estrutura.
+7. Proibido usar `NewModule(opts...)`, `WithDatabase(...)`, `Routers()` ou `Runners()` como novo padrao de composicao de modulo.
+8. Antes de criar wiring, verificar se repository, use case, handler, router, provider, job ou consumer existe no workspace. Se nao existir, registrar drift ou lacuna explicitamente em vez de inventar implementacao.
+9. Exemplos externos definem o formato arquitetural, mas imports, nomes, dependencias e contratos devem ser adaptados ao estado real deste repositorio.
+
 ### Plataforma Tecnica Compartilhada
 
 Capacidades tecnicas reutilizaveis por mais de um modulo DEVEM viver em `internal/platform/`, mantendo visibilidade privada do monolito e evitando `pkg/` sem necessidade de consumo externo.

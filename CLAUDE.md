@@ -15,6 +15,7 @@ Claude deve respeitar TODAS as regras, skills, references, validacoes, restricoe
 7. Preservar estilo, arquitetura e fronteiras existentes antes de propor mudancas.
 8. Validar mudancas com comandos proporcionais ao risco.
 9. Nao flexibilizar nenhuma regra por diferenca de ferramenta, hook, agente pre-carregado ou conveniencia operacional.
+10. Para `internal/identity` e `internal/billing`, seguir o "Padrao Obrigatorio de Modulo" em `AGENTS.md`; nao inventar wiring, routers, jobs, consumers ou adapters ausentes.
 
 ## Go — Regra Mandatória e Inegociável
 
