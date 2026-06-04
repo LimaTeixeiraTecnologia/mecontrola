@@ -31,6 +31,8 @@ linters:
       forbid:
         - pattern: '\.DSN\(\)'
           msg: "Use SafeDSN() para logs. DSN() expõe a senha em texto claro e é proibido fora de configs/ e internal/platform/database/."
+        - pattern: '"github\.com/JailtonJunior94/devkit-go'
+          msg: "Importe devkit-go apenas via internal/platform/ (observability ou database). Fora desses pacotes, use os tipos re-exportados de platform."
 
     depguard:
       rules:
@@ -116,6 +118,17 @@ linters:
               desc: "platform não pode importar módulos de negócio"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
               desc: "platform não pode importar módulos de negócio"
+        # RF-45: billing pode importar identity/domain e identity/application, nunca identity/infrastructure.
+        # Garante fronteira hexagonal cross-module: billing não conhece detalhe de persistência identity.
+        # Exceção: infrastructure/subsystem/ é o composition root e faz o wire concreto.
+        billing-no-identity-infrastructure:
+          files:
+            - "**/internal/billing/domain/**/*.go"
+            - "**/internal/billing/application/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
+              desc: "billing/domain e billing/application não podem importar identity/infrastructure (RF-45 — cross-module boundary violation: use identity/domain ou identity/application)"
+
         # Regra 5 (cross-module): identity não importa finance diretamente.
         # Comunicação cross-module apenas via interface (application) ou Domain Event.
         identity-no-finance:
@@ -130,6 +143,32 @@ linters:
               desc: "identity não pode importar finance diretamente (cross-module boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
               desc: "identity não pode importar finance diretamente (cross-module boundary violation)"
+        # RF-16: identity não importa billing diretamente (cross-module boundary violation).
+        identity-no-billing:
+          files:
+            - "**/internal/identity/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
+              desc: "identity não pode importar billing diretamente (cross-module boundary violation — use interface em application ou Domain Event)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain"
+              desc: "identity não pode importar billing diretamente (cross-module boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application"
+              desc: "identity não pode importar billing diretamente (cross-module boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure"
+              desc: "identity não pode importar billing diretamente (cross-module boundary violation)"
+        # RF-16: identity não importa onboarding diretamente (cross-module boundary violation).
+        identity-no-onboarding:
+          files:
+            - "**/internal/identity/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+              desc: "identity não pode importar onboarding diretamente (cross-module boundary violation — use interface em application ou Domain Event)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
+              desc: "identity não pode importar onboarding diretamente (cross-module boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
+              desc: "identity não pode importar onboarding diretamente (cross-module boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure"
+              desc: "identity não pode importar onboarding diretamente (cross-module boundary violation)"
         # Regra 5 (cross-module): finance não importa identity diretamente.
         finance-no-identity:
           files:
@@ -191,6 +230,10 @@ exclusions:
       linters:
         - forbidigo
     - path: "internal/platform/database/.*\\.go"
+      linters:
+        - forbidigo
+    # internal/platform/ é o único adaptador autorizado para devkit-go.
+    - path: "internal/platform/.*\\.go"
       linters:
         - forbidigo
     # Testes podem ser mais relaxados em comprimento de função.

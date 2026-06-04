@@ -37,6 +37,9 @@ description: Implementa alteracoes em codigo Go usando governanca base, arquitet
 | R4 | Padrao `testify/suite` table-driven nos testes | `references/testing.md`, `references/examples-testing.md` |
 | R5 | Uber Go Style Guide (PT-BR) | inline abaixo + `interfaces.md`, `concurrency.md`, `persistence.md`, `api.md`, `configuration.md` |
 | R6 | Design e contratos Go (context, interface no consumidor, DI) | `references/interfaces.md`, `references/architecture.md` |
+| R6.4 | `var _ Interface = (*Type)(nil)` PROIBIDO | `references/interfaces.md` |
+| R6.6 | Command Object obrigatorio em use cases de escrita (DDD + linguagem ubiqua) | `references/interfaces.md` |
+| R6.7 | `clock.Clock` PROIBIDO em use cases e repositorios | `references/interfaces.md` |
 | R7 | Sempre usar recursos modernos do Go (versao do `go.mod`) | inline abaixo + `generics.md`, `observability.md` |
 | Checklist | Gates de validacao R0-R7 | `references/build.md` + Etapa 5 |
 
@@ -82,7 +85,7 @@ todo codigo Go e devem ser verificadas sempre:
 - **5.23** Imports em 3 grupos (stdlib | externas | internas do modulo), via `goimports -local`.
 - **5.24** Nomes de pacote: minusculo, sem underscore, singular, especifico (`payment`, nao `util`/`common`).
 - **5.25** Ordenacao no arquivo: tipos -> var/const -> `New*` -> metodos exportados -> nao exportados.
-- **5.26** Globais nao exportados com prefixo `_` (`const _defaultTimeout`); excecao: erros sentinel (`var errX`).
+- **5.26** Globais nao exportados em `camelCase` idiomatico, sem prefixo `_` (`_` so como blank identifier). Sentinel errors continuam `var errX = errors.New(...)`.
 - **5.27-5.31** Inicializar struct com nomes de campos; omitir campos zero-value; `var x T` para
   struct zero-value; `&T{...}` em vez de `new(T)`; `make(map...)` para maps populados programaticamente.
 - **5.36-5.45** Hot path: converter `string->[]byte` uma vez; `var` para zero-values e slices que

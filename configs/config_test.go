@@ -343,6 +343,22 @@ func (s *ConfigSuite) TestInsecurePlaceholdersNaoVazio() {
 	s.NotEmpty(configs.InsecurePlaceholders)
 }
 
+func (s *ConfigSuite) TestDBPoolTimeoutDefaults() {
+	dir := s.T().TempDir()
+
+	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+
+	db := cfg.DBConfig
+	s.Equal(30*time.Minute, db.ConnMaxLifetime, "DB_CONN_MAX_LIFETIME default deve ser 30m")
+	s.Equal(5*time.Minute, db.ConnMaxIdleTime, "DB_CONN_MAX_IDLE_TIME default deve ser 5m")
+}
+
 func (s *ConfigSuite) TestOutboxConfigDefaults() {
 	dir := s.T().TempDir()
 
@@ -621,6 +637,21 @@ func (s *ConfigSuite) TestValidatePoolTunablesInvalidos() {
 			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 3},
 			errMsg: "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS",
 		},
+		{
+			name:   "conn max lifetime negativo",
+			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxLifetime: -time.Second},
+			errMsg: "DB_CONN_MAX_LIFETIME não pode ser negativo",
+		},
+		{
+			name:   "conn max idle time negativo",
+			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxIdleTime: -time.Second},
+			errMsg: "DB_CONN_MAX_IDLE_TIME não pode ser negativo",
+		},
+		{
+			name:   "conn max idle time maior que conn max lifetime",
+			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxLifetime: 30 * time.Second, ConnMaxIdleTime: time.Minute},
+			errMsg: "DB_CONN_MAX_IDLE_TIME não pode ser maior que DB_CONN_MAX_LIFETIME",
+		},
 	}
 
 	for _, sc := range scenarios {
@@ -666,6 +697,267 @@ func (s *ConfigSuite) TestLoadConfigTraceSampleRateInvalidoRetornaErro() {
 	s.Error(err)
 	s.Nil(cfg)
 	s.Contains(err.Error(), "OTEL_TRACE_SAMPLE_RATE inválido")
+}
+
+func (s *ConfigSuite) TestKiwifyConfigDefaultsAplicados() {
+	dir := s.T().TempDir()
+
+	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+
+	k := cfg.KiwifyConfig
+	s.Equal("https://public-api.kiwify.com", k.APIBaseURL)
+	s.Equal("X-Kiwify-Webhook-Token", k.WebhookTokenHeader)
+	s.Equal(5*time.Minute, k.OAuthTokenSafetyMargin)
+	s.Equal(100, k.RateLimitMaxRequestsPerMin)
+	s.Equal(10, k.RateLimitBurst)
+	s.Equal("@hourly", k.ReconciliationInterval)
+	s.Equal(200, k.ReconciliationBatchSize)
+	s.Equal(10*time.Second, k.HTTPTimeout)
+	s.Equal(3, k.HTTPRetryMaxAttempts)
+	s.Equal(time.Second, k.HTTPRetryBackoff)
+}
+
+func (s *ConfigSuite) TestKiwifyConfigHTTPSafeNaoExpoeSecrets() {
+	k := configs.KiwifyConfig{
+		HTTPTimeout:          15 * time.Second,
+		HTTPRetryMaxAttempts: 5,
+		HTTPRetryBackoff:     2 * time.Second,
+	}
+	safe := k.Safe()
+	s.Equal("15s", safe["http_timeout"])
+	s.Equal(5, safe["http_retry_max_attempts"])
+	s.Equal("2s", safe["http_retry_backoff"])
+}
+
+func (s *ConfigSuite) TestValidateKiwifyHTTPTimeoutInvalido() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+		BillingConfig: configs.BillingConfig{
+			EntitlementCacheCapacity:   50000,
+			EntitlementCacheTTL:        5 * time.Minute,
+			AnonymizationBatchSize:     500,
+			AnonymizationRetentionDays: 365,
+		},
+		KiwifyConfig: configs.KiwifyConfig{
+			RateLimitMaxRequestsPerMin: 100,
+			HTTPTimeout:                2 * time.Minute, // acima do máximo de 1m
+		},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "KIWIFY_HTTP_TIMEOUT inválido")
+}
+
+func (s *ConfigSuite) TestValidateKiwifyHTTPRetryAttemptsInvalido() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+		BillingConfig: configs.BillingConfig{
+			EntitlementCacheCapacity:   50000,
+			EntitlementCacheTTL:        5 * time.Minute,
+			AnonymizationBatchSize:     500,
+			AnonymizationRetentionDays: 365,
+		},
+		KiwifyConfig: configs.KiwifyConfig{
+			RateLimitMaxRequestsPerMin: 100,
+			HTTPTimeout:                10 * time.Second,
+			HTTPRetryMaxAttempts:       50,
+			HTTPRetryBackoff:           time.Second,
+		},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "KIWIFY_HTTP_RETRY_MAX_ATTEMPTS inválido")
+}
+
+func (s *ConfigSuite) TestValidateKiwifyHTTPRetryBackoffObrigatorioQuandoAttemptsConfigurado() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+		BillingConfig: configs.BillingConfig{
+			EntitlementCacheCapacity:   50000,
+			EntitlementCacheTTL:        5 * time.Minute,
+			AnonymizationBatchSize:     500,
+			AnonymizationRetentionDays: 365,
+		},
+		KiwifyConfig: configs.KiwifyConfig{
+			RateLimitMaxRequestsPerMin: 100,
+			HTTPTimeout:                10 * time.Second,
+			HTTPRetryMaxAttempts:       3,
+			HTTPRetryBackoff:           0,
+		},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "KIWIFY_HTTP_RETRY_BACKOFF inválido")
+}
+
+func (s *ConfigSuite) TestBillingConfigDefaultsAplicados() {
+	dir := s.T().TempDir()
+
+	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
+	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
+	s.Require().NoError(err)
+
+	cfg, err := configs.LoadConfig(dir)
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+
+	b := cfg.BillingConfig
+	s.Equal(50000, b.EntitlementCacheCapacity)
+	s.Equal(5*time.Minute, b.EntitlementCacheTTL)
+	s.Equal("@daily", b.AnonymizationSchedule)
+	s.Equal(500, b.AnonymizationBatchSize)
+	s.Equal(365, b.AnonymizationRetentionDays)
+}
+
+func (s *ConfigSuite) TestSafeKiwifyConfigRedactaSecrets() {
+	k := configs.KiwifyConfig{
+		APIBaseURL:                 "https://public-api.kiwify.com",
+		WebhookSecret:              "super-secret-webhook",
+		WebhookTokenHeader:         "X-Kiwify-Webhook-Token",
+		ClientID:                   "client-id-value",
+		ClientSecret:               "super-secret-client",
+		RateLimitMaxRequestsPerMin: 100,
+		ReconciliationInterval:     "@hourly",
+		ReconciliationBatchSize:    200,
+	}
+
+	safe := k.Safe()
+
+	s.Equal("https://public-api.kiwify.com", safe["api_base_url"])
+	s.Equal("X-Kiwify-Webhook-Token", safe["webhook_token_header"])
+	s.Equal(100, safe["rate_limit"])
+	s.Equal("@hourly", safe["reconciliation_interval"])
+	s.Equal(200, safe["reconciliation_batch_size"])
+
+	// Secrets devem aparecer como booleanos, nunca em texto claro
+	s.Equal(true, safe["client_id_set"])
+	s.Equal(true, safe["client_secret_set"])
+	s.Equal(true, safe["webhook_secret_set"])
+
+	// Garantia adicional: o mapa não contém o valor real dos secrets
+	for key, val := range safe {
+		strVal, ok := val.(string)
+		if !ok {
+			continue
+		}
+		s.NotContains(strVal, "super-secret-webhook", "chave %q não deve conter o webhook secret", key)
+		s.NotContains(strVal, "super-secret-client", "chave %q não deve conter o client secret", key)
+		s.NotContains(strVal, "client-id-value", "chave %q não deve conter o client ID", key)
+	}
+}
+
+func (s *ConfigSuite) TestSafeKiwifyConfigSecretsNaoConfigurados() {
+	k := configs.KiwifyConfig{
+		APIBaseURL: "https://public-api.kiwify.com",
+	}
+
+	safe := k.Safe()
+
+	s.Equal(false, safe["client_id_set"])
+	s.Equal(false, safe["client_secret_set"])
+	s.Equal(false, safe["webhook_secret_set"])
+}
+
+func (s *ConfigSuite) TestValidateProductionKiwifySecretsAusentesQuandoHabilitado() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "production"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		DBConfig:   configs.DBConfig{Password: "productionStrongPassword123!", User: "mecontrola"},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
+		KiwifyConfig: configs.KiwifyConfig{
+			ClientID: "some-client-id",
+			// WebhookSecret e ClientSecret ausentes — Kiwify parcialmente configurado
+		},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "KIWIFY_WEBHOOK_SECRET é obrigatório")
+}
+
+func (s *ConfigSuite) TestValidateProductionKiwifyNaoConfiguradoPermitido() {
+	cfg := &configs.Config{
+		AppConfig:    configs.AppConfig{Environment: "production"},
+		HTTPConfig:   configs.HTTPConfig{Port: 8080},
+		DBConfig:     configs.DBConfig{Password: "productionStrongPassword123!", User: "mecontrola"},
+		O11yConfig:   configs.O11yConfig{TraceSampleRate: 0.2},
+		KiwifyConfig: configs.KiwifyConfig{}, // todos os campos vazios/zero
+	}
+
+	err := cfg.Validate()
+	s.NoError(err)
+}
+
+func (s *ConfigSuite) TestValidateBillingCacheCapacidadeInvalida() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+		BillingConfig: configs.BillingConfig{
+			EntitlementCacheCapacity:   500, // abaixo do mínimo de 1000
+			EntitlementCacheTTL:        5 * time.Minute,
+			AnonymizationBatchSize:     500,
+			AnonymizationRetentionDays: 365,
+		},
+		KiwifyConfig: configs.KiwifyConfig{RateLimitMaxRequestsPerMin: 100},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "BILLING_ENTITLEMENT_CACHE_CAPACITY inválido")
+}
+
+func (s *ConfigSuite) TestValidateBillingCacheTTLInvalida() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+		BillingConfig: configs.BillingConfig{
+			EntitlementCacheCapacity:   50000,
+			EntitlementCacheTTL:        2 * time.Hour, // acima do máximo de 1h
+			AnonymizationBatchSize:     500,
+			AnonymizationRetentionDays: 365,
+		},
+		KiwifyConfig: configs.KiwifyConfig{RateLimitMaxRequestsPerMin: 100},
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "BILLING_ENTITLEMENT_CACHE_TTL inválido")
+}
+
+func (s *ConfigSuite) TestValidateBillingRateLimitInvalido() {
+	cfg := &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local"},
+		HTTPConfig: configs.HTTPConfig{Port: 8080},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+		BillingConfig: configs.BillingConfig{
+			EntitlementCacheCapacity:   50000,
+			EntitlementCacheTTL:        5 * time.Minute,
+			AnonymizationBatchSize:     500,
+			AnonymizationRetentionDays: 365,
+		},
+		KiwifyConfig: configs.KiwifyConfig{RateLimitMaxRequestsPerMin: 0}, // inválido
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN inválido")
 }
 
 const passwordChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"

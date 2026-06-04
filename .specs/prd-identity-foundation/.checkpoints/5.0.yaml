@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-identity-foundation/5.0_execution_report.md
+summary: Ports UserRepository (5 métodos) e IDGenerator criados em application/interfaces; build, vet e lint passam sem tipos de infra
+timestamp: 2026-06-03T00:00:00Z

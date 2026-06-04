@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-billing-pipeline/10.0_execution_report.md
+summary: Integration tests billing pipeline CA-02..CA-12 verdes; depguard billing-no-identity-infrastructure adicionado; docs criados; migracao 0011 FK deferred; ErrSubscriptionNotFound unificado
+timestamp: 2026-06-03T00:00:00Z

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-identity-foundation/8.0_execution_report.md
+summary: "Pacote mask (WhatsApp + Email) criado com 100% de cobertura; PIIFields estendido com 3 novos campos; piiHandler testado."
+timestamp: 2026-06-03T18:42:55Z

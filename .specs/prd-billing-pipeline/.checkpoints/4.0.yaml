@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-billing-pipeline/4.0_execution_report.md
+summary: "Subscription aggregate + WebhookEvent entity + domain/errors.go + identity.Subscription structural satisfaction — 100% coverage, lint clean"
+timestamp: "2026-06-03T00:00:00Z"

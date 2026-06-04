@@ -162,11 +162,6 @@ grep -rn "\bpanic(" --include="*.go" . | grep -v "_test.go" | grep -v "template\
 # ── R5: type assertion sem comma-ok — revisão manual ─────────────────────────
 # Toda assertion i.(T) deve ter a forma t, ok := i.(T).
 
-# ── R5: globals não exportados sem prefixo _ ─────────────────────────────────
-grep -rn "^var [a-z][a-zA-Z]\|^const [a-z][a-zA-Z]" --include="*.go" . \
-  | grep -v "_test.go" | grep -v "^.*var err"
-# Revisar: globals sem _ que não sejam erros sentinel (var errX)
-
 # ── R6: context.Context não armazenado em struct — revisão manual ────────────
 # Nenhum campo de struct deve ter tipo context.Context.
 

@@ -39,6 +39,32 @@ Proteger o sistema contra falhas transitórias e degradação em dependências e
 - Circuit breaker com threshold muito sensível abrindo em picos normais de latência.
 - Retry em erro não-transitório (400, 409) desperdiçando recursos.
 
+## Padrão HTTP Outbound neste Repositório
+
+Toda chamada HTTP a APIs externas DEVE passar por `internal/platform/httpclient` —
+wrapper mandatório sobre `devkit-go/pkg/httpclient` que aplica timeouts, retry
+seguro (apenas métodos idempotentes por padrão) e observabilidade automática.
+
+```go
+import platformhttpclient "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
+
+client, err := platformhttpclient.NewClient(
+    provider.Observability(),
+    platformhttpclient.WithTimeout(10*time.Second),
+    platformhttpclient.WithBaseURL(cfg.APIBaseURL),
+    platformhttpclient.WithDefaultRetry(3, time.Second),
+    platformhttpclient.WithTarget("kiwify"),
+)
+```
+
+Regras:
+- `WithTimeout` é obrigatório — sem default implícito que mascare degradação.
+- `WithDefaultRetry` aplica `DefaultNewRetryPolicy` somente a GET/HEAD/OPTIONS.
+  POST/PUT/PATCH/DELETE exigem `httpclient.WithRetry` explícito.
+- Rate limit, refresh OAuth e retry específico de 429 ficam acima do wrapper, no
+  client da integração (`internal/<modulo>/infrastructure/http/client/<provedor>/`).
+- Instanciar `&http.Client{}` em código de produção é PROIBIDO.
+
 ## Proibido
 - Chamada de rede sem timeout.
 - Retry infinito ou sem limite de tentativas.

@@ -1,160 +1,96 @@
 # Módulo `identity`
 
-Responsabilidade: usuário, sessão, JWT/refresh, RBAC e audit de acesso.
+Responsabilidade: gerenciamento do agregado `User` — cadastro via WhatsApp, soft delete com histórico, mascaramento PII e verificação de elegibilidade por assinatura.
 
 Este módulo segue o **layout hexagonal canônico** do MeControla:
 
 ```
 internal/identity/
-├── domain/       # Regras de negócio puras (sem IO)
-├── application/  # Casos de uso + ports (interfaces)
-└── infrastructure/ # Implementações concretas (Postgres, HTTP, eventbus)
+├── domain/           # Regras de negócio puras (sem IO)
+├── application/      # Casos de uso + ports (interfaces)
+└── infrastructure/   # Implementações concretas (Postgres, UUID)
 ```
 
 ---
 
-## Scaffold Pattern
+## Value Objects
 
-Os PRDs subsequentes que adicionarem código a este módulo DEVEM seguir os
-padrões abaixo. Use os snippets como ponto de partida.
+| VO | Arquivo | Invariante |
+|----|---------|-----------|
+| `WhatsAppNumber` | `domain/valueobjects/whatsapp_number.go` | E.164 BR — normaliza 10/11/12/13 dígitos; rejeita não-BR |
+| `Email` | `domain/valueobjects/email.go` | RFC via `net/mail`; normalizado em lowercase; exige TLD |
+| `UserStatus` | `domain/valueobjects/user_status.go` | Enum `ACTIVE`/`BLOCKED`/`DELETED`; zero-value reservado a `UNKNOWN` |
 
-### Aggregate
+---
 
-```go
-// internal/identity/domain/user.go
+## Regra `IsEntitled`
 
-// UserID é o identificador único imutável de um usuário.
-type UserID struct{ value string }
+`EntitlementChecker.IsEntitled(subscription, now)` é uma função pura em `domain/services/entitlement.go`.
+Consome o contrato mínimo `Subscription` (interface declarada em `domain/services/subscription.go`).
+A implementação concreta de `Subscription` vive em `internal/billing` (Épico E2) — sem import cíclico.
 
-func NewUserID(v string) (UserID, error) {
-    if v == "" {
-        return UserID{}, errors.New("identity: user id cannot be empty")
-    }
-    return UserID{value: v}, nil
-}
+| Status | Condição de elegibilidade |
+|--------|--------------------------|
+| `Trialing`, `Active` | `now.Before(CurrentPeriodEnd())` |
+| `PastDue`, `CanceledPending` | `now.Before(GracePeriodEnd())` |
+| `Expired`, `Refunded`, `Unknown` | sempre `false` |
+| `nil` | sempre `false` |
 
-func (u UserID) String() string { return u.value }
+---
 
-// User é o aggregate root do módulo identity.
-// Toda mutação passa por métodos de domínio — sem setters mecânicos.
-type User struct {
-    id     UserID
-    email  Email
-    events []DomainEvent
-}
+## Convenção `_masked` para logging de PII
 
-func NewUser(id UserID, email Email) (*User, error) {
-    // validações de invariante aqui
-    return &User{id: id, email: email}, nil
-}
-
-func (u *User) ID() UserID          { return u.id }
-func (u *User) Events() []DomainEvent { return u.events }
-func (u *User) ClearEvents()          { u.events = nil }
-```
-
-### Value Object (VO)
+Nunca passar `whatsapp_number` ou `email` em claro em logs.
+Usar `mask.WhatsApp(number)` e `mask.Email(email)` do pacote `internal/platform/observability/mask`,
+com chave de atributo sufixada em `_masked`:
 
 ```go
-// internal/identity/domain/email.go
-
-// Email é um Value Object imutável com invariante de formato.
-type Email struct{ value string }
-
-func NewEmail(v string) (Email, error) {
-    if !strings.Contains(v, "@") {
-        return Email{}, errors.New("identity: invalid email format")
-    }
-    return Email{value: strings.ToLower(v)}, nil
-}
-
-func (e Email) String() string { return e.value }
+slog.String("whatsapp_number_masked", mask.WhatsApp(user.WhatsAppNumber().String()))
+slog.String("email_masked", mask.Email(user.Email().String()))
 ```
 
-### Port `Repository`
+O `piiHandler` global aplica `[REDACTED]` nas chaves `whatsapp_number` e `email` como rede de segurança (ADR-004).
 
-```go
-// internal/identity/application/repository.go
+---
 
-// UserRepository define o contrato de persistência para o agregado User.
-// A implementação concreta vive em infrastructure/.
-type UserRepository interface {
-    FindByID(ctx context.Context, id domain.UserID) (*domain.User, error)
-    Save(ctx context.Context, user *domain.User) error
-}
-```
+## Regra `RehydrateUser` — exclusivo do mapper
 
-### Port `EventPublisher`
+`entities.RehydrateUser(params)` é o único construtor de reidratação do agregado `User`.
+Aceita `Status` e `DeletedAt` arbitrários (já validados pelo banco via CK constraint).
+**Uso restrito ao mapper em `infrastructure/repositories/postgres/mapper.go`.**
+Código de `application` nunca deve chamar `RehydrateUser` diretamente — use `NewUser` no caminho de criação (ADR-008).
 
-```go
-// internal/identity/application/event_publisher.go
+---
 
-// EventPublisher define o contrato de publicação de domain events.
-// A implementação concreta vive em infrastructure/ e delega ao eventbus compartilhado.
-type EventPublisher interface {
-    Publish(ctx context.Context, events []domain.DomainEvent) error
-}
-```
+## Fronteiras `depguard`
 
-### Use Case com `UnitOfWork[T]`
+| Pacote | Pode importar | Proibido |
+|--------|--------------|---------|
+| `domain` | stdlib | `application`, `infrastructure`, `internal/platform/*`, `configs/*` |
+| `application` | `domain` | `infrastructure`, bibliotecas de IO concretas |
+| `infrastructure` | `domain`, `application`, `internal/platform/*` | cross-module direto (`billing`, `onboarding`, `finance`) |
 
-```go
-// internal/identity/application/create_user.go
+Regras enforçadas em `.golangci.yml` via `depguard` (RF-16):
+- `domain-no-infrastructure`: domain não importa infrastructure de nenhum módulo.
+- `application-no-infrastructure`: application não importa infrastructure.
+- `identity-no-finance`: identity não importa finance diretamente.
+- `finance-no-identity`: finance não importa identity diretamente.
 
-// CreateUserInput é o DTO de entrada do caso de uso.
-type CreateUserInput struct {
-    Email string
-}
+---
 
-// CreateUserUseCase coordena a criação de um novo usuário.
-type CreateUserUseCase struct {
-    repo      UserRepository
-    publisher EventPublisher
-    uow       database.UnitOfWork[*domain.User]
-}
+## Referências
 
-func NewCreateUserUseCase(
-    repo UserRepository,
-    publisher EventPublisher,
-    uow database.UnitOfWork[*domain.User],
-) *CreateUserUseCase {
-    return &CreateUserUseCase{repo: repo, publisher: publisher, uow: uow}
-}
-
-func (uc *CreateUserUseCase) Execute(ctx context.Context, in CreateUserInput) (*domain.User, error) {
-    return uc.uow.Do(ctx, func(tx database.Tx) (*domain.User, error) {
-        email, err := domain.NewEmail(in.Email)
-        if err != nil {
-            return nil, err
-        }
-        id, err := domain.NewUserID(uuid.NewString())
-        if err != nil {
-            return nil, err
-        }
-        user, err := domain.NewUser(id, email)
-        if err != nil {
-            return nil, err
-        }
-        if err := uc.repo.Save(ctx, user); err != nil {
-            return nil, err
-        }
-        if err := uc.publisher.Publish(ctx, user.Events()); err != nil {
-            return nil, err
-        }
-        user.ClearEvents()
-        return user, nil
-    })
-}
-```
+- PRD: `.specs/prd-identity-foundation/prd.md`
+- Techspec: `.specs/prd-identity-foundation/techspec.md`
+- ADR-004: mascaramento PII via pacote `mask`
+- ADR-008: `RehydrateUser` restrito ao mapper
 
 ---
 
 ## Comandos `ai-spec` recomendados
 
-Ao criar novos agregados neste módulo via PRD subsequente:
-
 ```bash
-# Iniciar novo ciclo de feature
+# Iniciar novo ciclo de feature neste módulo
 ai-spec create-prd
 
 # Derivar especificação técnica do PRD aprovado
@@ -166,21 +102,6 @@ ai-spec create-tasks
 # Executar tarefa isolada
 ai-spec execute-task
 
-# Verificar drift entre PRD e techspec
+# Verificar drift entre spec e tasks
 ai-spec check-spec-drift .specs/prd-identity-<feature>/tasks.md
-
-# Semver e changelog após merge
-ai-spec semver-next
-ai-spec changelog
 ```
-
-## Fronteiras de Import (enforçadas por `depguard`)
-
-| Pacote | Pode importar | Proibido |
-|--------|--------------|---------|
-| `domain` | stdlib, VOs próprios | `application`, `infrastructure`, `internal/platform/*`, `configs/*`, `viper` |
-| `application` | `domain` | `infrastructure`, bibliotecas de IO concretas |
-| `infrastructure` | `domain`, `application`, `internal/platform/*` | cross-module direto (ex: `finance/infrastructure`) |
-
-Cross-module: comunicação SOMENTE via interface declarada em `application` do consumidor
-ou via Domain Event publicado no `internal/platform/events`.

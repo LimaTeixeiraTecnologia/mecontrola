@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-identity-foundation/4.0_execution_report.md
+summary: "Domain services subscription.go + entitlement.go implementados com IsEntitled 100% coverage"
+timestamp: "2026-06-03T00:00:00Z"

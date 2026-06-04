@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-billing-pipeline/5.0_execution_report.md
+summary: "Task 5.0 validada: 6 interfaces + DTOs compilam e passam no linter sem issues"
+timestamp: "2026-06-03T00:00:00Z"

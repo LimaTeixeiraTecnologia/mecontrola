@@ -8,3 +8,16 @@ packages:
     interfaces:
       Storage:
       Registry:
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces:
+    interfaces:
+      UserRepository:
+      IDGenerator:
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces:
+    interfaces:
+      SubscriptionRepository:
+      WebhookEventRepository:
+      BillingProvider:
+      EntitlementCache:
+      IDGenerator:
+      UserResolver:
+      PIIRedactor:

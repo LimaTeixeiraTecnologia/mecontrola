@@ -155,10 +155,11 @@ Responsabilidades obrigatorias:
 6. `infrastructure/repositories/postgres` e `infrastructure/repositories/mssql`: persistencia concreta por banco.
 7. `infrastructure/http/server`: entrada servida pelo modulo, como handlers, controllers e rotas HTTP/gRPC.
 8. `infrastructure/http/client`: consumo de APIs externas ou servicos remotos.
-
 ### Plataforma Tecnica Compartilhada
 
 Capacidades tecnicas reutilizaveis por mais de um modulo DEVEM viver em `internal/platform/`, mantendo visibilidade privada do monolito e evitando `pkg/` sem necessidade de consumo externo.
+
+**Regra de Unicidade:** É PROIBIDO criar implementações locais ou redundantes de capacidades transversais (ex: geração de IDs, clock, hashing) dentro de `internal/<modulo>/...`. Se uma capacidade for necessária em múltiplos contextos, ela deve ser promovida ou criada diretamente em `internal/platform/`.
 
 ```text
 internal/platform/
@@ -167,6 +168,8 @@ internal/platform/
   errors/
   events/
   http/
+  httpclient/
+  id/
   observability/
   outbox/
   runtime/
@@ -174,6 +177,41 @@ internal/platform/
 ```
 
 `internal/platform/` nao e modulo de negocio e nao pode importar `internal/<modulo>/...`. Modulos podem consumir `internal/platform/` apenas nas camadas em que a dependencia tecnica seja permitida pela fronteira arquitetural; `domain` permanece puro e nao pode importar `platform`, banco, HTTP, filas, serializacao, configuracao ou drivers.
+
+### HTTP Outbound Mandatório
+
+Toda chamada HTTP a APIs externas (Kiwify, LLMs, provedores de notificação, etc.)
+DEVE usar `internal/platform/httpclient` como wrapper sobre `devkit-go/pkg/httpclient`.
+O wrapper garante timeouts explícitos, tracing W3C, métricas automáticas e política
+segura de retry (apenas métodos idempotentes por padrão).
+
+**Padrão de uso (bootstrap do módulo):**
+
+```go
+client, err := platformhttpclient.NewClient(
+    provider.Observability(),
+    platformhttpclient.WithTimeout(cfg.HTTPTimeout),
+    platformhttpclient.WithBaseURL(cfg.APIBaseURL),
+    platformhttpclient.WithDefaultRetry(cfg.HTTPRetryMaxAttempts, cfg.HTTPRetryBackoff),
+    platformhttpclient.WithTarget("kiwify"),
+)
+```
+
+**Proibido fora de testes:**
+
+1. Instanciar `&http.Client{}` diretamente em código de produção.
+2. Chamar `devkit-go/pkg/httpclient.NewObservableClient` sem passar por este wrapper.
+3. Realizar requisições HTTP outbound sem timeout explícito.
+
+Camadas auxiliares (rate limit, fluxo OAuth, retry específico de 429) ficam acima
+do wrapper, dentro do client da integração em `internal/<modulo>/infrastructure/http/client/`.
+
+### Proibições e Padrões desencorajados
+
+1. **Proibido o uso de pacotes de Clock globais ou compartilhados:** Não criar ou utilizar pacotes como `internal/platform/clock`. O tempo deve ser tratado como uma dependência local.
+   - **Use Cases/Domain:** Injetar `now func() time.Time`.
+   - **Infrastructure:** Declarar interface `Clock` local e privada se necessário (Interface Segregation).
+   - **Motivo:** Reduzir acoplamento desnecessário e "ruído" em camadas de domínio.
 
 Os modulos ativos devem usar `infrastructure/` como camada fisica de implementacoes concretas. Nao criar diretorios alternativos para a mesma responsabilidade.
 

@@ -44,6 +44,13 @@ tasks:
       - go tool cover -html={{.UNIT_PROFILE}} -o {{.COVERAGE_DIR}}/coverage.html
       - go tool cover -func={{.UNIT_PROFILE}}
 
+  coverage:identity:
+    desc: Cobertura agregada do modulo identity com validacao dos pontos criticos (RF-17).
+    cmds:
+      - mkdir -p {{.COVERAGE_DIR}}
+      - go test -coverprofile={{.COVERAGE_DIR}}/identity.out ./internal/identity/...
+      - go tool cover -func={{.COVERAGE_DIR}}/identity.out | grep -E 'NewWhatsAppNumber|NewEmail|IsEntitled'
+
   watch:
     desc: Reexecuta os testes unitarios ao alterar arquivos.
     watch: true

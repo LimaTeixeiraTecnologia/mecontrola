@@ -13,11 +13,58 @@ import (
 // Config incorpora grupos via mapstructure:",squash" para que as env vars
 // sejam mapeadas diretamente sem prefixo de grupo.
 type Config struct {
-	AppConfig    AppConfig    `mapstructure:",squash"`
-	HTTPConfig   HTTPConfig   `mapstructure:",squash"`
-	DBConfig     DBConfig     `mapstructure:",squash"`
-	O11yConfig   O11yConfig   `mapstructure:",squash"`
-	OutboxConfig OutboxConfig `mapstructure:",squash"`
+	AppConfig     AppConfig     `mapstructure:",squash"`
+	HTTPConfig    HTTPConfig    `mapstructure:",squash"`
+	DBConfig      DBConfig      `mapstructure:",squash"`
+	O11yConfig    O11yConfig    `mapstructure:",squash"`
+	OutboxConfig  OutboxConfig  `mapstructure:",squash"`
+	KiwifyConfig  KiwifyConfig  `mapstructure:",squash"`
+	BillingConfig BillingConfig `mapstructure:",squash"`
+}
+
+// KiwifyConfig agrupa as configurações do provedor Kiwify (RF-44).
+// Secrets (WebhookSecret, ClientSecret) NUNCA devem aparecer em logs — use Safe().
+type KiwifyConfig struct {
+	APIBaseURL                 string        `mapstructure:"KIWIFY_API_BASE_URL"`
+	WebhookSecret              string        `mapstructure:"KIWIFY_WEBHOOK_SECRET"`
+	WebhookTokenHeader         string        `mapstructure:"KIWIFY_WEBHOOK_TOKEN_HEADER"`
+	ClientID                   string        `mapstructure:"KIWIFY_CLIENT_ID"`
+	ClientSecret               string        `mapstructure:"KIWIFY_CLIENT_SECRET"`
+	OAuthTokenSafetyMargin     time.Duration `mapstructure:"KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN"`
+	RateLimitMaxRequestsPerMin int           `mapstructure:"KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN"`
+	RateLimitBurst             int           `mapstructure:"KIWIFY_RATE_LIMIT_BURST"`
+	ReconciliationInterval     string        `mapstructure:"KIWIFY_RECONCILIATION_INTERVAL"`
+	ReconciliationBatchSize    int           `mapstructure:"KIWIFY_RECONCILIATION_BATCH_SIZE"`
+	HTTPTimeout                time.Duration `mapstructure:"KIWIFY_HTTP_TIMEOUT"`
+	HTTPRetryMaxAttempts       int           `mapstructure:"KIWIFY_HTTP_RETRY_MAX_ATTEMPTS"`
+	HTTPRetryBackoff           time.Duration `mapstructure:"KIWIFY_HTTP_RETRY_BACKOFF"`
+}
+
+// Safe retorna uma representação redactada da KiwifyConfig segura para logs (RF-44).
+// Secrets aparecem apenas como booleanos indicando se estão configurados.
+func (k KiwifyConfig) Safe() map[string]any {
+	return map[string]any{
+		"api_base_url":              k.APIBaseURL,
+		"webhook_token_header":      k.WebhookTokenHeader,
+		"rate_limit":                k.RateLimitMaxRequestsPerMin,
+		"reconciliation_interval":   k.ReconciliationInterval,
+		"reconciliation_batch_size": k.ReconciliationBatchSize,
+		"http_timeout":              k.HTTPTimeout.String(),
+		"http_retry_max_attempts":   k.HTTPRetryMaxAttempts,
+		"http_retry_backoff":        k.HTTPRetryBackoff.String(),
+		"client_id_set":             k.ClientID != "",
+		"client_secret_set":         k.ClientSecret != "",
+		"webhook_secret_set":        k.WebhookSecret != "",
+	}
+}
+
+// BillingConfig agrupa as configurações do módulo de billing.
+type BillingConfig struct {
+	EntitlementCacheCapacity   int           `mapstructure:"BILLING_ENTITLEMENT_CACHE_CAPACITY"`
+	EntitlementCacheTTL        time.Duration `mapstructure:"BILLING_ENTITLEMENT_CACHE_TTL"`
+	AnonymizationSchedule      string        `mapstructure:"BILLING_ANONYMIZATION_SCHEDULE"`
+	AnonymizationBatchSize     int           `mapstructure:"BILLING_ANONYMIZATION_BATCH_SIZE"`
+	AnonymizationRetentionDays int           `mapstructure:"BILLING_ANONYMIZATION_RETENTION_DAYS"`
 }
 
 type AppConfig struct {
@@ -39,9 +86,12 @@ type DBConfig struct {
 	Name     string `mapstructure:"DB_NAME"`
 	SSLMode  string `mapstructure:"DB_SSL_MODE"`
 
-	MaxConns     int `mapstructure:"DB_MAX_CONNS"`
-	MinConns     int `mapstructure:"DB_MIN_CONNS"`
-	MaxIdleConns int `mapstructure:"DB_MAX_IDLE_CONNS"`
+	MaxConns int `mapstructure:"DB_MAX_CONNS"`
+	// MinConns: declarado para compatibilidade com .env legado; não é amarrado ao pool do devkit-go v0.4.0.
+	MinConns        int           `mapstructure:"DB_MIN_CONNS"`
+	MaxIdleConns    int           `mapstructure:"DB_MAX_IDLE_CONNS"`
+	ConnMaxLifetime time.Duration `mapstructure:"DB_CONN_MAX_LIFETIME"`
+	ConnMaxIdleTime time.Duration `mapstructure:"DB_CONN_MAX_IDLE_TIME"`
 }
 
 // DSN retorna a connection string com senha em texto claro.
@@ -114,6 +164,7 @@ func (l *configLoader) load() (*Config, error) {
 		"PORT", "SERVICE_NAME_API", "CORS_ALLOWED_ORIGINS",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSL_MODE",
 		"DB_MAX_CONNS", "DB_MIN_CONNS", "DB_MAX_IDLE_CONNS",
+		"DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS",
 		"OTEL_TRACE_SAMPLE_RATE", "LOG_LEVEL", "LOG_FORMAT", "SERVICE_VERSION",
 		"OUTBOX_DISPATCHER_ENABLED",
@@ -127,6 +178,24 @@ func (l *configLoader) load() (*Config, error) {
 		"OUTBOX_HOUSEKEEPING_SCHEDULE",
 		"OUTBOX_REAPER_INTERVAL",
 		"OUTBOX_REAPER_STUCK_AFTER",
+		"KIWIFY_API_BASE_URL",
+		"KIWIFY_WEBHOOK_SECRET",
+		"KIWIFY_WEBHOOK_TOKEN_HEADER",
+		"KIWIFY_CLIENT_ID",
+		"KIWIFY_CLIENT_SECRET",
+		"KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN",
+		"KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN",
+		"KIWIFY_RATE_LIMIT_BURST",
+		"KIWIFY_RECONCILIATION_INTERVAL",
+		"KIWIFY_RECONCILIATION_BATCH_SIZE",
+		"KIWIFY_HTTP_TIMEOUT",
+		"KIWIFY_HTTP_RETRY_MAX_ATTEMPTS",
+		"KIWIFY_HTTP_RETRY_BACKOFF",
+		"BILLING_ENTITLEMENT_CACHE_CAPACITY",
+		"BILLING_ENTITLEMENT_CACHE_TTL",
+		"BILLING_ANONYMIZATION_SCHEDULE",
+		"BILLING_ANONYMIZATION_BATCH_SIZE",
+		"BILLING_ANONYMIZATION_RETENTION_DAYS",
 	}
 	for _, key := range envKeys {
 		_ = l.v.BindEnv(key)
@@ -144,8 +213,12 @@ func (l *configLoader) load() (*Config, error) {
 	l.v.SetDefault("DB_MAX_CONNS", 10)
 	l.v.SetDefault("DB_MIN_CONNS", 2)
 	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
+	l.v.SetDefault("DB_CONN_MAX_LIFETIME", 30*time.Minute)
+	l.v.SetDefault("DB_CONN_MAX_IDLE_TIME", 5*time.Minute)
 
 	l.setOutboxDefaults()
+	l.setKiwifyDefaults()
+	l.setBillingDefaults()
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -167,6 +240,29 @@ func (l *configLoader) load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// setKiwifyDefaults registra os defaults do provedor Kiwify no Viper.
+func (l *configLoader) setKiwifyDefaults() {
+	l.v.SetDefault("KIWIFY_API_BASE_URL", "https://public-api.kiwify.com")
+	l.v.SetDefault("KIWIFY_WEBHOOK_TOKEN_HEADER", "X-Kiwify-Webhook-Token")
+	l.v.SetDefault("KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN", 5*time.Minute)
+	l.v.SetDefault("KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN", 100)
+	l.v.SetDefault("KIWIFY_RATE_LIMIT_BURST", 10)
+	l.v.SetDefault("KIWIFY_RECONCILIATION_INTERVAL", "@hourly")
+	l.v.SetDefault("KIWIFY_RECONCILIATION_BATCH_SIZE", 200)
+	l.v.SetDefault("KIWIFY_HTTP_TIMEOUT", 10*time.Second)
+	l.v.SetDefault("KIWIFY_HTTP_RETRY_MAX_ATTEMPTS", 3)
+	l.v.SetDefault("KIWIFY_HTTP_RETRY_BACKOFF", time.Second)
+}
+
+// setBillingDefaults registra os defaults do módulo billing no Viper.
+func (l *configLoader) setBillingDefaults() {
+	l.v.SetDefault("BILLING_ENTITLEMENT_CACHE_CAPACITY", 50000)
+	l.v.SetDefault("BILLING_ENTITLEMENT_CACHE_TTL", 5*time.Minute)
+	l.v.SetDefault("BILLING_ANONYMIZATION_SCHEDULE", "@daily")
+	l.v.SetDefault("BILLING_ANONYMIZATION_BATCH_SIZE", 500)
+	l.v.SetDefault("BILLING_ANONYMIZATION_RETENTION_DAYS", 365)
 }
 
 // setOutboxDefaults registra os defaults do Outbox Transacional (D-03) no Viper.
@@ -234,6 +330,7 @@ func (c *Config) Validate() error {
 
 	errs = append(errs, c.validatePoolTunables()...)
 	errs = append(errs, c.validateOutbox()...)
+	errs = append(errs, c.validateBilling()...)
 
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
@@ -247,30 +344,51 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validatePoolTunables() []string {
-	var errs []string
-
-	if c.DBConfig.MaxConns == 0 && c.DBConfig.MinConns == 0 && c.DBConfig.MaxIdleConns == 0 {
+	db := c.DBConfig
+	if db.MaxConns == 0 && db.MinConns == 0 && db.MaxIdleConns == 0 &&
+		db.ConnMaxLifetime == 0 && db.ConnMaxIdleTime == 0 {
 		return nil
 	}
 
-	if c.DBConfig.MaxConns < 1 {
+	var errs []string
+	errs = append(errs, validatePoolSizes(db)...)
+	errs = append(errs, validatePoolTimeouts(db)...)
+	return errs
+}
+
+func validatePoolSizes(db DBConfig) []string {
+	var errs []string
+
+	if db.MaxConns < 1 {
 		errs = append(errs, "DB_MAX_CONNS deve ser maior que zero")
 	}
-
-	if c.DBConfig.MinConns < 0 {
+	if db.MinConns < 0 {
 		errs = append(errs, "DB_MIN_CONNS não pode ser negativo")
 	}
-
-	if c.DBConfig.MaxIdleConns < 0 {
+	if db.MaxIdleConns < 0 {
 		errs = append(errs, "DB_MAX_IDLE_CONNS não pode ser negativo")
 	}
-
-	if c.DBConfig.MaxConns > 0 && c.DBConfig.MinConns > c.DBConfig.MaxConns {
+	if db.MaxConns > 0 && db.MinConns > db.MaxConns {
 		errs = append(errs, "DB_MIN_CONNS não pode ser maior que DB_MAX_CONNS")
 	}
-
-	if c.DBConfig.MaxConns > 0 && c.DBConfig.MaxIdleConns > c.DBConfig.MaxConns {
+	if db.MaxConns > 0 && db.MaxIdleConns > db.MaxConns {
 		errs = append(errs, "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS")
+	}
+
+	return errs
+}
+
+func validatePoolTimeouts(db DBConfig) []string {
+	var errs []string
+
+	if db.ConnMaxLifetime < 0 {
+		errs = append(errs, "DB_CONN_MAX_LIFETIME não pode ser negativo")
+	}
+	if db.ConnMaxIdleTime < 0 {
+		errs = append(errs, "DB_CONN_MAX_IDLE_TIME não pode ser negativo")
+	}
+	if db.ConnMaxLifetime > 0 && db.ConnMaxIdleTime > db.ConnMaxLifetime {
+		errs = append(errs, "DB_CONN_MAX_IDLE_TIME não pode ser maior que DB_CONN_MAX_LIFETIME")
 	}
 
 	return errs
@@ -369,5 +487,121 @@ func (c *Config) validateProduction() []string {
 		errs = append(errs, "OTEL_EXPORTER_OTLP_HEADERS deve ter ao menos 64 caracteres em production quando configurado")
 	}
 
+	errs = append(errs, c.validateProductionKiwify()...)
+
+	return errs
+}
+
+func (c *Config) validateProductionKiwify() []string {
+	k := c.KiwifyConfig
+
+	// Kiwify não está configurado: sem validação obrigatória de secrets em production.
+	// Considera "não configurado" quando todos os secrets e IDs estão vazios.
+	if k.ClientID == "" && k.WebhookSecret == "" && k.ClientSecret == "" {
+		return nil
+	}
+
+	var errs []string
+
+	if k.WebhookSecret == "" {
+		errs = append(errs, "KIWIFY_WEBHOOK_SECRET é obrigatório em production quando Kiwify está habilitado")
+	}
+
+	if k.ClientID == "" {
+		errs = append(errs, "KIWIFY_CLIENT_ID é obrigatório em production quando Kiwify está habilitado")
+	}
+
+	if k.ClientSecret == "" {
+		errs = append(errs, "KIWIFY_CLIENT_SECRET é obrigatório em production quando Kiwify está habilitado")
+	}
+
+	for _, placeholder := range InsecurePlaceholders {
+		if k.WebhookSecret == placeholder {
+			errs = append(errs, fmt.Sprintf(
+				"KIWIFY_WEBHOOK_SECRET contém placeholder inseguro %q em production",
+				placeholder,
+			))
+			break
+		}
+	}
+
+	for _, placeholder := range InsecurePlaceholders {
+		if k.ClientSecret == placeholder {
+			errs = append(errs, fmt.Sprintf(
+				"KIWIFY_CLIENT_SECRET contém placeholder inseguro %q em production",
+				placeholder,
+			))
+			break
+		}
+	}
+
+	return errs
+}
+
+func (c *Config) validateBilling() []string {
+	b := c.BillingConfig
+
+	// Quando todos os campos numéricos são zero, BillingConfig não foi configurado.
+	if b.EntitlementCacheCapacity == 0 && b.AnonymizationBatchSize == 0 && b.AnonymizationRetentionDays == 0 {
+		return nil
+	}
+
+	var errs []string
+
+	if b.EntitlementCacheCapacity < 1000 || b.EntitlementCacheCapacity > 500000 {
+		errs = append(errs, fmt.Sprintf(
+			"BILLING_ENTITLEMENT_CACHE_CAPACITY inválido %d: deve estar no intervalo [1000..500000]",
+			b.EntitlementCacheCapacity,
+		))
+	}
+
+	if b.EntitlementCacheTTL < time.Second || b.EntitlementCacheTTL > time.Hour {
+		errs = append(errs, fmt.Sprintf(
+			"BILLING_ENTITLEMENT_CACHE_TTL inválido %s: deve estar no intervalo [1s..1h]",
+			b.EntitlementCacheTTL,
+		))
+	}
+
+	k := c.KiwifyConfig
+	if k.RateLimitMaxRequestsPerMin < 1 || k.RateLimitMaxRequestsPerMin > 500 {
+		errs = append(errs, fmt.Sprintf(
+			"KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN inválido %d: deve estar no intervalo [1..500]",
+			k.RateLimitMaxRequestsPerMin,
+		))
+	}
+
+	errs = append(errs, validateKiwifyHTTP(k)...)
+
+	return errs
+}
+
+// validateKiwifyHTTP valida os campos HTTP da Kiwify quando ao menos um deles
+// foi configurado. Quando todos são zero (caminho via LoadConfig aplica defaults
+// e este Validate ocorre depois; caminho via literal nos testes mantém compat),
+// pula a validação para alinhar ao padrão "zero = não configurado".
+func validateKiwifyHTTP(k KiwifyConfig) []string {
+	if k.HTTPTimeout == 0 && k.HTTPRetryMaxAttempts == 0 && k.HTTPRetryBackoff == 0 {
+		return nil
+	}
+
+	var errs []string
+	if k.HTTPTimeout <= 0 || k.HTTPTimeout > time.Minute {
+		errs = append(errs, fmt.Sprintf(
+			"KIWIFY_HTTP_TIMEOUT inválido %s: deve estar no intervalo (0..1m]",
+			k.HTTPTimeout,
+		))
+	}
+	if k.HTTPRetryMaxAttempts < 0 || k.HTTPRetryMaxAttempts > 10 {
+		errs = append(errs, fmt.Sprintf(
+			"KIWIFY_HTTP_RETRY_MAX_ATTEMPTS inválido %d: deve estar no intervalo [0..10]",
+			k.HTTPRetryMaxAttempts,
+		))
+	}
+	if k.HTTPRetryMaxAttempts > 0 && (k.HTTPRetryBackoff <= 0 || k.HTTPRetryBackoff > 10*time.Second) {
+		errs = append(errs, fmt.Sprintf(
+			"KIWIFY_HTTP_RETRY_BACKOFF inválido %s: deve estar no intervalo (0..10s] quando há retry habilitado",
+			k.HTTPRetryBackoff,
+		))
+	}
 	return errs
 }
