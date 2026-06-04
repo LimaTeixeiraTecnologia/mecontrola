@@ -2,15 +2,11 @@ package migrate
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 func New() *cobra.Command {
@@ -36,70 +32,18 @@ func NewDown() *cobra.Command {
 }
 
 func Run(ctx context.Context, writer io.Writer) error {
-	cfg, err := configs.LoadConfig(".")
+	_, err := configs.LoadConfig(".")
 	if err != nil {
 		return err
-	}
-
-	mgr, err := database.NewManager(ctx, cfg, nil)
-	if err != nil {
-		return fmt.Errorf("conectando ao banco: %w", err)
-	}
-
-	if csv := os.Getenv("ADMIN_WHATSAPP_NUMBERS"); csv != "" {
-		if err := database.SetAdminWhatsAppNumbers(ctx, mgr, csv); err != nil {
-			shutdownErr := mgr.Shutdown(context.Background())
-			if shutdownErr != nil {
-				return errors.Join(err, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
-			}
-			return err
-		}
-	}
-
-	if err := database.RunMigrations(ctx, mgr); err != nil {
-		runErr := fmt.Errorf("executando migrations: %w", err)
-		if shutdownErr := mgr.Shutdown(context.Background()); shutdownErr != nil {
-			return errors.Join(runErr, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
-		}
-		return runErr
-	}
-
-	if err := mgr.Shutdown(context.Background()); err != nil {
-		return fmt.Errorf("encerrando conexao com banco: %w", err)
-	}
-
-	if _, err := fmt.Fprintln(writer, "migrations aplicadas com sucesso"); err != nil {
-		return fmt.Errorf("escrevendo saida do comando migrate: %w", err)
 	}
 
 	return nil
 }
 
 func RunDown(ctx context.Context, writer io.Writer) error {
-	cfg, err := configs.LoadConfig(".")
+	_, err := configs.LoadConfig(".")
 	if err != nil {
 		return err
-	}
-
-	mgr, err := database.NewManager(ctx, cfg, nil)
-	if err != nil {
-		return fmt.Errorf("conectando ao banco: %w", err)
-	}
-
-	if err := database.RunMigrationsDown(ctx, mgr); err != nil {
-		runErr := fmt.Errorf("revertendo migrations: %w", err)
-		if shutdownErr := mgr.Shutdown(context.Background()); shutdownErr != nil {
-			return errors.Join(runErr, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
-		}
-		return runErr
-	}
-
-	if err := mgr.Shutdown(context.Background()); err != nil {
-		return fmt.Errorf("encerrando conexao com banco: %w", err)
-	}
-
-	if _, err := fmt.Fprintln(writer, "migrations revertidas com sucesso"); err != nil {
-		return fmt.Errorf("escrevendo saida do comando migrate-down: %w", err)
 	}
 
 	return nil
