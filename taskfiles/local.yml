@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Gerenciamento do ambiente de desenvolvimento local via Docker Compose.
+
+vars:
+  COMPOSE_BASE: deployment/compose/compose.yml
+  COMPOSE_LOCAL: deployment/compose/compose.local.yml
+  COMPOSE_CMD: docker compose -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}}
+
+tasks:
+  up:
+    desc: Sobe o ambiente local (postgres, server, worker).
+    cmds:
+      - "{{.COMPOSE_CMD}} up -d"
+      - echo "Ambiente local disponivel em http://localhost:8080"
+
+  down:
+    desc: Para e remove os containers locais.
+    cmds:
+      - "{{.COMPOSE_CMD}} down"
+
+  seed:
+    desc: Sobe o ambiente e aplica migrations no banco local.
+    cmds:
+      - task: up
+      - "{{.COMPOSE_CMD}} run --rm migrate"
+      - echo "Migrations aplicadas. App em http://localhost:8080"
+
+  logs:
+    desc: Exibe logs dos containers locais (Ctrl+C para sair).
+    cmds:
+      - "{{.COMPOSE_CMD}} logs -f"
+
+  ps:
+    desc: Lista status dos containers locais.
+    cmds:
+      - "{{.COMPOSE_CMD}} ps"
+
+  reset:
+    desc: Para containers e remove volumes (apaga dados locais).
+    prompt: Isso apagara todos os dados locais. Continuar?
+    cmds:
+      - "{{.COMPOSE_CMD}} down -v"

@@ -1,0 +1,81 @@
+name: mecontrola
+
+# Overrides de produção — VPS Hostinger.
+# Uso: IMAGE_TAG=<sha> docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml up -d
+# IMAGE_TAG deve ser um digest ou tag semântica imutável; nunca usar 'latest' em prod.
+
+services:
+  postgres:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          memory: 512M
+    environment:
+      # pgtune mixed profile 8GB
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+
+  migrate:
+    image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
+    environment:
+      ENVIRONMENT: production
+
+  server:
+    image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      LOG_FORMAT: json
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  worker:
+    image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      LOG_FORMAT: json
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  caddy:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  promtail:
+    # Remove o profile para ativar promtail em produção
+    profiles: []
+    restart: unless-stopped

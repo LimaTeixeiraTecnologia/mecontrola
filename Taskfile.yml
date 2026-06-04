@@ -19,6 +19,8 @@ includes:
     taskfile: ./taskfiles/migrate.yml
   ci:
     taskfile: ./taskfiles/ci.yml
+  local:
+    taskfile: ./taskfiles/local.yml
 
 silent: true
 

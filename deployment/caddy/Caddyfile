@@ -1,0 +1,24 @@
+{
+	email {$CADDY_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	reverse_proxy server:{$PORT:-8080}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Content-Security-Policy "default-src 'none'; connect-src 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	encode gzip zstd
+
+	log {
+		output stderr
+		format json
+		level INFO
+	}
+}

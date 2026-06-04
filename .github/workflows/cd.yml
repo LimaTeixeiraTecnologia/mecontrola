@@ -5,6 +5,12 @@ on:
     branches: [main]
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag da imagem a publicar na VPS (SHA curto ou semver)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -133,23 +139,25 @@ jobs:
             --yes \
             ${{ env.IMAGE_NAME }}@${DIGEST}
 
-      - name: Install flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy to Fly.io (rolling)
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Resolve deploy tag
+        id: deploy-tag
         run: |
-          flyctl deploy \
-            --strategy rolling \
-            --image ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.short-sha }} \
-            --app mecontrola
+          # Em workflow_dispatch usa o tag informado; em push usa o short-sha
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ steps.meta.outputs.short-sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Smoke test — verify processes started
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy to VPS
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          sleep 15
-          flyctl status -a mecontrola | grep started
-          flyctl status -a mecontrola | grep app
-          flyctl status -a mecontrola | grep worker
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          IMAGE_TAG: ${{ steps.deploy-tag.outputs.tag }}
+        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
