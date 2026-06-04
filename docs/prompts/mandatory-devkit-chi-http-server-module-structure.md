@@ -130,7 +130,7 @@ Uso obrigatório, mandatório e inegociável da skill `go-implementation`, de se
 
 - `go.mod` declara Go `1.26.2` e `github.com/JailtonJunior94/devkit-go v0.4.0`.
 - `cmd/server/server.go` ja usa explicitamente `chi_server`: cria `server, err := chiserver.New(...)`, registra routers com `server.RegisterRouters(...)`, sobe workers auxiliares com `internal/platform/worker.NewManager(...)` e inicia o servidor com `server.Start(ctx)`.
-- `cmd/worker/worker.go` hoje tambem inicializa config, observabilidade e database manager, instancia `events.NewBus()` e sobe os runners via `internal/platform/worker.NewManager(...)`.
+- `cmd/worker/worker.go` hoje tambem inicializa config, observabilidade e database manager, sobe os runners via `internal/platform/worker.NewManager(...)`.
 - O estado atual do workspace deve ser tratado como fonte da verdade para qualquer refinamento, sem recorrer a historico, paths antigos ou suposicoes fora do que estiver visivel agora.
 - O exemplo original cita módulos inexistentes neste repositório (`user`, `category`, `card`, `transaction`, `paymentMethod`, `budget`, `invoice`). No estado real atual, o prompt não pode exigir routers ou handlers para módulos que ainda não expõem HTTP.
 - Há tensão entre o pedido por `http/client`, `http/server`, `routes` e `handlers/...` e a governança canônica do repositório, que exige preservar `internal/<modulo>/infrastructure/http/server` e `internal/<modulo>/infrastructure/http/client`.
@@ -173,13 +173,12 @@ Contexto real que deve orientar a implementacao:
 - `cmd/worker/worker.go` ja concentra explicitamente o bootstrap de processamento em background via `platformworker.NewManager(...)`.
 - O estado atual do workspace e a unica fonte de verdade para bootstrap, imports, wiring e estrutura de modulo.
 - Portanto, qualquer evolucao do bootstrap ou do wiring deve partir exclusivamente do que estiver visivel agora em `cmd/server/server.go`, `cmd/worker/worker.go` e nos packages acessiveis a partir deles.
-- O projeto e um monolito modular em Go e precisa preservar fronteiras arquiteturais.
+- O projeto segue orientacao modular em Go e precisa preservar fronteiras arquiteturais.
 - A fronteira obrigatoria para HTTP continua sendo:
   - inbound: `internal/<modulo>/infrastructure/http/server`
   - outbound: `internal/<modulo>/infrastructure/http/client`
-- Toda chamada HTTP outbound deve continuar usando `internal/platform/httpclient`.
-- Em `identity`, nunca logar `whatsapp_number` ou `email` em claro; usar sempre chaves `_masked`.
-- Em `billing`, nunca logar email, WhatsApp, CPF, payload sensivel ou dados de cartao em claro; respeitar a politica do `PIIRedactor`.
+- Toda chamada HTTP outbound visivel no estado atual deve continuar usando `internal/platform/httpclient`.
+- Nunca logar PII, segredos, payloads sensiveis, dados financeiros, email, telefone, identificadores pessoais ou credenciais em claro.
 
 Ambiguidades e conflitos que voce deve resolver com seguranca antes de codar:
 - O pedido quer bootstrap obrigatorio a partir dos entrypoints. Como `cmd/server/server.go` ja usa `chi_server` explicitamente, a tarefa nao e reintroduzir esse uso, e sim preservar e evoluir esse bootstrap sem regressao nem duplicidade.
@@ -205,8 +204,8 @@ Diretrizes de desenho obrigatorias:
 6. Toda rota protegida deve aplicar middleware de autorizacao no router do modulo, nunca no handler.
 7. O bootstrap de `cmd/server/server.go` e, quando aplicavel, de `cmd/worker/worker.go`, deve ser o ponto de partida obrigatorio da composicao. O servidor HTTP deve ser inicializado com options coerentes com a API real do pacote `chi_server`, incluindo health checks, metrics, CORS, porta, service name e service version somente quando esses dados existirem no codebase real.
 8. Se algum detalhe do snippet divergir da API real de `devkit-go` ou dos nomes reais de config, adapte ao estado verdadeiro do codebase. Nao invente API, campos de config ou wrappers desnecessarios.
-9. Se `identity` continuar sem rotas HTTP reais no estado atual, ele nao deve receber router vazio, estrutura artificial ou pasta `http/server` criada apenas por simetria.
-10. Se `billing` ja constroi handler e router no `module.go`, prefira composicao direta e previsivel. Evite registrars vazios, wiring lazy e ponteiros atomicos quando nao forem estritamente necessarios.
+9. Se algum modulo nao tiver rotas HTTP reais no estado atual, ele nao deve receber router vazio, estrutura artificial ou pasta `http/server` criada apenas por simetria.
+10. Se algum modulo ja constroi handler e router no `module.go`, prefira composicao direta e previsivel. Evite registrars vazios, wiring lazy e ponteiros atomicos quando nao forem estritamente necessarios.
 11. E obrigatorio usar os exemplos da skill `go-implementation` e os exemplos contidos neste prompt como base concreta de implementacao, adaptando-os ao contexto real do repositorio sem copia cega.
 12. E mandatorio e inegociavel manter `0 comentarios` em qualquer codigo Go novo ou alterado.
 
@@ -256,7 +255,7 @@ Proibicoes explicitas:
 - Nao deixar qualquer bootstrap HTTP legado ativo em paralelo se isso significar dois bootstraps HTTP concorrentes.
 - Nao mover HTTP outbound para fora de `internal/<modulo>/infrastructure/http/client`.
 - Nao registrar rota diretamente no `cmd/server/server.go` quando ela pertence ao modulo.
-- Nao criar router vazio para `identity` ou qualquer outro modulo sem HTTP real.
+- Nao criar router vazio para qualquer modulo sem HTTP real.
 - Nao manter wiring lazy no router se o handler puder ser construido e injetado de forma direta no `module.go`.
 - Nao quebrar as fronteiras `handler -> usecase -> repositories e/ou client http`.
 - Nao logar PII em claro.
@@ -270,8 +269,8 @@ Criterios de aceitacao:
 5. A estrutura HTTP final respeita `internal/<modulo>/infrastructure/http/server` e `internal/<modulo>/infrastructure/http/client`.
 6. Nao permanece bootstrap duplicado, concorrente ou redundante entre server e worker.
 7. Graceful shutdown de servidor HTTP, workers, observabilidade e database manager continua correto, com contexto derivado e timeout explicito.
-8. `billing` continua usando `internal/platform/httpclient` para HTTP outbound quando isso fizer parte do estado atual visivel.
-9. `identity` e `billing` continuam protegendo PII conforme suas politicas quando isso fizer parte do estado atual visivel.
+8. O uso de `internal/platform/httpclient` permanece obrigatorio para HTTP outbound quando isso fizer parte do estado atual visivel.
+9. PII, segredos e payloads sensiveis continuam protegidos no desenho final.
 10. Nenhum arquivo Go novo ou alterado recebe comentarios, sem excecao.
 11. A resposta final explica quais arquivos foram alterados e como os entrypoints permaneceram obrigatorios, sempre tomando o estado atual do workspace como fonte da verdade.
 
@@ -291,11 +290,9 @@ O objetivo nao e copiar literalmente os snippets abaixo, e sim deixar claro o al
 ## Exemplo alvo para `cmd/server/server.go`
 
 ```go
-eventBus := events.NewBus()
 
 billingModule, err := billing.NewModule(
     billing.WithConfig(cfg),
-    billing.WithEventBus(eventBus),
     billing.WithLogger(logger),
     billing.WithDatabase(mgr),
     billing.WithProvider(provider),
@@ -356,7 +353,7 @@ O ponto inegociavel do exemplo acima e:
 - `server.RegisterRouters(...)` registra os routers reais
 - o lifecycle final nasce do proprio entrypoint, incluindo `platformworker.NewManager(...)` e `server.Start(ctx)`
 
-## Exemplo alvo para `internal/billing/module.go`
+## Exemplo alvo de wiring de modulo HTTP, se esse modulo estiver visivel no workspace atual
 
 ```go
 type Module struct {
@@ -406,9 +403,9 @@ func (m *Module) Routers() []chiserver.Router {
 }
 ```
 
-O alvo aqui e tornar o `module.go` explicitamente responsavel pelo wiring do handler e do router real do modulo, evitando wiring opaco ou lazy sem necessidade.
+O alvo aqui e tornar o `module.go` explicitamente responsavel pelo wiring do handler e do router real do modulo, quando esse modulo fizer parte do estado atual visivel, evitando wiring opaco ou lazy sem necessidade.
 
-## Exemplo alvo para a estrutura do modulo com HTTP
+## Exemplo alvo para a estrutura de um modulo com HTTP, se esse modulo existir no workspace atual
 
 ```text
 internal/billing/
@@ -426,12 +423,12 @@ Se novos modulos passarem a expor HTTP no futuro, o mesmo padrao vale dentro de 
 
 # Melhorias aplicadas
 
-- Amarrei o prompt ao estado real do repositorio: hoje `billing` tem router HTTP real, `identity` ainda nao tem, e `cmd/server/server.go` passa a ser tratado como ponto de partida obrigatorio do bootstrap HTTP.
+- Amarrei o prompt ao estado real do repositorio: `cmd/server/server.go` e `cmd/worker/worker.go` sao os pontos de partida obrigatorios do bootstrap visivel hoje.
 - Explicitei o principal risco de falso positivo: introduzir novo bootstrap HTTP no entrypoint sem respeitar o bootstrap explicito que ja existe no estado atual.
 - Tornei o prompt mais robusto contra invencao de contexto: ele agora proibe routers vazios, modulos artificiais, wrappers cosmeticos e qualquer camada intermediaria desnecessaria entre o entrypoint e o servidor HTTP.
 - Transformei “robusto”, “eficiente”, “escalavel”, “production-ready”, “production-proof” e “sem falso positivo” em exigencias verificaveis de composicao, shutdown, registro de routers reais e ausencia de bootstrap duplicado.
-- Adicionei exemplos concretos do alvo para `cmd/server/server.go`, `internal/billing/module.go` e a estrutura fisica esperada do modulo HTTP.
-- Mantive a exigencia de `0 comentarios` em codigo Go novo ou alterado e preservei as politicas de PII de `billing` e `identity`.
+- Adicionei exemplos concretos do alvo para `cmd/server/server.go`, para `cmd/worker/worker.go` e para wiring de modulo HTTP quando esse wiring estiver visivel no workspace atual.
+- Mantive a exigencia de `0 comentarios` em codigo Go novo ou alterado e reforcei a protecao contra vazamento de PII e segredos no desenho final.
 
 # Exemplo de codigo real para analisar a proposta
 
@@ -447,7 +444,6 @@ func Run(ctx context.Context) error {
     }
 
     logger := slog.Default()
-    eventBus := events.NewBus()
 
     provider, _, err := observability.NewProvider(cfg)
     if err != nil {
@@ -470,7 +466,6 @@ func Run(ctx context.Context) error {
 
     billingModule, err := billing.NewModule(
         billing.WithConfig(cfg),
-        billing.WithEventBus(eventBus),
         billing.WithLogger(logger),
         billing.WithDatabase(mgr),
         billing.WithProvider(provider),
@@ -527,7 +522,7 @@ func Run(ctx context.Context) error {
 }
 ```
 
-## Exemplo proposto de wiring em `internal/billing/module.go`
+## Exemplo proposto de wiring de modulo HTTP, se esse modulo estiver visivel no workspace atual
 
 ```go
 type Module struct {
@@ -591,7 +586,6 @@ func Run(ctx context.Context) error {
     }
 
     logger := slog.Default()
-    eventBus := events.NewBus()
 
     provider, _, err := observability.NewProvider(cfg)
     if err != nil {
@@ -614,7 +608,6 @@ func Run(ctx context.Context) error {
 
     billingModule, err := billing.NewModule(
         billing.WithConfig(cfg),
-        billing.WithEventBus(eventBus),
         billing.WithLogger(logger),
         billing.WithDatabase(mgr),
         billing.WithProvider(provider),
@@ -747,7 +740,7 @@ func (c *Client) GetSubscription(ctx context.Context, subscriptionID string) (*h
 - `cmd/server/server.go` vira o ponto obrigatorio de bootstrap HTTP explicito com `chiserver.New(...)`
 - `cmd/server/server.go` tambem sobe os runners de background visiveis hoje via `platformworker.NewManager(...)`
 - `cmd/worker/worker.go` vira o ponto obrigatorio de bootstrap dedicado de processamento em background
-- `billing` continua sendo o unico modulo com router HTTP real enquanto `identity` nao expuser rotas
+- se houver modulo HTTP real visivel no workspace atual, ele deve ser registrado pelo entrypoint sem router placeholder
 - o fluxo HTTP fica estritamente `route registrar -> handler -> usecase -> repository/client`
-- o bootstrap dos entrypoints deve respeitar o estado atual visivel, incluindo `events.NewBus()`, `platformworker.NewManager(...)` e `server.Start(ctx)`
+- o bootstrap dos entrypoints deve respeitar o estado atual visivel, incluindo `platformworker.NewManager(...)` e `server.Start(ctx)`
 - `internal/platform/httpclient` continua sendo obrigatorio para HTTP outbound

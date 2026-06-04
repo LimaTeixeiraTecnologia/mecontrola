@@ -82,8 +82,8 @@ Antes de qualquer alteracao, carregue obrigatoriamente:
 
 Contexto real minimo ja verificado e que deve orientar a implementacao:
 1. `go.mod` declara Go `1.26.2` e `github.com/JailtonJunior94/devkit-go v0.4.0`.
-2. `cmd/server/server.go` e `cmd/worker/worker.go` carregam config com `configs.LoadConfig(".")`, criam logger e `events.NewBus()`, inicializam observabilidade antes do database manager e fazem shutdown explicito desse componente.
-3. Os entrypoints atuais ainda chamam `observability.NewProvider(cfg)` e passam `provider.Observability()` para `database.NewManager`, `billing.NewModule` e `chiserver.New`.
+2. `cmd/server/server.go` e `cmd/worker/worker.go` carregam config com `configs.LoadConfig(".")`, criam logger, inicializam observabilidade antes do database manager e fazem shutdown explicito desse componente.
+3. Os entrypoints atuais ainda chamam `observability.NewProvider(cfg)` com retorno multiplo e passam `provider.Observability()` para `database.NewManager`, `billing.NewModule` e `chiserver.New`.
 4. `internal/platform/httpclient.NewClient` ja exige `devkitobs.Observability` e encapsula `devkit-go/pkg/httpclient.NewObservableClient`.
 5. Assuma o estado atual do codebase como fonte da verdade, inclusive quando houver inconsistencias aparentes entre imports, arquivos presentes, worktree e documentacao historica.
 6. O repositorio e um monolito modular em Go; as fronteiras arquiteturais precisam ser preservadas.
@@ -176,6 +176,8 @@ Se houver conflito entre este prompt, o snippet fornecido, `AGENTS.md`, `agent-g
 
 O exemplo abaixo nao e para copia cega. Ele existe para deixar explicito o desenho esperado do resultado final a partir, obrigatoriamente, de `cmd/server/server.go` e/ou `cmd/worker/worker.go`.
 
+Nos exemplos abaixo, o nome local foi padronizado como `o11y` por criterio normativo do prompt, mesmo que os entrypoints atuais ainda usem a variavel local `provider`.
+
 ```go
 func Run(ctx context.Context) error {
 	cfg, err := configs.LoadConfig(".")
@@ -184,9 +186,8 @@ func Run(ctx context.Context) error {
 	}
 
 	logger := slog.Default()
-	eventBus := events.NewBus()
 
-	o11y, err := observability.NewProvider(cfg)
+	o11y, _, err := observability.NewProvider(cfg)
 	if err != nil {
 		return err
 	}
@@ -203,7 +204,6 @@ func Run(ctx context.Context) error {
 
 	billingModule, err := billing.NewModule(
 		billing.WithConfig(cfg),
-		billing.WithEventBus(eventBus),
 		billing.WithLogger(logger),
 		billing.WithDatabase(mgr),
 		billing.WithProvider(o11y),
@@ -252,10 +252,7 @@ func Run(ctx context.Context) error {
 		)
 	}
 
-	<-ctx.Done()
-
 	return errors.Join(
-		server.Stop(context.Background()),
 		runnerManager.Stop(context.Background()),
 		o11y.Shutdown(context.Background()),
 		mgr.Shutdown(context.Background()),
@@ -271,9 +268,8 @@ func Run(ctx context.Context) error {
 	}
 
 	logger := slog.Default()
-	eventBus := events.NewBus()
 
-	o11y, err := observability.NewProvider(cfg)
+	o11y, _, err := observability.NewProvider(cfg)
 	if err != nil {
 		return err
 	}
@@ -290,7 +286,6 @@ func Run(ctx context.Context) error {
 
 	billingModule, err := billing.NewModule(
 		billing.WithConfig(cfg),
-		billing.WithEventBus(eventBus),
 		billing.WithLogger(logger),
 		billing.WithDatabase(mgr),
 		billing.WithProvider(o11y),
@@ -378,9 +373,34 @@ func (h *KiwifyWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 ```go
 func (u *IngestKiwifyWebhookUseCase) Execute(ctx context.Context, in input.IngestWebhookInput) (output.IngestWebhookResult, error) {
 	return observability.Observe(ctx, u.o11y, u.metrics, "billing", "ingest_kiwify_webhook", func(ctx context.Context) (output.IngestWebhookResult, error) {
+		if err := u.provider.VerifySignature(in.RawBody, in.Headers); err != nil {
+			return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: %w", err)
+		}
+
+		externalID, err := valueobjects.NewExternalEventIDCascade(in.RawBody)
+		if err != nil {
+			return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: %w", err)
+		}
+
 		return u.txRunner.Do(ctx, func(txCtx context.Context, tx database.DBTX) (output.IngestWebhookResult, error) {
-			if err := u.provider.VerifySignature(in.RawBody, in.Headers); err != nil {
-				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: %w", err)
+			now := time.Now().UTC()
+			webhookID, err := valueobjects.NewWebhookEventID(u.idGenerator.NewID())
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: gerar webhook event id: %w", err)
+			}
+
+			webhookEvent, err := entities.NewWebhookEvent(entities.NewWebhookEventParams{
+				ID:              webhookID,
+				Provider:        "kiwify",
+				ExternalEventID: externalID,
+				EventType:       extractEventType(in.RawBody),
+				Signature:       lookupHeader(in.Headers, in.SignatureHeaderName),
+				HeadersJSON:     in.HeadersJSON(),
+				Payload:         in.RawBody,
+				ReceivedAt:      now,
+			})
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: criar webhook event: %w", err)
 			}
 
 			inserted, err := u.webhookRepo.InsertIfNew(txCtx, webhookEvent)
@@ -389,6 +409,33 @@ func (u *IngestKiwifyWebhookUseCase) Execute(ctx context.Context, in input.Inges
 			}
 			if !inserted {
 				return output.IngestWebhookResult{Duplicate: true}, nil
+			}
+
+			payload, err := encodeReceivedPayload(webhookEvent.ID().String(), webhookEvent.Provider())
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: codificar payload outbox: %w", err)
+			}
+
+			eventID, err := events.NewEventID(u.idGenerator.NewID())
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: gerar event id: %w", err)
+			}
+
+			eventName, err := events.NewEventName("billing.kiwify.received")
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: criar event name: %w", err)
+			}
+
+			evt, err := outbox.NewEvent(outbox.NewEventParams{
+				ID:            eventID,
+				EventType:     eventName,
+				AggregateType: "webhook_event",
+				AggregateID:   webhookEvent.ID().String(),
+				Payload:       payload,
+				OccurredAt:    now,
+			})
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: criar outbox event: %w", err)
 			}
 
 			if err := u.publisher.Publish(txCtx, tx, evt); err != nil {

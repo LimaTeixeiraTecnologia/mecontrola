@@ -14,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability"
 	platformworker "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
@@ -37,7 +36,6 @@ func Run(ctx context.Context) error {
 	}
 
 	logger := slog.Default()
-	eventBus := events.NewBus()
 
 	// Observability primeiro: o database manager consome o provider via WithObservability
 	// para emitir métricas de pool e logs estruturados desde o boot.
@@ -62,7 +60,6 @@ func Run(ctx context.Context) error {
 
 	billingModule, err := billing.NewModule(
 		billing.WithConfig(cfg),
-		billing.WithEventBus(eventBus),
 		billing.WithLogger(logger),
 		billing.WithDatabase(mgr),
 		billing.WithProvider(provider),

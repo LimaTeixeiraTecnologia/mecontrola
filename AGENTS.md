@@ -14,6 +14,76 @@ O projeto aparenta ser um monolito modular, com separacao relevante por modulos,
 Stack detectada: Go.
 Frameworks detectados: Fiber, gRPC.
 
+## Go — Regra Mandatória e Inegociável
+
+Toda implementação, alteração ou revisão de código Go DEVE obrigatoriamente seguir o protocolo completo de `.agents/skills/go-implementation/SKILL.md`. Nenhuma exceção por diferença de ferramenta, agente ou conveniência operacional.
+
+### Protocolo obrigatório (Etapas 1–5)
+
+**Etapa 1 — Base obrigatória (sempre):**
+- Carregar `.agents/skills/go-implementation/SKILL.md`.
+- Ler `references/architecture.md`.
+- Verificar versão em `go.mod` antes de usar qualquer API ou dependência nova.
+- Aplicar todas as Regras Estritas R0–R7 (`[HARD]`, bloqueantes de merge).
+
+**Etapa 2 — Referências por gatilho (carregar apenas o necessário):**
+
+| Gatilho da tarefa | Referência obrigatória |
+|---|---|
+| Interfaces, construtores, DI, fronteiras | `references/interfaces.md` |
+| Generics, constraints, componentes reutilizáveis | `references/generics.md` |
+| Goroutines, channels, cancelamento, worker pools | `references/concurrency.md` |
+| Strategy, observer, máquina de estado | `references/patterns-behavioral.md` |
+| Logging, tracing, métricas, health checks | `references/observability.md` |
+| Handlers HTTP/gRPC, middlewares, DTOs | `references/api.md` |
+| Repositories, transactions, migrations, queries | `references/persistence.md` |
+| Configuração, env vars, bootstrap de dependências | `references/configuration.md` |
+| Retries, circuit breakers, timeouts externos | `references/resilience.md` |
+| Mensagens, filas, outbox, idempotência | `references/messaging.md` |
+| Autenticação, autorização, segredos, rate limit | `references/security.md` |
+| Estratégia de testes, testcontainers, cobertura | `references/testing.md` |
+| Fluxo end-to-end (domain → service → handler → test) | `references/examples-domain-flow.md` |
+| Exemplos de fuzz, table-driven, invariantes | `references/examples-testing.md` |
+| Graceful shutdown, paginação, versionamento de API | `references/examples-infrastructure.md` |
+| Dockerfile, CI, build flags, gates de qualidade | `references/build.md` |
+| Startup ordenado, drain, shutdown de goroutines | `references/graceful-lifecycle.md` |
+
+**Economia de contexto (obrigatório):**
+- Máximo 4 referências simultâneas por tarefa. Se mais de 4 forem necessárias, priorizar as 3 mais críticas e registrar as demais como contexto não carregado.
+- Nunca carregar `references/patterns-structural.md` para Factory Function, Functional Options, Adapter, Decorator ou Facade — esses patterns já estão inline no SKILL.md (~960 tokens economizados).
+- Nunca carregar referências de domínios não afetados pela mudança.
+
+**Etapa 3 — Modelar antes de escrever:**
+- Identificar fronteiras arquiteturais afetadas.
+- Confirmar que a interface fica no consumidor (não no produtor).
+- Confirmar que nenhuma camada viola o fluxo `infrastructure → application → domain`.
+
+**Etapa 4 — Implementar:**
+- Adaptar exemplos ao contexto real — nunca replicar literalmente.
+- Aplicar R0–R7 durante a escrita, não só na revisão.
+
+**Etapa 5 — Validar (proporcional ao risco):**
+- Executar Checklist R0–R7 de `references/build.md` e reportar resultado.
+- Mínimo: `go build`, `go vet`, `go test -race -count=1` no pacote alterado.
+- Lint: `golangci-lint run` no escopo da mudança.
+- Registrar riscos residuais e suposições assumidas.
+
+### Regras de robustez transversais (resumo executivo)
+
+- **R0** — `init()` proibida em produção.
+- **R1** — toda função deve ser método de struct (exceto `main`, factory, helpers de teste).
+- **R5.8** — enums com `iota+1`; zero value reservado para "não inicializado".
+- **R5.10** — erros: `errors.New` (estático), `fmt.Errorf("ctx: %w", err)` (wrapping), `var errX = errors.New(...)` (sentinel). Tratar erro uma única vez.
+- **R5.12** — sem `panic` em produção.
+- **R5.26** — globais não exportados em camelCase; sem prefixo `_`.
+- **R6** — `context.Context` em toda fronteira de IO; DI via construtores explícitos.
+- **R6.4** — `var _ Interface = (*Type)(nil)` proibido.
+- **R6.7** — `clock.Clock` proibido em use cases e repositórios; `time.Now().UTC()` inline.
+- **R7.1** — `any` em vez de `interface{}`.
+- **R7.2** — `log/slog` para logging estruturado.
+- **R7.6** — `errors.Join` para agregar erros.
+- Goroutines: sempre canceláveis via `context.Context`, sem leak, participam do shutdown coordenado.
+
 ## Estrutura de Pastas
 
 ```
@@ -166,17 +236,85 @@ internal/platform/
   clock/
   database/
   errors/
-  events/
   http/
   httpclient/
   id/
   observability/
   outbox/
   worker/
+    types.go             — interfaces Job e Consumer
+    config.go            — Config{ShutdownTimeout}
+    errors.go            — erros sentinela de lifecycle
+    manager.go           — WorkerManager: unico ponto de start/stop/shutdown
+    job/
+      types.go           — OverlapPolicy (Skip|Allow)
+      adapter.go         — JobAdapter: unico caminho valido para cron jobs
+      scheduler.go       — scheduler interno via robfig/cron/v3
+    consumer/
+      types.go           — Handler, HandlerFunc, Message, Source, Runner
+      registration.go    — Registration{Name, EventType, Handler}
+      registry.go        — Registry agnostico: Register + Dispatch
+      runner.go          — NewRunner(Source, Registry, logger)
+      adapter.go         — ConsumerAdapter: unico caminho valido para consumers
+      database/
+        adapter.go       — adapter para transporte persistido via outbox/banco
   secrets/
 ```
 
 `internal/platform/` nao e modulo de negocio e nao pode importar `internal/<modulo>/...`. Modulos podem consumir `internal/platform/` apenas nas camadas em que a dependencia tecnica seja permitida pela fronteira arquitetural; `domain` permanece puro e nao pode importar `platform`, banco, HTTP, filas, serializacao, configuracao ou drivers.
+
+### Worker — Orquestração de Jobs e Consumers
+
+O `WorkerManager` e o unico ponto de lifecycle para cron jobs e consumers. Nenhum modulo pode inicializar cron job ou consumer fora do manager.
+
+**Contrato de bootstrap obrigatorio:**
+
+```go
+jobs := []worker.Job{
+    job.NewAdapter("faturamento-sync", cfg.CronFaturamentoSync, syncJob.Execute),
+}
+
+consumers := []worker.Consumer{
+    consumer.NewAdapter("faturamento-db", "database",
+        consumer.NewRunner(dbSource, registry, logger)),
+}
+
+manager := worker.NewManager(
+    worker.Config{ShutdownTimeout: 30 * time.Second},
+    jobs,
+    consumers,
+    logger,
+)
+
+if err := manager.Start(ctx); err != nil {
+    return err
+}
+```
+
+**Regras obrigatorias:**
+
+1. Todo cron job DEVE passar por `job.NewAdapter` ou `job.NewAdapterWithPolicy`.
+2. Todo consumer DEVE passar por `consumer.NewAdapter`.
+3. O `WorkerManager` DEVE ser o unico orquestrador de lifecycle — `Start` e `Stop` sao os unicos pontos de entrada.
+4. O modulo constroi um `consumer.Registry`, registra os handlers uma unica vez e passa o registry para o `consumer.NewRunner`.
+5. O `consumer/database.NewAdapter` e o adapter para o transporte local persistido via outbox/banco. Ele recebe uma `consumer.Source` injetada pelo modulo — sem reimplementar o outbox.
+6. Quando RabbitMQ ou Kafka forem adotados, cada tecnologia adiciona um subpacote em `consumer/<tecnologia>/` expondo `NewAdapter(name, runner)` sem alterar handlers nem registry.
+7. Handlers de modulo DEVEM delegar para use cases da camada `application` — nunca acessar repositories diretamente.
+
+**Contrato de handler:**
+
+```go
+type Handler interface {
+    Handle(ctx context.Context, params map[string]string, body []byte) error
+}
+```
+
+**Politica de overlap de jobs:**
+
+- `OverlapSkip` (padrao): execucao anterior ainda em curso e ignorada com log `slog.Warn`.
+- `OverlapAllow`: execucoes paralelas permitidas (responsabilidade do job ser thread-safe).
+
+**Shutdown gracioso:** `Stop(ctx)` cancela o contexto raiz, drena execucoes em voo via `scheduler.Stop()`, chama `consumer.Stop` em paralelo e aguarda todas as goroutines dentro de `ShutdownTimeout`. Retorna `errStopTimeout` explicitamente se o timeout expirar.
 
 ### HTTP Outbound Mandatório
 
@@ -325,24 +463,13 @@ Comandos detectados no projeto (Go):
 2. Rodar test: `go test ./...`.
 3. Rodar lint: `golangci-lint run`.
 
-## Outbox vs events.Bus
+## Outbox
 
 <!-- RF-38 / ADR-016 — contrato do outbox.Publisher -->
 
-Use `outbox.Publisher` (`internal/platform/outbox`) para side-effects **criticos** que precisam ser entregues mesmo apos crash, deploy ou reinicio do worker: notificacoes, projecoes persistentes, integracoes externas disparadas pos-commit. O Publisher garante at-least-once escrevendo atomicamente na transacao do agregado.
+Use `outbox.Publisher` (`internal/platform/outbox`) para todo side-effect que precisa ser entregue mesmo apos crash, deploy ou reinicio: notificacoes, projecoes persistentes, integracoes externas disparadas pos-commit. O Publisher garante at-least-once escrevendo atomicamente na transacao do agregado.
 
-Use `events.Bus` (ADR-003) para sinais **volateis** in-process que podem ser perdidos sem impacto ao produto: telemetria em tempo real, propagacao de cache local, triggers de UI. O Bus descarta mensagens quando o canal do subscriber esta cheio — comportamento intencional.
-
-**Regra obrigatoria de idempotencia:** Todo `outbox.Handler` DEVE ser idempotente por `event.ID`. O Dispatcher entrega at-least-once; o handler e responsavel por evitar duplicacao via upsert ou tabela de deduplicacao.
-
-Criterio de escolha resumido (ver ADR-016 para detalhes):
-
-| Precisa sobreviver a restart? | Tem side-effect externo? | Publisher escolhido |
-|---|---|---|
-| Sim | Sim | `outbox.Publisher` |
-| Nao | Nao | `events.Bus` |
-
-Ambos coexistem; um nao substitui o outro. Documentar no godoc do handler qual foi escolhido e por que (RF-38).
+**Regra obrigatoria de idempotencia:** Todo handler de outbox DEVE ser idempotente por `event.ID`. O Dispatcher entrega at-least-once; o handler e responsavel por evitar duplicacao via upsert ou tabela de deduplicacao.
 
 ## Restricoes
 

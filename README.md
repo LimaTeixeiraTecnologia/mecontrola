@@ -75,9 +75,9 @@ internal/platform/
   database/        Manager + UnitOfWork[T] + migrations embed
   http/            Servidor Chi + middlewares + health endpoints
   observability/   OTel traces/metrics/logs + redaction PII
-  events/          EventBus tipado via generics
-  clock/           Abstração de tempo (testável)
-  worker/          Contrato e lifecycle de runners em background
+  worker/          WorkerManager + JobAdapter + ConsumerAdapter + Registry agnóstico
+    job/           Scheduler via robfig/cron/v3 + OverlapPolicy (Skip|Allow)
+    consumer/      Registry, Runner, Adapter e subpacote database (outbox/banco)
 ```
 
 ## Segurança
