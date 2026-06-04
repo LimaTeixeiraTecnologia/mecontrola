@@ -131,6 +131,9 @@ Uso obrigatório, mandatório e inegociável da skill `go-implementation`, de se
 - `go.mod` declara Go `1.26.2` e `github.com/JailtonJunior94/devkit-go v0.4.0`.
 - `cmd/server/server.go` ja usa explicitamente `chi_server`: cria `server, err := chiserver.New(...)`, registra routers com `server.RegisterRouters(...)`, sobe workers auxiliares com `internal/platform/worker.NewManager(...)` e inicia o servidor com `server.Start(ctx)`.
 - `cmd/worker/worker.go` hoje tambem inicializa config, observabilidade e database manager, sobe os runners via `internal/platform/worker.NewManager(...)`.
+- `internal/platform/worker/manager.go` hoje expõe `NewManager(cfg Config, jobs []Job, consumers []Consumer, logger *slog.Logger)`, com `Job` e `Consumer` definidos em `internal/platform/worker/types.go`.
+- `AGENTS.md` e `CLAUDE.md` exigem, para `internal/identity` e `internal/billing`, o "Padrao Obrigatorio de Modulo" e proíbem `NewModule(opts...)`, `WithDatabase(...)`, `Routers()` e `Runners()` como novo padrão de composição.
+- `internal/billing/module.go` e `internal/identity/module.go` visíveis hoje nao fornecem wiring verificável além da declaração de package; portanto, qualquer exemplo de `module.go` deve ser tratado como alvo arquitetural e nao como espelho fiel do estado atual implementado.
 - O estado atual do workspace deve ser tratado como fonte da verdade para qualquer refinamento, sem recorrer a historico, paths antigos ou suposicoes fora do que estiver visivel agora.
 - O exemplo original cita módulos inexistentes neste repositório (`user`, `category`, `card`, `transaction`, `paymentMethod`, `budget`, `invoice`). No estado real atual, o prompt não pode exigir routers ou handlers para módulos que ainda não expõem HTTP.
 - Há tensão entre o pedido por `http/client`, `http/server`, `routes` e `handlers/...` e a governança canônica do repositório, que exige preservar `internal/<modulo>/infrastructure/http/server` e `internal/<modulo>/infrastructure/http/client`.
@@ -184,6 +187,8 @@ Ambiguidades e conflitos que voce deve resolver com seguranca antes de codar:
 - O pedido quer bootstrap obrigatorio a partir dos entrypoints. Como `cmd/server/server.go` ja usa `chi_server` explicitamente, a tarefa nao e reintroduzir esse uso, e sim preservar e evoluir esse bootstrap sem regressao nem duplicidade.
 - O exemplo original vem de outro contexto e cita routers/handlers/modulos inexistentes. Use o snippet apenas como referencia de composicao e naming, nunca como copia literal.
 - O pedido fala em `routes` e `handlers/...`, mas `AGENTS.md` exige preservar `internal/<modulo>/infrastructure/http/server` e `internal/<modulo>/infrastructure/http/client`. Resolva essa tensao mantendo toda organizacao dentro de `infrastructure/http/...`.
+- O estado visível hoje contém um drift entre o bootstrap dos entrypoints e o padrão obrigatório de módulo definido em `AGENTS.md`/`CLAUDE.md`: o prompt deve explicitar essa divergência em vez de cristalizar o padrão antigo como alvo desejado.
+- O estado visível hoje também contém um drift entre o uso de `platformworker.NewManager(...)` nos entrypoints e a assinatura real exposta por `internal/platform/worker/manager.go`; o prompt deve exigir aderência à API real visível, sem inventar overloads ou helpers intermediários.
 - Assuma o estado atual como fonte da verdade. Nao invente `billing`, `identity`, `events`, `platform/worker` ou qualquer outro package fora do que estiver efetivamente representado no workspace atual.
 - O pedido exige `0 comentarios`; portanto, nao adicione comentarios novos em arquivos Go e nao use comentarios para justificar a implementacao.
 
@@ -191,9 +196,10 @@ Objetivo principal:
 1. Preservar `cmd/server/server.go` como ponto de partida obrigatorio do bootstrap HTTP explicito com `chi_server`, evoluindo o desenho sem reintroduzir bootstrap paralelo ou indireto.
 2. Registrar apenas routers reais via `srv.RegisterRouters(...)`, adaptados aos modulos que de fato expõem HTTP no repositório.
 3. Tratar `cmd/worker/worker.go` como ponto de partida obrigatorio para runners, schedulers, consumers e processamento assíncrono.
-4. Padronizar o wiring de modulo para que `module.go` construa dependencias HTTP de forma explicita, previsivel e consistente com DI manual, quando esse wiring estiver visivel no workspace atual.
-5. Preservar HTTP outbound em `internal/<modulo>/infrastructure/http/client` usando `internal/platform/httpclient`.
-6. Garantir graceful shutdown robusto, com contexto derivado, timeout explicito e desligamento ordenado de servidor HTTP, workers, observabilidade e banco.
+4. Alinhar o desenho alvo dos modulos `billing` e `identity` ao "Padrao Obrigatorio de Modulo" de `AGENTS.md` e `CLAUDE.md`, sem perpetuar `NewModule(opts...)`, `WithDatabase(...)`, `Routers()` ou `Runners()` como padrão novo.
+5. Garantir que qualquer uso de `internal/platform/worker.NewManager(...)` siga a assinatura real visível no codebase atual: `Config`, `[]worker.Job`, `[]worker.Consumer` e `logger`.
+6. Preservar HTTP outbound em `internal/<modulo>/infrastructure/http/client` usando `internal/platform/httpclient`.
+7. Garantir graceful shutdown robusto, com contexto derivado, timeout explicito e desligamento ordenado de servidor HTTP, workers, observabilidade e banco.
 
 Diretrizes de desenho obrigatorias:
 1. Preserve a arquitetura do repositorio e a DI manual por construtores; nao use framework de DI.
@@ -205,9 +211,11 @@ Diretrizes de desenho obrigatorias:
 7. O bootstrap de `cmd/server/server.go` e, quando aplicavel, de `cmd/worker/worker.go`, deve ser o ponto de partida obrigatorio da composicao. O servidor HTTP deve ser inicializado com options coerentes com a API real do pacote `chi_server`, incluindo health checks, metrics, CORS, porta, service name e service version somente quando esses dados existirem no codebase real.
 8. Se algum detalhe do snippet divergir da API real de `devkit-go` ou dos nomes reais de config, adapte ao estado verdadeiro do codebase. Nao invente API, campos de config ou wrappers desnecessarios.
 9. Se algum modulo nao tiver rotas HTTP reais no estado atual, ele nao deve receber router vazio, estrutura artificial ou pasta `http/server` criada apenas por simetria.
-10. Se algum modulo ja constroi handler e router no `module.go`, prefira composicao direta e previsivel. Evite registrars vazios, wiring lazy e ponteiros atomicos quando nao forem estritamente necessarios.
-11. E obrigatorio usar os exemplos da skill `go-implementation` e os exemplos contidos neste prompt como base concreta de implementacao, adaptando-os ao contexto real do repositorio sem copia cega.
-12. E mandatorio e inegociavel manter `0 comentarios` em qualquer codigo Go novo ou alterado.
+10. Para `internal/identity` e `internal/billing`, siga o "Padrao Obrigatorio de Modulo" de `AGENTS.md`: construtor nomeado pelo modulo, struct concreta, campos nomeados para routers/providers/adapters/jobs/consumers reais e entrega de jobs/consumers ao WorkerManager como `worker.Job` e `worker.Consumer`.
+11. Nao use `NewModule(opts...)`, `WithDatabase(...)`, `Routers()` ou `Runners()` como padrao alvo novo de composicao de modulo.
+12. Se algum modulo ja constroi handler e router no `module.go`, prefira composicao direta e previsivel. Evite registrars vazios, wiring lazy e ponteiros atomicos quando nao forem estritamente necessarios.
+13. E obrigatorio usar os exemplos da skill `go-implementation` e os exemplos contidos neste prompt como base concreta de implementacao, adaptando-os ao contexto real do repositorio sem copia cega.
+14. E mandatorio e inegociavel manter `0 comentarios` em qualquer codigo Go novo ou alterado.
 
 Estrutura obrigatoria para modulos com HTTP:
 1. HTTP inbound:
@@ -234,16 +242,17 @@ Requisitos funcionais:
 1. `cmd/server/server.go` deve continuar como ponto de bootstrap HTTP explicito usando a API real do pacote `github.com/JailtonJunior94/devkit-go/pkg/http_server/chi_server`.
 2. `cmd/worker/worker.go` deve continuar como ponto de bootstrap explicito de runners, schedulers e consumers.
 3. O servidor central deve registrar os routers reais dos modulos via `srv.RegisterRouters(...)` somente quando esses modulos fizerem parte do estado atual visivel.
-4. Cada modulo que exponha rotas HTTP deve ter wiring explicito em `module.go`, no espirito do exemplo de `InvoiceModule`, mas adaptado ao contexto real do modulo.
+4. Cada modulo que exponha rotas HTTP deve ter wiring explicito em `module.go`, no espirito do "Padrao Obrigatorio de Modulo" de `AGENTS.md`, mas adaptado ao contexto real do modulo.
 5. Cada router de modulo deve encapsular middlewares, handlers e paths do proprio modulo.
-6. O shutdown deve derivar contexto com timeout a partir de `ctx`, encerrar servidor HTTP, workers, observabilidade e banco de forma ordenada e sem falso positivo de sucesso.
-7. A implementacao deve se manter fiel ao estado atual visivel do workspace, sem introduzir comportamento baseado em historico presumido ou estrutura antiga.
+6. O bootstrap de jobs e consumers deve usar a assinatura real de `internal/platform/worker.NewManager(...)`: config, jobs, consumers e logger.
+7. O shutdown deve derivar contexto com timeout a partir de `ctx`, encerrar servidor HTTP, workers, observabilidade e banco de forma ordenada e sem falso positivo de sucesso.
+8. A implementacao deve se manter fiel ao estado atual visivel do workspace, sem introduzir comportamento baseado em historico presumido ou estrutura antiga.
 
 Requisitos nao funcionais obrigatorios:
 1. Production-ready de verdade: nada de bootstrap parcial, alias cosmetico, placeholder ou migracao pela metade.
 2. Sem falso positivo: se `cmd/server/server.go` nao continuar sendo o bootstrap HTTP explicito real, a tarefa deve ser considerada incompleta.
 3. Sem concorrencia de servidores, runners ou bootstraps duplicados para a mesma responsabilidade.
-4. Logging, tracing, health checks e shutdown devem permanecer coerentes com observabilidade e database manager reais do repositorio.
+4. Logging, tracing, health checks e shutdown devem permanecer coerentes com observabilidade, database manager e WorkerManager reais do repositorio.
 5. Sem vazamento de PII, segredos, payloads sensiveis, CPF, dados de cartao, email ou WhatsApp em claro.
 6. A solucao final deve reduzir complexidade incidental quando possivel, em vez de adicionar wrappers apenas para aparentar padronizacao.
 7. E mandatorio e inegociavel manter `0 comentarios` em qualquer codigo Go novo ou alterado.
@@ -290,21 +299,29 @@ O objetivo nao e copiar literalmente os snippets abaixo, e sim deixar claro o al
 ## Exemplo alvo para `cmd/server/server.go`
 
 ```go
+identityModule, err := identity.NewIdentityModule(identity.ModuleDeps{
+    DB: mgr,
+})
+if err != nil {
+    return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+}
 
-billingModule, err := billing.NewModule(
-    billing.WithConfig(cfg),
-    billing.WithLogger(logger),
-    billing.WithDatabase(mgr),
-    billing.WithProvider(provider),
-    billing.WithUserRepository(identityModule.Ports.UserRepository),
-)
+billingModule, err := billing.NewBillingModule(billing.ModuleDeps{
+    Config:         cfg,
+    DB:             mgr,
+    Logger:         logger,
+    Provider:       provider,
+    UserRepository: identityModule.UserRepository,
+})
 if err != nil {
     return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
 }
 
 runnerManager := platformworker.NewManager(
+    platformworker.Config{ShutdownTimeout: 30 * time.Second},
+    billingModule.Jobs,
+    billingModule.Consumers,
     logger,
-    slices.Concat(identityModule.Runners(), billingModule.Runners())...,
 )
 if err := runnerManager.Start(ctx); err != nil {
     return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
@@ -330,7 +347,7 @@ if err != nil {
     )
 }
 
-server.RegisterRouters(slices.Concat(identityModule.Routers(), billingModule.Routers())...)
+server.RegisterRouters(append(identityModule.Routers, billingModule.Routers...)...)
 
 if err := server.Start(ctx); err != nil {
     return errors.Join(
@@ -351,59 +368,51 @@ return errors.Join(
 O ponto inegociavel do exemplo acima e:
 - `cmd/server/server.go` cria o servidor HTTP com `chiserver.New(...)`
 - `server.RegisterRouters(...)` registra os routers reais
-- o lifecycle final nasce do proprio entrypoint, incluindo `platformworker.NewManager(...)` e `server.Start(ctx)`
+- o lifecycle final nasce do proprio entrypoint, incluindo `platformworker.NewManager(...)` com `Config`, `Jobs`, `Consumers` e `server.Start(ctx)`
 
-## Exemplo alvo de wiring de modulo HTTP, se esse modulo estiver visivel no workspace atual
+## Exemplo alvo de wiring de modulo HTTP, alinhado ao "Padrao Obrigatorio de Modulo"
 
 ```go
-type Module struct {
-    Ports        Ports
-    KiwifyRouter *billinghttp.KiwifyRouteRegistrar
+type BillingModule struct {
+    Routers   []chiserver.Router
+    Jobs      []worker.Job
+    Consumers []worker.Consumer
 }
 
-func NewModule(opts ...Option) (*Module, error) {
-    settings := options{}
-    for _, opt := range opts {
-        opt(&settings)
-    }
+func NewBillingModule(deps ModuleDeps) (BillingModule, error) {
+    webhookRepo := billingrepos.NewPgxWebhookEventRepository(deps.DB)
+    subscriptionRepo := billingrepos.NewPgxSubscriptionRepository(deps.DB)
 
-    webhookRepo := billingrepos.NewPgxWebhookEventRepository(settings.db)
-    subscriptionRepo := billingrepos.NewPgxSubscriptionRepository(settings.db)
-
-    adapter, err := newWiring(settings).buildKiwifyAdapter(context.Background(), subscriptionRepo)
+    adapter, err := newWiring(deps).buildKiwifyAdapter(context.Background(), subscriptionRepo)
     if err != nil {
-        return nil, err
+        return BillingModule{}, err
     }
 
-    ingestUseCase, processUseCase, anonymizeUseCase, reconcileUseCase, err := newWiring(settings).buildUseCases(
+    ingestUseCase, err := newWiring(deps).buildWebhookUseCase(
         adapter,
         webhookRepo,
-        subscriptionRepo,
-        outboxPublisher,
     )
     if err != nil {
-        return nil, err
+        return BillingModule{}, err
     }
 
     kiwifyHandler := billinghttp.NewKiwifyWebhookHandler(
         ingestUseCase,
-        settings.logger,
-        settings.config.KiwifyConfig.WebhookTokenHeader,
+        deps.Logger,
+        deps.Config.KiwifyConfig.WebhookTokenHeader,
     )
 
     kiwifyRouter := billinghttp.NewKiwifyRouteRegistrar(kiwifyHandler)
 
-    return &Module{
-        KiwifyRouter: kiwifyRouter,
+    return BillingModule{
+        Routers:   []chiserver.Router{kiwifyRouter},
+        Jobs:      nil,
+        Consumers: nil,
     }, nil
-}
-
-func (m *Module) Routers() []chiserver.Router {
-    return []chiserver.Router{m.KiwifyRouter}
 }
 ```
 
-O alvo aqui e tornar o `module.go` explicitamente responsavel pelo wiring do handler e do router real do modulo, quando esse modulo fizer parte do estado atual visivel, evitando wiring opaco ou lazy sem necessidade.
+O alvo aqui e tornar o `module.go` explicitamente responsavel pelo wiring do handler, router, jobs e consumers reais do modulo, sem perpetuar `NewModule(opts...)`, `WithDatabase(...)`, `Routers()` ou `Runners()` como padrao novo.
 
 ## Exemplo alvo para a estrutura de um modulo com HTTP, se esse modulo existir no workspace atual
 
@@ -459,25 +468,29 @@ func Run(ctx context.Context) error {
         return err
     }
 
-    identityModule, err := identity.NewModule(identity.WithDatabase(mgr))
+    identityModule, err := identity.NewIdentityModule(identity.ModuleDeps{
+        DB: mgr,
+    })
     if err != nil {
         return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
     }
 
-    billingModule, err := billing.NewModule(
-        billing.WithConfig(cfg),
-        billing.WithLogger(logger),
-        billing.WithDatabase(mgr),
-        billing.WithProvider(provider),
-        billing.WithUserRepository(identityModule.Ports.UserRepository),
-    )
+    billingModule, err := billing.NewBillingModule(billing.ModuleDeps{
+        Config:         cfg,
+        DB:             mgr,
+        Logger:         logger,
+        Provider:       provider,
+        UserRepository: identityModule.UserRepository,
+    })
     if err != nil {
         return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
     }
 
     runnerManager := platformworker.NewManager(
+        platformworker.Config{ShutdownTimeout: 30 * time.Second},
+        billingModule.Jobs,
+        billingModule.Consumers,
         logger,
-        slices.Concat(identityModule.Runners(), billingModule.Runners())...,
     )
     if err := runnerManager.Start(ctx); err != nil {
         return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
@@ -503,7 +516,7 @@ func Run(ctx context.Context) error {
         )
     }
 
-    server.RegisterRouters(slices.Concat(identityModule.Routers(), billingModule.Routers())...)
+    server.RegisterRouters(append(identityModule.Routers, billingModule.Routers...)...)
 
     if err := server.Start(ctx); err != nil {
         return errors.Join(
@@ -522,57 +535,45 @@ func Run(ctx context.Context) error {
 }
 ```
 
-## Exemplo proposto de wiring de modulo HTTP, se esse modulo estiver visivel no workspace atual
+## Exemplo proposto de wiring de modulo HTTP, alinhado ao "Padrao Obrigatorio de Modulo"
 
 ```go
-type Module struct {
-    Ports        Ports
-    KiwifyRouter *billinghttp.KiwifyRouteRegistrar
+type BillingModule struct {
+    Routers   []chiserver.Router
+    Jobs      []worker.Job
+    Consumers []worker.Consumer
 }
 
-func NewModule(opts ...Option) (*Module, error) {
-    settings := options{}
-    for _, opt := range opts {
-        opt(&settings)
-    }
+func NewBillingModule(deps ModuleDeps) (BillingModule, error) {
+    webhookRepo := billingrepos.NewPgxWebhookEventRepository(deps.DB)
+    subscriptionRepo := billingrepos.NewPgxSubscriptionRepository(deps.DB)
 
-    webhookRepo := billingrepos.NewPgxWebhookEventRepository(settings.db)
-    subscriptionRepo := billingrepos.NewPgxSubscriptionRepository(settings.db)
-
-    adapter, err := newWiring(settings).buildKiwifyAdapter(context.Background(), subscriptionRepo)
+    adapter, err := newWiring(deps).buildKiwifyAdapter(context.Background(), subscriptionRepo)
     if err != nil {
-        return nil, err
+        return BillingModule{}, err
     }
 
-    registry := outbox.NewRegistry()
-    outboxStorage := outbox.NewPgxStorage(settings.db)
-    outboxPublisher := outbox.NewPublisher(outboxStorage, registry, nil)
-
-    ingestUseCase, _, _, _, err := newWiring(settings).buildUseCases(
+    ingestUseCase, err := newWiring(deps).buildWebhookUseCase(
         adapter,
         webhookRepo,
-        subscriptionRepo,
-        outboxPublisher,
     )
     if err != nil {
-        return nil, err
+        return BillingModule{}, err
     }
 
     kiwifyHandler := billinghttp.NewKiwifyWebhookHandler(
         ingestUseCase,
-        settings.logger,
-        settings.config.KiwifyConfig.WebhookTokenHeader,
+        deps.Logger,
+        deps.Config.KiwifyConfig.WebhookTokenHeader,
     )
 
     kiwifyRouter := billinghttp.NewKiwifyRouteRegistrar(kiwifyHandler)
 
-    return &Module{
-        KiwifyRouter: kiwifyRouter,
+    return BillingModule{
+        Routers:   []chiserver.Router{kiwifyRouter},
+        Jobs:      nil,
+        Consumers: nil,
     }, nil
-}
-
-func (m *Module) Routers() []chiserver.Router {
-    return []chiserver.Router{m.KiwifyRouter}
 }
 ```
 
@@ -601,25 +602,29 @@ func Run(ctx context.Context) error {
         return err
     }
 
-    identityModule, err := identity.NewModule(identity.WithDatabase(mgr))
+    identityModule, err := identity.NewIdentityModule(identity.ModuleDeps{
+        DB: mgr,
+    })
     if err != nil {
         return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
     }
 
-    billingModule, err := billing.NewModule(
-        billing.WithConfig(cfg),
-        billing.WithLogger(logger),
-        billing.WithDatabase(mgr),
-        billing.WithProvider(provider),
-        billing.WithUserRepository(identityModule.Ports.UserRepository),
-    )
+    billingModule, err := billing.NewBillingModule(billing.ModuleDeps{
+        Config:         cfg,
+        DB:             mgr,
+        Logger:         logger,
+        Provider:       provider,
+        UserRepository: identityModule.UserRepository,
+    })
     if err != nil {
         return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
     }
 
     runnerManager := platformworker.NewManager(
+        platformworker.Config{ShutdownTimeout: 30 * time.Second},
+        billingModule.Jobs,
+        billingModule.Consumers,
         logger,
-        slices.Concat(identityModule.Runners(), billingModule.Runners())...,
     )
     if err := runnerManager.Start(ctx); err != nil {
         return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))

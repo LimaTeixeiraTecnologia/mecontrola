@@ -396,6 +396,64 @@ Observacoes obrigatorias sobre o estado atual:
 2. O unico ajuste proposto no bootstrap e trocar o bootstrap de banco atual por `database.NewDatabaseManager(...)`, sem criar outro entrypoint intermediario.
 3. O codebase visivel hoje tem drift adicional: o call site de `platformworker.NewManager(...)` visto nos entrypoints nao bate com a assinatura hoje exposta em `internal/platform/worker/manager.go`, entao isso precisa ser reconciliado explicitamente na implementacao.
 
+## Bootstrap de `cmd/migrate/migrate.go`
+
+```go
+func Run(ctx context.Context, writer io.Writer) error {
+	cfg, err := configs.LoadConfig(".")
+	if err != nil {
+		return err
+	}
+
+	dbManager, err := database.NewDatabaseManager(
+		ctx,
+		database.WithMetrics(false),
+		database.WithDSN(cfg.DBConfig.DSN()),
+		database.WithConnMaxLifetime(cfg.DBConfig.ConnMaxLifetime),
+		database.WithConnMaxIdleTime(cfg.DBConfig.ConnMaxIdleTime),
+		database.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
+		database.WithMaxOpenConns(cfg.DBConfig.MaxConns),
+		database.WithMaxIdleConns(cfg.DBConfig.MaxIdleConns),
+	)
+	if err != nil {
+		return fmt.Errorf("conectando ao banco: %w", err)
+	}
+
+	if csv := os.Getenv("ADMIN_WHATSAPP_NUMBERS"); csv != "" {
+		if err := database.SetAdminWhatsAppNumbers(ctx, dbManager, csv); err != nil {
+			shutdownErr := dbManager.Shutdown(context.Background())
+			if shutdownErr != nil {
+				return errors.Join(err, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
+			}
+			return err
+		}
+	}
+
+	if err := database.RunMigrations(ctx, dbManager); err != nil {
+		runErr := fmt.Errorf("executando migrations: %w", err)
+		if shutdownErr := dbManager.Shutdown(context.Background()); shutdownErr != nil {
+			return errors.Join(runErr, fmt.Errorf("encerrando conexao com banco: %w", shutdownErr))
+		}
+		return runErr
+	}
+
+	if err := dbManager.Shutdown(context.Background()); err != nil {
+		return fmt.Errorf("encerrando conexao com banco: %w", err)
+	}
+
+	if _, err := fmt.Fprintln(writer, "migrations aplicadas com sucesso"); err != nil {
+		return fmt.Errorf("escrevendo saida do comando migrate: %w", err)
+	}
+
+	return nil
+}
+```
+
+Observacoes obrigatorias sobre o estado atual:
+
+1. Este exemplo preserva o shape atual real de `cmd/migrate/migrate.go`: `configs.LoadConfig(".")`, `database.SetAdminWhatsAppNumbers(...)`, `database.RunMigrations(...)` e shutdown explicito do manager.
+2. O unico ajuste proposto no bootstrap e trocar o bootstrap de banco atual por `database.NewDatabaseManager(...)`, mantendo o restante do fluxo de migrate.
+
 ## Limite de verdade do exemplo final
 
 De forma mandatória, o que está acima é o limite do que pode ser exemplificado sem falso positivo com base no working tree atual.
@@ -417,4 +475,5 @@ Esses trechos foram removidos do exemplo final porque os packages correspondente
 3. o bootstrap de banco muda de `database.NewManager(...)` para `database.NewDatabaseManager(...)`, adaptado ao shape real do pacote
 4. `identity.WithDatabase(...)` e `billing.WithDatabase(...)` permanecem como contratos de entrada enquanto esses modulos forem a forma real de composicao do codebase
 5. `platformworker.NewManager(...)`, `chiserver.New(...)` e `server.RegisterRouters(...)` continuam sendo preservados quando existirem no entrypoint atual
-6. qualquer detalhamento adicional de handler, use case, repository ou client so deve ser documentado depois que os respectivos packages existirem novamente no working tree
+6. `cmd/migrate/migrate.go` continua preservando `SetAdminWhatsAppNumbers`, `RunMigrations` e shutdown explicito
+7. qualquer detalhamento adicional de handler, use case, repository ou client so deve ser documentado depois que os respectivos packages existirem novamente no working tree

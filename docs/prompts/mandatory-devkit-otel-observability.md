@@ -83,7 +83,7 @@ Antes de qualquer alteracao, carregue obrigatoriamente:
 Contexto real minimo ja verificado e que deve orientar a implementacao:
 1. `go.mod` declara Go `1.26.2` e `github.com/JailtonJunior94/devkit-go v0.4.0`.
 2. `cmd/server/server.go` e `cmd/worker/worker.go` carregam config com `configs.LoadConfig(".")`, criam logger, inicializam observabilidade antes do database manager e fazem shutdown explicito desse componente.
-3. Os entrypoints atuais ainda chamam `observability.NewProvider(cfg)` com retorno multiplo e passam `provider.Observability()` para `database.NewManager`, `billing.NewModule` e `chiserver.New`.
+3. Os entrypoints atuais ainda chamam `observability.NewProvider(cfg)` com retorno multiplo, passam `provider.Observability()` para `database.NewManager` e `chiserver.New`, e passam o proprio `provider` para `billing.NewModule`.
 4. `internal/platform/httpclient.NewClient` ja exige `devkitobs.Observability` e encapsula `devkit-go/pkg/httpclient.NewObservableClient`.
 5. Assuma o estado atual do codebase como fonte da verdade, inclusive quando houver inconsistencias aparentes entre imports, arquivos presentes, worktree e documentacao historica.
 6. O repositorio e um monolito modular em Go; as fronteiras arquiteturais precisam ser preservadas.
@@ -479,7 +479,7 @@ func (r *PgxWebhookEventRepository) InsertIfNew(ctx context.Context, event entit
 ```
 
 ```go
-func (w *wiring) buildKiwifyAdapter(ctx context.Context, subscriptionRepo *billingrepos.PgxSubscriptionRepository) (*kiwifyclient.KiwifyAdapter, error) {
+func (w *wiring) buildKiwifyAdapter(subscriptionRepo *billingrepos.PgxSubscriptionRepository) (*kiwifyclient.KiwifyAdapter, error) {
 	client, err := platformhttpclient.NewClient(
 		w.options.o11y.Observability(),
 		platformhttpclient.WithBaseURL(w.options.config.KiwifyConfig.APIBaseURL),
