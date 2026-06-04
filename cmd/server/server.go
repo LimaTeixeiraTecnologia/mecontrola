@@ -5,15 +5,18 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strconv"
 
+	chiserver "github.com/JailtonJunior94/devkit-go/pkg/http_server/chi_server"
 	"github.com/spf13/cobra"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/runtime"
+	platformworker "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
 func New() *cobra.Command {
@@ -33,8 +36,8 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
-	foundation := runtime.NewFoundation()
 	logger := slog.Default()
+	eventBus := events.NewBus()
 
 	// Observability primeiro: o database manager consome o provider via WithObservability
 	// para emitir métricas de pool e logs estruturados desde o boot.
@@ -59,7 +62,7 @@ func Run(ctx context.Context) error {
 
 	billingModule, err := billing.NewModule(
 		billing.WithConfig(cfg),
-		billing.WithFoundation(foundation),
+		billing.WithEventBus(eventBus),
 		billing.WithLogger(logger),
 		billing.WithDatabase(mgr),
 		billing.WithProvider(provider),
@@ -69,37 +72,46 @@ func Run(ctx context.Context) error {
 		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
 	}
 
-	httpRunner := runtime.NewHTTPRunnerWithDeps(
-		cfg,
-		mgr,
-		provider,
-		slices.Concat(
-			identityModule.Routers(),
-			billingModule.Routers(),
-		)...,
+	runnerManager := platformworker.NewManager(
+		logger,
+		slices.Concat(identityModule.Runners(), billingModule.Runners())...,
 	)
+	if err := runnerManager.Start(ctx); err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
 
-	application, err := runtime.NewApp(
-		cfg,
-		runtime.ModeServer,
-		slices.Concat(
-			[]runtime.Runner{httpRunner},
-			identityModule.Runners(),
-			billingModule.Runners(),
-		)...,
+	server, err := chiserver.New(
+		provider.Observability(),
+		chiserver.WithPort(strconv.Itoa(cfg.HTTPConfig.Port)),
+		chiserver.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
+		chiserver.WithServiceVersion(cfg.O11yConfig.ServiceVersion),
+		chiserver.WithEnvironment(cfg.AppConfig.Environment),
+		chiserver.WithCORS(cfg.HTTPConfig.CORSAllowedOrigins),
+		chiserver.WithMetrics(),
+		chiserver.WithTracing(),
+		chiserver.WithOTelMetrics(),
 	)
 	if err != nil {
-		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+		return errors.Join(
+			err,
+			runnerManager.Stop(context.Background()),
+			provider.Shutdown(context.Background()),
+			mgr.Shutdown(context.Background()),
+		)
 	}
+	server.RegisterRouters(slices.Concat(identityModule.Routers(), billingModule.Routers())...)
 
-	if err := application.Run(ctx); err != nil {
-		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	if err := server.Start(ctx); err != nil {
+		return errors.Join(
+			err,
+			runnerManager.Stop(context.Background()),
+			provider.Shutdown(context.Background()),
+			mgr.Shutdown(context.Background()),
+		)
 	}
-
-	<-ctx.Done()
 
 	return errors.Join(
-		application.Shutdown(context.Background()),
+		runnerManager.Stop(context.Background()),
 		provider.Shutdown(context.Background()),
 		mgr.Shutdown(context.Background()),
 	)

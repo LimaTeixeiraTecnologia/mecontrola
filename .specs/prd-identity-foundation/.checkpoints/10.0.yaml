@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/10.0_execution_report.md
-summary: "Drift cleanup (doc.go, README.md, AGENTS.md), depguard confirmado com identity-no-billing/onboarding, mockery zero diff, cobertura 100% em NewWhatsAppNumber/NewEmail/IsEntitled"
-timestamp: "2026-06-03T19:09:00Z"

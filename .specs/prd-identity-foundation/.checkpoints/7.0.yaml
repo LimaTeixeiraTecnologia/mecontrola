@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/7.0_execution_report.md
-summary: "Adapter PgxUserRepository + rowMapper + UoW interna + UUIDGenerator implementados com todos os critérios de aceite verificados"
-timestamp: "2026-06-03T00:00:00Z"

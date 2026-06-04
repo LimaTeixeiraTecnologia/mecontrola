@@ -33,7 +33,7 @@ task security:vulncheck  # govulncheck + trivy fs
 
 ```
 mecontrola server    Sobe o servidor HTTP na porta 8080 + health endpoints
-mecontrola worker    Sobe o runtime worker idle (jobs registrados em PRDs futuros)
+mecontrola worker    Sobe o worker de módulos em background
 mecontrola migrate   Aplica migrations pendentes do PostgreSQL e termina com exit 0
 ```
 
@@ -77,7 +77,7 @@ internal/platform/
   observability/   OTel traces/metrics/logs + redaction PII
   events/          EventBus tipado via generics
   clock/           Abstração de tempo (testável)
-  runtime/         Bootstrap de modos server/worker
+  worker/          Contrato e lifecycle de runners em background
 ```
 
 ## Segurança

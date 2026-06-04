@@ -12,15 +12,16 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/runtime"
+	platformworker "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
 func New() *cobra.Command {
 	return &cobra.Command{
 		Use:   "worker",
-		Short: "Sobe o runtime worker MeControla",
-		Long:  "Inicializa o runtime worker do MeControla com módulos de processamento em background.",
+		Short: "Sobe o worker MeControla",
+		Long:  "Inicializa o worker do MeControla com módulos de processamento em background.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Run(cmd.Context())
 		},
@@ -33,8 +34,8 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
-	foundation := runtime.NewFoundation()
 	logger := slog.Default()
+	eventBus := events.NewBus()
 
 	// Observability primeiro: o database manager consome o provider via WithObservability
 	// para emitir métricas de pool e logs estruturados desde o boot.
@@ -59,7 +60,7 @@ func Run(ctx context.Context) error {
 
 	billingModule, err := billing.NewModule(
 		billing.WithConfig(cfg),
-		billing.WithFoundation(foundation),
+		billing.WithEventBus(eventBus),
 		billing.WithLogger(logger),
 		billing.WithDatabase(mgr),
 		billing.WithProvider(provider),
@@ -69,19 +70,11 @@ func Run(ctx context.Context) error {
 		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
 	}
 
-	application, err := runtime.NewApp(
-		cfg,
-		runtime.ModeWorker,
-		slices.Concat(
-			identityModule.Runners(),
-			billingModule.Runners(),
-		)...,
+	runnerManager := platformworker.NewManager(
+		logger,
+		slices.Concat(identityModule.Runners(), billingModule.Runners())...,
 	)
-	if err != nil {
-		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
-	}
-
-	if err := application.Run(ctx); err != nil {
+	if err := runnerManager.Start(ctx); err != nil {
 		return errors.Join(err, provider.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
 	}
 
@@ -90,7 +83,7 @@ func Run(ctx context.Context) error {
 	<-ctx.Done()
 
 	return errors.Join(
-		application.Shutdown(context.Background()),
+		runnerManager.Stop(context.Background()),
 		provider.Shutdown(context.Background()),
 		mgr.Shutdown(context.Background()),
 	)

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-billing-pipeline/1.0_execution_report.md
-summary: "Migrations 0009_billing_schema e 0010_billing_plans_seed criadas com 4 tabelas, constraints, índices parciais e testes de integração PASS (8/8)."
-timestamp: "2026-06-03T22:35:00Z"

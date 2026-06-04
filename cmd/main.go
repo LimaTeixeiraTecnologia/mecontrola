@@ -25,7 +25,7 @@ func main() {
 
 Utilize um dos subcomandos para iniciar a aplicação:
   server   — sobe o servidor HTTP e o scheduler placeholder
-  worker   — sobe o runtime worker idle
+  worker   — sobe o worker de módulos em background
   migrate  — aplica as migrations pendentes e termina`,
 		SilenceUsage: true,
 	}

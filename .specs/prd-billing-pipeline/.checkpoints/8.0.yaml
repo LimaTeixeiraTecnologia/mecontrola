@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-billing-pipeline/8.0_execution_report.md
-summary: "Implementados PgxSubscriptionRepository, PgxWebhookEventRepository, rowMapper, EntitlementLRU (100% coverage), UUIDGenerator (100% coverage) e sentinelas de erro; hashicorp/golang-lru/v2 adicionado ao go.mod; todos os testes da tarefa passam."
-timestamp: "2026-06-03T00:00:00Z"

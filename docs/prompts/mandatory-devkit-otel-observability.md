@@ -52,161 +52,437 @@ Uso mandatório, obrigatório e inegociável da skill `go-implementation`, de se
 
 Mandatório e inegociável ter `0 comentários` no código produzido.
 
-# Prompt enriquecido
+# Prompt enriquecido v2
 
 ```text
-Quero que voce implemente o uso obrigatorio, mandatorio e inegociavel de `github.com/JailtonJunior94/devkit-go/pkg/observability/otel` neste repositorio Go, padronizando bootstrap, injecao de dependencias, spans e logging estruturado em toda a cadeia `handlers -> usecases -> repositories/clients/servers`.
+Quero que voce implemente, sem discovery e sem resposta especulativa, o uso obrigatorio, mandatorio e inegociavel de `github.com/JailtonJunior94/devkit-go/pkg/observability/otel` neste repositorio Go. O resultado precisa ser robusto, eficiente, escalavel, production-ready, production-proof e sem falso positivo de conclusao.
+
+Seu trabalho nao e "sugerir" como poderia ficar. Seu trabalho e entregar a implementacao final, coerente com o codigo real do repositorio, cobrindo bootstrap, injecao de dependencias, spans, logs estruturados e propagacao de contexto na cadeia `handlers -> usecases -> repositories/clients/servers`.
+
+O ponto de partida obrigatorio da implementacao e sempre `cmd/server/server.go` e/ou `cmd/worker/worker.go`.
 
 Tambem e obrigatorio, mandatorio e inegociavel:
-1. usar a skill `go-implementation` e seus exemplos como base normativa e obrigatoria de implementacao;
-2. usar os exemplos deste proprio prompt como referencia obrigatoria de bootstrap, spans e logs, adaptando-os ao estado real do repositorio quando houver divergencia;
-3. entregar codigo com `0 comentarios` no resultado final, sem comentarios de linha, bloco, doc comments ou observacoes inline adicionadas pela implementacao.
+1. usar a skill `go-implementation` e seus exemplos como base normativa de implementacao;
+2. usar os exemplos deste prompt como referencia normativa de desenho, mas sempre adaptados ao estado real do repositorio e da biblioteca;
+3. entregar codigo final com `0 comentarios`, sem comentarios de linha, bloco ou doc comments adicionados pela implementacao;
+4. nao declarar sucesso parcial como se fosse implementacao completa.
 
 Antes de qualquer alteracao, carregue obrigatoriamente:
 1. `AGENTS.md`
 2. `.github/skills/agent-governance/SKILL.md`
 3. `.github/skills/go-implementation/SKILL.md`
-4. As referencias da skill Go realmente relevantes para esta tarefa:
-   - `.github/skills/go-implementation/references/architecture.md`
-   - `.github/skills/go-implementation/references/interfaces.md`
-   - `.github/skills/go-implementation/references/observability.md`
-   - `.github/skills/go-implementation/references/api.md`
-   - `.github/skills/go-implementation/references/persistence.md`
-   - `.github/skills/go-implementation/references/configuration.md`
-   - `.github/skills/go-implementation/references/testing.md`
-   - `.github/skills/go-implementation/references/examples-infrastructure.md`
-   - `.github/skills/go-implementation/references/examples-domain-flow.md`
-   - `.github/skills/go-implementation/references/examples-testing.md`
-5. `go.mod` para respeitar a versao declarada do Go e as dependencias reais do projeto.
+4. As referencias realmente necessarias da skill Go para arquitetura, interfaces, observabilidade, configuracao, persistencia e testes
+5. `go.mod`
+6. `configs/config.go`
+7. `cmd/server/server.go`
+8. `cmd/worker/worker.go`
+9. `internal/platform/httpclient/...`
+10. O pacote real de observabilidade atualmente usado pelo repositorio
+11. Handlers, use cases, repositories, clients e servers relevantes do fluxo afetado
 
-Contexto real do repositorio que deve orientar a implementacao:
-- `go.mod` declara Go `1.26.2` e `github.com/JailtonJunior94/devkit-go v0.4.0`.
-- O repositorio e um monolito modular em Go; fronteiras arquiteturais precisam ser preservadas.
-- O fluxo de negocio deve continuar obedecendo `handler -> usecase -> repositories e/ou client http`.
-- `cmd/server/server.go` e `cmd/worker/worker.go` hoje carregam config via `configs.LoadConfig(".")`, inicializam provider de observabilidade antes do database manager e compoem modulos.
-- Hoje os entrypoints importam `internal/platform/observability` e passam `provider.Observability()` para outras dependencias; a implementacao deve reconciliar esse wiring com o uso obrigatorio de `devkit-go/pkg/observability/otel`.
-- O projeto possui `internal/platform/httpclient`, e chamadas HTTP outbound precisam continuar seguindo esse wrapper, agora com observabilidade consistente.
-- Existem regras especificas de PII em `identity` e `billing`; nunca logar email, WhatsApp, CPF, card data ou outros dados sensiveis em claro. Preserve mascaramento/redaction conforme o modulo.
+Contexto real minimo ja verificado e que deve orientar a implementacao:
+1. `go.mod` declara Go `1.26.2` e `github.com/JailtonJunior94/devkit-go v0.4.0`.
+2. `cmd/server/server.go` e `cmd/worker/worker.go` carregam config com `configs.LoadConfig(".")`, criam logger e `events.NewBus()`, inicializam observabilidade antes do database manager e fazem shutdown explicito desse componente.
+3. Os entrypoints atuais ainda chamam `observability.NewProvider(cfg)` e passam `provider.Observability()` para `database.NewManager`, `billing.NewModule` e `chiserver.New`.
+4. `internal/platform/httpclient.NewClient` ja exige `devkitobs.Observability` e encapsula `devkit-go/pkg/httpclient.NewObservableClient`.
+5. Assuma o estado atual do codebase como fonte da verdade, inclusive quando houver inconsistencias aparentes entre imports, arquivos presentes, worktree e documentacao historica.
+6. O repositorio e um monolito modular em Go; as fronteiras arquiteturais precisam ser preservadas.
+7. O fluxo funcional deve continuar obedecendo `handler -> usecase -> repository e/ou client http`, sem acoplamento invertido.
+8. Existem regras rigidas de PII. Nunca logar email, WhatsApp, CPF, card data, segredos, DSN com senha ou payload sensivel bruto. Em `billing`, trate como sensiveis no minimo `customer.email`, `customer.mobile`, `customer.cpf`, `card.*` e `payment.*.card.*`.
 
-Atencao obrigatoria a ambiguidades entre o snippet desejado e o codigo atual:
-- O snippet de referencia usa `cfg.HTTPConfig.ServiceName`, mas o codigo atual declara `cfg.HTTPConfig.ServiceNameAPI`.
-- O snippet de referencia usa `cfg.O11yConfig.ExporterEndpoint`, `ExporterInsecure` e `ExporterProtocol`, mas o `configs/config.go` atual declara `OTLPEndpoint`, `OTLPHeaders`, `TraceSampleRate`, `LogLevel`, `LogFormat` e `ServiceVersion`.
-- Portanto, NAO invente campos, nomes ou APIs sem primeiro validar o estado real do repositorio e da dependencia `devkit-go`. Adapte o desenho aos nomes existentes ou ajuste a configuracao somente quando houver necessidade concreta, coerente e consistente com o projeto.
-- Se a API exata de `otel.NewProvider` ou do tipo `otel.Config` diferir do snippet fornecido, use a API real da biblioteca e adapte o wiring local sem copiar o exemplo literalmente.
+Ambiguidades obrigatorias a resolver contra o codigo real antes de editar:
+1. O snippet de referencia usa `cfg.HTTPConfig.ServiceName`, mas o codigo atual declara `cfg.HTTPConfig.ServiceNameAPI`.
+2. O snippet de referencia usa `ExporterEndpoint`, `ExporterInsecure` e `ExporterProtocol`, mas o `configs/config.go` atual declara `OTLPEndpoint`, `OTLPHeaders`, `TraceSampleRate`, `LogLevel`, `LogFormat` e `ServiceVersion`.
+3. O estado atual do codebase prevalece sobre exemplos antigos, documentacao anterior, suposicoes sobre o branch e qualquer contexto historico divergente.
+4. Os entrypoints atuais usam `billing.WithProvider(provider)`; se a implementacao padronizar o nome local para `o11y`, isso deve ser feito de forma consciente e consistente, sem inventar APIs inexistentes.
+5. Portanto, NAO invente campos, nomes, tipos ou APIs. Use a API real da dependencia e o wiring real do repositorio como fonte da verdade.
 
-Objetivo principal:
-1. Tornar obrigatorio o uso de `github.com/JailtonJunior94/devkit-go/pkg/observability/otel` no bootstrap principal da aplicacao, no minimo em:
-   - `cmd/server/server.go`
-   - `cmd/worker/worker.go`
-2. Garantir que a observabilidade seja propagada explicitamente por construtor para handlers, usecases, repositories, clients e servers relevantes.
-3. Padronizar a criacao de spans e logs estruturados em cada camada, respeitando contexto, nomes consistentes e mascaramento de dados.
-4. Eliminar lacunas em que fluxos relevantes executem sem tracing/logging estruturado coerente com o provider obrigatorio.
+Objetivo principal inegociavel:
+1. Tornar obrigatorio o uso real de `devkit-go/pkg/observability/otel` no bootstrap principal, no minimo em `cmd/server/server.go` e `cmd/worker/worker.go`, direta ou indiretamente por meio de wrapper local coerente.
+2. Garantir que a observabilidade seja propagada explicitamente por construtor para componentes que recebem request, coordenam caso de uso, executam IO, falam com banco, outbox, jobs ou integracoes HTTP.
+3. Padronizar spans e logs estruturados com nomes consistentes, contexto correto, cardinalidade controlada e sem vazamento de PII.
+4. Eliminar lacunas onde o `o11y` e inicializado, mas o fluxo real continua sem instrumentacao relevante.
 
-Diretrizes de desenho obrigatorias:
-1. Preserve a arquitetura do repositorio e a DI manual por construtores; nao use framework de DI.
-2. Nao introduza singleton global de observabilidade nem acesso implicito/oculto ao provider.
-3. O bootstrap deve inicializar o provider cedo o suficiente para que database, HTTP clients, handlers e workers recebam a dependencia observavel ja pronta.
-4. Toda dependencia que executa IO, recebe request, coordena caso de uso ou fala com integracoes externas deve receber observabilidade explicitamente quando isso for necessario para spans/logs.
-5. `handler`, `usecase`, `repository`, `client` e `server` devem manter responsabilidades separadas; observabilidade nao pode virar desculpa para pular camadas.
-6. O `context.Context` deve ser propagado em todo boundary de IO e em toda operacao relevante de tracing.
-7. Os exemplos da skill `go-implementation` e os exemplos deste prompt devem ser seguidos obrigatoriamente como referencia de desenho, sempre com adaptacao ao contexto real do repositorio quando houver conflito objetivo.
-8. O codigo final deve ter `0 comentarios`; nao adicionar comentarios de qualquer tipo.
-9. Nao copiar literalmente os snippets do pedido quando conflitam com o repositorio real; adaptar ao contexto.
-10. Respeitar as regras do repositorio para logs curtos, erro contextual, ausencia de fallback silencioso e protecao de PII.
-11. Se ja existir helper local coerente para observabilidade, reutilize-o em vez de duplicar wrapper sem necessidade.
+Definicao objetiva do que SERA implementado:
+1. Bootstrap:
+   - validar e mapear a configuracao real para a API real de `otel`;
+   - inicializar o `o11y` antes de database, HTTP clients e modulos que dependem dele;
+   - manter shutdown deterministico, ordenado e sem vazamento de recursos.
+2. Wiring:
+   - partir obrigatoriamente dos entrypoints reais e do wiring efetivamente presente no estado atual do codebase;
+   - propagar `o11y` ou `o11y.Observability()` explicitamente por construtor;
+   - nao introduzir singleton global, service locator ou acesso oculto.
+3. Instrumentacao:
+   - handlers devem abrir span de entrada e emitir log estruturado de recebimento da operacao com campos permitidos;
+   - use cases devem abrir span filho, propagar `context.Context` e registrar somente eventos relevantes;
+   - repositories e clients devem instrumentar chamadas de IO sem expor SQL bruto, DSN sensivel, headers sigilosos ou payloads sensiveis;
+   - jobs, runners e workers devem manter tracing/logging coerente com o mesmo `o11y` obrigatorio.
+4. Testes e comprovacao:
+   - ajustar ou criar testes proporcionais ao impacto para validar wiring critico, propagacao de dependencia e comportamento essencial observavel;
+   - nao encerrar a tarefa enquanto houver caminho critico sem observabilidade obrigatoria comprovavel.
 
-Padrao minimo esperado de uso nas camadas:
-1. Handlers:
-   - iniciar span no inicio do request, por exemplo `invoice_handler.list_by_card`;
-   - logar evento de entrada com campos estruturados como `operation`, `layer`, `entity`, `correlation_id` e identificadores permitidos;
-   - nunca logar payload sensivel em claro.
-2. Use cases:
-   - envolver a operacao com span/log coerente, sem duplicacao inutil do mesmo evento;
-   - manter o foco em orquestracao de regra de negocio e propagacao de contexto.
-3. Repositories:
-   - garantir telemetria nas operacoes de persistencia sem vazar SQL sensivel, DSN ou PII;
-   - manter o contrato de transacao e `DBTX` existente intacto.
-4. Clients HTTP:
-   - usar `internal/platform/httpclient`;
-   - garantir propagacao de contexto, timeouts, tracing e logs coerentes com o provider.
-5. Servers/runtimes:
-   - bootstrap observabilidade antes das dependencias que consomem provider;
-   - garantir shutdown ordenado do provider.
+Regras de robustez, eficiencia, escalabilidade e producao:
+1. Nao criar explosao de spans: nao abrir span em helper trivial, getter, mapper simples ou loop de alto volume sem justificativa concreta.
+2. Nao criar explosao de logs: evitar log por item em lote, payload inteiro, SQL completo, headers completos ou qualquer dado de cardinalidade descontrolada.
+3. Logs e atributos devem usar somente campos operacionais uteis e com cardinalidade controlada.
+4. Nao usar `context.Background()` no meio do fluxo de request/job onde o contexto recebido deveria ser propagado.
+5. Nao duplicar erro em tres camadas com o mesmo log; registrar no boundary correto com contexto suficiente.
+6. Nao considerar a tarefa pronta se existir apenas bootstrap instrumentado sem spans/logs coerentes nas bordas e IO relevante.
+7. Nao considerar a tarefa pronta se o `o11y` estiver presente, mas nao for realmente consumido pelos componentes criticos.
+8. Nao considerar a tarefa pronta se a implementacao depender de wrappers vazios, no-op helpers ou spans sem semantica.
+9. Nao considerar a tarefa pronta se houver risco de falso positivo operacional por logar "success" antes de concluir a operacao real.
 
-Padrao de nomenclatura e semantica:
-- Nomes de spans devem ser consistentes e legiveis, no estilo:
-  - `invoice_handler.list_by_card`
-  - `invoice_usecase.list_by_card`
-  - `invoice_repository.find_by_card_id`
-  - `kiwify_client.get_subscription`
-  - `http_server.handle_webhook`
-- Logs devem ser estruturados e incluir apenas campos uteis para operacao e diagnostico.
-- Sempre que houver `correlation_id`, `request_id`, `event_id`, `user_id` ou identificador equivalente permitido, propagá-los de forma consistente.
-- Para dados sensiveis, aplicar as regras de mascaramento/redaction do modulo em vez de logar valor bruto.
-
-Arquivos e areas minimas a inspecionar antes de editar:
-- `go.mod`
-- `configs/config.go`
-- `cmd/server/server.go`
-- `cmd/worker/worker.go`
-- `internal/platform/httpclient/...`
-- handlers HTTP e/ou gRPC relevantes
-- use cases relevantes em `internal/identity/application/usecases` e `internal/billing/application/usecases`
-- repositories e clients concretos que executam IO
-- qualquer pacote atual de observabilidade ou provider realmente presente no branch
-
-Requisitos funcionais:
-1. O bootstrap principal deve usar `devkit-go/pkg/observability/otel` de forma obrigatoria.
-2. O provider de observabilidade deve ser disponibilizado para os componentes relevantes por injecao de dependencia.
-3. Handlers devem abrir spans e emitir logs estruturados de request.
-4. Use cases devem propagar contexto observavel e registrar spans/logs coerentes.
-5. Repositories, clients e servers devem respeitar o provider obrigatorio sem quebrar contratos existentes.
-6. O fluxo `handler -> usecase -> repositories e/ou client http` deve continuar intacto.
-
-Requisitos nao funcionais obrigatorios:
-1. Sem log de segredos, DSN com senha, payloads sensiveis ou PII em claro.
-2. Shutdown deterministico do provider de observabilidade.
-3. Propagacao correta de `context.Context` em requests, jobs e IO.
-4. Naming consistente de spans/logs entre modulos.
-5. Testes proporcionais ao impacto da mudanca, cobrindo pelo menos wiring critico e comportamento observavel essencial.
+Padrao minimo esperado de nomes e semantica:
+1. spans em formato consistente, por exemplo:
+   - `billing_webhook_handler.handle`
+   - `billing_ingest_webhook_usecase.execute`
+   - `subscription_repository.find_active_by_user_id_for_update`
+   - `kiwify_client.get_subscription`
+   - `worker.reconcile_subscriptions`
+2. logs com campos como `layer`, `operation`, `module`, `provider`, `event_id`, `request_id`, `correlation_id`, `user_id` somente quando permitido e seguro;
+3. proibido anexar payload sensivel bruto, card data, cpf, email, segredo ou token em atributo de span ou campo de log;
+4. se houver regra local de redaction/masking, ela prevalece sobre conveniencia de debug.
 
 Proibicoes explicitas:
-- Nao usar estado global para observabilidade.
-- Nao adicionar helper generico vazio ou abstração sem consumidor real.
-- Nao instrumentar ignorando mascaramento de PII.
-- Nao logar erro e retornar o mesmo erro em duplicidade.
-- Nao inventar campos de config inexistentes sem validar antes.
-- Nao quebrar wiring atual de database, runtime, modules ou httpclient.
-- Nao usar implementacao parcial: o uso deve ser realmente obrigatorio nos pontos criticos do fluxo.
-- Nao ignorar os exemplos da skill `go-implementation` nem os exemplos deste prompt.
-- Nao deixar comentarios no codigo final sob nenhuma forma.
+1. Nao quebrar o wiring atual de database manager, modules ou `internal/platform/httpclient`.
+2. Nao substituir DI manual por framework.
+3. Nao usar `&http.Client{}` direto fora de testes.
+4. Nao burlar `internal/platform/httpclient` para chamadas outbound.
+5. Nao alterar regra de negocio, maquina de estados, locking, idempotencia ou politicas de PII sob o pretexto de instrumentacao.
+6. Nao inventar novos campos de config se os atuais bastarem.
+7. Nao deixar comentarios no codigo final.
 
-Criterios de aceitacao:
-1. `cmd/server/server.go` e `cmd/worker/worker.go` usam `github.com/JailtonJunior94/devkit-go/pkg/observability/otel` de forma obrigatoria no bootstrap, adaptado ao codigo real do repositorio.
-2. O provider resultante e injetado explicitamente nas dependencias relevantes, sem singleton global.
-3. Handlers, usecases, repositories/clients/servers relevantes passam a registrar spans e logs estruturados de forma consistente.
-4. O padrao `handler -> usecase -> repositories e/ou client http` permanece preservado.
-5. PII, segredos e dados sensiveis continuam protegidos conforme as politicas do repositorio.
-6. O shutdown do provider continua correto e nao deixa recurso aberto.
-7. O codigo final entregue possui `0 comentarios`.
-8. A implementacao segue obrigatoriamente a skill `go-implementation`, seus exemplos e os exemplos deste prompt, com adaptacao ao contexto real quando necessario.
-9. A resposta final lista os arquivos alterados, explica o wiring adotado e aponta como a observabilidade ficou obrigatoria de ponta a ponta.
+Criterios de aceitacao anti-falso-positivo:
+1. `cmd/server/server.go` e `cmd/worker/worker.go` passam a depender obrigatoriamente de `devkit-go/pkg/observability/otel`, sem ambiguidade sobre o backend efetivo usado.
+2. O `o11y` resultante e injetado explicitamente nas dependencias relevantes; nao existe acesso global implicito.
+3. Os fluxos criticos realmente passam a gerar spans/logs coerentes em handlers, use cases e IO relevante, e nao apenas no bootstrap.
+4. `context.Context` e propagado corretamente do inicio ao fim dos fluxos instrumentados.
+5. A instrumentacao respeita PII, mascaramento e segredos, sem falso ganho de observabilidade a custo de vazamento.
+6. A implementacao evita span/log noise e nao introduz custo operacional desnecessario em hot paths.
+7. O shutdown do provider permanece correto e sem recurso aberto.
+8. O codigo final possui `0 comentarios`.
+9. A resposta final descreve exatamente quais arquivos foram alterados, qual wiring foi adotado e por que isso elimina falso positivo de "observabilidade obrigatoria".
 
 Saida esperada:
-1. Analise curta das ambiguidades do pedido versus o codigo real antes de codar.
-2. Implementacao completa e coerente com o repositorio.
-3. Testes e ajustes necessarios para cobrir o wiring e os pontos criticos.
-4. Resumo final objetivo em PT-BR com foco em bootstrap, injecao, spans, logs e preservacao arquitetural.
+1. Analise curta das ambiguidades reais antes de alterar.
+2. Implementacao completa.
+3. Testes e ajustes proporcionais ao risco.
+4. Resumo final objetivo, em PT-BR, explicando o que ficou obrigatorio no bootstrap e no fluxo ponta a ponta.
 
-Se houver conflito entre o snippet fornecido, `AGENTS.md`, `agent-governance`, `go-implementation` e o estado real do repositorio, prevalecem `AGENTS.md`, `go-implementation` e a restricao mais segura.
+Se houver conflito entre este prompt, o snippet fornecido, `AGENTS.md`, `agent-governance`, `go-implementation` e o estado real do repositorio, prevalecem `AGENTS.md`, `go-implementation`, o codigo real e a opcao mais segura.
 ```
+
+# Exemplo concreto do que sera implementado
+
+O exemplo abaixo nao e para copia cega. Ele existe para deixar explicito o desenho esperado do resultado final a partir, obrigatoriamente, de `cmd/server/server.go` e/ou `cmd/worker/worker.go`.
+
+```go
+func Run(ctx context.Context) error {
+	cfg, err := configs.LoadConfig(".")
+	if err != nil {
+		return err
+	}
+
+	logger := slog.Default()
+	eventBus := events.NewBus()
+
+	o11y, err := observability.NewProvider(cfg)
+	if err != nil {
+		return err
+	}
+
+	mgr, err := database.NewManager(ctx, cfg, o11y.Observability())
+	if err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()))
+	}
+
+	identityModule, err := identity.NewModule(identity.WithDatabase(mgr))
+	if err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
+
+	billingModule, err := billing.NewModule(
+		billing.WithConfig(cfg),
+		billing.WithEventBus(eventBus),
+		billing.WithLogger(logger),
+		billing.WithDatabase(mgr),
+		billing.WithProvider(o11y),
+		billing.WithUserRepository(identityModule.Ports.UserRepository),
+	)
+	if err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
+
+	runnerManager := platformworker.NewManager(
+		logger,
+		slices.Concat(identityModule.Runners(), billingModule.Runners())...,
+	)
+	if err := runnerManager.Start(ctx); err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
+
+	server, err := chiserver.New(
+		o11y.Observability(),
+		chiserver.WithPort(strconv.Itoa(cfg.HTTPConfig.Port)),
+		chiserver.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
+		chiserver.WithServiceVersion(cfg.O11yConfig.ServiceVersion),
+		chiserver.WithEnvironment(cfg.AppConfig.Environment),
+		chiserver.WithCORS(cfg.HTTPConfig.CORSAllowedOrigins),
+		chiserver.WithMetrics(),
+		chiserver.WithTracing(),
+		chiserver.WithOTelMetrics(),
+	)
+	if err != nil {
+		return errors.Join(
+			err,
+			runnerManager.Stop(context.Background()),
+			o11y.Shutdown(context.Background()),
+			mgr.Shutdown(context.Background()),
+		)
+	}
+
+	server.RegisterRouters(slices.Concat(identityModule.Routers(), billingModule.Routers())...)
+
+	if err := server.Start(ctx); err != nil {
+		return errors.Join(
+			err,
+			runnerManager.Stop(context.Background()),
+			o11y.Shutdown(context.Background()),
+			mgr.Shutdown(context.Background()),
+		)
+	}
+
+	<-ctx.Done()
+
+	return errors.Join(
+		server.Stop(context.Background()),
+		runnerManager.Stop(context.Background()),
+		o11y.Shutdown(context.Background()),
+		mgr.Shutdown(context.Background()),
+	)
+}
+```
+
+```go
+func Run(ctx context.Context) error {
+	cfg, err := configs.LoadConfig(".")
+	if err != nil {
+		return err
+	}
+
+	logger := slog.Default()
+	eventBus := events.NewBus()
+
+	o11y, err := observability.NewProvider(cfg)
+	if err != nil {
+		return err
+	}
+
+	mgr, err := database.NewManager(ctx, cfg, o11y.Observability())
+	if err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()))
+	}
+
+	identityModule, err := identity.NewModule(identity.WithDatabase(mgr))
+	if err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
+
+	billingModule, err := billing.NewModule(
+		billing.WithConfig(cfg),
+		billing.WithEventBus(eventBus),
+		billing.WithLogger(logger),
+		billing.WithDatabase(mgr),
+		billing.WithProvider(o11y),
+		billing.WithUserRepository(identityModule.Ports.UserRepository),
+	)
+	if err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
+
+	runnerManager := platformworker.NewManager(
+		logger,
+		slices.Concat(identityModule.Runners(), billingModule.Runners())...,
+	)
+	if err := runnerManager.Start(ctx); err != nil {
+		return errors.Join(err, o11y.Shutdown(context.Background()), mgr.Shutdown(context.Background()))
+	}
+
+	<-ctx.Done()
+
+	return errors.Join(
+		runnerManager.Stop(context.Background()),
+		o11y.Shutdown(context.Background()),
+		mgr.Shutdown(context.Background()),
+	)
+}
+```
+
+Exemplo esperado de instrumentacao nas camadas a partir desses entrypoints:
+
+```go
+type KiwifyWebhookHandler struct {
+	useCase ingestWebhookExecutor
+	o11y    observability.Observability
+	logger  *slog.Logger
+	header  string
+}
+
+func (h *KiwifyWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.o11y.Tracer().Start(r.Context(), "billing_webhook_handler.handle")
+	defer span.End()
+
+	correlationID := r.Header.Get("X-Request-ID")
+
+	h.o11y.Logger().Info(
+		ctx,
+		"webhook_received",
+		observability.String("layer", "handler"),
+		observability.String("operation", "handle_kiwify_webhook"),
+		observability.String("module", "billing"),
+		observability.String("provider", "kiwify"),
+		observability.String("correlation_id", correlationID),
+	)
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, webhookBodyLimitBytes))
+	if err != nil {
+		span.RecordError(err)
+		writeWebhookJSON(w, http.StatusInternalServerError)
+		return
+	}
+
+	_, err = h.useCase.Execute(ctx, input.IngestWebhookInput{
+		RawBody:             body,
+		Headers:             extractHeaders(r),
+		SignatureHeaderName: h.header,
+		ReceivedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		span.RecordError(err)
+		h.o11y.Logger().Error(
+			ctx,
+			"webhook_failed",
+			observability.String("layer", "handler"),
+			observability.String("module", "billing"),
+			observability.String("operation", "handle_kiwify_webhook"),
+			observability.String("correlation_id", correlationID),
+		)
+		writeWebhookJSON(w, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+```
+
+```go
+func (u *IngestKiwifyWebhookUseCase) Execute(ctx context.Context, in input.IngestWebhookInput) (output.IngestWebhookResult, error) {
+	return observability.Observe(ctx, u.o11y, u.metrics, "billing", "ingest_kiwify_webhook", func(ctx context.Context) (output.IngestWebhookResult, error) {
+		return u.txRunner.Do(ctx, func(txCtx context.Context, tx database.DBTX) (output.IngestWebhookResult, error) {
+			if err := u.provider.VerifySignature(in.RawBody, in.Headers); err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: %w", err)
+			}
+
+			inserted, err := u.webhookRepo.InsertIfNew(txCtx, webhookEvent)
+			if err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: inserir webhook_event: %w", err)
+			}
+			if !inserted {
+				return output.IngestWebhookResult{Duplicate: true}, nil
+			}
+
+			if err := u.publisher.Publish(txCtx, tx, evt); err != nil {
+				return output.IngestWebhookResult{}, fmt.Errorf("ingest kiwify: publicar outbox: %w", err)
+			}
+
+			return output.IngestWebhookResult{Duplicate: false, WebhookEventID: webhookEvent.ID()}, nil
+		})
+	})
+}
+```
+
+```go
+func (r *PgxWebhookEventRepository) InsertIfNew(ctx context.Context, event entities.WebhookEvent) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "billing_webhook_event_repository.insert_if_new")
+	defer span.End()
+
+	result, err := r.dbtx(ctx).ExecContext(ctx, insertIfNewWebhookEvent,
+		event.ID().String(),
+		event.Provider(),
+		event.ExternalEventID().String(),
+		event.EventType(),
+		event.Signature(),
+		[]byte(event.HeadersJSON()),
+		[]byte(event.Payload()),
+		event.ReceivedAt(),
+	)
+	if err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("postgres webhook event repository: insert if new: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("postgres webhook event repository: rows affected: %w", err)
+	}
+
+	return affected > 0, nil
+}
+```
+
+```go
+func (w *wiring) buildKiwifyAdapter(ctx context.Context, subscriptionRepo *billingrepos.PgxSubscriptionRepository) (*kiwifyclient.KiwifyAdapter, error) {
+	client, err := platformhttpclient.NewClient(
+		w.options.o11y.Observability(),
+		platformhttpclient.WithBaseURL(w.options.config.KiwifyConfig.APIBaseURL),
+		platformhttpclient.WithTimeout(w.options.config.KiwifyConfig.HTTPTimeout),
+		platformhttpclient.WithDefaultRetry(
+			w.options.config.KiwifyConfig.HTTPRetryMaxAttempts,
+			w.options.config.KiwifyConfig.HTTPRetryBackoff,
+		),
+		platformhttpclient.WithTarget("kiwify"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	kiwifyHTTPClient := kiwifyclient.NewClient(
+		client,
+		w.options.config.KiwifyConfig.RateLimitMaxRequestsPerMin,
+		w.options.config.KiwifyConfig.RateLimitBurst,
+	)
+
+	oauthClient := kiwifyclient.NewOAuthClient(
+		client,
+		w.options.config.KiwifyConfig.ClientID,
+		w.options.config.KiwifyConfig.ClientSecret,
+		w.options.config.KiwifyConfig.OAuthTokenSafetyMargin,
+	)
+
+	return kiwifyclient.NewKiwifyAdapter(kiwifyHTTPClient, oauthClient, subscriptionRepo), nil
+}
+```
+
+Leitura do exemplo:
+
+1. O ponto de partida obrigatorio e `cmd/server/server.go` e/ou `cmd/worker/worker.go`.
+2. O `o11y` nasce nesses entrypoints e entra cedo no wiring.
+3. O bootstrap injeta a dependencia nos modulos reais antes de banco, server HTTP, runners e clients relevantes.
+4. O handler abre o span de entrada com `r.Context()` e nao com `context.Background()`.
+5. O use case preserva o contexto e centraliza a orquestracao observavel.
+6. O repository instrumenta IO relevante sem vazar SQL bruto, DSN sensivel ou payload sigiloso.
+7. O client HTTP continua obrigatoriamente passando por `internal/platform/httpclient`.
+8. Nao ha log de payload sensivel, segredo, email, CPF, card data ou DSN bruto.
+9. O desenho final e observavel de ponta a ponta, sem trocar arquitetura por magia global.
 
 # Melhorias aplicadas
 
-- Tornou explicita a carga obrigatoria de `AGENTS.md`, `agent-governance`, `go-implementation` e das referencias Go mais pertinentes para observabilidade, API, configuracao, persistencia e testes.
-- Amarrou o prompt ao estado real do repositorio, citando `go.mod`, `cmd/server/server.go`, `cmd/worker/worker.go`, `configs/config.go` e `internal/platform/httpclient`.
-- Explicou as ambiguidades centrais do pedido: o snippet usa nomes de config que hoje nao batem com o repositorio (`ServiceName` vs `ServiceNameAPI`, `ExporterEndpoint`/`ExporterProtocol`/`ExporterInsecure` vs `OTLPEndpoint`/`OTLPHeaders`).
-- Transformou o objetivo amplo em escopo implementavel, exigindo observabilidade obrigatoria no bootstrap e na cadeia `handlers -> usecases -> repositories/clients/servers`.
-- Tornou explicito que o uso da skill `go-implementation`, de seus exemplos e dos exemplos do proprio prompt e obrigatorio e inegociavel.
-- Adicionou a exigencia objetiva de `0 comentarios` no codigo final.
-- Adicionou criterios de aceitacao verificaveis para injecao explicita, shutdown correto, protecao de PII, consistencia de spans/logs, ausencia de comentarios e preservacao da arquitetura.
+- Evoluiu o prompt de "instrumentar OTel" para uma especificacao de execucao, com definicao explicita do que sera implementado.
+- Amarrou o prompt ao estado real do repositorio, inclusive ao bootstrap existente, ao wrapper local de observabilidade e ao `internal/platform/httpclient`.
+- Adicionou gates anti-falso-positivo para impedir conclusao enganosa baseada apenas em bootstrap ou spans vazios.
+- Adicionou regras objetivas de eficiencia e escalabilidade para evitar log/spam, cardinalidade descontrolada e custo operacional inutil.
+- Tornou explicito que robustez e production-ready significam wiring real, contexto propagado, shutdown correto, PII protegida e instrumentacao relevante nos pontos criticos.
+- Incluiu um exemplo concreto do resultado esperado em bootstrap, handler, use case e client, deixando claro o desenho que deve emergir da implementacao.
+
+Exemplo de codigo real para analisar a proposta

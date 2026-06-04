@@ -172,7 +172,7 @@ internal/platform/
   id/
   observability/
   outbox/
-  runtime/
+  worker/
   secrets/
 ```
 

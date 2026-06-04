@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-billing-pipeline/9.0_execution_report.md
-summary: "Implementados KiwifyWebhookHandler, KiwifyRouteRegistrar, BillingScheduler, outbox/event_payload, outbox/handler, configs KiwifyConfig+BillingConfig e BillingSubsystem; platform/http e runtime/bootstrap estendidos; golangci-lint 0 issues; todos os testes passam."
-timestamp: "2026-06-03T00:00:00Z"

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/1.0_execution_report.md
-summary: "Schema Postgres 0003_identity + admin seed 0004 criados com migrations SQL, helper SetAdminWhatsAppNumbers com validação E.164 BR e bootstrap integrado no cmd/migrate"
-timestamp: 2026-06-03T00:00:00Z

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-billing-pipeline/3.0_execution_report.md
-summary: "StateMachine stateless 7×7 com 100% de cobertura, PeriodChange, CanonicalEvent, CanonicalSubscription e ErrIllegalTransition criados em internal/billing/domain/services/"
-timestamp: "2026-06-03T00:00:00Z"

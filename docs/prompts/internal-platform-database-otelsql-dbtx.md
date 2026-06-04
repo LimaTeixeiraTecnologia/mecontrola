@@ -79,10 +79,12 @@ Contexto real do repositorio que deve orientar a implementacao:
 - O repositorio e um monolito modular em Go; capacidades tecnicas compartilhadas devem viver em `internal/platform`.
 - `internal/platform` nao pode importar `internal/<modulo>/...`.
 - O fluxo arquitetural deve continuar preservado: transporte/scheduler/bootstrap -> application/usecase -> repositories e/ou clients.
-- Hoje os entrypoints `cmd/server/server.go`, `cmd/worker/worker.go` e `cmd/migrate/migrate.go` ja importam `internal/platform/database` e usam `database.NewManager(...)`.
-- Hoje `internal/identity/module.go` e `internal/billing/module.go` recebem `*database.Manager` via `WithDatabase(...)`.
-- Hoje repositories concretos em `internal/identity/infrastructure/repositories/postgres` e `internal/billing/infrastructure/repositories/postgres` usam `*database.Manager` e resolvem `DBTX` internamente via `mgr.DBTX(ctx)`.
-- Ha uso de `database.NewUnitOfWork[...]` em billing e identity; preserve o contrato transacional existente e nao quebre o fluxo de UnitOfWork/outbox.
+- Na arvore local atual, `cmd/server/server.go`, `cmd/worker/worker.go` e `cmd/migrate/migrate.go` ja importam `internal/platform/database` e usam `database.NewManager(...)`.
+- Na arvore local atual, `cmd/server/server.go` e `cmd/worker/worker.go` tambem usam `events.NewBus()`, `platformworker.NewManager(...)` e composicao manual via `chiserver.New(...)` no servidor HTTP.
+- Na arvore local atual, os paths `internal/identity/module.go`, `internal/billing/module.go`, `internal/identity/...`, `internal/billing/...`, `migrations/...` e `internal/platform/database/...` aparecem removidos do working tree, embora os entrypoints ainda dependam deles.
+- O estado atual do working tree e a fonte da verdade para esta tarefa, mesmo quando houver divergencia com exemplos historicos, documentacao anterior ou expectativas do prompt.
+- Portanto, trate o repositorio atual como um codebase em drift parcial: antes de aplicar o novo desenho de banco, confirme se a implementacao deve restaurar esses packages, recria-los, ou adaptar os entrypoints ao novo estado real.
+- Se os packages de `identity` e `billing` forem restaurados no processo, preserve o contrato transacional historico com `database.NewUnitOfWork[...]` e o wiring de outbox.
 
 Atencao obrigatoria a inconsistencias entre o snippet desejado e o codigo real:
 - No codigo atual, os nomes de configuracao sao `cfg.DBConfig.MaxConns`, `cfg.DBConfig.MaxIdleConns`, `cfg.DBConfig.ConnMaxLifetime`, `cfg.DBConfig.ConnMaxIdleTime` e `cfg.HTTPConfig.ServiceNameAPI`.
@@ -135,14 +137,16 @@ Diretrizes de desenho obrigatorias:
 12. Nao copiar literalmente o snippet de referencia quando ele conflitar com o repositorio; adapte ao contexto real.
 
 Arquivos e areas minimas que devem ser inspecionadas antes de editar:
+- `git status --short`
 - `configs/config.go`
 - `cmd/server/server.go`
 - `cmd/worker/worker.go`
 - `cmd/migrate/migrate.go`
-- `internal/identity/module.go`
-- `internal/billing/module.go`
-- repositories postgres que hoje dependem de `*database.Manager`
-- usos atuais de `database.NewUnitOfWork[...]`
+- imports quebrados ou paths ausentes referenciados por `cmd/server/server.go`, `cmd/worker/worker.go` e `cmd/migrate/migrate.go`
+- `internal/identity/module.go`, se o arquivo existir ou precisar ser restaurado
+- `internal/billing/module.go`, se o arquivo existir ou precisar ser restaurado
+- repositories postgres que hoje dependem de `*database.Manager`, se ainda estiverem presentes ou se precisarem ser recriados
+- usos atuais de `database.NewUnitOfWork[...]`, se ainda estiverem presentes ou se precisarem ser restaurados
 
 Requisitos funcionais:
 1. O pacote `internal/platform/database` deve centralizar a criacao da conexao/pool instrumentado com OpenTelemetry.
@@ -199,3 +203,552 @@ Se houver conflito entre o exemplo fornecido, `AGENTS.md`, `agent-governance` e 
 - Tornou explicito que o uso da skill `go-implementation`, de seus exemplos e dos exemplos do proprio prompt e obrigatorio e inegociavel.
 - Adicionou a exigencia objetiva de `0 comentarios` no codigo final.
 - Adicionou criterios de aceitacao verificaveis para wiring, observabilidade, transacoes, protecao de segredos, ausencia de comentarios e aderencia arquitetural.
+- Atualizou o prompt para refletir o drift atual do working tree: entrypoints ainda dependem de `billing`, `identity`, `migrations` e `internal/platform/database`, mas esses paths nao estao presentes localmente neste momento.
+- Declarou explicitamente que o estado atual do working tree e a fonte da verdade para a tarefa, acima de exemplos historicos do proprio prompt.
+
+# Exemplo de codigo real para analisar a proposta
+
+O exemplo abaixo parte obrigatoriamente de `cmd/server/server.go` e `cmd/worker/worker.go`, e deve ser lido como proposta-alvo de composicao. Ele nao presume que todos os packages citados ja existam no working tree atual.
+
+Ele preserva a separacao entre:
+
+- `Manager` como responsavel por lifecycle, pool, shutdown e `UnitOfWork`
+- `DBTX` como executor injetado nos repositories
+- use cases como fronteira transacional
+- handlers e clients sem acoplamento a detalhes de conexao
+
+## Bootstrap de `cmd/server/server.go`
+
+```go
+func Run(ctx context.Context) error {
+	cfg, err := configs.LoadConfig(".")
+	if err != nil {
+		return err
+	}
+
+	logger := slog.Default()
+
+	provider, _, err := observability.NewProvider(cfg)
+	if err != nil {
+		return err
+	}
+
+	dbManager, err := database.NewDatabaseManager(
+		ctx,
+		database.WithMetrics(true),
+		database.WithDSN(cfg.DBConfig.DSN()),
+		database.WithConnMaxLifetime(cfg.DBConfig.ConnMaxLifetime),
+		database.WithConnMaxIdleTime(cfg.DBConfig.ConnMaxIdleTime),
+		database.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
+		database.WithMaxOpenConns(cfg.DBConfig.MaxConns),
+		database.WithMaxIdleConns(cfg.DBConfig.MaxIdleConns),
+	)
+	if err != nil {
+		shutdownErr := provider.Shutdown(context.Background())
+		if shutdownErr != nil {
+			return errors.Join(err, shutdownErr)
+		}
+		return err
+	}
+
+	baseDB := dbManager.Executor()
+
+	identityModule, err := identity.NewModule(
+		identity.WithDatabaseManager(dbManager),
+		identity.WithDB(baseDB),
+		identity.WithObservability(provider.Observability()),
+	)
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	webhookRepo := billingrepos.NewPgxWebhookEventRepository(baseDB)
+	subscriptionRepo := billingrepos.NewPgxSubscriptionRepository(baseDB)
+
+	platformClient, err := platformhttpclient.NewClient(
+		provider.Observability(),
+		platformhttpclient.WithBaseURL(cfg.KiwifyConfig.APIBaseURL),
+		platformhttpclient.WithTimeout(cfg.KiwifyConfig.HTTPTimeout),
+		platformhttpclient.WithDefaultRetry(
+			cfg.KiwifyConfig.HTTPRetryMaxAttempts,
+			cfg.KiwifyConfig.HTTPRetryBackoff,
+		),
+		platformhttpclient.WithTarget("kiwify"),
+	)
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	kiwifyHTTPClient := kiwifyclient.NewClient(
+		platformClient,
+		cfg.KiwifyConfig.RateLimitMaxRequestsPerMin,
+		cfg.KiwifyConfig.RateLimitBurst,
+	)
+
+	oauthClient := kiwifyclient.NewOAuthClient(
+		platformClient,
+		cfg.KiwifyConfig.ClientID,
+		cfg.KiwifyConfig.ClientSecret,
+		cfg.KiwifyConfig.OAuthTokenSafetyMargin,
+	)
+
+	verifier := kiwifyclient.NewTokenSignatureVerifier(
+		cfg.KiwifyConfig.WebhookSecret,
+		cfg.KiwifyConfig.WebhookTokenHeader,
+	)
+
+	plansRegistry, err := kiwifyclient.NewBillingPlansRegistry(ctx, subscriptionRepo)
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	mapper := kiwifyclient.NewPayloadMapper(plansRegistry, nil)
+	adapter := kiwifyclient.NewKiwifyAdapter(
+		kiwifyHTTPClient,
+		oauthClient,
+		verifier,
+		mapper,
+		plansRegistry,
+	)
+
+	registry := outbox.NewRegistry()
+	outboxStorage := outbox.NewPgxStorage(dbManager)
+	outboxPublisher := outbox.NewPublisher(outboxStorage, registry, nil)
+
+	metrics, err := observability.RegisterUsecaseMetrics(provider.Observability().Metrics())
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	idGenerator := platformid.NewUUIDGenerator()
+
+	ingestUseCase := usecases.NewIngestKiwifyWebhookUseCase(
+		adapter,
+		webhookRepo,
+		outboxPublisher,
+		dbManager,
+		idGenerator,
+		provider.Observability(),
+		metrics,
+	)
+
+	handler := billinghttp.NewKiwifyWebhookHandler(
+		ingestUseCase,
+		logger,
+		cfg.KiwifyConfig.WebhookTokenHeader,
+	)
+
+	router := chi.NewRouter()
+	billinghttp.NewKiwifyRouteRegistrar(handler).Register(router)
+
+	<-ctx.Done()
+
+	return errors.Join(
+		provider.Shutdown(context.Background()),
+		dbManager.Shutdown(context.Background()),
+	)
+}
+```
+
+Observacao de aderencia ao estado atual do entrypoint:
+
+- no codebase atual, `cmd/server/server.go` tambem instancia `events.NewBus()`
+- no codebase atual, `cmd/server/server.go` sobe runners com `platformworker.NewManager(...)`
+- no codebase atual, `cmd/server/server.go` publica routers via `chiserver.New(...)` e `server.RegisterRouters(...)`
+- se esse shape for preservado, adapte o exemplo acima mantendo `cmd/server/server.go` como ponto de composicao principal e substitua apenas o wiring de banco, sem reintroduzir `internal/platform/runtime`
+
+## Bootstrap de `cmd/worker/worker.go`
+
+```go
+func Run(ctx context.Context) error {
+	cfg, err := configs.LoadConfig(".")
+	if err != nil {
+		return err
+	}
+
+	logger := slog.Default()
+
+	provider, _, err := observability.NewProvider(cfg)
+	if err != nil {
+		return err
+	}
+
+	dbManager, err := database.NewDatabaseManager(
+		ctx,
+		database.WithMetrics(true),
+		database.WithDSN(cfg.DBConfig.DSN()),
+		database.WithConnMaxLifetime(cfg.DBConfig.ConnMaxLifetime),
+		database.WithConnMaxIdleTime(cfg.DBConfig.ConnMaxIdleTime),
+		database.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
+		database.WithMaxOpenConns(cfg.DBConfig.MaxConns),
+		database.WithMaxIdleConns(cfg.DBConfig.MaxIdleConns),
+	)
+	if err != nil {
+		shutdownErr := provider.Shutdown(context.Background())
+		if shutdownErr != nil {
+			return errors.Join(err, shutdownErr)
+		}
+		return err
+	}
+
+	baseDB := dbManager.Executor()
+
+	identityModule, err := identity.NewModule(
+		identity.WithDatabaseManager(dbManager),
+		identity.WithDB(baseDB),
+		identity.WithObservability(provider.Observability()),
+	)
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	webhookRepo := billingrepos.NewPgxWebhookEventRepository(baseDB)
+	subscriptionRepo := billingrepos.NewPgxSubscriptionRepository(baseDB)
+
+	platformClient, err := platformhttpclient.NewClient(
+		provider.Observability(),
+		platformhttpclient.WithBaseURL(cfg.KiwifyConfig.APIBaseURL),
+		platformhttpclient.WithTimeout(cfg.KiwifyConfig.HTTPTimeout),
+		platformhttpclient.WithDefaultRetry(
+			cfg.KiwifyConfig.HTTPRetryMaxAttempts,
+			cfg.KiwifyConfig.HTTPRetryBackoff,
+		),
+		platformhttpclient.WithTarget("kiwify"),
+	)
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	kiwifyHTTPClient := kiwifyclient.NewClient(
+		platformClient,
+		cfg.KiwifyConfig.RateLimitMaxRequestsPerMin,
+		cfg.KiwifyConfig.RateLimitBurst,
+	)
+
+	oauthClient := kiwifyclient.NewOAuthClient(
+		platformClient,
+		cfg.KiwifyConfig.ClientID,
+		cfg.KiwifyConfig.ClientSecret,
+		cfg.KiwifyConfig.OAuthTokenSafetyMargin,
+	)
+
+	verifier := kiwifyclient.NewTokenSignatureVerifier(
+		cfg.KiwifyConfig.WebhookSecret,
+		cfg.KiwifyConfig.WebhookTokenHeader,
+	)
+
+	plansRegistry, err := kiwifyclient.NewBillingPlansRegistry(ctx, subscriptionRepo)
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	mapper := kiwifyclient.NewPayloadMapper(plansRegistry, nil)
+	adapter := kiwifyclient.NewKiwifyAdapter(
+		kiwifyHTTPClient,
+		oauthClient,
+		verifier,
+		mapper,
+		plansRegistry,
+	)
+
+	registry := outbox.NewRegistry()
+	outboxStorage := outbox.NewPgxStorage(dbManager)
+	outboxPublisher := outbox.NewPublisher(outboxStorage, registry, nil)
+
+	metrics, err := observability.RegisterUsecaseMetrics(provider.Observability().Metrics())
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	idGenerator := platformid.NewUUIDGenerator()
+	entitlementCache := billingcache.NewEntitlementLRU(
+		cfg.BillingConfig.EntitlementCacheCapacity,
+		cfg.BillingConfig.EntitlementCacheTTL,
+	)
+	userResolver := billinginfra.NewIdentityUserResolverAdapter(identityModule.Ports.UserRepository)
+
+	processUseCase := usecases.NewProcessBillingEventUseCase(
+		webhookRepo,
+		subscriptionRepo,
+		adapter,
+		userResolver,
+		entitlementCache,
+		nil,
+		dbManager,
+		idGenerator,
+		logger,
+		provider.Observability(),
+		metrics,
+	)
+
+	anonymizeUseCase := usecases.NewAnonymizeWebhookEventsUseCase(
+		webhookRepo,
+		services.NewPIIRedactor(),
+		provider.Observability(),
+		metrics,
+	)
+
+	reconcileUseCase := usecases.NewReconcileSubscriptionsUseCase(
+		subscriptionRepo,
+		webhookRepo,
+		adapter,
+		outboxPublisher,
+		dbManager,
+		idGenerator,
+		provider.Observability(),
+		metrics,
+		cfg.KiwifyConfig.ReconciliationBatchSize,
+	)
+
+	if err := billingoutbox.RegisterHandlers(registry, processUseCase); err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	_, err = outbox.NewModule(outbox.ModuleDeps{
+		Config:     cfg.OutboxConfig,
+		Storage:    outboxStorage,
+		Registry:   registry,
+		Metrics:    nil,
+		Logger:     logger,
+		InstanceID: outbox.NewInstanceID(),
+	})
+	if err != nil {
+		return errors.Join(err, provider.Shutdown(context.Background()), dbManager.Shutdown(context.Background()))
+	}
+
+	_ = billingscheduler.NewBillingScheduler(billingscheduler.Deps{
+		ReconcileUseCase:  reconcileUseCase,
+		AnonymizeUseCase:  anonymizeUseCase,
+		ReconcileSchedule: cfg.KiwifyConfig.ReconciliationInterval,
+		AnonymizeSchedule: cfg.BillingConfig.AnonymizationSchedule,
+		Logger:            logger,
+	})
+
+	<-ctx.Done()
+
+	return errors.Join(
+		provider.Shutdown(context.Background()),
+		dbManager.Shutdown(context.Background()),
+	)
+}
+```
+
+Observacao de aderencia ao estado atual do entrypoint:
+
+- no codebase atual, `cmd/worker/worker.go` tambem instancia `events.NewBus()`
+- no codebase atual, `cmd/worker/worker.go` sobe runners com `platformworker.NewManager(...)`
+- se esse shape for preservado, adapte o exemplo acima mantendo `cmd/worker/worker.go` como ponto de composicao principal e substitua apenas o wiring de banco, sem introduzir outro bootstrap intermediario
+
+## Handler HTTP chamando use case
+
+```go
+type KiwifyWebhookHandler struct {
+	useCase ingestWebhookExecutor
+	logger  *slog.Logger
+	header  string
+}
+
+func (h *KiwifyWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, webhookBodyLimitBytes))
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "billing webhook: leitura body", "error", err)
+		writeWebhookJSON(w, http.StatusInternalServerError)
+		return
+	}
+
+	result, err := h.useCase.Execute(r.Context(), input.IngestWebhookInput{
+		RawBody:             body,
+		Headers:             extractHeaders(r),
+		SignatureHeaderName: h.header,
+		ReceivedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		h.handleError(r.Context(), w, r, err)
+		return
+	}
+
+	if result.Duplicate {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"received":  true,
+		"duplicate": false,
+	})
+}
+```
+
+## Use case abrindo transacao e chamando repository
+
+```go
+type IngestKiwifyWebhookUseCase struct {
+	provider    interfaces.BillingProvider
+	webhookRepo interfaces.WebhookEventRepository
+	publisher   outbox.Publisher
+	dbManager   *database.Manager
+	idGenerator interfaces.IDGenerator
+	o11y        observability.Observability
+	metrics     *observability.UsecaseMetrics
+}
+
+func (u *IngestKiwifyWebhookUseCase) Execute(ctx context.Context, in input.IngestWebhookInput) (output.IngestWebhookResult, error) {
+	if err := u.provider.VerifySignature(in.RawBody, in.Headers); err != nil {
+		return output.IngestWebhookResult{}, err
+	}
+
+	externalID, err := valueobjects.NewExternalEventIDCascade(in.RawBody)
+	if err != nil {
+		return output.IngestWebhookResult{}, err
+	}
+
+	return database.NewUnitOfWork[output.IngestWebhookResult](u.dbManager).Do(
+		ctx,
+		func(txCtx context.Context, tx database.DBTX) (output.IngestWebhookResult, error) {
+			now := time.Now().UTC()
+
+			webhookID, err := valueobjects.NewWebhookEventID(u.idGenerator.NewID())
+			if err != nil {
+				return output.IngestWebhookResult{}, err
+			}
+
+			webhookEvent, err := entities.NewWebhookEvent(entities.NewWebhookEventParams{
+				ID:              webhookID,
+				Provider:        "kiwify",
+				ExternalEventID: externalID,
+				EventType:       extractEventType(in.RawBody),
+				Signature:       lookupHeader(in.Headers, in.SignatureHeaderName),
+				HeadersJSON:     in.HeadersJSON(),
+				Payload:         in.RawBody,
+				ReceivedAt:      now,
+			})
+			if err != nil {
+				return output.IngestWebhookResult{}, err
+			}
+
+			inserted, err := u.webhookRepo.InsertIfNew(txCtx, webhookEvent)
+			if err != nil {
+				return output.IngestWebhookResult{}, err
+			}
+			if !inserted {
+				return output.IngestWebhookResult{Duplicate: true}, nil
+			}
+
+			evt, err := newReceivedOutboxEvent(u.idGenerator, webhookEvent, now)
+			if err != nil {
+				return output.IngestWebhookResult{}, err
+			}
+
+			if err := u.publisher.Publish(txCtx, tx, evt); err != nil {
+				return output.IngestWebhookResult{}, err
+			}
+
+			return output.IngestWebhookResult{
+				Duplicate:      false,
+				WebhookEventID: webhookEvent.ID(),
+			}, nil
+		},
+	)
+}
+```
+
+## Repository recebendo apenas `database.DBTX`
+
+```go
+type PgxWebhookEventRepository struct {
+	db     database.DBTX
+	mapper rowMapper
+}
+
+func NewPgxWebhookEventRepository(db database.DBTX) *PgxWebhookEventRepository {
+	return &PgxWebhookEventRepository{db: db}
+}
+
+func (r *PgxWebhookEventRepository) InsertIfNew(ctx context.Context, event entities.WebhookEvent) (bool, error) {
+	result, err := r.db.ExecContext(ctx, insertIfNewWebhookEvent,
+		event.ID().String(),
+		event.Provider(),
+		event.ExternalEventID().String(),
+		event.EventType(),
+		event.Signature(),
+		[]byte(event.HeadersJSON()),
+		[]byte(event.Payload()),
+		event.ReceivedAt(),
+	)
+	if err != nil {
+		return false, fmt.Errorf("postgres webhook event repository: insert if new: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("postgres webhook event repository: rows affected: %w", err)
+	}
+
+	return affected > 0, nil
+}
+```
+
+## Client externo por adapter
+
+```go
+platformClient, err := platformhttpclient.NewClient(
+	o11y,
+	platformhttpclient.WithBaseURL(cfg.KiwifyConfig.APIBaseURL),
+	platformhttpclient.WithTimeout(cfg.KiwifyConfig.HTTPTimeout),
+	platformhttpclient.WithDefaultRetry(
+		cfg.KiwifyConfig.HTTPRetryMaxAttempts,
+		cfg.KiwifyConfig.HTTPRetryBackoff,
+	),
+	platformhttpclient.WithTarget("kiwify"),
+)
+if err != nil {
+	return nil, err
+}
+
+kiwifyHTTPClient := kiwifyclient.NewClient(
+	platformClient,
+	cfg.KiwifyConfig.RateLimitMaxRequestsPerMin,
+	cfg.KiwifyConfig.RateLimitBurst,
+)
+
+oauthClient := kiwifyclient.NewOAuthClient(
+	platformClient,
+	cfg.KiwifyConfig.ClientID,
+	cfg.KiwifyConfig.ClientSecret,
+	cfg.KiwifyConfig.OAuthTokenSafetyMargin,
+)
+
+verifier := kiwifyclient.NewTokenSignatureVerifier(
+	cfg.KiwifyConfig.WebhookSecret,
+	cfg.KiwifyConfig.WebhookTokenHeader,
+)
+
+plansRegistry, err := kiwifyclient.NewBillingPlansRegistry(ctx, subscriptionRepo)
+if err != nil {
+	return nil, err
+}
+
+mapper := kiwifyclient.NewPayloadMapper(plansRegistry, nil)
+
+adapter := kiwifyclient.NewKiwifyAdapter(
+	kiwifyHTTPClient,
+	oauthClient,
+	verifier,
+	mapper,
+	plansRegistry,
+)
+```
+
+## Fluxo esperado ponta a ponta
+
+1. `cmd/server/server.go` e `cmd/worker/worker.go` criam `dbManager` e `baseDB`
+2. `baseDB` e injetado nos repositories
+3. `dbManager` e injetado nos use cases que abrem transacao
+4. `cmd/server/server.go` compoe handler, repository, use case e client
+5. `cmd/worker/worker.go` compoe processamento assincrono, scheduler, repository, use case e client
+6. use cases abrem `UnitOfWork`
+7. repositories usam apenas `database.DBTX`
+8. clients externos ficam encapsulados em adapters
+9. o mesmo repository funciona em fluxo transacional e nao transacional desde que o `DBTX` seja context-aware e resolva automaticamente a transacao ativa a partir do `context.Context`
