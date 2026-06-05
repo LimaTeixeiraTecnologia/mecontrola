@@ -1,4 +1,5 @@
-<!-- spec-hash-prd: a450afc022d8e4eba4e0fc74802e7690c9c3b6e7b242a622982a0024612c60c1 -->
+<!-- spec-hash-prd: 7abc7ae26aff1d53146918cd563fa6c4b21d0a28f73cbd71e7018b20555c5e97 -->
+<!-- spec-hash-techspec: bd62ade7a89222b68bf24f43c03d8e65aa5f65d40b105c0cf47b7de21020fee0 -->
 <!-- MANDATÓRIO: preenchido por `create-technical-specification` Etapa 7.1 com sha256 do PRD consumido.
      Rastreabilidade: `create-tasks` e `execute-task` comparam este hash com o atual do prd.md
      para detectar drift entre techspec e PRD. NÃO remover este comentário ao editar a techspec. -->
