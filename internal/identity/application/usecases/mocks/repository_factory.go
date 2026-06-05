@@ -1,0 +1,74 @@
+package mocks
+
+import (
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+)
+
+type RepositoryFactory struct {
+	mock.Mock
+}
+
+type RepositoryFactory_Expecter struct {
+	mock *mock.Mock
+}
+
+func (_m *RepositoryFactory) EXPECT() *RepositoryFactory_Expecter {
+	return &RepositoryFactory_Expecter{mock: &_m.Mock}
+}
+
+func (_m *RepositoryFactory) UserRepository(db database.DBTX) interfaces.UserRepository {
+	ret := _m.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UserRepository")
+	}
+
+	var r0 interfaces.UserRepository
+	if rf, ok := ret.Get(0).(func(database.DBTX) interfaces.UserRepository); ok {
+		r0 = rf(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.UserRepository)
+		}
+	}
+
+	return r0
+}
+
+type RepositoryFactory_UserRepository_Call struct {
+	*mock.Call
+}
+
+func (_e *RepositoryFactory_Expecter) UserRepository(db any) *RepositoryFactory_UserRepository_Call {
+	return &RepositoryFactory_UserRepository_Call{Call: _e.mock.On("UserRepository", db)}
+}
+
+func (_c *RepositoryFactory_UserRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_UserRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(database.DBTX))
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_UserRepository_Call) Return(_a0 interfaces.UserRepository) *RepositoryFactory_UserRepository_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *RepositoryFactory_UserRepository_Call) RunAndReturn(run func(database.DBTX) interfaces.UserRepository) *RepositoryFactory_UserRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+func NewRepositoryFactory(t interface {
+	mock.TestingT
+	Cleanup(func())
+}) *RepositoryFactory {
+	m := &RepositoryFactory{}
+	m.Test(t)
+	t.Cleanup(func() { m.AssertExpectations(t) })
+	return m
+}

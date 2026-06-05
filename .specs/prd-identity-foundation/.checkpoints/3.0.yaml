@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-identity-foundation/3.0_execution_report.md
+summary: Agregados User e WhatsAppHistoryEntry implementados com construtores autossuficientes, 97.7% cobertura, todos os testes de borda passando
+timestamp: 2026-06-05T00:00:00Z

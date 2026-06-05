@@ -53,13 +53,6 @@ func (s *PublisherSuite) TestPublish_Sucesso() {
 	s.NoError(err)
 }
 
-func (s *PublisherSuite) TestPublish_SemTransacao() {
-	evt := s.newValidEvent()
-
-	err := s.publisher.Publish(context.Background(), evt)
-	s.ErrorIs(err, outbox.ErrNoActiveTransaction)
-}
-
 func (s *PublisherSuite) TestPublish_IDInvalido() {
 	evt := s.newValidEvent()
 	evt.ID = "not-a-uuid"

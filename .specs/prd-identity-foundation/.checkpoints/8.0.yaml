@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-identity-foundation/8.0_execution_report.md
+summary: NewIdentityModule + doc.go + bootstrap em cmd/server implementados; go build e go vet verdes
+timestamp: 2026-06-05T00:00:00Z

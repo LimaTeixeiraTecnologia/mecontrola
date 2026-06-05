@@ -3,27 +3,21 @@ package outbox
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 )
 
 type postgresStorage struct {
-	db manager.Manager
+	db database.DBTX
 }
 
-func NewPostgresStorage(db manager.Manager) Storage {
+func NewPostgresStorage(db database.DBTX) OutboxRepository {
 	return &postgresStorage{db: db}
 }
 
 func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int) error {
-	dbtx, ok := database.FromContext(ctx)
-	if !ok {
-		return ErrNoActiveTransaction
-	}
 	meta, err := marshalMetadata(evt.Metadata)
 	if err != nil {
 		return err
@@ -35,7 +29,7 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 		VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,now(),now())
 		ON CONFLICT (id) DO NOTHING`
 
-	_, err = dbtx.ExecContext(ctx, q,
+	_, err = s.db.ExecContext(ctx, q,
 		evt.ID,
 		evt.Type,
 		evt.AggregateType,
@@ -54,11 +48,6 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 }
 
 func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batchSize int) ([]Row, error) {
-	tx, err := s.db.BeginTx(ctx, database.TxOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("outbox: claim batch begin tx: %w", err)
-	}
-
 	const selectQ = `
 		SELECT id, event_type, aggregate_type, aggregate_id, payload, metadata,
 		       attempts, max_attempts, occurred_at
@@ -69,9 +58,9 @@ func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batch
 		 LIMIT $2
 		   FOR UPDATE SKIP LOCKED`
 
-	rows, err := tx.QueryContext(ctx, selectQ, int(StatusPending), batchSize)
+	rows, err := s.db.QueryContext(ctx, selectQ, int(StatusPending), batchSize)
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("outbox: claim batch select: %w", err), tx.Rollback(ctx))
+		return nil, fmt.Errorf("outbox: claim batch select: %w", err)
 	}
 
 	var result []Row
@@ -89,24 +78,27 @@ func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batch
 			&r.MaxAttempts,
 			&r.OccurredAt,
 		); err != nil {
-			return nil, errors.Join(fmt.Errorf("outbox: claim batch scan: %w", err), rows.Close(), tx.Rollback(ctx))
+			_ = rows.Close()
+			return nil, fmt.Errorf("outbox: claim batch scan: %w", err)
 		}
 		m, err := unmarshalMetadata(meta)
 		if err != nil {
-			return nil, errors.Join(err, rows.Close(), tx.Rollback(ctx))
+			_ = rows.Close()
+			return nil, err
 		}
 		r.Metadata = m
 		result = append(result, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.Join(fmt.Errorf("outbox: claim batch rows: %w", err), rows.Close(), tx.Rollback(ctx))
+		_ = rows.Close()
+		return nil, fmt.Errorf("outbox: claim batch rows: %w", err)
 	}
 	if err := rows.Close(); err != nil {
-		return nil, errors.Join(fmt.Errorf("outbox: claim batch close rows: %w", err), tx.Rollback(ctx))
+		return nil, fmt.Errorf("outbox: claim batch close rows: %w", err)
 	}
 
 	if len(result) == 0 {
-		return nil, tx.Rollback(ctx)
+		return nil, nil
 	}
 
 	const updateQ = `
@@ -115,14 +107,11 @@ func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batch
 		 WHERE id = $3`
 
 	for _, r := range result {
-		if _, err := tx.ExecContext(ctx, updateQ, int(StatusProcessing), lockedBy, r.ID); err != nil {
-			return nil, errors.Join(fmt.Errorf("outbox: claim batch update %s: %w", r.ID, err), tx.Rollback(ctx))
+		if _, err := s.db.ExecContext(ctx, updateQ, int(StatusProcessing), lockedBy, r.ID); err != nil {
+			return nil, fmt.Errorf("outbox: claim batch update %s: %w", r.ID, err)
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, errors.Join(fmt.Errorf("outbox: claim batch commit: %w", err), tx.Rollback(ctx))
-	}
 	return result, nil
 }
 
@@ -132,7 +121,7 @@ func (s *postgresStorage) MarkPublished(ctx context.Context, id string) error {
 		   SET status = $1, published_at = now(), locked_at = NULL, locked_by = NULL, updated_at = now()
 		 WHERE id = $2`
 
-	if _, err := s.db.DBTX(ctx).ExecContext(ctx, q, int(StatusPublished), id); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, int(StatusPublished), id); err != nil {
 		return fmt.Errorf("outbox: mark published: %w", err)
 	}
 	return nil
@@ -145,7 +134,7 @@ func (s *postgresStorage) MarkPendingRetry(ctx context.Context, id string, lastE
 		       next_attempt_at = $3, locked_at = NULL, locked_by = NULL, updated_at = now()
 		 WHERE id = $4`
 
-	if _, err := s.db.DBTX(ctx).ExecContext(ctx, q, int(StatusPending), lastErr, nextAttemptAt, id); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, int(StatusPending), lastErr, nextAttemptAt, id); err != nil {
 		return fmt.Errorf("outbox: mark pending retry: %w", err)
 	}
 	return nil
@@ -158,7 +147,7 @@ func (s *postgresStorage) MarkFailed(ctx context.Context, id string, lastErr str
 		       locked_at = NULL, locked_by = NULL, updated_at = now()
 		 WHERE id = $3`
 
-	if _, err := s.db.DBTX(ctx).ExecContext(ctx, q, int(StatusFailed), lastErr, id); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, int(StatusFailed), lastErr, id); err != nil {
 		return fmt.Errorf("outbox: mark failed: %w", err)
 	}
 	return nil
@@ -171,7 +160,7 @@ func (s *postgresStorage) ResetStuck(ctx context.Context, stuckAfter time.Durati
 		 WHERE status = $2
 		   AND locked_at < now() - ($3 * interval '1 microsecond')`
 
-	res, err := s.db.DBTX(ctx).ExecContext(ctx, q, int(StatusPending), int(StatusProcessing), stuckAfter.Microseconds())
+	res, err := s.db.ExecContext(ctx, q, int(StatusPending), int(StatusProcessing), stuckAfter.Microseconds())
 	if err != nil {
 		return 0, fmt.Errorf("outbox: reset stuck: %w", err)
 	}
@@ -193,7 +182,7 @@ func (s *postgresStorage) DeletePublishedBatch(ctx context.Context, retention ti
 		    LIMIT $3
 		 )`
 
-	res, err := s.db.DBTX(ctx).ExecContext(ctx, q, int(StatusPublished), retention.Microseconds(), limit)
+	res, err := s.db.ExecContext(ctx, q, int(StatusPublished), retention.Microseconds(), limit)
 	if err != nil {
 		return 0, fmt.Errorf("outbox: delete published batch: %w", err)
 	}

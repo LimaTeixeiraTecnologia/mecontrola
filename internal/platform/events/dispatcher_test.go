@@ -264,9 +264,7 @@ func (s *DispatcherSuite) TestWithCapacity_FuncionaCorretamente() {
 
 // safeHandler é um Handler com contador atômico, seguro para uso concorrente em testes.
 
-type safeHandler struct {
-	count sync.WaitGroup
-}
+type safeHandler struct{}
 
 func (h *safeHandler) Handle(_ context.Context, _ Event) error {
 	return nil

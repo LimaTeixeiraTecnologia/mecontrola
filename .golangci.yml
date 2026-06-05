@@ -33,6 +33,19 @@ linters:
           msg: "Use SafeDSN() para logs. DSN() expõe a senha em texto claro e é proibido fora de configs/ e internal/platform/database/."
         - pattern: '"github\.com/JailtonJunior94/devkit-go'
           msg: "Importe devkit-go apenas via internal/platform/ (observability ou database). Fora desses pacotes, use os tipos re-exportados de platform."
+        # Gates do runbook docs/runbooks/handler-usecase-uow-repository.md §13 — aderência obrigatória ao padrão identity foundation.
+        - pattern: 'WhatsAppNumber\)\.String\(\)'
+          msg: "use WhatsAppNumber.Masked() em logs (ADR-003)"
+        - pattern: 'Email\)\.String\(\)'
+          msg: "use Email.Masked() em logs (ADR-003)"
+        - pattern: 'func\s+writeError\b'
+          msg: "usar github.com/JailtonJunior94/devkit-go/pkg/responses (R6.10)"
+        - pattern: 'func\s+writeJSON\b'
+          msg: "usar github.com/JailtonJunior94/devkit-go/pkg/responses (R6.10)"
+        - pattern: 'func\s+nullableString\b'
+          msg: "usar internal/platform/sqlnull.Str (R6.11)"
+        - pattern: 'func\s+nullableEmail\b'
+          msg: "usar internal/platform/sqlnull.Str (R6.11)"
 
     depguard:
       rules:
@@ -204,6 +217,39 @@ linters:
               desc: "agent não pode importar finance diretamente (cross-module boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
               desc: "agent não pode importar finance diretamente (cross-module boundary violation)"
+
+        # Gates do runbook docs/runbooks/handler-usecase-uow-repository.md §13 — fronteiras hexagonais identity e proibições de platform.
+        # RF-15: identity/domain não importa identity/application nem identity/infrastructure.
+        identity-domain-no-application:
+          files:
+            - "**/internal/identity/domain/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
+              desc: "identity/domain não pode importar identity/application (F-11/RF-15)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
+              desc: "identity/domain não pode importar identity/infrastructure (F-11/RF-15)"
+        # RF-15: identity/application não importa identity/infrastructure.
+        identity-application-no-infrastructure:
+          files:
+            - "**/internal/identity/application/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
+              desc: "identity/application não pode importar identity/infrastructure (F-11/RF-15)"
+        # R6.9: identity e outbox não usam platform/uow — consumir devkit-go/pkg/database/uow direto.
+        identity-no-internal-platform-uow:
+          files:
+            - "**/internal/identity/**/*.go"
+            - "**/internal/platform/outbox/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/uow"
+              desc: "Consumir devkit-go/pkg/database/uow direto (R6.9 — ADR-008)"
+        # R6.8: identity/domain gera ID via entities.NewID() — sem IDGenerator injetado.
+        identity-no-platform-id:
+          files:
+            - "**/internal/identity/**/*.go"
+          deny:
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
+              desc: "Domínio gera ID via entities.NewID() — sem IDGenerator injetado (R6.8)"
 
     revive:
       rules:

@@ -8,13 +8,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
 
-type OutboxDispatcher struct {
-	storage    Storage
+type DispatcherJob struct {
+	uow        uow.UnitOfWork[[]Row]
+	factory    OutboxRepositoryFactory
 	registry   Registry
 	cfg        configs.OutboxConfig
 	logger     observability.Logger
@@ -23,15 +26,17 @@ type OutboxDispatcher struct {
 	instanceID string
 }
 
-func NewOutboxDispatcher(
-	storage Storage,
+func NewDispatcherJob(
+	unitOfWork uow.UnitOfWork[[]Row],
+	factory OutboxRepositoryFactory,
 	registry Registry,
 	cfg configs.OutboxConfig,
 	logger observability.Logger,
 	rng *rand.Rand,
-) *OutboxDispatcher {
-	return &OutboxDispatcher{
-		storage:    storage,
+) *DispatcherJob {
+	return &DispatcherJob{
+		uow:        unitOfWork,
+		factory:    factory,
 		registry:   registry,
 		cfg:        cfg,
 		logger:     logger,
@@ -40,25 +45,39 @@ func NewOutboxDispatcher(
 	}
 }
 
-func (d *OutboxDispatcher) RunOnce(ctx context.Context) error {
-	rows, err := d.storage.ClaimBatch(ctx, d.instanceID, d.cfg.DispatcherBatchSize)
-	if err != nil {
-		return fmt.Errorf("outbox: dispatcher claim batch: %w", err)
-	}
+func (d *DispatcherJob) Name() string     { return "outbox-dispatcher" }
+func (d *DispatcherJob) Schedule() string { return "@every " + d.cfg.DispatcherTickInterval.String() }
 
-	var rowErrs []error
-	for _, row := range rows {
-		if err := d.dispatch(ctx, row); err != nil {
-			rowErrs = append(rowErrs, err)
+func (d *DispatcherJob) Run(ctx context.Context) error {
+	rows, err := d.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) ([]Row, error) {
+		storage := d.factory.OutboxRepository(tx)
+		claimed, claimErr := storage.ClaimBatch(ctx, d.instanceID, d.cfg.DispatcherBatchSize)
+		if claimErr != nil {
+			return nil, fmt.Errorf("outbox: dispatcher claim batch: %w", claimErr)
 		}
+		var rowErrs []error
+		for _, row := range claimed {
+			if dispErr := d.dispatch(ctx, row, storage); dispErr != nil {
+				rowErrs = append(rowErrs, dispErr)
+			}
+		}
+		return claimed, errors.Join(rowErrs...)
+	})
+	if err != nil {
+		return err
 	}
-	return errors.Join(rowErrs...)
+	if len(rows) > 0 {
+		d.logger.Info(ctx, "outbox: dispatcher processed batch",
+			observability.Int("count", len(rows)),
+		)
+	}
+	return nil
 }
 
-func (d *OutboxDispatcher) dispatch(ctx context.Context, row Row) error {
+func (d *DispatcherJob) dispatch(ctx context.Context, row Row, storage OutboxRepository) error {
 	handlers := d.registry.HandlersOf(row.Type)
 	if len(handlers) == 0 {
-		if err := d.storage.MarkFailed(ctx, row.ID, "no handlers registered"); err != nil {
+		if err := storage.MarkFailed(ctx, row.ID, "no handlers registered"); err != nil {
 			return fmt.Errorf("outbox: mark failed (no handlers): %w", err)
 		}
 		d.logger.Error(ctx, "outbox: no handlers registered",
@@ -88,7 +107,7 @@ func (d *OutboxDispatcher) dispatch(ctx context.Context, row Row) error {
 
 	joined := errors.Join(handlerErrs...)
 	if joined == nil {
-		if err := d.storage.MarkPublished(ctx, row.ID); err != nil {
+		if err := storage.MarkPublished(ctx, row.ID); err != nil {
 			return fmt.Errorf("outbox: mark published: %w", err)
 		}
 		return nil
@@ -96,20 +115,20 @@ func (d *OutboxDispatcher) dispatch(ctx context.Context, row Row) error {
 
 	nextAttempts := row.Attempts + 1
 	if nextAttempts >= row.MaxAttempts {
-		if err := d.storage.MarkFailed(ctx, row.ID, joined.Error()); err != nil {
+		if err := storage.MarkFailed(ctx, row.ID, joined.Error()); err != nil {
 			return fmt.Errorf("outbox: mark failed: %w", err)
 		}
 		return nil
 	}
 
 	backoff := d.CalcBackoff(row.Attempts)
-	if err := d.storage.MarkPendingRetry(ctx, row.ID, joined.Error(), time.Now().UTC().Add(backoff)); err != nil {
+	if err := storage.MarkPendingRetry(ctx, row.ID, joined.Error(), time.Now().UTC().Add(backoff)); err != nil {
 		return fmt.Errorf("outbox: mark pending retry: %w", err)
 	}
 	return nil
 }
 
-func (d *OutboxDispatcher) CalcBackoff(attempts int) time.Duration {
+func (d *DispatcherJob) CalcBackoff(attempts int) time.Duration {
 	base := d.cfg.RetryBaseBackoff
 	maxB := d.cfg.RetryMaxBackoff
 

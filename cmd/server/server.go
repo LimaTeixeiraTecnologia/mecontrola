@@ -20,6 +20,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 )
 
 func New() *cobra.Command {
@@ -111,6 +112,12 @@ func Run() error {
 		observability.String("service", cfg.HTTPConfig.ServiceNameAPI),
 		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
 	)
+
+	identityModule := identity.NewIdentityModule(cfg, o11y, dbManager)
+	if identityModule.UserRouter != nil {
+		srv.RegisterRouters(identityModule.UserRouter)
+	}
+	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
@@ -82,17 +83,21 @@ func Run() error {
 		)
 	}
 
-	storage := outbox.NewPostgresStorage(dbManager)
+	outboxFactory := outbox.NewRepositoryFactory(o11y)
+	dispatcherUoW := uow.New[[]outbox.Row](dbManager, uow.WithObservability(o11y))
+	reaperUoW := uow.NewVoid(dbManager, uow.WithObservability(o11y))
+	housekeepUoW := uow.NewVoid(dbManager, uow.WithObservability(o11y))
+
 	eventsDispatcher := events.NewDispatcher()
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	jobs := make([]worker.Job, 0, 3)
 	if cfg.OutboxConfig.DispatcherEnabled {
-		jobs = append(jobs, outbox.NewDispatcherJob(storage, eventsDispatcher, cfg.OutboxConfig, o11y.Logger(), rng))
+		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, cfg.OutboxConfig, o11y.Logger(), rng))
 	}
 	jobs = append(jobs,
-		outbox.NewReaperJob(storage, cfg.OutboxConfig, o11y.Logger()),
-		outbox.NewHousekeepingJob(storage, cfg.OutboxConfig, o11y.Logger()),
+		outbox.NewReaperJob(reaperUoW, outboxFactory, cfg.OutboxConfig, o11y.Logger()),
+		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, cfg.OutboxConfig, o11y.Logger()),
 	)
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))

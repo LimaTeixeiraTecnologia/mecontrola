@@ -5,28 +5,53 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
 
-type housekeepingRunner struct {
-	storage Storage
+type HousekeepingJob struct {
+	uow     uow.UnitOfWork[struct{}]
+	factory OutboxRepositoryFactory
 	cfg     configs.OutboxConfig
 	logger  observability.Logger
 }
 
-func NewHousekeepingRunner(storage Storage, cfg configs.OutboxConfig, logger observability.Logger) *housekeepingRunner {
-	return &housekeepingRunner{storage: storage, cfg: cfg, logger: logger}
+func NewHousekeepingJob(
+	unitOfWork uow.UnitOfWork[struct{}],
+	factory OutboxRepositoryFactory,
+	cfg configs.OutboxConfig,
+	logger observability.Logger,
+) *HousekeepingJob {
+	return &HousekeepingJob{
+		uow:     unitOfWork,
+		factory: factory,
+		cfg:     cfg,
+		logger:  logger,
+	}
 }
 
-func (h *housekeepingRunner) RunOnce(ctx context.Context) error {
+func (h *HousekeepingJob) Name() string     { return "outbox-housekeeping" }
+func (h *HousekeepingJob) Schedule() string { return h.cfg.HousekeepingSchedule }
+
+func (h *HousekeepingJob) Run(ctx context.Context) error {
 	retention := time.Duration(h.cfg.HousekeepingRetentionDays) * 24 * time.Hour
 	var total int64
 	for {
-		n, err := h.storage.DeletePublishedBatch(ctx, retention, 1000)
+		var n int64
+		_, err := h.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+			storage := h.factory.OutboxRepository(tx)
+			deleted, delErr := storage.DeletePublishedBatch(ctx, retention, 1000)
+			if delErr != nil {
+				return struct{}{}, fmt.Errorf("outbox: housekeeping: %w", delErr)
+			}
+			n = deleted
+			return struct{}{}, nil
+		})
 		if err != nil {
-			return fmt.Errorf("outbox: housekeeping: %w", err)
+			return err
 		}
 		total += n
 		if n == 0 {

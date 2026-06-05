@@ -14,7 +14,6 @@ import (
 )
 
 var (
-	ErrNoActiveTransaction  = errors.New("outbox: no active transaction in context")
 	ErrEventIDMissing       = errors.New("outbox: event id is required and must be a valid uuid")
 	ErrEventTypeMissing     = errors.New("outbox: event type is required")
 	ErrAggregateTypeMissing = errors.New("outbox: aggregate type is required")

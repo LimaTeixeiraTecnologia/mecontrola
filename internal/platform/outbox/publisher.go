@@ -7,8 +7,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
 
@@ -22,9 +20,6 @@ func NewPostgresPublisher(storage Storage, cfg configs.OutboxConfig) Publisher {
 }
 
 func (p *postgresPublisher) Publish(ctx context.Context, evt Event) error {
-	if _, ok := database.FromContext(ctx); !ok {
-		return ErrNoActiveTransaction
-	}
 	if _, err := uuid.Parse(evt.ID); err != nil {
 		return ErrEventIDMissing
 	}

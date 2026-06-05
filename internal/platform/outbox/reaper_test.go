@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
@@ -16,6 +17,7 @@ import (
 type ReaperSuite struct {
 	suite.Suite
 	storage *outboxmocks.Storage
+	factory *outboxmocks.OutboxRepositoryFactory
 	cfg     configs.OutboxConfig
 }
 
@@ -25,6 +27,7 @@ func TestReaper(t *testing.T) {
 
 func (s *ReaperSuite) SetupTest() {
 	s.storage = outboxmocks.NewStorage(s.T())
+	s.factory = outboxmocks.NewOutboxRepositoryFactory(s.T())
 	s.cfg = configs.OutboxConfig{ReaperStuckAfter: 5 * time.Minute}
 }
 
@@ -35,7 +38,7 @@ type reaperScenario struct {
 	wantError bool
 }
 
-func (s *ReaperSuite) TestRunOnce() {
+func (s *ReaperSuite) TestRun() {
 	scenarios := []reaperScenario{
 		{
 			name:      "deve resetar eventos stuck com sucesso",
@@ -60,10 +63,12 @@ func (s *ReaperSuite) TestRunOnce() {
 	for _, sc := range scenarios {
 		s.Run(sc.name, func() {
 			storage := outboxmocks.NewStorage(s.T())
-			storage.EXPECT().ResetStuck(context.Background(), s.cfg.ReaperStuckAfter).Return(sc.resetN, sc.resetErr)
+			factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+			factory.EXPECT().OutboxRepository(mock.Anything).Return(storage)
+			storage.EXPECT().ResetStuck(mock.Anything, s.cfg.ReaperStuckAfter).Return(sc.resetN, sc.resetErr)
 
-			r := outbox.NewReaperRunner(storage, s.cfg, noopLogger{})
-			err := r.RunOnce(context.Background())
+			r := outbox.NewReaperJob(&fakeUoWVoid{}, factory, s.cfg, noopLogger{})
+			err := r.Run(context.Background())
 
 			if sc.wantError {
 				s.Error(err)

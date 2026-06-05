@@ -1,11 +1,11 @@
 ---
 name: feedback-no-unnecessary-comments
-description: Remove all unnecessary comments from Go code — only keep comments that explain WHY, never WHAT
+description: Zero comments in Go code — absolute rule, no exceptions
 metadata:
   type: feedback
 ---
 
-Never write comments that restate what the code does. Only add a comment when the WHY is non-obvious: a hidden constraint, a subtle invariant, or a workaround. Doc comments that just describe the function signature or rephrase the type name are forbidden.
+Zero comments in all Go source files. No package doc comments, no inline comments, no block comments. The only allowed exception is a `doc.go` file that exists purely as a package declaration placeholder with no comment body.
 
-**Why:** User explicitly requested removing excessive comments — "muito comentário totalmente desnecessário".
-**How to apply:** Before committing any Go file, strip all comments that would be obvious from the code or the name. Keep only comments explaining invariants, workarounds, or non-obvious constraints.
+**Why:** User escalated to "0 comentários obrigatório e inegociável" — stricter than "only WHY comments". Every comment is forbidden.
+**How to apply:** Before any commit touching Go files, run `grep -rn "^[[:space:]]*//" internal/` and remove every match. Also remove block comments `/* ... */`. Do not add any comments when writing new Go code.

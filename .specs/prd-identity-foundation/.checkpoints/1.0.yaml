@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-identity-foundation/1.0_execution_report.md
+summary: "Migrations 000002 (users) e 000003 (user_whatsapp_history) criadas, aplicadas e validadas com todos os invariantes e índices parciais conforme ADR-007"
+timestamp: "2026-06-05T20:00:00Z"
