@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +19,9 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
 func New() *cobra.Command {
@@ -77,6 +82,33 @@ func Run() error {
 		)
 	}
 
+	storage := outbox.NewPostgresStorage(dbManager)
+	eventsDispatcher := events.NewDispatcher()
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	jobs := make([]worker.Job, 0, 3)
+	if cfg.OutboxConfig.DispatcherEnabled {
+		jobs = append(jobs, outbox.NewDispatcherJob(storage, eventsDispatcher, cfg.OutboxConfig, o11y.Logger(), rng))
+	}
+	jobs = append(jobs,
+		outbox.NewReaperJob(storage, cfg.OutboxConfig, o11y.Logger()),
+		outbox.NewHousekeepingJob(storage, cfg.OutboxConfig, o11y.Logger()),
+	)
+
+	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	workerManager := worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger)
+	if err := workerManager.Start(ctx); err != nil {
+		dbStartCtx, dbStartCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer dbStartCancel()
+		o11yStartCtx, o11yStartCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer o11yStartCancel()
+		return errors.Join(
+			fmt.Errorf("worker: erro ao iniciar worker manager: %w", err),
+			dbManager.Shutdown(dbStartCtx),
+			o11y.Shutdown(o11yStartCtx),
+		)
+	}
+
 	o11y.Logger().Info(ctx, "database manager initialized",
 		observability.String("service", cfg.HTTPConfig.ServiceNameWorker),
 		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
@@ -85,14 +117,25 @@ func Run() error {
 	<-ctx.Done()
 	o11y.Logger().Info(context.Background(), "shutdown signal received, draining")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	var shutdownErrs []error
-	if err := dbManager.Shutdown(shutdownCtx); err != nil {
+
+	workerCtx, workerCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer workerCancel()
+	if err := workerManager.Stop(workerCtx); err != nil {
+		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro ao parar worker manager: %w", err))
+	}
+
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer dbCancel()
+	if err := dbManager.Shutdown(dbCtx); err != nil {
 		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro ao encerrar database manager: %w", err))
 	}
-	if err := o11y.Shutdown(shutdownCtx); err != nil {
+
+	o11yCtx, o11yCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer o11yCancel()
+	if err := o11y.Shutdown(o11yCtx); err != nil {
 		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro durante shutdown de observabilidade: %w", err))
 	}
+
 	return errors.Join(shutdownErrs...)
 }

@@ -1,1 +1,0 @@
--- placeholder: sem migrations ainda; garante que //go:embed *.sql compile.

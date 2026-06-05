@@ -313,3 +313,31 @@ func (s *DispatcherSuite) TestConcorrencia_Race() {
 
 	wg.Wait()
 }
+
+// HandlersOf
+
+func (s *DispatcherSuite) TestHandlersOf_RetornaDoisHandlers() {
+	h1 := &fakeHandler{}
+	h2 := &fakeHandler{}
+	s.NoError(s.d.Register("user.created", h1))
+	s.NoError(s.d.Register("user.created", h2))
+
+	handlers := s.d.HandlersOf("user.created")
+
+	s.Len(handlers, 2)
+}
+
+func (s *DispatcherSuite) TestHandlersOf_EventTypeVazio_RetornaVazio() {
+	handlers := s.d.HandlersOf("")
+	s.Empty(handlers)
+}
+
+func (s *DispatcherSuite) TestHandlersOf_SnapshotIsolado() {
+	h := &fakeHandler{}
+	s.NoError(s.d.Register("user.created", h))
+
+	snapshot := s.d.HandlersOf("user.created")
+	s.d.Clear()
+
+	s.Len(snapshot, 1, "snapshot deve ser independente do dispatcher")
+}

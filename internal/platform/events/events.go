@@ -26,5 +26,6 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, event Event) error
 	Remove(eventType string, handler Handler) error
 	Has(eventType string, handler Handler) bool
+	HandlersOf(eventType string) []Handler
 	Clear()
 }

@@ -101,6 +101,15 @@ func (d *dispatcher) Has(eventType string, handler Handler) bool {
 	return slices.Contains(d.handlers[eventType], handler)
 }
 
+func (d *dispatcher) HandlersOf(eventType string) []Handler {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	src := d.handlers[eventType]
+	snapshot := make([]Handler, len(src))
+	copy(snapshot, src)
+	return snapshot
+}
+
 func (d *dispatcher) Clear() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
