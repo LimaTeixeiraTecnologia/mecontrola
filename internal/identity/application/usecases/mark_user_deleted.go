@@ -42,6 +42,7 @@ func (u *MarkUserDeleted) Execute(ctx context.Context, in input.MarkUserDeleted)
 	})
 
 	if err != nil {
+		span.RecordError(err)
 		u.o11y.Logger().Error(ctx, "identity.usecase.mark_user_deleted_failed",
 			observability.String("layer", "usecase"),
 			observability.String("operation", "mark_user_deleted"),

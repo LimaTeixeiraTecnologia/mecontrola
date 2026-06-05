@@ -19,7 +19,7 @@ import (
 
 type FindUserByWhatsAppSuite struct {
 	suite.Suite
-	uowMock     *mocks.UnitOfWorkUser
+	mgr         *mocks.FakeManager
 	factoryMock *mocks.RepositoryFactory
 	repoMock    *mocks.UserRepository
 	uc          *usecases.FindUserByWhatsApp
@@ -30,10 +30,10 @@ func TestFindUserByWhatsApp(t *testing.T) {
 }
 
 func (s *FindUserByWhatsAppSuite) SetupTest() {
-	s.uowMock = mocks.NewUnitOfWorkUser(s.T())
+	s.mgr = mocks.NewFakeManager()
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
 	s.repoMock = mocks.NewUserRepository(s.T())
-	s.uc = usecases.NewFindUserByWhatsApp(s.uowMock, s.factoryMock, noop.NewProvider())
+	s.uc = usecases.NewFindUserByWhatsApp(s.mgr, s.factoryMock, noop.NewProvider())
 }
 
 func (s *FindUserByWhatsAppSuite) validWhatsApp() valueobjects.WhatsAppNumber {
@@ -75,4 +75,9 @@ func (s *FindUserByWhatsAppSuite) TestErroDeIO() {
 	_, err := s.uc.Execute(context.Background(), input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"})
 	s.Require().Error(err)
 	s.True(errors.Is(err, ioErr))
+}
+
+func (s *FindUserByWhatsAppSuite) TestParseWhatsAppInvalid() {
+	_, err := s.uc.Execute(context.Background(), input.FindUserByWhatsApp{WhatsAppNumber: "not-a-number"})
+	s.Require().Error(err)
 }

@@ -1,12 +1,12 @@
 package entities
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
-
-const ReanimationWindow = 30 * 24 * time.Hour
 
 type Status string
 
@@ -54,9 +54,18 @@ func New(whatsapp valueobjects.WhatsAppNumber, opts ...Option) User {
 	return u
 }
 
-func Hydrate(id, whatsapp, email, displayName, status string, createdAt, updatedAt, deletedAt time.Time) User {
-	wa, _ := valueobjects.NewWhatsAppNumber(whatsapp)
-	em, _ := valueobjects.NewEmail(email)
+func Hydrate(id, whatsapp, email, displayName, status string, createdAt, updatedAt, deletedAt time.Time) (User, error) {
+	wa, err := valueobjects.NewWhatsAppNumber(whatsapp)
+	if err != nil {
+		return User{}, fmt.Errorf("identity: hydrate whatsapp: %w", err)
+	}
+	var em valueobjects.Email
+	if email != "" {
+		em, err = valueobjects.NewEmail(email)
+		if err != nil {
+			return User{}, fmt.Errorf("identity: hydrate email: %w", err)
+		}
+	}
 	return User{
 		id:          id,
 		whatsapp:    wa,
@@ -66,7 +75,7 @@ func Hydrate(id, whatsapp, email, displayName, status string, createdAt, updated
 		createdAt:   createdAt,
 		updatedAt:   updatedAt,
 		deletedAt:   deletedAt,
-	}
+	}, nil
 }
 
 func (u User) ID() string                            { return u.id }
@@ -96,7 +105,7 @@ func (u User) CanReanimate(now time.Time) bool {
 	if u.deletedAt.IsZero() {
 		return false
 	}
-	return now.Sub(u.deletedAt) <= ReanimationWindow
+	return now.Sub(u.deletedAt) <= domain.ReanimationWindow
 }
 
 func (u *User) SetDisplayNameIfEmpty(name string) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	mock "github.com/stretchr/testify/mock"
@@ -13,6 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
@@ -50,12 +52,13 @@ func (s *UpsertUserByWhatsAppSuite) validWhatsApp() valueobjects.WhatsAppNumber 
 	return wa
 }
 
-func (s *UpsertUserByWhatsAppSuite) TestCriarNovoUsuario() {
+func (s *UpsertUserByWhatsAppSuite) TestCriarNovoQuandoNumeroInedito() {
 	in := s.validInput()
 	wa := s.validWhatsApp()
 
 	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
 	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+	s.repoMock.On("FindByWhatsAppNumberIncludingDeleted", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
 	created := entities.New(wa, entities.WithDisplayName("Test User"))
 	s.repoMock.On("UpsertByWhatsAppNumber", mock.Anything, mock.Anything, mock.Anything).Return(created, nil)
 
@@ -119,10 +122,89 @@ func (s *UpsertUserByWhatsAppSuite) TestErroPropagadoDeUpsert() {
 
 	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
 	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+	s.repoMock.On("FindByWhatsAppNumberIncludingDeleted", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
 	s.repoMock.On("UpsertByWhatsAppNumber", mock.Anything, mock.Anything, mock.Anything).
 		Return(entities.User{}, upsertErr)
 
 	_, err := s.uc.Execute(context.Background(), in)
 	s.Require().Error(err)
 	s.True(errors.Is(err, upsertErr))
+}
+
+func (s *UpsertUserByWhatsAppSuite) TestReanimateDentroDaJanela() {
+	in := s.validInput()
+	wa := s.validWhatsApp()
+
+	deletedBase := time.Now().UTC().Add(-10 * 24 * time.Hour)
+	deletedUser, hydErr := entities.Hydrate(
+		"original-uuid", wa.String(), "", "",
+		string(entities.StatusDeleted),
+		deletedBase.Add(-1*time.Hour), deletedBase, deletedBase,
+	)
+	s.Require().NoError(hydErr)
+
+	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
+	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+	s.repoMock.On("FindByWhatsAppNumberIncludingDeleted", mock.Anything, wa).Return(deletedUser, nil)
+
+	expected, hydErr2 := entities.Hydrate("original-uuid", wa.String(), "user@example.com", "Test User",
+		string(entities.StatusActive), deletedBase.Add(-1*time.Hour), time.Now().UTC(), time.Time{})
+	s.Require().NoError(hydErr2)
+	s.repoMock.On("Reanimate", mock.Anything, mock.Anything, mock.Anything).Return(expected, nil)
+
+	out, err := s.uc.Execute(context.Background(), in)
+	s.Require().NoError(err)
+	s.Equal("original-uuid", out.ID)
+	s.Equal("ACTIVE", out.Status)
+}
+
+func (s *UpsertUserByWhatsAppSuite) TestForaDaJanelaCriaNovo() {
+	in := s.validInput()
+	wa := s.validWhatsApp()
+
+	expiredAt := time.Now().UTC().Add(-(domain.ReanimationWindow + time.Hour))
+	expiredUser, hydErr := entities.Hydrate(
+		"original-uuid", wa.String(), "", "",
+		string(entities.StatusDeleted),
+		expiredAt.Add(-1*time.Hour), expiredAt, expiredAt,
+	)
+	s.Require().NoError(hydErr)
+
+	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
+	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+	s.repoMock.On("FindByWhatsAppNumberIncludingDeleted", mock.Anything, wa).Return(expiredUser, nil)
+
+	created := entities.New(wa, entities.WithDisplayName("Test User"))
+	s.repoMock.On("UpsertByWhatsAppNumber", mock.Anything, mock.Anything, mock.Anything).Return(created, nil)
+
+	out, err := s.uc.Execute(context.Background(), in)
+	s.Require().NoError(err)
+	s.NotEqual("original-uuid", out.ID)
+}
+
+func (s *UpsertUserByWhatsAppSuite) TestEmailInvalidoRetornaErro() {
+	_, err := s.uc.Execute(context.Background(), input.UpsertUserByWhatsApp{
+		WhatsAppNumber: "+5511987654321",
+		Email:          "not-an-email",
+	})
+	s.Require().Error(err)
+}
+
+func (s *UpsertUserByWhatsAppSuite) TestEmailVazioNaoErra() {
+	in := input.UpsertUserByWhatsApp{
+		WhatsAppNumber: "+5511987654321",
+		Email:          "",
+		DisplayName:    "Test User",
+	}
+	wa := s.validWhatsApp()
+
+	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
+	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+	s.repoMock.On("FindByWhatsAppNumberIncludingDeleted", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+	created := entities.New(wa, entities.WithDisplayName("Test User"))
+	s.repoMock.On("UpsertByWhatsAppNumber", mock.Anything, mock.Anything, mock.Anything).Return(created, nil)
+
+	out, err := s.uc.Execute(context.Background(), in)
+	s.Require().NoError(err)
+	s.Equal("Test User", out.DisplayName)
 }

@@ -4,15 +4,14 @@ package postgres_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
@@ -113,28 +112,42 @@ func (s *UserRepositorySuite) TestCA04c_AppendWhatsAppHistoryPersists() {
 	s.Assert().Equal(1, count)
 }
 
-func (s *UserRepositorySuite) TestCA04d_SoftDeletePlusUpsertWithinWindowReanimates() {
+func (s *UserRepositorySuite) TestCA04d_ReanimateWithinWindowPreservesUUID() {
 	ctx := context.Background()
 	wa := s.newNumber("+5511988880004")
 	repo := s.newRepo()
 
-	candidate := entities.New(wa)
+	email, eerr := valueobjects.NewEmail("original@example.com")
+	s.Require().NoError(eerr)
+	candidate := entities.New(wa, entities.WithEmail(email), entities.WithDisplayName("Original"))
 	inserted, err := repo.UpsertByWhatsAppNumber(ctx, candidate, time.Now().UTC())
 	s.Require().NoError(err)
 
-	deletedAt := time.Now().UTC()
-	s.Require().NoError(repo.MarkDeleted(ctx, inserted.ID(), deletedAt))
+	originalID := inserted.ID()
+	s.Require().NoError(repo.MarkDeleted(ctx, originalID, time.Now().UTC()))
 
-	now := deletedAt.Add(29 * 24 * time.Hour)
-	s.Assert().True(inserted.CanReanimate(now) || true)
-
-	newCandidate := entities.New(wa)
-	newInserted, err := repo.UpsertByWhatsAppNumber(ctx, newCandidate, now)
+	deleted, err := repo.FindByWhatsAppNumberIncludingDeleted(ctx, wa)
 	s.Require().NoError(err)
-	s.Assert().NotEmpty(newInserted.ID())
+	s.Require().Equal(originalID, deleted.ID())
+	s.Require().Equal(entities.StatusDeleted, deleted.Status())
+
+	deleted.Reanimate(time.Now().UTC())
+	reanimated, err := repo.Reanimate(ctx, deleted, time.Now().UTC())
+	s.Require().NoError(err)
+
+	s.Equal(originalID, reanimated.ID())
+	s.Equal(entities.StatusActive, reanimated.Status())
+	s.True(reanimated.DeletedAt().IsZero())
+	s.Empty(reanimated.Email().String())
+	s.Empty(reanimated.DisplayName())
+
+	found, err := repo.FindByID(ctx, originalID)
+	s.Require().NoError(err)
+	s.Equal(originalID, found.ID())
+	s.Equal(entities.StatusActive, found.Status())
 }
 
-func (s *UserRepositorySuite) TestCA04e_SoftDeletePlusUpsertOutsideWindowCreatesNew() {
+func (s *UserRepositorySuite) TestCA04e_OutsideWindowUpsertCreatesNewUUIDAndPreservesDeleted() {
 	ctx := context.Background()
 	wa := s.newNumber("+5511988880005")
 	repo := s.newRepo()
@@ -142,23 +155,32 @@ func (s *UserRepositorySuite) TestCA04e_SoftDeletePlusUpsertOutsideWindowCreates
 	candidate := entities.New(wa)
 	inserted, err := repo.UpsertByWhatsAppNumber(ctx, candidate, time.Now().UTC())
 	s.Require().NoError(err)
+	originalID := inserted.ID()
 
 	deletedAt := time.Now().UTC().Add(-31 * 24 * time.Hour)
-
 	dbtx := s.mgr.DBTX(ctx)
 	_, err = dbtx.ExecContext(ctx,
 		`UPDATE users SET status = 'DELETED', deleted_at = $1, updated_at = $1 WHERE id = $2`,
-		deletedAt, inserted.ID(),
+		deletedAt, originalID,
 	)
 	s.Require().NoError(err)
 
-	now := time.Now().UTC()
-	s.Assert().False(inserted.CanReanimate(now))
-
 	newCandidate := entities.New(wa)
-	newInserted, err := repo.UpsertByWhatsAppNumber(ctx, newCandidate, now)
+	newInserted, err := repo.UpsertByWhatsAppNumber(ctx, newCandidate, time.Now().UTC())
 	s.Require().NoError(err)
-	s.Assert().NotEmpty(newInserted.ID())
+
+	s.NotEqual(originalID, newInserted.ID())
+	s.Equal(entities.StatusActive, newInserted.Status())
+
+	var oldStatus string
+	var oldDeletedAt sql.NullTime
+	row := dbtx.QueryRowContext(ctx,
+		`SELECT status, deleted_at FROM users WHERE id = $1`,
+		originalID,
+	)
+	s.Require().NoError(row.Scan(&oldStatus, &oldDeletedAt))
+	s.Equal(string(entities.StatusDeleted), oldStatus)
+	s.True(oldDeletedAt.Valid)
 }
 
 func (s *UserRepositorySuite) TestCA04f_DisplayNameFirstWriteWins() {
@@ -203,30 +225,7 @@ func (s *UserRepositorySuite) TestCA04h_CheckConstraintRejectsDeletedWithNullDel
 	s.Assert().Error(err)
 }
 
-func (s *UserRepositorySuite) TestUniqueConstraintMapping_WhatsAppNumber() {
-	ctx := context.Background()
-	wa := s.newNumber("+5511988880010")
-
-	uow1 := uow.New[entities.User](s.mgr, uow.WithObservability(s.o11y))
-	factory := repositories.NewRepositoryFactory(s.o11y)
-
-	_, err := uow1.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
-		repo := factory.UserRepository(tx)
-		candidate := entities.New(wa)
-		return repo.UpsertByWhatsAppNumber(ctx, candidate, time.Now().UTC())
-	})
-	s.Require().NoError(err)
-
-	dbtx := s.mgr.DBTX(ctx)
-	_, err = dbtx.ExecContext(ctx,
-		`INSERT INTO users (id, whatsapp_number, status, created_at, updated_at)
-		 VALUES (gen_random_uuid(), $1, 'ACTIVE', now(), now())`,
-		wa.String(),
-	)
-	s.Assert().Error(err)
-}
-
-func (s *UserRepositorySuite) TestUniqueConstraintMapping_Email() {
+func (s *UserRepositorySuite) TestUniqueConstraintMapping_Email_ViaRepo() {
 	ctx := context.Background()
 	wa1 := s.newNumber("+5511988880020")
 	wa2 := s.newNumber("+5511988880021")
@@ -238,14 +237,50 @@ func (s *UserRepositorySuite) TestUniqueConstraintMapping_Email() {
 	_, err = repo.UpsertByWhatsAppNumber(ctx, candidate1, time.Now().UTC())
 	s.Require().NoError(err)
 
-	dbtx := s.mgr.DBTX(ctx)
 	candidate2 := entities.New(wa2, entities.WithEmail(email))
-	_, err = dbtx.ExecContext(ctx,
-		`INSERT INTO users (id, whatsapp_number, email, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, 'ACTIVE', now(), now())`,
-		candidate2.ID(), wa2.String(), email.String(),
-	)
-	s.Assert().Error(err)
+	_, err = repo.UpsertByWhatsAppNumber(ctx, candidate2, time.Now().UTC())
+	s.Require().Error(err)
+	s.True(errors.Is(err, application.ErrEmailInUse), "esperava sentinel ErrEmailInUse, obtive: %v", err)
+}
+
+func (s *UserRepositorySuite) TestUniqueConstraintMapping_WhatsApp_ViaReanimate() {
+	ctx := context.Background()
+	wa := s.newNumber("+5511988880030")
+	repo := s.newRepo()
+
+	candidate := entities.New(wa)
+	original, err := repo.UpsertByWhatsAppNumber(ctx, candidate, time.Now().UTC())
+	s.Require().NoError(err)
+	originalID := original.ID()
+
+	s.Require().NoError(repo.MarkDeleted(ctx, originalID, time.Now().UTC()))
+
+	conflicting := entities.New(wa)
+	conflictingInserted, err := repo.UpsertByWhatsAppNumber(ctx, conflicting, time.Now().UTC())
+	s.Require().NoError(err)
+	s.Require().NotEqual(originalID, conflictingInserted.ID())
+
+	deleted, err := repo.FindByWhatsAppNumberIncludingDeleted(ctx, wa)
+	s.Require().NoError(err)
+	if deleted.ID() != originalID {
+		dbtx := s.mgr.DBTX(ctx)
+		row := dbtx.QueryRowContext(ctx,
+			`SELECT id, whatsapp_number, email, display_name, status, created_at, updated_at, deleted_at
+			   FROM users WHERE id = $1`, originalID)
+		var id, whatsapp, status string
+		var email, displayName sql.NullString
+		var createdAt, updatedAt time.Time
+		var delAt sql.NullTime
+		s.Require().NoError(row.Scan(&id, &whatsapp, &email, &displayName, &status, &createdAt, &updatedAt, &delAt))
+		hydrated, hydErr := entities.Hydrate(id, whatsapp, email.String, displayName.String, status, createdAt, updatedAt, delAt.Time)
+		s.Require().NoError(hydErr)
+		deleted = hydrated
+	}
+
+	deleted.Reanimate(time.Now().UTC())
+	_, err = repo.Reanimate(ctx, deleted, time.Now().UTC())
+	s.Require().Error(err)
+	s.True(errors.Is(err, application.ErrWhatsAppNumberInUse), "esperava sentinel ErrWhatsAppNumberInUse, obtive: %v", err)
 }
 
 func (s *UserRepositorySuite) TestFindByWhatsAppNumber_NotFound() {

@@ -19,7 +19,7 @@ import (
 
 type FindUserByIDSuite struct {
 	suite.Suite
-	uowMock     *mocks.UnitOfWorkUser
+	mgr         *mocks.FakeManager
 	factoryMock *mocks.RepositoryFactory
 	repoMock    *mocks.UserRepository
 	uc          *usecases.FindUserByID
@@ -30,10 +30,10 @@ func TestFindUserByID(t *testing.T) {
 }
 
 func (s *FindUserByIDSuite) SetupTest() {
-	s.uowMock = mocks.NewUnitOfWorkUser(s.T())
+	s.mgr = mocks.NewFakeManager()
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
 	s.repoMock = mocks.NewUserRepository(s.T())
-	s.uc = usecases.NewFindUserByID(s.uowMock, s.factoryMock, noop.NewProvider())
+	s.uc = usecases.NewFindUserByID(s.mgr, s.factoryMock, noop.NewProvider())
 }
 
 func (s *FindUserByIDSuite) TestEncontrado() {

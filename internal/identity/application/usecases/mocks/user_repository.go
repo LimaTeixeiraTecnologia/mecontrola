@@ -179,6 +179,110 @@ func (_c *UserRepository_FindByWhatsAppNumber_Call) RunAndReturn(run func(contex
 	return _c
 }
 
+func (_m *UserRepository) FindByWhatsAppNumberIncludingDeleted(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, error) {
+	ret := _m.Called(ctx, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindByWhatsAppNumberIncludingDeleted")
+	}
+
+	var r0 entities.User
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, valueobjects.WhatsAppNumber) (entities.User, error)); ok {
+		return rf(ctx, number)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, valueobjects.WhatsAppNumber) entities.User); ok {
+		r0 = rf(ctx, number)
+	} else {
+		r0 = ret.Get(0).(entities.User)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, valueobjects.WhatsAppNumber) error); ok {
+		r1 = rf(ctx, number)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+type UserRepository_FindByWhatsAppNumberIncludingDeleted_Call struct {
+	*mock.Call
+}
+
+func (_e *UserRepository_Expecter) FindByWhatsAppNumberIncludingDeleted(ctx, number any) *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call {
+	return &UserRepository_FindByWhatsAppNumberIncludingDeleted_Call{Call: _e.mock.On("FindByWhatsAppNumberIncludingDeleted", ctx, number)}
+}
+
+func (_c *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call) Run(run func(ctx context.Context, number valueobjects.WhatsAppNumber)) *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(valueobjects.WhatsAppNumber))
+	})
+	return _c
+}
+
+func (_c *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call) Return(_a0 entities.User, _a1 error) *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call) RunAndReturn(run func(context.Context, valueobjects.WhatsAppNumber) (entities.User, error)) *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+func (_m *UserRepository) Reanimate(ctx context.Context, u entities.User, now time.Time) (entities.User, error) {
+	ret := _m.Called(ctx, u, now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Reanimate")
+	}
+
+	var r0 entities.User
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, entities.User, time.Time) (entities.User, error)); ok {
+		return rf(ctx, u, now)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, entities.User, time.Time) entities.User); ok {
+		r0 = rf(ctx, u, now)
+	} else {
+		r0 = ret.Get(0).(entities.User)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, entities.User, time.Time) error); ok {
+		r1 = rf(ctx, u, now)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+type UserRepository_Reanimate_Call struct {
+	*mock.Call
+}
+
+func (_e *UserRepository_Expecter) Reanimate(ctx, u, now any) *UserRepository_Reanimate_Call {
+	return &UserRepository_Reanimate_Call{Call: _e.mock.On("Reanimate", ctx, u, now)}
+}
+
+func (_c *UserRepository_Reanimate_Call) Run(run func(ctx context.Context, u entities.User, now time.Time)) *UserRepository_Reanimate_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(entities.User), args[2].(time.Time))
+	})
+	return _c
+}
+
+func (_c *UserRepository_Reanimate_Call) Return(_a0 entities.User, _a1 error) *UserRepository_Reanimate_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *UserRepository_Reanimate_Call) RunAndReturn(run func(context.Context, entities.User, time.Time) (entities.User, error)) *UserRepository_Reanimate_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 func (_m *UserRepository) MarkDeleted(ctx context.Context, id string, now time.Time) error {
 	ret := _m.Called(ctx, id, now)
 

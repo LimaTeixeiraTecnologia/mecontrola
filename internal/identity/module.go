@@ -15,8 +15,12 @@ import (
 )
 
 type IdentityModule struct {
-	RepositoryFactory interfaces.RepositoryFactory
-	UserRouter        *server.UserRouter
+	RepositoryFactory   interfaces.RepositoryFactory
+	UserRouter          *server.UserRouter
+	UpsertUserUseCase   *usecases.UpsertUserByWhatsApp
+	FindUserByIDUseCase *usecases.FindUserByID
+	FindUserByWhatsApp  *usecases.FindUserByWhatsApp
+	MarkUserDeleted     *usecases.MarkUserDeleted
 }
 
 func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) IdentityModule {
@@ -27,12 +31,18 @@ func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mg
 
 	markDeletedUoW := uow.NewVoid(mgr, uow.WithObservability(o11y))
 	markDeletedUC := usecases.NewMarkUserDeleted(markDeletedUoW, factory, o11y)
-	_ = markDeletedUC
+
+	findByIDUC := usecases.NewFindUserByID(mgr, factory, o11y)
+	findByWhatsAppUC := usecases.NewFindUserByWhatsApp(mgr, factory, o11y)
 
 	upsertHandler := handlers.NewUpsertUserByWhatsAppHandler(upsertUC, o11y)
 
 	return IdentityModule{
-		RepositoryFactory: factory,
-		UserRouter:        server.NewUserRouter(upsertHandler),
+		RepositoryFactory:   factory,
+		UserRouter:          server.NewUserRouter(upsertHandler),
+		UpsertUserUseCase:   upsertUC,
+		FindUserByIDUseCase: findByIDUC,
+		FindUserByWhatsApp:  findByWhatsAppUC,
+		MarkUserDeleted:     markDeletedUC,
 	}
 }

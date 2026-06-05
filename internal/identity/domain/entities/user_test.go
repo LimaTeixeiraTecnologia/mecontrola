@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
@@ -112,17 +113,17 @@ func (s *UserSuite) TestCanReanimate_BorderCases() {
 	}{
 		{
 			name:    "exactly 30d",
-			elapsed: entities.ReanimationWindow,
+			elapsed: domain.ReanimationWindow,
 			want:    true,
 		},
 		{
 			name:    "30d minus 1ns",
-			elapsed: entities.ReanimationWindow - time.Nanosecond,
+			elapsed: domain.ReanimationWindow - time.Nanosecond,
 			want:    true,
 		},
 		{
 			name:    "30d plus 1ns",
-			elapsed: entities.ReanimationWindow + time.Nanosecond,
+			elapsed: domain.ReanimationWindow + time.Nanosecond,
 			want:    false,
 		},
 		{
@@ -140,9 +141,10 @@ func (s *UserSuite) TestCanReanimate_BorderCases() {
 
 			var now time.Time
 			if tc.deletedAt != nil {
-				u2 := entities.Hydrate(u.ID(), wa.String(), "", "", string(entities.StatusDeleted),
+				u2, err := entities.Hydrate(u.ID(), wa.String(), "", "", string(entities.StatusDeleted),
 					u.CreatedAt(), u.UpdatedAt(), tc.deletedAt())
-				now = base.Add(entities.ReanimationWindow)
+				s.Require().NoError(err)
+				now = base.Add(domain.ReanimationWindow)
 				s.Equal(tc.want, u2.CanReanimate(now))
 				return
 			}
@@ -199,12 +201,41 @@ func (s *UserSuite) TestHydrate_ReconstructsWithoutGeneratingID() {
 	id := "fixed-uuid-1234"
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	u := entities.Hydrate(id, wa.String(), em.String(), "Alice", string(entities.StatusActive), now, now, time.Time{})
+	u, err := entities.Hydrate(id, wa.String(), em.String(), "Alice", string(entities.StatusActive), now, now, time.Time{})
 
+	s.Require().NoError(err)
 	s.Equal(id, u.ID())
 	s.Equal("Alice", u.DisplayName())
 	s.Equal(entities.StatusActive, u.Status())
 	s.True(u.DeletedAt().IsZero())
+}
+
+func (s *UserSuite) TestHydrate_EmailNullIsNotError() {
+	wa := validWA(s.T())
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	u, err := entities.Hydrate("id-1", wa.String(), "", "", string(entities.StatusActive), now, now, time.Time{})
+
+	s.Require().NoError(err)
+	s.Empty(u.Email().String())
+	s.Empty(u.DisplayName())
+}
+
+func (s *UserSuite) TestHydrate_InvalidWhatsAppReturnsError() {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err := entities.Hydrate("id-1", "not-a-number", "", "", string(entities.StatusActive), now, now, time.Time{})
+
+	s.Require().Error(err)
+}
+
+func (s *UserSuite) TestHydrate_InvalidEmailReturnsError() {
+	wa := validWA(s.T())
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err := entities.Hydrate("id-1", wa.String(), "not-an-email", "", string(entities.StatusActive), now, now, time.Time{})
+
+	s.Require().Error(err)
 }
 
 func (s *UserSuite) TestNew_IDIsUUIDFormat() {

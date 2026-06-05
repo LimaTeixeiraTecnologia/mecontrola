@@ -25,7 +25,7 @@
 | 1.0 | Migrations Postgres + invariantes (users + user_whatsapp_history) | done | — | Com 2.0, 10.0 | — |
 | 2.0 | Domínio puro: VOs, PII, entitlement, policies, entities.NewID | done | — | Com 1.0, 10.0 | — |
 | 3.0 | Agregados User e WhatsAppHistoryEntry com construtores autossuficientes | done | 2.0 | Não | — |
-| 4.0 | Ports application/interfaces (UserRepository, RepositoryFactory) + erros tipados | pending | 3.0 | Não | — |
+| 4.0 | Ports application/interfaces (UserRepository, RepositoryFactory) + erros tipados | done | 3.0 | Não | — |
 | 5.0 | Use cases com uow.UnitOfWork[T] da devkit + RepositoryFactory | done | 4.0 | Não | — |
 | 6.0 | Impl Postgres: RepositoryFactory + user_repository com sqlnull | done | 1.0, 4.0 | Não | — |
 | 7.0 | HTTP: router placeholder + handler com devkit-go/pkg/responses | done | 2.0, 5.0 | Não | — |
