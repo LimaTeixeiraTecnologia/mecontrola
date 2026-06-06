@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-billing-pipeline/4.0_execution_report.md
+summary: "Repositórios Postgres billing implementados com sentinels RF-11 e RF-17, factory UoW-compatível e integration tests verdes com testcontainers"
+timestamp: "2026-06-06T00:00:00Z"

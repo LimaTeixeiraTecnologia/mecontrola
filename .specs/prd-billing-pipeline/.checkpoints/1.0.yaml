@@ -1,0 +1,4 @@
+status: done
+report_path: /Users/jailtonjunior/Git/mecontrola/.specs/prd-billing-pipeline/1.0_execution_report.md
+summary: Migrations 0004-0009 criadas com teste de integração cobrindo up/down, seed dos planos e índice único parcial de assinatura ativa.
+timestamp: 2026-06-06T00:52:27Z

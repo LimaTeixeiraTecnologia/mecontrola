@@ -2,17 +2,17 @@
 epic_id: E2
 slug: billing-pipeline
 title: Pipeline de cobrança recorrente (webhook Kiwify → subscription → entitlement)
-status: pending
+status: prd_done
 blocked_by: [E1]
 blocks: [E4]
 source_bundle: .agents/skills/decision-brainstorming/discoveries/brainstorm-consolidacao-core/decision-brief.md
 source_discoveries:
   - docs/discoveries/discovery-billing-hotmart-kiwify.md
 artifacts:
-  prd: null
+  prd: .specs/prd-billing-pipeline/prd.md
   techspec: null
   tasks: null
-next_skill: create-prd
+next_skill: create-technical-specification
 target_module: internal/billing/
 ---
 
