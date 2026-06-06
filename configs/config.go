@@ -26,6 +26,10 @@ type Config struct {
 // Secrets (WebhookSecret, ClientSecret) NUNCA devem aparecer em logs — use Safe().
 type KiwifyConfig struct {
 	APIBaseURL                 string        `mapstructure:"KIWIFY_API_BASE_URL"`
+	AccountID                  string        `mapstructure:"KIWIFY_ACCOUNT_ID"`
+	ProductIDMonthly           string        `mapstructure:"KIWIFY_PRODUCT_ID_MONTHLY"`
+	ProductIDQuarterly         string        `mapstructure:"KIWIFY_PRODUCT_ID_QUARTERLY"`
+	ProductIDAnnual            string        `mapstructure:"KIWIFY_PRODUCT_ID_ANNUAL"`
 	WebhookSecret              string        `mapstructure:"KIWIFY_WEBHOOK_SECRET"`
 	WebhookSecretNext          string        `mapstructure:"KIWIFY_WEBHOOK_SECRET_NEXT"`
 	WebhookTokenHeader         string        `mapstructure:"KIWIFY_WEBHOOK_TOKEN_HEADER"`
@@ -46,6 +50,10 @@ type KiwifyConfig struct {
 func (k KiwifyConfig) Safe() map[string]any {
 	return map[string]any{
 		"api_base_url":              k.APIBaseURL,
+		"account_id_set":            k.AccountID != "",
+		"product_id_monthly_set":    k.ProductIDMonthly != "",
+		"product_id_quarterly_set":  k.ProductIDQuarterly != "",
+		"product_id_annual_set":     k.ProductIDAnnual != "",
 		"webhook_token_header":      k.WebhookTokenHeader,
 		"rate_limit":                k.RateLimitMaxRequestsPerMin,
 		"reconciliation_interval":   k.ReconciliationInterval,
@@ -186,6 +194,10 @@ func (l *configLoader) load() (*Config, error) {
 		"OUTBOX_REAPER_INTERVAL",
 		"OUTBOX_REAPER_STUCK_AFTER",
 		"KIWIFY_API_BASE_URL",
+		"KIWIFY_ACCOUNT_ID",
+		"KIWIFY_PRODUCT_ID_MONTHLY",
+		"KIWIFY_PRODUCT_ID_QUARTERLY",
+		"KIWIFY_PRODUCT_ID_ANNUAL",
 		"KIWIFY_WEBHOOK_SECRET",
 		"KIWIFY_WEBHOOK_SECRET_NEXT",
 		"KIWIFY_WEBHOOK_TOKEN_HEADER",
@@ -347,6 +359,7 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validatePoolTunables()...)
 	errs = append(errs, c.validateOutbox()...)
 	errs = append(errs, c.validateBilling()...)
+	errs = append(errs, c.KiwifyConfig.validateProductIDs()...)
 
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
@@ -499,7 +512,7 @@ func (c *Config) validateProductionKiwify() []string {
 
 	// Kiwify não está configurado: sem validação obrigatória de secrets em production.
 	// Considera "não configurado" quando todos os secrets e IDs estão vazios.
-	if k.ClientID == "" && k.WebhookSecret == "" && k.ClientSecret == "" {
+	if !k.isConfigured() {
 		return nil
 	}
 
@@ -513,9 +526,14 @@ func (c *Config) validateProductionKiwify() []string {
 		errs = append(errs, "KIWIFY_CLIENT_ID é obrigatório em production quando Kiwify está habilitado")
 	}
 
+	if k.AccountID == "" {
+		errs = append(errs, "KIWIFY_ACCOUNT_ID é obrigatório em production quando Kiwify está habilitado")
+	}
+
 	if k.ClientSecret == "" {
 		errs = append(errs, "KIWIFY_CLIENT_SECRET é obrigatório em production quando Kiwify está habilitado")
 	}
+	errs = append(errs, k.requiredProductIDErrors()...)
 
 	for _, placeholder := range InsecurePlaceholders {
 		if k.WebhookSecret == placeholder {
@@ -538,6 +556,38 @@ func (c *Config) validateProductionKiwify() []string {
 	}
 
 	return errs
+}
+
+func (k KiwifyConfig) isConfigured() bool {
+	return k.AccountID != "" || k.ClientID != "" || k.WebhookSecret != "" || k.ClientSecret != "" ||
+		k.ProductIDMonthly != "" || k.ProductIDQuarterly != "" || k.ProductIDAnnual != ""
+}
+
+func (k KiwifyConfig) requiredProductIDErrors() []string {
+	var errs []string
+	if k.ProductIDMonthly == "" {
+		errs = append(errs, "KIWIFY_PRODUCT_ID_MONTHLY é obrigatório em production quando Kiwify está habilitado")
+	}
+	if k.ProductIDQuarterly == "" {
+		errs = append(errs, "KIWIFY_PRODUCT_ID_QUARTERLY é obrigatório em production quando Kiwify está habilitado")
+	}
+	if k.ProductIDAnnual == "" {
+		errs = append(errs, "KIWIFY_PRODUCT_ID_ANNUAL é obrigatório em production quando Kiwify está habilitado")
+	}
+	return errs
+}
+
+func (k KiwifyConfig) validateProductIDs() []string {
+	configured := 0
+	for _, productID := range []string{k.ProductIDMonthly, k.ProductIDQuarterly, k.ProductIDAnnual} {
+		if productID != "" {
+			configured++
+		}
+	}
+	if configured == 0 || configured == 3 {
+		return nil
+	}
+	return []string{"KIWIFY_PRODUCT_ID_MONTHLY, KIWIFY_PRODUCT_ID_QUARTERLY e KIWIFY_PRODUCT_ID_ANNUAL devem ser configurados juntos"}
 }
 
 func (c *Config) validateBilling() []string {

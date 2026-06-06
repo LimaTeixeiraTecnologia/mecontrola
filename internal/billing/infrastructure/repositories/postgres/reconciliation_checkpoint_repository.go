@@ -10,10 +10,9 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 )
-
-var ErrCheckpointNotFound = errors.New("billing: checkpoint not found")
 
 type reconciliationCheckpointRepository struct {
 	o11y observability.Observability
@@ -38,7 +37,7 @@ func (r *reconciliationCheckpointRepository) Get(ctx context.Context, name strin
 	var watermark time.Time
 	err := r.db.QueryRowContext(ctx, query, name).Scan(&watermark)
 	if errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, fmt.Errorf("billing/postgres: get_checkpoint: %w", ErrCheckpointNotFound)
+		return time.Time{}, fmt.Errorf("billing/postgres: get_checkpoint: %w", application.ErrCheckpointNotFound)
 	}
 	if err != nil {
 		span.RecordError(err)

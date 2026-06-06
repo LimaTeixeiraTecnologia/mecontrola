@@ -9,12 +9,11 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 )
-
-var ErrEntitlementNotFound = errors.New("identity: entitlement not found for user")
 
 type entitlementView struct {
 	subscriptionID string
@@ -48,7 +47,7 @@ func (u *DecideUserEntitlement) Execute(ctx context.Context, userID string) (out
 	entitlementRepo := u.factory.EntitlementRepository(u.mgr.DBTX(ctx))
 	record, err := entitlementRepo.FindByUserID(ctx, userID)
 	if err != nil {
-		if errors.Is(err, interfaces.ErrEntitlementNotFound) {
+		if errors.Is(err, application.ErrEntitlementNotFound) {
 			entitled, reason := domain.IsEntitled(nil, time.Now().UTC())
 			return output.NewEntitlementDecision(entitled, reason, "", "", time.Time{}, time.Time{}), nil
 		}

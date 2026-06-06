@@ -120,7 +120,10 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
 
-	billingModule := billing.NewBillingModule(cfg, o11y, dbManager)
+	billingModule, err := billing.NewBillingModule(cfg, o11y, dbManager)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo billing: %w", err)
+	}
 	if billingModule.WebhookRouter != nil {
 		srv.RegisterRouters(billingModule.WebhookRouter)
 	}

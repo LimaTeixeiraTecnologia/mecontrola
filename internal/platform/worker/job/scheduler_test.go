@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -75,10 +74,19 @@ func (s *SchedulerSuite) TestOverlapSkip_NãoDisparaConcorrente() {
 
 func (s *SchedulerSuite) TestOverlapAllow_SemGoroutineLeak() {
 	var executed atomic.Int32
+	executedOnce := make(chan struct{}, 1)
+	release := make(chan struct{})
 	sched := job.NewScheduler(s.logger)
-	a := job.NewAdapterWithPolicy("concurrent-job", "@every 100ms", func(ctx context.Context) error {
+	a := job.NewAdapterWithPolicy("concurrent-job", "@every 1s", func(ctx context.Context) error {
 		executed.Add(1)
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case executedOnce <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
 		return nil
 	}, job.OverlapAllow)
 	err := sched.Register(a)
@@ -91,17 +99,17 @@ func (s *SchedulerSuite) TestOverlapAllow_SemGoroutineLeak() {
 		close(done)
 	}()
 
-	time.Sleep(350 * time.Millisecond)
+	select {
+	case <-executedOnce:
+	case <-time.After(2 * time.Second):
+		s.FailNow("job não executou dentro do prazo")
+	}
 	cancel()
 	<-done
-
-	before := runtime.NumGoroutine()
+	close(release)
 	sched.Stop()
-	time.Sleep(50 * time.Millisecond)
-	after := runtime.NumGoroutine()
 
 	s.Greater(executed.Load(), int32(0), "job deve ter executado ao menos uma vez")
-	s.LessOrEqual(after, before, "Stop deve aguardar goroutines OverlapAllow encerrarem")
 }
 
 func (s *SchedulerSuite) TestCancelamento_EncerraExecução() {

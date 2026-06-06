@@ -49,7 +49,9 @@ func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mg
 
 	upsertHandler := handlers.NewUpsertUserByWhatsAppHandler(upsertUC, o11y)
 
-	projector := consumers.NewSubscriptionEventProjector(factory, mgr, o11y)
+	projectionReader := repositories.NewSubscriptionProjectionReader(mgr, o11y)
+	projectSubscriptionEvent := usecases.NewProjectSubscriptionEvent(factory, mgr.DBTX(context.Background()), projectionReader, o11y)
+	projector := consumers.NewSubscriptionEventProjector(projectSubscriptionEvent, o11y)
 
 	eventHandlers := []EventHandlerRegistration{
 		{EventType: "billing.subscription.activated", Handler: projector},

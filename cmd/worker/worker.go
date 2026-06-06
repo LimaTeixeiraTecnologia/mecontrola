@@ -85,37 +85,11 @@ func Run() error {
 		)
 	}
 
-	outboxFactory := outbox.NewRepositoryFactory(o11y)
-	dispatcherUoW := uow.New[[]outbox.Row](dbManager, uow.WithObservability(o11y))
-	reaperUoW := uow.NewVoid(dbManager, uow.WithObservability(o11y))
-	housekeepUoW := uow.NewVoid(dbManager, uow.WithObservability(o11y))
-
-	eventsDispatcher := events.NewDispatcher()
-
-	identityModule := identity.NewIdentityModule(cfg, o11y, dbManager)
-	billingModule := billing.NewBillingModule(cfg, o11y, dbManager)
-
-	for _, reg := range identityModule.EventHandlers {
-		if regErr := eventsDispatcher.Register(reg.EventType, reg.Handler); regErr != nil {
-			return fmt.Errorf("worker: registrar handler identity %s: %w", reg.EventType, regErr)
-		}
+	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager}
+	workerManager, err := runtime.newManager()
+	if err != nil {
+		return err
 	}
-
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	jobs := make([]worker.Job, 0, 6)
-	if cfg.OutboxConfig.DispatcherEnabled {
-		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, cfg.OutboxConfig, o11y.Logger(), rng))
-	}
-	jobs = append(jobs,
-		outbox.NewReaperJob(reaperUoW, outboxFactory, cfg.OutboxConfig, o11y.Logger()),
-		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, cfg.OutboxConfig, o11y.Logger()),
-		billingModule.ReconciliationJob,
-		billingModule.KiwifyEventsHousekeeper,
-	)
-
-	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	workerManager := worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger)
 	if err := workerManager.Start(ctx); err != nil {
 		dbStartCtx, dbStartCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer dbStartCancel()
@@ -136,6 +110,55 @@ func Run() error {
 	<-ctx.Done()
 	o11y.Logger().Info(context.Background(), "shutdown signal received, draining")
 
+	return runtime.shutdown(workerManager)
+}
+
+type workerRuntime struct {
+	cfg       *configs.Config
+	o11y      observability.Observability
+	dbManager manager.Manager
+}
+
+func (r *workerRuntime) newManager() (*worker.Manager, error) {
+	outboxFactory := outbox.NewRepositoryFactory(r.o11y)
+	dispatcherUoW := uow.New[[]outbox.Row](r.dbManager, uow.WithObservability(r.o11y))
+	reaperUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
+	housekeepUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
+	eventsDispatcher := events.NewDispatcher()
+	identityModule := identity.NewIdentityModule(r.cfg, r.o11y, r.dbManager)
+	billingModule, err := billing.NewBillingModule(r.cfg, r.o11y, r.dbManager)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
+	}
+
+	for _, reg := range identityModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler identity %s: %w", reg.EventType, err)
+		}
+	}
+	for _, reg := range billingModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler billing %s: %w", reg.EventType, err)
+		}
+	}
+
+	jobs := make([]worker.Job, 0, 6)
+	if r.cfg.OutboxConfig.DispatcherEnabled {
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, r.cfg.OutboxConfig, r.o11y.Logger(), rng))
+	}
+	jobs = append(jobs,
+		outbox.NewReaperJob(reaperUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
+		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
+		billingModule.ReconciliationJob,
+		billingModule.KiwifyEventsHousekeeper,
+	)
+
+	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	return worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger), nil
+}
+
+func (r *workerRuntime) shutdown(workerManager *worker.Manager) error {
 	var shutdownErrs []error
 
 	workerCtx, workerCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -146,13 +169,13 @@ func Run() error {
 
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer dbCancel()
-	if err := dbManager.Shutdown(dbCtx); err != nil {
+	if err := r.dbManager.Shutdown(dbCtx); err != nil {
 		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro ao encerrar database manager: %w", err))
 	}
 
 	o11yCtx, o11yCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer o11yCancel()
-	if err := o11y.Shutdown(o11yCtx); err != nil {
+	if err := r.o11y.Shutdown(o11yCtx); err != nil {
 		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro durante shutdown de observabilidade: %w", err))
 	}
 

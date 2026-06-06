@@ -117,6 +117,36 @@ func (s *ReconcileSubscriptionsSuite) TestCheckpointNaoAtualizadoEmFalhaDeListag
 		WindowEnd:   windowEnd,
 	})
 	s.Require().Error(err)
+	s.checkpointMock.AssertNotCalled(s.T(), "Set", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *ReconcileSubscriptionsSuite) TestCheckpointNaoAtualizadoEmFalhaDeVenda() {
+	now := time.Now().UTC()
+	windowStart := now.Add(-time.Hour)
+	windowEnd := now
+	sale := interfaces.KiwifySale{
+		ID:              "sale-failed",
+		KiwifyProductID: "missing-plan",
+		OrderID:         "order-failed",
+		FunnelToken:     "token-failed",
+		Status:          "paid",
+		OccurredAt:      now.Add(-time.Minute),
+	}
+
+	s.kiwifyClientMock.On("ListSalesUpdatedSince", mock.Anything, windowStart, windowEnd, 1).
+		Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}}, nil)
+	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
+	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
+	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
+	s.eventRepoMock.On("MarkApplied", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "missing-plan").Return(valueobjects.Plan{}, errors.New("not found"))
+
+	err := s.uc.Execute(context.Background(), input.ReconcileSubscriptionsInput{
+		WindowStart: windowStart,
+		WindowEnd:   windowEnd,
+	})
+	s.Require().Error(err)
+	s.checkpointMock.AssertNotCalled(s.T(), "Set", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func (s *ReconcileSubscriptionsSuite) TestSaleRefundadaRotaParaRefund() {

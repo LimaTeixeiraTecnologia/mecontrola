@@ -12,7 +12,7 @@ Criar duas migrations SQL via `golang-migrate` (já presente em `cmd/migrate`) m
 - RF-08: UNIQUE parcial em `whatsapp_number` quando `deleted_at IS NULL`; UNIQUE parcial em `email` quando `email IS NOT NULL AND deleted_at IS NULL`.
 - RF-09: tabela `user_whatsapp_history` com colunas mínimas (`id`, `user_id`, `number`, `active`, `linked_at`, `unlinked_at`, `reason`), FK `user_id → users(id) ON DELETE CASCADE`, índices `(user_id, active)` e `(number)`.
 - RF-16: numeração contínua a partir do último arquivo em `migrations/`. Próximo número livre: `000002` (anterior é `000001_outbox_events`).
-- Nomes exatos das constraints devem casar com os mapeamentos de erro em 6.0 (`users_whatsapp_number_active_uniq`, `users_email_active_uniq`).
+- Nomes exatos das constraints devem casar com os mapeamentos de erro em 6.0 (`users_whatsapp_number_active_uniq_idx`, `users_email_active_uniq_idx`).
 </requirements>
 
 ## Subtarefas
@@ -30,16 +30,17 @@ Referenciar:
 - [`techspec.md` §11](./techspec.md) — resumo das migrations e nomes exatos de constraints/índices.
 - [ADR-007](./adr-007-postgres-partial-unique-indexes.md) — SQL completo + alternativas rejeitadas.
 
-**Constraints obrigatórias (nomes exatos):**
+**Constraints obrigatórias (nomes exatos — working tree é fonte da verdade após bugfix C-2):**
 
-- `users_pk` (PRIMARY KEY)
-- `users_status_allowed` (CHECK)
-- `users_status_deleted_at_invariant` (CHECK)
-- `users_whatsapp_number_active_uniq` (UNIQUE INDEX parcial — consumido pelo mapping de erro em 6.0)
+- `users_pkey` (PRIMARY KEY)
+- `users_status_check` (CHECK)
+- `users_status_deleted_at_check` (CHECK)
+- `users_whatsapp_number_active_uniq_idx` (UNIQUE INDEX parcial — consumido pelo mapping de erro em 6.0)
 - `users_whatsapp_number_deleted_idx` (INDEX auxiliar para reanimação)
-- `users_email_active_uniq` (UNIQUE INDEX parcial — consumido pelo mapping de erro em 6.0)
-- `user_whatsapp_history_pk` (PRIMARY KEY)
-- `user_whatsapp_history_user_fk` (FOREIGN KEY ON DELETE CASCADE)
+- `users_email_active_uniq_idx` (UNIQUE INDEX parcial — consumido pelo mapping de erro em 6.0)
+- `user_whatsapp_history_pkey` (PRIMARY KEY)
+- `user_whatsapp_history_user_id_fkey` (FOREIGN KEY ON DELETE CASCADE)
+- `user_whatsapp_history_active_unlinked_at_check` (CHECK invariante `active = TRUE ⇔ unlinked_at IS NULL`)
 - `user_whatsapp_history_user_active_idx`
 - `user_whatsapp_history_number_idx`
 
@@ -47,7 +48,7 @@ Referenciar:
 
 - `migrations/000002_identity_users.{up,down}.sql` e `migrations/000003_identity_user_whatsapp_history.{up,down}.sql` presentes.
 - Aplicar `up.sql` em Postgres limpo cria tabelas/índices com os nomes exatos acima.
-- Tentativa de `INSERT INTO users (status, deleted_at, ...) VALUES ('DELETED', NULL, ...)` é rejeitada pelo CHECK `users_status_deleted_at_invariant` (cobre CA-04(h) do PRD em camada de DDL).
+- Tentativa de `INSERT INTO users (status, deleted_at, ...) VALUES ('DELETED', NULL, ...)` é rejeitada pelo CHECK `users_status_deleted_at_check` (cobre CA-04(h) do PRD em camada de DDL).
 - Aplicar `down.sql` deixa o schema limpo (sem objetos residuais).
 - `go build ./...` continua verde (embed.FS atualizado automaticamente).
 
@@ -62,8 +63,8 @@ Nenhuma além das auto-carregadas (governance + linguagem).
 ## Testes da Tarefa
 
 - [ ] Aplicação manual de up/down em Postgres local valida ausência de objetos residuais.
-- [ ] Tentativa de violar invariante `status='DELETED' AND deleted_at IS NULL` via SQL direto retorna erro `users_status_deleted_at_invariant`.
-- [ ] Tentativa de inserir dois usuários vivos com mesmo `whatsapp_number` viola `users_whatsapp_number_active_uniq`.
+- [ ] Tentativa de violar invariante `status='DELETED' AND deleted_at IS NULL` via SQL direto retorna erro `users_status_deleted_at_check`.
+- [ ] Tentativa de inserir dois usuários vivos com mesmo `whatsapp_number` viola `users_whatsapp_number_active_uniq_idx`.
 - [ ] Inserção de usuário com `deleted_at IS NOT NULL` permite inserir outro vivo com o mesmo número (índice é parcial).
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>

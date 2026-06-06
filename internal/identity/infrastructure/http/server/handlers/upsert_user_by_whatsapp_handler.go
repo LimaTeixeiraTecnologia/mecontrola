@@ -59,21 +59,6 @@ func (h *UpsertUserByWhatsAppHandler) Handle(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, err := valueobjects.NewWhatsAppNumber(req.WhatsApp)
-	if err != nil {
-		responses.ErrorWithDetails(w, http.StatusBadRequest, "whatsapp inválido",
-			map[string]string{"code": "invalid_whatsapp"})
-		return
-	}
-
-	if req.Email != "" {
-		if _, err = valueobjects.NewEmail(req.Email); err != nil {
-			responses.ErrorWithDetails(w, http.StatusBadRequest, "email inválido",
-				map[string]string{"code": "invalid_email"})
-			return
-		}
-	}
-
 	out, err := h.usecase.Execute(ctx, input.UpsertUserByWhatsApp{
 		WhatsAppNumber: req.WhatsApp,
 		Email:          req.Email,
@@ -82,6 +67,12 @@ func (h *UpsertUserByWhatsAppHandler) Handle(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		span.RecordError(err)
 		switch {
+		case errors.Is(err, application.ErrInvalidWhatsApp):
+			responses.ErrorWithDetails(w, http.StatusBadRequest, "whatsapp inválido",
+				map[string]string{"code": "invalid_whatsapp"})
+		case errors.Is(err, application.ErrInvalidEmail):
+			responses.ErrorWithDetails(w, http.StatusBadRequest, "email inválido",
+				map[string]string{"code": "invalid_email"})
 		case errors.Is(err, application.ErrWhatsAppNumberInUse):
 			responses.ErrorWithDetails(w, http.StatusConflict, "número já vinculado a outra conta",
 				map[string]string{"code": "whatsapp_in_use"})
@@ -92,12 +83,20 @@ func (h *UpsertUserByWhatsAppHandler) Handle(w http.ResponseWriter, r *http.Requ
 			h.o11y.Logger().Error(ctx, "identity.handler.upsert_failed",
 				observability.String("layer", "handler"),
 				observability.String("operation", "upsert_user_by_whatsapp"),
+				observability.String("whatsapp_masked", h.maskWhatsApp(req.WhatsApp)),
 				observability.Error(err),
 			)
 			responses.Error(w, http.StatusInternalServerError, "erro inesperado")
 		}
 		return
 	}
+
+	h.o11y.Logger().Info(ctx, "identity.handler.upsert_succeeded",
+		observability.String("layer", "handler"),
+		observability.String("operation", "upsert_user_by_whatsapp"),
+		observability.String("user_id", out.ID),
+		observability.String("whatsapp_masked", h.maskWhatsApp(req.WhatsApp)),
+	)
 
 	responses.JSON(w, http.StatusOK, upsertUserResponse{
 		ID:          out.ID,
@@ -108,4 +107,12 @@ func (h *UpsertUserByWhatsAppHandler) Handle(w http.ResponseWriter, r *http.Requ
 		CreatedAt:   out.CreatedAt,
 		UpdatedAt:   out.UpdatedAt,
 	})
+}
+
+func (h *UpsertUserByWhatsAppHandler) maskWhatsApp(raw string) string {
+	number, err := valueobjects.NewWhatsAppNumber(raw)
+	if err != nil {
+		return "****"
+	}
+	return number.Masked()
 }

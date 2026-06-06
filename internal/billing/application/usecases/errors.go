@@ -13,3 +13,7 @@ var ErrEventSuperseded = errors.New("billing: event superseded by more recent st
 var ErrConcurrentActiveSub = errors.New("billing: user already has an active subscription")
 
 var ErrUnknownTrigger = errors.New("billing: unknown trigger")
+
+var ErrInvalidSignature = errors.New("billing: invalid signature")
+
+var ErrInvalidWebhookPayload = errors.New("billing: invalid webhook payload")

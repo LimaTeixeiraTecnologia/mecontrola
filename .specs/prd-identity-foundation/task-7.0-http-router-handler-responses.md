@@ -53,7 +53,7 @@ responses.ErrorWithDetails(w, http.StatusConflict, "número já vinculado a outr
 - `go test -race -count=1 ./internal/identity/infrastructure/http/...` verde.
 - `grep -nE "func writeError|func writeJSON|w\.Header\(\)\.Set\(\"Content-Type" internal/identity/infrastructure/http/` retorna 0 (R6.10).
 - `grep -nE "responses\\.(JSON|Error|ErrorWithDetails)" internal/identity/infrastructure/http/server/handlers/` aparece em todo handler.
-- `UserRouter` satisfaz `chi_server.Router` (validar via type-assertion em teste de compilação).
+- `UserRouter` satisfaz `chi_server.Router` — validar implicitamente pela assinatura de `srv.RegisterRouters(NewUserRouter(handler))` compilar (R6.4 proíbe `var _ chi_server.Router = (*UserRouter)(nil)` como teste de compilação; ver `.claude/projects/.../memory/feedback_no_interface_assertion.md`).
 - Handler nunca chama repository direto (cadeia Handler → UC inegociável).
 
 ## Skills Necessárias

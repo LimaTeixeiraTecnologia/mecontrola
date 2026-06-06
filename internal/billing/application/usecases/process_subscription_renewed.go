@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -120,9 +121,20 @@ func (uc *ProcessSubscriptionRenewed) extendExisting(ctx context.Context, tx dat
 		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: extend period: %w", extendErr)
 	}
 
-	if pubErr := uc.publisher.PublishRenewed(ctx, tx, existing, existing.ID(), previousPeriodEnd); pubErr != nil {
+	renewed := entities.Hydrate(
+		existing.ID(),
+		existing.FunnelToken(),
+		existing.Plan(),
+		valueobjects.StatusActive,
+		existing.PeriodStart(),
+		newPeriodEnd,
+		time.Time{},
+		in.OccurredAt,
+	)
+
+	if pubErr := uc.publisher.PublishRenewed(ctx, tx, renewed, renewed.ID(), previousPeriodEnd); pubErr != nil {
 		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: publish renewed: %w", pubErr)
 	}
 
-	return existing, nil
+	return renewed, nil
 }

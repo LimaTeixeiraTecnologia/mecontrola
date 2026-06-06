@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
@@ -18,6 +19,7 @@ type ReconcileSubscriptions struct {
 	saleApproved *ProcessSaleApproved
 	refund       *ProcessRefundOrChargeback
 	o11y         observability.Observability
+	corrections  observability.Counter
 }
 
 func NewReconcileSubscriptions(
@@ -28,6 +30,11 @@ func NewReconcileSubscriptions(
 	refund *ProcessRefundOrChargeback,
 	o11y observability.Observability,
 ) *ReconcileSubscriptions {
+	corrections := o11y.Metrics().Counter(
+		"billing_reconciliation_corrections_total",
+		"Total de correções aplicadas durante reconciliação",
+		"1",
+	)
 	return &ReconcileSubscriptions{
 		db:           db,
 		factory:      factory,
@@ -35,6 +42,7 @@ func NewReconcileSubscriptions(
 		saleApproved: saleApproved,
 		refund:       refund,
 		o11y:         o11y,
+		corrections:  corrections,
 	}
 }
 
@@ -42,6 +50,7 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.reconcile_subscriptions")
 	defer span.End()
 
+	var saleErrors []error
 	for page := 1; ; page++ {
 		salesPage, listErr := uc.kiwifyClient.ListSalesUpdatedSince(ctx, in.WindowStart, in.WindowEnd, page)
 		if listErr != nil {
@@ -50,16 +59,28 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 
 		for _, sale := range salesPage.Sales {
 			if err := uc.reconcileSale(ctx, sale); err != nil {
+				if errors.Is(err, ErrEventAlreadyProcessed) || errors.Is(err, ErrEventSuperseded) {
+					continue
+				}
 				uc.o11y.Logger().Error(ctx, "billing.usecase.reconcile_subscriptions.sale_failed",
 					observability.String("sale_id", sale.ID),
 					observability.Error(err),
 				)
+				saleErrors = append(saleErrors, fmt.Errorf("sale %s: %w", sale.ID, err))
+				continue
+			}
+			if sale.Status == "refunded" || sale.Status == "chargedback" || sale.Status == "paid" || sale.Status == "approved" {
+				uc.corrections.Add(ctx, 1, observability.String("correction_type", sale.Status))
 			}
 		}
 
 		if !salesPage.HasMore {
 			break
 		}
+	}
+
+	if err := errors.Join(saleErrors...); err != nil {
+		return fmt.Errorf("billing.usecase.reconcile_subscriptions: reconcile sales: %w", err)
 	}
 
 	checkpointRepo := uc.factory.ReconciliationCheckpointRepository(uc.db)

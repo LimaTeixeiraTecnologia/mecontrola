@@ -58,9 +58,12 @@ func (s *stubRefund) Execute(_ context.Context, _ input.ProcessRefundOrChargebac
 	return s.err
 }
 
-type stubKiwifyEventRepo struct{}
+type stubKiwifyEventRepo struct {
+	signatureStatus string
+}
 
-func (s *stubKiwifyEventRepo) Persist(_ context.Context, _ string, _ string, _ []byte, _ string) error {
+func (s *stubKiwifyEventRepo) Persist(_ context.Context, _ string, _ string, _ []byte, signatureStatus string) error {
+	s.signatureStatus = signatureStatus
 	return nil
 }
 func (s *stubKiwifyEventRepo) MarkProcessed(_ context.Context, _ string, _ time.Time) error {
@@ -70,7 +73,9 @@ func (s *stubKiwifyEventRepo) DeleteOlderThan(_ context.Context, _ time.Time, _ 
 	return 0, nil
 }
 
-type stubRepositoryFactory struct{}
+type stubRepositoryFactory struct {
+	kiwifyRepo interfaces.KiwifyEventRepository
+}
 
 func (f *stubRepositoryFactory) SubscriptionRepository(_ database.DBTX) interfaces.SubscriptionRepository {
 	return nil
@@ -79,6 +84,9 @@ func (f *stubRepositoryFactory) ProcessedEventRepository(_ database.DBTX) interf
 	return nil
 }
 func (f *stubRepositoryFactory) KiwifyEventRepository(_ database.DBTX) interfaces.KiwifyEventRepository {
+	if f.kiwifyRepo != nil {
+		return f.kiwifyRepo
+	}
 	return &stubKiwifyEventRepo{}
 }
 func (f *stubRepositoryFactory) PlanRepository(_ database.DBTX) interfaces.PlanRepository {
@@ -88,26 +96,21 @@ func (f *stubRepositoryFactory) ReconciliationCheckpointRepository(_ database.DB
 	return nil
 }
 
-type stubManager struct{}
-
-func (m *stubManager) DBTX(_ context.Context) database.DBTX {
-	return nil
-}
-
 func buildTestHandler(
 	saleErr, renewedErr, lateErr, canceledErr, refundErr error,
 ) http.Handler {
 	o11y := noop.NewProvider()
-	h := handlers.NewKiwifyWebhookHandler(
+	uc := usecases.NewProcessKiwifyWebhook(
 		&stubSaleApproved{err: saleErr},
 		&stubSubRenewed{err: renewedErr},
 		&stubSubLate{err: lateErr},
 		&stubSubCanceled{err: canceledErr},
 		&stubRefund{err: refundErr},
 		&stubRepositoryFactory{},
-		&stubManager{},
+		nil,
 		o11y,
 	)
+	h := handlers.NewKiwifyWebhookHandler(uc, o11y)
 
 	return middleware.RawBody(
 		middleware.HMACSignature(testWebhookSecret, "")(
@@ -170,6 +173,36 @@ func TestKiwifyWebhookHandler_401_InvalidSignature(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestKiwifyWebhookHandler_401_InvalidSignatureIsAudited(t *testing.T) {
+	repo := &stubKiwifyEventRepo{}
+	uc := usecases.NewProcessKiwifyWebhook(
+		&stubSaleApproved{},
+		&stubSubRenewed{},
+		&stubSubLate{},
+		&stubSubCanceled{},
+		&stubRefund{},
+		&stubRepositoryFactory{kiwifyRepo: repo},
+		nil,
+		noop.NewProvider(),
+	)
+	h := handlers.NewKiwifyWebhookHandler(uc, noop.NewProvider())
+	handler := middleware.RawBody(
+		middleware.HMACSignature(testWebhookSecret, "")(
+			http.HandlerFunc(h.Handle),
+		),
+	)
+	payload := kiwifyPayload("compra_aprovada", nil)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Kiwify-Signature", "wrong")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, middleware.SignatureStatusInvalid, repo.signatureStatus)
 }
 
 func TestKiwifyWebhookHandler_415_WrongContentType(t *testing.T) {
@@ -284,16 +317,17 @@ func TestKiwifyWebhookHandler_202_Chargeback(t *testing.T) {
 func TestKiwifyWebhookHandler_202_RotatedSecret(t *testing.T) {
 	const secretNext = "secret-next"
 	o11y := noop.NewProvider()
-	h := handlers.NewKiwifyWebhookHandler(
+	uc := usecases.NewProcessKiwifyWebhook(
 		&stubSaleApproved{},
 		&stubSubRenewed{},
 		&stubSubLate{},
 		&stubSubCanceled{},
 		&stubRefund{},
 		&stubRepositoryFactory{},
-		&stubManager{},
+		nil,
 		o11y,
 	)
+	h := handlers.NewKiwifyWebhookHandler(uc, o11y)
 	handler := middleware.RawBody(
 		middleware.HMACSignature(testWebhookSecret, secretNext)(
 			http.HandlerFunc(h.Handle),

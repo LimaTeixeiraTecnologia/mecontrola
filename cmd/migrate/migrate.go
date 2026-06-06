@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -148,10 +149,11 @@ type runtime struct {
 }
 
 func (r *runtime) shutdown(ctx context.Context) error {
-	return errors.Join(
-		r.dbManager.Shutdown(ctx),
-		r.o11y.Shutdown(ctx),
-	)
+	dbErr := r.dbManager.Shutdown(ctx)
+	if err := r.o11y.Shutdown(ctx); err != nil {
+		slog.Warn("migrate: observability shutdown failed", "error", err)
+	}
+	return dbErr
 }
 
 func bootstrap(ctx context.Context) (*runtime, error) {

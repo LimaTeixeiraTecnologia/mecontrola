@@ -50,6 +50,37 @@ func (r *planRepository) FindByCode(ctx context.Context, code valueobjects.PlanC
 	return r.scanPlan(ctx, span, "find_by_code", r.db.QueryRowContext(ctx, query, string(code)))
 }
 
+func (r *planRepository) ConfigureProductIDs(ctx context.Context, productIDs map[valueobjects.PlanCode]string) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.plan.configure_product_ids")
+	defer span.End()
+
+	const query = `
+		UPDATE billing_plans
+		   SET kiwify_product_id = CASE code
+		       WHEN 'MONTHLY' THEN $1
+		       WHEN 'QUARTERLY' THEN $2
+		       WHEN 'ANNUAL' THEN $3
+		   END
+		 WHERE code IN ('MONTHLY', 'QUARTERLY', 'ANNUAL')
+	`
+	result, err := r.db.ExecContext(ctx, query,
+		productIDs[valueobjects.PlanCodeMonthly],
+		productIDs[valueobjects.PlanCodeQuarterly],
+		productIDs[valueobjects.PlanCodeAnnual],
+	)
+	if err != nil {
+		return fmt.Errorf("billing/postgres: configure product ids: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("billing/postgres: configure product ids rows_affected: %w", err)
+	}
+	if rows != 3 {
+		return fmt.Errorf("billing/postgres: configure product ids: expected 3 plans, updated %d", rows)
+	}
+	return nil
+}
+
 func (r *planRepository) scanPlan(ctx context.Context, span observability.Span, op string, row database.Row) (valueobjects.Plan, error) {
 	var code string
 	var durationDays int

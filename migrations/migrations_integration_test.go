@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -144,27 +146,44 @@ func (s *MigrationSuite) assertActiveSubscriptionUniqueIndex() {
 	`, userID)
 	s.Require().NoError(err)
 
-	_, err = s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
-		INSERT INTO billing_subscriptions (
-			id, funnel_token, user_id, kiwify_order_id, kiwify_subscription_id, plan_code, status,
-			period_start, period_end, grace_end, last_event_at, created_at, updated_at
-		) VALUES (
-			'22222222-2222-2222-2222-222222222222', 'token-1', $1, 'order-1', 'sub-1', 'MONTHLY', 'ACTIVE',
-			now(), now() + interval '30 days', NULL, now(), now(), now()
-		)
-	`, userID)
-	s.Require().NoError(err)
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	inputs := [][4]string{
+		{"22222222-2222-2222-2222-222222222222", "token-1", "order-1", "ACTIVE"},
+		{"33333333-3333-3333-3333-333333333333", "token-2", "order-2", "PAST_DUE"},
+	}
 
-	_, err = s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
-		INSERT INTO billing_subscriptions (
-			id, funnel_token, user_id, kiwify_order_id, kiwify_subscription_id, plan_code, status,
-			period_start, period_end, grace_end, last_event_at, created_at, updated_at
-		) VALUES (
-			'33333333-3333-3333-3333-333333333333', 'token-2', $1, 'order-2', 'sub-2', 'QUARTERLY', 'PAST_DUE',
-			now(), now() + interval '90 days', now() + interval '3 days', now(), now(), now()
-		)
-	`, userID)
-	s.Require().Error(err)
+	for _, in := range inputs {
+		go func(values [4]string) {
+			<-start
+			_, execErr := s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
+				INSERT INTO billing_subscriptions (
+					id, funnel_token, user_id, kiwify_order_id, plan_code, status,
+					period_start, period_end, grace_end, last_event_at, created_at, updated_at
+				) VALUES ($1, $2, $3, $4, 'MONTHLY', $5,
+					now(), now() + interval '30 days', NULL, now(), now(), now())
+			`, values[0], values[1], userID, values[2], values[3])
+			results <- execErr
+		}(in)
+	}
+	close(start)
+
+	var successCount, uniqueViolationCount int
+	for range 2 {
+		resultErr := <-results
+		if resultErr == nil {
+			successCount++
+			continue
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(resultErr, &pgErr) &&
+			pgErr.Code == pgerrcode.UniqueViolation &&
+			pgErr.ConstraintName == "billing_subscriptions_user_active_uniq_idx" {
+			uniqueViolationCount++
+		}
+	}
+	s.Equal(1, successCount)
+	s.Equal(1, uniqueViolationCount)
 }
 
 func (s *MigrationSuite) assertBillingTablesRemoved() {

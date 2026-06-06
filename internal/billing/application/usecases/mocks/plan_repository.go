@@ -66,6 +66,14 @@ func (_m *PlanRepository) FindByCode(ctx context.Context, code valueobjects.Plan
 	return r0, r1
 }
 
+func (_m *PlanRepository) ConfigureProductIDs(ctx context.Context, productIDs map[valueobjects.PlanCode]string) error {
+	ret := _m.Called(ctx, productIDs)
+	if len(ret) == 0 {
+		panic("no return value specified for ConfigureProductIDs")
+	}
+	return ret.Error(0)
+}
+
 func NewPlanRepository(t interface {
 	mock.TestingT
 	Cleanup(func())

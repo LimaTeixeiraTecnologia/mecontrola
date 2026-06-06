@@ -2,11 +2,8 @@ package interfaces
 
 import (
 	"context"
-	"errors"
 	"time"
 )
-
-var ErrEntitlementNotFound = errors.New("identity: entitlement not found")
 
 type EntitlementRecord struct {
 	UserID         string

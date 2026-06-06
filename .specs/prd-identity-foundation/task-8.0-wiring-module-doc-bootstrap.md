@@ -9,7 +9,7 @@ Materializar o `IdentityModule` seguindo o Padrão Obrigatório de Módulo (`AGE
 <requirements>
 - RF-17: `internal/identity/doc.go` documenta contratos exportados sem nenhuma menção a `JWT|RBAC|role|is_admin|session`. F-12 satisfeita por inexistência ativa.
 - RF-18: `NewIdentityModule(cfg, o11y, mgr) IdentityModule` segue o Padrão (sem `opts ...Option`, sem `With...`).
-- ADR-005: campos `RepositoryFactory interfaces.RepositoryFactory` e `UserRouter *server.UserRouter` (este último nil no MVP — bootstrap só registra se != nil).
+- ADR-005 (shape MVP) + ADR-005-bis (shape pós-E2): no MVP de E1 a struct expõe `RepositoryFactory interfaces.RepositoryFactory` e `UserRouter *server.UserRouter` (este último nil — bootstrap só registra se != nil). Após E2 a struct evoluiu de forma aditiva para 9 campos (ver `adr-005-bis-identity-module-shape-post-e2.md`); construtor mantém 3 parâmetros.
 - Slots vazios materializados com `doc.go` placeholder (cada subpasta declarada como reservada).
 - `cmd/server/server.go` ganha: `identityModule := identity.NewIdentityModule(cfg, o11y, dbManager)` + `if identityModule.UserRouter != nil { srv.RegisterRouters(identityModule.UserRouter) }`.
 - O módulo internamente cria `upsertUoW := uow.New[entities.User](mgr, uow.WithObservability(o11y))`, `markDeletedUoW := uow.NewVoid(mgr, uow.WithObservability(o11y))`, instancia UCs e handler, embrulha no `UserRouter`.
@@ -34,7 +34,8 @@ Materializar o `IdentityModule` seguindo o Padrão Obrigatório de Módulo (`AGE
 Referenciar:
 - [`techspec.md` §13](./techspec.md) — bootstrap delta canônico.
 - [Runbook §9 + §10](../../docs/runbooks/handler-usecase-uow-repository.md) — module.go + bootstrap.
-- [ADR-005](./adr-005-identity-module-shape-mvp.md) — shape final aprovado.
+- [ADR-005](./adr-005-identity-module-shape-mvp.md) — shape MVP de E1.
+- [ADR-005-bis](./adr-005-bis-identity-module-shape-post-e2.md) — shape aditivo pós-E2 (working tree é fonte da verdade).
 
 **Imports inegociáveis em `module.go`:**
 

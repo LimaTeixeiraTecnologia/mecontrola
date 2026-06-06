@@ -92,7 +92,7 @@ func (s *UpsertHandlerSuite) TestJSONMalformado_400_InvalidPayload() {
 }
 
 func (s *UpsertHandlerSuite) TestWhatsAppInvalido_400_InvalidWhatsapp() {
-	uc := &mockUpsertUseCase{}
+	uc := &mockUpsertUseCase{err: application.ErrInvalidWhatsApp}
 	rr := s.post(s.newHandler(uc), map[string]string{
 		"whatsapp": "123",
 		"email":    "user@example.com",
@@ -106,7 +106,7 @@ func (s *UpsertHandlerSuite) TestWhatsAppInvalido_400_InvalidWhatsapp() {
 }
 
 func (s *UpsertHandlerSuite) TestEmailInvalido_400_InvalidEmail() {
-	uc := &mockUpsertUseCase{}
+	uc := &mockUpsertUseCase{err: application.ErrInvalidEmail}
 	rr := s.post(s.newHandler(uc), map[string]string{
 		"whatsapp": "+5511987654321",
 		"email":    "not-an-email",

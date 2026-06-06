@@ -115,6 +115,23 @@ Regras:
 6. Proibido usar `NewModule(opts...)`, `WithDatabase(...)`, `Routers()` ou `Runners()` como novo padrao de composicao.
 7. Antes de criar wiring, verificar se repository, use case, handler, router, provider, job ou consumer existe no workspace.
 
+## Regra Obrigatoria para Handlers, Consumers, Jobs e Producers
+
+Nos bounded contexts `internal/identity` e `internal/billing`, os diretórios abaixo sao tratados como portas de entrada ou adapters outbound e devem permanecer finos:
+
+- `infrastructure/http/server/handlers`
+- `infrastructure/messaging/database/consumers`
+- `infrastructure/jobs/handlers`
+- `infrastructure/messaging/database/producers`
+
+Regras obrigatorias:
+1. Handlers HTTP, consumers de eventos e jobs sao apenas porta de entrada: decodificam input, chamam use case, traduzem erro/saida e encerram.
+2. O fluxo permitido e sempre `handler -> usecase -> repository/service/client`.
+3. Proibido implementar regra de negocio, branching de negocio, query SQL, decisao de persistencia, calculo de janela/default, orchestration cross-repository ou chamada direta a repository/client dentro desses handlers/consumers/jobs.
+4. `producers` sao adapters outbound: podem serializar e publicar um evento ja decidido pela aplicacao, mas nao podem decidir regra de negocio, trigger, payload semantico ou branching de dominio.
+5. Em novos desenvolvimentos, nao injetar `RepositoryFactory`, `manager.Manager`, `database.DBTX`, clients externos ou services de dominio diretamente em handlers/consumers/jobs quando o use case correspondente puder receber essa responsabilidade.
+6. Em use cases e services, e proibido criar interfaces locais apenas para expor `DBTX(ctx)`; quando a dependencia for somente o handle de banco, injetar `database.DBTX` concreto na struct consumidora.
+
 ## Plataforma Compartilhada
 
 - Capacidades tecnicas reutilizaveis por mais de um modulo devem viver em `internal/platform/`.

@@ -72,7 +72,16 @@ func (s *ProcessSubscriptionRenewedSuite) TestSucessoExtendePeriodo() {
 	s.eventRepoMock.On("MarkApplied", mock.Anything, eventKey, "subscription_renewed", "kiwify-sub-001", now).Return(nil)
 	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
 	s.subRepoMock.On("ExtendPeriod", mock.Anything, "sub-001", mock.Anything, now).Return(nil)
-	s.publisherMock.On("PublishRenewed", mock.Anything, mock.Anything, mock.Anything, "sub-001", mock.Anything).Return(nil)
+	expectedPeriodEnd := sub.PeriodEnd().Add(sub.Plan().Duration())
+	s.publisherMock.On("PublishRenewed", mock.Anything, mock.Anything,
+		mock.MatchedBy(func(renewed entities.Subscription) bool {
+			return renewed.Status() == valueobjects.StatusActive &&
+				renewed.PeriodEnd().Equal(expectedPeriodEnd) &&
+				renewed.LastEventAt().Equal(now)
+		}),
+		"sub-001",
+		sub.PeriodEnd(),
+	).Return(nil)
 
 	err := s.uc.Execute(context.Background(), in)
 	s.Require().NoError(err)

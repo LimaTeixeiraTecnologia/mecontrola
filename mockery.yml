@@ -1,23 +1,30 @@
-with-expecter: true
-mockname: "{{.InterfaceName}}"
-outpkg: "mocks"
-filename: "{{.InterfaceName | snakecase}}.go"
-dir: "{{.InterfaceDir}}/mocks"
+# Mockery v3 config — compatível com mockery v3.7.0+
+#
+# Mocks gerados ficam em `<package>/mocks/<interface_snake>.go`.
+#
+# Atenção: alguns mocks são mantidos manualmente porque dependem de tipos
+# genéricos (`uow.UnitOfWork[T]`) ou pattern de fixture específico de teste
+# (`FakeManager`, `RepositoryFactory` com expectativas em métodos não-listáveis
+# como `EntitlementRepository`). Esses não devem ser regenerados sem revisão.
+dir: '{{.InterfaceDir}}/mocks'
+structname: '{{.InterfaceName}}'
+pkgname: mocks
+template: testify
+template-data:
+  unroll-variadic: true
 packages:
-  github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox:
-    interfaces:
-      Storage:
-      Registry:
-  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces:
-    interfaces:
-      UserRepository:
-      IDGenerator:
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces:
     interfaces:
-      SubscriptionRepository:
-      WebhookEventRepository:
-      BillingProvider:
-      EntitlementCache:
-      IDGenerator:
-      UserResolver:
-      PIIRedactor:
+      BillingProvider: {}
+      EntitlementCache: {}
+      PIIRedactor: {}
+      SubscriptionRepository: {}
+      UserResolver: {}
+      WebhookEventRepository: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces:
+    interfaces:
+      UserRepository: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox:
+    interfaces:
+      Registry: {}
+      Storage: {}

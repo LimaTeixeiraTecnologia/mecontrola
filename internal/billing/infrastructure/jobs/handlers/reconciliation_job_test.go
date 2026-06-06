@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
@@ -59,9 +60,10 @@ func (s *ReconciliationJobSuite) SetupTest() {
 	saleApproved := usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 	refund := usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 	reconcile := usecases.NewReconcileSubscriptions(nil, s.factoryMock, s.kiwifyMock, saleApproved, refund, noop.NewProvider())
+	runReconciliation := usecases.NewRunReconciliation(nil, s.factoryMock, reconcile, noop.NewProvider())
 
 	cfg := configs.KiwifyConfig{ReconciliationInterval: "@hourly"}
-	s.job = handlers.NewReconciliationJob(nil, s.factoryMock, reconcile, cfg, noop.NewProvider())
+	s.job = handlers.NewReconciliationJob(runReconciliation, cfg)
 }
 
 func (s *ReconciliationJobSuite) TestName() {
@@ -99,7 +101,7 @@ func (s *ReconciliationJobSuite) TestRunUsesDefaultLookbackWhenCheckpointMissing
 	ctx := context.Background()
 
 	s.factoryMock.On("ReconciliationCheckpointRepository", mock.Anything).Return(s.checkpointMock)
-	s.checkpointMock.On("Get", mock.Anything, "kiwify_sales").Return(time.Time{}, errors.New("not found"))
+	s.checkpointMock.On("Get", mock.Anything, "kiwify_sales").Return(time.Time{}, application.ErrCheckpointNotFound)
 
 	s.kiwifyMock.On("ListSalesUpdatedSince", mock.Anything, mock.Anything, mock.Anything, 1).
 		Return(interfaces.KiwifySalePage{Sales: nil, HasMore: false}, nil)

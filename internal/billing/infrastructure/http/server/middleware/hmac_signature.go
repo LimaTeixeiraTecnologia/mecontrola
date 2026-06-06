@@ -31,11 +31,6 @@ func HMACSignature(secretCurrent, secretNext string) func(http.Handler) http.Han
 			}
 
 			status := computeSignatureStatus(raw, header, secretCurrent, secretNext)
-			if status == SignatureStatusInvalid {
-				http.Error(w, `{"message":"invalid signature"}`, http.StatusUnauthorized)
-				return
-			}
-
 			ctx := context.WithValue(r.Context(), ctxKeySignatureStatus{}, status)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

@@ -680,6 +680,7 @@ func (s *ConfigSuite) TestLoadConfigTraceSampleRateInvalidoRetornaErro() {
 
 func (s *ConfigSuite) TestKiwifyConfigDefaultsAplicados() {
 	dir := s.T().TempDir()
+	s.T().Setenv("KIWIFY_ACCOUNT_ID", "account-test")
 
 	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
 	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
@@ -691,6 +692,7 @@ func (s *ConfigSuite) TestKiwifyConfigDefaultsAplicados() {
 
 	k := cfg.KiwifyConfig
 	s.Equal("https://public-api.kiwify.com", k.APIBaseURL)
+	s.Equal("account-test", k.AccountID)
 	s.Equal("X-Kiwify-Webhook-Token", k.WebhookTokenHeader)
 	s.Equal(5*time.Minute, k.OAuthTokenSafetyMargin)
 	s.Equal(100, k.RateLimitMaxRequestsPerMin)
@@ -806,6 +808,7 @@ func (s *ConfigSuite) TestBillingConfigDefaultsAplicados() {
 func (s *ConfigSuite) TestSafeKiwifyConfigRedactaSecrets() {
 	k := configs.KiwifyConfig{
 		APIBaseURL:                 "https://public-api.kiwify.com",
+		AccountID:                  "account-id-value",
 		WebhookSecret:              "super-secret-webhook",
 		WebhookTokenHeader:         "X-Kiwify-Webhook-Token",
 		ClientID:                   "client-id-value",
@@ -818,6 +821,10 @@ func (s *ConfigSuite) TestSafeKiwifyConfigRedactaSecrets() {
 	safe := k.Safe()
 
 	s.Equal("https://public-api.kiwify.com", safe["api_base_url"])
+	s.Equal(true, safe["account_id_set"])
+	s.Equal(false, safe["product_id_monthly_set"])
+	s.Equal(false, safe["product_id_quarterly_set"])
+	s.Equal(false, safe["product_id_annual_set"])
 	s.Equal("X-Kiwify-Webhook-Token", safe["webhook_token_header"])
 	s.Equal(100, safe["rate_limit"])
 	s.Equal("@hourly", safe["reconciliation_interval"])
@@ -837,6 +844,7 @@ func (s *ConfigSuite) TestSafeKiwifyConfigRedactaSecrets() {
 		s.NotContains(strVal, "super-secret-webhook", "chave %q não deve conter o webhook secret", key)
 		s.NotContains(strVal, "super-secret-client", "chave %q não deve conter o client secret", key)
 		s.NotContains(strVal, "client-id-value", "chave %q não deve conter o client ID", key)
+		s.NotContains(strVal, "account-id-value", "chave %q não deve conter o account ID", key)
 	}
 }
 
@@ -848,6 +856,7 @@ func (s *ConfigSuite) TestSafeKiwifyConfigSecretsNaoConfigurados() {
 	safe := k.Safe()
 
 	s.Equal(false, safe["client_id_set"])
+	s.Equal(false, safe["account_id_set"])
 	s.Equal(false, safe["client_secret_set"])
 	s.Equal(false, safe["webhook_secret_set"])
 }
@@ -867,6 +876,7 @@ func (s *ConfigSuite) TestValidateProductionKiwifySecretsAusentesQuandoHabilitad
 	err := cfg.Validate()
 	s.Error(err)
 	s.Contains(err.Error(), "KIWIFY_WEBHOOK_SECRET é obrigatório")
+	s.Contains(err.Error(), "KIWIFY_ACCOUNT_ID é obrigatório")
 }
 
 func (s *ConfigSuite) TestValidateProductionKiwifyNaoConfiguradoPermitido() {

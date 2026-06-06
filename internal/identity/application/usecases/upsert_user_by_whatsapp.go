@@ -38,17 +38,9 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.upsert_user_by_whatsapp")
 	defer span.End()
 
-	whatsapp, err := valueobjects.NewWhatsAppNumber(in.WhatsAppNumber)
+	whatsapp, email, err := u.parseInput(in)
 	if err != nil {
-		return output.UpsertUserByWhatsApp{}, fmt.Errorf("%s parse whatsapp: %w", prefixUpsertUser, err)
-	}
-
-	var email valueobjects.Email
-	if in.Email != "" {
-		email, err = valueobjects.NewEmail(in.Email)
-		if err != nil {
-			return output.UpsertUserByWhatsApp{}, fmt.Errorf("%s parse email: %w", prefixUpsertUser, err)
-		}
+		return output.UpsertUserByWhatsApp{}, err
 	}
 
 	result, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
@@ -99,6 +91,9 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 	})
 
 	if err != nil {
+		if errors.Is(err, application.ErrInvalidWhatsApp) || errors.Is(err, application.ErrInvalidEmail) {
+			return output.UpsertUserByWhatsApp{}, err
+		}
 		span.RecordError(err)
 		u.o11y.Logger().Error(ctx, "identity.usecase.upsert_failed",
 			observability.String("layer", "usecase"),
@@ -118,4 +113,31 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 		CreatedAt:      result.CreatedAt(),
 		UpdatedAt:      result.UpdatedAt(),
 	}, nil
+}
+
+func (u *UpsertUserByWhatsApp) parseInput(
+	in input.UpsertUserByWhatsApp,
+) (valueobjects.WhatsAppNumber, valueobjects.Email, error) {
+	whatsapp, err := valueobjects.NewWhatsAppNumber(in.WhatsAppNumber)
+	if err != nil {
+		return valueobjects.WhatsAppNumber{}, valueobjects.Email{}, errors.Join(
+			application.ErrInvalidWhatsApp,
+			fmt.Errorf("%s parse whatsapp: %w", prefixUpsertUser, err),
+		)
+	}
+
+	var email valueobjects.Email
+	if in.Email == "" {
+		return whatsapp, email, nil
+	}
+
+	email, err = valueobjects.NewEmail(in.Email)
+	if err != nil {
+		return valueobjects.WhatsAppNumber{}, valueobjects.Email{}, errors.Join(
+			application.ErrInvalidEmail,
+			fmt.Errorf("%s parse email: %w", prefixUpsertUser, err),
+		)
+	}
+
+	return whatsapp, email, nil
 }

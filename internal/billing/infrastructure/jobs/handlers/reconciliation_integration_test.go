@@ -167,9 +167,10 @@ func (s *ReconciliationIntegrationSuite) buildJob(kiwifyMock interfaces.KiwifyCl
 		o11y,
 	)
 	reconcile := usecases.NewReconcileSubscriptions(db, s.factory, kiwifyMock, saleApproved, refundUC, o11y)
+	runReconciliation := usecases.NewRunReconciliation(db, s.factory, reconcile, o11y)
 
 	cfg := configs.KiwifyConfig{ReconciliationInterval: "@hourly"}
-	return handlers.NewReconciliationJob(db, s.factory, reconcile, cfg, o11y)
+	return handlers.NewReconciliationJob(runReconciliation, cfg)
 }
 
 func (s *ReconciliationIntegrationSuite) insertActiveSubscription(orderID, funnelToken string) {
@@ -180,6 +181,7 @@ func (s *ReconciliationIntegrationSuite) insertActiveSubscription(orderID, funne
 	now := time.Now().UTC()
 
 	sub := entities.NewSubscription(plan, ft)
+	s.Require().NoError(sub.Activate(now))
 	subRepo := s.factory.SubscriptionRepository(db)
 	s.Require().NoError(subRepo.UpsertByOrder(ctx, orderID, sub, now))
 }
@@ -289,7 +291,7 @@ func (s *HousekeepingIntegrationSuite) persistEvent(envelopeID string, receivedA
 	ctx := context.Background()
 	db := s.mgr.DBTX(ctx)
 	rawBody, _ := json.Marshal(map[string]any{"trigger": "compra_aprovada"})
-	err := db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO billing_kiwify_events (envelope_id, trigger, raw_body, received_at, signature_status)
 		VALUES ($1, 'compra_aprovada', $2, $3, 'valid')
 		ON CONFLICT (envelope_id) DO NOTHING`,
@@ -325,7 +327,8 @@ func (s *HousekeepingIntegrationSuite) TestHousekeepingRemovesOldRows() {
 		KiwifyEventsHousekeepingSchedule: "@daily",
 		KiwifyEventsHousekeepingBatch:    500,
 	}
-	job := handlers.NewKiwifyEventsHousekeepingJob(db, s.factory, cfg, o11y)
+	cleanup := usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, o11y)
+	job := handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
 
 	err := job.Run(ctx)
 	s.Require().NoError(err)
@@ -349,7 +352,8 @@ func (s *HousekeepingIntegrationSuite) TestHousekeepingPreservesRowsWithinRetent
 		KiwifyEventsHousekeepingSchedule: "@daily",
 		KiwifyEventsHousekeepingBatch:    500,
 	}
-	job := handlers.NewKiwifyEventsHousekeepingJob(db, s.factory, cfg, o11y)
+	cleanup := usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, o11y)
+	job := handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
 
 	err := job.Run(ctx)
 	s.Require().NoError(err)

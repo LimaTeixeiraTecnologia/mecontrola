@@ -10,6 +10,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/sqlnull"
 )
@@ -75,7 +76,7 @@ func (r *entitlementRepository) FindByUserID(ctx context.Context, userID string)
 	err := r.db.QueryRowContext(ctx, query, userID).
 		Scan(&uid, &subscriptionID, &status, &periodEnd, &graceEnd)
 	if errors.Is(err, sql.ErrNoRows) {
-		return interfaces.EntitlementRecord{}, interfaces.ErrEntitlementNotFound
+		return interfaces.EntitlementRecord{}, application.ErrEntitlementNotFound
 	}
 	if err != nil {
 		span.RecordError(err)
@@ -106,7 +107,10 @@ func (r *entitlementRepository) UpsertPending(ctx context.Context, subscriptionI
 		INSERT INTO identity_entitlements_pending (subscription_id, funnel_token, payload, received_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (subscription_id) DO UPDATE SET
-			funnel_token = EXCLUDED.funnel_token,
+			funnel_token = CASE
+				WHEN EXCLUDED.funnel_token <> '' THEN EXCLUDED.funnel_token
+				ELSE identity_entitlements_pending.funnel_token
+			END,
 			payload      = EXCLUDED.payload,
 			received_at  = EXCLUDED.received_at
 	`

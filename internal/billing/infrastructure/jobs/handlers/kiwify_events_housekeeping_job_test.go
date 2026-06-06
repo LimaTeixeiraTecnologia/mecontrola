@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/jobs/handlers"
 )
@@ -52,7 +53,8 @@ func (s *HousekeepingJobSuite) SetupTest() {
 		KiwifyEventsHousekeepingSchedule: "@daily",
 		KiwifyEventsHousekeepingBatch:    100,
 	}
-	s.job = handlers.NewKiwifyEventsHousekeepingJob(nil, s.factoryMock, cfg, noop.NewProvider())
+	cleanup := usecases.NewCleanupKiwifyEvents(nil, s.factoryMock, cfg, noop.NewProvider())
+	s.job = handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
 }
 
 func (s *HousekeepingJobSuite) TestName() {
@@ -65,7 +67,8 @@ func (s *HousekeepingJobSuite) TestSchedule() {
 
 func (s *HousekeepingJobSuite) TestScheduleDefaultsToDaily() {
 	cfg := configs.BillingConfig{KiwifyEventsRetentionDays: 90}
-	job := handlers.NewKiwifyEventsHousekeepingJob(nil, s.factoryMock, cfg, noop.NewProvider())
+	cleanup := usecases.NewCleanupKiwifyEvents(nil, s.factoryMock, cfg, noop.NewProvider())
+	job := handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
 	s.Equal("@daily", job.Schedule())
 }
 

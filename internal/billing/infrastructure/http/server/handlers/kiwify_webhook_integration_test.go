@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -35,6 +36,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/producers"
 	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	outboxrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
@@ -137,17 +140,18 @@ func (s *WebhookIntegSuite) SetupSuite() {
 	processLate := usecases.NewProcessSubscriptionLate(lateUoW, s.factory, publisher, o11y)
 	processCanceled := usecases.NewProcessSubscriptionCanceled(canceledUoW, s.factory, publisher, o11y)
 	processRefund := usecases.NewProcessRefundOrChargeback(refundUoW, s.factory, publisher, o11y)
-
-	h := handlers.NewKiwifyWebhookHandler(
+	processWebhook := usecases.NewProcessKiwifyWebhook(
 		processSale,
 		processRenewed,
 		processLate,
 		processCanceled,
 		processRefund,
 		s.factory,
-		s.mgr,
+		s.mgr.DBTX(context.Background()),
 		o11y,
 	)
+
+	h := handlers.NewKiwifyWebhookHandler(processWebhook, o11y)
 
 	s.webhookHandler = middleware.RawBody(
 		middleware.HMACSignature(integWebhookSecret, "")(
@@ -174,6 +178,31 @@ func (s *WebhookIntegSuite) buildSignedRequest(payload []byte) *http.Request {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Kiwify-Signature", sig)
 	return req
+}
+
+func (s *WebhookIntegSuite) dispatchOutbox(ctx context.Context) {
+	o11y := noop.NewProvider()
+	dispatcher := events.NewDispatcher()
+	identityModule := identity.NewIdentityModule(&configs.Config{}, o11y, s.mgr)
+	for _, registration := range identityModule.EventHandlers {
+		s.Require().NoError(dispatcher.Register(registration.EventType, registration.Handler))
+	}
+	cfg := configs.OutboxConfig{
+		DispatcherBatchSize:      50,
+		DispatcherHandlerTimeout: 5 * time.Second,
+		RetryMaxAttempts:         5,
+		RetryBaseBackoff:         time.Second,
+		RetryMaxBackoff:          time.Minute,
+	}
+	job := outboxrepo.NewDispatcherJob(
+		uow.New[[]outboxrepo.Row](s.mgr, uow.WithObservability(o11y)),
+		outboxrepo.NewRepositoryFactory(o11y),
+		dispatcher,
+		cfg,
+		o11y.Logger(),
+		rand.New(rand.NewSource(42)),
+	)
+	s.Require().NoError(job.Run(ctx))
 }
 
 func (s *WebhookIntegSuite) TestWebhookToOutbox_CompraAprovada_202_OneSubOneProcessedOneOutbox() {
@@ -228,4 +257,14 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_CompraAprovada_202_OneSubOneProc
 		`SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, envelopeID)
 	s.Require().NoError(row.Scan(&kiwifyCount))
 	s.Equal(1, kiwifyCount, "expected 1 kiwify_events row")
+
+	s.dispatchOutbox(ctx)
+
+	var pendingCount int
+	row = s.mgr.DBTX(ctx).QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM identity_entitlements_pending WHERE subscription_id = (
+			SELECT id FROM billing_subscriptions WHERE kiwify_order_id = $1
+		)`, orderID)
+	s.Require().NoError(row.Scan(&pendingCount))
+	s.Equal(1, pendingCount, "expected dispatcher to project subscription into identity pending")
 }

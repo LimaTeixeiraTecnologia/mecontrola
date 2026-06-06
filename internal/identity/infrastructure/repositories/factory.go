@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
@@ -22,4 +23,11 @@ func (r *repositoryFactory) UserRepository(db database.DBTX) interfaces.UserRepo
 
 func (r *repositoryFactory) EntitlementRepository(db database.DBTX) interfaces.EntitlementRepository {
 	return postgres.NewEntitlementRepository(r.o11y, db)
+}
+
+func NewSubscriptionProjectionReader(
+	mgr manager.Manager,
+	o11y observability.Observability,
+) interfaces.SubscriptionProjectionReader {
+	return postgres.NewSubscriptionProjectionReader(mgr, o11y)
 }

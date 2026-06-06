@@ -9,6 +9,7 @@ import (
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
@@ -151,7 +152,7 @@ func (s *DecideUserEntitlementSuite) TestNoSubscriptionNotEntitled() {
 	userID := "user-no-sub"
 
 	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(interfaces.EntitlementRecord{}, interfaces.ErrEntitlementNotFound)
+	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(interfaces.EntitlementRecord{}, application.ErrEntitlementNotFound)
 
 	decision, err := s.uc.Execute(context.Background(), userID)
 	s.Require().NoError(err)

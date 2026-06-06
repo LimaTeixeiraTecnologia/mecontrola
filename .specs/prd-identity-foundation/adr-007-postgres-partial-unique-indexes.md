@@ -47,9 +47,9 @@ CREATE TABLE users (
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ  NULL,
 
-    CONSTRAINT users_pk PRIMARY KEY (id),
-    CONSTRAINT users_status_allowed CHECK (status IN ('ACTIVE','DELETED')),
-    CONSTRAINT users_status_deleted_at_invariant
+    CONSTRAINT users_pkey PRIMARY KEY (id),
+    CONSTRAINT users_status_check CHECK (status IN ('ACTIVE','DELETED')),
+    CONSTRAINT users_status_deleted_at_check
         CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL))
 );
 
@@ -57,7 +57,7 @@ CREATE TABLE users (
 -- Permite reanimação: linha soft-deletada não bloqueia upsert; o use case
 -- detecta a linha soft-deletada via SELECT separado antes do upsert e
 -- decide entre reanimar (mesmo UUID) ou criar nova (novo UUID).
-CREATE UNIQUE INDEX users_whatsapp_number_active_uniq
+CREATE UNIQUE INDEX users_whatsapp_number_active_uniq_idx
     ON users (whatsapp_number)
     WHERE deleted_at IS NULL;
 
@@ -68,7 +68,7 @@ CREATE INDEX users_whatsapp_number_deleted_idx
     WHERE deleted_at IS NOT NULL;
 
 -- Unicidade de email entre linhas vivas com email presente.
-CREATE UNIQUE INDEX users_email_active_uniq
+CREATE UNIQUE INDEX users_email_active_uniq_idx
     ON users (email)
     WHERE email IS NOT NULL AND deleted_at IS NULL;
 
@@ -87,9 +87,11 @@ CREATE TABLE user_whatsapp_history (
     unlinked_at  TIMESTAMPTZ  NULL,
     reason       TEXT         NULL,
 
-    CONSTRAINT user_whatsapp_history_pk PRIMARY KEY (id),
-    CONSTRAINT user_whatsapp_history_user_fk
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    CONSTRAINT user_whatsapp_history_pkey PRIMARY KEY (id),
+    CONSTRAINT user_whatsapp_history_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT user_whatsapp_history_active_unlinked_at_check
+        CHECK ((active = TRUE) = (unlinked_at IS NULL))
 );
 
 CREATE INDEX user_whatsapp_history_user_active_idx
@@ -144,7 +146,7 @@ A migration `down` deve fazer o `DROP` ordenado.
   2. Se encontrou, decidir reanimar ou criar (lógica em `application` usando `CanReanimate(now)` — ADR-006).
   3. Se reanimar: `UPDATE` (mesma linha; reset `deleted_at`, `status`, `email`, `display_name`).
   4. Se criar novo: `INSERT` (novo UUID); o índice único vivo aceita porque a linha velha está deletada.
-- **Conflitos detectáveis:** violação de `users_whatsapp_number_active_uniq` retorna `pgerrcode.UniqueViolation` → repository devolve `application.ErrWhatsAppNumberInUse` (ADR-004).
+- **Conflitos detectáveis:** violação de `users_whatsapp_number_active_uniq_idx` retorna `pgerrcode.UniqueViolation` → repository devolve `application.ErrWhatsAppNumberInUse` (ADR-004).
 - **Invariante de domínio defendida no schema** (CHECK constraint).
 - **Performance previsível** em queries de leitura (índice parcial é menor).
 
@@ -178,7 +180,7 @@ A migration `down` deve fazer o `DROP` ordenado.
 ## Monitoramento e Validação
 
 - **Validação imediata:** `make migrate-up && make migrate-down` (ou equivalente) executa sem erro.
-- **EXPLAIN check** no smoke: `EXPLAIN SELECT ... FROM users WHERE whatsapp_number = '+5511...' AND deleted_at IS NULL` mostra `Index Scan using users_whatsapp_number_active_uniq`.
+- **EXPLAIN check** no smoke: `EXPLAIN SELECT ... FROM users WHERE whatsapp_number = '+5511...' AND deleted_at IS NULL` mostra `Index Scan using users_whatsapp_number_active_uniq_idx`.
 - **Pg stats:** `pg_stat_user_indexes` em staging mostra `idx_scan > 0` para ambos os índices parciais após smoke.
 - **Sinal de drift:** taxa de `pgerrcode.UniqueViolation` em `UpsertByWhatsAppNumber` acima do esperado indica race condition no `SELECT FOR UPDATE` (alerta operacional futuro).
 
@@ -193,3 +195,7 @@ A migration `down` deve fazer o `DROP` ordenado.
 - Revisitar se enum `status` crescer (atualizar CHECK).
 - Revisitar se o número de linhas `deleted_at IS NOT NULL` crescer demais antes de E4 entrar em produção (avaliar TTL operacional).
 - Revisitar se Postgres planner deixar de escolher o índice parcial em queries específicas (`pg_hint_plan` ou refator de query).
+
+## Histórico
+
+- 2026-06-06: nomes de constraints/índices alinhados ao working tree real após bugfix C-2 (sufixo `_idx` nos UNIQUE INDEX, CHECK `users_status_deleted_at_check`, FK `user_whatsapp_history_user_id_fkey`). A versão anterior deste ADR usava nomenclatura sem `_idx`/`_pkey`/`_fkey` que nunca chegou a ser materializada na migration `000002`. Mapping de erro em `internal/identity/infrastructure/repositories/postgres/user_repository.go` casa com os nomes reais. Constraint adicional `user_whatsapp_history_active_unlinked_at_check` documentada explicitamente.

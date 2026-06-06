@@ -67,7 +67,8 @@ func TestHMACSignature_InvalidSignature(t *testing.T) {
 	handler := middleware.RawBody(
 		middleware.HMACSignature(testSecret, "")(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Error("next handler must not be called for invalid signature")
+				w.Header().Set("X-Sig-Status", middleware.SignatureStatusFromContext(r))
+				w.WriteHeader(http.StatusAccepted)
 			}),
 		),
 	)
@@ -77,7 +78,8 @@ func TestHMACSignature_InvalidSignature(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, http.StatusAccepted, rr.Code)
+	assert.Equal(t, middleware.SignatureStatusInvalid, rr.Header().Get("X-Sig-Status"))
 }
 
 func TestHMACSignature_RotatedSecret(t *testing.T) {
@@ -132,7 +134,8 @@ func TestHMACSignature_ConstantTimeComparison(t *testing.T) {
 	handler := middleware.RawBody(
 		middleware.HMACSignature(testSecret, "")(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Error("next handler must not be called for tampered signature")
+				w.Header().Set("X-Sig-Status", middleware.SignatureStatusFromContext(r))
+				w.WriteHeader(http.StatusAccepted)
 			}),
 		),
 	)
@@ -142,7 +145,8 @@ func TestHMACSignature_ConstantTimeComparison(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, http.StatusAccepted, rr.Code)
+	assert.Equal(t, middleware.SignatureStatusInvalid, rr.Header().Get("X-Sig-Status"))
 }
 
 var _ = buildHMACMiddlewareChain

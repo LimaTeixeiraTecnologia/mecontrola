@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "slug": "crud-de-categorias-e-subcategorias-de-despesas",
+  "title": "CRUD de Categorias e Subcategorias (Receitas e Despesas)",
+  "created_at": "2026-06-06T11:52:32Z",
+  "language": "pt-BR",
+  "status": "done",
+  "decision_brief": {
+    "file": "decision-brief.md",
+    "title": "CRUD de Categorias e Subcategorias (Receitas e Despesas)"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "assumptions": {
+    "file": "assumptions.md"
+  },
+  "option_scorecard": {
+    "file": "option-scorecard.md"
+  },
+  "alternatives": [
+    "Alternativa 1 - Adjacency List (tabela única + parent_id) + validação no domínio",
+    "Alternativa 2 - Duas tabelas (categories + subcategories)",
+    "Alternativa 3 - Closure Table (suporta N níveis, limita 2 na app)",
+    "Alternativa 4 - Adjacency List + projetor de read-model category_tree_view"
+  ],
+  "recommended_alternative": "Alternativa 1 - Adjacency List (tabela única + parent_id) + validação no domínio",
+  "decisions": [
+    "D1: Criar módulo internal/categories seguindo o Padrão Obrigatório de Módulo (AGENTS.md).",
+    "D2: Schema Adjacency List - tabela única categories com parent_id self-ref.",
+    "D3: Profundidade hierárquica fixa em 2 níveis, validada no domínio.",
+    "D4: kind (income/expense) na raiz; subcategoria herda do pai por constraint.",
+    "D5: Soft-delete com deleted_at; bloqueia delete se houver filhos ativos (409 Conflict).",
+    "D6: Seed via migration SQL idempotente (INSERT ... ON CONFLICT DO NOTHING).",
+    "D7: Customização de seed via endpoint POST /v1/categories/{id}/clone.",
+    "D8: Outbox completo (publisher + idempotência por event_id) para eventos categories.v1.*.",
+    "D9: Audit log dedicado (category_audit_log) entregue na primeira onda.",
+    "D10: Sem cor/ícone no MVP - canal de consumo exclusivo WhatsApp.",
+    "D11: Endpoint de busca fuzzy GET /v1/categories?q=<termo> faz parte do escopo MVP.",
+    "D12: Próxima skill recomendada - create-prd."
+  ],
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  }
+}

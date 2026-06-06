@@ -8,6 +8,7 @@ const (
 	EventTypeSubscriptionPastDue   = "billing.subscription.past_due"
 	EventTypeSubscriptionCanceled  = "billing.subscription.canceled"
 	EventTypeSubscriptionRefunded  = "billing.subscription.refunded"
+	EventTypeSubscriptionExpired   = "billing.subscription.expired_after_grace"
 )
 
 type SubscriptionActivatedPayload struct {

@@ -94,3 +94,25 @@ func (s *PlanRepositorySuite) TestFindByKiwifyProductID_NotFound() {
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, billingpostgres.ErrPlanNotFound))
 }
+
+func (s *PlanRepositorySuite) TestConfigureProductIDs() {
+	ctx := context.Background()
+	repo := s.newRepo()
+
+	err := repo.ConfigureProductIDs(ctx, map[valueobjects.PlanCode]string{
+		valueobjects.PlanCodeMonthly:   "real-monthly",
+		valueobjects.PlanCodeQuarterly: "real-quarterly",
+		valueobjects.PlanCodeAnnual:    "real-annual",
+	})
+	s.Require().NoError(err)
+
+	plan, err := repo.FindByKiwifyProductID(ctx, "real-monthly")
+	s.Require().NoError(err)
+	s.Equal(valueobjects.PlanCodeMonthly, plan.Code())
+
+	s.Require().NoError(repo.ConfigureProductIDs(ctx, map[valueobjects.PlanCode]string{
+		valueobjects.PlanCodeMonthly:   "<id-mensal>",
+		valueobjects.PlanCodeQuarterly: "<id-trimestral>",
+		valueobjects.PlanCodeAnnual:    "<id-anual>",
+	}))
+}
