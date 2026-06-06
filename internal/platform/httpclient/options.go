@@ -106,7 +106,7 @@ func WithHeaders(headers map[string]string) RequestOption {
 	}
 }
 
-func WithRetry(maxAttempts int, backoff time.Duration, policy devkithttp.NewRetryPolicy) RequestOption {
+func WithRetry(maxAttempts int, backoff time.Duration, policy devkithttp.RetryPolicy) RequestOption {
 	return func(s *requestState) {
 		s.overrideRetry = true
 		s.devkit = append(s.devkit, devkithttp.WithRetry(maxAttempts, backoff, policy))

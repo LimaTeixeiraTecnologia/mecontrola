@@ -3,6 +3,7 @@ package kiwify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -77,11 +78,17 @@ func (p *tokenProvider) fetchToken(ctx context.Context) (string, int, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("billing/kiwify: %w: %w", ErrKiwifyAuth, err)
 	}
-	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
 	if err != nil {
-		return "", 0, fmt.Errorf("billing/kiwify: ler resposta OAuth: %w", err)
+		return "", 0, errors.Join(
+			fmt.Errorf("billing/kiwify: ler resposta OAuth: %w", err),
+			p.wrapBodyCloseError(closeErr),
+		)
+	}
+	if closeErr != nil {
+		return "", 0, p.wrapBodyCloseError(closeErr)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -98,4 +105,12 @@ func (p *tokenProvider) fetchToken(ctx context.Context) (string, int, error) {
 	}
 
 	return result.AccessToken, result.ExpiresIn, nil
+}
+
+func (p *tokenProvider) wrapBodyCloseError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("billing/kiwify: fechar resposta OAuth: %w", err)
 }

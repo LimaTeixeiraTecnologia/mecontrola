@@ -86,7 +86,7 @@ func (s *UpsertHandlerSuite) TestJSONMalformado_400_InvalidPayload() {
 	s.Equal(http.StatusBadRequest, rr.Code)
 	var resp map[string]any
 	s.Require().NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	details, ok := resp["details"].(map[string]any)
+	details, ok := resp["errors"].(map[string]any)
 	s.Require().True(ok)
 	s.Equal("invalid_payload", details["code"])
 }
@@ -100,7 +100,7 @@ func (s *UpsertHandlerSuite) TestWhatsAppInvalido_400_InvalidWhatsapp() {
 	s.Equal(http.StatusBadRequest, rr.Code)
 	var resp map[string]any
 	s.Require().NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	details, ok := resp["details"].(map[string]any)
+	details, ok := resp["errors"].(map[string]any)
 	s.Require().True(ok)
 	s.Equal("invalid_whatsapp", details["code"])
 }
@@ -114,7 +114,7 @@ func (s *UpsertHandlerSuite) TestEmailInvalido_400_InvalidEmail() {
 	s.Equal(http.StatusBadRequest, rr.Code)
 	var resp map[string]any
 	s.Require().NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	details, ok := resp["details"].(map[string]any)
+	details, ok := resp["errors"].(map[string]any)
 	s.Require().True(ok)
 	s.Equal("invalid_email", details["code"])
 }
@@ -127,7 +127,7 @@ func (s *UpsertHandlerSuite) TestWhatsAppEmUso_409_WhatsappInUse() {
 	s.Equal(http.StatusConflict, rr.Code)
 	var resp map[string]any
 	s.Require().NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	details, ok := resp["details"].(map[string]any)
+	details, ok := resp["errors"].(map[string]any)
 	s.Require().True(ok)
 	s.Equal("whatsapp_in_use", details["code"])
 }
@@ -141,7 +141,7 @@ func (s *UpsertHandlerSuite) TestEmailEmUso_409_EmailInUse() {
 	s.Equal(http.StatusConflict, rr.Code)
 	var resp map[string]any
 	s.Require().NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	details, ok := resp["details"].(map[string]any)
+	details, ok := resp["errors"].(map[string]any)
 	s.Require().True(ok)
 	s.Equal("email_in_use", details["code"])
 }
@@ -154,5 +154,5 @@ func (s *UpsertHandlerSuite) TestErroInterno_500() {
 	s.Equal(http.StatusInternalServerError, rr.Code)
 	var resp map[string]any
 	s.Require().NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	s.Equal("erro inesperado", resp["message"])
+	s.Equal("erro inesperado", resp["detail"])
 }

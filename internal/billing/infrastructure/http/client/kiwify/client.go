@@ -3,6 +3,7 @@ package kiwify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -122,20 +123,19 @@ func (c *Client) ListSalesUpdatedSince(ctx context.Context, windowStart time.Tim
 	resp, err := c.httpClient.Get(ctx, path,
 		httpclient.WithHeader("Authorization", "Bearer "+token),
 		httpclient.WithHeader("x-kiwify-account-id", c.accountID),
-		httpclient.WithRetry(c.retryMax, c.retryBackoff, devkithttp.IdempotentNewRetryPolicy),
+		httpclient.WithRetry(c.retryMax, c.retryBackoff, devkithttp.IdempotentRetryPolicy),
 	)
 	if err != nil {
 		return interfaces.KiwifySalePage{}, fmt.Errorf("billing/kiwify: listar vendas: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if err := c.checkStatus(resp); err != nil {
-		return interfaces.KiwifySalePage{}, err
+	statusErr := c.checkStatus(resp)
+	body, bodyErr := c.readResponseBody(resp, "list sales")
+	if statusErr != nil {
+		return interfaces.KiwifySalePage{}, errors.Join(statusErr, bodyErr)
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return interfaces.KiwifySalePage{}, fmt.Errorf("billing/kiwify: ler resposta list sales: %w", err)
+	if bodyErr != nil {
+		return interfaces.KiwifySalePage{}, bodyErr
 	}
 
 	var result salesListResponse
@@ -169,20 +169,19 @@ func (c *Client) GetSale(ctx context.Context, saleID string) (interfaces.KiwifyS
 	resp, err := c.httpClient.Get(ctx, path,
 		httpclient.WithHeader("Authorization", "Bearer "+token),
 		httpclient.WithHeader("x-kiwify-account-id", c.accountID),
-		httpclient.WithRetry(c.retryMax, c.retryBackoff, devkithttp.IdempotentNewRetryPolicy),
+		httpclient.WithRetry(c.retryMax, c.retryBackoff, devkithttp.IdempotentRetryPolicy),
 	)
 	if err != nil {
 		return interfaces.KiwifySale{}, fmt.Errorf("billing/kiwify: obter venda %s: %w", saleID, err)
 	}
-	defer resp.Body.Close()
 
-	if err := c.checkStatus(resp); err != nil {
-		return interfaces.KiwifySale{}, err
+	statusErr := c.checkStatus(resp)
+	body, bodyErr := c.readResponseBody(resp, "get sale")
+	if statusErr != nil {
+		return interfaces.KiwifySale{}, errors.Join(statusErr, bodyErr)
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return interfaces.KiwifySale{}, fmt.Errorf("billing/kiwify: ler resposta get sale: %w", err)
+	if bodyErr != nil {
+		return interfaces.KiwifySale{}, bodyErr
 	}
 
 	var result saleResponse
@@ -191,6 +190,30 @@ func (c *Client) GetSale(ctx context.Context, saleID string) (interfaces.KiwifyS
 	}
 
 	return mapSale(result), nil
+}
+
+func (c *Client) readResponseBody(resp *http.Response, op string) ([]byte, error) {
+	body, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if readErr != nil {
+		return nil, errors.Join(
+			fmt.Errorf("billing/kiwify: ler resposta %s: %w", op, readErr),
+			c.wrapBodyCloseError(op, closeErr),
+		)
+	}
+	if closeErr != nil {
+		return nil, c.wrapBodyCloseError(op, closeErr)
+	}
+
+	return body, nil
+}
+
+func (c *Client) wrapBodyCloseError(op string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("billing/kiwify: fechar resposta %s: %w", op, err)
 }
 
 func (c *Client) checkStatus(resp *http.Response) error {

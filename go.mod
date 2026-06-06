@@ -1,11 +1,9 @@
 module github.com/LimaTeixeiraTecnologia/mecontrola
 
-go 1.26.2
-
-toolchain go1.26.4
+go 1.26.4
 
 require (
-	github.com/JailtonJunior94/devkit-go v0.4.0
+	github.com/JailtonJunior94/devkit-go v0.5.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
@@ -16,6 +14,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/vektra/mockery/v2 v2.53.6
+	golang.org/x/time v0.15.0
 )
 
 require (
@@ -135,7 +134,6 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect

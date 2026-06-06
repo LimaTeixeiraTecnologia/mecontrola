@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,11 +10,12 @@ import (
 	"time"
 
 	devkithttp "github.com/JailtonJunior94/devkit-go/pkg/httpclient"
+	devkithttpobservable "github.com/JailtonJunior94/devkit-go/pkg/httpclient/observable"
 	devkitobs "github.com/JailtonJunior94/devkit-go/pkg/observability"
 )
 
 type Client struct {
-	inner               *devkithttp.ObservableClient
+	inner               *devkithttpobservable.Client
 	baseURL             *url.URL
 	target              string
 	defaultRetryEnabled bool
@@ -33,15 +35,15 @@ func NewClient(o11y devkitobs.Observability, opts ...Option) (*Client, error) {
 		}
 	}
 
-	devkitOpts := make([]devkithttp.ClientOption, 0, 2)
+	devkitOpts := make([]devkithttpobservable.ClientOption, 0, 2)
 	if cfg.timeout > 0 {
-		devkitOpts = append(devkitOpts, devkithttp.WithClientTimeout(cfg.timeout))
+		devkitOpts = append(devkitOpts, devkithttpobservable.WithTimeout(cfg.timeout))
 	}
 	if cfg.maxBodySize != nil {
-		devkitOpts = append(devkitOpts, devkithttp.WithMaxBodySize(*cfg.maxBodySize))
+		devkitOpts = append(devkitOpts, devkithttpobservable.WithBodySize(*cfg.maxBodySize))
 	}
 
-	inner, err := devkithttp.NewObservableClient(o11y, devkitOpts...)
+	inner, err := devkithttpobservable.NewClient(o11y, devkitOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("httpclient: %w", err)
 	}
@@ -129,12 +131,12 @@ func (c *Client) Do(ctx context.Context, req *http.Request, opts ...RequestOptio
 		retryOpt := devkithttp.WithRetry(
 			c.defaultRetryMax,
 			c.defaultRetryBackoff,
-			devkithttp.DefaultNewRetryPolicy,
+			devkithttp.DefaultRetryPolicy,
 		)
 		devkitOpts = append([]devkithttp.RequestOption{retryOpt}, devkitOpts...)
 	}
 
-	return c.inner.Do(ctx, req, devkitOpts...)
+	return c.doWithMethod(ctx, req, devkitOpts)
 }
 
 func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
@@ -166,4 +168,48 @@ func isSafeMethod(method string) bool {
 		return true
 	}
 	return false
+}
+
+func (c *Client) requestBodyReader(req *http.Request) (io.Reader, error) {
+	if req.Body == nil {
+		return nil, nil
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, fmt.Errorf("httpclient: ler body do request: %w", err)
+	}
+	if err := req.Body.Close(); err != nil {
+		return nil, fmt.Errorf("httpclient: fechar body do request: %w", err)
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+
+	return bytes.NewReader(body), nil
+}
+
+func (c *Client) doWithMethod(ctx context.Context, req *http.Request, opts []devkithttp.RequestOption) (*http.Response, error) {
+	switch req.Method {
+	case http.MethodGet:
+		return c.inner.Get(ctx, req.URL.String(), opts...)
+	case http.MethodPost:
+		body, err := c.requestBodyReader(req)
+		if err != nil {
+			return nil, err
+		}
+		return c.inner.Post(ctx, req.URL.String(), body, opts...)
+	case http.MethodPut:
+		body, err := c.requestBodyReader(req)
+		if err != nil {
+			return nil, err
+		}
+		return c.inner.Put(ctx, req.URL.String(), body, opts...)
+	case http.MethodDelete:
+		return c.inner.Delete(ctx, req.URL.String(), opts...)
+	default:
+		return c.inner.Do(req)
+	}
 }

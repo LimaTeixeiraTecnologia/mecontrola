@@ -150,7 +150,7 @@ func TestClient_Post_WithExplicitRetryRetries(t *testing.T) {
 		context.Background(),
 		"/",
 		strings.NewReader(`{}`),
-		httpclient.WithRetry(3, 5*time.Millisecond, devkithttp.DefaultNewRetryPolicy),
+		httpclient.WithRetry(3, 5*time.Millisecond, devkithttp.DefaultRetryPolicy),
 	)
 	require.NoError(t, err)
 	_ = resp.Body.Close()
