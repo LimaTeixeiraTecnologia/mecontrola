@@ -27,6 +27,7 @@ type Config struct {
 type KiwifyConfig struct {
 	APIBaseURL                 string        `mapstructure:"KIWIFY_API_BASE_URL"`
 	WebhookSecret              string        `mapstructure:"KIWIFY_WEBHOOK_SECRET"`
+	WebhookSecretNext          string        `mapstructure:"KIWIFY_WEBHOOK_SECRET_NEXT"`
 	WebhookTokenHeader         string        `mapstructure:"KIWIFY_WEBHOOK_TOKEN_HEADER"`
 	ClientID                   string        `mapstructure:"KIWIFY_CLIENT_ID"`
 	ClientSecret               string        `mapstructure:"KIWIFY_CLIENT_SECRET"`
@@ -60,11 +61,14 @@ func (k KiwifyConfig) Safe() map[string]any {
 
 // BillingConfig agrupa as configurações do módulo de billing.
 type BillingConfig struct {
-	EntitlementCacheCapacity   int           `mapstructure:"BILLING_ENTITLEMENT_CACHE_CAPACITY"`
-	EntitlementCacheTTL        time.Duration `mapstructure:"BILLING_ENTITLEMENT_CACHE_TTL"`
-	AnonymizationSchedule      string        `mapstructure:"BILLING_ANONYMIZATION_SCHEDULE"`
-	AnonymizationBatchSize     int           `mapstructure:"BILLING_ANONYMIZATION_BATCH_SIZE"`
-	AnonymizationRetentionDays int           `mapstructure:"BILLING_ANONYMIZATION_RETENTION_DAYS"`
+	EntitlementCacheCapacity         int           `mapstructure:"BILLING_ENTITLEMENT_CACHE_CAPACITY"`
+	EntitlementCacheTTL              time.Duration `mapstructure:"BILLING_ENTITLEMENT_CACHE_TTL"`
+	AnonymizationSchedule            string        `mapstructure:"BILLING_ANONYMIZATION_SCHEDULE"`
+	AnonymizationBatchSize           int           `mapstructure:"BILLING_ANONYMIZATION_BATCH_SIZE"`
+	AnonymizationRetentionDays       int           `mapstructure:"BILLING_ANONYMIZATION_RETENTION_DAYS"`
+	KiwifyEventsRetentionDays        int           `mapstructure:"BILLING_KIWIFY_EVENTS_RETENTION_DAYS"`
+	KiwifyEventsHousekeepingSchedule string        `mapstructure:"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE"`
+	KiwifyEventsHousekeepingBatch    int           `mapstructure:"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH"`
 }
 
 type AppConfig struct {
@@ -183,6 +187,7 @@ func (l *configLoader) load() (*Config, error) {
 		"OUTBOX_REAPER_STUCK_AFTER",
 		"KIWIFY_API_BASE_URL",
 		"KIWIFY_WEBHOOK_SECRET",
+		"KIWIFY_WEBHOOK_SECRET_NEXT",
 		"KIWIFY_WEBHOOK_TOKEN_HEADER",
 		"KIWIFY_CLIENT_ID",
 		"KIWIFY_CLIENT_SECRET",
@@ -199,6 +204,9 @@ func (l *configLoader) load() (*Config, error) {
 		"BILLING_ANONYMIZATION_SCHEDULE",
 		"BILLING_ANONYMIZATION_BATCH_SIZE",
 		"BILLING_ANONYMIZATION_RETENTION_DAYS",
+		"BILLING_KIWIFY_EVENTS_RETENTION_DAYS",
+		"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE",
+		"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH",
 	}
 	for _, key := range envKeys {
 		_ = l.v.BindEnv(key)
@@ -268,6 +276,9 @@ func (l *configLoader) setBillingDefaults() {
 	l.v.SetDefault("BILLING_ANONYMIZATION_SCHEDULE", "@daily")
 	l.v.SetDefault("BILLING_ANONYMIZATION_BATCH_SIZE", 500)
 	l.v.SetDefault("BILLING_ANONYMIZATION_RETENTION_DAYS", 365)
+	l.v.SetDefault("BILLING_KIWIFY_EVENTS_RETENTION_DAYS", 90)
+	l.v.SetDefault("BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE", "@daily")
+	l.v.SetDefault("BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH", 500)
 }
 
 // setOutboxDefaults registra os defaults do Outbox Transacional (D-03) no Viper.
@@ -533,7 +544,7 @@ func (c *Config) validateBilling() []string {
 	b := c.BillingConfig
 
 	// Quando todos os campos numéricos são zero, BillingConfig não foi configurado.
-	if b.EntitlementCacheCapacity == 0 && b.AnonymizationBatchSize == 0 && b.AnonymizationRetentionDays == 0 {
+	if b.EntitlementCacheCapacity == 0 && b.AnonymizationBatchSize == 0 && b.AnonymizationRetentionDays == 0 && b.KiwifyEventsRetentionDays == 0 {
 		return nil
 	}
 

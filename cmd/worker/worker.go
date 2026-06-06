@@ -20,6 +20,8 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
@@ -89,15 +91,27 @@ func Run() error {
 	housekeepUoW := uow.NewVoid(dbManager, uow.WithObservability(o11y))
 
 	eventsDispatcher := events.NewDispatcher()
+
+	identityModule := identity.NewIdentityModule(cfg, o11y, dbManager)
+	billingModule := billing.NewBillingModule(cfg, o11y, dbManager)
+
+	for _, reg := range identityModule.EventHandlers {
+		if regErr := eventsDispatcher.Register(reg.EventType, reg.Handler); regErr != nil {
+			return fmt.Errorf("worker: registrar handler identity %s: %w", reg.EventType, regErr)
+		}
+	}
+
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	jobs := make([]worker.Job, 0, 3)
+	jobs := make([]worker.Job, 0, 6)
 	if cfg.OutboxConfig.DispatcherEnabled {
 		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, cfg.OutboxConfig, o11y.Logger(), rng))
 	}
 	jobs = append(jobs,
 		outbox.NewReaperJob(reaperUoW, outboxFactory, cfg.OutboxConfig, o11y.Logger()),
 		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, cfg.OutboxConfig, o11y.Logger()),
+		billingModule.ReconciliationJob,
+		billingModule.KiwifyEventsHousekeeper,
 	)
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))

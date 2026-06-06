@@ -17,11 +17,11 @@
 | 3.0 | Application ports + DTOs billing (interfaces consumer-defined) | done | 2.0 | — | — |
 | 4.0 | Repositórios Postgres billing | done | 1.0, 3.0 | Com 7.0 | — |
 | 5.0 | Use cases billing (5 webhook + reconcile) | done | 3.0, 4.0 | Com 7.0 | — |
-| 6.0 | Outbox producer billing: publisher + structs de evento | pending | 3.0, 4.0, 5.0 | Com 7.0 | — |
+| 6.0 | Outbox producer billing: publisher + structs de evento | done | 3.0, 4.0, 5.0 | Com 7.0 | — |
 | 7.0 | Cliente Kiwify Public API (OAuth + rate limit + retry) | done | 3.0 | Com 4.0, 5.0, 6.0 | — |
-| 8.0 | HTTP server billing: router, handler, middleware HMAC e raw_body | pending | 5.0, 6.0 | Com 9.0 | — |
-| 9.0 | Jobs billing: reconciliação horária e housekeeping de kiwify_events | pending | 4.0, 5.0, 7.0 | Com 8.0 | — |
-| 10.0 | Identity entitlement (read model, projector, DecideUserEntitlement) e wiring final em cmd/server, cmd/worker e billing.NewBillingModule | pending | 6.0, 8.0, 9.0 | — | — |
+| 8.0 | HTTP server billing: router, handler, middleware HMAC e raw_body | done | 5.0, 6.0 | Com 9.0 | — |
+| 9.0 | Jobs billing: reconciliação horária e housekeeping de kiwify_events | done | 4.0, 5.0, 7.0 | Com 8.0 | — |
+| 10.0 | Identity entitlement (read model, projector, DecideUserEntitlement) e wiring final em cmd/server, cmd/worker e billing.NewBillingModule | done | 6.0, 8.0, 9.0 | — | — |
 
 ## Dependências Críticas
 

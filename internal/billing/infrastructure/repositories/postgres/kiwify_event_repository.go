@@ -55,3 +55,29 @@ func (r *kiwifyEventRepository) MarkProcessed(ctx context.Context, envelopeID st
 	}
 	return nil
 }
+
+func (r *kiwifyEventRepository) DeleteOlderThan(ctx context.Context, before time.Time, limit int) (int64, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.kiwify_event.delete_older_than")
+	defer span.End()
+
+	query := fmt.Sprintf(`
+		DELETE FROM billing_kiwify_events
+		 WHERE envelope_id IN (
+		       SELECT envelope_id
+		         FROM billing_kiwify_events
+		        WHERE received_at < $1
+		        LIMIT %d
+		 )
+	`, limit)
+
+	result, err := r.db.ExecContext(ctx, query, before)
+	if err != nil {
+		span.RecordError(err)
+		return 0, fmt.Errorf("billing/postgres: delete_older_than_kiwify_event: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("billing/postgres: delete_older_than_kiwify_event rows_affected: %w", err)
+	}
+	return n, nil
+}

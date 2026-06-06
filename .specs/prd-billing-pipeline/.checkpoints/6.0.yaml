@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-billing-pipeline/6.0_execution_report.md
+summary: Outbox producer billing implementado com 5 structs de evento, publisher, unit tests (10) e integration test (1) — todos verdes.
+timestamp: 2026-06-06T09:45:00Z

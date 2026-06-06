@@ -1,6 +1,8 @@
 package identity
 
 import (
+	"context"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -11,16 +13,26 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server/handlers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 )
 
+type EventHandlerRegistration struct {
+	EventType string
+	Handler   events.Handler
+}
+
 type IdentityModule struct {
-	RepositoryFactory   interfaces.RepositoryFactory
-	UserRouter          *server.UserRouter
-	UpsertUserUseCase   *usecases.UpsertUserByWhatsApp
-	FindUserByIDUseCase *usecases.FindUserByID
-	FindUserByWhatsApp  *usecases.FindUserByWhatsApp
-	MarkUserDeleted     *usecases.MarkUserDeleted
+	RepositoryFactory     interfaces.RepositoryFactory
+	UserRouter            *server.UserRouter
+	UpsertUserUseCase     *usecases.UpsertUserByWhatsApp
+	FindUserByIDUseCase   *usecases.FindUserByID
+	FindUserByWhatsApp    *usecases.FindUserByWhatsApp
+	MarkUserDeleted       *usecases.MarkUserDeleted
+	EntitlementReader     interfaces.EntitlementReader
+	SubscriptionProjector *consumers.SubscriptionEventProjector
+	EventHandlers         []EventHandlerRegistration
 }
 
 func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) IdentityModule {
@@ -37,12 +49,25 @@ func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mg
 
 	upsertHandler := handlers.NewUpsertUserByWhatsAppHandler(upsertUC, o11y)
 
+	projector := consumers.NewSubscriptionEventProjector(factory, mgr, o11y)
+
+	eventHandlers := []EventHandlerRegistration{
+		{EventType: "billing.subscription.activated", Handler: projector},
+		{EventType: "billing.subscription.renewed", Handler: projector},
+		{EventType: "billing.subscription.past_due", Handler: projector},
+		{EventType: "billing.subscription.canceled", Handler: projector},
+		{EventType: "billing.subscription.refunded", Handler: projector},
+	}
+
 	return IdentityModule{
-		RepositoryFactory:   factory,
-		UserRouter:          server.NewUserRouter(upsertHandler),
-		UpsertUserUseCase:   upsertUC,
-		FindUserByIDUseCase: findByIDUC,
-		FindUserByWhatsApp:  findByWhatsAppUC,
-		MarkUserDeleted:     markDeletedUC,
+		RepositoryFactory:     factory,
+		UserRouter:            server.NewUserRouter(upsertHandler),
+		UpsertUserUseCase:     upsertUC,
+		FindUserByIDUseCase:   findByIDUC,
+		FindUserByWhatsApp:    findByWhatsAppUC,
+		MarkUserDeleted:       markDeletedUC,
+		EntitlementReader:     factory.EntitlementRepository(mgr.DBTX(context.Background())),
+		SubscriptionProjector: projector,
+		EventHandlers:         eventHandlers,
 	}
 }

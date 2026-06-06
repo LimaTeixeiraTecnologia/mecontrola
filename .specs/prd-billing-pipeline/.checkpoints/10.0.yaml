@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-billing-pipeline/10.0_execution_report.md
+summary: "Identity entitlement read model, projector, DecideUserEntitlement e wiring final billing/identity concluidos com go build + go vet verdes e todos os testes unitarios passando"
+timestamp: "2026-06-06T00:00:00Z"

@@ -19,3 +19,7 @@ func NewRepositoryFactory(o11y observability.Observability) interfaces.Repositor
 func (r *repositoryFactory) UserRepository(db database.DBTX) interfaces.UserRepository {
 	return postgres.NewUserRepository(r.o11y, db)
 }
+
+func (r *repositoryFactory) EntitlementRepository(db database.DBTX) interfaces.EntitlementRepository {
+	return postgres.NewEntitlementRepository(r.o11y, db)
+}

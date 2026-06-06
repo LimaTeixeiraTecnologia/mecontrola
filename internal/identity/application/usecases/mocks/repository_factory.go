@@ -19,6 +19,50 @@ func (_m *RepositoryFactory) EXPECT() *RepositoryFactory_Expecter {
 	return &RepositoryFactory_Expecter{mock: &_m.Mock}
 }
 
+func (_m *RepositoryFactory) EntitlementRepository(db database.DBTX) interfaces.EntitlementRepository {
+	ret := _m.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for EntitlementRepository")
+	}
+
+	var r0 interfaces.EntitlementRepository
+	if rf, ok := ret.Get(0).(func(database.DBTX) interfaces.EntitlementRepository); ok {
+		r0 = rf(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.EntitlementRepository)
+		}
+	}
+
+	return r0
+}
+
+type RepositoryFactory_EntitlementRepository_Call struct {
+	*mock.Call
+}
+
+func (_e *RepositoryFactory_Expecter) EntitlementRepository(db any) *RepositoryFactory_EntitlementRepository_Call {
+	return &RepositoryFactory_EntitlementRepository_Call{Call: _e.mock.On("EntitlementRepository", db)}
+}
+
+func (_c *RepositoryFactory_EntitlementRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_EntitlementRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(database.DBTX))
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_EntitlementRepository_Call) Return(_a0 interfaces.EntitlementRepository) *RepositoryFactory_EntitlementRepository_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *RepositoryFactory_EntitlementRepository_Call) RunAndReturn(run func(database.DBTX) interfaces.EntitlementRepository) *RepositoryFactory_EntitlementRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 func (_m *RepositoryFactory) UserRepository(db database.DBTX) interfaces.UserRepository {
 	ret := _m.Called(db)
 

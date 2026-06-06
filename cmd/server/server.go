@@ -20,6 +20,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 )
 
@@ -118,6 +119,12 @@ func Run() error {
 		srv.RegisterRouters(identityModule.UserRouter)
 	}
 	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
+
+	billingModule := billing.NewBillingModule(cfg, o11y, dbManager)
+	if billingModule.WebhookRouter != nil {
+		srv.RegisterRouters(billingModule.WebhookRouter)
+	}
+	o11y.Logger().Info(ctx, "billing module wired", observability.Bool("router_registered", billingModule.WebhookRouter != nil))
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)
