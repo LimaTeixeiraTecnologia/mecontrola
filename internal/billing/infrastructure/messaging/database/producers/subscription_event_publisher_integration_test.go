@@ -1,0 +1,161 @@
+//go:build integration
+
+package producers_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
+	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	tc "github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/producers"
+	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	outboxrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
+)
+
+const pgIntegImage = "postgres:16"
+
+type OutboxProducerIntegSuite struct {
+	suite.Suite
+	mgr             manager.Manager
+	factory         interfaces.RepositoryFactory
+	outboxFactory   outbox.OutboxRepositoryFactory
+	publisher       *producers.SubscriptionEventPublisher
+	processSaleUC   *usecases.ProcessSaleApproved
+	kiwifyProductID string
+}
+
+func TestOutboxProducerIntegSuite(t *testing.T) {
+	suite.Run(t, new(OutboxProducerIntegSuite))
+}
+
+func (s *OutboxProducerIntegSuite) SetupSuite() {
+	ctx := context.Background()
+
+	req := tc.ContainerRequest{
+		Image:        pgIntegImage,
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER":     "test",
+			"POSTGRES_PASSWORD": "test",
+			"POSTGRES_DB":       "testdb",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").
+			WithOccurrence(2).
+			WithStartupTimeout(60 * time.Second),
+	}
+
+	container, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	s.Require().NoError(err)
+
+	s.T().Cleanup(func() {
+		if terr := container.Terminate(context.Background()); terr != nil {
+			s.T().Logf("container terminate: %v", terr)
+		}
+	})
+
+	host, err := container.Host(ctx)
+	s.Require().NoError(err)
+
+	mapped, err := container.MappedPort(ctx, "5432")
+	s.Require().NoError(err)
+
+	portNum, err := strconv.Atoi(mapped.Port())
+	s.Require().NoError(err)
+
+	cfg := dbpostgres.PostgresConfig{
+		Host:     host,
+		Port:     portNum,
+		User:     "test",
+		Password: "test",
+		Database: "testdb",
+		SSLMode:  "disable",
+	}
+
+	mgr, err := manager.New(cfg)
+	s.Require().NoError(err)
+	s.mgr = mgr
+
+	s.T().Cleanup(func() {
+		_ = s.mgr.Shutdown(context.Background())
+	})
+
+	dsn := fmt.Sprintf("pgx5://test:test@%s:%d/testdb?sslmode=disable", host, portNum)
+	migrator, err := migration.New(s.mgr, migration.EmbedFS{FS: migrations.FS, Root: "."}, migration.WithDSN(dsn))
+	s.Require().NoError(err)
+
+	if err := migrator.Up(ctx); err != nil && !errors.Is(err, migration.ErrNoChange) {
+		s.Require().NoError(err)
+	}
+
+	o11y := noop.NewProvider()
+	s.factory = billingrepos.NewRepositoryFactory(o11y)
+	s.outboxFactory = outboxrepo.NewRepositoryFactory(o11y)
+
+	outboxCfg := configs.OutboxConfig{RetryMaxAttempts: 5}
+	idGen := id.NewUUIDGenerator()
+
+	s.publisher = producers.NewSubscriptionEventPublisher(s.outboxFactory, outboxCfg, idGen)
+
+	saleUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
+	s.processSaleUC = usecases.NewProcessSaleApproved(saleUoW, s.factory, s.publisher, o11y)
+
+	s.seedKiwifyProductID(ctx)
+}
+
+func (s *OutboxProducerIntegSuite) seedKiwifyProductID(ctx context.Context) {
+	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT kiwify_product_id FROM billing_plans WHERE code='MONTHLY' LIMIT 1`)
+	var pid string
+	s.Require().NoError(row.Scan(&pid))
+	s.kiwifyProductID = pid
+}
+
+func (s *OutboxProducerIntegSuite) TestRF10_OutboxRowCreatedTransactionallyOnProcessSaleApproved() {
+	ctx := context.Background()
+
+	saleID := fmt.Sprintf("sale-integ-%d", time.Now().UnixNano())
+	orderID := fmt.Sprintf("order-integ-%d", time.Now().UnixNano())
+
+	in := input.ProcessSaleApprovedInput{
+		EnvelopeID:      fmt.Sprintf("env-%d", time.Now().UnixNano()),
+		SaleID:          saleID,
+		KiwifyProductID: s.kiwifyProductID,
+		OrderID:         orderID,
+		FunnelToken:     "token-integ-001",
+		OccurredAt:      time.Now().UTC().Truncate(time.Millisecond),
+	}
+
+	err := s.processSaleUC.Execute(ctx, in)
+	s.Require().NoError(err)
+
+	var count int
+	row := s.mgr.DBTX(ctx).QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`,
+		producers.EventTypeSubscriptionActivated,
+	)
+	s.Require().NoError(row.Scan(&count))
+	s.Equal(1, count, "expected exactly 1 outbox row with event_type billing.subscription.activated")
+}
