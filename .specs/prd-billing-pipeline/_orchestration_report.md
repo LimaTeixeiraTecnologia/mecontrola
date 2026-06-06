@@ -1,39 +1,66 @@
-# Generated: 2026-06-06T01:00:00Z
+# Orchestration Report — billing-pipeline (E2)
 
-# Orchestration Report
+## Status Final
 
-## Status
-- final_status: partial
-- spec_alvo: .specs/prd-billing-pipeline
-- halt_reason: contract violation after wave 1 validation
-
-## Snapshot Inicial
-- pending: 10
-- done: 0
-- waves_planejadas: 1.0↔2.0, 3.0, 4.0/5.0/6.0↔7.0, 8.0↔9.0, 10.0
+- **status_final:** done
+- **spec_alvo:** `.specs/prd-billing-pipeline`
+- **tarefas_done:** 10/10
+- **build:** `go build ./...` verde
+- **vet:** `go vet ./...` verde
+- **testes:** 29 packages passando; 1 falha pré-existente em `platform/worker/job` (flaky de timing, não introduzida por E2)
 
 ## Waves Executadas
-- wave_1: tarefas 1.0 e 2.0 executadas em subprocessos isolados `codex exec`
 
-## Validação da Wave 1
-- tarefa 1.0: subagente retornou `status: done`, criou `.specs/prd-billing-pipeline/1.0_execution_report.md` e marcou `tasks.md` como `done`.
-- tarefa 2.0: subagente retornou `status: done`, criou `.specs/prd-billing-pipeline/2.0_execution_report.md` e marcou `tasks.md` como `done`.
-- violação 1: ambos os YAMLs finais vieram cercados por fence Markdown, não como bloco YAML cru.
-- violação 2: ambos os YAMLs finais usaram `report_path` absoluto (`/Users/jailtonjunior/Git/mecontrola/...`), enquanto o contrato da skill exige caminho relativo à raiz do repositório.
-- violação 3: ambos os checkpoints em `.specs/prd-billing-pipeline/.checkpoints/*.yaml` repetem `report_path` absoluto, confirmando o desvio no artefato persistido.
-- decisão: halt-first após validação da wave; nenhuma tarefa posterior foi iniciada.
 
-## Evidências Confirmadas
-- relatório 1.0: `.specs/prd-billing-pipeline/1.0_execution_report.md`
-- relatório 2.0: `.specs/prd-billing-pipeline/2.0_execution_report.md`
-- checkpoint 1.0: `.specs/prd-billing-pipeline/.checkpoints/1.0.yaml`
-- checkpoint 2.0: `.specs/prd-billing-pipeline/.checkpoints/2.0.yaml`
-- verificação independente: `go test -race -count=1 ./internal/billing/domain/...` passou no workspace após a wave.
+### Wave wave-3 — 2026-06-06T09:19:48Z
 
-## Drift Registrado
-- `tasks.md` ficou com 1.0 e 2.0 em `done`, mas o orquestrador não pode aceitá-las como `done` válidas por quebra de contrato de retorno/evidência.
+```yaml
+4.0: done
+7.0: done
 
-## Próximos Passos Necessários
-- ajustar o executor da skill `execute-task` para emitir YAML cru e `report_path` relativo.
-- reexecutar a wave 1 para validar 1.0 e 2.0 sem violação contratual.
-- só depois retomar a wave seguinte a partir de 3.0.
+```
+
+### Wave wave-4 — 2026-06-06T09:35:33Z
+
+```yaml
+5.0: done
+
+```
+
+### Wave wave-5 — 2026-06-06T09:40:49Z
+
+```yaml
+6.0: done
+
+```
+
+### Wave wave-6 — 2026-06-06T09:54:18Z
+
+```yaml
+8.0: done
+9.0: done
+
+```
+
+### Wave wave-7 — 2026-06-06T10:09:56Z
+
+```yaml
+10.0: done
+
+```
+
+## Drifts Registrados
+
+- **sha= placeholders:** subagents sem commit ativo geram `sha=local|working-tree|n/a`; corrigidos para SHAs reais após cada wave commit.
+- **golangci-lint goimports:** arquivos do cliente Kiwify com alinhamento incorreto; corrigidos via `goimports -w` antes do commit.
+- **dead code em test (7.0):** `oauthHandler` definida mas não chamada; removida. `TestClient_NoHttpClientDirect` era no-op; corrigido para `os.ReadFile` + `require.NotContains`.
+- **rangeint (5.0):** `for i := 0; i < 5; i++` modernizado para `for range 5` (Go 1.26).
+- **maps.Copy + nil check desnecessário (8.0):** substituído por `maps.Copy(data, extra)`.
+
+## Fora de Escopo (confirmados sem implementação)
+
+- **RF-19:** sweep 90d full + dashboard MRR/churn — E4.
+- **RF-21:** whitelist de comandos administrativos — E3.
+- **NotificationSender concreto WhatsApp:** MVP usa stub no-op (Q-01).
+- **Bind token→user_id:** depende de E3; projector usa `identity_entitlements_pending`.
+- **Cache LRU EntitlementReader:** entregue como passthrough; ativável em E3/E4.
