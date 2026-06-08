@@ -44,14 +44,14 @@ func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSale
 		return ErrFunnelTokenMissing
 	}
 
-	eventKey := fmt.Sprintf("compra_aprovada:%s", in.SaleID)
+	eventKey := fmt.Sprintf("order_approved:%s", in.SaleID)
 
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		processedRepo := uc.factory.ProcessedEventRepository(tx)
 		planRepo := uc.factory.PlanRepository(tx)
 		subRepo := uc.factory.SubscriptionRepository(tx)
 
-		if markErr := processedRepo.MarkApplied(ctx, eventKey, "compra_aprovada", in.SaleID, in.OccurredAt); markErr != nil {
+		if markErr := processedRepo.MarkApplied(ctx, eventKey, "order_approved", in.SaleID, in.OccurredAt); markErr != nil {
 			if errors.Is(markErr, interfaces.ErrEventAlreadyProcessed) {
 				return entities.Subscription{}, ErrEventAlreadyProcessed
 			}
@@ -104,14 +104,14 @@ func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSale
 }
 
 func (uc *ProcessSaleApproved) executeWithoutToken(ctx context.Context, in input.ProcessSaleApprovedInput) error {
-	eventKey := fmt.Sprintf("compra_aprovada:%s", in.SaleID)
+	eventKey := fmt.Sprintf("order_approved:%s", in.SaleID)
 
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		processedRepo := uc.factory.ProcessedEventRepository(tx)
 		planRepo := uc.factory.PlanRepository(tx)
 		subRepo := uc.factory.SubscriptionRepository(tx)
 
-		if markErr := processedRepo.MarkApplied(ctx, eventKey, "compra_aprovada", in.SaleID, in.OccurredAt); markErr != nil {
+		if markErr := processedRepo.MarkApplied(ctx, eventKey, "order_approved", in.SaleID, in.OccurredAt); markErr != nil {
 			if errors.Is(markErr, interfaces.ErrEventAlreadyProcessed) {
 				return entities.Subscription{}, ErrEventAlreadyProcessed
 			}

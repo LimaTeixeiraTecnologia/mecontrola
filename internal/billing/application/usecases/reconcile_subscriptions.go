@@ -93,7 +93,7 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 
 func (uc *ReconcileSubscriptions) reconcileSale(ctx context.Context, sale interfaces.KiwifySale) error {
 	if sale.Status == "refunded" || sale.Status == "chargedback" {
-		trigger := "compra_reembolsada"
+		trigger := "order_refunded"
 		if sale.Status == "chargedback" {
 			trigger = "chargeback"
 		}
