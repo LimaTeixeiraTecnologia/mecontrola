@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | `https://docs.kiwify.com.br/api-reference/general` (Public API) | Base URL `public-api.kiwify.com/v1`. Headers obrigatórios: `Authorization: Bearer ...` + `x-kiwify-account-id: ...`. Rate limit 100 req/min. | Client em `internal/billing/infrastructure/http/client/kiwify` segue estritamente esse contrato. |
 | `https://docs.kiwify.com.br/api-reference/auth/oauth` | `POST /v1/oauth/token` form-urlencoded (`client_id`/`client_secret`) retorna `access_token` Bearer (`token_type:"Bearer"`, `expires_in: 86400`). | Cache em-memória com refresh em `expires_in - safety_margin`. |
-| `https://docs.kiwify.com.br/api-reference/webhooks/create` | `POST /v1/webhooks` aceita `triggers[]`. Triggers oficiais: `boleto_gerado`, `pix_gerado`, `carrinho_abandonado`, `compra_recusada`, `compra_aprovada`, `compra_reembolsada`, `chargeback`, `subscription_canceled`, `subscription_late`, `subscription_renewed`. Recurso webhook persiste campo `token`. | Subscription do webhook é provisionada externamente (não pela aplicação) com 5 triggers do MVP: `compra_aprovada`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `compra_reembolsada`, `chargeback`. |
+| `https://docs.kiwify.com.br/api-reference/webhooks/create` | `POST /v1/webhooks` aceita `triggers[]`. Triggers oficiais: `boleto_gerado`, `pix_gerado`, `carrinho_abandonado`, `compra_recusada`, `order_approved`, `order_refunded`, `chargeback`, `subscription_canceled`, `subscription_late`, `subscription_renewed`. Recurso webhook persiste campo `token`. | Subscription do webhook é provisionada externamente (não pela aplicação) com 5 triggers do MVP: `order_approved`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `order_refunded`, `chargeback`. |
 | `https://docs.kiwify.com.br/api-reference/sales/list` | `GET /v1/sales` query: `start_date`/`end_date` (obrigatórios, ≤ 90d), `status`, `updated_at_start_date`, `updated_at_end_date`, `payment_method`, `product_id`, `page_size`, `page_number`. Resposta paginada. | Reconciliação horária varre por `updated_at_start_date = checkpoint - 15m` paginado. |
 | `https://docs.kiwify.com.br/api-reference/sales/single` | `GET /v1/sales/{id}` retorna sale completa: `id`, `reference`, `status`, `created_at`, `updated_at`, `payment_method`, `net_amount`, `customer`, `tracking{utm_*, sck, src, s1..s3}`, `parent_order_id`, `sale_type`, `refunded_at`. | `tracking.s1` (ou `src`) carrega o `?s={token}` validado em P-01 (H7). Mapeamento exato confirmado em sandbox antes da execução. |
 | `https://docs.kiwify.com.br/api-reference/banking/webhooks` (Banking) | Envelope `id`/`type`/`version`/`data`/`created_at`; `id` muda por retry, dedupe por `recurso_id + type`; assinatura Ed25519 prehashed; chave pública em `GET /v1/webhooks-keys`. | **Banking API NÃO é usada** (não cobre assinatura). Referenciado apenas como padrão para dedupe (`recurso_id + type`) e como ADR-001 explicando a divergência com o prompt enriquecido. |
@@ -60,7 +60,7 @@ Nenhum bloqueio material para escrever a techspec. As três lacunas viram itens 
 Entregar o ciclo de vida da assinatura ponta a ponta para o gateway **Kiwify único**, expondo: (a) endpoint HTTP de webhook autenticado, (b) máquina de estados idempotente sobre o agregado `Subscription`, (c) emissão de eventos internos via outbox transacional, (d) read model de entitlement em `identity`, (e) reconciliação horária via `GET /v1/sales`, (f) notificação WhatsApp best-effort.
 
 Recorte estrito **dentro do MVP**:
-- 5 triggers Kiwify (`compra_aprovada`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `compra_reembolsada`+`chargeback`);
+- 5 triggers Kiwify (`order_approved`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `order_refunded`+`chargeback`);
 - 5 estados ativos + `TRIALING` inerte;
 - 3 planos (Mensal/Trimestral/Anual) seedados via migration;
 - 1 usuário = 1 sub ativa simultânea;
@@ -200,19 +200,19 @@ internal/identity/
 
 ## 5. Fluxo ponta a ponta do webhook Kiwify até os eventos internos
 
-### 5.1 Sequência canônica (caminho feliz `compra_aprovada`)
+### 5.1 Sequência canônica (caminho feliz `order_approved`)
 
 1. **POST /api/v1/billing/webhooks/kiwify** chega no `httpserver` (chi).
 2. **`raw_body_buffer` middleware** lê e armazena o body em `context` (`ctxKey{rawBody}`), evitando re-leitura.
 3. **`hmac_signature` middleware** computa `expected = base64(hmac_sha256(secret, raw_body))` e compara em tempo constante com header `X-Kiwify-Signature` (e fallback `signature` query). Tolera `KIWIFY_WEBHOOK_SECRET_NEXT` durante rotação. Em mismatch → `401`.
 4. **`KiwifyWebhookHandler.Handle`** faz `json.Unmarshal` para `Envelope{Trigger, Data}`; persiste em `kiwify_events(envelope_id, trigger, raw_body, received_at, signature_status='valid')` fora da transação (auditoria proativa).
 5. **Dispatch por trigger** chama o use case correspondente:
-   - `compra_aprovada` → `ProcessSaleApproved`
+   - `order_approved` → `ProcessSaleApproved`
    - `subscription_renewed` → `ProcessSubscriptionRenewed`
    - `subscription_late` → `ProcessSubscriptionLate`
    - `subscription_canceled` → `ProcessSubscriptionCanceled`
-   - `compra_reembolsada` ∪ `chargeback` → `ProcessRefundOrChargeback`
-6. **Use case** monta `eventKey = "compra_aprovada:" + order_id`, abre `uow.New[domain.Subscription]`, dentro da transação:
+   - `order_refunded` ∪ `chargeback` → `ProcessRefundOrChargeback`
+6. **Use case** monta `eventKey = "order_approved:" + order_id`, abre `uow.New[domain.Subscription]`, dentro da transação:
    1. `ProcessedEventRepository.MarkApplied(ctx, event_key, occurred_at)` — INSERT; conflito → return `ErrEventAlreadyProcessed` (idempotente, no-op silencioso, retorna 202).
    2. Resolve `Plan` por `kiwify_product_id`.
    3. Resolve `funnelToken` do payload (`sale.tracking.s1`, validado em sandbox); se vazio → `ErrFunnelTokenMissing` (return 422, **não** persiste subscription nem evento processado — a Kiwify deve reenviar; é caso operacional).
@@ -230,7 +230,7 @@ internal/identity/
 | `subscription_renewed` | Etapa 6.4: `SubscriptionRepository.ExtendPeriod(ctx, sub_id, duration)`; etapa 6.5 emite `billing.subscription.renewed`. Se subscription não existir localmente: cria placeholder ACTIVE com período derivado (ordering — ADR-005). |
 | `subscription_late` | Etapa 6.4: transição → `PAST_DUE`, set `grace_end = late_at + 3 * 24h`; emite `billing.subscription.past_due`. Notification handler é acionado downstream. |
 | `subscription_canceled` | Etapa 6.4: `CANCELED_PENDING`, mantém `period_end`; emite `billing.subscription.canceled`. |
-| `compra_reembolsada` / `chargeback` | Etapa 6.4: força `REFUNDED` (terminal); mesmo `event_key` para ambos por `order_id` (ADR-005); emite `billing.subscription.refunded`. |
+| `order_refunded` / `chargeback` | Etapa 6.4: força `REFUNDED` (terminal); mesmo `event_key` para ambos por `order_id` (ADR-005); emite `billing.subscription.refunded`. |
 
 ### 5.3 Detecção de evento staled (out-of-order)
 
@@ -330,7 +330,7 @@ Type names estáveis e prefixados (também é o `event.Type` do outbox):
 
 | Type | Aggregate | Quando | Payload (campos) |
 | --- | --- | --- | --- |
-| `billing.subscription.activated` | `Subscription` | `compra_aprovada` cria sub | `subscription_id, funnel_token, plan_code, period_start, period_end, occurred_at` |
+| `billing.subscription.activated` | `Subscription` | `order_approved` cria sub | `subscription_id, funnel_token, plan_code, period_start, period_end, occurred_at` |
 | `billing.subscription.renewed` | `Subscription` | `subscription_renewed` estende | `subscription_id, plan_code, previous_period_end, period_end, occurred_at` |
 | `billing.subscription.past_due` | `Subscription` | `subscription_late` | `subscription_id, period_end, grace_end, occurred_at` |
 | `billing.subscription.canceled` | `Subscription` | `subscription_canceled` | `subscription_id, period_end, occurred_at` |
@@ -435,11 +435,11 @@ Chave por trigger (ADR-005):
 
 | Trigger | event_key |
 | --- | --- |
-| `compra_aprovada` | `compra_aprovada:{sale.id}` |
+| `order_approved` | `order_approved:{sale.id}` |
 | `subscription_renewed` | `subscription_renewed:{subscription.id}:{subscription.updated_at_iso8601}` |
 | `subscription_late` | `subscription_late:{subscription.id}:{subscription.updated_at_iso8601}` |
 | `subscription_canceled` | `subscription_canceled:{subscription.id}` |
-| `compra_reembolsada` | `refund:{sale.id}` |
+| `order_refunded` | `refund:{sale.id}` |
 | `chargeback` | `refund:{sale.id}` (mesmo prefixo — refund ∪ chargeback) |
 
 INSERT em `billing_processed_events` antes do mutation; `pgErrCode 23505` ou rowsAffected=0 ⇒ no-op silencioso (retorna 202).
@@ -475,7 +475,7 @@ ReconciliationJob.Run(ctx):
   repo.SetCheckpoint("kiwify_sales", windowEnd)
 ```
 
-`reconcileSale` traduz uma sale Kiwify em um pseudo-evento `compra_aprovada` (ou refund se `status == 'refunded|chargedback'`) e roteia para o use case correspondente. Como o `event_key` é determinístico (`compra_aprovada:{sale.id}`), uma sale já processada pelo webhook é no-op.
+`reconcileSale` traduz uma sale Kiwify em um pseudo-evento `order_approved` (ou refund se `status == 'refunded|chargedback'`) e roteia para o use case correspondente. Como o `event_key` é determinístico (`order_approved:{sale.id}`), uma sale já processada pelo webhook é no-op.
 
 **Trade-offs:** janela de 15min de overlap absorve clock skew Kiwify ↔ MeControla. Custo: ≤ 100 req/min (compatível com rate limit Kiwify).
 
@@ -621,7 +621,7 @@ Diferido para hardening pós-MVP (E4). MVP cobre via integração.
 | Falha de projector identity persistente | Outbox marca `failed`; alerta operacional. Reset manual revoga e reenvia. |
 | Spike de webhook (DoS) | Body limit + HMAC barrato antes de parse + httpserver default rate. Sem WAF no MVP. |
 | Falha cascata no `events.Dispatcher` in-process | Trade-off aceito: cross-module same-binary é simples; falha cobre via outbox retry + manual reprocess. |
-| `subscription_renewed` chega antes de `compra_aprovada` (split) | Placeholder ACTIVE criado; subsequente `approved` é no-op idempotente. Cobertura por teste. |
+| `subscription_renewed` chega antes de `order_approved` (split) | Placeholder ACTIVE criado; subsequente `approved` é no-op idempotente. Cobertura por teste. |
 
 ### 11.2 Trade-offs
 

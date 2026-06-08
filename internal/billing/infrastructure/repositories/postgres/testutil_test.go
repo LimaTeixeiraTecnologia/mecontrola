@@ -13,6 +13,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
 	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
+	"github.com/stretchr/testify/suite"
 	tc "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -20,6 +21,16 @@ import (
 )
 
 const pgImage = "postgres:16"
+
+type TestutilSuite struct {
+	suite.Suite
+}
+
+func TestTestutilSuite(t *testing.T) {
+	suite.Run(t, new(TestutilSuite))
+}
+
+func (s *TestutilSuite) SetupTest() {}
 
 func setupTestDB(t *testing.T) manager.Manager {
 	t.Helper()

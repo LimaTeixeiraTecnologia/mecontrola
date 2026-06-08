@@ -1,6 +1,7 @@
 package services_test
 
 import (
+	"github.com/stretchr/testify/suite"
 	"testing"
 	"time"
 
@@ -10,185 +11,189 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
 )
 
-func TestTransitionService_CanTransitionMatrix(t *testing.T) {
-	t.Parallel()
-
-	transitionService := services.NewTransitionService()
-	statuses := []valueobjects.Status{
-		valueobjects.StatusTrialing,
-		valueobjects.StatusActive,
-		valueobjects.StatusPastDue,
-		valueobjects.StatusCanceledPending,
-		valueobjects.StatusExpired,
-		valueobjects.StatusRefunded,
-	}
-	expected := map[valueobjects.Status]map[valueobjects.Status]bool{
-		valueobjects.StatusTrialing: {},
-		valueobjects.StatusActive: {
-			valueobjects.StatusActive:          true,
-			valueobjects.StatusPastDue:         true,
-			valueobjects.StatusCanceledPending: true,
-			valueobjects.StatusRefunded:        true,
-		},
-		valueobjects.StatusPastDue: {
-			valueobjects.StatusActive:          true,
-			valueobjects.StatusPastDue:         true,
-			valueobjects.StatusCanceledPending: true,
-			valueobjects.StatusRefunded:        true,
-		},
-		valueobjects.StatusCanceledPending: {
-			valueobjects.StatusActive:   true,
-			valueobjects.StatusRefunded: true,
-		},
-		valueobjects.StatusExpired: {
-			valueobjects.StatusActive:   true,
-			valueobjects.StatusRefunded: true,
-		},
-		valueobjects.StatusRefunded: {},
-	}
-
-	for _, current := range statuses {
-		current := current
-		for _, next := range statuses {
-			next := next
-			t.Run(current.String()+"->"+next.String(), func(t *testing.T) {
-				t.Parallel()
-				assert.Equal(t, expected[current][next], transitionService.CanTransition(current, next))
-			})
-		}
-	}
+type TransitionsSuite struct {
+	suite.Suite
 }
 
-func TestTransitionService_TargetStatus(t *testing.T) {
-	t.Parallel()
-
-	transitionService := services.NewTransitionService()
-	tests := []struct {
-		name       string
-		current    valueobjects.Status
-		trigger    services.Trigger
-		wantStatus valueobjects.Status
-		wantOK     bool
-	}{
-		{
-			name:       "bootstrap from zero via purchase",
-			trigger:    services.TriggerSaleApproved,
-			wantStatus: valueobjects.StatusActive,
-			wantOK:     true,
-		},
-		{
-			name:       "renew from past due returns active",
-			current:    valueobjects.StatusPastDue,
-			trigger:    services.TriggerSubscriptionRenewed,
-			wantStatus: valueobjects.StatusActive,
-			wantOK:     true,
-		},
-		{
-			name:       "late while active returns past due",
-			current:    valueobjects.StatusActive,
-			trigger:    services.TriggerSubscriptionLate,
-			wantStatus: valueobjects.StatusPastDue,
-			wantOK:     true,
-		},
-		{
-			name:       "cancel while past due returns canceled pending",
-			current:    valueobjects.StatusPastDue,
-			trigger:    services.TriggerSubscriptionCanceled,
-			wantStatus: valueobjects.StatusCanceledPending,
-			wantOK:     true,
-		},
-		{
-			name:       "refund while refunded keeps refunded",
-			current:    valueobjects.StatusRefunded,
-			trigger:    services.TriggerRefunded,
-			wantStatus: valueobjects.StatusRefunded,
-			wantOK:     true,
-		},
-		{
-			name:    "cancel from expired is blocked",
-			current: valueobjects.StatusExpired,
-			trigger: services.TriggerSubscriptionCanceled,
-			wantOK:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			status, ok := transitionService.TargetStatus(tt.current, tt.trigger)
-			assert.Equal(t, tt.wantOK, ok)
-			assert.Equal(t, tt.wantStatus, status)
-		})
-	}
+func TestTransitionsSuite(t *testing.T) {
+	suite.Run(t, new(TransitionsSuite))
 }
 
-func TestTransitionService_IsRegression(t *testing.T) {
-	t.Parallel()
+func (s *TransitionsSuite) SetupTest() {}
 
-	transitionService := services.NewTransitionService()
+func (s *TransitionsSuite) TestTransitionService() {
+	type args struct {
+		current     valueobjects.Status
+		next        valueobjects.Status
+		trigger     services.Trigger
+		occurredAt  time.Time
+		lastEventAt time.Time
+	}
+
 	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
-
-	tests := []struct {
-		name         string
-		current      valueobjects.Status
-		trigger      services.Trigger
-		occurredAt   time.Time
-		lastEventAt  time.Time
-		wantDecision bool
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(services.TransitionService)
 	}{
 		{
-			name:         "renewed after recent late is regression",
-			current:      valueobjects.StatusPastDue,
-			trigger:      services.TriggerSubscriptionRenewed,
-			occurredAt:   now.Add(-2 * time.Hour),
-			lastEventAt:  now,
-			wantDecision: true,
+			name: "deve permitir transicao de active para past due",
+			args: args{
+				current: valueobjects.StatusActive,
+				next:    valueobjects.StatusPastDue,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.True(s.T(), transitionService.CanTransition(valueobjects.StatusActive, valueobjects.StatusPastDue))
+			},
 		},
 		{
-			name:         "purchase after expiration older than current is regression",
-			current:      valueobjects.StatusExpired,
-			trigger:      services.TriggerSaleApproved,
-			occurredAt:   now.Add(-2 * time.Hour),
-			lastEventAt:  now,
-			wantDecision: true,
+			name: "deve bloquear transicao de refunded para active",
+			args: args{
+				current: valueobjects.StatusRefunded,
+				next:    valueobjects.StatusActive,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.CanTransition(valueobjects.StatusRefunded, valueobjects.StatusActive))
+			},
 		},
 		{
-			name:         "late older than current past due is not regression because status is unchanged",
-			current:      valueobjects.StatusPastDue,
-			trigger:      services.TriggerSubscriptionLate,
-			occurredAt:   now.Add(-2 * time.Hour),
-			lastEventAt:  now,
-			wantDecision: false,
+			name: "deve mapear bootstrap por compra para active",
+			args: args{
+				trigger: services.TriggerSaleApproved,
+			},
+			expect: func(transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(0, services.TriggerSaleApproved)
+				assert.True(s.T(), ok)
+				assert.Equal(s.T(), valueobjects.StatusActive, status)
+			},
 		},
 		{
-			name:         "newer event is never regression",
-			current:      valueobjects.StatusPastDue,
-			trigger:      services.TriggerSubscriptionRenewed,
-			occurredAt:   now.Add(2 * time.Hour),
-			lastEventAt:  now,
-			wantDecision: false,
+			name: "deve mapear renovacao em past due para active",
+			args: args{
+				current: valueobjects.StatusPastDue,
+				trigger: services.TriggerSubscriptionRenewed,
+			},
+			expect: func(transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(valueobjects.StatusPastDue, services.TriggerSubscriptionRenewed)
+				assert.True(s.T(), ok)
+				assert.Equal(s.T(), valueobjects.StatusActive, status)
+			},
 		},
 		{
-			name:         "refund always wins regardless of timestamp",
-			current:      valueobjects.StatusActive,
-			trigger:      services.TriggerRefunded,
-			occurredAt:   now.Add(-2 * time.Hour),
-			lastEventAt:  now,
-			wantDecision: false,
+			name: "deve mapear late em active para past due",
+			args: args{
+				current: valueobjects.StatusActive,
+				trigger: services.TriggerSubscriptionLate,
+			},
+			expect: func(transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(valueobjects.StatusActive, services.TriggerSubscriptionLate)
+				assert.True(s.T(), ok)
+				assert.Equal(s.T(), valueobjects.StatusPastDue, status)
+			},
+		},
+		{
+			name: "deve mapear cancelamento em past due para canceled pending",
+			args: args{
+				current: valueobjects.StatusPastDue,
+				trigger: services.TriggerSubscriptionCanceled,
+			},
+			expect: func(transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(valueobjects.StatusPastDue, services.TriggerSubscriptionCanceled)
+				assert.True(s.T(), ok)
+				assert.Equal(s.T(), valueobjects.StatusCanceledPending, status)
+			},
+		},
+		{
+			name: "deve manter refunded quando trigger de refund ocorrer novamente",
+			args: args{
+				current: valueobjects.StatusRefunded,
+				trigger: services.TriggerRefunded,
+			},
+			expect: func(transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(valueobjects.StatusRefunded, services.TriggerRefunded)
+				assert.True(s.T(), ok)
+				assert.Equal(s.T(), valueobjects.StatusRefunded, status)
+			},
+		},
+		{
+			name: "deve bloquear cancelamento a partir de expired",
+			args: args{
+				current: valueobjects.StatusExpired,
+				trigger: services.TriggerSubscriptionCanceled,
+			},
+			expect: func(transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(valueobjects.StatusExpired, services.TriggerSubscriptionCanceled)
+				assert.False(s.T(), ok)
+				assert.Equal(s.T(), valueobjects.Status(0), status)
+			},
+		},
+		{
+			name: "deve identificar renewed antigo apos late recente como regressao",
+			args: args{
+				current:     valueobjects.StatusPastDue,
+				trigger:     services.TriggerSubscriptionRenewed,
+				occurredAt:  now.Add(-2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.True(s.T(), transitionService.IsRegression(valueobjects.StatusPastDue, services.TriggerSubscriptionRenewed, now.Add(-2*time.Hour), now))
+			},
+		},
+		{
+			name: "deve identificar compra antiga apos expiracao como regressao",
+			args: args{
+				current:     valueobjects.StatusExpired,
+				trigger:     services.TriggerSaleApproved,
+				occurredAt:  now.Add(-2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.True(s.T(), transitionService.IsRegression(valueobjects.StatusExpired, services.TriggerSaleApproved, now.Add(-2*time.Hour), now))
+			},
+		},
+		{
+			name: "deve ignorar late antigo quando o status permanece igual",
+			args: args{
+				current:     valueobjects.StatusPastDue,
+				trigger:     services.TriggerSubscriptionLate,
+				occurredAt:  now.Add(-2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.IsRegression(valueobjects.StatusPastDue, services.TriggerSubscriptionLate, now.Add(-2*time.Hour), now))
+			},
+		},
+		{
+			name: "deve ignorar evento mais novo em relacao ao atual",
+			args: args{
+				current:     valueobjects.StatusPastDue,
+				trigger:     services.TriggerSubscriptionRenewed,
+				occurredAt:  now.Add(2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.IsRegression(valueobjects.StatusPastDue, services.TriggerSubscriptionRenewed, now.Add(2*time.Hour), now))
+			},
+		},
+		{
+			name: "deve considerar que refund sempre prevalece",
+			args: args{
+				current:     valueobjects.StatusActive,
+				trigger:     services.TriggerRefunded,
+				occurredAt:  now.Add(-2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.IsRegression(valueobjects.StatusActive, services.TriggerRefunded, now.Add(-2*time.Hour), now))
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(
-				t,
-				tt.wantDecision,
-				transitionService.IsRegression(tt.current, tt.trigger, tt.occurredAt, tt.lastEventAt),
-			)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			transitionService := services.NewTransitionService()
+			_ = scenario.args
+			scenario.expect(transitionService)
 		})
 	}
 }

@@ -35,7 +35,7 @@ Run(ctx):
 
 `reconcileSale(s)` traduz uma sale em um pseudo-evento e roteia para o mesmo use case do webhook (mesmo `event_key`). Detalhes:
 
-- `s.status == "paid|approved"` → `ProcessSaleApproved` com `event_key = "compra_aprovada:" + s.id`.
+- `s.status == "paid|approved"` → `ProcessSaleApproved` com `event_key = "order_approved:" + s.id`.
 - `s.status == "refunded"` → `ProcessRefundOrChargeback` com `event_key = "refund:" + s.id`.
 - `s.status == "chargedback"` → `ProcessRefundOrChargeback` com `event_key = "refund:" + s.id`.
 - Outros status (`pending`, `processing`, etc.) → ignorados na reconciliação (MVP).

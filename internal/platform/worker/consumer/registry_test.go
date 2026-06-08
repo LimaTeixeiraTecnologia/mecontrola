@@ -12,62 +12,165 @@ import (
 
 type RegistrySuite struct {
 	suite.Suite
-	registry consumer.Registry
-}
-
-func (s *RegistrySuite) SetupTest() {
-	s.registry = consumer.NewRegistry()
 }
 
 func TestRegistrySuite(t *testing.T) {
 	suite.Run(t, new(RegistrySuite))
 }
 
-func (s *RegistrySuite) TestRegistrar_Sucesso() {
-	h := consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error { return nil })
-	err := s.registry.Register(consumer.Registration{Name: "test", EventType: "order.created", Handler: h})
-	s.NoError(err)
+func (s *RegistrySuite) SetupTest() {}
+
+func (s *RegistrySuite) TestRegister() {
+	type args struct {
+		registration consumer.Registration
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(consumer.Registry)
+		expect func(error)
+	}{
+		{
+			name: "deve registrar handler com sucesso",
+			args: args{
+				registration: consumer.Registration{
+					Name:      "test",
+					EventType: "order.created",
+					Handler:   consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error { return nil }),
+				},
+			},
+			setup: func(consumer.Registry) {},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve retornar erro quando handler for nil",
+			args: args{
+				registration: consumer.Registration{Name: "test", EventType: "order.created"},
+			},
+			setup: func(consumer.Registry) {},
+			expect: func(err error) {
+				s.Error(err)
+			},
+		},
+		{
+			name: "deve retornar erro quando event type ja existir",
+			args: args{
+				registration: consumer.Registration{
+					Name:      "test",
+					EventType: "order.created",
+					Handler:   consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error { return nil }),
+				},
+			},
+			setup: func(registry consumer.Registry) {
+				err := registry.Register(consumer.Registration{
+					Name:      "test",
+					EventType: "order.created",
+					Handler:   consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error { return nil }),
+				})
+				s.Require().NoError(err)
+			},
+			expect: func(err error) {
+				s.Error(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := consumer.NewRegistry()
+			scenario.setup(sut)
+
+			err := sut.Register(scenario.args.registration)
+
+			scenario.expect(err)
+		})
+	}
 }
 
-func (s *RegistrySuite) TestRegistrar_HandlerNil() {
-	err := s.registry.Register(consumer.Registration{Name: "test", EventType: "order.created", Handler: nil})
-	s.Error(err)
-}
+func (s *RegistrySuite) TestDispatch() {
+	type args struct {
+		eventType string
+		params    map[string]string
+		body      []byte
+	}
 
-func (s *RegistrySuite) TestRegistrar_EventTypeDuplicado() {
-	h := consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error { return nil })
-	reg := consumer.Registration{Name: "test", EventType: "order.created", Handler: h}
-	s.NoError(s.registry.Register(reg))
-	err := s.registry.Register(reg)
-	s.Error(err)
-}
+	type observed struct {
+		params map[string]string
+		body   []byte
+	}
 
-func (s *RegistrySuite) TestDespachar_Sucesso_ParamsBodyCorretos() {
-	var gotParams map[string]string
-	var gotBody []byte
-	h := consumer.HandlerFunc(func(_ context.Context, params map[string]string, body []byte) error {
-		gotParams = params
-		gotBody = body
-		return nil
-	})
-	s.NoError(s.registry.Register(consumer.Registration{Name: "t", EventType: "evt", Handler: h}))
-
-	err := s.registry.Dispatch(context.Background(), "evt", map[string]string{"k": "v"}, []byte("payload"))
-	s.NoError(err)
-	s.Equal(map[string]string{"k": "v"}, gotParams)
-	s.Equal([]byte("payload"), gotBody)
-}
-
-func (s *RegistrySuite) TestDespachar_EventTypeDesconhecido() {
-	err := s.registry.Dispatch(context.Background(), "nao-existe", nil, nil)
-	s.Error(err)
-}
-
-func (s *RegistrySuite) TestDespachar_PropagaErroDoHandler() {
 	sentinel := errors.New("handler error")
-	h := consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error { return sentinel })
-	s.NoError(s.registry.Register(consumer.Registration{Name: "t", EventType: "evt", Handler: h}))
 
-	err := s.registry.Dispatch(context.Background(), "evt", nil, nil)
-	s.ErrorIs(err, sentinel)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(consumer.Registry, *observed)
+		expect func(error, observed)
+	}{
+		{
+			name: "deve despachar params e body corretos",
+			args: args{
+				eventType: "evt",
+				params:    map[string]string{"k": "v"},
+				body:      []byte("payload"),
+			},
+			setup: func(registry consumer.Registry, state *observed) {
+				err := registry.Register(consumer.Registration{
+					Name:      "evt",
+					EventType: "evt",
+					Handler: consumer.HandlerFunc(func(_ context.Context, params map[string]string, body []byte) error {
+						state.params = params
+						state.body = body
+						return nil
+					}),
+				})
+				s.Require().NoError(err)
+			},
+			expect: func(err error, state observed) {
+				s.NoError(err)
+				s.Equal(map[string]string{"k": "v"}, state.params)
+				s.Equal([]byte("payload"), state.body)
+			},
+		},
+		{
+			name:  "deve retornar erro para event type desconhecido",
+			args:  args{eventType: "nao-existe"},
+			setup: func(consumer.Registry, *observed) {},
+			expect: func(err error, _ observed) {
+				s.Error(err)
+			},
+		},
+		{
+			name: "deve propagar erro do handler",
+			args: args{eventType: "evt"},
+			setup: func(registry consumer.Registry, _ *observed) {
+				err := registry.Register(consumer.Registration{
+					Name:      "evt",
+					EventType: "evt",
+					Handler: consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error {
+						return sentinel
+					}),
+				})
+				s.Require().NoError(err)
+			},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, sentinel)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			state := observed{}
+			sut := consumer.NewRegistry()
+			scenario.setup(sut, &state)
+
+			err := sut.Dispatch(context.Background(), scenario.args.eventType, scenario.args.params, scenario.args.body)
+
+			scenario.expect(err, state)
+		})
+	}
 }

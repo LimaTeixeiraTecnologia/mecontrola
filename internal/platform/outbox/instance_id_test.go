@@ -1,12 +1,12 @@
-package outbox
+package outbox_test
 
 import (
-	"fmt"
-	"os"
-	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 type InstanceIDSuite struct {
@@ -17,18 +17,54 @@ func TestInstanceID(t *testing.T) {
 	suite.Run(t, new(InstanceIDSuite))
 }
 
-func (s *InstanceIDSuite) TestNewInstanceID_ContainsHostAndPID() {
-	host, _ := os.Hostname()
-	pid := os.Getpid()
+func (s *InstanceIDSuite) SetupTest() {}
 
-	id := newInstanceID()
+func (s *InstanceIDSuite) TestNewEventGeneratesUniqueIDs() {
+	type args struct {
+		aggregateID string
+	}
 
-	s.True(strings.HasPrefix(id, host+"-"), "should start with hostname")
-	s.Contains(id, fmt.Sprintf("-%d-", pid), "should contain pid")
-}
+	scenarios := []struct {
+		name   string
+		args   []args
+		setup  func()
+		expect func([]outbox.Event, []error)
+	}{
+		{
+			name:  "deve gerar ids validos e unicos",
+			args:  []args{{aggregateID: "1"}, {aggregateID: "2"}},
+			setup: func() {},
+			expect: func(events []outbox.Event, errs []error) {
+				s.Require().NoError(errs[0])
+				s.Require().NoError(errs[1])
+				s.NotEqual(events[0].ID, events[1].ID)
+				_, firstErr := uuid.Parse(events[0].ID)
+				_, secondErr := uuid.Parse(events[1].ID)
+				s.NoError(firstErr)
+				s.NoError(secondErr)
+			},
+		},
+	}
 
-func (s *InstanceIDSuite) TestNewInstanceID_IsUnique() {
-	a := newInstanceID()
-	b := newInstanceID()
-	s.NotEqual(a, b)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.setup()
+
+			results := make([]outbox.Event, 0, len(scenario.args))
+			errs := make([]error, 0, len(scenario.args))
+			for _, arg := range scenario.args {
+				sut := outbox.NewEvent
+				event, err := sut(outbox.EventInput{
+					Type:          "test.event",
+					AggregateType: "aggregate",
+					AggregateID:   arg.aggregateID,
+					Payload:       []byte(`{}`),
+				})
+				results = append(results, event)
+				errs = append(errs, err)
+			}
+
+			scenario.expect(results, errs)
+		})
+	}
 }

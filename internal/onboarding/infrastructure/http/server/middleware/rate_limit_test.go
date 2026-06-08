@@ -5,112 +5,134 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 )
 
-func TestRateLimiter_AllowsUpToLimit(t *testing.T) {
-	rl := middleware.NewRateLimiter(10, 10, nil)
-	defer rl.Stop()
-
-	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	for range 10 {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = "1.2.3.4:1234"
-		rr := httptest.NewRecorder()
-		rl.Middleware(ok).ServeHTTP(rr, req)
-		assert.Equal(t, http.StatusOK, rr.Code)
-	}
+type RateLimitSuite struct {
+	suite.Suite
 }
 
-func TestRateLimiter_ThrottlesAfterLimit(t *testing.T) {
-	rl := middleware.NewRateLimiter(10, 10, nil)
-	defer rl.Stop()
-
-	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	for range 10 {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = "2.3.4.5:1234"
-		rr := httptest.NewRecorder()
-		rl.Middleware(ok).ServeHTTP(rr, req)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "2.3.4.5:1234"
-	rr := httptest.NewRecorder()
-	rl.Middleware(ok).ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusTooManyRequests, rr.Code)
+func TestRateLimitSuite(t *testing.T) {
+	suite.Run(t, new(RateLimitSuite))
 }
 
-func TestRateLimiter_DifferentIPsIndependent(t *testing.T) {
-	rl := middleware.NewRateLimiter(10, 10, nil)
-	defer rl.Stop()
+func (s *RateLimitSuite) SetupTest() {}
 
-	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	for range 10 {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = "10.0.0.1:1234"
-		rr := httptest.NewRecorder()
-		rl.Middleware(ok).ServeHTTP(rr, req)
+func (s *RateLimitSuite) TestRateLimiter() {
+	type args struct {
+		remoteAddrs    []string
+		trustedProxies []string
+		setHeaders     func(*http.Request)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "10.0.0.2:1234"
-	rr := httptest.NewRecorder()
-	rl.Middleware(ok).ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(*middleware.RateLimiter, http.Handler)
+	}{
+		{
+			name: "deve permitir ate o limite",
+			args: args{
+				remoteAddrs: []string{
+					"1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234",
+					"1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234",
+				},
+			},
+			expect: func(limiter *middleware.RateLimiter, next http.Handler) {
+				for _, remoteAddr := range []string{
+					"1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234",
+					"1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234", "1.2.3.4:1234",
+				} {
+					request := httptest.NewRequest(http.MethodGet, "/", nil)
+					request.RemoteAddr = remoteAddr
+					recorder := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(recorder, request)
+					s.Equal(http.StatusOK, recorder.Code)
+				}
+			},
+		},
+		{
+			name: "deve bloquear apos o limite",
+			args: args{},
+			expect: func(limiter *middleware.RateLimiter, next http.Handler) {
+				for range 10 {
+					request := httptest.NewRequest(http.MethodGet, "/", nil)
+					request.RemoteAddr = "2.3.4.5:1234"
+					recorder := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(recorder, request)
+				}
 
-func TestRateLimiter_TrustedProxy_XRealIP(t *testing.T) {
-	rl := middleware.NewRateLimiter(10, 10, []string{"127.0.0.1/32"})
-	defer rl.Stop()
+				request := httptest.NewRequest(http.MethodGet, "/", nil)
+				request.RemoteAddr = "2.3.4.5:1234"
+				recorder := httptest.NewRecorder()
+				limiter.Middleware(next).ServeHTTP(recorder, request)
+				s.Equal(http.StatusTooManyRequests, recorder.Code)
+			},
+		},
+		{
+			name: "deve tratar ips diferentes de forma independente",
+			args: args{},
+			expect: func(limiter *middleware.RateLimiter, next http.Handler) {
+				for range 10 {
+					request := httptest.NewRequest(http.MethodGet, "/", nil)
+					request.RemoteAddr = "10.0.0.1:1234"
+					recorder := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(recorder, request)
+				}
 
-	firstIP := ""
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+				request := httptest.NewRequest(http.MethodGet, "/", nil)
+				request.RemoteAddr = "10.0.0.2:1234"
+				recorder := httptest.NewRecorder()
+				limiter.Middleware(next).ServeHTTP(recorder, request)
+				s.Equal(http.StatusOK, recorder.Code)
+			},
+		},
+		{
+			name: "deve confiar em proxy autorizado com x-real-ip",
+			args: args{trustedProxies: []string{"127.0.0.1/32"}},
+			expect: func(limiter *middleware.RateLimiter, next http.Handler) {
+				request := httptest.NewRequest(http.MethodGet, "/", nil)
+				request.RemoteAddr = "127.0.0.1:1234"
+				request.Header.Set("X-Real-IP", "192.168.1.100")
+				recorder := httptest.NewRecorder()
+				limiter.Middleware(next).ServeHTTP(recorder, request)
+				s.Equal(http.StatusOK, recorder.Code)
+			},
+		},
+		{
+			name: "deve ignorar header em proxy nao confiavel",
+			args: args{trustedProxies: []string{"10.0.0.0/8"}},
+			expect: func(limiter *middleware.RateLimiter, next http.Handler) {
+				for range 10 {
+					request := httptest.NewRequest(http.MethodGet, "/", nil)
+					request.RemoteAddr = "192.168.1.1:1234"
+					request.Header.Set("X-Real-IP", "1.1.1.1")
+					recorder := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(recorder, request)
+				}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	req.Header.Set("X-Real-IP", "192.168.1.100")
-	rr := httptest.NewRecorder()
-	rl.Middleware(handler).ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusOK, rr.Code)
-	_ = firstIP
-}
-
-func TestRateLimiter_UntrustedProxy_IgnoresHeaders(t *testing.T) {
-	rl := middleware.NewRateLimiter(10, 10, []string{"10.0.0.0/8"})
-	defer rl.Stop()
-
-	requestCount := 0
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requestCount++
-		w.WriteHeader(http.StatusOK)
-	})
-
-	for range 10 {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = "192.168.1.1:1234"
-		req.Header.Set("X-Real-IP", "1.1.1.1")
-		rr := httptest.NewRecorder()
-		rl.Middleware(handler).ServeHTTP(rr, req)
+				request := httptest.NewRequest(http.MethodGet, "/", nil)
+				request.RemoteAddr = "192.168.1.1:1234"
+				request.Header.Set("X-Real-IP", "1.1.1.1")
+				recorder := httptest.NewRecorder()
+				limiter.Middleware(next).ServeHTTP(recorder, request)
+				s.Equal(http.StatusTooManyRequests, recorder.Code)
+			},
+		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "192.168.1.1:1234"
-	req.Header.Set("X-Real-IP", "1.1.1.1")
-	rr := httptest.NewRecorder()
-	rl.Middleware(handler).ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusTooManyRequests, rr.Code)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			limiter := middleware.NewRateLimiter(10, 10, scenario.args.trustedProxies)
+			defer limiter.Stop()
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			scenario.expect(limiter, next)
+		})
+	}
 }

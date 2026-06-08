@@ -1,6 +1,7 @@
 package valueobjects_test
 
 import (
+	"github.com/stretchr/testify/suite"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,50 +10,64 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
 )
 
-func TestNewFunnelToken(t *testing.T) {
-	t.Parallel()
+type FunnelTokenSuite struct {
+	suite.Suite
+}
 
-	tests := []struct {
-		name    string
-		raw     string
-		want    string
-		wantErr error
+func TestFunnelTokenSuite(t *testing.T) {
+	suite.Run(t, new(FunnelTokenSuite))
+}
+
+func (s *FunnelTokenSuite) SetupTest() {}
+
+func (s *FunnelTokenSuite) TestNewFunnelToken() {
+	type args struct {
+		raw string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(valueobjects.FunnelToken, error)
 	}{
 		{
-			name: "accepts valid token",
-			raw:  "token-123",
-			want: "token-123",
+			name: "deve aceitar token valido",
+			args: args{raw: "token-123"},
+			expect: func(token valueobjects.FunnelToken, err error) {
+				require.NoError(s.T(), err)
+				assert.Equal(s.T(), "token-123", token.String())
+			},
 		},
 		{
-			name: "trims spaces",
-			raw:  "  token-123  ",
-			want: "token-123",
+			name: "deve remover espacos nas extremidades",
+			args: args{raw: "  token-123  "},
+			expect: func(token valueobjects.FunnelToken, err error) {
+				require.NoError(s.T(), err)
+				assert.Equal(s.T(), "token-123", token.String())
+			},
 		},
 		{
-			name:    "rejects empty token",
-			raw:     "",
-			wantErr: valueobjects.ErrFunnelTokenEmpty,
+			name: "deve rejeitar token vazio",
+			args: args{raw: ""},
+			expect: func(token valueobjects.FunnelToken, err error) {
+				require.ErrorIs(s.T(), err, valueobjects.ErrFunnelTokenEmpty)
+				assert.Empty(s.T(), token.String())
+			},
 		},
 		{
-			name:    "rejects blank token",
-			raw:     "   ",
-			wantErr: valueobjects.ErrFunnelTokenEmpty,
+			name: "deve rejeitar token em branco",
+			args: args{raw: "   "},
+			expect: func(token valueobjects.FunnelToken, err error) {
+				require.ErrorIs(s.T(), err, valueobjects.ErrFunnelTokenEmpty)
+				assert.Empty(s.T(), token.String())
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			token, err := valueobjects.NewFunnelToken(tt.raw)
-			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, token.String())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			token, err := valueobjects.NewFunnelToken(scenario.args.raw)
+			scenario.expect(token, err)
 		})
 	}
 }

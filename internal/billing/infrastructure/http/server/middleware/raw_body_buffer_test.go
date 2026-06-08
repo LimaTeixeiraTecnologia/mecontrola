@@ -9,58 +9,85 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server/middleware"
 )
 
-func TestRawBody_StoresBodyInContext(t *testing.T) {
-	payload := `{"trigger":"compra_aprovada"}`
-	var captured []byte
-
-	handler := middleware.RawBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, ok := middleware.RawBodyFromContext(r)
-		require.True(t, ok)
-		captured = raw
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, []byte(payload), captured)
+type RawBodyBufferSuite struct {
+	suite.Suite
 }
 
-func TestRawBody_RejectsBodyExceedingLimit(t *testing.T) {
-	big := bytes.Repeat([]byte("x"), 256*1024+1)
-
-	handler := middleware.RawBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("next handler must not be called for oversized body")
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(big))
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
+func TestRawBodyBufferSuite(t *testing.T) {
+	suite.Run(t, new(RawBodyBufferSuite))
 }
 
-func TestRawBody_AcceptsBodyAtExactLimit(t *testing.T) {
-	exact := bytes.Repeat([]byte("x"), 256*1024)
-	var captured []byte
+func (s *RawBodyBufferSuite) SetupTest() {}
 
-	handler := middleware.RawBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, ok := middleware.RawBodyFromContext(r)
-		require.True(t, ok)
-		captured = raw
-		w.WriteHeader(http.StatusOK)
-	}))
+func (s *RawBodyBufferSuite) TestRawBody() {
+	scenarios := []struct {
+		name         string
+		body         []byte
+		bodyReader   func([]byte) *bytes.Reader
+		expectStatus int
+		expect       func(*httptest.ResponseRecorder, []byte)
+	}{
+		{
+			name:         "deve armazenar o corpo no contexto",
+			body:         []byte(`{"trigger":"compra_aprovada"}`),
+			bodyReader:   bytes.NewReader,
+			expectStatus: http.StatusOK,
+			expect: func(rr *httptest.ResponseRecorder, captured []byte) {
+				assert.Equal(s.T(), []byte(`{"trigger":"compra_aprovada"}`), captured)
+			},
+		},
+		{
+			name:         "deve rejeitar corpo acima do limite",
+			body:         bytes.Repeat([]byte("x"), 256*1024+1),
+			bodyReader:   bytes.NewReader,
+			expectStatus: http.StatusRequestEntityTooLarge,
+			expect: func(rr *httptest.ResponseRecorder, captured []byte) {
+				assert.Nil(s.T(), captured)
+			},
+		},
+		{
+			name:         "deve aceitar corpo no limite exato",
+			body:         bytes.Repeat([]byte("x"), 256*1024),
+			bodyReader:   bytes.NewReader,
+			expectStatus: http.StatusOK,
+			expect: func(rr *httptest.ResponseRecorder, captured []byte) {
+				assert.Len(s.T(), captured, 256*1024)
+			},
+		},
+	}
 
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(exact))
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			var captured []byte
 
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Len(t, captured, 256*1024)
+			handler := middleware.RawBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, ok := middleware.RawBodyFromContext(r)
+				require.True(s.T(), ok)
+				captured = raw
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			if scenario.expectStatus == http.StatusRequestEntityTooLarge {
+				handler = middleware.RawBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					s.T().Error("next handler must not be called for oversized body")
+				}))
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/", scenario.bodyReader(scenario.body))
+			if strings.HasPrefix(string(scenario.body), "{") {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(s.T(), scenario.expectStatus, rr.Code)
+			scenario.expect(rr, captured)
+		})
+	}
 }

@@ -49,6 +49,8 @@ func TestOutboxProducerIntegSuite(t *testing.T) {
 	suite.Run(t, new(OutboxProducerIntegSuite))
 }
 
+func (s *OutboxProducerIntegSuite) SetupTest() {}
+
 func (s *OutboxProducerIntegSuite) SetupSuite() {
 	ctx := context.Background()
 
@@ -134,28 +136,33 @@ func (s *OutboxProducerIntegSuite) seedKiwifyProductID(ctx context.Context) {
 }
 
 func (s *OutboxProducerIntegSuite) TestRF10_OutboxRowCreatedTransactionallyOnProcessSaleApproved() {
-	ctx := context.Background()
-
-	saleID := fmt.Sprintf("sale-integ-%d", time.Now().UnixNano())
-	orderID := fmt.Sprintf("order-integ-%d", time.Now().UnixNano())
-
-	in := input.ProcessSaleApprovedInput{
-		EnvelopeID:      fmt.Sprintf("env-%d", time.Now().UnixNano()),
-		SaleID:          saleID,
-		KiwifyProductID: s.kiwifyProductID,
-		OrderID:         orderID,
-		FunnelToken:     "token-integ-001",
-		OccurredAt:      time.Now().UTC().Truncate(time.Millisecond),
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve criar a linha de outbox transacionalmente"},
 	}
 
-	err := s.processSaleUC.Execute(ctx, in)
-	s.Require().NoError(err)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			saleID := fmt.Sprintf("sale-integ-%d", time.Now().UnixNano())
+			orderID := fmt.Sprintf("order-integ-%d", time.Now().UnixNano())
+			in := input.ProcessSaleApprovedInput{
+				EnvelopeID:      fmt.Sprintf("env-%d", time.Now().UnixNano()),
+				SaleID:          saleID,
+				KiwifyProductID: s.kiwifyProductID,
+				OrderID:         orderID,
+				FunnelToken:     "token-integ-001",
+				OccurredAt:      time.Now().UTC().Truncate(time.Millisecond),
+			}
 
-	var count int
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`,
-		producers.EventTypeSubscriptionActivated,
-	)
-	s.Require().NoError(row.Scan(&count))
-	s.Equal(1, count, "expected exactly 1 outbox row with event_type billing.subscription.activated")
+			err := s.processSaleUC.Execute(ctx, in)
+			s.Require().NoError(err)
+
+			var count int
+			row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
+			s.Require().NoError(row.Scan(&count))
+			s.Equal(1, count, "expected exactly 1 outbox row with event_type billing.subscription.activated")
+		})
+	}
 }

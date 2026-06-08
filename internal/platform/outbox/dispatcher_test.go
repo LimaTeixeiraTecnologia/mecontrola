@@ -15,47 +15,39 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	eventsmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
-type fakeHandler struct {
-	err error
-}
-
-func (f *fakeHandler) Handle(_ context.Context, _ events.Event) error { return f.err }
-
-type fakeRegistry struct {
-	handlers []events.Handler
-}
-
-func (f *fakeRegistry) HandlersOf(_ string) []events.Handler { return f.handlers }
-
 type noopLogger struct{}
 
-func (noopLogger) Debug(_ context.Context, _ string, _ ...observability.Field) {}
-func (noopLogger) Info(_ context.Context, _ string, _ ...observability.Field)  {}
-func (noopLogger) Warn(_ context.Context, _ string, _ ...observability.Field)  {}
-func (noopLogger) Error(_ context.Context, _ string, _ ...observability.Field) {}
-func (noopLogger) With(_ ...observability.Field) observability.Logger          { return noopLogger{} }
+func (noopLogger) Debug(context.Context, string, ...observability.Field) {}
+func (noopLogger) Info(context.Context, string, ...observability.Field)  {}
+func (noopLogger) Warn(context.Context, string, ...observability.Field)  {}
+func (noopLogger) Error(context.Context, string, ...observability.Field) {}
+func (noopLogger) With(...observability.Field) observability.Logger      { return noopLogger{} }
 
-type fakeUoWRows struct {
+type unitOfWorkRows struct {
 	err error
 }
 
-func (f *fakeUoWRows) Do(ctx context.Context, fn func(context.Context, database.DBTX) ([]outbox.Row, error), _ ...uow.Option) ([]outbox.Row, error) {
+func (f *unitOfWorkRows) Do(ctx context.Context, fn func(context.Context, database.DBTX) ([]outbox.Row, error), _ ...uow.Option) ([]outbox.Row, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return fn(ctx, nil)
 }
 
+type unitOfWorkVoid struct{}
+
+func (f *unitOfWorkVoid) Do(ctx context.Context, fn func(context.Context, database.DBTX) (struct{}, error), _ ...uow.Option) (struct{}, error) {
+	return fn(ctx, nil)
+}
+
 type DispatcherSuite struct {
 	suite.Suite
-	storage  *outboxmocks.Storage
-	factory  *outboxmocks.OutboxRepositoryFactory
-	registry *fakeRegistry
-	cfg      configs.OutboxConfig
+	cfg configs.OutboxConfig
 }
 
 func TestDispatcher(t *testing.T) {
@@ -63,9 +55,6 @@ func TestDispatcher(t *testing.T) {
 }
 
 func (s *DispatcherSuite) SetupTest() {
-	s.storage = outboxmocks.NewStorage(s.T())
-	s.factory = outboxmocks.NewOutboxRepositoryFactory(s.T())
-	s.registry = &fakeRegistry{}
 	s.cfg = configs.OutboxConfig{
 		DispatcherBatchSize:      3,
 		DispatcherHandlerTimeout: 5 * time.Second,
@@ -76,121 +65,213 @@ func (s *DispatcherSuite) SetupTest() {
 }
 
 func (s *DispatcherSuite) makeRow(attempts, maxAttempts int) outbox.Row {
-	evt, _ := outbox.NewEvent(outbox.EventInput{
+	event, err := outbox.NewEvent(outbox.EventInput{
 		Type:          "test.event",
 		AggregateType: "A",
 		AggregateID:   "1",
 		Payload:       []byte(`{}`),
 	})
-	return outbox.Row{Event: evt, Attempts: attempts, MaxAttempts: maxAttempts}
+	s.Require().NoError(err)
+	return outbox.Row{Event: event, Attempts: attempts, MaxAttempts: maxAttempts}
 }
 
-func (s *DispatcherSuite) newJob() *outbox.DispatcherJob {
-	fakeUoW := &fakeUoWRows{}
-	return outbox.NewDispatcherJob(fakeUoW, s.factory, s.registry, s.cfg, noopLogger{}, rand.New(rand.NewSource(42)))
-}
+func (s *DispatcherSuite) TestRun() {
+	type args struct {
+		ctx context.Context
+		row outbox.Row
+	}
 
-func (s *DispatcherSuite) TestRun_Sucesso_1Handler() {
-	row := s.makeRow(0, 15)
-	s.registry.handlers = []events.Handler{&fakeHandler{}}
+	type dependencies struct {
+		storage  *outboxmocks.Storage
+		factory  *outboxmocks.OutboxRepositoryFactory
+		registry *outboxmocks.Registry
+	}
 
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil)
-	s.storage.EXPECT().MarkPublished(mock.Anything, row.ID).Return(nil)
-
-	err := s.newJob().Run(context.Background())
-	s.NoError(err)
-}
-
-func (s *DispatcherSuite) TestRun_Sucesso_3Handlers() {
-	row := s.makeRow(0, 15)
-	s.registry.handlers = []events.Handler{&fakeHandler{}, &fakeHandler{}, &fakeHandler{}}
-
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil)
-	s.storage.EXPECT().MarkPublished(mock.Anything, row.ID).Return(nil)
-
-	err := s.newJob().Run(context.Background())
-	s.NoError(err)
-}
-
-func (s *DispatcherSuite) TestRun_FalhaParcial_RetryComBackoff() {
-	row := s.makeRow(0, 15)
 	handlerErr := errors.New("handler failed")
-	s.registry.handlers = []events.Handler{&fakeHandler{}, &fakeHandler{err: handlerErr}, &fakeHandler{}}
 
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil)
-	s.storage.EXPECT().MarkPendingRetry(
-		mock.Anything, row.ID, handlerErr.Error(), mock.AnythingOfType("time.Time"),
-	).Return(nil)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(args) dependencies
+		expect func(error)
+	}{
+		{
+			name: "deve publicar evento com um handler",
+			args: args{ctx: context.Background(), row: s.makeRow(0, 15)},
+			setup: func(input args) dependencies {
+				storage := outboxmocks.NewStorage(s.T())
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+				handler := eventsmocks.NewHandler(s.T())
 
-	err := s.newJob().Run(context.Background())
-	s.NoError(err)
+				handler.EXPECT().Handle(mock.Anything, mock.Anything).Return(nil).Once()
+				registry.EXPECT().HandlersOf("test.event").Return([]events.Handler{handler}).Once()
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{input.row}, nil).Once()
+				storage.EXPECT().MarkPublished(mock.Anything, input.row.ID).Return(nil).Once()
+
+				return dependencies{storage: storage, factory: factory, registry: registry}
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve publicar evento com multiplos handlers",
+			args: args{ctx: context.Background(), row: s.makeRow(0, 15)},
+			setup: func(input args) dependencies {
+				storage := outboxmocks.NewStorage(s.T())
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+				handlers := make([]events.Handler, 0, 3)
+				for range 3 {
+					handler := eventsmocks.NewHandler(s.T())
+					handler.EXPECT().Handle(mock.Anything, mock.Anything).Return(nil).Once()
+					handlers = append(handlers, handler)
+				}
+
+				registry.EXPECT().HandlersOf("test.event").Return(handlers).Once()
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{input.row}, nil).Once()
+				storage.EXPECT().MarkPublished(mock.Anything, input.row.ID).Return(nil).Once()
+
+				return dependencies{storage: storage, factory: factory, registry: registry}
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve reagendar retry em falha parcial",
+			args: args{ctx: context.Background(), row: s.makeRow(0, 15)},
+			setup: func(input args) dependencies {
+				storage := outboxmocks.NewStorage(s.T())
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+
+				successHandler := eventsmocks.NewHandler(s.T())
+				successHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(nil).Once()
+				failingHandler := eventsmocks.NewHandler(s.T())
+				failingHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(handlerErr).Once()
+
+				registry.EXPECT().HandlersOf("test.event").Return([]events.Handler{successHandler, failingHandler}).Once()
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{input.row}, nil).Once()
+				storage.EXPECT().MarkPendingRetry(mock.Anything, input.row.ID, handlerErr.Error(), mock.AnythingOfType("time.Time")).Return(nil).Once()
+
+				return dependencies{storage: storage, factory: factory, registry: registry}
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve marcar evento como falho ao atingir max attempts",
+			args: args{ctx: context.Background(), row: s.makeRow(14, 15)},
+			setup: func(input args) dependencies {
+				storage := outboxmocks.NewStorage(s.T())
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+				handler := eventsmocks.NewHandler(s.T())
+
+				handler.EXPECT().Handle(mock.Anything, mock.Anything).Return(handlerErr).Once()
+				registry.EXPECT().HandlersOf("test.event").Return([]events.Handler{handler}).Once()
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{input.row}, nil).Once()
+				storage.EXPECT().MarkFailed(mock.Anything, input.row.ID, handlerErr.Error()).Return(nil).Once()
+
+				return dependencies{storage: storage, factory: factory, registry: registry}
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve marcar falha quando nao houver handlers",
+			args: args{ctx: context.Background(), row: s.makeRow(0, 15)},
+			setup: func(input args) dependencies {
+				storage := outboxmocks.NewStorage(s.T())
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+
+				registry.EXPECT().HandlersOf("test.event").Return(nil).Once()
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{input.row}, nil).Once()
+				storage.EXPECT().MarkFailed(mock.Anything, input.row.ID, "no handlers registered").Return(nil).Once()
+
+				return dependencies{storage: storage, factory: factory, registry: registry}
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve abortar quando contexto estiver cancelado",
+			args: func() args {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return args{ctx: ctx, row: s.makeRow(0, 15)}
+			}(),
+			setup: func(input args) dependencies {
+				storage := outboxmocks.NewStorage(s.T())
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+				handler := eventsmocks.NewHandler(s.T())
+
+				registry.EXPECT().HandlersOf("test.event").Return([]events.Handler{handler}).Once()
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{input.row}, nil).Once()
+
+				return dependencies{storage: storage, factory: factory, registry: registry}
+			},
+			expect: func(err error) { s.ErrorIs(err, context.Canceled) },
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := scenario.setup(scenario.args)
+			sut := outbox.NewDispatcherJob(&unitOfWorkRows{}, deps.factory, deps.registry, s.cfg, noopLogger{}, rand.New(rand.NewSource(42)))
+
+			err := sut.Run(scenario.args.ctx)
+
+			scenario.expect(err)
+		})
+	}
 }
 
-func (s *DispatcherSuite) TestRun_MaxAttempts_MarkFailed() {
-	row := s.makeRow(14, 15)
-	handlerErr := errors.New("fatal handler")
-	s.registry.handlers = []events.Handler{&fakeHandler{err: handlerErr}}
+func (s *DispatcherSuite) TestCalcBackoff() {
+	type args struct {
+		attempt int
+		seed    int64
+	}
 
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil)
-	s.storage.EXPECT().MarkFailed(mock.Anything, row.ID, handlerErr.Error()).Return(nil)
+	scenarios := []struct {
+		name   string
+		args   []args
+		setup  func()
+		expect func([]time.Duration)
+	}{
+		{
+			name:  "deve crescer exponencialmente",
+			args:  []args{{attempt: 0, seed: 0}, {attempt: 1, seed: 0}, {attempt: 2, seed: 0}},
+			setup: func() {},
+			expect: func(results []time.Duration) {
+				s.Greater(results[1], results[0])
+				s.Greater(results[2], results[1])
+			},
+		},
+		{
+			name:  "deve aplicar jitter por seed",
+			args:  []args{{attempt: 3, seed: 1}, {attempt: 3, seed: 2}},
+			setup: func() {},
+			expect: func(results []time.Duration) {
+				s.NotEqual(results[0], results[1])
+			},
+		},
+	}
 
-	err := s.newJob().Run(context.Background())
-	s.NoError(err)
-}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.setup()
 
-func (s *DispatcherSuite) TestRun_ZeroHandlers_MarkFailed() {
-	row := s.makeRow(0, 15)
-	s.registry.handlers = nil
+			results := make([]time.Duration, 0, len(scenario.args))
+			for _, arg := range scenario.args {
+				sut := outbox.NewDispatcherJob(&unitOfWorkRows{}, outboxmocks.NewOutboxRepositoryFactory(s.T()), outboxmocks.NewRegistry(s.T()), s.cfg, noopLogger{}, rand.New(rand.NewSource(arg.seed)))
+				results = append(results, sut.CalcBackoff(arg.attempt))
+			}
 
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil)
-	s.storage.EXPECT().MarkFailed(mock.Anything, row.ID, "no handlers registered").Return(nil)
-
-	err := s.newJob().Run(context.Background())
-	s.NoError(err)
-}
-
-func (s *DispatcherSuite) TestRun_CtxCancelado_AbortaSemPanic() {
-	row := s.makeRow(0, 15)
-	s.registry.handlers = []events.Handler{&fakeHandler{}}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil)
-
-	err := s.newJob().Run(ctx)
-	s.ErrorIs(err, context.Canceled)
-}
-
-func (s *DispatcherSuite) TestBackoff_CresceExponencialmente() {
-	rng := rand.New(rand.NewSource(0))
-	fakeUoW := &fakeUoWRows{}
-	d := outbox.NewDispatcherJob(fakeUoW, s.factory, s.registry, s.cfg, noopLogger{}, rng)
-
-	b0 := d.CalcBackoff(0)
-	b1 := d.CalcBackoff(1)
-	b2 := d.CalcBackoff(2)
-
-	s.Greater(int64(b1), int64(b0), "backoff 1 deve ser maior que 0")
-	s.Greater(int64(b2), int64(b1), "backoff 2 deve ser maior que 1")
-}
-
-func (s *DispatcherSuite) TestBackoff_JitterAplicado() {
-	rng1 := rand.New(rand.NewSource(1))
-	rng2 := rand.New(rand.NewSource(2))
-
-	fakeUoW := &fakeUoWRows{}
-	d1 := outbox.NewDispatcherJob(fakeUoW, s.factory, s.registry, s.cfg, noopLogger{}, rng1)
-	d2 := outbox.NewDispatcherJob(fakeUoW, s.factory, s.registry, s.cfg, noopLogger{}, rng2)
-
-	b1 := d1.CalcBackoff(3)
-	b2 := d2.CalcBackoff(3)
-
-	s.NotEqual(b1, b2, "jitters diferentes devem produzir durações diferentes")
+			scenario.expect(results)
+		})
+	}
 }

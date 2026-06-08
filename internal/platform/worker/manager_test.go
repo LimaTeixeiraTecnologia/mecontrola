@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
+	workermocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/mocks"
 )
 
 type ManagerSuite struct {
@@ -21,118 +23,250 @@ func TestManagerSuite(t *testing.T) {
 	suite.Run(t, new(ManagerSuite))
 }
 
-func (s *ManagerSuite) TestStartStop_Sucesso() {
-	cfg := worker.Config{ShutdownTimeout: 5 * time.Second}
-	j := &fakeJob{name: "job1"}
-	c := newFakeConsumer("consumer1")
+func (s *ManagerSuite) SetupTest() {}
 
-	m := worker.NewManager(cfg, []worker.Job{j}, []worker.Consumer{c}, noopLogger())
+func (s *ManagerSuite) TestStart() {
+	type args struct {
+		ctx context.Context
+		cfg worker.Config
+	}
 
-	err := m.Start(context.Background())
-	s.NoError(err)
+	type dependencies struct {
+		jobs      []worker.Job
+		consumers []worker.Consumer
+		started   chan struct{}
+	}
 
-	time.Sleep(50 * time.Millisecond)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func() dependencies
+		expect func(*worker.Manager, dependencies, error)
+	}{
+		{
+			name: "deve iniciar e parar com sucesso",
+			args: args{
+				ctx: context.Background(),
+				cfg: worker.Config{ShutdownTimeout: 5 * time.Second},
+			},
+			setup: func() dependencies {
+				jobMock := workermocks.NewJob(s.T())
+				consumerMock := workermocks.NewConsumer(s.T())
+				started := make(chan struct{}, 1)
 
-	err = m.Stop(context.Background())
-	s.NoError(err)
-}
+				jobMock.EXPECT().Name().Return("job1").Times(3)
+				jobMock.EXPECT().Schedule().Return("@every 1h").Once()
 
-func (s *ManagerSuite) TestStart_NomeDuplicadoEmJobs() {
-	cfg := worker.Config{ShutdownTimeout: 5 * time.Second}
-	j1 := &fakeJob{name: "mesmo"}
-	j2 := &fakeJob{name: "mesmo"}
+				consumerMock.EXPECT().Name().Return("consumer1").Twice()
+				consumerMock.EXPECT().Start(mock.Anything).RunAndReturn(func(ctx context.Context) error {
+					select {
+					case started <- struct{}{}:
+					default:
+					}
+					<-ctx.Done()
+					return nil
+				}).Once()
+				consumerMock.EXPECT().Stop(mock.Anything).Return(nil).Once()
 
-	m := worker.NewManager(cfg, []worker.Job{j1, j2}, nil, noopLogger())
-	err := m.Start(context.Background())
-	s.Error(err)
-}
+				return dependencies{
+					jobs:      []worker.Job{jobMock},
+					consumers: []worker.Consumer{consumerMock},
+					started:   started,
+				}
+			},
+			expect: func(manager *worker.Manager, deps dependencies, err error) {
+				s.NoError(err)
+				select {
+				case <-deps.started:
+				case <-time.After(2 * time.Second):
+					s.FailNow("consumer nao iniciou dentro do prazo")
+				}
+				s.NoError(manager.Stop(context.Background()))
+			},
+		},
+		{
+			name: "deve retornar erro para nomes duplicados em jobs",
+			args: args{
+				ctx: context.Background(),
+				cfg: worker.Config{ShutdownTimeout: 5 * time.Second},
+			},
+			setup: func() dependencies {
+				firstJob := workermocks.NewJob(s.T())
+				secondJob := workermocks.NewJob(s.T())
 
-func (s *ManagerSuite) TestStart_NomeDuplicadoEmConsumers() {
-	cfg := worker.Config{ShutdownTimeout: 5 * time.Second}
-	c1 := newFakeConsumer("mesmo")
-	c2 := newFakeConsumer("mesmo")
+				firstJob.EXPECT().Name().Return("mesmo").Twice()
+				secondJob.EXPECT().Name().Return("mesmo").Twice()
 
-	m := worker.NewManager(cfg, nil, []worker.Consumer{c1, c2}, noopLogger())
-	err := m.Start(context.Background())
-	s.Error(err)
-}
+				return dependencies{jobs: []worker.Job{firstJob, secondJob}}
+			},
+			expect: func(_ *worker.Manager, _ dependencies, err error) {
+				s.Error(err)
+			},
+		},
+		{
+			name: "deve retornar erro para nomes duplicados em consumers",
+			args: args{
+				ctx: context.Background(),
+				cfg: worker.Config{ShutdownTimeout: 5 * time.Second},
+			},
+			setup: func() dependencies {
+				firstConsumer := workermocks.NewConsumer(s.T())
+				secondConsumer := workermocks.NewConsumer(s.T())
 
-func (s *ManagerSuite) TestStop_ChamamConsumersStop() {
-	cfg := worker.Config{ShutdownTimeout: 5 * time.Second}
-	c := newFakeConsumer("c1")
+				firstConsumer.EXPECT().Name().Return("mesmo").Twice()
+				secondConsumer.EXPECT().Name().Return("mesmo").Twice()
 
-	m := worker.NewManager(cfg, nil, []worker.Consumer{c}, noopLogger())
-	err := m.Start(context.Background())
-	s.NoError(err)
+				return dependencies{consumers: []worker.Consumer{firstConsumer, secondConsumer}}
+			},
+			expect: func(_ *worker.Manager, _ dependencies, err error) {
+				s.Error(err)
+			},
+		},
+	}
 
-	time.Sleep(30 * time.Millisecond)
-
-	err = m.Stop(context.Background())
-	s.NoError(err)
-
-	select {
-	case <-c.stopped:
-	case <-time.After(2 * time.Second):
-		s.Fail("consumer.Stop não foi chamado")
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := scenario.setup()
+			sut := worker.NewManager(scenario.args.cfg, deps.jobs, deps.consumers, noopLogger())
+			err := sut.Start(scenario.args.ctx)
+			scenario.expect(sut, deps, err)
+		})
 	}
 }
 
-func (s *ManagerSuite) TestSemGoroutineLeak() {
-	before := runtime.NumGoroutine()
+func (s *ManagerSuite) TestStop() {
+	type args struct {
+		ctx context.Context
+		cfg worker.Config
+	}
 
-	cfg := worker.Config{ShutdownTimeout: 5 * time.Second}
-	c := newFakeConsumer("c1")
-	m := worker.NewManager(cfg, nil, []worker.Consumer{c}, noopLogger())
+	type dependencies struct {
+		consumers []worker.Consumer
+		started   chan struct{}
+		stopped   chan struct{}
+	}
 
-	err := m.Start(context.Background())
-	s.NoError(err)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func() dependencies
+		expect func(*worker.Manager, dependencies, error)
+	}{
+		{
+			name: "deve chamar stop dos consumers",
+			args: args{
+				ctx: context.Background(),
+				cfg: worker.Config{ShutdownTimeout: 5 * time.Second},
+			},
+			setup: func() dependencies {
+				consumerMock := workermocks.NewConsumer(s.T())
+				started := make(chan struct{}, 1)
+				stopped := make(chan struct{}, 1)
 
-	err = m.Stop(context.Background())
-	s.NoError(err)
+				consumerMock.EXPECT().Name().Return("consumer1").Twice()
+				consumerMock.EXPECT().Start(mock.Anything).RunAndReturn(func(ctx context.Context) error {
+					select {
+					case started <- struct{}{}:
+					default:
+					}
+					<-ctx.Done()
+					return nil
+				}).Once()
+				consumerMock.EXPECT().Stop(mock.Anything).RunAndReturn(func(context.Context) error {
+					select {
+					case stopped <- struct{}{}:
+					default:
+					}
+					return nil
+				}).Once()
 
-	time.Sleep(100 * time.Millisecond)
-	after := runtime.NumGoroutine()
-	s.LessOrEqual(after, before+2)
-}
+				return dependencies{
+					consumers: []worker.Consumer{consumerMock},
+					started:   started,
+					stopped:   stopped,
+				}
+			},
+			expect: func(manager *worker.Manager, deps dependencies, err error) {
+				s.NoError(err)
+				select {
+				case <-deps.started:
+				case <-time.After(2 * time.Second):
+					s.FailNow("consumer nao iniciou dentro do prazo")
+				}
 
-type fakeJob struct{ name string }
+				s.NoError(manager.Stop(context.Background()))
 
-func (j *fakeJob) Name() string                { return j.name }
-func (j *fakeJob) Schedule() string            { return "@every 1h" }
-func (j *fakeJob) Run(_ context.Context) error { return nil }
+				select {
+				case <-deps.stopped:
+				case <-time.After(2 * time.Second):
+					s.FailNow("consumer stop nao foi chamado")
+				}
+			},
+		},
+	}
 
-type fakeConsumer struct {
-	name    string
-	started chan struct{}
-	stopped chan struct{}
-}
-
-func newFakeConsumer(name string) *fakeConsumer {
-	return &fakeConsumer{
-		name:    name,
-		started: make(chan struct{}),
-		stopped: make(chan struct{}, 1),
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := scenario.setup()
+			sut := worker.NewManager(scenario.args.cfg, nil, deps.consumers, noopLogger())
+			err := sut.Start(scenario.args.ctx)
+			scenario.expect(sut, deps, err)
+		})
 	}
 }
 
-func (c *fakeConsumer) Name() string       { return c.name }
-func (c *fakeConsumer) Technology() string { return "fake" }
-
-func (c *fakeConsumer) Start(ctx context.Context) error {
-	select {
-	case c.started <- struct{}{}:
-	default:
+func (s *ManagerSuite) TestNoGoroutineLeak() {
+	type args struct {
+		cfg worker.Config
 	}
-	<-ctx.Done()
-	return nil
-}
 
-func (c *fakeConsumer) Stop(_ context.Context) error {
-	select {
-	case c.stopped <- struct{}{}:
-	default:
+	type dependencies struct {
+		consumers []worker.Consumer
 	}
-	return nil
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func() dependencies
+		expect func(int, int, error)
+	}{
+		{
+			name: "deve encerrar sem leak relevante de goroutines",
+			args: args{cfg: worker.Config{ShutdownTimeout: 5 * time.Second}},
+			setup: func() dependencies {
+				consumerMock := workermocks.NewConsumer(s.T())
+				consumerMock.EXPECT().Name().Return("consumer1").Twice()
+				consumerMock.EXPECT().Start(mock.Anything).RunAndReturn(func(ctx context.Context) error {
+					<-ctx.Done()
+					return nil
+				}).Once()
+				consumerMock.EXPECT().Stop(mock.Anything).Return(nil).Once()
+
+				return dependencies{consumers: []worker.Consumer{consumerMock}}
+			},
+			expect: func(before int, after int, err error) {
+				s.NoError(err)
+				s.LessOrEqual(after, before+2)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := scenario.setup()
+			before := runtime.NumGoroutine()
+
+			sut := worker.NewManager(scenario.args.cfg, nil, deps.consumers, noopLogger())
+			err := sut.Start(context.Background())
+			s.Require().NoError(err)
+			err = sut.Stop(context.Background())
+
+			time.Sleep(100 * time.Millisecond)
+			after := runtime.NumGoroutine()
+
+			scenario.expect(before, after, err)
+		})
+	}
 }
 
 func noopLogger() *slog.Logger {

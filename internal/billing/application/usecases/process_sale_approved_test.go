@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
+	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -20,13 +20,13 @@ import (
 
 type ProcessSaleApprovedSuite struct {
 	suite.Suite
+	ctx           context.Context
 	uowMock       *mocks.UnitOfWorkSubscription
 	factoryMock   *mocks.RepositoryFactory
 	subRepoMock   *mocks.SubscriptionRepository
 	eventRepoMock *mocks.ProcessedEventRepository
 	planRepoMock  *mocks.PlanRepository
 	publisherMock *mocks.SubscriptionEventPublisher
-	uc            *usecases.ProcessSaleApproved
 }
 
 func TestProcessSaleApproved(t *testing.T) {
@@ -34,13 +34,13 @@ func TestProcessSaleApproved(t *testing.T) {
 }
 
 func (s *ProcessSaleApprovedSuite) SetupTest() {
+	s.ctx = context.Background()
 	s.uowMock = mocks.NewUnitOfWorkSubscription(s.T())
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
 	s.subRepoMock = mocks.NewSubscriptionRepository(s.T())
 	s.eventRepoMock = mocks.NewProcessedEventRepository(s.T())
 	s.planRepoMock = mocks.NewPlanRepository(s.T())
 	s.publisherMock = mocks.NewSubscriptionEventPublisher(s.T())
-	s.uc = usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 }
 
 func (s *ProcessSaleApprovedSuite) validPlan() valueobjects.Plan {
@@ -64,112 +64,270 @@ func (s *ProcessSaleApprovedSuite) validInput() input.ProcessSaleApprovedInput {
 
 func (s *ProcessSaleApprovedSuite) hydrateSub() entities.Subscription {
 	plan := s.validPlan()
-	ft, err := valueobjects.NewFunnelToken("token-abc")
+	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	return entities.Hydrate("sub-001", ft, plan, valueobjects.StatusActive,
-		time.Now().UTC(), time.Now().UTC().Add(30*24*time.Hour), time.Time{}, time.Now().UTC())
+	now := time.Now().UTC()
+	return entities.Hydrate(
+		"sub-001",
+		funnelToken,
+		plan,
+		valueobjects.StatusActive,
+		now,
+		now.Add(30*24*time.Hour),
+		time.Time{},
+		now,
+	)
 }
 
 func (s *ProcessSaleApprovedSuite) hydrateSubNoToken() entities.Subscription {
 	plan := s.validPlan()
-	return entities.Hydrate("sub-002", valueobjects.FunnelToken{}, plan, valueobjects.StatusActive,
-		time.Now().UTC(), time.Now().UTC().Add(30*24*time.Hour), time.Time{}, time.Now().UTC())
+	now := time.Now().UTC()
+	return entities.Hydrate(
+		"sub-002",
+		valueobjects.FunnelToken{},
+		plan,
+		valueobjects.StatusActive,
+		now,
+		now.Add(30*24*time.Hour),
+		time.Time{},
+		now,
+	)
 }
 
-func (s *ProcessSaleApprovedSuite) TestSucessoCriaNovaSub() {
-	in := s.validInput()
-	sub := s.hydrateSub()
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", in.OccurredAt).Return(nil)
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(s.validPlan(), nil)
-	s.subRepoMock.On("UpsertByOrder", mock.Anything, "order-001", mock.Anything, mock.Anything).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
-	s.publisherMock.On("PublishActivated", mock.Anything, mock.Anything, mock.Anything, "sub-001", "token-abc", "+5511999999999", "test@example.com", "sale-001").Return(nil)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().NoError(err)
+func (s *ProcessSaleApprovedSuite) expectRepositories(times int) {
+	s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(times)
+	s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Times(times)
+	s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(times)
 }
 
-func (s *ProcessSaleApprovedSuite) TestFunnelTokenVazioPublicaWithoutToken() {
-	in := s.validInput()
-	in.FunnelToken = ""
-	sub := s.hydrateSubNoToken()
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", in.OccurredAt).Return(nil)
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(s.validPlan(), nil)
-	s.subRepoMock.On("UpsertByOrder", mock.Anything, "order-001", mock.Anything, mock.Anything).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
-	s.publisherMock.On("PublishActivatedWithoutToken", mock.Anything, mock.Anything, mock.Anything, "sub-002", "+5511999999999", "test@example.com", "sale-001").Return(nil)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().NoError(err)
-}
-
-func (s *ProcessSaleApprovedSuite) TestPlanoNaoEncontradoRetornaErro() {
-	in := s.validInput()
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", in.OccurredAt).Return(nil)
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(valueobjects.Plan{}, errors.New("not found"))
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().Error(err)
-	s.True(errors.Is(err, usecases.ErrPlanNotFound))
-}
-
-func (s *ProcessSaleApprovedSuite) TestIdempotenciaRetornaErrEventoJaProcessado() {
-	in := s.validInput()
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", in.OccurredAt).Return(interfaces.ErrEventAlreadyProcessed)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().Error(err)
-	s.True(errors.Is(err, usecases.ErrEventAlreadyProcessed))
-}
-
-func (s *ProcessSaleApprovedSuite) TestIdempotencia5xRetorna1TransicaoE4ErrAlreadyProcessed() {
-	in := s.validInput()
-	sub := s.hydrateSub()
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", in.OccurredAt).
-		Return(nil).Once()
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", in.OccurredAt).
-		Return(interfaces.ErrEventAlreadyProcessed).Times(4)
-
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(s.validPlan(), nil).Once()
-	s.subRepoMock.On("UpsertByOrder", mock.Anything, "order-001", mock.Anything, mock.Anything).Return(nil).Once()
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil).Once()
-	s.publisherMock.On("PublishActivated", mock.Anything, mock.Anything, mock.Anything, "sub-001", "token-abc", "+5511999999999", "test@example.com", "sale-001").Return(nil).Once()
-
-	var transitions, duplicates int
-	for range 5 {
-		err := s.uc.Execute(context.Background(), in)
-		if err == nil {
-			transitions++
-		} else if errors.Is(err, usecases.ErrEventAlreadyProcessed) {
-			duplicates++
-		}
+func (s *ProcessSaleApprovedSuite) TestExecute() {
+	type args struct {
+		input      input.ProcessSaleApprovedInput
+		executions int
 	}
 
-	s.Equal(1, transitions)
-	s.Equal(4, duplicates)
+	type result struct {
+		err         error
+		transitions int
+		duplicates  int
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(args)
+		expect func(result)
+	}{
+		{
+			name: "deve criar nova assinatura com token",
+			args: args{input: s.validInput(), executions: 1},
+			setup: func(args args) {
+				sub := s.hydrateSub()
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "prod-monthly").
+					Return(s.validPlan(), nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishActivated(
+						s.ctx,
+						mock.Anything,
+						sub,
+						"sub-001",
+						"token-abc",
+						"+5511999999999",
+						"test@example.com",
+						"sale-001",
+					).
+					Return(nil).
+					Once()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(1, result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
+			name: "deve publicar ativacao sem token quando funnel token estiver vazio",
+			args: args{
+				input: func() input.ProcessSaleApprovedInput {
+					in := s.validInput()
+					in.FunnelToken = ""
+					return in
+				}(),
+				executions: 1,
+			},
+			setup: func(args args) {
+				sub := s.hydrateSubNoToken()
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "prod-monthly").
+					Return(s.validPlan(), nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishActivatedWithoutToken(
+						s.ctx,
+						mock.Anything,
+						sub,
+						"sub-002",
+						"+5511999999999",
+						"test@example.com",
+						"sale-001",
+					).
+					Return(nil).
+					Once()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(1, result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
+			name: "deve retornar erro quando plano nao for encontrado",
+			args: args{input: s.validInput(), executions: 1},
+			setup: func(args args) {
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "prod-monthly").
+					Return(valueobjects.Plan{}, errors.New("not found")).
+					Once()
+			},
+			expect: func(result result) {
+				s.Error(result.err)
+				s.ErrorIs(result.err, usecases.ErrPlanNotFound)
+				s.Zero(result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
+			name: "deve retornar erro de evento ja processado em cenario idempotente",
+			args: args{input: s.validInput(), executions: 1},
+			setup: func(args args) {
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					Return(application.ErrEventAlreadyProcessed).
+					Once()
+			},
+			expect: func(result result) {
+				s.Error(result.err)
+				s.ErrorIs(result.err, usecases.ErrEventAlreadyProcessed)
+				s.Zero(result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
+			name: "deve aplicar uma transicao e rejeitar quatro duplicidades em cinco execucoes",
+			args: args{input: s.validInput(), executions: 5},
+			setup: func(args args) {
+				sub := s.hydrateSub()
+				s.expectRepositories(args.executions)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					Return(application.ErrEventAlreadyProcessed).
+					Times(4)
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "prod-monthly").
+					Return(s.validPlan(), nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishActivated(
+						s.ctx,
+						mock.Anything,
+						sub,
+						"sub-001",
+						"token-abc",
+						"+5511999999999",
+						"test@example.com",
+						"sale-001",
+					).
+					Return(nil).
+					Once()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(1, result.transitions)
+				s.Equal(4, result.duplicates)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.SetupTest()
+			sut := usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
+			scenario.setup(scenario.args)
+
+			result := result{}
+			executions := scenario.args.executions
+			if executions == 0 {
+				executions = 1
+			}
+
+			for index := 0; index < executions; index++ {
+				err := sut.Execute(s.ctx, scenario.args.input)
+				if executions == 1 {
+					result.err = err
+					if err == nil {
+						result.transitions = 1
+					}
+					continue
+				}
+				if err == nil {
+					result.transitions++
+					continue
+				}
+				if errors.Is(err, usecases.ErrEventAlreadyProcessed) {
+					result.duplicates++
+					continue
+				}
+				result.err = err
+				break
+			}
+
+			scenario.expect(result)
+		})
+	}
 }

@@ -4,7 +4,7 @@
 
 - **Título:** Campo Kiwify usado para propagar o magic token entre landing → checkout → webhook
 - **Data:** 2026-06-06
-- **Status:** Aceita
+- **Status:** **Confirmada empiricamente** em 2026-06-08 (captura sandbox via `webhook.site`). `TrackingParameters.sck` chega intacto no payload do webhook produto da Kiwify (`webhook_event_type: order_approved`). Evidência em `docs/runs/2026-06-08-validacao-webhook-kiwify-sandbox.md`. **Atenção:** o campo no payload é `TrackingParameters` (PascalCase), não `tracking` (lowercase) — o struct tag do parser em `internal/billing/application/usecases/process_kiwify_webhook.go:52` precisa ser corrigido (bug descoberto pela mesma validação, ver relatório). Ordem `sck > s1 > src` continua válida.
 - **Decisores:** PO (jailton), arquitetura (AI)
 - **Relacionados:** `.specs/prd-onboarding-magic-token/techspec.md` §"Evidências oficiais", RF-01, RF-03, S-01; `.specs/prd-billing-pipeline/techspec.md` §6.3, L-03 do E2
 

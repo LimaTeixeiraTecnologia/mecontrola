@@ -141,6 +141,8 @@ func TestReconciliationIntegration(t *testing.T) {
 	suite.Run(t, new(ReconciliationIntegrationSuite))
 }
 
+func (s *ReconciliationIntegrationSuite) SetupTest() {}
+
 func (s *ReconciliationIntegrationSuite) SetupSuite() {
 	s.mgr = setupIntegrationDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
@@ -151,8 +153,8 @@ func (s *ReconciliationIntegrationSuite) buildJob(kiwifyMock interfaces.KiwifyCl
 	db := s.mgr.DBTX(context.Background())
 
 	publisherMock := ucmocks.NewSubscriptionEventPublisher(s.T())
-	publisherMock.On("PublishActivated", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	publisherMock.On("PublishRefunded", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	publisherMock.EXPECT().PublishActivated(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	publisherMock.EXPECT().PublishRefunded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	saleApproved := usecases.NewProcessSaleApproved(
 		uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y)),
@@ -193,83 +195,62 @@ func (s *ReconciliationIntegrationSuite) setCheckpoint(name string, watermark ti
 	s.Require().NoError(repo.Set(ctx, name, watermark))
 }
 
-func (s *ReconciliationIntegrationSuite) TestReconcileRefundedSaleTransitionsToRefunded() {
-	ctx := context.Background()
-	now := time.Now().UTC()
-
-	orderID := fmt.Sprintf("order-integ-refund-%d", now.UnixNano())
-	saleID := fmt.Sprintf("sale-integ-refund-%d", now.UnixNano())
-	funnelToken := fmt.Sprintf("token-integ-%d", now.UnixNano())
-
-	s.insertActiveSubscription(orderID, funnelToken)
-
-	checkpoint := now.Add(-time.Hour)
-	s.setCheckpoint("kiwify_sales", checkpoint)
-
-	refundTime := now.Add(-30 * time.Minute)
-	sale := interfaces.KiwifySale{
-		ID:         saleID,
-		OrderID:    orderID,
-		Status:     "refunded",
-		OccurredAt: refundTime,
-		UpdatedAt:  refundTime,
+func (s *ReconciliationIntegrationSuite) TestReconcile() {
+	scenarios := []struct {
+		name   string
+		expect func(context.Context)
+	}{
+		{
+			name: "deve transicionar venda refundada para refunded",
+			expect: func(ctx context.Context) {
+				now := time.Now().UTC()
+				orderID := fmt.Sprintf("order-integ-refund-%d", now.UnixNano())
+				saleID := fmt.Sprintf("sale-integ-refund-%d", now.UnixNano())
+				funnelToken := fmt.Sprintf("token-integ-%d", now.UnixNano())
+				s.insertActiveSubscription(orderID, funnelToken)
+				s.setCheckpoint("kiwify_sales", now.Add(-time.Hour))
+				refundTime := now.Add(-30 * time.Minute)
+				sale := interfaces.KiwifySale{ID: saleID, OrderID: orderID, Status: "refunded", OccurredAt: refundTime, UpdatedAt: refundTime}
+				kiwifyMock := ucmocks.NewKiwifyClient(s.T())
+				kiwifyMock.EXPECT().ListSalesUpdatedSince(mock.Anything, mock.Anything, mock.Anything, 1).Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).Once()
+				job := s.buildJob(kiwifyMock)
+				s.Require().NoError(job.Run(ctx))
+				subRepo := s.factory.SubscriptionRepository(s.mgr.DBTX(ctx))
+				sub, findErr := subRepo.FindByOrderID(ctx, orderID)
+				s.Require().NoError(findErr)
+				s.Equal(valueobjects.StatusRefunded, sub.Status())
+			},
+		},
+		{
+			name: "deve tratar venda ja processada como no-op",
+			expect: func(ctx context.Context) {
+				now := time.Now().UTC()
+				orderID := fmt.Sprintf("order-integ-noop-%d", now.UnixNano())
+				saleID := fmt.Sprintf("sale-integ-noop-%d", now.UnixNano())
+				funnelToken := fmt.Sprintf("token-integ-noop-%d", now.UnixNano())
+				s.insertActiveSubscription(orderID, funnelToken)
+				s.setCheckpoint("kiwify_sales", now.Add(-time.Hour))
+				refundTime := now.Add(-30 * time.Minute)
+				processedRepo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
+				s.Require().NoError(processedRepo.MarkApplied(ctx, "refund:"+saleID, "compra_reembolsada", saleID, refundTime))
+				sale := interfaces.KiwifySale{ID: saleID, OrderID: orderID, Status: "refunded", OccurredAt: refundTime, UpdatedAt: refundTime}
+				kiwifyMock := ucmocks.NewKiwifyClient(s.T())
+				kiwifyMock.EXPECT().ListSalesUpdatedSince(mock.Anything, mock.Anything, mock.Anything, 1).Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).Once()
+				job := s.buildJob(kiwifyMock)
+				s.Require().NoError(job.Run(ctx))
+				subRepo := s.factory.SubscriptionRepository(s.mgr.DBTX(ctx))
+				sub, findErr := subRepo.FindByOrderID(ctx, orderID)
+				s.Require().NoError(findErr)
+				s.Equal(valueobjects.StatusActive, sub.Status())
+			},
+		},
 	}
 
-	kiwifyMock := ucmocks.NewKiwifyClient(s.T())
-	kiwifyMock.On("ListSalesUpdatedSince", mock.Anything, mock.Anything, mock.Anything, 1).
-		Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil)
-
-	job := s.buildJob(kiwifyMock)
-	err := job.Run(ctx)
-	s.Require().NoError(err)
-
-	db := s.mgr.DBTX(ctx)
-	subRepo := s.factory.SubscriptionRepository(db)
-	sub, findErr := subRepo.FindByOrderID(ctx, orderID)
-	s.Require().NoError(findErr)
-	s.Equal(valueobjects.StatusRefunded, sub.Status())
-}
-
-func (s *ReconciliationIntegrationSuite) TestReconcileAlreadyProcessedSaleIsNoOp() {
-	ctx := context.Background()
-	now := time.Now().UTC()
-
-	orderID := fmt.Sprintf("order-integ-noop-%d", now.UnixNano())
-	saleID := fmt.Sprintf("sale-integ-noop-%d", now.UnixNano())
-	funnelToken := fmt.Sprintf("token-integ-noop-%d", now.UnixNano())
-
-	s.insertActiveSubscription(orderID, funnelToken)
-
-	checkpoint := now.Add(-time.Hour)
-	s.setCheckpoint("kiwify_sales", checkpoint)
-
-	refundTime := now.Add(-30 * time.Minute)
-
-	db := s.mgr.DBTX(ctx)
-	processedRepo := s.factory.ProcessedEventRepository(db)
-	s.Require().NoError(processedRepo.MarkApplied(ctx, "refund:"+saleID, "compra_reembolsada", saleID, refundTime))
-
-	sale := interfaces.KiwifySale{
-		ID:         saleID,
-		OrderID:    orderID,
-		Status:     "refunded",
-		OccurredAt: refundTime,
-		UpdatedAt:  refundTime,
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.expect(context.Background())
+		})
 	}
-
-	kiwifyMock := ucmocks.NewKiwifyClient(s.T())
-	kiwifyMock.On("ListSalesUpdatedSince", mock.Anything, mock.Anything, mock.Anything, 1).
-		Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil)
-
-	job := s.buildJob(kiwifyMock)
-	err := job.Run(ctx)
-	s.Require().NoError(err)
-
-	db2 := s.mgr.DBTX(ctx)
-	subRepo := s.factory.SubscriptionRepository(db2)
-	sub, findErr := subRepo.FindByOrderID(ctx, orderID)
-	s.Require().NoError(findErr)
-	s.Equal(valueobjects.StatusActive, sub.Status(), "already processed event must not change status")
 }
 
 type HousekeepingIntegrationSuite struct {
@@ -281,6 +262,8 @@ type HousekeepingIntegrationSuite struct {
 func TestHousekeepingIntegration(t *testing.T) {
 	suite.Run(t, new(HousekeepingIntegrationSuite))
 }
+
+func (s *HousekeepingIntegrationSuite) SetupTest() {}
 
 func (s *HousekeepingIntegrationSuite) SetupSuite() {
 	s.mgr = setupIntegrationDB(s.T())
@@ -310,55 +293,47 @@ func (s *HousekeepingIntegrationSuite) countEvents(envelopeID string) int {
 	return count
 }
 
-func (s *HousekeepingIntegrationSuite) TestHousekeepingRemovesOldRows() {
-	ctx := context.Background()
-	db := s.mgr.DBTX(ctx)
-	o11y := noop.NewProvider()
-
-	now := time.Now().UTC()
-	oldID := fmt.Sprintf("hk-old-%d", now.UnixNano())
-	recentID := fmt.Sprintf("hk-recent-%d", now.UnixNano())
-
-	s.persistEvent(oldID, now.Add(-91*24*time.Hour))
-	s.persistEvent(recentID, now.Add(-1*time.Hour))
-
-	cfg := configs.BillingConfig{
-		KiwifyEventsRetentionDays:        90,
-		KiwifyEventsHousekeepingSchedule: "@daily",
-		KiwifyEventsHousekeepingBatch:    500,
+func (s *HousekeepingIntegrationSuite) TestHousekeeping() {
+	scenarios := []struct {
+		name   string
+		expect func(context.Context)
+	}{
+		{
+			name: "deve remover linhas antigas",
+			expect: func(ctx context.Context) {
+				db := s.mgr.DBTX(ctx)
+				now := time.Now().UTC()
+				oldID := fmt.Sprintf("hk-old-%d", now.UnixNano())
+				recentID := fmt.Sprintf("hk-recent-%d", now.UnixNano())
+				s.persistEvent(oldID, now.Add(-91*24*time.Hour))
+				s.persistEvent(recentID, now.Add(-time.Hour))
+				cfg := configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 500}
+				job := handlers.NewKiwifyEventsHousekeepingJob(usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, noop.NewProvider()), cfg)
+				s.Require().NoError(job.Run(ctx))
+				s.Equal(0, s.countEvents(oldID))
+				s.Equal(1, s.countEvents(recentID))
+			},
+		},
+		{
+			name: "deve preservar linhas dentro da janela de retencao",
+			expect: func(ctx context.Context) {
+				db := s.mgr.DBTX(ctx)
+				now := time.Now().UTC()
+				boundaryID := fmt.Sprintf("hk-boundary-%d", now.UnixNano())
+				s.persistEvent(boundaryID, now.Add(-89*24*time.Hour))
+				cfg := configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 500}
+				job := handlers.NewKiwifyEventsHousekeepingJob(usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, noop.NewProvider()), cfg)
+				s.Require().NoError(job.Run(ctx))
+				s.Equal(1, s.countEvents(boundaryID))
+			},
+		},
 	}
-	cleanup := usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, o11y)
-	job := handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
 
-	err := job.Run(ctx)
-	s.Require().NoError(err)
-
-	s.Equal(0, s.countEvents(oldID), "old row should be deleted")
-	s.Equal(1, s.countEvents(recentID), "recent row should be preserved")
-}
-
-func (s *HousekeepingIntegrationSuite) TestHousekeepingPreservesRowsWithinRetentionWindow() {
-	ctx := context.Background()
-	db := s.mgr.DBTX(ctx)
-	o11y := noop.NewProvider()
-
-	now := time.Now().UTC()
-	boundaryID := fmt.Sprintf("hk-boundary-%d", now.UnixNano())
-
-	s.persistEvent(boundaryID, now.Add(-89*24*time.Hour))
-
-	cfg := configs.BillingConfig{
-		KiwifyEventsRetentionDays:        90,
-		KiwifyEventsHousekeepingSchedule: "@daily",
-		KiwifyEventsHousekeepingBatch:    500,
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.expect(context.Background())
+		})
 	}
-	cleanup := usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, o11y)
-	job := handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
-
-	err := job.Run(ctx)
-	s.Require().NoError(err)
-
-	s.Equal(1, s.countEvents(boundaryID), "row within retention window must be preserved")
 }
 
 var _ = input.ReconcileSubscriptionsInput{}

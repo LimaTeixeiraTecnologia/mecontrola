@@ -4,7 +4,7 @@
 
 - **Título:** HMAC-SHA256 com token compartilhado para validar webhooks Kiwify
 - **Data:** 2026-06-05
-- **Status:** Aceita (com suposição material a confirmar pré-execução)
+- **Status:** **SUBSTITUÍDA** em 2026-06-08 pela ADR-002b (`adr-002b-hmac-sha1-hex-webhook-query-signature.md`). Evidência empírica em `docs/runs/2026-06-08-validacao-webhook-kiwify-sandbox.md` mostrou que a Kiwify usa **HMAC-SHA1 em hex via query string `?signature=`** — não HMAC-SHA256 base64 via header `X-Kiwify-Signature`. A suposição material desta ADR falhou. **NÃO seguir esta ADR para implementação.**
 - **Decisores:** PO (jailton), arquitetura (AI)
 - **Relacionados:** `.specs/prd-billing-pipeline/techspec.md` §8.1, [ADR-001](./adr-001-kiwify-public-api-vs-banking.md)
 

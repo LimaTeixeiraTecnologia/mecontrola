@@ -11,12 +11,12 @@ Garantir correção, prevenir regressão e documentar comportamento com custo pr
 
 ## Unit Tests (obrigatorio)
 - Todo comportamento de dominio, use case e logica pura deve ter unit test.
-- Table-driven tests para variacoes de input/output.
-- `testify/assert`, `testify/require` para assercoes. `testify/suite` quando setup compartilhado justificar.
+- Table-driven tests para variacoes de input/output, sempre dentro de `testify/suite`.
+- `testify/assert`, `testify/require` para assercoes. `testify/suite` e obrigatorio em todo `_test.go`.
 - `testify/mock` ou `mockery` para substituir dependencias em fronteiras.
-- Nomear pelo cenario: `TestConfirm_OrderAlreadyShipped`, nao `TestConfirm3`.
+- Nomear suites e cenarios pelo comportamento: `ConfirmOrderSuite` com cenario
+  `"deve retornar erro quando pedido ja foi enviado"`, nao `TestConfirm3`.
 - Testes deterministicos — sem sleep, sem estado global. Usar `t.Parallel()` quando possivel.
-- Fuzz tests para parsers e validadores com input arbitrario.
 - Arquivo de teste ao lado do testado: `service.go` -> `service_test.go`.
 - Mocks em `mocks/` do pacote consumidor. Helpers em `_test.go` do mesmo pacote.
 - Nao testar glue code sem logica nem interacao real com banco/fila (isso e integration test).
@@ -47,17 +47,17 @@ packages:
   testar; se nao, adiciona-la e regenerar antes de prosseguir.
 
 ## R4 — Padrao obrigatorio de arquivo `_test.go` `[HARD]`
-Todo `_test.go` que cubra use cases, services e handlers DEVE seguir `testify/suite` com cenarios
-table-driven. Testes avulsos com `t.Run` direto sao permitidos apenas para funcoes utilitarias
-simples sem dependencias injetaveis. Ver esqueleto canonico completo em `examples-testing.md`.
+Todo arquivo `_test.go`, sem excecao por camada ou tipo de teste, DEVE seguir `testify/suite`
+com cenarios table-driven no formato canonico de `examples-testing.md`. Testes avulsos com
+`t.Run` direto fora de uma suite sao proibidos.
 
 Estrutura obrigatoria:
-1. `package <pacote>` (whitebox) ou `<pacote>_test` (blackbox).
+1. `package <pacote>_test` (blackbox).
 2. Imports em 3 grupos (stdlib | testify/externas | mocks e internos).
 3. Suite struct embutindo `suite.Suite` + todos os mocks como campos tipados.
 4. `TestXxx(t)` registrador: apenas `suite.Run(t, new(XxxSuite))`.
 5. `SetupTest()` reinicia todos os mocks antes de cada cenario (evita vazamento de estado).
-6. Metodo de teste principal com tabela `scenarios` (args, dependencies, `expect func`).
+6. Metodo de teste principal com tabela `scenarios` (`args`, `setup func()`, `expect func`).
 7. Loop `for _, scenario := range scenarios` com `s.Run` + instanciacao real do SUT dentro do loop.
 
 Cobertura minima de cenarios por metodo `Test<Acao>()`:
@@ -89,6 +89,8 @@ type RepositorySuite struct {
 }
 
 func TestRepositorySuite(t *testing.T) { suite.Run(t, new(RepositorySuite)) }
+
+func (s *RepositorySuite) SetupTest() {}
 
 func (s *RepositorySuite) SetupSuite() {
     ctx := context.Background()
@@ -122,4 +124,6 @@ Modulos disponiveis: postgres, mysql, redis, kafka, mongodb, rabbitmq, localstac
 - Teste que passa sozinho mas falha quando rodado com `./...`.
 - Ignorar `t.Helper()` em funções auxiliares de teste.
 - Mocks escritos a mão ou divergentes da interface (R3 — gerar via `mockery.yml`).
-- `_test.go` de use case/service/handler sem `suite.Suite`, `SetupTest` e `suite.Run` (R4).
+- Qualquer `_test.go` sem `suite.Suite`, `SetupTest` e `suite.Run` (R4).
+- Teste avulso com `func TestXxx(t *testing.T)` contendo logica de cenario em vez de apenas
+  `suite.Run(t, new(XxxSuite))` (R4).

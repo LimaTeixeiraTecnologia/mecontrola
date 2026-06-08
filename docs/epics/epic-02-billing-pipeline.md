@@ -2,7 +2,7 @@
 epic_id: E2
 slug: billing-pipeline
 title: Pipeline de cobrança recorrente (webhook Kiwify → subscription → entitlement)
-status: prd_done
+status: implemented
 blocked_by: [E1]
 blocks: [E4]
 source_bundle: .agents/skills/decision-brainstorming/discoveries/brainstorm-consolidacao-core/decision-brief.md
@@ -10,9 +10,9 @@ source_discoveries:
   - docs/discoveries/discovery-billing-hotmart-kiwify.md
 artifacts:
   prd: .specs/prd-billing-pipeline/prd.md
-  techspec: null
-  tasks: null
-next_skill: create-technical-specification
+  techspec: .specs/prd-billing-pipeline/techspec.md
+  tasks: .specs/prd-billing-pipeline/tasks.md
+next_skill: null
 target_module: internal/billing/
 ---
 
@@ -79,7 +79,7 @@ A discovery de billing dita: webhook handler faz **3 coisas** (verifica assinatu
 
 - **CA-01:** Webhook ingress retorna 200 em < 2s p99 com payload Kiwify real.
 - **CA-02:** Mesmo evento Kiwify enviado 5x produz mesmo estado final (idempotência testada).
-- **CA-03:** Eventos fora de ordem (`subscription_renewed` antes de `compra_aprovada`) processam corretamente sem regressão de estado.
+- **CA-03:** Eventos fora de ordem (`subscription_renewed` antes de `order_approved`) processam corretamente sem regressão de estado.
 - **CA-04:** Cobertura 100% da máquina de estados (6 estados × principais transições).
 - **CA-05:** `EntitlementService.Check` serve decisão em < 5ms p99 com cache quente.
 - **CA-06:** Reconciliação horária detecta e corrige divergência simulada (mock de API Kiwify).
@@ -89,7 +89,7 @@ A discovery de billing dita: webhook handler faz **3 coisas** (verifica assinatu
 
 ## Dependências externas
 
-- **Kiwify:** API REST `public-api.kiwify.com`; webhook configurado apontando para `/webhooks/kiwify`; secret de assinatura em vault; eventos habilitados: `compra_aprovada`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `compra_reembolsada`, `chargeback`.
+- **Kiwify:** API REST `public-api.kiwify.com`; webhook configurado apontando para `/webhooks/kiwify`; secret de assinatura em vault; eventos habilitados: `order_approved`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `order_refunded`, `chargeback`.
 - **Postgres:** novas tabelas via migration.
 - **Redis:** já existente; cache de entitlement e outbox streams.
 - **WhatsApp Business API:** notificação de mudança de estado (best-effort via `events.Bus`).

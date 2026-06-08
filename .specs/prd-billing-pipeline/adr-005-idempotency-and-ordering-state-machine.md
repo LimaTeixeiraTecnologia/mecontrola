@@ -24,11 +24,11 @@ Persistida em `billing_processed_events(event_key TEXT PRIMARY KEY, trigger, rec
 
 | Trigger | event_key |
 | --- | --- |
-| `compra_aprovada` | `compra_aprovada:{sale.id}` |
+| `order_approved` | `order_approved:{sale.id}` |
 | `subscription_renewed` | `subscription_renewed:{subscription.id}:{subscription.updated_at_iso8601}` |
 | `subscription_late` | `subscription_late:{subscription.id}:{subscription.updated_at_iso8601}` |
 | `subscription_canceled` | `subscription_canceled:{subscription.id}` |
-| `compra_reembolsada` | `refund:{sale.id}` |
+| `order_refunded` | `refund:{sale.id}` |
 | `chargeback` | `refund:{sale.id}` (mesmo prefixo) |
 
 Refund e chargeback compartilham prefixo porque o PRD os trata como o mesmo efeito de negócio (REFUNDED imediato) — receber ambos para a mesma sale é no-op idempotente.

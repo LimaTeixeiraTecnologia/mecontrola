@@ -13,7 +13,7 @@ Expor `POST /api/v1/billing/webhooks/kiwify` substituindo o placeholder atual em
 - HMAC-SHA256 sobre `raw_body` (ADR-002); comparar em `hmac.Equal` (constant time).
 - Suporte a rotação: aceitar `KIWIFY_WEBHOOK_SECRET` ∪ `KIWIFY_WEBHOOK_SECRET_NEXT`; `signature_status` registra `valid|invalid|rotated`.
 - Persistência proativa em `billing_kiwify_events` antes do dispatch (auditoria).
-- Dispatch por trigger: `compra_aprovada`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `compra_reembolsada`, `chargeback`. Triggers desconhecidos → 422 com `ErrUnknownTrigger`.
+- Dispatch por trigger: `order_approved`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `order_refunded`, `chargeback`. Triggers desconhecidos → 422 com `ErrUnknownTrigger`.
 - `ErrFunnelTokenMissing` (RF-03) → 422.
 - Provider hardcoded `kiwify` (RF-01); endpoint não aceita query param de provider.
 - Resposta de sucesso ou no-op idempotente: `202 Accepted {"received":true}`.

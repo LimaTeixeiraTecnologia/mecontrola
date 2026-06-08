@@ -2,7 +2,7 @@
 epic_id: E1
 slug: identity-foundation
 title: Fundação do módulo Identity (User, VOs, IsEntitled, soft delete)
-status: prd_done
+status: implemented
 blocked_by: []
 blocks: [E2, E3]
 source_bundle: .agents/skills/decision-brainstorming/discoveries/brainstorm-consolidacao-core/decision-brief.md
@@ -10,9 +10,9 @@ source_discoveries:
   - docs/discoveries/discovery-identity-entitlement.md
 artifacts:
   prd: .specs/prd-identity-foundation/prd.md
-  techspec: null
-  tasks: null
-next_skill: create-technical-specification
+  techspec: .specs/prd-identity-foundation/techspec.md
+  tasks: .specs/prd-identity-foundation/tasks.md
+next_skill: null
 target_module: internal/identity/
 ---
 

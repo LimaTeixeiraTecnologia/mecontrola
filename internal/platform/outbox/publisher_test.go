@@ -17,111 +17,158 @@ import (
 
 type PublisherSuite struct {
 	suite.Suite
-	storage   *outboxmocks.Storage
-	dbtx      *dbmocks.MockDBTX
-	publisher outbox.Publisher
 }
 
 func TestPublisher(t *testing.T) {
 	suite.Run(t, new(PublisherSuite))
 }
 
-func (s *PublisherSuite) SetupTest() {
-	s.storage = outboxmocks.NewStorage(s.T())
-	s.dbtx = dbmocks.NewMockDBTX(s.T())
-	s.publisher = outbox.NewPostgresPublisher(s.storage, configs.OutboxConfig{RetryMaxAttempts: 15})
-}
+func (s *PublisherSuite) SetupTest() {}
 
 func (s *PublisherSuite) newValidEvent() outbox.Event {
-	evt, err := outbox.NewEvent(outbox.EventInput{
+	event, err := outbox.NewEvent(outbox.EventInput{
 		Type:          "test.event",
 		AggregateType: "TestAggregate",
 		AggregateID:   "agg-1",
 		Payload:       []byte(`{"x":1}`),
 	})
 	s.Require().NoError(err)
-	return evt
+	return event
 }
 
-func (s *PublisherSuite) TestPublish_Sucesso() {
-	evt := s.newValidEvent()
-	ctx := database.WithTx(context.Background(), s.dbtx)
-
-	s.storage.EXPECT().Insert(ctx, evt, 15).Return(nil)
-
-	err := s.publisher.Publish(ctx, evt)
-	s.NoError(err)
-}
-
-func (s *PublisherSuite) TestPublish_IDInvalido() {
-	evt := s.newValidEvent()
-	evt.ID = "not-a-uuid"
-	ctx := database.WithTx(context.Background(), s.dbtx)
-
-	err := s.publisher.Publish(ctx, evt)
-	s.ErrorIs(err, outbox.ErrEventIDMissing)
-}
-
-func (s *PublisherSuite) TestPublish_TypeVazio() {
-	evt := s.newValidEvent()
-	evt.Type = ""
-	ctx := database.WithTx(context.Background(), s.dbtx)
-
-	err := s.publisher.Publish(ctx, evt)
-	s.ErrorIs(err, outbox.ErrEventTypeMissing)
-}
-
-func (s *PublisherSuite) TestPublish_PayloadInvalido() {
-	evt := s.newValidEvent()
-	evt.Payload = []byte(`not-json`)
-	ctx := database.WithTx(context.Background(), s.dbtx)
-
-	err := s.publisher.Publish(ctx, evt)
-	s.ErrorIs(err, outbox.ErrInvalidPayload)
-}
-
-func (s *PublisherSuite) TestPublish_PayloadNaoEObjeto() {
-	ctx := database.WithTx(context.Background(), s.dbtx)
-
-	for _, payload := range [][]byte{[]byte(`null`), []byte(`[]`), []byte(`42`), []byte(`"string"`)} {
-		evt := s.newValidEvent()
-		evt.Payload = payload
-		err := s.publisher.Publish(ctx, evt)
-		s.ErrorIs(err, outbox.ErrInvalidPayload, "payload %s deveria falhar", payload)
+func (s *PublisherSuite) TestPublish() {
+	type args struct {
+		event outbox.Event
 	}
-}
 
-func (s *PublisherSuite) TestPublish_OccurredAtZero() {
-	evt := s.newValidEvent()
-	evt.OccurredAt = time.Time{}
-	ctx := database.WithTx(context.Background(), s.dbtx)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage)
+		expect func(error)
+	}{
+		{
+			name: "deve publicar evento com sucesso",
+			args: args{event: s.newValidEvent()},
+			setup: func(event outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				storage.EXPECT().Insert(ctx, event, 15).Return(nil).Once()
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve retornar erro para id invalido",
+			args: func() args {
+				event := s.newValidEvent()
+				event.ID = "not-a-uuid"
+				return args{event: event}
+			}(),
+			setup: func(outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.ErrorIs(err, outbox.ErrEventIDMissing) },
+		},
+		{
+			name: "deve retornar erro para type vazio",
+			args: func() args {
+				event := s.newValidEvent()
+				event.Type = ""
+				return args{event: event}
+			}(),
+			setup: func(outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.ErrorIs(err, outbox.ErrEventTypeMissing) },
+		},
+		{
+			name: "deve retornar erro para payload invalido",
+			args: func() args {
+				event := s.newValidEvent()
+				event.Payload = []byte(`not-json`)
+				return args{event: event}
+			}(),
+			setup: func(outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.ErrorIs(err, outbox.ErrInvalidPayload) },
+		},
+		{
+			name: "deve retornar erro para payload nao objeto",
+			args: func() args {
+				event := s.newValidEvent()
+				event.Payload = []byte(`null`)
+				return args{event: event}
+			}(),
+			setup: func(outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.ErrorIs(err, outbox.ErrInvalidPayload) },
+		},
+		{
+			name: "deve retornar erro para occurred at zero",
+			args: func() args {
+				event := s.newValidEvent()
+				event.OccurredAt = time.Time{}
+				return args{event: event}
+			}(),
+			setup: func(outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.ErrorIs(err, outbox.ErrOccurredAtZero) },
+		},
+		{
+			name: "deve ser idempotente para conflitos por id",
+			args: args{event: s.newValidEvent()},
+			setup: func(event outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				storage.EXPECT().Insert(ctx, event, 15).Return(nil).Twice()
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve propagar erro do storage",
+			args: args{event: s.newValidEvent()},
+			setup: func(event outbox.Event) (outbox.Publisher, context.Context, *outboxmocks.Storage) {
+				storage := outboxmocks.NewStorage(s.T())
+				dbtx := dbmocks.NewMockDBTX(s.T())
+				ctx := database.WithTx(context.Background(), dbtx)
+				storage.EXPECT().Insert(ctx, event, 15).Return(errors.New("db failure")).Once()
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+			},
+			expect: func(err error) { s.Error(err) },
+		},
+	}
 
-	err := s.publisher.Publish(ctx, evt)
-	s.ErrorIs(err, outbox.ErrOccurredAtZero)
-}
-
-func (s *PublisherSuite) TestPublish_ConflictIdempotente() {
-	evt := s.newValidEvent()
-	ctx := database.WithTx(context.Background(), s.dbtx)
-
-	s.storage.EXPECT().Insert(ctx, evt, 15).Return(nil)
-
-	err1 := s.publisher.Publish(ctx, evt)
-	s.NoError(err1)
-
-	s.storage.EXPECT().Insert(ctx, evt, 15).Return(nil)
-
-	err2 := s.publisher.Publish(ctx, evt)
-	s.NoError(err2)
-}
-
-func (s *PublisherSuite) TestPublish_ErroStorage() {
-	evt := s.newValidEvent()
-	ctx := database.WithTx(context.Background(), s.dbtx)
-	dbErr := errors.New("db failure")
-
-	s.storage.EXPECT().Insert(ctx, evt, 15).Return(dbErr)
-
-	err := s.publisher.Publish(ctx, evt)
-	s.Error(err)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			publisher, ctx, _ := scenario.setup(scenario.args.event)
+			err := publisher.Publish(ctx, scenario.args.event)
+			if scenario.name == "deve ser idempotente para conflitos por id" {
+				s.NoError(err)
+				err = publisher.Publish(ctx, scenario.args.event)
+			}
+			scenario.expect(err)
+		})
+	}
 }

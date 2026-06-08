@@ -5,26 +5,89 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/job"
 )
 
-func TestNewAdapter_PolíticaPadrãoÉSkip(t *testing.T) {
-	a := job.NewAdapter("meu-job", "@hourly", func(_ context.Context) error { return nil })
-	require.Equal(t, "meu-job", a.Name())
-	require.Equal(t, "@hourly", a.Schedule())
-	require.Equal(t, job.OverlapSkip, a.OverlapPolicy())
+type AdapterSuite struct {
+	suite.Suite
 }
 
-func TestNewAdapterWithPolicy_PolíticaAllow(t *testing.T) {
-	a := job.NewAdapterWithPolicy("meu-job", "@daily", func(_ context.Context) error { return nil }, job.OverlapAllow)
-	require.Equal(t, job.OverlapAllow, a.OverlapPolicy())
+func TestAdapterSuite(t *testing.T) {
+	suite.Run(t, new(AdapterSuite))
 }
 
-func TestAdapter_Run_DelegaFunção(t *testing.T) {
+func (s *AdapterSuite) SetupTest() {}
+
+func (s *AdapterSuite) TestAdapter() {
+	type args struct {
+		name     string
+		schedule string
+	}
+
 	sentinel := errors.New("erro sentinel")
-	a := job.NewAdapter("test", "@hourly", func(_ context.Context) error { return sentinel })
-	err := a.Run(context.Background())
-	require.ErrorIs(t, err, sentinel)
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		build  func(args) *job.Adapter
+		act    func(*job.Adapter) error
+		expect func(*job.Adapter, error)
+	}{
+		{
+			name:  "deve usar politica skip por padrao",
+			args:  args{name: "meu-job", schedule: "@hourly"},
+			setup: func() {},
+			build: func(input args) *job.Adapter {
+				return job.NewAdapter(input.name, input.schedule, func(context.Context) error { return nil })
+			},
+			act: func(*job.Adapter) error { return nil },
+			expect: func(adapter *job.Adapter, err error) {
+				s.NoError(err)
+				s.Equal("meu-job", adapter.Name())
+				s.Equal("@hourly", adapter.Schedule())
+				s.Equal(job.OverlapSkip, adapter.OverlapPolicy())
+			},
+		},
+		{
+			name:  "deve usar politica allow quando informada",
+			args:  args{name: "meu-job", schedule: "@daily"},
+			setup: func() {},
+			build: func(input args) *job.Adapter {
+				return job.NewAdapterWithPolicy(input.name, input.schedule, func(context.Context) error { return nil }, job.OverlapAllow)
+			},
+			act: func(*job.Adapter) error { return nil },
+			expect: func(adapter *job.Adapter, err error) {
+				s.NoError(err)
+				s.Equal(job.OverlapAllow, adapter.OverlapPolicy())
+			},
+		},
+		{
+			name:  "deve delegar execucao da funcao",
+			args:  args{name: "test", schedule: "@hourly"},
+			setup: func() {},
+			build: func(input args) *job.Adapter {
+				return job.NewAdapter(input.name, input.schedule, func(context.Context) error { return sentinel })
+			},
+			act: func(adapter *job.Adapter) error {
+				return adapter.Run(context.Background())
+			},
+			expect: func(_ *job.Adapter, err error) {
+				s.ErrorIs(err, sentinel)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.setup()
+
+			sut := scenario.build(scenario.args)
+			err := scenario.act(sut)
+
+			scenario.expect(sut, err)
+		})
+	}
 }

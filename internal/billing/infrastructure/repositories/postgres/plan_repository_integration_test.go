@@ -29,6 +29,8 @@ func TestPlanRepositorySuite(t *testing.T) {
 	suite.Run(t, new(PlanRepositorySuite))
 }
 
+func (s *PlanRepositorySuite) SetupTest() {}
+
 func (s *PlanRepositorySuite) SetupSuite() {
 	s.mgr = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
@@ -38,81 +40,105 @@ func (s *PlanRepositorySuite) newRepo() interfaces.PlanRepository {
 	return s.factory.PlanRepository(s.mgr.DBTX(context.Background()))
 }
 
-func (s *PlanRepositorySuite) TestFindByCode_Monthly() {
-	ctx := context.Background()
-	repo := s.newRepo()
+func (s *PlanRepositorySuite) TestFindByCode() {
+	scenarios := []struct {
+		name       string
+		code       valueobjects.PlanCode
+		expectCode valueobjects.PlanCode
+		expectDays int
+		expectErr  error
+	}{
+		{name: "deve encontrar plano mensal", code: valueobjects.PlanCodeMonthly, expectCode: valueobjects.PlanCodeMonthly, expectDays: 30},
+		{name: "deve encontrar plano trimestral", code: valueobjects.PlanCodeQuarterly, expectCode: valueobjects.PlanCodeQuarterly, expectDays: 90},
+		{name: "deve encontrar plano anual", code: valueobjects.PlanCodeAnnual, expectCode: valueobjects.PlanCodeAnnual, expectDays: 365},
+		{name: "deve retornar erro quando o plano nao existir", code: "NONEXISTENT", expectErr: billingpostgres.ErrPlanNotFound},
+	}
 
-	plan, err := repo.FindByCode(ctx, valueobjects.PlanCodeMonthly)
-	s.Require().NoError(err)
-	s.Assert().Equal(valueobjects.PlanCodeMonthly, plan.Code())
-	s.Assert().Equal(30, plan.DurationDays())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			repo := s.newRepo()
+
+			plan, err := repo.FindByCode(ctx, scenario.code)
+
+			if scenario.expectErr != nil {
+				s.Require().Error(err)
+				s.Assert().True(errors.Is(err, scenario.expectErr))
+				return
+			}
+
+			s.Require().NoError(err)
+			s.Assert().Equal(scenario.expectCode, plan.Code())
+			s.Assert().Equal(scenario.expectDays, plan.DurationDays())
+		})
+	}
 }
 
-func (s *PlanRepositorySuite) TestFindByCode_Quarterly() {
-	ctx := context.Background()
-	repo := s.newRepo()
+func (s *PlanRepositorySuite) TestFindByKiwifyProductID() {
+	scenarios := []struct {
+		name       string
+		productID  string
+		expectCode valueobjects.PlanCode
+		expectErr  error
+	}{
+		{name: "deve encontrar plano pelo produto mensal", productID: "<id-mensal>", expectCode: valueobjects.PlanCodeMonthly},
+		{name: "deve retornar erro quando o produto nao existir", productID: "unknown-product-id", expectErr: billingpostgres.ErrPlanNotFound},
+	}
 
-	plan, err := repo.FindByCode(ctx, valueobjects.PlanCodeQuarterly)
-	s.Require().NoError(err)
-	s.Assert().Equal(valueobjects.PlanCodeQuarterly, plan.Code())
-	s.Assert().Equal(90, plan.DurationDays())
-}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			repo := s.newRepo()
 
-func (s *PlanRepositorySuite) TestFindByCode_Annual() {
-	ctx := context.Background()
-	repo := s.newRepo()
+			plan, err := repo.FindByKiwifyProductID(ctx, scenario.productID)
 
-	plan, err := repo.FindByCode(ctx, valueobjects.PlanCodeAnnual)
-	s.Require().NoError(err)
-	s.Assert().Equal(valueobjects.PlanCodeAnnual, plan.Code())
-	s.Assert().Equal(365, plan.DurationDays())
-}
+			if scenario.expectErr != nil {
+				s.Require().Error(err)
+				s.Assert().True(errors.Is(err, scenario.expectErr))
+				return
+			}
 
-func (s *PlanRepositorySuite) TestFindByCode_NotFound() {
-	ctx := context.Background()
-	repo := s.newRepo()
-
-	_, err := repo.FindByCode(ctx, "NONEXISTENT")
-	s.Require().Error(err)
-	s.Assert().True(errors.Is(err, billingpostgres.ErrPlanNotFound))
-}
-
-func (s *PlanRepositorySuite) TestFindByKiwifyProductID_Monthly() {
-	ctx := context.Background()
-	repo := s.newRepo()
-
-	plan, err := repo.FindByKiwifyProductID(ctx, "<id-mensal>")
-	s.Require().NoError(err)
-	s.Assert().Equal(valueobjects.PlanCodeMonthly, plan.Code())
-}
-
-func (s *PlanRepositorySuite) TestFindByKiwifyProductID_NotFound() {
-	ctx := context.Background()
-	repo := s.newRepo()
-
-	_, err := repo.FindByKiwifyProductID(ctx, "unknown-product-id")
-	s.Require().Error(err)
-	s.Assert().True(errors.Is(err, billingpostgres.ErrPlanNotFound))
+			s.Require().NoError(err)
+			s.Assert().Equal(scenario.expectCode, plan.Code())
+		})
+	}
 }
 
 func (s *PlanRepositorySuite) TestConfigureProductIDs() {
-	ctx := context.Background()
-	repo := s.newRepo()
+	scenarios := []struct {
+		name   string
+		setup  func(context.Context, interfaces.PlanRepository)
+		expect func(context.Context, interfaces.PlanRepository)
+	}{
+		{
+			name: "deve reconfigurar os ids de produto",
+			setup: func(ctx context.Context, repo interfaces.PlanRepository) {
+				err := repo.ConfigureProductIDs(ctx, map[valueobjects.PlanCode]string{
+					valueobjects.PlanCodeMonthly:   "real-monthly",
+					valueobjects.PlanCodeQuarterly: "real-quarterly",
+					valueobjects.PlanCodeAnnual:    "real-annual",
+				})
+				s.Require().NoError(err)
+			},
+			expect: func(ctx context.Context, repo interfaces.PlanRepository) {
+				plan, err := repo.FindByKiwifyProductID(ctx, "real-monthly")
+				s.Require().NoError(err)
+				s.Equal(valueobjects.PlanCodeMonthly, plan.Code())
+				s.Require().NoError(repo.ConfigureProductIDs(ctx, map[valueobjects.PlanCode]string{
+					valueobjects.PlanCodeMonthly:   "<id-mensal>",
+					valueobjects.PlanCodeQuarterly: "<id-trimestral>",
+					valueobjects.PlanCodeAnnual:    "<id-anual>",
+				}))
+			},
+		},
+	}
 
-	err := repo.ConfigureProductIDs(ctx, map[valueobjects.PlanCode]string{
-		valueobjects.PlanCodeMonthly:   "real-monthly",
-		valueobjects.PlanCodeQuarterly: "real-quarterly",
-		valueobjects.PlanCodeAnnual:    "real-annual",
-	})
-	s.Require().NoError(err)
-
-	plan, err := repo.FindByKiwifyProductID(ctx, "real-monthly")
-	s.Require().NoError(err)
-	s.Equal(valueobjects.PlanCodeMonthly, plan.Code())
-
-	s.Require().NoError(repo.ConfigureProductIDs(ctx, map[valueobjects.PlanCode]string{
-		valueobjects.PlanCodeMonthly:   "<id-mensal>",
-		valueobjects.PlanCodeQuarterly: "<id-trimestral>",
-		valueobjects.PlanCodeAnnual:    "<id-anual>",
-	}))
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			repo := s.newRepo()
+			scenario.setup(ctx, repo)
+			scenario.expect(ctx, repo)
+		})
+	}
 }

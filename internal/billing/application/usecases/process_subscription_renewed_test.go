@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
+	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -20,13 +20,13 @@ import (
 
 type ProcessSubscriptionRenewedSuite struct {
 	suite.Suite
+	ctx           context.Context
 	uowMock       *mocks.UnitOfWorkSubscription
 	factoryMock   *mocks.RepositoryFactory
 	subRepoMock   *mocks.SubscriptionRepository
 	eventRepoMock *mocks.ProcessedEventRepository
 	planRepoMock  *mocks.PlanRepository
 	publisherMock *mocks.SubscriptionEventPublisher
-	uc            *usecases.ProcessSubscriptionRenewed
 }
 
 func TestProcessSubscriptionRenewed(t *testing.T) {
@@ -34,141 +34,247 @@ func TestProcessSubscriptionRenewed(t *testing.T) {
 }
 
 func (s *ProcessSubscriptionRenewedSuite) SetupTest() {
+	s.ctx = context.Background()
 	s.uowMock = mocks.NewUnitOfWorkSubscription(s.T())
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
 	s.subRepoMock = mocks.NewSubscriptionRepository(s.T())
 	s.eventRepoMock = mocks.NewProcessedEventRepository(s.T())
 	s.planRepoMock = mocks.NewPlanRepository(s.T())
 	s.publisherMock = mocks.NewSubscriptionEventPublisher(s.T())
-	s.uc = usecases.NewProcessSubscriptionRenewed(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 }
 
 func (s *ProcessSubscriptionRenewedSuite) activeSub(lastEventAt time.Time) entities.Subscription {
 	plan, err := valueobjects.NewPlan("MONTHLY", 30)
 	s.Require().NoError(err)
-	ft, err := valueobjects.NewFunnelToken("token-abc")
+	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	periodEnd := lastEventAt.Add(30 * 24 * time.Hour)
-	return entities.Hydrate("sub-001", ft, plan, valueobjects.StatusActive,
-		lastEventAt.Add(-30*24*time.Hour), periodEnd, time.Time{}, lastEventAt)
-}
-
-func (s *ProcessSubscriptionRenewedSuite) TestSucessoExtendePeriodo() {
-	now := time.Now().UTC()
-	sub := s.activeSub(now.Add(-1 * time.Hour))
-	eventKey := "subscription_renewed:kiwify-sub-001:" + now.UTC().Format("2006-01-02T15:04:05Z07:00")
-
-	in := input.ProcessSubscriptionRenewedInput{
-		OrderID:         "order-001",
-		KiwifySubID:     "kiwify-sub-001",
-		KiwifyProductID: "prod-monthly",
-		OccurredAt:      now,
-	}
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, eventKey, "subscription_renewed", "kiwify-sub-001", now).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
-	s.subRepoMock.On("ExtendPeriod", mock.Anything, "sub-001", mock.Anything, now).Return(nil)
-	expectedPeriodEnd := sub.PeriodEnd().Add(sub.Plan().Duration())
-	s.publisherMock.On("PublishRenewed", mock.Anything, mock.Anything,
-		mock.MatchedBy(func(renewed entities.Subscription) bool {
-			return renewed.Status() == valueobjects.StatusActive &&
-				renewed.PeriodEnd().Equal(expectedPeriodEnd) &&
-				renewed.LastEventAt().Equal(now)
-		}),
+	return entities.Hydrate(
 		"sub-001",
-		sub.PeriodEnd(),
-	).Return(nil)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().NoError(err)
-}
-
-func (s *ProcessSubscriptionRenewedSuite) TestIdempotenciaRetornaErrEventoJaProcessado() {
-	now := time.Now().UTC()
-	eventKey := "subscription_renewed:kiwify-sub-001:" + now.UTC().Format("2006-01-02T15:04:05Z07:00")
-
-	in := input.ProcessSubscriptionRenewedInput{
-		OrderID:     "order-001",
-		KiwifySubID: "kiwify-sub-001",
-		OccurredAt:  now,
-	}
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, eventKey, "subscription_renewed", "kiwify-sub-001", now).Return(interfaces.ErrEventAlreadyProcessed)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().Error(err)
-	s.True(errors.Is(err, usecases.ErrEventAlreadyProcessed))
+		funnelToken,
+		plan,
+		valueobjects.StatusActive,
+		lastEventAt.Add(-30*24*time.Hour),
+		lastEventAt.Add(30*24*time.Hour),
+		time.Time{},
+		lastEventAt,
+	)
 }
 
 func (s *ProcessSubscriptionRenewedSuite) pastDueSub(lastEventAt time.Time) entities.Subscription {
 	plan, err := valueobjects.NewPlan("MONTHLY", 30)
 	s.Require().NoError(err)
-	ft, err := valueobjects.NewFunnelToken("token-abc")
+	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	graceEnd := lastEventAt.Add(3 * 24 * time.Hour)
-	return entities.Hydrate("sub-001", ft, plan, valueobjects.StatusPastDue,
-		lastEventAt.Add(-30*24*time.Hour), lastEventAt.Add(24*time.Hour), graceEnd, lastEventAt)
+	return entities.Hydrate(
+		"sub-001",
+		funnelToken,
+		plan,
+		valueobjects.StatusPastDue,
+		lastEventAt.Add(-30*24*time.Hour),
+		lastEventAt.Add(24*time.Hour),
+		lastEventAt.Add(3*24*time.Hour),
+		lastEventAt,
+	)
 }
 
-func (s *ProcessSubscriptionRenewedSuite) TestRenewedStaledQuandoSubEstaPastDueComEventoMaisRecente() {
-	recentLastEvent := time.Now().UTC()
-	oldOccurredAt := recentLastEvent.Add(-2 * time.Hour)
-	sub := s.pastDueSub(recentLastEvent)
-	eventKey := "subscription_renewed:kiwify-sub-001:" + oldOccurredAt.UTC().Format("2006-01-02T15:04:05Z07:00")
-
-	in := input.ProcessSubscriptionRenewedInput{
-		OrderID:     "order-001",
-		KiwifySubID: "kiwify-sub-001",
-		OccurredAt:  oldOccurredAt,
-	}
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, eventKey, "subscription_renewed", "kiwify-sub-001", oldOccurredAt).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
-	s.eventRepoMock.On("MarkSuperseded", mock.Anything, eventKey).Return(nil)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().Error(err)
-	s.True(errors.Is(err, usecases.ErrEventSuperseded))
+func (s *ProcessSubscriptionRenewedSuite) expectRepositories() {
+	s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
+	s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Once()
+	s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 }
 
-func (s *ProcessSubscriptionRenewedSuite) TestCriaPlaceholderSeSubNaoExiste() {
-	now := time.Now().UTC()
-	eventKey := "subscription_renewed:kiwify-sub-001:" + now.UTC().Format("2006-01-02T15:04:05Z07:00")
-	plan, err := valueobjects.NewPlan("MONTHLY", 30)
-	s.Require().NoError(err)
-	placeholderSub := entities.Hydrate("sub-placeholder", valueobjects.FunnelToken{}, plan, valueobjects.StatusActive,
-		now, now.Add(30*24*time.Hour), time.Time{}, now)
-
-	in := input.ProcessSubscriptionRenewedInput{
-		OrderID:         "order-001",
-		KiwifySubID:     "kiwify-sub-001",
-		KiwifyProductID: "prod-monthly",
-		OccurredAt:      now,
+func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
+	type args struct {
+		input input.ProcessSubscriptionRenewedInput
 	}
 
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(args)
+		expect func(error)
+	}{
+		{
+			name: "deve estender periodo de assinatura ativa",
+			args: args{
+				input: func() input.ProcessSubscriptionRenewedInput {
+					now := time.Now().UTC()
+					return input.ProcessSubscriptionRenewedInput{
+						OrderID:         "order-001",
+						KiwifySubID:     "kiwify-sub-001",
+						KiwifyProductID: "prod-monthly",
+						OccurredAt:      now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				sub := s.activeSub(args.input.OccurredAt.Add(-time.Hour))
+				eventKey := "subscription_renewed:kiwify-sub-001:" + args.input.OccurredAt.Format("2006-01-02T15:04:05Z07:00")
+				expectedPeriodEnd := sub.PeriodEnd().Add(sub.Plan().Duration())
 
-	s.eventRepoMock.On("MarkApplied", mock.Anything, eventKey, "subscription_renewed", "kiwify-sub-001", now).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(entities.Subscription{}, errors.New("not found")).Once()
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(plan, nil)
-	s.subRepoMock.On("UpsertByOrder", mock.Anything, "order-001", mock.Anything, now).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(placeholderSub, nil).Once()
-	s.publisherMock.On("PublishRenewed", mock.Anything, mock.Anything, mock.Anything, "sub-placeholder", mock.Anything).Return(nil)
+				s.expectRepositories()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, eventKey, "subscription_renewed", "kiwify-sub-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					ExtendPeriod(s.ctx, "sub-001", expectedPeriodEnd, args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishRenewed(
+						s.ctx,
+						mock.Anything,
+						mock.MatchedBy(func(renewed entities.Subscription) bool {
+							return renewed.ID() == "sub-001" &&
+								renewed.Status() == valueobjects.StatusActive &&
+								renewed.PeriodEnd().Equal(expectedPeriodEnd) &&
+								renewed.LastEventAt().Equal(args.input.OccurredAt)
+						}),
+						"sub-001",
+						sub.PeriodEnd(),
+					).
+					Return(nil).
+					Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve retornar erro de evento ja processado em cenario idempotente",
+			args: args{
+				input: func() input.ProcessSubscriptionRenewedInput {
+					now := time.Now().UTC()
+					return input.ProcessSubscriptionRenewedInput{
+						OrderID:     "order-001",
+						KiwifySubID: "kiwify-sub-001",
+						OccurredAt:  now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				eventKey := "subscription_renewed:kiwify-sub-001:" + args.input.OccurredAt.Format("2006-01-02T15:04:05Z07:00")
 
-	err = s.uc.Execute(context.Background(), in)
-	s.Require().NoError(err)
+				s.expectRepositories()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, eventKey, "subscription_renewed", "kiwify-sub-001", args.input.OccurredAt).
+					Return(application.ErrEventAlreadyProcessed).
+					Once()
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.ErrorIs(err, usecases.ErrEventAlreadyProcessed)
+			},
+		},
+		{
+			name: "deve marcar evento stale como superseded quando houver evento mais recente",
+			args: args{
+				input: func() input.ProcessSubscriptionRenewedInput {
+					now := time.Now().UTC()
+					return input.ProcessSubscriptionRenewedInput{
+						OrderID:     "order-001",
+						KiwifySubID: "kiwify-sub-001",
+						OccurredAt:  now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				sub := s.pastDueSub(args.input.OccurredAt.Add(2 * time.Hour))
+				eventKey := "subscription_renewed:kiwify-sub-001:" + args.input.OccurredAt.Format("2006-01-02T15:04:05Z07:00")
+
+				s.expectRepositories()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, eventKey, "subscription_renewed", "kiwify-sub-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.eventRepoMock.EXPECT().
+					MarkSuperseded(s.ctx, eventKey).
+					Return(nil).
+					Once()
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.ErrorIs(err, usecases.ErrEventSuperseded)
+			},
+		},
+		{
+			name: "deve criar placeholder quando assinatura ainda nao existir",
+			args: args{
+				input: func() input.ProcessSubscriptionRenewedInput {
+					now := time.Now().UTC()
+					return input.ProcessSubscriptionRenewedInput{
+						OrderID:         "order-001",
+						KiwifySubID:     "kiwify-sub-001",
+						KiwifyProductID: "prod-monthly",
+						OccurredAt:      now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				plan, err := valueobjects.NewPlan("MONTHLY", 30)
+				s.Require().NoError(err)
+				placeholderSub := entities.Hydrate(
+					"sub-placeholder",
+					valueobjects.FunnelToken{},
+					plan,
+					valueobjects.StatusActive,
+					args.input.OccurredAt,
+					args.input.OccurredAt.Add(30*24*time.Hour),
+					time.Time{},
+					args.input.OccurredAt,
+				)
+				eventKey := "subscription_renewed:kiwify-sub-001:" + args.input.OccurredAt.Format("2006-01-02T15:04:05Z07:00")
+
+				s.expectRepositories()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, eventKey, "subscription_renewed", "kiwify-sub-001", args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(entities.Subscription{}, errors.New("not found")).
+					Once()
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "prod-monthly").
+					Return(plan, nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(placeholderSub, nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishRenewed(s.ctx, mock.Anything, placeholderSub, "sub-placeholder", args.input.OccurredAt).
+					Return(nil).
+					Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.SetupTest()
+			sut := usecases.NewProcessSubscriptionRenewed(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
+			scenario.setup(scenario.args)
+
+			err := sut.Execute(s.ctx, scenario.args.input)
+
+			scenario.expect(err)
+		})
+	}
 }

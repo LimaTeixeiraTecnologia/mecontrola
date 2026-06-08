@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
@@ -18,40 +17,50 @@ func TestWhatsAppHistoryEntrySuite(t *testing.T) {
 	suite.Run(t, new(WhatsAppHistoryEntrySuite))
 }
 
-func (s *WhatsAppHistoryEntrySuite) TestNewWhatsAppHistoryEntry_GeneratesValidID() {
-	entry := entities.NewWhatsAppHistoryEntry("user-123", "+5511987654321", "initial_link")
+func (s *WhatsAppHistoryEntrySuite) SetupTest() {}
 
-	assert.Regexp(s.T(), `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`, entry.ID())
-}
+func (s *WhatsAppHistoryEntrySuite) TestNewWhatsAppHistoryEntry() {
+	type args struct {
+		userID string
+		number string
+		reason string
+	}
 
-func (s *WhatsAppHistoryEntrySuite) TestNewWhatsAppHistoryEntry_LinkedAtIsNonZero() {
-	before := time.Now().UTC()
-	entry := entities.NewWhatsAppHistoryEntry("user-123", "+5511987654321", "initial_link")
-	after := time.Now().UTC()
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(entities.WhatsAppHistoryEntry, time.Time, time.Time)
+	}{
+		{
+			name: "deve preencher campos obrigatorios",
+			args: args{userID: "user-abc", number: "+5511912345678", reason: "reactivation"},
+			expect: func(entry entities.WhatsAppHistoryEntry, before time.Time, after time.Time) {
+				s.Equal("user-abc", entry.UserID())
+				s.Equal("+5511912345678", entry.Number())
+				s.Equal("reactivation", entry.Reason())
+				s.True(entry.Active())
+				s.True(entry.UnlinkedAt().IsZero())
+				s.False(entry.LinkedAt().Before(before))
+				s.False(entry.LinkedAt().After(after))
+			},
+		},
+		{
+			name: "deve gerar ids unicos",
+			args: args{userID: "user-1", number: "+5511987654321", reason: "initial_link"},
+			expect: func(entry entities.WhatsAppHistoryEntry, _ time.Time, _ time.Time) {
+				second := entities.NewWhatsAppHistoryEntry("user-1", "+5511987654321", "initial_link")
+				s.NotEqual(entry.ID(), second.ID())
+			},
+		},
+	}
 
-	s.False(entry.LinkedAt().IsZero())
-	s.True(!entry.LinkedAt().Before(before))
-	s.True(!entry.LinkedAt().After(after))
-}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			before := time.Now().UTC()
+			entry := entities.NewWhatsAppHistoryEntry(scenario.args.userID, scenario.args.number, scenario.args.reason)
+			after := time.Now().UTC()
 
-func (s *WhatsAppHistoryEntrySuite) TestNewWhatsAppHistoryEntry_ActiveIsTrue() {
-	entry := entities.NewWhatsAppHistoryEntry("user-123", "+5511987654321", "initial_link")
-
-	s.True(entry.Active())
-}
-
-func (s *WhatsAppHistoryEntrySuite) TestNewWhatsAppHistoryEntry_FieldsSetCorrectly() {
-	entry := entities.NewWhatsAppHistoryEntry("user-abc", "+5511912345678", "reactivation")
-
-	s.Equal("user-abc", entry.UserID())
-	s.Equal("+5511912345678", entry.Number())
-	s.Equal("reactivation", entry.Reason())
-	s.True(entry.UnlinkedAt().IsZero())
-}
-
-func (s *WhatsAppHistoryEntrySuite) TestNewWhatsAppHistoryEntry_UniqueIDs() {
-	e1 := entities.NewWhatsAppHistoryEntry("user-1", "+5511987654321", "r1")
-	e2 := entities.NewWhatsAppHistoryEntry("user-1", "+5511987654321", "r1")
-
-	s.NotEqual(e1.ID(), e2.ID())
+			scenario.expect(entry, before, after)
+		})
+	}
 }

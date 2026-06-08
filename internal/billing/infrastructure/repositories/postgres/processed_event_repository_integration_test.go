@@ -28,6 +28,8 @@ func TestProcessedEventRepositorySuite(t *testing.T) {
 	suite.Run(t, new(ProcessedEventRepositorySuite))
 }
 
+func (s *ProcessedEventRepositorySuite) SetupTest() {}
+
 func (s *ProcessedEventRepositorySuite) SetupSuite() {
 	s.mgr = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
@@ -37,41 +39,65 @@ func (s *ProcessedEventRepositorySuite) newRepo() interfaces.ProcessedEventRepos
 	return s.factory.ProcessedEventRepository(s.mgr.DBTX(context.Background()))
 }
 
-func (s *ProcessedEventRepositorySuite) TestMarkApplied_InsertsRow() {
-	ctx := context.Background()
-	repo := s.newRepo()
+func (s *ProcessedEventRepositorySuite) TestMarkApplied() {
+	scenarios := []struct {
+		name      string
+		setup     func() (string, string, string, time.Time)
+		expectErr error
+		repeat    bool
+	}{
+		{
+			name: "deve inserir a linha do evento processado",
+			setup: func() (string, string, string, time.Time) {
+				return "compra_aprovada:order-pe-test-001", "compra_aprovada", "order-pe-test-001", time.Now().UTC()
+			},
+		},
+		{
+			name: "deve retornar sentinela quando o evento ja foi processado",
+			setup: func() (string, string, string, time.Time) {
+				return "compra_aprovada:order-pe-dup-001", "compra_aprovada", "order-pe-dup-001", time.Now().UTC()
+			},
+			expectErr: interfaces.ErrEventAlreadyProcessed,
+			repeat:    true,
+		},
+	}
 
-	eventKey := "compra_aprovada:order-pe-test-001"
-	err := repo.MarkApplied(ctx, eventKey, "compra_aprovada", "order-pe-test-001", time.Now().UTC())
-	s.Require().NoError(err)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			repo := s.newRepo()
+			eventKey, trigger, recursoID, occurredAt := scenario.setup()
+
+			err := repo.MarkApplied(ctx, eventKey, trigger, recursoID, occurredAt)
+			s.Require().NoError(err)
+
+			if !scenario.repeat {
+				return
+			}
+
+			err = repo.MarkApplied(ctx, eventKey, trigger, recursoID, occurredAt)
+			s.Require().Error(err)
+			s.Assert().True(errors.Is(err, scenario.expectErr), "expected %v, got: %v", scenario.expectErr, err)
+		})
+	}
 }
 
-func (s *ProcessedEventRepositorySuite) TestMarkApplied_DuplicateReturnsSentinel() {
-	ctx := context.Background()
-	repo := s.newRepo()
+func (s *ProcessedEventRepositorySuite) TestMarkSuperseded() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve atualizar o status para superseded"},
+	}
 
-	eventKey := "compra_aprovada:order-pe-dup-001"
-	occurredAt := time.Now().UTC()
-
-	err := repo.MarkApplied(ctx, eventKey, "compra_aprovada", "order-pe-dup-001", occurredAt)
-	s.Require().NoError(err)
-
-	err = repo.MarkApplied(ctx, eventKey, "compra_aprovada", "order-pe-dup-001", occurredAt)
-	s.Require().Error(err)
-	s.Assert().True(errors.Is(err, interfaces.ErrEventAlreadyProcessed),
-		"expected ErrEventAlreadyProcessed, got: %v", err)
-}
-
-func (s *ProcessedEventRepositorySuite) TestMarkSuperseded_UpdatesStatus() {
-	ctx := context.Background()
-	repo := s.newRepo()
-
-	eventKey := "subscription_late:sub-superseded-001:2026-06-01T00:00:00Z"
-	err := repo.MarkApplied(ctx, eventKey, "subscription_late", "sub-superseded-001", time.Now().UTC())
-	s.Require().NoError(err)
-
-	err = repo.MarkSuperseded(ctx, eventKey)
-	s.Require().NoError(err)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			repo := s.newRepo()
+			eventKey := "subscription_late:sub-superseded-001:2026-06-01T00:00:00Z"
+			s.Require().NoError(repo.MarkApplied(ctx, eventKey, "subscription_late", "sub-superseded-001", time.Now().UTC()))
+			s.Require().NoError(repo.MarkSuperseded(ctx, eventKey))
+		})
+	}
 }
 
 type RF11ReplaySuite struct {
@@ -84,36 +110,49 @@ func TestRF11ReplaySuite(t *testing.T) {
 	suite.Run(t, new(RF11ReplaySuite))
 }
 
+func (s *RF11ReplaySuite) SetupTest() {}
+
 func (s *RF11ReplaySuite) SetupSuite() {
 	s.mgr = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *RF11ReplaySuite) TestRF11_ThreeReplaysYieldOneInsertAndTwoSentinels() {
-	ctx := context.Background()
-	repo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
-
-	eventKey := "compra_aprovada:order-rf11-replay-001"
-	occurredAt := time.Now().UTC()
-
-	var errs []error
-	for i := 0; i < 3; i++ {
-		err := repo.MarkApplied(ctx, eventKey, "compra_aprovada", "order-rf11-replay-001", occurredAt)
-		errs = append(errs, err)
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve produzir um insert e duas sentinelas em tres replays"},
 	}
 
-	inserted := 0
-	sentinels := 0
-	for _, err := range errs {
-		if err == nil {
-			inserted++
-		} else if errors.Is(err, interfaces.ErrEventAlreadyProcessed) {
-			sentinels++
-		} else {
-			s.Failf("unexpected error", "unexpected error on replay: %v", err)
-		}
-	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			repo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
+			eventKey := "compra_aprovada:order-rf11-replay-001"
+			occurredAt := time.Now().UTC()
 
-	s.Assert().Equal(1, inserted, "RF-11: exactly 1 INSERT expected")
-	s.Assert().Equal(2, sentinels, "RF-11: exactly 2 sentinels expected")
+			var errs []error
+			for range 3 {
+				err := repo.MarkApplied(ctx, eventKey, "compra_aprovada", "order-rf11-replay-001", occurredAt)
+				errs = append(errs, err)
+			}
+
+			inserted := 0
+			sentinels := 0
+			for _, err := range errs {
+				if err == nil {
+					inserted++
+					continue
+				}
+				if errors.Is(err, interfaces.ErrEventAlreadyProcessed) {
+					sentinels++
+					continue
+				}
+				s.Failf("unexpected error", "unexpected error on replay: %v", err)
+			}
+
+			s.Assert().Equal(1, inserted, "RF-11: exactly 1 INSERT expected")
+			s.Assert().Equal(2, sentinels, "RF-11: exactly 2 sentinels expected")
+		})
+	}
 }

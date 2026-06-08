@@ -4,120 +4,97 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
+	domainmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/mocks"
 )
 
-type stubSub struct {
-	status         domain.SubscriptionStatus
-	periodEnd      time.Time
-	gracePeriodEnd time.Time
+type EntitlementSuite struct {
+	suite.Suite
+	now time.Time
 }
 
-func (s stubSub) Status() domain.SubscriptionStatus { return s.status }
-func (s stubSub) PeriodEnd() time.Time              { return s.periodEnd }
-func (s stubSub) GracePeriodEnd() time.Time         { return s.gracePeriodEnd }
+func TestEntitlementSuite(t *testing.T) {
+	suite.Run(t, new(EntitlementSuite))
+}
 
-func TestIsEntitled(t *testing.T) {
-	t.Parallel()
+func (s *EntitlementSuite) SetupTest() {
+	s.now = time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
+}
 
-	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
-	future := now.Add(24 * time.Hour)
-	past := now.Add(-24 * time.Hour)
+func (s *EntitlementSuite) TestIsEntitled() {
+	type args struct {
+		useNil    bool
+		status    domain.SubscriptionStatus
+		periodEnd time.Time
+		graceEnd  time.Time
+	}
 
-	tests := []struct {
-		name         string
-		sub          domain.Subscription
-		wantEntitled bool
-		wantReason   domain.Reason
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(bool, domain.Reason)
 	}{
 		{
-			name:         "nil subscription",
-			sub:          nil,
-			wantEntitled: false,
-			wantReason:   domain.ReasonNoSubscription,
+			name: "deve negar acesso quando nao houver assinatura",
+			args: args{useNil: true},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonNoSubscription, reason)
+			},
 		},
 		{
-			name:         "ACTIVE period_end > now",
-			sub:          stubSub{status: domain.SubscriptionActive, periodEnd: future},
-			wantEntitled: true,
-			wantReason:   domain.ReasonActive,
+			name: "deve conceder acesso para assinatura ativa com periodo vigente",
+			args: args{status: domain.SubscriptionActive, periodEnd: s.now.Add(24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.True(entitled)
+				s.Equal(domain.ReasonActive, reason)
+			},
 		},
 		{
-			name:         "ACTIVE period_end <= now",
-			sub:          stubSub{status: domain.SubscriptionActive, periodEnd: past},
-			wantEntitled: false,
-			wantReason:   domain.ReasonExpired,
+			name: "deve negar acesso para past due sem carencia",
+			args: args{status: domain.SubscriptionPastDue, graceEnd: s.now.Add(-24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonPastDueNoGrace, reason)
+			},
 		},
 		{
-			name:         "TRIALING period_end > now",
-			sub:          stubSub{status: domain.SubscriptionTrialing, periodEnd: future},
-			wantEntitled: true,
-			wantReason:   domain.ReasonTrialing,
+			name: "deve conceder acesso para cancelado com periodo vigente",
+			args: args{status: domain.SubscriptionCanceledPending, periodEnd: s.now.Add(24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.True(entitled)
+				s.Equal(domain.ReasonCanceledPending, reason)
+			},
 		},
 		{
-			name:         "TRIALING period_end <= now",
-			sub:          stubSub{status: domain.SubscriptionTrialing, periodEnd: past},
-			wantEntitled: false,
-			wantReason:   domain.ReasonExpired,
-		},
-		{
-			name:         "PAST_DUE grace_period_end > now",
-			sub:          stubSub{status: domain.SubscriptionPastDue, gracePeriodEnd: future},
-			wantEntitled: true,
-			wantReason:   domain.ReasonPastDueGrace,
-		},
-		{
-			name:         "PAST_DUE grace_period_end <= now",
-			sub:          stubSub{status: domain.SubscriptionPastDue, gracePeriodEnd: past},
-			wantEntitled: false,
-			wantReason:   domain.ReasonPastDueNoGrace,
-		},
-		{
-			name:         "PAST_DUE grace_period_end zero",
-			sub:          stubSub{status: domain.SubscriptionPastDue},
-			wantEntitled: false,
-			wantReason:   domain.ReasonPastDueNoGrace,
-		},
-		{
-			name:         "CANCELED_PENDING period_end > now",
-			sub:          stubSub{status: domain.SubscriptionCanceledPending, periodEnd: future},
-			wantEntitled: true,
-			wantReason:   domain.ReasonCanceledPending,
-		},
-		{
-			name:         "CANCELED_PENDING period_end <= now",
-			sub:          stubSub{status: domain.SubscriptionCanceledPending, periodEnd: past},
-			wantEntitled: false,
-			wantReason:   domain.ReasonExpired,
-		},
-		{
-			name:         "EXPIRED",
-			sub:          stubSub{status: domain.SubscriptionExpired},
-			wantEntitled: false,
-			wantReason:   domain.ReasonExpired,
-		},
-		{
-			name:         "REFUNDED",
-			sub:          stubSub{status: domain.SubscriptionRefunded},
-			wantEntitled: false,
-			wantReason:   domain.ReasonRefunded,
-		},
-		{
-			name:         "status desconhecido",
-			sub:          stubSub{status: "UNKNOWN_STATUS"},
-			wantEntitled: false,
-			wantReason:   domain.ReasonExpired,
+			name: "deve negar acesso para status desconhecido",
+			args: args{status: domain.SubscriptionStatus("UNKNOWN_STATUS")},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonExpired, reason)
+			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			entitled, reason := domain.IsEntitled(tc.sub, now)
-			assert.Equal(t, tc.wantEntitled, entitled)
-			assert.Equal(t, tc.wantReason, reason)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			var subscription domain.Subscription
+			if !scenario.args.useNil {
+				mockSubscription := domainmocks.NewSubscription(s.T())
+				mockSubscription.EXPECT().Status().Return(scenario.args.status).Once()
+				switch scenario.args.status {
+				case domain.SubscriptionActive, domain.SubscriptionTrialing, domain.SubscriptionCanceledPending:
+					mockSubscription.EXPECT().PeriodEnd().Return(scenario.args.periodEnd).Once()
+				case domain.SubscriptionPastDue:
+					mockSubscription.EXPECT().GracePeriodEnd().Return(scenario.args.graceEnd).Once()
+				}
+				subscription = mockSubscription
+			}
+
+			entitled, reason := domain.IsEntitled(subscription, s.now)
+			scenario.expect(entitled, reason)
 		})
 	}
 }

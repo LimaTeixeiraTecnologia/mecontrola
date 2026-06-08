@@ -179,11 +179,11 @@ Estados internos canônicos (independentes de provider):
 
 |Evento Kiwify                      |Ação                                                   |
 |-----------------------------------|-------------------------------------------------------|
-|`compra_aprovada` (primeira)       |cria/ativa subscription, `period_end = now + 30d`      |
+|`order_approved` (primeira)       |cria/ativa subscription, `period_end = now + 30d`      |
 |`subscription_renewed`             |estende `period_end += 30d`                            |
 |`subscription_late`                |marca `PAST_DUE`, inicia grace period                  |
 |`subscription_canceled`            |marca `CANCELED_PENDING` (mantém acesso até period_end)|
-|`compra_reembolsada` / `chargeback`|`EXPIRED` imediato + notifica financeiro               |
+|`order_refunded` / `chargeback`|`EXPIRED` imediato + notifica financeiro               |
 |`pix_gerado` / `boleto_gerado`     |apenas log, não muda entitlement                       |
 
 ### Mapeamento Hotmart → estado
@@ -284,7 +284,7 @@ token := uuid.NewString()
 err := h.repo.CreateSignupToken(ctx, token, whatsappNumber, "pro", 30*time.Minute)
 sendMessage(whatsappNumber, "Pague aqui: " + checkoutURL + "?s=" + token)
 
-// no BillingEventProcessor após compra_aprovada
+// no BillingEventProcessor após order_approved
 token := payload.CustomFields["s"] // ou UTM
 whatsappNumber, err := h.repo.ConsumeSignupToken(ctx, token)
 user := getOrCreateUserByWhatsApp(ctx, whatsappNumber)
@@ -316,7 +316,7 @@ Webhooks **vão falhar**. Rede cai, deploy reinicia pod no meio do POST, platafo
 
 ## 8. Armadilhas (vão te morder se ignorar)
 
-1. **Webhook fora de ordem.** `subscription_renewed` pode chegar antes de `compra_aprovada`. Sempre use `occurred_at` do evento; ignore se representaria regressão.
+1. **Webhook fora de ordem.** `subscription_renewed` pode chegar antes de `order_approved`. Sempre use `occurred_at` do evento; ignore se representaria regressão.
 1. **Hotmart versiona payload** (v1, v2, v2.0.0). Versione seu parser.
 1. **Reembolso após 7 dias acontece.** Nunca assuma “pagou está sempre OK”. Sempre escute refund/chargeback e bloqueie.
 1. **Cartão expirado.** Plataformas tentam recobrar por X dias e desistem. Implemente régua WhatsApp (“seu cartão falhou, atualize aqui: {link}”) — elas não fazem bem.

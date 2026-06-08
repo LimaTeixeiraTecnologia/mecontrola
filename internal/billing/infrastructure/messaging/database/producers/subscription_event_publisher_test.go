@@ -24,8 +24,6 @@ type SubscriptionEventPublisherSuite struct {
 	storage        *outboxmocks.Storage
 	repoFactory    *outboxmocks.OutboxRepositoryFactory
 	tx             *dbmocks.MockDBTX
-	publisher      *producers.SubscriptionEventPublisher
-	sub            entities.Subscription
 	subscriptionID string
 	occurredAt     time.Time
 }
@@ -39,22 +37,43 @@ func (s *SubscriptionEventPublisherSuite) SetupTest() {
 	s.repoFactory = outboxmocks.NewOutboxRepositoryFactory(s.T())
 	s.tx = dbmocks.NewMockDBTX(s.T())
 
-	cfg := configs.OutboxConfig{RetryMaxAttempts: 5}
-	idGen := id.NewUUIDGenerator()
-
-	s.publisher = producers.NewSubscriptionEventPublisher(s.repoFactory, cfg, idGen)
-
 	s.subscriptionID = "sub-unit-001"
 	s.occurredAt = time.Now().UTC().Truncate(time.Millisecond)
+}
 
+func (s *SubscriptionEventPublisherSuite) newPublisher() *producers.SubscriptionEventPublisher {
+	cfg := configs.OutboxConfig{RetryMaxAttempts: 5}
+	idGen := id.NewUUIDGenerator()
+	return producers.NewSubscriptionEventPublisher(s.repoFactory, cfg, idGen)
+}
+
+func (s *SubscriptionEventPublisherSuite) newActiveSubscription(token string) entities.Subscription {
 	plan, err := valueobjects.NewPlan("MONTHLY", 30)
 	s.Require().NoError(err)
-	ft, err := valueobjects.NewFunnelToken("token-unit-001")
+	ft, err := valueobjects.NewFunnelToken(token)
 	s.Require().NoError(err)
 
 	sub := entities.NewSubscription(plan, ft)
 	s.Require().NoError(sub.Activate(s.occurredAt))
-	s.sub = sub
+	return sub
+}
+
+func (s *SubscriptionEventPublisherSuite) newPastDueSubscription() entities.Subscription {
+	sub := s.newActiveSubscription("token-pastdue-001")
+	s.Require().NoError(sub.MarkPastDue(s.occurredAt.Add(time.Hour), 3*24*time.Hour))
+	return sub
+}
+
+func (s *SubscriptionEventPublisherSuite) newCanceledSubscription() entities.Subscription {
+	sub := s.newActiveSubscription("token-canceled-001")
+	s.Require().NoError(sub.MarkCanceled(s.occurredAt.Add(time.Hour)))
+	return sub
+}
+
+func (s *SubscriptionEventPublisherSuite) newRefundedSubscription() entities.Subscription {
+	sub := s.newActiveSubscription("token-refunded-001")
+	s.Require().NoError(sub.MarkRefunded(s.occurredAt.Add(time.Hour)))
+	return sub
 }
 
 func (s *SubscriptionEventPublisherSuite) expectInsertOnce(eventType string) {
@@ -86,131 +105,136 @@ func (s *SubscriptionEventPublisherSuite) expectInsertError(storageErr error) {
 		Once()
 }
 
-func (s *SubscriptionEventPublisherSuite) TestPublishActivated_CallsInsertExactlyOnce() {
-	s.expectInsertOnce(producers.EventTypeSubscriptionActivated)
-	ctx := context.Background()
-	err := s.publisher.PublishActivated(ctx, s.tx, s.sub, s.subscriptionID, "token-unit-001", "+5511999999999", "user@example.com", "sale-001")
-	s.NoError(err)
+func (s *SubscriptionEventPublisherSuite) TestPublish() {
+	scenarios := []struct {
+		name      string
+		eventType string
+		setup     func()
+		act       func(*producers.SubscriptionEventPublisher, context.Context) error
+	}{
+		{
+			name:      "deve publicar ativacao com token",
+			eventType: producers.EventTypeSubscriptionActivated,
+			setup: func() {
+				s.expectInsertOnce(producers.EventTypeSubscriptionActivated)
+			},
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishActivated(ctx, s.tx, s.newActiveSubscription("token-unit-001"), s.subscriptionID, "token-unit-001", "+5511999999999", "user@example.com", "sale-001")
+			},
+		},
+		{
+			name:      "deve publicar ativacao sem token",
+			eventType: producers.EventTypeSubscriptionActivatedWithoutToken,
+			setup: func() {
+				s.expectInsertOnce(producers.EventTypeSubscriptionActivatedWithoutToken)
+			},
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishActivatedWithoutToken(ctx, s.tx, s.newActiveSubscription("token-unit-002"), s.subscriptionID, "+5511999999999", "user@example.com", "sale-002")
+			},
+		},
+		{
+			name:      "deve publicar renovacao",
+			eventType: producers.EventTypeSubscriptionRenewed,
+			setup: func() {
+				s.expectInsertOnce(producers.EventTypeSubscriptionRenewed)
+			},
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishRenewed(ctx, s.tx, s.newActiveSubscription("token-unit-003"), s.subscriptionID, s.occurredAt.Add(-30*24*time.Hour))
+			},
+		},
+		{
+			name:      "deve publicar atraso",
+			eventType: producers.EventTypeSubscriptionPastDue,
+			setup: func() {
+				s.expectInsertOnce(producers.EventTypeSubscriptionPastDue)
+			},
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishPastDue(ctx, s.tx, s.newPastDueSubscription(), s.subscriptionID)
+			},
+		},
+		{
+			name:      "deve publicar cancelamento",
+			eventType: producers.EventTypeSubscriptionCanceled,
+			setup: func() {
+				s.expectInsertOnce(producers.EventTypeSubscriptionCanceled)
+			},
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishCanceled(ctx, s.tx, s.newCanceledSubscription(), s.subscriptionID)
+			},
+		},
+		{
+			name:      "deve publicar reembolso",
+			eventType: producers.EventTypeSubscriptionRefunded,
+			setup: func() {
+				s.expectInsertOnce(producers.EventTypeSubscriptionRefunded)
+			},
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishRefunded(ctx, s.tx, s.newRefundedSubscription(), s.subscriptionID)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.setup()
+			publisher := s.newPublisher()
+			err := scenario.act(publisher, context.Background())
+			s.NoError(err)
+		})
+	}
 }
 
-func (s *SubscriptionEventPublisherSuite) TestPublishActivated_PropagatesError() {
-	storageErr := errors.New("db failure")
-	s.expectInsertError(storageErr)
-	ctx := context.Background()
-	err := s.publisher.PublishActivated(ctx, s.tx, s.sub, s.subscriptionID, "token-unit-001", "+5511999999999", "user@example.com", "sale-001")
-	s.ErrorContains(err, "billing/producer:")
-	s.ErrorContains(err, "db failure")
-}
+func (s *SubscriptionEventPublisherSuite) TestPublish_PropagatesError() {
+	scenarios := []struct {
+		name string
+		act  func(*producers.SubscriptionEventPublisher, context.Context) error
+	}{
+		{
+			name: "deve propagar erro ao publicar ativacao",
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishActivated(ctx, s.tx, s.newActiveSubscription("token-unit-011"), s.subscriptionID, "token-unit-011", "+5511999999999", "user@example.com", "sale-011")
+			},
+		},
+		{
+			name: "deve propagar erro ao publicar ativacao sem token",
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishActivatedWithoutToken(ctx, s.tx, s.newActiveSubscription("token-unit-012"), s.subscriptionID, "+5511999999999", "user@example.com", "sale-012")
+			},
+		},
+		{
+			name: "deve propagar erro ao publicar renovacao",
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishRenewed(ctx, s.tx, s.newActiveSubscription("token-unit-013"), s.subscriptionID, s.occurredAt)
+			},
+		},
+		{
+			name: "deve propagar erro ao publicar atraso",
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishPastDue(ctx, s.tx, s.newPastDueSubscription(), s.subscriptionID)
+			},
+		},
+		{
+			name: "deve propagar erro ao publicar cancelamento",
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishCanceled(ctx, s.tx, s.newCanceledSubscription(), s.subscriptionID)
+			},
+		},
+		{
+			name: "deve propagar erro ao publicar reembolso",
+			act: func(publisher *producers.SubscriptionEventPublisher, ctx context.Context) error {
+				return publisher.PublishRefunded(ctx, s.tx, s.newRefundedSubscription(), s.subscriptionID)
+			},
+		},
+	}
 
-func (s *SubscriptionEventPublisherSuite) TestPublishActivatedWithoutToken_CallsInsertExactlyOnce() {
-	s.expectInsertOnce(producers.EventTypeSubscriptionActivatedWithoutToken)
-	ctx := context.Background()
-	err := s.publisher.PublishActivatedWithoutToken(ctx, s.tx, s.sub, s.subscriptionID, "+5511999999999", "user@example.com", "sale-002")
-	s.NoError(err)
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishActivatedWithoutToken_PropagatesError() {
-	storageErr := errors.New("db failure")
-	s.expectInsertError(storageErr)
-	ctx := context.Background()
-	err := s.publisher.PublishActivatedWithoutToken(ctx, s.tx, s.sub, s.subscriptionID, "+5511999999999", "user@example.com", "sale-002")
-	s.ErrorContains(err, "billing/producer:")
-	s.ErrorContains(err, "db failure")
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishRenewed_CallsInsertExactlyOnce() {
-	s.expectInsertOnce(producers.EventTypeSubscriptionRenewed)
-	ctx := context.Background()
-	previousEnd := s.occurredAt.Add(-30 * 24 * time.Hour)
-	err := s.publisher.PublishRenewed(ctx, s.tx, s.sub, s.subscriptionID, previousEnd)
-	s.NoError(err)
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishRenewed_PropagatesError() {
-	storageErr := errors.New("db failure")
-	s.expectInsertError(storageErr)
-	ctx := context.Background()
-	err := s.publisher.PublishRenewed(ctx, s.tx, s.sub, s.subscriptionID, s.occurredAt)
-	s.ErrorContains(err, "billing/producer:")
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishPastDue_CallsInsertExactlyOnce() {
-	plan, _ := valueobjects.NewPlan("MONTHLY", 30)
-	ft, _ := valueobjects.NewFunnelToken("token-pastdue-001")
-	sub := entities.NewSubscription(plan, ft)
-	s.Require().NoError(sub.Activate(s.occurredAt))
-	s.Require().NoError(sub.MarkPastDue(s.occurredAt.Add(time.Hour), 3*24*time.Hour))
-
-	s.repoFactory.EXPECT().OutboxRepository(s.tx).Return(s.storage).Once()
-	s.storage.EXPECT().
-		Insert(mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
-			return evt.Type == producers.EventTypeSubscriptionPastDue
-		}), 5).
-		Return(nil).Once()
-
-	ctx := context.Background()
-	err := s.publisher.PublishPastDue(ctx, s.tx, sub, s.subscriptionID)
-	s.NoError(err)
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishPastDue_PropagatesError() {
-	storageErr := errors.New("db failure")
-	s.expectInsertError(storageErr)
-	ctx := context.Background()
-	err := s.publisher.PublishPastDue(ctx, s.tx, s.sub, s.subscriptionID)
-	s.ErrorContains(err, "billing/producer:")
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishCanceled_CallsInsertExactlyOnce() {
-	plan, _ := valueobjects.NewPlan("MONTHLY", 30)
-	ft, _ := valueobjects.NewFunnelToken("token-canceled-001")
-	sub := entities.NewSubscription(plan, ft)
-	s.Require().NoError(sub.Activate(s.occurredAt))
-	s.Require().NoError(sub.MarkCanceled(s.occurredAt.Add(time.Hour)))
-
-	s.repoFactory.EXPECT().OutboxRepository(s.tx).Return(s.storage).Once()
-	s.storage.EXPECT().
-		Insert(mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
-			return evt.Type == producers.EventTypeSubscriptionCanceled
-		}), 5).
-		Return(nil).Once()
-
-	ctx := context.Background()
-	err := s.publisher.PublishCanceled(ctx, s.tx, sub, s.subscriptionID)
-	s.NoError(err)
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishCanceled_PropagatesError() {
-	storageErr := errors.New("db failure")
-	s.expectInsertError(storageErr)
-	ctx := context.Background()
-	err := s.publisher.PublishCanceled(ctx, s.tx, s.sub, s.subscriptionID)
-	s.ErrorContains(err, "billing/producer:")
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishRefunded_CallsInsertExactlyOnce() {
-	plan, _ := valueobjects.NewPlan("MONTHLY", 30)
-	ft, _ := valueobjects.NewFunnelToken("token-refunded-001")
-	sub := entities.NewSubscription(plan, ft)
-	s.Require().NoError(sub.Activate(s.occurredAt))
-	s.Require().NoError(sub.MarkRefunded(s.occurredAt.Add(time.Hour)))
-
-	s.repoFactory.EXPECT().OutboxRepository(s.tx).Return(s.storage).Once()
-	s.storage.EXPECT().
-		Insert(mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
-			return evt.Type == producers.EventTypeSubscriptionRefunded
-		}), 5).
-		Return(nil).Once()
-
-	ctx := context.Background()
-	err := s.publisher.PublishRefunded(ctx, s.tx, sub, s.subscriptionID)
-	s.NoError(err)
-}
-
-func (s *SubscriptionEventPublisherSuite) TestPublishRefunded_PropagatesError() {
-	storageErr := errors.New("db failure")
-	s.expectInsertError(storageErr)
-	ctx := context.Background()
-	err := s.publisher.PublishRefunded(ctx, s.tx, s.sub, s.subscriptionID)
-	s.ErrorContains(err, "billing/producer:")
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			storageErr := errors.New("db failure")
+			s.expectInsertError(storageErr)
+			publisher := s.newPublisher()
+			err := scenario.act(publisher, context.Background())
+			s.ErrorContains(err, "billing/producer:")
+			s.ErrorContains(err, "db failure")
+		})
+	}
 }

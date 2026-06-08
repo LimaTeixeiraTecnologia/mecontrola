@@ -3,138 +3,136 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers"
+	handlersmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers/mocks"
 )
 
-type stubCreateCheckout struct {
-	result output.CreateCheckoutSessionOutput
-	err    error
+type CreateCheckoutHandlerSuite struct {
+	suite.Suite
+	ctx context.Context
 }
 
-func (s *stubCreateCheckout) Execute(_ context.Context, in input.CreateCheckoutSessionInput) (output.CreateCheckoutSessionOutput, error) {
-	if in.PlanID == "" {
-		return output.CreateCheckoutSessionOutput{}, errors.New("plan_id is required")
+func TestCreateCheckoutHandlerSuite(t *testing.T) {
+	suite.Run(t, new(CreateCheckoutHandlerSuite))
+}
+
+func (s *CreateCheckoutHandlerSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *CreateCheckoutHandlerSuite) TestHandle() {
+	type args struct {
+		body   string
+		origin string
 	}
-	return s.result, s.err
-}
 
-func buildCheckoutHandler(stub *stubCreateCheckout) http.Handler {
-	o11y := noop.NewProvider()
-	createdCount := 0
-	rateLimitCount := 0
-	h := handlers.NewCreateCheckoutHandler(
-		stub,
-		func(_ string) { createdCount++ },
-		func() { rateLimitCount++ },
-		o11y,
-	)
-	return http.HandlerFunc(h.Handle)
-}
-
-func TestCreateCheckoutHandler_201_Success(t *testing.T) {
-	stub := &stubCreateCheckout{
-		result: output.CreateCheckoutSessionOutput{
-			CheckoutURL: "https://pay.kiwify.com.br/abc?sck=tok123",
-			TokenID:     "token-id-1",
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*handlersmocks.CreateCheckoutSessionUseCase)
+		expect func(*httptest.ResponseRecorder)
+	}{
+		{
+			name: "deve retornar created quando sucesso",
+			args: args{body: `{"plan_id":"11111111-1111-1111-1111-111111111111"}`},
+			setup: func(useCase *handlersmocks.CreateCheckoutSessionUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, input.CreateCheckoutSessionInput{
+					PlanID: "11111111-1111-1111-1111-111111111111",
+				}).Return(output.CreateCheckoutSessionOutput{
+					CheckoutURL: "https://pay.kiwify.com.br/abc?sck=tok123",
+					TokenID:     "token-id-1",
+				}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusCreated, recorder.Code)
+				var response map[string]any
+				s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&response))
+				s.Equal("https://pay.kiwify.com.br/abc?sck=tok123", response["checkout_url"])
+			},
+		},
+		{
+			name:  "deve retornar bad request sem plan id",
+			args:  args{body: `{}`},
+			setup: func(useCase *handlersmocks.CreateCheckoutSessionUseCase) {},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name:  "deve retornar bad request para json invalido",
+			args:  args{body: `not-json`},
+			setup: func(useCase *handlersmocks.CreateCheckoutSessionUseCase) {},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name: "deve retornar bad request para plano desconhecido",
+			args: args{body: `{"plan_id":"unknown-plan"}`},
+			setup: func(useCase *handlersmocks.CreateCheckoutSessionUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, input.CreateCheckoutSessionInput{PlanID: "unknown-plan"}).
+					Return(output.CreateCheckoutSessionOutput{}, application.ErrUnknownPlan).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name: "deve retornar service unavailable quando checkout indisponivel",
+			args: args{body: `{"plan_id":"22222222-2222-2222-2222-222222222222"}`},
+			setup: func(useCase *handlersmocks.CreateCheckoutSessionUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, input.CreateCheckoutSessionInput{
+					PlanID: "22222222-2222-2222-2222-222222222222",
+				}).Return(output.CreateCheckoutSessionOutput{}, application.ErrCheckoutUnavailable).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusServiceUnavailable, recorder.Code)
+			},
+		},
+		{
+			name: "deve aceitar origem permitida",
+			args: args{
+				body:   `{"plan_id":"11111111-1111-1111-1111-111111111111"}`,
+				origin: "https://www.mecontrola.app.br",
+			},
+			setup: func(useCase *handlersmocks.CreateCheckoutSessionUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, input.CreateCheckoutSessionInput{
+					PlanID: "11111111-1111-1111-1111-111111111111",
+				}).Return(output.CreateCheckoutSessionOutput{CheckoutURL: "https://pay.kiwify.com.br/abc"}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusCreated, recorder.Code)
+			},
 		},
 	}
-	handler := buildCheckoutHandler(stub)
 
-	body := `{"plan_id":"11111111-1111-1111-1111-111111111111"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			useCase := handlersmocks.NewCreateCheckoutSessionUseCase(s.T())
+			scenario.setup(useCase)
+			handler := handlers.NewCreateCheckoutHandler(useCase, func(string) {}, func() {}, noop.NewProvider())
 
-	assert.Equal(t, http.StatusCreated, rr.Code)
+			request := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(scenario.args.body))
+			request.Header.Set("Content-Type", "application/json")
+			if scenario.args.origin != "" {
+				request.Header.Set("Origin", scenario.args.origin)
+			}
 
-	var resp map[string]any
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, "https://pay.kiwify.com.br/abc?sck=tok123", resp["checkout_url"])
-}
-
-func TestCreateCheckoutHandler_400_MissingPlanID(t *testing.T) {
-	stub := &stubCreateCheckout{}
-	handler := buildCheckoutHandler(stub)
-
-	body := `{}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-func TestCreateCheckoutHandler_400_InvalidJSON(t *testing.T) {
-	stub := &stubCreateCheckout{}
-	handler := buildCheckoutHandler(stub)
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader("not-json"))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-func TestCreateCheckoutHandler_400_UnknownPlan(t *testing.T) {
-	stub := &stubCreateCheckout{err: application.ErrUnknownPlan}
-	handler := buildCheckoutHandler(stub)
-
-	body := `{"plan_id":"unknown-plan"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-func TestCreateCheckoutHandler_503_CheckoutUnavailable(t *testing.T) {
-	stub := &stubCreateCheckout{err: application.ErrCheckoutUnavailable}
-	handler := buildCheckoutHandler(stub)
-
-	body := `{"plan_id":"22222222-2222-2222-2222-222222222222"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
-}
-
-func TestCreateCheckoutHandler_CORS_AllowedOrigin(t *testing.T) {
-	stub := &stubCreateCheckout{
-		result: output.CreateCheckoutSessionOutput{CheckoutURL: "https://pay.kiwify.com.br/abc"},
+			recorder := httptest.NewRecorder()
+			handler.Handle(recorder, request)
+			scenario.expect(recorder)
+		})
 	}
-	o11y := noop.NewProvider()
-	h := handlers.NewCreateCheckoutHandler(
-		stub,
-		func(_ string) {},
-		func() {},
-		o11y,
-	)
-
-	body := `{"plan_id":"11111111-1111-1111-1111-111111111111"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://www.mecontrola.app.br")
-	rr := httptest.NewRecorder()
-	h.Handle(rr, req)
-
-	assert.Equal(t, http.StatusCreated, rr.Code)
 }

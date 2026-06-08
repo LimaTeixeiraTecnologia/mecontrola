@@ -1,16 +1,17 @@
-package id
+package id_test
 
 import (
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
 
 type UUIDGeneratorSuite struct {
 	suite.Suite
-
-	generator UUIDGenerator
+	newGenerator func() id.UUIDGenerator
 }
 
 func TestUUIDGeneratorSuite(t *testing.T) {
@@ -18,30 +19,64 @@ func TestUUIDGeneratorSuite(t *testing.T) {
 }
 
 func (s *UUIDGeneratorSuite) SetupTest() {
-	s.generator = NewUUIDGenerator()
+	s.newGenerator = id.NewUUIDGenerator
 }
 
-func (s *UUIDGeneratorSuite) TestNewID_ReturnsValidUUIDv4() {
-	id := s.generator.NewID()
-
-	parsed, err := uuid.Parse(id)
-	s.Require().NoError(err, "deve ser um UUID válido")
-	s.Equal(uuid.Version(4), parsed.Version(), "deve ser UUID v4")
-}
-
-func (s *UUIDGeneratorSuite) TestNewID_100CallsProduceDistinctIDs() {
-	const count = 100
-	seen := make(map[string]struct{}, count)
-
-	for range count {
-		id := s.generator.NewID()
-		_, exists := seen[id]
-		s.Require().False(exists, "ID duplicado detectado: %s", id)
-		seen[id] = struct{}{}
+func (s *UUIDGeneratorSuite) TestNewID() {
+	type args struct {
+		calls int
 	}
-}
 
-func (s *UUIDGeneratorSuite) TestNewID_IsNonEmpty() {
-	id := s.generator.NewID()
-	s.NotEmpty(id)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func([]string)
+	}{
+		{
+			name:  "deve retornar uuid v4 valido",
+			args:  args{calls: 1},
+			setup: func() {},
+			expect: func(ids []string) {
+				parsed, err := uuid.Parse(ids[0])
+				s.Require().NoError(err)
+				s.Equal(uuid.Version(4), parsed.Version())
+			},
+		},
+		{
+			name:  "deve retornar ids distintos em multiplas chamadas",
+			args:  args{calls: 100},
+			setup: func() {},
+			expect: func(ids []string) {
+				seen := make(map[string]struct{}, len(ids))
+				for _, generatedID := range ids {
+					_, exists := seen[generatedID]
+					s.False(exists)
+					seen[generatedID] = struct{}{}
+				}
+			},
+		},
+		{
+			name:  "deve retornar id nao vazio",
+			args:  args{calls: 1},
+			setup: func() {},
+			expect: func(ids []string) {
+				s.NotEmpty(ids[0])
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.setup()
+
+			generator := s.newGenerator()
+			ids := make([]string, 0, scenario.args.calls)
+			for range scenario.args.calls {
+				ids = append(ids, generator.NewID())
+			}
+
+			scenario.expect(ids)
+		})
+	}
 }

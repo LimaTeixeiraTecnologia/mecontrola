@@ -60,6 +60,8 @@ func TestWebhookIntegSuite(t *testing.T) {
 	suite.Run(t, new(WebhookIntegSuite))
 }
 
+func (s *WebhookIntegSuite) SetupTest() {}
+
 func (s *WebhookIntegSuite) SetupSuite() {
 	ctx := context.Background()
 
@@ -205,66 +207,66 @@ func (s *WebhookIntegSuite) dispatchOutbox(ctx context.Context) {
 	s.Require().NoError(job.Run(ctx))
 }
 
-func (s *WebhookIntegSuite) TestWebhookToOutbox_CompraAprovada_202_OneSubOneProcessedOneOutbox() {
-	ctx := context.Background()
-
-	saleID := fmt.Sprintf("sale-integ-webhook-%d", time.Now().UnixNano())
-	orderID := fmt.Sprintf("order-integ-webhook-%d", time.Now().UnixNano())
-	envelopeID := fmt.Sprintf("env-integ-%d", time.Now().UnixNano())
-
-	data := map[string]any{
-		"id":         saleID,
-		"order_id":   orderID,
-		"product_id": s.kiwifyProductID,
-		"updated_at": time.Now().UTC().Format(time.RFC3339),
-		"tracking":   map[string]any{"s1": "funnel-token-integ"},
+func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProcessedOneOutbox() {
+	scenarios := []struct {
+		name string
+	}{
+		{name: "deve projetar webhook para outbox e identidade pendente"},
 	}
-	env := map[string]any{
-		"id":      envelopeID,
-		"trigger": "compra_aprovada",
-		"data":    data,
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			saleID := fmt.Sprintf("sale-integ-webhook-%d", time.Now().UnixNano())
+			orderID := fmt.Sprintf("order-integ-webhook-%d", time.Now().UnixNano())
+			envelopeID := fmt.Sprintf("env-integ-%d", time.Now().UnixNano())
+			payloadMap := map[string]any{
+				"id":         saleID,
+				"order_id":   orderID,
+				"product_id": s.kiwifyProductID,
+				"updated_at": time.Now().UTC().Format(time.RFC3339),
+				"tracking":   map[string]any{"s1": "funnel-token-integ"},
+			}
+			envelope := map[string]any{
+				"id":      envelopeID,
+				"trigger": "compra_aprovada",
+				"data":    payloadMap,
+			}
+			payload, err := json.Marshal(envelope)
+			s.Require().NoError(err)
+			req := s.buildSignedRequest(payload)
+			rr := httptest.NewRecorder()
+			s.webhookHandler.ServeHTTP(rr, req)
+			s.Equal(http.StatusAccepted, rr.Code)
+
+			var subCount int
+			row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+			s.Require().NoError(row.Scan(&subCount))
+			s.Equal(1, subCount)
+
+			var procCount int
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, saleID)
+			s.Require().NoError(row.Scan(&procCount))
+			s.Equal(1, procCount)
+
+			var outboxCount int
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
+			s.Require().NoError(row.Scan(&outboxCount))
+			s.GreaterOrEqual(outboxCount, 1)
+
+			var kiwifyCount int
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, envelopeID)
+			s.Require().NoError(row.Scan(&kiwifyCount))
+			s.Equal(1, kiwifyCount)
+
+			s.dispatchOutbox(ctx)
+
+			var pendingCount int
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_entitlements_pending WHERE subscription_id = (
+				SELECT id FROM billing_subscriptions WHERE kiwify_order_id = $1
+			)`, orderID)
+			s.Require().NoError(row.Scan(&pendingCount))
+			s.Equal(1, pendingCount)
+		})
 	}
-	payload, err := json.Marshal(env)
-	s.Require().NoError(err)
-
-	req := s.buildSignedRequest(payload)
-	rr := httptest.NewRecorder()
-	s.webhookHandler.ServeHTTP(rr, req)
-
-	s.Equal(http.StatusAccepted, rr.Code)
-
-	var subCount int
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
-	s.Require().NoError(row.Scan(&subCount))
-	s.Equal(1, subCount, "expected 1 subscription row")
-
-	var procCount int
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, saleID)
-	s.Require().NoError(row.Scan(&procCount))
-	s.Equal(1, procCount, "expected 1 processed_event row")
-
-	var outboxCount int
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`,
-		producers.EventTypeSubscriptionActivated)
-	s.Require().NoError(row.Scan(&outboxCount))
-	s.GreaterOrEqual(outboxCount, 1, "expected at least 1 outbox row")
-
-	var kiwifyCount int
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, envelopeID)
-	s.Require().NoError(row.Scan(&kiwifyCount))
-	s.Equal(1, kiwifyCount, "expected 1 kiwify_events row")
-
-	s.dispatchOutbox(ctx)
-
-	var pendingCount int
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM identity_entitlements_pending WHERE subscription_id = (
-			SELECT id FROM billing_subscriptions WHERE kiwify_order_id = $1
-		)`, orderID)
-	s.Require().NoError(row.Scan(&pendingCount))
-	s.Equal(1, pendingCount, "expected dispatcher to project subscription into identity pending")
 }

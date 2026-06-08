@@ -28,15 +28,16 @@ const pgImage = "postgres:16"
 
 type MigrationSuite struct {
 	suite.Suite
-	ctx      context.Context
-	mgr      manager.Manager
-	dsn      string
-	migrator migration.Migrator
+	ctx context.Context
+	mgr manager.Manager
+	dsn string
 }
 
 func TestMigrationSuite(t *testing.T) {
 	suite.Run(t, new(MigrationSuite))
 }
+
+func (s *MigrationSuite) SetupTest() {}
 
 func (s *MigrationSuite) SetupSuite() {
 	s.ctx = context.Background()
@@ -92,20 +93,52 @@ func (s *MigrationSuite) SetupSuite() {
 
 	s.dsn = fmt.Sprintf("pgx5://test:test@%s:%d/testdb?sslmode=disable", host, portNum)
 
-	migrator, err := migration.New(s.mgr, migration.EmbedFS{FS: migrations.FS, Root: "."}, migration.WithDSN(s.dsn))
-	s.Require().NoError(err)
-	s.migrator = migrator
 }
 
 func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
-	s.Require().NoError(s.migrator.Up(s.ctx))
+	type args struct {
+		downSteps int
+	}
 
-	s.assertSeededPlans()
-	s.assertActiveSubscriptionUniqueIndex()
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func(migrator migration.Migrator, downSteps int)
+	}{
+		{
+			name:  "deve aplicar e reverter migrations do pipeline de billing",
+			args:  args{downSteps: 6},
+			setup: func() {},
+			expect: func(migrator migration.Migrator, downSteps int) {
+				s.Require().NoError(migrator.Up(s.ctx))
+				s.assertSeededPlans()
+				s.assertActiveSubscriptionUniqueIndex()
+				s.Require().NoError(migrator.Down(s.ctx, downSteps))
+				s.assertTablePresent("billing_plans")
+				s.assertTablePresent("billing_subscriptions")
+				s.assertTablePresent("billing_processed_events")
+				s.assertTablePresent("billing_kiwify_events")
+				s.assertBillingPipelineTailTablesRemoved()
+			},
+		},
+	}
 
-	s.Require().NoError(s.migrator.Down(s.ctx, 6))
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
 
-	s.assertBillingTablesRemoved()
+			migrator, err := migration.New(
+				s.mgr,
+				migration.EmbedFS{FS: migrations.FS, Root: "."},
+				migration.WithDSN(s.dsn),
+			)
+			s.Require().NoError(err)
+
+			scenario.expect(migrator, scenario.args.downSteps)
+		})
+	}
 }
 
 func (s *MigrationSuite) assertSeededPlans() {
@@ -186,14 +219,17 @@ func (s *MigrationSuite) assertActiveSubscriptionUniqueIndex() {
 	s.Equal(1, uniqueViolationCount)
 }
 
-func (s *MigrationSuite) assertBillingTablesRemoved() {
-	s.assertTableMissing("billing_plans")
-	s.assertTableMissing("billing_subscriptions")
-	s.assertTableMissing("billing_processed_events")
-	s.assertTableMissing("billing_kiwify_events")
+func (s *MigrationSuite) assertBillingPipelineTailTablesRemoved() {
 	s.assertTableMissing("billing_reconciliation_checkpoints")
 	s.assertTableMissing("identity_entitlements")
 	s.assertTableMissing("identity_entitlements_pending")
+}
+
+func (s *MigrationSuite) assertTablePresent(name string) {
+	var regclass sql.NullString
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT to_regclass($1)`, name).Scan(&regclass)
+	s.Require().NoError(err)
+	s.True(regclass.Valid)
 }
 
 func (s *MigrationSuite) assertTableMissing(name string) {
@@ -201,15 +237,4 @@ func (s *MigrationSuite) assertTableMissing(name string) {
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT to_regclass($1)`, name).Scan(&regclass)
 	s.Require().NoError(err)
 	s.False(regclass.Valid)
-}
-
-func (s *MigrationSuite) TearDownSuite() {
-	if s.migrator == nil {
-		return
-	}
-
-	err := s.migrator.Down(s.ctx, 6)
-	if err != nil && !errors.Is(err, migration.ErrNoChange) {
-		s.T().Logf("cleanup migrations down: %v", err)
-	}
 }

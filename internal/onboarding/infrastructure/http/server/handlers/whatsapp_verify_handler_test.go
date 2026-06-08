@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers"
@@ -17,7 +16,7 @@ type WhatsAppVerifyHandlerSuite struct {
 	handler *handlers.WhatsAppVerifyHandler
 }
 
-func TestWhatsAppVerifyHandler(t *testing.T) {
+func TestWhatsAppVerifyHandlerSuite(t *testing.T) {
 	suite.Run(t, new(WhatsAppVerifyHandlerSuite))
 }
 
@@ -25,40 +24,54 @@ func (s *WhatsAppVerifyHandlerSuite) SetupTest() {
 	s.handler = handlers.NewWhatsAppVerifyHandler("my-verify-token", noop.NewProvider())
 }
 
-func (s *WhatsAppVerifyHandlerSuite) TestHandle_ValidToken() {
-	req := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=my-verify-token&hub.challenge=challenge123", nil)
-	rr := httptest.NewRecorder()
+func (s *WhatsAppVerifyHandlerSuite) TestHandle() {
+	type args struct {
+		url string
+	}
 
-	s.handler.Handle(rr, req)
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(*httptest.ResponseRecorder)
+	}{
+		{
+			name: "deve responder challenge com token valido",
+			args: args{url: "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=my-verify-token&hub.challenge=challenge123"},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+				s.Equal("challenge123", recorder.Body.String())
+			},
+		},
+		{
+			name: "deve rejeitar token invalido",
+			args: args{url: "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong-token&hub.challenge=challenge123"},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusForbidden, recorder.Code)
+			},
+		},
+		{
+			name: "deve rejeitar modo invalido",
+			args: args{url: "/webhooks/whatsapp?hub.mode=other&hub.verify_token=my-verify-token&hub.challenge=challenge123"},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusForbidden, recorder.Code)
+			},
+		},
+		{
+			name: "deve responder vazio sem challenge",
+			args: args{url: "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=my-verify-token"},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+				s.Empty(recorder.Body.String())
+			},
+		},
+	}
 
-	assert.Equal(s.T(), http.StatusOK, rr.Code)
-	assert.Equal(s.T(), "challenge123", rr.Body.String())
-}
-
-func (s *WhatsAppVerifyHandlerSuite) TestHandle_InvalidToken() {
-	req := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong-token&hub.challenge=challenge123", nil)
-	rr := httptest.NewRecorder()
-
-	s.handler.Handle(rr, req)
-
-	assert.Equal(s.T(), http.StatusForbidden, rr.Code)
-}
-
-func (s *WhatsAppVerifyHandlerSuite) TestHandle_WrongMode() {
-	req := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.mode=other&hub.verify_token=my-verify-token&hub.challenge=challenge123", nil)
-	rr := httptest.NewRecorder()
-
-	s.handler.Handle(rr, req)
-
-	assert.Equal(s.T(), http.StatusForbidden, rr.Code)
-}
-
-func (s *WhatsAppVerifyHandlerSuite) TestHandle_MissingChallenge() {
-	req := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=my-verify-token", nil)
-	rr := httptest.NewRecorder()
-
-	s.handler.Handle(rr, req)
-
-	assert.Equal(s.T(), http.StatusOK, rr.Code)
-	assert.Equal(s.T(), "", rr.Body.String())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			request := httptest.NewRequest(http.MethodGet, scenario.args.url, nil)
+			recorder := httptest.NewRecorder()
+			s.handler.Handle(recorder, request)
+			scenario.expect(recorder)
+		})
+	}
 }

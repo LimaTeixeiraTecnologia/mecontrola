@@ -30,7 +30,7 @@ Implementar dois jobs em `internal/billing/infrastructure/jobs/handlers/`: (a) `
 
 - Pseudocódigo da reconciliação em techspec §7.4; `windowStart = checkpoint - 15m` absorve clock skew.
 - O `KiwifyClient.ListSalesUpdatedSince` (Tarefa 7.0) já trata paginação, rate limit e retry; o job não duplica esses comportamentos.
-- `reconcileSale` traduz uma sale em pseudo-evento `compra_aprovada` ou `compra_reembolsada` conforme `sale.status`; sale já processada pelo webhook é no-op (idempotência por `event_key`).
+- `reconcileSale` traduz uma sale em pseudo-evento `order_approved` ou `order_refunded` conforme `sale.status`; sale já processada pelo webhook é no-op (idempotência por `event_key`).
 - Housekeeping: `DELETE FROM billing_kiwify_events WHERE received_at < now() - interval '90 days' LIMIT N` em loop curto até esgotar; respeita `ctx.Done()`.
 - `WorkerManager` é configurado no `cmd/worker` (Tarefa 10.0); aqui só entregamos `worker.Job` registráveis.
 

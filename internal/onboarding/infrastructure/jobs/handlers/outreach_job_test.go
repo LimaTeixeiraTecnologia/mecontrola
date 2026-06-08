@@ -5,146 +5,87 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
-	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	appinterfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
 
-type noopOutreachTokenRepo struct{}
-
-func (r *noopOutreachTokenRepo) Insert(_ context.Context, _ entities.MagicToken) error { return nil }
-func (r *noopOutreachTokenRepo) FindByHash(_ context.Context, _ []byte) (entities.MagicToken, error) {
-	return entities.MagicToken{}, nil
-}
-func (r *noopOutreachTokenRepo) FindPaidByMobileForFallback(_ context.Context, _ string) (entities.MagicToken, error) {
-	return entities.MagicToken{}, nil
-}
-func (r *noopOutreachTokenRepo) FindPaidForOutreach(_ context.Context, _ time.Time, _ int) ([]entities.MagicToken, error) {
-	return nil, nil
-}
-func (r *noopOutreachTokenRepo) UpdateMarkPaid(_ context.Context, _ entities.MagicToken) error {
-	return nil
-}
-func (r *noopOutreachTokenRepo) UpdateMarkConsumed(_ context.Context, _ entities.MagicToken) error {
-	return nil
-}
-func (r *noopOutreachTokenRepo) UpdateMarkOutreachSent(_ context.Context, _ string, _ time.Time) error {
-	return nil
-}
-func (r *noopOutreachTokenRepo) UpdateMarkOutreachReset(_ context.Context, _ string) error {
-	return nil
-}
-func (r *noopOutreachTokenRepo) BulkExpire(_ context.Context, _ time.Time, _ int) ([]entities.MagicToken, error) {
-	return nil, nil
-}
-func (r *noopOutreachTokenRepo) CountPaidUnconsumed(_ context.Context) (int64, error) { return 0, nil }
-
-type noopOutreachFactory struct{}
-
-func (f *noopOutreachFactory) MagicTokenRepository(_ database.DBTX) appinterfaces.MagicTokenRepository {
-	return &noopOutreachTokenRepo{}
-}
-func (f *noopOutreachFactory) SupportSignalRepository(_ database.DBTX) appinterfaces.SupportSignalRepository {
-	return nil
-}
-func (f *noopOutreachFactory) MetaMessageRepository(_ database.DBTX) appinterfaces.MetaMessageRepository {
-	return nil
-}
-func (f *noopOutreachFactory) OnboardingCleanupRepository(_ database.DBTX) appinterfaces.OnboardingCleanupRepository {
-	return nil
+type OutreachJobSuite struct {
+	suite.Suite
 }
 
-type noopOutreachGateway struct {
-	called bool
+func TestOutreachJobSuite(t *testing.T) {
+	suite.Run(t, new(OutreachJobSuite))
 }
 
-func (g *noopOutreachGateway) SendActivationTemplate(_ context.Context, _, _, _ string) (string, error) {
-	g.called = true
-	return "wamid.noop", nil
-}
+func (s *OutreachJobSuite) SetupTest() {}
 
-func (g *noopOutreachGateway) SendTextMessage(_ context.Context, _ string, _ string) error {
-	return nil
-}
+func (s *OutreachJobSuite) TestOutreachJob_Scenarios() {
+	scenarios := []struct {
+		name          string
+		enabled       bool
+		cancelContext bool
+	}{
+		{
+			name:          "Enabled job runs successfully",
+			enabled:       true,
+			cancelContext: false,
+		},
+		{
+			name:          "Disabled job skips execution",
+			enabled:       false,
+			cancelContext: false,
+		},
+		{
+			name:          "Canceled context returns no error",
+			enabled:       true,
+			cancelContext: true,
+		},
+	}
 
-type noopManager struct{}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			dbManager := usecasesmocks.NewFakeManager()
+			repoFactory := appinterfacesmocks.NewRepositoryFactory(s.T())
+			tokenRepo := appinterfacesmocks.NewMagicTokenRepository(s.T())
+			waGW := appinterfacesmocks.NewWhatsAppGateway(s.T())
+			cipher := appinterfacesmocks.NewTokenCipher(s.T())
 
-func (m *noopManager) Driver() database.Driver              { return "" }
-func (m *noopManager) DBTX(_ context.Context) database.DBTX { return nil }
-func (m *noopManager) BeginTx(_ context.Context, _ database.TxOptions) (database.Tx, error) {
-	return nil, nil
-}
-func (m *noopManager) Ping(_ context.Context) error     { return nil }
-func (m *noopManager) Shutdown(_ context.Context) error { return nil }
+			repoFactory.EXPECT().MagicTokenRepository(mock.Anything).Return(tokenRepo).Maybe()
+			tokenRepo.EXPECT().FindPaidForOutreach(mock.Anything, mock.Anything, mock.Anything).
+				Return(nil, nil).Maybe()
 
-type noopTokenCipher struct{}
+			uc := usecases.NewSendOutreach(
+				dbManager,
+				repoFactory,
+				waGW,
+				cipher,
+				id.NewUUIDGenerator(),
+				"activation_reminder",
+				2*time.Hour,
+				noop.NewProvider(),
+			)
 
-func (c *noopTokenCipher) Encrypt(_ context.Context, clearToken string) (string, error) {
-	return clearToken, nil
-}
+			job := handlers.NewOutreachJob(uc, scenario.enabled)
 
-func (c *noopTokenCipher) Decrypt(_ context.Context, _ string) (string, error) {
-	return "clear-token", nil
-}
+			s.Equal("onboarding.outreach_job", job.Name())
+			s.NotEmpty(job.Schedule())
 
-func buildSendOutreachUseCase(gw appinterfaces.WhatsAppGateway) *usecases.SendOutreach {
-	return usecases.NewSendOutreach(
-		&noopManager{},
-		&noopOutreachFactory{},
-		gw,
-		&noopTokenCipher{},
-		id.NewUUIDGenerator(),
-		"activation_reminder",
-		2*time.Hour,
-		noop.NewProvider(),
-	)
-}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-func TestOutreachJob_Enabled_Runs(t *testing.T) {
-	gw := &noopOutreachGateway{}
-	uc := buildSendOutreachUseCase(gw)
+			if scenario.cancelContext {
+				cancel()
+			}
 
-	j := handlers.NewOutreachJob(uc, true)
-
-	require.Equal(t, "onboarding.outreach_job", j.Name())
-	require.NotEmpty(t, j.Schedule())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	err := j.Run(ctx)
-	require.NoError(t, err)
-}
-
-func TestOutreachJob_Disabled_SkipsExecution(t *testing.T) {
-	gw := &noopOutreachGateway{}
-	uc := buildSendOutreachUseCase(gw)
-
-	j := handlers.NewOutreachJob(uc, false)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	err := j.Run(ctx)
-	require.NoError(t, err)
-	require.False(t, gw.called, "gateway não deve ser chamado quando outreach está desabilitado")
-}
-
-func TestOutreachJob_CancelableContext(t *testing.T) {
-	gw := &noopOutreachGateway{}
-	uc := buildSendOutreachUseCase(gw)
-
-	j := handlers.NewOutreachJob(uc, true)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := j.Run(ctx)
-	require.NoError(t, err)
+			err := job.Run(ctx)
+			s.NoError(err)
+		})
+	}
 }

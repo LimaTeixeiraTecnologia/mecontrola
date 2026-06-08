@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/consumer"
+	consumermocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/consumer/mocks"
 )
 
 type RunnerSuite struct {
@@ -17,88 +19,132 @@ type RunnerSuite struct {
 	logger *slog.Logger
 }
 
-func (s *RunnerSuite) SetupTest() {
-	s.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
 func TestRunnerSuite(t *testing.T) {
 	suite.Run(t, new(RunnerSuite))
 }
 
-func (s *RunnerSuite) TestStart_PropagaErroDoSource() {
-	sentinel := errors.New("source error")
-	src := &fakeSource{startErr: sentinel}
-	reg := consumer.NewRegistry()
-	r := consumer.NewRunner(src, reg, s.logger)
-
-	err := r.Start(context.Background())
-	s.ErrorIs(err, sentinel)
+func (s *RunnerSuite) SetupTest() {
+	s.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func (s *RunnerSuite) TestStart_DespachaMensagens() {
-	var dispatched []string
-	src := &fakeSource{
-		messages: []consumer.Message{
-			{EventType: "evt1", Params: nil, Body: nil},
-			{EventType: "evt2", Params: nil, Body: nil},
+func (s *RunnerSuite) TestStart() {
+	type args struct {
+		ctx context.Context
+	}
+
+	type observed struct {
+		dispatched []string
+	}
+
+	sentinel := errors.New("source error")
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*consumermocks.Source, consumer.Registry, *observed)
+		expect func(error, observed)
+	}{
+		{
+			name: "deve propagar erro da source",
+			args: args{ctx: context.Background()},
+			setup: func(source *consumermocks.Source, _ consumer.Registry, _ *observed) {
+				source.EXPECT().Start(context.Background(), mock.Anything).Return(sentinel).Once()
+			},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, sentinel)
+			},
+		},
+		{
+			name: "deve despachar mensagens registradas",
+			args: args{ctx: context.Background()},
+			setup: func(source *consumermocks.Source, registry consumer.Registry, state *observed) {
+				for _, eventType := range []string{"evt1", "evt2"} {
+					currentType := eventType
+					err := registry.Register(consumer.Registration{
+						Name:      currentType,
+						EventType: currentType,
+						Handler: consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error {
+							state.dispatched = append(state.dispatched, currentType)
+							return nil
+						}),
+					})
+					s.Require().NoError(err)
+				}
+
+				source.EXPECT().Start(context.Background(), mock.Anything).RunAndReturn(
+					func(ctx context.Context, deliver func(context.Context, consumer.Message) error) error {
+						err := deliver(ctx, consumer.Message{EventType: "evt1"})
+						s.Require().NoError(err)
+						return deliver(ctx, consumer.Message{EventType: "evt2"})
+					},
+				).Once()
+			},
+			expect: func(err error, state observed) {
+				s.NoError(err)
+				s.Equal([]string{"evt1", "evt2"}, state.dispatched)
+			},
 		},
 	}
-	reg := consumer.NewRegistry()
-	for _, evt := range []string{"evt1", "evt2"} {
-		evt := evt
-		h := consumer.HandlerFunc(func(_ context.Context, _ map[string]string, _ []byte) error {
-			dispatched = append(dispatched, evt)
-			return nil
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			state := observed{}
+			source := consumermocks.NewSource(s.T())
+			registry := consumer.NewRegistry()
+			scenario.setup(source, registry, &state)
+
+			sut := consumer.NewRunner(source, registry, s.logger)
+			err := sut.Start(scenario.args.ctx)
+
+			scenario.expect(err, state)
 		})
-		s.NoError(reg.Register(consumer.Registration{Name: evt, EventType: evt, Handler: h}))
+	}
+}
+
+func (s *RunnerSuite) TestStop() {
+	type args struct {
+		ctx context.Context
 	}
 
-	r := consumer.NewRunner(src, reg, s.logger)
-	err := r.Start(context.Background())
-	s.NoError(err)
-	s.Equal([]string{"evt1", "evt2"}, dispatched)
-}
-
-func (s *RunnerSuite) TestStop_ChamaSourceStop() {
-	src := &fakeSource{}
-	reg := consumer.NewRegistry()
-	r := consumer.NewRunner(src, reg, s.logger)
-
-	err := r.Stop(context.Background())
-	s.NoError(err)
-	s.True(src.stopCalled)
-}
-
-func (s *RunnerSuite) TestStop_PropagaErroDoSourceStop() {
 	sentinel := errors.New("stop error")
-	src := &fakeSource{stopErr: sentinel}
-	reg := consumer.NewRegistry()
-	r := consumer.NewRunner(src, reg, s.logger)
 
-	err := r.Stop(context.Background())
-	s.ErrorIs(err, sentinel)
-}
-
-type fakeSource struct {
-	startErr   error
-	stopErr    error
-	stopCalled bool
-	messages   []consumer.Message
-}
-
-func (s *fakeSource) Start(_ context.Context, deliver func(context.Context, consumer.Message) error) error {
-	if s.startErr != nil {
-		return s.startErr
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*consumermocks.Source)
+		expect func(error)
+	}{
+		{
+			name: "deve chamar stop da source",
+			args: args{ctx: context.Background()},
+			setup: func(source *consumermocks.Source) {
+				source.EXPECT().Stop(context.Background()).Return(nil).Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar erro do stop da source",
+			args: args{ctx: context.Background()},
+			setup: func(source *consumermocks.Source) {
+				source.EXPECT().Stop(context.Background()).Return(sentinel).Once()
+			},
+			expect: func(err error) {
+				s.ErrorIs(err, sentinel)
+			},
+		},
 	}
-	for _, msg := range s.messages {
-		if err := deliver(context.Background(), msg); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
-func (s *fakeSource) Stop(_ context.Context) error {
-	s.stopCalled = true
-	return s.stopErr
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			source := consumermocks.NewSource(s.T())
+			scenario.setup(source)
+
+			sut := consumer.NewRunner(source, consumer.NewRegistry(), s.logger)
+			err := sut.Stop(scenario.args.ctx)
+
+			scenario.expect(err)
+		})
+	}
 }

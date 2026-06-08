@@ -1,11 +1,7 @@
 package configs_test
 
 import (
-	"context"
-	"fmt"
-	"math/rand"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,950 +12,1257 @@ import (
 
 type ConfigSuite struct {
 	suite.Suite
-	ctx context.Context
 }
 
-func TestConfig(t *testing.T) {
+func TestConfigSuite(t *testing.T) {
 	suite.Run(t, new(ConfigSuite))
 }
 
-func (s *ConfigSuite) SetupTest() {
-	s.ctx = context.Background()
-}
+func (s *ConfigSuite) SetupTest() {}
 
 func (s *ConfigSuite) TestValidate() {
-	prod := "production"
-	local := "local"
+	type args struct {
+		build func() *configs.Config
+	}
 
 	scenarios := []struct {
-		name    string
-		cfg     *configs.Config
-		wantErr bool
-		errMsg  string
+		name   string
+		args   args
+		setup  func()
+		expect func(cfg *configs.Config, err error)
 	}{
 		{
 			name: "deve validar config local com sucesso",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local, AppMode: "server"},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "qualquer", User: "user"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+			args: args{
+				build: func() *configs.Config {
+					return s.newBaseConfig()
+				},
 			},
-			wantErr: false,
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
-			name: "deve retornar erro quando environment inválido",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: "dev", AppMode: "server"},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			name: "deve retornar erro quando environment invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AppConfig.Environment = "dev"
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "ENVIRONMENT inválido",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "ENVIRONMENT inválido")
+			},
 		},
 		{
 			name: "deve retornar erro quando environment vazio",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: "", AppMode: "server"},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AppConfig.Environment = ""
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "ENVIRONMENT inválido",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "ENVIRONMENT inválido")
+			},
 		},
 		{
 			name: "deve retornar erro quando port zero",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 0},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.HTTPConfig.Port = 0
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "PORT inválido",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "PORT inválido")
+			},
 		},
 		{
 			name: "deve retornar erro quando port acima de 65535",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 65536},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.HTTPConfig.Port = 65536
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "PORT inválido",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "PORT inválido")
+			},
 		},
 		{
-			name: "deve aceitar port mínimo válido igual a 1",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 1},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			name: "deve aceitar port minimo valido igual a 1",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.HTTPConfig.Port = 1
+					return cfg
+				},
 			},
-			wantErr: false,
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
-			name: "deve aceitar port máximo válido igual a 65535",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 65535},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			name: "deve aceitar port maximo valido igual a 65535",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.HTTPConfig.Port = 65535
+					return cfg
+				},
 			},
-			wantErr: false,
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
-			name: "deve retornar erro quando TraceSampleRate negativo",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: -0.1},
+			name: "deve retornar erro quando trace sample rate negativo",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.O11yConfig.TraceSampleRate = -0.1
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "OTEL_TRACE_SAMPLE_RATE inválido",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OTEL_TRACE_SAMPLE_RATE inválido")
+			},
 		},
 		{
-			name: "deve retornar erro quando TraceSampleRate acima de 1",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 1.1},
+			name: "deve retornar erro quando trace sample rate acima de 1",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.O11yConfig.TraceSampleRate = 1.1
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "OTEL_TRACE_SAMPLE_RATE inválido",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OTEL_TRACE_SAMPLE_RATE inválido")
+			},
 		},
 		{
-			name: "deve aceitar TraceSampleRate zero como válido",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.0},
+			name: "deve aceitar trace sample rate zero como valido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.O11yConfig.TraceSampleRate = 0
+					return cfg
+				},
 			},
-			wantErr: false,
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
-			name: "deve aceitar TraceSampleRate um como válido",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: local},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
+			name: "deve aceitar trace sample rate um como valido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.O11yConfig.TraceSampleRate = 1
+					return cfg
+				},
 			},
-			wantErr: false,
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
 			name: "deve retornar erro quando production com senha curta",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: prod},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "short", User: "dbuser"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.DBConfig.Password = "short"
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "DB_PASSWORD deve ter ao menos 16 caracteres",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_PASSWORD deve ter ao menos 16 caracteres")
+			},
 		},
 		{
-			name: "deve aceitar production com senha de exatamente 16 chars",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: prod},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "exactly16chars!!", User: "dbuser"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
+			name: "deve aceitar production com senha de exatamente 16 caracteres",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.DBConfig.Password = "exactly16chars!!"
+					return cfg
+				},
 			},
-			wantErr: false,
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
-			name: "deve retornar erro quando production com placeholder CHANGE_ME na senha",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: prod},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "CHANGE_ME_USE_STRONG_PASSWORD", User: "dbuser"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
+			name: "deve retornar erro quando production com placeholder na senha",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.DBConfig.Password = "CHANGE_ME_USE_STRONG_PASSWORD"
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "placeholder inseguro",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "placeholder inseguro")
+			},
 		},
 		{
-			name: "deve retornar erro quando production com your_secret_key na senha",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: prod},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "your_secret_key", User: "dbuser"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
+			name: "deve retornar erro quando production com placeholder no usuario",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.DBConfig.User = "your_secret_key"
+					return cfg
+				},
 			},
-			wantErr: true,
-			errMsg:  "placeholder inseguro",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_USER contém placeholder inseguro")
+			},
 		},
 		{
-			name: "deve retornar erro quando production com financial@password na senha",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: prod},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "financial@password", User: "dbuser"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
+			name: "deve aceitar production valida",
+			args: args{
+				build: func() *configs.Config {
+					return s.newProductionConfig()
+				},
 			},
-			wantErr: true,
-			errMsg:  "placeholder inseguro",
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
 		},
 		{
 			name: "deve validar staging sem exigir senha longa",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: "staging"},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   configs.DBConfig{Password: "short", User: "user"},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 0.5},
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AppConfig.Environment = "staging"
+					cfg.DBConfig.Password = "short"
+					return cfg
+				},
 			},
-			wantErr: false,
-		},
-		{
-			name: "deve acumular múltiplos erros de validação",
-			cfg: &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: "invalid"},
-				HTTPConfig: configs.HTTPConfig{Port: 0},
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 2.0},
-			},
-			wantErr: true,
-			errMsg:  "ENVIRONMENT inválido",
-		},
-	}
-
-	for _, sc := range scenarios {
-		s.Run(sc.name, func() {
-			err := sc.cfg.Validate()
-			if sc.wantErr {
-				s.Error(err)
-				if sc.errMsg != "" {
-					s.Contains(err.Error(), sc.errMsg)
-				}
-			} else {
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
 				s.NoError(err)
-			}
-		})
+			},
+		},
+		{
+			name: "deve acumular multiplos erros de validacao",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AppConfig.Environment = "invalid"
+					cfg.HTTPConfig.Port = 0
+					cfg.O11yConfig.TraceSampleRate = 2
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "ENVIRONMENT inválido", "PORT inválido", "OTEL_TRACE_SAMPLE_RATE inválido")
+			},
+		},
+		{
+			name: "deve aceitar outbox configurado com valores validos",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar retry max attempts zero",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.RetryMaxAttempts = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_RETRY_MAX_ATTEMPTS inválido")
+			},
+		},
+		{
+			name: "deve rejeitar retry max attempts acima de 50",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.RetryMaxAttempts = 51
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_RETRY_MAX_ATTEMPTS inválido")
+			},
+		},
+		{
+			name: "deve aceitar retry max attempts igual a 1",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.RetryMaxAttempts = 1
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve aceitar retry max attempts igual a 50",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.RetryMaxAttempts = 50
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar dispatcher batch size zero",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.DispatcherBatchSize = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_DISPATCHER_BATCH_SIZE inválido")
+			},
+		},
+		{
+			name: "deve rejeitar dispatcher batch size acima de 500",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.DispatcherBatchSize = 501
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_DISPATCHER_BATCH_SIZE inválido")
+			},
+		},
+		{
+			name: "deve rejeitar housekeeping retention days zero",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.HousekeepingRetentionDays = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido")
+			},
+		},
+		{
+			name: "deve rejeitar housekeeping retention days acima de 3650",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.HousekeepingRetentionDays = 3651
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido")
+			},
+		},
+		{
+			name: "deve rejeitar housekeeping schedule invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.HousekeepingSchedule = "nao-e-cron"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_HOUSEKEEPING_SCHEDULE inválido")
+			},
+		},
+		{
+			name: "deve aceitar housekeeping schedule weekly valido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.HousekeepingSchedule = "@weekly"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar reaper interval invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.ReaperInterval = "invalido"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "OUTBOX_REAPER_INTERVAL inválido")
+			},
+		},
+		{
+			name: "deve aceitar reaper interval valido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.OutboxConfig = s.newValidOutboxConfig()
+					cfg.OutboxConfig.ReaperInterval = "@every 5m"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar max conns zero quando tunables configurados",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.DBConfig = configs.DBConfig{MaxConns: 0, MinConns: 1, MaxIdleConns: 1}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_MAX_CONNS deve ser maior que zero")
+			},
+		},
+		{
+			name: "deve rejeitar min conns maior que max conns",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.DBConfig = configs.DBConfig{MaxConns: 2, MinConns: 3, MaxIdleConns: 1}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_MIN_CONNS não pode ser maior que DB_MAX_CONNS")
+			},
+		},
+		{
+			name: "deve rejeitar max idle maior que max conns",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.DBConfig = configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 3}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS")
+			},
+		},
+		{
+			name: "deve rejeitar conn max lifetime negativo",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.DBConfig = configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxLifetime: -time.Second}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_CONN_MAX_LIFETIME não pode ser negativo")
+			},
+		},
+		{
+			name: "deve rejeitar conn max idle time negativo",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.DBConfig = configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxIdleTime: -time.Second}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_CONN_MAX_IDLE_TIME não pode ser negativo")
+			},
+		},
+		{
+			name: "deve rejeitar conn max idle time maior que conn max lifetime",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.DBConfig = configs.DBConfig{
+						MaxConns:        2,
+						MinConns:        1,
+						MaxIdleConns:    1,
+						ConnMaxLifetime: 30 * time.Second,
+						ConnMaxIdleTime: time.Minute,
+					}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "DB_CONN_MAX_IDLE_TIME não pode ser maior que DB_CONN_MAX_LIFETIME")
+			},
+		},
+		{
+			name: "deve validar kiwify http timeout invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBillingEnabledConfig()
+					cfg.KiwifyConfig.HTTPTimeout = 2 * time.Minute
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "KIWIFY_HTTP_TIMEOUT inválido")
+			},
+		},
+		{
+			name: "deve validar kiwify retry attempts invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBillingEnabledConfig()
+					cfg.KiwifyConfig.HTTPRetryMaxAttempts = 50
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "KIWIFY_HTTP_RETRY_MAX_ATTEMPTS inválido")
+			},
+		},
+		{
+			name: "deve validar kiwify retry backoff obrigatorio quando attempts configurado",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBillingEnabledConfig()
+					cfg.KiwifyConfig.HTTPRetryBackoff = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "KIWIFY_HTTP_RETRY_BACKOFF inválido")
+			},
+		},
+		{
+			name: "deve validar production kiwify secrets ausentes quando habilitado",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.KiwifyConfig.ClientID = "some-client-id"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "KIWIFY_WEBHOOK_SECRET é obrigatório", "KIWIFY_ACCOUNT_ID é obrigatório")
+			},
+		},
+		{
+			name: "deve permitir production sem kiwify configurado",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.KiwifyConfig = configs.KiwifyConfig{}
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve validar billing cache capacidade invalida",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBillingEnabledConfig()
+					cfg.BillingConfig.EntitlementCacheCapacity = 500
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "BILLING_ENTITLEMENT_CACHE_CAPACITY inválido")
+			},
+		},
+		{
+			name: "deve validar billing cache ttl invalida",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBillingEnabledConfig()
+					cfg.BillingConfig.EntitlementCacheTTL = 2 * time.Hour
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "BILLING_ENTITLEMENT_CACHE_TTL inválido")
+			},
+		},
+		{
+			name: "deve validar billing rate limit invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBillingEnabledConfig()
+					cfg.KiwifyConfig.RateLimitMaxRequestsPerMin = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN inválido")
+			},
+		},
 	}
-}
 
-func (s *ConfigSuite) TestLoadConfigComArquivoValido() {
-	cfg, err := configs.LoadConfig("./testdata/valid")
-
-	s.NoError(err)
-	s.NotNil(cfg)
-	s.Equal("local", cfg.AppConfig.Environment)
-	s.Equal(8080, cfg.HTTPConfig.Port)
-	s.Equal("localhost", cfg.DBConfig.Host)
-	s.Equal(1.0, cfg.O11yConfig.TraceSampleRate)
-}
-
-func (s *ConfigSuite) TestLoadConfigLocalSemArquivoEnvRetornaErro() {
-	s.T().Setenv("ENVIRONMENT", "local")
-	dir := s.T().TempDir()
-
-	cfg, err := configs.LoadConfig(dir)
-
-	s.Error(err)
-	s.Nil(cfg)
-	s.Contains(err.Error(), "arquivo .env obrigatório não encontrado")
-}
-
-func (s *ConfigSuite) TestLoadConfigProductionSemArquivoUsaEnvVars() {
-	s.T().Setenv("ENVIRONMENT", "production")
-	s.T().Setenv("PORT", "8080")
-	s.T().Setenv("DB_HOST", "db.fly.internal")
-	s.T().Setenv("DB_PORT", "5432")
-	s.T().Setenv("DB_USER", "mecontrola")
-	s.T().Setenv("DB_PASSWORD", "productionStrongPassword123!")
-	s.T().Setenv("DB_NAME", "mecontrola_db")
-	s.T().Setenv("DB_SSL_MODE", "require")
-	s.T().Setenv("OTEL_TRACE_SAMPLE_RATE", "0.2")
-	s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
-
-	dir := s.T().TempDir()
-
-	cfg, err := configs.LoadConfig(dir)
-
-	s.NoError(err)
-	s.NotNil(cfg)
-	s.Equal("production", cfg.AppConfig.Environment)
-	s.Equal("db.fly.internal", cfg.DBConfig.Host)
-}
-
-func (s *ConfigSuite) TestLoadConfigProductionInseguroRetornaErro() {
-	cfg, err := configs.LoadConfig("./testdata/insecure-prod")
-
-	s.Error(err)
-	s.Nil(cfg)
-	s.Contains(err.Error(), "placeholder inseguro")
-}
-
-func (s *ConfigSuite) TestSafeDSNNuncaContemSenha() {
-	passwords := generateRandomPasswords(5)
-
-	for i, pwd := range passwords {
-		s.Run(fmt.Sprintf("senha_%d", i+1), func() {
-			db := &configs.DBConfig{
-				Host:     "localhost",
-				Port:     5432,
-				User:     "user",
-				Password: pwd,
-				Name:     "dbname",
-				SSLMode:  "disable",
-			}
-
-			safeDSN := db.SafeDSN()
-
-			s.NotContains(safeDSN, pwd)
-			s.Contains(safeDSN, "***")
-		})
-	}
-}
-
-func (s *ConfigSuite) TestDSNContemSenha() {
-	db := &configs.DBConfig{
-		Host:     "db.example.com",
-		Port:     5432,
-		User:     "mecontrola",
-		Password: "supersecretpassword",
-		Name:     "mecontrola_db",
-		SSLMode:  "require",
-	}
-
-	dsn := db.DSN()
-
-	s.Contains(dsn, "supersecretpassword")
-	s.Contains(dsn, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require")
-}
-
-func (s *ConfigSuite) TestSafeDSNFormato() {
-	db := &configs.DBConfig{
-		Host:     "db.example.com",
-		Port:     5432,
-		User:     "mecontrola",
-		Password: "anypassword",
-		Name:     "mecontrola_db",
-		SSLMode:  "require",
-	}
-
-	safeDSN := db.SafeDSN()
-
-	s.Equal("postgres://mecontrola:***@db.example.com:5432/mecontrola_db?sslmode=require", safeDSN)
-}
-
-func (s *ConfigSuite) TestInsecurePlaceholdersNaoVazio() {
-	s.NotEmpty(configs.InsecurePlaceholders)
-}
-
-func (s *ConfigSuite) TestDBPoolTimeoutDefaults() {
-	dir := s.T().TempDir()
-
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-	s.Require().NoError(err)
-	s.Require().NotNil(cfg)
-
-	db := cfg.DBConfig
-	s.Equal(30*time.Minute, db.ConnMaxLifetime, "DB_CONN_MAX_LIFETIME default deve ser 30m")
-	s.Equal(5*time.Minute, db.ConnMaxIdleTime, "DB_CONN_MAX_IDLE_TIME default deve ser 5m")
-}
-
-func (s *ConfigSuite) TestOutboxConfigDefaults() {
-	dir := s.T().TempDir()
-
-	// Ambiente local requer .env — criar um minimo valido
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-	s.Require().NoError(err)
-	s.Require().NotNil(cfg)
-
-	o := cfg.OutboxConfig
-	s.True(o.DispatcherEnabled, "OUTBOX_DISPATCHER_ENABLED default deve ser true")
-	s.Equal(500*time.Millisecond, o.DispatcherTickInterval, "OUTBOX_DISPATCHER_TICK_INTERVAL default deve ser 500ms")
-	s.Equal(50, o.DispatcherBatchSize, "OUTBOX_DISPATCHER_BATCH_SIZE default deve ser 50")
-	s.Equal(10*time.Second, o.DispatcherHandlerTimeout, "OUTBOX_DISPATCHER_HANDLER_TIMEOUT default deve ser 10s")
-	s.Equal(15, o.RetryMaxAttempts, "OUTBOX_RETRY_MAX_ATTEMPTS default deve ser 15")
-	s.Equal(2*time.Second, o.RetryBaseBackoff, "OUTBOX_RETRY_BASE_BACKOFF default deve ser 2s")
-	s.Equal(5*time.Minute, o.RetryMaxBackoff, "OUTBOX_RETRY_MAX_BACKOFF default deve ser 5m")
-	s.Equal(90, o.HousekeepingRetentionDays, "OUTBOX_HOUSEKEEPING_RETENTION_DAYS default deve ser 90")
-	s.Equal("@daily", o.HousekeepingSchedule, "OUTBOX_HOUSEKEEPING_SCHEDULE default deve ser @daily")
-	s.Equal("@every 1m", o.ReaperInterval, "OUTBOX_REAPER_INTERVAL default deve ser @every 1m")
-	s.Equal(5*time.Minute, o.ReaperStuckAfter, "OUTBOX_REAPER_STUCK_AFTER default deve ser 5m")
-}
-
-func (s *ConfigSuite) TestOutboxConfigOverrideViaEnv() {
-	s.T().Setenv("OUTBOX_DISPATCHER_ENABLED", "false")
-	s.T().Setenv("OUTBOX_DISPATCHER_BATCH_SIZE", "100")
-	s.T().Setenv("OUTBOX_RETRY_MAX_ATTEMPTS", "10")
-	s.T().Setenv("OUTBOX_HOUSEKEEPING_RETENTION_DAYS", "30")
-	s.T().Setenv("OUTBOX_HOUSEKEEPING_SCHEDULE", "@weekly")
-	s.T().Setenv("OUTBOX_REAPER_INTERVAL", "@every 5m")
-
-	dir := s.T().TempDir()
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-	s.Require().NoError(err)
-	s.Require().NotNil(cfg)
-
-	o := cfg.OutboxConfig
-	s.False(o.DispatcherEnabled)
-	s.Equal(100, o.DispatcherBatchSize)
-	s.Equal(10, o.RetryMaxAttempts)
-	s.Equal(30, o.HousekeepingRetentionDays)
-	s.Equal("@weekly", o.HousekeepingSchedule)
-	s.Equal("@every 5m", o.ReaperInterval)
-}
-
-func (s *ConfigSuite) TestOutboxConfigValidacaoRanges() {
-	base := func() *configs.Config {
-		return &configs.Config{
-			AppConfig:  configs.AppConfig{Environment: "local"},
-			HTTPConfig: configs.HTTPConfig{Port: 8080},
-			O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-			OutboxConfig: configs.OutboxConfig{
-				RetryMaxAttempts:          15,
-				DispatcherBatchSize:       50,
-				HousekeepingRetentionDays: 90,
-				HousekeepingSchedule:      "@daily",
-				ReaperInterval:            "@every 1m",
-			},
-		}
-	}
-
-	scenarios := []struct {
-		name    string
-		mutate  func(*configs.Config)
-		errMsg  string
-		wantErr bool
-	}{
-		{
-			name:    "deve aceitar valores validos dentro dos ranges",
-			mutate:  func(_ *configs.Config) {},
-			wantErr: false,
-		},
-		{
-			name: "deve rejeitar RetryMaxAttempts zero",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.RetryMaxAttempts = 0
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_RETRY_MAX_ATTEMPTS inválido",
-		},
-		{
-			name: "deve rejeitar RetryMaxAttempts acima de 50",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.RetryMaxAttempts = 51
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_RETRY_MAX_ATTEMPTS inválido",
-		},
-		{
-			name: "deve aceitar RetryMaxAttempts igual a 1",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.RetryMaxAttempts = 1
-			},
-			wantErr: false,
-		},
-		{
-			name: "deve aceitar RetryMaxAttempts igual a 50",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.RetryMaxAttempts = 50
-			},
-			wantErr: false,
-		},
-		{
-			name: "deve rejeitar DispatcherBatchSize zero",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.DispatcherBatchSize = 0
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_DISPATCHER_BATCH_SIZE inválido",
-		},
-		{
-			name: "deve rejeitar DispatcherBatchSize acima de 500",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.DispatcherBatchSize = 501
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_DISPATCHER_BATCH_SIZE inválido",
-		},
-		{
-			name: "deve rejeitar HousekeepingRetentionDays zero",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.HousekeepingRetentionDays = 0
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido",
-		},
-		{
-			name: "deve rejeitar HousekeepingRetentionDays acima de 3650",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.HousekeepingRetentionDays = 3651
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_HOUSEKEEPING_RETENTION_DAYS inválido",
-		},
-		{
-			name: "deve rejeitar HousekeepingSchedule invalido",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.HousekeepingSchedule = "nao-e-cron"
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_HOUSEKEEPING_SCHEDULE inválido",
-		},
-		{
-			name: "deve aceitar HousekeepingSchedule @weekly valido",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.HousekeepingSchedule = "@weekly"
-			},
-			wantErr: false,
-		},
-		{
-			name: "deve rejeitar ReaperInterval invalido",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.ReaperInterval = "invalido"
-			},
-			wantErr: true,
-			errMsg:  "OUTBOX_REAPER_INTERVAL inválido",
-		},
-		{
-			name: "deve aceitar ReaperInterval @every 5m valido",
-			mutate: func(c *configs.Config) {
-				c.OutboxConfig.ReaperInterval = "@every 5m"
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, sc := range scenarios {
-		s.Run(sc.name, func() {
-			cfg := base()
-			sc.mutate(cfg)
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
+			cfg := scenario.args.build()
 			err := cfg.Validate()
-			if sc.wantErr {
-				s.Error(err)
-				if sc.errMsg != "" {
-					s.Contains(err.Error(), sc.errMsg)
-				}
-			} else {
-				s.NoError(err)
-			}
+			scenario.expect(cfg, err)
 		})
 	}
 }
 
-func (s *ConfigSuite) TestInsecurePlaceholdersContemValoresConhecidos() {
-	known := []string{
-		"CHANGE_ME_USE_STRONG_PASSWORD",
-		"CHANGE_ME_GENERATE_SECURE_SECRET_KEY_MIN_64_CHARS",
-		"your_secret_key",
-		"financial@password",
+func (s *ConfigSuite) TestLoadConfig() {
+	type args struct {
+		path func() string
 	}
 
-	for _, v := range known {
-		s.Contains(configs.InsecurePlaceholders, v)
-	}
-}
-
-func (s *ConfigSuite) TestValidateProductionUsuarioInseguro() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "production"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		DBConfig: configs.DBConfig{
-			Password: "productionStrongPassword123!",
-			User:     "your_secret_key",
-		},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "DB_USER contém placeholder inseguro")
-}
-
-func (s *ConfigSuite) TestValidateProductionPassValid() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "production"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		DBConfig: configs.DBConfig{
-			Password: "productionStrongPassword123!",
-			User:     "mecontrola",
-		},
-		O11yConfig: configs.O11yConfig{
-			TraceSampleRate: 0.2,
-		},
-	}
-
-	err := cfg.Validate()
-	s.NoError(err)
-}
-
-func (s *ConfigSuite) TestValidatePoolTunablesInvalidos() {
 	scenarios := []struct {
 		name   string
-		db     configs.DBConfig
-		errMsg string
+		args   args
+		setup  func(path string)
+		expect func(cfg *configs.Config, err error)
 	}{
 		{
-			name:   "max conns zero quando tunables configurados",
-			db:     configs.DBConfig{MaxConns: 0, MinConns: 1, MaxIdleConns: 1},
-			errMsg: "DB_MAX_CONNS deve ser maior que zero",
+			name: "deve carregar config com arquivo valido",
+			args: args{
+				path: func() string {
+					return "./testdata/valid"
+				},
+			},
+			setup: func(_ string) {},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal("local", cfg.AppConfig.Environment)
+				s.Equal(8080, cfg.HTTPConfig.Port)
+				s.Equal("localhost", cfg.DBConfig.Host)
+				s.Equal(1.0, cfg.O11yConfig.TraceSampleRate)
+			},
 		},
 		{
-			name:   "min conns maior que max conns",
-			db:     configs.DBConfig{MaxConns: 2, MinConns: 3, MaxIdleConns: 1},
-			errMsg: "DB_MIN_CONNS não pode ser maior que DB_MAX_CONNS",
+			name: "deve retornar erro quando local sem arquivo env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(_ string) {
+				s.T().Setenv("ENVIRONMENT", "local")
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Error(err)
+				s.Nil(cfg)
+				s.ErrorContains(err, "arquivo .env obrigatório não encontrado")
+			},
 		},
 		{
-			name:   "max idle maior que max conns",
-			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 3},
-			errMsg: "DB_MAX_IDLE_CONNS não pode ser maior que DB_MAX_CONNS",
+			name: "deve carregar production sem arquivo usando env vars",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(_ string) {
+				s.T().Setenv("ENVIRONMENT", "production")
+				s.T().Setenv("PORT", "8080")
+				s.T().Setenv("DB_HOST", "db.fly.internal")
+				s.T().Setenv("DB_PORT", "5432")
+				s.T().Setenv("DB_USER", "mecontrola")
+				s.T().Setenv("DB_PASSWORD", "productionStrongPassword123!")
+				s.T().Setenv("DB_NAME", "mecontrola_db")
+				s.T().Setenv("DB_SSL_MODE", "require")
+				s.T().Setenv("OTEL_TRACE_SAMPLE_RATE", "0.2")
+				s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal("production", cfg.AppConfig.Environment)
+				s.Equal("db.fly.internal", cfg.DBConfig.Host)
+			},
 		},
 		{
-			name:   "conn max lifetime negativo",
-			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxLifetime: -time.Second},
-			errMsg: "DB_CONN_MAX_LIFETIME não pode ser negativo",
+			name: "deve retornar erro quando production fixture e insegura",
+			args: args{
+				path: func() string {
+					return "./testdata/insecure-prod"
+				},
+			},
+			setup: func(_ string) {},
+			expect: func(cfg *configs.Config, err error) {
+				s.Error(err)
+				s.Nil(cfg)
+				s.ErrorContains(err, "placeholder inseguro")
+			},
 		},
 		{
-			name:   "conn max idle time negativo",
-			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxIdleTime: -time.Second},
-			errMsg: "DB_CONN_MAX_IDLE_TIME não pode ser negativo",
+			name: "deve aplicar defaults do pool de banco",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(30*time.Minute, cfg.DBConfig.ConnMaxLifetime)
+				s.Equal(5*time.Minute, cfg.DBConfig.ConnMaxIdleTime)
+			},
 		},
 		{
-			name:   "conn max idle time maior que conn max lifetime",
-			db:     configs.DBConfig{MaxConns: 2, MinConns: 1, MaxIdleConns: 1, ConnMaxLifetime: 30 * time.Second, ConnMaxIdleTime: time.Minute},
-			errMsg: "DB_CONN_MAX_IDLE_TIME não pode ser maior que DB_CONN_MAX_LIFETIME",
+			name: "deve aplicar defaults do outbox",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(true, cfg.OutboxConfig.DispatcherEnabled)
+				s.Equal(500*time.Millisecond, cfg.OutboxConfig.DispatcherTickInterval)
+				s.Equal(50, cfg.OutboxConfig.DispatcherBatchSize)
+				s.Equal(10*time.Second, cfg.OutboxConfig.DispatcherHandlerTimeout)
+				s.Equal(15, cfg.OutboxConfig.RetryMaxAttempts)
+				s.Equal(2*time.Second, cfg.OutboxConfig.RetryBaseBackoff)
+				s.Equal(5*time.Minute, cfg.OutboxConfig.RetryMaxBackoff)
+				s.Equal(90, cfg.OutboxConfig.HousekeepingRetentionDays)
+				s.Equal("@daily", cfg.OutboxConfig.HousekeepingSchedule)
+				s.Equal("@every 1m", cfg.OutboxConfig.ReaperInterval)
+				s.Equal(5*time.Minute, cfg.OutboxConfig.ReaperStuckAfter)
+			},
+		},
+		{
+			name: "deve sobrescrever defaults do outbox via env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("OUTBOX_DISPATCHER_ENABLED", "false")
+				s.T().Setenv("OUTBOX_DISPATCHER_BATCH_SIZE", "100")
+				s.T().Setenv("OUTBOX_RETRY_MAX_ATTEMPTS", "10")
+				s.T().Setenv("OUTBOX_HOUSEKEEPING_RETENTION_DAYS", "30")
+				s.T().Setenv("OUTBOX_HOUSEKEEPING_SCHEDULE", "@weekly")
+				s.T().Setenv("OUTBOX_REAPER_INTERVAL", "@every 5m")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(false, cfg.OutboxConfig.DispatcherEnabled)
+				s.Equal(100, cfg.OutboxConfig.DispatcherBatchSize)
+				s.Equal(10, cfg.OutboxConfig.RetryMaxAttempts)
+				s.Equal(30, cfg.OutboxConfig.HousekeepingRetentionDays)
+				s.Equal("@weekly", cfg.OutboxConfig.HousekeepingSchedule)
+				s.Equal("@every 5m", cfg.OutboxConfig.ReaperInterval)
+			},
+		},
+		{
+			name: "deve retornar erro quando porta carregada e invalida",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, "ENVIRONMENT=local\nPORT=99999\nOTEL_TRACE_SAMPLE_RATE=1.0\n")
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Error(err)
+				s.Nil(cfg)
+				s.ErrorContains(err, "PORT inválido")
+			},
+		},
+		{
+			name: "deve retornar erro quando trace sample rate carregado e invalido",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=2.5\n")
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Error(err)
+				s.Nil(cfg)
+				s.ErrorContains(err, "OTEL_TRACE_SAMPLE_RATE inválido")
+			},
+		},
+		{
+			name: "deve aplicar defaults da kiwify",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("KIWIFY_ACCOUNT_ID", "account-test")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal("https://public-api.kiwify.com", cfg.KiwifyConfig.APIBaseURL)
+				s.Equal("account-test", cfg.KiwifyConfig.AccountID)
+				s.Equal("X-Kiwify-Webhook-Token", cfg.KiwifyConfig.WebhookTokenHeader)
+				s.Equal(5*time.Minute, cfg.KiwifyConfig.OAuthTokenSafetyMargin)
+				s.Equal(100, cfg.KiwifyConfig.RateLimitMaxRequestsPerMin)
+				s.Equal(10, cfg.KiwifyConfig.RateLimitBurst)
+				s.Equal("@hourly", cfg.KiwifyConfig.ReconciliationInterval)
+				s.Equal(200, cfg.KiwifyConfig.ReconciliationBatchSize)
+				s.Equal(10*time.Second, cfg.KiwifyConfig.HTTPTimeout)
+				s.Equal(3, cfg.KiwifyConfig.HTTPRetryMaxAttempts)
+				s.Equal(time.Second, cfg.KiwifyConfig.HTTPRetryBackoff)
+			},
+		},
+		{
+			name: "deve aplicar defaults do billing",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(50000, cfg.BillingConfig.EntitlementCacheCapacity)
+				s.Equal(5*time.Minute, cfg.BillingConfig.EntitlementCacheTTL)
+				s.Equal("@daily", cfg.BillingConfig.AnonymizationSchedule)
+				s.Equal(500, cfg.BillingConfig.AnonymizationBatchSize)
+				s.Equal(365, cfg.BillingConfig.AnonymizationRetentionDays)
+			},
 		},
 	}
 
-	for _, sc := range scenarios {
-		s.Run(sc.name, func() {
-			cfg := &configs.Config{
-				AppConfig:  configs.AppConfig{Environment: "local"},
-				HTTPConfig: configs.HTTPConfig{Port: 8080},
-				DBConfig:   sc.db,
-				O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-			}
-
-			err := cfg.Validate()
-			s.Error(err)
-			s.Contains(err.Error(), sc.errMsg)
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			path := scenario.args.path()
+			loadConfig := configs.LoadConfig
+			scenario.setup(path)
+			cfg, err := loadConfig(path)
+			scenario.expect(cfg, err)
 		})
 	}
 }
 
-func (s *ConfigSuite) TestLoadConfigPortInvalidaRetornaErro() {
-	s.T().Setenv("ENVIRONMENT", "local")
-	s.T().Setenv("PORT", "99999")
-
-	dir := s.T().TempDir()
-	envContent := "ENVIRONMENT=local\nPORT=99999\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-
-	s.Error(err)
-	s.Nil(cfg)
-	s.Contains(err.Error(), "PORT inválido")
-}
-
-func (s *ConfigSuite) TestLoadConfigTraceSampleRateInvalidoRetornaErro() {
-	dir := s.T().TempDir()
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=2.5\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-
-	s.Error(err)
-	s.Nil(cfg)
-	s.Contains(err.Error(), "OTEL_TRACE_SAMPLE_RATE inválido")
-}
-
-func (s *ConfigSuite) TestKiwifyConfigDefaultsAplicados() {
-	dir := s.T().TempDir()
-	s.T().Setenv("KIWIFY_ACCOUNT_ID", "account-test")
-
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-	s.Require().NoError(err)
-	s.Require().NotNil(cfg)
-
-	k := cfg.KiwifyConfig
-	s.Equal("https://public-api.kiwify.com", k.APIBaseURL)
-	s.Equal("account-test", k.AccountID)
-	s.Equal("X-Kiwify-Webhook-Token", k.WebhookTokenHeader)
-	s.Equal(5*time.Minute, k.OAuthTokenSafetyMargin)
-	s.Equal(100, k.RateLimitMaxRequestsPerMin)
-	s.Equal(10, k.RateLimitBurst)
-	s.Equal("@hourly", k.ReconciliationInterval)
-	s.Equal(200, k.ReconciliationBatchSize)
-	s.Equal(10*time.Second, k.HTTPTimeout)
-	s.Equal(3, k.HTTPRetryMaxAttempts)
-	s.Equal(time.Second, k.HTTPRetryBackoff)
-}
-
-func (s *ConfigSuite) TestKiwifyConfigHTTPSafeNaoExpoeSecrets() {
-	k := configs.KiwifyConfig{
-		HTTPTimeout:          15 * time.Second,
-		HTTPRetryMaxAttempts: 5,
-		HTTPRetryBackoff:     2 * time.Second,
+func (s *ConfigSuite) TestDBConfigAccessors() {
+	type args struct {
+		build func() *configs.DBConfig
+		call  func(db *configs.DBConfig) string
 	}
-	safe := k.Safe()
-	s.Equal("15s", safe["http_timeout"])
-	s.Equal(5, safe["http_retry_max_attempts"])
-	s.Equal("2s", safe["http_retry_backoff"])
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func(result string)
+	}{
+		{
+			name: "deve ocultar senha no safe dsn com senha alfanumerica",
+			args: args{
+				build: func() *configs.DBConfig {
+					return &configs.DBConfig{
+						Host:     "localhost",
+						Port:     5432,
+						User:     "user",
+						Password: "Senha123!",
+						Name:     "dbname",
+						SSLMode:  "disable",
+					}
+				},
+				call: func(db *configs.DBConfig) string {
+					return db.SafeDSN()
+				},
+			},
+			setup: func() {},
+			expect: func(result string) {
+				s.NotContains(result, "Senha123!")
+				s.Contains(result, "***")
+			},
+		},
+		{
+			name: "deve ocultar senha no safe dsn com simbolos",
+			args: args{
+				build: func() *configs.DBConfig {
+					return &configs.DBConfig{
+						Host:     "localhost",
+						Port:     5432,
+						User:     "user",
+						Password: "sup3r-secret@2026",
+						Name:     "dbname",
+						SSLMode:  "disable",
+					}
+				},
+				call: func(db *configs.DBConfig) string {
+					return db.SafeDSN()
+				},
+			},
+			setup: func() {},
+			expect: func(result string) {
+				s.NotContains(result, "sup3r-secret@2026")
+				s.Contains(result, "***")
+			},
+		},
+		{
+			name: "deve manter formato esperado no safe dsn",
+			args: args{
+				build: func() *configs.DBConfig {
+					return &configs.DBConfig{
+						Host:     "db.example.com",
+						Port:     5432,
+						User:     "mecontrola",
+						Password: "anypassword",
+						Name:     "mecontrola_db",
+						SSLMode:  "require",
+					}
+				},
+				call: func(db *configs.DBConfig) string {
+					return db.SafeDSN()
+				},
+			},
+			setup: func() {},
+			expect: func(result string) {
+				s.Equal("postgres://mecontrola:***@db.example.com:5432/mecontrola_db?sslmode=require", result)
+			},
+		},
+		{
+			name: "deve incluir senha em texto claro no dsn",
+			args: args{
+				build: func() *configs.DBConfig {
+					return &configs.DBConfig{
+						Host:     "db.example.com",
+						Port:     5432,
+						User:     "mecontrola",
+						Password: "supersecretpassword",
+						Name:     "mecontrola_db",
+						SSLMode:  "require",
+					}
+				},
+				call: func(db *configs.DBConfig) string {
+					return db.DSN()
+				},
+			},
+			setup: func() {},
+			expect: func(result string) {
+				s.Contains(result, "supersecretpassword")
+				s.Contains(result, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
+			db := scenario.args.build()
+			result := scenario.args.call(db)
+			scenario.expect(result)
+		})
+	}
 }
 
-func (s *ConfigSuite) TestValidateKiwifyHTTPTimeoutInvalido() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local"},
+func (s *ConfigSuite) TestInsecurePlaceholders() {
+	type args struct {
+		values func() []string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func(values []string)
+	}{
+		{
+			name: "deve manter lista de placeholders nao vazia",
+			args: args{
+				values: func() []string {
+					return configs.InsecurePlaceholders
+				},
+			},
+			setup: func() {},
+			expect: func(values []string) {
+				s.NotEmpty(values)
+			},
+		},
+		{
+			name: "deve conter placeholders conhecidos",
+			args: args{
+				values: func() []string {
+					return configs.InsecurePlaceholders
+				},
+			},
+			setup: func() {},
+			expect: func(values []string) {
+				s.Contains(values, "CHANGE_ME_USE_STRONG_PASSWORD")
+				s.Contains(values, "CHANGE_ME_GENERATE_SECURE_SECRET_KEY_MIN_64_CHARS")
+				s.Contains(values, "your_secret_key")
+				s.Contains(values, "financial@password")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
+			values := scenario.args.values()
+			scenario.expect(values)
+		})
+	}
+}
+
+func (s *ConfigSuite) TestKiwifySafe() {
+	type args struct {
+		build func() configs.KiwifyConfig
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func(safe map[string]any)
+	}{
+		{
+			name: "deve manter valores http seguros",
+			args: args{
+				build: func() configs.KiwifyConfig {
+					return configs.KiwifyConfig{
+						HTTPTimeout:          15 * time.Second,
+						HTTPRetryMaxAttempts: 5,
+						HTTPRetryBackoff:     2 * time.Second,
+					}
+				},
+			},
+			setup: func() {},
+			expect: func(safe map[string]any) {
+				s.Equal("15s", safe["http_timeout"])
+				s.Equal(5, safe["http_retry_max_attempts"])
+				s.Equal("2s", safe["http_retry_backoff"])
+			},
+		},
+		{
+			name: "deve redactar secrets e ids configurados",
+			args: args{
+				build: func() configs.KiwifyConfig {
+					return configs.KiwifyConfig{
+						APIBaseURL:                 "https://public-api.kiwify.com",
+						AccountID:                  "account-id-value",
+						WebhookSecret:              "super-secret-webhook",
+						WebhookTokenHeader:         "X-Kiwify-Webhook-Token",
+						ClientID:                   "client-id-value",
+						ClientSecret:               "super-secret-client",
+						RateLimitMaxRequestsPerMin: 100,
+						ReconciliationInterval:     "@hourly",
+						ReconciliationBatchSize:    200,
+					}
+				},
+			},
+			setup: func() {},
+			expect: func(safe map[string]any) {
+				s.Equal("https://public-api.kiwify.com", safe["api_base_url"])
+				s.Equal(true, safe["account_id_set"])
+				s.Equal(false, safe["product_id_monthly_set"])
+				s.Equal(false, safe["product_id_quarterly_set"])
+				s.Equal(false, safe["product_id_annual_set"])
+				s.Equal("X-Kiwify-Webhook-Token", safe["webhook_token_header"])
+				s.Equal(100, safe["rate_limit"])
+				s.Equal("@hourly", safe["reconciliation_interval"])
+				s.Equal(200, safe["reconciliation_batch_size"])
+				s.Equal(true, safe["client_id_set"])
+				s.Equal(true, safe["client_secret_set"])
+				s.Equal(true, safe["webhook_secret_set"])
+				for key, value := range safe {
+					strValue, ok := value.(string)
+					if !ok {
+						continue
+					}
+					s.NotContains(strValue, "super-secret-webhook", key)
+					s.NotContains(strValue, "super-secret-client", key)
+					s.NotContains(strValue, "client-id-value", key)
+					s.NotContains(strValue, "account-id-value", key)
+				}
+			},
+		},
+		{
+			name: "deve indicar secrets nao configurados",
+			args: args{
+				build: func() configs.KiwifyConfig {
+					return configs.KiwifyConfig{
+						APIBaseURL: "https://public-api.kiwify.com",
+					}
+				},
+			},
+			setup: func() {},
+			expect: func(safe map[string]any) {
+				s.Equal(false, safe["client_id_set"])
+				s.Equal(false, safe["account_id_set"])
+				s.Equal(false, safe["client_secret_set"])
+				s.Equal(false, safe["webhook_secret_set"])
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
+			kiwifyConfig := scenario.args.build()
+			safe := kiwifyConfig.Safe()
+			scenario.expect(safe)
+		})
+	}
+}
+
+func (s *ConfigSuite) assertConfigError(err error, messages ...string) {
+	s.Require().Error(err)
+	for _, message := range messages {
+		s.ErrorContains(err, message)
+	}
+}
+
+func (s *ConfigSuite) newBaseConfig() *configs.Config {
+	return &configs.Config{
+		AppConfig:  configs.AppConfig{Environment: "local", AppMode: "server"},
 		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-		BillingConfig: configs.BillingConfig{
-			EntitlementCacheCapacity:   50000,
-			EntitlementCacheTTL:        5 * time.Minute,
-			AnonymizationBatchSize:     500,
-			AnonymizationRetentionDays: 365,
-		},
-		KiwifyConfig: configs.KiwifyConfig{
-			RateLimitMaxRequestsPerMin: 100,
-			HTTPTimeout:                2 * time.Minute, // acima do máximo de 1m
-		},
+		DBConfig:   configs.DBConfig{Password: "qualquer", User: "user"},
+		O11yConfig: configs.O11yConfig{TraceSampleRate: 1},
 	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "KIWIFY_HTTP_TIMEOUT inválido")
 }
 
-func (s *ConfigSuite) TestValidateKiwifyHTTPRetryAttemptsInvalido() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-		BillingConfig: configs.BillingConfig{
-			EntitlementCacheCapacity:   50000,
-			EntitlementCacheTTL:        5 * time.Minute,
-			AnonymizationBatchSize:     500,
-			AnonymizationRetentionDays: 365,
-		},
-		KiwifyConfig: configs.KiwifyConfig{
-			RateLimitMaxRequestsPerMin: 100,
-			HTTPTimeout:                10 * time.Second,
-			HTTPRetryMaxAttempts:       50,
-			HTTPRetryBackoff:           time.Second,
-		},
+func (s *ConfigSuite) newProductionConfig() *configs.Config {
+	cfg := s.newBaseConfig()
+	cfg.AppConfig.Environment = "production"
+	cfg.DBConfig.Password = "productionStrongPassword123!"
+	cfg.DBConfig.User = "mecontrola"
+	cfg.O11yConfig.TraceSampleRate = 0.2
+	return cfg
+}
+
+func (s *ConfigSuite) newBillingEnabledConfig() *configs.Config {
+	cfg := s.newBaseConfig()
+	cfg.BillingConfig = configs.BillingConfig{
+		EntitlementCacheCapacity:   50000,
+		EntitlementCacheTTL:        5 * time.Minute,
+		AnonymizationBatchSize:     500,
+		AnonymizationRetentionDays: 365,
 	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "KIWIFY_HTTP_RETRY_MAX_ATTEMPTS inválido")
-}
-
-func (s *ConfigSuite) TestValidateKiwifyHTTPRetryBackoffObrigatorioQuandoAttemptsConfigurado() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-		BillingConfig: configs.BillingConfig{
-			EntitlementCacheCapacity:   50000,
-			EntitlementCacheTTL:        5 * time.Minute,
-			AnonymizationBatchSize:     500,
-			AnonymizationRetentionDays: 365,
-		},
-		KiwifyConfig: configs.KiwifyConfig{
-			RateLimitMaxRequestsPerMin: 100,
-			HTTPTimeout:                10 * time.Second,
-			HTTPRetryMaxAttempts:       3,
-			HTTPRetryBackoff:           0,
-		},
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "KIWIFY_HTTP_RETRY_BACKOFF inválido")
-}
-
-func (s *ConfigSuite) TestBillingConfigDefaultsAplicados() {
-	dir := s.T().TempDir()
-
-	envContent := "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
-	err := os.WriteFile(dir+"/.env", []byte(envContent), 0600)
-	s.Require().NoError(err)
-
-	cfg, err := configs.LoadConfig(dir)
-	s.Require().NoError(err)
-	s.Require().NotNil(cfg)
-
-	b := cfg.BillingConfig
-	s.Equal(50000, b.EntitlementCacheCapacity)
-	s.Equal(5*time.Minute, b.EntitlementCacheTTL)
-	s.Equal("@daily", b.AnonymizationSchedule)
-	s.Equal(500, b.AnonymizationBatchSize)
-	s.Equal(365, b.AnonymizationRetentionDays)
-}
-
-func (s *ConfigSuite) TestSafeKiwifyConfigRedactaSecrets() {
-	k := configs.KiwifyConfig{
-		APIBaseURL:                 "https://public-api.kiwify.com",
-		AccountID:                  "account-id-value",
-		WebhookSecret:              "super-secret-webhook",
-		WebhookTokenHeader:         "X-Kiwify-Webhook-Token",
-		ClientID:                   "client-id-value",
-		ClientSecret:               "super-secret-client",
+	cfg.KiwifyConfig = configs.KiwifyConfig{
 		RateLimitMaxRequestsPerMin: 100,
-		ReconciliationInterval:     "@hourly",
-		ReconciliationBatchSize:    200,
+		HTTPTimeout:                10 * time.Second,
+		HTTPRetryMaxAttempts:       3,
+		HTTPRetryBackoff:           time.Second,
 	}
+	return cfg
+}
 
-	safe := k.Safe()
-
-	s.Equal("https://public-api.kiwify.com", safe["api_base_url"])
-	s.Equal(true, safe["account_id_set"])
-	s.Equal(false, safe["product_id_monthly_set"])
-	s.Equal(false, safe["product_id_quarterly_set"])
-	s.Equal(false, safe["product_id_annual_set"])
-	s.Equal("X-Kiwify-Webhook-Token", safe["webhook_token_header"])
-	s.Equal(100, safe["rate_limit"])
-	s.Equal("@hourly", safe["reconciliation_interval"])
-	s.Equal(200, safe["reconciliation_batch_size"])
-
-	// Secrets devem aparecer como booleanos, nunca em texto claro
-	s.Equal(true, safe["client_id_set"])
-	s.Equal(true, safe["client_secret_set"])
-	s.Equal(true, safe["webhook_secret_set"])
-
-	// Garantia adicional: o mapa não contém o valor real dos secrets
-	for key, val := range safe {
-		strVal, ok := val.(string)
-		if !ok {
-			continue
-		}
-		s.NotContains(strVal, "super-secret-webhook", "chave %q não deve conter o webhook secret", key)
-		s.NotContains(strVal, "super-secret-client", "chave %q não deve conter o client secret", key)
-		s.NotContains(strVal, "client-id-value", "chave %q não deve conter o client ID", key)
-		s.NotContains(strVal, "account-id-value", "chave %q não deve conter o account ID", key)
+func (s *ConfigSuite) newValidOutboxConfig() configs.OutboxConfig {
+	return configs.OutboxConfig{
+		RetryMaxAttempts:          15,
+		DispatcherBatchSize:       50,
+		HousekeepingRetentionDays: 90,
+		HousekeepingSchedule:      "@daily",
+		ReaperInterval:            "@every 1m",
 	}
 }
 
-func (s *ConfigSuite) TestSafeKiwifyConfigSecretsNaoConfigurados() {
-	k := configs.KiwifyConfig{
-		APIBaseURL: "https://public-api.kiwify.com",
-	}
-
-	safe := k.Safe()
-
-	s.Equal(false, safe["client_id_set"])
-	s.Equal(false, safe["account_id_set"])
-	s.Equal(false, safe["client_secret_set"])
-	s.Equal(false, safe["webhook_secret_set"])
+func (s *ConfigSuite) minimalLocalEnv() string {
+	return "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\n"
 }
 
-func (s *ConfigSuite) TestValidateProductionKiwifySecretsAusentesQuandoHabilitado() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "production"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		DBConfig:   configs.DBConfig{Password: "productionStrongPassword123!", User: "mecontrola"},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 0.2},
-		KiwifyConfig: configs.KiwifyConfig{
-			ClientID: "some-client-id",
-			// WebhookSecret e ClientSecret ausentes — Kiwify parcialmente configurado
-		},
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "KIWIFY_WEBHOOK_SECRET é obrigatório")
-	s.Contains(err.Error(), "KIWIFY_ACCOUNT_ID é obrigatório")
-}
-
-func (s *ConfigSuite) TestValidateProductionKiwifyNaoConfiguradoPermitido() {
-	cfg := &configs.Config{
-		AppConfig:    configs.AppConfig{Environment: "production"},
-		HTTPConfig:   configs.HTTPConfig{Port: 8080},
-		DBConfig:     configs.DBConfig{Password: "productionStrongPassword123!", User: "mecontrola"},
-		O11yConfig:   configs.O11yConfig{TraceSampleRate: 0.2},
-		KiwifyConfig: configs.KiwifyConfig{}, // todos os campos vazios/zero
-	}
-
-	err := cfg.Validate()
-	s.NoError(err)
-}
-
-func (s *ConfigSuite) TestValidateBillingCacheCapacidadeInvalida() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-		BillingConfig: configs.BillingConfig{
-			EntitlementCacheCapacity:   500, // abaixo do mínimo de 1000
-			EntitlementCacheTTL:        5 * time.Minute,
-			AnonymizationBatchSize:     500,
-			AnonymizationRetentionDays: 365,
-		},
-		KiwifyConfig: configs.KiwifyConfig{RateLimitMaxRequestsPerMin: 100},
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "BILLING_ENTITLEMENT_CACHE_CAPACITY inválido")
-}
-
-func (s *ConfigSuite) TestValidateBillingCacheTTLInvalida() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-		BillingConfig: configs.BillingConfig{
-			EntitlementCacheCapacity:   50000,
-			EntitlementCacheTTL:        2 * time.Hour, // acima do máximo de 1h
-			AnonymizationBatchSize:     500,
-			AnonymizationRetentionDays: 365,
-		},
-		KiwifyConfig: configs.KiwifyConfig{RateLimitMaxRequestsPerMin: 100},
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "BILLING_ENTITLEMENT_CACHE_TTL inválido")
-}
-
-func (s *ConfigSuite) TestValidateBillingRateLimitInvalido() {
-	cfg := &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1.0},
-		BillingConfig: configs.BillingConfig{
-			EntitlementCacheCapacity:   50000,
-			EntitlementCacheTTL:        5 * time.Minute,
-			AnonymizationBatchSize:     500,
-			AnonymizationRetentionDays: 365,
-		},
-		KiwifyConfig: configs.KiwifyConfig{RateLimitMaxRequestsPerMin: 0}, // inválido
-	}
-
-	err := cfg.Validate()
-	s.Error(err)
-	s.Contains(err.Error(), "KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN inválido")
-}
-
-const passwordChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-
-func generateRandomPasswords(n int) []string {
-	passwords := make([]string, n)
-	for i := range passwords {
-		length := 20 + rand.Intn(20) //nolint:gosec
-		var sb strings.Builder
-		for range length {
-			sb.WriteByte(passwordChars[rand.Intn(len(passwordChars))]) //nolint:gosec
-		}
-		passwords[i] = sb.String()
-	}
-	return passwords
+func (s *ConfigSuite) writeEnvFile(path, content string) {
+	err := os.WriteFile(path+"/.env", []byte(content), 0o600)
+	s.Require().NoError(err)
 }

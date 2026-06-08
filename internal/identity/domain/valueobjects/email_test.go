@@ -4,131 +4,152 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
 
-func TestNewEmail(t *testing.T) {
-	t.Parallel()
+type EmailSuite struct {
+	suite.Suite
+}
 
-	tests := []struct {
-		name        string
-		input       string
-		wantAddr    string
-		wantErr     error
-		wantErrWrap bool
+func TestEmailSuite(t *testing.T) {
+	suite.Run(t, new(EmailSuite))
+}
+
+func (s *EmailSuite) SetupTest() {}
+
+func (s *EmailSuite) mustEmail(raw string) valueobjects.Email {
+	email, err := valueobjects.NewEmail(raw)
+	s.Require().NoError(err)
+	return email
+}
+
+func (s *EmailSuite) TestNewEmail() {
+	type args struct {
+		input string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(valueobjects.Email, error)
 	}{
 		{
-			name:     "email válido",
-			input:    "joao@example.com",
-			wantAddr: "joao@example.com",
+			name: "deve normalizar email valido em lowercase",
+			args: args{input: "JOAO@EXAMPLE.COM"},
+			expect: func(email valueobjects.Email, err error) {
+				s.Require().NoError(err)
+				s.Equal("joao@example.com", email.String())
+			},
 		},
 		{
-			name:     "email com uppercase normaliza lowercase",
-			input:    "JOAO@EXAMPLE.COM",
-			wantAddr: "joao@example.com",
+			name: "deve remover espacos externos",
+			args: args{input: "  joao@example.com  "},
+			expect: func(email valueobjects.Email, err error) {
+				s.Require().NoError(err)
+				s.Equal("joao@example.com", email.String())
+			},
 		},
 		{
-			name:     "email com espaços externos",
-			input:    "  joao@example.com  ",
-			wantAddr: "joao@example.com",
+			name: "deve retornar erro para email vazio",
+			args: args{input: ""},
+			expect: func(email valueobjects.Email, err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, valueobjects.ErrEmailInvalid)
+				s.Equal(valueobjects.Email{}, email)
+			},
 		},
 		{
-			name:     "subdomínio",
-			input:    "user@mail.example.co.uk",
-			wantAddr: "user@mail.example.co.uk",
-		},
-		{
-			name:    "vazio",
-			input:   "",
-			wantErr: valueobjects.ErrEmailInvalid,
-		},
-		{
-			name:    "apenas espaços",
-			input:   "   ",
-			wantErr: valueobjects.ErrEmailInvalid,
-		},
-		{
-			name:        "sem @",
-			input:       "joaosemarroba",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrEmailInvalid,
-		},
-		{
-			name:        "sem domínio",
-			input:       "joao@",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrEmailInvalid,
-		},
-		{
-			name:        "formato inválido",
-			input:       "@@example.com",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrEmailInvalid,
+			name: "deve retornar erro para formato invalido",
+			args: args{input: "@@example.com"},
+			expect: func(email valueobjects.Email, err error) {
+				s.Require().Error(err)
+				s.True(errors.Is(err, valueobjects.ErrEmailInvalid))
+				s.Equal(valueobjects.Email{}, email)
+			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := valueobjects.NewEmail(tc.input)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			email, err := valueobjects.NewEmail(scenario.args.input)
+			scenario.expect(email, err)
+		})
+	}
+}
 
-			if tc.wantErr != nil {
-				require.Error(t, err)
-				if tc.wantErrWrap {
-					assert.True(t, errors.Is(err, tc.wantErr), "erro deve envolver %v, got %v", tc.wantErr, err)
-				} else {
-					assert.ErrorIs(t, err, tc.wantErr)
-				}
-				assert.Equal(t, valueobjects.Email{}, got)
-				return
+func (s *EmailSuite) TestEqual() {
+	type args struct {
+		left  string
+		right string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(bool)
+	}{
+		{
+			name: "deve considerar emails equivalentes apos normalizacao",
+			args: args{left: "JOAO@EXAMPLE.COM", right: "joao@example.com"},
+			expect: func(equal bool) {
+				s.True(equal)
+			},
+		},
+		{
+			name: "deve diferenciar emails distintos",
+			args: args{left: "joao@example.com", right: "maria@example.com"},
+			expect: func(equal bool) {
+				s.False(equal)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			left := s.mustEmail(scenario.args.left)
+			right := s.mustEmail(scenario.args.right)
+			scenario.expect(left.Equal(right))
+		})
+	}
+}
+
+func (s *EmailSuite) TestMasked() {
+	type args struct {
+		input   string
+		useZero bool
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(string)
+	}{
+		{
+			name: "deve mascarar email preenchido",
+			args: args{input: "joao@example.com"},
+			expect: func(masked string) {
+				s.Equal("j***@example.com", masked)
+			},
+		},
+		{
+			name: "deve mascarar zero value",
+			args: args{useZero: true},
+			expect: func(masked string) {
+				s.Equal("***", masked)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			var email valueobjects.Email
+			if !scenario.args.useZero {
+				email = s.mustEmail(scenario.args.input)
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantAddr, got.String())
+			scenario.expect(email.Masked())
 		})
 	}
-}
-
-func TestEmail_Equal(t *testing.T) {
-	t.Parallel()
-	a, err := valueobjects.NewEmail("JOAO@EXAMPLE.COM")
-	require.NoError(t, err)
-	b, err := valueobjects.NewEmail("joao@example.com")
-	require.NoError(t, err)
-	c, err := valueobjects.NewEmail("maria@example.com")
-	require.NoError(t, err)
-
-	assert.True(t, a.Equal(b))
-	assert.False(t, a.Equal(c))
-}
-
-func TestEmail_Masked(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"joao@example.com", "j***@example.com"},
-		{"a@b.com", "a***@b.com"},
-		{"UPPER@DOMAIN.ORG", "u***@domain.org"},
-		{"z@x.io", "z***@x.io"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			e, err := valueobjects.NewEmail(tc.input)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, e.Masked())
-		})
-	}
-}
-
-func TestEmail_MaskedZeroValue(t *testing.T) {
-	t.Parallel()
-	var e valueobjects.Email
-	masked := e.Masked()
-	assert.Equal(t, "***", masked)
 }

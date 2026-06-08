@@ -16,9 +16,7 @@ import (
 
 type ReaperSuite struct {
 	suite.Suite
-	storage *outboxmocks.Storage
-	factory *outboxmocks.OutboxRepositoryFactory
-	cfg     configs.OutboxConfig
+	cfg configs.OutboxConfig
 }
 
 func TestReaper(t *testing.T) {
@@ -26,55 +24,64 @@ func TestReaper(t *testing.T) {
 }
 
 func (s *ReaperSuite) SetupTest() {
-	s.storage = outboxmocks.NewStorage(s.T())
-	s.factory = outboxmocks.NewOutboxRepositoryFactory(s.T())
 	s.cfg = configs.OutboxConfig{ReaperStuckAfter: 5 * time.Minute}
 }
 
-type reaperScenario struct {
-	name      string
-	resetN    int64
-	resetErr  error
-	wantError bool
-}
-
 func (s *ReaperSuite) TestRun() {
-	scenarios := []reaperScenario{
+	type args struct {
+		ctx context.Context
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func() *outboxmocks.OutboxRepositoryFactory
+		expect func(error)
+	}{
 		{
-			name:      "deve resetar eventos stuck com sucesso",
-			resetN:    3,
-			resetErr:  nil,
-			wantError: false,
+			name: "deve resetar eventos stuck com sucesso",
+			args: args{ctx: context.Background()},
+			setup: func() *outboxmocks.OutboxRepositoryFactory {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ResetStuck(mock.Anything, s.cfg.ReaperStuckAfter).Return(int64(3), nil).Once()
+				return factory
+			},
+			expect: func(err error) { s.NoError(err) },
 		},
 		{
-			name:      "deve retornar erro ao resetar stuck",
-			resetN:    0,
-			resetErr:  errors.New("db error"),
-			wantError: true,
+			name: "deve retornar erro ao resetar stuck",
+			args: args{ctx: context.Background()},
+			setup: func() *outboxmocks.OutboxRepositoryFactory {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ResetStuck(mock.Anything, s.cfg.ReaperStuckAfter).Return(int64(0), errors.New("db error")).Once()
+				return factory
+			},
+			expect: func(err error) { s.Error(err) },
 		},
 		{
-			name:      "deve ter sucesso sem eventos stuck",
-			resetN:    0,
-			resetErr:  nil,
-			wantError: false,
+			name: "deve concluir quando nao houver eventos stuck",
+			args: args{ctx: context.Background()},
+			setup: func() *outboxmocks.OutboxRepositoryFactory {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ResetStuck(mock.Anything, s.cfg.ReaperStuckAfter).Return(int64(0), nil).Once()
+				return factory
+			},
+			expect: func(err error) { s.NoError(err) },
 		},
 	}
 
-	for _, sc := range scenarios {
-		s.Run(sc.name, func() {
-			storage := outboxmocks.NewStorage(s.T())
-			factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
-			factory.EXPECT().OutboxRepository(mock.Anything).Return(storage)
-			storage.EXPECT().ResetStuck(mock.Anything, s.cfg.ReaperStuckAfter).Return(sc.resetN, sc.resetErr)
-
-			r := outbox.NewReaperJob(&fakeUoWVoid{}, factory, s.cfg, noopLogger{})
-			err := r.Run(context.Background())
-
-			if sc.wantError {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			factory := scenario.setup()
+			sut := outbox.NewReaperJob(&unitOfWorkVoid{}, factory, s.cfg, noopLogger{})
+			err := sut.Run(scenario.args.ctx)
+			scenario.expect(err)
 		})
 	}
 }

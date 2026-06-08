@@ -34,7 +34,7 @@ Esse é o **único** fluxo que resolve simultaneamente:
       │  User preenche: email, WhatsApp (campo do Kiwify), cartão/Pix
       ▼
 [3] Pagamento aprovado
-      │  Kiwify dispara webhook compra_aprovada → seu backend
+      │  Kiwify dispara webhook order_approved → seu backend
       │  Backend marca token como PAID
       │  Kiwify redireciona pra sua thank-you page
       ▼
@@ -83,7 +83,7 @@ Frágil.
 ### ✅ Fluxo escolhido: Checkout primeiro + deep link na thank-you page
 
 - **Identidade inegociável:** o número que abre o chat **é** o número real, porque vem do próprio WhatsApp.
-- **Magic token amarra tudo:** `compra_aprovada` chega no webhook com o token, primeira mensagem `ATIVAR {token}` chega com o número. Você cruza os dois lados.
+- **Magic token amarra tudo:** `order_approved` chega no webhook com o token, primeira mensagem `ATIVAR {token}` chega com o número. Você cruza os dois lados.
 - **Fricção mínima:** thank-you page é 1 clique pra abrir o WhatsApp, mensagem já pré-preenchida.
 - **Independe de campo digitado**, mas usa esse campo como fallback de segurança.
 
@@ -122,7 +122,7 @@ PENDING ──────► PAID ──────► CONSUMED
 ```
 
 - `PENDING` → criado no clique do “Assinar” na landing
-- `PAID` → webhook `compra_aprovada` carimba `paid_at`
+- `PAID` → webhook `order_approved` carimba `paid_at`
 - `CONSUMED` → mensagem `ATIVAR` recebida, user vinculado
 - `EXPIRED` → TTL passou sem virar `CONSUMED`
 
@@ -203,7 +203,7 @@ document.querySelector('#cta-assinar').addEventListener('click', async (e) => {
 });
 ```
 
-### 4.3 Webhook handler `compra_aprovada`
+### 4.3 Webhook handler `order_approved`
 
 Já modelado no doc de billing, mas o trecho específico do onboarding:
 
@@ -478,7 +478,7 @@ No painel da Kiwify, no produto:
 
 - [ ] Criar produto recorrente (mensal/anual)
 - [ ] Configurar webhook apontando pra `https://api.mecontrola.app.br/webhooks/kiwify`
-- [ ] Habilitar eventos: `compra_aprovada`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `compra_reembolsada`, `chargeback`
+- [ ] Habilitar eventos: `order_approved`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `order_refunded`, `chargeback`
 - [ ] **URL de redirect pós-pagamento**: `https://mecontrola.app.br/obrigado?token={s}` (verificar se Kiwify propaga query params)
 - [ ] **Custom field oculto** (se Kiwify suportar) recebendo o `?s=` do checkout — garante que o token volta no webhook
 - [ ] Token do webhook em variável de ambiente, **nunca** commitado

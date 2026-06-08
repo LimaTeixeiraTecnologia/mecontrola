@@ -13,140 +13,256 @@ import (
 
 type MagicTokenSuite struct {
 	suite.Suite
+	now time.Time
 }
 
 func TestMagicTokenSuite(t *testing.T) {
 	suite.Run(t, new(MagicTokenSuite))
 }
 
-func (s *MagicTokenSuite) TestNewMagicToken_CreatesWithPendingStatus() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, err := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
+func (s *MagicTokenSuite) SetupTest() {
+	s.now = time.Now().UTC().Truncate(time.Second)
+}
+
+func (s *MagicTokenSuite) newPendingToken(expiresAt time.Time) entities.MagicToken {
+	token, err := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expiresAt)
 	s.Require().NoError(err)
-	s.Equal(valueobjects.TokenStatusPending, token.Status())
+	return token
 }
 
-func (s *MagicTokenSuite) TestNewMagicToken_RequiresID() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	_, err := entities.NewMagicToken("", []byte("hash"), "plan-1", expires)
-	s.Error(err)
-}
-
-func (s *MagicTokenSuite) TestNewMagicToken_RequiresTokenHash() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	_, err := entities.NewMagicToken("id-1", nil, "plan-1", expires)
-	s.Error(err)
-}
-
-func (s *MagicTokenSuite) TestNewMagicToken_RequiresPlanID() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	_, err := entities.NewMagicToken("id-1", []byte("hash"), "", expires)
-	s.Error(err)
-}
-
-func (s *MagicTokenSuite) TestMarkPaid_TransitionsPendingToPaid() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-	paidAt := time.Now().UTC()
-
-	paid, err := token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-sale-1", paidAt)
-
+func (s *MagicTokenSuite) newPaidToken(expiresAt time.Time) entities.MagicToken {
+	token := s.newPendingToken(expiresAt)
+	paidToken, err := token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-1", s.now)
 	s.Require().NoError(err)
-	s.Equal(valueobjects.TokenStatusPaid, paid.Status())
-	s.Equal("sub-001", paid.SubscriptionID())
-	s.Equal("+5511999990000", paid.CustomerMobileE164())
-	s.Equal("user@test.com", paid.CustomerEmail())
-	s.Equal("ext-sale-1", paid.ExternalSaleID())
+	return paidToken
 }
 
-func (s *MagicTokenSuite) TestMarkPaid_IsNoOpWhenAlreadyPaid() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-	paidAt := time.Now().UTC()
-
-	paid, _ := token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-1", paidAt)
-	paidAgain, err := paid.MarkPaid("sub-002", "+5511999990001", "other@test.com", "ext-2", paidAt)
-
+func (s *MagicTokenSuite) newConsumedToken(expiresAt time.Time) entities.MagicToken {
+	token := s.newPaidToken(expiresAt)
+	consumedToken, err := token.MarkConsumed("user-1", "+5511999990000", valueobjects.ActivationPathDirect, s.now)
 	s.Require().NoError(err)
-	s.Equal("+5511999990000", paidAgain.CustomerMobileE164())
+	return consumedToken
 }
 
-func (s *MagicTokenSuite) TestMarkConsumed_TransitionsPaidToConsumed() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-	token, _ = token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-1", time.Now().UTC())
+func (s *MagicTokenSuite) TestNewMagicToken() {
+	type args struct {
+		id        string
+		hash      []byte
+		planID    string
+		expiresAt time.Time
+	}
 
-	consumed, err := token.MarkConsumed("user-1", "+5511999990000", valueobjects.ActivationPathDirect, time.Now().UTC())
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(entities.MagicToken, error)
+	}{
+		{
+			name: "deve criar token pendente",
+			args: args{id: "id-1", hash: []byte("hash"), planID: "plan-1", expiresAt: s.now.Add(7 * 24 * time.Hour)},
+			expect: func(token entities.MagicToken, err error) {
+				s.Require().NoError(err)
+				s.Equal(valueobjects.TokenStatusPending, token.Status())
+			},
+		},
+		{
+			name: "deve falhar sem id",
+			args: args{id: "", hash: []byte("hash"), planID: "plan-1", expiresAt: s.now.Add(7 * 24 * time.Hour)},
+			expect: func(token entities.MagicToken, err error) {
+				s.Error(err)
+				s.Zero(token)
+			},
+		},
+		{
+			name: "deve falhar sem hash",
+			args: args{id: "id-1", hash: nil, planID: "plan-1", expiresAt: s.now.Add(7 * 24 * time.Hour)},
+			expect: func(token entities.MagicToken, err error) {
+				s.Error(err)
+				s.Zero(token)
+			},
+		},
+		{
+			name: "deve falhar sem plan id",
+			args: args{id: "id-1", hash: []byte("hash"), planID: "", expiresAt: s.now.Add(7 * 24 * time.Hour)},
+			expect: func(token entities.MagicToken, err error) {
+				s.Error(err)
+				s.Zero(token)
+			},
+		},
+	}
 
-	s.Require().NoError(err)
-	s.Equal(valueobjects.TokenStatusConsumed, consumed.Status())
-	s.Equal("user-1", consumed.ConsumedByUserID())
-	s.Equal(valueobjects.ActivationPathDirect, consumed.ActivationPath())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			token, err := entities.NewMagicToken(
+				scenario.args.id,
+				scenario.args.hash,
+				scenario.args.planID,
+				scenario.args.expiresAt,
+			)
+			scenario.expect(token, err)
+		})
+	}
 }
 
-func (s *MagicTokenSuite) TestMarkConsumed_FailsFromPending() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
+func (s *MagicTokenSuite) TestMarkPaid() {
+	type args struct {
+		token entities.MagicToken
+	}
 
-	_, err := token.MarkConsumed("user-1", "+5511999990000", valueobjects.ActivationPathDirect, time.Now().UTC())
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(entities.MagicToken, error)
+	}{
+		{
+			name: "deve transicionar de pendente para pago",
+			args: args{token: s.newPendingToken(s.now.Add(7 * 24 * time.Hour))},
+			expect: func(token entities.MagicToken, err error) {
+				s.Require().NoError(err)
+				s.Equal(valueobjects.TokenStatusPaid, token.Status())
+				s.Equal("sub-001", token.SubscriptionID())
+				s.Equal("+5511999990000", token.CustomerMobileE164())
+				s.Equal("user@test.com", token.CustomerEmail())
+				s.Equal("ext-1", token.ExternalSaleID())
+			},
+		},
+		{
+			name: "deve manter dados quando ja estiver pago",
+			args: args{token: s.newPaidToken(s.now.Add(7 * 24 * time.Hour))},
+			expect: func(token entities.MagicToken, err error) {
+				s.Require().NoError(err)
+				s.Equal("+5511999990000", token.CustomerMobileE164())
+				s.Equal("sub-001", token.SubscriptionID())
+			},
+		},
+	}
 
-	s.ErrorIs(err, domain.ErrTransitionNotAllowed)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			paidToken, err := scenario.args.token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-1", s.now)
+			if scenario.name == "deve manter dados quando ja estiver pago" {
+				paidToken, err = scenario.args.token.MarkPaid("sub-002", "+5511999990001", "other@test.com", "ext-2", s.now)
+			}
+			scenario.expect(paidToken, err)
+		})
+	}
 }
 
-func (s *MagicTokenSuite) TestMarkExpired_TransitionsPendingToExpired() {
-	expires := time.Now().UTC().Add(-1 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
+func (s *MagicTokenSuite) TestMarkConsumed() {
+	type args struct {
+		token entities.MagicToken
+	}
 
-	expired, err := token.MarkExpired()
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(entities.MagicToken, error)
+	}{
+		{
+			name: "deve consumir token pago",
+			args: args{token: s.newPaidToken(s.now.Add(7 * 24 * time.Hour))},
+			expect: func(token entities.MagicToken, err error) {
+				s.Require().NoError(err)
+				s.Equal(valueobjects.TokenStatusConsumed, token.Status())
+				s.Equal("user-1", token.ConsumedByUserID())
+				s.Equal(valueobjects.ActivationPathDirect, token.ActivationPath())
+			},
+		},
+		{
+			name: "deve falhar ao consumir token pendente",
+			args: args{token: s.newPendingToken(s.now.Add(7 * 24 * time.Hour))},
+			expect: func(token entities.MagicToken, err error) {
+				s.ErrorIs(err, domain.ErrTransitionNotAllowed)
+				s.Equal(valueobjects.TokenStatusPending, token.Status())
+			},
+		},
+	}
 
-	s.Require().NoError(err)
-	s.Equal(valueobjects.TokenStatusExpired, expired.Status())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			consumedToken, err := scenario.args.token.MarkConsumed("user-1", "+5511999990000", valueobjects.ActivationPathDirect, s.now)
+			scenario.expect(consumedToken, err)
+		})
+	}
 }
 
-func (s *MagicTokenSuite) TestMarkExpired_IsNoOpWhenConsumed() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-	token, _ = token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-1", time.Now().UTC())
-	token, _ = token.MarkConsumed("user-1", "+5511999990000", valueobjects.ActivationPathDirect, time.Now().UTC())
+func (s *MagicTokenSuite) TestMarkExpired() {
+	type args struct {
+		token entities.MagicToken
+	}
 
-	expired, err := token.MarkExpired()
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(entities.MagicToken, error)
+	}{
+		{
+			name: "deve expirar token pendente",
+			args: args{token: s.newPendingToken(s.now.Add(-time.Hour))},
+			expect: func(token entities.MagicToken, err error) {
+				s.Require().NoError(err)
+				s.Equal(valueobjects.TokenStatusExpired, token.Status())
+			},
+		},
+		{
+			name: "deve manter token consumido",
+			args: args{token: s.newConsumedToken(s.now.Add(7 * 24 * time.Hour))},
+			expect: func(token entities.MagicToken, err error) {
+				s.Require().NoError(err)
+				s.Equal(valueobjects.TokenStatusConsumed, token.Status())
+			},
+		},
+	}
 
-	s.Require().NoError(err)
-	s.Equal(valueobjects.TokenStatusConsumed, expired.Status())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			expiredToken, err := scenario.args.token.MarkExpired()
+			scenario.expect(expiredToken, err)
+		})
+	}
 }
 
-func (s *MagicTokenSuite) TestIsExpiredAt_TrueWhenPastExpiresAt() {
-	expires := time.Now().UTC().Add(-1 * time.Minute)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
+func (s *MagicTokenSuite) TestHelpers() {
+	scenarios := []struct {
+		name   string
+		expect func()
+	}{
+		{
+			name: "deve identificar expiracao pelo expires at",
+			expect: func() {
+				token := s.newPendingToken(s.now.Add(-time.Minute))
+				s.True(token.IsExpiredAt(s.now))
+			},
+		},
+		{
+			name: "deve indicar sem outreach quando nao enviado",
+			expect: func() {
+				token := s.newPendingToken(s.now.Add(7 * 24 * time.Hour))
+				s.False(token.HasOutreach())
+			},
+		},
+		{
+			name: "deve registrar outreach para token pago",
+			expect: func() {
+				token := s.newPaidToken(s.now.Add(7 * 24 * time.Hour))
+				outreachedToken, err := token.MarkOutreachSent(s.now)
+				s.Require().NoError(err)
+				s.True(outreachedToken.HasOutreach())
+				s.Equal(s.now, outreachedToken.OutreachSentAt())
+			},
+		},
+		{
+			name: "deve falhar ao registrar outreach para token pendente",
+			expect: func() {
+				token := s.newPendingToken(s.now.Add(7 * 24 * time.Hour))
+				outreachedToken, err := token.MarkOutreachSent(s.now)
+				s.ErrorIs(err, domain.ErrTransitionNotAllowed)
+				s.Equal(valueobjects.TokenStatusPending, outreachedToken.Status())
+			},
+		},
+	}
 
-	s.True(token.IsExpiredAt(time.Now().UTC()))
-}
-
-func (s *MagicTokenSuite) TestHasOutreach_FalseWhenOutreachNotSent() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-
-	s.False(token.HasOutreach())
-}
-
-func (s *MagicTokenSuite) TestMarkOutreachSent_SetsSentAt() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-	token, _ = token.MarkPaid("sub-001", "+5511999990000", "user@test.com", "ext-1", time.Now().UTC())
-
-	sentAt := time.Now().UTC()
-	outreached, err := token.MarkOutreachSent(sentAt)
-
-	s.Require().NoError(err)
-	s.True(outreached.HasOutreach())
-	s.Equal(sentAt, outreached.OutreachSentAt())
-}
-
-func (s *MagicTokenSuite) TestMarkOutreachSent_FailsFromPending() {
-	expires := time.Now().UTC().Add(7 * 24 * time.Hour)
-	token, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", expires)
-
-	_, err := token.MarkOutreachSent(time.Now().UTC())
-
-	s.ErrorIs(err, domain.ErrTransitionNotAllowed)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, scenario.expect)
+	}
 }

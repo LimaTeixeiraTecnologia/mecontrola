@@ -15,12 +15,21 @@ template-data:
 packages:
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces:
     interfaces:
-      BillingProvider: {}
-      EntitlementCache: {}
-      PIIRedactor: {}
+      KiwifyClient: {}
+      KiwifyEventRepository: {}
+      PlanRepository: {}
+      ProcessedEventRepository: {}
+      ReconciliationCheckpointRepository: {}
+      RepositoryFactory: {}
       SubscriptionRepository: {}
-      UserResolver: {}
-      WebhookEventRepository: {}
+      SubscriptionEventPublisher: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases:
+    interfaces:
+      processRefundOrChargeback: {}
+      processSaleApproved: {}
+      processSubscriptionCanceled: {}
+      processSubscriptionLate: {}
+      processSubscriptionRenewed: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces:
     interfaces:
       UserRepository: {}

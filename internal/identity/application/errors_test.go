@@ -5,38 +5,74 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 )
 
-func TestSentinelsAreDistinct(t *testing.T) {
-	sentinels := []error{
-		application.ErrUserNotFound,
-		application.ErrWhatsAppNumberInUse,
-		application.ErrEmailInUse,
-		application.ErrEntitlementNotFound,
-	}
-	for i, a := range sentinels {
-		for j, b := range sentinels {
-			if i == j {
-				continue
-			}
-			if errors.Is(a, b) {
-				t.Fatalf("sentinels [%d]=%v and [%d]=%v unexpectedly equal", i, a, j, b)
-			}
-		}
-	}
+type ErrorsSuite struct {
+	suite.Suite
 }
 
-func TestErrEntitlementNotFoundIsMatched(t *testing.T) {
-	wrapped := fmt.Errorf("identity.repository.entitlement.find_by_user_id: %w", application.ErrEntitlementNotFound)
-	if !errors.Is(wrapped, application.ErrEntitlementNotFound) {
-		t.Fatal("errors.Is must match the sentinel through %w wrapping")
-	}
+func TestErrorsSuite(t *testing.T) {
+	suite.Run(t, new(ErrorsSuite))
 }
 
-func TestErrUserNotFoundIsMatched(t *testing.T) {
-	wrapped := fmt.Errorf("ctx: %w", application.ErrUserNotFound)
-	if !errors.Is(wrapped, application.ErrUserNotFound) {
-		t.Fatal("errors.Is must match ErrUserNotFound through %w wrapping")
+func (s *ErrorsSuite) SetupTest() {}
+
+func (s *ErrorsSuite) TestSentinelsRemainDistinctAndWrappable() {
+	type args struct {
+		left    error
+		right   error
+		wrapped error
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(args)
+	}{
+		{
+			name: "deve manter err user not found distinto de err whatsapp number in use",
+			args: args{
+				left:    application.ErrUserNotFound,
+				right:   application.ErrWhatsAppNumberInUse,
+				wrapped: fmt.Errorf("ctx: %w", application.ErrUserNotFound),
+			},
+			expect: func(current args) {
+				s.False(errors.Is(current.left, current.right))
+				s.True(errors.Is(current.wrapped, current.left))
+			},
+		},
+		{
+			name: "deve manter err user not found distinto de err email in use",
+			args: args{
+				left:    application.ErrUserNotFound,
+				right:   application.ErrEmailInUse,
+				wrapped: fmt.Errorf("ctx: %w", application.ErrUserNotFound),
+			},
+			expect: func(current args) {
+				s.False(errors.Is(current.left, current.right))
+				s.True(errors.Is(current.wrapped, current.left))
+			},
+		},
+		{
+			name: "deve manter err entitlement not found distinto de err email in use",
+			args: args{
+				left:    application.ErrEntitlementNotFound,
+				right:   application.ErrEmailInUse,
+				wrapped: fmt.Errorf("identity.repository.entitlement.find_by_user_id: %w", application.ErrEntitlementNotFound),
+			},
+			expect: func(current args) {
+				s.False(errors.Is(current.left, current.right))
+				s.True(errors.Is(current.wrapped, current.left))
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.expect(scenario.args)
+		})
 	}
 }

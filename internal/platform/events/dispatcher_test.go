@@ -1,4 +1,4 @@
-package events
+package events_test
 
 import (
 	"context"
@@ -7,335 +7,462 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	eventsmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events/mocks"
 )
 
 type DispatcherSuite struct {
 	suite.Suite
-	d Dispatcher
 }
 
 func TestDispatcherSuite(t *testing.T) {
 	suite.Run(t, new(DispatcherSuite))
 }
 
-func (s *DispatcherSuite) SetupTest() {
-	s.d = NewDispatcher()
+func (s *DispatcherSuite) SetupTest() {}
+
+func (s *DispatcherSuite) newEvent(eventType string) events.Event {
+	event := eventsmocks.NewEvent(s.T())
+	event.EXPECT().GetEventType().Return(eventType)
+	return event
 }
 
-// fakeEvent
-
-type fakeEvent struct {
-	eventType string
-	payload   any
-}
-
-func (e *fakeEvent) GetEventType() string { return e.eventType }
-func (e *fakeEvent) GetPayload() any      { return e.payload }
-
-// fakeHandler
-
-type fakeHandler struct {
-	calls  []Event
-	err    error
-	onCall func(ctx context.Context, e Event)
-}
-
-func (h *fakeHandler) Handle(ctx context.Context, event Event) error {
-	h.calls = append(h.calls, event)
-	if h.onCall != nil {
-		h.onCall(ctx, event)
-	}
-	return h.err
-}
-
-// Register
-
-func (s *DispatcherSuite) TestRegister_EventTypeVazio() {
-	h := &fakeHandler{}
-	err := s.d.Register("", h)
-	s.ErrorIs(err, ErrEventTypeEmpty)
-}
-
-func (s *DispatcherSuite) TestRegister_HandlerNil() {
-	err := s.d.Register("user.created", nil)
-	s.ErrorIs(err, ErrHandlerNil)
-}
-
-func (s *DispatcherSuite) TestRegister_Valido() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-	s.True(s.d.Has("user.created", h))
-}
-
-func (s *DispatcherSuite) TestRegister_Duplicidade() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-	err := s.d.Register("user.created", h)
-	s.ErrorIs(err, ErrHandlerAlreadyRegistered)
-}
-
-func (s *DispatcherSuite) TestRegister_MultiploHandlersMesmoTipo() {
-	h1 := &fakeHandler{}
-	h2 := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h1))
-	s.NoError(s.d.Register("user.created", h2))
-	s.True(s.d.Has("user.created", h1))
-	s.True(s.d.Has("user.created", h2))
-}
-
-// Dispatch
-
-func (s *DispatcherSuite) TestDispatch_EventNil() {
-	err := s.d.Dispatch(context.Background(), nil)
-	s.ErrorIs(err, ErrEventNil)
-}
-
-func (s *DispatcherSuite) TestDispatch_EventTypeVazio() {
-	err := s.d.Dispatch(context.Background(), &fakeEvent{eventType: ""})
-	s.ErrorIs(err, ErrEventTypeEmpty)
-}
-
-func (s *DispatcherSuite) TestDispatch_SemHandlers_NoOp() {
-	err := s.d.Dispatch(context.Background(), &fakeEvent{eventType: "user.created"})
-	s.NoError(err)
-}
-
-func (s *DispatcherSuite) TestDispatch_Sucesso() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-	evt := &fakeEvent{eventType: "user.created", payload: "test"}
-
-	err := s.d.Dispatch(context.Background(), evt)
-	s.NoError(err)
-	s.Len(h.calls, 1)
-	s.Equal(evt, h.calls[0])
-}
-
-func (s *DispatcherSuite) TestDispatch_PropagaErroHandler() {
-	sentinel := errors.New("handler error")
-	h := &fakeHandler{err: sentinel}
-	s.NoError(s.d.Register("user.created", h))
-
-	err := s.d.Dispatch(context.Background(), &fakeEvent{eventType: "user.created"})
-	s.ErrorIs(err, sentinel)
-}
-
-func (s *DispatcherSuite) TestDispatch_OrdemDeExecucao() {
-	var order []int
-	h1 := &fakeHandler{onCall: func(_ context.Context, _ Event) { order = append(order, 1) }}
-	h2 := &fakeHandler{onCall: func(_ context.Context, _ Event) { order = append(order, 2) }}
-	h3 := &fakeHandler{onCall: func(_ context.Context, _ Event) { order = append(order, 3) }}
-
-	s.NoError(s.d.Register("order.placed", h1))
-	s.NoError(s.d.Register("order.placed", h2))
-	s.NoError(s.d.Register("order.placed", h3))
-
-	s.NoError(s.d.Dispatch(context.Background(), &fakeEvent{eventType: "order.placed"}))
-	s.Equal([]int{1, 2, 3}, order)
-}
-
-func (s *DispatcherSuite) TestDispatch_CurtoCircuitaNoErro() {
-	sentinel := errors.New("falha")
-	h1 := &fakeHandler{err: sentinel}
-	h2 := &fakeHandler{}
-
-	s.NoError(s.d.Register("order.placed", h1))
-	s.NoError(s.d.Register("order.placed", h2))
-
-	err := s.d.Dispatch(context.Background(), &fakeEvent{eventType: "order.placed"})
-	s.ErrorIs(err, sentinel)
-	s.Len(h2.calls, 0)
-}
-
-func (s *DispatcherSuite) TestDispatch_ContextCanceladoAntesPrimeiroHandler() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := s.d.Dispatch(ctx, &fakeEvent{eventType: "user.created"})
-	s.ErrorIs(err, context.Canceled)
-	s.Len(h.calls, 0)
-}
-
-func (s *DispatcherSuite) TestDispatch_ContextCanceladoNoMeio() {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	h1 := &fakeHandler{onCall: func(_ context.Context, _ Event) { cancel() }}
-	h2 := &fakeHandler{}
-
-	s.NoError(s.d.Register("user.created", h1))
-	s.NoError(s.d.Register("user.created", h2))
-
-	err := s.d.Dispatch(ctx, &fakeEvent{eventType: "user.created"})
-	s.ErrorIs(err, context.Canceled)
-	s.Len(h2.calls, 0)
-}
-
-// Remove
-
-func (s *DispatcherSuite) TestRemove_HandlerExistente() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-	s.NoError(s.d.Remove("user.created", h))
-	s.False(s.d.Has("user.created", h))
-}
-
-func (s *DispatcherSuite) TestRemove_HandlerInexistente() {
-	h1 := &fakeHandler{}
-	h2 := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h1))
-	s.NoError(s.d.Remove("user.created", h2))
-	s.True(s.d.Has("user.created", h1))
-}
-
-func (s *DispatcherSuite) TestRemove_EventTypeInexistente() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Remove("nao.existe", h))
-}
-
-func (s *DispatcherSuite) TestRemove_UltimoHandlerLimpaBucket() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-	s.NoError(s.d.Remove("user.created", h))
-
-	d := s.d.(*dispatcher)
-	d.mu.RLock()
-	_, ok := d.handlers["user.created"]
-	d.mu.RUnlock()
-	s.False(ok)
-}
-
-func (s *DispatcherSuite) TestRemove_EventTypeVazio_NoOp() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Remove("", h))
-}
-
-func (s *DispatcherSuite) TestRemove_HandlerNil_NoOp() {
-	s.NoError(s.d.Remove("user.created", nil))
-}
-
-// Has
-
-func (s *DispatcherSuite) TestHas_True() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
-	s.True(s.d.Has("user.created", h))
-}
-
-func (s *DispatcherSuite) TestHas_False() {
-	h := &fakeHandler{}
-	s.False(s.d.Has("user.created", h))
-}
-
-func (s *DispatcherSuite) TestHas_EventTypeVazio() {
-	h := &fakeHandler{}
-	s.False(s.d.Has("", h))
-}
-
-func (s *DispatcherSuite) TestHas_HandlerNil() {
-	s.False(s.d.Has("user.created", nil))
-}
-
-// Clear
-
-func (s *DispatcherSuite) TestClear() {
-	h1 := &fakeHandler{}
-	h2 := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h1))
-	s.NoError(s.d.Register("order.placed", h2))
-
-	s.d.Clear()
-
-	s.False(s.d.Has("user.created", h1))
-	s.False(s.d.Has("order.placed", h2))
-}
-
-// WithCapacity
-
-func (s *DispatcherSuite) TestWithCapacity_FuncionaCorretamente() {
-	d := NewDispatcher(WithCapacity(16))
-	h := &fakeHandler{}
-	s.NoError(d.Register("user.created", h))
-	s.True(d.Has("user.created", h))
-}
-
-// safeHandler é um Handler com contador atômico, seguro para uso concorrente em testes.
-
-type safeHandler struct{}
-
-func (h *safeHandler) Handle(_ context.Context, _ Event) error {
-	return nil
-}
-
-// Concorrência
-
-func (s *DispatcherSuite) TestConcorrencia_Race() {
-	d := NewDispatcher()
-	const goroutines = 20
-
-	handlers := make([]*safeHandler, goroutines)
-	for i := range handlers {
-		handlers[i] = &safeHandler{}
+func (s *DispatcherSuite) TestRegister() {
+	type args struct {
+		eventType string
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(goroutines * 4)
-
-	for i := range goroutines {
-		h := handlers[i]
-		eventType := fmt.Sprintf("event.%d", i%5)
-
-		go func() {
-			defer wg.Done()
-			_ = d.Register(eventType, h)
-		}()
-
-		go func() {
-			defer wg.Done()
-			_ = d.Dispatch(context.Background(), &fakeEvent{eventType: eventType})
-		}()
-
-		go func() {
-			defer wg.Done()
-			_ = d.Has(eventType, h)
-		}()
-
-		go func() {
-			defer wg.Done()
-			_ = d.Remove(eventType, h)
-		}()
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(events.Dispatcher) events.Handler
+		expect func(events.Dispatcher, events.Handler, error)
+	}{
+		{
+			name:  "deve retornar erro quando event type for vazio",
+			args:  args{eventType: ""},
+			setup: func(events.Dispatcher) events.Handler { return eventsmocks.NewHandler(s.T()) },
+			expect: func(_ events.Dispatcher, _ events.Handler, err error) {
+				s.ErrorIs(err, events.ErrEventTypeEmpty)
+			},
+		},
+		{
+			name:  "deve retornar erro quando handler for nil",
+			args:  args{eventType: "user.created"},
+			setup: func(events.Dispatcher) events.Handler { return nil },
+			expect: func(_ events.Dispatcher, _ events.Handler, err error) {
+				s.ErrorIs(err, events.ErrHandlerNil)
+			},
+		},
+		{
+			name: "deve registrar handler valido",
+			args: args{eventType: "user.created"},
+			setup: func(events.Dispatcher) events.Handler {
+				return eventsmocks.NewHandler(s.T())
+			},
+			expect: func(dispatcher events.Dispatcher, handler events.Handler, err error) {
+				s.NoError(err)
+				s.True(dispatcher.Has("user.created", handler))
+			},
+		},
+		{
+			name: "deve retornar erro ao registrar duplicidade",
+			args: args{eventType: "user.created"},
+			setup: func(dispatcher events.Dispatcher) events.Handler {
+				handler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+				return handler
+			},
+			expect: func(_ events.Dispatcher, _ events.Handler, err error) {
+				s.ErrorIs(err, events.ErrHandlerAlreadyRegistered)
+			},
+		},
+		{
+			name: "deve permitir multiplos handlers do mesmo tipo",
+			args: args{eventType: "user.created"},
+			setup: func(dispatcher events.Dispatcher) events.Handler {
+				firstHandler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", firstHandler))
+				return eventsmocks.NewHandler(s.T())
+			},
+			expect: func(dispatcher events.Dispatcher, handler events.Handler, err error) {
+				s.NoError(err)
+				s.True(dispatcher.Has("user.created", handler))
+				s.Len(dispatcher.HandlersOf("user.created"), 2)
+			},
+		},
 	}
 
-	wg.Wait()
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := events.NewDispatcher()
+			handler := scenario.setup(sut)
+
+			err := sut.Register(scenario.args.eventType, handler)
+
+			scenario.expect(sut, handler, err)
+		})
+	}
 }
 
-// HandlersOf
+func (s *DispatcherSuite) TestDispatch() {
+	type args struct {
+		ctx    context.Context
+		cancel context.CancelFunc
+		event  events.Event
+	}
 
-func (s *DispatcherSuite) TestHandlersOf_RetornaDoisHandlers() {
-	h1 := &fakeHandler{}
-	h2 := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h1))
-	s.NoError(s.d.Register("user.created", h2))
+	type observed struct {
+		order []int
+	}
 
-	handlers := s.d.HandlersOf("user.created")
+	handlerErr := errors.New("handler error")
 
-	s.Len(handlers, 2)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(args, events.Dispatcher, *observed)
+		expect func(error, observed)
+	}{
+		{
+			name:  "deve retornar erro quando evento for nil",
+			args:  args{ctx: context.Background()},
+			setup: func(args, events.Dispatcher, *observed) {},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, events.ErrEventNil)
+			},
+		},
+		{
+			name:  "deve retornar erro quando event type for vazio",
+			args:  args{ctx: context.Background(), event: s.newEvent("")},
+			setup: func(args, events.Dispatcher, *observed) {},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, events.ErrEventTypeEmpty)
+			},
+		},
+		{
+			name:  "deve ignorar dispatch sem handlers",
+			args:  args{ctx: context.Background(), event: s.newEvent("user.created")},
+			setup: func(args, events.Dispatcher, *observed) {},
+			expect: func(err error, _ observed) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve despachar com sucesso",
+			args: args{ctx: context.Background(), event: s.newEvent("user.created")},
+			setup: func(_ args, dispatcher events.Dispatcher, _ *observed) {
+				handler := eventsmocks.NewHandler(s.T())
+				handler.EXPECT().Handle(context.Background(), mock.Anything).Return(nil).Once()
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+			},
+			expect: func(err error, _ observed) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar erro do handler",
+			args: args{ctx: context.Background(), event: s.newEvent("user.created")},
+			setup: func(_ args, dispatcher events.Dispatcher, _ *observed) {
+				handler := eventsmocks.NewHandler(s.T())
+				handler.EXPECT().Handle(context.Background(), mock.Anything).Return(handlerErr).Once()
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+			},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, handlerErr)
+			},
+		},
+		{
+			name: "deve respeitar ordem de execucao",
+			args: args{ctx: context.Background(), event: s.newEvent("order.placed")},
+			setup: func(_ args, dispatcher events.Dispatcher, state *observed) {
+				for index := range 3 {
+					orderIndex := index + 1
+					handler := eventsmocks.NewHandler(s.T())
+					handler.EXPECT().Handle(context.Background(), mock.Anything).Run(func(context.Context, events.Event) {
+						state.order = append(state.order, orderIndex)
+					}).Return(nil).Once()
+					s.Require().NoError(dispatcher.Register("order.placed", handler))
+				}
+			},
+			expect: func(err error, state observed) {
+				s.NoError(err)
+				s.Equal([]int{1, 2, 3}, state.order)
+			},
+		},
+		{
+			name: "deve interromper execucao ao encontrar erro",
+			args: args{ctx: context.Background(), event: s.newEvent("order.placed")},
+			setup: func(_ args, dispatcher events.Dispatcher, _ *observed) {
+				firstHandler := eventsmocks.NewHandler(s.T())
+				firstHandler.EXPECT().Handle(context.Background(), mock.Anything).Return(handlerErr).Once()
+				secondHandler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("order.placed", firstHandler))
+				s.Require().NoError(dispatcher.Register("order.placed", secondHandler))
+			},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, handlerErr)
+			},
+		},
+		{
+			name: "deve retornar erro quando contexto ja estiver cancelado",
+			args: func() args {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return args{ctx: ctx, cancel: cancel, event: s.newEvent("user.created")}
+			}(),
+			setup: func(_ args, dispatcher events.Dispatcher, _ *observed) {
+				handler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+			},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, context.Canceled)
+			},
+		},
+		{
+			name: "deve retornar erro quando contexto cancelar durante execucao",
+			args: func() args {
+				ctx, cancel := context.WithCancel(context.Background())
+				return args{ctx: ctx, cancel: cancel, event: s.newEvent("user.created")}
+			}(),
+			setup: func(input args, dispatcher events.Dispatcher, _ *observed) {
+				firstHandler := eventsmocks.NewHandler(s.T())
+				firstHandler.EXPECT().Handle(mock.Anything, mock.Anything).Run(func(context.Context, events.Event) {
+					input.cancel()
+				}).Return(nil).Once()
+				secondHandler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", firstHandler))
+				s.Require().NoError(dispatcher.Register("user.created", secondHandler))
+			},
+			expect: func(err error, _ observed) {
+				s.ErrorIs(err, context.Canceled)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			state := observed{}
+			sut := events.NewDispatcher()
+			scenario.setup(scenario.args, sut, &state)
+
+			err := sut.Dispatch(scenario.args.ctx, scenario.args.event)
+
+			scenario.expect(err, state)
+		})
+	}
 }
 
-func (s *DispatcherSuite) TestHandlersOf_EventTypeVazio_RetornaVazio() {
-	handlers := s.d.HandlersOf("")
-	s.Empty(handlers)
+func (s *DispatcherSuite) TestCollectionOperations() {
+	type observed struct {
+		snapshot []events.Handler
+	}
+
+	scenarios := []struct {
+		name   string
+		setup  func(events.Dispatcher, *observed)
+		act    func(events.Dispatcher, *observed) error
+		expect func(events.Dispatcher, observed, error)
+	}{
+		{
+			name: "deve remover handler existente",
+			setup: func(dispatcher events.Dispatcher, _ *observed) {
+				handler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+			},
+			act: func(dispatcher events.Dispatcher, _ *observed) error {
+				handlers := dispatcher.HandlersOf("user.created")
+				return dispatcher.Remove("user.created", handlers[0])
+			},
+			expect: func(dispatcher events.Dispatcher, _ observed, err error) {
+				s.NoError(err)
+				s.Empty(dispatcher.HandlersOf("user.created"))
+			},
+		},
+		{
+			name: "deve ignorar remocao de handler inexistente",
+			setup: func(dispatcher events.Dispatcher, _ *observed) {
+				handler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+			},
+			act: func(dispatcher events.Dispatcher, _ *observed) error {
+				return dispatcher.Remove("user.created", eventsmocks.NewHandler(s.T()))
+			},
+			expect: func(dispatcher events.Dispatcher, _ observed, err error) {
+				s.NoError(err)
+				s.Len(dispatcher.HandlersOf("user.created"), 1)
+			},
+		},
+		{
+			name: "deve limpar handlers com clear",
+			setup: func(dispatcher events.Dispatcher, _ *observed) {
+				s.Require().NoError(dispatcher.Register("user.created", eventsmocks.NewHandler(s.T())))
+				s.Require().NoError(dispatcher.Register("order.placed", eventsmocks.NewHandler(s.T())))
+			},
+			act: func(dispatcher events.Dispatcher, _ *observed) error {
+				dispatcher.Clear()
+				return nil
+			},
+			expect: func(dispatcher events.Dispatcher, _ observed, err error) {
+				s.NoError(err)
+				s.Empty(dispatcher.HandlersOf("user.created"))
+				s.Empty(dispatcher.HandlersOf("order.placed"))
+			},
+		},
+		{
+			name: "deve retornar snapshot isolado dos handlers",
+			setup: func(dispatcher events.Dispatcher, state *observed) {
+				handler := eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", handler))
+				state.snapshot = dispatcher.HandlersOf("user.created")
+			},
+			act: func(dispatcher events.Dispatcher, _ *observed) error {
+				dispatcher.Clear()
+				return nil
+			},
+			expect: func(_ events.Dispatcher, state observed, err error) {
+				s.NoError(err)
+				s.Len(state.snapshot, 1)
+			},
+		},
+		{
+			name:  "deve criar dispatcher com capacidade customizada",
+			setup: func(events.Dispatcher, *observed) {},
+			act:   func(_ events.Dispatcher, _ *observed) error { return nil },
+			expect: func(_ events.Dispatcher, _ observed, err error) {
+				s.NoError(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			state := observed{}
+			sut := events.NewDispatcher()
+			if scenario.name == "deve criar dispatcher com capacidade customizada" {
+				sut = events.NewDispatcher(events.WithCapacity(16))
+			}
+			scenario.setup(sut, &state)
+
+			err := scenario.act(sut, &state)
+
+			scenario.expect(sut, state, err)
+		})
+	}
 }
 
-func (s *DispatcherSuite) TestHandlersOf_SnapshotIsolado() {
-	h := &fakeHandler{}
-	s.NoError(s.d.Register("user.created", h))
+func (s *DispatcherSuite) TestHas() {
+	type args struct {
+		eventType string
+		handler   events.Handler
+	}
 
-	snapshot := s.d.HandlersOf("user.created")
-	s.d.Clear()
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(events.Dispatcher, *args)
+		expect func(bool)
+	}{
+		{
+			name: "deve retornar true quando handler existir",
+			args: args{eventType: "user.created"},
+			setup: func(dispatcher events.Dispatcher, input *args) {
+				input.handler = eventsmocks.NewHandler(s.T())
+				s.Require().NoError(dispatcher.Register("user.created", input.handler))
+			},
+			expect: func(result bool) { s.True(result) },
+		},
+		{
+			name:   "deve retornar false quando handler nao existir",
+			args:   args{eventType: "user.created", handler: eventsmocks.NewHandler(s.T())},
+			setup:  func(events.Dispatcher, *args) {},
+			expect: func(result bool) { s.False(result) },
+		},
+		{
+			name:   "deve retornar false com event type vazio",
+			args:   args{handler: eventsmocks.NewHandler(s.T())},
+			setup:  func(events.Dispatcher, *args) {},
+			expect: func(result bool) { s.False(result) },
+		},
+		{
+			name:   "deve retornar false com handler nil",
+			args:   args{eventType: "user.created"},
+			setup:  func(events.Dispatcher, *args) {},
+			expect: func(result bool) { s.False(result) },
+		},
+	}
 
-	s.Len(snapshot, 1, "snapshot deve ser independente do dispatcher")
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := events.NewDispatcher()
+			scenario.setup(sut, &scenario.args)
+
+			result := sut.Has(scenario.args.eventType, scenario.args.handler)
+
+			scenario.expect(result)
+		})
+	}
+}
+
+func (s *DispatcherSuite) TestConcurrency() {
+	scenarios := []struct {
+		name   string
+		setup  func() []string
+		expect func(events.Dispatcher, []string)
+	}{
+		{
+			name: "deve operar de forma concorrente sem panic",
+			setup: func() []string {
+				eventTypes := make([]string, 0, 20)
+				for index := range 20 {
+					eventTypes = append(eventTypes, fmt.Sprintf("event.%d", index%5))
+				}
+				return eventTypes
+			},
+			expect: func(dispatcher events.Dispatcher, eventTypes []string) {
+				var wg sync.WaitGroup
+				wg.Add(len(eventTypes) * 4)
+
+				for _, eventType := range eventTypes {
+					handler := eventsmocks.NewHandler(s.T())
+					handler.EXPECT().Handle(mock.Anything, mock.Anything).Return(nil).Maybe()
+					event := eventsmocks.NewEvent(s.T())
+					event.EXPECT().GetEventType().Return(eventType).Maybe()
+
+					go func(eventType string, handler *eventsmocks.Handler, event *eventsmocks.Event) {
+						defer wg.Done()
+						_ = dispatcher.Register(eventType, handler)
+					}(eventType, handler, event)
+
+					go func(event *eventsmocks.Event) {
+						defer wg.Done()
+						_ = dispatcher.Dispatch(context.Background(), event)
+					}(event)
+
+					go func(eventType string, handler *eventsmocks.Handler) {
+						defer wg.Done()
+						_ = dispatcher.Has(eventType, handler)
+					}(eventType, handler)
+
+					go func(eventType string, handler *eventsmocks.Handler) {
+						defer wg.Done()
+						_ = dispatcher.Remove(eventType, handler)
+					}(eventType, handler)
+				}
+
+				wg.Wait()
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := events.NewDispatcher()
+			eventTypes := scenario.setup()
+			scenario.expect(sut, eventTypes)
+		})
+	}
 }

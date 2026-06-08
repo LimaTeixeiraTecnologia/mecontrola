@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
+	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -20,12 +20,12 @@ import (
 
 type ProcessRefundOrChargebackSuite struct {
 	suite.Suite
+	ctx           context.Context
 	uowMock       *mocks.UnitOfWorkSubscription
 	factoryMock   *mocks.RepositoryFactory
 	subRepoMock   *mocks.SubscriptionRepository
 	eventRepoMock *mocks.ProcessedEventRepository
 	publisherMock *mocks.SubscriptionEventPublisher
-	uc            *usecases.ProcessRefundOrChargeback
 }
 
 func TestProcessRefundOrChargeback(t *testing.T) {
@@ -33,132 +33,267 @@ func TestProcessRefundOrChargeback(t *testing.T) {
 }
 
 func (s *ProcessRefundOrChargebackSuite) SetupTest() {
+	s.ctx = context.Background()
 	s.uowMock = mocks.NewUnitOfWorkSubscription(s.T())
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
 	s.subRepoMock = mocks.NewSubscriptionRepository(s.T())
 	s.eventRepoMock = mocks.NewProcessedEventRepository(s.T())
 	s.publisherMock = mocks.NewSubscriptionEventPublisher(s.T())
-	s.uc = usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 }
 
 func (s *ProcessRefundOrChargebackSuite) activeSub() entities.Subscription {
 	plan, err := valueobjects.NewPlan("MONTHLY", 30)
 	s.Require().NoError(err)
-	ft, err := valueobjects.NewFunnelToken("token-abc")
+	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
 	now := time.Now().UTC()
-	return entities.Hydrate("sub-001", ft, plan, valueobjects.StatusActive,
-		now.Add(-30*24*time.Hour), now.Add(24*time.Hour), time.Time{}, now.Add(-1*time.Hour))
+	return entities.Hydrate(
+		"sub-001",
+		funnelToken,
+		plan,
+		valueobjects.StatusActive,
+		now.Add(-30*24*time.Hour),
+		now.Add(24*time.Hour),
+		time.Time{},
+		now.Add(-time.Hour),
+	)
 }
 
 func (s *ProcessRefundOrChargebackSuite) canceledSub() entities.Subscription {
 	plan, err := valueobjects.NewPlan("MONTHLY", 30)
 	s.Require().NoError(err)
-	ft, err := valueobjects.NewFunnelToken("token-abc")
+	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
 	now := time.Now().UTC()
-	return entities.Hydrate("sub-001", ft, plan, valueobjects.StatusCanceledPending,
-		now.Add(-30*24*time.Hour), now.Add(24*time.Hour), time.Time{}, now.Add(-1*time.Hour))
+	return entities.Hydrate(
+		"sub-001",
+		funnelToken,
+		plan,
+		valueobjects.StatusCanceledPending,
+		now.Add(-30*24*time.Hour),
+		now.Add(24*time.Hour),
+		time.Time{},
+		now.Add(-time.Hour),
+	)
 }
 
-func (s *ProcessRefundOrChargebackSuite) TestSucessoRefundForaAlteraParaRefunded() {
-	now := time.Now().UTC()
-	sub := s.activeSub()
-
-	in := input.ProcessRefundOrChargebackInput{
-		SaleID:     "sale-001",
-		OrderID:    "order-001",
-		Trigger:    "compra_reembolsada",
-		OccurredAt: now,
-	}
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "refund:sale-001", "compra_reembolsada", "sale-001", now).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
-	s.subRepoMock.On("ApplyTransition", mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, now).Return(nil)
-	s.publisherMock.On("PublishRefunded", mock.Anything, mock.Anything, mock.Anything, "sub-001").Return(nil)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().NoError(err)
+func (s *ProcessRefundOrChargebackSuite) expectRepositories(times int) {
+	s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(times)
+	s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(times)
 }
 
-func (s *ProcessRefundOrChargebackSuite) TestRefundEChargebackUsaMesmoEventKey() {
-	now := time.Now().UTC()
-	sub := s.activeSub()
-
-	inRefund := input.ProcessRefundOrChargebackInput{
-		SaleID:     "sale-001",
-		OrderID:    "order-001",
-		Trigger:    "compra_reembolsada",
-		OccurredAt: now,
+func (s *ProcessRefundOrChargebackSuite) TestExecute() {
+	type args struct {
+		inputs []input.ProcessRefundOrChargebackInput
 	}
 
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "refund:sale-001", "compra_reembolsada", "sale-001", now).Return(nil).Once()
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil).Once()
-	s.subRepoMock.On("ApplyTransition", mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, now).Return(nil).Once()
-	s.publisherMock.On("PublishRefunded", mock.Anything, mock.Anything, mock.Anything, "sub-001").Return(nil).Once()
-
-	err := s.uc.Execute(context.Background(), inRefund)
-	s.Require().NoError(err)
-
-	inChargeback := input.ProcessRefundOrChargebackInput{
-		SaleID:     "sale-001",
-		OrderID:    "order-001",
-		Trigger:    "chargeback",
-		OccurredAt: now,
+	type result struct {
+		err         error
+		transitions int
+		duplicates  int
 	}
 
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "refund:sale-001", "chargeback", "sale-001", now).Return(interfaces.ErrEventAlreadyProcessed).Once()
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(args)
+		expect func(result)
+	}{
+		{
+			name: "deve transicionar assinatura ativa para refunded",
+			args: args{
+				inputs: []input.ProcessRefundOrChargebackInput{
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "compra_reembolsada",
+						OccurredAt: time.Now().UTC(),
+					},
+				},
+			},
+			setup: func(args args) {
+				sub := s.activeSub()
+				occurredAt := args.inputs[0].OccurredAt
 
-	err = s.uc.Execute(context.Background(), inChargeback)
-	s.Require().Error(err)
-	s.True(errors.Is(err, usecases.ErrEventAlreadyProcessed))
-}
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", occurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, occurredAt).
+					Return(nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishRefunded(
+						s.ctx,
+						mock.Anything,
+						mock.MatchedBy(func(updated entities.Subscription) bool {
+							return updated.ID() == "sub-001" &&
+								updated.Status() == valueobjects.StatusRefunded &&
+								updated.GraceEnd().IsZero() &&
+								updated.LastEventAt().Equal(occurredAt)
+						}),
+						"sub-001",
+					).
+					Return(nil).
+					Once()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(1, result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
+			name: "deve usar a mesma chave de evento para refund e chargeback",
+			args: args{
+				inputs: []input.ProcessRefundOrChargebackInput{
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "compra_reembolsada",
+						OccurredAt: time.Now().UTC(),
+					},
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "chargeback",
+						OccurredAt: time.Now().UTC(),
+					},
+				},
+			},
+			setup: func(args args) {
+				sub := s.activeSub()
+				s.expectRepositories(len(args.inputs))
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", args.inputs[0].OccurredAt).
+					Return(nil).
+					Once()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "refund:sale-001", "chargeback", "sale-001", args.inputs[1].OccurredAt).
+					Return(application.ErrEventAlreadyProcessed).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, args.inputs[0].OccurredAt).
+					Return(nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-001").
+					Return(nil).
+					Once()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(1, result.transitions)
+				s.Equal(1, result.duplicates)
+			},
+		},
+		{
+			name: "deve forcar refunded quando reembolso ocorrer apos cancelamento",
+			args: args{
+				inputs: []input.ProcessRefundOrChargebackInput{
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "compra_reembolsada",
+						OccurredAt: time.Now().UTC(),
+					},
+				},
+			},
+			setup: func(args args) {
+				sub := s.canceledSub()
+				occurredAt := args.inputs[0].OccurredAt
 
-func (s *ProcessRefundOrChargebackSuite) TestRefundAposCancelForceRefunded() {
-	now := time.Now().UTC()
-	sub := s.canceledSub()
-
-	in := input.ProcessRefundOrChargebackInput{
-		SaleID:     "sale-001",
-		OrderID:    "order-001",
-		Trigger:    "compra_reembolsada",
-		OccurredAt: now,
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", occurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, occurredAt).
+					Return(nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-001").
+					Return(nil).
+					Once()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(1, result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
+			name: "deve retornar erro de evento ja processado em cenario idempotente",
+			args: args{
+				inputs: []input.ProcessRefundOrChargebackInput{
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "compra_reembolsada",
+						OccurredAt: time.Now().UTC(),
+					},
+				},
+			},
+			setup: func(args args) {
+				s.expectRepositories(1)
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", args.inputs[0].OccurredAt).
+					Return(application.ErrEventAlreadyProcessed).
+					Once()
+			},
+			expect: func(result result) {
+				s.Error(result.err)
+				s.ErrorIs(result.err, usecases.ErrEventAlreadyProcessed)
+				s.Zero(result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
 	}
 
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.SetupTest()
+			sut := usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
+			scenario.setup(scenario.args)
 
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "refund:sale-001", "compra_reembolsada", "sale-001", now).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(sub, nil)
-	s.subRepoMock.On("ApplyTransition", mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, now).Return(nil)
-	s.publisherMock.On("PublishRefunded", mock.Anything, mock.Anything, mock.Anything, "sub-001").Return(nil)
+			result := result{}
+			for _, currentInput := range scenario.args.inputs {
+				err := sut.Execute(s.ctx, currentInput)
+				if len(scenario.args.inputs) == 1 {
+					result.err = err
+					if err == nil {
+						result.transitions = 1
+					}
+					continue
+				}
+				if err == nil {
+					result.transitions++
+					continue
+				}
+				if errors.Is(err, usecases.ErrEventAlreadyProcessed) {
+					result.duplicates++
+					continue
+				}
+				result.err = err
+				break
+			}
 
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().NoError(err)
-}
-
-func (s *ProcessRefundOrChargebackSuite) TestIdempotenciaRetornaErrEventoJaProcessado() {
-	now := time.Now().UTC()
-
-	in := input.ProcessRefundOrChargebackInput{
-		SaleID:     "sale-001",
-		OrderID:    "order-001",
-		Trigger:    "compra_reembolsada",
-		OccurredAt: now,
+			scenario.expect(result)
+		})
 	}
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "refund:sale-001", "compra_reembolsada", "sale-001", now).Return(interfaces.ErrEventAlreadyProcessed)
-
-	err := s.uc.Execute(context.Background(), in)
-	s.Require().Error(err)
-	s.True(errors.Is(err, usecases.ErrEventAlreadyProcessed))
 }

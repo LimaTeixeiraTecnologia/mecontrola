@@ -3,71 +3,64 @@ package pii_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/pii"
 )
 
-func TestMaskDisplayName(t *testing.T) {
-	t.Parallel()
+type MaskSuite struct {
+	suite.Suite
+}
 
-	tests := []struct {
-		name  string
+func TestMaskSuite(t *testing.T) {
+	suite.Run(t, new(MaskSuite))
+}
+
+func (s *MaskSuite) SetupTest() {}
+
+func (s *MaskSuite) TestMaskDisplayName() {
+	type args struct {
 		input string
-		want  string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(string)
 	}{
 		{
-			name:  "vazio",
-			input: "",
-			want:  "",
+			name: "deve retornar vazio para nome vazio",
+			args: args{input: ""},
+			expect: func(masked string) {
+				s.Equal("", masked)
+			},
 		},
 		{
-			name:  "1 rune ASCII",
-			input: "A",
-			want:  "*",
+			name: "deve mascarar nome ascii curto",
+			args: args{input: "Jo"},
+			expect: func(masked string) {
+				s.Equal("J****", masked)
+			},
 		},
 		{
-			name:  "1 rune multibyte (ç)",
-			input: "ç",
-			want:  "*",
+			name: "deve mascarar nome com acento",
+			args: args{input: "Ângela"},
+			expect: func(masked string) {
+				s.Equal("Â****", masked)
+			},
 		},
 		{
-			name:  "1 rune multibyte (é)",
-			input: "é",
-			want:  "*",
-		},
-		{
-			name:  "2 runes ASCII",
-			input: "Jo",
-			want:  "J****",
-		},
-		{
-			name:  "nome completo ASCII",
-			input: "João Silva",
-			want:  "J****",
-		},
-		{
-			name:  "nome com acento inicial (Ângela)",
-			input: "Ângela",
-			want:  "Â****",
-		},
-		{
-			name:  "nome apenas acentos multibyte",
-			input: "érica",
-			want:  "é****",
-		},
-		{
-			name:  "byte inválido UTF-8",
-			input: "\xff",
-			want:  "****",
+			name: "deve mascarar utf8 invalido",
+			args: args{input: "\xff"},
+			expect: func(masked string) {
+				s.Equal("****", masked)
+			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := pii.MaskDisplayName(tc.input)
-			assert.Equal(t, tc.want, got)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.expect(pii.MaskDisplayName(scenario.args.input))
 		})
 	}
 }

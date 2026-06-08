@@ -14,9 +14,9 @@ Esta pasta hospeda os **épicos derivados do brainstorm decisório `consolidacao
 
 | Épico | Slug | Status | Bloqueado por | Bloqueia | Artefatos gerados |
 |---|---|---|---|---|---|
-| **E1** | `identity-foundation` | PRD criado | — (raiz) | E2, E3 | `.specs/prd-identity-foundation/prd.md` |
-| **E2** | `billing-pipeline` | Aguarda | E1 | E4 | — |
-| **E3** | `onboarding-magic-token` | Aguarda | E1 | E4 | — |
+| **E1** | `identity-foundation` | Implementado | — (raiz) | E2, E3 | `.specs/prd-identity-foundation/` (prd + techspec + tasks) |
+| **E2** | `billing-pipeline` | Implementado | E1 | E4 | `.specs/prd-billing-pipeline/` (prd + techspec + tasks) |
+| **E3** | `onboarding-magic-token` | Implementado | E1 | E4 | `.specs/prd-onboarding-magic-token/` (prd + techspec + tasks) |
 | **E4** | `reconciliation-hardening` | Backlog pós-MVP | E2 e E3 (parcial) | — | — |
 
 ```

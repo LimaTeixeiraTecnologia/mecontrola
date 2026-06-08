@@ -6,21 +6,19 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
+	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 )
 
 type DecideUserEntitlementSuite struct {
 	suite.Suite
-	mgr             *mocks.FakeManager
-	factoryMock     *mocks.RepositoryFactory
-	entitlementMock *mocks.EntitlementRepository
-	uc              *usecases.DecideUserEntitlement
+	ctx context.Context
 }
 
 func TestDecideUserEntitlement(t *testing.T) {
@@ -28,134 +26,172 @@ func TestDecideUserEntitlement(t *testing.T) {
 }
 
 func (s *DecideUserEntitlementSuite) SetupTest() {
-	s.mgr = mocks.NewFakeManager()
-	s.factoryMock = mocks.NewRepositoryFactory(s.T())
-	s.entitlementMock = mocks.NewEntitlementRepository(s.T())
-	s.uc = usecases.NewDecideUserEntitlement(s.mgr, s.factoryMock, noop.NewProvider())
+	s.ctx = context.Background()
 }
 
-func (s *DecideUserEntitlementSuite) TestActiveEntitled() {
-	userID := "user-active"
-	periodEnd := time.Now().UTC().Add(24 * time.Hour)
-	record := interfaces.EntitlementRecord{
-		UserID:         userID,
-		SubscriptionID: "sub-1",
-		Status:         "ACTIVE",
-		PeriodEnd:      periodEnd,
+func (s *DecideUserEntitlementSuite) TestExecute() {
+	type args struct {
+		userID string
 	}
 
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(record, nil)
-
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.True(decision.Entitled)
-	s.Equal("active", decision.Reason)
-}
-
-func (s *DecideUserEntitlementSuite) TestPastDueWithinGraceEntitled() {
-	userID := "user-past-due-grace"
-	graceEnd := time.Now().UTC().Add(24 * time.Hour)
-	record := interfaces.EntitlementRecord{
-		UserID:         userID,
-		SubscriptionID: "sub-2",
-		Status:         "PAST_DUE",
-		PeriodEnd:      time.Now().UTC().Add(-time.Hour),
-		GraceEnd:       graceEnd,
+	type dependencies struct {
+		manager *usecasemocks.FakeManager
+		factory *interfacesmocks.MockRepositoryFactory
+		repo    *interfacesmocks.MockEntitlementRepository
 	}
 
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(record, nil)
+	now := time.Now().UTC()
 
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.True(decision.Entitled)
-	s.Equal("past_due_grace", decision.Reason)
-}
-
-func (s *DecideUserEntitlementSuite) TestPastDueAfterGraceNotEntitled() {
-	userID := "user-past-due-expired"
-	graceEnd := time.Now().UTC().Add(-24 * time.Hour)
-	record := interfaces.EntitlementRecord{
-		UserID:         userID,
-		SubscriptionID: "sub-3",
-		Status:         "PAST_DUE",
-		PeriodEnd:      time.Now().UTC().Add(-48 * time.Hour),
-		GraceEnd:       graceEnd,
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(dependencies)
+		expect func(bool, string, error)
+	}{
+		{
+			name: "deve conceder acesso para assinatura ativa",
+			args: args{userID: "user-active"},
+			setup: func(deps dependencies) {
+				record := interfaces.EntitlementRecord{
+					UserID:         "user-active",
+					SubscriptionID: "sub-1",
+					Status:         "ACTIVE",
+					PeriodEnd:      now.Add(24 * time.Hour),
+				}
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-active").Return(record, nil).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.True(entitled)
+				s.Equal("active", reason)
+			},
+		},
+		{
+			name: "deve conceder acesso para past due dentro da carencia",
+			args: args{userID: "user-past-due-grace"},
+			setup: func(deps dependencies) {
+				record := interfaces.EntitlementRecord{
+					UserID:         "user-past-due-grace",
+					SubscriptionID: "sub-2",
+					Status:         "PAST_DUE",
+					PeriodEnd:      now.Add(-time.Hour),
+					GraceEnd:       now.Add(24 * time.Hour),
+				}
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-past-due-grace").Return(record, nil).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.True(entitled)
+				s.Equal("past_due_grace", reason)
+			},
+		},
+		{
+			name: "deve negar acesso para past due fora da carencia",
+			args: args{userID: "user-past-due-expired"},
+			setup: func(deps dependencies) {
+				record := interfaces.EntitlementRecord{
+					UserID:         "user-past-due-expired",
+					SubscriptionID: "sub-3",
+					Status:         "PAST_DUE",
+					PeriodEnd:      now.Add(-48 * time.Hour),
+					GraceEnd:       now.Add(-24 * time.Hour),
+				}
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-past-due-expired").Return(record, nil).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.False(entitled)
+				s.Equal("past_due_no_grace", reason)
+			},
+		},
+		{
+			name: "deve conceder acesso para cancelado com periodo vigente",
+			args: args{userID: "user-canceled-pending"},
+			setup: func(deps dependencies) {
+				record := interfaces.EntitlementRecord{
+					UserID:         "user-canceled-pending",
+					SubscriptionID: "sub-4",
+					Status:         "CANCELED_PENDING",
+					PeriodEnd:      now.Add(48 * time.Hour),
+				}
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-canceled-pending").Return(record, nil).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.True(entitled)
+				s.Equal("canceled_pending", reason)
+			},
+		},
+		{
+			name: "deve negar acesso para assinatura expirada",
+			args: args{userID: "user-expired"},
+			setup: func(deps dependencies) {
+				record := interfaces.EntitlementRecord{
+					UserID:         "user-expired",
+					SubscriptionID: "sub-5",
+					Status:         "EXPIRED",
+					PeriodEnd:      now.Add(-24 * time.Hour),
+				}
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-expired").Return(record, nil).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.False(entitled)
+				s.Equal("expired", reason)
+			},
+		},
+		{
+			name: "deve negar acesso para assinatura reembolsada",
+			args: args{userID: "user-refunded"},
+			setup: func(deps dependencies) {
+				record := interfaces.EntitlementRecord{
+					UserID:         "user-refunded",
+					SubscriptionID: "sub-6",
+					Status:         "REFUNDED",
+					PeriodEnd:      now.Add(24 * time.Hour),
+				}
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-refunded").Return(record, nil).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.False(entitled)
+				s.Equal("refunded", reason)
+			},
+		},
+		{
+			name: "deve negar acesso quando nao existir assinatura",
+			args: args{userID: "user-no-sub"},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().EntitlementRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByUserID(mock.Anything, "user-no-sub").Return(interfaces.EntitlementRecord{}, application.ErrEntitlementNotFound).Once()
+			},
+			expect: func(entitled bool, reason string, err error) {
+				s.Require().NoError(err)
+				s.False(entitled)
+				s.Equal("no_subscription", reason)
+			},
+		},
 	}
 
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(record, nil)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := dependencies{
+				manager: usecasemocks.NewFakeManager(),
+				factory: interfacesmocks.NewMockRepositoryFactory(s.T()),
+				repo:    interfacesmocks.NewMockEntitlementRepository(s.T()),
+			}
+			scenario.setup(deps)
 
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.False(decision.Entitled)
-	s.Equal("past_due_no_grace", decision.Reason)
-}
+			sut := usecases.NewDecideUserEntitlement(deps.manager, deps.factory, noop.NewProvider())
+			decision, err := sut.Execute(s.ctx, scenario.args.userID)
 
-func (s *DecideUserEntitlementSuite) TestCanceledPendingUntilPeriodEndEntitled() {
-	userID := "user-canceled-pending"
-	periodEnd := time.Now().UTC().Add(48 * time.Hour)
-	record := interfaces.EntitlementRecord{
-		UserID:         userID,
-		SubscriptionID: "sub-4",
-		Status:         "CANCELED_PENDING",
-		PeriodEnd:      periodEnd,
+			scenario.expect(decision.Entitled, decision.Reason, err)
+		})
 	}
-
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(record, nil)
-
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.True(decision.Entitled)
-	s.Equal("canceled_pending", decision.Reason)
-}
-
-func (s *DecideUserEntitlementSuite) TestExpiredNotEntitled() {
-	userID := "user-expired"
-	record := interfaces.EntitlementRecord{
-		UserID:         userID,
-		SubscriptionID: "sub-5",
-		Status:         "EXPIRED",
-		PeriodEnd:      time.Now().UTC().Add(-24 * time.Hour),
-	}
-
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(record, nil)
-
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.False(decision.Entitled)
-	s.Equal("expired", decision.Reason)
-}
-
-func (s *DecideUserEntitlementSuite) TestRefundedNotEntitled() {
-	userID := "user-refunded"
-	record := interfaces.EntitlementRecord{
-		UserID:         userID,
-		SubscriptionID: "sub-6",
-		Status:         "REFUNDED",
-		PeriodEnd:      time.Now().UTC().Add(24 * time.Hour),
-	}
-
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(record, nil)
-
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.False(decision.Entitled)
-	s.Equal("refunded", decision.Reason)
-}
-
-func (s *DecideUserEntitlementSuite) TestNoSubscriptionNotEntitled() {
-	userID := "user-no-sub"
-
-	s.factoryMock.On("EntitlementRepository", mock.Anything).Return(s.entitlementMock)
-	s.entitlementMock.On("FindByUserID", mock.Anything, userID).Return(interfaces.EntitlementRecord{}, application.ErrEntitlementNotFound)
-
-	decision, err := s.uc.Execute(context.Background(), userID)
-	s.Require().NoError(err)
-	s.False(decision.Entitled)
-	s.Equal("no_subscription", decision.Reason)
 }

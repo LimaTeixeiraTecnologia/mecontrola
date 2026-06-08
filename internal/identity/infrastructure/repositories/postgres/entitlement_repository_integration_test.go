@@ -20,22 +20,57 @@ func TestEntitlementRepositoryIntegration(t *testing.T) {
 	suite.Run(t, new(EntitlementRepositoryIntegrationSuite))
 }
 
-func (s *EntitlementRepositoryIntegrationSuite) TestPendingUpdatePreservesFunnelToken() {
-	ctx := context.Background()
-	mgr, _ := setupTestDB(s.T())
-	repo := identitypostgres.NewEntitlementRepository(noop.NewProvider(), mgr.DBTX(ctx))
-	subscriptionID := "11111111-1111-1111-1111-111111111111"
+func (s *EntitlementRepositoryIntegrationSuite) SetupTest() {}
 
-	s.Require().NoError(repo.UpsertPending(ctx, subscriptionID, "funnel-original", []byte(`{"status":"ACTIVE"}`)))
-	s.Require().NoError(repo.UpsertPending(ctx, subscriptionID, "", []byte(`{"status":"REFUNDED"}`)))
+func (s *EntitlementRepositoryIntegrationSuite) TestUpsertPending() {
+	type args struct {
+		subscriptionID string
+		firstToken     string
+		secondToken    string
+		firstPayload   []byte
+		secondPayload  []byte
+	}
 
-	var funnelToken, payload string
-	err := mgr.DBTX(ctx).QueryRowContext(ctx, `
-		SELECT funnel_token, payload::text
-		  FROM identity_entitlements_pending
-		 WHERE subscription_id = $1
-	`, subscriptionID).Scan(&funnelToken, &payload)
-	s.Require().NoError(err)
-	s.Equal("funnel-original", funnelToken)
-	s.JSONEq(`{"status":"REFUNDED"}`, payload)
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(string, string, error)
+	}{
+		{
+			name: "deve preservar funnel token original ao atualizar pendencia",
+			args: args{
+				subscriptionID: "11111111-1111-1111-1111-111111111111",
+				firstToken:     "funnel-original",
+				secondToken:    "",
+				firstPayload:   []byte(`{"status":"ACTIVE"}`),
+				secondPayload:  []byte(`{"status":"REFUNDED"}`),
+			},
+			expect: func(funnelToken string, payload string, err error) {
+				s.Require().NoError(err)
+				s.Equal("funnel-original", funnelToken)
+				s.JSONEq(`{"status":"REFUNDED"}`, payload)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			manager, _ := setupTestDB(s.T())
+			repo := identitypostgres.NewEntitlementRepository(noop.NewProvider(), manager.DBTX(ctx))
+
+			s.Require().NoError(repo.UpsertPending(ctx, scenario.args.subscriptionID, scenario.args.firstToken, scenario.args.firstPayload))
+			s.Require().NoError(repo.UpsertPending(ctx, scenario.args.subscriptionID, scenario.args.secondToken, scenario.args.secondPayload))
+
+			var funnelToken string
+			var payload string
+			err := manager.DBTX(ctx).QueryRowContext(ctx, `
+				SELECT funnel_token, payload::text
+				  FROM identity_entitlements_pending
+				 WHERE subscription_id = $1
+			`, scenario.args.subscriptionID).Scan(&funnelToken, &payload)
+
+			scenario.expect(funnelToken, payload, err)
+		})
+	}
 }

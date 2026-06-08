@@ -8,156 +8,144 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers"
+	handlersmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers/mocks"
 )
 
-type stubGetTokenState struct {
-	result usecases.GetTokenStateResult
-	err    error
+type TokenStateHandlerSuite struct {
+	suite.Suite
+	ctx context.Context
 }
 
-func (s *stubGetTokenState) Execute(_ context.Context, _ string) (usecases.GetTokenStateResult, error) {
-	return s.result, s.err
+func TestTokenStateHandlerSuite(t *testing.T) {
+	suite.Run(t, new(TokenStateHandlerSuite))
 }
 
-func buildStateHandler(stub *stubGetTokenState) http.Handler {
-	o11y := noop.NewProvider()
-	invalidCount := 0
-	h := handlers.NewTokenStateHandler(
-		stub,
-		func(_ string) { invalidCount++ },
-		o11y,
-	)
-
-	r := chi.NewRouter()
-	r.Get("/v1/onboarding/tokens/{token}/state", h.Handle)
-	return r
+func (s *TokenStateHandlerSuite) SetupTest() {
+	s.ctx = context.Background()
 }
 
-func TestTokenStateHandler_200_ReadyToActivate(t *testing.T) {
-	stub := &stubGetTokenState{
-		result: usecases.GetTokenStateResult{
-			Output: output.GetTokenStateOutput{
-				ReadyToActivate:  true,
-				WaMeURL:          "https://wa.me/5511999999999?text=ATIVAR%20tok123",
-				BotNumberDisplay: "+55 11 9XXXX-XXXX",
+func (s *TokenStateHandlerSuite) TestHandle() {
+	type args struct {
+		token string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*handlersmocks.GetTokenStateUseCase)
+		expect func(*httptest.ResponseRecorder)
+	}{
+		{
+			name: "deve retornar token pronto para ativacao",
+			args: args{token: "some-token"},
+			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, "some-token").Return(usecases.GetTokenStateResult{
+					Output: output.GetTokenStateOutput{
+						ReadyToActivate:  true,
+						WaMeURL:          "https://wa.me/5511999999999?text=ATIVAR%20tok123",
+						BotNumberDisplay: "+55 11 9XXXX-XXXX",
+					},
+				}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+				s.Equal("no-store", recorder.Header().Get("Cache-Control"))
+				var response map[string]any
+				s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&response))
+				s.Equal(true, response["ready_to_activate"])
+				s.NotEmpty(response["wa_me_url"])
+				s.NotEmpty(response["bot_number_display"])
+			},
+		},
+		{
+			name: "deve omitir campos quando nao estiver pronto",
+			args: args{token: "bad-token"},
+			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, "bad-token").Return(usecases.GetTokenStateResult{
+					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Reason: usecases.TokenStateReasonNotFound,
+				}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+				var response map[string]any
+				s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&response))
+				s.Equal(false, response["ready_to_activate"])
+				s.Nil(response["wa_me_url"])
+				s.Nil(response["bot_number_display"])
+			},
+		},
+		{
+			name: "deve responder ok para estado pendente",
+			args: args{token: "tok-pending"},
+			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, "tok-pending").Return(usecases.GetTokenStateResult{
+					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Reason: usecases.TokenStateReasonPending,
+				}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+			},
+		},
+		{
+			name: "deve responder ok para estado expirado",
+			args: args{token: "tok-expired"},
+			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, "tok-expired").Return(usecases.GetTokenStateResult{
+					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Reason: usecases.TokenStateReasonExpired,
+				}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+			},
+		},
+		{
+			name: "deve responder ok para estado consumido",
+			args: args{token: "tok-consumed"},
+			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, "tok-consumed").Return(usecases.GetTokenStateResult{
+					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Reason: usecases.TokenStateReasonConsumed,
+				}, nil).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, recorder.Code)
+			},
+		},
+		{
+			name: "deve responder erro interno quando use case falha",
+			args: args{token: "tok-err"},
+			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, "tok-err").Return(usecases.GetTokenStateResult{}, errors.New("database error")).Once()
+			},
+			expect: func(recorder *httptest.ResponseRecorder) {
+				s.Equal(http.StatusInternalServerError, recorder.Code)
 			},
 		},
 	}
-	handler := buildStateHandler(stub)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/some-token/state", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			useCase := handlersmocks.NewGetTokenStateUseCase(s.T())
+			scenario.setup(useCase)
+			handler := handlers.NewTokenStateHandler(useCase, func(string) {}, noop.NewProvider())
+			router := chi.NewRouter()
+			router.Get("/v1/onboarding/tokens/{token}/state", handler.Handle)
 
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "no-store", rr.Header().Get("Cache-Control"))
-
-	var resp map[string]any
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, true, resp["ready_to_activate"])
-	assert.NotEmpty(t, resp["wa_me_url"])
-	assert.NotEmpty(t, resp["bot_number_display"])
-}
-
-func TestTokenStateHandler_200_NotReadyOmitsWaMeURL(t *testing.T) {
-	stub := &stubGetTokenState{
-		result: usecases.GetTokenStateResult{
-			Output: output.GetTokenStateOutput{ReadyToActivate: false},
-			Reason: usecases.TokenStateReasonNotFound,
-		},
+			request := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/"+scenario.args.token+"/state", nil)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			scenario.expect(recorder)
+		})
 	}
-	handler := buildStateHandler(stub)
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/bad-token/state", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var resp map[string]any
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, false, resp["ready_to_activate"])
-	assert.Nil(t, resp["wa_me_url"], "wa_me_url must be absent when not ready")
-	assert.Nil(t, resp["bot_number_display"], "bot_number_display must be absent when not ready")
-}
-
-func TestTokenStateHandler_200_PendingStateDoesNotRevealReason(t *testing.T) {
-	stub := &stubGetTokenState{
-		result: usecases.GetTokenStateResult{
-			Output: output.GetTokenStateOutput{ReadyToActivate: false},
-			Reason: usecases.TokenStateReasonPending,
-		},
-	}
-	handler := buildStateHandler(stub)
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/tok-pending/state", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var resp map[string]any
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, false, resp["ready_to_activate"])
-	assert.Nil(t, resp["wa_me_url"])
-}
-
-func TestTokenStateHandler_200_ExpiredStateDoesNotRevealReason(t *testing.T) {
-	stub := &stubGetTokenState{
-		result: usecases.GetTokenStateResult{
-			Output: output.GetTokenStateOutput{ReadyToActivate: false},
-			Reason: usecases.TokenStateReasonExpired,
-		},
-	}
-	handler := buildStateHandler(stub)
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/tok-expired/state", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	var resp map[string]any
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, false, resp["ready_to_activate"])
-}
-
-func TestTokenStateHandler_200_ConsumedStateDoesNotRevealReason(t *testing.T) {
-	stub := &stubGetTokenState{
-		result: usecases.GetTokenStateResult{
-			Output: output.GetTokenStateOutput{ReadyToActivate: false},
-			Reason: usecases.TokenStateReasonConsumed,
-		},
-	}
-	handler := buildStateHandler(stub)
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/tok-consumed/state", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	var resp map[string]any
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.Equal(t, false, resp["ready_to_activate"])
-}
-
-func TestTokenStateHandler_500_UseCaseError(t *testing.T) {
-	stub := &stubGetTokenState{
-		err: errors.New("database error"),
-	}
-	handler := buildStateHandler(stub)
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/tok-err/state", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 }

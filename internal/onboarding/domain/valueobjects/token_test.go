@@ -17,66 +17,119 @@ func TestTokenSuite(t *testing.T) {
 	suite.Run(t, new(TokenSuite))
 }
 
-func (s *TokenSuite) TestNewToken_GeneratesUniqueTokens() {
-	t1, err := valueobjects.NewToken()
-	s.Require().NoError(err)
+func (s *TokenSuite) SetupTest() {}
 
-	t2, err := valueobjects.NewToken()
-	s.Require().NoError(err)
+func (s *TokenSuite) TestNewToken() {
+	scenarios := []struct {
+		name   string
+		expect func()
+	}{
+		{
+			name: "deve gerar tokens unicos",
+			expect: func() {
+				firstToken, err := valueobjects.NewToken()
+				s.Require().NoError(err)
 
-	s.NotEqual(t1.ClearText(), t2.ClearText())
+				secondToken, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+
+				s.NotEqual(firstToken.ClearText(), secondToken.ClearText())
+			},
+		},
+		{
+			name: "deve gerar clear text com 43 caracteres",
+			expect: func() {
+				token, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+				s.Len(token.ClearText(), 43)
+			},
+		},
+		{
+			name: "deve gerar clear text url safe",
+			expect: func() {
+				token, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+				clearText := token.ClearText()
+				s.False(strings.Contains(clearText, "+"))
+				s.False(strings.Contains(clearText, "/"))
+				s.False(strings.Contains(clearText, "="))
+			},
+		},
+		{
+			name: "deve gerar hash com 32 bytes",
+			expect: func() {
+				token, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+				s.Len(token.Hash(), 32)
+			},
+		},
+		{
+			name: "deve gerar hash deterministico",
+			expect: func() {
+				token, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+
+				recoveredToken, err := valueobjects.TokenFromClear(token.ClearText())
+				s.Require().NoError(err)
+				s.Equal(token.HashHex(), recoveredToken.HashHex())
+			},
+		},
+		{
+			name: "deve mascarar string do token",
+			expect: func() {
+				token, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+				s.Equal("[REDACTED]", token.String())
+				s.NotContains(token.String(), token.ClearText())
+			},
+		},
+		{
+			name: "deve retornar hash prefix com 8 caracteres",
+			expect: func() {
+				token, err := valueobjects.NewToken()
+				s.Require().NoError(err)
+				s.Len(token.HashPrefix(), 8)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, scenario.expect)
+	}
 }
 
-func (s *TokenSuite) TestNewToken_ClearTextIs43Chars() {
-	t, err := valueobjects.NewToken()
-	s.Require().NoError(err)
-	s.Len(t.ClearText(), 43)
-}
+func (s *TokenSuite) TestTokenFromClear() {
+	type args struct {
+		clearText string
+	}
 
-func (s *TokenSuite) TestNewToken_ClearTextURLSafe() {
-	t, err := valueobjects.NewToken()
-	s.Require().NoError(err)
-	clear := t.ClearText()
-	s.False(strings.Contains(clear, "+"), "clear text should not contain +")
-	s.False(strings.Contains(clear, "/"), "clear text should not contain /")
-	s.False(strings.Contains(clear, "="), "clear text should not have padding")
-}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(valueobjects.Token, error)
+	}{
+		{
+			name: "deve retornar erro para token vazio",
+			args: args{clearText: ""},
+			expect: func(token valueobjects.Token, err error) {
+				s.ErrorIs(err, valueobjects.ErrTokenEmpty)
+				s.Zero(token)
+			},
+		},
+		{
+			name: "deve retornar erro para base64 invalido",
+			args: args{clearText: "not-valid-base64!!"},
+			expect: func(token valueobjects.Token, err error) {
+				s.ErrorIs(err, valueobjects.ErrTokenInvalid)
+				s.Zero(token)
+			},
+		},
+	}
 
-func (s *TokenSuite) TestNewToken_HashIs32Bytes() {
-	t, err := valueobjects.NewToken()
-	s.Require().NoError(err)
-	s.Len(t.Hash(), 32)
-}
-
-func (s *TokenSuite) TestNewToken_HashIsDeterministic() {
-	t, err := valueobjects.NewToken()
-	s.Require().NoError(err)
-
-	recovered, err := valueobjects.TokenFromClear(t.ClearText())
-	s.Require().NoError(err)
-
-	s.Equal(t.HashHex(), recovered.HashHex())
-}
-
-func (s *TokenSuite) TestNewToken_StringIsRedacted() {
-	t, err := valueobjects.NewToken()
-	s.Require().NoError(err)
-	s.Equal("[REDACTED]", t.String())
-	s.NotContains(t.String(), t.ClearText())
-}
-
-func (s *TokenSuite) TestTokenFromClear_EmptyReturnsError() {
-	_, err := valueobjects.TokenFromClear("")
-	s.ErrorIs(err, valueobjects.ErrTokenEmpty)
-}
-
-func (s *TokenSuite) TestTokenFromClear_InvalidBase64ReturnsError() {
-	_, err := valueobjects.TokenFromClear("not-valid-base64!!")
-	s.ErrorIs(err, valueobjects.ErrTokenInvalid)
-}
-
-func (s *TokenSuite) TestHashPrefix_Returns8HexChars() {
-	t, err := valueobjects.NewToken()
-	s.Require().NoError(err)
-	s.Len(t.HashPrefix(), 8)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			token, err := valueobjects.TokenFromClear(scenario.args.clearText)
+			scenario.expect(token, err)
+		})
+	}
 }

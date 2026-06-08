@@ -5,55 +5,85 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/jobs/handlers"
+	handlersjobmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/jobs/handlers/mocks"
 )
-
-type fakeExpireTokensUseCase struct {
-	executeErr   error
-	executeCalls int
-}
-
-func (f *fakeExpireTokensUseCase) Execute(_ context.Context) error {
-	f.executeCalls++
-	return f.executeErr
-}
 
 type TokenExpirationJobSuite struct {
 	suite.Suite
-	uc  *fakeExpireTokensUseCase
-	job *handlers.TokenExpirationJob
+	useCase any
+	job     *handlers.TokenExpirationJob
 }
 
-func TestTokenExpirationJob(t *testing.T) {
+func TestTokenExpirationJobSuite(t *testing.T) {
 	suite.Run(t, new(TokenExpirationJobSuite))
 }
 
-func (s *TokenExpirationJobSuite) SetupTest() {
-	s.uc = &fakeExpireTokensUseCase{}
-	s.job = handlers.NewTokenExpirationJob(s.uc, "0 3 * * *")
+func (s *TokenExpirationJobSuite) SetupTest() {}
+
+func (s *TokenExpirationJobSuite) TestJobMetadata() {
+	scenarios := []struct {
+		name   string
+		expect func(*handlers.TokenExpirationJob)
+	}{
+		{
+			name: "deve expor nome configurado",
+			expect: func(job *handlers.TokenExpirationJob) {
+				s.Equal("onboarding-token-expiration", job.Name())
+			},
+		},
+		{
+			name: "deve expor cron configurado",
+			expect: func(job *handlers.TokenExpirationJob) {
+				s.Equal("0 3 * * *", job.Schedule())
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			useCase := handlersjobmocks.NewExpireTokensUseCase(s.T())
+			job := handlers.NewTokenExpirationJob(useCase, "0 3 * * *")
+			scenario.expect(job)
+		})
+	}
 }
 
-func (s *TokenExpirationJobSuite) TestName() {
-	s.Equal("onboarding-token-expiration", s.job.Name())
-}
+func (s *TokenExpirationJobSuite) TestRun() {
+	scenarios := []struct {
+		name   string
+		setup  func(*handlersjobmocks.ExpireTokensUseCase)
+		expect func(error)
+	}{
+		{
+			name: "deve delegar para o use case",
+			setup: func(useCase *handlersjobmocks.ExpireTokensUseCase) {
+				useCase.EXPECT().Execute(mock.Anything).Return(nil).Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar erro do use case",
+			setup: func(useCase *handlersjobmocks.ExpireTokensUseCase) {
+				useCase.EXPECT().Execute(mock.Anything).Return(errors.New("expire failed")).Once()
+			},
+			expect: func(err error) {
+				s.ErrorContains(err, "expire failed")
+			},
+		},
+	}
 
-func (s *TokenExpirationJobSuite) TestSchedule() {
-	s.Equal("0 3 * * *", s.job.Schedule())
-}
-
-func (s *TokenExpirationJobSuite) TestRunDelegatesUseCase() {
-	err := s.job.Run(context.Background())
-	s.Require().NoError(err)
-	s.Equal(1, s.uc.executeCalls)
-}
-
-func (s *TokenExpirationJobSuite) TestRunPropagatesError() {
-	s.uc.executeErr = errors.New("expire failed")
-
-	err := s.job.Run(context.Background())
-
-	s.Require().Error(err)
-	s.ErrorContains(err, "expire failed")
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			useCase := handlersjobmocks.NewExpireTokensUseCase(s.T())
+			scenario.setup(useCase)
+			job := handlers.NewTokenExpirationJob(useCase, "0 3 * * *")
+			scenario.expect(job.Run(context.Background()))
+		})
+	}
 }

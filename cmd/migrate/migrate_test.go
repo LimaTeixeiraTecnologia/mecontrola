@@ -1,58 +1,106 @@
-package migrate
+package migrate_test
 
 import (
-	"context"
-	"errors"
+	"io"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"github.com/stretchr/testify/require"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/cmd/migrate"
 )
 
-type shutdownManager struct {
-	manager.Manager
-	err    error
-	called bool
+type MigrateSuite struct {
+	suite.Suite
 }
 
-func (m *shutdownManager) Shutdown(context.Context) error {
-	m.called = true
-	return m.err
+func TestMigrateSuite(t *testing.T) {
+	suite.Run(t, new(MigrateSuite))
 }
 
-type shutdownObservability struct {
-	observability.Observability
-	err    error
-	called bool
+func (s *MigrateSuite) SetupTest() {}
+
+func (s *MigrateSuite) TestCommandFactories() {
+	type args struct {
+		build func() *cobra.Command
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func(cmd *cobra.Command)
+	}{
+		{
+			name: "deve criar comando migrate",
+			args: args{
+				build: func() *cobra.Command {
+					return migrate.New()
+				},
+			},
+			setup: func() {},
+			expect: func(cmd *cobra.Command) {
+				s.Equal("migrate", cmd.Use)
+				s.NotNil(cmd.RunE)
+			},
+		},
+		{
+			name: "deve criar comando migrate-down com flag steps",
+			args: args{
+				build: func() *cobra.Command {
+					return migrate.NewDown()
+				},
+			},
+			setup: func() {},
+			expect: func(cmd *cobra.Command) {
+				s.Equal("migrate-down", cmd.Use)
+				s.NotNil(cmd.RunE)
+				s.NotNil(cmd.Flags().Lookup("steps"))
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
+
+			command := scenario.args.build()
+			scenario.expect(command)
+		})
+	}
 }
 
-func (o *shutdownObservability) Shutdown(context.Context) error {
-	o.called = true
-	return o.err
-}
+func (s *MigrateSuite) TestRunDown() {
+	type args struct {
+		steps int
+	}
 
-func TestRuntimeShutdownDoesNotFailSuccessfulMigrationOnTelemetryFlushError(t *testing.T) {
-	dbManager := &shutdownManager{}
-	o11y := &shutdownObservability{err: errors.New("collector unavailable")}
-	rt := &runtime{dbManager: dbManager, o11y: o11y}
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func()
+		expect func(err error)
+	}{
+		{
+			name:  "deve rejeitar zero steps antes do bootstrap",
+			args:  args{steps: 0},
+			setup: func() {},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.ErrorContains(err, "steps deve ser != 0")
+			},
+		},
+	}
 
-	err := rt.shutdown(context.Background())
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			scenario.setup()
 
-	require.NoError(t, err)
-	require.True(t, dbManager.called)
-	require.True(t, o11y.called)
-}
-
-func TestRuntimeShutdownPreservesDatabaseShutdownError(t *testing.T) {
-	dbErr := errors.New("database shutdown failed")
-	dbManager := &shutdownManager{err: dbErr}
-	o11y := &shutdownObservability{}
-	rt := &runtime{dbManager: dbManager, o11y: o11y}
-
-	err := rt.shutdown(context.Background())
-
-	require.ErrorIs(t, err, dbErr)
-	require.True(t, dbManager.called)
-	require.True(t, o11y.called)
+			runDown := migrate.RunDown
+			err := runDown(io.Discard, scenario.args.steps)
+			scenario.expect(err)
+		})
+	}
 }

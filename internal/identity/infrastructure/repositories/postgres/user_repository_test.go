@@ -4,30 +4,65 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	repopostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories/postgres"
 )
 
-func TestNewUserRepository_ReturnsNonNil(t *testing.T) {
-	o11y := noop.NewProvider()
-	repo := repopostgres.NewUserRepository(o11y, nil)
-	assert.NotNil(t, repo)
+type UserRepositorySuite struct {
+	suite.Suite
 }
 
-func TestErrorSentinels_CanBeCheckedWithErrorsIs(t *testing.T) {
-	wrapped := errors.New("identity.repository.user: " + application.ErrUserNotFound.Error())
-	assert.False(t, errors.Is(wrapped, application.ErrUserNotFound))
+func TestUserRepositorySuite(t *testing.T) {
+	suite.Run(t, new(UserRepositorySuite))
+}
 
-	wrapped2 := errors.Join(application.ErrUserNotFound)
-	assert.True(t, errors.Is(wrapped2, application.ErrUserNotFound))
+func (s *UserRepositorySuite) SetupTest() {}
 
-	wrapped3 := errors.Join(application.ErrWhatsAppNumberInUse)
-	assert.True(t, errors.Is(wrapped3, application.ErrWhatsAppNumberInUse))
+func (s *UserRepositorySuite) TestRepositoryConstructionAndSentinels() {
+	type args struct {
+		wrapped error
+		target  error
+	}
 
-	wrapped4 := errors.Join(application.ErrEmailInUse)
-	assert.True(t, errors.Is(wrapped4, application.ErrEmailInUse))
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(interfaces.UserRepository, args)
+	}{
+		{
+			name: "deve criar repositorio nao nulo",
+			args: args{},
+			expect: func(repo interfaces.UserRepository, current args) {
+				_ = current
+				s.NotNil(repo)
+			},
+		},
+		{
+			name: "deve reconhecer err user not found com errors join",
+			args: args{wrapped: errors.Join(application.ErrUserNotFound), target: application.ErrUserNotFound},
+			expect: func(repo interfaces.UserRepository, current args) {
+				s.NotNil(repo)
+				s.True(errors.Is(current.wrapped, current.target))
+			},
+		},
+		{
+			name: "deve reconhecer err whatsapp number in use com errors join",
+			args: args{wrapped: errors.Join(application.ErrWhatsAppNumberInUse), target: application.ErrWhatsAppNumberInUse},
+			expect: func(repo interfaces.UserRepository, current args) {
+				s.NotNil(repo)
+				s.True(errors.Is(current.wrapped, current.target))
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			repo := repopostgres.NewUserRepository(noop.NewProvider(), nil)
+			scenario.expect(repo, scenario.args)
+		})
+	}
 }

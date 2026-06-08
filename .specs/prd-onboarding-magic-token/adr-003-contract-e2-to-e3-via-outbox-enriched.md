@@ -10,7 +10,7 @@
 
 ## Contexto
 
-O PRD (RF-03 e RF-18) exige que o webhook `compra_aprovada` de E2 alimente E3 com:
+O PRD (RF-03 e RF-18) exige que o webhook `order_approved` de E2 alimente E3 com:
 1. `funnel_token` (quando presente) para marcar `onboarding_tokens.status=PAID`.
 2. `customer_mobile_e164` (digitado no checkout) — necessário para outreach (RF-09) e fallback E.164 (RF-10).
 3. `customer_email` — usado para suporte (RF-18) e para gravar no user (E1 reanimação).

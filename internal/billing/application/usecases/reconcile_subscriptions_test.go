@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
+	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -20,6 +20,7 @@ import (
 
 type ReconcileSubscriptionsSuite struct {
 	suite.Suite
+	ctx              context.Context
 	factoryMock      *mocks.RepositoryFactory
 	checkpointMock   *mocks.ReconciliationCheckpointRepository
 	kiwifyClientMock *mocks.KiwifyClient
@@ -28,7 +29,6 @@ type ReconcileSubscriptionsSuite struct {
 	subRepoMock      *mocks.SubscriptionRepository
 	planRepoMock     *mocks.PlanRepository
 	eventRepoMock    *mocks.ProcessedEventRepository
-	uc               *usecases.ReconcileSubscriptions
 }
 
 func TestReconcileSubscriptions(t *testing.T) {
@@ -36,6 +36,7 @@ func TestReconcileSubscriptions(t *testing.T) {
 }
 
 func (s *ReconcileSubscriptionsSuite) SetupTest() {
+	s.ctx = context.Background()
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
 	s.checkpointMock = mocks.NewReconciliationCheckpointRepository(s.T())
 	s.kiwifyClientMock = mocks.NewKiwifyClient(s.T())
@@ -44,11 +45,12 @@ func (s *ReconcileSubscriptionsSuite) SetupTest() {
 	s.subRepoMock = mocks.NewSubscriptionRepository(s.T())
 	s.planRepoMock = mocks.NewPlanRepository(s.T())
 	s.eventRepoMock = mocks.NewProcessedEventRepository(s.T())
+}
 
+func (s *ReconcileSubscriptionsSuite) newSUT() *usecases.ReconcileSubscriptions {
 	saleApproved := usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 	refund := usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-
-	s.uc = usecases.NewReconcileSubscriptions(nil, s.factoryMock, s.kiwifyClientMock, saleApproved, refund, noop.NewProvider())
+	return usecases.NewReconcileSubscriptions(nil, s.factoryMock, s.kiwifyClientMock, saleApproved, refund, noop.NewProvider())
 }
 
 func (s *ReconcileSubscriptionsSuite) monthlyPlan() valueobjects.Plan {
@@ -59,127 +61,231 @@ func (s *ReconcileSubscriptionsSuite) monthlyPlan() valueobjects.Plan {
 
 func (s *ReconcileSubscriptionsSuite) activeSubWithID(id, token string) entities.Subscription {
 	plan := s.monthlyPlan()
-	ft, err := valueobjects.NewFunnelToken(token)
+	funnelToken, err := valueobjects.NewFunnelToken(token)
 	s.Require().NoError(err)
 	now := time.Now().UTC()
-	return entities.Hydrate(id, ft, plan, valueobjects.StatusActive,
-		now, now.Add(30*24*time.Hour), time.Time{}, now)
+	return entities.Hydrate(
+		id,
+		funnelToken,
+		plan,
+		valueobjects.StatusActive,
+		now,
+		now.Add(30*24*time.Hour),
+		time.Time{},
+		now,
+	)
 }
 
-func (s *ReconcileSubscriptionsSuite) TestSucessoComSaleApproved() {
-	now := time.Now().UTC()
-	windowStart := now.Add(-1 * time.Hour)
-	windowEnd := now
-	saleTime := now.Add(-30 * time.Minute)
-
-	sale := interfaces.KiwifySale{
-		ID:              "sale-001",
-		KiwifyProductID: "prod-monthly",
-		OrderID:         "order-001",
-		FunnelToken:     "token-abc",
-		Status:          "paid",
-		OccurredAt:      saleTime,
-		UpdatedAt:       saleTime,
+func (s *ReconcileSubscriptionsSuite) TestExecute() {
+	type args struct {
+		input input.ReconcileSubscriptionsInput
 	}
 
-	s.kiwifyClientMock.On("ListSalesUpdatedSince", mock.Anything, windowStart, windowEnd, 1).
-		Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(args)
+		expect func(error)
+	}{
+		{
+			name: "deve reconciliar venda aprovada e atualizar checkpoint",
+			args: args{
+				input: func() input.ReconcileSubscriptionsInput {
+					now := time.Now().UTC()
+					return input.ReconcileSubscriptionsInput{
+						WindowStart: now.Add(-time.Hour),
+						WindowEnd:   now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				saleTime := args.input.WindowEnd.Add(-30 * time.Minute)
+				sale := application.KiwifySale{
+					ID:              "sale-001",
+					KiwifyProductID: "prod-monthly",
+					OrderID:         "order-001",
+					FunnelToken:     "token-abc",
+					Status:          "paid",
+					OccurredAt:      saleTime,
+					UpdatedAt:       saleTime,
+				}
 
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-	s.factoryMock.On("ReconciliationCheckpointRepository", mock.Anything).Return(s.checkpointMock)
+				s.kiwifyClientMock.EXPECT().
+					ListSalesUpdatedSince(s.ctx, args.input.WindowStart, args.input.WindowEnd, 1).
+					Return(application.KiwifySalePage{Sales: []application.KiwifySale{sale}, HasMore: false}, nil).
+					Once()
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
+				s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Once()
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
+				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", saleTime).
+					Return(nil).
+					Once()
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "prod-monthly").
+					Return(s.monthlyPlan(), nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					UpsertByOrder(s.ctx, "order-001", mock.Anything, saleTime).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(s.activeSubWithID("sub-001", "token-abc"), nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishActivated(
+						s.ctx,
+						mock.Anything,
+						mock.Anything,
+						"sub-001",
+						"token-abc",
+						mock.Anything,
+						mock.Anything,
+						"sale-001",
+					).
+					Return(nil).
+					Once()
+				s.checkpointMock.EXPECT().
+					Set(s.ctx, "kiwify_sales", args.input.WindowEnd).
+					Return(nil).
+					Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve nao atualizar checkpoint quando a listagem falhar",
+			args: args{
+				input: func() input.ReconcileSubscriptionsInput {
+					now := time.Now().UTC()
+					return input.ReconcileSubscriptionsInput{
+						WindowStart: now.Add(-time.Hour),
+						WindowEnd:   now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				s.kiwifyClientMock.EXPECT().
+					ListSalesUpdatedSince(s.ctx, args.input.WindowStart, args.input.WindowEnd, 1).
+					Return(application.KiwifySalePage{}, errors.New("kiwify timeout")).
+					Once()
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.checkpointMock.AssertNotCalled(s.T(), "Set", mock.Anything, mock.Anything, mock.Anything)
+			},
+		},
+		{
+			name: "deve nao atualizar checkpoint quando a venda falhar",
+			args: args{
+				input: func() input.ReconcileSubscriptionsInput {
+					now := time.Now().UTC()
+					return input.ReconcileSubscriptionsInput{
+						WindowStart: now.Add(-time.Hour),
+						WindowEnd:   now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				sale := application.KiwifySale{
+					ID:              "sale-failed",
+					KiwifyProductID: "missing-plan",
+					OrderID:         "order-failed",
+					FunnelToken:     "token-failed",
+					Status:          "paid",
+					OccurredAt:      args.input.WindowEnd.Add(-time.Minute),
+					UpdatedAt:       args.input.WindowEnd.Add(-time.Minute),
+				}
 
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", saleTime).Return(nil)
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(s.monthlyPlan(), nil)
-	s.subRepoMock.On("UpsertByOrder", mock.Anything, "order-001", mock.Anything, mock.Anything).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(s.activeSubWithID("sub-001", "token-abc"), nil)
-	s.publisherMock.On("PublishActivated", mock.Anything, mock.Anything, mock.Anything, "sub-001", "token-abc", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	s.checkpointMock.On("Set", mock.Anything, "kiwify_sales", windowEnd).Return(nil)
+				s.kiwifyClientMock.EXPECT().
+					ListSalesUpdatedSince(s.ctx, args.input.WindowStart, args.input.WindowEnd, 1).
+					Return(application.KiwifySalePage{Sales: []application.KiwifySale{sale}, HasMore: false}, nil).
+					Once()
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
+				s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Once()
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "compra_aprovada:sale-failed", "compra_aprovada", "sale-failed", sale.OccurredAt).
+					Return(nil).
+					Once()
+				s.planRepoMock.EXPECT().
+					FindByKiwifyProductID(s.ctx, "missing-plan").
+					Return(valueobjects.Plan{}, errors.New("not found")).
+					Once()
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.checkpointMock.AssertNotCalled(s.T(), "Set", mock.Anything, mock.Anything, mock.Anything)
+			},
+		},
+		{
+			name: "deve encaminhar venda refundada para processamento de refund",
+			args: args{
+				input: func() input.ReconcileSubscriptionsInput {
+					now := time.Now().UTC()
+					return input.ReconcileSubscriptionsInput{
+						WindowStart: now.Add(-time.Hour),
+						WindowEnd:   now,
+					}
+				}(),
+			},
+			setup: func(args args) {
+				saleTime := args.input.WindowEnd.Add(-30 * time.Minute)
+				sale := application.KiwifySale{
+					ID:         "sale-002",
+					OrderID:    "order-002",
+					Status:     "refunded",
+					OccurredAt: saleTime,
+					UpdatedAt:  saleTime,
+				}
+				sub := s.activeSubWithID("sub-002", "token-xyz")
 
-	err := s.uc.Execute(context.Background(), input.ReconcileSubscriptionsInput{
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-	})
-	s.Require().NoError(err)
-}
-
-func (s *ReconcileSubscriptionsSuite) TestCheckpointNaoAtualizadoEmFalhaDeListagem() {
-	now := time.Now().UTC()
-	windowStart := now.Add(-1 * time.Hour)
-	windowEnd := now
-
-	s.kiwifyClientMock.On("ListSalesUpdatedSince", mock.Anything, windowStart, windowEnd, 1).
-		Return(interfaces.KiwifySalePage{}, errors.New("kiwify timeout"))
-
-	err := s.uc.Execute(context.Background(), input.ReconcileSubscriptionsInput{
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-	})
-	s.Require().Error(err)
-	s.checkpointMock.AssertNotCalled(s.T(), "Set", mock.Anything, mock.Anything, mock.Anything)
-}
-
-func (s *ReconcileSubscriptionsSuite) TestCheckpointNaoAtualizadoEmFalhaDeVenda() {
-	now := time.Now().UTC()
-	windowStart := now.Add(-time.Hour)
-	windowEnd := now
-	sale := interfaces.KiwifySale{
-		ID:              "sale-failed",
-		KiwifyProductID: "missing-plan",
-		OrderID:         "order-failed",
-		FunnelToken:     "token-failed",
-		Status:          "paid",
-		OccurredAt:      now.Add(-time.Minute),
+				s.kiwifyClientMock.EXPECT().
+					ListSalesUpdatedSince(s.ctx, args.input.WindowStart, args.input.WindowEnd, 1).
+					Return(application.KiwifySalePage{Sales: []application.KiwifySale{sale}, HasMore: false}, nil).
+					Once()
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
+				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "refund:sale-002", "compra_reembolsada", "sale-002", saleTime).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-002").
+					Return(sub, nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					ApplyTransition(s.ctx, "sub-002", valueobjects.StatusRefunded, time.Time{}, saleTime).
+					Return(nil).
+					Once()
+				s.publisherMock.EXPECT().
+					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-002").
+					Return(nil).
+					Once()
+				s.checkpointMock.EXPECT().
+					Set(s.ctx, "kiwify_sales", args.input.WindowEnd).
+					Return(nil).
+					Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
 	}
 
-	s.kiwifyClientMock.On("ListSalesUpdatedSince", mock.Anything, windowStart, windowEnd, 1).
-		Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}}, nil)
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("PlanRepository", mock.Anything).Return(s.planRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-	s.eventRepoMock.On("MarkApplied", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "missing-plan").Return(valueobjects.Plan{}, errors.New("not found"))
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.SetupTest()
+			sut := s.newSUT()
+			scenario.setup(scenario.args)
 
-	err := s.uc.Execute(context.Background(), input.ReconcileSubscriptionsInput{
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-	})
-	s.Require().Error(err)
-	s.checkpointMock.AssertNotCalled(s.T(), "Set", mock.Anything, mock.Anything, mock.Anything)
-}
+			err := sut.Execute(s.ctx, scenario.args.input)
 
-func (s *ReconcileSubscriptionsSuite) TestSaleRefundadaRotaParaRefund() {
-	now := time.Now().UTC()
-	windowStart := now.Add(-1 * time.Hour)
-	windowEnd := now
-	saleTime := now.Add(-30 * time.Minute)
-
-	sale := interfaces.KiwifySale{
-		ID:         "sale-002",
-		OrderID:    "order-002",
-		Status:     "refunded",
-		OccurredAt: saleTime,
-		UpdatedAt:  saleTime,
+			scenario.expect(err)
+		})
 	}
-	sub := s.activeSubWithID("sub-002", "token-xyz")
-
-	s.kiwifyClientMock.On("ListSalesUpdatedSince", mock.Anything, windowStart, windowEnd, 1).
-		Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil)
-
-	s.factoryMock.On("ProcessedEventRepository", mock.Anything).Return(s.eventRepoMock)
-	s.factoryMock.On("SubscriptionRepository", mock.Anything).Return(s.subRepoMock)
-	s.factoryMock.On("ReconciliationCheckpointRepository", mock.Anything).Return(s.checkpointMock)
-
-	s.eventRepoMock.On("MarkApplied", mock.Anything, "refund:sale-002", "compra_reembolsada", "sale-002", saleTime).Return(nil)
-	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-002").Return(sub, nil)
-	s.subRepoMock.On("ApplyTransition", mock.Anything, "sub-002", valueobjects.StatusRefunded, time.Time{}, saleTime).Return(nil)
-	s.publisherMock.On("PublishRefunded", mock.Anything, mock.Anything, mock.Anything, "sub-002").Return(nil)
-	s.checkpointMock.On("Set", mock.Anything, "kiwify_sales", windowEnd).Return(nil)
-
-	err := s.uc.Execute(context.Background(), input.ReconcileSubscriptionsInput{
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-	})
-	s.Require().NoError(err)
 }

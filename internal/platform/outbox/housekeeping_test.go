@@ -29,40 +29,63 @@ func (s *HousekeepingSuite) SetupTest() {
 	s.cfg = configs.OutboxConfig{HousekeepingRetentionDays: 90}
 }
 
-func (s *HousekeepingSuite) TestRun_DeleteBatchesAteLimite() {
-	storage := outboxmocks.NewStorage(s.T())
-	factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+func (s *HousekeepingSuite) TestRun() {
+	type args struct {
+		ctx context.Context
+	}
 
-	factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Times(3)
-	storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(1000), nil).Once()
-	storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(500), nil).Once()
-	storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(0), nil).Once()
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func() (*outboxmocks.OutboxRepositoryFactory, *outboxmocks.Storage)
+		expect func(error)
+	}{
+		{
+			name: "deve deletar lotes ate o limite",
+			args: args{ctx: context.Background()},
+			setup: func() (*outboxmocks.OutboxRepositoryFactory, *outboxmocks.Storage) {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Times(3)
+				storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(1000), nil).Once()
+				storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(500), nil).Once()
+				storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(0), nil).Once()
+				return factory, storage
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve concluir sem eventos publicados",
+			args: args{ctx: context.Background()},
+			setup: func() (*outboxmocks.OutboxRepositoryFactory, *outboxmocks.Storage) {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(0), nil).Once()
+				return factory, storage
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve retornar erro ao falhar no delete",
+			args: args{ctx: context.Background()},
+			setup: func() (*outboxmocks.OutboxRepositoryFactory, *outboxmocks.Storage) {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(0), errors.New("db error")).Once()
+				return factory, storage
+			},
+			expect: func(err error) { s.Error(err) },
+		},
+	}
 
-	h := outbox.NewHousekeepingJob(&fakeUoWVoid{}, factory, s.cfg, noopLogger{})
-	err := h.Run(context.Background())
-	s.NoError(err)
-}
-
-func (s *HousekeepingSuite) TestRun_SemEventos_Sucesso() {
-	storage := outboxmocks.NewStorage(s.T())
-	factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
-
-	factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
-	storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(0), nil).Once()
-
-	h := outbox.NewHousekeepingJob(&fakeUoWVoid{}, factory, s.cfg, noopLogger{})
-	err := h.Run(context.Background())
-	s.NoError(err)
-}
-
-func (s *HousekeepingSuite) TestRun_ErroDelete_RetornaErro() {
-	storage := outboxmocks.NewStorage(s.T())
-	factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
-
-	factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
-	storage.EXPECT().DeletePublishedBatch(mock.Anything, retention90Days, 1000).Return(int64(0), errors.New("db error")).Once()
-
-	h := outbox.NewHousekeepingJob(&fakeUoWVoid{}, factory, s.cfg, noopLogger{})
-	err := h.Run(context.Background())
-	s.Error(err)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			factory, _ := scenario.setup()
+			sut := outbox.NewHousekeepingJob(&unitOfWorkVoid{}, factory, s.cfg, noopLogger{})
+			err := sut.Run(scenario.args.ctx)
+			scenario.expect(err)
+		})
+	}
 }

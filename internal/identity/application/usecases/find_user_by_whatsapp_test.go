@@ -6,23 +6,21 @@ import (
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
+	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
+	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
 
 type FindUserByWhatsAppSuite struct {
 	suite.Suite
-	mgr         *mocks.FakeManager
-	factoryMock *mocks.RepositoryFactory
-	repoMock    *mocks.UserRepository
-	uc          *usecases.FindUserByWhatsApp
+	ctx context.Context
 }
 
 func TestFindUserByWhatsApp(t *testing.T) {
@@ -30,54 +28,101 @@ func TestFindUserByWhatsApp(t *testing.T) {
 }
 
 func (s *FindUserByWhatsAppSuite) SetupTest() {
-	s.mgr = mocks.NewFakeManager()
-	s.factoryMock = mocks.NewRepositoryFactory(s.T())
-	s.repoMock = mocks.NewUserRepository(s.T())
-	s.uc = usecases.NewFindUserByWhatsApp(s.mgr, s.factoryMock, noop.NewProvider())
+	s.ctx = context.Background()
 }
 
-func (s *FindUserByWhatsAppSuite) validWhatsApp() valueobjects.WhatsAppNumber {
-	wa, err := valueobjects.NewWhatsAppNumber("+5511987654321")
+func (s *FindUserByWhatsAppSuite) mustWhatsApp(raw string) valueobjects.WhatsAppNumber {
+	whatsApp, err := valueobjects.NewWhatsAppNumber(raw)
 	s.Require().NoError(err)
-	return wa
+	return whatsApp
 }
 
-func (s *FindUserByWhatsAppSuite) TestEncontrado() {
-	wa := s.validWhatsApp()
-	user := entities.New(wa)
+func (s *FindUserByWhatsAppSuite) TestExecute() {
+	type args struct {
+		input input.FindUserByWhatsApp
+	}
 
-	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
-	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(user, nil)
+	type dependencies struct {
+		manager *usecasemocks.FakeManager
+		factory *interfacesmocks.MockRepositoryFactory
+		repo    *interfacesmocks.MockUserRepository
+	}
 
-	out, err := s.uc.Execute(context.Background(), input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"})
-	s.Require().NoError(err)
-	s.Equal(user.ID(), out.ID)
-}
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(dependencies)
+		expect func(outputErr error, outputID string)
+	}{
+		{
+			name: "deve retornar usuario encontrado",
+			args: args{input: input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"}},
+			setup: func(deps dependencies) {
+				whatsApp := s.mustWhatsApp("+5511987654321")
+				user := entities.New(whatsApp)
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(user, nil).Once()
+			},
+			expect: func(outputErr error, outputID string) {
+				s.Require().NoError(outputErr)
+				s.NotEmpty(outputID)
+			},
+		},
+		{
+			name: "deve propagar erro de usuario nao encontrado",
+			args: args{input: input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"}},
+			setup: func(deps dependencies) {
+				whatsApp := s.mustWhatsApp("+5511987654321")
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+			},
+			expect: func(outputErr error, outputID string) {
+				s.Require().Error(outputErr)
+				s.Require().ErrorIs(outputErr, application.ErrUserNotFound)
+				s.Empty(outputID)
+			},
+		},
+		{
+			name: "deve propagar erro de infraestrutura",
+			args: args{input: input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"}},
+			setup: func(deps dependencies) {
+				whatsApp := s.mustWhatsApp("+5511987654321")
+				ioErr := errors.New("db unavailable")
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, ioErr).Once()
+			},
+			expect: func(outputErr error, outputID string) {
+				s.Require().Error(outputErr)
+				s.Contains(outputErr.Error(), "db unavailable")
+				s.Empty(outputID)
+			},
+		},
+		{
+			name: "deve retornar erro ao parsear whatsapp invalido",
+			args: args{input: input.FindUserByWhatsApp{WhatsAppNumber: "not-a-number"}},
+			setup: func(deps dependencies) {
+				_ = deps
+			},
+			expect: func(outputErr error, outputID string) {
+				s.Require().Error(outputErr)
+				s.Empty(outputID)
+			},
+		},
+	}
 
-func (s *FindUserByWhatsAppSuite) TestErrUserNotFound() {
-	wa := s.validWhatsApp()
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := dependencies{
+				manager: usecasemocks.NewFakeManager(),
+				factory: interfacesmocks.NewMockRepositoryFactory(s.T()),
+				repo:    interfacesmocks.NewMockUserRepository(s.T()),
+			}
+			scenario.setup(deps)
 
-	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
-	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, application.ErrUserNotFound)
+			sut := usecases.NewFindUserByWhatsApp(deps.manager, deps.factory, noop.NewProvider())
+			output, err := sut.Execute(s.ctx, scenario.args.input)
 
-	_, err := s.uc.Execute(context.Background(), input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"})
-	s.Require().Error(err)
-	s.True(errors.Is(err, application.ErrUserNotFound))
-}
-
-func (s *FindUserByWhatsAppSuite) TestErroDeIO() {
-	wa := s.validWhatsApp()
-	ioErr := errors.New("db unavailable")
-
-	s.factoryMock.On("UserRepository", mock.Anything).Return(s.repoMock)
-	s.repoMock.On("FindByWhatsAppNumber", mock.Anything, wa).Return(entities.User{}, ioErr)
-
-	_, err := s.uc.Execute(context.Background(), input.FindUserByWhatsApp{WhatsAppNumber: "+5511987654321"})
-	s.Require().Error(err)
-	s.True(errors.Is(err, ioErr))
-}
-
-func (s *FindUserByWhatsAppSuite) TestParseWhatsAppInvalid() {
-	_, err := s.uc.Execute(context.Background(), input.FindUserByWhatsApp{WhatsAppNumber: "not-a-number"})
-	s.Require().Error(err)
+			scenario.expect(err, output.ID)
+		})
+	}
 }

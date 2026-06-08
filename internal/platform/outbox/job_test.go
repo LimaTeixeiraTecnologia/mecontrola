@@ -6,27 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
-type fakeUoWVoid struct{}
-
-func (f *fakeUoWVoid) Do(ctx context.Context, fn func(context.Context, database.DBTX) (struct{}, error), _ ...uow.Option) (struct{}, error) {
-	return fn(ctx, nil)
-}
-
 type JobSuite struct {
 	suite.Suite
-	storage *outboxmocks.Storage
-	factory *outboxmocks.OutboxRepositoryFactory
-	cfg     configs.OutboxConfig
+	cfg configs.OutboxConfig
 }
 
 func TestJob(t *testing.T) {
@@ -34,8 +25,6 @@ func TestJob(t *testing.T) {
 }
 
 func (s *JobSuite) SetupTest() {
-	s.storage = outboxmocks.NewStorage(s.T())
-	s.factory = outboxmocks.NewOutboxRepositoryFactory(s.T())
 	s.cfg = configs.OutboxConfig{
 		DispatcherTickInterval:    500 * time.Millisecond,
 		DispatcherBatchSize:       50,
@@ -50,39 +39,112 @@ func (s *JobSuite) SetupTest() {
 	}
 }
 
-func (s *JobSuite) TestDispatcherJob_NameAndSchedule() {
-	rng := rand.New(rand.NewSource(0))
-	reg := &fakeRegistry{}
-	fakeUoW := &fakeUoWRows{}
-	j := outbox.NewDispatcherJob(fakeUoW, s.factory, reg, s.cfg, noopLogger{}, rng)
+func (s *JobSuite) TestJobs() {
+	type args struct {
+		ctx context.Context
+	}
 
-	s.Equal("outbox-dispatcher", j.Name())
-	s.Equal("@every 500ms", j.Schedule())
-}
+	scenarios := []struct {
+		name  string
+		args  args
+		setup func() (interface {
+			Name() string
+			Schedule() string
+		}, func() error)
+		expect func(interface {
+			Name() string
+			Schedule() string
+		}, error)
+	}{
+		{
+			name: "deve expor nome e schedule do dispatcher",
+			args: args{ctx: context.Background()},
+			setup: func() (interface {
+				Name() string
+				Schedule() string
+			}, func() error) {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+				jobInstance := outbox.NewDispatcherJob(&unitOfWorkRows{}, factory, registry, s.cfg, noopLogger{}, rand.New(rand.NewSource(0)))
+				return jobInstance, func() error { return nil }
+			},
+			expect: func(jobInstance interface {
+				Name() string
+				Schedule() string
+			}, err error) {
+				s.NoError(err)
+				s.Equal("outbox-dispatcher", jobInstance.Name())
+				s.Equal("@every 500ms", jobInstance.Schedule())
+			},
+		},
+		{
+			name: "deve delegar run do dispatcher para run once",
+			args: args{ctx: context.Background()},
+			setup: func() (interface {
+				Name() string
+				Schedule() string
+			}, func() error) {
+				factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+				registry := outboxmocks.NewRegistry(s.T())
+				storage := outboxmocks.NewStorage(s.T())
+				factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Once()
+				storage.EXPECT().ClaimBatch(context.Background(), mock.AnythingOfType("string"), 50).Return(nil, nil).Once()
+				registry.EXPECT().HandlersOf(mock.Anything).Maybe().Return([]events.Handler{})
+				jobInstance := outbox.NewDispatcherJob(&unitOfWorkRows{}, factory, registry, s.cfg, noopLogger{}, rand.New(rand.NewSource(0)))
+				return jobInstance, func() error { return jobInstance.Run(context.Background()) }
+			},
+			expect: func(_ interface {
+				Name() string
+				Schedule() string
+			}, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve expor nome e schedule do reaper",
+			args: args{ctx: context.Background()},
+			setup: func() (interface {
+				Name() string
+				Schedule() string
+			}, func() error) {
+				jobInstance := outbox.NewReaperJob(&unitOfWorkVoid{}, outboxmocks.NewOutboxRepositoryFactory(s.T()), s.cfg, noopLogger{})
+				return jobInstance, func() error { return nil }
+			},
+			expect: func(jobInstance interface {
+				Name() string
+				Schedule() string
+			}, err error) {
+				s.NoError(err)
+				s.Equal("outbox-reaper", jobInstance.Name())
+				s.Equal("@every 1m", jobInstance.Schedule())
+			},
+		},
+		{
+			name: "deve expor nome e schedule do housekeeping",
+			args: args{ctx: context.Background()},
+			setup: func() (interface {
+				Name() string
+				Schedule() string
+			}, func() error) {
+				jobInstance := outbox.NewHousekeepingJob(&unitOfWorkVoid{}, outboxmocks.NewOutboxRepositoryFactory(s.T()), s.cfg, noopLogger{})
+				return jobInstance, func() error { return nil }
+			},
+			expect: func(jobInstance interface {
+				Name() string
+				Schedule() string
+			}, err error) {
+				s.NoError(err)
+				s.Equal("outbox-housekeeping", jobInstance.Name())
+				s.Equal("@daily", jobInstance.Schedule())
+			},
+		},
+	}
 
-func (s *JobSuite) TestDispatcherJob_RunDelegatesParaRunOnce() {
-	rng := rand.New(rand.NewSource(0))
-	reg := &fakeRegistry{}
-	fakeUoW := &fakeUoWRows{}
-	j := outbox.NewDispatcherJob(fakeUoW, s.factory, reg, s.cfg, noopLogger{}, rng)
-
-	s.factory.EXPECT().OutboxRepository(mock.Anything).Return(s.storage)
-	s.storage.EXPECT().ClaimBatch(context.Background(), mock.AnythingOfType("string"), 50).Return(nil, nil)
-
-	err := j.Run(context.Background())
-	s.NoError(err)
-}
-
-func (s *JobSuite) TestReaperJob_NameAndSchedule() {
-	j := outbox.NewReaperJob(&fakeUoWVoid{}, s.factory, s.cfg, noopLogger{})
-
-	s.Equal("outbox-reaper", j.Name())
-	s.Equal("@every 1m", j.Schedule())
-}
-
-func (s *JobSuite) TestHousekeepingJob_NameAndSchedule() {
-	j := outbox.NewHousekeepingJob(&fakeUoWVoid{}, s.factory, s.cfg, noopLogger{})
-
-	s.Equal("outbox-housekeeping", j.Name())
-	s.Equal("@daily", j.Schedule())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			jobInstance, act := scenario.setup()
+			err := act()
+			scenario.expect(jobInstance, err)
+		})
+	}
 }

@@ -2,17 +2,17 @@
 epic_id: E3
 slug: onboarding-magic-token
 title: Onboarding via magic token (landing → checkout → wa.me → ATIVAR)
-status: pending
+status: implemented
 blocked_by: [E1]
 blocks: [E4]
 source_bundle: .agents/skills/decision-brainstorming/discoveries/brainstorm-consolidacao-core/decision-brief.md
 source_discoveries:
   - docs/discoveries/discovery-onboarding-flow.md
 artifacts:
-  prd: null
-  techspec: null
-  tasks: null
-next_skill: create-prd
+  prd: .specs/prd-onboarding-magic-token/prd.md
+  techspec: .specs/prd-onboarding-magic-token/techspec.md
+  tasks: .specs/prd-onboarding-magic-token/tasks.md
+next_skill: null
 target_module: internal/onboarding/
 ---
 
@@ -26,7 +26,7 @@ A ativação `ATIVAR <token>` precisa criar/atualizar `User` via `UserRepository
 
 **Pode rodar em paralelo a E2** (`billing-pipeline`) — ambos dependem de E1, mas não entre si **na fase de PRD/techspec**. Em runtime, E3 consome o resultado do webhook de E2 (`signup_tokens.status = PAID`) e chama `EntitlementService.Invalidate` de E2 ao ativar.
 
-**Acoplamento operacional com E2:** o token marcado como `PAID` é populado pelo `BillingEventProcessor` de E2 ao processar `compra_aprovada`. Para testes E2E completos, ambos precisam estar implementados; testes unitários e de integração de E3 podem mockar essa borda.
+**Acoplamento operacional com E2:** o token marcado como `PAID` é populado pelo `BillingEventProcessor` de E2 ao processar `order_approved`. Para testes E2E completos, ambos precisam estar implementados; testes unitários e de integração de E3 podem mockar essa borda.
 
 **PRD e techspec podem ser escritos em paralelo a E1**, mas execução de tarefas espera E1 atingir `status: implemented`.
 
@@ -130,7 +130,7 @@ ai-spec execute-all-tasks
 ## Riscos residuais
 
 - **R-01 (alto):** `wa.me` com texto pré-preenchido pode não abrir corretamente em desktop ou versões antigas — mitigado por copy-paste fallback visível.
-- **R-02 (médio):** Race condition `ATIVAR` chega antes do webhook `compra_aprovada` (Pix lento) — mitigado por mensagem "pagamento ainda processando, tente em 1 minuto".
+- **R-02 (médio):** Race condition `ATIVAR` chega antes do webhook `order_approved` (Pix lento) — mitigado por mensagem "pagamento ainda processando, tente em 1 minuto".
 - **R-03 (médio):** Token usado em outro número (cartão clonado tentando ativar em número diferente) — mitigado por bloqueio + alerta para suporte.
 - **R-04 (baixo):** Compra duplicada (cliente clica 2x) gera 2 tokens em `PAID` e 2 subscriptions — mitigado por ativar a primeira e disparar alerta na segunda para reembolso manual.
 - **R-05 (médio):** Template WhatsApp Business demora a ser aprovado pela Meta — atraso operacional; mitigado iniciando o processo de aprovação em paralelo ao desenvolvimento.

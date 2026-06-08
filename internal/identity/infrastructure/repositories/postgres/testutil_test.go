@@ -13,6 +13,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
 	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
+	"github.com/stretchr/testify/suite"
 	tc "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -20,6 +21,43 @@ import (
 )
 
 const pgImage = "postgres:16"
+
+type TestutilSuite struct {
+	suite.Suite
+}
+
+func TestTestutilSuite(t *testing.T) {
+	suite.Run(t, new(TestutilSuite))
+}
+
+func (s *TestutilSuite) SetupTest() {}
+
+func (s *TestutilSuite) TestSetupTestDB() {
+	scenarios := []struct {
+		name   string
+		setup  func()
+		expect func(manager.Manager, string)
+	}{
+		{
+			name:  "deve provisionar banco de teste com dsn",
+			setup: func() {},
+			expect: func(mgr manager.Manager, dsn string) {
+				s.NotNil(mgr)
+				s.NotEmpty(dsn)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.SetupTest()
+			scenario.setup()
+
+			mgr, dsn := setupTestDB(s.T())
+			scenario.expect(mgr, dsn)
+		})
+	}
+}
 
 func setupTestDB(t *testing.T) (manager.Manager, string) {
 	t.Helper()

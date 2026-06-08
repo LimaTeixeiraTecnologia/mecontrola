@@ -10,7 +10,7 @@
 
 ## Contexto
 
-PRD RF-02 define 3 planos: Mensal (30d), Trimestral (90d), Anual (365d). Cada plano tem um `product_id` correspondente na Kiwify. O `compra_aprovada` carrega `product.id`; o sistema precisa traduzir para o código interno e a duração para calcular `period_end`.
+PRD RF-02 define 3 planos: Mensal (30d), Trimestral (90d), Anual (365d). Cada plano tem um `product_id` correspondente na Kiwify. O `order_approved` carrega `product.id`; o sistema precisa traduzir para o código interno e a duração para calcular `period_end`.
 
 Três localizações possíveis: tabela DB, código Go, env config.
 

@@ -8,141 +8,145 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/messaging/database/consumers"
+	consumerMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/messaging/database/consumers/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
-type mockMarkTokenPaid struct {
-	mock.Mock
-}
-
-func (m *mockMarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInput) error {
-	return m.Called(ctx, in).Error(0)
-}
-
-type fakeEvent struct {
+type subscriptionPaidEvent struct {
 	eventType string
 	envelope  outbox.Envelope
 }
 
-func (e *fakeEvent) GetEventType() string { return e.eventType }
-func (e *fakeEvent) GetPayload() any      { return e.envelope }
+func (e *subscriptionPaidEvent) GetEventType() string { return e.eventType }
+func (e *subscriptionPaidEvent) GetPayload() any      { return e.envelope }
 
-func makeActivatedEnvelope(payload any) events.Event {
-	raw, _ := json.Marshal(payload)
-	env := outbox.Envelope{
-		ID:        "evt-001",
-		EventType: "billing.subscription.activated",
-		Payload:   json.RawMessage(raw),
+func newSubscriptionPaidEvent(payload any) events.Event {
+	rawPayload, _ := json.Marshal(payload)
+	return &subscriptionPaidEvent{
+		eventType: "billing.subscription.activated",
+		envelope: outbox.Envelope{
+			ID:        "evt-001",
+			EventType: "billing.subscription.activated",
+			Payload:   json.RawMessage(rawPayload),
+		},
 	}
-	return &fakeEvent{eventType: "billing.subscription.activated", envelope: env}
 }
+
+type subscriptionPaidBadPayloadEvent struct{}
+
+func (e *subscriptionPaidBadPayloadEvent) GetEventType() string {
+	return "billing.subscription.activated"
+}
+func (e *subscriptionPaidBadPayloadEvent) GetPayload() any { return "not-an-envelope" }
 
 type SubscriptionPaidConsumerSuite struct {
 	suite.Suite
-	usecase  *mockMarkTokenPaid
-	consumer *consumers.SubscriptionPaidConsumer
+	ctx context.Context
 }
 
-func TestSubscriptionPaidConsumer(t *testing.T) {
+func TestSubscriptionPaidConsumerSuite(t *testing.T) {
 	suite.Run(t, new(SubscriptionPaidConsumerSuite))
 }
 
 func (s *SubscriptionPaidConsumerSuite) SetupTest() {
-	s.usecase = &mockMarkTokenPaid{}
-	s.consumer = consumers.NewSubscriptionPaidConsumer(s.usecase, noop.NewProvider())
+	s.ctx = context.Background()
 }
 
-func (s *SubscriptionPaidConsumerSuite) TestHandleCallsMarkTokenPaid() {
+func (s *SubscriptionPaidConsumerSuite) TestHandle() {
 	paidAt := time.Now().UTC().Truncate(time.Second)
-	payload := map[string]any{
-		"subscription_id":      "sub-001",
-		"funnel_token":         "token-sck-abc",
-		"plan_code":            "MONTHLY",
-		"external_sale_id":     "sale-001",
-		"customer_mobile_e164": "+5511999999999",
-		"customer_email":       "user@example.com",
-		"paid_at":              paidAt,
-		"occurred_at":          paidAt,
+
+	type args struct {
+		event events.Event
 	}
 
-	s.usecase.On("Execute", mock.Anything, mock.MatchedBy(func(in input.MarkTokenPaidInput) bool {
-		return in.SubscriptionID == "sub-001" &&
-			in.FunnelToken == "token-sck-abc" &&
-			in.CustomerMobileE164 == "+5511999999999" &&
-			in.CustomerEmail == "user@example.com" &&
-			in.ExternalSaleID == "sale-001"
-	})).Return(nil)
-
-	err := s.consumer.Handle(context.Background(), makeActivatedEnvelope(payload))
-	s.Require().NoError(err)
-	s.usecase.AssertExpectations(s.T())
-}
-
-func (s *SubscriptionPaidConsumerSuite) TestHandleNoopWhenFunnelTokenEmpty() {
-	paidAt := time.Now().UTC()
-	payload := map[string]any{
-		"subscription_id":      "sub-002",
-		"funnel_token":         "",
-		"external_sale_id":     "sale-002",
-		"customer_mobile_e164": "+5511999999999",
-		"customer_email":       "user@example.com",
-		"paid_at":              paidAt,
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*consumerMocks.MarkTokenPaidUseCase)
+		expect func(error)
+	}{
+		{
+			name: "deve chamar mark token paid",
+			args: args{
+				event: newSubscriptionPaidEvent(map[string]any{
+					"subscription_id":      "sub-001",
+					"funnel_token":         "token-sck-abc",
+					"plan_code":            "MONTHLY",
+					"external_sale_id":     "sale-001",
+					"customer_mobile_e164": "+5511999999999",
+					"customer_email":       "user@example.com",
+					"paid_at":              paidAt,
+					"occurred_at":          paidAt,
+				}),
+			},
+			setup: func(useCase *consumerMocks.MarkTokenPaidUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, mock.MatchedBy(func(in input.MarkTokenPaidInput) bool {
+					return in.SubscriptionID == "sub-001" &&
+						in.FunnelToken == "token-sck-abc" &&
+						in.CustomerMobileE164 == "+5511999999999" &&
+						in.CustomerEmail == "user@example.com" &&
+						in.ExternalSaleID == "sale-001"
+				})).Return(nil).Once()
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve ignorar payload sem funnel token",
+			args: args{
+				event: newSubscriptionPaidEvent(map[string]any{
+					"subscription_id":      "sub-002",
+					"funnel_token":         "",
+					"external_sale_id":     "sale-002",
+					"customer_mobile_e164": "+5511999999999",
+					"customer_email":       "user@example.com",
+					"paid_at":              paidAt,
+				}),
+			},
+			setup: func(useCase *consumerMocks.MarkTokenPaidUseCase) {},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar erro do use case",
+			args: args{
+				event: newSubscriptionPaidEvent(map[string]any{
+					"funnel_token":     "token-err",
+					"external_sale_id": "sale-err",
+					"paid_at":          paidAt,
+				}),
+			},
+			setup: func(useCase *consumerMocks.MarkTokenPaidUseCase) {
+				useCase.EXPECT().Execute(mock.Anything, mock.Anything).Return(errors.New("db error")).Once()
+			},
+			expect: func(err error) {
+				s.ErrorContains(err, "mark token paid")
+			},
+		},
+		{
+			name:  "deve retornar erro para payload inesperado",
+			args:  args{event: &subscriptionPaidBadPayloadEvent{}},
+			setup: func(useCase *consumerMocks.MarkTokenPaidUseCase) {},
+			expect: func(err error) {
+				s.ErrorContains(err, "unexpected payload type")
+			},
+		},
 	}
 
-	err := s.consumer.Handle(context.Background(), makeActivatedEnvelope(payload))
-	s.Require().NoError(err)
-	s.usecase.AssertNotCalled(s.T(), "Execute")
-}
-
-func (s *SubscriptionPaidConsumerSuite) TestHandleIdempotentRetry() {
-	paidAt := time.Now().UTC()
-	payload := map[string]any{
-		"funnel_token":         "token-idem",
-		"external_sale_id":     "sale-idem",
-		"customer_mobile_e164": "+5511999999999",
-		"customer_email":       "user@example.com",
-		"paid_at":              paidAt,
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			useCase := consumerMocks.NewMarkTokenPaidUseCase(s.T())
+			scenario.setup(useCase)
+			consumer := consumers.NewSubscriptionPaidConsumer(useCase, noop.NewProvider())
+			scenario.expect(consumer.Handle(s.ctx, scenario.args.event))
+		})
 	}
-
-	s.usecase.On("Execute", mock.Anything, mock.Anything).Return(nil)
-
-	evt := makeActivatedEnvelope(payload)
-	err1 := s.consumer.Handle(context.Background(), evt)
-	s.Require().NoError(err1)
-	err2 := s.consumer.Handle(context.Background(), evt)
-	s.Require().NoError(err2)
 }
-
-func (s *SubscriptionPaidConsumerSuite) TestHandleUsecaseErrorPropagated() {
-	paidAt := time.Now().UTC()
-	payload := map[string]any{
-		"funnel_token":     "token-err",
-		"external_sale_id": "sale-err",
-		"paid_at":          paidAt,
-	}
-
-	ucErr := errors.New("db error")
-	s.usecase.On("Execute", mock.Anything, mock.Anything).Return(ucErr)
-
-	err := s.consumer.Handle(context.Background(), makeActivatedEnvelope(payload))
-	s.Require().Error(err)
-	s.ErrorContains(err, "mark token paid")
-}
-
-func (s *SubscriptionPaidConsumerSuite) TestHandleUnexpectedPayloadTypeReturnsError() {
-	badEvt := &badPayloadEvent{}
-	err := s.consumer.Handle(context.Background(), badEvt)
-	s.Require().Error(err)
-	s.ErrorContains(err, "unexpected payload type")
-}
-
-type badPayloadEvent struct{}
-
-func (e *badPayloadEvent) GetEventType() string { return "billing.subscription.activated" }
-func (e *badPayloadEvent) GetPayload() any      { return "not-an-envelope" }

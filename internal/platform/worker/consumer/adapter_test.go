@@ -5,52 +5,108 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/consumer"
+	consumermocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/consumer/mocks"
 )
 
-func TestAdapter_NomeETecnologia(t *testing.T) {
-	a := consumer.NewAdapter("billing", "kafka", &fakeRunner{})
-	require.Equal(t, "billing", a.Name())
-	require.Equal(t, "kafka", a.Technology())
+type AdapterSuite struct {
+	suite.Suite
 }
 
-func TestAdapter_DelegaStart(t *testing.T) {
-	started := false
-	r := &fakeRunner{startFn: func(_ context.Context) error {
-		started = true
-		return nil
-	}}
-	a := consumer.NewAdapter("test", "fake", r)
-	err := a.Start(context.Background())
-	require.NoError(t, err)
-	require.True(t, started)
+func TestAdapterSuite(t *testing.T) {
+	suite.Run(t, new(AdapterSuite))
 }
 
-func TestAdapter_DelegaStop(t *testing.T) {
+func (s *AdapterSuite) SetupTest() {}
+
+func (s *AdapterSuite) TestMetadata() {
+	type args struct {
+		name       string
+		technology string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*consumermocks.Runner)
+		expect func(*consumer.Adapter)
+	}{
+		{
+			name:  "deve expor nome e tecnologia configurados",
+			args:  args{name: "billing", technology: "kafka"},
+			setup: func(*consumermocks.Runner) {},
+			expect: func(adapter *consumer.Adapter) {
+				s.Equal("billing", adapter.Name())
+				s.Equal("kafka", adapter.Technology())
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			runner := consumermocks.NewRunner(s.T())
+			scenario.setup(runner)
+
+			sut := consumer.NewAdapter(scenario.args.name, scenario.args.technology, runner)
+
+			scenario.expect(sut)
+		})
+	}
+}
+
+func (s *AdapterSuite) TestDelegation() {
+	type args struct {
+		ctx context.Context
+	}
+
 	sentinel := errors.New("stop err")
-	r := &fakeRunner{stopFn: func(_ context.Context) error { return sentinel }}
-	a := consumer.NewAdapter("test", "fake", r)
-	err := a.Stop(context.Background())
-	require.ErrorIs(t, err, sentinel)
-}
 
-type fakeRunner struct {
-	startFn func(context.Context) error
-	stopFn  func(context.Context) error
-}
-
-func (r *fakeRunner) Start(ctx context.Context) error {
-	if r.startFn != nil {
-		return r.startFn(ctx)
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(*consumermocks.Runner)
+		expect func(*consumer.Adapter, error)
+		act    func(*consumer.Adapter, context.Context) error
+	}{
+		{
+			name: "deve delegar start para runner",
+			args: args{ctx: context.Background()},
+			setup: func(runner *consumermocks.Runner) {
+				runner.EXPECT().Start(context.Background()).Return(nil).Once()
+			},
+			act: func(adapter *consumer.Adapter, ctx context.Context) error {
+				return adapter.Start(ctx)
+			},
+			expect: func(_ *consumer.Adapter, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar erro do stop do runner",
+			args: args{ctx: context.Background()},
+			setup: func(runner *consumermocks.Runner) {
+				runner.EXPECT().Stop(context.Background()).Return(sentinel).Once()
+			},
+			act: func(adapter *consumer.Adapter, ctx context.Context) error {
+				return adapter.Stop(ctx)
+			},
+			expect: func(_ *consumer.Adapter, err error) {
+				s.ErrorIs(err, sentinel)
+			},
+		},
 	}
-	return nil
-}
 
-func (r *fakeRunner) Stop(ctx context.Context) error {
-	if r.stopFn != nil {
-		return r.stopFn(ctx)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			runner := consumermocks.NewRunner(s.T())
+			scenario.setup(runner)
+
+			sut := consumer.NewAdapter("test", "fake", runner)
+			err := scenario.act(sut, scenario.args.ctx)
+
+			scenario.expect(sut, err)
+		})
 	}
-	return nil
 }

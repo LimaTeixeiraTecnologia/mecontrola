@@ -1,6 +1,7 @@
 package valueobjects_test
 
 import (
+	"github.com/stretchr/testify/suite"
 	"testing"
 	"time"
 
@@ -10,63 +11,79 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
 )
 
-func TestNewPlan(t *testing.T) {
-	t.Parallel()
+type PlanSuite struct {
+	suite.Suite
+}
 
-	tests := []struct {
-		name         string
+func TestPlanSuite(t *testing.T) {
+	suite.Run(t, new(PlanSuite))
+}
+
+func (s *PlanSuite) SetupTest() {}
+
+func (s *PlanSuite) TestNewPlan() {
+	type args struct {
 		code         string
 		durationDays int
-		wantCode     valueobjects.PlanCode
-		wantErr      error
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(valueobjects.Plan, error)
 	}{
 		{
-			name:         "monthly plan",
-			code:         "MONTHLY",
-			durationDays: 30,
-			wantCode:     valueobjects.PlanCodeMonthly,
+			name: "deve criar plano mensal",
+			args: args{code: "MONTHLY", durationDays: 30},
+			expect: func(plan valueobjects.Plan, err error) {
+				require.NoError(s.T(), err)
+				assert.Equal(s.T(), valueobjects.PlanCodeMonthly, plan.Code())
+				assert.Equal(s.T(), 30, plan.DurationDays())
+				assert.Equal(s.T(), 30*24*time.Hour, plan.Duration())
+			},
 		},
 		{
-			name:         "quarterly plan",
-			code:         "QUARTERLY",
-			durationDays: 90,
-			wantCode:     valueobjects.PlanCodeQuarterly,
+			name: "deve criar plano trimestral",
+			args: args{code: "QUARTERLY", durationDays: 90},
+			expect: func(plan valueobjects.Plan, err error) {
+				require.NoError(s.T(), err)
+				assert.Equal(s.T(), valueobjects.PlanCodeQuarterly, plan.Code())
+				assert.Equal(s.T(), 90, plan.DurationDays())
+				assert.Equal(s.T(), 90*24*time.Hour, plan.Duration())
+			},
 		},
 		{
-			name:         "annual plan",
-			code:         "ANNUAL",
-			durationDays: 365,
-			wantCode:     valueobjects.PlanCodeAnnual,
+			name: "deve criar plano anual",
+			args: args{code: "ANNUAL", durationDays: 365},
+			expect: func(plan valueobjects.Plan, err error) {
+				require.NoError(s.T(), err)
+				assert.Equal(s.T(), valueobjects.PlanCodeAnnual, plan.Code())
+				assert.Equal(s.T(), 365, plan.DurationDays())
+				assert.Equal(s.T(), 365*24*time.Hour, plan.Duration())
+			},
 		},
 		{
-			name:         "invalid code",
-			code:         "WEEKLY",
-			durationDays: 7,
-			wantErr:      valueobjects.ErrPlanCodeInvalid,
+			name: "deve rejeitar codigo invalido",
+			args: args{code: "WEEKLY", durationDays: 7},
+			expect: func(plan valueobjects.Plan, err error) {
+				require.ErrorIs(s.T(), err, valueobjects.ErrPlanCodeInvalid)
+				assert.Equal(s.T(), valueobjects.Plan{}, plan)
+			},
 		},
 		{
-			name:         "invalid duration",
-			code:         "MONTHLY",
-			durationDays: 0,
-			wantErr:      valueobjects.ErrPlanDurationInvalid,
+			name: "deve rejeitar duracao invalida",
+			args: args{code: "MONTHLY", durationDays: 0},
+			expect: func(plan valueobjects.Plan, err error) {
+				require.ErrorIs(s.T(), err, valueobjects.ErrPlanDurationInvalid)
+				assert.Equal(s.T(), valueobjects.Plan{}, plan)
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			plan, err := valueobjects.NewPlan(tt.code, tt.durationDays)
-			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantCode, plan.Code())
-			assert.Equal(t, tt.durationDays, plan.DurationDays())
-			assert.Equal(t, time.Duration(tt.durationDays)*24*time.Hour, plan.Duration())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			plan, err := valueobjects.NewPlan(scenario.args.code, scenario.args.durationDays)
+			scenario.expect(plan, err)
 		})
 	}
 }

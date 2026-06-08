@@ -4,25 +4,60 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	onboardingcrypto "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/crypto"
 )
 
-func TestTokenCipher_RoundTrip(t *testing.T) {
-	cipher, err := onboardingcrypto.NewTokenCipher("12345678901234567890123456789012")
-	require.NoError(t, err)
-
-	encrypted, err := cipher.Encrypt(context.Background(), "activation-token")
-	require.NoError(t, err)
-	require.NotContains(t, encrypted, "activation-token")
-
-	decrypted, err := cipher.Decrypt(context.Background(), encrypted)
-	require.NoError(t, err)
-	require.Equal(t, "activation-token", decrypted)
+type TokenCipherSuite struct {
+	suite.Suite
 }
 
-func TestTokenCipher_RejectsInvalidKey(t *testing.T) {
-	_, err := onboardingcrypto.NewTokenCipher("short")
-	require.Error(t, err)
+func TestTokenCipherSuite(t *testing.T) {
+	suite.Run(t, new(TokenCipherSuite))
+}
+
+func (s *TokenCipherSuite) SetupTest() {}
+
+func (s *TokenCipherSuite) TestNewTokenCipher() {
+	type args struct {
+		key string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(*onboardingcrypto.TokenCipher, error)
+	}{
+		{
+			name: "deve criptografar e descriptografar token",
+			args: args{key: "12345678901234567890123456789012"},
+			expect: func(cipher *onboardingcrypto.TokenCipher, err error) {
+				s.Require().NoError(err)
+
+				encryptedToken, err := cipher.Encrypt(context.Background(), "activation-token")
+				s.Require().NoError(err)
+				s.NotContains(encryptedToken, "activation-token")
+
+				decryptedToken, err := cipher.Decrypt(context.Background(), encryptedToken)
+				s.Require().NoError(err)
+				s.Equal("activation-token", decryptedToken)
+			},
+		},
+		{
+			name: "deve rejeitar chave invalida",
+			args: args{key: "short"},
+			expect: func(cipher *onboardingcrypto.TokenCipher, err error) {
+				s.Nil(cipher)
+				s.Error(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			cipher, err := onboardingcrypto.NewTokenCipher(scenario.args.key)
+			scenario.expect(cipher, err)
+		})
+	}
 }

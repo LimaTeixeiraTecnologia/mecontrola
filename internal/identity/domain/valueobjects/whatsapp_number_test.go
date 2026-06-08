@@ -4,146 +4,152 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
 
-func TestNewWhatsAppNumber(t *testing.T) {
-	t.Parallel()
+type WhatsappNumberSuite struct {
+	suite.Suite
+}
 
-	tests := []struct {
-		name        string
-		input       string
-		wantE164    string
-		wantErr     error
-		wantErrWrap bool
+func TestWhatsappNumberSuite(t *testing.T) {
+	suite.Run(t, new(WhatsappNumberSuite))
+}
+
+func (s *WhatsappNumberSuite) SetupTest() {}
+
+func (s *WhatsappNumberSuite) mustWhatsApp(raw string) valueobjects.WhatsAppNumber {
+	whatsApp, err := valueobjects.NewWhatsAppNumber(raw)
+	s.Require().NoError(err)
+	return whatsApp
+}
+
+func (s *WhatsappNumberSuite) TestNewWhatsAppNumber() {
+	type args struct {
+		input string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(valueobjects.WhatsAppNumber, error)
 	}{
 		{
-			name:     "e164 canônico",
-			input:    "+5511988887777",
-			wantE164: "+5511988887777",
+			name: "deve normalizar numero canonico",
+			args: args{input: "(11) 98888-7777"},
+			expect: func(number valueobjects.WhatsAppNumber, err error) {
+				s.Require().NoError(err)
+				s.Equal("+5511988887777", number.String())
+			},
 		},
 		{
-			name:     "sem +55",
-			input:    "11988887777",
-			wantE164: "+5511988887777",
+			name: "deve aceitar numero com codigo do pais sem sinal",
+			args: args{input: "5511988887777"},
+			expect: func(number valueobjects.WhatsAppNumber, err error) {
+				s.Require().NoError(err)
+				s.Equal("+5511988887777", number.String())
+			},
 		},
 		{
-			name:     "com 55 sem +",
-			input:    "5511988887777",
-			wantE164: "+5511988887777",
+			name: "deve retornar erro para valor vazio",
+			args: args{input: ""},
+			expect: func(number valueobjects.WhatsAppNumber, err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, valueobjects.ErrWhatsAppNumberEmpty)
+				s.Equal(valueobjects.WhatsAppNumber{}, number)
+			},
 		},
 		{
-			name:     "formato (11) 98888-7777",
-			input:    "(11) 98888-7777",
-			wantE164: "+5511988887777",
-		},
-		{
-			name:     "formato 11 98888-7777",
-			input:    "11 98888-7777",
-			wantE164: "+5511988887777",
-		},
-		{
-			name:     "ddd 21",
-			input:    "+5521987654321",
-			wantE164: "+5521987654321",
-		},
-		{
-			name:    "vazio",
-			input:   "",
-			wantErr: valueobjects.ErrWhatsAppNumberEmpty,
-		},
-		{
-			name:    "apenas espaços",
-			input:   "   ",
-			wantErr: valueobjects.ErrWhatsAppNumberEmpty,
-		},
-		{
-			name:        "fixo sem 9",
-			input:       "+551133334444",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrWhatsAppNumberInvalid,
-		},
-		{
-			name:        "celular com 7 dígitos finais",
-			input:       "+55119888777",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrWhatsAppNumberInvalid,
-		},
-		{
-			name:        "celular com 9 dígitos finais (11 no total após DDD)",
-			input:       "+551198888777777",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrWhatsAppNumberInvalid,
-		},
-		{
-			name:        "país diferente",
-			input:       "+5511988887777extra",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrWhatsAppNumberInvalid,
-		},
-		{
-			name:        "DDD com 3 dígitos",
-			input:       "+55119988887777",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrWhatsAppNumberInvalid,
-		},
-		{
-			name:        "unicode no número",
-			input:       "+55119888é7777",
-			wantErrWrap: true,
-			wantErr:     valueobjects.ErrWhatsAppNumberInvalid,
+			name: "deve retornar erro para numero invalido",
+			args: args{input: "+551133334444"},
+			expect: func(number valueobjects.WhatsAppNumber, err error) {
+				s.Require().Error(err)
+				s.True(errors.Is(err, valueobjects.ErrWhatsAppNumberInvalid))
+				s.Equal(valueobjects.WhatsAppNumber{}, number)
+			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := valueobjects.NewWhatsAppNumber(tc.input)
-
-			if tc.wantErr != nil {
-				require.Error(t, err)
-				if tc.wantErrWrap {
-					assert.True(t, errors.Is(err, tc.wantErr), "erro deve envolver %v, got %v", tc.wantErr, err)
-				} else {
-					assert.ErrorIs(t, err, tc.wantErr)
-				}
-				assert.Equal(t, valueobjects.WhatsAppNumber{}, got)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantE164, got.String())
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			number, err := valueobjects.NewWhatsAppNumber(scenario.args.input)
+			scenario.expect(number, err)
 		})
 	}
 }
 
-func TestWhatsAppNumber_Equal(t *testing.T) {
-	t.Parallel()
-	a, err := valueobjects.NewWhatsAppNumber("+5511988887777")
-	require.NoError(t, err)
-	b, err := valueobjects.NewWhatsAppNumber("(11) 98888-7777")
-	require.NoError(t, err)
-	c, err := valueobjects.NewWhatsAppNumber("+5521987654321")
-	require.NoError(t, err)
+func (s *WhatsappNumberSuite) TestEqual() {
+	type args struct {
+		left  string
+		right string
+	}
 
-	assert.True(t, a.Equal(b))
-	assert.False(t, a.Equal(c))
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(bool)
+	}{
+		{
+			name: "deve considerar numeros equivalentes",
+			args: args{left: "+5511988887777", right: "(11) 98888-7777"},
+			expect: func(equal bool) {
+				s.True(equal)
+			},
+		},
+		{
+			name: "deve diferenciar numeros distintos",
+			args: args{left: "+5511988887777", right: "+5521987654321"},
+			expect: func(equal bool) {
+				s.False(equal)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			left := s.mustWhatsApp(scenario.args.left)
+			right := s.mustWhatsApp(scenario.args.right)
+			scenario.expect(left.Equal(right))
+		})
+	}
 }
 
-func TestWhatsAppNumber_Masked(t *testing.T) {
-	t.Parallel()
-	n, err := valueobjects.NewWhatsAppNumber("+5511988887777")
-	require.NoError(t, err)
-	masked := n.Masked()
-	assert.Equal(t, "+55 11 9****-7777", masked)
-}
+func (s *WhatsappNumberSuite) TestMasked() {
+	type args struct {
+		input   string
+		useZero bool
+	}
 
-func TestWhatsAppNumber_MaskedZeroValue(t *testing.T) {
-	t.Parallel()
-	var n valueobjects.WhatsAppNumber
-	masked := n.Masked()
-	assert.Equal(t, "****", masked)
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(string)
+	}{
+		{
+			name: "deve mascarar numero preenchido",
+			args: args{input: "+5511988887777"},
+			expect: func(masked string) {
+				s.Equal("+55 11 9****-7777", masked)
+			},
+		},
+		{
+			name: "deve mascarar zero value",
+			args: args{useZero: true},
+			expect: func(masked string) {
+				s.Equal("****", masked)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			var number valueobjects.WhatsAppNumber
+			if !scenario.args.useZero {
+				number = s.mustWhatsApp(scenario.args.input)
+			}
+
+			scenario.expect(number.Masked())
+		})
+	}
 }

@@ -13,7 +13,7 @@
 O prompt enriquecido (e portanto a expectativa inicial) listava como fonte oficial obrigatória `https://docs.kiwify.com.br/api-reference/banking/webhooks` (e páginas adjacentes), incluindo o protocolo Ed25519 prehashed e o endpoint `GET /v1/webhooks-keys`. Auditoria nas docs oficiais Kiwify revelou que o domínio possui **duas APIs distintas com escopo completamente diferente**:
 
 - **Banking API** (`conta-public-api.kiwify.com`, `/api-reference/banking/*`): exclusivamente operações da conta digital (PIX/Boleto/QR Code). Usa Ed25519 prehashed + headers `x-kiwify-digital-signature` e `x-kiwify-timestamp`, chave pública via `GET /v1/webhooks-keys`. **Não emite eventos de assinatura recorrente.**
-- **Public API** (`public-api.kiwify.com/v1`, `/api-reference/{webhooks,sales,auth,...}`): cobre vendas e assinaturas recorrentes (`compra_aprovada`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `compra_reembolsada`, `chargeback`). Usa OAuth2 + `x-kiwify-account-id`.
+- **Public API** (`public-api.kiwify.com/v1`, `/api-reference/{webhooks,sales,auth,...}`): cobre vendas e assinaturas recorrentes (`order_approved`, `subscription_renewed`, `subscription_late`, `subscription_canceled`, `order_refunded`, `chargeback`). Usa OAuth2 + `x-kiwify-account-id`.
 
 O PRD E2 lida exclusivamente com ciclo de vida de assinatura (Mensal/Trimestral/Anual). Adotar a Banking API tornaria o desenho irrelevante — nenhum dos triggers necessários existe lá.
 

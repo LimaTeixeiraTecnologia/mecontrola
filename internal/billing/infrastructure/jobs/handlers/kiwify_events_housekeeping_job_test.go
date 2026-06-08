@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
@@ -16,28 +16,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/jobs/handlers"
 )
 
-type mockKiwifyEventRepo struct {
-	mock.Mock
-}
-
-func (m *mockKiwifyEventRepo) Persist(ctx context.Context, envelopeID string, trigger string, rawBody []byte, signatureStatus string) error {
-	return m.Called(ctx, envelopeID, trigger, rawBody, signatureStatus).Error(0)
-}
-
-func (m *mockKiwifyEventRepo) MarkProcessed(ctx context.Context, envelopeID string, processedAt time.Time) error {
-	return m.Called(ctx, envelopeID, processedAt).Error(0)
-}
-
-func (m *mockKiwifyEventRepo) DeleteOlderThan(ctx context.Context, before time.Time, limit int) (int64, error) {
-	args := m.Called(ctx, before, limit)
-	return args.Get(0).(int64), args.Error(1)
-}
-
 type HousekeepingJobSuite struct {
 	suite.Suite
 	factoryMock *ucmocks.RepositoryFactory
-	eventRepo   *mockKiwifyEventRepo
-	job         *handlers.KiwifyEventsHousekeepingJob
+	eventRepo   *ucmocks.KiwifyEventRepository
 }
 
 func TestHousekeepingJob(t *testing.T) {
@@ -46,108 +28,135 @@ func TestHousekeepingJob(t *testing.T) {
 
 func (s *HousekeepingJobSuite) SetupTest() {
 	s.factoryMock = ucmocks.NewRepositoryFactory(s.T())
-	s.eventRepo = &mockKiwifyEventRepo{}
+	s.eventRepo = ucmocks.NewKiwifyEventRepository(s.T())
+}
 
-	cfg := configs.BillingConfig{
-		KiwifyEventsRetentionDays:        90,
-		KiwifyEventsHousekeepingSchedule: "@daily",
-		KiwifyEventsHousekeepingBatch:    100,
+func (s *HousekeepingJobSuite) newJob(cfg configs.BillingConfig) *handlers.KiwifyEventsHousekeepingJob {
+	cleanup := usecases.NewCleanupKiwifyEvents(nil, s.factoryMock, cfg, noop.NewProvider())
+	return handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
+}
+
+func (s *HousekeepingJobSuite) TestMetadata() {
+	scenarios := []struct {
+		name             string
+		cfg              configs.BillingConfig
+		expectedName     string
+		expectedSchedule string
+	}{
+		{
+			name:             "deve expor nome e schedule configurado",
+			cfg:              configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 100},
+			expectedName:     "billing-kiwify-events-housekeeping",
+			expectedSchedule: "@daily",
+		},
+		{
+			name:             "deve usar schedule padrao quando vazio",
+			cfg:              configs.BillingConfig{KiwifyEventsRetentionDays: 90},
+			expectedName:     "billing-kiwify-events-housekeeping",
+			expectedSchedule: "@daily",
+		},
 	}
-	cleanup := usecases.NewCleanupKiwifyEvents(nil, s.factoryMock, cfg, noop.NewProvider())
-	s.job = handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			job := s.newJob(scenario.cfg)
+			s.Equal(scenario.expectedName, job.Name())
+			s.Equal(scenario.expectedSchedule, job.Schedule())
+		})
+	}
 }
 
-func (s *HousekeepingJobSuite) TestName() {
-	s.Equal("billing-kiwify-events-housekeeping", s.job.Name())
-}
+func (s *HousekeepingJobSuite) TestRun() {
+	scenarios := []struct {
+		name      string
+		cfg       configs.BillingConfig
+		setup     func(context.Context)
+		expectErr string
+	}{
+		{
+			name: "deve excluir linhas antigas em lotes",
+			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 100},
+			setup: func(ctx context.Context) {
+				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
+				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(100), nil).Once()
+				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(50), nil).Once()
+				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(0), nil).Once()
+			},
+		},
+		{
+			name: "deve concluir quando nao houver linhas para excluir",
+			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
+			setup: func(ctx context.Context) {
+				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
+				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(0), nil).Once()
+			},
+		},
+		{
+			name: "deve respeitar a janela de retencao",
+			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
+			setup: func(ctx context.Context) {
+				before90d := time.Now().UTC().Add(-90 * 24 * time.Hour)
+				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
+				s.eventRepo.EXPECT().
+					DeleteOlderThan(ctx, mock.MatchedBy(func(before time.Time) bool {
+						diff := before90d.Sub(before)
+						if diff < 0 {
+							diff = -diff
+						}
+						return diff < 5*time.Second
+					}), 100).
+					Return(int64(0), nil).
+					Once()
+			},
+		},
+		{
+			name: "deve propagar erro do repositorio",
+			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
+			setup: func(ctx context.Context) {
+				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
+				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(0), errors.New("db error")).Once()
+			},
+			expectErr: "db error",
+		},
+		{
+			name: "deve parar quando o contexto for cancelado",
+			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
+			setup: func(ctx context.Context) {
+				cancelableCtx, ok := ctx.(interface{ Done() <-chan struct{} })
+				s.Require().True(ok)
+				_ = cancelableCtx
+			},
+			expectErr: "context cancelled",
+		},
+	}
 
-func (s *HousekeepingJobSuite) TestSchedule() {
-	s.Equal("@daily", s.job.Schedule())
-}
-
-func (s *HousekeepingJobSuite) TestScheduleDefaultsToDaily() {
-	cfg := configs.BillingConfig{KiwifyEventsRetentionDays: 90}
-	cleanup := usecases.NewCleanupKiwifyEvents(nil, s.factoryMock, cfg, noop.NewProvider())
-	job := handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
-	s.Equal("@daily", job.Schedule())
-}
-
-func (s *HousekeepingJobSuite) TestRunDeletesOldRowsInBatches() {
-	ctx := context.Background()
-
-	s.factoryMock.On("KiwifyEventRepository", mock.Anything).Return(s.eventRepo)
-
-	s.eventRepo.On("DeleteOlderThan", mock.Anything, mock.Anything, 100).
-		Return(int64(100), nil).Once()
-	s.eventRepo.On("DeleteOlderThan", mock.Anything, mock.Anything, 100).
-		Return(int64(50), nil).Once()
-	s.eventRepo.On("DeleteOlderThan", mock.Anything, mock.Anything, 100).
-		Return(int64(0), nil).Once()
-
-	err := s.job.Run(ctx)
-	s.Require().NoError(err)
-	s.eventRepo.AssertNumberOfCalls(s.T(), "DeleteOlderThan", 3)
-}
-
-func (s *HousekeepingJobSuite) TestRunNoRowsToDelete() {
-	ctx := context.Background()
-
-	s.factoryMock.On("KiwifyEventRepository", mock.Anything).Return(s.eventRepo)
-	s.eventRepo.On("DeleteOlderThan", mock.Anything, mock.Anything, 100).
-		Return(int64(0), nil)
-
-	err := s.job.Run(ctx)
-	s.Require().NoError(err)
-}
-
-func (s *HousekeepingJobSuite) TestRunRespectsRetentionWindow() {
-	ctx := context.Background()
-
-	s.factoryMock.On("KiwifyEventRepository", mock.Anything).Return(s.eventRepo)
-
-	before90d := time.Now().UTC().Add(-90 * 24 * time.Hour)
-
-	s.eventRepo.On("DeleteOlderThan", mock.Anything,
-		mock.MatchedBy(func(before time.Time) bool {
-			diff := before90d.Sub(before)
-			if diff < 0 {
-				diff = -diff
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			if scenario.expectErr == "context cancelled" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(context.Background())
+				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
+				s.eventRepo.EXPECT().
+					DeleteOlderThan(mock.Anything, mock.Anything, 100).
+					RunAndReturn(func(innerCtx context.Context, before time.Time, limit int) (int64, error) {
+						cancel()
+						return 50, nil
+					}).
+					Once()
+			} else {
+				scenario.setup(ctx)
 			}
-			return diff < 5*time.Second
-		}),
-		100).Return(int64(0), nil)
+			job := s.newJob(scenario.cfg)
+			err := job.Run(ctx)
 
-	err := s.job.Run(ctx)
-	s.Require().NoError(err)
-}
-
-func (s *HousekeepingJobSuite) TestRunPropagatesDeleteError() {
-	ctx := context.Background()
-
-	s.factoryMock.On("KiwifyEventRepository", mock.Anything).Return(s.eventRepo)
-	s.eventRepo.On("DeleteOlderThan", mock.Anything, mock.Anything, 100).
-		Return(int64(0), errors.New("db error"))
-
-	err := s.job.Run(ctx)
-	s.Require().Error(err)
-}
-
-func (s *HousekeepingJobSuite) TestRunStopsOnContextCancellation() {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	s.factoryMock.On("KiwifyEventRepository", mock.Anything).Return(s.eventRepo)
-
-	call := 0
-	s.eventRepo.On("DeleteOlderThan", mock.Anything, mock.Anything, 100).
-		Run(func(_ mock.Arguments) {
-			call++
-			if call == 1 {
-				cancel()
+			if scenario.expectErr == "" {
+				s.Require().NoError(err)
+				return
 			}
-		}).
-		Return(int64(50), nil)
 
-	err := s.job.Run(ctx)
-	s.Require().Error(err)
-	s.Contains(err.Error(), "context cancelled")
+			s.Require().Error(err)
+			s.Contains(err.Error(), scenario.expectErr)
+		})
+	}
 }
