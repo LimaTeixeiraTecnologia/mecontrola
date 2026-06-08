@@ -26,15 +26,23 @@ func (s *ModuleSuite) TestNewBillingModule() {
 		cfg *configs.Config
 	}
 
+	type dependencies struct {
+		mgr *onboardingmocks.FakeManager
+	}
+
 	scenarios := []struct {
-		name   string
-		args   args
-		expect func(billing.BillingModule, error)
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(billing.BillingModule, error)
 	}{
 		{
 			name: "deve expor handlers de notificacao para registro no worker",
 			args: args{
 				cfg: &configs.Config{},
+			},
+			dependencies: dependencies{
+				mgr: onboardingmocks.NewFakeManager(),
 			},
 			expect: func(module billing.BillingModule, err error) {
 				s.Require().NoError(err)
@@ -54,6 +62,9 @@ func (s *ModuleSuite) TestNewBillingModule() {
 					KiwifyConfig: configs.KiwifyConfig{APIBaseURL: "://invalid"},
 				},
 			},
+			dependencies: dependencies{
+				mgr: onboardingmocks.NewFakeManager(),
+			},
 			expect: func(module billing.BillingModule, err error) {
 				s.Error(err)
 				s.Empty(module.EventHandlers)
@@ -63,7 +74,7 @@ func (s *ModuleSuite) TestNewBillingModule() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			module, err := billing.NewBillingModule(scenario.args.cfg, noop.NewProvider(), onboardingmocks.NewFakeManager())
+			module, err := billing.NewBillingModule(scenario.args.cfg, noop.NewProvider(), scenario.dependencies.mgr)
 			scenario.expect(module, err)
 		})
 	}

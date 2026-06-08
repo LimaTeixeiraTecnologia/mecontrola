@@ -176,7 +176,7 @@ func (s *ClientSuite) TestClient_ListSalesUpdatedSince() {
 			var oauthCalls atomic.Int32
 			var salesCalls atomic.Int32
 			var gotAccountID string
-			srv := httptest.NewServer(http.HandlerFunc(scenario.handler(&oauthCalls, &salesCalls, &gotAccountID)))
+			srv := httptest.NewServer(scenario.handler(&oauthCalls, &salesCalls, &gotAccountID))
 			defer srv.Close()
 
 			client := newTestClient(s.T(), srv.URL, scenario.overrides...)

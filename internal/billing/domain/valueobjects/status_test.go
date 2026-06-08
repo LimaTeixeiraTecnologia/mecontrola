@@ -29,74 +29,74 @@ func (s *StatusSuite) TestStatus() {
 	scenarios := []struct {
 		name   string
 		args   args
-		expect func()
+		expect func(args)
 	}{
 		{
 			name: "deve refletir string e helpers do status trialing",
 			args: args{status: billingvo.StatusTrialing},
-			expect: func() {
-				assert.Equal(s.T(), "TRIALING", billingvo.StatusTrialing.String())
-				assert.False(s.T(), billingvo.StatusTrialing.IsTerminal())
-				assert.False(s.T(), billingvo.StatusTrialing.IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "TRIALING", args.status.String())
+				assert.False(s.T(), args.status.IsTerminal())
+				assert.False(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve refletir string e helpers do status active",
 			args: args{status: billingvo.StatusActive},
-			expect: func() {
-				assert.Equal(s.T(), "ACTIVE", billingvo.StatusActive.String())
-				assert.False(s.T(), billingvo.StatusActive.IsTerminal())
-				assert.True(s.T(), billingvo.StatusActive.IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "ACTIVE", args.status.String())
+				assert.False(s.T(), args.status.IsTerminal())
+				assert.True(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve refletir string e helpers do status past due",
 			args: args{status: billingvo.StatusPastDue},
-			expect: func() {
-				assert.Equal(s.T(), "PAST_DUE", billingvo.StatusPastDue.String())
-				assert.False(s.T(), billingvo.StatusPastDue.IsTerminal())
-				assert.True(s.T(), billingvo.StatusPastDue.IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "PAST_DUE", args.status.String())
+				assert.False(s.T(), args.status.IsTerminal())
+				assert.True(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve refletir string e helpers do status canceled pending",
 			args: args{status: billingvo.StatusCanceledPending},
-			expect: func() {
-				assert.Equal(s.T(), "CANCELED_PENDING", billingvo.StatusCanceledPending.String())
-				assert.False(s.T(), billingvo.StatusCanceledPending.IsTerminal())
-				assert.True(s.T(), billingvo.StatusCanceledPending.IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "CANCELED_PENDING", args.status.String())
+				assert.False(s.T(), args.status.IsTerminal())
+				assert.True(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve refletir string e helpers do status expired",
 			args: args{status: billingvo.StatusExpired},
-			expect: func() {
-				assert.Equal(s.T(), "EXPIRED", billingvo.StatusExpired.String())
-				assert.True(s.T(), billingvo.StatusExpired.IsTerminal())
-				assert.False(s.T(), billingvo.StatusExpired.IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "EXPIRED", args.status.String())
+				assert.True(s.T(), args.status.IsTerminal())
+				assert.False(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve refletir string e helpers do status refunded",
 			args: args{status: billingvo.StatusRefunded},
-			expect: func() {
-				assert.Equal(s.T(), "REFUNDED", billingvo.StatusRefunded.String())
-				assert.True(s.T(), billingvo.StatusRefunded.IsTerminal())
-				assert.False(s.T(), billingvo.StatusRefunded.IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "REFUNDED", args.status.String())
+				assert.True(s.T(), args.status.IsTerminal())
+				assert.False(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve manter zero value reservado",
 			args: args{status: 0},
-			expect: func() {
-				assert.Equal(s.T(), "", billingvo.Status(0).String())
-				assert.False(s.T(), billingvo.Status(0).IsTerminal())
-				assert.False(s.T(), billingvo.Status(0).IsActiveForBilling())
+			expect: func(args args) {
+				assert.Equal(s.T(), "", args.status.String())
+				assert.False(s.T(), args.status.IsTerminal())
+				assert.False(s.T(), args.status.IsActiveForBilling())
 			},
 		},
 		{
 			name: "deve manter alinhamento com status de assinatura da identidade",
-			expect: func() {
+			expect: func(args args) {
 				billingStatuses := []billingvo.Status{
 					billingvo.StatusTrialing,
 					billingvo.StatusActive,
@@ -125,8 +125,7 @@ func (s *StatusSuite) TestStatus() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			_ = scenario.args
-			scenario.expect()
+			scenario.expect(scenario.args)
 		})
 	}
 }

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "slug": "autenticacao-autorizacao-mvp-whatsapp",
+  "title": "Autenticacao e Autorizacao do MeControla (MVP WhatsApp + LLM)",
+  "created_at": "2026-06-08T19:36:27Z",
+  "language": "pt-BR",
+  "status": "done",
+  "decision_brief": {
+    "file": "decision-brief.md",
+    "title": "Autenticacao e Autorizacao do MeControla (MVP WhatsApp + LLM)"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "assumptions": {
+    "file": "assumptions.md"
+  },
+  "option_scorecard": {
+    "file": "option-scorecard.md"
+  },
+  "alternatives": [
+    "Alternativa 1 - Principal in-process via ctx",
+    "Alternativa 2 - JWT Ed25519 curto + JWKs",
+    "Alternativa 3 - Sessão opaca persistida em Postgres",
+    "Alternativa 4 - Boundary-explicit (ctx + interface JWT documentada)"
+  ],
+  "recommended_alternative": "Alternativa 4 - Boundary-explicit (ctx + interface JWT documentada)",
+  "decisions": [
+    "D-001: Alternativa recomendada e (D') Principal in-process via ctx + ADR.",
+    "D-002: Identidade canonica e user_id UUID interno.",
+    "D-003: Webhook WhatsApp e a unica boundary autenticadora no MVP.",
+    "D-004: Middleware RequireUser substitui X-User-ID transitorio do PRD card.",
+    "D-005: Usecases derivam user_id apenas de auth.FromContext(ctx).",
+    "D-006: Eventos de auth via outbox.Publisher + projector auth_events.",
+    "D-007: Rate-limit 60 msg/min/user in-memory + divida documentada.",
+    "D-008: HMAC X-Hub-Signature-256 + verify_token sao pre-requisitos invioaveis.",
+    "D-009: Zero dependencia externa nova no MVP.",
+    "D-010: PRD futuro para app/web implementara boundary HTTP conforme ADR."
+  ],
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  }
+}

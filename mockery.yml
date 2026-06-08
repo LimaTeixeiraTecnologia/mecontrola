@@ -1,12 +1,8 @@
 # Mockery v3 config — compatível com mockery v3.7.0+
 #
 # Mocks gerados ficam em `<package>/mocks/<interface_snake>.go`.
-#
-# Atenção: alguns mocks são mantidos manualmente porque dependem de tipos
-# genéricos (`uow.UnitOfWork[T]`) ou pattern de fixture específico de teste
-# (`FakeManager`, `RepositoryFactory` com expectativas em métodos não-listáveis
-# como `EntitlementRepository`). Esses não devem ser regenerados sem revisão.
 dir: '{{.InterfaceDir}}/mocks'
+filename: '{{.InterfaceName | snakecase}}.go'
 structname: '{{.InterfaceName}}'
 pkgname: mocks
 template: testify
@@ -32,7 +28,47 @@ packages:
       processSubscriptionRenewed: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces:
     interfaces:
+      EntitlementReader: {}
+      EntitlementRepository: {}
+      RepositoryFactory: {}
+      SubscriptionProjectionReader: {}
       UserRepository: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain:
+    interfaces:
+      Subscription: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server/handlers:
+    interfaces:
+      upsertUseCase: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers:
+    interfaces:
+      projectSubscriptionBoundUseCase: {}
+      projectSubscriptionEventUseCase: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces:
+    interfaces:
+      CheckoutURLBuilder: {}
+      IdentityGateway: {}
+      MagicTokenRepository: {}
+      MetaMessageRepository: {}
+      OnboardingCleanupRepository: {}
+      OnboardingCleanupRepositoryFactory: {}
+      RepositoryFactory: {}
+      SubscriptionBinder: {}
+      SupportSignalRepository: {}
+      TokenCipher: {}
+      WhatsAppGateway: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers:
+    interfaces:
+      consumeMagicTokenUseCase: {}
+      createCheckoutSessionUseCase: {}
+      getTokenStateUseCase: {}
+      tryFallbackActivationUseCase: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/jobs/handlers:
+    interfaces:
+      expireTokensUseCase: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/messaging/database/consumers:
+    interfaces:
+      handlePaidWithoutTokenUseCase: {}
+      markTokenPaidUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox:
     interfaces:
       Registry: {}

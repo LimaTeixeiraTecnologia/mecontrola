@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
@@ -286,10 +285,11 @@ func (s *HousekeepingIntegrationSuite) countEvents(envelopeID string) int {
 	ctx := context.Background()
 	db := s.mgr.DBTX(ctx)
 	var count int
-	_ = db.QueryRowContext(ctx,
+	err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`,
 		envelopeID,
 	).Scan(&count)
+	s.Require().NoError(err)
 	return count
 }
 
@@ -335,5 +335,3 @@ func (s *HousekeepingIntegrationSuite) TestHousekeeping() {
 		})
 	}
 }
-
-var _ = input.ReconcileSubscriptionsInput{}

@@ -122,9 +122,8 @@ func (s *HousekeepingJobSuite) TestRun() {
 			name: "deve parar quando o contexto for cancelado",
 			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
 			setup: func(ctx context.Context) {
-				cancelableCtx, ok := ctx.(interface{ Done() <-chan struct{} })
+				_, ok := ctx.(interface{ Done() <-chan struct{} })
 				s.Require().True(ok)
-				_ = cancelableCtx
 			},
 			expectErr: "context cancelled",
 		},

@@ -32,6 +32,31 @@ func TestTestutilSuite(t *testing.T) {
 
 func (s *TestutilSuite) SetupTest() {}
 
+func (s *TestutilSuite) TestSetupTestDB() {
+	scenarios := []struct {
+		name   string
+		setup  func()
+		expect func(manager.Manager)
+	}{
+		{
+			name:  "deve provisionar banco de teste",
+			setup: func() {},
+			expect: func(mgr manager.Manager) {
+				s.NotNil(mgr)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			scenario.setup()
+
+			mgr := setupTestDB(s.T())
+			scenario.expect(mgr)
+		})
+	}
+}
+
 func setupTestDB(t *testing.T) manager.Manager {
 	t.Helper()
 	ctx := context.Background()

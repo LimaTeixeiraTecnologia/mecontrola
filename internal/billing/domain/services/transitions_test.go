@@ -35,7 +35,7 @@ func (s *TransitionsSuite) TestTransitionService() {
 	scenarios := []struct {
 		name   string
 		args   args
-		expect func(services.TransitionService)
+		expect func(args, services.TransitionService)
 	}{
 		{
 			name: "deve permitir transicao de active para past due",
@@ -43,8 +43,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusActive,
 				next:    valueobjects.StatusPastDue,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.True(s.T(), transitionService.CanTransition(valueobjects.StatusActive, valueobjects.StatusPastDue))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.True(s.T(), transitionService.CanTransition(args.current, args.next))
 			},
 		},
 		{
@@ -53,8 +53,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusRefunded,
 				next:    valueobjects.StatusActive,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.False(s.T(), transitionService.CanTransition(valueobjects.StatusRefunded, valueobjects.StatusActive))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.CanTransition(args.current, args.next))
 			},
 		},
 		{
@@ -62,8 +62,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 			args: args{
 				trigger: services.TriggerSaleApproved,
 			},
-			expect: func(transitionService services.TransitionService) {
-				status, ok := transitionService.TargetStatus(0, services.TriggerSaleApproved)
+			expect: func(args args, transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(args.current, args.trigger)
 				assert.True(s.T(), ok)
 				assert.Equal(s.T(), valueobjects.StatusActive, status)
 			},
@@ -74,8 +74,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusPastDue,
 				trigger: services.TriggerSubscriptionRenewed,
 			},
-			expect: func(transitionService services.TransitionService) {
-				status, ok := transitionService.TargetStatus(valueobjects.StatusPastDue, services.TriggerSubscriptionRenewed)
+			expect: func(args args, transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(args.current, args.trigger)
 				assert.True(s.T(), ok)
 				assert.Equal(s.T(), valueobjects.StatusActive, status)
 			},
@@ -86,8 +86,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusActive,
 				trigger: services.TriggerSubscriptionLate,
 			},
-			expect: func(transitionService services.TransitionService) {
-				status, ok := transitionService.TargetStatus(valueobjects.StatusActive, services.TriggerSubscriptionLate)
+			expect: func(args args, transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(args.current, args.trigger)
 				assert.True(s.T(), ok)
 				assert.Equal(s.T(), valueobjects.StatusPastDue, status)
 			},
@@ -98,8 +98,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusPastDue,
 				trigger: services.TriggerSubscriptionCanceled,
 			},
-			expect: func(transitionService services.TransitionService) {
-				status, ok := transitionService.TargetStatus(valueobjects.StatusPastDue, services.TriggerSubscriptionCanceled)
+			expect: func(args args, transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(args.current, args.trigger)
 				assert.True(s.T(), ok)
 				assert.Equal(s.T(), valueobjects.StatusCanceledPending, status)
 			},
@@ -110,8 +110,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusRefunded,
 				trigger: services.TriggerRefunded,
 			},
-			expect: func(transitionService services.TransitionService) {
-				status, ok := transitionService.TargetStatus(valueobjects.StatusRefunded, services.TriggerRefunded)
+			expect: func(args args, transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(args.current, args.trigger)
 				assert.True(s.T(), ok)
 				assert.Equal(s.T(), valueobjects.StatusRefunded, status)
 			},
@@ -122,8 +122,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				current: valueobjects.StatusExpired,
 				trigger: services.TriggerSubscriptionCanceled,
 			},
-			expect: func(transitionService services.TransitionService) {
-				status, ok := transitionService.TargetStatus(valueobjects.StatusExpired, services.TriggerSubscriptionCanceled)
+			expect: func(args args, transitionService services.TransitionService) {
+				status, ok := transitionService.TargetStatus(args.current, args.trigger)
 				assert.False(s.T(), ok)
 				assert.Equal(s.T(), valueobjects.Status(0), status)
 			},
@@ -136,8 +136,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				occurredAt:  now.Add(-2 * time.Hour),
 				lastEventAt: now,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.True(s.T(), transitionService.IsRegression(valueobjects.StatusPastDue, services.TriggerSubscriptionRenewed, now.Add(-2*time.Hour), now))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.True(s.T(), transitionService.IsRegression(args.current, args.trigger, args.occurredAt, args.lastEventAt))
 			},
 		},
 		{
@@ -148,8 +148,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				occurredAt:  now.Add(-2 * time.Hour),
 				lastEventAt: now,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.True(s.T(), transitionService.IsRegression(valueobjects.StatusExpired, services.TriggerSaleApproved, now.Add(-2*time.Hour), now))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.True(s.T(), transitionService.IsRegression(args.current, args.trigger, args.occurredAt, args.lastEventAt))
 			},
 		},
 		{
@@ -160,8 +160,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				occurredAt:  now.Add(-2 * time.Hour),
 				lastEventAt: now,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.False(s.T(), transitionService.IsRegression(valueobjects.StatusPastDue, services.TriggerSubscriptionLate, now.Add(-2*time.Hour), now))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.IsRegression(args.current, args.trigger, args.occurredAt, args.lastEventAt))
 			},
 		},
 		{
@@ -172,8 +172,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				occurredAt:  now.Add(2 * time.Hour),
 				lastEventAt: now,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.False(s.T(), transitionService.IsRegression(valueobjects.StatusPastDue, services.TriggerSubscriptionRenewed, now.Add(2*time.Hour), now))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.IsRegression(args.current, args.trigger, args.occurredAt, args.lastEventAt))
 			},
 		},
 		{
@@ -184,8 +184,8 @@ func (s *TransitionsSuite) TestTransitionService() {
 				occurredAt:  now.Add(-2 * time.Hour),
 				lastEventAt: now,
 			},
-			expect: func(transitionService services.TransitionService) {
-				assert.False(s.T(), transitionService.IsRegression(valueobjects.StatusActive, services.TriggerRefunded, now.Add(-2*time.Hour), now))
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.False(s.T(), transitionService.IsRegression(args.current, args.trigger, args.occurredAt, args.lastEventAt))
 			},
 		},
 	}
@@ -193,8 +193,7 @@ func (s *TransitionsSuite) TestTransitionService() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			transitionService := services.NewTransitionService()
-			_ = scenario.args
-			scenario.expect(transitionService)
+			scenario.expect(scenario.args, transitionService)
 		})
 	}
 }
