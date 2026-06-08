@@ -208,6 +208,100 @@ func (s *WebhookIntegSuite) dispatchOutbox(ctx context.Context) {
 	s.Require().NoError(job.Run(ctx))
 }
 
+func (s *WebhookIntegSuite) TestWebhookNoOp_TriggersForaDoMVP_Auditados202SemDispatch() {
+	scenarios := []struct {
+		name      string
+		payload   func(orderID string) map[string]any
+		noPayload []byte
+	}{
+		{
+			name: "billet_created persiste em billing_kiwify_events sem dispatch downstream",
+			payload: func(orderID string) map[string]any {
+				return map[string]any{
+					"order_id":           orderID,
+					"webhook_event_type": "billet_created",
+					"order_status":       "waiting_payment",
+					"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Plan"},
+					"Customer":           map[string]any{"email": "a@b.com", "mobile": "+5511900000000", "CPF": "00000000000"},
+					"TrackingParameters": map[string]any{"sck": "tok", "s1": nil, "src": nil},
+					"updated_at":         "2026-06-08 11:53",
+					"created_at":         "2026-06-08 11:53",
+				}
+			},
+		},
+		{
+			name: "pix_created persiste em billing_kiwify_events sem dispatch downstream",
+			payload: func(orderID string) map[string]any {
+				return map[string]any{
+					"order_id":           orderID,
+					"webhook_event_type": "pix_created",
+					"order_status":       "waiting_payment",
+					"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Plan"},
+					"Customer":           map[string]any{"email": "a@b.com", "mobile": "+5511900000000", "CPF": "00000000000"},
+					"TrackingParameters": map[string]any{"sck": "tok", "s1": nil, "src": nil},
+					"updated_at":         "2026-06-08 11:53",
+					"created_at":         "2026-06-08 11:53",
+				}
+			},
+		},
+		{
+			name: "order_rejected persiste em billing_kiwify_events sem dispatch downstream",
+			payload: func(orderID string) map[string]any {
+				return map[string]any{
+					"order_id":           orderID,
+					"webhook_event_type": "order_rejected",
+					"order_status":       "refused",
+					"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Plan"},
+					"Customer":           map[string]any{"email": "a@b.com", "mobile": "+5511900000000", "CPF": "00000000000"},
+					"TrackingParameters": map[string]any{"sck": "tok", "s1": nil, "src": nil},
+					"updated_at":         "2026-06-08 11:53",
+					"created_at":         "2026-06-08 11:53",
+				}
+			},
+		},
+		{
+			name: "abandoned_cart sem webhook_event_type ainda persiste em billing_kiwify_events",
+			payload: func(orderID string) map[string]any {
+				return map[string]any{
+					"id":         orderID,
+					"status":     "abandoned",
+					"email":      "a@b.com",
+					"phone":      "+5511900000000",
+					"product_id": s.kiwifyProductID,
+				}
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx := context.Background()
+			orderID := fmt.Sprintf("noop-%d", time.Now().UnixNano())
+			payload, err := json.Marshal(scenario.payload(orderID))
+			s.Require().NoError(err)
+			req := s.buildSignedRequest(payload)
+			rr := httptest.NewRecorder()
+			s.webhookHandler.ServeHTTP(rr, req)
+			s.Equal(http.StatusAccepted, rr.Code)
+
+			var kiwifyCount int
+			row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1 AND signature_status = 'valid'`, orderID)
+			s.Require().NoError(row.Scan(&kiwifyCount))
+			s.Equal(1, kiwifyCount, "esperado 1 registro de auditoria para trigger no-op em billing_kiwify_events")
+
+			var subCount int
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+			s.Require().NoError(row.Scan(&subCount))
+			s.Equal(0, subCount, "trigger no-op nao deve criar subscription")
+
+			var procCount int
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, orderID)
+			s.Require().NoError(row.Scan(&procCount))
+			s.Equal(0, procCount, "trigger no-op nao deve gerar processed_event")
+		})
+	}
+}
+
 func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProcessedOneOutbox() {
 	scenarios := []struct {
 		name string
