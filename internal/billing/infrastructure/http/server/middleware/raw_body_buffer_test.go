@@ -34,11 +34,11 @@ func (s *RawBodyBufferSuite) TestRawBody() {
 	}{
 		{
 			name:         "deve armazenar o corpo no contexto",
-			body:         []byte(`{"trigger":"compra_aprovada"}`),
+			body:         []byte(`{"trigger":"order_approved"}`),
 			bodyReader:   bytes.NewReader,
 			expectStatus: http.StatusOK,
 			expect: func(rr *httptest.ResponseRecorder, captured []byte) {
-				assert.Equal(s.T(), []byte(`{"trigger":"compra_aprovada"}`), captured)
+				assert.Equal(s.T(), []byte(`{"trigger":"order_approved"}`), captured)
 			},
 		},
 		{

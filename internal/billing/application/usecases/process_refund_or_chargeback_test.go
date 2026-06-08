@@ -106,7 +106,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 					{
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
-						Trigger:    "compra_reembolsada",
+						Trigger:    "order_refunded",
 						OccurredAt: time.Now().UTC(),
 					},
 				},
@@ -117,7 +117,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", occurredAt).
+					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", occurredAt).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -156,7 +156,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 					{
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
-						Trigger:    "compra_reembolsada",
+						Trigger:    "order_refunded",
 						OccurredAt: time.Now().UTC(),
 					},
 					{
@@ -171,7 +171,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 				sub := s.activeSub()
 				s.expectRepositories(len(args.inputs))
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
 					Return(nil).
 					Once()
 				s.eventRepoMock.EXPECT().
@@ -204,7 +204,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 					{
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
-						Trigger:    "compra_reembolsada",
+						Trigger:    "order_refunded",
 						OccurredAt: time.Now().UTC(),
 					},
 				},
@@ -215,7 +215,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", occurredAt).
+					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", occurredAt).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -244,7 +244,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 					{
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
-						Trigger:    "compra_reembolsada",
+						Trigger:    "order_refunded",
 						OccurredAt: time.Now().UTC(),
 					},
 				},
@@ -252,7 +252,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 			setup: func(args args) {
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "compra_reembolsada", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
 			},

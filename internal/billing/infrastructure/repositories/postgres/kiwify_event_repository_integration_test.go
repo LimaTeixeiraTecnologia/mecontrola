@@ -48,9 +48,9 @@ func (s *KiwifyEventRepositorySuite) TestPersist() {
 		{
 			name: "deve persistir o evento",
 			setup: func() (string, string, []byte, string) {
-				rawBody, err := json.Marshal(map[string]any{"trigger": "compra_aprovada", "order_id": "order-ke-001"})
+				rawBody, err := json.Marshal(map[string]any{"trigger": "order_approved", "order_id": "order-ke-001"})
 				s.Require().NoError(err)
-				return "envelope-ke-001", "compra_aprovada", rawBody, "valid"
+				return "envelope-ke-001", "order_approved", rawBody, "valid"
 			},
 			expect: func(ctx context.Context, repo interfaces.KiwifyEventRepository, envelopeID string, trigger string, rawBody []byte, signatureStatus string) {
 				err := repo.Persist(ctx, envelopeID, trigger, rawBody, signatureStatus)
@@ -60,9 +60,9 @@ func (s *KiwifyEventRepositorySuite) TestPersist() {
 		{
 			name: "deve ignorar envelope duplicado",
 			setup: func() (string, string, []byte, string) {
-				rawBody, err := json.Marshal(map[string]any{"trigger": "compra_aprovada"})
+				rawBody, err := json.Marshal(map[string]any{"trigger": "order_approved"})
 				s.Require().NoError(err)
-				return "envelope-ke-dup-001", "compra_aprovada", rawBody, "valid"
+				return "envelope-ke-dup-001", "order_approved", rawBody, "valid"
 			},
 			expect: func(ctx context.Context, repo interfaces.KiwifyEventRepository, envelopeID string, trigger string, rawBody []byte, signatureStatus string) {
 				s.Require().NoError(repo.Persist(ctx, envelopeID, trigger, rawBody, signatureStatus))

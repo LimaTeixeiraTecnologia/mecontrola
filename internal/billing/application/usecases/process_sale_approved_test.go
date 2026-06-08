@@ -125,7 +125,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 				sub := s.hydrateSub()
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", args.input.OccurredAt).
 					Return(nil).
 					Once()
 				s.planRepoMock.EXPECT().
@@ -174,7 +174,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 				sub := s.hydrateSubNoToken()
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", args.input.OccurredAt).
 					Return(nil).
 					Once()
 				s.planRepoMock.EXPECT().
@@ -214,7 +214,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 			setup: func(args args) {
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", args.input.OccurredAt).
 					Return(nil).
 					Once()
 				s.planRepoMock.EXPECT().
@@ -235,7 +235,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 			setup: func(args args) {
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", args.input.OccurredAt).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
 			},
@@ -253,11 +253,11 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 				sub := s.hydrateSub()
 				s.expectRepositories(args.executions)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", args.input.OccurredAt).
 					Return(nil).
 					Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", args.input.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", args.input.OccurredAt).
 					Return(application.ErrEventAlreadyProcessed).
 					Times(4)
 				s.planRepoMock.EXPECT().

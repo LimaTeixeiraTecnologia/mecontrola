@@ -183,7 +183,7 @@ func (s *ReconciliationJobSuite) TestRun() {
 					Once()
 				s.factoryMock.EXPECT().ProcessedEventRepository(nil).Return(s.eventRepoMock).Once()
 				s.factoryMock.EXPECT().SubscriptionRepository(nil).Return(s.subRepoMock).Once()
-				s.eventRepoMock.EXPECT().MarkApplied(ctx, "refund:sale-refund-01", "compra_reembolsada", "sale-refund-01", saleTime).Return(nil).Once()
+				s.eventRepoMock.EXPECT().MarkApplied(ctx, "refund:sale-refund-01", "order_refunded", "sale-refund-01", saleTime).Return(nil).Once()
 				s.subRepoMock.EXPECT().FindByOrderID(ctx, "order-refund-01").Return(sub, nil).Once()
 				s.subRepoMock.EXPECT().ApplyTransition(ctx, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 				s.publisherMock.EXPECT().PublishRefunded(ctx, nil, mock.Anything, mock.Anything).Return(nil).Once()
@@ -213,7 +213,7 @@ func (s *ReconciliationJobSuite) TestRun() {
 					Once()
 				s.factoryMock.EXPECT().ProcessedEventRepository(nil).Return(s.eventRepoMock).Once()
 				s.factoryMock.EXPECT().SubscriptionRepository(nil).Return(s.subRepoMock).Once()
-				s.eventRepoMock.EXPECT().MarkApplied(ctx, "refund:sale-idem-01", "compra_reembolsada", "sale-idem-01", saleTime).
+				s.eventRepoMock.EXPECT().MarkApplied(ctx, "refund:sale-idem-01", "order_refunded", "sale-idem-01", saleTime).
 					Return(interfaces.ErrEventAlreadyProcessed).
 					Once()
 				s.checkpointMock.EXPECT().Set(ctx, "kiwify_sales", mock.Anything).Return(nil).Once()

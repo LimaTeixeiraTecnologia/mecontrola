@@ -5,8 +5,8 @@ package handlers_test
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,13 +172,14 @@ func (s *WebhookIntegSuite) seedKiwifyProductID(ctx context.Context) {
 }
 
 func (s *WebhookIntegSuite) buildSignedRequest(payload []byte) *http.Request {
-	mac := hmac.New(sha256.New, []byte(integWebhookSecret))
+	mac := hmac.New(sha1.New, []byte(integWebhookSecret))
 	mac.Write(payload)
-	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	sig := hex.EncodeToString(mac.Sum(nil))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhooks/kiwify", strings.NewReader(string(payload)))
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/billing/webhooks/kiwify?signature="+sig,
+		strings.NewReader(string(payload)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Kiwify-Signature", sig)
 	return req
 }
 
@@ -217,22 +218,32 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProce
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			ctx := context.Background()
-			saleID := fmt.Sprintf("sale-integ-webhook-%d", time.Now().UnixNano())
 			orderID := fmt.Sprintf("order-integ-webhook-%d", time.Now().UnixNano())
-			envelopeID := fmt.Sprintf("env-integ-%d", time.Now().UnixNano())
+			subscriptionID := fmt.Sprintf("sub-integ-%d", time.Now().UnixNano())
+			now := time.Now().UTC().Format("2006-01-02 15:04:05")
 			payloadMap := map[string]any{
-				"id":         saleID,
-				"order_id":   orderID,
-				"product_id": s.kiwifyProductID,
-				"updated_at": time.Now().UTC().Format(time.RFC3339),
-				"tracking":   map[string]any{"s1": "funnel-token-integ"},
+				"order_id":           orderID,
+				"order_ref":          "ref-integ",
+				"order_status":       "paid",
+				"webhook_event_type": "order_approved",
+				"subscription_id":    subscriptionID,
+				"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Integration Plan"},
+				"Customer": map[string]any{
+					"email":  "test+integ@example.com",
+					"mobile": "+5511900000000",
+					"CPF":    "00000000000",
+				},
+				"Subscription": map[string]any{
+					"status":       "active",
+					"start_date":   "2026-06-08T14:53:19.679Z",
+					"next_payment": "2026-07-08T14:53:23.137Z",
+				},
+				"TrackingParameters": map[string]any{"sck": "funnel-token-integ", "s1": nil, "src": nil},
+				"approved_date":      now,
+				"updated_at":         now,
+				"created_at":         now,
 			}
-			envelope := map[string]any{
-				"id":      envelopeID,
-				"trigger": "compra_aprovada",
-				"data":    payloadMap,
-			}
-			payload, err := json.Marshal(envelope)
+			payload, err := json.Marshal(payloadMap)
 			s.Require().NoError(err)
 			req := s.buildSignedRequest(payload)
 			rr := httptest.NewRecorder()
@@ -245,7 +256,7 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProce
 			s.Equal(1, subCount)
 
 			var procCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, saleID)
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&procCount))
 			s.Equal(1, procCount)
 
@@ -255,7 +266,7 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProce
 			s.GreaterOrEqual(outboxCount, 1)
 
 			var kiwifyCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, envelopeID)
+			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&kiwifyCount))
 			s.Equal(1, kiwifyCount)
 

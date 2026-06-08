@@ -3,10 +3,9 @@ package handlers_test
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -75,36 +74,52 @@ func (s *KiwifyWebhookHandlerSuite) newHandler(secretNext string) http.Handler {
 }
 
 func signPayload(payload []byte, secret string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
+	mac := hmac.New(sha1.New, []byte(secret))
 	mac.Write(payload)
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func buildRequest(t *testing.T, payload []byte) *http.Request {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhooks/kiwify", strings.NewReader(string(payload)))
+	sig := signPayload(payload, testWebhookSecret)
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/billing/webhooks/kiwify?signature="+sig,
+		strings.NewReader(string(payload)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Kiwify-Signature", signPayload(payload, testWebhookSecret))
 	return req
 }
 
-func kiwifyPayload(trigger string, extra map[string]any) []byte {
+func kiwifyPayload(eventType string, extra map[string]any) []byte {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 	data := map[string]any{
-		"id":         fmt.Sprintf("sale-%s", trigger),
-		"order_id":   "order-123",
-		"product_id": "prod-456",
-		"updated_at": time.Now().UTC().Format(time.RFC3339),
-		"tracking":   map[string]any{"s1": "funnel-token-abc"},
+		"order_id":           "order-" + eventType,
+		"order_ref":          "ref-001",
+		"order_status":       "paid",
+		"webhook_event_type": eventType,
+		"subscription_id":    "sub-abc",
+		"Product":            map[string]any{"product_id": "prod-456", "product_name": "Test Plan"},
+		"Customer": map[string]any{
+			"email":  "test+webhook@example.com",
+			"mobile": "+5511900000000",
+			"CPF":    "00000000000",
+		},
+		"Subscription": map[string]any{
+			"status":       "active",
+			"start_date":   "2026-06-08T14:53:19.679Z",
+			"next_payment": "2026-07-08T14:53:23.137Z",
+		},
+		"TrackingParameters": map[string]any{"sck": "funnel-token-abc", "s1": nil, "src": nil},
+		"approved_date":      now,
+		"updated_at":         now,
+		"created_at":         now,
 	}
 	maps.Copy(data, extra)
-
-	envelope := map[string]any{
-		"id":      "env-001",
-		"trigger": trigger,
-		"data":    data,
-	}
-	raw, _ := json.Marshal(envelope)
+	raw, _ := json.Marshal(data)
 	return raw
+}
+
+func abandonedCartPayload() []byte {
+	return []byte(`{"checkout_link":"IDhfYNV","country":"br","cpf":"30574187242","created_at":"2026-06-05T15:44:25.411Z","email":"johndoe@example.com","id":"c6euk9v1lfj9jqxhfs","name":"John Doe","offer_name":null,"phone":"(10) 5467-4999","product_id":"0f3bf47c-6011-4ea4-8aeb-0e7d744f4acc","product_name":"Example product","status":"abandoned","store_id":"Q33AnzwYbfkFFwS","subscription_plan":"Example subscription"}`)
 }
 
 func (s *KiwifyWebhookHandlerSuite) expectAudit(expectedStatus string) *string {
@@ -135,8 +150,8 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 		expectBody   bool
 	}{
 		{
-			name:         "deve responder 202 para compra aprovada",
-			payload:      kiwifyPayload("compra_aprovada", nil),
+			name:         "deve responder 202 para order_approved",
+			payload:      kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
 			setup: func() {
 				s.saleApproved.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil).Once()
@@ -145,22 +160,20 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 		},
 		{
 			name:    "deve responder 401 para assinatura invalida",
-			payload: kiwifyPayload("compra_aprovada", nil),
+			payload: kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request {
-				req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(payload)))
+				req := httptest.NewRequest(http.MethodPost, "/?signature=wrongsig", strings.NewReader(string(payload)))
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Kiwify-Signature", "wrongsig")
 				return req
 			},
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
 			name:    "deve auditar assinatura invalida",
-			payload: kiwifyPayload("compra_aprovada", nil),
+			payload: kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request {
-				req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(payload)))
+				req := httptest.NewRequest(http.MethodPost, "/?signature=wrong", strings.NewReader(string(payload)))
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Kiwify-Signature", "wrong")
 				return req
 			},
 			expectStatus: http.StatusUnauthorized,
@@ -168,11 +181,11 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 		},
 		{
 			name:    "deve responder 415 para content type invalido",
-			payload: kiwifyPayload("compra_aprovada", nil),
+			payload: kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request {
-				req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(payload)))
+				sig := signPayload(payload, testWebhookSecret)
+				req := httptest.NewRequest(http.MethodPost, "/?signature="+sig, strings.NewReader(string(payload)))
 				req.Header.Set("Content-Type", "text/plain")
-				req.Header.Set("X-Kiwify-Signature", signPayload(payload, testWebhookSecret))
 				return req
 			},
 			expectStatus: http.StatusUnsupportedMediaType,
@@ -189,7 +202,7 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 		},
 		{
 			name:         "deve responder 422 quando funnel token estiver ausente",
-			payload:      kiwifyPayload("compra_aprovada", map[string]any{"tracking": map[string]any{"s1": ""}}),
+			payload:      kiwifyPayload("order_approved", map[string]any{"TrackingParameters": map[string]any{"sck": nil, "s1": nil, "src": nil}}),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
 			setup: func() {
 				s.saleApproved.EXPECT().Execute(mock.Anything, mock.Anything).Return(usecases.ErrFunnelTokenMissing).Once()
@@ -204,7 +217,7 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 		},
 		{
 			name:         "deve responder 202 quando o evento ja tiver sido processado",
-			payload:      kiwifyPayload("compra_aprovada", nil),
+			payload:      kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
 			setup: func() {
 				s.saleApproved.EXPECT().Execute(mock.Anything, mock.Anything).Return(usecases.ErrEventAlreadyProcessed).Once()
@@ -212,8 +225,8 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 			expectStatus: http.StatusAccepted,
 		},
 		{
-			name:         "deve responder 202 para subscription renewed",
-			payload:      kiwifyPayload("subscription_renewed", map[string]any{"subscription": map[string]any{"id": "sub-abc", "updated_at": time.Now().UTC().Format(time.RFC3339)}}),
+			name:         "deve responder 202 para subscription_renewed",
+			payload:      kiwifyPayload("subscription_renewed", nil),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
 			setup: func() {
 				s.subRenewed.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil).Once()
@@ -221,7 +234,7 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 			expectStatus: http.StatusAccepted,
 		},
 		{
-			name:         "deve responder 202 para subscription late",
+			name:         "deve responder 202 para subscription_late",
 			payload:      kiwifyPayload("subscription_late", nil),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
 			setup: func() {
@@ -230,11 +243,20 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 			expectStatus: http.StatusAccepted,
 		},
 		{
-			name:         "deve responder 202 para subscription canceled",
+			name:         "deve responder 202 para subscription_canceled",
 			payload:      kiwifyPayload("subscription_canceled", nil),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
 			setup: func() {
 				s.subCanceled.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil).Once()
+			},
+			expectStatus: http.StatusAccepted,
+		},
+		{
+			name:         "deve responder 202 para order_refunded",
+			payload:      kiwifyPayload("order_refunded", nil),
+			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
+			setup: func() {
+				s.refund.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil).Once()
 			},
 			expectStatus: http.StatusAccepted,
 		},
@@ -248,13 +270,37 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 			expectStatus: http.StatusAccepted,
 		},
 		{
+			name:         "deve responder 202 no-op para billet_created",
+			payload:      kiwifyPayload("billet_created", nil),
+			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
+			expectStatus: http.StatusAccepted,
+		},
+		{
+			name:         "deve responder 202 no-op para pix_created",
+			payload:      kiwifyPayload("pix_created", nil),
+			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
+			expectStatus: http.StatusAccepted,
+		},
+		{
+			name:         "deve responder 202 no-op para order_rejected",
+			payload:      kiwifyPayload("order_rejected", nil),
+			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
+			expectStatus: http.StatusAccepted,
+		},
+		{
+			name:         "deve responder 202 no-op para carrinho abandonado",
+			payload:      abandonedCartPayload(),
+			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
+			expectStatus: http.StatusAccepted,
+		},
+		{
 			name:       "deve responder 202 com segredo rotacionado",
-			payload:    kiwifyPayload("compra_aprovada", nil),
+			payload:    kiwifyPayload("order_approved", nil),
 			secretNext: "secret-next",
 			buildRequest: func(payload []byte) *http.Request {
-				req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(payload)))
+				sig := signPayload(payload, "secret-next")
+				req := httptest.NewRequest(http.MethodPost, "/?signature="+sig, strings.NewReader(string(payload)))
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Kiwify-Signature", signPayload(payload, "secret-next"))
 				return req
 			},
 			setup: func() {

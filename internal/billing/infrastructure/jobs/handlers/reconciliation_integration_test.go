@@ -232,7 +232,7 @@ func (s *ReconciliationIntegrationSuite) TestReconcile() {
 				s.setCheckpoint("kiwify_sales", now.Add(-time.Hour))
 				refundTime := now.Add(-30 * time.Minute)
 				processedRepo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
-				s.Require().NoError(processedRepo.MarkApplied(ctx, "refund:"+saleID, "compra_reembolsada", saleID, refundTime))
+				s.Require().NoError(processedRepo.MarkApplied(ctx, "refund:"+saleID, "order_refunded", saleID, refundTime))
 				sale := interfaces.KiwifySale{ID: saleID, OrderID: orderID, Status: "refunded", OccurredAt: refundTime, UpdatedAt: refundTime}
 				kiwifyMock := ucmocks.NewKiwifyClient(s.T())
 				kiwifyMock.EXPECT().ListSalesUpdatedSince(mock.Anything, mock.Anything, mock.Anything, 1).Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).Once()
@@ -273,10 +273,10 @@ func (s *HousekeepingIntegrationSuite) SetupSuite() {
 func (s *HousekeepingIntegrationSuite) persistEvent(envelopeID string, receivedAt time.Time) {
 	ctx := context.Background()
 	db := s.mgr.DBTX(ctx)
-	rawBody, _ := json.Marshal(map[string]any{"trigger": "compra_aprovada"})
+	rawBody, _ := json.Marshal(map[string]any{"trigger": "order_approved"})
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO billing_kiwify_events (envelope_id, trigger, raw_body, received_at, signature_status)
-		VALUES ($1, 'compra_aprovada', $2, $3, 'valid')
+		VALUES ($1, 'order_approved', $2, $3, 'valid')
 		ON CONFLICT (envelope_id) DO NOTHING`,
 		envelopeID, rawBody, receivedAt)
 	s.Require().NoError(err)

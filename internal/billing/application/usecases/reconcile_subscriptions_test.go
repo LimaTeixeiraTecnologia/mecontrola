@@ -119,7 +119,7 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-001", "compra_aprovada", "sale-001", saleTime).
+					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", saleTime).
 					Return(nil).
 					Once()
 				s.planRepoMock.EXPECT().
@@ -208,7 +208,7 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 				s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Once()
 				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "compra_aprovada:sale-failed", "compra_aprovada", "sale-failed", sale.OccurredAt).
+					MarkApplied(s.ctx, "order_approved:sale-failed", "order_approved", "sale-failed", sale.OccurredAt).
 					Return(nil).
 					Once()
 				s.planRepoMock.EXPECT().
@@ -251,7 +251,7 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-002", "compra_reembolsada", "sale-002", saleTime).
+					MarkApplied(s.ctx, "refund:sale-002", "order_refunded", "sale-002", saleTime).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().

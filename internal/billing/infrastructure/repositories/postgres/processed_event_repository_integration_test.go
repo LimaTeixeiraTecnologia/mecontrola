@@ -49,13 +49,13 @@ func (s *ProcessedEventRepositorySuite) TestMarkApplied() {
 		{
 			name: "deve inserir a linha do evento processado",
 			setup: func() (string, string, string, time.Time) {
-				return "compra_aprovada:order-pe-test-001", "compra_aprovada", "order-pe-test-001", time.Now().UTC()
+				return "order_approved:order-pe-test-001", "order_approved", "order-pe-test-001", time.Now().UTC()
 			},
 		},
 		{
 			name: "deve retornar sentinela quando o evento ja foi processado",
 			setup: func() (string, string, string, time.Time) {
-				return "compra_aprovada:order-pe-dup-001", "compra_aprovada", "order-pe-dup-001", time.Now().UTC()
+				return "order_approved:order-pe-dup-001", "order_approved", "order-pe-dup-001", time.Now().UTC()
 			},
 			expectErr: interfaces.ErrEventAlreadyProcessed,
 			repeat:    true,
@@ -128,12 +128,12 @@ func (s *RF11ReplaySuite) TestRF11_ThreeReplaysYieldOneInsertAndTwoSentinels() {
 		s.Run(scenario.name, func() {
 			ctx := context.Background()
 			repo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
-			eventKey := "compra_aprovada:order-rf11-replay-001"
+			eventKey := "order_approved:order-rf11-replay-001"
 			occurredAt := time.Now().UTC()
 
 			var errs []error
 			for range 3 {
-				err := repo.MarkApplied(ctx, eventKey, "compra_aprovada", "order-rf11-replay-001", occurredAt)
+				err := repo.MarkApplied(ctx, eventKey, "order_approved", "order-rf11-replay-001", occurredAt)
 				errs = append(errs, err)
 			}
 
