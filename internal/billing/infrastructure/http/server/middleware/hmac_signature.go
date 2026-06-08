@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
+	"crypto/sha1"
+	"encoding/hex"
 	"net/http"
 )
 
@@ -25,12 +25,12 @@ func HMACSignature(secretCurrent, secretNext string) func(http.Handler) http.Han
 				return
 			}
 
-			header := r.Header.Get("X-Kiwify-Signature")
-			if header == "" {
-				header = r.URL.Query().Get("signature")
+			received := r.URL.Query().Get("signature")
+			if received == "" {
+				received = r.Header.Get("X-Kiwify-Signature")
 			}
 
-			status := computeSignatureStatus(raw, header, secretCurrent, secretNext)
+			status := computeSignatureStatus(raw, received, secretCurrent, secretNext)
 			ctx := context.WithValue(r.Context(), ctxKeySignatureStatus{}, status)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -46,19 +46,19 @@ func SignatureStatusFromContext(r *http.Request) string {
 	return s
 }
 
-func computeSignatureStatus(raw []byte, header, secretCurrent, secretNext string) string {
-	if secretCurrent != "" && matchHMAC(raw, header, secretCurrent) {
+func computeSignatureStatus(raw []byte, received, secretCurrent, secretNext string) string {
+	if secretCurrent != "" && matchHMAC(raw, received, secretCurrent) {
 		return SignatureStatusValid
 	}
-	if secretNext != "" && matchHMAC(raw, header, secretNext) {
+	if secretNext != "" && matchHMAC(raw, received, secretNext) {
 		return SignatureStatusRotated
 	}
 	return SignatureStatusInvalid
 }
 
-func matchHMAC(raw []byte, header, secret string) bool {
-	mac := hmac.New(sha256.New, []byte(secret))
+func matchHMAC(raw []byte, received, secret string) bool {
+	mac := hmac.New(sha1.New, []byte(secret))
 	mac.Write(raw)
-	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(header))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(received))
 }
