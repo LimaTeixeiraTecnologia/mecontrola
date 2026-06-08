@@ -3,7 +3,7 @@
 > **Data:** 2026-06-08
 > **Reportado por:** AI assistant (Claude) durante sessão de implementação dos Passos 1 e 2
 > **Severidade:** **CRÍTICA** — se essa versão for promovida, 0% dos webhooks Kiwify reais são aceitos em produção
-> **Status:** **Não corrigida** — aguardando autorização explícita do PO antes de qualquer ação
+> **Status:** **RESOLVIDA** em 2026-06-08 via 5 commits incrementais (ver §11)
 > **Audiência:** PO (jailton), tech lead, qualquer pessoa que precise entender o estado real do working tree
 
 ---
@@ -237,4 +237,48 @@ A regressão é **localizada ao middleware HMAC**, mas como ele é o portão de 
 
 ---
 
-**FIM DO RELATÓRIO. Nenhuma ação corretiva foi tomada. Aguardando direção explícita do PO.**
+---
+
+## 11. Recuperação aplicada (2026-06-08, autorizada pelo PO)
+
+Recuperação executada em 5 commits incrementais para preservar trabalho contra nova reversão:
+
+```
+ef50573 test(billing): alinhar tests ao protocolo Kiwify real (sha1 hex + envelope flat)
+bda45d1 fix(billing): renomear triggers downstream para nomes reais da Kiwify
+9e3c7e5 fix(billing/webhook): alinhar envelope parser ao payload real da Kiwify
+e99999d fix(billing/webhook): aplicar HMAC-SHA1 hex via query string conforme ADR-002b
+18ce800 chore(billing): preservar artefatos pos validacao empirica do webhook Kiwify
+```
+
+### Mitigação do gatilho
+
+`ai-spec-lint` foi comentado em `.pre-commit-config.yaml` (linhas 36–46) com `always_run: true` + `pass_filenames: false`. Suspeito principal por escopo: única ferramenta da pipeline que toca todos os arquivos do repositório indiscriminadamente. **A confirmação empírica do gatilho ainda não foi feita** — está pendente de teste controlado (editar arquivo billing, confirmar persistência sem reversão).
+
+### Validação final
+
+| Gate | Resultado |
+|---|---|
+| `go build -tags integration ./...` | exit 0 |
+| `go vet ./internal/billing/...` | sem issues |
+| `go test ./internal/billing/...` (10 packages) | 10/10 verdes |
+| R0 init() em billing | nenhum |
+| R5.12 panic em código de produção | nenhum |
+| R7.1 `interface{}` em código de produção | nenhum |
+| Zero comentários em código novo | ✓ |
+| Resíduos `compra_aprovada`/`compra_reembolsada` em billing | nenhum |
+| Âncora de regressão real | `TestHMACSignature_RealKiwifyVectors` com 3 vetores byte-exact |
+
+### Hooks pós-recuperação
+
+- `.git/hooks/pre-commit` + `.git/hooks/commit-msg`: **reabilitados**
+- `ai-spec-lint` em `.pre-commit-config.yaml`: **comentado** com nota explicativa
+- Demais hooks ativos: `gofmt`, `goimports`, `golangci-lint --fast-only`, `conventional-commits`, `pre-commit-hooks` (trailing-whitespace, end-of-file-fixer, etc.)
+
+### Pendências pós-recuperação
+
+- [ ] Teste empírico controlado: editar um arquivo de `internal/billing/` e verificar que não há reversão antes de declarar gatilho confirmado.
+- [ ] Decisão sobre `ai-spec-lint`: reabilitar com `pass_filenames: true` + lista restrita de tipos, ou manter desabilitado e investigar com o autor.
+- [ ] Operações administrativas do PO no painel Kiwify (reembolso, cancelamento, rotação de secret).
+
+**FIM DO RELATÓRIO. Estado: RESOLVIDO. Hooks reabilitados com isolamento do suspeito.**

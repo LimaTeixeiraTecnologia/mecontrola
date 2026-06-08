@@ -3,7 +3,7 @@
 > **Data:** 2026-06-08
 > **Executado por:** PO (jailton) + AI assistant
 > **Custo do teste:** R$ 5,00 (compra real) + ~R$ 2,94 de taxa Kiwify; R$ 5,00 estornável em 7–15 dias úteis
-> **Status:** **REMEDIADO** — 9 bugs estruturais detectados e corrigidos; suíte de testes verde
+> **Status:** **REMEDIADO + RECUPERADO** — 9 bugs estruturais detectados e corrigidos; reversão involuntária ocorreu apos remediação inicial e foi recuperada em 5 commits incrementais (ver §Recuperação)
 > **Evidência crua (não versionada, PII presente):** `/tmp/kiwify-evidence/*.json` (descartar após uso)
 
 ## Resumo executivo
