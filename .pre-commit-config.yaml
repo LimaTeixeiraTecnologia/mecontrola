@@ -33,17 +33,12 @@ repos:
         types: [go]
         pass_filenames: false
 
-      # ai-spec-lint desabilitado temporariamente em 2026-06-08.
-      # Suspeita de causar reversao involuntaria de arquivos de producao
-      # em internal/billing/ (rollback de adr-002b fix). Reabilitar apos
-      # confirmar empiricamente que ai-spec lint nao reescreve codigo Go.
-      # Ver docs/reports/2026-06-08-regressao-middleware-hmac-kiwify.md
-      # - id: ai-spec-lint
-      #   name: ai-spec lint
-      #   language: system
-      #   entry: ai-spec lint .
-      #   pass_filenames: false
-      #   always_run: true
+      - id: ai-spec-lint
+        name: ai-spec lint
+        language: system
+        entry: ai-spec lint .
+        pass_filenames: false
+        always_run: true
 
       - id: conventional-commits
         name: conventional commits

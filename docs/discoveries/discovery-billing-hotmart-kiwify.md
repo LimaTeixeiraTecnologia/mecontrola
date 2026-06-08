@@ -3,6 +3,8 @@
 > **Stack alvo:** Backend Go + Postgres + Redis + LLM (intenções) + WhatsApp
 > **Objetivo do MVP:** integrar pagamento + recorrência + gate de uso (pago/não pago)
 > **Princípio inegociável:** production-proof desde o dia 1 — idempotência, reconciliação, máquina de estados única.
+>
+> **NOTA DE DRIFT — 2026-06-08:** As menções históricas a `X-Kiwify-Signature` (linhas 86, 102) refletem **suposição inicial não validada**. Captura empírica em sandbox em 2026-06-08 demonstrou que a Kiwify usa **HMAC-SHA1 em hex via query string `?signature=`**, sem header. ADR vigente: `.specs/prd-billing-pipeline/adr-002b-hmac-sha1-hex-webhook-query-signature.md`. Implementação em `internal/billing/infrastructure/http/server/middleware/hmac_signature.go` está alinhada à ADR-002b.
 
 -----
 

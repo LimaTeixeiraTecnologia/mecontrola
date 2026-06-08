@@ -3,6 +3,8 @@
      Rastreabilidade: `create-tasks` e `execute-task` comparam este hash com o atual do prd.md
      para detectar drift entre techspec e PRD. NÃO remover este comentário ao editar a techspec. -->
 
+> **NOTA DE DRIFT — 2026-06-08:** Esta techspec contém referências históricas a `HMAC-SHA256 base64` no header `X-Kiwify-Signature` (§8.1, §5.1, §3.5, §4 etc) que **NÃO refletem o protocolo real da Kiwify**. Captura empírica em sandbox em 2026-06-08 demonstrou que o protocolo correto é **HMAC-SHA1 em hex via query string `?signature=`**. ADR vigente: [`adr-002b-hmac-sha1-hex-webhook-query-signature.md`](./adr-002b-hmac-sha1-hex-webhook-query-signature.md) (substitui ADR-002). Implementação no código está alinhada à ADR-002b. O conteúdo histórico desta techspec é mantido para auditoria e contexto — não usar como referência de implementação atual.
+
 # Análise inicial
 
 ## Status do PRD de entrada
