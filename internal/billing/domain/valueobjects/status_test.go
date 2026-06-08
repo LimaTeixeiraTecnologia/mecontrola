@@ -1,8 +1,9 @@
 package valueobjects_test
 
 import (
-	"github.com/stretchr/testify/suite"
 	"testing"
+
+	"github.com/stretchr/testify/suite"
 
 	"github.com/stretchr/testify/assert"
 

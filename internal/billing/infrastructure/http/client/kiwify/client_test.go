@@ -3,13 +3,14 @@ package kiwify_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/stretchr/testify/suite"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/suite"
 
 	devkitfake "github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/require"

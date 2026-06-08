@@ -1,9 +1,10 @@
 package services_test
 
 import (
-	"github.com/stretchr/testify/suite"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/suite"
 
 	"github.com/stretchr/testify/assert"
 
