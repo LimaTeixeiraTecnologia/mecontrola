@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-magic-token/6.0_execution_report.md
+summary: Meta Cloud API client, WhatsApp gateway e OutreachJob implementados com politica 4xx/5xx
+timestamp: 2026-06-08T12:30:00Z

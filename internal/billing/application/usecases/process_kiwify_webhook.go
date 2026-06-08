@@ -48,6 +48,7 @@ type saleData struct {
 	ProductID    string       `json:"product_id"`
 	RefundedAt   *time.Time   `json:"refunded_at"`
 	Subscription *subData     `json:"subscription"`
+	Customer     customerData `json:"customer"`
 	Tracking     trackingData `json:"tracking"`
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
@@ -58,7 +59,13 @@ type subData struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type customerData struct {
+	Email  string `json:"email"`
+	Mobile string `json:"mobile"`
+}
+
 type trackingData struct {
+	SCK string `json:"sck"`
 	S1  string `json:"s1"`
 	Src string `json:"src"`
 }
@@ -152,12 +159,14 @@ func (u *ProcessKiwifyWebhook) dispatch(ctx context.Context, envelope kiwifyEnve
 	switch envelope.Trigger {
 	case "compra_aprovada":
 		return u.saleApproved.Execute(ctx, input.ProcessSaleApprovedInput{
-			EnvelopeID:      envelope.ID,
-			SaleID:          sale.ID,
-			KiwifyProductID: sale.ProductID,
-			OrderID:         sale.OrderID,
-			FunnelToken:     u.extractFunnelToken(sale.Tracking),
-			OccurredAt:      sale.UpdatedAt,
+			EnvelopeID:         envelope.ID,
+			SaleID:             sale.ID,
+			KiwifyProductID:    sale.ProductID,
+			OrderID:            sale.OrderID,
+			FunnelToken:        u.extractFunnelToken(sale.Tracking),
+			CustomerMobileE164: sale.Customer.Mobile,
+			CustomerEmail:      sale.Customer.Email,
+			OccurredAt:         sale.UpdatedAt,
 		})
 	case "subscription_renewed":
 		subID, subUpdatedAt := u.extractSub(sale.Subscription)
@@ -201,10 +210,7 @@ func (u *ProcessKiwifyWebhook) dispatch(ctx context.Context, envelope kiwifyEnve
 }
 
 func (u *ProcessKiwifyWebhook) extractFunnelToken(tracking trackingData) string {
-	if tracking.S1 != "" {
-		return tracking.S1
-	}
-	return tracking.Src
+	return extractFunnelToken(kiwifyTracking(tracking))
 }
 
 func (u *ProcessKiwifyWebhook) extractSub(sub *subData) (string, time.Time) {

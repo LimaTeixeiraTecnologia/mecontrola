@@ -46,6 +46,11 @@ linters:
           msg: "usar internal/platform/sqlnull.Str (R6.11)"
         - pattern: 'func\s+nullableEmail\b'
           msg: "usar internal/platform/sqlnull.Str (R6.11)"
+        # REGRA MANDATÓRIA: Close() não pode ter erro descartado silenciosamente com _ =.
+        # Erros de Close() em rows e response bodies indicam falha real (e.g. pool exhaustion,
+        # truncated read). Use slog.WarnContext para logar ou propague via named return.
+        - pattern: '\_ = .*\.Close\(\)'
+          msg: "Close() error must not be silently discarded — log with slog.WarnContext or propagate via named return (RULE: R-CLOSE-001)"
 
     depguard:
       rules:

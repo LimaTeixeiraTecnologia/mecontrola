@@ -22,14 +22,28 @@ func (_m *SubscriptionEventPublisher) EXPECT() *SubscriptionEventPublisher_Expec
 	return &SubscriptionEventPublisher_Expecter{mock: &_m.Mock}
 }
 
-func (_m *SubscriptionEventPublisher) PublishActivated(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, funnelToken string) error {
-	ret := _m.Called(ctx, tx, sub, subscriptionID, funnelToken)
+func (_m *SubscriptionEventPublisher) PublishActivated(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, funnelToken string, customerMobileE164 string, customerEmail string, externalSaleID string) error {
+	ret := _m.Called(ctx, tx, sub, subscriptionID, funnelToken, customerMobileE164, customerEmail, externalSaleID)
 	if len(ret) == 0 {
 		panic("no return value specified for PublishActivated")
 	}
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Subscription, string, string) error); ok {
-		r0 = rf(ctx, tx, sub, subscriptionID, funnelToken)
+	if rf, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Subscription, string, string, string, string, string) error); ok {
+		r0 = rf(ctx, tx, sub, subscriptionID, funnelToken, customerMobileE164, customerEmail, externalSaleID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+func (_m *SubscriptionEventPublisher) PublishActivatedWithoutToken(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, customerMobileE164 string, customerEmail string, externalSaleID string) error {
+	ret := _m.Called(ctx, tx, sub, subscriptionID, customerMobileE164, customerEmail, externalSaleID)
+	if len(ret) == 0 {
+		panic("no return value specified for PublishActivatedWithoutToken")
+	}
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Subscription, string, string, string, string) error); ok {
+		r0 = rf(ctx, tx, sub, subscriptionID, customerMobileE164, customerEmail, externalSaleID)
 	} else {
 		r0 = ret.Error(0)
 	}

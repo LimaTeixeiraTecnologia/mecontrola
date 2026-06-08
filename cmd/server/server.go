@@ -22,6 +22,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 )
 
 func New() *cobra.Command {
@@ -128,6 +129,20 @@ func Run() error {
 		srv.RegisterRouters(billingModule.WebhookRouter)
 	}
 	o11y.Logger().Info(ctx, "billing module wired", observability.Bool("router_registered", billingModule.WebhookRouter != nil))
+
+	onboardingModule, err := onboarding.NewOnboardingModule(
+		dbManager,
+		cfg.OnboardingConfig,
+		cfg.WhatsAppConfig,
+		cfg.OutboxConfig,
+		identityModule,
+		o11y,
+	)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo onboarding: %w", err)
+	}
+	srv.RegisterRouters(onboardingModule.PublicRouter, onboardingModule.WhatsAppRouter)
+	o11y.Logger().Info(ctx, "onboarding module wired")
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)

@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	eventTypeActivated = "billing.subscription.activated"
-	eventTypeRenewed   = "billing.subscription.renewed"
-	eventTypePastDue   = "billing.subscription.past_due"
-	eventTypeCanceled  = "billing.subscription.canceled"
-	eventTypeRefunded  = "billing.subscription.refunded"
+	eventTypeActivated         = "billing.subscription.activated"
+	eventTypeRenewed           = "billing.subscription.renewed"
+	eventTypePastDue           = "billing.subscription.past_due"
+	eventTypeCanceled          = "billing.subscription.canceled"
+	eventTypeRefunded          = "billing.subscription.refunded"
+	eventTypeSubscriptionBound = "onboarding.subscription_bound"
 )
 
 type activatedPayload struct {
@@ -71,6 +72,8 @@ func (u *ProjectSubscriptionEvent) Execute(ctx context.Context, in input.Project
 		return u.projectCanceled(ctx, in.Payload)
 	case eventTypeRefunded:
 		return u.projectRefunded(ctx, in.Payload)
+	case eventTypeSubscriptionBound:
+		return u.projectBound(ctx, in.Payload)
 	default:
 		return nil
 	}
@@ -112,6 +115,21 @@ func (u *ProjectSubscriptionEvent) projectRefunded(ctx context.Context, raw json
 	var payload refundedPayload
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return fmt.Errorf("identity.usecase.project_subscription_event refunded: unmarshal: %w", err)
+	}
+	return u.projectCurrent(ctx, payload.SubscriptionID)
+}
+
+type boundPayload struct {
+	SubscriptionID string `json:"subscription_id"`
+}
+
+func (u *ProjectSubscriptionEvent) projectBound(ctx context.Context, raw json.RawMessage) error {
+	var payload boundPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("identity.usecase.project_subscription_event bound: unmarshal: %w", err)
+	}
+	if payload.SubscriptionID == "" {
+		return nil
 	}
 	return u.projectCurrent(ctx, payload.SubscriptionID)
 }

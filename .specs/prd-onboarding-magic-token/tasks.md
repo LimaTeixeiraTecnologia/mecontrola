@@ -23,15 +23,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Fundacoes de dominio, persistencia e contratos do onboarding | pending | — | — | — |
-| 2.0 | Criacao de checkout e consulta publica de estado do token | pending | 1.0 | Com 3.0, 4.0, 6.0, 7.0 | — |
-| 3.0 | Contrato E2, carrier sck e consumers de pagamento | pending | 1.0 | Com 2.0, 4.0, 6.0, 7.0 | — |
-| 4.0 | Webhook WhatsApp e ativacao direta por ATIVAR token | pending | 1.0 | Com 2.0, 3.0, 6.0, 7.0 | — |
-| 5.0 | Fallback de ativacao por E.164 condicionado a outreach | pending | 4.0, 6.0 | Não | — |
-| 6.0 | Cliente Meta Cloud API e job horario de outreach | pending | 1.0 | Com 2.0, 3.0, 4.0, 7.0 | — |
-| 7.0 | Job diario de expiracao e sinais de subscription orfa | pending | 1.0 | Com 2.0, 3.0, 4.0, 6.0 | — |
-| 8.0 | Wiring de modulo, server, worker, eventos e configuracao | pending | 2.0, 3.0, 4.0, 6.0, 7.0 | Não | — |
-| 9.0 | Observabilidade, seguranca PII e contrato da thank-you page externa | pending | 2.0, 4.0, 5.0, 6.0, 7.0, 8.0 | Não | — |
+| 1.0 | Fundacoes de dominio, persistencia e contratos do onboarding | done | — | — | — |
+| 2.0 | Criacao de checkout e consulta publica de estado do token | done | 1.0 | Com 3.0, 4.0, 6.0, 7.0 | — |
+| 3.0 | Contrato E2, carrier sck e consumers de pagamento | done | 1.0 | Com 2.0, 4.0, 6.0, 7.0 | — |
+| 4.0 | Webhook WhatsApp e ativacao direta por ATIVAR token | done | 1.0 | Com 2.0, 3.0, 6.0, 7.0 | — |
+| 5.0 | Fallback de ativacao por E.164 condicionado a outreach | done | 4.0, 6.0 | Não | — |
+| 6.0 | Cliente Meta Cloud API e job horario de outreach | done | 1.0 | Com 2.0, 3.0, 4.0, 7.0 | — |
+| 7.0 | Job diario de expiracao e sinais de subscription orfa | done | 1.0 | Com 2.0, 3.0, 4.0, 6.0 | — |
+| 8.0 | Wiring de modulo, server, worker, eventos e configuracao | done | 2.0, 3.0, 4.0, 6.0, 7.0 | Não | — |
+| 9.0 | Observabilidade, seguranca PII e contrato da thank-you page externa | done | 2.0, 4.0, 5.0, 6.0, 7.0, 8.0 | Não | — |
 
 ## Dependências Críticas
 - `1.0` cria o alicerce de schema, dominio, repositorios e contratos consumidos pelas demais tarefas.

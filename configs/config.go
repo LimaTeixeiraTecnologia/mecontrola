@@ -13,13 +13,57 @@ import (
 // Config incorpora grupos via mapstructure:",squash" para que as env vars
 // sejam mapeadas diretamente sem prefixo de grupo.
 type Config struct {
-	AppConfig     AppConfig     `mapstructure:",squash"`
-	HTTPConfig    HTTPConfig    `mapstructure:",squash"`
-	DBConfig      DBConfig      `mapstructure:",squash"`
-	O11yConfig    O11yConfig    `mapstructure:",squash"`
-	OutboxConfig  OutboxConfig  `mapstructure:",squash"`
-	KiwifyConfig  KiwifyConfig  `mapstructure:",squash"`
-	BillingConfig BillingConfig `mapstructure:",squash"`
+	AppConfig        AppConfig        `mapstructure:",squash"`
+	HTTPConfig       HTTPConfig       `mapstructure:",squash"`
+	DBConfig         DBConfig         `mapstructure:",squash"`
+	O11yConfig       O11yConfig       `mapstructure:",squash"`
+	OutboxConfig     OutboxConfig     `mapstructure:",squash"`
+	KiwifyConfig     KiwifyConfig     `mapstructure:",squash"`
+	BillingConfig    BillingConfig    `mapstructure:",squash"`
+	OnboardingConfig OnboardingConfig `mapstructure:",squash"`
+	WhatsAppConfig   WhatsAppConfig   `mapstructure:",squash"`
+}
+
+// OnboardingConfig agrupa as configuracoes do modulo de onboarding via magic token.
+type OnboardingConfig struct {
+	TokenTTLDays            int    `mapstructure:"ONBOARDING_TOKEN_TTL_DAYS"`
+	OutreachGapHours        int    `mapstructure:"ONBOARDING_OUTREACH_GAP_HOURS"`
+	OutreachEnabled         bool   `mapstructure:"ONBOARDING_OUTREACH_ENABLED"`
+	CheckoutCORSOrigins     string `mapstructure:"ONBOARDING_CHECKOUT_CORS_ORIGINS"`
+	TrustedProxies          string `mapstructure:"ONBOARDING_TRUSTED_PROXIES"`
+	CheckoutRateLimitPerMin int    `mapstructure:"ONBOARDING_CHECKOUT_RATE_LIMIT_PER_MIN"`
+	CheckoutRateLimitBurst  int    `mapstructure:"ONBOARDING_CHECKOUT_RATE_LIMIT_BURST"`
+	StateRateLimitPerMin    int    `mapstructure:"ONBOARDING_STATE_RATE_LIMIT_PER_MIN"`
+	StateRateLimitBurst     int    `mapstructure:"ONBOARDING_STATE_RATE_LIMIT_BURST"`
+	KiwifyCheckoutURLs      string `mapstructure:"ONBOARDING_KIWIFY_CHECKOUT_URLS"`
+	KiwifyAllowedHosts      string `mapstructure:"ONBOARDING_KIWIFY_ALLOWED_HOSTS"`
+	MetaRetentionDays       int    `mapstructure:"ONBOARDING_META_RETENTION_DAYS"`
+	MetaCleanupSchedule     string `mapstructure:"ONBOARDING_META_CLEANUP_SCHEDULE"`
+	TokenExpirationSchedule string `mapstructure:"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE"`
+	MaxTokenLookupAttempts  int    `mapstructure:"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS"`
+	TokenEncryptionKey      string `mapstructure:"ONBOARDING_TOKEN_ENCRYPTION_KEY"`
+}
+
+// WhatsAppConfig agrupa as configuracoes da integracao com a Meta Cloud API.
+// Secrets (AppSecret, AccessToken, VerifyToken) NUNCA devem aparecer em logs.
+type WhatsAppConfig struct {
+	PhoneNumberID        string `mapstructure:"META_PHONE_NUMBER_ID"`
+	AccessToken          string `mapstructure:"META_ACCESS_TOKEN"`
+	AppSecret            string `mapstructure:"META_APP_SECRET"`
+	AppSecretNext        string `mapstructure:"META_APP_SECRET_NEXT"`
+	VerifyToken          string `mapstructure:"META_VERIFY_TOKEN"`
+	OutreachTemplateName string `mapstructure:"META_OUTREACH_TEMPLATE_NAME"`
+	BotNumberE164        string `mapstructure:"META_BOT_NUMBER_E164"`
+	BotNumberDisplay     string `mapstructure:"META_BOT_NUMBER_DISPLAY"`
+	WelcomeActivated     string `mapstructure:"WA_MSG_WELCOME_ACTIVATED"`
+	AlreadyActive        string `mapstructure:"WA_MSG_ALREADY_ACTIVE"`
+	CodeAlreadyUsed      string `mapstructure:"WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
+	PaymentProcessing    string `mapstructure:"WA_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
+	CodeExpired          string `mapstructure:"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
+	CodeInvalid          string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
+	SystemUnavailable    string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
+	PleaseUseAtivar      string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
+	InvalidCountry       string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
 }
 
 // KiwifyConfig agrupa as configurações do provedor Kiwify (RF-44).
@@ -171,9 +215,59 @@ func (l *configLoader) load() (*Config, error) {
 	l.v.AutomaticEnv()
 	l.v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
+	for _, key := range l.envKeys() {
+		_ = l.v.BindEnv(key)
+	}
+
+	l.v.SetDefault("PORT", 8080)
+	l.v.SetDefault("APP_MODE", "server")
+	l.v.SetDefault("ENVIRONMENT", "local")
+	l.v.SetDefault("LOG_LEVEL", "info")
+	l.v.SetDefault("LOG_FORMAT", "json")
+	l.v.SetDefault("OTEL_SERVICE_VERSION", "dev")
+	l.v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
+	l.v.SetDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+	l.v.SetDefault("OTEL_EXPORTER_OTLP_INSECURE", true)
+	l.v.SetDefault("DB_PORT", 5432)
+	l.v.SetDefault("DB_SSL_MODE", "disable")
+	l.v.SetDefault("DB_MAX_CONNS", 10)
+	l.v.SetDefault("DB_MIN_CONNS", 2)
+	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
+	l.v.SetDefault("DB_CONN_MAX_LIFETIME", 30*time.Minute)
+	l.v.SetDefault("DB_CONN_MAX_IDLE_TIME", 5*time.Minute)
+
+	l.setOutboxDefaults()
+	l.setKiwifyDefaults()
+	l.setBillingDefaults()
+	l.setOnboardingDefaults()
+	l.setWhatsAppDefaults()
+
+	if err := l.v.ReadInConfig(); err != nil {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
+			return nil, fmt.Errorf("lendo arquivo de configuração: %w", err)
+		}
+		if l.requiresLocalEnvFile() {
+			return nil, fmt.Errorf("arquivo .env obrigatório não encontrado em %q para ENVIRONMENT=%s", l.path, l.v.GetString("ENVIRONMENT"))
+		}
+	}
+
+	cfg := &Config{}
+	if err := l.v.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("deserializando configuração: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validando configuração: %w", err)
+	}
+
+	return cfg, nil
+}
+
+func (l *configLoader) envKeys() []string {
 	// Bind env vars explicitamente para garantir que AutomaticEnv() funcione com Unmarshal.
 	// Necessário porque mapstructure não chama os getters do Viper automaticamente.
-	envKeys := []string{
+	return []string{
 		"ENVIRONMENT", "APP_MODE",
 		"PORT", "SERVICE_NAME_API", "CORS_ALLOWED_ORIGINS",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSL_MODE",
@@ -219,52 +313,40 @@ func (l *configLoader) load() (*Config, error) {
 		"BILLING_KIWIFY_EVENTS_RETENTION_DAYS",
 		"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH",
+		"ONBOARDING_TOKEN_TTL_DAYS",
+		"ONBOARDING_OUTREACH_GAP_HOURS",
+		"ONBOARDING_OUTREACH_ENABLED",
+		"ONBOARDING_CHECKOUT_CORS_ORIGINS",
+		"ONBOARDING_TRUSTED_PROXIES",
+		"ONBOARDING_CHECKOUT_RATE_LIMIT_PER_MIN",
+		"ONBOARDING_CHECKOUT_RATE_LIMIT_BURST",
+		"ONBOARDING_STATE_RATE_LIMIT_PER_MIN",
+		"ONBOARDING_STATE_RATE_LIMIT_BURST",
+		"ONBOARDING_KIWIFY_CHECKOUT_URLS",
+		"ONBOARDING_KIWIFY_ALLOWED_HOSTS",
+		"ONBOARDING_META_RETENTION_DAYS",
+		"ONBOARDING_META_CLEANUP_SCHEDULE",
+		"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE",
+		"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS",
+		"ONBOARDING_TOKEN_ENCRYPTION_KEY",
+		"META_PHONE_NUMBER_ID",
+		"META_ACCESS_TOKEN",
+		"META_APP_SECRET",
+		"META_APP_SECRET_NEXT",
+		"META_VERIFY_TOKEN",
+		"META_OUTREACH_TEMPLATE_NAME",
+		"META_BOT_NUMBER_E164",
+		"META_BOT_NUMBER_DISPLAY",
+		"WA_MSG_WELCOME_ACTIVATED",
+		"WA_MSG_ALREADY_ACTIVE",
+		"WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT",
+		"WA_MSG_PAYMENT_STILL_PROCESSING_RETRY",
+		"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT",
+		"WA_MSG_CODE_INVALID_CHECK_AGAIN",
+		"WA_MSG_SYSTEM_UNAVAILABLE_RETRY",
+		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
+		"WA_MSG_INVALID_COUNTRY",
 	}
-	for _, key := range envKeys {
-		_ = l.v.BindEnv(key)
-	}
-
-	l.v.SetDefault("PORT", 8080)
-	l.v.SetDefault("APP_MODE", "server")
-	l.v.SetDefault("ENVIRONMENT", "local")
-	l.v.SetDefault("LOG_LEVEL", "info")
-	l.v.SetDefault("LOG_FORMAT", "json")
-	l.v.SetDefault("OTEL_SERVICE_VERSION", "dev")
-	l.v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
-	l.v.SetDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-	l.v.SetDefault("OTEL_EXPORTER_OTLP_INSECURE", true)
-	l.v.SetDefault("DB_PORT", 5432)
-	l.v.SetDefault("DB_SSL_MODE", "disable")
-	l.v.SetDefault("DB_MAX_CONNS", 10)
-	l.v.SetDefault("DB_MIN_CONNS", 2)
-	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
-	l.v.SetDefault("DB_CONN_MAX_LIFETIME", 30*time.Minute)
-	l.v.SetDefault("DB_CONN_MAX_IDLE_TIME", 5*time.Minute)
-
-	l.setOutboxDefaults()
-	l.setKiwifyDefaults()
-	l.setBillingDefaults()
-
-	if err := l.v.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
-			return nil, fmt.Errorf("lendo arquivo de configuração: %w", err)
-		}
-		if l.requiresLocalEnvFile() {
-			return nil, fmt.Errorf("arquivo .env obrigatório não encontrado em %q para ENVIRONMENT=%s", l.path, l.v.GetString("ENVIRONMENT"))
-		}
-	}
-
-	cfg := &Config{}
-	if err := l.v.Unmarshal(cfg); err != nil {
-		return nil, fmt.Errorf("deserializando configuração: %w", err)
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validando configuração: %w", err)
-	}
-
-	return cfg, nil
 }
 
 // setKiwifyDefaults registra os defaults do provedor Kiwify no Viper.
@@ -359,6 +441,7 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validatePoolTunables()...)
 	errs = append(errs, c.validateOutbox()...)
 	errs = append(errs, c.validateBilling()...)
+	errs = append(errs, c.validateOnboarding()...)
 	errs = append(errs, c.KiwifyConfig.validateProductIDs()...)
 
 	if c.AppConfig.Environment == "production" {
@@ -503,7 +586,6 @@ func (c *Config) validateProduction() []string {
 	}
 
 	errs = append(errs, c.validateProductionKiwify()...)
-
 	return errs
 }
 
@@ -625,6 +707,60 @@ func (c *Config) validateBilling() []string {
 	errs = append(errs, validateKiwifyHTTP(k)...)
 
 	return errs
+}
+
+func (c *Config) validateOnboarding() []string {
+	o := c.OnboardingConfig
+	if o.KiwifyCheckoutURLs == "" && !o.OutreachEnabled && c.WhatsAppConfig.PhoneNumberID == "" &&
+		c.WhatsAppConfig.AccessToken == "" && c.WhatsAppConfig.AppSecret == "" {
+		return nil
+	}
+
+	var errs []string
+	if o.TokenEncryptionKey == "" {
+		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY é obrigatório quando onboarding está habilitado")
+	}
+	if c.AppConfig.Environment == "production" && o.TokenEncryptionKey == "0123456789abcdef0123456789abcdef" {
+		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY deve ser substituida em production")
+	}
+	if o.TokenEncryptionKey != "" && len(o.TokenEncryptionKey) != 32 &&
+		len(o.TokenEncryptionKey) != 43 && len(o.TokenEncryptionKey) != 44 {
+		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY deve ter 32 bytes ou base64 de 32 bytes")
+	}
+	return errs
+}
+
+// setOnboardingDefaults registra os defaults do modulo onboarding no Viper.
+func (l *configLoader) setOnboardingDefaults() {
+	l.v.SetDefault("ONBOARDING_TOKEN_TTL_DAYS", 7)
+	l.v.SetDefault("ONBOARDING_OUTREACH_GAP_HOURS", 2)
+	l.v.SetDefault("ONBOARDING_OUTREACH_ENABLED", false)
+	l.v.SetDefault("ONBOARDING_CHECKOUT_CORS_ORIGINS", "https://www.mecontrola.app.br,https://mecontrola.app.br")
+	l.v.SetDefault("ONBOARDING_TRUSTED_PROXIES", "127.0.0.1/32,::1/128")
+	l.v.SetDefault("ONBOARDING_CHECKOUT_RATE_LIMIT_PER_MIN", 10)
+	l.v.SetDefault("ONBOARDING_CHECKOUT_RATE_LIMIT_BURST", 5)
+	l.v.SetDefault("ONBOARDING_STATE_RATE_LIMIT_PER_MIN", 30)
+	l.v.SetDefault("ONBOARDING_STATE_RATE_LIMIT_BURST", 10)
+	l.v.SetDefault("ONBOARDING_KIWIFY_ALLOWED_HOSTS", "pay.kiwify.com.br")
+	l.v.SetDefault("ONBOARDING_META_RETENTION_DAYS", 30)
+	l.v.SetDefault("ONBOARDING_META_CLEANUP_SCHEDULE", "30 3 * * *")
+	l.v.SetDefault("ONBOARDING_TOKEN_EXPIRATION_SCHEDULE", "0 3 * * *")
+	l.v.SetDefault("ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS", 5)
+}
+
+// setWhatsAppDefaults registra os defaults da integracao Meta Cloud API no Viper.
+func (l *configLoader) setWhatsAppDefaults() {
+	l.v.SetDefault("META_OUTREACH_TEMPLATE_NAME", "activation_reminder")
+	l.v.SetDefault("META_BOT_NUMBER_DISPLAY", "+55 11 9XXXX-XXXX")
+	l.v.SetDefault("WA_MSG_WELCOME_ACTIVATED", "Sua conta foi ativada com sucesso! Bem-vindo ao MeControla.")
+	l.v.SetDefault("WA_MSG_ALREADY_ACTIVE", "Sua conta ja esta ativa.")
+	l.v.SetDefault("WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT", "Este codigo ja foi utilizado por outra conta.")
+	l.v.SetDefault("WA_MSG_PAYMENT_STILL_PROCESSING_RETRY", "Seu pagamento ainda esta sendo processado. Tente novamente em alguns minutos.")
+	l.v.SetDefault("WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT", "Este codigo expirou. Entre em contato com o suporte.")
+	l.v.SetDefault("WA_MSG_CODE_INVALID_CHECK_AGAIN", "Codigo invalido. Verifique o link de ativacao e tente novamente.")
+	l.v.SetDefault("WA_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
+	l.v.SetDefault("WA_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para ativar sua conta, envie: ATIVAR seguido do seu codigo de ativacao.")
+	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
 }
 
 // validateKiwifyHTTP valida os campos HTTP da Kiwify quando ao menos um deles

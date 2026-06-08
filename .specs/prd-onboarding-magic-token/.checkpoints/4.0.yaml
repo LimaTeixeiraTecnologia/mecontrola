@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-magic-token/4.0_execution_report.md
+summary: MetaSignatureMiddleware, WhatsApp verify/inbound handlers, WAMID deduplication e testes implementados
+timestamp: 2026-06-08T09:25:00Z

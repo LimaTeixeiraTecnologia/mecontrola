@@ -10,7 +10,8 @@ import (
 )
 
 type SubscriptionEventPublisher interface {
-	PublishActivated(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, funnelToken string) error
+	PublishActivated(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, funnelToken string, customerMobileE164 string, customerEmail string, externalSaleID string) error
+	PublishActivatedWithoutToken(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, customerMobileE164 string, customerEmail string, externalSaleID string) error
 	PublishRenewed(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, previousPeriodEnd time.Time) error
 	PublishPastDue(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string) error
 	PublishCanceled(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string) error

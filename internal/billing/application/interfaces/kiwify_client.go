@@ -6,19 +6,20 @@ import (
 )
 
 type KiwifySale struct {
-	ID              string
-	KiwifyProductID string
-	OrderID         string
-	SubscriptionID  string
-	ParentOrderID   string
-	Status          string
-	SaleType        string
-	PaymentMethod   string
-	FunnelToken     string
-	CustomerEmail   string
-	OccurredAt      time.Time
-	UpdatedAt       time.Time
-	RefundedAt      time.Time
+	ID                 string
+	KiwifyProductID    string
+	OrderID            string
+	SubscriptionID     string
+	ParentOrderID      string
+	Status             string
+	SaleType           string
+	PaymentMethod      string
+	FunnelToken        string
+	CustomerEmail      string
+	CustomerMobileE164 string
+	OccurredAt         time.Time
+	UpdatedAt          time.Time
+	RefundedAt         time.Time
 }
 
 type KiwifySalePage struct {

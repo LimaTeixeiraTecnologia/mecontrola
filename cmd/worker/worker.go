@@ -22,6 +22,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
@@ -131,6 +132,18 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
 	}
 
+	onboardingModule, err := onboarding.NewOnboardingModule(
+		r.dbManager,
+		r.cfg.OnboardingConfig,
+		r.cfg.WhatsAppConfig,
+		r.cfg.OutboxConfig,
+		identityModule,
+		r.o11y,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo onboarding: %w", err)
+	}
+
 	for _, reg := range identityModule.EventHandlers {
 		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
 			return nil, fmt.Errorf("worker: registrar handler identity %s: %w", reg.EventType, err)
@@ -141,8 +154,13 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 			return nil, fmt.Errorf("worker: registrar handler billing %s: %w", reg.EventType, err)
 		}
 	}
+	for _, reg := range onboardingModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler onboarding %s: %w", reg.EventType, err)
+		}
+	}
 
-	jobs := make([]worker.Job, 0, 6)
+	jobs := make([]worker.Job, 0, 9)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
 		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, r.cfg.OutboxConfig, r.o11y.Logger(), rng))
@@ -152,6 +170,9 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
 		billingModule.ReconciliationJob,
 		billingModule.KiwifyEventsHousekeeper,
+		onboardingModule.OutreachJob,
+		onboardingModule.ExpirationJob,
+		onboardingModule.MetaProcessedMessagesCleanup,
 	)
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))

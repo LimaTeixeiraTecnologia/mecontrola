@@ -89,7 +89,7 @@ func (s *SubscriptionEventPublisherSuite) expectInsertError(storageErr error) {
 func (s *SubscriptionEventPublisherSuite) TestPublishActivated_CallsInsertExactlyOnce() {
 	s.expectInsertOnce(producers.EventTypeSubscriptionActivated)
 	ctx := context.Background()
-	err := s.publisher.PublishActivated(ctx, s.tx, s.sub, s.subscriptionID, "token-unit-001")
+	err := s.publisher.PublishActivated(ctx, s.tx, s.sub, s.subscriptionID, "token-unit-001", "+5511999999999", "user@example.com", "sale-001")
 	s.NoError(err)
 }
 
@@ -97,7 +97,23 @@ func (s *SubscriptionEventPublisherSuite) TestPublishActivated_PropagatesError()
 	storageErr := errors.New("db failure")
 	s.expectInsertError(storageErr)
 	ctx := context.Background()
-	err := s.publisher.PublishActivated(ctx, s.tx, s.sub, s.subscriptionID, "token-unit-001")
+	err := s.publisher.PublishActivated(ctx, s.tx, s.sub, s.subscriptionID, "token-unit-001", "+5511999999999", "user@example.com", "sale-001")
+	s.ErrorContains(err, "billing/producer:")
+	s.ErrorContains(err, "db failure")
+}
+
+func (s *SubscriptionEventPublisherSuite) TestPublishActivatedWithoutToken_CallsInsertExactlyOnce() {
+	s.expectInsertOnce(producers.EventTypeSubscriptionActivatedWithoutToken)
+	ctx := context.Background()
+	err := s.publisher.PublishActivatedWithoutToken(ctx, s.tx, s.sub, s.subscriptionID, "+5511999999999", "user@example.com", "sale-002")
+	s.NoError(err)
+}
+
+func (s *SubscriptionEventPublisherSuite) TestPublishActivatedWithoutToken_PropagatesError() {
+	storageErr := errors.New("db failure")
+	s.expectInsertError(storageErr)
+	ctx := context.Background()
+	err := s.publisher.PublishActivatedWithoutToken(ctx, s.tx, s.sub, s.subscriptionID, "+5511999999999", "user@example.com", "sale-002")
 	s.ErrorContains(err, "billing/producer:")
 	s.ErrorContains(err, "db failure")
 }

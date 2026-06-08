@@ -3,25 +3,45 @@ package producers
 import "time"
 
 const (
-	EventTypeSubscriptionActivated = "billing.subscription.activated"
-	EventTypeSubscriptionRenewed   = "billing.subscription.renewed"
-	EventTypeSubscriptionPastDue   = "billing.subscription.past_due"
-	EventTypeSubscriptionCanceled  = "billing.subscription.canceled"
-	EventTypeSubscriptionRefunded  = "billing.subscription.refunded"
-	EventTypeSubscriptionExpired   = "billing.subscription.expired_after_grace"
+	EventTypeSubscriptionActivated             = "billing.subscription.activated"
+	EventTypeSubscriptionActivatedWithoutToken = "billing.subscription.activated_without_token"
+	EventTypeSubscriptionRenewed               = "billing.subscription.renewed"
+	EventTypeSubscriptionPastDue               = "billing.subscription.past_due"
+	EventTypeSubscriptionCanceled              = "billing.subscription.canceled"
+	EventTypeSubscriptionRefunded              = "billing.subscription.refunded"
+	EventTypeSubscriptionExpired               = "billing.subscription.expired_after_grace"
 )
 
 type SubscriptionActivatedPayload struct {
-	SubscriptionID string    `json:"subscription_id"`
-	FunnelToken    string    `json:"funnel_token"`
-	PlanCode       string    `json:"plan_code"`
-	PeriodStart    time.Time `json:"period_start"`
-	PeriodEnd      time.Time `json:"period_end"`
-	OccurredAt     time.Time `json:"occurred_at"`
+	SubscriptionID     string    `json:"subscription_id"`
+	FunnelToken        string    `json:"funnel_token"`
+	PlanCode           string    `json:"plan_code"`
+	ExternalSaleID     string    `json:"external_sale_id"`
+	CustomerMobileE164 string    `json:"customer_mobile_e164"`
+	CustomerEmail      string    `json:"customer_email"`
+	PeriodStart        time.Time `json:"period_start"`
+	PeriodEnd          time.Time `json:"period_end"`
+	PaidAt             time.Time `json:"paid_at"`
+	OccurredAt         time.Time `json:"occurred_at"`
 }
 
 func (e SubscriptionActivatedPayload) GetEventType() string { return EventTypeSubscriptionActivated }
 func (e SubscriptionActivatedPayload) GetPayload() any      { return e }
+
+type SubscriptionActivatedWithoutTokenPayload struct {
+	SubscriptionID     string    `json:"subscription_id"`
+	PlanCode           string    `json:"plan_code"`
+	ExternalSaleID     string    `json:"external_sale_id"`
+	CustomerMobileE164 string    `json:"customer_mobile_e164"`
+	CustomerEmail      string    `json:"customer_email"`
+	PaidAt             time.Time `json:"paid_at"`
+	OccurredAt         time.Time `json:"occurred_at"`
+}
+
+func (e SubscriptionActivatedWithoutTokenPayload) GetEventType() string {
+	return EventTypeSubscriptionActivatedWithoutToken
+}
+func (e SubscriptionActivatedWithoutTokenPayload) GetPayload() any { return e }
 
 type SubscriptionRenewedPayload struct {
 	SubscriptionID    string    `json:"subscription_id"`

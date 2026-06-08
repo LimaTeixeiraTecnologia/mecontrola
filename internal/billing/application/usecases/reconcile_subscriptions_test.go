@@ -94,7 +94,7 @@ func (s *ReconcileSubscriptionsSuite) TestSucessoComSaleApproved() {
 	s.planRepoMock.On("FindByKiwifyProductID", mock.Anything, "prod-monthly").Return(s.monthlyPlan(), nil)
 	s.subRepoMock.On("UpsertByOrder", mock.Anything, "order-001", mock.Anything, mock.Anything).Return(nil)
 	s.subRepoMock.On("FindByOrderID", mock.Anything, "order-001").Return(s.activeSubWithID("sub-001", "token-abc"), nil)
-	s.publisherMock.On("PublishActivated", mock.Anything, mock.Anything, mock.Anything, "sub-001", "token-abc").Return(nil)
+	s.publisherMock.On("PublishActivated", mock.Anything, mock.Anything, mock.Anything, "sub-001", "token-abc", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	s.checkpointMock.On("Set", mock.Anything, "kiwify_sales", windowEnd).Return(nil)
 
 	err := s.uc.Execute(context.Background(), input.ReconcileSubscriptionsInput{

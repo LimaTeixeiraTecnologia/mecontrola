@@ -34,16 +34,47 @@ func (p *SubscriptionEventPublisher) PublishActivated(
 	sub entities.Subscription,
 	subscriptionID string,
 	funnelToken string,
+	customerMobileE164 string,
+	customerEmail string,
+	externalSaleID string,
 ) error {
 	payload := SubscriptionActivatedPayload{
-		SubscriptionID: subscriptionID,
-		FunnelToken:    funnelToken,
-		PlanCode:       string(sub.Plan().Code()),
-		PeriodStart:    sub.PeriodStart().UTC(),
-		PeriodEnd:      sub.PeriodEnd().UTC(),
-		OccurredAt:     sub.LastEventAt().UTC(),
+		SubscriptionID:     subscriptionID,
+		FunnelToken:        funnelToken,
+		PlanCode:           string(sub.Plan().Code()),
+		ExternalSaleID:     externalSaleID,
+		CustomerMobileE164: customerMobileE164,
+		CustomerEmail:      customerEmail,
+		PeriodStart:        sub.PeriodStart().UTC(),
+		PeriodEnd:          sub.PeriodEnd().UTC(),
+		PaidAt:             sub.LastEventAt().UTC(),
+		OccurredAt:         sub.LastEventAt().UTC(),
 	}
 	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionActivated, payload); err != nil {
+		return fmt.Errorf("billing/producer: %w", err)
+	}
+	return nil
+}
+
+func (p *SubscriptionEventPublisher) PublishActivatedWithoutToken(
+	ctx context.Context,
+	tx database.DBTX,
+	sub entities.Subscription,
+	subscriptionID string,
+	customerMobileE164 string,
+	customerEmail string,
+	externalSaleID string,
+) error {
+	payload := SubscriptionActivatedWithoutTokenPayload{
+		SubscriptionID:     subscriptionID,
+		PlanCode:           string(sub.Plan().Code()),
+		ExternalSaleID:     externalSaleID,
+		CustomerMobileE164: customerMobileE164,
+		CustomerEmail:      customerEmail,
+		PaidAt:             sub.LastEventAt().UTC(),
+		OccurredAt:         sub.LastEventAt().UTC(),
+	}
+	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionActivatedWithoutToken, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil

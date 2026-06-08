@@ -107,11 +107,13 @@ func (uc *ReconcileSubscriptions) reconcileSale(ctx context.Context, sale interf
 
 	if sale.Status == "paid" || sale.Status == "approved" {
 		return uc.saleApproved.Execute(ctx, input.ProcessSaleApprovedInput{
-			SaleID:          sale.ID,
-			KiwifyProductID: sale.KiwifyProductID,
-			OrderID:         sale.OrderID,
-			FunnelToken:     sale.FunnelToken,
-			OccurredAt:      sale.OccurredAt,
+			SaleID:             sale.ID,
+			KiwifyProductID:    sale.KiwifyProductID,
+			OrderID:            sale.OrderID,
+			FunnelToken:        sale.FunnelToken,
+			CustomerEmail:      sale.CustomerEmail,
+			CustomerMobileE164: sale.CustomerMobileE164,
+			OccurredAt:         sale.OccurredAt,
 		})
 	}
 

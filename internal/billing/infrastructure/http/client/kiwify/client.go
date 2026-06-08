@@ -229,25 +229,30 @@ func (c *Client) checkStatus(resp *http.Response) error {
 }
 
 func mapSale(s saleResponse) interfaces.KiwifySale {
+	funnelToken := s.Tracking.SCK
+	if funnelToken == "" {
+		funnelToken = s.Tracking.S1
+	}
+	if funnelToken == "" {
+		funnelToken = s.Tracking.Src
+	}
 	sale := interfaces.KiwifySale{
-		ID:              s.ID,
-		KiwifyProductID: s.ProductID,
-		OrderID:         s.Reference,
-		SubscriptionID:  s.SubscriptionID,
-		ParentOrderID:   s.ParentOrderID,
-		Status:          s.Status,
-		SaleType:        s.SaleType,
-		PaymentMethod:   s.PaymentMethod,
-		FunnelToken:     s.Tracking.S1,
-		CustomerEmail:   s.Customer.Email,
-		OccurredAt:      s.CreatedAt,
-		UpdatedAt:       s.UpdatedAt,
+		ID:                 s.ID,
+		KiwifyProductID:    s.ProductID,
+		OrderID:            s.Reference,
+		SubscriptionID:     s.SubscriptionID,
+		ParentOrderID:      s.ParentOrderID,
+		Status:             s.Status,
+		SaleType:           s.SaleType,
+		PaymentMethod:      s.PaymentMethod,
+		FunnelToken:        funnelToken,
+		CustomerEmail:      s.Customer.Email,
+		CustomerMobileE164: s.Customer.Phone,
+		OccurredAt:         s.CreatedAt,
+		UpdatedAt:          s.UpdatedAt,
 	}
 	if s.RefundedAt != nil {
 		sale.RefundedAt = *s.RefundedAt
-	}
-	if sale.FunnelToken == "" {
-		sale.FunnelToken = s.Tracking.Src
 	}
 	return sale
 }

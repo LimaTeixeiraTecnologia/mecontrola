@@ -24,15 +24,16 @@ type EventHandlerRegistration struct {
 }
 
 type IdentityModule struct {
-	RepositoryFactory     interfaces.RepositoryFactory
-	UserRouter            *server.UserRouter
-	UpsertUserUseCase     *usecases.UpsertUserByWhatsApp
-	FindUserByIDUseCase   *usecases.FindUserByID
-	FindUserByWhatsApp    *usecases.FindUserByWhatsApp
-	MarkUserDeleted       *usecases.MarkUserDeleted
-	EntitlementReader     interfaces.EntitlementReader
-	SubscriptionProjector *consumers.SubscriptionEventProjector
-	EventHandlers         []EventHandlerRegistration
+	RepositoryFactory          interfaces.RepositoryFactory
+	UserRouter                 *server.UserRouter
+	UpsertUserUseCase          *usecases.UpsertUserByWhatsApp
+	FindUserByIDUseCase        *usecases.FindUserByID
+	FindUserByWhatsApp         *usecases.FindUserByWhatsApp
+	MarkUserDeleted            *usecases.MarkUserDeleted
+	EntitlementReader          interfaces.EntitlementReader
+	SubscriptionProjector      *consumers.SubscriptionEventProjector
+	SubscriptionBoundProjector *consumers.SubscriptionBoundProjector
+	EventHandlers              []EventHandlerRegistration
 }
 
 func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) IdentityModule {
@@ -53,23 +54,27 @@ func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mg
 	projectSubscriptionEvent := usecases.NewProjectSubscriptionEvent(factory, mgr.DBTX(context.Background()), projectionReader, o11y)
 	projector := consumers.NewSubscriptionEventProjector(projectSubscriptionEvent, o11y)
 
+	subscriptionBoundProjector := consumers.NewSubscriptionBoundProjector(projectSubscriptionEvent, o11y)
+
 	eventHandlers := []EventHandlerRegistration{
 		{EventType: "billing.subscription.activated", Handler: projector},
 		{EventType: "billing.subscription.renewed", Handler: projector},
 		{EventType: "billing.subscription.past_due", Handler: projector},
 		{EventType: "billing.subscription.canceled", Handler: projector},
 		{EventType: "billing.subscription.refunded", Handler: projector},
+		{EventType: "onboarding.subscription_bound", Handler: subscriptionBoundProjector},
 	}
 
 	return IdentityModule{
-		RepositoryFactory:     factory,
-		UserRouter:            server.NewUserRouter(upsertHandler),
-		UpsertUserUseCase:     upsertUC,
-		FindUserByIDUseCase:   findByIDUC,
-		FindUserByWhatsApp:    findByWhatsAppUC,
-		MarkUserDeleted:       markDeletedUC,
-		EntitlementReader:     factory.EntitlementRepository(mgr.DBTX(context.Background())),
-		SubscriptionProjector: projector,
-		EventHandlers:         eventHandlers,
+		RepositoryFactory:          factory,
+		UserRouter:                 server.NewUserRouter(upsertHandler),
+		UpsertUserUseCase:          upsertUC,
+		FindUserByIDUseCase:        findByIDUC,
+		FindUserByWhatsApp:         findByWhatsAppUC,
+		MarkUserDeleted:            markDeletedUC,
+		EntitlementReader:          factory.EntitlementRepository(mgr.DBTX(context.Background())),
+		SubscriptionProjector:      projector,
+		SubscriptionBoundProjector: subscriptionBoundProjector,
+		EventHandlers:              eventHandlers,
 	}
 }
