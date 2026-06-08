@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "slug": "modulo-de-orcamentos-mensais-por-categoria",
+  "title": "Discovery técnico do módulo de orçamentos mensais por categoria",
+  "created_at": "2026-06-06T19:31:55Z",
+  "language": "pt-BR",
+  "status": "done",
+  "discovery": {
+    "file": "discovery.md",
+    "title": "Solução production-ready para orçamentos mensais por categoria"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  },
+  "planned_epics": [
+    "Epic 01 - Fundação de orçamentos mensais",
+    "Epic 02 - Despesas canônicas e entradas idempotentes",
+    "Epic 03 - Consultas, metas e alertas",
+    "Epic 04 - Operação, retenção e hardening"
+  ]
+}
