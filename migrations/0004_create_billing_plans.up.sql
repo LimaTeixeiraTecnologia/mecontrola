@@ -6,6 +6,6 @@ CREATE TABLE billing_plans (
 );
 
 INSERT INTO billing_plans (kiwify_product_id, code, duration_days) VALUES
-    ('<id-mensal>', 'MONTHLY', 30),
-    ('<id-trimestral>', 'QUARTERLY', 90),
-    ('<id-anual>', 'ANNUAL', 365);
+    ('__PLACEHOLDER_MONTHLY__', 'MONTHLY', 30),
+    ('__PLACEHOLDER_QUARTERLY__', 'QUARTERLY', 90),
+    ('__PLACEHOLDER_ANNUAL__', 'ANNUAL', 365);

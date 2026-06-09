@@ -28,6 +28,7 @@ packages:
       processSubscriptionRenewed: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces:
     interfaces:
+      AuthEventsRepository: {}
       EntitlementReader: {}
       EntitlementRepository: {}
       RepositoryFactory: {}
@@ -41,6 +42,8 @@ packages:
       upsertUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers:
     interfaces:
+      projectAuthEventUseCase: {}
+      anonymizeUserAuthEventsUseCase: {}
       projectSubscriptionBoundUseCase: {}
       projectSubscriptionEventUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces:
@@ -48,7 +51,6 @@ packages:
       CheckoutURLBuilder: {}
       IdentityGateway: {}
       MagicTokenRepository: {}
-      MetaMessageRepository: {}
       OnboardingCleanupRepository: {}
       OnboardingCleanupRepositoryFactory: {}
       RepositoryFactory: {}
@@ -73,3 +75,6 @@ packages:
     interfaces:
       Registry: {}
       Storage: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup:
+    interfaces:
+      MessageRepository: {}

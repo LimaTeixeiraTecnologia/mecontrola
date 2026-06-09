@@ -289,6 +289,81 @@ func (_c *SubscriptionEventPublisher_PublishCanceled_Call) RunAndReturn(run func
 	return _c
 }
 
+// PublishExpired provides a mock function for the type SubscriptionEventPublisher
+func (_mock *SubscriptionEventPublisher) PublishExpired(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, graceEnd time.Time) error {
+	ret := _mock.Called(ctx, tx, sub, subscriptionID, graceEnd)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PublishExpired")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Subscription, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, tx, sub, subscriptionID, graceEnd)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// SubscriptionEventPublisher_PublishExpired_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PublishExpired'
+type SubscriptionEventPublisher_PublishExpired_Call struct {
+	*mock.Call
+}
+
+// PublishExpired is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tx database.DBTX
+//   - sub entities.Subscription
+//   - subscriptionID string
+//   - graceEnd time.Time
+func (_e *SubscriptionEventPublisher_Expecter) PublishExpired(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}, graceEnd interface{}) *SubscriptionEventPublisher_PublishExpired_Call {
+	return &SubscriptionEventPublisher_PublishExpired_Call{Call: _e.mock.On("PublishExpired", ctx, tx, sub, subscriptionID, graceEnd)}
+}
+
+func (_c *SubscriptionEventPublisher_PublishExpired_Call) Run(run func(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, graceEnd time.Time)) *SubscriptionEventPublisher_PublishExpired_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 database.DBTX
+		if args[1] != nil {
+			arg1 = args[1].(database.DBTX)
+		}
+		var arg2 entities.Subscription
+		if args[2] != nil {
+			arg2 = args[2].(entities.Subscription)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 time.Time
+		if args[4] != nil {
+			arg4 = args[4].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *SubscriptionEventPublisher_PublishExpired_Call) Return(err error) *SubscriptionEventPublisher_PublishExpired_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *SubscriptionEventPublisher_PublishExpired_Call) RunAndReturn(run func(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, graceEnd time.Time) error) *SubscriptionEventPublisher_PublishExpired_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // PublishPastDue provides a mock function for the type SubscriptionEventPublisher
 func (_mock *SubscriptionEventPublisher) PublishPastDue(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string) error {
 	ret := _mock.Called(ctx, tx, sub, subscriptionID)

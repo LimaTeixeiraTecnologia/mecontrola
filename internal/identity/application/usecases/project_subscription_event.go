@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
@@ -43,18 +43,18 @@ type refundedPayload struct {
 
 type ProjectSubscriptionEvent struct {
 	factory interfaces.RepositoryFactory
-	db      database.DBTX
+	mgr     manager.Manager
 	reader  interfaces.SubscriptionProjectionReader
 	o11y    observability.Observability
 }
 
 func NewProjectSubscriptionEvent(
 	factory interfaces.RepositoryFactory,
-	db database.DBTX,
+	mgr manager.Manager,
 	reader interfaces.SubscriptionProjectionReader,
 	o11y observability.Observability,
 ) *ProjectSubscriptionEvent {
-	return &ProjectSubscriptionEvent{factory: factory, db: db, reader: reader, o11y: o11y}
+	return &ProjectSubscriptionEvent{factory: factory, mgr: mgr, reader: reader, o11y: o11y}
 }
 
 func (u *ProjectSubscriptionEvent) Execute(ctx context.Context, in input.ProjectSubscriptionEvent) error {
@@ -140,7 +140,7 @@ func (u *ProjectSubscriptionEvent) projectCurrent(ctx context.Context, subscript
 		return fmt.Errorf("identity.usecase.project_subscription_event current: %w", err)
 	}
 
-	repo := u.factory.EntitlementRepository(u.db)
+	repo := u.factory.EntitlementRepository(u.mgr.DBTX(ctx))
 	if projection.UserID == "" {
 		raw, marshalErr := json.Marshal(projection)
 		if marshalErr != nil {

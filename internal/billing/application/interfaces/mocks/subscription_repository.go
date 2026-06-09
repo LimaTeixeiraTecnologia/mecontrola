@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
 	mock "github.com/stretchr/testify/mock"
@@ -247,6 +248,72 @@ func (_c *SubscriptionRepository_ExtendPeriod_Call) RunAndReturn(run func(ctx co
 	return _c
 }
 
+// FindByKiwifySubID provides a mock function for the type SubscriptionRepository
+func (_mock *SubscriptionRepository) FindByKiwifySubID(ctx context.Context, kiwifySubID string) (entities.Subscription, error) {
+	ret := _mock.Called(ctx, kiwifySubID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindByKiwifySubID")
+	}
+
+	var r0 entities.Subscription
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (entities.Subscription, error)); ok {
+		return returnFunc(ctx, kiwifySubID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) entities.Subscription); ok {
+		r0 = returnFunc(ctx, kiwifySubID)
+	} else {
+		r0 = ret.Get(0).(entities.Subscription)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, kiwifySubID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// SubscriptionRepository_FindByKiwifySubID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindByKiwifySubID'
+type SubscriptionRepository_FindByKiwifySubID_Call struct {
+	*mock.Call
+}
+
+// FindByKiwifySubID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - kiwifySubID string
+func (_e *SubscriptionRepository_Expecter) FindByKiwifySubID(ctx interface{}, kiwifySubID interface{}) *SubscriptionRepository_FindByKiwifySubID_Call {
+	return &SubscriptionRepository_FindByKiwifySubID_Call{Call: _e.mock.On("FindByKiwifySubID", ctx, kiwifySubID)}
+}
+
+func (_c *SubscriptionRepository_FindByKiwifySubID_Call) Run(run func(ctx context.Context, kiwifySubID string)) *SubscriptionRepository_FindByKiwifySubID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *SubscriptionRepository_FindByKiwifySubID_Call) Return(subscription entities.Subscription, err error) *SubscriptionRepository_FindByKiwifySubID_Call {
+	_c.Call.Return(subscription, err)
+	return _c
+}
+
+func (_c *SubscriptionRepository_FindByKiwifySubID_Call) RunAndReturn(run func(ctx context.Context, kiwifySubID string) (entities.Subscription, error)) *SubscriptionRepository_FindByKiwifySubID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // FindByOrderID provides a mock function for the type SubscriptionRepository
 func (_mock *SubscriptionRepository) FindByOrderID(ctx context.Context, orderID string) (entities.Subscription, error) {
 	ret := _mock.Called(ctx, orderID)
@@ -379,17 +446,91 @@ func (_c *SubscriptionRepository_FindByUserID_Call) RunAndReturn(run func(ctx co
 	return _c
 }
 
+// ListPastDueGraceExpired provides a mock function for the type SubscriptionRepository
+func (_mock *SubscriptionRepository) ListPastDueGraceExpired(ctx context.Context, now time.Time, limit int) ([]interfaces.ExpiredGraceCandidate, error) {
+	ret := _mock.Called(ctx, now, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListPastDueGraceExpired")
+	}
+
+	var r0 []interfaces.ExpiredGraceCandidate
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) ([]interfaces.ExpiredGraceCandidate, error)); ok {
+		return returnFunc(ctx, now, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) []interfaces.ExpiredGraceCandidate); ok {
+		r0 = returnFunc(ctx, now, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]interfaces.ExpiredGraceCandidate)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, int) error); ok {
+		r1 = returnFunc(ctx, now, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// SubscriptionRepository_ListPastDueGraceExpired_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListPastDueGraceExpired'
+type SubscriptionRepository_ListPastDueGraceExpired_Call struct {
+	*mock.Call
+}
+
+// ListPastDueGraceExpired is a helper method to define mock.On call
+//   - ctx context.Context
+//   - now time.Time
+//   - limit int
+func (_e *SubscriptionRepository_Expecter) ListPastDueGraceExpired(ctx interface{}, now interface{}, limit interface{}) *SubscriptionRepository_ListPastDueGraceExpired_Call {
+	return &SubscriptionRepository_ListPastDueGraceExpired_Call{Call: _e.mock.On("ListPastDueGraceExpired", ctx, now, limit)}
+}
+
+func (_c *SubscriptionRepository_ListPastDueGraceExpired_Call) Run(run func(ctx context.Context, now time.Time, limit int)) *SubscriptionRepository_ListPastDueGraceExpired_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *SubscriptionRepository_ListPastDueGraceExpired_Call) Return(expiredGraceCandidates []interfaces.ExpiredGraceCandidate, err error) *SubscriptionRepository_ListPastDueGraceExpired_Call {
+	_c.Call.Return(expiredGraceCandidates, err)
+	return _c
+}
+
+func (_c *SubscriptionRepository_ListPastDueGraceExpired_Call) RunAndReturn(run func(ctx context.Context, now time.Time, limit int) ([]interfaces.ExpiredGraceCandidate, error)) *SubscriptionRepository_ListPastDueGraceExpired_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpsertByOrder provides a mock function for the type SubscriptionRepository
-func (_mock *SubscriptionRepository) UpsertByOrder(ctx context.Context, orderID string, sub entities.Subscription, periodStart time.Time) error {
-	ret := _mock.Called(ctx, orderID, sub, periodStart)
+func (_mock *SubscriptionRepository) UpsertByOrder(ctx context.Context, params interfaces.UpsertByOrderParams) error {
+	ret := _mock.Called(ctx, params)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpsertByOrder")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, entities.Subscription, time.Time) error); ok {
-		r0 = returnFunc(ctx, orderID, sub, periodStart)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.UpsertByOrderParams) error); ok {
+		r0 = returnFunc(ctx, params)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -403,36 +544,24 @@ type SubscriptionRepository_UpsertByOrder_Call struct {
 
 // UpsertByOrder is a helper method to define mock.On call
 //   - ctx context.Context
-//   - orderID string
-//   - sub entities.Subscription
-//   - periodStart time.Time
-func (_e *SubscriptionRepository_Expecter) UpsertByOrder(ctx interface{}, orderID interface{}, sub interface{}, periodStart interface{}) *SubscriptionRepository_UpsertByOrder_Call {
-	return &SubscriptionRepository_UpsertByOrder_Call{Call: _e.mock.On("UpsertByOrder", ctx, orderID, sub, periodStart)}
+//   - params interfaces.UpsertByOrderParams
+func (_e *SubscriptionRepository_Expecter) UpsertByOrder(ctx interface{}, params interface{}) *SubscriptionRepository_UpsertByOrder_Call {
+	return &SubscriptionRepository_UpsertByOrder_Call{Call: _e.mock.On("UpsertByOrder", ctx, params)}
 }
 
-func (_c *SubscriptionRepository_UpsertByOrder_Call) Run(run func(ctx context.Context, orderID string, sub entities.Subscription, periodStart time.Time)) *SubscriptionRepository_UpsertByOrder_Call {
+func (_c *SubscriptionRepository_UpsertByOrder_Call) Run(run func(ctx context.Context, params interfaces.UpsertByOrderParams)) *SubscriptionRepository_UpsertByOrder_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 interfaces.UpsertByOrderParams
 		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 entities.Subscription
-		if args[2] != nil {
-			arg2 = args[2].(entities.Subscription)
-		}
-		var arg3 time.Time
-		if args[3] != nil {
-			arg3 = args[3].(time.Time)
+			arg1 = args[1].(interfaces.UpsertByOrderParams)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -443,7 +572,7 @@ func (_c *SubscriptionRepository_UpsertByOrder_Call) Return(err error) *Subscrip
 	return _c
 }
 
-func (_c *SubscriptionRepository_UpsertByOrder_Call) RunAndReturn(run func(ctx context.Context, orderID string, sub entities.Subscription, periodStart time.Time) error) *SubscriptionRepository_UpsertByOrder_Call {
+func (_c *SubscriptionRepository_UpsertByOrder_Call) RunAndReturn(run func(ctx context.Context, params interfaces.UpsertByOrderParams) error) *SubscriptionRepository_UpsertByOrder_Call {
 	_c.Call.Return(run)
 	return _c
 }

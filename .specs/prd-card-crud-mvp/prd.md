@@ -1,10 +1,11 @@
 # Documento de Requisitos do Produto (PRD)
 
-<!-- spec-version: 1 -->
+<!-- spec-version: 2 -->
 
 <!--
 Histórico de versões:
 - v1 (2026-06-06): escopo MVP production-ready do módulo `internal/card` consolidando brainstorming decisório (`discoveries/brainstorm-modulo-crud-de-cartoes-de-credito-com-calculo-de-fatura/`) e discovery técnico (`discoveries/technical-modulo-card-mvp-crud-com-invoicefor/`). CRUD HTTP de cartões + função pura `InvoiceFor` de domínio. Introduz pacote genérico `internal/platform/idempotency/`. Middleware transitório `RequireUser` via header `X-User-ID` enquanto módulo de autenticação não existir.
+- v2 (2026-06-08): bump pós-`prd-auth-foundation` task 9.0. O middleware transitório `RequireUser` via `X-User-ID` é substituído pelo `RequireUser` canônico de `internal/identity/infrastructure/http/server/middleware` que consome `auth.Principal` do `context.Context` injetado pelo `EstablishPrincipal` usecase. Referência: `prd-auth-foundation`. ADR-003 permanece válido; a substituição é additive e não muda o contrato HTTP do módulo `card`.
 -->
 
 ## Visão Geral

@@ -14,8 +14,6 @@ import (
 
 type TokenExpirationJobSuite struct {
 	suite.Suite
-	useCase any
-	job     *handlers.TokenExpirationJob
 }
 
 func TestTokenExpirationJobSuite(t *testing.T) {

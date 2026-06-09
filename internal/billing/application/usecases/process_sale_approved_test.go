@@ -133,7 +133,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 					Return(s.validPlan(), nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					UpsertByOrder(s.ctx, mock.Anything).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -182,7 +182,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 					Return(s.validPlan(), nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					UpsertByOrder(s.ctx, mock.Anything).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -265,7 +265,7 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 					Return(s.validPlan(), nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
+					UpsertByOrder(s.ctx, mock.Anything).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().

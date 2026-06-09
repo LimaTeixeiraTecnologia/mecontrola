@@ -1,0 +1,584 @@
+{
+  "id": null,
+  "uid": "auth-module-v1",
+  "title": "Auth Module",
+  "description": "Dashboard operacional do modulo de autenticacao e autorizacao (prd-auth-foundation). Cobre as 11 metricas OTel, alertas e visibilidade de traces.",
+  "tags": ["auth", "identity", "whatsapp", "otel"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "pluginId": "prometheus",
+        "label": "Prometheus",
+        "hide": 0,
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      },
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": "${datasource}",
+        "label": "Job",
+        "hide": 0,
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "query": "label_values(auth_principal_established_total, job)",
+        "current": {}
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "datasource": "${datasource}",
+        "label": "Instance",
+        "hide": 0,
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "query": "label_values(auth_principal_established_total{job=\"$job\"}, instance)",
+        "current": {}
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Alertas",
+        "datasource": "${datasource}",
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "type": "alert"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Principals e Falhas",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "auth_principal_established_total — Taxa de Principals Estabelecidos",
+      "description": "RF-17: Principals estabelecidos com sucesso por source (whatsapp). Taxa por minuto.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "rate(auth_principal_established_total{job=\"$job\", instance=~\"$instance\"}[5m]) * 60",
+          "legendFormat": "established/min (source={{source}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "auth_failed_total — Taxa de Falhas de Autenticacao",
+      "description": "RF-17: Falhas por reason {invalid_signature, unknown_wa_id, invalid_country, rate_limited, db_unavailable}. ALERTA se invalid_signature > 0/5min ou db_unavailable > 1/1min.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "rate(auth_failed_total{job=\"$job\", instance=~\"$instance\"}[5m]) * 60",
+          "legendFormat": "failed/min (reason={{reason}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*invalid_signature.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": ".*db_unavailable.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "auth_unknown_wa_id_total — WhatsApp IDs Desconhecidos",
+      "description": "RF-17: Total de mensagens de wa_id sem usuario ativo.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "rate(auth_unknown_wa_id_total{job=\"$job\", instance=~\"$instance\"}[5m]) * 60",
+          "legendFormat": "unknown/min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "auth_rate_limit_hits_total — Rate Limit Hits",
+      "description": "RF-17: Mensagens bloqueadas pelo rate limiter.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "rate(auth_rate_limit_hits_total{job=\"$job\", instance=~\"$instance\"}[5m]) * 60",
+          "legendFormat": "rate_limited/min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "meta_signature_status_total — Status de Assinatura Meta",
+      "description": "RF-17: Assinaturas validas, invalidas e rotacionadas (reusada do onboarding).",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "rate(meta_signature_status_total{job=\"$job\", instance=~\"$instance\"}[5m]) * 60",
+          "legendFormat": "signature/min (status={{status}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*invalid.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Latencia",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "auth_resolve_wa_duration_seconds — Latencia de Resolucao WA",
+      "description": "RF-17: Histograma p50/p95/p99. ALERTA: p99 > 100ms sustentado por 3 dias.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(auth_resolve_wa_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(auth_resolve_wa_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(auth_resolve_wa_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m]))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.1 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Dispatcher e Rate Limiter",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": false
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "whatsapp_dispatcher_route_total — Roteamento do Dispatcher",
+      "description": "RF-17: Mensagens roteadas por outcome {onboarding, agent, fallback, rate_limited, duplicate, invalid}.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "rate(whatsapp_dispatcher_route_total{job=\"$job\", instance=~\"$instance\"}[5m]) * 60",
+          "legendFormat": "routed/min (outcome={{outcome}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 9,
+      "type": "gauge",
+      "title": "whatsapp_ratelimit_buckets_count — Buckets Ativos",
+      "description": "RF-17: Numero de buckets ativos no rate limiter. ALERTA: > 10000 indica possivel leak.",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 27 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "whatsapp_ratelimit_buckets_count{job=\"$job\", instance=~\"$instance\"}",
+          "legendFormat": "buckets ativos"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5000 },
+              { "color": "red", "value": 10000 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "whatsapp_ratelimit_cleanup_duration_seconds — Duracao do Cleanup",
+      "description": "RF-17: Histograma de duracao de cada execucao da goroutine de cleanup.",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 27 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(whatsapp_ratelimit_cleanup_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[10m]))",
+          "legendFormat": "cleanup p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Housekeeping",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "collapsed": false
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "auth_events_housekeeping_deleted_total — Linhas Apagadas",
+      "description": "RF-17: Total acumulado de linhas de auth_events apagadas pelo housekeeping mensal.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "increase(auth_events_housekeeping_deleted_total{job=\"$job\", instance=~\"$instance\"}[1h])",
+          "legendFormat": "linhas apagadas/h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "auth_events_housekeeping_duration_seconds — Duracao do Housekeeping",
+      "description": "RF-17: Duracao de cada execucao do housekeeping.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(auth_events_housekeeping_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[1h]))",
+          "legendFormat": "housekeeping p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Alertas",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 44 },
+      "collapsed": false
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "ALERTA: Assinaturas Invalidas (5min)",
+      "description": "Dispara se auth_failed_total{reason=invalid_signature} > 0 nos ultimos 5 minutos. Indica ataque ou rotacao incorreta.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 45 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "increase(auth_failed_total{reason=\"invalid_signature\", job=\"$job\"}[5m])",
+          "legendFormat": "invalid_signature/5min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "ALERTA: DB Indisponivel (1min)",
+      "description": "Dispara se auth_failed_total{reason=db_unavailable} > 1 no ultimo minuto. Indica saturacao do Postgres.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 45 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "increase(auth_failed_total{reason=\"db_unavailable\", job=\"$job\"}[1m])",
+          "legendFormat": "db_unavailable/1min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "ALERTA: Buckets Leak (> 10000)",
+      "description": "Dispara se whatsapp_ratelimit_buckets_count > 10000. Indica possivel leak de bucket.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 45 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "whatsapp_ratelimit_buckets_count{job=\"$job\"}",
+          "legendFormat": "buckets"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5000 },
+              { "color": "red", "value": 10000 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "ALERTA: Outbox Auth Falhou",
+      "description": "Dispara se outbox_publish_failed_total{kind=~auth.*} > 0. Indica perda de audit log (critico).",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 45 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "increase(outbox_publish_failed_total{kind=~\"auth\\\\..*\", job=\"$job\"}[5m])",
+          "legendFormat": "outbox_auth_failed/5min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "ALERTA: p99 Latencia Alta (> 100ms)",
+      "description": "Dispara se histogram_quantile(0.99, auth_resolve_wa_duration_seconds) > 0.1s. Gatilho para cache.",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 49 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(auth_resolve_wa_duration_seconds_bucket{job=\"$job\"}[5m]))",
+          "legendFormat": "p99 latencia"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.1 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    }
+  ],
+  "links": [],
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "weekStart": "",
+  "style": "dark"
+}

@@ -325,6 +325,62 @@ func (_c *UserRepository_MarkDeleted_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
+func (_m *UserRepository) TryFindActiveByWhatsApp(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, bool, error) {
+	ret := _m.Called(ctx, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TryFindActiveByWhatsApp")
+	}
+
+	var r0 entities.User
+	var r1 bool
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, valueobjects.WhatsAppNumber) (entities.User, bool, error)); ok {
+		return rf(ctx, number)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, valueobjects.WhatsAppNumber) entities.User); ok {
+		r0 = rf(ctx, number)
+	} else {
+		r0 = ret.Get(0).(entities.User)
+	}
+	if rf, ok := ret.Get(1).(func(context.Context, valueobjects.WhatsAppNumber) bool); ok {
+		r1 = rf(ctx, number)
+	} else {
+		r1 = ret.Bool(1)
+	}
+	if rf, ok := ret.Get(2).(func(context.Context, valueobjects.WhatsAppNumber) error); ok {
+		r2 = rf(ctx, number)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+type UserRepository_TryFindActiveByWhatsApp_Call struct {
+	*mock.Call
+}
+
+func (_e *UserRepository_Expecter) TryFindActiveByWhatsApp(ctx, number any) *UserRepository_TryFindActiveByWhatsApp_Call {
+	return &UserRepository_TryFindActiveByWhatsApp_Call{Call: _e.mock.On("TryFindActiveByWhatsApp", ctx, number)}
+}
+
+func (_c *UserRepository_TryFindActiveByWhatsApp_Call) Run(run func(ctx context.Context, number valueobjects.WhatsAppNumber)) *UserRepository_TryFindActiveByWhatsApp_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(valueobjects.WhatsAppNumber))
+	})
+	return _c
+}
+
+func (_c *UserRepository_TryFindActiveByWhatsApp_Call) Return(_a0 entities.User, _a1 bool, _a2 error) *UserRepository_TryFindActiveByWhatsApp_Call {
+	_c.Call.Return(_a0, _a1, _a2)
+	return _c
+}
+
+func (_c *UserRepository_TryFindActiveByWhatsApp_Call) RunAndReturn(run func(context.Context, valueobjects.WhatsAppNumber) (entities.User, bool, error)) *UserRepository_TryFindActiveByWhatsApp_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 func (_m *UserRepository) AppendWhatsAppHistory(ctx context.Context, userID string, entry interfaces.WhatsAppHistoryEntry) error {
 	ret := _m.Called(ctx, userID, entry)
 

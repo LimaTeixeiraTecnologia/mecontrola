@@ -127,7 +127,7 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 					Return(s.monthlyPlan(), nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					UpsertByOrder(s.ctx, "order-001", mock.Anything, saleTime).
+					UpsertByOrder(s.ctx, mock.Anything).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -251,7 +251,7 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-002", "order_refunded", "sale-002", saleTime).
+					MarkApplied(s.ctx, "order_refunded:sale-002", "order_refunded", "sale-002", saleTime).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -288,4 +288,22 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 			scenario.expect(err)
 		})
 	}
+}
+
+func (s *ReconcileSubscriptionsSuite) TestMaxPagesGuard() {
+	s.SetupTest()
+	in := input.ReconcileSubscriptionsInput{
+		WindowStart: time.Now().UTC().Add(-time.Hour),
+		WindowEnd:   time.Now().UTC(),
+	}
+
+	s.kiwifyClientMock.EXPECT().
+		ListSalesUpdatedSince(s.ctx, in.WindowStart, in.WindowEnd, mock.AnythingOfType("int")).
+		Return(application.KiwifySalePage{Sales: nil, HasMore: true}, nil).
+		Times(1000)
+
+	sut := s.newSUT()
+	err := sut.Execute(s.ctx, in)
+	s.Require().Error(err)
+	s.ErrorIs(err, usecases.ErrReconcileMaxPagesExceeded)
 }

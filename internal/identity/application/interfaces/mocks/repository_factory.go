@@ -37,6 +37,59 @@ func (_m *RepositoryFactory) EXPECT() *RepositoryFactory_Expecter {
 	return &RepositoryFactory_Expecter{mock: &_m.Mock}
 }
 
+// AuthEventsRepository provides a mock function for the type RepositoryFactory
+func (_mock *RepositoryFactory) AuthEventsRepository(db database.DBTX) interfaces.AuthEventsRepository {
+	ret := _mock.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AuthEventsRepository")
+	}
+
+	var r0 interfaces.AuthEventsRepository
+	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.AuthEventsRepository); ok {
+		r0 = returnFunc(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.AuthEventsRepository)
+		}
+	}
+	return r0
+}
+
+// RepositoryFactory_AuthEventsRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AuthEventsRepository'
+type RepositoryFactory_AuthEventsRepository_Call struct {
+	*mock.Call
+}
+
+// AuthEventsRepository is a helper method to define mock.On call
+//   - db database.DBTX
+func (_e *RepositoryFactory_Expecter) AuthEventsRepository(db interface{}) *RepositoryFactory_AuthEventsRepository_Call {
+	return &RepositoryFactory_AuthEventsRepository_Call{Call: _e.mock.On("AuthEventsRepository", db)}
+}
+
+func (_c *RepositoryFactory_AuthEventsRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_AuthEventsRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 database.DBTX
+		if args[0] != nil {
+			arg0 = args[0].(database.DBTX)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_AuthEventsRepository_Call) Return(authEventsRepository interfaces.AuthEventsRepository) *RepositoryFactory_AuthEventsRepository_Call {
+	_c.Call.Return(authEventsRepository)
+	return _c
+}
+
+func (_c *RepositoryFactory_AuthEventsRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.AuthEventsRepository) *RepositoryFactory_AuthEventsRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // EntitlementRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) EntitlementRepository(db database.DBTX) interfaces.EntitlementRepository {
 	ret := _mock.Called(db)

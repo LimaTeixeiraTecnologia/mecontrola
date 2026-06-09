@@ -53,8 +53,48 @@ func (s *EntitlementSuite) TestIsEntitled() {
 			},
 		},
 		{
+			name: "deve negar acesso para assinatura ativa com periodo expirado",
+			args: args{status: domain.SubscriptionActive, periodEnd: s.now.Add(-24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonExpired, reason)
+			},
+		},
+		{
+			name: "deve conceder acesso para trialing com periodo vigente",
+			args: args{status: domain.SubscriptionTrialing, periodEnd: s.now.Add(24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.True(entitled)
+				s.Equal(domain.ReasonTrialing, reason)
+			},
+		},
+		{
+			name: "deve negar acesso para trialing com periodo expirado",
+			args: args{status: domain.SubscriptionTrialing, periodEnd: s.now.Add(-24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonExpired, reason)
+			},
+		},
+		{
+			name: "deve conceder acesso para past due dentro da carencia",
+			args: args{status: domain.SubscriptionPastDue, graceEnd: s.now.Add(24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.True(entitled)
+				s.Equal(domain.ReasonPastDueGrace, reason)
+			},
+		},
+		{
 			name: "deve negar acesso para past due sem carencia",
 			args: args{status: domain.SubscriptionPastDue, graceEnd: s.now.Add(-24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonPastDueNoGrace, reason)
+			},
+		},
+		{
+			name: "deve negar acesso para past due sem grace period definido",
+			args: args{status: domain.SubscriptionPastDue, graceEnd: time.Time{}},
 			expect: func(entitled bool, reason domain.Reason) {
 				s.False(entitled)
 				s.Equal(domain.ReasonPastDueNoGrace, reason)
@@ -66,6 +106,30 @@ func (s *EntitlementSuite) TestIsEntitled() {
 			expect: func(entitled bool, reason domain.Reason) {
 				s.True(entitled)
 				s.Equal(domain.ReasonCanceledPending, reason)
+			},
+		},
+		{
+			name: "deve negar acesso para cancelado com periodo expirado",
+			args: args{status: domain.SubscriptionCanceledPending, periodEnd: s.now.Add(-24 * time.Hour)},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonExpired, reason)
+			},
+		},
+		{
+			name: "deve negar acesso para assinatura expirada",
+			args: args{status: domain.SubscriptionExpired},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonExpired, reason)
+			},
+		},
+		{
+			name: "deve negar acesso para assinatura reembolsada",
+			args: args{status: domain.SubscriptionRefunded},
+			expect: func(entitled bool, reason domain.Reason) {
+				s.False(entitled)
+				s.Equal(domain.ReasonRefunded, reason)
 			},
 		},
 		{

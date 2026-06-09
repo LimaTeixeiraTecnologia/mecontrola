@@ -80,3 +80,15 @@ type SubscriptionRefundedPayload struct {
 
 func (e SubscriptionRefundedPayload) GetEventType() string { return EventTypeSubscriptionRefunded }
 func (e SubscriptionRefundedPayload) GetPayload() any      { return e }
+
+type SubscriptionExpiredAfterGracePayload struct {
+	SubscriptionID string    `json:"subscription_id"`
+	PeriodEnd      time.Time `json:"period_end"`
+	GraceEnd       time.Time `json:"grace_end"`
+	OccurredAt     time.Time `json:"occurred_at"`
+}
+
+func (e SubscriptionExpiredAfterGracePayload) GetEventType() string {
+	return EventTypeSubscriptionExpired
+}
+func (e SubscriptionExpiredAfterGracePayload) GetPayload() any { return e }

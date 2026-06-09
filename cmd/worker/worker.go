@@ -160,7 +160,7 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 		}
 	}
 
-	jobs := make([]worker.Job, 0, 9)
+	jobs := make([]worker.Job, 0, 10)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
 		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, r.cfg.OutboxConfig, r.o11y.Logger(), rng))
@@ -168,8 +168,10 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 	jobs = append(jobs,
 		outbox.NewReaperJob(reaperUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
 		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
+		identityModule.AuthEventsHousekeepingJob,
 		billingModule.ReconciliationJob,
 		billingModule.KiwifyEventsHousekeeper,
+		billingModule.GraceExpirationJob,
 		onboardingModule.OutreachJob,
 		onboardingModule.ExpirationJob,
 		onboardingModule.MetaProcessedMessagesCleanup,

@@ -105,6 +105,10 @@ func (s *Subscription) Renew(occurredAt time.Time) error {
 	return s.applyStatusTransition(services.TriggerSubscriptionRenewed, occurredAt, 0)
 }
 
+func (s *Subscription) MarkExpiredAfterGrace(occurredAt time.Time) error {
+	return s.applyStatusTransition(services.TriggerGraceExpired, occurredAt, 0)
+}
+
 func (s *Subscription) applyActive(occurredAt time.Time) {
 	base := occurredAt
 	if s.periodEnd.After(occurredAt) {
@@ -126,6 +130,12 @@ func (s *Subscription) applyCanceled(occurredAt time.Time) {
 func (s *Subscription) applyPastDue(occurredAt time.Time, graceDuration time.Duration) {
 	s.status = valueobjects.StatusPastDue
 	s.graceEnd = occurredAt.Add(graceDuration)
+	s.lastEventAt = occurredAt
+}
+
+func (s *Subscription) applyExpired(occurredAt time.Time) {
+	s.status = valueobjects.StatusExpired
+	s.graceEnd = time.Time{}
 	s.lastEventAt = occurredAt
 }
 
@@ -163,6 +173,8 @@ func (s *Subscription) applyStatusTransition(
 		s.applyCanceled(occurredAt)
 	case valueobjects.StatusRefunded:
 		s.applyRefunded(occurredAt)
+	case valueobjects.StatusExpired:
+		s.applyExpired(occurredAt)
 	default:
 		return fmt.Errorf("billing: %s -> %s: %w", s.status.String(), targetStatus.String(), ErrTransitionNotAllowed)
 	}

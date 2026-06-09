@@ -22,6 +22,20 @@ type Config struct {
 	BillingConfig    BillingConfig    `mapstructure:",squash"`
 	OnboardingConfig OnboardingConfig `mapstructure:",squash"`
 	WhatsAppConfig   WhatsAppConfig   `mapstructure:",squash"`
+	IdentityConfig   IdentityConfig   `mapstructure:",squash"`
+}
+
+// IdentityConfig agrupa as configurações do módulo de identity/auth.
+type IdentityConfig struct {
+	// AuthEventsHousekeepingSchedule define o cron schedule do housekeeping mensal de auth_events.
+	// Padrão: "@monthly".
+	AuthEventsHousekeepingSchedule string `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE"`
+	// AuthEventsHousekeepingBatch define o tamanho do lote de deleção por iteração.
+	// Padrão: 10000.
+	AuthEventsHousekeepingBatch int `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH"`
+	// AuthEventsRetentionDays define a retenção em dias dos eventos de autenticação.
+	// Padrão: 180.
+	AuthEventsRetentionDays int `mapstructure:"IDENTITY_AUTH_EVENTS_RETENTION_DAYS"`
 }
 
 // OnboardingConfig agrupa as configuracoes do modulo de onboarding via magic token.
@@ -64,6 +78,7 @@ type WhatsAppConfig struct {
 	SystemUnavailable    string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
 	PleaseUseAtivar      string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
 	InvalidCountry       string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
+	AgentStubReceived    string `mapstructure:"WA_MSG_AGENT_STUB_RECEIVED"`
 }
 
 // KiwifyConfig agrupa as configurações do provedor Kiwify (RF-44).
@@ -121,6 +136,7 @@ type BillingConfig struct {
 	KiwifyEventsRetentionDays        int           `mapstructure:"BILLING_KIWIFY_EVENTS_RETENTION_DAYS"`
 	KiwifyEventsHousekeepingSchedule string        `mapstructure:"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE"`
 	KiwifyEventsHousekeepingBatch    int           `mapstructure:"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH"`
+	GraceExpirationSchedule          string        `mapstructure:"BILLING_GRACE_EXPIRATION_SCHEDULE"`
 }
 
 type AppConfig struct {
@@ -346,6 +362,7 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_SYSTEM_UNAVAILABLE_RETRY",
 		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
 		"WA_MSG_INVALID_COUNTRY",
+		"WA_MSG_AGENT_STUB_RECEIVED",
 	}
 }
 
@@ -761,6 +778,7 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
 	l.v.SetDefault("WA_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para ativar sua conta, envie: ATIVAR seguido do seu codigo de ativacao.")
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
+	l.v.SetDefault("WA_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
 }
 
 // validateKiwifyHTTP valida os campos HTTP da Kiwify quando ao menos um deles

@@ -141,7 +141,7 @@ Cada requisito está ancorado em uma decisão consolidada do épico, da discover
 
 ### Comunicação ao assinante
 
-- **RF-20:** O sistema deve, em **regime best-effort**, notificar o assinante via WhatsApp nas transições de estado que afetam o seu acesso (`ACTIVE → PAST_DUE`, `PAST_DUE → EXPIRED`, transição para `REFUNDED`). Falha de envio é tolerada e **não** impede, atrasa ou reverte a mudança de estado da assinatura.
+- **RF-20:** O sistema deve, em **regime best-effort**, notificar o assinante via WhatsApp nas transições de estado que afetam o seu acesso (`ACTIVE → PAST_DUE`, `PAST_DUE → EXPIRED`, transição para `REFUNDED`). Falha de envio é tolerada e **não** impede, atrasa ou reverte a mudança de estado da assinatura. **Nota de implementação (ADR-005 + bugfix 2026-06-09):** a transição `PAST_DUE → EXPIRED` é materializada por um job dedicado de expiração de graça (`ExpireGraceJob`, cron `@every 30m` por padrão) que percorre assinaturas com `status='PAST_DUE' AND grace_end < now()`, aplica `StatusExpired` em transação e publica o evento outbox `billing.subscription.expired_after_grace`. Esse evento aciona o `NotificationHandler` de expiração. O gate de acesso continua usando `IsEntitled(sub, now)` (decisão runtime, ADR-005), portanto o usuário perde acesso ao terminar a graça mesmo antes do job rodar.
 
 ### Relação com o gate de uso
 

@@ -1,0 +1,148 @@
+package usecases_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
+
+	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
+	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
+	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
+	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
+)
+
+type EstablishPrincipalSuite struct {
+	suite.Suite
+	ctx context.Context
+}
+
+func TestEstablishPrincipal(t *testing.T) {
+	suite.Run(t, new(EstablishPrincipalSuite))
+}
+
+func (s *EstablishPrincipalSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *EstablishPrincipalSuite) mustWhatsApp(raw string) valueobjects.WhatsAppNumber {
+	wa, err := valueobjects.NewWhatsAppNumber(raw)
+	s.Require().NoError(err)
+	return wa
+}
+
+func (s *EstablishPrincipalSuite) TestExecute() {
+	const validWA = "+5511987654321"
+
+	type args struct {
+		in input.EstablishPrincipalInput
+	}
+
+	type dependencies struct {
+		factory   *interfacesmocks.MockRepositoryFactory
+		repo      *interfacesmocks.MockUserRepository
+		publisher *outboxmocks.Publisher
+	}
+
+	wa := s.mustWhatsApp(validWA)
+
+	hydratedUser, err := entities.Hydrate(
+		"a0a0a0a0-0000-0000-0000-000000000001",
+		wa.String(),
+		"", "", "ACTIVE",
+		time.Time{}, time.Time{}, time.Time{},
+	)
+	s.Require().NoError(err)
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(dependencies)
+		expect func(auth.Principal, error)
+	}{
+		{
+			name: "deve retornar Principal para usuario ativo",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+				s.Equal(auth.SourceWhatsApp, p.Source)
+			},
+		},
+		{
+			name: "deve retornar ErrUnknownUser e publicar unknown_user para usuario inexistente",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev any) bool {
+					return true // outbox event for unknown_user
+				})).Return(nil).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().ErrorIs(err, application.ErrUnknownUser)
+				s.True(p.IsZero())
+			},
+		},
+		{
+			name: "deve propagar erro de banco de dados",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				dbErr := errors.New("db unavailable")
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, dbErr).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().Error(err)
+				s.Contains(err.Error(), "db unavailable")
+				s.True(p.IsZero())
+			},
+		},
+		{
+			name: "deve propagar erro de outbox e nao retornar Principal (rollback observavel via erro)",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+				pubErr := errors.New("outbox unavailable")
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(pubErr).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().Error(err)
+				s.Contains(err.Error(), "outbox unavailable")
+				s.True(p.IsZero())
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			deps := dependencies{
+				factory:   interfacesmocks.NewMockRepositoryFactory(s.T()),
+				repo:      interfacesmocks.NewMockUserRepository(s.T()),
+				publisher: outboxmocks.NewPublisher(s.T()),
+			}
+			scenario.setup(deps)
+
+			uow := usecasemocks.NewUnitOfWorkGeneric[usecases.EstablishResult](s.T())
+			sut := usecases.NewEstablishPrincipal(uow, deps.factory, deps.publisher, noop.NewProvider())
+			p, err := sut.Execute(s.ctx, scenario.args.in)
+
+			scenario.expect(p, err)
+		})
+	}
+}

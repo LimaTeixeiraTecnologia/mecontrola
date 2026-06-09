@@ -14,6 +14,7 @@ const (
 	TriggerSubscriptionLate
 	TriggerSubscriptionCanceled
 	TriggerRefunded
+	TriggerGraceExpired
 )
 
 type TransitionService struct{}
@@ -37,7 +38,7 @@ func (s TransitionService) IsRegression(
 	occurredAt time.Time,
 	lastEventAt time.Time,
 ) bool {
-	if incomingTrigger == TriggerRefunded {
+	if incomingTrigger == TriggerRefunded || incomingTrigger == TriggerGraceExpired {
 		return false
 	}
 	if lastEventAt.IsZero() || occurredAt.After(lastEventAt) {
@@ -79,6 +80,10 @@ func (s TransitionService) TargetStatus(current valueobjects.Status, trigger Tri
 		if current == valueobjects.StatusRefunded || s.CanTransition(current, valueobjects.StatusRefunded) {
 			return valueobjects.StatusRefunded, true
 		}
+	case TriggerGraceExpired:
+		if current == valueobjects.StatusPastDue {
+			return valueobjects.StatusExpired, true
+		}
 	}
 
 	return 0, false
@@ -98,6 +103,7 @@ func (s TransitionService) transitionTable() [7][7]bool {
 			valueobjects.StatusActive:          true,
 			valueobjects.StatusPastDue:         true,
 			valueobjects.StatusCanceledPending: true,
+			valueobjects.StatusExpired:         true,
 			valueobjects.StatusRefunded:        true,
 		},
 		{

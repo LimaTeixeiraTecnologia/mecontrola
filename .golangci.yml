@@ -51,6 +51,23 @@ linters:
         # truncated read). Use slog.WarnContext para logar ou propague via named return.
         - pattern: '\_ = .*\.Close\(\)'
           msg: "Close() error must not be silently discarded — log with slog.WarnContext or propagate via named return (RULE: R-CLOSE-001)"
+        # RF-13: proibir os.Getenv para leitura de secrets/config fora do pacote canônico.
+        # O pacote canônico é configs/ (github.com/LimaTeixeiraTecnologia/mecontrola/configs).
+        # Toda configuração e secret deve ser carregada via configs.Config (PRE-03, ADR-001).
+        - pattern: 'os\.Getenv\b'
+          msg: "Use configs.Config para acessar variáveis de ambiente e secrets (RF-13, PRE-03). Pacote canônico: github.com/LimaTeixeiraTecnologia/mecontrola/configs. os.Getenv direto é proibido fora desse pacote."
+        # RF-12 (ADR-001): proibido ler X-User-* header em qualquer casing. Headers HTTP sao
+        # case-insensitive (X-User-Id, x-user-id, X-USER-ID, etc) e bloquear apenas uma grafia
+        # permitiria bypass. O padrao (?i) cobre toda casing, incluindo a forma canonica Go via
+        # textproto.CanonicalMIMEHeaderKey. Allowlist explicita (X-Request-ID, Content-Type,
+        # Idempotency-Key, X-Kiwify-Signature, Origin, X-Real-IP, X-Forwarded-For, X-Hub-Signature-256)
+        # nao colide com X-User-* — adicionar headers operacionais novos exige PR com revisao.
+        - pattern: '\.Header\.(Get|Values)\(\s*"(?i)x-user-[a-z0-9_-]*"'
+          msg: "RF-12 (ADR-001): use auth.FromContext(ctx) para obter identidade do usuario. Leitura direta de header X-User-* (qualquer casing) e proibida."
+        - pattern: '\.Header\[\s*"[Xx]-[Uu]ser-[A-Za-z0-9_-]+"\s*\]'
+          msg: "RF-12 (ADR-001): leitura direta de header map para X-User-* e proibida — bypass via map[textproto.CanonicalMIMEHeaderKey()] tambem viola o contrato."
+        - pattern: 'textproto\.CanonicalMIMEHeaderKey\(\s*"(?i)x-user-'
+          msg: "RF-12 (ADR-001): canonicalmimeheaderkey para X-User-* e proibido — qualquer caminho de leitura desse header viola o contrato."
 
     depguard:
       rules:
@@ -118,9 +135,23 @@ linters:
               desc: "application não pode importar infrastructure (hexagonal boundary violation)"
         # Platform é fundação técnica compartilhada e não pode depender de módulos de negócio.
         platform-no-business-modules:
+          # ADR-001 / RF-04 / RF-06: dispatcher do WhatsApp (internal/platform/whatsapp/dispatcher)
+          # e integration point platform <-> identity legitimo, listado fora deste glob.
+          # Demais subpacotes de platform/ seguem regra estrita: nao podem importar negocio.
           files:
             - "**/internal/platform/*.go"
-            - "**/internal/platform/**/*.go"
+            - "**/internal/platform/dedup/**/*.go"
+            - "**/internal/platform/events/**/*.go"
+            - "**/internal/platform/httpclient/**/*.go"
+            - "**/internal/platform/id/**/*.go"
+            - "**/internal/platform/outbox/**/*.go"
+            - "**/internal/platform/sqlnull/**/*.go"
+            - "**/internal/platform/whatsapp/dedup/**/*.go"
+            - "**/internal/platform/whatsapp/handlers/**/*.go"
+            - "**/internal/platform/whatsapp/payload/**/*.go"
+            - "**/internal/platform/whatsapp/ratelimit/**/*.go"
+            - "**/internal/platform/whatsapp/signature/**/*.go"
+            - "**/internal/platform/worker/**/*.go"
           deny:
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
               desc: "platform não pode importar módulos de negócio"
@@ -146,6 +177,12 @@ linters:
           deny:
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure"
               desc: "billing/domain e billing/application não podem importar identity/infrastructure (RF-45 — cross-module boundary violation: use identity/domain ou identity/application)"
+
+        # RF-12 (ADR-001): a aplicacao da regra de identidade fica em forbidigo acima
+        # (analyzer patterns case-insensitive cobrem X-User-* em qualquer grafia + bypass via
+        # map e CanonicalMIMEHeaderKey). Esta secao depguard nao serve para regex de strings.
+        # Allowlist de headers legitimos (PRE-02): X-Request-ID, Content-Type, Idempotency-Key,
+        #   X-Kiwify-Signature, Origin, X-Real-IP, X-Forwarded-For, X-Hub-Signature-256.
 
         # Regra 5 (cross-module): identity não importa finance diretamente.
         # Comunicação cross-module apenas via interface (application) ou Domain Event.
@@ -292,3 +329,27 @@ exclusions:
       linters:
         - revive
     # Nota: misspell removido dos linters ativos — projeto usa comentários em PT-BR.
+    # RF-13: permitir os.Getenv no pacote canônico de config (onde é definido e lido).
+    - path: "^configs/.*\\.go$"
+      linters:
+        - forbidigo
+    # RF-13: permitir os.Getenv em cmd/ (composition root / bootstrap).
+    - path: "^cmd/.*\\.go$"
+      linters:
+        - forbidigo
+    # RF-13: permitir os.Getenv em scripts e utilitários fora do domínio.
+    - path: "^scripts/.*\\.go$"
+      linters:
+        - forbidigo
+    # RF-13: permitir os.Getenv em testes de integração (setup de infra / testcontainers).
+    - path: "_integration_test\\.go$"
+      linters:
+        - forbidigo
+    # ADR-001 / RF-04 / RF-06: dispatcher do WhatsApp e integration point platform <-> identity.
+    # E o unico componente em platform/ legitimamente acoplado a identity/application,
+    # pois orquestra EstablishPrincipal + auth.WithPrincipal apos resolver wa_id -> user_id.
+    # Esta excecao e explicita e auditada em ADR; nenhum outro pacote em platform/ pode
+    # importar identity/billing/onboarding.
+    - path: "internal/platform/whatsapp/dispatcher/"
+      linters:
+        - depguard

@@ -36,6 +36,7 @@ func New() *cobra.Command {
 	}
 }
 
+//nolint:revive // composition root agrega bootstrap de o11y, db, modules e shutdown; refatorar em helpers menores fragmentaria a ordem de lifecycle critica (HTTP -> Dispatcher -> Limiter -> Consumer -> Housekeeping -> PG).
 func Run() error {
 	cfg, err := configs.LoadConfig(".")
 	if err != nil {
@@ -119,6 +120,20 @@ func Run() error {
 	if identityModule.UserRouter != nil {
 		srv.RegisterRouters(identityModule.UserRouter)
 	}
+
+	limiterStartCtx, limiterStartCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer limiterStartCancel()
+	if err := identityModule.WhatsAppLimiter.Start(limiterStartCtx); err != nil {
+		return fmt.Errorf("run: iniciar whatsapp limiter: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := identityModule.WhatsAppLimiter.Shutdown(shutdownCtx); err != nil {
+			slog.Error("whatsapp limiter shutdown failed", "error", err)
+		}
+	}()
+
 	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
 
 	billingModule, err := billing.NewBillingModule(cfg, o11y, dbManager)
@@ -141,8 +156,12 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo onboarding: %w", err)
 	}
-	srv.RegisterRouters(onboardingModule.PublicRouter, onboardingModule.WhatsAppRouter)
+	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
+
+	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule)
+	srv.RegisterRouters(waWebhookRouter)
+	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)

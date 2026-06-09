@@ -79,7 +79,6 @@ func (s *ProcessSubscriptionRenewedSuite) pastDueSub(lastEventAt time.Time) enti
 
 func (s *ProcessSubscriptionRenewedSuite) expectRepositories() {
 	s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
-	s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Once()
 	s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 }
 
@@ -118,7 +117,7 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByKiwifySubID(s.ctx, "kiwify-sub-001").
 					Return(sub, nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -193,7 +192,7 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByKiwifySubID(s.ctx, "kiwify-sub-001").
 					Return(sub, nil).
 					Once()
 				s.eventRepoMock.EXPECT().
@@ -207,7 +206,7 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 			},
 		},
 		{
-			name: "deve criar placeholder quando assinatura ainda nao existir",
+			name: "deve retornar erro quando renovacao chegar sem assinatura base por kiwify_sub_id",
 			args: args{
 				input: func() input.ProcessSubscriptionRenewedInput {
 					now := time.Now().UTC()
@@ -220,18 +219,6 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 				}(),
 			},
 			setup: func(args args) {
-				plan, err := valueobjects.NewPlan("MONTHLY", 30)
-				s.Require().NoError(err)
-				placeholderSub := entities.Hydrate(
-					"sub-placeholder",
-					valueobjects.FunnelToken{},
-					plan,
-					valueobjects.StatusActive,
-					args.input.OccurredAt,
-					args.input.OccurredAt.Add(30*24*time.Hour),
-					time.Time{},
-					args.input.OccurredAt,
-				)
 				eventKey := "subscription_renewed:kiwify-sub-001:" + args.input.OccurredAt.Format("2006-01-02T15:04:05Z07:00")
 
 				s.expectRepositories()
@@ -240,28 +227,12 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByKiwifySubID(s.ctx, "kiwify-sub-001").
 					Return(entities.Subscription{}, errors.New("not found")).
-					Once()
-				s.planRepoMock.EXPECT().
-					FindByKiwifyProductID(s.ctx, "prod-monthly").
-					Return(plan, nil).
-					Once()
-				s.subRepoMock.EXPECT().
-					UpsertByOrder(s.ctx, "order-001", mock.Anything, args.input.OccurredAt).
-					Return(nil).
-					Once()
-				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
-					Return(placeholderSub, nil).
-					Once()
-				s.publisherMock.EXPECT().
-					PublishRenewed(s.ctx, mock.Anything, placeholderSub, "sub-placeholder", args.input.OccurredAt).
-					Return(nil).
 					Once()
 			},
 			expect: func(err error) {
-				s.NoError(err)
+				s.ErrorIs(err, usecases.ErrRenewedWithoutBaseSubscription)
 			},
 		},
 	}

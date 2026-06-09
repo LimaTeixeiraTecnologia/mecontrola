@@ -1,6 +1,11 @@
 # PRD — Onboarding via Magic Token (E3)
 
-<!-- spec-version: 1 -->
+<!-- spec-version: 2 -->
+<!-- migration-note: 2026-06-08 — primitivos WhatsApp (HMAC, RawBodyBuffer, payload types) migrados
+     de internal/onboarding para internal/platform/whatsapp/{signature,payload,dedup} via PR atômico
+     Strangler Fig (RF-28 do prd-auth-foundation). Ver ADR-002 em
+     .specs/prd-auth-foundation/adr-002-strangler-fig-onboarding-whatsapp.md para rastreabilidade
+     completa da migração e lista de arquivos movidos/deletados. -->
 
 > **Slug:** `onboarding-magic-token`
 > **Épico de origem:** `docs/epics/epic-03-onboarding-magic-token.md`

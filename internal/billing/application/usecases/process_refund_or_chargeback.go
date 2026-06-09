@@ -36,7 +36,11 @@ func (uc *ProcessRefundOrChargeback) Execute(ctx context.Context, in input.Proce
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_refund_or_chargeback")
 	defer span.End()
 
-	eventKey := fmt.Sprintf("refund:%s", in.SaleID)
+	trigger := in.Trigger
+	if trigger == "" {
+		trigger = "order_refunded"
+	}
+	eventKey := fmt.Sprintf("%s:%s", trigger, in.SaleID)
 
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		processedRepo := uc.factory.ProcessedEventRepository(tx)

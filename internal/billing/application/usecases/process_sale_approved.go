@@ -69,7 +69,15 @@ func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSale
 		}
 
 		periodStart := in.OccurredAt
-		if upsertErr := subRepo.UpsertByOrder(ctx, in.OrderID, sub, periodStart); upsertErr != nil {
+		if upsertErr := subRepo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{
+			OrderID:            in.OrderID,
+			KiwifySubID:        in.KiwifySubID,
+			ExternalSaleID:     in.SaleID,
+			CustomerMobileE164: in.CustomerMobileE164,
+			CustomerEmail:      in.CustomerEmail,
+			Subscription:       sub,
+			PeriodStart:        periodStart,
+		}); upsertErr != nil {
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_sale_approved: upsert: %w", upsertErr)
 		}
 
@@ -129,7 +137,15 @@ func (uc *ProcessSaleApproved) executeWithoutToken(ctx context.Context, in input
 		}
 
 		periodStart := in.OccurredAt
-		if upsertErr := subRepo.UpsertByOrder(ctx, in.OrderID, sub, periodStart); upsertErr != nil {
+		if upsertErr := subRepo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{
+			OrderID:            in.OrderID,
+			KiwifySubID:        in.KiwifySubID,
+			ExternalSaleID:     in.SaleID,
+			CustomerMobileE164: in.CustomerMobileE164,
+			CustomerEmail:      in.CustomerEmail,
+			Subscription:       sub,
+			PeriodStart:        periodStart,
+		}); upsertErr != nil {
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_sale_approved.without_token: upsert: %w", upsertErr)
 		}
 

@@ -7,6 +7,7 @@ type ProcessSaleApprovedInput struct {
 	SaleID             string
 	KiwifyProductID    string
 	OrderID            string
+	KiwifySubID        string
 	FunnelToken        string
 	CustomerMobileE164 string
 	CustomerEmail      string

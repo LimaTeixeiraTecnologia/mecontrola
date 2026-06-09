@@ -10,40 +10,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 )
 
-type WhatsAppRouter struct {
-	verifyHandler  *handlers.WhatsAppVerifyHandler
-	inboundHandler *handlers.WhatsAppInboundHandler
-	secretCurrent  string
-	secretNext     string
-	onSigInvalid   func()
-}
-
-func NewWhatsAppRouter(
-	verifyHandler *handlers.WhatsAppVerifyHandler,
-	inboundHandler *handlers.WhatsAppInboundHandler,
-	secretCurrent string,
-	secretNext string,
-	onSigInvalid func(),
-) *WhatsAppRouter {
-	return &WhatsAppRouter{
-		verifyHandler:  verifyHandler,
-		inboundHandler: inboundHandler,
-		secretCurrent:  secretCurrent,
-		secretNext:     secretNext,
-		onSigInvalid:   onSigInvalid,
-	}
-}
-
-func (rt *WhatsAppRouter) Register(r chi.Router) {
-	r.Route("/webhooks/whatsapp", func(sub chi.Router) {
-		sub.Get("/", rt.verifyHandler.Handle)
-		sub.With(
-			middleware.RawBody,
-			middleware.MetaSignatureWithMetrics(rt.secretCurrent, rt.secretNext, rt.onSigInvalid),
-		).Post("/", rt.inboundHandler.Handle)
-	})
-}
-
 type PublicRouter struct {
 	checkoutHandler *handlers.CreateCheckoutHandler
 	stateHandler    *handlers.TokenStateHandler

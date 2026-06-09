@@ -14,6 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	identityinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/checkout"
@@ -40,7 +41,8 @@ type EventHandlerRegistration struct {
 
 type OnboardingModule struct {
 	PublicRouter                 *onboardingserver.PublicRouter
-	WhatsAppRouter               *onboardingserver.WhatsAppRouter
+	WhatsAppGateway              appinterfaces.WhatsAppGateway
+	WhatsAppMessageProcessor     *services.WhatsAppMessageProcessor
 	SubscriptionConsumer         events.Handler
 	PaidWithoutTokenConsumer     events.Handler
 	OutreachJob                  worker.Job
@@ -89,11 +91,19 @@ func NewOnboardingModule(
 
 	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(ucs.markTokenPaid, o11y)
 	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(ucs.handlePaidWithoutToken, o11y)
-	publicRouter, whatsAppRouter := buildRouters(mgr, cfg, waCfg, factory, ucs, waGateway, o11y)
+	publicRouter := buildPublicRouter(cfg, ucs, o11y)
+	messageProcessor := services.NewWhatsAppMessageProcessor(
+		ucs.consumeToken,
+		ucs.fallbackActivation,
+		waGateway,
+		buildMessagesMap(waCfg),
+		o11y,
+	)
 
 	return OnboardingModule{
 		PublicRouter:                 publicRouter,
-		WhatsAppRouter:               whatsAppRouter,
+		WhatsAppGateway:              waGateway,
+		WhatsAppMessageProcessor:     messageProcessor,
 		SubscriptionConsumer:         subscriptionConsumer,
 		PaidWithoutTokenConsumer:     paidWithoutTokenConsumer,
 		OutreachJob:                  onboardingjobs.NewOutreachJob(ucs.sendOutreach, cfg.OutreachEnabled),
@@ -165,13 +175,12 @@ func registerModuleGauge(mgr manager.Manager, factory appinterfaces.RepositoryFa
 	)
 }
 
-func buildRouters(mgr manager.Manager, cfg configs.OnboardingConfig, waCfg configs.WhatsAppConfig, factory appinterfaces.RepositoryFactory, ucs moduleUseCases, waGateway appinterfaces.WhatsAppGateway, o11y observability.Observability) (*onboardingserver.PublicRouter, *onboardingserver.WhatsAppRouter) {
+func buildPublicRouter(cfg configs.OnboardingConfig, ucs moduleUseCases, o11y observability.Observability) *onboardingserver.PublicRouter {
 	trustedProxies := parseCSV(cfg.TrustedProxies)
 
 	checkoutCreatedC := o11y.Metrics().Counter("onboarding_checkout_sessions_created_total", "Total de sessoes de checkout criadas", "1")
 	checkoutRateLimitedC := o11y.Metrics().Counter("onboarding_checkout_rate_limited_total", "Total de requisicoes de checkout bloqueadas por rate limit", "1")
 	invalidAccessC := o11y.Metrics().Counter("ty_page_invalid_access_total", "Total de acessos invalidos a pagina de obrigado", "1")
-	sigInvalidC := o11y.Metrics().Counter("meta_signature_invalid_total", "Total de requisicoes rejeitadas por assinatura Meta invalida", "1")
 
 	checkoutLimiter := middleware.NewRateLimiter(cfg.CheckoutRateLimitPerMin, cfg.CheckoutRateLimitBurst, trustedProxies)
 	stateLimiter := middleware.NewRateLimiter(cfg.StateRateLimitPerMin, cfg.StateRateLimitBurst, trustedProxies)
@@ -190,19 +199,7 @@ func buildRouters(mgr manager.Manager, cfg configs.OnboardingConfig, waCfg confi
 		o11y,
 	)
 
-	inboundHandler := handlers.NewWhatsAppInboundHandler(
-		ucs.consumeToken, ucs.fallbackActivation, waGateway,
-		factory, mgr.DBTX(context.Background()), buildMessagesMap(waCfg), o11y,
-	)
-
-	public := onboardingserver.NewPublicRouter(checkoutHandler, stateHandler, checkoutLimiter, stateLimiter, parseCSV(cfg.CheckoutCORSOrigins))
-	whatsApp := onboardingserver.NewWhatsAppRouter(
-		handlers.NewWhatsAppVerifyHandler(waCfg.VerifyToken, o11y),
-		inboundHandler,
-		waCfg.AppSecret, waCfg.AppSecretNext,
-		func() { sigInvalidC.Add(context.Background(), 1) },
-	)
-	return public, whatsApp
+	return onboardingserver.NewPublicRouter(checkoutHandler, stateHandler, checkoutLimiter, stateLimiter, parseCSV(cfg.CheckoutCORSOrigins))
 }
 
 type managerPublisher struct {

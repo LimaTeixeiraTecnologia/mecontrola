@@ -25,6 +25,10 @@ func (r *repositoryFactory) EntitlementRepository(db database.DBTX) interfaces.E
 	return postgres.NewEntitlementRepository(r.o11y, db)
 }
 
+func (r *repositoryFactory) AuthEventsRepository(db database.DBTX) interfaces.AuthEventsRepository {
+	return postgres.NewAuthEventsRepository(r.o11y, db)
+}
+
 func NewSubscriptionProjectionReader(
 	mgr manager.Manager,
 	o11y observability.Observability,

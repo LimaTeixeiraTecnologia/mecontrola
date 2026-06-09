@@ -13,16 +13,16 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Pre-build discovery (framework, headers, config, user.deleted publish) | pending | — | — | — |
-| 2.0 | auth.Principal + RequireUser + ADR-001 + .golangci.yml (depguard/forbidigo) | pending | 1.0 | Com 3.0, 6.0 | — |
-| 3.0 | Migrations 0014/0015 + auth_events repository (UUID v7) + housekeeping job | pending | 1.0 | Com 2.0, 6.0 | — |
-| 4.0 | EstablishPrincipal + TryFindActiveByWhatsApp + MarkUserDeleted publica user.deleted | pending | 3.0 | Não | — |
-| 5.0 | auth_events_consumer (projeção idempotente + anonimização) | pending | 3.0, 4.0 | Não | — |
-| 6.0 | Strangler Fig atômico — internal/platform/whatsapp + migra onboarding + ADR-002 | pending | 1.0 | Com 2.0, 3.0 | — |
-| 7.0 | whatsapp.ratelimit.Limiter (Start/Shutdown via module.go) + race + bench | pending | 6.0 | Não | — |
-| 8.0 | whatsapp.dispatcher.Dispatcher + agent stub + integração end-to-end | pending | 4.0, 5.0, 6.0, 7.0 | Não | — |
-| 9.0 | HTTP routes + wiring module.go + cmd/api/main.go shutdown order + cross-PRD bumps | pending | 2.0, 8.0 | Não | — |
-| 10.0 | Observabilidade + runbooks + Grafana + load test k6 + task auth:smoke | pending | 9.0 | Não | taskfile-production, otel-grafana-dashboards |
+| 1.0 | Pre-build discovery (framework, headers, config, user.deleted publish) | done | — | — | — |
+| 2.0 | auth.Principal + RequireUser + ADR-001 + .golangci.yml (depguard/forbidigo) | done    | 1.0 | Com 3.0, 6.0 | — |
+| 3.0 | Migrations 0014/0015 + auth_events repository (UUID v7) + housekeeping job | done    | 1.0 | Com 2.0, 6.0 | — |
+| 4.0 | EstablishPrincipal + TryFindActiveByWhatsApp + MarkUserDeleted publica user.deleted | done | 3.0 | Não | — |
+| 5.0 | auth_events_consumer (projeção idempotente + anonimização) | done | 3.0, 4.0 | Não | — |
+| 6.0 | Strangler Fig atômico — internal/platform/whatsapp + migra onboarding + ADR-002 | done    | 1.0 | Com 2.0, 3.0 | — |
+| 7.0 | whatsapp.ratelimit.Limiter (Start/Shutdown via module.go) + race + bench | done | 6.0 | Não | — |
+| 8.0 | whatsapp.dispatcher.Dispatcher + agent stub + integração end-to-end | done | 4.0, 5.0, 6.0, 7.0 | Não | — |
+| 9.0 | HTTP routes + wiring module.go + cmd/api/main.go shutdown order + cross-PRD bumps | done | 2.0, 8.0 | Não | — |
+| 10.0 | Observabilidade + runbooks + Grafana + load test k6 + task auth:smoke | done    | 9.0 | Não | taskfile-production, otel-grafana-dashboards |
 
 ## Dependências Críticas
 - **1.0 → todas**: as descobertas de framework de teste, headers atualmente lidos, pacote canônico de config e estado do publish de `user.deleted` em `MarkUserDeleted` são pré-requisitos para qualquer codificação.

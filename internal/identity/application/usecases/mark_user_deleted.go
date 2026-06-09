@@ -2,31 +2,36 @@ package usecases
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 const prefixMarkUserDeleted = "identity.usecase.mark_user_deleted:"
 
 type MarkUserDeleted struct {
-	uow     uow.UnitOfWork[struct{}]
-	factory interfaces.RepositoryFactory
-	o11y    observability.Observability
+	uow       uow.UnitOfWork[struct{}]
+	factory   interfaces.RepositoryFactory
+	publisher outbox.Publisher
+	o11y      observability.Observability
 }
 
 func NewMarkUserDeleted(
 	u uow.UnitOfWork[struct{}],
 	factory interfaces.RepositoryFactory,
+	publisher outbox.Publisher,
 	o11y observability.Observability,
 ) *MarkUserDeleted {
-	return &MarkUserDeleted{uow: u, factory: factory, o11y: o11y}
+	return &MarkUserDeleted{uow: u, factory: factory, publisher: publisher, o11y: o11y}
 }
 
 func (u *MarkUserDeleted) Execute(ctx context.Context, in input.MarkUserDeleted) error {
@@ -34,9 +39,18 @@ func (u *MarkUserDeleted) Execute(ctx context.Context, in input.MarkUserDeleted)
 	defer span.End()
 
 	_, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+		now := time.Now().UTC()
 		userRepo := u.factory.UserRepository(tx)
-		if markErr := userRepo.MarkDeleted(ctx, in.ID, time.Now().UTC()); markErr != nil {
+		if markErr := userRepo.MarkDeleted(ctx, in.ID, now); markErr != nil {
 			return struct{}{}, fmt.Errorf("%s mark deleted: %w", prefixMarkUserDeleted, markErr)
+		}
+
+		ev, buildErr := buildUserDeletedEvent(in.ID, now)
+		if buildErr != nil {
+			return struct{}{}, fmt.Errorf("%s build user.deleted event: %w", prefixMarkUserDeleted, buildErr)
+		}
+		if pubErr := u.publisher.Publish(ctx, ev); pubErr != nil {
+			return struct{}{}, fmt.Errorf("%s publish user.deleted: %w", prefixMarkUserDeleted, pubErr)
 		}
 		return struct{}{}, nil
 	})
@@ -53,4 +67,35 @@ func (u *MarkUserDeleted) Execute(ctx context.Context, in input.MarkUserDeleted)
 	}
 
 	return nil
+}
+
+type userDeletedPayload struct {
+	EventID   string `json:"event_id"`
+	UserID    string `json:"user_id"`
+	DeletedAt string `json:"deleted_at"`
+}
+
+func buildUserDeletedEvent(userID string, deletedAt time.Time) (outbox.Event, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return outbox.Event{}, fmt.Errorf("generate user.deleted event id: %w", err)
+	}
+	eventID := id.String()
+	payload := userDeletedPayload{
+		EventID:   eventID,
+		UserID:    userID,
+		DeletedAt: deletedAt.Format(time.RFC3339),
+	}
+	rawPayload, err := json.Marshal(payload)
+	if err != nil {
+		return outbox.Event{}, fmt.Errorf("marshal user.deleted payload: %w", err)
+	}
+	return outbox.Event{
+		ID:            eventID,
+		Type:          "user.deleted",
+		AggregateType: "user",
+		AggregateID:   userID,
+		Payload:       rawPayload,
+		OccurredAt:    deletedAt,
+	}, nil
 }

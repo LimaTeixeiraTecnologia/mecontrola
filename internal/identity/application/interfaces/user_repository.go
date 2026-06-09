@@ -23,6 +23,7 @@ type UserRepository interface {
 	FindByID(ctx context.Context, id string) (entities.User, error)
 	FindByWhatsAppNumber(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, error)
 	FindByWhatsAppNumberIncludingDeleted(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, error)
+	TryFindActiveByWhatsApp(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, bool, error)
 	Reanimate(ctx context.Context, u entities.User, now time.Time) (entities.User, error)
 	MarkDeleted(ctx context.Context, id string, now time.Time) error
 	AppendWhatsAppHistory(ctx context.Context, userID string, entry WhatsAppHistoryEntry) error

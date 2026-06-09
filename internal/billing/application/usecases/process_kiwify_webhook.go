@@ -15,7 +15,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 )
 
-const signatureStatusInvalid = "invalid"
+const (
+	signatureStatusInvalid = "invalid"
+	signatureStatusRotated = "rotated"
+)
 
 type processSaleApproved interface {
 	Execute(ctx context.Context, in input.ProcessSaleApprovedInput) error
@@ -181,16 +184,17 @@ func (p kiwifyWebhookPayload) refundAtUTC() time.Time {
 }
 
 type ProcessKiwifyWebhook struct {
-	saleApproved    processSaleApproved
-	subRenewed      processSubscriptionRenewed
-	subLate         processSubscriptionLate
-	subCanceled     processSubscriptionCanceled
-	refundOrCharge  processRefundOrChargeback
-	factory         interfaces.RepositoryFactory
-	db              database.DBTX
-	o11y            observability.Observability
-	received        observability.Counter
-	trackingCarrier observability.Counter
+	saleApproved     processSaleApproved
+	subRenewed       processSubscriptionRenewed
+	subLate          processSubscriptionLate
+	subCanceled      processSubscriptionCanceled
+	refundOrCharge   processRefundOrChargeback
+	factory          interfaces.RepositoryFactory
+	db               database.DBTX
+	o11y             observability.Observability
+	received         observability.Counter
+	trackingCarrier  observability.Counter
+	signatureRotated observability.Counter
 }
 
 func NewProcessKiwifyWebhook(
@@ -213,17 +217,23 @@ func NewProcessKiwifyWebhook(
 		"Total de webhooks por carrier de funnel token (sck|s1|src|none)",
 		"1",
 	)
+	signatureRotated := o11y.Metrics().Counter(
+		"billing_webhook_signature_rotated_total",
+		"Total de webhooks aceitos via secret rotacional (KIWIFY_WEBHOOK_SECRET_NEXT)",
+		"1",
+	)
 	return &ProcessKiwifyWebhook{
-		saleApproved:    saleApproved,
-		subRenewed:      subRenewed,
-		subLate:         subLate,
-		subCanceled:     subCanceled,
-		refundOrCharge:  refundOrCharge,
-		factory:         factory,
-		db:              db,
-		o11y:            o11y,
-		received:        received,
-		trackingCarrier: trackingCarrier,
+		saleApproved:     saleApproved,
+		subRenewed:       subRenewed,
+		subLate:          subLate,
+		subCanceled:      subCanceled,
+		refundOrCharge:   refundOrCharge,
+		factory:          factory,
+		db:               db,
+		o11y:             o11y,
+		received:         received,
+		trackingCarrier:  trackingCarrier,
+		signatureRotated: signatureRotated,
 	}
 }
 
@@ -238,6 +248,12 @@ func (u *ProcessKiwifyWebhook) Execute(ctx context.Context, in input.ProcessKiwi
 
 	u.auditEnvelope(ctx, payload, in.RawBody, in.SignatureStatus)
 	u.received.Add(ctx, 1, observability.String("signature_status", in.SignatureStatus))
+	if in.SignatureStatus == signatureStatusRotated {
+		u.signatureRotated.Add(ctx, 1)
+		u.o11y.Logger().Warn(ctx, "billing.webhook.signature_rotated",
+			observability.String("envelope_id", payload.envelopeID()),
+		)
+	}
 	if in.SignatureStatus == signatureStatusInvalid {
 		u.o11y.Logger().Warn(ctx, "billing.webhook.signature_invalid",
 			observability.String("envelope_id", payload.envelopeID()),
@@ -299,6 +315,7 @@ func (u *ProcessKiwifyWebhook) dispatch(ctx context.Context, p kiwifyWebhookPayl
 			SaleID:             p.OrderID,
 			KiwifyProductID:    p.Product.ProductID,
 			OrderID:            p.OrderID,
+			KiwifySubID:        p.SubscriptionID,
 			FunnelToken:        p.funnelToken(),
 			CustomerMobileE164: p.Customer.Mobile,
 			CustomerEmail:      p.Customer.Email,

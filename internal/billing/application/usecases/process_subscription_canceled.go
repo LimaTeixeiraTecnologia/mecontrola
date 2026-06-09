@@ -50,7 +50,7 @@ func (uc *ProcessSubscriptionCanceled) Execute(ctx context.Context, in input.Pro
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_canceled: mark applied: %w", markErr)
 		}
 
-		existing, findErr := subRepo.FindByOrderID(ctx, in.OrderID)
+		existing, findErr := uc.resolveSubscription(ctx, subRepo, in)
 		if findErr != nil {
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_canceled: find subscription: %w", findErr)
 		}
@@ -91,6 +91,7 @@ func (uc *ProcessSubscriptionCanceled) Execute(ctx context.Context, in input.Pro
 			return execErr
 		}
 		uc.o11y.Logger().Error(ctx, "billing.usecase.process_subscription_canceled.failed",
+			observability.String("kiwify_sub_id", in.KiwifySubID),
 			observability.String("order_id", in.OrderID),
 			observability.Error(execErr),
 		)
@@ -98,4 +99,13 @@ func (uc *ProcessSubscriptionCanceled) Execute(ctx context.Context, in input.Pro
 	}
 
 	return nil
+}
+
+func (uc *ProcessSubscriptionCanceled) resolveSubscription(ctx context.Context, subRepo interfaces.SubscriptionRepository, in input.ProcessSubscriptionCanceledInput) (entities.Subscription, error) {
+	if in.KiwifySubID != "" {
+		if existing, err := subRepo.FindByKiwifySubID(ctx, in.KiwifySubID); err == nil {
+			return existing, nil
+		}
+	}
+	return subRepo.FindByOrderID(ctx, in.OrderID)
 }

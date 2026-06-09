@@ -23,6 +23,9 @@ var ErrConcurrentActiveSub = errors.New("billing: user already has an active sub
 
 var ErrSubscriptionNotFound = errors.New("billing: subscription not found")
 
+const subscriptionSelectColumns = `id, funnel_token, kiwify_order_id,
+		       plan_code, status, period_start, period_end, grace_end, last_event_at`
+
 type subscriptionRepository struct {
 	o11y observability.Observability
 	db   database.DBTX
@@ -36,59 +39,80 @@ func (r *subscriptionRepository) FindByOrderID(ctx context.Context, orderID stri
 	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.find_by_order_id")
 	defer span.End()
 
-	const query = `
-		SELECT id, funnel_token, user_id, kiwify_order_id, kiwify_subscription_id,
-		       plan_code, status, period_start, period_end, grace_end, last_event_at
-		  FROM billing_subscriptions
-		 WHERE kiwify_order_id = $1
-	`
+	query := `SELECT ` + subscriptionSelectColumns + ` FROM billing_subscriptions WHERE kiwify_order_id = $1`
 
 	row := r.db.QueryRowContext(ctx, query, orderID)
 	return r.scanRow(ctx, span, "find_by_order_id", row)
+}
+
+func (r *subscriptionRepository) FindByKiwifySubID(ctx context.Context, kiwifySubID string) (entities.Subscription, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.find_by_kiwify_sub_id")
+	defer span.End()
+
+	if kiwifySubID == "" {
+		return entities.Subscription{}, fmt.Errorf("billing/postgres: find_by_kiwify_sub_id: %w", ErrSubscriptionNotFound)
+	}
+
+	query := `SELECT ` + subscriptionSelectColumns + `
+		  FROM billing_subscriptions
+		 WHERE kiwify_subscription_id = $1
+		 ORDER BY last_event_at DESC
+		 LIMIT 1`
+
+	row := r.db.QueryRowContext(ctx, query, kiwifySubID)
+	return r.scanRow(ctx, span, "find_by_kiwify_sub_id", row)
 }
 
 func (r *subscriptionRepository) FindByUserID(ctx context.Context, userID string) (entities.Subscription, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.find_by_user_id")
 	defer span.End()
 
-	const query = `
-		SELECT id, funnel_token, user_id, kiwify_order_id, kiwify_subscription_id,
-		       plan_code, status, period_start, period_end, grace_end, last_event_at
+	query := `SELECT ` + subscriptionSelectColumns + `
 		  FROM billing_subscriptions
 		 WHERE user_id = $1
 		   AND status IN ('ACTIVE', 'PAST_DUE', 'CANCELED_PENDING')
-		 LIMIT 1
-	`
+		 LIMIT 1`
 
 	row := r.db.QueryRowContext(ctx, query, userID)
 	return r.scanRow(ctx, span, "find_by_user_id", row)
 }
 
-func (r *subscriptionRepository) UpsertByOrder(ctx context.Context, orderID string, sub entities.Subscription, periodStart time.Time) error {
+func (r *subscriptionRepository) UpsertByOrder(ctx context.Context, params interfaces.UpsertByOrderParams) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.upsert_by_order")
 	defer span.End()
 
 	const query = `
 		INSERT INTO billing_subscriptions
-		       (id, funnel_token, user_id, kiwify_order_id, plan_code, status,
-		        period_start, period_end, grace_end, last_event_at, created_at, updated_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5,
-		        $6, $7, $8, $9, now(), now())
+		       (id, funnel_token, user_id, kiwify_order_id, kiwify_subscription_id,
+		        external_sale_id, customer_mobile_e164, customer_email,
+		        plan_code, status, period_start, period_end, grace_end, last_event_at,
+		        created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, NULL, $2, NULLIF($3, ''),
+		        NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''),
+		        $7, $8, $9, $10, $11, $12, now(), now())
 		ON CONFLICT (kiwify_order_id) DO UPDATE SET
-		    status        = EXCLUDED.status,
-		    period_end    = EXCLUDED.period_end,
-		    grace_end     = EXCLUDED.grace_end,
-		    last_event_at = EXCLUDED.last_event_at,
-		    updated_at    = now()
+		    status                 = EXCLUDED.status,
+		    period_end             = EXCLUDED.period_end,
+		    grace_end              = EXCLUDED.grace_end,
+		    last_event_at          = EXCLUDED.last_event_at,
+		    kiwify_subscription_id = COALESCE(billing_subscriptions.kiwify_subscription_id, EXCLUDED.kiwify_subscription_id),
+		    external_sale_id       = COALESCE(billing_subscriptions.external_sale_id, EXCLUDED.external_sale_id),
+		    customer_mobile_e164   = COALESCE(billing_subscriptions.customer_mobile_e164, EXCLUDED.customer_mobile_e164),
+		    customer_email         = COALESCE(billing_subscriptions.customer_email, EXCLUDED.customer_email),
+		    updated_at             = now()
 	`
 
+	sub := params.Subscription
 	_, err := r.db.ExecContext(ctx, query,
 		sub.FunnelToken().String(),
-		nil,
-		orderID,
+		params.OrderID,
+		params.KiwifySubID,
+		params.ExternalSaleID,
+		params.CustomerMobileE164,
+		params.CustomerEmail,
 		string(sub.Plan().Code()),
 		sub.Status().String(),
-		periodStart,
+		params.PeriodStart,
 		sub.PeriodEnd(),
 		sqlnull.Time(sub.GraceEnd()),
 		sub.LastEventAt(),
@@ -209,6 +233,57 @@ func (r *subscriptionRepository) BindUser(ctx context.Context, subscriptionID st
 	return nil
 }
 
+func (r *subscriptionRepository) ListPastDueGraceExpired(ctx context.Context, now time.Time, limit int) ([]interfaces.ExpiredGraceCandidate, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.list_past_due_grace_expired")
+	defer span.End()
+
+	if limit <= 0 {
+		limit = 100
+	}
+
+	const query = `
+		SELECT id, grace_end, last_event_at
+		  FROM billing_subscriptions
+		 WHERE status    = 'PAST_DUE'
+		   AND grace_end IS NOT NULL
+		   AND grace_end < $1
+		 ORDER BY grace_end ASC
+		 LIMIT $2
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, now, limit)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("billing/postgres: list_past_due_grace_expired: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []interfaces.ExpiredGraceCandidate
+	for rows.Next() {
+		var (
+			id          string
+			graceEnd    sql.NullTime
+			lastEventAt time.Time
+		)
+		if scanErr := rows.Scan(&id, &graceEnd, &lastEventAt); scanErr != nil {
+			span.RecordError(scanErr)
+			return nil, fmt.Errorf("billing/postgres: list_past_due_grace_expired scan: %w", scanErr)
+		}
+		if !graceEnd.Valid {
+			continue
+		}
+		out = append(out, interfaces.ExpiredGraceCandidate{
+			SubscriptionID: id,
+			GraceEnd:       graceEnd.Time,
+			LastEventAt:    lastEventAt,
+		})
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("billing/postgres: list_past_due_grace_expired rows: %w", rowsErr)
+	}
+	return out, nil
+}
+
 func (r *subscriptionRepository) scanRow(
 	ctx context.Context,
 	span observability.Span,
@@ -217,17 +292,12 @@ func (r *subscriptionRepository) scanRow(
 ) (entities.Subscription, error) {
 	var (
 		id, funnelToken, orderID, planCode, status string
-		userID, kiwifySubID                        sql.NullString
 		periodStart, periodEnd, lastEventAt        time.Time
 		graceEnd                                   sql.NullTime
 	)
 
-	_ = orderID
-	_ = userID
-	_ = kiwifySubID
-
 	err := row.Scan(
-		&id, &funnelToken, &userID, &orderID, &kiwifySubID,
+		&id, &funnelToken, &orderID,
 		&planCode, &status, &periodStart, &periodEnd, &graceEnd, &lastEventAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -241,6 +311,8 @@ func (r *subscriptionRepository) scanRow(
 		)
 		return entities.Subscription{}, fmt.Errorf("billing/postgres: %s scan: %w", op, err)
 	}
+
+	_ = orderID
 
 	plan, planErr := resolvePlanFromCode(planCode)
 	if planErr != nil {

@@ -91,3 +91,39 @@ tasks:
     desc: Executa benchmarks do pacote outbox e captura baseline em docs/benchmarks/outbox-baseline.md.
     cmds:
       - go test -bench=BenchmarkPublisher -benchmem -count=5 -run=^$ ./internal/platform/outbox/...
+
+  auth:smoke:
+    desc: |
+      Smoke test do webhook auth em staging (RF-30).
+      Envia payload valido com HMAC-SHA256 real e verifica HTTP 200.
+      Com --db, valida linha em auth_events nos ultimos 10 segundos.
+      Requer: WEBHOOK_URL, META_APP_SECRET, SMOKE_WA. DB_URL e opcional.
+    vars:
+      WEBHOOK_URL: '{{.WEBHOOK_URL | default (env "WEBHOOK_URL")}}'
+      META_APP_SECRET: '{{.META_APP_SECRET | default (env "META_APP_SECRET")}}'
+      SMOKE_WA: '{{.SMOKE_WA | default (env "SMOKE_WA")}}'
+      DB_URL: '{{.DB_URL | default (env "DB_URL")}}'
+    cmds:
+      - go run ./scripts/smoke/auth_webhook --url "{{.WEBHOOK_URL}}" --secret "{{.META_APP_SECRET}}" --user-wa "{{.SMOKE_WA}}" --db "{{.DB_URL}}"
+
+  onboarding:smoke:
+    desc: |
+      Smoke test do fluxo ATIVAR end-to-end com HMAC real (staging).
+      Requer: META_APP_SECRET, STAGING_WEBHOOK_URL, STAGING_PHONE_FROM env vars.
+      Envia um webhook POST simulado com assinatura HMAC-SHA256 valida e verifica
+      que o endpoint retorna 200 OK (sem regressao no pipeline de onboarding).
+    cmds:
+      - |
+        : "${META_APP_SECRET:?META_APP_SECRET is required}"
+        : "${STAGING_WEBHOOK_URL:?STAGING_WEBHOOK_URL is required}"
+        PAYLOAD='{"object":"whatsapp_business_account","entry":[{"id":"smoke-entry","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511900000001","id":"wamid-smoke-'$(date +%s)'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"SMOKE TEST"}}]}}]}]}'
+        SIG="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$META_APP_SECRET" | awk '{print $2}')"
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$STAGING_WEBHOOK_URL/webhooks/whatsapp" \
+          -H "Content-Type: application/json" \
+          -H "X-Hub-Signature-256: $SIG" \
+          -d "$PAYLOAD")
+        if [ "$STATUS" != "200" ]; then
+          echo "FAIL: webhook retornou HTTP $STATUS (esperado 200)"
+          exit 1
+        fi
+        echo "PASS: onboarding smoke OK (HTTP $STATUS)"

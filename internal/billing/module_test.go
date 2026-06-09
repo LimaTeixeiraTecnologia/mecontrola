@@ -39,7 +39,13 @@ func (s *ModuleSuite) TestNewBillingModule() {
 		{
 			name: "deve expor handlers de notificacao para registro no worker",
 			args: args{
-				cfg: &configs.Config{},
+				cfg: &configs.Config{
+					KiwifyConfig: configs.KiwifyConfig{
+						ProductIDMonthly:   "prod-monthly-real",
+						ProductIDQuarterly: "prod-quarterly-real",
+						ProductIDAnnual:    "prod-annual-real",
+					},
+				},
 			},
 			dependencies: dependencies{
 				mgr: onboardingmocks.NewFakeManager(),
@@ -53,6 +59,7 @@ func (s *ModuleSuite) TestNewBillingModule() {
 				for _, registration := range module.EventHandlers {
 					s.NotNil(registration.Handler)
 				}
+				s.NotNil(module.GraceExpirationJob)
 			},
 		},
 		{

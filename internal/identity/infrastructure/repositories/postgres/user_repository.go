@@ -173,6 +173,45 @@ func (r *userRepository) FindByWhatsAppNumber(ctx context.Context, number valueo
 	return r.hydrate(ctx, span, "find_by_whatsapp_number", id, whatsapp, email.String, displayName.String, status, createdAt, updatedAt, time.Time{})
 }
 
+func (r *userRepository) TryFindActiveByWhatsApp(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "identity.repository.user.try_find_active_by_whatsapp")
+	defer span.End()
+
+	const query = `
+		SELECT id, whatsapp_number, email, display_name, status, created_at, updated_at
+		  FROM users
+		 WHERE whatsapp_number = $1 AND deleted_at IS NULL
+		 LIMIT 1
+	`
+
+	var (
+		id, whatsapp, status string
+		email, displayName   sql.NullString
+		createdAt, updatedAt time.Time
+	)
+	err := r.db.QueryRowContext(ctx, query, number.String()).
+		Scan(&id, &whatsapp, &email, &displayName, &status, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return entities.User{}, false, nil
+	}
+	if err != nil {
+		span.RecordError(err)
+		r.o11y.Logger().Error(ctx, "identity.repository.user.try_find_active_by_whatsapp.failed",
+			observability.String("layer", "repository"),
+			observability.String("operation", "try_find_active_by_whatsapp"),
+			observability.String("whatsapp", number.Masked()),
+			observability.Error(err),
+		)
+		return entities.User{}, false, fmt.Errorf("%s try find active by whatsapp: %w", prefixUserRepository, err)
+	}
+
+	user, err := r.hydrate(ctx, span, "try_find_active_by_whatsapp", id, whatsapp, email.String, displayName.String, status, createdAt, updatedAt, time.Time{})
+	if err != nil {
+		return entities.User{}, false, err
+	}
+	return user, true, nil
+}
+
 func (r *userRepository) FindByWhatsAppNumberIncludingDeleted(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "identity.repository.user.find_by_whatsapp_number_including_deleted")
 	defer span.End()

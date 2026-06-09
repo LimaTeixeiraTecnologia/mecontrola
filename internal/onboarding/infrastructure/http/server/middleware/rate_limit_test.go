@@ -24,7 +24,6 @@ func (s *RateLimitSuite) TestRateLimiter() {
 	type args struct {
 		remoteAddrs    []string
 		trustedProxies []string
-		setHeaders     func(*http.Request)
 	}
 
 	scenarios := []struct {

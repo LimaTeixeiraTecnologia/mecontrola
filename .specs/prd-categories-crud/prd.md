@@ -1,6 +1,6 @@
 # Documento de Requisitos do Produto (PRD)
 
-<!-- spec-version: 6 -->
+<!-- spec-version: 7 -->
 
 <!--
 Histórico de versões:
@@ -8,6 +8,7 @@ Histórico de versões:
 - v4 (2026-06-06): despesas consolidadas nas cinco caixinhas oficiais e adição de dicionário conversacional.
 - v5 (2026-06-06): escopo simplificado para catálogo global somente leitura. Removidos CRUD público, personalização, clone, preferências, classificação automática e ações do usuário. O MVP cobre exclusivamente seed, listagem de categorias/subcategorias e consulta conservadora ao dicionário.
 - v6 (2026-06-06): consolidação production-ready. Fixados volumetria-alvo, SLO de disponibilidade, ETag/304, normalização via coluna gerada com `unaccent`, UUIDv5 determinístico com slug, dedup de candidatos por subcategoria com precedência editorial, rollback append-only explícito, telemetria sem termo bruto, OpenAPI versionado obrigatório, envelope de erro reusado de billing/identity e cenários canônicos de aceitação.
+- v7 (2026-06-08): bump pós-`prd-auth-foundation` task 9.0. Endpoints autenticados usarão o `RequireUser` canônico de `internal/identity/infrastructure/http/server/middleware` (via `auth.Principal` no `context.Context`), removendo qualquer dependência do header transitório `X-User-ID`. Referência: `prd-auth-foundation`.
 -->
 
 ## Visão Geral

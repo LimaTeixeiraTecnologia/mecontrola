@@ -1,6 +1,6 @@
 # Documento de Requisitos do Produto (PRD)
 
-<!-- spec-version: 22 -->
+<!-- spec-version: 23 -->
 
 <!--
 Histórico de versões:
@@ -26,6 +26,7 @@ Histórico de versões:
 - v20 (2026-06-06): catálogo de despesas migrado para subcategorias de `internal/categories`; auth E1 obrigatório na API; eventos pendentes e alertas persistidos em tabelas dedicadas; exclusão de rascunho permitida; tombstone libera reuso após 24m; sinal de rascunho abandonado via cronjob 03:00 BR; allowlist estática de produtores; identidade API com `external_transaction_id` no body e `source="api"` fixo pelo servidor.
 - v21 (2026-06-06): contrato de leitura com `internal/categories` formalizado por slugs editoriais imutáveis; estado terminal de evento pendente desambiguado entre `failed` (erro permanente) e `expired` (timeout); versão monotônica fixada explicitamente para criação (v=1 imposta pelo servidor) e exclusão (tombstone congela a próxima versão); avaliação de alerta declarada como assíncrona via outbox interno; formato canônico de `external_transaction_id` (UUID v4 ou ULID) e chave de competência (`YYYY-MM` em America/Sao_Paulo) fixados no PRD; cardinalidade de métricas operacionais limitada; recorrência exige fonte com 100% alocados; demais ajustes editoriais para prontidão de especificação técnica.
 - v22 (2026-06-08): estouro de orçamento explicitamente permitido; despesas podem levar o percentual utilizado acima de 100% sem bloqueio, rejeição, reversão ou truncamento do resumo.
+- v23 (2026-06-08): bump pós-`prd-auth-foundation` task 9.0. Endpoints autenticados da API usarão o `RequireUser` canônico de `internal/identity/infrastructure/http/server/middleware` (via `auth.Principal` no `context.Context` injetado pelo `EstablishPrincipal`), removendo dependência do header transitório `X-User-ID`. Referência: `prd-auth-foundation`.
 -->
 
 > **Origem**: brainstorming decisório em `docs/discoveries/brainstorms/brainstorm-modulo-de-orcamentos-mensais-por-categoria/` e discovery técnico em `docs/discoveries/technical-modulo-de-orcamentos-mensais-por-categoria/`, ambos validados com `SUCCESS` em 2026-06-06.

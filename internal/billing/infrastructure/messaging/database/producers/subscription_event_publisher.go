@@ -151,6 +151,25 @@ func (p *SubscriptionEventPublisher) PublishRefunded(
 	return nil
 }
 
+func (p *SubscriptionEventPublisher) PublishExpired(
+	ctx context.Context,
+	tx database.DBTX,
+	sub entities.Subscription,
+	subscriptionID string,
+	graceEnd time.Time,
+) error {
+	payload := SubscriptionExpiredAfterGracePayload{
+		SubscriptionID: subscriptionID,
+		PeriodEnd:      sub.PeriodEnd().UTC(),
+		GraceEnd:       graceEnd.UTC(),
+		OccurredAt:     sub.LastEventAt().UTC(),
+	}
+	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionExpired, payload); err != nil {
+		return fmt.Errorf("billing/producer: %w", err)
+	}
+	return nil
+}
+
 func (p *SubscriptionEventPublisher) publish(
 	ctx context.Context,
 	tx database.DBTX,

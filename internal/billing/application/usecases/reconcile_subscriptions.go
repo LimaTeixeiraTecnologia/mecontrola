@@ -12,6 +12,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 )
 
+const reconcileMaxPages = 1000
+
+var ErrReconcileMaxPagesExceeded = errors.New("billing: reconciliation page guard tripped")
+
 type ReconcileSubscriptions struct {
 	db           database.DBTX
 	factory      interfaces.RepositoryFactory
@@ -51,7 +55,7 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 	defer span.End()
 
 	var saleErrors []error
-	for page := 1; ; page++ {
+	for page := 1; page <= reconcileMaxPages; page++ {
 		salesPage, listErr := uc.kiwifyClient.ListSalesUpdatedSince(ctx, in.WindowStart, in.WindowEnd, page)
 		if listErr != nil {
 			return fmt.Errorf("billing.usecase.reconcile_subscriptions: list sales page %d: %w", page, listErr)
@@ -76,6 +80,12 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 
 		if !salesPage.HasMore {
 			break
+		}
+		if page == reconcileMaxPages {
+			uc.o11y.Logger().Error(ctx, "billing.usecase.reconcile_subscriptions.max_pages_reached",
+				observability.Int("max_pages", reconcileMaxPages),
+			)
+			return fmt.Errorf("billing.usecase.reconcile_subscriptions: %w: stopped at %d pages", ErrReconcileMaxPagesExceeded, reconcileMaxPages)
 		}
 	}
 

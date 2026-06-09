@@ -117,7 +117,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", occurredAt).
+					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", occurredAt).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -150,6 +150,54 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 			},
 		},
 		{
+			name: "deve permitir reaplicar chargeback apos order_refunded pois chaves de evento sao independentes (regressao #4)",
+			args: args{
+				inputs: []input.ProcessRefundOrChargebackInput{
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "order_refunded",
+						OccurredAt: time.Now().UTC(),
+					},
+					{
+						SaleID:     "sale-001",
+						OrderID:    "order-001",
+						Trigger:    "chargeback",
+						OccurredAt: time.Now().UTC().Add(time.Hour),
+					},
+				},
+			},
+			setup: func(args args) {
+				sub := s.activeSub()
+				s.expectRepositories(len(args.inputs))
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
+					Return(nil).
+					Once()
+				s.eventRepoMock.EXPECT().
+					MarkApplied(s.ctx, "chargeback:sale-001", "chargeback", "sale-001", args.inputs[1].OccurredAt).
+					Return(nil).
+					Once()
+				s.subRepoMock.EXPECT().
+					FindByOrderID(s.ctx, "order-001").
+					Return(sub, nil).
+					Twice()
+				s.subRepoMock.EXPECT().
+					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, mock.Anything).
+					Return(nil).
+					Twice()
+				s.publisherMock.EXPECT().
+					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-001").
+					Return(nil).
+					Twice()
+			},
+			expect: func(result result) {
+				s.NoError(result.err)
+				s.Equal(2, result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
+		{
 			name: "deve usar a mesma chave de evento para refund e chargeback",
 			args: args{
 				inputs: []input.ProcessRefundOrChargebackInput{
@@ -171,11 +219,11 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 				sub := s.activeSub()
 				s.expectRepositories(len(args.inputs))
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
 					Return(nil).
 					Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "chargeback", "sale-001", args.inputs[1].OccurredAt).
+					MarkApplied(s.ctx, "chargeback:sale-001", "chargeback", "sale-001", args.inputs[1].OccurredAt).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -215,7 +263,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", occurredAt).
+					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", occurredAt).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
@@ -252,7 +300,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 			setup: func(args args) {
 				s.expectRepositories(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "refund:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
 			},

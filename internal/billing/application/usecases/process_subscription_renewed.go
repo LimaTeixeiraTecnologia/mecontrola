@@ -17,6 +17,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
 )
 
+var ErrRenewedWithoutBaseSubscription = errors.New("billing: renewal received for unknown kiwify_subscription_id")
+
 type ProcessSubscriptionRenewed struct {
 	uow       uow.UnitOfWork[entities.Subscription]
 	factory   interfaces.RepositoryFactory
@@ -37,6 +39,10 @@ func (uc *ProcessSubscriptionRenewed) Execute(ctx context.Context, in input.Proc
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_subscription_renewed")
 	defer span.End()
 
+	if in.KiwifySubID == "" {
+		return fmt.Errorf("billing.usecase.process_subscription_renewed: %w", ErrRenewedWithoutBaseSubscription)
+	}
+
 	eventKey := fmt.Sprintf("subscription_renewed:%s:%s", in.KiwifySubID, in.OccurredAt.UTC().Format("2006-01-02T15:04:05Z07:00"))
 
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
@@ -45,10 +51,11 @@ func (uc *ProcessSubscriptionRenewed) Execute(ctx context.Context, in input.Proc
 
 	if execErr != nil {
 		span.RecordError(execErr)
-		if errors.Is(execErr, ErrEventAlreadyProcessed) || errors.Is(execErr, ErrEventSuperseded) {
+		if errors.Is(execErr, ErrEventAlreadyProcessed) || errors.Is(execErr, ErrEventSuperseded) || errors.Is(execErr, ErrRenewedWithoutBaseSubscription) {
 			return execErr
 		}
 		uc.o11y.Logger().Error(ctx, "billing.usecase.process_subscription_renewed.failed",
+			observability.String("kiwify_sub_id", in.KiwifySubID),
 			observability.String("order_id", in.OrderID),
 			observability.Error(execErr),
 		)
@@ -60,7 +67,6 @@ func (uc *ProcessSubscriptionRenewed) Execute(ctx context.Context, in input.Proc
 
 func (uc *ProcessSubscriptionRenewed) applyRenewal(ctx context.Context, tx database.DBTX, in input.ProcessSubscriptionRenewedInput, eventKey string) (entities.Subscription, error) {
 	processedRepo := uc.factory.ProcessedEventRepository(tx)
-	planRepo := uc.factory.PlanRepository(tx)
 	subRepo := uc.factory.SubscriptionRepository(tx)
 
 	if markErr := processedRepo.MarkApplied(ctx, eventKey, "subscription_renewed", in.KiwifySubID, in.OccurredAt); markErr != nil {
@@ -70,39 +76,16 @@ func (uc *ProcessSubscriptionRenewed) applyRenewal(ctx context.Context, tx datab
 		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: mark applied: %w", markErr)
 	}
 
-	existing, findErr := subRepo.FindByOrderID(ctx, in.OrderID)
+	existing, findErr := subRepo.FindByKiwifySubID(ctx, in.KiwifySubID)
 	if findErr != nil {
-		return uc.createPlaceholder(ctx, tx, subRepo, planRepo, in)
+		uc.o11y.Logger().Warn(ctx, "billing.usecase.process_subscription_renewed.base_subscription_missing",
+			observability.String("kiwify_sub_id", in.KiwifySubID),
+			observability.String("order_id", in.OrderID),
+		)
+		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: %w", ErrRenewedWithoutBaseSubscription)
 	}
 
 	return uc.extendExisting(ctx, tx, subRepo, processedRepo, existing, in, eventKey)
-}
-
-func (uc *ProcessSubscriptionRenewed) createPlaceholder(ctx context.Context, tx database.DBTX, subRepo interfaces.SubscriptionRepository, planRepo interfaces.PlanRepository, in input.ProcessSubscriptionRenewedInput) (entities.Subscription, error) {
-	plan, planErr := planRepo.FindByKiwifyProductID(ctx, in.KiwifyProductID)
-	if planErr != nil {
-		return entities.Subscription{}, ErrPlanNotFound
-	}
-
-	sub := entities.NewSubscription(plan, valueobjects.FunnelToken{})
-	if activateErr := sub.Activate(in.OccurredAt); activateErr != nil {
-		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: activate placeholder: %w", activateErr)
-	}
-
-	if upsertErr := subRepo.UpsertByOrder(ctx, in.OrderID, sub, in.OccurredAt); upsertErr != nil {
-		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: upsert placeholder: %w", upsertErr)
-	}
-
-	persisted, findNewErr := subRepo.FindByOrderID(ctx, in.OrderID)
-	if findNewErr != nil {
-		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: find placeholder: %w", findNewErr)
-	}
-
-	if pubErr := uc.publisher.PublishRenewed(ctx, tx, persisted, persisted.ID(), in.OccurredAt); pubErr != nil {
-		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: publish renewed placeholder: %w", pubErr)
-	}
-
-	return persisted, nil
 }
 
 func (uc *ProcessSubscriptionRenewed) extendExisting(ctx context.Context, tx database.DBTX, subRepo interfaces.SubscriptionRepository, processedRepo interfaces.ProcessedEventRepository, existing entities.Subscription, in input.ProcessSubscriptionRenewedInput, eventKey string) (entities.Subscription, error) {

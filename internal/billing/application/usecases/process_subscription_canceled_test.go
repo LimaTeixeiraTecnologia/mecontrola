@@ -95,7 +95,7 @@ func (s *ProcessSubscriptionCanceledSuite) TestExecute() {
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByKiwifySubID(s.ctx, "kiwify-sub-001").
 					Return(sub, nil).
 					Once()
 				s.subRepoMock.EXPECT().

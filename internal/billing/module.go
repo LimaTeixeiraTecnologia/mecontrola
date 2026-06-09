@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -36,6 +37,7 @@ type BillingModule struct {
 	WebhookRouter              *billingserver.WebhookRouter
 	ReconciliationJob          *billingjobs.ReconciliationJob
 	KiwifyEventsHousekeeper    *billingjobs.KiwifyEventsHousekeepingJob
+	GraceExpirationJob         *billingjobs.GraceExpirationJob
 	SubscriptionEventPublisher *producers.SubscriptionEventPublisher
 	EventHandlers              []EventHandlerRegistration
 }
@@ -54,6 +56,7 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 	subLate := usecases.NewProcessSubscriptionLate(subUoW, factory, publisher, o11y)
 	subCanceled := usecases.NewProcessSubscriptionCanceled(subUoW, factory, publisher, o11y)
 	refund := usecases.NewProcessRefundOrChargeback(subUoW, factory, publisher, o11y)
+	graceExpired := usecases.NewProcessSubscriptionGraceExpired(subUoW, factory, publisher, o11y)
 
 	kiwifyClient, err := kiwify.NewClient(o11y, kiwify.Config{
 		AccountID:                  cfg.KiwifyConfig.AccountID,
@@ -72,14 +75,9 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 	}
 
 	db := mgr.DBTX(context.Background())
-	productIDs := map[valueobjects.PlanCode]string{
-		valueobjects.PlanCodeMonthly:   cfg.KiwifyConfig.ProductIDMonthly,
-		valueobjects.PlanCodeQuarterly: cfg.KiwifyConfig.ProductIDQuarterly,
-		valueobjects.PlanCodeAnnual:    cfg.KiwifyConfig.ProductIDAnnual,
-	}
-	if cfg.KiwifyConfig.ProductIDMonthly != "" || cfg.KiwifyConfig.ProductIDQuarterly != "" || cfg.KiwifyConfig.ProductIDAnnual != "" {
-		if err := factory.PlanRepository(db).ConfigureProductIDs(context.Background(), productIDs); err != nil {
-			return BillingModule{}, fmt.Errorf("billing: configurar IDs de produto Kiwify: %w", err)
+	if db != nil {
+		if err := ensurePlansConfigured(context.Background(), factory.PlanRepository(db), cfg.KiwifyConfig); err != nil {
+			return BillingModule{}, err
 		}
 	}
 	reconcile := usecases.NewReconcileSubscriptions(db, factory, kiwifyClient, saleApproved, refund, o11y)
@@ -104,6 +102,7 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 
 	reconciliationJob := billingjobs.NewReconciliationJob(runReconciliation, cfg.KiwifyConfig)
 	housekeepingJob := billingjobs.NewKiwifyEventsHousekeepingJob(cleanupKiwifyEvents, cfg.BillingConfig)
+	graceExpirationJob := billingjobs.NewGraceExpirationJob(graceExpired, cfg.BillingConfig)
 
 	notificationPastDue := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionPastDue, o11y)
 	notificationRefunded := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionRefunded, o11y)
@@ -114,6 +113,7 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 		WebhookRouter:              webhookRouter,
 		ReconciliationJob:          reconciliationJob,
 		KiwifyEventsHousekeeper:    housekeepingJob,
+		GraceExpirationJob:         graceExpirationJob,
 		SubscriptionEventPublisher: publisher,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: producers.EventTypeSubscriptionPastDue, Handler: notificationPastDue},
@@ -121,4 +121,42 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 			{EventType: producers.EventTypeSubscriptionExpired, Handler: notificationExpired},
 		},
 	}, nil
+}
+
+func ensurePlansConfigured(ctx context.Context, repo interfaces.PlanRepository, cfg configs.KiwifyConfig) error {
+	missing := planMissingEnvVars(cfg)
+	if len(missing) > 0 {
+		return fmt.Errorf("billing: planos Kiwify nao configurados: %s", strings.Join(missing, ", "))
+	}
+
+	productIDs := map[valueobjects.PlanCode]string{
+		valueobjects.PlanCodeMonthly:   cfg.ProductIDMonthly,
+		valueobjects.PlanCodeQuarterly: cfg.ProductIDQuarterly,
+		valueobjects.PlanCodeAnnual:    cfg.ProductIDAnnual,
+	}
+	if err := repo.ConfigureProductIDs(ctx, productIDs); err != nil {
+		return fmt.Errorf("billing: configurar IDs de produto Kiwify: %w", err)
+	}
+	return nil
+}
+
+func planMissingEnvVars(cfg configs.KiwifyConfig) []string {
+	var missing []string
+	if isUnsetPlanID(cfg.ProductIDMonthly) {
+		missing = append(missing, "KIWIFY_PRODUCT_ID_MONTHLY")
+	}
+	if isUnsetPlanID(cfg.ProductIDQuarterly) {
+		missing = append(missing, "KIWIFY_PRODUCT_ID_QUARTERLY")
+	}
+	if isUnsetPlanID(cfg.ProductIDAnnual) {
+		missing = append(missing, "KIWIFY_PRODUCT_ID_ANNUAL")
+	}
+	return missing
+}
+
+func isUnsetPlanID(id string) bool {
+	if id == "" {
+		return true
+	}
+	return strings.HasPrefix(id, "__PLACEHOLDER_")
 }

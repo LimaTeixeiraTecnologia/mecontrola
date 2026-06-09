@@ -9,4 +9,5 @@ var (
 	ErrEntitlementNotFound = errors.New("identity: entitlement not found")
 	ErrInvalidWhatsApp     = errors.New("identity: invalid whatsapp")
 	ErrInvalidEmail        = errors.New("identity: invalid email")
+	ErrUnknownUser         = errors.New("identity: unknown user")
 )

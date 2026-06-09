@@ -14,6 +14,7 @@ import (
 	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
+	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
 type MarkUserDeletedSuite struct {
@@ -35,9 +36,10 @@ func (s *MarkUserDeletedSuite) TestExecute() {
 	}
 
 	type dependencies struct {
-		uow     *usecasemocks.UnitOfWorkVoid
-		factory *interfacesmocks.MockRepositoryFactory
-		repo    *interfacesmocks.MockUserRepository
+		uow       *usecasemocks.UnitOfWorkVoid
+		factory   *interfacesmocks.MockRepositoryFactory
+		repo      *interfacesmocks.MockUserRepository
+		publisher *outboxmocks.Publisher
 	}
 
 	scenarios := []struct {
@@ -47,11 +49,14 @@ func (s *MarkUserDeletedSuite) TestExecute() {
 		expect func(error)
 	}{
 		{
-			name: "deve marcar usuario como deletado com sucesso",
-			args: args{input: input.MarkUserDeleted{ID: "user-id-1"}},
+			name: "deve marcar usuario como deletado e publicar user.deleted com sucesso",
+			args: args{input: input.MarkUserDeleted{ID: "a0a0a0a0-0000-0000-0000-000000000001"}},
 			setup: func(deps dependencies) {
 				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().MarkDeleted(mock.Anything, "user-id-1", mock.Anything).Return(nil).Once()
+				deps.repo.EXPECT().MarkDeleted(mock.Anything, "a0a0a0a0-0000-0000-0000-000000000001", mock.Anything).Return(nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev any) bool {
+					return true // user.deleted event published
+				})).Return(nil).Once()
 			},
 			expect: func(err error) {
 				s.Require().NoError(err)
@@ -59,10 +64,10 @@ func (s *MarkUserDeletedSuite) TestExecute() {
 		},
 		{
 			name: "deve propagar erro de usuario nao encontrado",
-			args: args{input: input.MarkUserDeleted{ID: "not-found"}},
+			args: args{input: input.MarkUserDeleted{ID: "a0a0a0a0-0000-0000-0000-000000000002"}},
 			setup: func(deps dependencies) {
 				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().MarkDeleted(mock.Anything, "not-found", mock.Anything).Return(application.ErrUserNotFound).Once()
+				deps.repo.EXPECT().MarkDeleted(mock.Anything, "a0a0a0a0-0000-0000-0000-000000000002", mock.Anything).Return(application.ErrUserNotFound).Once()
 			},
 			expect: func(err error) {
 				s.Require().Error(err)
@@ -71,15 +76,28 @@ func (s *MarkUserDeletedSuite) TestExecute() {
 		},
 		{
 			name: "deve propagar erro de infraestrutura",
-			args: args{input: input.MarkUserDeleted{ID: "user-id-2"}},
+			args: args{input: input.MarkUserDeleted{ID: "a0a0a0a0-0000-0000-0000-000000000003"}},
 			setup: func(deps dependencies) {
 				ioErr := errors.New("db unavailable")
 				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().MarkDeleted(mock.Anything, "user-id-2", mock.Anything).Return(ioErr).Once()
+				deps.repo.EXPECT().MarkDeleted(mock.Anything, "a0a0a0a0-0000-0000-0000-000000000003", mock.Anything).Return(ioErr).Once()
 			},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.Require().Contains(err.Error(), "db unavailable")
+			},
+		},
+		{
+			name: "deve propagar erro do outbox e causar rollback",
+			args: args{input: input.MarkUserDeleted{ID: "a0a0a0a0-0000-0000-0000-000000000004"}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().MarkDeleted(mock.Anything, "a0a0a0a0-0000-0000-0000-000000000004", mock.Anything).Return(nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox unavailable")).Once()
+			},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.Require().Contains(err.Error(), "outbox unavailable")
 			},
 		},
 	}
@@ -87,13 +105,14 @@ func (s *MarkUserDeletedSuite) TestExecute() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			deps := dependencies{
-				uow:     usecasemocks.NewUnitOfWorkVoid(s.T()),
-				factory: interfacesmocks.NewMockRepositoryFactory(s.T()),
-				repo:    interfacesmocks.NewMockUserRepository(s.T()),
+				uow:       usecasemocks.NewUnitOfWorkVoid(s.T()),
+				factory:   interfacesmocks.NewMockRepositoryFactory(s.T()),
+				repo:      interfacesmocks.NewMockUserRepository(s.T()),
+				publisher: outboxmocks.NewPublisher(s.T()),
 			}
 			scenario.setup(deps)
 
-			sut := usecases.NewMarkUserDeleted(deps.uow, deps.factory, noop.NewProvider())
+			sut := usecases.NewMarkUserDeleted(deps.uow, deps.factory, deps.publisher, noop.NewProvider())
 			err := sut.Execute(s.ctx, scenario.args.input)
 
 			scenario.expect(err)

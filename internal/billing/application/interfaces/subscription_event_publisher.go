@@ -16,4 +16,5 @@ type SubscriptionEventPublisher interface {
 	PublishPastDue(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string) error
 	PublishCanceled(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string) error
 	PublishRefunded(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string) error
+	PublishExpired(ctx context.Context, tx database.DBTX, sub entities.Subscription, subscriptionID string, graceEnd time.Time) error
 }

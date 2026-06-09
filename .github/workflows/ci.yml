@@ -213,6 +213,33 @@ jobs:
           ai-spec doctor
           ai-spec lint
 
+  auth-smoke:
+    name: Auth Smoke (staging)
+    runs-on: ubuntu-latest
+    needs: [lint, unit, integration, security, governance]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ needs.setup.outputs.task-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auth smoke test
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
+          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
+          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
+          DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: task auth:smoke
+
   coverage-comment:
     name: Coverage Comment
     runs-on: ubuntu-latest

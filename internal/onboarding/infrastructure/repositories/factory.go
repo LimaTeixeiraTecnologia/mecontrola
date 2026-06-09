@@ -24,10 +24,6 @@ func (f *repositoryFactory) SupportSignalRepository(db database.DBTX) appinterfa
 	return postgres.NewSupportSignalRepository(f.o11y, db)
 }
 
-func (f *repositoryFactory) MetaMessageRepository(db database.DBTX) appinterfaces.MetaMessageRepository {
-	return postgres.NewMetaMessageRepository(f.o11y, db)
-}
-
 func (f *repositoryFactory) OnboardingCleanupRepository(db database.DBTX) appinterfaces.OnboardingCleanupRepository {
 	return postgres.NewOnboardingCleanupRepository(f.o11y, db)
 }

@@ -437,6 +437,78 @@ func (_c *UserRepository_Reanimate_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// TryFindActiveByWhatsApp provides a mock function for the type UserRepository
+func (_mock *UserRepository) TryFindActiveByWhatsApp(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, bool, error) {
+	ret := _mock.Called(ctx, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TryFindActiveByWhatsApp")
+	}
+
+	var r0 entities.User
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, valueobjects.WhatsAppNumber) (entities.User, bool, error)); ok {
+		return returnFunc(ctx, number)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, valueobjects.WhatsAppNumber) entities.User); ok {
+		r0 = returnFunc(ctx, number)
+	} else {
+		r0 = ret.Get(0).(entities.User)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, valueobjects.WhatsAppNumber) bool); ok {
+		r1 = returnFunc(ctx, number)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, valueobjects.WhatsAppNumber) error); ok {
+		r2 = returnFunc(ctx, number)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// UserRepository_TryFindActiveByWhatsApp_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TryFindActiveByWhatsApp'
+type UserRepository_TryFindActiveByWhatsApp_Call struct {
+	*mock.Call
+}
+
+// TryFindActiveByWhatsApp is a helper method to define mock.On call
+//   - ctx context.Context
+//   - number valueobjects.WhatsAppNumber
+func (_e *UserRepository_Expecter) TryFindActiveByWhatsApp(ctx interface{}, number interface{}) *UserRepository_TryFindActiveByWhatsApp_Call {
+	return &UserRepository_TryFindActiveByWhatsApp_Call{Call: _e.mock.On("TryFindActiveByWhatsApp", ctx, number)}
+}
+
+func (_c *UserRepository_TryFindActiveByWhatsApp_Call) Run(run func(ctx context.Context, number valueobjects.WhatsAppNumber)) *UserRepository_TryFindActiveByWhatsApp_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 valueobjects.WhatsAppNumber
+		if args[1] != nil {
+			arg1 = args[1].(valueobjects.WhatsAppNumber)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *UserRepository_TryFindActiveByWhatsApp_Call) Return(user entities.User, b bool, err error) *UserRepository_TryFindActiveByWhatsApp_Call {
+	_c.Call.Return(user, b, err)
+	return _c
+}
+
+func (_c *UserRepository_TryFindActiveByWhatsApp_Call) RunAndReturn(run func(ctx context.Context, number valueobjects.WhatsAppNumber) (entities.User, bool, error)) *UserRepository_TryFindActiveByWhatsApp_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpsertByWhatsAppNumber provides a mock function for the type UserRepository
 func (_mock *UserRepository) UpsertByWhatsAppNumber(ctx context.Context, u entities.User, now time.Time) (entities.User, error) {
 	ret := _mock.Called(ctx, u, now)

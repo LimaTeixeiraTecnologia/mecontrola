@@ -90,59 +90,6 @@ func (_c *RepositoryFactory_MagicTokenRepository_Call) RunAndReturn(run func(db 
 	return _c
 }
 
-// MetaMessageRepository provides a mock function for the type RepositoryFactory
-func (_mock *RepositoryFactory) MetaMessageRepository(db database.DBTX) interfaces.MetaMessageRepository {
-	ret := _mock.Called(db)
-
-	if len(ret) == 0 {
-		panic("no return value specified for MetaMessageRepository")
-	}
-
-	var r0 interfaces.MetaMessageRepository
-	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.MetaMessageRepository); ok {
-		r0 = returnFunc(db)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(interfaces.MetaMessageRepository)
-		}
-	}
-	return r0
-}
-
-// RepositoryFactory_MetaMessageRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MetaMessageRepository'
-type RepositoryFactory_MetaMessageRepository_Call struct {
-	*mock.Call
-}
-
-// MetaMessageRepository is a helper method to define mock.On call
-//   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) MetaMessageRepository(db interface{}) *RepositoryFactory_MetaMessageRepository_Call {
-	return &RepositoryFactory_MetaMessageRepository_Call{Call: _e.mock.On("MetaMessageRepository", db)}
-}
-
-func (_c *RepositoryFactory_MetaMessageRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_MetaMessageRepository_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 database.DBTX
-		if args[0] != nil {
-			arg0 = args[0].(database.DBTX)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *RepositoryFactory_MetaMessageRepository_Call) Return(metaMessageRepository interfaces.MetaMessageRepository) *RepositoryFactory_MetaMessageRepository_Call {
-	_c.Call.Return(metaMessageRepository)
-	return _c
-}
-
-func (_c *RepositoryFactory_MetaMessageRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.MetaMessageRepository) *RepositoryFactory_MetaMessageRepository_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // OnboardingCleanupRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) OnboardingCleanupRepository(db database.DBTX) interfaces.OnboardingCleanupRepository {
 	ret := _mock.Called(db)
