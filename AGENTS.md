@@ -168,7 +168,7 @@ Outbox:
 5. Atualizar/adicionar testes quando houver mudanca de comportamento.
 6. Rodar validacoes proporcionais ao risco.
 7. Registrar bloqueios, drift e suposicoes explicitamente.
-8. Evitar comentarios; manter apenas os que explicam decisao, invariante, risco, contrato publico ou comportamento nao obvio.
+8. Zero comentarios em codigo Go de producao [HARD] — inegociavel. Excecoes: `// Code generated` (gerado por ferramenta), diretivas `//go:` e `//nolint:` com justificativa na mesma linha.
 
 ## Validacao
 

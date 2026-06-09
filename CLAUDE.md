@@ -42,6 +42,12 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - R7.6: `errors.Join` para agregar erros; `fmt.Errorf("ctx: %w", err)` para wrapping.
 - Goroutines sempre canceláveis, com shutdown cooperativo e sem leak.
 
+**R-ADAPTER-001 (hard) — Zero comentários e adaptadores finos:**
+- Zero comentários em todos os arquivos `.go` de produção — inegociável. Exceções: `// Code generated`, diretivas `//go:`, `//nolint:` com justificativa na mesma linha.
+- Nos quatro caminhos de adapter (`handlers/`, `consumers/`, `jobs/handlers/`, `producers/`): fluxo `adapter → usecase` obrigatório; SQL direto, branching de domínio e regra de negócio são proibidos.
+- Carregar referências go-implementation conforme Matriz R-ADAPTER-001.3 em `.claude/rules/go-adapters.md`.
+- Ver `.claude/rules/go-adapters.md` para contrato completo e gates de verificação.
+
 ## Outbox
 
 Ver secao "Outbox" em `AGENTS.md` para o contrato completo do `outbox.Publisher` e a regra obrigatoria de idempotencia por `event_id`.

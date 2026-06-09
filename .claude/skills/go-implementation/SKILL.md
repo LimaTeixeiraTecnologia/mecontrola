@@ -144,6 +144,7 @@ todo codigo Go e devem ser verificadas sempre:
 16. Ler `references/examples-infrastructure.md` quando a tarefa precisar de exemplo de graceful shutdown, paginacao cursor-based ou versionamento de API.
 17. Ler `references/build.md` quando a tarefa envolver Dockerfile, Makefile, pipeline de CI, build flags, imagem de container ou gates de qualidade.
 18. Ler `references/graceful-lifecycle.md` quando a tarefa envolver inicializacao ordenada, shutdown gracioso, handler de sinais, drain de conexoes ou encerramento de goroutines de longa duracao.
+19. Para qualquer adapter nos quatro caminhos canonicos (`handlers/`, `consumers/`, `jobs/handlers/`, `producers/`): usar a Matriz R-ADAPTER-001.3 em `.claude/rules/go-adapters.md` para selecionar referencias por tipo, em vez de carregar por diff_signal generico.
 
 **Economia de contexto**
 Se mais de 4 referencias forem necessarias para a mesma tarefa, priorizar as 3 mais criticas para o escopo da mudanca e registrar as demais como contexto nao carregado. Carregar referencias adicionais apenas se a implementacao revelar necessidade concreta.
@@ -157,7 +158,7 @@ Se mais de 4 referencias forem necessarias para a mesma tarefa, priorizar as 3 m
 
 **Etapa 4: Implementar**
 1. Editar o codigo seguindo a versao Go declarada em `go.mod` e as convencoes do contexto analisado.
-2. Manter comentarios curtos e apenas quando agregarem contexto real.
+2. Nenhum comentario em codigo de producao — R-ADAPTER-001.1 [HARD]. Excecoes: `// Code generated`, `//go:`, `//nolint:` com justificativa.
 3. Atualizar ou adicionar testes para toda mudanca de comportamento.
 4. Adaptar exemplos ao contexto real em vez de replica-los literalmente.
 
