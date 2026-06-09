@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS mecontrola.dictionary_kind_term_normalized_idx;
+DROP INDEX IF EXISTS mecontrola.dictionary_term_normalized_idx;
+DROP INDEX IF EXISTS mecontrola.dictionary_active_term_uniq_idx;
+DROP TABLE IF EXISTS mecontrola.category_dictionary;
+DROP INDEX IF EXISTS mecontrola.categories_parent_sort_idx;
+DROP INDEX IF EXISTS mecontrola.categories_kind_parent_idx;
+DROP INDEX IF EXISTS mecontrola.categories_kind_slug_uniq_idx;
+DROP TABLE IF EXISTS mecontrola.categories;
+DROP TABLE IF EXISTS mecontrola.category_editorial_version;
+DROP FUNCTION IF EXISTS mecontrola.immutable_unaccent(text);
