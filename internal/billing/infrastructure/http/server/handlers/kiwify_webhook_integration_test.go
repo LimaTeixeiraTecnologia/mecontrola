@@ -8,23 +8,17 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
-	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-	tc "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/stretchr/testify/suite"
 
@@ -40,13 +34,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	outboxrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
-const (
-	integWebhookSecret = "integ-test-secret"
-	pgImage            = "postgres:16"
-)
+const integWebhookSecret = "integ-test-secret"
 
 type WebhookIntegSuite struct {
 	suite.Suite
@@ -65,59 +56,8 @@ func (s *WebhookIntegSuite) SetupTest() {}
 func (s *WebhookIntegSuite) SetupSuite() {
 	ctx := context.Background()
 
-	req := tc.ContainerRequest{
-		Image:        pgImage,
-		ExposedPorts: []string{"5432/tcp"},
-		Env: map[string]string{
-			"POSTGRES_USER":     "test",
-			"POSTGRES_PASSWORD": "test",
-			"POSTGRES_DB":       "testdb",
-		},
-		WaitingFor: wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).
-			WithStartupTimeout(60 * time.Second),
-	}
-
-	container, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	s.Require().NoError(err)
-
-	s.T().Cleanup(func() {
-		if terr := container.Terminate(context.Background()); terr != nil {
-			s.T().Logf("container terminate: %v", terr)
-		}
-	})
-
-	host, err := container.Host(ctx)
-	s.Require().NoError(err)
-
-	mapped, err := container.MappedPort(ctx, "5432")
-	s.Require().NoError(err)
-
-	portNum, err := strconv.Atoi(mapped.Port())
-	s.Require().NoError(err)
-
-	cfg := dbpostgres.PostgresConfig{
-		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
-	}
-
-	mgr, err := manager.New(cfg)
-	s.Require().NoError(err)
+	mgr, _ := testcontainer.Postgres(s.T())
 	s.mgr = mgr
-
-	s.T().Cleanup(func() {
-		_ = s.mgr.Shutdown(context.Background())
-	})
-
-	dsn := fmt.Sprintf("pgx5://test:test@%s:%d/testdb?sslmode=disable", host, portNum)
-	migrator, err := migration.New(s.mgr, migration.EmbedFS{FS: migrations.FS, Root: "."}, migration.WithDSN(dsn))
-	s.Require().NoError(err)
-
-	if err := migrator.Up(ctx); err != nil && !errors.Is(err, migration.ErrNoChange) {
-		s.Require().NoError(err)
-	}
 
 	o11y := noop.NewProvider()
 	s.factory = billingrepos.NewRepositoryFactory(o11y)

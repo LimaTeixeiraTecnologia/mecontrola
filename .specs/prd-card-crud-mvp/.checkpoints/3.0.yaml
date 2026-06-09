@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-card-crud-mvp/3.0_execution_report.md
+summary: Domain package internal/card/domain implementado com VOs, agregado, InvoiceFor puro e testes >=95% coverage
+timestamp: 2026-06-09T00:00:00Z

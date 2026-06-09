@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-card-crud-mvp/5.0_execution_report.md
+summary: Repository pgx, factory e integration tests (5.1-5.8) implementados e todos os testes passando verde.
+timestamp: 2026-06-09T21:37:10Z

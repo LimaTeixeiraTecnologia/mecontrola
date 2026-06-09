@@ -61,14 +61,20 @@ type listQuery struct {
 }
 
 func (r *categoryRepository) buildListQuery(q interfaces.CategoryQuery) listQuery {
-	args := []any{q.Kind.String()}
-	argIdx := 1
+	var args []any
+	argIdx := 0
 
 	sql := `
 		SELECT id, slug, name, kind, parent_id, allocation_type, deprecated_at
 		FROM mecontrola.categories
-		WHERE kind = $1
+		WHERE 1=1
 	`
+
+	if q.Kind.IsValid() {
+		argIdx++
+		sql += fmt.Sprintf(" AND kind = $%d", argIdx)
+		args = append(args, q.Kind)
+	}
 
 	if q.ParentID != nil {
 		argIdx++

@@ -21,6 +21,8 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 )
@@ -136,6 +138,12 @@ func Run() error {
 
 	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
 
+	categoriesModule := categories.NewCategoriesModule(dbManager, o11y)
+	if categoriesModule.CategoryRouter != nil {
+		srv.RegisterRouters(categoriesModule.CategoryRouter)
+	}
+	o11y.Logger().Info(ctx, "categories module wired", observability.Bool("router_registered", categoriesModule.CategoryRouter != nil))
+
 	billingModule, err := billing.NewBillingModule(cfg, o11y, dbManager)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo billing: %w", err)
@@ -158,6 +166,12 @@ func Run() error {
 	}
 	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
+
+	cardModule := card.NewCardModule(cfg, o11y, dbManager)
+	if cardModule.CardRouter != nil {
+		srv.RegisterRouters(cardModule.CardRouter)
+	}
+	o11y.Logger().Info(ctx, "card module wired", observability.Bool("router_registered", cardModule.CardRouter != nil))
 
 	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule)
 	srv.RegisterRouters(waWebhookRouter)

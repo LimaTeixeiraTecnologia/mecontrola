@@ -68,6 +68,9 @@ linters:
           msg: "RF-12 (ADR-001): leitura direta de header map para X-User-* e proibida — bypass via map[textproto.CanonicalMIMEHeaderKey()] tambem viola o contrato."
         - pattern: 'textproto\.CanonicalMIMEHeaderKey\(\s*"(?i)x-user-'
           msg: "RF-12 (ADR-001): canonicalmimeheaderkey para X-User-* e proibido — qualquer caminho de leitura desse header viola o contrato."
+        - pattern: '\b(pan|cvv|cvc|track|pin)\b'
+          msg: "PAN/CVV/CVC/track/PIN sao proibidos no escopo card — aplicacao e nao-PCI (PRD RF-16)"
+          path: 'internal/card/.*'
 
     depguard:
       rules:

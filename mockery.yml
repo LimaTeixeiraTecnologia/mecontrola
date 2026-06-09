@@ -71,6 +71,13 @@ packages:
     interfaces:
       handlePaidWithoutTokenUseCase: {}
       markTokenPaidUseCase: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces:
+    interfaces:
+      CardRepository: {}
+      RepositoryFactory: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency:
+    interfaces:
+      Storage: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox:
     interfaces:
       Registry: {}

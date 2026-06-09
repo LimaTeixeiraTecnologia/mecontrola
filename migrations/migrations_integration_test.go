@@ -6,10 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"strconv"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,14 +14,10 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
-	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
-	tc "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
 )
-
-const pgImage = "postgres:16"
 
 type MigrationSuite struct {
 	suite.Suite
@@ -42,52 +35,9 @@ func (s *MigrationSuite) SetupTest() {}
 func (s *MigrationSuite) SetupSuite() {
 	s.ctx = context.Background()
 
-	req := tc.ContainerRequest{
-		Image:        pgImage,
-		ExposedPorts: []string{"5432/tcp"},
-		Env: map[string]string{
-			"POSTGRES_USER":     "test",
-			"POSTGRES_PASSWORD": "test",
-			"POSTGRES_DB":       "testdb",
-		},
-		WaitingFor: wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).
-			WithStartupTimeout(60 * time.Second),
-	}
-
-	container, err := tc.GenericContainer(s.ctx, tc.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	s.Require().NoError(err)
-
-	s.T().Cleanup(func() {
-		s.Require().NoError(container.Terminate(context.Background()))
-	})
-
-	host, err := container.Host(s.ctx)
-	s.Require().NoError(err)
-
-	mapped, err := container.MappedPort(s.ctx, "5432")
-	s.Require().NoError(err)
-
-	portNum, err := strconv.Atoi(mapped.Port())
-	s.Require().NoError(err)
-
-	cfg := dbpostgres.PostgresConfig{
-		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
-	}
-
-	mgr, err := manager.New(cfg)
-	s.Require().NoError(err)
+	mgr, dsn := testcontainer.Postgres(s.T())
 	s.mgr = mgr
-
-	s.T().Cleanup(func() {
-		s.Require().NoError(s.mgr.Shutdown(context.Background()))
-	})
-
-	s.dsn = fmt.Sprintf("pgx5://test:test@%s:%d/testdb?sslmode=disable", host, portNum)
-
+	s.dsn = dsn
 }
 
 func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
@@ -103,10 +53,12 @@ func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
 	}{
 		{
 			name:  "deve aplicar e reverter a baseline consolidada",
-			args:  args{downSteps: 2},
+			args:  args{downSteps: 8},
 			setup: func() {},
 			expect: func(migrator migration.Migrator, downSteps int) {
-				s.Require().NoError(migrator.Up(s.ctx))
+				upErr := migrator.Up(s.ctx)
+				s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange),
+					"up deve ser idempotente: %v", upErr)
 				s.assertSeededPlans()
 				s.assertActiveSubscriptionUniqueIndex()
 				s.Require().NoError(migrator.Down(s.ctx, downSteps))
@@ -133,6 +85,144 @@ func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
 
 			scenario.expect(migrator, scenario.args.downSteps)
 		})
+	}
+}
+
+func (s *MigrationSuite) TestCardAndIdempotencyMigrationsUpDownUp() {
+	scenarios := []struct {
+		name   string
+		expect func(migrator migration.Migrator)
+	}{
+		{
+			name: "deve aplicar, reverter e reaplicar migrations de idempotency_keys e cards",
+			expect: func(migrator migration.Migrator) {
+				upErr := migrator.Up(s.ctx)
+				s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange),
+					"up deve ser idempotente: %v", upErr)
+
+				s.assertTablePresent("mecontrola.idempotency_keys")
+				s.assertTablePresent("mecontrola.cards")
+
+				s.Require().NoError(migrator.Down(s.ctx, 2))
+
+				s.assertTableMissing("mecontrola.idempotency_keys")
+				s.assertTableMissing("mecontrola.cards")
+				s.assertTablePresent("mecontrola.idempotency_keys_archived_20260609120000")
+				s.assertTablePresent("mecontrola.cards_archived_20260609120000")
+
+				s.Require().NoError(migrator.Up(s.ctx))
+
+				s.assertTablePresent("mecontrola.idempotency_keys")
+				s.assertTablePresent("mecontrola.cards")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			migrator, err := migration.New(
+				s.mgr,
+				migration.EmbedFS{FS: migrations.FS, Root: "."},
+				migration.WithDSN(s.dsn),
+			)
+			s.Require().NoError(err)
+
+			scenario.expect(migrator)
+		})
+	}
+}
+
+func (s *MigrationSuite) TestIdempotencyKeysConstraints() {
+	userID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	validHash := "a948904f2f0f479b8f936f443923b14a04f830de30e39fa93ef91b5c6a8c5e10"
+
+	statusErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.idempotency_keys (scope, key, user_id, request_hash, response_status, response_body, expires_at)
+		VALUES ('card', $1, $2, $3, 199, '', now() + interval '1 day')
+	`, "key-status-test", userID, validHash)
+	s.Require().Error(statusErr, "response_status=199 deve violar check")
+	s.Contains(statusErr.Error(), "idempotency_keys_status_chk")
+
+	bodyErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.idempotency_keys (scope, key, user_id, request_hash, response_status, response_body, expires_at)
+		VALUES ('card', $1, $2, $3, 200, $4, now() + interval '1 day')
+	`, "key-body-test", userID, validHash, make([]byte, 65537))
+	s.Require().Error(bodyErr, "response_body > 65536 bytes deve violar check")
+	s.Contains(bodyErr.Error(), "idempotency_keys_body_size_chk")
+
+	longKey := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa129x"
+	keyErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.idempotency_keys (scope, key, user_id, request_hash, response_status, response_body, expires_at)
+		VALUES ('card', $1, $2, $3, 200, '', now() + interval '1 day')
+	`, longKey, userID, validHash)
+	s.Require().Error(keyErr, "key com 133 chars deve violar check")
+	s.Contains(keyErr.Error(), "idempotency_keys_key_len_chk")
+}
+
+func (s *MigrationSuite) TestCardsConstraints() {
+	userID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	insertUserErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511999990099', 'ACTIVE', now(), now())
+	`, userID)
+	s.Require().NoError(insertUserErr)
+
+	closingZeroErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 0, 5)
+	`, userID)
+	s.Require().Error(closingZeroErr, "closing_day=0 deve violar check")
+	s.Contains(closingZeroErr.Error(), "cards_closing_day_chk")
+
+	closing32Err := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 32, 5)
+	`, userID)
+	s.Require().Error(closing32Err, "closing_day=32 deve violar check")
+	s.Contains(closing32Err.Error(), "cards_closing_day_chk")
+
+	emptyNicknameErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Valid Card', '', 10, 15)
+	`, userID)
+	s.Require().Error(emptyNicknameErr, "nickname vazio deve violar check")
+	s.Contains(emptyNicknameErr.Error(), "cards_nickname_len_chk")
+
+	longNameErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, $2, 'mycard', 10, 15)
+	`, userID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	s.Require().Error(longNameErr, "name com 65 chars deve violar check")
+	s.Contains(longNameErr.Error(), "cards_name_len_chk")
+
+	insertCardErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 10, 15)
+	`, userID)
+	s.Require().NoError(insertCardErr)
+
+	dupNicknameErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Another Card', 'mycard', 15, 20)
+	`, userID)
+	s.Require().Error(dupNicknameErr, "nickname duplicado entre ativos deve violar unique index")
+	s.Contains(dupNicknameErr.Error(), "cards_user_nickname_active_uniq_idx")
+}
+
+func (s *MigrationSuite) TestCardsNoPCIColumns() {
+	prohibitedTerms := []string{"pan", "cvv", "cvc", "track", "pin"}
+	for _, term := range prohibitedTerms {
+		var count int64
+		err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.columns
+			WHERE table_schema = 'mecontrola'
+			  AND table_name = 'cards'
+			  AND lower(column_name) LIKE '%' || $1 || '%'
+		`, term).Scan(&count)
+		s.Require().NoError(err)
+		s.Equal(int64(0), count, "tabela cards nao deve ter coluna contendo '%s'", term)
 	}
 }
 
@@ -239,4 +329,9 @@ func (s *MigrationSuite) assertSchemaMissing(name string) {
 	`, name).Scan(&exists)
 	s.Require().NoError(err)
 	s.False(exists)
+}
+
+func execSQL(mgr manager.Manager, ctx context.Context, query string, args ...any) error {
+	_, err := mgr.DBTX(ctx).ExecContext(ctx, query, args...)
+	return err
 }

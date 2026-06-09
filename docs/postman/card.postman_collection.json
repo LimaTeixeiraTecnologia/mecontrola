@@ -1,0 +1,571 @@
+{
+  "info": {
+    "_postman_id": "card-crud-mvp-collection-v1",
+    "name": "Card CRUD MVP",
+    "description": "CRUD de cartões de crédito com cálculo de fatura — módulo internal/card.\n\n**Variáveis obrigatórias antes de executar:**\n- `base_url`: URL base do servidor (ex: http://localhost:8080)\n- `user_id`: UUID v4 do usuário autenticado (ex: 550e8400-e29b-41d4-a716-446655440001)\n- `card_id`: UUID v4 de um cartão existente (preenchido automaticamente após POST)\n- `idempotency_key`: Chave de idempotência única por operação de mutação\n\n**Referência:** openapi.yaml (OpenAPI 3.1) em internal/card/infrastructure/http/server/openapi.yaml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string",
+      "description": "URL base do servidor"
+    },
+    {
+      "key": "user_id",
+      "value": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "string",
+      "description": "UUID v4 do usuário autenticado (header X-User-ID)"
+    },
+    {
+      "key": "card_id",
+      "value": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "string",
+      "description": "UUID v4 do cartão — preenchido automaticamente pelo test script do POST"
+    },
+    {
+      "key": "idempotency_key",
+      "value": "req-2026-01-15-001",
+      "type": "string",
+      "description": "Chave de idempotência única por operação de mutação (ASCII 1–128 chars)"
+    }
+  ],
+  "item": [
+    {
+      "name": "Cards",
+      "description": "Gerenciamento de cartões de crédito",
+      "item": [
+        {
+          "name": "Criar cartão",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}",
+                "description": "UUID v4 do usuário autenticado (obrigatório)",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "description": "Chave de idempotência ASCII 1–128 chars (obrigatório)",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nubank\",\n  \"nickname\": \"Nu\",\n  \"closing_day\": 15,\n  \"due_day\": 22\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cards"]
+            },
+            "description": "Cria um cartão para o usuário autenticado.\n\n**Headers obrigatórios:** X-User-ID, Idempotency-Key\n\n**Responses:**\n- 201: Cartão criado (header Location com URI)\n- 400: Payload inválido ou Idempotency-Key ausente\n- 401: X-User-ID ausente ou inválido\n- 409: Apelido já em uso ou hash de idempotência divergente\n- 500: Erro interno"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"},
+                  {"key": "Idempotency-Key", "value": "req-2026-01-15-001"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Nubank\",\n  \"nickname\": \"Nu\",\n  \"closing_day\": 15,\n  \"due_day\": 22\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "cards"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {"key": "Content-Type", "value": "application/json"},
+                {"key": "Location", "value": "/api/v1/cards/550e8400-e29b-41d4-a716-446655440000"}
+              ],
+              "body": "{\n  \"ID\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"UserID\": \"550e8400-e29b-41d4-a716-446655440001\",\n  \"Name\": \"Nubank\",\n  \"Nickname\": \"Nu\",\n  \"ClosingDay\": 15,\n  \"DueDay\": 22,\n  \"CreatedAt\": \"2026-01-15T10:30:00Z\",\n  \"UpdatedAt\": \"2026-01-15T10:30:00Z\",\n  \"DeletedAt\": null\n}"
+            },
+            {
+              "name": "400 Bad Request — payload inválido",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"},
+                  {"key": "Idempotency-Key", "value": "req-2026-01-15-001"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {"mode": "raw", "raw": "{bad-json}"},
+                "url": {"raw": "{{base_url}}/api/v1/cards", "host": ["{{base_url}}"], "path": ["api", "v1", "cards"]}
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/problem+json"}],
+              "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"Bad Request\",\n  \"status\": 400,\n  \"detail\": \"payload inválido\",\n  \"errors\": {\"code\": \"invalid_payload\"}\n}"
+            },
+            {
+              "name": "409 Conflict — apelido em uso",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"},
+                  {"key": "Idempotency-Key", "value": "req-2026-01-15-002"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {"mode": "raw", "raw": "{\n  \"name\": \"Nubank\",\n  \"nickname\": \"Nu\",\n  \"closing_day\": 15,\n  \"due_day\": 22\n}"},
+                "url": {"raw": "{{base_url}}/api/v1/cards", "host": ["{{base_url}}"], "path": ["api", "v1", "cards"]}
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/problem+json"}],
+              "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"Conflict\",\n  \"status\": 409,\n  \"detail\": \"apelido já em uso\",\n  \"errors\": {\"code\": \"nickname_in_use\"}\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.ID) {",
+                  "        pm.collectionVariables.set('card_id', json.ID);",
+                  "        console.log('card_id set to:', json.ID);",
+                  "    }",
+                  "    pm.test('Status 201 Created', function() {",
+                  "        pm.response.to.have.status(201);",
+                  "    });",
+                  "    pm.test('Response has ID', function() {",
+                  "        pm.expect(json.ID).to.be.a('string');",
+                  "    });",
+                  "    pm.test('Response has Location header', function() {",
+                  "        pm.response.to.have.header('Location');",
+                  "    });",
+                  "    pm.test('No PII in response (name/nickname allowed in card response)', function() {",
+                  "        pm.expect(json.UserID).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var ts = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);",
+                  "pm.collectionVariables.set('idempotency_key', 'req-' + ts + '-create');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar cartões",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}",
+                "description": "UUID v4 do usuário autenticado (obrigatório)",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cards"],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "Cursor opaco base64 para paginação keyset (opcional)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Quantidade máxima de itens por página (1–100, default 20)"
+                }
+              ]
+            },
+            "description": "Lista cartões ativos do usuário com paginação cursor keyset.\n\n**Headers obrigatórios:** X-User-ID\n\n**Query params:**\n- cursor: cursor opaco base64 (opcional)\n- limit: 1–100 (default 20)\n\n**Responses:**\n- 200: Lista paginada\n- 401: X-User-ID ausente ou inválido\n- 500: Erro interno"
+          },
+          "response": [
+            {
+              "name": "200 OK — lista paginada",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"}],
+                "url": {"raw": "{{base_url}}/api/v1/cards?limit=20", "host": ["{{base_url}}"], "path": ["api", "v1", "cards"], "query": [{"key": "limit", "value": "20"}]}
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"Cards\": [\n    {\n      \"ID\": \"550e8400-e29b-41d4-a716-446655440000\",\n      \"UserID\": \"550e8400-e29b-41d4-a716-446655440001\",\n      \"Name\": \"Nubank\",\n      \"Nickname\": \"Nu\",\n      \"ClosingDay\": 15,\n      \"DueDay\": 22,\n      \"CreatedAt\": \"2026-01-15T10:30:00Z\",\n      \"UpdatedAt\": \"2026-01-15T10:30:00Z\",\n      \"DeletedAt\": null\n    }\n  ],\n  \"NextCursor\": \"\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has Cards array', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.Cards).to.be.an('array');",
+                  "});",
+                  "pm.test('Response has NextCursor', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('NextCursor');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Obter cartão por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}",
+                "description": "UUID v4 do usuário autenticado (obrigatório)",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/{{card_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cards", "{{card_id}}"]
+            },
+            "description": "Obtém um cartão por ID. Retorna 404 se não existir ou tiver sido soft-deleted.\n\n**Headers obrigatórios:** X-User-ID\n\n**Path params:**\n- id: UUID v4 do cartão\n\n**Responses:**\n- 200: Cartão encontrado\n- 401: X-User-ID ausente ou inválido\n- 404: Cartão não encontrado\n- 500: Erro interno"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"}],
+                "url": {"raw": "{{base_url}}/api/v1/cards/550e8400-e29b-41d4-a716-446655440000", "host": ["{{base_url}}"], "path": ["api", "v1", "cards", "550e8400-e29b-41d4-a716-446655440000"]}
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"ID\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"UserID\": \"550e8400-e29b-41d4-a716-446655440001\",\n  \"Name\": \"Nubank\",\n  \"Nickname\": \"Nu\",\n  \"ClosingDay\": 15,\n  \"DueDay\": 22,\n  \"CreatedAt\": \"2026-01-15T10:30:00Z\",\n  \"UpdatedAt\": \"2026-01-15T10:30:00Z\",\n  \"DeletedAt\": null\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"}],
+                "url": {"raw": "{{base_url}}/api/v1/cards/00000000-0000-0000-0000-000000000000", "host": ["{{base_url}}"], "path": ["api", "v1", "cards", "00000000-0000-0000-0000-000000000000"]}
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/problem+json"}],
+              "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"Not Found\",\n  \"status\": 404,\n  \"detail\": \"cartão não encontrado\",\n  \"errors\": {\"code\": \"card_not_found\"}\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Status 200 OK', function() {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "    pm.test('Response has ID', function() {",
+                  "        var json = pm.response.json();",
+                  "        pm.expect(json.ID).to.be.a('string');",
+                  "    });",
+                  "} else if (pm.response.code === 404) {",
+                  "    pm.test('Status 404 Not Found', function() {",
+                  "        pm.response.to.have.status(404);",
+                  "    });",
+                  "    pm.test('Error detail present', function() {",
+                  "        var json = pm.response.json();",
+                  "        pm.expect(json.detail).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Atualizar cartão",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}",
+                "description": "UUID v4 do usuário autenticado (obrigatório)",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "description": "Chave de idempotência ASCII 1–128 chars (obrigatório)",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nubank Gold\",\n  \"nickname\": \"Nu Gold\",\n  \"closing_day\": 20,\n  \"due_day\": 27\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/{{card_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cards", "{{card_id}}"]
+            },
+            "description": "Atualiza nome, apelido, closing_day e/ou due_day (envio parcial suportado).\n\n**Headers obrigatórios:** X-User-ID, Idempotency-Key\n\n**Responses:**\n- 200: Cartão atualizado\n- 400: Payload inválido ou Idempotency-Key ausente\n- 401: X-User-ID ausente ou inválido\n- 404: Cartão não encontrado\n- 409: Apelido já em uso\n- 500: Erro interno"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"},
+                  {"key": "Idempotency-Key", "value": "req-2026-01-16-001"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {"mode": "raw", "raw": "{\n  \"name\": \"Nubank Gold\",\n  \"nickname\": \"Nu Gold\",\n  \"closing_day\": 20,\n  \"due_day\": 27\n}"},
+                "url": {"raw": "{{base_url}}/api/v1/cards/550e8400-e29b-41d4-a716-446655440000", "host": ["{{base_url}}"], "path": ["api", "v1", "cards", "550e8400-e29b-41d4-a716-446655440000"]}
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"ID\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"UserID\": \"550e8400-e29b-41d4-a716-446655440001\",\n  \"Name\": \"Nubank Gold\",\n  \"Nickname\": \"Nu Gold\",\n  \"ClosingDay\": 20,\n  \"DueDay\": 27,\n  \"CreatedAt\": \"2026-01-15T10:30:00Z\",\n  \"UpdatedAt\": \"2026-01-16T10:30:00Z\",\n  \"DeletedAt\": null\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has ID', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.ID).to.be.a('string');",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var ts = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);",
+                  "pm.collectionVariables.set('idempotency_key', 'req-' + ts + '-update');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Excluir cartão (soft-delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}",
+                "description": "UUID v4 do usuário autenticado (obrigatório)",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}",
+                "description": "Chave de idempotência ASCII 1–128 chars (obrigatório)",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/{{card_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cards", "{{card_id}}"]
+            },
+            "description": "Aplica soft-delete no cartão (preenche deleted_at). O cartão não aparece mais em listagens ou buscas.\n\n**Headers obrigatórios:** X-User-ID, Idempotency-Key\n\n**Responses:**\n- 204: Cartão excluído (sem body)\n- 400: Idempotency-Key ausente ou inválida\n- 401: X-User-ID ausente ou inválido\n- 404: Cartão não encontrado\n- 500: Erro interno"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"},
+                  {"key": "Idempotency-Key", "value": "req-2026-01-16-del-001"}
+                ],
+                "url": {"raw": "{{base_url}}/api/v1/cards/550e8400-e29b-41d4-a716-446655440000", "host": ["{{base_url}}"], "path": ["api", "v1", "cards", "550e8400-e29b-41d4-a716-446655440000"]}
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "body": ""
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "pm.test('Response body is empty', function() {",
+                  "    pm.expect(pm.response.text()).to.be.empty;",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var ts = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);",
+                  "pm.collectionVariables.set('idempotency_key', 'req-' + ts + '-delete');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Calcular fatura para uma data de compra",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}",
+                "description": "UUID v4 do usuário autenticado (obrigatório)",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/{{card_id}}/invoices?for=2026-01-10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cards", "{{card_id}}", "invoices"],
+              "query": [
+                {
+                  "key": "for",
+                  "value": "2026-01-10",
+                  "description": "Data da compra no formato YYYY-MM-DD (obrigatório)"
+                }
+              ]
+            },
+            "description": "Calcula em qual fatura cairia uma compra realizada na data `for`, usando o ciclo atual do cartão e o algoritmo InvoiceFor (America/Sao_Paulo).\n\n**Headers obrigatórios:** X-User-ID\n\n**Query params:**\n- for: data no formato YYYY-MM-DD (obrigatório)\n\n**Responses:**\n- 200: Datas de fechamento e vencimento\n- 400: Param `for` ausente ou formato inválido\n- 401: X-User-ID ausente ou inválido\n- 404: Cartão não encontrado\n- 500: Erro interno"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"}],
+                "url": {"raw": "{{base_url}}/api/v1/cards/550e8400-e29b-41d4-a716-446655440000/invoices?for=2026-01-10", "host": ["{{base_url}}"], "path": ["api", "v1", "cards", "550e8400-e29b-41d4-a716-446655440000", "invoices"], "query": [{"key": "for", "value": "2026-01-10"}]}
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"ClosingDate\": \"2026-01-15T00:00:00Z\",\n  \"DueDate\": \"2026-01-22T00:00:00Z\"\n}"
+            },
+            {
+              "name": "400 Bad Request — param 'for' inválido",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "X-User-ID", "value": "550e8400-e29b-41d4-a716-446655440001"}],
+                "url": {"raw": "{{base_url}}/api/v1/cards/550e8400-e29b-41d4-a716-446655440000/invoices?for=notadate", "host": ["{{base_url}}"], "path": ["api", "v1", "cards", "550e8400-e29b-41d4-a716-446655440000", "invoices"], "query": [{"key": "for", "value": "notadate"}]}
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/problem+json"}],
+              "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"Bad Request\",\n  \"status\": 400,\n  \"detail\": \"data inválida; use YYYY-MM-DD\",\n  \"errors\": {\"code\": \"invalid_purchase_date\"}\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Status 200 OK', function() {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "    pm.test('Response has ClosingDate', function() {",
+                  "        var json = pm.response.json();",
+                  "        pm.expect(json.ClosingDate).to.be.a('string');",
+                  "    });",
+                  "    pm.test('Response has DueDate', function() {",
+                  "        var json = pm.response.json();",
+                  "        pm.expect(json.DueDate).to.be.a('string');",
+                  "    });",
+                  "    pm.test('DueDate >= ClosingDate', function() {",
+                  "        var json = pm.response.json();",
+                  "        pm.expect(new Date(json.DueDate).getTime()).to.be.at.least(new Date(json.ClosingDate).getTime());",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

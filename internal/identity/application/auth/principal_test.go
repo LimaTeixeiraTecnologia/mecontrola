@@ -97,6 +97,22 @@ func (s *PrincipalSuite) TestSourceWhatsApp_Value() {
 	s.Equal(auth.PrincipalSource("whatsapp"), auth.SourceWhatsApp)
 }
 
+func (s *PrincipalSuite) TestSourceHeader_Value() {
+	s.Equal(auth.PrincipalSource("header"), auth.SourceHeader)
+}
+
+func (s *PrincipalSuite) TestRoundTrip_SourceHeader() {
+	p := auth.Principal{
+		UserID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		Source: auth.SourceHeader,
+	}
+	ctx := auth.WithPrincipal(context.Background(), p)
+	got, ok := auth.FromContext(ctx)
+	s.True(ok)
+	s.Equal(p, got)
+	s.Equal(auth.SourceHeader, got.Source)
+}
+
 func BenchmarkWithPrincipal(b *testing.B) {
 	p := auth.Principal{
 		UserID: uuid.MustParse("11111111-1111-1111-1111-111111111111"),

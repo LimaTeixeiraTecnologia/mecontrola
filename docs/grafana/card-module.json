@@ -1,0 +1,229 @@
+{
+  "id": null,
+  "uid": "card-module-v1",
+  "title": "Card Module",
+  "description": "Dashboard operacional do modulo card (prd-card-crud-mvp). Cobre metricas RED por rota, idempotency outcomes e InvoiceFor duration via OpenTelemetry.",
+  "tags": ["card", "cards", "otel", "idempotency"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "pluginId": "prometheus",
+        "label": "Prometheus",
+        "hide": 0,
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      },
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": "${datasource}",
+        "label": "Job",
+        "hide": 0,
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "query": "label_values(http_server_request_duration_seconds_count{route=~\"/api/v1/cards.*\"}, job)",
+        "current": {}
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "datasource": "${datasource}",
+        "label": "Instance",
+        "hide": 0,
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "query": "label_values(http_server_request_duration_seconds_count{job=\"$job\", route=~\"/api/v1/cards.*\"}, instance)",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate by Route (/api/v1/cards*)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "targets": [
+        {
+          "expr": "sum by (route, method) (rate(http_server_request_duration_seconds_count{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\"}[5m]))",
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latency p50/p95/p99 por Route",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (route, le) (rate(http_server_request_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\"}[5m])))",
+          "legendFormat": "p50 {{route}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (route, le) (rate(http_server_request_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\"}[5m])))",
+          "legendFormat": "p95 {{route}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (route, le) (rate(http_server_request_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\"}[5m])))",
+          "legendFormat": "p99 {{route}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Error Rate por Status Class",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(http_server_request_duration_seconds_count{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\", http_response_status_code=~\"4..\"}[5m])) / sum by (route) (rate(http_server_request_duration_seconds_count{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\"}[5m]))",
+          "legendFormat": "4xx {{route}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (route) (rate(http_server_request_duration_seconds_count{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\", http_response_status_code=~\"5..\"}[5m])) / sum by (route) (rate(http_server_request_duration_seconds_count{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards.*\"}[5m]))",
+          "legendFormat": "5xx {{route}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Idempotency Outcomes (replay/miss/conflict) por minuto",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(card_idempotency_requests_total{job=\"$job\", instance=~\"$instance\"}[1m])) * 60",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(traces_spanmetrics_duration_milliseconds_count{job=\"$job\", instance=~\"$instance\", span_name=\"card.middleware.idempotency\", outcome=\"replay\"}[1m])) * 60",
+          "legendFormat": "replay (spanmetrics)",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(traces_spanmetrics_duration_milliseconds_count{job=\"$job\", instance=~\"$instance\", span_name=\"card.middleware.idempotency\", outcome=\"miss\"}[1m])) * 60",
+          "legendFormat": "miss (spanmetrics)",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(traces_spanmetrics_duration_milliseconds_count{job=\"$job\", instance=~\"$instance\", span_name=\"card.middleware.idempotency\", outcome=\"conflict\"}[1m])) * 60",
+          "legendFormat": "conflict (spanmetrics)",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "InvoiceFor Duration p99",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "last"] }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(traces_spanmetrics_duration_milliseconds_bucket{job=\"$job\", instance=~\"$instance\", span_name=\"card.usecase.invoice_for\"}[5m])))",
+          "legendFormat": "invoice_for p99 (ms)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\", route=~\"/api/v1/cards/.*/invoices\"}[5m]))) * 1000",
+          "legendFormat": "GET /invoices p99 via HTTP (ms)",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

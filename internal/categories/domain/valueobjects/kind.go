@@ -5,7 +5,10 @@ import (
 	"fmt"
 )
 
-var ErrInvalidKind = errors.New("categories: invalid kind")
+var (
+	ErrInvalidKind  = errors.New("categories: invalid kind")
+	ErrInvalidQuery = errors.New("categories: invalid query")
+)
 
 type Kind uint8
 

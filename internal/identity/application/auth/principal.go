@@ -8,7 +8,10 @@ import (
 
 type PrincipalSource string
 
-const SourceWhatsApp PrincipalSource = "whatsapp"
+const (
+	SourceWhatsApp PrincipalSource = "whatsapp"
+	SourceHeader   PrincipalSource = "header"
+)
 
 type Principal struct {
 	UserID uuid.UUID

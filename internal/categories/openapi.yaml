@@ -1,0 +1,578 @@
+openapi: 3.0.3
+info:
+  title: MeControla Categories API
+  description: |
+    API de catálogo global e dicionário de categorias para classificação de receitas e despesas.
+    Todos os endpoints são somente leitura e requerem autenticação via middleware RequireUser.
+  version: 1.0.0
+  contact:
+    name: MeControla Team
+
+servers:
+  - url: /api/v1
+    description: API v1 base path
+
+security:
+  - bearerAuth: []
+
+paths:
+  /categories:
+    get:
+      summary: Listar categorias e subcategorias
+      description: |
+        Retorna o catálogo hierárquico de categorias. Por padrão, retorna apenas itens ativos
+        (sem deprecated_at). Suporta filtro por kind (income/expense) e parent_id.
+      tags:
+        - Categories
+      parameters:
+        - name: kind
+          in: query
+          description: Tipo de categoria (income ou expense)
+          schema:
+            type: string
+            enum: [income, expense]
+        - name: parent_id
+          in: query
+          description: ID da categoria pai para listar subcategorias
+          schema:
+            type: string
+            format: uuid
+        - name: include_deprecated
+          in: query
+          description: Incluir categorias descontinuadas na resposta
+          schema:
+            type: boolean
+            default: false
+        - name: If-None-Match
+          in: header
+          description: ETag para revalidação de cache
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de categorias retornada com sucesso
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCategoriesResponse'
+        '304':
+          description: Conteúdo não modificado (cache válido)
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Parâmetro inválido (kind inválido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /categories/{id}:
+    get:
+      summary: Obter categoria por ID
+      description: |
+        Retorna detalhes de uma categoria específica, incluindo caminho completo e
+        subcategorias quando aplicável.
+      tags:
+        - Categories
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID da categoria (UUID)
+          schema:
+            type: string
+            format: uuid
+        - name: include_deprecated
+          in: query
+          description: Permitir retornar categoria descontinuada
+          schema:
+            type: boolean
+            default: false
+        - name: If-None-Match
+          in: header
+          description: ETag para revalidação de cache
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Categoria encontrada
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryDetailResponse'
+        '304':
+          description: Conteúdo não modificado (cache válido)
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Categoria não encontrada ou descontinuada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: ID inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /category-dictionary:
+    get:
+      summary: Listar entradas do dicionário
+      description: |
+        Retorna entradas do dicionário de categorias com suporte a paginação cursor-based.
+        Permite filtrar por category_id, kind e signal_type.
+      tags:
+        - Dictionary
+      parameters:
+        - name: category_id
+          in: query
+          description: Filtrar por ID da categoria
+          schema:
+            type: string
+            format: uuid
+        - name: kind
+          in: query
+          description: Tipo de categoria (income ou expense)
+          schema:
+            type: string
+            enum: [income, expense]
+        - name: signal_type
+          in: query
+          description: Tipo de sinal (canonical_name, alias, phrase, merchant, segment)
+          schema:
+            type: string
+            enum: [canonical_name, alias, phrase, merchant, segment]
+        - name: cursor
+          in: query
+          description: Cursor opaco para paginação
+          schema:
+            type: string
+        - name: page_size
+          in: query
+          description: Tamanho da página (máximo 200)
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: If-None-Match
+          in: header
+          description: ETag para revalidação de cache
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de entradas do dicionário
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDictionaryResponse'
+        '304':
+          description: Conteúdo não modificado (cache válido)
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Parâmetro inválido (kind ou signal_type inválido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /category-dictionary/search:
+    get:
+      summary: Buscar no dicionário
+      description: |
+        Busca termos no dicionário de categorias. Retorna até 3 candidatos explicáveis
+        ou "no_match" quando não houver correspondência segura. A busca é determinística
+        e baseada em correspondência exata normalizada (case-insensitive, accent-insensitive).
+      tags:
+        - Dictionary
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Termo de busca (mínimo 3 caracteres após normalização)
+          schema:
+            type: string
+            minLength: 3
+        - name: kind
+          in: query
+          required: true
+          description: Tipo de categoria (income ou expense)
+          schema:
+            type: string
+            enum: [income, expense]
+        - name: If-None-Match
+          in: header
+          description: ETag para revalidação de cache
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resultado da busca (candidatos ou no_match)
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DictionarySearchResponse'
+        '304':
+          description: Conteúdo não modificado (cache válido)
+          headers:
+            ETag:
+              description: Versão editorial do catálogo
+              schema:
+                type: string
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: |
+            Parâmetro inválido:
+            - invalid_kind: kind ausente ou inválido
+            - invalid_query: q ausente, vazio, ou menor que 3 caracteres após normalização
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ListCategoriesResponse:
+      type: object
+      required:
+        - categories
+        - version
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryTree'
+        version:
+          type: integer
+          format: int64
+          description: Versão editorial monotônica do catálogo
+
+    CategoryTree:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - kind
+        - allocation_type
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          description: Identificador estável em kebab-case PT-BR
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [income, expense]
+        allocation_type:
+          type: string
+          enum: [consumption, asset_allocation]
+        deprecated_at:
+          type: string
+          format: date-time
+          nullable: true
+        subcategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryOutput'
+        version:
+          type: integer
+          format: int64
+
+    CategoryOutput:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - kind
+        - allocation_type
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [income, expense]
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        allocation_type:
+          type: string
+          enum: [consumption, asset_allocation]
+        deprecated_at:
+          type: string
+          format: date-time
+          nullable: true
+        version:
+          type: integer
+          format: int64
+
+    CategoryDetailResponse:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - kind
+        - allocation_type
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [income, expense]
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        allocation_type:
+          type: string
+          enum: [consumption, asset_allocation]
+        deprecated_at:
+          type: string
+          format: date-time
+          nullable: true
+        path:
+          type: string
+          description: Caminho completo (Raiz > Subcategoria)
+        subcategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryOutput'
+        version:
+          type: integer
+          format: int64
+
+    ListDictionaryResponse:
+      type: object
+      required:
+        - entries
+        - version
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/DictionaryEntryOutput'
+        next_cursor:
+          type: string
+          description: Cursor opaco para próxima página (omitido quando não há mais resultados)
+        version:
+          type: integer
+          format: int64
+
+    DictionaryEntryOutput:
+      type: object
+      required:
+        - id
+        - category_id
+        - kind
+        - term
+        - signal_type
+        - confidence
+        - is_ambiguous
+      properties:
+        id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [income, expense]
+        term:
+          type: string
+          description: Termo original (com acentos e case preservados)
+        signal_type:
+          type: string
+          enum: [canonical_name, alias, phrase, merchant, segment]
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        is_ambiguous:
+          type: boolean
+          description: Indica se o termo é ambíguo entre múltiplas categorias
+        deprecated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DictionarySearchResponse:
+      type: object
+      required:
+        - result
+        - version
+      properties:
+        result:
+          type: string
+          enum: [candidates, no_match]
+          description: |
+            candidates: foram encontrados candidatos (pode ser ambíguo)
+            no_match: nenhuma correspondência segura encontrada
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandidateOutput'
+          description: Presente apenas quando result=candidates
+        has_more:
+          type: boolean
+          description: Indica se existem mais candidatos além dos 3 retornados
+        version:
+          type: integer
+          format: int64
+
+    CandidateOutput:
+      type: object
+      required:
+        - category_id
+        - root_category_id
+        - path
+        - matched_term
+        - signal_type
+        - confidence
+        - is_ambiguous
+        - match_reason
+      properties:
+        category_id:
+          type: string
+          format: uuid
+          description: ID da subcategoria
+        root_category_id:
+          type: string
+          format: uuid
+          description: ID da categoria raiz
+        path:
+          type: string
+          description: Caminho completo (Raiz > Subcategoria)
+        matched_term:
+          type: string
+          description: Termo que casou com a busca
+        signal_type:
+          type: string
+          enum: [canonical_name, alias, phrase, merchant, segment]
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        is_ambiguous:
+          type: boolean
+          description: |
+            true quando há múltiplos candidatos ou o termo é marcado como ambíguo.
+            Nunca confiar em um único candidato quando is_ambiguous=true.
+        match_reason:
+          type: string
+          description: Explicação de por que o candidato foi recuperado
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Mensagem de erro legível
+        details:
+          type: object
+          additionalProperties: true
+          description: Detalhes adicionais do erro (ex código de erro)

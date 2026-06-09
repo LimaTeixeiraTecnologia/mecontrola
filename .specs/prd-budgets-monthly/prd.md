@@ -1,6 +1,6 @@
 # Documento de Requisitos do Produto (PRD)
 
-<!-- spec-version: 23 -->
+<!-- spec-version: 24 -->
 
 <!--
 Histórico de versões:
@@ -27,6 +27,7 @@ Histórico de versões:
 - v21 (2026-06-06): contrato de leitura com `internal/categories` formalizado por slugs editoriais imutáveis; estado terminal de evento pendente desambiguado entre `failed` (erro permanente) e `expired` (timeout); versão monotônica fixada explicitamente para criação (v=1 imposta pelo servidor) e exclusão (tombstone congela a próxima versão); avaliação de alerta declarada como assíncrona via outbox interno; formato canônico de `external_transaction_id` (UUID v4 ou ULID) e chave de competência (`YYYY-MM` em America/Sao_Paulo) fixados no PRD; cardinalidade de métricas operacionais limitada; recorrência exige fonte com 100% alocados; demais ajustes editoriais para prontidão de especificação técnica.
 - v22 (2026-06-08): estouro de orçamento explicitamente permitido; despesas podem levar o percentual utilizado acima de 100% sem bloqueio, rejeição, reversão ou truncamento do resumo.
 - v23 (2026-06-08): bump pós-`prd-auth-foundation` task 9.0. Endpoints autenticados da API usarão o `RequireUser` canônico de `internal/identity/infrastructure/http/server/middleware` (via `auth.Principal` no `context.Context` injetado pelo `EstablishPrincipal`), removendo dependência do header transitório `X-User-ID`. Referência: `prd-auth-foundation`.
+- v24 (2026-06-09): decisões de production-readiness fechadas antes do handoff para techspec — (1) endpoints administrativos HTTP (RF-39b original e RF-64c expansivo) movidos para fora do MVP via OUT-16, mantendo persistência e observabilidade por SQL/Grafana; (2) estado de cruzamento de limiar formalizado em tabela dedicada `budgets_threshold_state` com versão monotônica (novos RF-60e/RF-60f); (3) allowlist de produtores fixada como constante Go versionada em `internal/budgets/infrastructure/config/` (RT-28); (4) resumo mensal calculado on-demand com índice composto obrigatório (RT-29); (5) cronjobs de RF-18b e RF-66 executados pelo scheduler in-process via `internal/budgets/infrastructure/jobs/handlers/` (RT-30); (6) cache de categories com raízes resolvidas no boot e subcategorias com TTL 60s + bust por `editorial_version` (RT-31).
 -->
 
 > **Origem**: brainstorming decisório em `docs/discoveries/brainstorms/brainstorm-modulo-de-orcamentos-mensais-por-categoria/` e discovery técnico em `docs/discoveries/technical-modulo-de-orcamentos-mensais-por-categoria/`, ambos validados com `SUCCESS` em 2026-06-06.
@@ -221,7 +222,7 @@ Mantém orçamentos, despesas e tombstones por 24 meses, sinaliza eventos fora d
 - **RF-38**: Evento com lacuna de versão ou recebido antes da criação DEVE permanecer pendente por até 24 horas em estado `pending`.
 - **RF-39**: Evento ainda inaplicável após a janela de 24 horas DEVE transitar para estado terminal `expired`, observável, sem criar estado financeiro incompleto e sem agir sobre o agregado de despesa.
 - **RF-39a**: Eventos pendentes (lacuna de versão ou recebidos antes da criação) DEVEM ser persistidos em tabela dedicada `budgets_expense_events_pending`, com máquina de estados `pending → applied | failed | expired`. O estado `failed` DEVE ser usado exclusivamente para erro permanente (validação de schema, autorização, identidade canônica inválida, regra de versão definitivamente impossível); o estado `expired` DEVE ser usado exclusivamente para timeout de 24h sem aplicabilidade. As transições DEVEM ser idempotentes e auditáveis.
-- **RF-39b**: O sistema DEVE expor endpoint administrativo de inspeção (não acessível ao usuário final) sobre eventos pendentes, com filtros por `source`, `user_id`, estado e janela temporal.
+- **RF-39b**: No MVP, a inspeção de eventos pendentes DEVE permanecer consultável exclusivamente via SQL e dashboards de observabilidade (sem endpoint HTTP administrativo, conforme OUT-16). A tabela `budgets_expense_events_pending` DEVE expor colunas indexadas suficientes para filtros por `source`, `user_id`, estado e janela temporal direto no banco.
 - **RF-39c**: Métricas DEVEM cobrir taxa de eventos por estado, idade do pendente mais antigo e contagem de transições para `failed` e `expired`.
 - **RF-40**: API e eventos DEVEM compartilhar a mesma regra de versão monotônica e conflito.
 - **RF-41**: `occurred_at` DEVE ser preservado como data de negócio/auditoria, mas NÃO DEVE definir a autoridade concorrente da mutação.
@@ -263,6 +264,8 @@ Mantém orçamentos, despesas e tombstones por 24 meses, sinaliza eventos fora d
 - **RF-60b**: Edição ou exclusão que reduza o gasto abaixo do limiar DEVE rearmar imediatamente aquele limiar para futuros cruzamentos.
 - **RF-60c**: Cruzamento de limiar causado por correção em competência anterior à competência corrente NÃO DEVE gerar alerta ao usuário.
 - **RF-60d**: Cruzamento retroativo suprimido DEVE gerar sinal operacional observável, sem afetar o estado financeiro.
+- **RF-60e**: O estado de cruzamento de cada limiar DEVE ser persistido em tabela dedicada `budgets_threshold_state` com chave `(user_id, competence, root_slug, threshold)` e colunas mínimas `currently_crossed` (boolean), `last_crossed_at` (timestamptz, UTC), `last_uncrossed_at` (timestamptz nullable, UTC), `version` (bigint monotônico incrementado a cada transição) e `last_evaluated_committed_at` (timestamptz, UTC). A transição DEVE ser atualizada exclusivamente pelo avaliador assíncrono em UPSERT idempotente.
+- **RF-60f**: O avaliador DEVE ler `budgets_threshold_state` antes de decidir emissão; nova linha em `budgets_alerts` SOMENTE DEVE ser criada quando `currently_crossed` transitar de `false` para `true` no recálculo do estado financeiro atual da categoria. Evento de outbox cuja avaliação resulte em "permanece cruzado" ou "permanece abaixo" DEVE atualizar apenas `last_evaluated_committed_at` (ou nada) sem criar alerta.
 - **RF-61**: O sistema DEVE aplicar limite independente de 10 alertas por usuário, competência, categoria e limiar.
 - **RF-61a**: Alertas de 80% e 100% DEVEM possuir contadores independentes; alertas de uma categoria NÃO DEVEM consumir o limite de outra categoria.
 - **RF-62**: Alertas excedentes do mesmo usuário, competência, categoria e limiar DEVEM ser descartados de forma observável e NÃO DEVEM afetar o estado financeiro.
@@ -270,7 +273,7 @@ Mantém orçamentos, despesas e tombstones por 24 meses, sinaliza eventos fora d
 - **RF-64**: O MVP DEVE preparar contrato/provider para futura integração, sem exigir envio real por WhatsApp.
 - **RF-64a**: Alertas confirmados DEVEM ser persistidos em tabela `budgets_alerts` com estado mínimo `pending_delivery | delivered | suppressed_stale | suppressed_retroactive | rate_limited`.
 - **RF-64b**: A API DEVE expor `GET /v1/budgets/alerts` paginado por cursor, com filtros por competência, raiz oficial e limiar, restrito ao `user_id` autenticado.
-- **RF-64c**: A listagem ao usuário final DEVE retornar somente alertas com estado relevante (`pending_delivery` e `delivered`); estados auxiliares DEVEM permanecer consultáveis apenas via endpoint administrativo.
+- **RF-64c**: A listagem ao usuário final (`GET /v1/budgets/alerts`) DEVE retornar somente alertas com estado relevante (`pending_delivery` e `delivered`). No MVP, estados auxiliares (`suppressed_stale`, `suppressed_retroactive`, `rate_limited`) DEVEM permanecer persistidos em `budgets_alerts` e observáveis via SQL e dashboards, sem endpoint HTTP administrativo (OUT-16). O contrato público da API NÃO DEVE expor esses estados.
 - **RF-64d**: No MVP, sem provider externo (OUT-01), `delivered` DEVE ser atribuído quando o alerta é persistido com sucesso em `budgets_alerts`. A introdução futura do provider WhatsApp DEVE estender a máquina com estado `delivery_failed` sem quebrar contrato dos estados existentes; o MVP NÃO DEVE expor `delivery_failed` no contrato público.
 
 ### Retenção e Operação
@@ -342,6 +345,10 @@ Mantém orçamentos, despesas e tombstones por 24 meses, sinaliza eventos fora d
 - **RT-25**: Métricas operacionais de budgets DEVEM ter cardinalidade limitada; `user_id`, `external_transaction_id` e `subcategory_id` NÃO DEVEM compor labels de métricas. Granularidade aceita inclui módulo, raiz oficial (por slug), competência (`YYYY-MM`), estado de máquina, fonte (`source`) restrita à allowlist e limiar. Tracing pode reter atributos de alta cardinalidade conforme política de PII vigente.
 - **RT-26**: `external_transaction_id` DEVE ser validado no boundary como UUID v4 canônico (lowercase com hyphens, 36 caracteres) OU ULID canônico (26 caracteres Crockford base32 uppercase). Identificadores em outros formatos DEVEM ser rejeitados antes do commit, sem normalização pelo servidor; identidade canônica é case-sensitive para evitar colisão entre formatos.
 - **RT-27**: A chave canônica de competência DEVE ser uma string `YYYY-MM` (ISO 8601 truncado), com o mês computado em `America/Sao_Paulo` conforme RT-17. Persistência interna PODE usar tipo equivalente desde que a serialização externa preserve o formato `YYYY-MM`.
+- **RT-28**: A allowlist de produtores internos autorizados (RF-32a/RF-72) DEVE ser definida como constante Go versionada em `internal/budgets/infrastructure/config/producers.go`, exportando o conjunto canônico de `source` aceitos. Mudanças DEVEM ocorrer via PR revisado + deploy; budgets NÃO DEVE expor mutação runtime nem leitura de arquivo/env para essa lista.
+- **RT-29**: O resumo mensal (RF-48–RF-54) DEVE ser calculado on-demand por agregação SQL sobre `budgets_expenses` filtrada por `(user_id, competence)` e agrupada por raiz oficial. A tabela DEVE possuir índice composto `(user_id, competence, subcategory_id)` com cláusula `WHERE deleted_at IS NULL` para suportar o p95 ≤ 300 ms (M-05/RT-07). Acumulado persistido permanece proibido (RF-54).
+- **RT-30**: As tarefas agendadas RF-18b (varredura diária de rascunhos abandonados às 03:00 BR) e RF-66 (expurgo mensal de retenção) DEVEM ser implementadas como handlers em `internal/budgets/infrastructure/jobs/handlers/`, disparados pelo scheduler in-process já adotado por `internal/identity` e `internal/billing`. NÃO DEVE haver introdução de cron externo, `pg_cron` ou serviço dedicado.
+- **RT-31**: O cache local do contrato de `internal/categories` (RT-14/RT-23) em budgets DEVE resolver as cinco raízes oficiais uma única vez no boot do processo, mantendo `category_id ↔ slug` em memória pelo lifetime do binário (raízes são imutáveis por contrato). Subcategorias DEVEM ser cacheadas com TTL máximo de 60 segundos e bust explícito quando a `editorial_version` exposta por `internal/categories` mudar. Falha ao resolver raízes no boot DEVE impedir o startup do módulo.
 
 ## Fora de Escopo
 
@@ -360,13 +367,14 @@ Mantém orçamentos, despesas e tombstones por 24 meses, sinaliza eventos fora d
 - **OUT-13**: Planejamento anual além da recorrência limitada a 12 meses.
 - **OUT-14**: Front-end gráfico dedicado; o PRD define contratos e comportamento de produto.
 - **OUT-15**: Arquivamento consultável separado após 24 meses.
+- **OUT-16**: Endpoints HTTP administrativos para inspeção de eventos pendentes (RF-39b) e de estados auxiliares de alertas (RF-64c). No MVP, inspeção é feita exclusivamente via SQL e dashboards de observabilidade; introdução de endpoints administrativos depende de roles/claims no E1 e fica para pós-MVP.
 
 ## Suposições e Questões em Aberto
 
 - **QA-04 — Recuperação**: comprovar capacidade real de backup/restauração para RPO de 15 minutos e RTO de 4 horas.
 - **QA-05 — Alertas futuros**: definir o contrato do provider de agente LLM/WhatsApp sem adicioná-lo ao MVP.
 
-## Decisões Fechadas (v22)
+## Decisões Fechadas (v24)
 
 | Decisão | Resultado |
 | --- | --- |
@@ -391,7 +399,13 @@ Mantém orçamentos, despesas e tombstones por 24 meses, sinaliza eventos fora d
 | Subcategoria descontinuada | Despesa histórica mantém referência e exibe caminho completo |
 | Chave de competência | `YYYY-MM` (RT-27), mês computado em America/Sao_Paulo |
 | Cardinalidade de métricas | `user_id`, `external_transaction_id` e `subcategory_id` proibidos como labels |
+| Endpoints admin HTTP | Fora do MVP (OUT-16); inspeção via SQL + Grafana até roles no E1 |
+| Estado de cruzamento de limiar | Tabela `budgets_threshold_state` com versão monotônica, atualizada apenas pelo avaliador assíncrono (RF-60e/RF-60f) |
+| Allowlist de produtores | Constante Go versionada em `internal/budgets/infrastructure/config/producers.go` (RT-28) |
+| Resumo mensal | Agregação SQL on-demand com índice composto `(user_id, competence, subcategory_id) WHERE deleted_at IS NULL` (RT-29) |
+| Scheduler de jobs | Handlers em `internal/budgets/infrastructure/jobs/handlers/` no scheduler in-process (RT-30) |
+| Cache de categories | Raízes resolvidas 1x no boot; subcategorias com TTL 60s + bust por `editorial_version` (RT-31) |
 
 ## Critério de Prontidão para Especificação Técnica
 
-O PRD está pronto para especificação técnica. A especificação DEVE coordenar com a techspec de `internal/categories` para fechar o contrato de leitura consumido (RT-23) — resolução de slugs para IDs, validação de subcategoria (`kind=expense`, raiz oficial, `deprecated_at` aceito) e versão editorial para invalidação de cache — e DEVE detalhar o esquema das tabelas `budgets_alerts` e `budgets_expense_events_pending`, o evento de outbox interno que aciona a avaliação assíncrona de alerta (RT-24), o ciclo de vida de `tombstone_version` e a estratégia de cardinalidade de métricas. A entrega de budgets em produção DEPENDE da entrega prévia de `internal/categories` cumprindo RT-23. QA-04 deve ser comprovada antes da liberação produtiva. QA-05 não bloqueia o MVP.
+O PRD está pronto para especificação técnica. A especificação DEVE coordenar com a techspec de `internal/categories` para fechar o contrato de leitura consumido (RT-23) — resolução de slugs para IDs, validação de subcategoria (`kind=expense`, raiz oficial, `deprecated_at` aceito) e versão editorial para invalidação de cache — e DEVE detalhar o esquema das tabelas `budgets_alerts`, `budgets_expense_events_pending` e `budgets_threshold_state` (RF-60e/RF-60f), o evento de outbox interno que aciona a avaliação assíncrona de alerta (RT-24), o ciclo de vida de `tombstone_version`, o índice composto exigido por RT-29, os handlers de scheduler (RT-30), a estratégia de cache de categories (RT-31) e a estratégia de cardinalidade de métricas (RT-25). A entrega de budgets em produção DEPENDE da entrega prévia de `internal/categories` cumprindo RT-23. QA-04 deve ser comprovada antes da liberação produtiva. QA-05 não bloqueia o MVP.

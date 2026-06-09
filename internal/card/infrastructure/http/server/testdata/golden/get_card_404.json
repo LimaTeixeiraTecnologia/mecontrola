@@ -1,0 +1,9 @@
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "cartão não encontrado",
+  "errors": {
+    "code": "card_not_found"
+  }
+}

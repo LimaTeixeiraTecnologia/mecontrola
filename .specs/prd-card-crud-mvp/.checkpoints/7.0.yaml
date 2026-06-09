@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-card-crud-mvp/7.0_execution_report.md
+summary: "HTTP layer do card: 6 handlers thin + CardRouter + redact helper + testes M-07 PII e router chain — cobertura 100%"
+timestamp: "2026-06-09T00:00:00Z"

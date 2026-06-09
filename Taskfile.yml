@@ -127,3 +127,148 @@ tasks:
           exit 1
         fi
         echo "PASS: onboarding smoke OK (HTTP $STATUS)"
+
+  card:lint:
+    desc: Executa golangci-lint no escopo do modulo card (inclui regra forbidigo anti-PCI).
+    preconditions:
+      - sh: command -v golangci-lint >/dev/null 2>&1
+        msg: "golangci-lint ausente. Instale: https://golangci-lint.run/welcome/install/"
+    cmds:
+      - golangci-lint run ./internal/card/... ./internal/platform/idempotency/...
+
+  card:test:
+    desc: Executa testes unitarios do modulo card com detector de corrida.
+    cmds:
+      - go test -race -count=1 -short ./internal/card/... ./internal/platform/idempotency/...
+
+  card:integration:
+    desc: Executa testes de integracao do modulo card (requer Docker para testcontainers).
+    preconditions:
+      - sh: docker info >/dev/null 2>&1
+        msg: "Docker nao esta disponivel; suba as dependencias antes dos testes de integracao."
+    cmds:
+      - go test -race -count=1 -tags=integration ./internal/card/... ./internal/platform/idempotency/...
+
+  loadtest:card:
+    desc: Executa load test k6 contra homologacao (requer BASE_URL, X_USER_ID).
+    preconditions:
+      - sh: '[ -n "${BASE_URL:-}" ]'
+        msg: "BASE_URL nao definido. Exporte BASE_URL=https://<host-homologacao> antes de executar."
+      - sh: '[ -n "${X_USER_ID:-}" ]'
+        msg: "X_USER_ID nao definido. Exporte X_USER_ID=<uuid-usuario-teste> antes de executar."
+    cmds:
+      - docker run --rm
+          -e BASE_URL=$BASE_URL
+          -e X_USER_ID=$X_USER_ID
+          -v ./loadtest:/loadtest
+          grafana/k6 run /loadtest/card/m02_post_create.js
+      - docker run --rm
+          -e BASE_URL=$BASE_URL
+          -e X_USER_ID=$X_USER_ID
+          -v ./loadtest:/loadtest
+          grafana/k6 run /loadtest/card/m03_get_list.js
+      - docker run --rm
+          -e BASE_URL=$BASE_URL
+          -e X_USER_ID=$X_USER_ID
+          -v ./loadtest:/loadtest
+          grafana/k6 run /loadtest/card/m04_invoice_for.js
+
+  loadtest:card:mixed:
+    desc: Executa cenario misto de load test k6 (50/30/20 list/get/invoice_for por 5 min).
+    preconditions:
+      - sh: '[ -n "${BASE_URL:-}" ]'
+        msg: "BASE_URL nao definido."
+      - sh: '[ -n "${X_USER_ID:-}" ]'
+        msg: "X_USER_ID nao definido."
+    cmds:
+      - docker run --rm
+          -e BASE_URL=$BASE_URL
+          -e X_USER_ID=$X_USER_ID
+          -v ./loadtest:/loadtest
+          grafana/k6 run /loadtest/card/mixed.js
+
+  loadtest:card:setup:
+    desc: Executa bootstrap de dados de teste para load test (cria usuarios e cartoes base).
+    preconditions:
+      - sh: '[ -n "${BASE_URL:-}" ]'
+        msg: "BASE_URL nao definido."
+      - sh: '[ -n "${X_USER_ID:-}" ]'
+        msg: "X_USER_ID nao definido."
+    cmds:
+      - docker run --rm
+          -e BASE_URL=$BASE_URL
+          -e X_USER_ID=$X_USER_ID
+          -v ./loadtest:/loadtest
+          grafana/k6 run /loadtest/card/setup.js
+
+  loadtest:card:teardown:
+    desc: Executa cleanup dos dados de teste criados pelo setup do load test.
+    preconditions:
+      - sh: '[ -n "${BASE_URL:-}" ]'
+        msg: "BASE_URL nao definido."
+      - sh: '[ -n "${X_USER_ID:-}" ]'
+        msg: "X_USER_ID nao definido."
+    cmds:
+      - docker run --rm
+          -e BASE_URL=$BASE_URL
+          -e X_USER_ID=$X_USER_ID
+          -v ./loadtest:/loadtest
+          grafana/k6 run /loadtest/card/teardown.js
+
+  card:audit:
+    desc: Auditoria R0-R7 do modulo card — gates de init, panic, clock, interface-assertion e zero-comentarios.
+    cmds:
+      - |
+        echo "==> [R0] Verificando ausencia de init()..."
+        if grep -rn '^func init()' internal/card/ internal/platform/idempotency/; then
+          echo "FAIL: init() encontrado — violacao R0"
+          exit 1
+        fi
+        echo "PASS R0: sem init()"
+      - |
+        echo "==> [R5.12] Verificando ausencia de panic em producao..."
+        if grep -rn 'panic(' --include="*.go" --exclude-dir=mocks --exclude="*_test.go" internal/card/ internal/platform/idempotency/; then
+          echo "FAIL: panic() encontrado em producao — violacao R5.12"
+          exit 1
+        fi
+        echo "PASS R5.12: sem panic em producao"
+      - |
+        echo "==> [R6.7] Verificando ausencia de clock.Clock..."
+        if grep -rn 'clock\.Clock' --include="*.go" internal/card/; then
+          echo "FAIL: clock.Clock encontrado — violacao R6.7"
+          exit 1
+        fi
+        echo "PASS R6.7: sem clock.Clock"
+      - |
+        echo "==> [R6.4] Verificando ausencia de var _ Interface = (*Type)(nil)..."
+        if grep -rn 'var _ .* = (' --include="*.go" internal/card/; then
+          echo "FAIL: assertiva de interface encontrada — violacao R6.4"
+          exit 1
+        fi
+        echo "PASS R6.4: sem assertiva de interface"
+      - |
+        echo "==> [R-ADAPTER-001.1] Verificando ausencia de comentarios em producao..."
+        if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*.pb.go" --exclude="*_test.go" \
+          "^[[:space:]]*//" internal/card/ internal/platform/idempotency/ \
+          | grep -Ev "(//go:|//nolint:|// Code generated)"; then
+          echo "FAIL: comentarios proibidos encontrados — violacao R-ADAPTER-001.1"
+          exit 1
+        fi
+        echo "PASS R-ADAPTER-001.1: zero comentarios em producao"
+      - |
+        echo "==> [R-ADAPTER-001.2] Verificando ausencia de SQL direto em adapters..."
+        if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+          "QueryContext\|ExecContext\|db\.Query\|tx\.Exec\|db\.Exec" \
+          internal/card/infrastructure/http/server/handlers/ 2>/dev/null; then
+          echo "FAIL: SQL direto em handler — violacao R-ADAPTER-001.2"
+          exit 1
+        fi
+        echo "PASS R-ADAPTER-001.2: sem SQL direto em adapters"
+      - |
+        echo "==> [RF-16] Verificando ausencia de PAN/CVV/CVC/track/PIN em internal/card..."
+        if grep -rn --include="*.go" --exclude="*_test.go" -E '\b(pan|cvv|cvc|track|pin)\b' internal/card/; then
+          echo "FAIL: PAN/CVV/CVC/track/PIN encontrado — violacao RF-16 (nao-PCI)"
+          exit 1
+        fi
+        echo "PASS RF-16: sem dados sensiveis PCI em internal/card"
+      - echo "==> card:audit concluido com SUCESSO"

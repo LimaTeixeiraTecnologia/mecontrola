@@ -1,0 +1,446 @@
+openapi: "3.1.0"
+info:
+  title: Card CRUD MVP
+  version: "1.0.0"
+  description: CRUD de cartões de crédito com cálculo de fatura — módulo internal/card.
+
+servers:
+  - url: http://localhost:8080
+    description: Ambiente local
+
+tags:
+  - name: cards
+    description: Gerenciamento de cartões de crédito
+
+paths:
+  /api/v1/cards:
+    post:
+      tags: [cards]
+      operationId: createCard
+      summary: Criar cartão
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCardRequest"
+            example:
+              name: Nubank
+              nickname: Nu
+              closing_day: 15
+              due_day: 22
+      responses:
+        "201":
+          description: Cartão criado
+          headers:
+            Location:
+              description: URI do cartão criado
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [cards]
+      operationId: listCards
+      summary: Listar cartões
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor opaco base64 para paginação keyset
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Quantidade máxima de itens por página
+      responses:
+        "200":
+          description: Lista de cartões paginada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/cards/{id}:
+    get:
+      tags: [cards]
+      operationId: getCard
+      summary: Obter cartão por ID
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - $ref: "#/components/parameters/CardID"
+      responses:
+        "200":
+          description: Cartão encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      tags: [cards]
+      operationId: updateCard
+      summary: Atualizar cartão
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CardID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCardRequest"
+            example:
+              name: Nubank Gold
+              nickname: Nu Gold
+              closing_day: 20
+              due_day: 27
+      responses:
+        "200":
+          description: Cartão atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [cards]
+      operationId: deleteCard
+      summary: Excluir cartão (soft-delete)
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CardID"
+      responses:
+        "204":
+          description: Cartão excluído (sem conteúdo)
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/cards/{id}/invoices:
+    get:
+      tags: [cards]
+      operationId: getInvoiceFor
+      summary: Calcular fatura para uma data de compra
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - $ref: "#/components/parameters/CardID"
+        - name: for
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: "Data da compra no formato YYYY-MM-DD"
+          example: "2026-01-10"
+      responses:
+        "200":
+          description: Datas de fechamento e vencimento da fatura
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    XUserID:
+      name: X-User-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID v4 do usuário autenticado
+      example: "550e8400-e29b-41d4-a716-446655440001"
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+      description: Chave de idempotência ASCII (1–128 chars)
+      example: "req-2026-01-15-001"
+
+    CardID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID v4 do cartão
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+  schemas:
+    CreateCardRequest:
+      type: object
+      required: [name, nickname, closing_day, due_day]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Nome do cartão
+          example: Nubank
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Apelido único entre cartões ativos do usuário
+          example: Nu
+        closing_day:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: Dia de fechamento da fatura
+          example: 15
+        due_day:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: Dia de vencimento da fatura
+          example: 22
+
+    UpdateCardRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Nome do cartão
+          example: Nubank Gold
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Apelido único entre cartões ativos do usuário
+          example: Nu Gold
+        closing_day:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: Dia de fechamento da fatura
+          example: 20
+        due_day:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: Dia de vencimento da fatura
+          example: 27
+
+    Card:
+      type: object
+      properties:
+        ID:
+          type: string
+          format: uuid
+          description: UUID do cartão
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        UserID:
+          type: string
+          format: uuid
+          description: UUID do usuário dono do cartão
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        Name:
+          type: string
+          description: Nome do cartão
+          example: Nubank
+        Nickname:
+          type: string
+          description: Apelido do cartão
+          example: Nu
+        ClosingDay:
+          type: integer
+          description: Dia de fechamento
+          example: 15
+        DueDay:
+          type: integer
+          description: Dia de vencimento
+          example: 22
+        CreatedAt:
+          type: string
+          format: date-time
+          description: Timestamp de criação (UTC)
+          example: "2026-01-15T10:30:00Z"
+        UpdatedAt:
+          type: string
+          format: date-time
+          description: Timestamp da última atualização (UTC)
+          example: "2026-01-15T10:30:00Z"
+        DeletedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Timestamp de exclusão (null se ativo)
+          example: null
+
+    CardList:
+      type: object
+      properties:
+        Cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
+        NextCursor:
+          type: string
+          description: Cursor opaco para a próxima página (vazio se última página)
+          example: ""
+
+    Invoice:
+      type: object
+      properties:
+        ClosingDate:
+          type: string
+          format: date-time
+          description: Data de fechamento da fatura (fuso America/Sao_Paulo)
+          example: "2026-01-15T00:00:00Z"
+        DueDate:
+          type: string
+          format: date-time
+          description: Data de vencimento da fatura (fuso America/Sao_Paulo)
+          example: "2026-01-22T00:00:00Z"
+
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "about:blank"
+        title:
+          type: string
+          example: "Bad Request"
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: "payload inválido"
+        errors:
+          type: object
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Bad Request"
+            status: 400
+            detail: "payload inválido"
+            errors:
+              code: "invalid_payload"
+
+    Unauthorized:
+      description: Não autorizado — header X-User-ID ausente ou inválido
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Unauthorized"
+            status: 401
+            detail: "não autorizado"
+
+    NotFound:
+      description: Cartão não encontrado
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Not Found"
+            status: 404
+            detail: "cartão não encontrado"
+            errors:
+              code: "card_not_found"
+
+    Conflict:
+      description: Conflito — apelido em uso ou chave de idempotência com hash divergente
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Conflict"
+            status: 409
+            detail: "apelido já em uso"
+            errors:
+              code: "nickname_in_use"
+
+    InternalError:
+      description: Erro interno do servidor
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Internal Server Error"
+            status: 500
+            detail: "erro interno"

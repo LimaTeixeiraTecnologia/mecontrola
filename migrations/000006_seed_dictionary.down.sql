@@ -3,7 +3,7 @@ SET LOCAL statement_timeout = '120s';
 
 UPDATE mecontrola.category_dictionary
 SET deprecated_at = now()
-WHERE id LIKE 'd0a1b2c3-4e5f-6789-0123-456789abc%'
+WHERE signal_type = 'canonical_name'
 AND deprecated_at IS NULL;
 
 UPDATE mecontrola.category_editorial_version

@@ -21,6 +21,17 @@ type Candidate struct {
 	MatchReason    string
 }
 
+func (c Candidate) GetCategoryID() uuid.UUID     { return c.CategoryID }
+func (c Candidate) GetRootCategoryID() uuid.UUID { return c.RootCategoryID }
+func (c Candidate) GetPath() string              { return c.Path }
+func (c Candidate) GetMatchedTerm() string       { return c.MatchedTerm }
+func (c Candidate) GetSignalType() valueobjects.SignalType {
+	return c.SignalType
+}
+func (c Candidate) GetConfidence() valueobjects.Confidence { return c.Confidence }
+func (c Candidate) GetIsAmbiguous() bool                   { return c.IsAmbiguous }
+func (c Candidate) GetMatchReason() string                 { return c.MatchReason }
+
 type CandidateResolver struct{}
 
 func NewCandidateResolver() *CandidateResolver {

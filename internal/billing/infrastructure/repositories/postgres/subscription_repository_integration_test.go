@@ -68,7 +68,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-upsert-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, orderID, sub, occurredAt))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				s.Assert().Equal(valueobjects.StatusActive, found.Status())
@@ -92,7 +92,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-extend-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, orderID, sub, occurredAt))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				newEnd := time.Now().UTC().Add(60 * 24 * time.Hour).Truncate(time.Millisecond)
@@ -113,7 +113,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-pastdue-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, orderID, sub, occurredAt))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				lateAt := time.Now().UTC().Truncate(time.Millisecond)
@@ -134,7 +134,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-lasteventat-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, orderID, sub, occurredAt))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				s.Assert().WithinDuration(occurredAt, found.LastEventAt(), time.Second)
@@ -193,7 +193,7 @@ func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFai
 			occurredAt := time.Now().UTC()
 			s.Require().NoError(sub1.Activate(occurredAt))
 			orderID1 := "order-rf17-001"
-			s.Require().NoError(repo.UpsertByOrder(ctx, orderID1, sub1, occurredAt))
+			s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID1, Subscription: sub1, PeriodStart: occurredAt}))
 			found1, err := repo.FindByOrderID(ctx, orderID1)
 			s.Require().NoError(err)
 			s.Require().NoError(repo.BindUser(ctx, found1.ID(), userID))
@@ -201,7 +201,7 @@ func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFai
 			sub2 := entities.NewSubscription(plan, ft2)
 			s.Require().NoError(sub2.Activate(occurredAt.Add(time.Second)))
 			orderID2 := "order-rf17-002"
-			s.Require().NoError(repo.UpsertByOrder(ctx, orderID2, sub2, occurredAt.Add(time.Second)))
+			s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID2, Subscription: sub2, PeriodStart: occurredAt.Add(time.Second)}))
 			found2, err := repo.FindByOrderID(ctx, orderID2)
 			s.Require().NoError(err)
 

@@ -4,25 +4,16 @@ package outbox_test
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
-	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
-	tc "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
-
-const pgImage = "postgres:16"
 
 type StoragePostgresIntegrationSuite struct {
 	suite.Suite
@@ -35,57 +26,7 @@ func TestStoragePostgresIntegrationSuite(t *testing.T) {
 func (s *StoragePostgresIntegrationSuite) SetupTest() {}
 
 func (s *StoragePostgresIntegrationSuite) setupOutboxDB() manager.Manager {
-	ctx := context.Background()
-	request := tc.ContainerRequest{
-		Image:        pgImage,
-		ExposedPorts: []string{"5432/tcp"},
-		Env: map[string]string{
-			"POSTGRES_USER":     "test",
-			"POSTGRES_PASSWORD": "test",
-			"POSTGRES_DB":       "testdb",
-		},
-		WaitingFor: wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).
-			WithStartupTimeout(60 * time.Second),
-	}
-
-	container, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
-		ContainerRequest: request,
-		Started:          true,
-	})
-	s.Require().NoError(err)
-	s.T().Cleanup(func() {
-		s.NoError(container.Terminate(context.Background()))
-	})
-
-	host, err := container.Host(ctx)
-	s.Require().NoError(err)
-
-	mappedPort, err := container.MappedPort(ctx, "5432")
-	s.Require().NoError(err)
-
-	port, err := strconv.Atoi(mappedPort.Port())
-	s.Require().NoError(err)
-
-	cfg := dbpostgres.PostgresConfig{
-		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, port),
-	}
-
-	mgr, err := manager.New(cfg)
-	s.Require().NoError(err)
-	s.T().Cleanup(func() {
-		s.NoError(mgr.Shutdown(context.Background()))
-	})
-
-	dsn := fmt.Sprintf("pgx5://test:test@%s:%d/testdb?sslmode=disable", host, port)
-	migrator, err := migration.New(mgr, migration.EmbedFS{FS: migrations.FS, Root: "."}, migration.WithDSN(dsn))
-	s.Require().NoError(err)
-
-	err = migrator.Up(ctx)
-	if err != nil && !errors.Is(err, migration.ErrNoChange) {
-		s.FailNow(err.Error())
-	}
-
+	mgr, _ := testcontainer.Postgres(s.T())
 	return mgr
 }
 
