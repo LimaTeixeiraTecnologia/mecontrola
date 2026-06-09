@@ -95,12 +95,7 @@ func setupMarkDeletedTestDB(t *testing.T) manager.Manager {
 	}
 
 	cfg := dbpostgres.PostgresConfig{
-		Host:     host,
-		Port:     portNum,
-		User:     "test",
-		Password: "test",
-		Database: "testdb",
-		SSLMode:  "disable",
+		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
 	}
 
 	mgr, err := manager.New(cfg)
@@ -176,7 +171,7 @@ func (s *MarkUserDeletedIntegrationSuite) TestMarkUserDeleted() {
 		{
 			name: "usuario ativo: marca como deletado e publica user.deleted no outbox",
 			setup: func() args {
-				const wa = "+5511800000001"
+				const wa = "+5511900000001"
 				user := s.seedActiveUser(wa)
 				return args{userID: user.ID()}
 			},

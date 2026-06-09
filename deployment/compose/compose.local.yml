@@ -6,24 +6,75 @@ name: mecontrola
 services:
   postgres:
     ports:
-      # Expõe Postgres em loopback para ferramentas locais (DBeaver, psql, etc.)
-      - "127.0.0.1:5432:5432"
+      # Expõe Postgres para ferramentas locais (DBeaver, psql, etc.)
+      # 0.0.0.0 necessário no macOS com Docker Desktop (VM não propaga 127.0.0.1)
+      - "5432:5432"
+
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.7.5
+    environment:
+      GF_SECURITY_ADMIN_USER: ${OTEL_LGTM_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${OTEL_LGTM_ADMIN_PASSWORD:-admin@dev}
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+    volumes:
+      - ../telemetry/grafana/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - otel-lgtm-data:/otel-lgtm/grafana/data
+    networks:
+      - backend
+
+  migrate:
+    volumes:
+      - ../../.env:/app/.env:ro
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-lgtm:
+        condition: service_started
 
   server:
     ports:
       # Acesso direto ao servidor sem Caddy
       - "127.0.0.1:8080:8080"
+    volumes:
+      - ../../.env:/app/.env:ro
     environment:
       ENVIRONMENT: local
       LOG_LEVEL: debug
       LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-lgtm:
+        condition: service_started
 
   worker:
+    volumes:
+      - ../../.env:/app/.env:ro
     environment:
       ENVIRONMENT: local
       LOG_LEVEL: debug
       LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-lgtm:
+        condition: service_started
 
   caddy:
     profiles: ["proxy"]
     # Caddy desabilitado por padrão no local; ative com --profile proxy
+
+volumes:
+  otel-lgtm-data:
+
+networks:
+  # Remove isolamento da rede interna para expor postgres ao host em dev local
+  backend:
+    internal: false

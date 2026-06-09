@@ -32,7 +32,7 @@ func (r *magicTokenRepository) Insert(ctx context.Context, token entities.MagicT
 	defer span.End()
 
 	const query = `
-		INSERT INTO onboarding.onboarding_tokens
+		INSERT INTO mecontrola.onboarding_tokens
 		       (id, token_hash, activation_token_ciphertext, status, plan_id, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
@@ -62,7 +62,7 @@ func (r *magicTokenRepository) FindByHash(ctx context.Context, tokenHash []byte)
 		       activation_token_ciphertext, subscription_id,
 		       customer_mobile_e164, customer_email, external_sale_id,
 		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
-		  FROM onboarding.onboarding_tokens
+		  FROM mecontrola.onboarding_tokens
 		 WHERE token_hash = $1
 	`
 
@@ -80,7 +80,7 @@ func (r *magicTokenRepository) FindPaidByMobileForFallback(ctx context.Context, 
 		       activation_token_ciphertext, subscription_id,
 		       customer_mobile_e164, customer_email, external_sale_id,
 		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
-		  FROM onboarding.onboarding_tokens
+		  FROM mecontrola.onboarding_tokens
 		 WHERE status = 'PAID'
 		   AND customer_mobile_e164 = $1
 		   AND outreach_sent_at IS NOT NULL
@@ -102,7 +102,7 @@ func (r *magicTokenRepository) FindPaidForOutreach(ctx context.Context, olderTha
 		       activation_token_ciphertext, subscription_id,
 		       customer_mobile_e164, customer_email, external_sale_id,
 		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
-		  FROM onboarding.onboarding_tokens
+		  FROM mecontrola.onboarding_tokens
 		 WHERE status = 'PAID'
 		   AND outreach_sent_at IS NULL
 		   AND paid_at < $1
@@ -141,7 +141,7 @@ func (r *magicTokenRepository) UpdateMarkPaid(ctx context.Context, token entitie
 	defer span.End()
 
 	const query = `
-		UPDATE onboarding.onboarding_tokens
+		UPDATE mecontrola.onboarding_tokens
 		   SET status                = $1,
 		       paid_at               = $2,
 		       subscription_id       = $3,
@@ -172,7 +172,7 @@ func (r *magicTokenRepository) UpdateMarkConsumed(ctx context.Context, token ent
 	defer span.End()
 
 	const query = `
-		UPDATE onboarding.onboarding_tokens
+		UPDATE mecontrola.onboarding_tokens
 		   SET status                  = $1,
 		       consumed_at             = $2,
 		       consumed_by_user_id     = $3,
@@ -201,7 +201,7 @@ func (r *magicTokenRepository) UpdateMarkOutreachSent(ctx context.Context, token
 	defer span.End()
 
 	const query = `
-		UPDATE onboarding.onboarding_tokens
+		UPDATE mecontrola.onboarding_tokens
 		   SET outreach_sent_at = $1
 		 WHERE id                = $2
 		   AND outreach_sent_at IS NULL
@@ -219,7 +219,7 @@ func (r *magicTokenRepository) UpdateMarkOutreachReset(ctx context.Context, toke
 	defer span.End()
 
 	const query = `
-		UPDATE onboarding.onboarding_tokens
+		UPDATE mecontrola.onboarding_tokens
 		   SET outreach_sent_at = NULL
 		 WHERE id = $1
 	`
@@ -236,11 +236,11 @@ func (r *magicTokenRepository) BulkExpire(ctx context.Context, now time.Time, li
 	defer span.End()
 
 	const query = `
-		UPDATE onboarding.onboarding_tokens
+		UPDATE mecontrola.onboarding_tokens
 		   SET status = 'EXPIRED'
 		 WHERE id IN (
 		     SELECT id
-		       FROM onboarding.onboarding_tokens
+		       FROM mecontrola.onboarding_tokens
 		      WHERE status IN ('PENDING', 'PAID')
 		        AND expires_at < $1
 		      LIMIT $2
@@ -281,7 +281,7 @@ func (r *magicTokenRepository) CountPaidUnconsumed(ctx context.Context) (int64, 
 	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.count_paid_unconsumed")
 	defer span.End()
 
-	const query = `SELECT COUNT(*) FROM onboarding.onboarding_tokens WHERE status = 'PAID'`
+	const query = `SELECT COUNT(*) FROM mecontrola.onboarding_tokens WHERE status = 'PAID'`
 
 	var count int64
 	if err := r.db.QueryRowContext(ctx, query).Scan(&count); err != nil {

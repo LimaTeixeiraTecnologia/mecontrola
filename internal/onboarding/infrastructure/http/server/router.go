@@ -35,7 +35,7 @@ func NewPublicRouter(
 }
 
 func (rt *PublicRouter) Register(r chi.Router) {
-	r.Route("/v1/onboarding", func(sub chi.Router) {
+	r.Route("/api/v1/onboarding", func(sub chi.Router) {
 		sub.With(
 			rt.checkoutLimiter.Middleware,
 			rt.corsMiddleware,

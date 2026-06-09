@@ -115,12 +115,7 @@ func setupDispatcherTestDB(t *testing.T) manager.Manager {
 	}
 
 	cfg := dbpostgres.PostgresConfig{
-		Host:     host,
-		Port:     portNum,
-		User:     "test",
-		Password: "test",
-		Database: "testdb",
-		SSLMode:  "disable",
+		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
 	}
 
 	mgr, err := manager.New(cfg)
@@ -249,7 +244,7 @@ func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mo
 	establishUoW := uow.New[usecases.EstablishResult](s.mgr, uow.WithObservability(s.o11y))
 	establishUC := usecases.NewEstablishPrincipal(establishUoW, factory, s.newPublisher(), s.o11y)
 
-	dedupRepo := postgres.NewMessageRepository(s.o11y, s.mgr.DBTX(s.ctx))
+	dedupRepo := postgres.NewMessageRepository(s.o11y, s.mgr)
 
 	stubAgent := agent.NewStubAgent(waGW, map[string]string{
 		"agent_stub_received": "MeControla recebeu sua mensagem — estamos preparando sua experiencia.",

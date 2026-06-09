@@ -25,9 +25,9 @@ func (r *onboardingCleanupRepository) DeleteMetaProcessedOlderThan(ctx context.C
 	defer span.End()
 
 	const query = `
-		DELETE FROM onboarding.meta_processed_messages
+		DELETE FROM mecontrola.meta_processed_messages
 		 WHERE wamid IN (
-		     SELECT wamid FROM onboarding.meta_processed_messages
+		     SELECT wamid FROM mecontrola.meta_processed_messages
 		      WHERE processed_at < $1
 		      LIMIT $2
 		 )
@@ -49,9 +49,9 @@ func (r *onboardingCleanupRepository) DeleteConsumerLookupAttemptsOlderThan(ctx 
 	defer span.End()
 
 	const query = `
-		DELETE FROM onboarding.consumer_lookup_attempts
+		DELETE FROM mecontrola.consumer_lookup_attempts
 		 WHERE event_id IN (
-		     SELECT event_id FROM onboarding.consumer_lookup_attempts
+		     SELECT event_id FROM mecontrola.consumer_lookup_attempts
 		      WHERE last_attempt_at < $1
 		      LIMIT $2
 		 )

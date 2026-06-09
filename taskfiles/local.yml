@@ -6,14 +6,14 @@ version: '3'
 vars:
   COMPOSE_BASE: deployment/compose/compose.yml
   COMPOSE_LOCAL: deployment/compose/compose.local.yml
-  COMPOSE_CMD: docker compose -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}}
+  COMPOSE_CMD: docker compose --env-file .env -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}}
 
 tasks:
   up:
-    desc: Sobe o ambiente local (postgres, server, worker).
+    desc: Sobe o ambiente local (postgres, server, worker, otel-lgtm).
     cmds:
       - "{{.COMPOSE_CMD}} up -d"
-      - echo "Ambiente local disponivel em http://localhost:8080"
+      - echo "Ambiente local disponivel em http://localhost:8080 e http://localhost:3000"
 
   down:
     desc: Para e remove os containers locais.
@@ -25,7 +25,7 @@ tasks:
     cmds:
       - task: up
       - "{{.COMPOSE_CMD}} run --rm migrate"
-      - echo "Migrations aplicadas. App em http://localhost:8080"
+      - echo "Migrations aplicadas. App em http://localhost:8080 e Grafana em http://localhost:3000"
 
   logs:
     desc: Exibe logs dos containers locais (Ctrl+C para sair).

@@ -68,12 +68,7 @@ func (s *StoragePostgresIntegrationSuite) setupOutboxDB() manager.Manager {
 	s.Require().NoError(err)
 
 	cfg := dbpostgres.PostgresConfig{
-		Host:     host,
-		Port:     port,
-		User:     "test",
-		Password: "test",
-		Database: "testdb",
-		SSLMode:  "disable",
+		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, port),
 	}
 
 	mgr, err := manager.New(cfg)

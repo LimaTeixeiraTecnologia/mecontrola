@@ -65,7 +65,7 @@ func Run(writer io.Writer) (retErr error) {
 	migrator, err := migration.New(
 		rt.dbManager,
 		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(rt.cfg.DBConfig.DSN()),
+		migration.WithDSN(rt.cfg.DBConfig.MigrationDSN()),
 		migration.WithMigrationTimeout(5*time.Minute),
 		migration.WithObservability(rt.o11y),
 	)
@@ -114,7 +114,7 @@ func RunDown(writer io.Writer, steps int) (retErr error) {
 	migrator, err := migration.New(
 		rt.dbManager,
 		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(rt.cfg.DBConfig.DSN()),
+		migration.WithDSN(rt.cfg.DBConfig.MigrationDSN()),
 		migration.WithMigrationTimeout(5*time.Minute),
 		migration.WithObservability(rt.o11y),
 	)
@@ -179,7 +179,7 @@ func bootstrap(ctx context.Context) (*runtime, error) {
 	}
 
 	postgresConfig := postgres.PostgresConfig{
-		DSN:          cfg.DBConfig.DSN(),
+		DSN:          cfg.DBConfig.MigrationDSN(),
 		MaxOpenConns: cfg.DBConfig.MaxConns,
 		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
 		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,

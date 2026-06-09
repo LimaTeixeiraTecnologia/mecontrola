@@ -149,12 +149,7 @@ func setupJobIntegrationDB(t *testing.T) manager.Manager {
 	}
 
 	cfg := dbpostgres.PostgresConfig{
-		Host:     host,
-		Port:     portNum,
-		User:     "test",
-		Password: "test",
-		Database: "testdb",
-		SSLMode:  "disable",
+		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
 	}
 
 	mgr, err := manager.New(cfg)

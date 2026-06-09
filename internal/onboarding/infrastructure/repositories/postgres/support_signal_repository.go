@@ -25,7 +25,7 @@ func (r *supportSignalRepository) Insert(ctx context.Context, signal entities.Su
 	defer span.End()
 
 	const query = `
-		INSERT INTO onboarding.support_signals
+		INSERT INTO mecontrola.support_signals
 		       (id, kind, payload, occurred_at)
 		VALUES ($1, $2, $3, $4)
 	`

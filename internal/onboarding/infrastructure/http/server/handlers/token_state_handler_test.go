@@ -140,9 +140,9 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 			scenario.setup(useCase)
 			handler := handlers.NewTokenStateHandler(useCase, func(string) {}, noop.NewProvider())
 			router := chi.NewRouter()
-			router.Get("/v1/onboarding/tokens/{token}/state", handler.Handle)
+			router.Get("/api/v1/onboarding/tokens/{token}/state", handler.Handle)
 
-			request := httptest.NewRequest(http.MethodGet, "/v1/onboarding/tokens/"+scenario.args.token+"/state", nil)
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/onboarding/tokens/"+scenario.args.token+"/state", nil)
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, request)
 			scenario.expect(recorder)

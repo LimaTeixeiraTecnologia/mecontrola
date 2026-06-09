@@ -24,7 +24,7 @@ func (r *messageRepository) InsertIfAbsent(ctx context.Context, wamid string) (b
 	defer span.End()
 
 	const q = `
-		INSERT INTO onboarding.meta_processed_messages (wamid, processed_at)
+		INSERT INTO mecontrola.meta_processed_messages (wamid, processed_at)
 		VALUES ($1, now())
 		ON CONFLICT (wamid) DO NOTHING`
 

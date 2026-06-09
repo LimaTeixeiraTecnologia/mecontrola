@@ -75,12 +75,7 @@ func (s *MigrationSuite) SetupSuite() {
 	s.Require().NoError(err)
 
 	cfg := dbpostgres.PostgresConfig{
-		Host:     host,
-		Port:     portNum,
-		User:     "test",
-		Password: "test",
-		Database: "testdb",
-		SSLMode:  "disable",
+		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
 	}
 
 	mgr, err := manager.New(cfg)
@@ -107,19 +102,19 @@ func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
 		expect func(migrator migration.Migrator, downSteps int)
 	}{
 		{
-			name:  "deve aplicar e reverter migrations do pipeline de billing",
-			args:  args{downSteps: 6},
+			name:  "deve aplicar e reverter a baseline consolidada",
+			args:  args{downSteps: 2},
 			setup: func() {},
 			expect: func(migrator migration.Migrator, downSteps int) {
 				s.Require().NoError(migrator.Up(s.ctx))
 				s.assertSeededPlans()
 				s.assertActiveSubscriptionUniqueIndex()
 				s.Require().NoError(migrator.Down(s.ctx, downSteps))
-				s.assertTablePresent("billing_plans")
-				s.assertTablePresent("billing_subscriptions")
-				s.assertTablePresent("billing_processed_events")
-				s.assertTablePresent("billing_kiwify_events")
-				s.assertBillingPipelineTailTablesRemoved()
+				s.assertSchemaMissing("mecontrola")
+				s.assertTableMissing("mecontrola.billing_plans")
+				s.assertTableMissing("mecontrola.billing_subscriptions")
+				s.assertTableMissing("mecontrola.billing_processed_events")
+				s.assertTableMissing("mecontrola.billing_kiwify_events")
 			},
 		},
 	}
@@ -144,7 +139,7 @@ func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
 func (s *MigrationSuite) assertSeededPlans() {
 	rows, err := s.mgr.DBTX(s.ctx).QueryContext(s.ctx, `
 		SELECT code, duration_days
-		FROM billing_plans
+		FROM mecontrola.billing_plans
 		ORDER BY duration_days
 	`)
 	s.Require().NoError(err)
@@ -174,7 +169,7 @@ func (s *MigrationSuite) assertSeededPlans() {
 func (s *MigrationSuite) assertActiveSubscriptionUniqueIndex() {
 	userID := "11111111-1111-1111-1111-111111111111"
 	_, err := s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
-		INSERT INTO users (id, whatsapp_number, status, created_at, updated_at)
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		VALUES ($1, '+5511999990001', 'ACTIVE', now(), now())
 	`, userID)
 	s.Require().NoError(err)
@@ -190,7 +185,7 @@ func (s *MigrationSuite) assertActiveSubscriptionUniqueIndex() {
 		go func(values [4]string) {
 			<-start
 			_, execErr := s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
-				INSERT INTO billing_subscriptions (
+				INSERT INTO mecontrola.billing_subscriptions (
 					id, funnel_token, user_id, kiwify_order_id, plan_code, status,
 					period_start, period_end, grace_end, last_event_at, created_at, updated_at
 				) VALUES ($1, $2, $3, $4, 'MONTHLY', $5,
@@ -219,12 +214,6 @@ func (s *MigrationSuite) assertActiveSubscriptionUniqueIndex() {
 	s.Equal(1, uniqueViolationCount)
 }
 
-func (s *MigrationSuite) assertBillingPipelineTailTablesRemoved() {
-	s.assertTableMissing("billing_reconciliation_checkpoints")
-	s.assertTableMissing("identity_entitlements")
-	s.assertTableMissing("identity_entitlements_pending")
-}
-
 func (s *MigrationSuite) assertTablePresent(name string) {
 	var regclass sql.NullString
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT to_regclass($1)`, name).Scan(&regclass)
@@ -237,4 +226,17 @@ func (s *MigrationSuite) assertTableMissing(name string) {
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT to_regclass($1)`, name).Scan(&regclass)
 	s.Require().NoError(err)
 	s.False(regclass.Valid)
+}
+
+func (s *MigrationSuite) assertSchemaMissing(name string) {
+	var exists bool
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_namespace
+			WHERE nspname = $1
+		)
+	`, name).Scan(&exists)
+	s.Require().NoError(err)
+	s.False(exists)
 }

@@ -1015,7 +1015,7 @@ func (s *ConfigSuite) TestDBConfigAccessors() {
 			},
 			setup: func() {},
 			expect: func(result string) {
-				s.Equal("postgres://mecontrola:***@db.example.com:5432/mecontrola_db?sslmode=require", result)
+				s.Equal("postgres://mecontrola:***@db.example.com:5432/mecontrola_db?sslmode=require&search_path=mecontrola,public", result)
 			},
 		},
 		{
@@ -1038,7 +1038,7 @@ func (s *ConfigSuite) TestDBConfigAccessors() {
 			setup: func() {},
 			expect: func(result string) {
 				s.Contains(result, "supersecretpassword")
-				s.Contains(result, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require")
+				s.Contains(result, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require&search_path=mecontrola,public")
 			},
 		},
 	}

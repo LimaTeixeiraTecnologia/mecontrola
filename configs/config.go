@@ -167,20 +167,36 @@ type DBConfig struct {
 	ConnMaxIdleTime time.Duration `mapstructure:"DB_CONN_MAX_IDLE_TIME"`
 }
 
+const databaseSearchPath = "mecontrola,public"
+
 // DSN retorna a connection string com senha em texto claro.
 // NUNCA logar diretamente — use SafeDSN() para logs e mensagens de erro.
 func (d *DBConfig) DSN() string {
+	return d.formatDSN(true)
+}
+
+func (d *DBConfig) MigrationDSN() string {
+	return d.formatDSN(false)
+}
+
+func (d *DBConfig) formatDSN(withSearchPath bool) string {
+	if !withSearchPath {
+		return fmt.Sprintf(
+			"postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			d.User, d.Password, d.Host, d.Port, d.Name, d.SSLMode,
+		)
+	}
 	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		d.User, d.Password, d.Host, d.Port, d.Name, d.SSLMode,
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s&search_path=%s",
+		d.User, d.Password, d.Host, d.Port, d.Name, d.SSLMode, databaseSearchPath,
 	)
 }
 
 // SafeDSN é o único formato permitido em logs, mensagens de erro e traces.
 func (d *DBConfig) SafeDSN() string {
 	return fmt.Sprintf(
-		"postgres://%s:***@%s:%d/%s?sslmode=%s",
-		d.User, d.Host, d.Port, d.Name, d.SSLMode,
+		"postgres://%s:***@%s:%d/%s?sslmode=%s&search_path=%s",
+		d.User, d.Host, d.Port, d.Name, d.SSLMode, databaseSearchPath,
 	)
 }
 

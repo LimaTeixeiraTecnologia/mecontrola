@@ -94,12 +94,7 @@ func setupConsumerTestDB(t *testing.T) manager.Manager {
 	}
 
 	cfg := dbpostgres.PostgresConfig{
-		Host:     host,
-		Port:     portNum,
-		User:     "test",
-		Password: "test",
-		Database: "testdb",
-		SSLMode:  "disable",
+		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
 	}
 
 	mgr, err := manager.New(cfg)
@@ -125,9 +120,8 @@ func setupConsumerTestDB(t *testing.T) manager.Manager {
 func (s *AuthEventsConsumerIntegrationSuite) newSUT() *consumers.AuthEventsConsumer {
 	o11y := noop.NewProvider()
 	factory := repositories.NewRepositoryFactory(o11y)
-	db := s.mgr.DBTX(s.ctx)
-	projectAuthEventUC := usecases.NewProjectAuthEvent(factory, db, o11y)
-	anonymizeUserAuthEventsUC := usecases.NewAnonymizeUserAuthEvents(factory, db, o11y)
+	projectAuthEventUC := usecases.NewProjectAuthEvent(factory, s.mgr, o11y)
+	anonymizeUserAuthEventsUC := usecases.NewAnonymizeUserAuthEvents(factory, s.mgr, o11y)
 	return consumers.NewAuthEventsConsumer(projectAuthEventUC, anonymizeUserAuthEventsUC, o11y)
 }
 

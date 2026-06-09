@@ -169,7 +169,7 @@ func assertAuthEvent(ctx context.Context, dbURL string) error {
 	cutoff := time.Now().UTC().Add(-10 * time.Second)
 	var count int
 	err = db.QueryRowContext(ctx,
-		`SELECT count(*) FROM auth_events WHERE user_id = $1 AND occurred_at > $2`,
+		`SELECT count(*) FROM mecontrola.auth_events WHERE user_id = $1 AND occurred_at > $2`,
 		smokeUserID,
 		cutoff,
 	).Scan(&count)

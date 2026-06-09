@@ -124,7 +124,7 @@ func (s *CreateCheckoutHandlerSuite) TestHandle() {
 			scenario.setup(useCase)
 			handler := handlers.NewCreateCheckoutHandler(useCase, func(string) {}, func() {}, noop.NewProvider())
 
-			request := httptest.NewRequest(http.MethodPost, "/v1/onboarding/checkout", strings.NewReader(scenario.args.body))
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/checkout", strings.NewReader(scenario.args.body))
 			request.Header.Set("Content-Type", "application/json")
 			if scenario.args.origin != "" {
 				request.Header.Set("Origin", scenario.args.origin)
