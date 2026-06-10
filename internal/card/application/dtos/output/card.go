@@ -3,13 +3,13 @@ package output
 import "time"
 
 type Card struct {
-	ID         string
-	UserID     string
-	Name       string
-	Nickname   string
-	ClosingDay int
-	DueDay     int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	DeletedAt  *time.Time
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id"`
+	Name       string     `json:"name"`
+	Nickname   string     `json:"nickname"`
+	ClosingDay int        `json:"closing_day"`
+	DueDay     int        `json:"due_day"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
 }

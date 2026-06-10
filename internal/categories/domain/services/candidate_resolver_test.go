@@ -76,7 +76,7 @@ func (s *CandidateResolverSuite) TestResolveHighUnequivocal() {
 	s.Equal(valueobjects.SignalTypeAlias, candidates[0].SignalType)
 	s.Equal(valueobjects.ConfidenceHigh, candidates[0].Confidence)
 	s.False(candidates[0].IsAmbiguous)
-	s.Equal("alias inequivoco", candidates[0].MatchReason)
+	s.Equal("alias inequívoco", candidates[0].MatchReason)
 }
 
 func (s *CandidateResolverSuite) TestResolveMerchantAmbiguous() {
@@ -267,7 +267,7 @@ func (s *CandidateResolverSuite) TestResolveMatchReasons() {
 		expected   string
 	}{
 		{signalType: valueobjects.SignalTypeCanonicalName, expected: "canonical name"},
-		{signalType: valueobjects.SignalTypeAlias, expected: "alias inequivoco"},
+		{signalType: valueobjects.SignalTypeAlias, expected: "alias inequívoco"},
 		{signalType: valueobjects.SignalTypePhrase, expected: "phrase match"},
 		{signalType: valueobjects.SignalTypeMerchant, expected: "merchant match"},
 		{signalType: valueobjects.SignalTypeSegment, expected: "segment match"},

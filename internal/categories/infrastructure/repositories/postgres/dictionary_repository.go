@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,7 +31,7 @@ func NewDictionaryRepository(o11y observability.Observability, db database.DBTX)
 	return &dictionaryRepository{o11y: o11y, db: db}
 }
 
-func (r *dictionaryRepository) List(ctx context.Context, q interfaces.DictionaryQuery) ([]entities.DictionaryEntry, string, error) {
+func (r *dictionaryRepository) List(ctx context.Context, q interfaces.DictionaryQuery) (entries []entities.DictionaryEntry, nextCursor string, err error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.dictionary.list")
 	defer span.End()
 
@@ -40,14 +41,18 @@ func (r *dictionaryRepository) List(ctx context.Context, q interfaces.Dictionary
 	}
 
 	query, args := r.buildListQuery(q, pageSize)
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		span.RecordError(err)
-		return nil, "", fmt.Errorf("categories/postgres: dictionary list: %w", err)
+	rows, qerr := r.db.QueryContext(ctx, query, args...)
+	if qerr != nil {
+		span.RecordError(qerr)
+		return nil, "", fmt.Errorf("categories/postgres: dictionary list: %w", qerr)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("categories/postgres: close list rows: %w", cerr))
+		}
+	}()
 
-	entries, err := r.scanEntries(rows)
+	entries, err = r.scanEntries(rows)
 	if err != nil {
 		return nil, "", err
 	}
@@ -56,7 +61,6 @@ func (r *dictionaryRepository) List(ctx context.Context, q interfaces.Dictionary
 		return entries, "", nil
 	}
 
-	nextCursor := ""
 	if len(entries) > pageSize {
 		entries = entries[:pageSize]
 		last := entries[len(entries)-1]
@@ -66,7 +70,7 @@ func (r *dictionaryRepository) List(ctx context.Context, q interfaces.Dictionary
 	return entries, nextCursor, nil
 }
 
-func (r *dictionaryRepository) Search(ctx context.Context, q interfaces.DictionarySearchQuery) ([]entities.DictionaryEntry, error) {
+func (r *dictionaryRepository) Search(ctx context.Context, q interfaces.DictionarySearchQuery) (entries []entities.DictionaryEntry, err error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.dictionary.search")
 	defer span.End()
 
@@ -84,16 +88,20 @@ func (r *dictionaryRepository) Search(ctx context.Context, q interfaces.Dictiona
 				WHEN 'merchant' THEN 4
 				WHEN 'segment' THEN 5
 			END,
-			term
+			term COLLATE "pt-BR-x-icu"
 		LIMIT $3
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, q.Kind.String(), q.Term, q.Limit)
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("categories/postgres: dictionary search: %w", err)
+	rows, qerr := r.db.QueryContext(ctx, query, q.Kind.String(), q.Term, q.Limit)
+	if qerr != nil {
+		span.RecordError(qerr)
+		return nil, fmt.Errorf("categories/postgres: dictionary search: %w", qerr)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("categories/postgres: close search rows: %w", cerr))
+		}
+	}()
 
 	return r.scanEntries(rows)
 }
@@ -136,7 +144,7 @@ func (r *dictionaryRepository) buildListQuery(q interfaces.DictionaryQuery, page
 	}
 
 	argIdx++
-	sql += fmt.Sprintf(` ORDER BY term_normalized, id LIMIT $%d`, argIdx)
+	sql += fmt.Sprintf(` ORDER BY term_normalized COLLATE "pt-BR-x-icu", id LIMIT $%d`, argIdx)
 	args = append(args, pageSize+1)
 
 	return sql, args

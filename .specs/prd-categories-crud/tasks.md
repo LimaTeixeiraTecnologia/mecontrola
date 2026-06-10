@@ -13,16 +13,31 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Schema baseline, extensão unaccent e tabela de versão editorial | pending | — | — | — |
-| 2.0 | Seed editorial do catálogo completo | pending | 1.0 | Com 3.0 | — |
-| 3.0 | Seed editorial do dicionário mínimo | pending | 1.0 | Com 2.0 | — |
-| 4.0 | Domínio: value objects, entidades e CandidateResolver | pending | — | Com 1.0, 2.0, 3.0 | — |
-| 5.0 | Repositórios Postgres, VersionReader e testes de integração | pending | 1.0, 4.0 | — | — |
-| 6.0 | Use cases: ListCategories, GetCategory, ListDictionary, SearchDictionary | pending | 4.0, 5.0 | — | — |
-| 7.0 | Handlers HTTP, router, RequireUser, ETag/304 e envelope de erro | pending | 6.0 | — | — |
-| 8.0 | CategoriesModule, wiring e registro em cmd/server/server.go | pending | 7.0 | — | — |
-| 9.0 | Observabilidade: métricas custom, logs e traces | pending | 6.0, 7.0 | — | — |
-| 10.0 | OpenAPI, testes de cenários canônicos e gates R0–R7 | pending | 1.0–9.0 | — | — |
+| 1.0 | Schema baseline, extensão unaccent e tabela de versão editorial | done | — | — | — |
+| 2.0 | Seed editorial do catálogo completo | done | 1.0 | Com 3.0 | — |
+| 3.0 | Seed editorial do dicionário mínimo | done | 1.0 | Com 2.0 | — |
+| 4.0 | Domínio: value objects, entidades e CandidateResolver | done | — | Com 1.0, 2.0, 3.0 | — |
+| 5.0 | Repositórios Postgres, VersionReader e testes de integração | done | 1.0, 4.0 | — | — |
+| 6.0 | Use cases: ListCategories, GetCategory, ListDictionary, SearchDictionary | done | 4.0, 5.0 | — | — |
+| 7.0 | Handlers HTTP, router, RequireUser, ETag/304 e envelope de erro | done | 6.0 | — | — |
+| 8.0 | CategoriesModule, wiring e registro em cmd/server/server.go | done | 7.0 | — | — |
+| 9.0 | Observabilidade: métricas custom, logs e traces | done | 6.0, 7.0 | — | — |
+| 10.0 | OpenAPI, testes de cenários canônicos e gates R0–R7 | done | 1.0–9.0 | — | — |
+
+## Gaps resolvidos no bugfix de hardening (2026-06-09)
+
+| Task | Gap original | Resolução | Evidência |
+|---|---|---|---|
+| 3.0 | RF-29/RF-32: 54 subcategorias sem `canonical_name` + 46 com term=slug-hifen | Migration `000010_seed_dictionary_canonicals` adiciona 100 canonicais human-readable + deprecia broken | passa `go test -tags=integration ./internal/categories/... ./migrations/...` |
+| 3.0 | RF-34: termo `investimento` (e demais) sem cobertura ambígua | Teste `TestRF34NegativeSuite` cobre os 23 termos: nenhum retorna candidate inequívoco | suite passa em testcontainer |
+| 2.0 | RF-01/ADR-004: UUIDv5 não-recomputável em teste | `TestNewCategoryID_MatchesPublishedSeedIDs` (unit) + `TestSeedIDsAreDeterministicRecomputable` (integration) recomputam e batem com seed | suites passam |
+| 10.0 | CC-B5 não auditado | Confirmado em `canonical_scenarios_integration_test.go:220` (fixture sintética dois canonicais em mesmo kind) | integration passa |
+| 10.0 | Integration `-tags=integration` não rodado em CI | Toda a suíte categories+migrations passa em testcontainer Postgres real (postgres:16-alpine) localmente | log integration |
+| Hardening | COLLATE `pt_BR` indisponível em CI Postgres alpine | Substituído por `pt-BR-x-icu` (ICU built-in PG14+) em índices + ORDER BY | `TestDictionaryIndexes_UsePTBRCollation` + `TestParentSortIndex_UsesPTBRCollation` passam |
+| Hardening | Trigger `parent_same_kind` não cobria mudança de `kind` no pai | Trigger adicional `categories_parent_kind_change_blocks_children_trg` em migration 000011 | `TestParentKindChange_BlocksWhenChildrenExist` passa |
+| Hardening | `wrapper immutable_unaccent` divergia da ADR-005 | ADR-005 atualizada documentando que wrapper IMMUTABLE é obrigatório (unaccent é STABLE) | revisão ADR-005 |
+| 10.0 | CC-B5 (empate em alta confiança com dois canonicais sintéticos no mesmo kind) — não confirmado | F-15 |
+| 10.0 | Testes `-tags=integration` não executados em CI contra Postgres real | rastreabilidade |
 
 ## Dependências Críticas
 

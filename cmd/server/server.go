@@ -21,6 +21,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
@@ -172,6 +173,15 @@ func Run() error {
 		srv.RegisterRouters(cardModule.CardRouter)
 	}
 	o11y.Logger().Info(ctx, "card module wired", observability.Bool("router_registered", cardModule.CardRouter != nil))
+
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, dbManager, categoriesModule)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo budgets: %w", err)
+	}
+	if budgetsModule.BudgetsRouter != nil {
+		srv.RegisterRouters(budgetsModule.BudgetsRouter)
+	}
+	o11y.Logger().Info(ctx, "budgets module wired", observability.Bool("router_registered", budgetsModule.BudgetsRouter != nil))
 
 	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule)
 	srv.RegisterRouters(waWebhookRouter)

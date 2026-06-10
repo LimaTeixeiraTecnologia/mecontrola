@@ -49,13 +49,17 @@ func (s *UpdateCardSuite) existingCard(userID uuid.UUID) entities.Card {
 }
 
 func (s *UpdateCardSuite) makeInput(cardID, userID uuid.UUID) input.UpdateCard {
+	name := "NewName"
+	nick := "NewNick"
+	cd := 15
+	dd := 22
 	return input.UpdateCard{
 		ID:         cardID,
 		UserID:     userID,
-		Name:       "NewName",
-		Nickname:   "NewNick",
-		ClosingDay: 15,
-		DueDay:     22,
+		Name:       &name,
+		Nickname:   &nick,
+		ClosingDay: &cd,
+		DueDay:     &dd,
 	}
 }
 
@@ -139,14 +143,17 @@ func (s *UpdateCardSuite) TestExecute_RINT05_IdempotencyPutRollback() {
 
 func (s *UpdateCardSuite) TestExecute_InvalidInput() {
 	ctx := context.Background()
+	userID := uuid.New()
+	existing := s.existingCard(userID)
+	empty := ""
 	in := input.UpdateCard{
-		ID:         uuid.New(),
-		UserID:     uuid.New(),
-		Name:       "",
-		Nickname:   "nick",
-		ClosingDay: 15,
-		DueDay:     22,
+		ID:     existing.ID,
+		UserID: userID,
+		Name:   &empty,
 	}
+
+	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, existing.ID.String(), userID.String()).Return(existing, nil).Once()
 
 	sut := usecases.NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
 	_, err := sut.Execute(ctx, in)

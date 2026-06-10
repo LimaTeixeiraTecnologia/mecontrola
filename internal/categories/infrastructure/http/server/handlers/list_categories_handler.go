@@ -11,6 +11,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
@@ -20,12 +21,13 @@ type listCategoriesUseCase interface {
 
 type ListCategoriesHandler struct {
 	usecase         listCategoriesUseCase
+	version         interfaces.VersionReader
 	o11y            observability.Observability
 	requestTotal    observability.Counter
 	requestDuration observability.Histogram
 }
 
-func NewListCategoriesHandler(uc listCategoriesUseCase, o11y observability.Observability) *ListCategoriesHandler {
+func NewListCategoriesHandler(uc listCategoriesUseCase, version interfaces.VersionReader, o11y observability.Observability) *ListCategoriesHandler {
 	requestTotal := o11y.Metrics().Counter(
 		"categories_list_total",
 		"Total de requisicoes de listagem de categorias",
@@ -39,6 +41,7 @@ func NewListCategoriesHandler(uc listCategoriesUseCase, o11y observability.Obser
 	)
 	return &ListCategoriesHandler{
 		usecase:         uc,
+		version:         version,
 		o11y:            o11y,
 		requestTotal:    requestTotal,
 		requestDuration: requestDuration,
@@ -55,6 +58,28 @@ func (h *ListCategoriesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", formatETag(version))
 	}
 
+	in, kindStr, ok := h.buildInput(w, r, start)
+	if !ok {
+		return
+	}
+
+	out, err := h.usecase.Execute(ctx, in)
+	if err != nil {
+		h.handleError(ctx, w, r, start, span, kindStr, err)
+		return
+	}
+
+	w.Header().Set("ETag", formatETag(out.Version))
+
+	if newETagHelper().checkIfNoneMatch(r, out.Version) {
+		h.writeNotModified(ctx, w, r, start, kindStr)
+		return
+	}
+
+	h.writeSuccess(ctx, w, r, start, kindStr, out)
+}
+
+func (h *ListCategoriesHandler) buildInput(w http.ResponseWriter, r *http.Request, start time.Time) (*input.ListCategoriesInput, string, bool) {
 	in := &input.ListCategoriesInput{}
 	var kindStr string
 
@@ -63,13 +88,13 @@ func (h *ListCategoriesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		kind, err := valueobjects.ParseKind(kindStr)
 		if err != nil {
 			d := time.Since(start)
-			h.recordMetrics(ctx, kindStr, "invalid_kind")
-			h.recordDuration(ctx, d, kindStr, "invalid_kind")
+			h.recordMetrics(r.Context(), kindStr, "invalid_kind")
+			h.recordDuration(r.Context(), d, kindStr, "invalid_kind")
 			h.logRequest(r, "invalid_kind", d)
-			w.Header().Set("ETag", formatETag(h.currentVersion(ctx)))
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "invalid kind",
-				map[string]string{"code": "invalid_kind"})
-			return
+			version := h.currentVersion(r.Context())
+			w.Header().Set("ETag", formatETag(version))
+			writeProblem(w, http.StatusUnprocessableEntity, "invalid kind", "invalid_kind", version)
+			return nil, "", false
 		}
 		in.Kind = &kind
 	}
@@ -78,13 +103,13 @@ func (h *ListCategoriesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		parentID, err := uuid.Parse(parentIDStr)
 		if err != nil {
 			d := time.Since(start)
-			h.recordMetrics(ctx, kindStr, "invalid_query")
-			h.recordDuration(ctx, d, kindStr, "invalid_query")
+			h.recordMetrics(r.Context(), kindStr, "invalid_query")
+			h.recordDuration(r.Context(), d, kindStr, "invalid_query")
 			h.logRequest(r, "invalid_query", d)
-			w.Header().Set("ETag", formatETag(h.currentVersion(ctx)))
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "invalid parent_id",
-				map[string]string{"code": "invalid_query"})
-			return
+			version := h.currentVersion(r.Context())
+			w.Header().Set("ETag", formatETag(version))
+			writeProblem(w, http.StatusUnprocessableEntity, "invalid parent_id", "invalid_query", version)
+			return nil, "", false
 		}
 		in.ParentID = &parentID
 	}
@@ -92,31 +117,30 @@ func (h *ListCategoriesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("include_deprecated") == "true" {
 		in.IncludeDeprecated = true
 	}
+	return in, kindStr, true
+}
 
-	out, err := h.usecase.Execute(ctx, in)
-	if err != nil {
-		span.RecordError(err)
-		d := time.Since(start)
-		h.o11y.Logger().Error(ctx, "categories.list.failed", observability.Error(err))
-		h.recordMetrics(ctx, kindStr, "error")
-		h.recordDuration(ctx, d, kindStr, "error")
-		h.logRequest(r, "error", d)
-		w.Header().Set("ETag", formatETag(h.currentVersion(ctx)))
-		responses.Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+func (h *ListCategoriesHandler) handleError(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr string, err error) {
+	span.RecordError(err)
+	d := time.Since(start)
+	h.o11y.Logger().Error(ctx, "categories.list.failed", observability.Error(err))
+	h.recordMetrics(ctx, kindStr, "error")
+	h.recordDuration(ctx, d, kindStr, "error")
+	h.logRequest(r, "error", d)
+	version := h.currentVersion(ctx)
+	w.Header().Set("ETag", formatETag(version))
+	writeProblem(w, http.StatusInternalServerError, "internal error", "", version)
+}
 
-	w.Header().Set("ETag", formatETag(out.Version))
+func (h *ListCategoriesHandler) writeNotModified(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, kindStr string) {
+	d := time.Since(start)
+	h.recordMetrics(ctx, kindStr, "matched")
+	h.recordDuration(ctx, d, kindStr, "matched")
+	h.logRequest(r, "matched", d)
+	w.WriteHeader(http.StatusNotModified)
+}
 
-	if newETagHelper().checkIfNoneMatch(r, out.Version) {
-		d := time.Since(start)
-		h.recordMetrics(ctx, kindStr, "matched")
-		h.recordDuration(ctx, d, kindStr, "matched")
-		h.logRequest(r, "matched", d)
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
+func (h *ListCategoriesHandler) writeSuccess(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, kindStr string, out *output.ListCategoriesOutput) {
 	d := time.Since(start)
 	h.recordMetrics(ctx, kindStr, "matched")
 	h.recordDuration(ctx, d, kindStr, "matched")
@@ -150,7 +174,14 @@ func (h *ListCategoriesHandler) logRequest(r *http.Request, outcome string, dura
 }
 
 func (h *ListCategoriesHandler) currentVersion(ctx context.Context) int64 {
-	return 0
+	if h.version == nil {
+		return 0
+	}
+	v, err := h.version.Current(ctx)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 func (h *ListCategoriesHandler) extractVersion(r *http.Request) int64 {

@@ -33,6 +33,32 @@ CREATE TABLE mecontrola.categories (
     CONSTRAINT categories_no_cycles CHECK (parent_id IS NULL OR parent_id <> id)
 );
 
+CREATE OR REPLACE FUNCTION mecontrola.categories_parent_same_kind()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    parent_kind TEXT;
+BEGIN
+    IF NEW.parent_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    SELECT kind INTO parent_kind FROM mecontrola.categories WHERE id = NEW.parent_id;
+    IF parent_kind IS NULL THEN
+        RAISE EXCEPTION 'categories_parent_same_kind: parent_id % not found', NEW.parent_id;
+    END IF;
+    IF parent_kind <> NEW.kind THEN
+        RAISE EXCEPTION 'categories_parent_same_kind: child kind % does not match parent kind %', NEW.kind, parent_kind;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER categories_parent_same_kind_trg
+    BEFORE INSERT OR UPDATE OF parent_id, kind ON mecontrola.categories
+    FOR EACH ROW
+    EXECUTE FUNCTION mecontrola.categories_parent_same_kind();
+
 CREATE UNIQUE INDEX categories_kind_slug_uniq_idx
     ON mecontrola.categories (kind, slug);
 
@@ -41,7 +67,7 @@ CREATE INDEX categories_kind_parent_idx
     WHERE deprecated_at IS NULL;
 
 CREATE INDEX categories_parent_sort_idx
-    ON mecontrola.categories (parent_id, name)
+    ON mecontrola.categories (parent_id, name COLLATE "pt-BR-x-icu")
     WHERE deprecated_at IS NULL;
 
 CREATE TABLE mecontrola.category_dictionary (

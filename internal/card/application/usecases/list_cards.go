@@ -69,9 +69,15 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 		observability.Int("count", len(out)),
 	)
 
+	var next *string
+	if nextCursor != "" {
+		nc := nextCursor
+		next = &nc
+	}
+
 	return output.CardList{
-		Cards:      out,
-		NextCursor: nextCursor,
+		Items:      out,
+		NextCursor: next,
 	}, nil
 }
 

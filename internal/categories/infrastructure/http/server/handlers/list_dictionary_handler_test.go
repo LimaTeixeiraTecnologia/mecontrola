@@ -38,7 +38,7 @@ type ListDictionaryHandlerSuite struct {
 
 func (s *ListDictionaryHandlerSuite) SetupTest() {
 	s.mockUC = new(mockListDictionaryUseCase)
-	s.handler = NewListDictionaryHandler(s.mockUC, noop.NewProvider())
+	s.handler = NewListDictionaryHandler(s.mockUC, nil, noop.NewProvider())
 }
 
 func TestListDictionaryHandlerSuite(t *testing.T) {

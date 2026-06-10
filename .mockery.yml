@@ -85,3 +85,11 @@ packages:
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup:
     interfaces:
       MessageRepository: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces:
+    interfaces:
+      CategoriesReader: {}
+      BudgetRepository: {}
+      ExpenseRepository: {}
+      AlertRepository: {}
+      ThresholdStateRepository: {}
+      PendingEventRepository: {}

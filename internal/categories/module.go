@@ -6,6 +6,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/infrastructure/http/server"
@@ -14,7 +15,10 @@ import (
 )
 
 type CategoriesModule struct {
-	CategoryRouter *server.CategoryRouter
+	CategoryRouter      *server.CategoryRouter
+	ResolveBySlug       *usecases.ResolveBySlug
+	ValidateSubcategory *usecases.ValidateSubcategory
+	VersionReader       interfaces.VersionReader
 }
 
 func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) *CategoriesModule {
@@ -29,11 +33,13 @@ func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) 
 	getCategory := usecases.NewGetCategory(categoryRepo, versionReader, o11y)
 	listDictionary := usecases.NewListDictionary(dictionaryRepo, versionReader, o11y)
 	searchDictionary := usecases.NewSearchDictionary(dictionaryRepo, categoryRepo, versionReader, resolver, o11y)
+	resolveBySlug := usecases.NewResolveBySlug(categoryRepo, o11y)
+	validateSubcategory := usecases.NewValidateSubcategory(categoryRepo, o11y)
 
-	listCategoriesHandler := handlers.NewListCategoriesHandler(listCategories, o11y)
-	getCategoryHandler := handlers.NewGetCategoryHandler(getCategory, o11y)
-	listDictionaryHandler := handlers.NewListDictionaryHandler(listDictionary, o11y)
-	searchDictionaryHandler := handlers.NewSearchDictionaryHandler(searchDictionary, o11y)
+	listCategoriesHandler := handlers.NewListCategoriesHandler(listCategories, versionReader, o11y)
+	getCategoryHandler := handlers.NewGetCategoryHandler(getCategory, versionReader, o11y)
+	listDictionaryHandler := handlers.NewListDictionaryHandler(listDictionary, versionReader, o11y)
+	searchDictionaryHandler := handlers.NewSearchDictionaryHandler(searchDictionary, versionReader, o11y)
 
 	categoryRouter := server.NewCategoryRouter(
 		listCategoriesHandler,
@@ -43,6 +49,9 @@ func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) 
 	)
 
 	return &CategoriesModule{
-		CategoryRouter: categoryRouter,
+		CategoryRouter:      categoryRouter,
+		ResolveBySlug:       resolveBySlug,
+		ValidateSubcategory: validateSubcategory,
+		VersionReader:       versionReader,
 	}
 }

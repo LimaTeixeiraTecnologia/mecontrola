@@ -149,10 +149,12 @@ func (s *CategoryRepositoryIntegrationSuite) TestListOrdering() {
 	s.Require().NoError(err)
 	s.Require().NotEmpty(categories)
 
+	col := ptBRCollator()
 	for i := 1; i < len(categories); i++ {
 		prev := categories[i-1].Name
 		curr := categories[i].Name
-		s.Assert().True(prev <= curr, "categorias devem estar ordenadas alfabeticamente PT-BR: %s > %s", prev, curr)
+		s.Assert().LessOrEqualf(col.CompareString(prev, curr), 0,
+			"categorias devem estar ordenadas alfabeticamente PT-BR: %s > %s", prev, curr)
 	}
 }
 

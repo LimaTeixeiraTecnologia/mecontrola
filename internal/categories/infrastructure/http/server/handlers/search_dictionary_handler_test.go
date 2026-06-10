@@ -38,7 +38,7 @@ type SearchDictionaryHandlerSuite struct {
 
 func (s *SearchDictionaryHandlerSuite) SetupTest() {
 	s.mockUC = new(mockSearchDictionaryUseCase)
-	s.handler = NewSearchDictionaryHandler(s.mockUC, noop.NewProvider())
+	s.handler = NewSearchDictionaryHandler(s.mockUC, nil, noop.NewProvider())
 }
 
 func TestSearchDictionaryHandlerSuite(t *testing.T) {

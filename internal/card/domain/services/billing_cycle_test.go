@@ -801,15 +801,39 @@ func TestBillingCycle_InvoiceFor_PropertyBased(t *testing.T) {
 		closingInSP := inv.ClosingDate.In(sp)
 		dueInSP := inv.DueDate.In(sp)
 
+		// Invariante (a): due_date >= closing_date
 		if dueInSP.Before(closingInSP) {
 			return false
 		}
 
 		purchaseInSP := purchase.In(sp)
 		purchaseDayTime := time.Date(purchaseInSP.Year(), purchaseInSP.Month(), purchaseInSP.Day(), 0, 0, 0, 0, sp)
-		closingDayTime := time.Date(closingInSP.Year(), closingInSP.Month(), closingInSP.Day(), 0, 0, 0, 0, sp)
+		dueDayTime := time.Date(dueInSP.Year(), dueInSP.Month(), dueInSP.Day(), 0, 0, 0, 0, sp)
 
-		return !purchaseDayTime.After(closingDayTime)
+		// Invariante (b): due_date >= purchase_date
+		if dueDayTime.Before(purchaseDayTime) {
+			return false
+		}
+
+		// Invariante (d): closing_date.day == min(closing_day, daysInMonth(closing_date.year, closing_date.month))
+		// Excecao: quando closing_day == due_day, a convenção define closing como due_date - 1 dia.
+		if cd != dd {
+			dim := time.Date(closingInSP.Year(), closingInSP.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+			expectedClosingDay := cd
+			if expectedClosingDay > dim {
+				expectedClosingDay = dim
+			}
+			if closingInSP.Day() != expectedClosingDay {
+				return false
+			}
+		} else {
+			expectedClosing := dueDayTime.AddDate(0, 0, -1)
+			if !closingInSP.Equal(expectedClosing) {
+				return false
+			}
+		}
+
+		return true
 	}
 
 	cfg := &quick.Config{

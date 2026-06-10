@@ -1,6 +1,6 @@
 package output
 
 type CardList struct {
-	Cards      []Card
-	NextCursor string
+	Items      []Card  `json:"items"`
+	NextCursor *string `json:"next_cursor"`
 }

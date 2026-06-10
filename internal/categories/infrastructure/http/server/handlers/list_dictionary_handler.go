@@ -11,6 +11,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
@@ -20,12 +21,13 @@ type listDictionaryUseCase interface {
 
 type ListDictionaryHandler struct {
 	usecase         listDictionaryUseCase
+	version         interfaces.VersionReader
 	o11y            observability.Observability
 	requestTotal    observability.Counter
 	requestDuration observability.Histogram
 }
 
-func NewListDictionaryHandler(uc listDictionaryUseCase, o11y observability.Observability) *ListDictionaryHandler {
+func NewListDictionaryHandler(uc listDictionaryUseCase, version interfaces.VersionReader, o11y observability.Observability) *ListDictionaryHandler {
 	requestTotal := o11y.Metrics().Counter(
 		"category_dictionary_list_total",
 		"Total de requisicoes de listagem do dicionario",
@@ -39,6 +41,7 @@ func NewListDictionaryHandler(uc listDictionaryUseCase, o11y observability.Obser
 	)
 	return &ListDictionaryHandler{
 		usecase:         uc,
+		version:         version,
 		o11y:            o11y,
 		requestTotal:    requestTotal,
 		requestDuration: requestDuration,
@@ -50,6 +53,28 @@ func (h *ListDictionaryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.o11y.Tracer().Start(r.Context(), "categories.handler.list_dictionary")
 	defer span.End()
 
+	in, kindStr, ok := h.buildInput(w, r, start)
+	if !ok {
+		return
+	}
+
+	out, err := h.usecase.Execute(ctx, in)
+	if err != nil {
+		h.handleError(ctx, w, r, start, span, kindStr, err)
+		return
+	}
+
+	w.Header().Set("ETag", formatETag(out.Version))
+
+	if newETagHelper().checkIfNoneMatch(r, out.Version) {
+		h.writeNotModified(ctx, w, r, start, kindStr)
+		return
+	}
+
+	h.writeSuccess(ctx, w, r, start, kindStr, out)
+}
+
+func (h *ListDictionaryHandler) buildInput(w http.ResponseWriter, r *http.Request, start time.Time) (*input.ListDictionaryInput, string, bool) {
 	in := &input.ListDictionaryInput{}
 	var kindStr string
 
@@ -62,13 +87,13 @@ func (h *ListDictionaryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		kind, err := valueobjects.ParseKind(kindStr)
 		if err != nil {
 			d := time.Since(start)
-			h.recordMetrics(ctx, kindStr, "invalid_kind")
-			h.recordDuration(ctx, d, kindStr, "invalid_kind")
+			h.recordMetrics(r.Context(), kindStr, "invalid_kind")
+			h.recordDuration(r.Context(), d, kindStr, "invalid_kind")
 			h.logRequest(r, "invalid_kind", d)
-			w.Header().Set("ETag", formatETag(h.currentVersion(ctx)))
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "invalid kind",
-				map[string]string{"code": "invalid_kind"})
-			return
+			version := h.currentVersion(r.Context())
+			w.Header().Set("ETag", formatETag(version))
+			writeProblem(w, http.StatusUnprocessableEntity, "invalid kind", "invalid_kind", version)
+			return nil, "", false
 		}
 		in.Kind = &kind
 	}
@@ -77,13 +102,13 @@ func (h *ListDictionaryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		signalType, err := valueobjects.ParseSignalType(signalTypeStr)
 		if err != nil {
 			d := time.Since(start)
-			h.recordMetrics(ctx, kindStr, "invalid_query")
-			h.recordDuration(ctx, d, kindStr, "invalid_query")
+			h.recordMetrics(r.Context(), kindStr, "invalid_query")
+			h.recordDuration(r.Context(), d, kindStr, "invalid_query")
 			h.logRequest(r, "invalid_query", d)
-			w.Header().Set("ETag", formatETag(h.currentVersion(ctx)))
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "invalid signal_type",
-				map[string]string{"code": "invalid_query"})
-			return
+			version := h.currentVersion(r.Context())
+			w.Header().Set("ETag", formatETag(version))
+			writeProblem(w, http.StatusUnprocessableEntity, "invalid signal_type", "invalid_query", version)
+			return nil, "", false
 		}
 		in.SignalType = &signalType
 	}
@@ -96,31 +121,30 @@ func (h *ListDictionaryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			in.PageSize = pageSize
 		}
 	}
+	return in, kindStr, true
+}
 
-	out, err := h.usecase.Execute(ctx, in)
-	if err != nil {
-		span.RecordError(err)
-		d := time.Since(start)
-		h.o11y.Logger().Error(ctx, "categories.list_dictionary.failed", observability.Error(err))
-		h.recordMetrics(ctx, kindStr, "error")
-		h.recordDuration(ctx, d, kindStr, "error")
-		h.logRequest(r, "error", d)
-		w.Header().Set("ETag", formatETag(h.currentVersion(ctx)))
-		responses.Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+func (h *ListDictionaryHandler) handleError(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr string, err error) {
+	span.RecordError(err)
+	d := time.Since(start)
+	h.o11y.Logger().Error(ctx, "categories.list_dictionary.failed", observability.Error(err))
+	h.recordMetrics(ctx, kindStr, "error")
+	h.recordDuration(ctx, d, kindStr, "error")
+	h.logRequest(r, "error", d)
+	version := h.currentVersion(ctx)
+	w.Header().Set("ETag", formatETag(version))
+	writeProblem(w, http.StatusInternalServerError, "internal error", "", version)
+}
 
-	w.Header().Set("ETag", formatETag(out.Version))
+func (h *ListDictionaryHandler) writeNotModified(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, kindStr string) {
+	d := time.Since(start)
+	h.recordMetrics(ctx, kindStr, "matched")
+	h.recordDuration(ctx, d, kindStr, "matched")
+	h.logRequest(r, "matched", d)
+	w.WriteHeader(http.StatusNotModified)
+}
 
-	if newETagHelper().checkIfNoneMatch(r, out.Version) {
-		d := time.Since(start)
-		h.recordMetrics(ctx, kindStr, "matched")
-		h.recordDuration(ctx, d, kindStr, "matched")
-		h.logRequest(r, "matched", d)
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
+func (h *ListDictionaryHandler) writeSuccess(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, kindStr string, out *output.ListDictionaryOutput) {
 	d := time.Since(start)
 	h.recordMetrics(ctx, kindStr, "matched")
 	h.recordDuration(ctx, d, kindStr, "matched")
@@ -154,5 +178,12 @@ func (h *ListDictionaryHandler) logRequest(r *http.Request, outcome string, dura
 }
 
 func (h *ListDictionaryHandler) currentVersion(ctx context.Context) int64 {
-	return 0
+	if h.version == nil {
+		return 0
+	}
+	v, err := h.version.Current(ctx)
+	if err != nil {
+		return 0
+	}
+	return v
 }

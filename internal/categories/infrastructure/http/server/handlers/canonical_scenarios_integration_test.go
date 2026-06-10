@@ -217,6 +217,34 @@ func (s *CanonicalScenariosIntegrationSuite) TestCCB4_KindMismatch() {
 	s.Equal("no_match", body["result"])
 }
 
+func (s *CanonicalScenariosIntegrationSuite) TestCCB5_EmpateAltaConfianca() {
+	ctx := context.Background()
+	_, err := s.mgr.DBTX(ctx).ExecContext(ctx, `
+		INSERT INTO mecontrola.category_dictionary (id, category_id, kind, term, signal_type, confidence, is_ambiguous)
+		VALUES
+			(gen_random_uuid(), (SELECT id FROM mecontrola.categories WHERE kind = 'expense' AND parent_id IS NOT NULL LIMIT 1), 'expense', 'termounicoccb5', 'canonical_name', 'high', false),
+			(gen_random_uuid(), (SELECT id FROM mecontrola.categories WHERE kind = 'expense' AND parent_id IS NOT NULL OFFSET 1 LIMIT 1), 'expense', 'termounicoccb5', 'canonical_name', 'high', false)
+	`)
+	s.Require().NoError(err)
+
+	resp := s.makeRequest("GET", "/api/v1/category-dictionary/search?q=termounicoccb5&kind=expense", nil)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	body := s.parseBody(resp)
+	s.Equal("candidates", body["result"])
+
+	candidates, ok := body["candidates"].([]any)
+	s.Require().True(ok)
+	s.Len(candidates, 2)
+
+	for _, c := range candidates {
+		candidate := c.(map[string]any)
+		s.Equal("canonical_name", candidate["signal_type"])
+		s.Equal("high", candidate["confidence"])
+		s.Equal(true, candidate["is_ambiguous"])
+	}
+}
+
 func (s *CanonicalScenariosIntegrationSuite) TestCCD1_QueryCurto() {
 	resp := s.makeRequest("GET", "/api/v1/category-dictionary/search?q=ab&kind=expense", nil)
 	s.Require().Equal(http.StatusUnprocessableEntity, resp.StatusCode)

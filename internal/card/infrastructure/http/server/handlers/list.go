@@ -70,7 +70,7 @@ func (h *ListCardsHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	span.SetAttributes(observability.String("outcome", "success"))
 	h.o11y.Logger().Info(ctx, "card.list.served",
 		observability.String("user_id", principal.UserID.String()),
-		observability.Int("count", len(out.Cards)),
+		observability.Int("count", len(out.Items)),
 	)
 
 	responses.JSON(w, http.StatusOK, out)

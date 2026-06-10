@@ -1,8 +1,6 @@
 package output
 
-import "time"
-
 type Invoice struct {
-	ClosingDate time.Time
-	DueDate     time.Time
+	ClosingDate string `json:"closing_date"`
+	DueDate     string `json:"due_date"`
 }

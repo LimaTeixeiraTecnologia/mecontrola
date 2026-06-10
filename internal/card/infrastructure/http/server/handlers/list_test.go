@@ -45,7 +45,7 @@ func (s *ListCardsHandlerSuite) get(query string) *httptest.ResponseRecorder {
 func (s *ListCardsHandlerSuite) TestHandle_OK() {
 	card := sampleCard(s.userID)
 	s.uc.On("Execute", mock.Anything, mock.MatchedBy(func(in any) bool { return true })).
-		Return(output.CardList{Cards: []output.Card{card}}, nil).Once()
+		Return(output.CardList{Items: []output.Card{card}}, nil).Once()
 
 	rr := s.get("")
 	s.Equal(http.StatusOK, rr.Code)

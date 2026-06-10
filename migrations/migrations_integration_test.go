@@ -53,7 +53,7 @@ func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
 	}{
 		{
 			name:  "deve aplicar e reverter a baseline consolidada",
-			args:  args{downSteps: 8},
+			args:  args{downSteps: 12},
 			setup: func() {},
 			expect: func(migrator migration.Migrator, downSteps int) {
 				upErr := migrator.Up(s.ctx)
@@ -103,7 +103,7 @@ func (s *MigrationSuite) TestCardAndIdempotencyMigrationsUpDownUp() {
 				s.assertTablePresent("mecontrola.idempotency_keys")
 				s.assertTablePresent("mecontrola.cards")
 
-				s.Require().NoError(migrator.Down(s.ctx, 2))
+				s.Require().NoError(migrator.Down(s.ctx, 6))
 
 				s.assertTableMissing("mecontrola.idempotency_keys")
 				s.assertTableMissing("mecontrola.cards")
@@ -329,6 +329,320 @@ func (s *MigrationSuite) assertSchemaMissing(name string) {
 	`, name).Scan(&exists)
 	s.Require().NoError(err)
 	s.False(exists)
+}
+
+func (s *MigrationSuite) TestCategoriesMigrationsUpAndDown() {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
+
+	s.assertTablePresent("mecontrola.categories")
+	s.assertTablePresent("mecontrola.category_dictionary")
+	s.assertTablePresent("mecontrola.category_editorial_version")
+	s.assertUnaccentAvailable()
+
+	s.Require().NoError(migrator.Down(s.ctx, 9))
+
+	s.assertTableMissing("mecontrola.categories")
+	s.assertTableMissing("mecontrola.category_dictionary")
+	s.assertTableMissing("mecontrola.category_editorial_version")
+}
+
+func (s *MigrationSuite) TestCategoriesSeedMigration() {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
+
+	s.assertExpenseCategoriesCount()
+	s.assertIncomeCategoriesCount()
+	s.assertDeterministicCategoryIDs()
+	s.assertAllocationTypesCorrect()
+	s.assertMaxDepthTwo()
+	s.assertEditorialVersionIncremented()
+}
+
+func (s *MigrationSuite) TestDictionarySeedMigration() {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
+
+	s.assertDictionaryCanonicalsCount()
+	s.assertDictionaryAliasesCount()
+	s.assertDictionaryUniqueness()
+	s.assertDictionaryUnaccentNormalization()
+}
+
+func (s *MigrationSuite) assertUnaccentAvailable() {
+	var result bool
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT unaccent('á') = 'a'`).Scan(&result)
+	s.Require().NoError(err)
+	s.True(result, "extensão unaccent deve estar disponível")
+}
+
+func (s *MigrationSuite) assertExpenseCategoriesCount() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT COUNT(*) FROM mecontrola.categories WHERE kind = 'expense'`).Scan(&count)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(count, int64(88), "deve haver pelo menos 88 categorias de despesa")
+}
+
+func (s *MigrationSuite) assertIncomeCategoriesCount() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT COUNT(*) FROM mecontrola.categories WHERE kind = 'income'`).Scan(&count)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(count, int64(21), "deve haver pelo menos 21 categorias de receita")
+}
+
+func (s *MigrationSuite) assertDeterministicCategoryIDs() {
+	rows, err := s.mgr.DBTX(s.ctx).QueryContext(s.ctx, `SELECT slug, kind, id FROM mecontrola.categories`)
+	s.Require().NoError(err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var slug, kind, id string
+		s.Require().NoError(rows.Scan(&slug, &kind, &id))
+	}
+	s.Require().NoError(rows.Err())
+}
+
+func (s *MigrationSuite) assertAllocationTypesCorrect() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.categories
+		WHERE kind = 'expense' AND parent_id IS NOT NULL AND allocation_type = 'asset_allocation'
+	`).Scan(&count)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(count, int64(1), "deve haver subcategorias de despesa com asset_allocation")
+}
+
+func (s *MigrationSuite) assertMaxDepthTwo() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.categories c1
+		JOIN mecontrola.categories c2 ON c1.parent_id = c2.id
+		WHERE c2.parent_id IS NOT NULL
+	`).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(0), count, "não deve haver categorias com profundidade maior que 2")
+}
+
+func (s *MigrationSuite) assertEditorialVersionIncremented() {
+	var version int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version`).Scan(&version)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(version, int64(2), "versão editorial deve ser pelo menos 2 após seed")
+}
+
+func (s *MigrationSuite) assertDictionaryCanonicalsCount() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE signal_type = 'canonical_name'
+	`).Scan(&count)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(count, int64(60), "deve haver pelo menos 60 canônicos")
+}
+
+func (s *MigrationSuite) assertDictionaryAliasesCount() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE signal_type IN ('alias', 'phrase')
+	`).Scan(&count)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(count, int64(10), "deve haver pelo menos 10 aliases/frases")
+}
+
+func (s *MigrationSuite) assertDictionaryUniqueness() {
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM (
+			SELECT kind, category_id, term_normalized, COUNT(*) as c
+			FROM mecontrola.category_dictionary
+			WHERE deprecated_at IS NULL
+			GROUP BY kind, category_id, term_normalized
+			HAVING COUNT(*) > 1
+		) t
+	`).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(0), count, "não deve haver termos normalizados duplicados ativos")
+}
+
+func (s *MigrationSuite) assertDictionaryUnaccentNormalization() {
+	var result string
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT term_normalized FROM mecontrola.category_dictionary WHERE term = 'gás encanado' LIMIT 1
+	`).Scan(&result)
+	s.Require().NoError(err)
+	s.Equal("gas encanado", result, "normalização de gás encanado deve ser gas encanado")
+}
+
+func (s *MigrationSuite) TestBudgetsMigrationUpAndDown() {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
+
+	s.assertTablePresent("mecontrola.budgets")
+	s.assertTablePresent("mecontrola.budgets_allocations")
+	s.assertTablePresent("mecontrola.budgets_expenses")
+	s.assertTablePresent("mecontrola.budgets_threshold_states")
+	s.assertTablePresent("mecontrola.budgets_alerts")
+	s.assertTablePresent("mecontrola.budgets_expense_events_pending")
+
+	s.assertBudgetsUniqueConstraint()
+	s.assertBudgetsExpensesIdentityUnique()
+	s.assertBudgetsExpensesPartialIndex()
+	s.assertBudgetsThresholdStatesConstraints()
+	s.assertBudgetsPendingEventIdempotency()
+
+	s.Require().NoError(migrator.Down(s.ctx, 1))
+
+	s.assertTableMissing("mecontrola.budgets")
+	s.assertTableMissing("mecontrola.budgets_allocations")
+	s.assertTableMissing("mecontrola.budgets_expenses")
+	s.assertTableMissing("mecontrola.budgets_threshold_states")
+	s.assertTableMissing("mecontrola.budgets_alerts")
+	s.assertTableMissing("mecontrola.budgets_expense_events_pending")
+}
+
+func (s *MigrationSuite) assertBudgetsUniqueConstraint() {
+	userID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+	insertErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets (id, user_id, competence, total_cents, state, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, '2026-01', 0, 1, now(), now())
+	`, userID)
+	s.Require().NoError(insertErr)
+
+	dupErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets (id, user_id, competence, total_cents, state, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, '2026-01', 0, 1, now(), now())
+	`, userID)
+	s.Require().Error(dupErr, "duplicado (user_id, competence) deve violar budgets_user_comp_uk")
+	s.Contains(dupErr.Error(), "budgets_user_comp_uk")
+}
+
+func (s *MigrationSuite) assertBudgetsExpensesIdentityUnique() {
+	userID := "dddddddd-dddd-dddd-dddd-dddddddddddd"
+	insertErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_expenses (
+			id, user_id, source, external_transaction_id, subcategory_id,
+			root_slug, competence, amount_cents, occurred_at, version,
+			created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 'api', 'ext-001',
+			gen_random_uuid(), 'expense.custo_fixo', '2026-01',
+			1000, now(), 1, now(), now()
+		)
+	`, userID)
+	s.Require().NoError(insertErr)
+
+	dupErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_expenses (
+			id, user_id, source, external_transaction_id, subcategory_id,
+			root_slug, competence, amount_cents, occurred_at, version,
+			created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 'api', 'ext-001',
+			gen_random_uuid(), 'expense.custo_fixo', '2026-01',
+			2000, now(), 1, now(), now()
+		)
+	`, userID)
+	s.Require().Error(dupErr, "duplicado (user_id, source, external_transaction_id) deve violar budgets_expenses_identity_uk")
+	s.Contains(dupErr.Error(), "budgets_expenses_identity_uk")
+}
+
+func (s *MigrationSuite) assertBudgetsExpensesPartialIndex() {
+	rows, err := s.mgr.DBTX(s.ctx).QueryContext(s.ctx, `
+		EXPLAIN SELECT root_slug, SUM(amount_cents)
+		FROM mecontrola.budgets_expenses
+		WHERE user_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+		  AND competence = '2026-01'
+		  AND deleted_at IS NULL
+		GROUP BY root_slug
+	`)
+	s.Require().NoError(err)
+	defer rows.Close()
+	var hasRows bool
+	for rows.Next() {
+		hasRows = true
+	}
+	s.Require().NoError(rows.Err())
+	s.True(hasRows, "EXPLAIN deve retornar plano de execução")
+}
+
+func (s *MigrationSuite) assertBudgetsThresholdStatesConstraints() {
+	userID := "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+	insertErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_threshold_states (
+			user_id, competence, root_slug, threshold, currently_crossed, version
+		) VALUES ($1, '2026-01', 'expense.custo_fixo', 80, false, 0)
+	`, userID)
+	s.Require().NoError(insertErr)
+
+	dupErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_threshold_states (
+			user_id, competence, root_slug, threshold, currently_crossed, version
+		) VALUES ($1, '2026-01', 'expense.custo_fixo', 80, false, 0)
+	`, userID)
+	s.Require().Error(dupErr, "duplicado PK deve violar constraint de threshold_states")
+
+	invalidThresholdErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_threshold_states (
+			user_id, competence, root_slug, threshold, currently_crossed, version
+		) VALUES ($1, '2026-02', 'expense.custo_fixo', 50, false, 0)
+	`, userID)
+	s.Require().Error(invalidThresholdErr, "threshold=50 deve violar budgets_threshold_states_threshold_chk")
+	s.Contains(invalidThresholdErr.Error(), "budgets_threshold_states_threshold_chk")
+}
+
+func (s *MigrationSuite) assertBudgetsPendingEventIdempotency() {
+	eventID := "ffffffff-ffff-ffff-ffff-ffffffffffff"
+	insertErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_expense_events_pending (
+			id, event_id, source, user_id, external_transaction_id,
+			expected_version, mutation_kind, payload, state, received_at
+		) VALUES (
+			gen_random_uuid(), $1, 'api',
+			'aaaaaaaa-0000-0000-0000-000000000001', 'ext-pending-001',
+			1, 1, '{}', 1, now()
+		)
+	`, eventID)
+	s.Require().NoError(insertErr)
+
+	dupErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.budgets_expense_events_pending (
+			id, event_id, source, user_id, external_transaction_id,
+			expected_version, mutation_kind, payload, state, received_at
+		) VALUES (
+			gen_random_uuid(), $1, 'api',
+			'aaaaaaaa-0000-0000-0000-000000000001', 'ext-pending-001',
+			1, 1, '{}', 1, now()
+		)
+	`, eventID)
+	s.Require().Error(dupErr, "duplicado event_id deve violar budgets_expense_events_pending_event_uk")
+	s.Contains(dupErr.Error(), "budgets_expense_events_pending_event_uk")
 }
 
 func execSQL(mgr manager.Manager, ctx context.Context, query string, args ...any) error {

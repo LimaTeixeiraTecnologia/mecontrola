@@ -13,6 +13,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
+	cardobs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/observability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 )
 
@@ -21,10 +22,10 @@ type updateCardUseCase interface {
 }
 
 type updateCardRequest struct {
-	Name       string `json:"name"`
-	Nickname   string `json:"nickname"`
-	ClosingDay int    `json:"closing_day"`
-	DueDay     int    `json:"due_day"`
+	Name       *string `json:"name,omitempty"`
+	Nickname   *string `json:"nickname,omitempty"`
+	ClosingDay *int    `json:"closing_day,omitempty"`
+	DueDay     *int    `json:"due_day,omitempty"`
 }
 
 type UpdateCardHandler struct {
@@ -63,6 +64,13 @@ func (h *UpdateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Name == nil && req.Nickname == nil && req.ClosingDay == nil && req.DueDay == nil {
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, "informe ao menos um campo para atualizar",
+			map[string]string{"code": "empty_payload"})
+		return
+	}
+
 	out, err := h.usecase.Execute(ctx, input.UpdateCard{
 		ID:         cardID,
 		UserID:     principal.UserID,
@@ -79,8 +87,7 @@ func (h *UpdateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	h.o11y.Logger().Info(ctx, "card.update.completed",
-		observability.String("card_id", out.ID),
-		observability.String("user_id", out.UserID),
+		cardobs.RedactOutputCardLogFields(out)...,
 	)
 
 	responses.JSON(w, http.StatusOK, out)

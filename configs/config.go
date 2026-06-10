@@ -10,8 +10,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config incorpora grupos via mapstructure:",squash" para que as env vars
-// sejam mapeadas diretamente sem prefixo de grupo.
 type Config struct {
 	AppConfig        AppConfig        `mapstructure:",squash"`
 	HTTPConfig       HTTPConfig       `mapstructure:",squash"`
@@ -23,22 +21,24 @@ type Config struct {
 	OnboardingConfig OnboardingConfig `mapstructure:",squash"`
 	WhatsAppConfig   WhatsAppConfig   `mapstructure:",squash"`
 	IdentityConfig   IdentityConfig   `mapstructure:",squash"`
+	BudgetsConfig    BudgetsConfig    `mapstructure:",squash"`
 }
 
-// IdentityConfig agrupa as configurações do módulo de identity/auth.
 type IdentityConfig struct {
-	// AuthEventsHousekeepingSchedule define o cron schedule do housekeeping mensal de auth_events.
-	// Padrão: "@monthly".
 	AuthEventsHousekeepingSchedule string `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE"`
-	// AuthEventsHousekeepingBatch define o tamanho do lote de deleção por iteração.
-	// Padrão: 10000.
-	AuthEventsHousekeepingBatch int `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH"`
-	// AuthEventsRetentionDays define a retenção em dias dos eventos de autenticação.
-	// Padrão: 180.
-	AuthEventsRetentionDays int `mapstructure:"IDENTITY_AUTH_EVENTS_RETENTION_DAYS"`
+	AuthEventsHousekeepingBatch    int    `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH"`
+	AuthEventsRetentionDays        int    `mapstructure:"IDENTITY_AUTH_EVENTS_RETENTION_DAYS"`
 }
 
-// OnboardingConfig agrupa as configuracoes do modulo de onboarding via magic token.
+type BudgetsConfig struct {
+	PendingReaperInterval   string        `mapstructure:"BUDGETS_PENDING_REAPER_INTERVAL"`
+	PendingTTLHours         int           `mapstructure:"BUDGETS_PENDING_TTL_HOURS"`
+	PendingTTL              time.Duration `mapstructure:"-"`
+	AbandonedDraftCron      string        `mapstructure:"BUDGETS_ABANDONED_DRAFT_CRON"`
+	RetentionPurgeCron      string        `mapstructure:"BUDGETS_RETENTION_PURGE_CRON"`
+	RetentionPurgeBatchSize int           `mapstructure:"BUDGETS_RETENTION_PURGE_BATCH_SIZE"`
+}
+
 type OnboardingConfig struct {
 	TokenTTLDays            int    `mapstructure:"ONBOARDING_TOKEN_TTL_DAYS"`
 	OutreachGapHours        int    `mapstructure:"ONBOARDING_OUTREACH_GAP_HOURS"`
@@ -58,8 +58,6 @@ type OnboardingConfig struct {
 	TokenEncryptionKey      string `mapstructure:"ONBOARDING_TOKEN_ENCRYPTION_KEY"`
 }
 
-// WhatsAppConfig agrupa as configuracoes da integracao com a Meta Cloud API.
-// Secrets (AppSecret, AccessToken, VerifyToken) NUNCA devem aparecer em logs.
 type WhatsAppConfig struct {
 	PhoneNumberID        string `mapstructure:"META_PHONE_NUMBER_ID"`
 	AccessToken          string `mapstructure:"META_ACCESS_TOKEN"`
@@ -81,8 +79,6 @@ type WhatsAppConfig struct {
 	AgentStubReceived    string `mapstructure:"WA_MSG_AGENT_STUB_RECEIVED"`
 }
 
-// KiwifyConfig agrupa as configurações do provedor Kiwify (RF-44).
-// Secrets (WebhookSecret, ClientSecret) NUNCA devem aparecer em logs — use Safe().
 type KiwifyConfig struct {
 	APIBaseURL                 string        `mapstructure:"KIWIFY_API_BASE_URL"`
 	AccountID                  string        `mapstructure:"KIWIFY_ACCOUNT_ID"`
@@ -104,8 +100,6 @@ type KiwifyConfig struct {
 	HTTPRetryBackoff           time.Duration `mapstructure:"KIWIFY_HTTP_RETRY_BACKOFF"`
 }
 
-// Safe retorna uma representação redactada da KiwifyConfig segura para logs (RF-44).
-// Secrets aparecem apenas como booleanos indicando se estão configurados.
 func (k KiwifyConfig) Safe() map[string]any {
 	return map[string]any{
 		"api_base_url":              k.APIBaseURL,
@@ -126,7 +120,6 @@ func (k KiwifyConfig) Safe() map[string]any {
 	}
 }
 
-// BillingConfig agrupa as configurações do módulo de billing.
 type BillingConfig struct {
 	EntitlementCacheCapacity         int           `mapstructure:"BILLING_ENTITLEMENT_CACHE_CAPACITY"`
 	EntitlementCacheTTL              time.Duration `mapstructure:"BILLING_ENTITLEMENT_CACHE_TTL"`
@@ -159,8 +152,7 @@ type DBConfig struct {
 	Name     string `mapstructure:"DB_NAME"`
 	SSLMode  string `mapstructure:"DB_SSL_MODE"`
 
-	MaxConns int `mapstructure:"DB_MAX_CONNS"`
-	// MinConns: declarado para compatibilidade com .env legado; não é amarrado ao pool do devkit-go v0.4.0.
+	MaxConns        int           `mapstructure:"DB_MAX_CONNS"`
 	MinConns        int           `mapstructure:"DB_MIN_CONNS"`
 	MaxIdleConns    int           `mapstructure:"DB_MAX_IDLE_CONNS"`
 	ConnMaxLifetime time.Duration `mapstructure:"DB_CONN_MAX_LIFETIME"`
@@ -169,8 +161,6 @@ type DBConfig struct {
 
 const databaseSearchPath = "mecontrola,public"
 
-// DSN retorna a connection string com senha em texto claro.
-// NUNCA logar diretamente — use SafeDSN() para logs e mensagens de erro.
 func (d *DBConfig) DSN() string {
 	return d.formatDSN(true)
 }
@@ -192,7 +182,6 @@ func (d *DBConfig) formatDSN(withSearchPath bool) string {
 	)
 }
 
-// SafeDSN é o único formato permitido em logs, mensagens de erro e traces.
 func (d *DBConfig) SafeDSN() string {
 	return fmt.Sprintf(
 		"postgres://%s:***@%s:%d/%s?sslmode=%s&search_path=%s",
@@ -210,9 +199,6 @@ type O11yConfig struct {
 	LogFormat        string  `mapstructure:"LOG_FORMAT"`
 }
 
-// OutboxConfig agrupa todas as configuracoes do Outbox Transacional (RF-26 / D-03).
-// Todas as chaves usam o prefixo OUTBOX_ em SCREAMING_SNAKE_CASE.
-// Defaults aplicados em configLoader.load() e validacao em Config.Validate().
 type OutboxConfig struct {
 	DispatcherEnabled         bool          `mapstructure:"OUTBOX_DISPATCHER_ENABLED"`
 	DispatcherTickInterval    time.Duration `mapstructure:"OUTBOX_DISPATCHER_TICK_INTERVAL"`
@@ -227,19 +213,15 @@ type OutboxConfig struct {
 	ReaperStuckAfter          time.Duration `mapstructure:"OUTBOX_REAPER_STUCK_AFTER"`
 }
 
-// configLoader encapsula o pipeline Viper de carregamento de configuração.
-// Separado de Config para que LoadConfig não precise de funções standalone.
 type configLoader struct {
 	v    *viper.Viper
 	path string
 }
 
-// requiresLocalEnvFile retorna true quando o ambiente exige o arquivo .env local.
 func (l *configLoader) requiresLocalEnvFile() bool {
 	return l.v.GetString("ENVIRONMENT") != "production"
 }
 
-// load executa o pipeline completo: bind, defaults, ReadInConfig, Unmarshal, Validate.
 func (l *configLoader) load() (*Config, error) {
 	l.v.SetConfigName(".env")
 	l.v.SetConfigType("env")
@@ -271,6 +253,7 @@ func (l *configLoader) load() (*Config, error) {
 	l.setOutboxDefaults()
 	l.setKiwifyDefaults()
 	l.setBillingDefaults()
+	l.setBudgetsDefaults()
 	l.setOnboardingDefaults()
 	l.setWhatsAppDefaults()
 
@@ -297,8 +280,6 @@ func (l *configLoader) load() (*Config, error) {
 }
 
 func (l *configLoader) envKeys() []string {
-	// Bind env vars explicitamente para garantir que AutomaticEnv() funcione com Unmarshal.
-	// Necessário porque mapstructure não chama os getters do Viper automaticamente.
 	return []string{
 		"ENVIRONMENT", "APP_MODE",
 		"PORT", "SERVICE_NAME_API", "CORS_ALLOWED_ORIGINS",
@@ -379,10 +360,14 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
 		"WA_MSG_INVALID_COUNTRY",
 		"WA_MSG_AGENT_STUB_RECEIVED",
+		"BUDGETS_PENDING_REAPER_INTERVAL",
+		"BUDGETS_PENDING_TTL_HOURS",
+		"BUDGETS_ABANDONED_DRAFT_CRON",
+		"BUDGETS_RETENTION_PURGE_CRON",
+		"BUDGETS_RETENTION_PURGE_BATCH_SIZE",
 	}
 }
 
-// setKiwifyDefaults registra os defaults do provedor Kiwify no Viper.
 func (l *configLoader) setKiwifyDefaults() {
 	l.v.SetDefault("KIWIFY_API_BASE_URL", "https://public-api.kiwify.com")
 	l.v.SetDefault("KIWIFY_WEBHOOK_TOKEN_HEADER", "X-Kiwify-Webhook-Token")
@@ -396,7 +381,14 @@ func (l *configLoader) setKiwifyDefaults() {
 	l.v.SetDefault("KIWIFY_HTTP_RETRY_BACKOFF", time.Second)
 }
 
-// setBillingDefaults registra os defaults do módulo billing no Viper.
+func (l *configLoader) setBudgetsDefaults() {
+	l.v.SetDefault("BUDGETS_PENDING_REAPER_INTERVAL", "@every 30s")
+	l.v.SetDefault("BUDGETS_PENDING_TTL_HOURS", 24)
+	l.v.SetDefault("BUDGETS_ABANDONED_DRAFT_CRON", "0 3 * * *")
+	l.v.SetDefault("BUDGETS_RETENTION_PURGE_CRON", "0 4 1 * *")
+	l.v.SetDefault("BUDGETS_RETENTION_PURGE_BATCH_SIZE", 500)
+}
+
 func (l *configLoader) setBillingDefaults() {
 	l.v.SetDefault("BILLING_ENTITLEMENT_CACHE_CAPACITY", 50000)
 	l.v.SetDefault("BILLING_ENTITLEMENT_CACHE_TTL", 5*time.Minute)
@@ -408,7 +400,6 @@ func (l *configLoader) setBillingDefaults() {
 	l.v.SetDefault("BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH", 500)
 }
 
-// setOutboxDefaults registra os defaults do Outbox Transacional (D-03) no Viper.
 func (l *configLoader) setOutboxDefaults() {
 	l.v.SetDefault("OUTBOX_DISPATCHER_ENABLED", true)
 	l.v.SetDefault("OUTBOX_DISPATCHER_TICK_INTERVAL", 500*time.Millisecond)
@@ -423,33 +414,15 @@ func (l *configLoader) setOutboxDefaults() {
 	l.v.SetDefault("OUTBOX_REAPER_STUCK_AFTER", 5*time.Minute)
 }
 
-// LoadConfig carrega configuração do arquivo .env em path e de env vars do processo.
-//
-// Pipeline Viper:
-//  1. SetConfigName(".env") + SetConfigType("env")
-//  2. AddConfigPath(path)
-//  3. AutomaticEnv() captura env vars do processo
-//  4. SetEnvKeyReplacer(".", "_") para compatibilidade com nomes compostos
-//  5. ReadInConfig — obrigatório em local/staging; tolerado em production
-//  6. Unmarshal para *Config
-//  7. Validate() fail-fast
 func LoadConfig(path string) (*Config, error) {
 	return (&configLoader{v: viper.New(), path: path}).load()
 }
 
-// Validate executa verificações fail-fast antes de qualquer subsistema inicializar.
-//
-// Rejeita:
-//   - ENVIRONMENT fora de {local, staging, production}
-//   - Port fora de [1..65535]
-//   - TraceSampleRate fora de [0..1]
-//   - Em production: senha DB < 16 chars, secrets < 64 chars, placeholders CHANGE_ME_*
 func (c *Config) Validate() error {
 	var errs []string
 
 	switch c.AppConfig.Environment {
 	case "local", "staging", "production":
-		// válido
 	default:
 		errs = append(errs, fmt.Sprintf(
 			"ENVIRONMENT inválido %q: deve ser um de {local, staging, production}",
@@ -543,8 +516,6 @@ func (c *Config) validateOutbox() []string {
 	var errs []string
 	o := c.OutboxConfig
 
-	// Quando todos os campos numericos sao zero, OutboxConfig nao foi configurado
-	// (ex.: testes que usam Config{} sem setar OutboxConfig). Pulamos a validacao.
 	if o.RetryMaxAttempts == 0 && o.DispatcherBatchSize == 0 && o.HousekeepingRetentionDays == 0 {
 		return nil
 	}
@@ -625,8 +596,6 @@ func (c *Config) validateProduction() []string {
 func (c *Config) validateProductionKiwify() []string {
 	k := c.KiwifyConfig
 
-	// Kiwify não está configurado: sem validação obrigatória de secrets em production.
-	// Considera "não configurado" quando todos os secrets e IDs estão vazios.
 	if !k.isConfigured() {
 		return nil
 	}
@@ -708,7 +677,6 @@ func (k KiwifyConfig) validateProductIDs() []string {
 func (c *Config) validateBilling() []string {
 	b := c.BillingConfig
 
-	// Quando todos os campos numéricos são zero, BillingConfig não foi configurado.
 	if b.EntitlementCacheCapacity == 0 && b.AnonymizationBatchSize == 0 && b.AnonymizationRetentionDays == 0 && b.KiwifyEventsRetentionDays == 0 {
 		return nil
 	}
@@ -763,7 +731,6 @@ func (c *Config) validateOnboarding() []string {
 	return errs
 }
 
-// setOnboardingDefaults registra os defaults do modulo onboarding no Viper.
 func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_TOKEN_TTL_DAYS", 7)
 	l.v.SetDefault("ONBOARDING_OUTREACH_GAP_HOURS", 2)
@@ -781,7 +748,6 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS", 5)
 }
 
-// setWhatsAppDefaults registra os defaults da integracao Meta Cloud API no Viper.
 func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("META_OUTREACH_TEMPLATE_NAME", "activation_reminder")
 	l.v.SetDefault("META_BOT_NUMBER_DISPLAY", "+55 11 9XXXX-XXXX")
@@ -797,10 +763,6 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
 }
 
-// validateKiwifyHTTP valida os campos HTTP da Kiwify quando ao menos um deles
-// foi configurado. Quando todos são zero (caminho via LoadConfig aplica defaults
-// e este Validate ocorre depois; caminho via literal nos testes mantém compat),
-// pula a validação para alinhar ao padrão "zero = não configurado".
 func validateKiwifyHTTP(k KiwifyConfig) []string {
 	if k.HTTPTimeout == 0 && k.HTTPRetryMaxAttempts == 0 && k.HTTPRetryBackoff == 0 {
 		return nil

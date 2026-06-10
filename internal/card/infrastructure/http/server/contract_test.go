@@ -66,8 +66,8 @@ func contractUpdatedCard() output.Card {
 
 func contractInvoice() output.Invoice {
 	return output.Invoice{
-		ClosingDate: time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
-		DueDate:     time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC),
+		ClosingDate: "2026-01-15",
+		DueDate:     "2026-01-22",
 	}
 }
 
@@ -185,7 +185,7 @@ func (s *ContractSuite) TestContract_PostCards_201() {
 
 func (s *ContractSuite) TestContract_GetCards_200() {
 	s.listUC.On("Execute", mock.Anything, mock.AnythingOfType("input.ListCards")).
-		Return(output.CardList{Cards: []output.Card{contractCard()}, NextCursor: ""}, nil).Once()
+		Return(output.CardList{Items: []output.Card{contractCard()}, NextCursor: nil}, nil).Once()
 
 	rr := s.doRequest(http.MethodGet, "/api/v1/cards", "", s.authHeaders())
 

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
@@ -183,6 +184,49 @@ func (s *SearchDictionarySuite) TestExecute_QueryNormalization() {
 
 	s.NoError(err)
 	s.NotNil(result)
+}
+
+func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+
+	categoryID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
+
+	entries := []entities.DictionaryEntry{
+		{
+			ID:          uuid.MustParse("66666666-6666-6666-6666-666666666666"),
+			CategoryID:  categoryID,
+			Kind:        valueobjects.KindExpense,
+			Term:        "energia",
+			SignalType:  valueobjects.SignalTypeCanonicalName,
+			Confidence:  valueobjects.ConfidenceHigh,
+			IsAmbiguous: false,
+		},
+	}
+
+	s.repo.EXPECT().
+		Search(s.ctx, interfaces.DictionarySearchQuery{
+			Kind:  valueobjects.KindExpense,
+			Term:  "energia",
+			Limit: 100,
+		}).
+		Return(entries, nil).
+		Once()
+
+	s.categoryRepo.EXPECT().GetByID(s.ctx, categoryID).Return(entities.Category{
+		ID:   categoryID,
+		Name: "Energia",
+		Kind: valueobjects.KindExpense,
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
+		Query: "  energia  ",
+		Kind:  valueobjects.KindExpense,
+	})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal("candidates", result.Result)
+	s.Len(result.Candidates, 1)
 }
 
 func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {

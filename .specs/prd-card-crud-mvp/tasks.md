@@ -21,7 +21,7 @@
 | 7.0 | HTTP layer do `card` — handlers thin, router com chain, redact helper, spans/logs | done | 2.0, 4.0, 6.0 | Com 5.0 | — |
 | 8.0 | Contrato OpenAPI 3.1 + contract tests (kin-openapi) + Postman collection | done | 7.0 | — | postman-collection-generator |
 | 9.0 | Wiring + governança operacional (module.go, server.go, lint anti-PCI, runbook, dashboard) | done | 5.0, 7.0, 8.0 | — | otel-grafana-dashboards, taskfile-production |
-| 10.0 | Load test k6 + evidência de SLO M-02/M-03/M-04 | done | 9.0 | — | — |
+| 10.0 | Load test k6 + evidência de SLO M-02/M-03/M-04 | blocked | 9.0 | — | — |
 
 ## Dependências Críticas
 

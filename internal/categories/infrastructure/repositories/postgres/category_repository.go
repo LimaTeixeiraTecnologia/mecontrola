@@ -15,7 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
-var ErrCategoryNotFound = errors.New("categories: category not found")
+var ErrCategoryNotFound = fmt.Errorf("categories: category not found: %w", interfaces.ErrNotFound)
 
 type categoryRepository struct {
 	o11y observability.Observability
@@ -26,17 +26,21 @@ func NewCategoryRepository(o11y observability.Observability, db database.DBTX) i
 	return &categoryRepository{o11y: o11y, db: db}
 }
 
-func (r *categoryRepository) List(ctx context.Context, q interfaces.CategoryQuery) ([]entities.Category, error) {
+func (r *categoryRepository) List(ctx context.Context, q interfaces.CategoryQuery) (categories []entities.Category, err error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.category.list")
 	defer span.End()
 
 	query := r.buildListQuery(q)
-	rows, err := r.db.QueryContext(ctx, query.sql, query.args...)
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("categories/postgres: list: %w", err)
+	rows, qerr := r.db.QueryContext(ctx, query.sql, query.args...)
+	if qerr != nil {
+		span.RecordError(qerr)
+		return nil, fmt.Errorf("categories/postgres: list: %w", qerr)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("categories/postgres: close list rows: %w", cerr))
+		}
+	}()
 
 	return r.scanCategories(rows)
 }
@@ -86,7 +90,7 @@ func (r *categoryRepository) buildListQuery(q interfaces.CategoryQuery) listQuer
 		sql += " AND deprecated_at IS NULL"
 	}
 
-	sql += ` ORDER BY name`
+	sql += ` ORDER BY name COLLATE "pt-BR-x-icu"`
 
 	return listQuery{sql: sql, args: args}
 }

@@ -55,8 +55,8 @@ func (s *InvoiceForSuite) TestExecute_HappyPath() {
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
-	s.False(out.ClosingDate.IsZero())
-	s.False(out.DueDate.IsZero())
+	s.NotEmpty(out.ClosingDate)
+	s.NotEmpty(out.DueDate)
 }
 
 func (s *InvoiceForSuite) TestExecute_CardNotFound() {

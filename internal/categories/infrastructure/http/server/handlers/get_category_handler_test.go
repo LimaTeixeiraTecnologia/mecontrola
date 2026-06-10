@@ -39,7 +39,7 @@ type GetCategoryHandlerSuite struct {
 
 func (s *GetCategoryHandlerSuite) SetupTest() {
 	s.mockUC = new(mockGetCategoryUseCase)
-	s.handler = NewGetCategoryHandler(s.mockUC, noop.NewProvider())
+	s.handler = NewGetCategoryHandler(s.mockUC, nil, noop.NewProvider())
 }
 
 func TestGetCategoryHandlerSuite(t *testing.T) {

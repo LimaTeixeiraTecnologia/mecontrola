@@ -3,8 +3,11 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
@@ -56,6 +59,8 @@ func (uc *ListCategories) Execute(ctx context.Context, in *input.ListCategoriesI
 }
 
 func (uc *ListCategories) buildFlatList(categories []entities.Category, version int64) *output.ListCategoriesOutput {
+	uc.sortCategoriesByNamePTBR(categories)
+
 	result := make([]output.CategoryTreeOutput, 0, len(categories))
 	for _, c := range categories {
 		result = append(result, output.CategoryTreeOutput{
@@ -75,21 +80,29 @@ func (uc *ListCategories) buildFlatList(categories []entities.Category, version 
 func (uc *ListCategories) buildTree(categories []entities.Category, version int64) *output.ListCategoriesOutput {
 	roots := make([]entities.Category, 0)
 	children := make(map[string][]entities.Category)
+	rootMap := make(map[string]entities.Category)
 
 	for _, c := range categories {
 		if c.IsRoot() {
 			roots = append(roots, c)
+			rootMap[c.ID.String()] = c
 		} else if c.ParentID != nil {
-			parentID := c.ParentID.String()
-			children[parentID] = append(children[parentID], c)
+			children[c.ParentID.String()] = append(children[c.ParentID.String()], c)
 		}
 	}
+
+	uc.sortCategoriesByNamePTBR(roots)
 
 	result := make([]output.CategoryTreeOutput, 0, len(roots))
 	for _, root := range roots {
 		subs := children[root.ID.String()]
+		uc.sortCategoriesByNamePTBR(subs)
+
 		subOutputs := make([]output.CategoryOutput, 0, len(subs))
 		for _, s := range subs {
+			if s.Kind != root.Kind {
+				continue
+			}
 			subOutputs = append(subOutputs, output.CategoryOutput{
 				ID:             s.ID,
 				Slug:           s.Slug,
@@ -115,4 +128,11 @@ func (uc *ListCategories) buildTree(categories []entities.Category, version int6
 	}
 
 	return &output.ListCategoriesOutput{Categories: result, Version: version}
+}
+
+func (uc *ListCategories) sortCategoriesByNamePTBR(categories []entities.Category) {
+	cl := collate.New(language.BrazilianPortuguese, collate.IgnoreCase)
+	sort.Slice(categories, func(i, j int) bool {
+		return cl.CompareString(categories[i].Name, categories[j].Name) < 0
+	})
 }

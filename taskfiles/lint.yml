@@ -38,3 +38,29 @@ tasks:
       - go mod tidy
       - cmd: git diff --exit-code go.mod go.sum
         platforms: [linux, darwin]
+
+  pci:
+    desc: |
+      Gate estatico anti-PCI (RF-16). Bloqueia introducao de termos relacionados a dados
+      sensiveis de cartao (PAN, CVV/CVC, trilha magnetica, PIN block) em codigo de producao.
+      Padroes inequivocos sao usados para evitar falsos positivos em palavras comuns
+      ("pin point", "card", "underpin"). Politica: qualquer hit deve ser corrigido — nao
+      existe lista de excecoes.
+    cmds:
+      - |
+        set -eu
+        PATTERN='(\bPAN\b|\bpan_number\b|\bcardholder_pan\b|\bprimary_account_number\b|\bcvv\b|\bcvc\b|\bcvv2\b|\bcvc2\b|\bcvv_code\b|\bcvc_code\b|\btrack1\b|\btrack2\b|\btrack_data\b|\bmagstripe\b|\bcard_number\b|\bcardNumber\b|\bcc_number\b|\bccNumber\b|\bpin_block\b|\bpinBlock\b|\bcardholder_pin\b|\bcardholderPin\b)'
+        HITS=$(grep -rEn \
+          --include="*.go" --include="*.sql" --include="*.yaml" --include="*.yml" --include="*.json" \
+          --exclude-dir=mocks --exclude-dir=vendor --exclude-dir=node_modules --exclude-dir=.git \
+          --exclude="*_test.go" \
+          -i "$PATTERN" \
+          internal/ migrations/ docs/ cmd/ configs/ 2>/dev/null || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: termos PCI detectados em codigo de producao (RF-16)."
+          echo "$HITS"
+          echo ""
+          echo "Politica: nenhuma excecao. Renomeie campos, remova menos vivo ou abra ADR explicito."
+          exit 1
+        fi
+        echo "PASS lint:pci: nenhum termo PCI detectado em codigo de producao"

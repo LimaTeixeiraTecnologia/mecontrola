@@ -31,3 +31,4 @@ vendor/
 
 # Binarios temporarios
 *.tmp
+.claude/worktrees/

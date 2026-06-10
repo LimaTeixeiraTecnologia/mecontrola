@@ -134,7 +134,7 @@ func (r *CandidateResolver) buildMatchReason(entry entities.DictionaryEntry) str
 	case valueobjects.SignalTypeCanonicalName:
 		return "canonical name"
 	case valueobjects.SignalTypeAlias:
-		return "alias inequivoco"
+		return "alias inequívoco"
 	case valueobjects.SignalTypePhrase:
 		return "phrase match"
 	case valueobjects.SignalTypeMerchant:

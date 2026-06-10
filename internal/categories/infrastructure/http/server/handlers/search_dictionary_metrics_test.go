@@ -25,7 +25,7 @@ type SearchDictionaryMetricsSuite struct {
 func (s *SearchDictionaryMetricsSuite) SetupTest() {
 	s.mockUC = new(mockSearchDictionaryUseCase)
 	s.o11y = fake.NewProvider()
-	s.handler = NewSearchDictionaryHandler(s.mockUC, s.o11y)
+	s.handler = NewSearchDictionaryHandler(s.mockUC, nil, s.o11y)
 }
 
 func TestSearchDictionaryMetricsSuite(t *testing.T) {
@@ -49,34 +49,6 @@ func (s *SearchDictionaryMetricsSuite) counterValuesByLabel(metric, labelKey str
 		totals[label] += v.Value
 	}
 	return totals
-}
-
-func (s *SearchDictionaryMetricsSuite) counterValuesByLabels(metric string, labelFilters map[string]string) int64 {
-	c := s.o11y.Metrics().(*fake.FakeMetrics).GetCounter(metric)
-	if c == nil {
-		return 0
-	}
-	var total int64
-	for _, v := range c.GetValues() {
-		match := true
-		for key, expectedValue := range labelFilters {
-			found := false
-			for _, f := range v.Fields {
-				if f.Key == key && f.StringValue() == expectedValue {
-					found = true
-					break
-				}
-			}
-			if !found {
-				match = false
-				break
-			}
-		}
-		if match {
-			total += v.Value
-		}
-	}
-	return total
 }
 
 func (s *SearchDictionaryMetricsSuite) logEntries() []fake.LogEntry {

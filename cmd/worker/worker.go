@@ -21,6 +21,8 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
@@ -127,9 +129,14 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 	housekeepUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
 	eventsDispatcher := events.NewDispatcher()
 	identityModule := identity.NewIdentityModule(r.cfg, r.o11y, r.dbManager)
+	categoriesModule := categories.NewCategoriesModule(r.dbManager, r.o11y)
 	billingModule, err := billing.NewBillingModule(r.cfg, r.o11y, r.dbManager)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
+	}
+	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 
 	onboardingModule, err := onboarding.NewOnboardingModule(
@@ -159,6 +166,11 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 			return nil, fmt.Errorf("worker: registrar handler onboarding %s: %w", reg.EventType, err)
 		}
 	}
+	for _, reg := range budgetsModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler budgets %s: %w", reg.EventType, err)
+		}
+	}
 
 	jobs := make([]worker.Job, 0, 10)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
@@ -175,6 +187,9 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 		onboardingModule.OutreachJob,
 		onboardingModule.ExpirationJob,
 		onboardingModule.MetaProcessedMessagesCleanup,
+		budgetsModule.AbandonedDraftReaper,
+		budgetsModule.PendingEventsReaper,
+		budgetsModule.RetentionPurge,
 	)
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))

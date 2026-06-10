@@ -76,6 +76,7 @@ jobs:
 
       - run: task lint:run
       - run: task lint:fmt:check
+      - run: task lint:pci
 
   unit:
     name: Unit Tests

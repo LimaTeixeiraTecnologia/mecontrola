@@ -58,10 +58,10 @@ type CategoryRouterSuite struct {
 }
 
 func (s *CategoryRouterSuite) SetupTest() {
-	listCategoriesHandler := handlers.NewListCategoriesHandler(&mockListCategoriesUseCase{}, noop.NewProvider())
-	getCategoryHandler := handlers.NewGetCategoryHandler(&mockGetCategoryUseCase{}, noop.NewProvider())
-	listDictionaryHandler := handlers.NewListDictionaryHandler(&mockListDictionaryUseCase{}, noop.NewProvider())
-	searchDictionaryHandler := handlers.NewSearchDictionaryHandler(&mockSearchDictionaryUseCase{}, noop.NewProvider())
+	listCategoriesHandler := handlers.NewListCategoriesHandler(&mockListCategoriesUseCase{}, nil, noop.NewProvider())
+	getCategoryHandler := handlers.NewGetCategoryHandler(&mockGetCategoryUseCase{}, nil, noop.NewProvider())
+	listDictionaryHandler := handlers.NewListDictionaryHandler(&mockListDictionaryUseCase{}, nil, noop.NewProvider())
+	searchDictionaryHandler := handlers.NewSearchDictionaryHandler(&mockSearchDictionaryUseCase{}, nil, noop.NewProvider())
 
 	s.router = NewCategoryRouter(
 		listCategoriesHandler,

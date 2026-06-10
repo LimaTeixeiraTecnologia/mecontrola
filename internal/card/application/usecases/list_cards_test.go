@@ -55,7 +55,7 @@ func (s *ListCardsSuite) TestExecute_HappyPath() {
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
-	s.Len(out.Cards, 2)
+	s.Len(out.Items, 2)
 	s.Empty(out.NextCursor)
 }
 
@@ -77,8 +77,9 @@ func (s *ListCardsSuite) TestExecute_WithCursor() {
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
-	s.Len(out.Cards, 1)
-	s.Equal(nextCursor, out.NextCursor)
+	s.Len(out.Items, 1)
+	s.Require().NotNil(out.NextCursor)
+	s.Equal(nextCursor, *out.NextCursor)
 }
 
 func (s *ListCardsSuite) TestExecute_InvalidCursor_Base64() {

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-budgets-monthly/4.0_execution_report.md
+summary: "5 repositórios Postgres + 5 interfaces + dtos/input/AlertQuery implementados com 30 integration tests passando"
+timestamp: "2026-06-09T21:43:30Z"

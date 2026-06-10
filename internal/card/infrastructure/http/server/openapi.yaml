@@ -111,7 +111,7 @@ paths:
     put:
       tags: [cards]
       operationId: updateCard
-      summary: Atualizar cartão
+      summary: Atualizar cartão (parcial)
       parameters:
         - $ref: "#/components/parameters/XUserID"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -238,126 +238,127 @@ components:
         name:
           type: string
           minLength: 1
-          maxLength: 64
-          description: Nome do cartão
+          maxLength: 80
           example: Nubank
         nickname:
           type: string
           minLength: 1
-          maxLength: 32
-          description: Apelido único entre cartões ativos do usuário
+          maxLength: 30
           example: Nu
         closing_day:
           type: integer
           minimum: 1
           maximum: 31
-          description: Dia de fechamento da fatura
           example: 15
         due_day:
           type: integer
           minimum: 1
           maximum: 31
-          description: Dia de vencimento da fatura
           example: 22
 
     UpdateCardRequest:
       type: object
+      minProperties: 1
       properties:
         name:
           type: string
           minLength: 1
-          maxLength: 64
-          description: Nome do cartão
+          maxLength: 80
           example: Nubank Gold
         nickname:
           type: string
           minLength: 1
-          maxLength: 32
-          description: Apelido único entre cartões ativos do usuário
+          maxLength: 30
           example: Nu Gold
         closing_day:
           type: integer
           minimum: 1
           maximum: 31
-          description: Dia de fechamento da fatura
           example: 20
         due_day:
           type: integer
           minimum: 1
           maximum: 31
-          description: Dia de vencimento da fatura
           example: 27
 
     Card:
       type: object
+      required: [id, user_id, name, nickname, closing_day, due_day, created_at, updated_at]
       properties:
-        ID:
+        id:
           type: string
           format: uuid
-          description: UUID do cartão
           example: "550e8400-e29b-41d4-a716-446655440000"
-        UserID:
+        user_id:
           type: string
           format: uuid
-          description: UUID do usuário dono do cartão
           example: "550e8400-e29b-41d4-a716-446655440001"
-        Name:
+        name:
           type: string
-          description: Nome do cartão
+          maxLength: 80
           example: Nubank
-        Nickname:
+        nickname:
           type: string
-          description: Apelido do cartão
+          maxLength: 30
           example: Nu
-        ClosingDay:
+        closing_day:
           type: integer
-          description: Dia de fechamento
+          minimum: 1
+          maximum: 31
           example: 15
-        DueDay:
+        due_day:
           type: integer
-          description: Dia de vencimento
+          minimum: 1
+          maximum: 31
           example: 22
-        CreatedAt:
+        created_at:
           type: string
           format: date-time
-          description: Timestamp de criação (UTC)
           example: "2026-01-15T10:30:00Z"
-        UpdatedAt:
+        updated_at:
           type: string
           format: date-time
-          description: Timestamp da última atualização (UTC)
           example: "2026-01-15T10:30:00Z"
-        DeletedAt:
+        deleted_at:
           type: ["string", "null"]
           format: date-time
-          description: Timestamp de exclusão (null se ativo)
           example: null
 
     CardList:
       type: object
+      required: [items, next_cursor]
       properties:
-        Cards:
+        items:
           type: array
           items:
             $ref: "#/components/schemas/Card"
-        NextCursor:
-          type: string
-          description: Cursor opaco para a próxima página (vazio se última página)
-          example: ""
+        next_cursor:
+          type: ["string", "null"]
+          example: null
 
     Invoice:
       type: object
+      required: [closing_date, due_date]
       properties:
-        ClosingDate:
+        closing_date:
           type: string
-          format: date-time
-          description: Data de fechamento da fatura (fuso America/Sao_Paulo)
-          example: "2026-01-15T00:00:00Z"
-        DueDate:
+          format: date
+          example: "2026-01-15"
+        due_date:
           type: string
-          format: date-time
-          description: Data de vencimento da fatura (fuso America/Sao_Paulo)
-          example: "2026-01-22T00:00:00Z"
+          format: date
+          example: "2026-01-25"
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: "invalid_payload"
+        message:
+          type: string
+          example: "payload inválido"
 
     ProblemDetail:
       type: object

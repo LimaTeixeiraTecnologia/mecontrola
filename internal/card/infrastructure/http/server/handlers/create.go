@@ -11,7 +11,8 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
-	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
+	cardobs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/observability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 )
 
@@ -68,8 +69,7 @@ func (h *CreateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		observability.String("outcome", "success"),
 	)
 	h.o11y.Logger().Info(ctx, "card.create.completed",
-		observability.String("card_id", out.ID),
-		observability.String("user_id", out.UserID),
+		cardobs.RedactOutputCardLogFields(out)...,
 	)
 
 	w.Header().Set("Location", "/api/v1/cards/"+out.ID)

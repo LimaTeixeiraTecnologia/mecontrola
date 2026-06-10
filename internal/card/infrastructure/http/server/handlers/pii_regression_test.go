@@ -217,7 +217,7 @@ func TestM07_NoPIIInHandlerLogs(t *testing.T) {
 		o11y := newCaptureObs()
 		ucMock := &mockListCards{}
 		ucMock.On("Execute", mock.Anything, mock.MatchedBy(func(any) bool { return true })).
-			Return(output.CardList{Cards: []output.Card{card}}, nil).Once()
+			Return(output.CardList{Items: []output.Card{card}}, nil).Once()
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/cards", nil)
 		req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{UserID: userID, Source: auth.SourceHeader}))
@@ -232,8 +232,8 @@ func TestM07_NoPIIInHandlerLogs(t *testing.T) {
 		o11y := newCaptureObs()
 		ucMock := &mockInvoiceFor{}
 		invoice := output.Invoice{
-			ClosingDate: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-			DueDate:     time.Date(2024, 1, 22, 0, 0, 0, 0, time.UTC),
+			ClosingDate: "2024-01-15",
+			DueDate:     "2024-01-22",
 		}
 		ucMock.On("Execute", mock.Anything, mock.AnythingOfType("input.InvoiceFor")).
 			Return(invoice, nil).Once()

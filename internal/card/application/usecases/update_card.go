@@ -44,24 +44,6 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 	)
 	defer span.End()
 
-	name, err := valueobjects.NewCardName(in.Name)
-	if err != nil {
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		return output.Card{}, err
-	}
-
-	nickname, err := valueobjects.NewNickname(in.Nickname)
-	if err != nil {
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		return output.Card{}, err
-	}
-
-	cycle, err := valueobjects.NewBillingCycle(in.ClosingDay, in.DueDay)
-	if err != nil {
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		return output.Card{}, err
-	}
-
 	ic, hasIdem := idempotency.FromContext(ctx)
 
 	card, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Card, error) {
@@ -73,6 +55,44 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 		}
 		if existing.IsDeleted() {
 			return entities.Card{}, domain.ErrCardNotFound
+		}
+
+		name := existing.Name
+		if in.Name != nil {
+			n, vErr := valueobjects.NewCardName(*in.Name)
+			if vErr != nil {
+				span.SetAttributes(observability.String("outcome", "invalid"))
+				return entities.Card{}, vErr
+			}
+			name = n
+		}
+
+		nickname := existing.Nickname
+		if in.Nickname != nil {
+			nk, vErr := valueobjects.NewNickname(*in.Nickname)
+			if vErr != nil {
+				span.SetAttributes(observability.String("outcome", "invalid"))
+				return entities.Card{}, vErr
+			}
+			nickname = nk
+		}
+
+		cycle := existing.Cycle
+		if in.ClosingDay != nil || in.DueDay != nil {
+			cd := existing.Cycle.ClosingDay
+			dd := existing.Cycle.DueDay
+			if in.ClosingDay != nil {
+				cd = *in.ClosingDay
+			}
+			if in.DueDay != nil {
+				dd = *in.DueDay
+			}
+			c, vErr := valueobjects.NewBillingCycle(cd, dd)
+			if vErr != nil {
+				span.SetAttributes(observability.String("outcome", "invalid"))
+				return entities.Card{}, vErr
+			}
+			cycle = c
 		}
 
 		updated := entities.HydrateCard(

@@ -1,0 +1,681 @@
+openapi: 3.0.3
+info:
+  title: MeControla Budgets API
+  description: |
+    API de orçamentos mensais por competência. Gerencia orçamentos, despesas e alertas
+    de threshold para controle financeiro pessoal. Todos os endpoints requerem autenticação
+    via middleware RequireUser.
+  version: 1.0.0
+  contact:
+    name: MeControla Team
+
+servers:
+  - url: /api/v1
+    description: API v1 base path
+
+security:
+  - bearerAuth: []
+
+paths:
+  /budgets:
+    post:
+      summary: Criar orçamento mensal
+      description: |
+        Cria um orçamento mensal para a competência informada. Um único orçamento por
+        competência por usuário é permitido (RF-01). A competência deve estar no formato
+        YYYY-MM. O total_cents deve ser positivo. As alocações somam 100% em basis points
+        (10000 = 100%).
+      tags:
+        - Budgets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBudgetRequest'
+      responses:
+        '201':
+          description: Orçamento criado com sucesso
+          headers:
+            Location:
+              description: URL do orçamento criado
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/recurrence:
+    post:
+      summary: Criar recorrência de orçamento
+      description: |
+        Replica o orçamento base (por competência) para N meses futuros. Útil para
+        configurar orçamentos mensais com a mesma estrutura de alocação.
+      tags:
+        - Budgets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecurrenceRequest'
+      responses:
+        '201':
+          description: Recorrência criada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurrenceResultOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/alerts:
+    get:
+      summary: Listar alertas de threshold
+      description: |
+        Lista os alertas de threshold disparados para o usuário autenticado.
+        Pode ser filtrado por competência e root_slug.
+      tags:
+        - Alerts
+      parameters:
+        - name: competence
+          in: query
+          description: Competência no formato YYYY-MM
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+        - name: root_slug
+          in: query
+          description: Slug da categoria raiz
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Número da página (base 1)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          description: Tamanho da página
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Lista de alertas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAlertsOutput'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/expenses:
+    post:
+      summary: Registrar despesa
+      description: |
+        Registra uma nova despesa no orçamento do usuário. A subcategoria deve pertencer
+        à categoria raiz configurada no orçamento. Se não houver orçamento para a competência,
+        um rascunho (auto-draft) é criado automaticamente.
+      tags:
+        - Expenses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertExpenseRequest'
+      responses:
+        '201':
+          description: Despesa registrada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/expenses/{id}:
+    patch:
+      summary: Atualizar despesa
+      description: |
+        Atualiza uma despesa existente. Requer expected_version para controle otimista
+        de concorrência.
+      tags:
+        - Expenses
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID da despesa (UUID)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateExpenseRequest'
+      responses:
+        '200':
+          description: Despesa atualizada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Deletar despesa
+      description: |
+        Marca uma despesa como deletada (soft delete). Requer expected_version para
+        controle otimista de concorrência.
+      tags:
+        - Expenses
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID da despesa (UUID)
+          schema:
+            type: string
+            format: uuid
+        - name: expected_version
+          in: query
+          required: true
+          description: Versão esperada para controle de concorrência
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Despesa deletada com sucesso
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/{competence}/activate:
+    post:
+      summary: Ativar orçamento
+      description: |
+        Ativa um orçamento em estado de rascunho para a competência informada.
+        Após ativação, o orçamento passa a contabilizar despesas para alertas.
+      tags:
+        - Budgets
+      parameters:
+        - name: competence
+          in: path
+          required: true
+          description: Competência no formato YYYY-MM
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+      responses:
+        '200':
+          description: Orçamento ativado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/{competence}:
+    delete:
+      summary: Deletar rascunho de orçamento
+      description: |
+        Deleta um orçamento em estado de rascunho para a competência informada.
+        Apenas orçamentos em estado DRAFT podem ser deletados.
+      tags:
+        - Budgets
+      parameters:
+        - name: competence
+          in: path
+          required: true
+          description: Competência no formato YYYY-MM
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+      responses:
+        '204':
+          description: Rascunho deletado com sucesso
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /budgets/{competence}/summary:
+    get:
+      summary: Resumo mensal do orçamento
+      description: |
+        Retorna o resumo mensal do orçamento para a competência informada, incluindo
+        totais gastos por categoria, percentual de utilização e status de alerta.
+      tags:
+        - Budgets
+      parameters:
+        - name: competence
+          in: path
+          required: true
+          description: Competência no formato YYYY-MM
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+      responses:
+        '200':
+          description: Resumo mensal do orçamento
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlySummaryOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CreateBudgetRequest:
+      type: object
+      required:
+        - competence
+        - total_cents
+        - allocations
+      properties:
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+          description: Competência no formato YYYY-MM
+          example: "2025-06"
+        total_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Valor total do orçamento em centavos
+          example: 500000
+        allocations:
+          type: array
+          description: Alocações percentuais por categoria raiz
+          items:
+            $ref: '#/components/schemas/AllocationInput'
+
+    AllocationInput:
+      type: object
+      required:
+        - root_slug
+        - basis_points
+      properties:
+        root_slug:
+          type: string
+          description: Slug da categoria raiz (ex. expense.custo_fixo)
+          example: "expense.custo_fixo"
+        basis_points:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: Percentual em basis points (10000 = 100%)
+          example: 3000
+
+    BudgetOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        total_cents:
+          type: integer
+          format: int64
+        state:
+          type: string
+          enum: [draft, active]
+        auto_draft:
+          type: boolean
+        activated_at:
+          type: string
+          format: date-time
+          nullable: true
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AllocationOutput'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AllocationOutput:
+      type: object
+      properties:
+        root_slug:
+          type: string
+        basis_points:
+          type: integer
+        planned_cents:
+          type: integer
+          format: int64
+
+    CreateRecurrenceRequest:
+      type: object
+      required:
+        - source_competence
+        - months
+      properties:
+        source_competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+          description: Competência base para replicação
+          example: "2025-06"
+        months:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Número de meses futuros para criar orçamentos
+          example: 3
+
+    RecurrenceResultOutput:
+      type: object
+      properties:
+        created:
+          type: integer
+          description: Número de orçamentos criados
+        skipped:
+          type: integer
+          description: Número de competências ignoradas (já existentes)
+        competences:
+          type: array
+          items:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+
+    UpsertExpenseRequest:
+      type: object
+      required:
+        - subcategory_id
+        - competence
+        - amount_cents
+        - occurred_at
+      properties:
+        subcategory_id:
+          type: string
+          format: uuid
+          description: ID da subcategoria (deve pertencer a uma raiz configurada no orçamento)
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+          description: Competência da despesa
+          example: "2025-06"
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Valor da despesa em centavos
+          example: 15000
+        occurred_at:
+          type: string
+          format: date-time
+          description: Data e hora de ocorrência da despesa
+
+    UpdateExpenseRequest:
+      type: object
+      required:
+        - expected_version
+      properties:
+        subcategory_id:
+          type: string
+          format: uuid
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Versão atual da despesa para controle otimista de concorrência
+
+    ExpenseOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        subcategory_id:
+          type: string
+          format: uuid
+        root_slug:
+          type: string
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        amount_cents:
+          type: integer
+          format: int64
+        occurred_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ListAlertsOutput:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertOutput'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    AlertOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        root_slug:
+          type: string
+        threshold:
+          type: number
+          format: float
+          description: Percentual do threshold que disparou o alerta (ex. 0.8 = 80%)
+        spent_cents:
+          type: integer
+          format: int64
+        planned_cents:
+          type: integer
+          format: int64
+        fired_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    MonthlySummaryOutput:
+      type: object
+      properties:
+        competence:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        total_cents:
+          type: integer
+          format: int64
+        total_spent_cents:
+          type: integer
+          format: int64
+        state:
+          type: string
+          enum: [draft, active]
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AllocationSummary'
+
+    AllocationSummary:
+      type: object
+      properties:
+        root_slug:
+          type: string
+        planned_cents:
+          type: integer
+          format: int64
+        spent_cents:
+          type: integer
+          format: int64
+        basis_points:
+          type: integer
+        utilization_pct:
+          type: number
+          format: float
+          description: Percentual de utilização (0.0 a 1.0+)
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Mensagem de erro legível por humanos
+        details:
+          type: object
+          additionalProperties: true
+          description: Detalhes adicionais do erro (código, campo, etc.)
+
+  responses:
+    BadRequest:
+      description: Dados de entrada inválidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Não autenticado ou token inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Conflito de estado (recurso já existe ou versão incorreta)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnprocessableEntity:
+      description: Entidade semanticamente inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Erro interno do servidor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

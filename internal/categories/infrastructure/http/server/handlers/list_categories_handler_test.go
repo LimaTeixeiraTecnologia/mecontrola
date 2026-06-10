@@ -37,7 +37,7 @@ type ListCategoriesHandlerSuite struct {
 
 func (s *ListCategoriesHandlerSuite) SetupTest() {
 	s.mockUC = new(mockListCategoriesUseCase)
-	s.handler = NewListCategoriesHandler(s.mockUC, noop.NewProvider())
+	s.handler = NewListCategoriesHandler(s.mockUC, nil, noop.NewProvider())
 }
 
 func TestListCategoriesHandlerSuite(t *testing.T) {

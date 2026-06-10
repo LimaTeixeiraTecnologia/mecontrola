@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
@@ -44,7 +45,7 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 
 	entries, err := uc.repo.Search(ctx, interfaces.DictionarySearchQuery{
 		Kind:  in.Kind,
-		Term:  in.Query,
+		Term:  strings.TrimSpace(in.Query),
 		Limit: searchCandidateLimit,
 	})
 	if err != nil {

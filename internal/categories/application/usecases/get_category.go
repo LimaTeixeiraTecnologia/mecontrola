@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
@@ -91,10 +94,19 @@ func (uc *GetCategory) buildPath(ctx context.Context, category entities.Category
 		return "", fmt.Errorf("buscar categoria pai: %w", err)
 	}
 
+	if parent.Kind != category.Kind {
+		return "", fmt.Errorf("categoria %s aponta para pai de kind diferente", category.ID)
+	}
+
 	return parent.Name + " > " + category.Name, nil
 }
 
 func (uc *GetCategory) buildSubcategoryOutputs(categories []entities.Category, version int64) []output.CategoryOutput {
+	cl := collate.New(language.BrazilianPortuguese, collate.IgnoreCase)
+	sort.Slice(categories, func(i, j int) bool {
+		return cl.CompareString(categories[i].Name, categories[j].Name) < 0
+	})
+
 	result := make([]output.CategoryOutput, 0, len(categories))
 	for _, c := range categories {
 		result = append(result, output.CategoryOutput{

@@ -2,12 +2,15 @@ package interfaces
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
+
+var ErrNotFound = errors.New("categories: not found")
 
 type CategoryQuery struct {
 	Kind              valueobjects.Kind

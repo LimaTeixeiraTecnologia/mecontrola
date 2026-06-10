@@ -9,7 +9,7 @@ Objetivo: manter consistencia, seguranca, economia de contexto e qualidade em ta
 
 - Arquitetura: monolito modular em Go, com bounded contexts em `internal/`.
 - Stack detectada: Go; HTTP com Chi/Fiber no historico de dependencias; gRPC em dependencias.
-- Modulos ativos: `internal/identity`, `internal/billing`, `internal/platform`.
+- Modulos ativos: `internal/identity`, `internal/billing`, `internal/platform`, `internal/categories`, `internal/budgets`.
 - Fluxo permitido: `infrastructure -> application -> domain`.
 - `domain` nao importa `application`, `infrastructure`, `platform`, banco, HTTP, filas, serializacao, configuracao ou drivers.
 - `application` pode importar `domain`, mas nao `infrastructure`.

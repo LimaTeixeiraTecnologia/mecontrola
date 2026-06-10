@@ -14,15 +14,32 @@ O PRD exige que busca e unicidade editorial sejam case-insensitive e accent-inse
 
 ## Decisão
 
-Implementar a normalização exclusivamente no banco via coluna gerada:
+Implementar a normalização exclusivamente no banco via coluna gerada **com wrapper IMMUTABLE obrigatório** para `unaccent`:
 
 ```sql
-term_normalized TEXT GENERATED ALWAYS AS (lower(unaccent(term))) STORED
+CREATE OR REPLACE FUNCTION mecontrola.immutable_unaccent(text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$ SELECT unaccent($1); $$;
+
+term_normalized TEXT GENERATED ALWAYS AS (lower(mecontrola.immutable_unaccent(term))) STORED
 ```
 
 - A aplicação Go não computa normalização própria.
-- Toda comparação de igualdade usa `term_normalized = lower(unaccent($1))` no servidor.
+- Toda comparação de igualdade usa `term_normalized = lower(mecontrola.immutable_unaccent($1))` no servidor.
 - Não há paridade Go/SQL para manter.
+
+### Por que o wrapper IMMUTABLE é obrigatório
+
+A função `unaccent(text)` do Postgres é marcada `STABLE`, não `IMMUTABLE`, porque depende do dicionário `unaccent` configurado em runtime. **`GENERATED ALWAYS AS ... STORED` exige IMMUTABLE.** Uma tentativa direta com `lower(unaccent(term))` falha em migration:
+
+```
+ERROR: generation expression is not immutable
+```
+
+O wrapper `mecontrola.immutable_unaccent` declara IMMUTABLE assumindo que o dicionário é fixo (a stack carrega o dicionário PT-BR padrão na imagem Postgres). Esta é a prática canônica recomendada pela comunidade Postgres para usar `unaccent` em índices e generated columns.
 
 ## Alternativas Consideradas
 
