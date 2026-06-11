@@ -2,7 +2,6 @@ package usecases
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,7 +19,15 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
-const prefixEstablishPrincipal = "identity.usecase.establish_principal:"
+const (
+	prefixEstablishPrincipal   = "identity.usecase.establish_principal:"
+	authSourceWhatsApp         = "whatsapp"
+	authKindPrincipalEstablish = "principal_established"
+	authKindUnknownUser        = "unknown_user"
+	reasonOutboxPublishFailed  = "outbox_publish_failed"
+	reasonDBUnavailable        = "db_unavailable"
+	reasonInternalError        = "internal_error"
+)
 
 type EstablishResult struct {
 	Principal auth.Principal
@@ -39,12 +46,36 @@ func (e errLookup) Unwrap() error { return e.wrapped }
 
 func classifyEstablishErrorReason(err error) string {
 	if _, ok := errors.AsType[errOutboxPublish](err); ok {
-		return "outbox_publish_failed"
+		return reasonOutboxPublishFailed
 	}
 	if _, ok := errors.AsType[errLookup](err); ok {
-		return "db_unavailable"
+		return reasonDBUnavailable
 	}
-	return "internal_error"
+	return reasonInternalError
+}
+
+func newPrincipalEstablishedEvent(userID string, now time.Time) (outbox.Event, error) {
+	eid, err := uuid.NewV7()
+	if err != nil {
+		return outbox.Event{}, fmt.Errorf("generate principal_established event id: %w", err)
+	}
+	ev, err := newAuthEventOutbox(eid.String(), userID, authKindPrincipalEstablish, authSourceWhatsApp, "", now)
+	if err != nil {
+		return outbox.Event{}, fmt.Errorf("build principal_established event: %w", err)
+	}
+	return ev, nil
+}
+
+func newUnknownUserEvent(now time.Time) (outbox.Event, error) {
+	eid, err := uuid.NewV7()
+	if err != nil {
+		return outbox.Event{}, fmt.Errorf("generate unknown_user event id: %w", err)
+	}
+	ev, err := newAuthEventOutbox(eid.String(), "", authKindUnknownUser, authSourceWhatsApp, "", now)
+	if err != nil {
+		return outbox.Event{}, fmt.Errorf("build unknown_user event: %w", err)
+	}
+	return ev, nil
 }
 
 type EstablishPrincipal struct {
@@ -111,49 +142,7 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 	}
 
 	res, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
-		userRepo := u.factory.UserRepository(tx)
-
-		user, found, lookupErr := userRepo.TryFindActiveByWhatsApp(ctx, wa)
-		if lookupErr != nil {
-			return EstablishResult{}, errLookup{wrapped: fmt.Errorf("lookup: %w", lookupErr)}
-		}
-
-		if !found {
-			eid, idErr := uuid.NewV7()
-			if idErr != nil {
-				return EstablishResult{}, fmt.Errorf("generate unknown_user event id: %w", idErr)
-			}
-			ev, buildErr := buildAuthEvent(eid.String(), "", "unknown_user", "whatsapp", "")
-			if buildErr != nil {
-				return EstablishResult{}, fmt.Errorf("build unknown_user event: %w", buildErr)
-			}
-			if pubErr := u.publisher.Publish(ctx, ev); pubErr != nil {
-				return EstablishResult{}, errOutboxPublish{wrapped: fmt.Errorf("publish unknown_user: %w", pubErr)}
-			}
-			return EstablishResult{Found: false}, nil
-		}
-
-		userID := user.ID()
-		eid, idErr := uuid.NewV7()
-		if idErr != nil {
-			return EstablishResult{}, fmt.Errorf("generate principal_established event id: %w", idErr)
-		}
-		ev, buildErr := buildAuthEvent(eid.String(), userID, "principal_established", "whatsapp", "")
-		if buildErr != nil {
-			return EstablishResult{}, fmt.Errorf("build principal_established event: %w", buildErr)
-		}
-		if pubErr := u.publisher.Publish(ctx, ev); pubErr != nil {
-			return EstablishResult{}, errOutboxPublish{wrapped: fmt.Errorf("publish principal_established: %w", pubErr)}
-		}
-
-		uid, parseErr := uuid.Parse(userID)
-		if parseErr != nil {
-			return EstablishResult{}, fmt.Errorf("parse user id: %w", parseErr)
-		}
-		return EstablishResult{
-			Principal: auth.Principal{UserID: uid, Source: auth.SourceWhatsApp},
-			Found:     true,
-		}, nil
+		return u.resolvePrincipal(ctx, tx, wa)
 	})
 
 	elapsed := time.Since(start).Seconds()
@@ -187,47 +176,53 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 	return res.Principal, nil
 }
 
-type authEventPayload struct {
-	EventID    string  `json:"event_id"`
-	UserID     *string `json:"user_id"`
-	Kind       string  `json:"kind"`
-	Source     string  `json:"source"`
-	Reason     *string `json:"reason"`
-	OccurredAt string  `json:"occurred_at"`
-}
+func (u *EstablishPrincipal) resolvePrincipal(
+	ctx context.Context,
+	tx database.DBTX,
+	wa valueobjects.WhatsAppNumber,
+) (EstablishResult, error) {
+	userRepo := u.factory.UserRepository(tx)
 
-func buildAuthEvent(eventID, userID, kind, source, reason string) (outbox.Event, error) {
+	user, found, lookupErr := userRepo.TryFindActiveByWhatsApp(ctx, wa)
+	if lookupErr != nil {
+		return EstablishResult{}, errLookup{wrapped: fmt.Errorf("lookup: %w", lookupErr)}
+	}
+
 	now := time.Now().UTC()
 
-	payload := authEventPayload{
-		EventID:    eventID,
-		Kind:       kind,
-		Source:     source,
-		OccurredAt: now.Format(time.RFC3339),
-	}
-	if userID != "" {
-		payload.UserID = &userID
-	}
-	if reason != "" {
-		payload.Reason = &reason
+	if !found {
+		ev, buildErr := newUnknownUserEvent(now)
+		if buildErr != nil {
+			return EstablishResult{}, buildErr
+		}
+		if pubErr := u.publishAuthOutcome(ctx, ev); pubErr != nil {
+			return EstablishResult{}, pubErr
+		}
+		return EstablishResult{Found: false}, nil
 	}
 
-	rawPayload, err := json.Marshal(payload)
-	if err != nil {
-		return outbox.Event{}, fmt.Errorf("marshal auth event payload: %w", err)
+	userID := user.ID()
+	ev, buildErr := newPrincipalEstablishedEvent(userID, now)
+	if buildErr != nil {
+		return EstablishResult{}, buildErr
+	}
+	if pubErr := u.publishAuthOutcome(ctx, ev); pubErr != nil {
+		return EstablishResult{}, pubErr
 	}
 
-	aggregateID := eventID
-	if userID != "" {
-		aggregateID = userID
+	uid, parseErr := uuid.Parse(userID)
+	if parseErr != nil {
+		return EstablishResult{}, fmt.Errorf("parse user id: %w", parseErr)
 	}
-
-	return outbox.Event{
-		ID:            eventID,
-		Type:          "auth." + kind,
-		AggregateType: "auth_event",
-		AggregateID:   aggregateID,
-		Payload:       rawPayload,
-		OccurredAt:    now,
+	return EstablishResult{
+		Principal: auth.Principal{UserID: uid, Source: auth.SourceWhatsApp},
+		Found:     true,
 	}, nil
+}
+
+func (u *EstablishPrincipal) publishAuthOutcome(ctx context.Context, ev outbox.Event) error {
+	if err := u.publisher.Publish(ctx, ev); err != nil {
+		return errOutboxPublish{wrapped: fmt.Errorf("publish %s: %w", ev.Type, err)}
+	}
+	return nil
 }

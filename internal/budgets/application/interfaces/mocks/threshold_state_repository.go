@@ -8,7 +8,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/google/uuid"
@@ -43,8 +42,8 @@ func (_m *ThresholdStateRepository) EXPECT() *ThresholdStateRepository_Expecter 
 }
 
 // GetCurrentlyCrossed provides a mock function for the type ThresholdStateRepository
-func (_mock *ThresholdStateRepository) GetCurrentlyCrossed(ctx context.Context, db database.DBTX, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error) {
-	ret := _mock.Called(ctx, db, userID, competence, rootSlug)
+func (_mock *ThresholdStateRepository) GetCurrentlyCrossed(ctx context.Context, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error) {
+	ret := _mock.Called(ctx, userID, competence, rootSlug)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCurrentlyCrossed")
@@ -52,18 +51,18 @@ func (_mock *ThresholdStateRepository) GetCurrentlyCrossed(ctx context.Context, 
 
 	var r0 map[valueobjects.Threshold]bool
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence, valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error)); ok {
-		return returnFunc(ctx, db, userID, competence, rootSlug)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence, valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error)); ok {
+		return returnFunc(ctx, userID, competence, rootSlug)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence, valueobjects.RootSlug) map[valueobjects.Threshold]bool); ok {
-		r0 = returnFunc(ctx, db, userID, competence, rootSlug)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence, valueobjects.RootSlug) map[valueobjects.Threshold]bool); ok {
+		r0 = returnFunc(ctx, userID, competence, rootSlug)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(map[valueobjects.Threshold]bool)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence, valueobjects.RootSlug) error); ok {
-		r1 = returnFunc(ctx, db, userID, competence, rootSlug)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence, valueobjects.RootSlug) error); ok {
+		r1 = returnFunc(ctx, userID, competence, rootSlug)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -77,42 +76,36 @@ type ThresholdStateRepository_GetCurrentlyCrossed_Call struct {
 
 // GetCurrentlyCrossed is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - userID uuid.UUID
 //   - competence valueobjects.Competence
 //   - rootSlug valueobjects.RootSlug
-func (_e *ThresholdStateRepository_Expecter) GetCurrentlyCrossed(ctx interface{}, db interface{}, userID interface{}, competence interface{}, rootSlug interface{}) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
-	return &ThresholdStateRepository_GetCurrentlyCrossed_Call{Call: _e.mock.On("GetCurrentlyCrossed", ctx, db, userID, competence, rootSlug)}
+func (_e *ThresholdStateRepository_Expecter) GetCurrentlyCrossed(ctx interface{}, userID interface{}, competence interface{}, rootSlug interface{}) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
+	return &ThresholdStateRepository_GetCurrentlyCrossed_Call{Call: _e.mock.On("GetCurrentlyCrossed", ctx, userID, competence, rootSlug)}
 }
 
-func (_c *ThresholdStateRepository_GetCurrentlyCrossed_Call) Run(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug)) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
+func (_c *ThresholdStateRepository_GetCurrentlyCrossed_Call) Run(run func(ctx context.Context, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug)) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 uuid.UUID
+		var arg2 valueobjects.Competence
 		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
+			arg2 = args[2].(valueobjects.Competence)
 		}
-		var arg3 valueobjects.Competence
+		var arg3 valueobjects.RootSlug
 		if args[3] != nil {
-			arg3 = args[3].(valueobjects.Competence)
-		}
-		var arg4 valueobjects.RootSlug
-		if args[4] != nil {
-			arg4 = args[4].(valueobjects.RootSlug)
+			arg3 = args[3].(valueobjects.RootSlug)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
-			arg4,
 		)
 	})
 	return _c
@@ -123,14 +116,14 @@ func (_c *ThresholdStateRepository_GetCurrentlyCrossed_Call) Return(thresholdToB
 	return _c
 }
 
-func (_c *ThresholdStateRepository_GetCurrentlyCrossed_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error)) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
+func (_c *ThresholdStateRepository_GetCurrentlyCrossed_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error)) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UpsertIfTransition provides a mock function for the type ThresholdStateRepository
-func (_mock *ThresholdStateRepository) UpsertIfTransition(ctx context.Context, db database.DBTX, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time) (bool, error) {
-	ret := _mock.Called(ctx, db, k, nowCrossed, committedAt)
+func (_mock *ThresholdStateRepository) UpsertIfTransition(ctx context.Context, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time) (bool, error) {
+	ret := _mock.Called(ctx, k, nowCrossed, committedAt)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpsertIfTransition")
@@ -138,16 +131,16 @@ func (_mock *ThresholdStateRepository) UpsertIfTransition(ctx context.Context, d
 
 	var r0 bool
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.ThresholdKey, bool, time.Time) (bool, error)); ok {
-		return returnFunc(ctx, db, k, nowCrossed, committedAt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.ThresholdKey, bool, time.Time) (bool, error)); ok {
+		return returnFunc(ctx, k, nowCrossed, committedAt)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.ThresholdKey, bool, time.Time) bool); ok {
-		r0 = returnFunc(ctx, db, k, nowCrossed, committedAt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.ThresholdKey, bool, time.Time) bool); ok {
+		r0 = returnFunc(ctx, k, nowCrossed, committedAt)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, entities.ThresholdKey, bool, time.Time) error); ok {
-		r1 = returnFunc(ctx, db, k, nowCrossed, committedAt)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, entities.ThresholdKey, bool, time.Time) error); ok {
+		r1 = returnFunc(ctx, k, nowCrossed, committedAt)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -161,42 +154,36 @@ type ThresholdStateRepository_UpsertIfTransition_Call struct {
 
 // UpsertIfTransition is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - k entities.ThresholdKey
 //   - nowCrossed bool
 //   - committedAt time.Time
-func (_e *ThresholdStateRepository_Expecter) UpsertIfTransition(ctx interface{}, db interface{}, k interface{}, nowCrossed interface{}, committedAt interface{}) *ThresholdStateRepository_UpsertIfTransition_Call {
-	return &ThresholdStateRepository_UpsertIfTransition_Call{Call: _e.mock.On("UpsertIfTransition", ctx, db, k, nowCrossed, committedAt)}
+func (_e *ThresholdStateRepository_Expecter) UpsertIfTransition(ctx interface{}, k interface{}, nowCrossed interface{}, committedAt interface{}) *ThresholdStateRepository_UpsertIfTransition_Call {
+	return &ThresholdStateRepository_UpsertIfTransition_Call{Call: _e.mock.On("UpsertIfTransition", ctx, k, nowCrossed, committedAt)}
 }
 
-func (_c *ThresholdStateRepository_UpsertIfTransition_Call) Run(run func(ctx context.Context, db database.DBTX, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time)) *ThresholdStateRepository_UpsertIfTransition_Call {
+func (_c *ThresholdStateRepository_UpsertIfTransition_Call) Run(run func(ctx context.Context, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time)) *ThresholdStateRepository_UpsertIfTransition_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.ThresholdKey
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(entities.ThresholdKey)
 		}
-		var arg2 entities.ThresholdKey
+		var arg2 bool
 		if args[2] != nil {
-			arg2 = args[2].(entities.ThresholdKey)
+			arg2 = args[2].(bool)
 		}
-		var arg3 bool
+		var arg3 time.Time
 		if args[3] != nil {
-			arg3 = args[3].(bool)
-		}
-		var arg4 time.Time
-		if args[4] != nil {
-			arg4 = args[4].(time.Time)
+			arg3 = args[3].(time.Time)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
-			arg4,
 		)
 	})
 	return _c
@@ -207,7 +194,7 @@ func (_c *ThresholdStateRepository_UpsertIfTransition_Call) Return(transitioned 
 	return _c
 }
 
-func (_c *ThresholdStateRepository_UpsertIfTransition_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time) (bool, error)) *ThresholdStateRepository_UpsertIfTransition_Call {
+func (_c *ThresholdStateRepository_UpsertIfTransition_Call) RunAndReturn(run func(ctx context.Context, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time) (bool, error)) *ThresholdStateRepository_UpsertIfTransition_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -1,0 +1,3 @@
+func (uc *ProcessKiwifyWebhookUseCase) Execute(ctx context.Context, cmd ProcessKiwifyWebhookCommand) error {
+    return errors.Join(errA, errB)
+}

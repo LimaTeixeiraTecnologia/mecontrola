@@ -10,7 +10,7 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com
 ## Estado atual do projeto
 
 - **Arquitetura:** monolito modular com bounded contexts em `internal/`
-- **Módulos ativos no bootstrap:** `identity`, `billing`, `onboarding` e `platform`
+- **Módulos ativos no bootstrap:** `identity`, `billing`, `onboarding`, `categories`, `card`, `budgets` e `platform`
 - **Entrypoints principais:** `cmd/server`, `cmd/worker` e `cmd/migrate`
 - **Mensageria interna:** outbox transacional + dispatcher no worker
 - **HTTP inbound:** Chi
@@ -35,10 +35,13 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com
 
 | Módulo | Responsabilidade atual |
 |---|---|
-| `internal/identity` | Usuários, principal/auth, projeções de assinatura, webhook WhatsApp inbound e housekeeping de `auth_events` |
-| `internal/billing` | Webhook Kiwify, reconciliação de assinaturas, grace period, housekeeping de eventos e publicação de eventos de assinatura |
-| `internal/onboarding` | Checkout/magic token, ativação via WhatsApp, outreach, expiração de tokens e limpeza de mensagens Meta processadas |
-| `internal/platform` | Eventos, outbox, worker manager, HTTP client compartilhado, integrações transversais |
+| `internal/identity` | usuários, principal/auth, projeções de assinatura, webhook WhatsApp inbound e housekeeping de `auth_events` |
+| `internal/billing` | webhook Kiwify, reconciliação de assinaturas, grace period, housekeeping de eventos e publicação de eventos de assinatura |
+| `internal/onboarding` | checkout/magic token, ativação via WhatsApp, outreach, expiração de tokens e limpeza de mensagens Meta processadas |
+| `internal/categories` | catálogo de categorias e dicionário de categorias com busca HTTP |
+| `internal/card` | CRUD de cartões, listagem, consulta e cálculo de fatura por competência |
+| `internal/budgets` | orçamentos mensais, recorrência, despesas, resumo mensal, alertas e jobs de retenção/reprocessamento |
+| `internal/platform` | eventos, outbox, worker manager, HTTP client compartilhado, idempotência e capacidades transversais |
 
 ## Rotas HTTP atuais
 
@@ -52,22 +55,64 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com
 | `POST` | `/api/v1/billing/webhooks/kiwify` | webhook Kiwify |
 | `POST` | `/api/v1/onboarding/checkout` | onboarding |
 | `GET` | `/api/v1/onboarding/tokens/{token}/state` | onboarding |
+| `GET` | `/api/v1/categories/` | categories |
+| `GET` | `/api/v1/categories/{id}` | categories |
+| `GET` | `/api/v1/category-dictionary/` | categories |
+| `GET` | `/api/v1/category-dictionary/search` | categories |
+| `POST` | `/api/v1/cards/` | card |
+| `GET` | `/api/v1/cards/` | card |
+| `GET` | `/api/v1/cards/{id}/` | card |
+| `PUT` | `/api/v1/cards/{id}/` | card |
+| `DELETE` | `/api/v1/cards/{id}/` | card |
+| `GET` | `/api/v1/cards/{id}/invoices` | card |
+| `POST` | `/api/v1/budgets/` | budgets |
+| `POST` | `/api/v1/budgets/recurrence` | budgets |
+| `GET` | `/api/v1/budgets/alerts` | budgets |
+| `POST` | `/api/v1/budgets/expenses` | budgets |
+| `PATCH` | `/api/v1/budgets/expenses/{id}` | budgets |
+| `DELETE` | `/api/v1/budgets/expenses/{id}` | budgets |
+| `POST` | `/api/v1/budgets/{competence}/activate` | budgets |
+| `DELETE` | `/api/v1/budgets/{competence}` | budgets |
+| `GET` | `/api/v1/budgets/{competence}/summary` | budgets |
+
+Consulte também:
+
+- [docs/postman/README.md](docs/postman/README.md)
+- [internal/categories/openapi.yaml](internal/categories/openapi.yaml)
+- [internal/budgets/openapi.yaml](internal/budgets/openapi.yaml)
 
 ## Estrutura do repositório
 
 ```text
 cmd/
   main.go
+  migrate/
   server/
   worker/
-  migrate/
 configs/
 deployment/
+  caddy/
   compose/
   docker/
+  grafana/
+  promtail/
+  runbooks/
   scripts/
+  telemetry/
+docs/
+  adrs/
+  discoveries/
+  epics/
+  grafana/
+  postman/
+  refactors/
+  runbooks/
+  runs/
 internal/
   billing/
+  budgets/
+  card/
+  categories/
   identity/
   onboarding/
   platform/
@@ -98,7 +143,7 @@ task setup
 
 ### Variáveis mínimas para bootstrap local
 
-Hoje o bootstrap de `server` e `worker` instancia `billing` e `onboarding` logo na subida. Por isso, além do banco, o `.env` precisa ter valores para os pontos abaixo.
+Hoje o bootstrap de `server` e `worker` instancia `identity`, `billing`, `onboarding`, `categories`, `card` e `budgets` logo na subida. Por isso, além do banco, o `.env` precisa ter valores válidos para os pontos abaixo.
 
 Use valores de desenvolvimento, por exemplo:
 
@@ -108,19 +153,29 @@ DB_PASSWORD=mecontrola_local_password
 ONBOARDING_TOKEN_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 META_PHONE_NUMBER_ID=local-phone-number-id
 META_ACCESS_TOKEN=local-meta-access-token
+META_APP_SECRET=local-meta-app-secret
+META_VERIFY_TOKEN=local-meta-verify-token
 
 KIWIFY_PRODUCT_ID_MONTHLY=local-monthly
 KIWIFY_PRODUCT_ID_QUARTERLY=local-quarterly
 KIWIFY_PRODUCT_ID_ANNUAL=local-annual
-
-# Recomendado se voce for testar webhooks assinados localmente
-META_APP_SECRET=local-meta-app-secret
 KIWIFY_WEBHOOK_SECRET=local-kiwify-webhook-secret
 ```
 
-Se quiser exercitar fluxos reais, complete tambem as credenciais de Meta Cloud API e Kiwify no `.env`.
+Se quiser exercitar fluxos reais, complete também as credenciais de Meta Cloud API e Kiwify no `.env`.
 
 ### Subir o ambiente
+
+O `compose` base aponta por padrão para `ghcr.io/limateixeiratecnologia/mecontrola:latest`. Se você não tiver acesso de pull ao GHCR privado, use a imagem local.
+
+Construindo imagem local:
+
+```sh
+task build:docker:build IMAGE_TAG=dev
+IMAGE_NAME=mecontrola IMAGE_TAG=dev task local:seed
+```
+
+Se você tiver acesso ao GHCR e quiser usar a imagem remota publicada:
 
 ```sh
 task local:seed
@@ -129,11 +184,50 @@ task local:seed
 Isso sobe:
 
 - `postgres`
-- `server`
-- `worker`
 - `otel-lgtm`
+- executa `migrate`
+- sobe `server`
+- sobe `worker`
 
-E depois executa `migrate`.
+Resultado validado localmente em `2026-06-11`:
+
+- `task build:docker:build IMAGE_TAG=dev` construiu a imagem local `mecontrola:dev`
+- `IMAGE_NAME=mecontrola IMAGE_TAG=dev task local:seed` subiu `postgres`, `otel-lgtm`, `server` e `worker`
+- o passo final de `migrate` aplicou as migrations com sucesso em banco limpo
+- uma segunda execução explícita de `migrate` terminou com sucesso, sem reaplicar a migration inicial
+- o fluxo local foi ajustado para não subir `migrate` implicitamente dentro de `task local:up`, evitando corrida com `task local:seed`
+- o endpoint OTLP local foi alinhado para `grpc` em formato `host:port`, sem `http://`
+- a tabela de versionamento do `golang-migrate` ficou fixada em `public.schema_migrations`, evitando divergência de schema entre a primeira execução e os reruns
+- `task local:up` passou a subir o ambiente na ordem `infra -> migrate -> app`, evitando crash de bootstrap em banco vazio
+
+### Troubleshooting do bootstrap local
+
+Se `task local:seed` falhar no `migrate` com erro parecido com:
+
+```text
+relation "outbox_events" already exists
+```
+
+no estado atual do repositório, o cenário mais provável é volume local do Postgres carregando resíduos de execuções antigas, anteriores à correção do fluxo de migrations. A causa raiz original foi eliminada:
+
+- `task local:up` não sobe mais o serviço `migrate` implicitamente
+- o `cmd/migrate` usa tabela de controle fixa em `public.schema_migrations`
+- o runtime não executa startup migrations paralelas no bootstrap local atual
+
+Para recriar o ambiente do zero:
+
+```sh
+task local:reset
+IMAGE_NAME=mecontrola IMAGE_TAG=dev task local:seed
+```
+
+Se você quiser manter os dados locais, não rode `local:reset`; primeiro inspecione o estado atual das migrations e do schema antes de aplicar nova remediation.
+
+Observações:
+
+- `task local:up` e os bootstraps de `ngrok` sobem apenas `postgres`, `otel-lgtm`, `server`, `worker` e, quando aplicável, `caddy`
+- `task local:up`, `task local:seed` e os bootstraps de `ngrok` executam `migrate` antes de iniciar a app
+- para OTLP `grpc`, use endpoint local em formato `localhost:4317` ou `otel-lgtm:4317`, sem prefixo `http://`
 
 ### Endpoints locais
 
@@ -162,6 +256,149 @@ task local:logs
 task local:ps
 task local:reset
 task --list-all
+```
+
+### Webhooks locais com ngrok
+
+Use `ngrok` apenas para desenvolvimento local e homologação manual. Ele não faz parte do deployment publicado na VPS.
+
+#### Passo 1. Confirmar pré-requisitos
+
+Você precisa ter:
+
+- `.env` criado na raiz do projeto
+- Docker Engine + Docker Compose v2
+- `curl`
+- `ngrok` instalado e autenticado localmente
+
+Para validar tudo de uma vez:
+
+```sh
+task ngrok:check
+```
+
+Se o comando falhar:
+
+- copie `.env.example` para `.env` caso o arquivo ainda não exista
+- confirme que `ngrok config check` passa localmente
+- confirme que `docker compose version` funciona no terminal
+
+#### Passo 2. Garantir variáveis mínimas no `.env`
+
+O ambiente local precisa subir `server`, `worker`, `postgres` e, opcionalmente, `caddy`. Antes de abrir o túnel, confirme pelo menos os valores mínimos já descritos neste README.
+
+Se você for receber callbacks reais de Meta ou Kiwify, substitua os valores locais pelos segredos e IDs reais do ambiente que será testado.
+
+#### Passo 3. Escolher como expor a aplicação
+
+Opção mais simples, expondo o `server` direto em `127.0.0.1:8080`:
+
+```sh
+IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:server
+```
+
+Essa opção:
+
+- valida pré-requisitos
+- sobe `postgres`, `server`, `worker` e `otel-lgtm`
+- espera o `health` responder em `http://127.0.0.1:8080/health`
+- abre o túnel `ngrok` em foreground
+
+Opção mais próxima da borda de produção, passando pelo `caddy` local:
+
+```sh
+IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:caddy
+```
+
+Essa opção:
+
+- valida pré-requisitos
+- sobe o mesmo ambiente local com `--profile proxy`
+- espera o `health` responder em `http://127.0.0.1:80/health`
+- abre o túnel `ngrok` apontando para o `caddy`
+
+Quando usar cada uma:
+
+- `task ngrok:server`: menor atrito para testar callbacks e webhooks locais.
+- `task ngrok:caddy`: útil para validar o tráfego passando pela mesma borda reversa usada em produção.
+
+#### Passo 4. Manter o túnel aberto
+
+Os comandos `task ngrok:server` e `task ngrok:caddy` deixam o `ngrok` rodando em foreground. Não feche esse terminal enquanto o provedor externo precisar acessar sua máquina.
+
+Se o processo for interrompido:
+
+- a URL pública muda quando um novo túnel for criado
+- você precisará atualizar novamente a URL cadastrada na Meta ou na Kiwify
+
+#### Passo 5. Descobrir as URLs públicas geradas
+
+Em outro terminal, descubra as URLs públicas montadas para os webhooks:
+
+```sh
+task ngrok:urls
+```
+
+Saídas esperadas:
+
+- `https://<host-ngrok>/api/v1/whatsapp/verify`
+- `https://<host-ngrok>/api/v1/whatsapp/inbound`
+- `https://<host-ngrok>/api/v1/billing/webhooks/kiwify`
+
+O comando lê a API local do `ngrok` em `127.0.0.1:4040`. Se ele falhar, o túnel ainda não foi iniciado ou não está acessível.
+
+#### Passo 6. Cadastrar a URL no provedor externo
+
+Para Meta WhatsApp, use as URLs do passo anterior nos endpoints do webhook:
+
+- verificação: `https://<host-ngrok>/api/v1/whatsapp/verify`
+- inbound: `https://<host-ngrok>/api/v1/whatsapp/inbound`
+
+Para Kiwify, use:
+
+- `https://<host-ngrok>/api/v1/billing/webhooks/kiwify`
+
+Antes de apontar o provedor para a URL do `ngrok`, confirme localmente que o endpoint responde:
+
+```sh
+curl -i http://127.0.0.1:8080/health
+curl -i http://127.0.0.1:8080/ready
+```
+
+Se estiver usando `task ngrok:caddy`, você também pode validar:
+
+```sh
+curl -i http://127.0.0.1/health
+```
+
+#### Passo 7. Usar domínio reservado do ngrok, se necessário
+
+Se você tiver domínio reservado no ngrok, pode sobrescrever em tempo de execução:
+
+```sh
+IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:server NGROK_DOMAIN=mecontrola-dev.ngrok.app
+```
+
+O mesmo vale para a opção com proxy:
+
+```sh
+IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:caddy NGROK_DOMAIN=mecontrola-dev.ngrok.app
+```
+
+#### Passo 8. Encerrar o túnel e o ambiente local
+
+Para encerrar o `ngrok`, volte ao terminal onde a tarefa está rodando e use `Ctrl+C`.
+
+Para desligar os containers locais:
+
+```sh
+task local:down
+```
+
+Se quiser relembrar essas instruções rapidamente no terminal:
+
+```sh
+task ngrok:stop:tips
 ```
 
 ## CLI da aplicação
@@ -197,22 +434,27 @@ task test:unit
 task test:integration
 task test:coverage
 task test:coverage:identity
+task card:test
+task card:integration
 ```
 
 ### Lint, segurança e validação rápida
 
 ```sh
 task lint:run
+task lint:fmt
 task lint:fmt:check
+task lint:pci
 task security:vulncheck
 task check
 ```
 
-### Mocks e benchmarks
+### Mocks, benchmarks e auditorias
 
 ```sh
 task mocks
 task bench:outbox
+task card:audit
 ```
 
 ### Smokes disponíveis
@@ -220,6 +462,15 @@ task bench:outbox
 ```sh
 task auth:smoke
 task onboarding:smoke
+```
+
+### Load tests disponíveis
+
+```sh
+task loadtest:card
+task loadtest:card:mixed
+task loadtest:card:setup
+task loadtest:card:teardown
 ```
 
 ## Worker atual
@@ -234,6 +485,9 @@ O `cmd/worker` monta um `worker.Manager` com jobs e handlers dos módulos. Hoje 
 - outreach de onboarding
 - expiração de tokens de onboarding
 - limpeza de mensagens Meta já processadas
+- reaper de rascunhos abandonados em budgets
+- reaper de eventos pendentes em budgets
+- purge de retenção em budgets
 
 ## Build e imagem Docker
 
@@ -241,10 +495,18 @@ O `cmd/worker` monta um `worker.Manager` com jobs e handlers dos módulos. Hoje 
 
 ```sh
 task build
-task build:all
+task build:build:all
 ```
 
 ### Imagem
+
+Build local:
+
+```sh
+task build:docker:build IMAGE_TAG=dev
+```
+
+Build para tag versionada:
 
 ```sh
 SHA=$(git rev-parse --short HEAD)

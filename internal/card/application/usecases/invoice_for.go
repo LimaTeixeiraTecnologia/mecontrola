@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -16,15 +17,17 @@ import (
 type InvoiceFor struct {
 	factory interfaces.RepositoryFactory
 	mgr     manager.Manager
+	loc     *time.Location
 	o11y    observability.Observability
 }
 
 func NewInvoiceFor(
 	factory interfaces.RepositoryFactory,
 	mgr manager.Manager,
+	loc *time.Location,
 	o11y observability.Observability,
 ) *InvoiceFor {
-	return &InvoiceFor{factory: factory, mgr: mgr, o11y: o11y}
+	return &InvoiceFor{factory: factory, mgr: mgr, loc: loc, o11y: o11y}
 }
 
 func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.Invoice, error) {
@@ -55,8 +58,7 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 		return output.Invoice{}, domain.ErrCardNotFound
 	}
 
-	loc := services.SaoPauloLocation()
-	invoice := services.BillingCycle{}.InvoiceFor(in.Purchase, card.Cycle, loc)
+	invoice := services.InvoiceFor(in.Purchase, card.Cycle, u.loc)
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	u.o11y.Logger().Info(ctx, "card.invoice_for.computed",
@@ -65,7 +67,7 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 	)
 
 	return output.Invoice{
-		ClosingDate: invoice.ClosingDate.In(loc).Format("2006-01-02"),
-		DueDate:     invoice.DueDate.In(loc).Format("2006-01-02"),
+		ClosingDate: invoice.ClosingDate.In(u.loc).Format("2006-01-02"),
+		DueDate:     invoice.DueDate.In(u.loc).Format("2006-01-02"),
 	}, nil
 }

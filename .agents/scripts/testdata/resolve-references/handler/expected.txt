@@ -1,0 +1,12 @@
+META	task_type	http-handler
+META	validation_profile	boundary
+META	required_refs	api,http-handler
+META	optional_refs	security,observability,testing-unit,examples-infrastructure
+META	forbidden_refs	patterns-structural
+go-implementation/architecture	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/architecture.md	base_required_ref
+go-implementation/api	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/api.md	task_type:http-handler:file_pattern:**/infrastructure/http/server/**:required
+go-implementation/http-handler	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/http-handler.md	task_type:http-handler:file_pattern:**/infrastructure/http/server/**:required
+go-implementation/security	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/security.md	task_type:http-handler:optional
+go-implementation/observability	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/observability.md	task_type:http-handler:optional
+go-implementation/testing-unit	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/testing-unit.md	task_type:http-handler:optional
+go-implementation/examples-infrastructure	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/examples-infrastructure.md	task_type:http-handler:optional

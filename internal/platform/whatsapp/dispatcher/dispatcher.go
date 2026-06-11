@@ -104,7 +104,9 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 	if err != nil || !ok {
 		if err != nil {
 			if pubErr := d.publishAuthFailed(ctx, "", "invalid_payload"); pubErr != nil {
-				d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.publish_failed",
+				d.o11y.Logger().Error(
+					ctx,
+					"whatsapp.dispatcher.publish_failed",
 					observability.String("reason", "invalid_payload"),
 					observability.Error(pubErr),
 				)
@@ -150,7 +152,9 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 
 	if !d.limiter.Allow(principal.UserID) {
 		if pubErr := d.publishAuthFailed(ctx, principal.UserID.String(), "rate_limited"); pubErr != nil {
-			d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.publish_failed",
+			d.o11y.Logger().Error(
+				ctx,
+				"whatsapp.dispatcher.publish_failed",
 				observability.String("reason", "rate_limited"),
 				observability.Error(pubErr),
 			)

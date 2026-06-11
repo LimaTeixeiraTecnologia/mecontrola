@@ -1,0 +1,12 @@
+META	task_type	module-wiring
+META	validation_profile	global
+META	required_refs	configuration,module-wiring
+META	optional_refs	graceful-lifecycle,observability,build,examples-infrastructure
+META	forbidden_refs
+go-implementation/architecture	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/architecture.md	base_required_ref
+go-implementation/configuration	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/configuration.md	task_type:module-wiring:file_pattern:**/module.go:required
+go-implementation/module-wiring	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/module-wiring.md	task_type:module-wiring:file_pattern:**/module.go:required
+go-implementation/graceful-lifecycle	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/graceful-lifecycle.md	task_type:module-wiring:optional
+go-implementation/observability	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/observability.md	task_type:module-wiring:optional
+go-implementation/build	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/build.md	task_type:module-wiring:optional
+go-implementation/examples-infrastructure	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/examples-infrastructure.md	task_type:module-wiring:optional

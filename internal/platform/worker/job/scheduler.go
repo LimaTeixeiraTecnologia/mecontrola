@@ -67,13 +67,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 				}
 				return
 			}
-			s.allowWg.Add(1)
-			go func() {
-				defer s.allowWg.Done()
+			s.allowWg.Go(func() {
 				if err := rj.run(ctx); err != nil {
 					s.logger.ErrorContext(ctx, "job error", "name", rj.name, "error", err)
 				}
-			}()
+			})
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "falha ao registrar job no cron", "name", rj.name, "error", err)
 		}

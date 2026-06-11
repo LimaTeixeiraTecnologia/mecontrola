@@ -20,6 +20,7 @@ import (
 type CreateBudgetSuite struct {
 	suite.Suite
 	ctx     context.Context
+	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	uow     *uowMocks.UnitOfWorkBudget
 	useCase *usecases.CreateBudget
@@ -31,16 +32,18 @@ func TestCreateBudgetSuite(t *testing.T) {
 
 func (s *CreateBudgetSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
+	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkBudget(s.T())
-	s.useCase = usecases.NewCreateBudget(s.repo, s.uow, noop.NewProvider())
+	s.useCase = usecases.NewCreateBudget(s.factory, s.uow, noop.NewProvider())
 }
 
 func (s *CreateBudgetSuite) TestExecute_ValidInput_WithAllocations() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -66,7 +69,7 @@ func (s *CreateBudgetSuite) TestExecute_ValidInput_NoAllocations() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -158,7 +161,7 @@ func (s *CreateBudgetSuite) TestExecute_Conflict() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(interfaces.ErrBudgetConflict).
 		Once()
 
@@ -175,7 +178,7 @@ func (s *CreateBudgetSuite) TestExecute_RepositoryError() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(errors.New("db error")).
 		Once()
 

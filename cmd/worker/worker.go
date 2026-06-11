@@ -55,7 +55,7 @@ func Run() error {
 		ServiceName:     cfg.HTTPConfig.ServiceNameWorker,
 		ServiceVersion:  cfg.O11yConfig.ServiceVersion,
 		TraceSampleRate: cfg.O11yConfig.TraceSampleRate,
-		OTLPEndpoint:    cfg.O11yConfig.ExporterEndpoint,
+		OTLPEndpoint:    cfg.O11yConfig.NormalizedExporterEndpoint(),
 		Insecure:        cfg.O11yConfig.ExporterInsecure,
 		LogLevel:        observability.LogLevel(cfg.O11yConfig.LogLevel),
 		OTLPProtocol:    otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
@@ -78,6 +78,7 @@ func Run() error {
 		manager.WithObservability(o11y),
 		manager.WithShutdownTimeout(10*time.Second),
 		manager.WithPoolStatsInterval(30*time.Second),
+		manager.WithStartupMigrationDir(".migrations-disabled"),
 	)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -105,13 +106,22 @@ func Run() error {
 		)
 	}
 
-	o11y.Logger().Info(ctx, "database manager initialized",
+	o11y.Logger().Info(
+		ctx,
+		"database manager initialized",
 		observability.String("service", cfg.HTTPConfig.ServiceNameWorker),
 		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
 	)
-	o11y.Logger().Info(ctx, "worker bootstrap completed", observability.String("service", cfg.HTTPConfig.ServiceNameWorker))
+	o11y.Logger().Info(
+		ctx,
+		"worker bootstrap completed",
+		observability.String("service", cfg.HTTPConfig.ServiceNameWorker),
+	)
 	<-ctx.Done()
-	o11y.Logger().Info(context.Background(), "shutdown signal received, draining")
+	o11y.Logger().Info(
+		context.Background(),
+		"shutdown signal received, draining",
+	)
 
 	return runtime.shutdown(workerManager)
 }

@@ -7,7 +7,6 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/google/uuid"
@@ -42,8 +41,8 @@ func (_m *AlertRepository) EXPECT() *AlertRepository_Expecter {
 }
 
 // CountDelivered provides a mock function for the type AlertRepository
-func (_mock *AlertRepository) CountDelivered(ctx context.Context, db database.DBTX, k entities.ThresholdKey) (int64, error) {
-	ret := _mock.Called(ctx, db, k)
+func (_mock *AlertRepository) CountDelivered(ctx context.Context, k entities.ThresholdKey) (int64, error) {
+	ret := _mock.Called(ctx, k)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CountDelivered")
@@ -51,16 +50,16 @@ func (_mock *AlertRepository) CountDelivered(ctx context.Context, db database.DB
 
 	var r0 int64
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.ThresholdKey) (int64, error)); ok {
-		return returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.ThresholdKey) (int64, error)); ok {
+		return returnFunc(ctx, k)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.ThresholdKey) int64); ok {
-		r0 = returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.ThresholdKey) int64); ok {
+		r0 = returnFunc(ctx, k)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, entities.ThresholdKey) error); ok {
-		r1 = returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, entities.ThresholdKey) error); ok {
+		r1 = returnFunc(ctx, k)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -74,30 +73,24 @@ type AlertRepository_CountDelivered_Call struct {
 
 // CountDelivered is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - k entities.ThresholdKey
-func (_e *AlertRepository_Expecter) CountDelivered(ctx interface{}, db interface{}, k interface{}) *AlertRepository_CountDelivered_Call {
-	return &AlertRepository_CountDelivered_Call{Call: _e.mock.On("CountDelivered", ctx, db, k)}
+func (_e *AlertRepository_Expecter) CountDelivered(ctx interface{}, k interface{}) *AlertRepository_CountDelivered_Call {
+	return &AlertRepository_CountDelivered_Call{Call: _e.mock.On("CountDelivered", ctx, k)}
 }
 
-func (_c *AlertRepository_CountDelivered_Call) Run(run func(ctx context.Context, db database.DBTX, k entities.ThresholdKey)) *AlertRepository_CountDelivered_Call {
+func (_c *AlertRepository_CountDelivered_Call) Run(run func(ctx context.Context, k entities.ThresholdKey)) *AlertRepository_CountDelivered_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.ThresholdKey
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.ThresholdKey
-		if args[2] != nil {
-			arg2 = args[2].(entities.ThresholdKey)
+			arg1 = args[1].(entities.ThresholdKey)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -108,22 +101,22 @@ func (_c *AlertRepository_CountDelivered_Call) Return(n int64, err error) *Alert
 	return _c
 }
 
-func (_c *AlertRepository_CountDelivered_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, k entities.ThresholdKey) (int64, error)) *AlertRepository_CountDelivered_Call {
+func (_c *AlertRepository_CountDelivered_Call) RunAndReturn(run func(ctx context.Context, k entities.ThresholdKey) (int64, error)) *AlertRepository_CountDelivered_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Insert provides a mock function for the type AlertRepository
-func (_mock *AlertRepository) Insert(ctx context.Context, db database.DBTX, a entities.Alert) error {
-	ret := _mock.Called(ctx, db, a)
+func (_mock *AlertRepository) Insert(ctx context.Context, a entities.Alert) error {
+	ret := _mock.Called(ctx, a)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Insert")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Alert) error); ok {
-		r0 = returnFunc(ctx, db, a)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Alert) error); ok {
+		r0 = returnFunc(ctx, a)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -137,30 +130,24 @@ type AlertRepository_Insert_Call struct {
 
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - a entities.Alert
-func (_e *AlertRepository_Expecter) Insert(ctx interface{}, db interface{}, a interface{}) *AlertRepository_Insert_Call {
-	return &AlertRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, db, a)}
+func (_e *AlertRepository_Expecter) Insert(ctx interface{}, a interface{}) *AlertRepository_Insert_Call {
+	return &AlertRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, a)}
 }
 
-func (_c *AlertRepository_Insert_Call) Run(run func(ctx context.Context, db database.DBTX, a entities.Alert)) *AlertRepository_Insert_Call {
+func (_c *AlertRepository_Insert_Call) Run(run func(ctx context.Context, a entities.Alert)) *AlertRepository_Insert_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.Alert
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.Alert
-		if args[2] != nil {
-			arg2 = args[2].(entities.Alert)
+			arg1 = args[1].(entities.Alert)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -171,14 +158,14 @@ func (_c *AlertRepository_Insert_Call) Return(err error) *AlertRepository_Insert
 	return _c
 }
 
-func (_c *AlertRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, a entities.Alert) error) *AlertRepository_Insert_Call {
+func (_c *AlertRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, a entities.Alert) error) *AlertRepository_Insert_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListForUser provides a mock function for the type AlertRepository
-func (_mock *AlertRepository) ListForUser(ctx context.Context, db database.DBTX, userID uuid.UUID, q input.AlertQuery) ([]entities.Alert, string, error) {
-	ret := _mock.Called(ctx, db, userID, q)
+func (_mock *AlertRepository) ListForUser(ctx context.Context, userID uuid.UUID, q input.AlertQuery) ([]entities.Alert, string, error) {
+	ret := _mock.Called(ctx, userID, q)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListForUser")
@@ -187,23 +174,23 @@ func (_mock *AlertRepository) ListForUser(ctx context.Context, db database.DBTX,
 	var r0 []entities.Alert
 	var r1 string
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, input.AlertQuery) ([]entities.Alert, string, error)); ok {
-		return returnFunc(ctx, db, userID, q)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, input.AlertQuery) ([]entities.Alert, string, error)); ok {
+		return returnFunc(ctx, userID, q)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, input.AlertQuery) []entities.Alert); ok {
-		r0 = returnFunc(ctx, db, userID, q)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, input.AlertQuery) []entities.Alert); ok {
+		r0 = returnFunc(ctx, userID, q)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]entities.Alert)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, uuid.UUID, input.AlertQuery) string); ok {
-		r1 = returnFunc(ctx, db, userID, q)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, input.AlertQuery) string); ok {
+		r1 = returnFunc(ctx, userID, q)
 	} else {
 		r1 = ret.Get(1).(string)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, database.DBTX, uuid.UUID, input.AlertQuery) error); ok {
-		r2 = returnFunc(ctx, db, userID, q)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, uuid.UUID, input.AlertQuery) error); ok {
+		r2 = returnFunc(ctx, userID, q)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -217,36 +204,30 @@ type AlertRepository_ListForUser_Call struct {
 
 // ListForUser is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - userID uuid.UUID
 //   - q input.AlertQuery
-func (_e *AlertRepository_Expecter) ListForUser(ctx interface{}, db interface{}, userID interface{}, q interface{}) *AlertRepository_ListForUser_Call {
-	return &AlertRepository_ListForUser_Call{Call: _e.mock.On("ListForUser", ctx, db, userID, q)}
+func (_e *AlertRepository_Expecter) ListForUser(ctx interface{}, userID interface{}, q interface{}) *AlertRepository_ListForUser_Call {
+	return &AlertRepository_ListForUser_Call{Call: _e.mock.On("ListForUser", ctx, userID, q)}
 }
 
-func (_c *AlertRepository_ListForUser_Call) Run(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, q input.AlertQuery)) *AlertRepository_ListForUser_Call {
+func (_c *AlertRepository_ListForUser_Call) Run(run func(ctx context.Context, userID uuid.UUID, q input.AlertQuery)) *AlertRepository_ListForUser_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 uuid.UUID
+		var arg2 input.AlertQuery
 		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
-		}
-		var arg3 input.AlertQuery
-		if args[3] != nil {
-			arg3 = args[3].(input.AlertQuery)
+			arg2 = args[2].(input.AlertQuery)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -257,14 +238,14 @@ func (_c *AlertRepository_ListForUser_Call) Return(alerts []entities.Alert, s st
 	return _c
 }
 
-func (_c *AlertRepository_ListForUser_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, q input.AlertQuery) ([]entities.Alert, string, error)) *AlertRepository_ListForUser_Call {
+func (_c *AlertRepository_ListForUser_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, q input.AlertQuery) ([]entities.Alert, string, error)) *AlertRepository_ListForUser_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // PurgeOld provides a mock function for the type AlertRepository
-func (_mock *AlertRepository) PurgeOld(ctx context.Context, db database.DBTX, olderThan string, limit int) (int64, error) {
-	ret := _mock.Called(ctx, db, olderThan, limit)
+func (_mock *AlertRepository) PurgeOld(ctx context.Context, olderThan string, limit int) (int64, error) {
+	ret := _mock.Called(ctx, olderThan, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for PurgeOld")
@@ -272,16 +253,16 @@ func (_mock *AlertRepository) PurgeOld(ctx context.Context, db database.DBTX, ol
 
 	var r0 int64
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, string, int) (int64, error)); ok {
-		return returnFunc(ctx, db, olderThan, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) (int64, error)); ok {
+		return returnFunc(ctx, olderThan, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, string, int) int64); ok {
-		r0 = returnFunc(ctx, db, olderThan, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) int64); ok {
+		r0 = returnFunc(ctx, olderThan, limit)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, string, int) error); ok {
-		r1 = returnFunc(ctx, db, olderThan, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int) error); ok {
+		r1 = returnFunc(ctx, olderThan, limit)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -295,36 +276,30 @@ type AlertRepository_PurgeOld_Call struct {
 
 // PurgeOld is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - olderThan string
 //   - limit int
-func (_e *AlertRepository_Expecter) PurgeOld(ctx interface{}, db interface{}, olderThan interface{}, limit interface{}) *AlertRepository_PurgeOld_Call {
-	return &AlertRepository_PurgeOld_Call{Call: _e.mock.On("PurgeOld", ctx, db, olderThan, limit)}
+func (_e *AlertRepository_Expecter) PurgeOld(ctx interface{}, olderThan interface{}, limit interface{}) *AlertRepository_PurgeOld_Call {
+	return &AlertRepository_PurgeOld_Call{Call: _e.mock.On("PurgeOld", ctx, olderThan, limit)}
 }
 
-func (_c *AlertRepository_PurgeOld_Call) Run(run func(ctx context.Context, db database.DBTX, olderThan string, limit int)) *AlertRepository_PurgeOld_Call {
+func (_c *AlertRepository_PurgeOld_Call) Run(run func(ctx context.Context, olderThan string, limit int)) *AlertRepository_PurgeOld_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 int
 		if args[2] != nil {
-			arg2 = args[2].(string)
-		}
-		var arg3 int
-		if args[3] != nil {
-			arg3 = args[3].(int)
+			arg2 = args[2].(int)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -335,7 +310,7 @@ func (_c *AlertRepository_PurgeOld_Call) Return(n int64, err error) *AlertReposi
 	return _c
 }
 
-func (_c *AlertRepository_PurgeOld_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, olderThan string, limit int) (int64, error)) *AlertRepository_PurgeOld_Call {
+func (_c *AlertRepository_PurgeOld_Call) RunAndReturn(run func(ctx context.Context, olderThan string, limit int) (int64, error)) *AlertRepository_PurgeOld_Call {
 	_c.Call.Return(run)
 	return _c
 }

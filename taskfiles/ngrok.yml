@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+vars:
+  COMPOSE_BASE: deployment/compose/compose.yml
+  COMPOSE_LOCAL: deployment/compose/compose.local.yml
+  COMPOSE_CMD: docker compose --env-file .env -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}}
+  INFRA_SERVICES: postgres otel-lgtm
+  APP_SERVICES: server worker
+  PROXY_SERVICES: server worker caddy
+  NGROK_API_ADDR: '{{.NGROK_API_ADDR | default "127.0.0.1:4040"}}'
+  NGROK_ADDR: '{{.NGROK_ADDR | default "127.0.0.1:8080"}}'
+  NGROK_DOMAIN: '{{.NGROK_DOMAIN | default ""}}'
+
+tasks:
+  check:
+    desc: Valida pre-requisitos locais para uso do ngrok com o ambiente Docker Compose.
+    preconditions:
+      - sh: test -f .env
+        msg: ".env ausente. Crie a partir de .env.example antes de usar o ngrok."
+      - sh: command -v docker >/dev/null 2>&1
+        msg: "Docker nao esta disponivel no PATH."
+      - sh: docker compose version >/dev/null 2>&1
+        msg: "Docker Compose v2 nao esta disponivel."
+      - sh: command -v curl >/dev/null 2>&1
+        msg: "curl nao esta disponivel no PATH."
+      - sh: command -v ngrok >/dev/null 2>&1
+        msg: "ngrok nao esta disponivel no PATH."
+      - sh: ngrok config check >/dev/null 2>&1
+        msg: "Configuracao do ngrok invalida. Corrija antes de abrir o tunel."
+    cmds:
+      - echo "Pre-requisitos OK para ngrok."
+
+  server:
+    desc: Sobe o ambiente local e abre tunel ngrok direto para o server em 127.0.0.1:8080.
+    cmds:
+      - task: check
+      - task: _bootstrap:server
+      - echo "Tunelando server local em http://{{.NGROK_ADDR}}"
+      - echo "Em outro terminal, rode 'task ngrok:urls' para ver os endpoints publicos."
+      - |
+        if [ -n "{{.NGROK_DOMAIN}}" ]; then
+          ngrok http --domain="{{.NGROK_DOMAIN}}" {{.NGROK_ADDR}}
+        else
+          ngrok http {{.NGROK_ADDR}}
+        fi
+
+  caddy:
+    desc: Sobe o ambiente local com profile proxy e abre tunel ngrok para o Caddy em 127.0.0.1:80.
+    vars:
+      NGROK_ADDR: '{{.NGROK_ADDR | default "127.0.0.1:80"}}'
+    cmds:
+      - task: check
+      - task: _bootstrap:caddy
+      - echo "Tunelando proxy local em http://{{.NGROK_ADDR}}"
+      - echo "Em outro terminal, rode 'task ngrok:urls' para ver os endpoints publicos."
+      - |
+        if [ -n "{{.NGROK_DOMAIN}}" ]; then
+          ngrok http --domain="{{.NGROK_DOMAIN}}" {{.NGROK_ADDR}}
+        else
+          ngrok http {{.NGROK_ADDR}}
+        fi
+
+  urls:
+    desc: Imprime as URLs publicas dos webhooks a partir do ngrok local em execucao.
+    preconditions:
+      - sh: command -v curl >/dev/null 2>&1
+        msg: "curl nao esta disponivel no PATH."
+      - sh: 'curl -fsS "http://{{.NGROK_API_ADDR}}/api/tunnels" >/dev/null'
+        msg: "API local do ngrok indisponivel. Inicie um tunel com task ngrok:server ou task ngrok:caddy."
+    cmds:
+      - |
+        BASE_URL="$(curl -fsS "http://{{.NGROK_API_ADDR}}/api/tunnels" | grep -Eo 'https://[^"]+' | head -n1)"
+        if [ -z "$BASE_URL" ]; then
+          echo "Nenhum tunel HTTPS encontrado na API local do ngrok."
+          exit 1
+        fi
+        echo "Meta verify: ${BASE_URL}/api/v1/whatsapp/verify"
+        echo "Meta inbound: ${BASE_URL}/api/v1/whatsapp/inbound"
+        echo "Kiwify webhook: ${BASE_URL}/api/v1/billing/webhooks/kiwify"
+
+  stop:tips:
+    desc: Mostra como encerrar o tunel e desligar o ambiente local.
+    cmds:
+      - echo "Use Ctrl+C no terminal do ngrok para encerrar o tunel."
+      - echo "Use 'task local:down' para desligar os containers locais."
+
+  _bootstrap:server:
+    internal: true
+    cmds:
+      - "{{.COMPOSE_CMD}} up -d {{.INFRA_SERVICES}}"
+      - "{{.COMPOSE_CMD}} run --rm migrate"
+      - "{{.COMPOSE_CMD}} up -d {{.APP_SERVICES}}"
+      - "{{.COMPOSE_CMD}} ps"
+      - |
+        for i in $(seq 1 20); do
+          if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then
+            echo "Server local pronto em http://127.0.0.1:8080"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Server local nao respondeu em http://127.0.0.1:8080/health"
+        exit 1
+
+  _bootstrap:caddy:
+    internal: true
+    cmds:
+      - "{{.COMPOSE_CMD}} up -d {{.INFRA_SERVICES}}"
+      - "{{.COMPOSE_CMD}} run --rm migrate"
+      - docker compose --profile proxy --env-file .env -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}} up -d {{.PROXY_SERVICES}}
+      - docker compose --profile proxy --env-file .env -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}} ps
+      - |
+        for i in $(seq 1 20); do
+          if curl -fsS http://127.0.0.1:80/health >/dev/null 2>&1; then
+            echo "Proxy local pronto em http://127.0.0.1:80"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Proxy local nao respondeu em http://127.0.0.1:80/health"
+        exit 1

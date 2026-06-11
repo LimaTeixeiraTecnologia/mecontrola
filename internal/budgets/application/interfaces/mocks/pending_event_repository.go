@@ -7,7 +7,6 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
@@ -41,16 +40,16 @@ func (_m *PendingEventRepository) EXPECT() *PendingEventRepository_Expecter {
 }
 
 // Insert provides a mock function for the type PendingEventRepository
-func (_mock *PendingEventRepository) Insert(ctx context.Context, db database.DBTX, p entities.PendingEvent) error {
-	ret := _mock.Called(ctx, db, p)
+func (_mock *PendingEventRepository) Insert(ctx context.Context, p entities.PendingEvent) error {
+	ret := _mock.Called(ctx, p)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Insert")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.PendingEvent) error); ok {
-		r0 = returnFunc(ctx, db, p)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.PendingEvent) error); ok {
+		r0 = returnFunc(ctx, p)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -64,30 +63,24 @@ type PendingEventRepository_Insert_Call struct {
 
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - p entities.PendingEvent
-func (_e *PendingEventRepository_Expecter) Insert(ctx interface{}, db interface{}, p interface{}) *PendingEventRepository_Insert_Call {
-	return &PendingEventRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, db, p)}
+func (_e *PendingEventRepository_Expecter) Insert(ctx interface{}, p interface{}) *PendingEventRepository_Insert_Call {
+	return &PendingEventRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, p)}
 }
 
-func (_c *PendingEventRepository_Insert_Call) Run(run func(ctx context.Context, db database.DBTX, p entities.PendingEvent)) *PendingEventRepository_Insert_Call {
+func (_c *PendingEventRepository_Insert_Call) Run(run func(ctx context.Context, p entities.PendingEvent)) *PendingEventRepository_Insert_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.PendingEvent
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.PendingEvent
-		if args[2] != nil {
-			arg2 = args[2].(entities.PendingEvent)
+			arg1 = args[1].(entities.PendingEvent)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -98,14 +91,14 @@ func (_c *PendingEventRepository_Insert_Call) Return(err error) *PendingEventRep
 	return _c
 }
 
-func (_c *PendingEventRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, p entities.PendingEvent) error) *PendingEventRepository_Insert_Call {
+func (_c *PendingEventRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, p entities.PendingEvent) error) *PendingEventRepository_Insert_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListReady provides a mock function for the type PendingEventRepository
-func (_mock *PendingEventRepository) ListReady(ctx context.Context, db database.DBTX, limit int) ([]entities.PendingEvent, error) {
-	ret := _mock.Called(ctx, db, limit)
+func (_mock *PendingEventRepository) ListReady(ctx context.Context, limit int) ([]entities.PendingEvent, error) {
+	ret := _mock.Called(ctx, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListReady")
@@ -113,18 +106,18 @@ func (_mock *PendingEventRepository) ListReady(ctx context.Context, db database.
 
 	var r0 []entities.PendingEvent
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, int) ([]entities.PendingEvent, error)); ok {
-		return returnFunc(ctx, db, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]entities.PendingEvent, error)); ok {
+		return returnFunc(ctx, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, int) []entities.PendingEvent); ok {
-		r0 = returnFunc(ctx, db, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []entities.PendingEvent); ok {
+		r0 = returnFunc(ctx, limit)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]entities.PendingEvent)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, int) error); ok {
-		r1 = returnFunc(ctx, db, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
+		r1 = returnFunc(ctx, limit)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -138,30 +131,24 @@ type PendingEventRepository_ListReady_Call struct {
 
 // ListReady is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - limit int
-func (_e *PendingEventRepository_Expecter) ListReady(ctx interface{}, db interface{}, limit interface{}) *PendingEventRepository_ListReady_Call {
-	return &PendingEventRepository_ListReady_Call{Call: _e.mock.On("ListReady", ctx, db, limit)}
+func (_e *PendingEventRepository_Expecter) ListReady(ctx interface{}, limit interface{}) *PendingEventRepository_ListReady_Call {
+	return &PendingEventRepository_ListReady_Call{Call: _e.mock.On("ListReady", ctx, limit)}
 }
 
-func (_c *PendingEventRepository_ListReady_Call) Run(run func(ctx context.Context, db database.DBTX, limit int)) *PendingEventRepository_ListReady_Call {
+func (_c *PendingEventRepository_ListReady_Call) Run(run func(ctx context.Context, limit int)) *PendingEventRepository_ListReady_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 int
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 int
-		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg1 = args[1].(int)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -172,22 +159,22 @@ func (_c *PendingEventRepository_ListReady_Call) Return(pendingEvents []entities
 	return _c
 }
 
-func (_c *PendingEventRepository_ListReady_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, limit int) ([]entities.PendingEvent, error)) *PendingEventRepository_ListReady_Call {
+func (_c *PendingEventRepository_ListReady_Call) RunAndReturn(run func(ctx context.Context, limit int) ([]entities.PendingEvent, error)) *PendingEventRepository_ListReady_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Transition provides a mock function for the type PendingEventRepository
-func (_mock *PendingEventRepository) Transition(ctx context.Context, db database.DBTX, id uuid.UUID, to entities.PendingState, reason string) error {
-	ret := _mock.Called(ctx, db, id, to, reason)
+func (_mock *PendingEventRepository) Transition(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string) error {
+	ret := _mock.Called(ctx, id, to, reason)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Transition")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, entities.PendingState, string) error); ok {
-		r0 = returnFunc(ctx, db, id, to, reason)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, entities.PendingState, string) error); ok {
+		r0 = returnFunc(ctx, id, to, reason)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -201,42 +188,36 @@ type PendingEventRepository_Transition_Call struct {
 
 // Transition is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - id uuid.UUID
 //   - to entities.PendingState
 //   - reason string
-func (_e *PendingEventRepository_Expecter) Transition(ctx interface{}, db interface{}, id interface{}, to interface{}, reason interface{}) *PendingEventRepository_Transition_Call {
-	return &PendingEventRepository_Transition_Call{Call: _e.mock.On("Transition", ctx, db, id, to, reason)}
+func (_e *PendingEventRepository_Expecter) Transition(ctx interface{}, id interface{}, to interface{}, reason interface{}) *PendingEventRepository_Transition_Call {
+	return &PendingEventRepository_Transition_Call{Call: _e.mock.On("Transition", ctx, id, to, reason)}
 }
 
-func (_c *PendingEventRepository_Transition_Call) Run(run func(ctx context.Context, db database.DBTX, id uuid.UUID, to entities.PendingState, reason string)) *PendingEventRepository_Transition_Call {
+func (_c *PendingEventRepository_Transition_Call) Run(run func(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string)) *PendingEventRepository_Transition_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 uuid.UUID
+		var arg2 entities.PendingState
 		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
+			arg2 = args[2].(entities.PendingState)
 		}
-		var arg3 entities.PendingState
+		var arg3 string
 		if args[3] != nil {
-			arg3 = args[3].(entities.PendingState)
-		}
-		var arg4 string
-		if args[4] != nil {
-			arg4 = args[4].(string)
+			arg3 = args[3].(string)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
-			arg4,
 		)
 	})
 	return _c
@@ -247,7 +228,7 @@ func (_c *PendingEventRepository_Transition_Call) Return(err error) *PendingEven
 	return _c
 }
 
-func (_c *PendingEventRepository_Transition_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, id uuid.UUID, to entities.PendingState, reason string) error) *PendingEventRepository_Transition_Call {
+func (_c *PendingEventRepository_Transition_Call) RunAndReturn(run func(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string) error) *PendingEventRepository_Transition_Call {
 	_c.Call.Return(run)
 	return _c
 }

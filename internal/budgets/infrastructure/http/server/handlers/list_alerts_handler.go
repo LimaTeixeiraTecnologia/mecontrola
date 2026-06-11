@@ -39,62 +39,33 @@ func (h *ListAlertsHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := r.URL.Query()
-
 	in := input.ListAlertsInput{
 		UserID: principal.UserID.String(),
-		Cursor: q.Get("cursor"),
+		Cursor: r.URL.Query().Get("cursor"),
 	}
 
-	if v := q.Get("limit"); v != "" {
-		n, parseErr := strconv.Atoi(v)
-		if parseErr != nil || n < 0 {
-			span.SetAttributes(observability.String("outcome", "invalid"))
-			responses.ErrorWithDetails(w, http.StatusBadRequest, "limit inválido",
-				map[string]string{"code": "validation_error"})
-			return
-		}
-		in.Limit = n
+	if message, invalid := h.applyLimit(r, &in); invalid {
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, message, map[string]string{"code": "validation_error"})
+		return
 	}
 
-	if v := q.Get("competence"); v != "" {
-		comp, compErr := valueobjects.NewCompetence(v)
-		if compErr != nil {
-			span.SetAttributes(observability.String("outcome", "invalid"))
-			responses.ErrorWithDetails(w, http.StatusBadRequest, "competence inválida",
-				map[string]string{"code": "validation_error"})
-			return
-		}
-		in.Competence = &comp
+	if message, invalid := h.applyCompetence(r, &in); invalid {
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, message, map[string]string{"code": "validation_error"})
+		return
 	}
 
-	if v := q.Get("root_slug"); v != "" {
-		slug, slugErr := valueobjects.ParseRootSlug(v)
-		if slugErr != nil {
-			span.SetAttributes(observability.String("outcome", "invalid"))
-			responses.ErrorWithDetails(w, http.StatusBadRequest, "root_slug inválido",
-				map[string]string{"code": "validation_error"})
-			return
-		}
-		in.RootSlug = &slug
+	if message, invalid := h.applyRootSlug(r, &in); invalid {
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, message, map[string]string{"code": "validation_error"})
+		return
 	}
 
-	if v := q.Get("threshold"); v != "" {
-		n, parseErr := strconv.Atoi(v)
-		if parseErr != nil {
-			span.SetAttributes(observability.String("outcome", "invalid"))
-			responses.ErrorWithDetails(w, http.StatusBadRequest, "threshold inválido",
-				map[string]string{"code": "validation_error"})
-			return
-		}
-		t, tErr := valueobjects.ParseThreshold(n)
-		if tErr != nil {
-			span.SetAttributes(observability.String("outcome", "invalid"))
-			responses.ErrorWithDetails(w, http.StatusBadRequest, "threshold inválido",
-				map[string]string{"code": "validation_error"})
-			return
-		}
-		in.Threshold = &t
+	if message, invalid := h.applyThreshold(r, &in); invalid {
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, message, map[string]string{"code": "validation_error"})
+		return
 	}
 
 	out, err := h.usecase.Execute(ctx, in)
@@ -113,4 +84,69 @@ func (h *ListAlertsHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	span.SetAttributes(observability.String("outcome", "ok"))
 	responses.JSON(w, http.StatusOK, out)
+}
+
+func (h *ListAlertsHandler) applyLimit(r *http.Request, in *input.ListAlertsInput) (string, bool) {
+	value := r.URL.Query().Get("limit")
+	if value == "" {
+		return "", false
+	}
+
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit < 0 {
+		return "limit inválido", true
+	}
+
+	in.Limit = limit
+	return "", false
+}
+
+func (h *ListAlertsHandler) applyCompetence(r *http.Request, in *input.ListAlertsInput) (string, bool) {
+	value := r.URL.Query().Get("competence")
+	if value == "" {
+		return "", false
+	}
+
+	competence, err := valueobjects.NewCompetence(value)
+	if err != nil {
+		return "competence inválida", true
+	}
+
+	in.Competence = &competence
+	return "", false
+}
+
+func (h *ListAlertsHandler) applyRootSlug(r *http.Request, in *input.ListAlertsInput) (string, bool) {
+	value := r.URL.Query().Get("root_slug")
+	if value == "" {
+		return "", false
+	}
+
+	rootSlug, err := valueobjects.ParseRootSlug(value)
+	if err != nil {
+		return "root_slug inválido", true
+	}
+
+	in.RootSlug = &rootSlug
+	return "", false
+}
+
+func (h *ListAlertsHandler) applyThreshold(r *http.Request, in *input.ListAlertsInput) (string, bool) {
+	value := r.URL.Query().Get("threshold")
+	if value == "" {
+		return "", false
+	}
+
+	rawThreshold, err := strconv.Atoi(value)
+	if err != nil {
+		return "threshold inválido", true
+	}
+
+	threshold, err := valueobjects.ParseThreshold(rawThreshold)
+	if err != nil {
+		return "threshold inválido", true
+	}
+
+	in.Threshold = &threshold
+	return "", false
 }

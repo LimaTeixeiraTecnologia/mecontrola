@@ -1,0 +1,13 @@
+META	task_type	repository
+META	validation_profile	boundary
+META	required_refs	interfaces,persistence,repository
+META	optional_refs	testing-unit,testing-integration,resilience,observability
+META	forbidden_refs
+go-implementation/architecture	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/architecture.md	base_required_ref
+go-implementation/interfaces	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/interfaces.md	task_type:repository:file_pattern:**/repositories/**:required
+go-implementation/persistence	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/persistence.md	task_type:repository:file_pattern:**/repositories/**:required
+go-implementation/repository	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/repository.md	task_type:repository:file_pattern:**/repositories/**:required
+go-implementation/testing-unit	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/testing-unit.md	task_type:repository:optional
+go-implementation/testing-integration	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/testing-integration.md	task_type:repository:optional
+go-implementation/resilience	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/resilience.md	task_type:repository:optional
+go-implementation/observability	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/observability.md	task_type:repository:optional

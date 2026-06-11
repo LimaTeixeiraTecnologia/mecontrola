@@ -18,12 +18,12 @@ type CandidateOutput struct {
 }
 
 type DictionarySearchOutput struct {
-	Result        string            `json:"result"`
-	Candidates    []CandidateOutput `json:"candidates,omitempty"`
-	HasMore       bool              `json:"has_more"`
-	SignalTypeTop string            `json:"-"`
-	IsAmbiguous   bool              `json:"-"`
-	Version       int64             `json:"version"`
+	Result        string                     `json:"result"`
+	Candidates    []CandidateOutput          `json:"candidates,omitempty"`
+	HasMore       bool                       `json:"has_more"`
+	SignalTypeTop string                     `json:"-"`
+	Outcome       valueobjects.SearchOutcome `json:"-"`
+	Version       int64                      `json:"version"`
 }
 
 func NewCandidateOutputFromService(c CandidateLike) CandidateOutput {

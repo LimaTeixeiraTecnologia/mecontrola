@@ -7,12 +7,22 @@ vars:
   COMPOSE_BASE: deployment/compose/compose.yml
   COMPOSE_LOCAL: deployment/compose/compose.local.yml
   COMPOSE_CMD: docker compose --env-file .env -f {{.COMPOSE_BASE}} -f {{.COMPOSE_LOCAL}}
+  INFRA_SERVICES: postgres otel-lgtm
+  APP_SERVICES: server worker
 
 tasks:
-  up:
-    desc: Sobe o ambiente local (postgres, server, worker, otel-lgtm).
+  infra:
+    desc: Sobe apenas a infraestrutura local (postgres e otel-lgtm) sem a aplicacao.
     cmds:
-      - "{{.COMPOSE_CMD}} up -d"
+      - "{{.COMPOSE_CMD}} up -d {{.INFRA_SERVICES}}"
+      - echo "Infra disponivel: postgres em localhost:5432, Grafana em http://localhost:3000"
+
+  up:
+    desc: Sobe o ambiente local com ordem deterministica (infra, migrate, app).
+    cmds:
+      - "{{.COMPOSE_CMD}} up -d {{.INFRA_SERVICES}}"
+      - "{{.COMPOSE_CMD}} run --rm migrate"
+      - "{{.COMPOSE_CMD}} up -d {{.APP_SERVICES}}"
       - echo "Ambiente local disponivel em http://localhost:8080 e http://localhost:3000"
 
   down:
@@ -21,11 +31,9 @@ tasks:
       - "{{.COMPOSE_CMD}} down"
 
   seed:
-    desc: Sobe o ambiente e aplica migrations no banco local.
+    desc: Alias para subida local com migrations antes da app.
     cmds:
       - task: up
-      - "{{.COMPOSE_CMD}} run --rm migrate"
-      - echo "Migrations aplicadas. App em http://localhost:8080 e Grafana em http://localhost:3000"
 
   logs:
     desc: Exibe logs dos containers locais (Ctrl+C para sair).

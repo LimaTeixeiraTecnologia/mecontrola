@@ -1,141 +1,243 @@
-# INDEX de carga surgical para go-implementation.
-# Resolver: .agents/scripts/resolve-references.sh
-# Convenção: o agente sempre tem acesso ao SKILL.md + a este INDEX (~2KB total
-# de overhead). references/*.md só são anexadas quando a tarefa bate em
-# file_patterns OU diff_signals — economia de tokens em sessões longas.
-schema: 1
+# INDEX de carga deterministic para go-implementation.
+# O agente sempre tem acesso ao SKILL.md e a este INDEX.
+# As demais referencias so devem ser carregadas quando ativadas pela matriz.
+schema: 2
 skill: go-implementation
+defaults:
+  max_additional_references: 4
+  fallback_task_type: cross-cutting
+  base_required_refs:
+    - architecture
 references:
   - id: architecture
     file: architecture.md
-    topics: [arquitetura, packages, camadas]
-    always: true  # carga base (Etapa 1 do SKILL.md)
+    topics: [arquitetura, packages, camadas, di]
+    always: true
     est_tokens: 800
-  - id: api
-    file: api.md
-    topics: [api, http, handler, gin, echo, fiber, grpc, adapter]
-    when_to_load:
-      file_patterns: ["**/handler*.go", "**/*handler*.go", "**/api/**", "**/transport/**", "**/http/**", "**/adapters/**"]
-      diff_signals: ["gin.", "echo.", "fiber.", "http.HandleFunc", "http.ResponseWriter", "grpc.Server", "(w http.ResponseWriter"]
-    est_tokens: 700
-  - id: build
-    file: build.md
-    topics: [build, go.mod, makefile]
-    when_to_load:
-      file_patterns: ["go.mod", "go.sum", "Makefile", "Dockerfile"]
-      diff_signals: []
-    est_tokens: 500
+  - id: interfaces
+    file: interfaces.md
+    topics: [interface, contract, context, di]
+    est_tokens: 600
+  - id: generics
+    file: generics.md
+    topics: [generics, type-parameters]
+    est_tokens: 600
   - id: concurrency
     file: concurrency.md
     topics: [goroutine, channel, sync, context, race]
-    when_to_load:
-      file_patterns: []
-      diff_signals: ["go func(", "make(chan", "sync.Mutex", "sync.WaitGroup", "context.WithCancel"]
     est_tokens: 900
   - id: configuration
     file: configuration.md
     topics: [config, env, viper]
-    when_to_load:
-      file_patterns: ["**/config/**", "**/*.env*"]
-      diff_signals: ["os.Getenv", "viper.", "godotenv"]
     est_tokens: 500
-  - id: examples-domain-flow
-    file: examples-domain-flow.md
-    topics: [domain, entity, value-object, aggregate, usecase, application]
-    when_to_load:
-      # Cobre layout DDD canonico: domain/ (entities/VOs) + application/ (use cases).
-      file_patterns: ["**/domain/**", "**/application/**", "**/usecase*/**", "**/usecases/**", "**/internal/**/entity*.go"]
-      diff_signals: ["type.*Entity", "type.*Aggregate", "type.*ValueObject", "type.*UseCase", "Execute(ctx context.Context"]
-    est_tokens: 1200
-  - id: examples-infrastructure
-    file: examples-infrastructure.md
-    topics: [infra, adapter, gateway, bootstrap, runtime]
-    when_to_load:
-      # Cobre infrastructure/, gateway/, bootstrap/, runtime/ (recorrentes em Go DDD).
-      file_patterns: ["**/infrastructure/**", "**/gateway/**", "**/bootstrap/**", "**/runtime/**"]
-      diff_signals: []
-    est_tokens: 1100
-  - id: examples-testing
-    file: examples-testing.md
-    topics: [testing, table-driven, t.Run, testify]
-    when_to_load:
-      file_patterns: ["**/*_test.go"]
-      diff_signals: ["t.Run(", "TestMain", "suite.Suite", "testify"]
-    est_tokens: 1000
-  - id: generics
-    file: generics.md
-    topics: [generics, type-parameters]
-    when_to_load:
-      file_patterns: []
-      diff_signals: ["[T any]", "[T comparable]", "[K comparable, V any]"]
-    est_tokens: 600
-  - id: graceful-lifecycle
-    file: graceful-lifecycle.md
-    topics: [shutdown, signal, sigterm, lifecycle, bootstrap, runtime]
-    when_to_load:
-      file_patterns: ["**/main.go", "**/cmd/**", "**/bootstrap/**", "**/runtime/**"]
-      diff_signals: ["signal.Notify", "context.WithCancel", "SIGTERM", "SIGINT", "server.Shutdown"]
-    est_tokens: 700
-  - id: interfaces
-    file: interfaces.md
-    topics: [interface, contract, mock]
-    when_to_load:
-      file_patterns: []
-      diff_signals: ["type.*interface", "interface{"]
-    est_tokens: 600
-  - id: messaging
-    file: messaging.md
-    topics: [messaging, kafka, rabbitmq, nats, event]
-    when_to_load:
-      file_patterns: ["**/messaging/**", "**/events/**"]
-      diff_signals: ["kafka.", "amqp.", "nats.", "Publish(", "Subscribe("]
-    est_tokens: 800
   - id: observability
     file: observability.md
-    topics: [observability, otel, log, metric, trace]
-    when_to_load:
-      file_patterns: []
-      diff_signals: ["otel.", "slog.", "log/slog", "prometheus.", "trace.SpanFromContext"]
+    topics: [observability, slog, metric, trace]
     est_tokens: 800
-  - id: patterns-behavioral
-    file: patterns-behavioral.md
-    topics: [strategy, command, observer, behavioral]
-    when_to_load:
-      file_patterns: []
-      diff_signals: []
-    est_tokens: 700
-  - id: patterns-structural
-    file: patterns-structural.md
-    topics: [adapter, decorator, structural]
-    when_to_load:
-      file_patterns: []
-      diff_signals: []
+  - id: api
+    file: api.md
+    topics: [api, http, grpc, dto, middleware]
     est_tokens: 700
   - id: persistence
     file: persistence.md
-    topics: [persistence, database, sql, repository, gorm, sqlx]
-    when_to_load:
-      file_patterns: ["**/repository/**", "**/repositories/**", "**/persistence/**", "**/db/**", "**/database/**"]
-      diff_signals: ["sql.Open", "gorm.Open", "sqlx.", "database/sql", ".QueryContext", ".ExecContext", ".QueryRow", "db.Query(", "db.Exec(", "tx.Query(", "tx.Exec("]
+    topics: [persistence, database, sql, transaction]
     est_tokens: 900
   - id: resilience
     file: resilience.md
     topics: [retry, circuit-breaker, timeout, backoff]
-    when_to_load:
-      file_patterns: []
-      diff_signals: ["context.WithTimeout", "retry.", "backoff.", "circuit"]
     est_tokens: 700
+  - id: messaging
+    file: messaging.md
+    topics: [messaging, outbox, consumer, producer]
+    est_tokens: 800
   - id: security
     file: security.md
-    topics: [security, crypto, auth, jwt, tls]
-    when_to_load:
-      file_patterns: ["**/auth/**", "**/security/**", "**/middleware/**"]
-      diff_signals: ["crypto/", "jwt.", "tls.", "os/exec", "exec.Command"]
+    topics: [security, auth, validation, secrets]
     est_tokens: 800
+  - id: build
+    file: build.md
+    topics: [build, ci, gates, validation]
+    est_tokens: 700
   - id: testing
     file: testing.md
-    topics: [testing, unit, integration]
-    when_to_load:
+    topics: [testing, strategy, severity, suites]
+    est_tokens: 700
+  - id: graceful-lifecycle
+    file: graceful-lifecycle.md
+    topics: [shutdown, lifecycle, signal]
+    est_tokens: 700
+  - id: usecase-read
+    file: usecase-read.md
+    topics: [usecase, query, read-model]
+    est_tokens: 450
+  - id: usecase-write
+    file: usecase-write.md
+    topics: [usecase, command, write-model]
+    est_tokens: 550
+  - id: repository
+    file: repository.md
+    topics: [repository, transaction, mapping]
+    est_tokens: 550
+  - id: module-wiring
+    file: module-wiring.md
+    topics: [module, wiring, bootstrap, lifecycle]
+    est_tokens: 550
+  - id: http-handler
+    file: http-handler.md
+    topics: [handler, dto, validation, response]
+    est_tokens: 500
+  - id: consumer
+    file: consumer.md
+    topics: [consumer, idempotency, handler]
+    est_tokens: 500
+  - id: job-handler
+    file: job-handler.md
+    topics: [job, worker, drain, schedule]
+    est_tokens: 500
+  - id: producer
+    file: producer.md
+    topics: [producer, outbox, payload]
+    est_tokens: 500
+  - id: testing-unit
+    file: testing-unit.md
+    topics: [testing, unit, suite, mockery]
+    est_tokens: 500
+  - id: testing-integration
+    file: testing-integration.md
+    topics: [testing, integration, testcontainers]
+    est_tokens: 500
+  - id: examples-domain-flow
+    file: examples-domain-flow.md
+    topics: [domain, entity, usecase, end-to-end]
+    est_tokens: 1200
+  - id: examples-testing
+    file: examples-testing.md
+    topics: [testing, table-driven, suite]
+    est_tokens: 1000
+  - id: examples-infrastructure
+    file: examples-infrastructure.md
+    topics: [infra, lifecycle, pagination]
+    est_tokens: 1100
+  - id: examples-fuzz-testing
+    file: examples-fuzz-testing.md
+    topics: [fuzz, fuzzing]
+    est_tokens: 700
+  - id: patterns-behavioral
+    file: patterns-behavioral.md
+    topics: [strategy, command, observer]
+    est_tokens: 700
+  - id: patterns-structural
+    file: patterns-structural.md
+    topics: [singleton, prototype, flyweight]
+    est_tokens: 700
+task_types:
+  - id: usecase-read
+    description: Leitura sem efeito colateral persistente.
+    priority: 40
+    match:
+      file_patterns: ["**/application/usecases/**", "**/application/usecase*/**"]
+      diff_signals: ["Find", "Get", "List", "Search", "Execute(ctx context.Context"]
+    required_refs: [interfaces, usecase-read]
+    optional_refs: [testing-unit, observability, examples-domain-flow]
+    forbidden_refs: [patterns-structural]
+    validation_profile: local-minimal
+  - id: usecase-write
+    description: Escrita com efeito colateral persistente ou publicacao de evento.
+    priority: 60
+    match:
+      file_patterns: ["**/application/usecases/**", "**/application/usecase*/**"]
+      diff_signals: ["Create", "Update", "Delete", "Handle", "Command", "Execute(ctx context.Context"]
+    required_refs: [interfaces, usecase-write]
+    optional_refs: [testing-unit, observability, messaging, resilience, examples-domain-flow]
+    forbidden_refs: [patterns-structural]
+    validation_profile: boundary
+  - id: repository
+    description: Fronteira concreta de persistencia.
+    priority: 80
+    match:
+      file_patterns: ["**/repository/**", "**/repositories/**", "**/persistence/**", "**/db/**", "**/database/**"]
+      diff_signals: [".QueryContext", ".ExecContext", "sql.Open", "database/sql", "pgx", "gorm."]
+    required_refs: [interfaces, persistence, repository]
+    optional_refs: [testing-unit, testing-integration, resilience, observability]
+    forbidden_refs: []
+    validation_profile: boundary
+  - id: module-wiring
+    description: Wiring de modulo, bootstrap ou lifecycle.
+    priority: 90
+    match:
+      file_patterns: ["**/module.go", "**/cmd/**", "**/main.go", "**/bootstrap/**", "**/runtime/**"]
+      diff_signals: ["NewIdentityModule", "NewBillingModule", "Register(", "signal.Notify", "Shutdown", "NewRunner"]
+    required_refs: [configuration, module-wiring]
+    optional_refs: [graceful-lifecycle, observability, build, examples-infrastructure]
+    forbidden_refs: []
+    validation_profile: global
+  - id: http-handler
+    description: Adapter HTTP ou gRPC inbound.
+    priority: 80
+    match:
+      file_patterns: ["**/infrastructure/http/server/**", "**/handler*.go", "**/*handler*.go", "**/transport/**", "**/api/**"]
+      diff_signals: ["http.ResponseWriter", "chi.Router", "fiber.", "grpc.Server", "Bind(", "Decode("]
+    required_refs: [api, http-handler]
+    optional_refs: [security, observability, testing-unit, examples-infrastructure]
+    forbidden_refs: [patterns-structural]
+    validation_profile: boundary
+  - id: consumer
+    description: Consumer inbound por banco/outbox ou broker.
+    priority: 80
+    match:
+      file_patterns: ["**/infrastructure/messaging/**/consumers/**", "**/consumers/**"]
+      diff_signals: ["Consume(", "HandleMessage", "event.ID", "Registry", "consumer.NewAdapter"]
+    required_refs: [messaging, consumer]
+    optional_refs: [observability, testing-unit, graceful-lifecycle]
+    forbidden_refs: [patterns-structural]
+    validation_profile: boundary
+  - id: job-handler
+    description: Job handler ligado a worker/cron.
+    priority: 80
+    match:
+      file_patterns: ["**/infrastructure/jobs/handlers/**", "**/jobs/handlers/**"]
+      diff_signals: ["cron.", "job.NewAdapter", "Run(", "Schedule"]
+    required_refs: [job-handler]
+    optional_refs: [graceful-lifecycle, observability, testing-unit, examples-infrastructure]
+    forbidden_refs: [patterns-structural]
+    validation_profile: boundary
+  - id: producer
+    description: Producer outbound de evento ou outbox.
+    priority: 80
+    match:
+      file_patterns: ["**/infrastructure/messaging/**/producers/**", "**/producers/**"]
+      diff_signals: ["Publish(", "json.Marshal", "outbox.Publisher", "Dispatch("]
+    required_refs: [messaging, producer]
+    optional_refs: [persistence, observability, testing-unit]
+    forbidden_refs: [patterns-structural]
+    validation_profile: boundary
+  - id: testing-unit
+    description: Mudanca centrada em testes unitarios.
+    priority: 50
+    match:
       file_patterns: ["**/*_test.go"]
+      diff_signals: ["suite.Suite", "t.Run(", "require.", "assert.", "EXPECT()"]
+    required_refs: [testing, testing-unit]
+    optional_refs: [examples-testing]
+    forbidden_refs: []
+    validation_profile: local-minimal
+  - id: testing-integration
+    description: Mudanca centrada em testes de integracao.
+    priority: 70
+    match:
+      file_patterns: ["**/*_test.go"]
+      diff_signals: ["//go:build integration", "testcontainers", "postgres.Run(", "mysql.Run(", "localstack"]
+    required_refs: [testing, testing-integration]
+    optional_refs: [persistence, messaging, examples-testing]
+    forbidden_refs: []
+    validation_profile: boundary
+  - id: cross-cutting
+    description: Mudanca transversal nao coberta por uma unica superficie.
+    priority: 0
+    match:
+      file_patterns: []
       diff_signals: []
-    est_tokens: 800
+    required_refs: [interfaces]
+    optional_refs: [configuration, observability, build, testing]
+    forbidden_refs: []
+    validation_profile: global

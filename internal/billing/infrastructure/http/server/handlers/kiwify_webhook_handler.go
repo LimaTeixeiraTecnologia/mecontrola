@@ -37,6 +37,30 @@ func NewKiwifyWebhookHandler(
 	}
 }
 
+type webhookErrorMapping struct {
+	target error
+	body   func(http.ResponseWriter)
+}
+
+func respondAccepted(w http.ResponseWriter) {
+	responses.JSON(w, http.StatusAccepted, webhookResponse{Received: true})
+}
+
+func respondUnprocessable(message, code string) func(http.ResponseWriter) {
+	return func(w http.ResponseWriter) {
+		responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, message, map[string]string{"code": code})
+	}
+}
+
+var webhookErrorTable = []webhookErrorMapping{
+	{target: usecases.ErrInvalidWebhookPayload, body: respondUnprocessable("invalid payload", "invalid_json")},
+	{target: usecases.ErrInvalidSignature, body: func(w http.ResponseWriter) { responses.Error(w, http.StatusUnauthorized, "invalid signature") }},
+	{target: usecases.ErrEventAlreadyProcessed, body: respondAccepted},
+	{target: usecases.ErrEventSuperseded, body: respondAccepted},
+	{target: usecases.ErrFunnelTokenMissing, body: respondUnprocessable("funnel token missing", "funnel_token_missing")},
+	{target: usecases.ErrUnknownTrigger, body: respondUnprocessable("unknown trigger", "unknown_trigger")},
+}
+
 func (h *KiwifyWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.o11y.Tracer().Start(r.Context(), "billing.handler.kiwify_webhook")
 	defer span.End()
@@ -58,28 +82,14 @@ func (h *KiwifyWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		SignatureStatus: middleware.SignatureStatusFromContext(r),
 	}); err != nil {
 		span.RecordError(err)
-		switch {
-		case errors.Is(err, usecases.ErrInvalidWebhookPayload):
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "invalid payload",
-				map[string]string{"code": "invalid_json"})
-		case errors.Is(err, usecases.ErrInvalidSignature):
-			responses.Error(w, http.StatusUnauthorized, "invalid signature")
-		case errors.Is(err, usecases.ErrEventAlreadyProcessed):
-			responses.JSON(w, http.StatusAccepted, webhookResponse{Received: true})
-		case errors.Is(err, usecases.ErrEventSuperseded):
-			responses.JSON(w, http.StatusAccepted, webhookResponse{Received: true})
-		case errors.Is(err, usecases.ErrFunnelTokenMissing):
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "funnel token missing",
-				map[string]string{"code": "funnel_token_missing"})
-		case errors.Is(err, usecases.ErrUnknownTrigger):
-			responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, "unknown trigger",
-				map[string]string{"code": "unknown_trigger"})
-		default:
-			h.o11y.Logger().Error(ctx, "billing.webhook.dispatch_failed",
-				observability.Error(err),
-			)
-			responses.Error(w, http.StatusInternalServerError, "internal error")
+		for _, m := range webhookErrorTable {
+			if errors.Is(err, m.target) {
+				m.body(w)
+				return
+			}
 		}
+		h.o11y.Logger().Error(ctx, "billing.webhook.dispatch_failed", observability.Error(err))
+		responses.Error(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 

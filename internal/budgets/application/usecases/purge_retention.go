@@ -14,9 +14,7 @@ import (
 const _retentionInterval = "24 months"
 
 type PurgeRetention struct {
-	expenses  interfaces.ExpenseRepository
-	alerts    interfaces.AlertRepository
-	pending   interfaces.PendingEventRepository
+	factory   interfaces.RepositoryFactory
 	uow       uow.UnitOfWork[struct{}]
 	batchSize int
 	o11y      observability.Observability
@@ -25,9 +23,7 @@ type PurgeRetention struct {
 }
 
 func NewPurgeRetention(
-	expenses interfaces.ExpenseRepository,
-	alerts interfaces.AlertRepository,
-	pending interfaces.PendingEventRepository,
+	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork[struct{}],
 	batchSize int,
 	o11y observability.Observability,
@@ -43,9 +39,7 @@ func NewPurgeRetention(
 		"1",
 	)
 	return &PurgeRetention{
-		expenses:  expenses,
-		alerts:    alerts,
-		pending:   pending,
+		factory:   factory,
 		uow:       u,
 		batchSize: batchSize,
 		o11y:      o11y,
@@ -91,7 +85,8 @@ func (uc *PurgeRetention) Execute(ctx context.Context) error {
 func (uc *PurgeRetention) hasPendingNonTerminal(ctx context.Context) (bool, error) {
 	var found bool
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		ready, listErr := uc.pending.ListReady(ctx, tx, 1)
+		pending := uc.factory.PendingEventRepository(tx)
+		ready, listErr := pending.ListReady(ctx, 1)
 		if listErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.purge_retention: verificar pendentes: %w", listErr)
 		}
@@ -106,7 +101,8 @@ func (uc *PurgeRetention) hasPendingNonTerminal(ctx context.Context) (bool, erro
 
 func (uc *PurgeRetention) purgeExpenses(ctx context.Context) error {
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		n, purgeErr := uc.expenses.PurgeDeleted(ctx, tx, _retentionInterval, uc.batchSize)
+		expenses := uc.factory.ExpenseRepository(tx)
+		n, purgeErr := expenses.PurgeDeleted(ctx, _retentionInterval, uc.batchSize)
 		if purgeErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.purge_retention: purgar despesas: %w", purgeErr)
 		}
@@ -123,7 +119,8 @@ func (uc *PurgeRetention) purgeExpenses(ctx context.Context) error {
 
 func (uc *PurgeRetention) purgeAlerts(ctx context.Context) error {
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		n, purgeErr := uc.alerts.PurgeOld(ctx, tx, _retentionInterval, uc.batchSize)
+		alerts := uc.factory.AlertRepository(tx)
+		n, purgeErr := alerts.PurgeOld(ctx, _retentionInterval, uc.batchSize)
 		if purgeErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.purge_retention: purgar alertas: %w", purgeErr)
 		}

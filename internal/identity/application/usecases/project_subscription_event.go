@@ -13,32 +13,23 @@ import (
 )
 
 const (
-	eventTypeActivated         = "billing.subscription.activated"
-	eventTypeRenewed           = "billing.subscription.renewed"
-	eventTypePastDue           = "billing.subscription.past_due"
-	eventTypeCanceled          = "billing.subscription.canceled"
-	eventTypeRefunded          = "billing.subscription.refunded"
-	eventTypeSubscriptionBound = "onboarding.subscription_bound"
+	prefixProjectSubscriptionEvent = "identity.usecase.project_subscription_event:"
+	eventTypeActivated             = "billing.subscription.activated"
+	eventTypeRenewed               = "billing.subscription.renewed"
+	eventTypePastDue               = "billing.subscription.past_due"
+	eventTypeCanceled              = "billing.subscription.canceled"
+	eventTypeRefunded              = "billing.subscription.refunded"
+	eventTypeSubscriptionBound     = "onboarding.subscription_bound"
 )
 
-type activatedPayload struct {
+type subscriptionRefPayload struct {
 	SubscriptionID string `json:"subscription_id"`
 }
 
-type renewedPayload struct {
-	SubscriptionID string `json:"subscription_id"`
-}
-
-type pastDuePayload struct {
-	SubscriptionID string `json:"subscription_id"`
-}
-
-type canceledPayload struct {
-	SubscriptionID string `json:"subscription_id"`
-}
-
-type refundedPayload struct {
-	SubscriptionID string `json:"subscription_id"`
+type entitlementPlan struct {
+	record     interfaces.EntitlementRecord
+	pendingRaw []byte
+	isPending  bool
 }
 
 type ProjectSubscriptionEvent struct {
@@ -62,92 +53,72 @@ func (u *ProjectSubscriptionEvent) Execute(ctx context.Context, in input.Project
 	defer span.End()
 
 	switch in.EventType {
-	case eventTypeActivated:
-		return u.projectActivated(ctx, in.Payload)
-	case eventTypeRenewed:
-		return u.projectRenewed(ctx, in.Payload)
-	case eventTypePastDue:
-		return u.projectPastDue(ctx, in.Payload)
-	case eventTypeCanceled:
-		return u.projectCanceled(ctx, in.Payload)
-	case eventTypeRefunded:
-		return u.projectRefunded(ctx, in.Payload)
+	case eventTypeActivated, eventTypeRenewed, eventTypePastDue, eventTypeCanceled, eventTypeRefunded:
+		subscriptionID, err := extractSubscriptionRef(in.Payload, in.EventType)
+		if err != nil {
+			return err
+		}
+		return u.projectCurrent(ctx, subscriptionID)
+
 	case eventTypeSubscriptionBound:
-		return u.projectBound(ctx, in.Payload)
+		subscriptionID, err := extractSubscriptionRef(in.Payload, in.EventType)
+		if err != nil {
+			return err
+		}
+		if subscriptionID == "" {
+			return nil
+		}
+		return u.projectCurrent(ctx, subscriptionID)
+
 	default:
 		return nil
 	}
 }
 
-func (u *ProjectSubscriptionEvent) projectActivated(ctx context.Context, raw json.RawMessage) error {
-	var payload activatedPayload
+func extractSubscriptionRef(raw json.RawMessage, eventType string) (string, error) {
+	var payload subscriptionRefPayload
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event activated: unmarshal: %w", err)
+		return "", fmt.Errorf("%s %s: unmarshal: %w", prefixProjectSubscriptionEvent, eventType, err)
 	}
-	return u.projectCurrent(ctx, payload.SubscriptionID)
+	return payload.SubscriptionID, nil
 }
 
-func (u *ProjectSubscriptionEvent) projectRenewed(ctx context.Context, raw json.RawMessage) error {
-	var payload renewedPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event renewed: unmarshal: %w", err)
+func planEntitlementUpsert(projection interfaces.SubscriptionProjectionRecord) (entitlementPlan, error) {
+	if projection.UserID == "" {
+		raw, err := json.Marshal(projection)
+		if err != nil {
+			return entitlementPlan{}, fmt.Errorf("marshal pending projection: %w", err)
+		}
+		return entitlementPlan{pendingRaw: raw, isPending: true}, nil
 	}
-	return u.projectCurrent(ctx, payload.SubscriptionID)
-}
 
-func (u *ProjectSubscriptionEvent) projectPastDue(ctx context.Context, raw json.RawMessage) error {
-	var payload pastDuePayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event past_due: unmarshal: %w", err)
-	}
-	return u.projectCurrent(ctx, payload.SubscriptionID)
-}
-
-func (u *ProjectSubscriptionEvent) projectCanceled(ctx context.Context, raw json.RawMessage) error {
-	var payload canceledPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event canceled: unmarshal: %w", err)
-	}
-	return u.projectCurrent(ctx, payload.SubscriptionID)
-}
-
-func (u *ProjectSubscriptionEvent) projectRefunded(ctx context.Context, raw json.RawMessage) error {
-	var payload refundedPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event refunded: unmarshal: %w", err)
-	}
-	return u.projectCurrent(ctx, payload.SubscriptionID)
-}
-
-type boundPayload struct {
-	SubscriptionID string `json:"subscription_id"`
-}
-
-func (u *ProjectSubscriptionEvent) projectBound(ctx context.Context, raw json.RawMessage) error {
-	var payload boundPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event bound: unmarshal: %w", err)
-	}
-	if payload.SubscriptionID == "" {
-		return nil
-	}
-	return u.projectCurrent(ctx, payload.SubscriptionID)
+	return entitlementPlan{
+		record: interfaces.EntitlementRecord{
+			UserID:         projection.UserID,
+			SubscriptionID: projection.SubscriptionID,
+			Status:         projection.Status,
+			PeriodEnd:      projection.PeriodEnd,
+			GraceEnd:       projection.GraceEnd,
+		},
+	}, nil
 }
 
 func (u *ProjectSubscriptionEvent) projectCurrent(ctx context.Context, subscriptionID string) error {
 	projection, err := u.reader.FindCurrentBySubscriptionID(ctx, subscriptionID)
 	if err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event current: %w", err)
+		return fmt.Errorf("%s current: %w", prefixProjectSubscriptionEvent, err)
+	}
+
+	plan, err := planEntitlementUpsert(projection)
+	if err != nil {
+		return fmt.Errorf("%s plan: %w", prefixProjectSubscriptionEvent, err)
 	}
 
 	repo := u.factory.EntitlementRepository(u.mgr.DBTX(ctx))
-	if projection.UserID == "" {
-		raw, marshalErr := json.Marshal(projection)
-		if marshalErr != nil {
-			return fmt.Errorf("identity.usecase.project_subscription_event pending: marshal: %w", marshalErr)
-		}
-		if upsertErr := repo.UpsertPending(ctx, projection.SubscriptionID, projection.FunnelToken, raw); upsertErr != nil {
-			return fmt.Errorf("identity.usecase.project_subscription_event pending: upsert: %w", upsertErr)
+
+	if plan.isPending {
+		if err := repo.UpsertPending(ctx, projection.SubscriptionID, projection.FunnelToken, plan.pendingRaw); err != nil {
+			return fmt.Errorf("%s pending upsert: %w", prefixProjectSubscriptionEvent, err)
 		}
 		u.o11y.Logger().Info(ctx, "identity.entitlement.pending",
 			observability.String("subscription_id", subscriptionID),
@@ -155,15 +126,8 @@ func (u *ProjectSubscriptionEvent) projectCurrent(ctx context.Context, subscript
 		return nil
 	}
 
-	record := interfaces.EntitlementRecord{
-		UserID:         projection.UserID,
-		SubscriptionID: projection.SubscriptionID,
-		Status:         projection.Status,
-		PeriodEnd:      projection.PeriodEnd,
-		GraceEnd:       projection.GraceEnd,
-	}
-	if err := repo.Upsert(ctx, record); err != nil {
-		return fmt.Errorf("identity.usecase.project_subscription_event upsert: %w", err)
+	if err := repo.Upsert(ctx, plan.record); err != nil {
+		return fmt.Errorf("%s upsert: %w", prefixProjectSubscriptionEvent, err)
 	}
 
 	u.o11y.Logger().Info(ctx, "identity.entitlement.projected",

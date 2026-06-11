@@ -17,7 +17,7 @@ import (
 const _abandonedDraftBatchSize = 200
 
 type SignalAbandonedDrafts struct {
-	budgets  interfaces.BudgetRepository
+	factory  interfaces.RepositoryFactory
 	uow      uow.UnitOfWork[struct{}]
 	loc      *time.Location
 	o11y     observability.Observability
@@ -25,7 +25,7 @@ type SignalAbandonedDrafts struct {
 }
 
 func NewSignalAbandonedDrafts(
-	budgets interfaces.BudgetRepository,
+	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork[struct{}],
 	loc *time.Location,
 	o11y observability.Observability,
@@ -36,7 +36,7 @@ func NewSignalAbandonedDrafts(
 		"1",
 	)
 	return &SignalAbandonedDrafts{
-		budgets:  budgets,
+		factory:  factory,
 		uow:      u,
 		loc:      loc,
 		o11y:     o11y,
@@ -75,7 +75,8 @@ func (uc *SignalAbandonedDrafts) Execute(ctx context.Context) error {
 func (uc *SignalAbandonedDrafts) listAbandoned(ctx context.Context, before valueobjects.Competence) ([]entities.Budget, error) {
 	var result []entities.Budget
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		drafts, listErr := uc.budgets.ListAbandonedDrafts(ctx, tx, before, _abandonedDraftBatchSize)
+		budgets := uc.factory.BudgetRepository(tx)
+		drafts, listErr := budgets.ListAbandonedDrafts(ctx, before, _abandonedDraftBatchSize)
 		if listErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.signal_abandoned_drafts: listar rascunhos: %w", listErr)
 		}
@@ -90,14 +91,15 @@ func (uc *SignalAbandonedDrafts) listAbandoned(ctx context.Context, before value
 
 func (uc *SignalAbandonedDrafts) processOne(ctx context.Context, draft entities.Budget) error {
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		already, checkErr := uc.budgets.IsSignaledAbandoned(ctx, tx, draft.ID())
+		budgets := uc.factory.BudgetRepository(tx)
+		already, checkErr := budgets.IsSignaledAbandoned(ctx, draft.ID())
 		if checkErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.signal_abandoned_drafts: verificar sinal: %w", checkErr)
 		}
 		if already {
 			return struct{}{}, nil
 		}
-		if signErr := uc.budgets.SignalAbandoned(ctx, tx, draft.ID()); signErr != nil {
+		if signErr := budgets.SignalAbandoned(ctx, draft.ID()); signErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.signal_abandoned_drafts: sinalizar: %w", signErr)
 		}
 		uc.signaled.Add(ctx, 1,

@@ -22,6 +22,7 @@ import (
 type EvaluateAlertSuite struct {
 	suite.Suite
 	ctx             context.Context
+	factory         *mockInterfaces.RepositoryFactory
 	expenses        *mockInterfaces.ExpenseRepository
 	budgets         *mockInterfaces.BudgetRepository
 	thresholdStates *mockInterfaces.ThresholdStateRepository
@@ -36,16 +37,18 @@ func TestEvaluateAlertSuite(t *testing.T) {
 
 func (s *EvaluateAlertSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.expenses = mockInterfaces.NewExpenseRepository(s.T())
 	s.budgets = mockInterfaces.NewBudgetRepository(s.T())
 	s.thresholdStates = mockInterfaces.NewThresholdStateRepository(s.T())
 	s.alerts = mockInterfaces.NewAlertRepository(s.T())
+	s.factory.EXPECT().ExpenseRepository(mock.Anything).Return(s.expenses).Maybe()
+	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.budgets).Maybe()
+	s.factory.EXPECT().ThresholdStateRepository(mock.Anything).Return(s.thresholdStates).Maybe()
+	s.factory.EXPECT().AlertRepository(mock.Anything).Return(s.alerts).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 	s.useCase = usecases.NewEvaluateAlert(
-		s.expenses,
-		s.budgets,
-		s.thresholdStates,
-		s.alerts,
+		s.factory,
 		s.uow,
 		noop.NewProvider(),
 	)
@@ -85,12 +88,12 @@ func (s *EvaluateAlertSuite) TestExecute_BudgetNotFound_NoOp() {
 	slug := valueobjects.RootSlugCustoFixo
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 8500}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
@@ -113,12 +116,12 @@ func (s *EvaluateAlertSuite) TestExecute_BudgetNotActive_NoOp() {
 	)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 8500}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draftBudget, nil).
 		Once()
 
@@ -146,12 +149,12 @@ func (s *EvaluateAlertSuite) TestExecute_NoPlannedCents_NoOp() {
 	)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 8500}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(budgetNoAlloc, nil).
 		Once()
 
@@ -169,17 +172,17 @@ func (s *EvaluateAlertSuite) TestExecute_Delivered_CrossesThreshold80() {
 	budget := buildActiveAlertBudget(userID, comp, 10000, slug, 10000)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 8000}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(budget, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		GetCurrentlyCrossed(s.ctx, mock.Anything, userID, comp, slug).
+		GetCurrentlyCrossed(s.ctx, userID, comp, slug).
 		Return(map[valueobjects.Threshold]bool{valueobjects.Threshold80: false, valueobjects.Threshold100: false}, nil).
 		Once()
 
@@ -197,22 +200,22 @@ func (s *EvaluateAlertSuite) TestExecute_Delivered_CrossesThreshold80() {
 	}
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key80, true, mock.Anything).
+		UpsertIfTransition(s.ctx, key80, true, mock.Anything).
 		Return(true, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key100, false, mock.Anything).
+		UpsertIfTransition(s.ctx, key100, false, mock.Anything).
 		Return(false, nil).
 		Once()
 
 	s.alerts.EXPECT().
-		CountDelivered(s.ctx, mock.Anything, key80).
+		CountDelivered(s.ctx, key80).
 		Return(int64(0), nil).
 		Once()
 
 	s.alerts.EXPECT().
-		Insert(s.ctx, mock.Anything, mock.MatchedBy(func(a entities.Alert) bool {
+		Insert(s.ctx, mock.MatchedBy(func(a entities.Alert) bool {
 			return a.State() == entities.AlertStateDelivered && a.Threshold() == valueobjects.Threshold80
 		})).
 		Return(nil).
@@ -232,17 +235,17 @@ func (s *EvaluateAlertSuite) TestExecute_SuppressedRetroactive_OlderCompetence()
 	budget := buildActiveAlertBudget(userID, oldComp, 10000, slug, 10000)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, oldComp).
+		SumByRoot(s.ctx, userID, oldComp).
 		Return(map[valueobjects.RootSlug]int64{slug: 8000}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, oldComp).
+		GetByUserCompetence(s.ctx, userID, oldComp).
 		Return(budget, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		GetCurrentlyCrossed(s.ctx, mock.Anything, userID, oldComp, slug).
+		GetCurrentlyCrossed(s.ctx, userID, oldComp, slug).
 		Return(map[valueobjects.Threshold]bool{valueobjects.Threshold80: false, valueobjects.Threshold100: false}, nil).
 		Once()
 
@@ -260,17 +263,17 @@ func (s *EvaluateAlertSuite) TestExecute_SuppressedRetroactive_OlderCompetence()
 	}
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key80, true, mock.Anything).
+		UpsertIfTransition(s.ctx, key80, true, mock.Anything).
 		Return(true, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key100, false, mock.Anything).
+		UpsertIfTransition(s.ctx, key100, false, mock.Anything).
 		Return(false, nil).
 		Once()
 
 	s.alerts.EXPECT().
-		Insert(s.ctx, mock.Anything, mock.MatchedBy(func(a entities.Alert) bool {
+		Insert(s.ctx, mock.MatchedBy(func(a entities.Alert) bool {
 			return a.State() == entities.AlertStateSuppressedRetroactive && a.Threshold() == valueobjects.Threshold80
 		})).
 		Return(nil).
@@ -291,17 +294,17 @@ func (s *EvaluateAlertSuite) TestExecute_SuppressedStale_WasCrossedNotAnymore() 
 	budget := buildActiveAlertBudget(userID, comp, 10000, slug, 10000)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 100}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(budget, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		GetCurrentlyCrossed(s.ctx, mock.Anything, userID, comp, slug).
+		GetCurrentlyCrossed(s.ctx, userID, comp, slug).
 		Return(map[valueobjects.Threshold]bool{valueobjects.Threshold80: true, valueobjects.Threshold100: false}, nil).
 		Once()
 
@@ -319,12 +322,12 @@ func (s *EvaluateAlertSuite) TestExecute_SuppressedStale_WasCrossedNotAnymore() 
 	}
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key80, false, mock.Anything).
+		UpsertIfTransition(s.ctx, key80, false, mock.Anything).
 		Return(false, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key100, false, mock.Anything).
+		UpsertIfTransition(s.ctx, key100, false, mock.Anything).
 		Return(false, nil).
 		Once()
 
@@ -342,17 +345,17 @@ func (s *EvaluateAlertSuite) TestExecute_RateLimited_ExceedsMaxDelivered() {
 	budget := buildActiveAlertBudget(userID, comp, 10000, slug, 10000)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 8000}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(budget, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		GetCurrentlyCrossed(s.ctx, mock.Anything, userID, comp, slug).
+		GetCurrentlyCrossed(s.ctx, userID, comp, slug).
 		Return(map[valueobjects.Threshold]bool{valueobjects.Threshold80: false, valueobjects.Threshold100: false}, nil).
 		Once()
 
@@ -370,22 +373,22 @@ func (s *EvaluateAlertSuite) TestExecute_RateLimited_ExceedsMaxDelivered() {
 	}
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key80, true, mock.Anything).
+		UpsertIfTransition(s.ctx, key80, true, mock.Anything).
 		Return(true, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key100, false, mock.Anything).
+		UpsertIfTransition(s.ctx, key100, false, mock.Anything).
 		Return(false, nil).
 		Once()
 
 	s.alerts.EXPECT().
-		CountDelivered(s.ctx, mock.Anything, key80).
+		CountDelivered(s.ctx, key80).
 		Return(int64(10), nil).
 		Once()
 
 	s.alerts.EXPECT().
-		Insert(s.ctx, mock.Anything, mock.MatchedBy(func(a entities.Alert) bool {
+		Insert(s.ctx, mock.MatchedBy(func(a entities.Alert) bool {
 			return a.State() == entities.AlertStateRateLimited && a.Threshold() == valueobjects.Threshold80
 		})).
 		Return(nil).
@@ -403,12 +406,12 @@ func (s *EvaluateAlertSuite) TestExecute_BudgetRepositoryError_PropagatesError()
 	slug := valueobjects.RootSlugCustoFixo
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, errors.New("db error")).
 		Once()
 
@@ -424,7 +427,7 @@ func (s *EvaluateAlertSuite) TestExecute_ExpenseRepositoryError_PropagatesError(
 	slug := valueobjects.RootSlugCustoFixo
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(nil, errors.New("sum error")).
 		Once()
 
@@ -442,17 +445,17 @@ func (s *EvaluateAlertSuite) TestExecute_Delivered_BothThresholds100() {
 	budget := buildActiveAlertBudget(userID, comp, 10000, slug, 10000)
 
 	s.expenses.EXPECT().
-		SumByRoot(s.ctx, mock.Anything, userID, comp).
+		SumByRoot(s.ctx, userID, comp).
 		Return(map[valueobjects.RootSlug]int64{slug: 10000}, nil).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(budget, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		GetCurrentlyCrossed(s.ctx, mock.Anything, userID, comp, slug).
+		GetCurrentlyCrossed(s.ctx, userID, comp, slug).
 		Return(map[valueobjects.Threshold]bool{valueobjects.Threshold80: false, valueobjects.Threshold100: false}, nil).
 		Once()
 
@@ -470,34 +473,34 @@ func (s *EvaluateAlertSuite) TestExecute_Delivered_BothThresholds100() {
 	}
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key80, true, mock.Anything).
+		UpsertIfTransition(s.ctx, key80, true, mock.Anything).
 		Return(true, nil).
 		Once()
 
 	s.thresholdStates.EXPECT().
-		UpsertIfTransition(s.ctx, mock.Anything, key100, true, mock.Anything).
+		UpsertIfTransition(s.ctx, key100, true, mock.Anything).
 		Return(true, nil).
 		Once()
 
 	s.alerts.EXPECT().
-		CountDelivered(s.ctx, mock.Anything, key80).
+		CountDelivered(s.ctx, key80).
 		Return(int64(0), nil).
 		Once()
 
 	s.alerts.EXPECT().
-		CountDelivered(s.ctx, mock.Anything, key100).
+		CountDelivered(s.ctx, key100).
 		Return(int64(0), nil).
 		Once()
 
 	s.alerts.EXPECT().
-		Insert(s.ctx, mock.Anything, mock.MatchedBy(func(a entities.Alert) bool {
+		Insert(s.ctx, mock.MatchedBy(func(a entities.Alert) bool {
 			return a.State() == entities.AlertStateDelivered && a.Threshold() == valueobjects.Threshold80
 		})).
 		Return(nil).
 		Once()
 
 	s.alerts.EXPECT().
-		Insert(s.ctx, mock.Anything, mock.MatchedBy(func(a entities.Alert) bool {
+		Insert(s.ctx, mock.MatchedBy(func(a entities.Alert) bool {
 			return a.State() == entities.AlertStateDelivered && a.Threshold() == valueobjects.Threshold100
 		})).
 		Return(nil).

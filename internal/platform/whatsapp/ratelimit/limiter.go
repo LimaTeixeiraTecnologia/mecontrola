@@ -133,10 +133,7 @@ func (l *Limiter) refill(b *bucket, nowNano int64) {
 	if b.lastRefill.CompareAndSwap(last, last+advance) {
 		for {
 			current := b.tokens.Load()
-			newVal := current + tokensToAdd
-			if newVal > l.capacity {
-				newVal = l.capacity
-			}
+			newVal := min(current+tokensToAdd, l.capacity)
 			if b.tokens.CompareAndSwap(current, newVal) {
 				break
 			}
@@ -197,7 +194,9 @@ func (l *Limiter) runCleanup() {
 	elapsed := time.Since(start).Seconds()
 	l.cleanupHist.Record(ctx, elapsed)
 
-	l.o11y.Logger().Info(ctx, "whatsapp.ratelimit.cleanup",
+	l.o11y.Logger().Info(
+		ctx,
+		"whatsapp.ratelimit.cleanup",
 		observability.Int64("removed", removed),
 		observability.Int64("remaining", remaining),
 		observability.Float64("duration_s", elapsed),

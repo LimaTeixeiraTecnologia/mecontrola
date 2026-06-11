@@ -752,11 +752,9 @@ func TestBillingCycle_InvoiceFor_TableDriven(t *testing.T) {
 		},
 	}
 
-	bc := services.BillingCycle{}
-
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
-			inv := bc.InvoiceFor(f.purchase, f.cycle, f.tz)
+			inv := services.InvoiceFor(f.purchase, f.cycle, f.tz)
 
 			gotC := inv.ClosingDate.In(f.tz)
 			gotD := inv.DueDate.In(f.tz)
@@ -781,8 +779,6 @@ func TestBillingCycle_InvoiceFor_PropertyBased(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bc := services.BillingCycle{}
-
 	baseTime := time.Date(2020, time.January, 1, 12, 0, 0, 0, sp)
 
 	f := func(closingDay, dueDay uint8, purchaseDays uint32) bool {
@@ -796,7 +792,7 @@ func TestBillingCycle_InvoiceFor_PropertyBased(t *testing.T) {
 		purchaseOffset := int(purchaseDays % (365 * 10))
 		purchase := baseTime.Add(time.Duration(purchaseOffset) * 24 * time.Hour)
 
-		inv := bc.InvoiceFor(purchase, cycle, sp)
+		inv := services.InvoiceFor(purchase, cycle, sp)
 
 		closingInSP := inv.ClosingDate.In(sp)
 		dueInSP := inv.DueDate.In(sp)
@@ -852,12 +848,11 @@ func TestBillingCycle_InvoiceFor_Idempotence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bc := services.BillingCycle{}
 	cycle := mustBillingCycle(20, 5)
 	purchase := spDate(sp, 2026, time.March, 10)
 
-	inv1 := bc.InvoiceFor(purchase, cycle, sp)
-	inv2 := bc.InvoiceFor(purchase, cycle, sp)
+	inv1 := services.InvoiceFor(purchase, cycle, sp)
+	inv2 := services.InvoiceFor(purchase, cycle, sp)
 
 	if !inv1.ClosingDate.Equal(inv2.ClosingDate) || !inv1.DueDate.Equal(inv2.DueDate) {
 		t.Errorf("idempotence violated: first=%v second=%v", inv1, inv2)
@@ -869,8 +864,6 @@ func TestBillingCycle_InvoiceFor_DueDateNeverBeforeClosingDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	bc := services.BillingCycle{}
 
 	type tc struct {
 		closing int
@@ -891,7 +884,7 @@ func TestBillingCycle_InvoiceFor_DueDateNeverBeforeClosingDate(t *testing.T) {
 		}
 		for i := range 366 * 2 {
 			purchase := baseDate.Add(time.Duration(i) * 24 * time.Hour)
-			inv := bc.InvoiceFor(purchase, cycle, sp)
+			inv := services.InvoiceFor(purchase, cycle, sp)
 			if inv.DueDate.Before(inv.ClosingDate) {
 				t.Errorf("due %v before closing %v for purchase %v cycle %d/%d",
 					inv.DueDate, inv.ClosingDate, purchase, tc.closing, tc.due)
@@ -906,14 +899,13 @@ func TestBillingCycle_InvoiceFor_DueDateNeverBeforePurchaseDate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bc := services.BillingCycle{}
 	cycle := mustBillingCycle(20, 5)
 
 	baseDate := time.Date(2024, time.January, 1, 12, 0, 0, 0, sp)
 
 	for i := range 366 * 2 {
 		purchase := baseDate.Add(time.Duration(i) * 24 * time.Hour)
-		inv := bc.InvoiceFor(purchase, cycle, sp)
+		inv := services.InvoiceFor(purchase, cycle, sp)
 		purchaseDay := purchase.In(sp)
 		purchaseNorm := time.Date(purchaseDay.Year(), purchaseDay.Month(), purchaseDay.Day(), 0, 0, 0, 0, sp)
 		if inv.DueDate.Before(purchaseNorm) {

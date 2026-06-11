@@ -1,0 +1,13 @@
+META	task_type	usecase-write
+META	validation_profile	boundary
+META	required_refs	interfaces,usecase-write
+META	optional_refs	testing-unit,observability,messaging,resilience,examples-domain-flow
+META	forbidden_refs	patterns-structural
+go-implementation/architecture	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/architecture.md	base_required_ref
+go-implementation/interfaces	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/interfaces.md	task_type:usecase-write:file_pattern:**/application/usecases/**:required
+go-implementation/usecase-write	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/usecase-write.md	task_type:usecase-write:file_pattern:**/application/usecases/**:required
+go-implementation/testing-unit	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/testing-unit.md	task_type:usecase-write:optional
+go-implementation/observability	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/observability.md	task_type:usecase-write:optional
+go-implementation/messaging	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/messaging.md	task_type:usecase-write:optional
+go-implementation/resilience	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/resilience.md	task_type:usecase-write:optional
+go-implementation/examples-domain-flow	/Users/jailtonjunior/Git/mecontrola/.agents/skills/go-implementation/references/examples-domain-flow.md	task_type:usecase-write:optional

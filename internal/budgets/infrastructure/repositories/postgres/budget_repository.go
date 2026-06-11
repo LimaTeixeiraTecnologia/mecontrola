@@ -16,14 +16,15 @@ import (
 )
 
 type budgetRepository struct {
+	db   database.DBTX
 	o11y observability.Observability
 }
 
-func NewBudgetRepository(o11y observability.Observability) interfaces.BudgetRepository {
-	return &budgetRepository{o11y: o11y}
+func NewBudgetRepository(o11y observability.Observability, db database.DBTX) interfaces.BudgetRepository {
+	return &budgetRepository{db: db, o11y: o11y}
 }
 
-func (r *budgetRepository) GetByUserCompetence(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error) {
+func (r *budgetRepository) GetByUserCompetence(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.get_by_user_competence")
 	defer span.End()
 
@@ -37,7 +38,7 @@ func (r *budgetRepository) GetByUserCompetence(ctx context.Context, db database.
 		 ORDER BY a.root_slug
 	`
 
-	rows, err := db.QueryContext(ctx, query, userID, c.String())
+	rows, err := r.db.QueryContext(ctx, query, userID, c.String())
 	if err != nil {
 		span.RecordError(err)
 		return entities.Budget{}, fmt.Errorf("budgets/postgres: get_by_user_competence: %w", err)
@@ -55,7 +56,7 @@ func (r *budgetRepository) GetByUserCompetence(ctx context.Context, db database.
 	return budgets[0], nil
 }
 
-func (r *budgetRepository) CreateDraft(ctx context.Context, db database.DBTX, b entities.Budget) error {
+func (r *budgetRepository) CreateDraft(ctx context.Context, b entities.Budget) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.create_draft")
 	defer span.End()
 
@@ -65,7 +66,7 @@ func (r *budgetRepository) CreateDraft(ctx context.Context, db database.DBTX, b 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
-	_, err := db.ExecContext(ctx, query,
+	_, err := r.db.ExecContext(ctx, query,
 		b.ID(), b.UserID(), b.Competence().String(), b.TotalCents(),
 		int(b.State()), b.ActivatedAt(), b.AutoDraft(),
 		b.CreatedAt(), b.UpdatedAt(),
@@ -76,7 +77,7 @@ func (r *budgetRepository) CreateDraft(ctx context.Context, db database.DBTX, b 
 	}
 
 	for _, alloc := range b.Allocations() {
-		if allocErr := r.upsertAllocation(ctx, db, alloc); allocErr != nil {
+		if allocErr := r.upsertAllocation(ctx, alloc); allocErr != nil {
 			span.RecordError(allocErr)
 			return fmt.Errorf("budgets/postgres: create_draft allocation: %w", allocErr)
 		}
@@ -84,7 +85,7 @@ func (r *budgetRepository) CreateDraft(ctx context.Context, db database.DBTX, b 
 	return nil
 }
 
-func (r *budgetRepository) Activate(ctx context.Context, db database.DBTX, b entities.Budget) error {
+func (r *budgetRepository) Activate(ctx context.Context, b entities.Budget) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.activate")
 	defer span.End()
 
@@ -97,7 +98,7 @@ func (r *budgetRepository) Activate(ctx context.Context, db database.DBTX, b ent
 		 WHERE id = $5
 	`
 
-	result, err := db.ExecContext(ctx, query,
+	result, err := r.db.ExecContext(ctx, query,
 		int(b.State()), b.TotalCents(), b.ActivatedAt(), b.UpdatedAt(), b.ID(),
 	)
 	if err != nil {
@@ -114,7 +115,7 @@ func (r *budgetRepository) Activate(ctx context.Context, db database.DBTX, b ent
 	}
 
 	for _, alloc := range b.Allocations() {
-		if allocErr := r.upsertAllocation(ctx, db, alloc); allocErr != nil {
+		if allocErr := r.upsertAllocation(ctx, alloc); allocErr != nil {
 			span.RecordError(allocErr)
 			return fmt.Errorf("budgets/postgres: activate allocation: %w", allocErr)
 		}
@@ -122,7 +123,7 @@ func (r *budgetRepository) Activate(ctx context.Context, db database.DBTX, b ent
 	return nil
 }
 
-func (r *budgetRepository) DeleteDraft(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) error {
+func (r *budgetRepository) DeleteDraft(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.delete_draft")
 	defer span.End()
 
@@ -131,7 +132,7 @@ func (r *budgetRepository) DeleteDraft(ctx context.Context, db database.DBTX, us
 		 WHERE user_id = $1 AND competence = $2 AND state = $3
 	`
 
-	result, err := db.ExecContext(ctx, query, userID, c.String(), int(entities.BudgetStateDraft))
+	result, err := r.db.ExecContext(ctx, query, userID, c.String(), int(entities.BudgetStateDraft))
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("budgets/postgres: delete_draft: %w", err)
@@ -147,7 +148,7 @@ func (r *budgetRepository) DeleteDraft(ctx context.Context, db database.DBTX, us
 	return nil
 }
 
-func (r *budgetRepository) ListFutureNotActivated(ctx context.Context, db database.DBTX, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error) {
+func (r *budgetRepository) ListFutureNotActivated(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.list_future_not_activated")
 	defer span.End()
 
@@ -162,7 +163,7 @@ func (r *budgetRepository) ListFutureNotActivated(ctx context.Context, db databa
 		 LIMIT $4
 	`
 
-	rows, err := db.QueryContext(ctx, query, userID, from.String(), int(entities.BudgetStateDraft), max)
+	rows, err := r.db.QueryContext(ctx, query, userID, from.String(), int(entities.BudgetStateDraft), max)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("budgets/postgres: list_future_not_activated: %w", err)
@@ -177,7 +178,7 @@ func (r *budgetRepository) ListFutureNotActivated(ctx context.Context, db databa
 	return result, nil
 }
 
-func (r *budgetRepository) ListAbandonedDrafts(ctx context.Context, db database.DBTX, before valueobjects.Competence, limit int) ([]entities.Budget, error) {
+func (r *budgetRepository) ListAbandonedDrafts(ctx context.Context, before valueobjects.Competence, limit int) ([]entities.Budget, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.list_abandoned_drafts")
 	defer span.End()
 
@@ -192,7 +193,7 @@ func (r *budgetRepository) ListAbandonedDrafts(ctx context.Context, db database.
 		 LIMIT $3
 	`
 
-	rows, err := db.QueryContext(ctx, query, int(entities.BudgetStateDraft), before.String(), limit)
+	rows, err := r.db.QueryContext(ctx, query, int(entities.BudgetStateDraft), before.String(), limit)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("budgets/postgres: list_abandoned_drafts: %w", err)
@@ -207,7 +208,7 @@ func (r *budgetRepository) ListAbandonedDrafts(ctx context.Context, db database.
 	return result, nil
 }
 
-func (r *budgetRepository) SignalAbandoned(ctx context.Context, db database.DBTX, budgetID uuid.UUID) error {
+func (r *budgetRepository) SignalAbandoned(ctx context.Context, budgetID uuid.UUID) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.signal_abandoned")
 	defer span.End()
 
@@ -217,7 +218,7 @@ func (r *budgetRepository) SignalAbandoned(ctx context.Context, db database.DBTX
 		ON CONFLICT (budget_id) DO NOTHING
 	`
 
-	_, err := db.ExecContext(ctx, query, budgetID)
+	_, err := r.db.ExecContext(ctx, query, budgetID)
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("budgets/postgres: signal_abandoned: %w", err)
@@ -225,7 +226,7 @@ func (r *budgetRepository) SignalAbandoned(ctx context.Context, db database.DBTX
 	return nil
 }
 
-func (r *budgetRepository) IsSignaledAbandoned(ctx context.Context, db database.DBTX, budgetID uuid.UUID) (bool, error) {
+func (r *budgetRepository) IsSignaledAbandoned(ctx context.Context, budgetID uuid.UUID) (bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.is_signaled_abandoned")
 	defer span.End()
 
@@ -234,14 +235,14 @@ func (r *budgetRepository) IsSignaledAbandoned(ctx context.Context, db database.
 	`
 
 	var count int64
-	if err := db.QueryRowContext(ctx, query, budgetID).Scan(&count); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, budgetID).Scan(&count); err != nil {
 		span.RecordError(err)
 		return false, fmt.Errorf("budgets/postgres: is_signaled_abandoned: %w", err)
 	}
 	return count > 0, nil
 }
 
-func (r *budgetRepository) upsertAllocation(ctx context.Context, db database.DBTX, a entities.Allocation) error {
+func (r *budgetRepository) upsertAllocation(ctx context.Context, a entities.Allocation) error {
 	const query = `
 		INSERT INTO mecontrola.budgets_allocations (budget_id, root_slug, basis_points, planned_cents)
 		VALUES ($1, $2, $3, $4)
@@ -250,7 +251,7 @@ func (r *budgetRepository) upsertAllocation(ctx context.Context, db database.DBT
 		       planned_cents = EXCLUDED.planned_cents
 	`
 
-	_, err := db.ExecContext(ctx, query, a.BudgetID(), a.RootSlug().String(), a.BasisPoints(), a.PlannedCents())
+	_, err := r.db.ExecContext(ctx, query, a.BudgetID(), a.RootSlug().String(), a.BasisPoints(), a.PlannedCents())
 	if err != nil {
 		return fmt.Errorf("upsert allocation %s: %w", a.RootSlug(), err)
 	}

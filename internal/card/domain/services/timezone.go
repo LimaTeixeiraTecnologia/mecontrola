@@ -1,29 +1,14 @@
 package services
 
 import (
-	"log/slog"
-	"os"
-	"sync"
+	"fmt"
 	"time"
 )
 
-var (
-	spOnce sync.Once
-	spLoc  *time.Location
-)
-
-func SaoPauloLocation() *time.Location {
-	spOnce.Do(func() {
-		loc, err := time.LoadLocation("America/Sao_Paulo")
-		if err != nil {
-			slog.Error("failed to load America/Sao_Paulo timezone", "error", err)
-			os.Exit(1)
-		}
-		spLoc = loc
-	})
-	return spLoc
-}
-
-func MustLoadSaoPauloOrExit() {
-	SaoPauloLocation()
+func NewSaoPauloLocation() (*time.Location, error) {
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		return nil, fmt.Errorf("card.services: carregar America/Sao_Paulo: %w", err)
+	}
+	return loc, nil
 }

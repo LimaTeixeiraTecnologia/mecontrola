@@ -21,15 +21,19 @@ import (
 type GetMonthlySummarySuite struct {
 	suite.Suite
 	uc       *usecases.GetMonthlySummary
+	factory  *ifmocks.RepositoryFactory
 	budgets  *ifmocks.BudgetRepository
 	expenses *ifmocks.ExpenseRepository
 }
 
 func (s *GetMonthlySummarySuite) SetupTest() {
+	s.factory = ifmocks.NewRepositoryFactory(s.T())
 	s.budgets = ifmocks.NewBudgetRepository(s.T())
 	s.expenses = ifmocks.NewExpenseRepository(s.T())
+	s.factory.On("BudgetRepository", mock.Anything).Return(s.budgets).Maybe()
+	s.factory.On("ExpenseRepository", mock.Anything).Return(s.expenses).Maybe()
 	uow := ucmocks.NewUnitOfWorkMonthlySummary(s.T())
-	s.uc = usecases.NewGetMonthlySummary(s.budgets, s.expenses, uow, noop.NewProvider())
+	s.uc = usecases.NewGetMonthlySummary(s.factory, uow, noop.NewProvider())
 }
 
 func TestGetMonthlySummarySuite(t *testing.T) {
@@ -48,7 +52,7 @@ func (s *GetMonthlySummarySuite) TestExecute_InvalidCompetence() {
 
 func (s *GetMonthlySummarySuite) TestExecute_BudgetNotFound() {
 	userID := uuid.New()
-	s.budgets.On("GetByUserCompetence", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.budgets.On("GetByUserCompetence", mock.Anything, userID, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound)
 
 	_, err := s.uc.Execute(context.Background(), userID.String(), "2025-01")
@@ -60,9 +64,9 @@ func (s *GetMonthlySummarySuite) TestExecute_AutoDraftReturnsSummaryWithNullFiel
 	comp, _ := valueobjects.NewCompetence("2025-01")
 	budget := entities.NewAutoDraftBudget(userID, comp, time.Now())
 
-	s.budgets.On("GetByUserCompetence", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.budgets.On("GetByUserCompetence", mock.Anything, userID, mock.Anything).
 		Return(budget, nil)
-	s.expenses.On("SumByRoot", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.expenses.On("SumByRoot", mock.Anything, userID, mock.Anything).
 		Return(map[valueobjects.RootSlug]int64{}, nil)
 
 	out, err := s.uc.Execute(context.Background(), userID.String(), "2025-01")
@@ -88,9 +92,9 @@ func (s *GetMonthlySummarySuite) TestExecute_ActiveBudgetWithExpenses() {
 		now, now,
 	)
 
-	s.budgets.On("GetByUserCompetence", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.budgets.On("GetByUserCompetence", mock.Anything, userID, mock.Anything).
 		Return(budget, nil)
-	s.expenses.On("SumByRoot", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.expenses.On("SumByRoot", mock.Anything, userID, mock.Anything).
 		Return(map[valueobjects.RootSlug]int64{valueobjects.RootSlugCustoFixo: 25000}, nil)
 
 	out, err := s.uc.Execute(context.Background(), userID.String(), "2025-01")
@@ -122,9 +126,9 @@ func (s *GetMonthlySummarySuite) TestExecute_AutoDraftShowsAllRootsWithSpentFrom
 		valueobjects.RootSlugLiberdadeFinanceira: 7800,
 	}
 
-	s.budgets.On("GetByUserCompetence", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.budgets.On("GetByUserCompetence", mock.Anything, userID, mock.Anything).
 		Return(budget, nil)
-	s.expenses.On("SumByRoot", mock.Anything, mock.Anything, userID, mock.Anything).
+	s.expenses.On("SumByRoot", mock.Anything, userID, mock.Anything).
 		Return(spent, nil)
 
 	out, err := s.uc.Execute(context.Background(), userID.String(), "2025-01")

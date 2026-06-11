@@ -19,14 +19,15 @@ import (
 )
 
 type alertRepository struct {
+	db   database.DBTX
 	o11y observability.Observability
 }
 
-func NewAlertRepository(o11y observability.Observability) interfaces.AlertRepository {
-	return &alertRepository{o11y: o11y}
+func NewAlertRepository(o11y observability.Observability, db database.DBTX) interfaces.AlertRepository {
+	return &alertRepository{db: db, o11y: o11y}
 }
 
-func (r *alertRepository) Insert(ctx context.Context, db database.DBTX, a entities.Alert) error {
+func (r *alertRepository) Insert(ctx context.Context, a entities.Alert) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.alert.insert")
 	defer span.End()
 
@@ -37,7 +38,7 @@ func (r *alertRepository) Insert(ctx context.Context, db database.DBTX, a entiti
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
-	_, err := db.ExecContext(ctx, query,
+	_, err := r.db.ExecContext(ctx, query,
 		a.ID(), a.UserID(), a.Competence().String(), a.RootSlug().String(),
 		a.Threshold().Int(), int(a.State()),
 		a.TriggeredByCommittedAt(), a.SpentCents(), a.PlannedCents(), a.CreatedAt(),
@@ -49,7 +50,7 @@ func (r *alertRepository) Insert(ctx context.Context, db database.DBTX, a entiti
 	return nil
 }
 
-func (r *alertRepository) CountDelivered(ctx context.Context, db database.DBTX, k entities.ThresholdKey) (int64, error) {
+func (r *alertRepository) CountDelivered(ctx context.Context, k entities.ThresholdKey) (int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.alert.count_delivered")
 	defer span.End()
 
@@ -63,7 +64,7 @@ func (r *alertRepository) CountDelivered(ctx context.Context, db database.DBTX, 
 		   AND state IN (1, 2)
 	`
 
-	row := db.QueryRowContext(ctx, query,
+	row := r.db.QueryRowContext(ctx, query,
 		k.UserID, k.Competence.String(), k.RootSlug.String(), k.Threshold.Int(),
 	)
 
@@ -75,7 +76,7 @@ func (r *alertRepository) CountDelivered(ctx context.Context, db database.DBTX, 
 	return count, nil
 }
 
-func (r *alertRepository) ListForUser(ctx context.Context, db database.DBTX, userID uuid.UUID, q input.AlertQuery) ([]entities.Alert, string, error) {
+func (r *alertRepository) ListForUser(ctx context.Context, userID uuid.UUID, q input.AlertQuery) ([]entities.Alert, string, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.alert.list_for_user")
 	defer span.End()
 
@@ -84,48 +85,12 @@ func (r *alertRepository) ListForUser(ctx context.Context, db database.DBTX, use
 		limit = 20
 	}
 
-	cursorTime, cursorID, cursorErr := decodeCursor(q.Cursor)
-	if cursorErr != nil {
-		return nil, "", fmt.Errorf("budgets/postgres: list_for_user invalid cursor: %w", cursorErr)
+	listQuery, err := r.buildListForUserQuery(userID, q, limit)
+	if err != nil {
+		return nil, "", fmt.Errorf("budgets/postgres: list_for_user invalid cursor: %w", err)
 	}
 
-	query := `
-		SELECT id, user_id, competence, root_slug, threshold, state,
-		       triggered_by_committed_at, spent_cents, planned_cents, created_at
-		  FROM mecontrola.budgets_alerts
-		 WHERE user_id = $1
-		   AND state IN (1, 2)
-	`
-
-	args := []any{userID}
-	idx := 2
-
-	if q.Competence != nil {
-		args = append(args, q.Competence.String())
-		query += fmt.Sprintf(" AND competence = $%d", idx)
-		idx++
-	}
-	if q.RootSlug != nil {
-		args = append(args, q.RootSlug.String())
-		query += fmt.Sprintf(" AND root_slug = $%d", idx)
-		idx++
-	}
-	if q.Threshold != nil {
-		args = append(args, q.Threshold.Int())
-		query += fmt.Sprintf(" AND threshold = $%d", idx)
-		idx++
-	}
-
-	if !cursorTime.IsZero() {
-		args = append(args, cursorTime, cursorID)
-		query += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d)", idx, idx+1)
-		idx += 2
-	}
-
-	args = append(args, limit+1)
-	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", idx)
-
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, listQuery.query, listQuery.args...)
 	if err != nil {
 		span.RecordError(err)
 		return nil, "", fmt.Errorf("budgets/postgres: list_for_user: %w", err)
@@ -146,6 +111,58 @@ func (r *alertRepository) ListForUser(ctx context.Context, db database.DBTX, use
 	}
 
 	return alerts, nextCursor, nil
+}
+
+type alertListQuery struct {
+	query string
+	args  []any
+}
+
+func (r *alertRepository) buildListForUserQuery(userID uuid.UUID, q input.AlertQuery, limit int) (alertListQuery, error) {
+	cursorTime, cursorID, err := decodeCursor(q.Cursor)
+	if err != nil {
+		return alertListQuery{}, err
+	}
+
+	query := `
+		SELECT id, user_id, competence, root_slug, threshold, state,
+		       triggered_by_committed_at, spent_cents, planned_cents, created_at
+		  FROM mecontrola.budgets_alerts
+		 WHERE user_id = $1
+		   AND state IN (1, 2)
+	`
+	args := []any{userID}
+	index := 2
+
+	query, args, index = r.appendListForUserFilters(query, args, index, q)
+	if !cursorTime.IsZero() {
+		args = append(args, cursorTime, cursorID)
+		query += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d)", index, index+1)
+		index += 2
+	}
+
+	args = append(args, limit+1)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", index)
+	return alertListQuery{query: query, args: args}, nil
+}
+
+func (r *alertRepository) appendListForUserFilters(query string, args []any, index int, q input.AlertQuery) (string, []any, int) {
+	if q.Competence != nil {
+		args = append(args, q.Competence.String())
+		query += fmt.Sprintf(" AND competence = $%d", index)
+		index++
+	}
+	if q.RootSlug != nil {
+		args = append(args, q.RootSlug.String())
+		query += fmt.Sprintf(" AND root_slug = $%d", index)
+		index++
+	}
+	if q.Threshold != nil {
+		args = append(args, q.Threshold.Int())
+		query += fmt.Sprintf(" AND threshold = $%d", index)
+		index++
+	}
+	return query, args, index
 }
 
 func (r *alertRepository) scanAlerts(rows database.Rows) ([]entities.Alert, error) {
@@ -254,7 +271,7 @@ func splitCursor(s string) []string {
 	return []string{s[:idx-1], s[idx:]}
 }
 
-func (r *alertRepository) PurgeOld(ctx context.Context, db database.DBTX, olderThan string, limit int) (int64, error) {
+func (r *alertRepository) PurgeOld(ctx context.Context, olderThan string, limit int) (int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.alert.purge_old")
 	defer span.End()
 
@@ -267,7 +284,7 @@ func (r *alertRepository) PurgeOld(ctx context.Context, db database.DBTX, olderT
 		 )
 	`
 
-	result, err := db.ExecContext(ctx, query, olderThan, limit)
+	result, err := r.db.ExecContext(ctx, query, olderThan, limit)
 	if err != nil {
 		span.RecordError(err)
 		return 0, fmt.Errorf("budgets/postgres: purge_old_alerts: %w", err)

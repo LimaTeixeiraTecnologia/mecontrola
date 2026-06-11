@@ -40,8 +40,9 @@ func TestNewCardModule_FieldsNotNil(t *testing.T) {
 	mgr := &stubManager{}
 	cfg := &configs.Config{}
 
-	m := card.NewCardModule(cfg, o11y, manager.Manager(mgr))
+	m, err := card.NewCardModule(cfg, o11y, manager.Manager(mgr))
 
+	assert.NoError(t, err, "NewCardModule nao deve retornar erro")
 	assert.NotNil(t, m.RepositoryFactory, "RepositoryFactory deve ser nao-nil")
 	assert.NotNil(t, m.CardRouter, "CardRouter deve ser nao-nil")
 	assert.NotNil(t, m.CardLookup, "CardLookup deve ser nao-nil")

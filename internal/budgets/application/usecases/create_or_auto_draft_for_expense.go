@@ -15,15 +15,16 @@ import (
 )
 
 type CreateOrAutoDraftForExpense struct {
-	budgets interfaces.BudgetRepository
+	factory interfaces.RepositoryFactory
 }
 
-func NewCreateOrAutoDraftForExpense(budgets interfaces.BudgetRepository) *CreateOrAutoDraftForExpense {
-	return &CreateOrAutoDraftForExpense{budgets: budgets}
+func NewCreateOrAutoDraftForExpense(factory interfaces.RepositoryFactory) *CreateOrAutoDraftForExpense {
+	return &CreateOrAutoDraftForExpense{factory: factory}
 }
 
 func (uc *CreateOrAutoDraftForExpense) EnsureExists(ctx context.Context, tx database.DBTX, userID uuid.UUID, competence valueobjects.Competence, now time.Time) error {
-	_, err := uc.budgets.GetByUserCompetence(ctx, tx, userID, competence)
+	budgets := uc.factory.BudgetRepository(tx)
+	_, err := budgets.GetByUserCompetence(ctx, userID, competence)
 	if err == nil {
 		return nil
 	}
@@ -33,7 +34,7 @@ func (uc *CreateOrAutoDraftForExpense) EnsureExists(ctx context.Context, tx data
 	}
 
 	draft := entities.NewAutoDraftBudget(userID, competence, now)
-	if createErr := uc.budgets.CreateDraft(ctx, tx, draft); createErr != nil {
+	if createErr := budgets.CreateDraft(ctx, draft); createErr != nil {
 		if errors.Is(createErr, interfaces.ErrBudgetConflict) {
 			return nil
 		}

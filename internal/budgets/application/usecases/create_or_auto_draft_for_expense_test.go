@@ -20,6 +20,7 @@ import (
 type CreateOrAutoDraftForExpenseSuite struct {
 	suite.Suite
 	ctx     context.Context
+	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	useCase *usecases.CreateOrAutoDraftForExpense
 }
@@ -30,8 +31,10 @@ func TestCreateOrAutoDraftForExpenseSuite(t *testing.T) {
 
 func (s *CreateOrAutoDraftForExpenseSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
-	s.useCase = usecases.NewCreateOrAutoDraftForExpense(s.repo)
+	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
+	s.useCase = usecases.NewCreateOrAutoDraftForExpense(s.factory)
 }
 
 func (s *CreateOrAutoDraftForExpenseSuite) TestEnsureExists_BudgetAlreadyExists_NoCreate() {
@@ -42,7 +45,7 @@ func (s *CreateOrAutoDraftForExpenseSuite) TestEnsureExists_BudgetAlreadyExists_
 	existing := entities.NewBudget(userID, comp, 100000, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(existing, nil).
 		Once()
 
@@ -57,12 +60,12 @@ func (s *CreateOrAutoDraftForExpenseSuite) TestEnsureExists_BudgetNotFound_Creat
 	now := time.Now().UTC()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.MatchedBy(func(b entities.Budget) bool {
+		CreateDraft(s.ctx, mock.MatchedBy(func(b entities.Budget) bool {
 			return b.AutoDraft() && b.UserID() == userID
 		})).
 		Return(nil).
@@ -79,12 +82,12 @@ func (s *CreateOrAutoDraftForExpenseSuite) TestEnsureExists_BudgetNotFound_Confl
 	now := time.Now().UTC()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(interfaces.ErrBudgetConflict).
 		Once()
 
@@ -99,7 +102,7 @@ func (s *CreateOrAutoDraftForExpenseSuite) TestEnsureExists_GetError_Propagates(
 	now := time.Now().UTC()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, errors.New("connection error")).
 		Once()
 
@@ -114,12 +117,12 @@ func (s *CreateOrAutoDraftForExpenseSuite) TestEnsureExists_CreateError_Propagat
 	now := time.Now().UTC()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(errors.New("db failure")).
 		Once()
 

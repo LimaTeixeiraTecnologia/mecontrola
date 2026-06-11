@@ -8,8 +8,6 @@ func Compose(secretCurrent, secretNext string, onInvalid func()) func(http.Handl
 
 func ComposeWithStatus(secretCurrent, secretNext string, onInvalid func(), onStatus func(status string)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		return RawBody(
-			HMACWithMetrics(secretCurrent, secretNext, onInvalid, onStatus)(next),
-		)
+		return RawBody(HMACWithMetrics(secretCurrent, secretNext, onInvalid, onStatus)(next))
 	}
 }

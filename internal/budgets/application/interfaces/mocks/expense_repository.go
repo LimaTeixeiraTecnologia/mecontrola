@@ -7,7 +7,6 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/google/uuid"
@@ -42,8 +41,8 @@ func (_m *ExpenseRepository) EXPECT() *ExpenseRepository_Expecter {
 }
 
 // GetByIdentity provides a mock function for the type ExpenseRepository
-func (_mock *ExpenseRepository) GetByIdentity(ctx context.Context, db database.DBTX, k entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error) {
-	ret := _mock.Called(ctx, db, k)
+func (_mock *ExpenseRepository) GetByIdentity(ctx context.Context, k entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error) {
+	ret := _mock.Called(ctx, k)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetByIdentity")
@@ -52,21 +51,21 @@ func (_mock *ExpenseRepository) GetByIdentity(ctx context.Context, db database.D
 	var r0 entities.Expense
 	var r1 entities.ExpenseTombstone
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error)); ok {
-		return returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error)); ok {
+		return returnFunc(ctx, k)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.ExpenseIdentity) entities.Expense); ok {
-		r0 = returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.ExpenseIdentity) entities.Expense); ok {
+		r0 = returnFunc(ctx, k)
 	} else {
 		r0 = ret.Get(0).(entities.Expense)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, entities.ExpenseIdentity) entities.ExpenseTombstone); ok {
-		r1 = returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, entities.ExpenseIdentity) entities.ExpenseTombstone); ok {
+		r1 = returnFunc(ctx, k)
 	} else {
 		r1 = ret.Get(1).(entities.ExpenseTombstone)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, database.DBTX, entities.ExpenseIdentity) error); ok {
-		r2 = returnFunc(ctx, db, k)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, entities.ExpenseIdentity) error); ok {
+		r2 = returnFunc(ctx, k)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -80,30 +79,24 @@ type ExpenseRepository_GetByIdentity_Call struct {
 
 // GetByIdentity is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - k entities.ExpenseIdentity
-func (_e *ExpenseRepository_Expecter) GetByIdentity(ctx interface{}, db interface{}, k interface{}) *ExpenseRepository_GetByIdentity_Call {
-	return &ExpenseRepository_GetByIdentity_Call{Call: _e.mock.On("GetByIdentity", ctx, db, k)}
+func (_e *ExpenseRepository_Expecter) GetByIdentity(ctx interface{}, k interface{}) *ExpenseRepository_GetByIdentity_Call {
+	return &ExpenseRepository_GetByIdentity_Call{Call: _e.mock.On("GetByIdentity", ctx, k)}
 }
 
-func (_c *ExpenseRepository_GetByIdentity_Call) Run(run func(ctx context.Context, db database.DBTX, k entities.ExpenseIdentity)) *ExpenseRepository_GetByIdentity_Call {
+func (_c *ExpenseRepository_GetByIdentity_Call) Run(run func(ctx context.Context, k entities.ExpenseIdentity)) *ExpenseRepository_GetByIdentity_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.ExpenseIdentity
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.ExpenseIdentity
-		if args[2] != nil {
-			arg2 = args[2].(entities.ExpenseIdentity)
+			arg1 = args[1].(entities.ExpenseIdentity)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -114,22 +107,22 @@ func (_c *ExpenseRepository_GetByIdentity_Call) Return(expense entities.Expense,
 	return _c
 }
 
-func (_c *ExpenseRepository_GetByIdentity_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, k entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error)) *ExpenseRepository_GetByIdentity_Call {
+func (_c *ExpenseRepository_GetByIdentity_Call) RunAndReturn(run func(ctx context.Context, k entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error)) *ExpenseRepository_GetByIdentity_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Insert provides a mock function for the type ExpenseRepository
-func (_mock *ExpenseRepository) Insert(ctx context.Context, db database.DBTX, e entities.Expense) error {
-	ret := _mock.Called(ctx, db, e)
+func (_mock *ExpenseRepository) Insert(ctx context.Context, e entities.Expense) error {
+	ret := _mock.Called(ctx, e)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Insert")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Expense) error); ok {
-		r0 = returnFunc(ctx, db, e)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Expense) error); ok {
+		r0 = returnFunc(ctx, e)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -143,30 +136,24 @@ type ExpenseRepository_Insert_Call struct {
 
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - e entities.Expense
-func (_e *ExpenseRepository_Expecter) Insert(ctx interface{}, db interface{}, e interface{}) *ExpenseRepository_Insert_Call {
-	return &ExpenseRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, db, e)}
+func (_e *ExpenseRepository_Expecter) Insert(ctx interface{}, e interface{}) *ExpenseRepository_Insert_Call {
+	return &ExpenseRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, e)}
 }
 
-func (_c *ExpenseRepository_Insert_Call) Run(run func(ctx context.Context, db database.DBTX, e entities.Expense)) *ExpenseRepository_Insert_Call {
+func (_c *ExpenseRepository_Insert_Call) Run(run func(ctx context.Context, e entities.Expense)) *ExpenseRepository_Insert_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.Expense
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.Expense
-		if args[2] != nil {
-			arg2 = args[2].(entities.Expense)
+			arg1 = args[1].(entities.Expense)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -177,14 +164,14 @@ func (_c *ExpenseRepository_Insert_Call) Return(err error) *ExpenseRepository_In
 	return _c
 }
 
-func (_c *ExpenseRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, e entities.Expense) error) *ExpenseRepository_Insert_Call {
+func (_c *ExpenseRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, e entities.Expense) error) *ExpenseRepository_Insert_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // PurgeDeleted provides a mock function for the type ExpenseRepository
-func (_mock *ExpenseRepository) PurgeDeleted(ctx context.Context, db database.DBTX, olderThan string, limit int) (int64, error) {
-	ret := _mock.Called(ctx, db, olderThan, limit)
+func (_mock *ExpenseRepository) PurgeDeleted(ctx context.Context, olderThan string, limit int) (int64, error) {
+	ret := _mock.Called(ctx, olderThan, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for PurgeDeleted")
@@ -192,16 +179,16 @@ func (_mock *ExpenseRepository) PurgeDeleted(ctx context.Context, db database.DB
 
 	var r0 int64
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, string, int) (int64, error)); ok {
-		return returnFunc(ctx, db, olderThan, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) (int64, error)); ok {
+		return returnFunc(ctx, olderThan, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, string, int) int64); ok {
-		r0 = returnFunc(ctx, db, olderThan, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) int64); ok {
+		r0 = returnFunc(ctx, olderThan, limit)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, string, int) error); ok {
-		r1 = returnFunc(ctx, db, olderThan, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int) error); ok {
+		r1 = returnFunc(ctx, olderThan, limit)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -215,36 +202,30 @@ type ExpenseRepository_PurgeDeleted_Call struct {
 
 // PurgeDeleted is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - olderThan string
 //   - limit int
-func (_e *ExpenseRepository_Expecter) PurgeDeleted(ctx interface{}, db interface{}, olderThan interface{}, limit interface{}) *ExpenseRepository_PurgeDeleted_Call {
-	return &ExpenseRepository_PurgeDeleted_Call{Call: _e.mock.On("PurgeDeleted", ctx, db, olderThan, limit)}
+func (_e *ExpenseRepository_Expecter) PurgeDeleted(ctx interface{}, olderThan interface{}, limit interface{}) *ExpenseRepository_PurgeDeleted_Call {
+	return &ExpenseRepository_PurgeDeleted_Call{Call: _e.mock.On("PurgeDeleted", ctx, olderThan, limit)}
 }
 
-func (_c *ExpenseRepository_PurgeDeleted_Call) Run(run func(ctx context.Context, db database.DBTX, olderThan string, limit int)) *ExpenseRepository_PurgeDeleted_Call {
+func (_c *ExpenseRepository_PurgeDeleted_Call) Run(run func(ctx context.Context, olderThan string, limit int)) *ExpenseRepository_PurgeDeleted_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 int
 		if args[2] != nil {
-			arg2 = args[2].(string)
-		}
-		var arg3 int
-		if args[3] != nil {
-			arg3 = args[3].(int)
+			arg2 = args[2].(int)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -255,14 +236,14 @@ func (_c *ExpenseRepository_PurgeDeleted_Call) Return(n int64, err error) *Expen
 	return _c
 }
 
-func (_c *ExpenseRepository_PurgeDeleted_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, olderThan string, limit int) (int64, error)) *ExpenseRepository_PurgeDeleted_Call {
+func (_c *ExpenseRepository_PurgeDeleted_Call) RunAndReturn(run func(ctx context.Context, olderThan string, limit int) (int64, error)) *ExpenseRepository_PurgeDeleted_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // SoftDelete provides a mock function for the type ExpenseRepository
-func (_mock *ExpenseRepository) SoftDelete(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64) (int64, error) {
-	ret := _mock.Called(ctx, db, e, expectedVersion)
+func (_mock *ExpenseRepository) SoftDelete(ctx context.Context, e entities.Expense, expectedVersion int64) (int64, error) {
+	ret := _mock.Called(ctx, e, expectedVersion)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SoftDelete")
@@ -270,16 +251,16 @@ func (_mock *ExpenseRepository) SoftDelete(ctx context.Context, db database.DBTX
 
 	var r0 int64
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Expense, int64) (int64, error)); ok {
-		return returnFunc(ctx, db, e, expectedVersion)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Expense, int64) (int64, error)); ok {
+		return returnFunc(ctx, e, expectedVersion)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Expense, int64) int64); ok {
-		r0 = returnFunc(ctx, db, e, expectedVersion)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Expense, int64) int64); ok {
+		r0 = returnFunc(ctx, e, expectedVersion)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, entities.Expense, int64) error); ok {
-		r1 = returnFunc(ctx, db, e, expectedVersion)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, entities.Expense, int64) error); ok {
+		r1 = returnFunc(ctx, e, expectedVersion)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -293,36 +274,30 @@ type ExpenseRepository_SoftDelete_Call struct {
 
 // SoftDelete is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - e entities.Expense
 //   - expectedVersion int64
-func (_e *ExpenseRepository_Expecter) SoftDelete(ctx interface{}, db interface{}, e interface{}, expectedVersion interface{}) *ExpenseRepository_SoftDelete_Call {
-	return &ExpenseRepository_SoftDelete_Call{Call: _e.mock.On("SoftDelete", ctx, db, e, expectedVersion)}
+func (_e *ExpenseRepository_Expecter) SoftDelete(ctx interface{}, e interface{}, expectedVersion interface{}) *ExpenseRepository_SoftDelete_Call {
+	return &ExpenseRepository_SoftDelete_Call{Call: _e.mock.On("SoftDelete", ctx, e, expectedVersion)}
 }
 
-func (_c *ExpenseRepository_SoftDelete_Call) Run(run func(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64)) *ExpenseRepository_SoftDelete_Call {
+func (_c *ExpenseRepository_SoftDelete_Call) Run(run func(ctx context.Context, e entities.Expense, expectedVersion int64)) *ExpenseRepository_SoftDelete_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.Expense
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(entities.Expense)
 		}
-		var arg2 entities.Expense
+		var arg2 int64
 		if args[2] != nil {
-			arg2 = args[2].(entities.Expense)
-		}
-		var arg3 int64
-		if args[3] != nil {
-			arg3 = args[3].(int64)
+			arg2 = args[2].(int64)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -333,14 +308,14 @@ func (_c *ExpenseRepository_SoftDelete_Call) Return(tombstoneVersion int64, err 
 	return _c
 }
 
-func (_c *ExpenseRepository_SoftDelete_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64) (int64, error)) *ExpenseRepository_SoftDelete_Call {
+func (_c *ExpenseRepository_SoftDelete_Call) RunAndReturn(run func(ctx context.Context, e entities.Expense, expectedVersion int64) (int64, error)) *ExpenseRepository_SoftDelete_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // SumByRoot provides a mock function for the type ExpenseRepository
-func (_mock *ExpenseRepository) SumByRoot(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) (map[valueobjects.RootSlug]int64, error) {
-	ret := _mock.Called(ctx, db, userID, c)
+func (_mock *ExpenseRepository) SumByRoot(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (map[valueobjects.RootSlug]int64, error) {
+	ret := _mock.Called(ctx, userID, c)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SumByRoot")
@@ -348,18 +323,18 @@ func (_mock *ExpenseRepository) SumByRoot(ctx context.Context, db database.DBTX,
 
 	var r0 map[valueobjects.RootSlug]int64
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) (map[valueobjects.RootSlug]int64, error)); ok {
-		return returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) (map[valueobjects.RootSlug]int64, error)); ok {
+		return returnFunc(ctx, userID, c)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) map[valueobjects.RootSlug]int64); ok {
-		r0 = returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) map[valueobjects.RootSlug]int64); ok {
+		r0 = returnFunc(ctx, userID, c)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(map[valueobjects.RootSlug]int64)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) error); ok {
-		r1 = returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
+		r1 = returnFunc(ctx, userID, c)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -373,36 +348,30 @@ type ExpenseRepository_SumByRoot_Call struct {
 
 // SumByRoot is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - userID uuid.UUID
 //   - c valueobjects.Competence
-func (_e *ExpenseRepository_Expecter) SumByRoot(ctx interface{}, db interface{}, userID interface{}, c interface{}) *ExpenseRepository_SumByRoot_Call {
-	return &ExpenseRepository_SumByRoot_Call{Call: _e.mock.On("SumByRoot", ctx, db, userID, c)}
+func (_e *ExpenseRepository_Expecter) SumByRoot(ctx interface{}, userID interface{}, c interface{}) *ExpenseRepository_SumByRoot_Call {
+	return &ExpenseRepository_SumByRoot_Call{Call: _e.mock.On("SumByRoot", ctx, userID, c)}
 }
 
-func (_c *ExpenseRepository_SumByRoot_Call) Run(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence)) *ExpenseRepository_SumByRoot_Call {
+func (_c *ExpenseRepository_SumByRoot_Call) Run(run func(ctx context.Context, userID uuid.UUID, c valueobjects.Competence)) *ExpenseRepository_SumByRoot_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 uuid.UUID
+		var arg2 valueobjects.Competence
 		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
-		}
-		var arg3 valueobjects.Competence
-		if args[3] != nil {
-			arg3 = args[3].(valueobjects.Competence)
+			arg2 = args[2].(valueobjects.Competence)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -413,22 +382,22 @@ func (_c *ExpenseRepository_SumByRoot_Call) Return(rootSlugToInt64 map[valueobje
 	return _c
 }
 
-func (_c *ExpenseRepository_SumByRoot_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) (map[valueobjects.RootSlug]int64, error)) *ExpenseRepository_SumByRoot_Call {
+func (_c *ExpenseRepository_SumByRoot_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (map[valueobjects.RootSlug]int64, error)) *ExpenseRepository_SumByRoot_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Update provides a mock function for the type ExpenseRepository
-func (_mock *ExpenseRepository) Update(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64) error {
-	ret := _mock.Called(ctx, db, e, expectedVersion)
+func (_mock *ExpenseRepository) Update(ctx context.Context, e entities.Expense, expectedVersion int64) error {
+	ret := _mock.Called(ctx, e, expectedVersion)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Update")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Expense, int64) error); ok {
-		r0 = returnFunc(ctx, db, e, expectedVersion)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Expense, int64) error); ok {
+		r0 = returnFunc(ctx, e, expectedVersion)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -442,36 +411,30 @@ type ExpenseRepository_Update_Call struct {
 
 // Update is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - e entities.Expense
 //   - expectedVersion int64
-func (_e *ExpenseRepository_Expecter) Update(ctx interface{}, db interface{}, e interface{}, expectedVersion interface{}) *ExpenseRepository_Update_Call {
-	return &ExpenseRepository_Update_Call{Call: _e.mock.On("Update", ctx, db, e, expectedVersion)}
+func (_e *ExpenseRepository_Expecter) Update(ctx interface{}, e interface{}, expectedVersion interface{}) *ExpenseRepository_Update_Call {
+	return &ExpenseRepository_Update_Call{Call: _e.mock.On("Update", ctx, e, expectedVersion)}
 }
 
-func (_c *ExpenseRepository_Update_Call) Run(run func(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64)) *ExpenseRepository_Update_Call {
+func (_c *ExpenseRepository_Update_Call) Run(run func(ctx context.Context, e entities.Expense, expectedVersion int64)) *ExpenseRepository_Update_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.Expense
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(entities.Expense)
 		}
-		var arg2 entities.Expense
+		var arg2 int64
 		if args[2] != nil {
-			arg2 = args[2].(entities.Expense)
-		}
-		var arg3 int64
-		if args[3] != nil {
-			arg3 = args[3].(int64)
+			arg2 = args[2].(int64)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -482,7 +445,7 @@ func (_c *ExpenseRepository_Update_Call) Return(err error) *ExpenseRepository_Up
 	return _c
 }
 
-func (_c *ExpenseRepository_Update_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64) error) *ExpenseRepository_Update_Call {
+func (_c *ExpenseRepository_Update_Call) RunAndReturn(run func(ctx context.Context, e entities.Expense, expectedVersion int64) error) *ExpenseRepository_Update_Call {
 	_c.Call.Return(run)
 	return _c
 }

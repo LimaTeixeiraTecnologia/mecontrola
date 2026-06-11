@@ -20,14 +20,15 @@ import (
 )
 
 type expenseRepository struct {
+	db   database.DBTX
 	o11y observability.Observability
 }
 
-func NewExpenseRepository(o11y observability.Observability) interfaces.ExpenseRepository {
-	return &expenseRepository{o11y: o11y}
+func NewExpenseRepository(o11y observability.Observability, db database.DBTX) interfaces.ExpenseRepository {
+	return &expenseRepository{db: db, o11y: o11y}
 }
 
-func (r *expenseRepository) GetByIdentity(ctx context.Context, db database.DBTX, k entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error) {
+func (r *expenseRepository) GetByIdentity(ctx context.Context, k entities.ExpenseIdentity) (entities.Expense, entities.ExpenseTombstone, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.expense.get_by_identity")
 	defer span.End()
 
@@ -39,14 +40,14 @@ func (r *expenseRepository) GetByIdentity(ctx context.Context, db database.DBTX,
 		 WHERE user_id = $1 AND source = $2 AND external_transaction_id = $3
 	`
 
-	row := db.QueryRowContext(ctx, query,
+	row := r.db.QueryRowContext(ctx, query,
 		k.UserID, k.Source.String(), k.ExternalTransactionID.String(),
 	)
 
 	return r.scanExpenseRow(row)
 }
 
-func (r *expenseRepository) Insert(ctx context.Context, db database.DBTX, e entities.Expense) error {
+func (r *expenseRepository) Insert(ctx context.Context, e entities.Expense) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.expense.insert")
 	defer span.End()
 
@@ -58,7 +59,7 @@ func (r *expenseRepository) Insert(ctx context.Context, db database.DBTX, e enti
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
-	_, err := db.ExecContext(ctx, query,
+	_, err := r.db.ExecContext(ctx, query,
 		e.ID(), e.UserID(), e.Source().String(), e.ExternalTransactionID().String(),
 		e.SubcategoryID(), e.RootSlug().String(), e.Competence().String(),
 		e.AmountCents(), e.OccurredAt(),
@@ -76,7 +77,7 @@ func (r *expenseRepository) Insert(ctx context.Context, db database.DBTX, e enti
 	return nil
 }
 
-func (r *expenseRepository) Update(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64) error {
+func (r *expenseRepository) Update(ctx context.Context, e entities.Expense, expectedVersion int64) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.expense.update")
 	defer span.End()
 
@@ -92,7 +93,7 @@ func (r *expenseRepository) Update(ctx context.Context, db database.DBTX, e enti
 		 WHERE id = $8 AND version = $9 AND deleted_at IS NULL
 	`
 
-	result, err := db.ExecContext(ctx, query,
+	result, err := r.db.ExecContext(ctx, query,
 		e.SubcategoryID(), e.RootSlug().String(), e.Competence().String(),
 		e.AmountCents(), e.OccurredAt(),
 		e.Version(), e.UpdatedAt(),
@@ -113,7 +114,7 @@ func (r *expenseRepository) Update(ctx context.Context, db database.DBTX, e enti
 	return nil
 }
 
-func (r *expenseRepository) SoftDelete(ctx context.Context, db database.DBTX, e entities.Expense, expectedVersion int64) (int64, error) {
+func (r *expenseRepository) SoftDelete(ctx context.Context, e entities.Expense, expectedVersion int64) (int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.expense.soft_delete")
 	defer span.End()
 
@@ -127,7 +128,7 @@ func (r *expenseRepository) SoftDelete(ctx context.Context, db database.DBTX, e 
 		 RETURNING version
 	`
 
-	row := db.QueryRowContext(ctx, query,
+	row := r.db.QueryRowContext(ctx, query,
 		e.Version(), e.TombstoneVersion(), e.DeletedAt(), e.UpdatedAt(),
 		e.ID(), expectedVersion,
 	)
@@ -143,7 +144,7 @@ func (r *expenseRepository) SoftDelete(ctx context.Context, db database.DBTX, e 
 	return tombstoneVersion, nil
 }
 
-func (r *expenseRepository) SumByRoot(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) (map[valueobjects.RootSlug]int64, error) {
+func (r *expenseRepository) SumByRoot(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (map[valueobjects.RootSlug]int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.expense.sum_by_root")
 	defer span.End()
 
@@ -154,7 +155,7 @@ func (r *expenseRepository) SumByRoot(ctx context.Context, db database.DBTX, use
 		 GROUP BY root_slug
 	`
 
-	rows, err := db.QueryContext(ctx, query, userID, c.String())
+	rows, err := r.db.QueryContext(ctx, query, userID, c.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("budgets/postgres: sum_by_root: %w", err)
@@ -262,7 +263,7 @@ func (r *expenseRepository) scanExpenseRow(row database.Row) (entities.Expense, 
 	return expense, entities.ExpenseTombstone{}, nil
 }
 
-func (r *expenseRepository) PurgeDeleted(ctx context.Context, db database.DBTX, olderThan string, limit int) (int64, error) {
+func (r *expenseRepository) PurgeDeleted(ctx context.Context, olderThan string, limit int) (int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.expense.purge_deleted")
 	defer span.End()
 
@@ -275,7 +276,7 @@ func (r *expenseRepository) PurgeDeleted(ctx context.Context, db database.DBTX, 
 		 )
 	`
 
-	result, err := db.ExecContext(ctx, query, olderThan, limit)
+	result, err := r.db.ExecContext(ctx, query, olderThan, limit)
 	if err != nil {
 		span.RecordError(err)
 		return 0, fmt.Errorf("budgets/postgres: purge_deleted_expenses: %w", err)

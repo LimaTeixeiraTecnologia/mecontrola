@@ -73,7 +73,7 @@ func (s *SearchDictionaryMetricsSuite) TestMetrics_Matched() {
 		HasMore:       false,
 		Version:       42,
 		SignalTypeTop: "canonical_name",
-		IsAmbiguous:   false,
+		Outcome:       valueobjects.SearchOutcomeMatched,
 	}
 
 	s.mockUC.On("Execute", mock.Anything, mock.Anything).Return(expectedOutput, nil)
@@ -98,6 +98,7 @@ func (s *SearchDictionaryMetricsSuite) TestMetrics_NoMatch() {
 
 	expectedOutput := &output.DictionarySearchOutput{
 		Result:  "no_match",
+		Outcome: valueobjects.SearchOutcomeNoMatch,
 		Version: 42,
 	}
 
@@ -135,9 +136,9 @@ func (s *SearchDictionaryMetricsSuite) TestMetrics_Ambiguous() {
 				IsAmbiguous: true,
 			},
 		},
-		HasMore:     false,
-		Version:     42,
-		IsAmbiguous: true,
+		HasMore: false,
+		Version: 42,
+		Outcome: valueobjects.SearchOutcomeAmbiguous,
 	}
 
 	s.mockUC.On("Execute", mock.Anything, mock.Anything).Return(expectedOutput, nil)
@@ -200,8 +201,8 @@ func (s *SearchDictionaryMetricsSuite) TestQLenBucket_Calculation() {
 
 	for _, tt := range tests {
 		s.Run(tt.query, func() {
-			result := s.handler.calcQLenBucket(tt.query)
-			s.Equal(tt.expected, result)
+			normalized := (&input.SearchDictionaryInput{Query: tt.query}).NormalizedQuery()
+			s.Equal(tt.expected, qLenBucket(normalized))
 		})
 	}
 }
@@ -224,7 +225,7 @@ func (s *SearchDictionaryMetricsSuite) TestLogs_DoNotContainRawQuery() {
 		HasMore:       false,
 		Version:       42,
 		SignalTypeTop: "canonical_name",
-		IsAmbiguous:   false,
+		Outcome:       valueobjects.SearchOutcomeMatched,
 	}
 
 	s.mockUC.On("Execute", mock.Anything, mock.MatchedBy(func(in *input.SearchDictionaryInput) bool {

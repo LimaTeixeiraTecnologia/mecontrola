@@ -11,9 +11,7 @@ type Invoice struct {
 	DueDate     time.Time
 }
 
-type BillingCycle struct{}
-
-func (BillingCycle) InvoiceFor(purchase time.Time, cycle valueobjects.BillingCycle, tz *time.Location) Invoice {
+func InvoiceFor(purchase time.Time, cycle valueobjects.BillingCycle, tz *time.Location) Invoice {
 	p := purchase.In(tz)
 	year := p.Year()
 	month := p.Month()

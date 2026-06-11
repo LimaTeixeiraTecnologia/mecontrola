@@ -21,6 +21,8 @@ includes:
     taskfile: ./taskfiles/ci.yml
   local:
     taskfile: ./taskfiles/local.yml
+  ngrok:
+    taskfile: ./taskfiles/ngrok.yml
 
 silent: true
 

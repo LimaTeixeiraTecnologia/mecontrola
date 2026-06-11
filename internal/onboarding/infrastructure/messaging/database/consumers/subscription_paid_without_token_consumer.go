@@ -43,13 +43,13 @@ func (c *PaidWithoutTokenConsumer) Handle(ctx context.Context, event events.Even
 	ctx, span := c.o11y.Tracer().Start(ctx, "onboarding.consumer.paid_without_token.handle")
 	defer span.End()
 
-	env, ok := event.GetPayload().(outbox.Envelope)
+	evt, ok := event.GetPayload().(outbox.Envelope)
 	if !ok {
 		return fmt.Errorf("onboarding.consumer.paid_without_token: unexpected payload type %T", event.GetPayload())
 	}
 
 	var p subscriptionActivatedWithoutTokenPayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(evt.Payload, &p); err != nil {
 		return fmt.Errorf("onboarding.consumer.paid_without_token: unmarshal payload: %w", err)
 	}
 

@@ -1,0 +1,3 @@
+func NewBillingModule(cfg Config) BillingModule {
+    return BillingModule{}
+}

@@ -167,7 +167,7 @@ func bootstrap(ctx context.Context) (*runtime, error) {
 		ServiceName:     cfg.HTTPConfig.ServiceNameAPI,
 		ServiceVersion:  cfg.O11yConfig.ServiceVersion,
 		TraceSampleRate: cfg.O11yConfig.TraceSampleRate,
-		OTLPEndpoint:    cfg.O11yConfig.ExporterEndpoint,
+		OTLPEndpoint:    cfg.O11yConfig.NormalizedExporterEndpoint(),
 		Insecure:        cfg.O11yConfig.ExporterInsecure,
 		LogLevel:        observability.LogLevel(cfg.O11yConfig.LogLevel),
 		OTLPProtocol:    otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
@@ -179,7 +179,7 @@ func bootstrap(ctx context.Context) (*runtime, error) {
 	}
 
 	postgresConfig := postgres.PostgresConfig{
-		DSN:          cfg.DBConfig.MigrationDSN(),
+		DSN:          cfg.DBConfig.DSN(),
 		MaxOpenConns: cfg.DBConfig.MaxConns,
 		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
 		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
@@ -189,6 +189,7 @@ func bootstrap(ctx context.Context) (*runtime, error) {
 		postgresConfig,
 		manager.WithObservability(o11y),
 		manager.WithShutdownTimeout(10*time.Second),
+		manager.WithStartupMigrationDir(".migrations-disabled"),
 	)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

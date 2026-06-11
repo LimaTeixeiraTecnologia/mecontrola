@@ -11,6 +11,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	dtooutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
+	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -20,14 +21,13 @@ import (
 	budgetsjobs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/messaging/database/producers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
-
-const eventTypeExternalExpense = "external.expense.v1"
 
 type BudgetsEventHandlerRegistration struct {
 	EventType string
@@ -44,102 +44,151 @@ type BudgetsModule struct {
 	EventHandlers            []BudgetsEventHandlerRegistration
 }
 
+type moduleBuilder struct {
+	cfg              *configs.Config
+	o11y             observability.Observability
+	mgr              manager.Manager
+	categoriesModule *categories.CategoriesModule
+	publisher        *producers.ExpenseCommittedPublisher
+}
+
+type moduleRepositories struct {
+	factory appinterfaces.RepositoryFactory
+}
+
+type moduleUseCases struct {
+	signalAbandonedDrafts  *usecases.SignalAbandonedDrafts
+	runPendingEventsReaper *usecases.RunPendingEventsReaper
+	purgeRetention         *usecases.PurgeRetention
+	createBudget           *usecases.CreateBudget
+	activateBudget         *usecases.ActivateBudget
+	deleteDraftBudget      *usecases.DeleteDraftBudget
+	createRecurrence       *usecases.CreateRecurrence
+	upsertExpense          *usecases.UpsertExpense
+	deleteExpense          *usecases.DeleteExpense
+	getMonthlySummary      *usecases.GetMonthlySummary
+	listAlerts             *usecases.ListAlerts
+	evaluateAlert          *usecases.EvaluateAlert
+	ingestExternalExpense  *usecases.IngestExternalExpense
+}
+
 func NewBudgetsModule(
 	cfg *configs.Config,
 	o11y observability.Observability,
 	mgr manager.Manager,
 	categoriesModule *categories.CategoriesModule,
 ) (*BudgetsModule, error) {
-	outboxFactory := outbox.NewRepositoryFactory(o11y)
-	idGen := id.NewUUIDGenerator()
+	builder := moduleBuilder{
+		cfg:              cfg,
+		o11y:             o11y,
+		mgr:              mgr,
+		categoriesModule: categoriesModule,
+		publisher:        producers.NewExpenseCommittedPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator()),
+	}
+	return builder.Build()
+}
 
-	budgetRepo := postgres.NewBudgetRepository(o11y)
-	expenseRepo := postgres.NewExpenseRepository(o11y)
-	alertRepo := postgres.NewAlertRepository(o11y)
-	pendingRepo := postgres.NewPendingEventRepository(o11y)
-	thresholdStateRepo := postgres.NewThresholdStateRepository(o11y)
+func (b *moduleBuilder) Build() (*BudgetsModule, error) {
+	repositories := b.buildRepositories()
+	categoriesCache, err := b.buildCategoriesCache()
+	if err != nil {
+		return nil, err
+	}
+	useCases, err := b.buildUseCases(repositories, categoriesCache)
+	if err != nil {
+		return nil, err
+	}
 
-	catReader := postgres.NewCategoriesReaderAdapter(
-		categoriesModule.ResolveBySlug,
-		categoriesModule.ValidateSubcategory,
-		categoriesModule.VersionReader,
-		o11y,
+	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
+	externalExpenseConsumer := consumers.NewExternalExpenseConsumer(useCases.ingestExternalExpense, b.o11y)
+
+	return &BudgetsModule{
+		BudgetsRouter:            b.buildRouter(useCases),
+		AbandonedDraftReaper:     budgetsjobs.NewAbandonedDraftReaper(useCases.signalAbandonedDrafts, b.cfg.BudgetsConfig),
+		PendingEventsReaper:      budgetsjobs.NewPendingEventsReaper(useCases.runPendingEventsReaper, b.cfg.BudgetsConfig),
+		RetentionPurge:           budgetsjobs.NewRetentionPurge(useCases.purgeRetention, b.cfg.BudgetsConfig),
+		ExpenseCommittedConsumer: expenseCommittedConsumer,
+		ExternalExpenseConsumer:  externalExpenseConsumer,
+		EventHandlers: []BudgetsEventHandlerRegistration{
+			{EventType: "budgets.expense.committed.v1", Handler: expenseCommittedConsumer},
+			{EventType: "external.expense.v1", Handler: externalExpenseConsumer},
+		},
+	}, nil
+}
+
+func (b *moduleBuilder) buildRepositories() moduleRepositories {
+	return moduleRepositories{
+		factory: repositories.NewRepositoryFactory(b.o11y),
+	}
+}
+
+func (b *moduleBuilder) buildCategoriesCache() (*budgetsconfig.CategoriesCache, error) {
+	categoriesReader := postgres.NewCategoriesReaderAdapter(
+		b.categoriesModule.ResolveBySlug,
+		b.categoriesModule.ValidateSubcategory,
+		b.categoriesModule.VersionReader,
+		b.o11y,
 	)
-
-	catCache := budgetsconfig.NewCategoriesCache(catReader)
-	if err := catCache.Boot(context.Background()); err != nil {
+	categoriesCache := budgetsconfig.NewCategoriesCache(categoriesReader)
+	if err := categoriesCache.Boot(context.Background()); err != nil {
 		return nil, fmt.Errorf("budgets: resolver raízes editoriais no boot: %w", err)
 	}
+	return categoriesCache, nil
+}
 
-	publisher := producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen)
-
-	budgetUoW := uow.New[entities.Budget](mgr, uow.WithObservability(o11y))
-	expenseUoW := uow.New[entities.Expense](mgr, uow.WithObservability(o11y))
-	voidUoW := uow.NewVoid(mgr, uow.WithObservability(o11y))
-	listAlertsUoW := uow.New[dtooutput.ListAlertsOutput](mgr, uow.WithObservability(o11y))
-	monthlySummaryUoW := uow.New[dtooutput.MonthlySummaryOutput](mgr, uow.WithObservability(o11y))
-
-	loc := valueobjects.SaoPauloLocation()
-	if loc == nil {
-		loaded, locErr := time.LoadLocation("America/Sao_Paulo")
-		if locErr != nil {
-			return nil, fmt.Errorf("budgets: carregar timezone: %w", locErr)
-		}
-		loc = loaded
+func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categoriesCache *budgetsconfig.CategoriesCache) (moduleUseCases, error) {
+	location, err := b.resolveLocation()
+	if err != nil {
+		return moduleUseCases{}, err
 	}
 
-	autoDraft := usecases.NewCreateOrAutoDraftForExpense(budgetRepo)
+	budgetUoW := uow.New[entities.Budget](b.mgr, uow.WithObservability(b.o11y))
+	expenseUoW := uow.New[entities.Expense](b.mgr, uow.WithObservability(b.o11y))
+	voidUoW := uow.NewVoid(b.mgr, uow.WithObservability(b.o11y))
+	listAlertsUoW := uow.New[dtooutput.ListAlertsOutput](b.mgr, uow.WithObservability(b.o11y))
+	monthlySummaryUoW := uow.New[dtooutput.MonthlySummaryOutput](b.mgr, uow.WithObservability(b.o11y))
 
+	autoDraft := usecases.NewCreateOrAutoDraftForExpense(repositories.factory)
 	upsertExpense := usecases.NewUpsertExpense(
-		expenseRepo,
-		budgetRepo,
-		catCache,
-		publisher,
+		repositories.factory,
+		categoriesCache,
+		b.publisher,
 		autoDraft,
 		expenseUoW,
-		o11y,
-		loc,
+		b.o11y,
+		location,
 	)
+	deleteExpense := usecases.NewDeleteExpense(repositories.factory, b.publisher, voidUoW, b.o11y, location)
+	applyPending := usecases.NewApplyPendingEvent(repositories.factory, upsertExpense, deleteExpense, b.pendingTTL(), b.o11y)
 
-	deleteExpense := usecases.NewDeleteExpense(expenseRepo, publisher, voidUoW, o11y, loc)
+	return moduleUseCases{
+		signalAbandonedDrafts:  usecases.NewSignalAbandonedDrafts(repositories.factory, voidUoW, location, b.o11y),
+		runPendingEventsReaper: usecases.NewRunPendingEventsReaper(repositories.factory, applyPending, voidUoW, b.o11y),
+		purgeRetention:         usecases.NewPurgeRetention(repositories.factory, voidUoW, b.retentionBatchSize(), b.o11y),
+		createBudget:           usecases.NewCreateBudget(repositories.factory, budgetUoW, b.o11y),
+		activateBudget:         usecases.NewActivateBudget(repositories.factory, budgetUoW, b.o11y),
+		deleteDraftBudget:      usecases.NewDeleteDraftBudget(repositories.factory, voidUoW, b.o11y),
+		createRecurrence:       usecases.NewCreateRecurrence(repositories.factory, voidUoW, b.o11y),
+		upsertExpense:          upsertExpense,
+		deleteExpense:          deleteExpense,
+		getMonthlySummary:      usecases.NewGetMonthlySummary(repositories.factory, monthlySummaryUoW, b.o11y),
+		listAlerts:             usecases.NewListAlerts(repositories.factory, listAlertsUoW, b.o11y),
+		evaluateAlert:          usecases.NewEvaluateAlert(repositories.factory, voidUoW, b.o11y),
+		ingestExternalExpense:  usecases.NewIngestExternalExpense(repositories.factory, upsertExpense, deleteExpense, voidUoW, b.o11y),
+	}, nil
+}
 
-	pendingTTL := cfg.BudgetsConfig.PendingTTL
-	if pendingTTL == 0 {
-		pendingTTL = time.Duration(cfg.BudgetsConfig.PendingTTLHours) * time.Hour
-	}
-	if pendingTTL == 0 {
-		pendingTTL = 24 * time.Hour
-	}
+func (b *moduleBuilder) buildRouter(useCases moduleUseCases) *budgetsserver.BudgetsRouter {
+	createBudgetHandler := handlers.NewCreateBudgetHandler(useCases.createBudget, b.o11y)
+	activateBudgetHandler := handlers.NewActivateBudgetHandler(useCases.activateBudget, b.o11y)
+	deleteBudgetHandler := handlers.NewDeleteBudgetHandler(useCases.deleteDraftBudget, b.o11y)
+	createRecurrenceHandler := handlers.NewCreateRecurrenceHandler(useCases.createRecurrence, b.o11y)
+	upsertExpenseHandler := handlers.NewUpsertExpenseHandler(useCases.upsertExpense, b.o11y)
+	deleteExpenseHandler := handlers.NewDeleteExpenseHandler(useCases.deleteExpense, b.o11y)
+	getMonthlySummaryHandler := handlers.NewGetMonthlySummaryHandler(useCases.getMonthlySummary, b.o11y)
+	listAlertsHandler := handlers.NewListAlertsHandler(useCases.listAlerts, b.o11y)
 
-	applyPending := usecases.NewApplyPendingEvent(expenseRepo, upsertExpense, deleteExpense, pendingTTL, o11y)
-
-	batchSize := cfg.BudgetsConfig.RetentionPurgeBatchSize
-	if batchSize <= 0 {
-		batchSize = 500
-	}
-
-	signalAbandonedDrafts := usecases.NewSignalAbandonedDrafts(budgetRepo, voidUoW, loc, o11y)
-	purgeRetention := usecases.NewPurgeRetention(expenseRepo, alertRepo, pendingRepo, voidUoW, batchSize, o11y)
-	runPendingEventsReaper := usecases.NewRunPendingEventsReaper(pendingRepo, applyPending, voidUoW, o11y)
-
-	createBudget := usecases.NewCreateBudget(budgetRepo, budgetUoW, o11y)
-	activateBudget := usecases.NewActivateBudget(budgetRepo, budgetUoW, o11y)
-	deleteDraft := usecases.NewDeleteDraftBudget(budgetRepo, voidUoW, o11y)
-	createRecurrence := usecases.NewCreateRecurrence(budgetRepo, voidUoW, o11y)
-	getMonthlySummary := usecases.NewGetMonthlySummary(budgetRepo, expenseRepo, monthlySummaryUoW, o11y)
-	listAlerts := usecases.NewListAlerts(alertRepo, listAlertsUoW, o11y)
-	evaluateAlert := usecases.NewEvaluateAlert(expenseRepo, budgetRepo, thresholdStateRepo, alertRepo, voidUoW, o11y)
-
-	createBudgetHandler := handlers.NewCreateBudgetHandler(createBudget, o11y)
-	activateBudgetHandler := handlers.NewActivateBudgetHandler(activateBudget, o11y)
-	deleteBudgetHandler := handlers.NewDeleteBudgetHandler(deleteDraft, o11y)
-	createRecurrenceHandler := handlers.NewCreateRecurrenceHandler(createRecurrence, o11y)
-	upsertExpenseHandler := handlers.NewUpsertExpenseHandler(upsertExpense, o11y)
-	deleteExpenseHandler := handlers.NewDeleteExpenseHandler(deleteExpense, o11y)
-	getMonthlySummaryHandler := handlers.NewGetMonthlySummaryHandler(getMonthlySummary, o11y)
-	listAlertsHandler := handlers.NewListAlertsHandler(listAlerts, o11y)
-
-	budgetsRouter := budgetsserver.NewBudgetsRouter(
+	return budgetsserver.NewBudgetsRouter(
 		createBudgetHandler,
 		activateBudgetHandler,
 		deleteBudgetHandler,
@@ -149,26 +198,36 @@ func NewBudgetsModule(
 		getMonthlySummaryHandler,
 		listAlertsHandler,
 	)
+}
 
-	ingestExternalExpense := usecases.NewIngestExternalExpense(pendingRepo, upsertExpense, deleteExpense, voidUoW, o11y)
+func (b *moduleBuilder) resolveLocation() (*time.Location, error) {
+	location := valueobjects.SaoPauloLocation()
+	if location != nil {
+		return location, nil
+	}
 
-	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(evaluateAlert, o11y)
-	externalExpenseConsumer := consumers.NewExternalExpenseConsumer(ingestExternalExpense, o11y)
+	loadedLocation, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		return nil, fmt.Errorf("budgets: carregar timezone: %w", err)
+	}
+	return loadedLocation, nil
+}
 
-	abandonedDraftReaper := budgetsjobs.NewAbandonedDraftReaper(signalAbandonedDrafts, cfg.BudgetsConfig)
-	pendingEventsReaper := budgetsjobs.NewPendingEventsReaper(runPendingEventsReaper, cfg.BudgetsConfig)
-	retentionPurge := budgetsjobs.NewRetentionPurge(purgeRetention, cfg.BudgetsConfig)
+func (b *moduleBuilder) pendingTTL() time.Duration {
+	pendingTTL := b.cfg.BudgetsConfig.PendingTTL
+	if pendingTTL == 0 {
+		pendingTTL = time.Duration(b.cfg.BudgetsConfig.PendingTTLHours) * time.Hour
+	}
+	if pendingTTL == 0 {
+		pendingTTL = 24 * time.Hour
+	}
+	return pendingTTL
+}
 
-	return &BudgetsModule{
-		BudgetsRouter:            budgetsRouter,
-		AbandonedDraftReaper:     abandonedDraftReaper,
-		PendingEventsReaper:      pendingEventsReaper,
-		RetentionPurge:           retentionPurge,
-		ExpenseCommittedConsumer: expenseCommittedConsumer,
-		ExternalExpenseConsumer:  externalExpenseConsumer,
-		EventHandlers: []BudgetsEventHandlerRegistration{
-			{EventType: "budgets.expense.committed.v1", Handler: expenseCommittedConsumer},
-			{EventType: eventTypeExternalExpense, Handler: externalExpenseConsumer},
-		},
-	}, nil
+func (b *moduleBuilder) retentionBatchSize() int {
+	batchSize := b.cfg.BudgetsConfig.RetentionPurgeBatchSize
+	if batchSize <= 0 {
+		return 500
+	}
+	return batchSize
 }

@@ -23,6 +23,7 @@ import (
 type UpsertExpenseSuite struct {
 	suite.Suite
 	ctx        context.Context
+	factory    *mockInterfaces.RepositoryFactory
 	expenses   *mockInterfaces.ExpenseRepository
 	budgets    *mockInterfaces.BudgetRepository
 	categories *mockInterfaces.CategoriesReader
@@ -38,15 +39,18 @@ func TestUpsertExpenseSuite(t *testing.T) {
 
 func (s *UpsertExpenseSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.expenses = mockInterfaces.NewExpenseRepository(s.T())
 	s.budgets = mockInterfaces.NewBudgetRepository(s.T())
+	s.factory.EXPECT().ExpenseRepository(mock.Anything).Return(s.expenses).Maybe()
+	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.budgets).Maybe()
 	s.categories = mockInterfaces.NewCategoriesReader(s.T())
 	s.publisher = mockInterfaces.NewExpenseCommittedPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkExpense(s.T())
-	s.autoDraft = usecases.NewCreateOrAutoDraftForExpense(s.budgets)
+	s.autoDraft = usecases.NewCreateOrAutoDraftForExpense(s.factory)
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
 	s.useCase = usecases.NewUpsertExpense(
-		s.expenses, s.budgets, s.categories, s.publisher, s.autoDraft, s.uow, noop.NewProvider(), loc,
+		s.factory, s.categories, s.publisher, s.autoDraft, s.uow, noop.NewProvider(), loc,
 	)
 }
 
@@ -71,22 +75,22 @@ func (s *UpsertExpenseSuite) TestCreate_FreshExpense() {
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, mock.Anything, mock.Anything).
+		GetByUserCompetence(s.ctx, mock.Anything, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.budgets.EXPECT().
-		CreateDraft(s.ctx, mock.Anything, mock.Anything).
+		CreateDraft(s.ctx, mock.Anything).
 		Return(nil).
 		Once()
 
 	s.expenses.EXPECT().
-		Insert(s.ctx, mock.Anything, mock.Anything).
+		Insert(s.ctx, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -121,7 +125,7 @@ func (s *UpsertExpenseSuite) TestCreate_IdempotentRetry() {
 	existing, _ := entities.NewExpense(userID, source, extID, subID, rootSlug, competence, 5000, time.Now().UTC(), time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
@@ -142,7 +146,7 @@ func (s *UpsertExpenseSuite) TestCreate_WithExplicitVersionRejected() {
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
@@ -165,7 +169,7 @@ func (s *UpsertExpenseSuite) TestCreate_TombstoneBlocksRecreation() {
 	tombstone := entities.NewExpenseTombstone(userID, source, extID, 2, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(entities.Expense{}, tombstone, nil).
 		Once()
 
@@ -194,12 +198,12 @@ func (s *UpsertExpenseSuite) TestUpdate_Success() {
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		Update(s.ctx, mock.Anything, mock.Anything, int64(1)).
+		Update(s.ctx, mock.Anything, int64(1)).
 		Return(nil).
 		Once()
 
@@ -234,7 +238,7 @@ func (s *UpsertExpenseSuite) TestUpdate_VersionConflict() {
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 

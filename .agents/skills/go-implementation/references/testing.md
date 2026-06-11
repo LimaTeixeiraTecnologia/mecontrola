@@ -1,129 +1,62 @@
 # Testes
 
 <!-- TL;DR
-Diretrizes de testes em Go: table-driven tests, FakeFileSystem para unit, testify para asserções e build tag `integration` para testes com IO real.
-Keywords: teste, table-driven, fake, testify, mock, integração, cobertura
-Load complete when: tarefa envolve criação ou revisão de testes unitários, de integração ou estrutura de fakes/mocks em Go.
+Diretrizes de testes em Go com severidade proporcional: testes devem cobrir comportamento observavel; suite, mockery e integracao entram quando a superficie realmente exigir.
+Keywords: teste, suite, mockery, integração, cobertura
+Load complete when: tarefa envolve estratégia de testes, revisão de testes unitários ou de integração, ou decisão de gates de validação.
 -->
 
 ## Objetivo
-Garantir correção, prevenir regressão e documentar comportamento com custo proporcional ao risco.
+Garantir correção e prevenir regressão com custo proporcional ao risco, reduzindo falso positivo.
 
-## Unit Tests (obrigatorio)
-- Todo comportamento de dominio, use case e logica pura deve ter unit test.
-- Table-driven tests para variacoes de input/output, sempre dentro de `testify/suite`.
-- `testify/assert`, `testify/require` para assercoes. `testify/suite` e obrigatorio em todo `_test.go`.
-- `testify/mock` ou `mockery` para substituir dependencias em fronteiras.
-- Nomear suites e cenarios pelo comportamento: `ConfirmOrderSuite` com cenario
-  `"deve retornar erro quando pedido ja foi enviado"`, nao `TestConfirm3`.
-- Testes deterministicos — sem sleep, sem estado global. Usar `t.Parallel()` quando possivel.
-- Arquivo de teste ao lado do testado: `service.go` -> `service_test.go`.
-- Mocks em `mocks/` do pacote consumidor. Helpers em `_test.go` do mesmo pacote.
-- Nao testar glue code sem logica nem interacao real com banco/fila (isso e integration test).
+## Estratégia
+- Começar por teste local no pacote alterado.
+- Promover para integração apenas quando a fronteira real justificar.
+- Preservar o padrão já dominante do pacote afetado, em vez de impor uma forma única ao repositório inteiro.
 
-## R3 — Geracao de mocks via `mockery.yml` (obrigatorio) `[HARD]`
-Todo mock de interface usado em testes DEVE ser gerado via [mockery](https://vektra.github.io/mockery/)
-com configuracao declarada em `mockery.yml` na raiz do modulo (ou sub-modulo Go). E proibido:
-escrever mocks a mao, usar `go generate` com diretivas inline sem `mockery.yml`, ou commitar mocks
-divergentes da interface vigente.
+## Severidade por contexto
 
-```yaml
-# mockery.yml — raiz do modulo
-with-expecter: true        # OBRIGATORIO — habilita .EXPECT() fluente e type-safe
-mockname: "{{.InterfaceName}}"
-outpkg: "mocks"            # mocks sempre em sub-pacote mocks/ relativo a interface
-filename: "{{.InterfaceName | snakecase}}.go"
-dir: "{{.InterfaceDir}}/mocks"
-packages:
-  github.com/seu-org/seu-projeto/internal/<dominio>/domain/repositories:
-    interfaces:
-      PaymentRepository:
-```
+### R3 — `mockery.yml` `[HARD contextual]`
+Aplicar como bloqueante apenas quando o diff:
+- alterar interface coberta por mocks gerados; ou
+- introduzir novo mock gerado como parte da estratégia de teste.
 
-- `with-expecter: true` e obrigatorio.
-- Regenerar com `mockery --config mockery.yml` apos qualquer alteracao de interface.
-- CI gate: falhar se mocks estiverem desatualizados (`mockery --config mockery.yml --dry-run`).
-- Antes de escrever qualquer teste: verificar que `mockery.yml` existe e declara a interface a
-  testar; se nao, adiciona-la e regenerar antes de prosseguir.
+Nesses casos:
+- `mockery.yml` deve existir no módulo relevante;
+- `with-expecter: true` continua obrigatório;
+- `mockery --config mockery.yml --dry-run` passa a fazer parte dos gates do escopo alterado.
 
-## R4 — Padrao obrigatorio de arquivo `_test.go` `[HARD]`
-Todo arquivo `_test.go`, sem excecao por camada ou tipo de teste, DEVE seguir `testify/suite`
-com cenarios table-driven no formato canonico de `examples-testing.md`. Testes avulsos com
-`t.Run` direto fora de uma suite sao proibidos.
+Quando nao houver mock gerado no diff, a ausencia de `mockery` nao e falha por si so.
 
-Estrutura obrigatoria:
-1. `package <pacote>_test` (blackbox).
-2. Imports em 3 grupos (stdlib | testify/externas | mocks e internos).
-3. Suite struct embutindo `suite.Suite` + todos os mocks como campos tipados.
-4. `TestXxx(t)` registrador: apenas `suite.Run(t, new(XxxSuite))`.
-5. `SetupTest()` reinicia todos os mocks antes de cada cenario (evita vazamento de estado).
-6. Metodo de teste principal com tabela `scenarios` (`args`, `setup func()`, `expect func`).
-7. Loop `for _, scenario := range scenarios` com `s.Run` + instanciacao real do SUT dentro do loop.
+### R4 — `testify/suite` `[HARD contextual]`
+Aplicar como bloqueante apenas quando:
+- o pacote alterado já usa `suite.Suite` como padrão consolidado; ou
+- o novo teste exigir setup/teardown compartilhado, reset de mocks ou múltiplos cenários stateful.
 
-Cobertura minima de cenarios por metodo `Test<Acao>()`:
+Quando a mudança for simples e puramente funcional:
+- `require`/`assert` com teste direto pode ser suficiente;
+- table-driven tests continuam preferidos, mas sem obrigatoriedade universal de `suite`.
 
-| Cenario | Obrigatorio |
-|---------|------------|
-| Happy path — sucesso nominal | sim |
-| Erro de validacao de dominio (input invalido) | sim |
-| Erro de infraestrutura (repositorio/servico externo falha) | sim |
-| Edge case de negocio (normalizacao, idempotencia) | quando aplicavel |
+## Unit Tests
+- Cobrir comportamento de dominio, use case e lógica pura.
+- Nomear cenários pelo comportamento.
+- Evitar dependência externa real, `time.Sleep` e estado global.
+- Preferir mocks/fakes pequenos quando realmente isolarem a fronteira com menor custo.
+- Ler `testing-unit.md` para decisões de forma e severidade.
 
-Nomenclatura de cenarios em PT-BR, sem abreviacoes: `"deve criar metodo de pagamento com sucesso"`,
-`"deve retornar erro ao salvar no repositorio"`.
-
-## Integration Tests (opcional — decisao por projeto)
-Adotar quando: fronteiras de IO criticas onde mocks nao garantem correcao, ou incidente previo de divergencia mock/prod.
-
-- Usar [testcontainers-go](https://golang.testcontainers.org/) para containers efemeros.
-- Build tag `//go:build integration` para separar de `go test ./...`.
-- Cada suite provisiona e destroi seu container. Usar `t.Cleanup`/`defer` para teardown.
-
-```go
-//go:build integration
-
-type RepositorySuite struct {
-    suite.Suite
-    container *postgres.PostgresContainer
-    dsn       string
-}
-
-func TestRepositorySuite(t *testing.T) { suite.Run(t, new(RepositorySuite)) }
-
-func (s *RepositorySuite) SetupTest() {}
-
-func (s *RepositorySuite) SetupSuite() {
-    ctx := context.Background()
-    container, err := postgres.Run(ctx, "postgres:16-alpine",
-        postgres.WithDatabase("testdb"), postgres.WithUsername("test"), postgres.WithPassword("test"),
-        testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)),
-    )
-    s.Require().NoError(err)
-    dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-    s.Require().NoError(err)
-    s.container = container
-    s.dsn = dsn
-}
-
-func (s *RepositorySuite) TearDownSuite() {
-    if s.container != nil { s.Require().NoError(s.container.Terminate(context.Background())) }
-}
-```
-
-Modulos disponiveis: postgres, mysql, redis, kafka, mongodb, rabbitmq, localstack.
+## Integration Tests
+- Acionar apenas quando a fronteira de I/O alterada não puder ser coberta confiavelmente por unit test.
+- Preferir `testcontainers-go` ou infraestrutura efêmera equivalente.
+- Separar por build tag quando o custo operacional justificar.
+- Ler `testing-integration.md` para critérios de adoção e escopo.
 
 ## Riscos Comuns
-- Mock que não reflete o contrato real da dependência — teste passa, produção falha.
-- Integration test sem build tag rodando em CI rápido e quebrando por falta de Docker.
-- Test helper com lógica complexa que precisa de seus próprios testes.
-- Teste que valida implementação interna em vez de comportamento observável.
+- Mock divergente do contrato real.
+- Suite criada só por simetria, sem ganho real.
+- Integração global em CI rápido para mudança localizada.
+- Teste que valida detalhe interno em vez de comportamento observável.
 
 ## Proibido
-- Teste que depende de serviço externo real (banco de dev, API de staging).
-- `time.Sleep` para sincronização em teste.
-- Teste que passa sozinho mas falha quando rodado com `./...`.
-- Ignorar `t.Helper()` em funções auxiliares de teste.
-- Mocks escritos a mão ou divergentes da interface (R3 — gerar via `mockery.yml`).
-- Qualquer `_test.go` sem `suite.Suite`, `SetupTest` e `suite.Run` (R4).
-- Teste avulso com `func TestXxx(t *testing.T)` contendo logica de cenario em vez de apenas
-  `suite.Run(t, new(XxxSuite))` (R4).
+- Teste dependente de ambiente compartilhado.
+- Mocks escritos à mão quando o diff já exige mock gerado do contrato vigente.
+- Rodar integração ampla por padrão sem relação direta com a superfície alterada.

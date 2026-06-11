@@ -160,13 +160,14 @@ type DBConfig struct {
 }
 
 const databaseSearchPath = "mecontrola,public"
+const migrationTableQueryParam = "&x-migrations-table=%22public%22.%22schema_migrations%22&x-migrations-table-quoted=true"
 
 func (d *DBConfig) DSN() string {
 	return d.formatDSN(true)
 }
 
 func (d *DBConfig) MigrationDSN() string {
-	return d.formatDSN(false)
+	return d.formatDSN(true) + migrationTableQueryParam
 }
 
 func (d *DBConfig) formatDSN(withSearchPath bool) string {
@@ -197,6 +198,21 @@ type O11yConfig struct {
 	TraceSampleRate  float64 `mapstructure:"OTEL_TRACE_SAMPLE_RATE"`
 	LogLevel         string  `mapstructure:"LOG_LEVEL"`
 	LogFormat        string  `mapstructure:"LOG_FORMAT"`
+}
+
+func (o O11yConfig) NormalizedExporterEndpoint() string {
+	endpoint := strings.TrimSpace(o.ExporterEndpoint)
+	if endpoint == "" {
+		return ""
+	}
+
+	if strings.EqualFold(strings.TrimSpace(o.ExporterProtocol), "grpc") {
+		endpoint = strings.TrimPrefix(endpoint, "http://")
+		endpoint = strings.TrimPrefix(endpoint, "https://")
+		endpoint = strings.TrimSuffix(endpoint, "/")
+	}
+
+	return endpoint
 }
 
 type OutboxConfig struct {

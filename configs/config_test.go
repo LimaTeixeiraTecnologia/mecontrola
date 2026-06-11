@@ -938,6 +938,46 @@ func (s *ConfigSuite) TestLoadConfig() {
 	}
 }
 
+func (s *ConfigSuite) TestNormalizedExporterEndpoint() {
+	scenarios := []struct {
+		name     string
+		config   configs.O11yConfig
+		expected string
+	}{
+		{
+			name: "deve remover scheme em grpc",
+			config: configs.O11yConfig{
+				ExporterProtocol: "grpc",
+				ExporterEndpoint: "http://localhost:4317",
+			},
+			expected: "localhost:4317",
+		},
+		{
+			name: "deve remover trailing slash em grpc",
+			config: configs.O11yConfig{
+				ExporterProtocol: "grpc",
+				ExporterEndpoint: "https://otel-lgtm:4317/",
+			},
+			expected: "otel-lgtm:4317",
+		},
+		{
+			name: "deve preservar endpoint http",
+			config: configs.O11yConfig{
+				ExporterProtocol: "http/protobuf",
+				ExporterEndpoint: "http://localhost:4318",
+			},
+			expected: "http://localhost:4318",
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario := scenario
+		s.Run(scenario.name, func() {
+			s.Equal(scenario.expected, scenario.config.NormalizedExporterEndpoint())
+		})
+	}
+}
+
 func (s *ConfigSuite) TestDBConfigAccessors() {
 	type args struct {
 		build func() *configs.DBConfig
@@ -1039,6 +1079,28 @@ func (s *ConfigSuite) TestDBConfigAccessors() {
 			expect: func(result string) {
 				s.Contains(result, "supersecretpassword")
 				s.Contains(result, "postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require&search_path=mecontrola,public")
+			},
+		},
+		{
+			name: "deve usar mesmo search path no migration dsn",
+			args: args{
+				build: func() *configs.DBConfig {
+					return &configs.DBConfig{
+						Host:     "db.example.com",
+						Port:     5432,
+						User:     "mecontrola",
+						Password: "supersecretpassword",
+						Name:     "mecontrola_db",
+						SSLMode:  "require",
+					}
+				},
+				call: func(db *configs.DBConfig) string {
+					return db.MigrationDSN()
+				},
+			},
+			setup: func() {},
+			expect: func(result string) {
+				s.Equal("postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require&search_path=mecontrola,public&x-migrations-table=%22public%22.%22schema_migrations%22&x-migrations-table-quoted=true", result)
 			},
 		},
 	}

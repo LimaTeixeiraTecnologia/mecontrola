@@ -9,22 +9,16 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
-var ErrDeleteExpenseInvalidUserID = errors.New("budgets: user_id inválido para exclusão de despesa")
-
-var ErrDeleteExpenseInvalidSource = errors.New("budgets: source inválido para exclusão de despesa")
-
-var ErrDeleteExpenseInvalidExternalID = errors.New("budgets: external_transaction_id inválido para exclusão")
-
 type DeleteExpense struct {
-	expenses  interfaces.ExpenseRepository
+	factory   interfaces.RepositoryFactory
 	publisher interfaces.ExpenseCommittedPublisher
 	uow       uow.UnitOfWork[struct{}]
 	o11y      observability.Observability
@@ -32,14 +26,14 @@ type DeleteExpense struct {
 }
 
 func NewDeleteExpense(
-	expenses interfaces.ExpenseRepository,
+	factory interfaces.RepositoryFactory,
 	publisher interfaces.ExpenseCommittedPublisher,
 	u uow.UnitOfWork[struct{}],
 	o11y observability.Observability,
 	loc *time.Location,
 ) *DeleteExpense {
 	return &DeleteExpense{
-		expenses:  expenses,
+		factory:   factory,
 		publisher: publisher,
 		uow:       u,
 		o11y:      o11y,
@@ -51,23 +45,16 @@ func (uc *DeleteExpense) Execute(ctx context.Context, in input.DeleteExpenseInpu
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.delete_expense")
 	defer span.End()
 
-	resolved, resErr := uc.resolveInput(in)
-	if resErr != nil {
-		return resErr
+	cmd, err := commands.NewDeleteExpenseCommand(in.UserID, in.Source, in.ExternalTransactionID, in.ExpectedVersion)
+	if err != nil {
+		return err
 	}
 
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		return struct{}{}, uc.ExecuteInTx(ctx, tx, resolved)
+		return struct{}{}, uc.executeInTx(ctx, tx, cmd)
 	})
-
 	if execErr != nil {
-		span.RecordError(execErr)
-		uc.o11y.Logger().Warn(ctx, "budgets.usecase.delete_expense.failed",
-			observability.String("user_id", in.UserID),
-			observability.String("source", in.Source),
-			observability.String("external_transaction_id", in.ExternalTransactionID),
-			observability.Error(execErr),
-		)
+		uc.logFailure(ctx, span, in, execErr)
 		return execErr
 	}
 
@@ -78,64 +65,28 @@ func (uc *DeleteExpense) ExecuteWithTx(ctx context.Context, tx database.DBTX, in
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.delete_expense.with_tx")
 	defer span.End()
 
-	resolved, resErr := uc.resolveInput(in)
-	if resErr != nil {
-		return resErr
+	cmd, err := commands.NewDeleteExpenseCommand(in.UserID, in.Source, in.ExternalTransactionID, in.ExpectedVersion)
+	if err != nil {
+		return err
 	}
 
-	if execErr := uc.ExecuteInTx(ctx, tx, resolved); execErr != nil {
-		span.RecordError(execErr)
-		uc.o11y.Logger().Warn(ctx, "budgets.usecase.delete_expense.failed",
-			observability.String("user_id", in.UserID),
-			observability.String("source", in.Source),
-			observability.String("external_transaction_id", in.ExternalTransactionID),
-			observability.Error(execErr),
-		)
+	if execErr := uc.executeInTx(ctx, tx, cmd); execErr != nil {
+		uc.logFailure(ctx, span, in, execErr)
 		return execErr
 	}
 
 	return nil
 }
 
-type deleteExpenseResolved struct {
-	userID          uuid.UUID
-	source          valueobjects.ProducerSource
-	extID           valueobjects.ExternalTransactionID
-	expectedVersion int64
-}
-
-func (uc *DeleteExpense) resolveInput(in input.DeleteExpenseInput) (deleteExpenseResolved, error) {
-	userID, err := uuid.Parse(in.UserID)
-	if err != nil {
-		return deleteExpenseResolved{}, ErrDeleteExpenseInvalidUserID
-	}
-
-	source, err := valueobjects.NewProducerSource(in.Source)
-	if err != nil {
-		return deleteExpenseResolved{}, ErrDeleteExpenseInvalidSource
-	}
-
-	extID, err := valueobjects.NewExternalTransactionID(in.ExternalTransactionID)
-	if err != nil {
-		return deleteExpenseResolved{}, ErrDeleteExpenseInvalidExternalID
-	}
-
-	return deleteExpenseResolved{
-		userID:          userID,
-		source:          source,
-		extID:           extID,
-		expectedVersion: in.ExpectedVersion,
-	}, nil
-}
-
-func (uc *DeleteExpense) ExecuteInTx(ctx context.Context, tx database.DBTX, r deleteExpenseResolved) error {
+func (uc *DeleteExpense) executeInTx(ctx context.Context, tx database.DBTX, cmd commands.DeleteExpenseCommand) error {
+	expenses := uc.factory.ExpenseRepository(tx)
 	identity := entities.ExpenseIdentity{
-		UserID:                r.userID,
-		Source:                r.source,
-		ExternalTransactionID: r.extID,
+		UserID:                cmd.UserID,
+		Source:                cmd.Source,
+		ExternalTransactionID: cmd.ExtID,
 	}
 
-	existing, tombstone, getErr := uc.expenses.GetByIdentity(ctx, tx, identity)
+	existing, tombstone, getErr := expenses.GetByIdentity(ctx, identity)
 	if getErr != nil {
 		if errors.Is(getErr, interfaces.ErrExpenseNotFound) {
 			return interfaces.ErrExpenseNotFound
@@ -148,29 +99,32 @@ func (uc *DeleteExpense) ExecuteInTx(ctx context.Context, tx database.DBTX, r de
 	}
 
 	now := time.Now().UTC()
-	committedAt := now
 	cutoff := valueobjects.CompetenceFromTime(now, uc.loc)
 
-	if _, softDeleteErr := uc.expenses.SoftDelete(ctx, tx, existing, r.expectedVersion); softDeleteErr != nil {
+	if _, softDeleteErr := expenses.SoftDelete(ctx, existing, cmd.ExpectedVersion); softDeleteErr != nil {
 		if errors.Is(softDeleteErr, interfaces.ErrExpenseConflict) {
 			return interfaces.ErrExpenseConflict
 		}
 		return fmt.Errorf("budgets.usecase.delete_expense: soft delete: %w", softDeleteErr)
 	}
 
-	env := interfaces.ExpenseCommittedEnvelope{
-		UserID:             r.userID,
-		Competence:         existing.Competence(),
-		SubcategoryID:      existing.SubcategoryID(),
-		RootSlug:           existing.RootSlug(),
-		MutationKind:       valueobjects.MutationKindDelete,
-		CommittedAt:        committedAt,
-		CutoffCompetenceBR: cutoff,
-		ExpenseID:          existing.ID(),
-	}
-	if pubErr := uc.publisher.Publish(ctx, tx, env); pubErr != nil {
+	envelope := interfaces.NewExpenseCommittedEnvelope(
+		existing.ID(), cmd.UserID, existing.SubcategoryID(), existing.RootSlug(), existing.Competence(),
+		valueobjects.MutationKindDelete, now, cutoff,
+	)
+	if pubErr := uc.publisher.Publish(ctx, tx, envelope); pubErr != nil {
 		return fmt.Errorf("budgets.usecase.delete_expense: publicar evento: %w", pubErr)
 	}
 
 	return nil
+}
+
+func (uc *DeleteExpense) logFailure(ctx context.Context, span observability.Span, in input.DeleteExpenseInput, err error) {
+	span.RecordError(err)
+	uc.o11y.Logger().Warn(ctx, "budgets.usecase.delete_expense.failed",
+		observability.String("user_id", in.UserID),
+		observability.String("source", in.Source),
+		observability.String("external_transaction_id", in.ExternalTransactionID),
+		observability.Error(err),
+	)
 }

@@ -16,7 +16,7 @@ import (
 const _pendingReaperBatchSize = 200
 
 type RunPendingEventsReaper struct {
-	pending   interfaces.PendingEventRepository
+	factory   interfaces.RepositoryFactory
 	apply     *ApplyPendingEvent
 	uow       uow.UnitOfWork[struct{}]
 	o11y      observability.Observability
@@ -26,7 +26,7 @@ type RunPendingEventsReaper struct {
 }
 
 func NewRunPendingEventsReaper(
-	pending interfaces.PendingEventRepository,
+	factory interfaces.RepositoryFactory,
 	apply *ApplyPendingEvent,
 	u uow.UnitOfWork[struct{}],
 	o11y observability.Observability,
@@ -47,7 +47,7 @@ func NewRunPendingEventsReaper(
 		"1",
 	)
 	return &RunPendingEventsReaper{
-		pending:   pending,
+		factory:   factory,
 		apply:     apply,
 		uow:       u,
 		o11y:      o11y,
@@ -62,7 +62,8 @@ func (uc *RunPendingEventsReaper) Execute(ctx context.Context) error {
 	defer span.End()
 
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		events, listErr := uc.pending.ListReady(ctx, tx, _pendingReaperBatchSize)
+		pending := uc.factory.PendingEventRepository(tx)
+		events, listErr := pending.ListReady(ctx, _pendingReaperBatchSize)
 		if listErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.run_pending_events_reaper: listar prontos: %w", listErr)
 		}
@@ -93,6 +94,7 @@ func (uc *RunPendingEventsReaper) Execute(ctx context.Context) error {
 }
 
 func (uc *RunPendingEventsReaper) processOne(ctx context.Context, tx database.DBTX, evt entities.PendingEvent) error {
+	pending := uc.factory.PendingEventRepository(tx)
 	outcome, applyErr := uc.apply.Execute(ctx, tx, evt)
 	if applyErr != nil {
 		return fmt.Errorf("budgets.usecase.run_pending_events_reaper: aplicar evento: %w", applyErr)
@@ -100,19 +102,19 @@ func (uc *RunPendingEventsReaper) processOne(ctx context.Context, tx database.DB
 
 	switch outcome {
 	case PendingEventOutcomeApplied:
-		if transErr := uc.pending.Transition(ctx, tx, evt.ID(), entities.PendingStateApplied, "applied"); transErr != nil {
+		if transErr := pending.Transition(ctx, evt.ID(), entities.PendingStateApplied, "applied"); transErr != nil {
 			return fmt.Errorf("budgets.usecase.run_pending_events_reaper: transitar applied: %w", transErr)
 		}
 		uc.applied.Add(ctx, 1)
 
 	case PendingEventOutcomeExpired:
-		if transErr := uc.pending.Transition(ctx, tx, evt.ID(), entities.PendingStateExpired, "ttl_exceeded"); transErr != nil {
+		if transErr := pending.Transition(ctx, evt.ID(), entities.PendingStateExpired, "ttl_exceeded"); transErr != nil {
 			return fmt.Errorf("budgets.usecase.run_pending_events_reaper: transitar expired: %w", transErr)
 		}
 		uc.expired.Add(ctx, 1)
 
 	case PendingEventOutcomeObsoleteIdempotent:
-		if transErr := uc.pending.Transition(ctx, tx, evt.ID(), entities.PendingStateApplied, "obsolete_idempotent"); transErr != nil {
+		if transErr := pending.Transition(ctx, evt.ID(), entities.PendingStateApplied, "obsolete_idempotent"); transErr != nil {
 			return fmt.Errorf("budgets.usecase.run_pending_events_reaper: transitar obsolete: %w", transErr)
 		}
 

@@ -1,6 +1,8 @@
 package card
 
 import (
+	"fmt"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -22,8 +24,11 @@ type CardModule struct {
 	CardLookup        *usecases.InvoiceFor
 }
 
-func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr manager.Manager) CardModule {
-	services.MustLoadSaoPauloOrExit()
+func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr manager.Manager) (CardModule, error) {
+	loc, err := services.NewSaoPauloLocation()
+	if err != nil {
+		return CardModule{}, fmt.Errorf("card.module: %w", err)
+	}
 
 	factory := cardrepo.NewRepositoryFactory(o11y)
 	idemStorage := idempotency.NewPostgresStorage(mgr)
@@ -37,7 +42,7 @@ func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr mana
 	listCards := usecases.NewListCards(factory, mgr, o11y)
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
 	softDelete := usecases.NewSoftDeleteCard(deleteUoW, factory, idemStorage, o11y)
-	invoiceFor := usecases.NewInvoiceFor(factory, mgr, o11y)
+	invoiceFor := usecases.NewInvoiceFor(factory, mgr, loc, o11y)
 
 	createHandler := handlers.NewCreateCardHandler(createCard, o11y)
 	listHandler := handlers.NewListCardsHandler(listCards, o11y)
@@ -52,5 +57,5 @@ func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr mana
 		RepositoryFactory: factory,
 		CardRouter:        router,
 		CardLookup:        invoiceFor,
-	}
+	}, nil
 }

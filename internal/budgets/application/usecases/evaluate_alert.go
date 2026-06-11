@@ -13,12 +13,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
-
-const maxDeliveredAlerts = 10
 
 var ErrEvaluateAlertInvalidPayload = errors.New("budgets: payload inválido para avaliação de alerta")
 
@@ -33,29 +32,22 @@ type EvaluateAlertInput struct {
 }
 
 type EvaluateAlert struct {
-	expenses        interfaces.ExpenseRepository
-	budgets         interfaces.BudgetRepository
-	thresholdStates interfaces.ThresholdStateRepository
-	alerts          interfaces.AlertRepository
-	uow             uow.UnitOfWork[struct{}]
-	o11y            observability.Observability
+	factory  interfaces.RepositoryFactory
+	uow      uow.UnitOfWork[struct{}]
+	o11y     observability.Observability
+	resolver *services.AlertStateResolver
 }
 
 func NewEvaluateAlert(
-	expenses interfaces.ExpenseRepository,
-	budgets interfaces.BudgetRepository,
-	thresholdStates interfaces.ThresholdStateRepository,
-	alerts interfaces.AlertRepository,
+	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork[struct{}],
 	o11y observability.Observability,
 ) *EvaluateAlert {
 	return &EvaluateAlert{
-		expenses:        expenses,
-		budgets:         budgets,
-		thresholdStates: thresholdStates,
-		alerts:          alerts,
-		uow:             u,
-		o11y:            o11y,
+		factory:  factory,
+		uow:      u,
+		o11y:     o11y,
+		resolver: services.NewAlertStateResolver(),
 	}
 }
 
@@ -63,128 +55,13 @@ func (uc *EvaluateAlert) Execute(ctx context.Context, in EvaluateAlertInput) err
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.evaluate_alert")
 	defer span.End()
 
+	if _, err := commands.NewEvaluateAlertCommand(in.UserID.String(), in.Competence.String(), time.Now().UTC()); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		sumByRoot, sumErr := uc.expenses.SumByRoot(ctx, tx, in.UserID, in.Competence)
-		if sumErr != nil {
-			return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: somar despesas: %w", sumErr)
-		}
-
-		budget, budgetErr := uc.budgets.GetByUserCompetence(ctx, tx, in.UserID, in.Competence)
-		if budgetErr != nil {
-			if errors.Is(budgetErr, interfaces.ErrBudgetNotFound) {
-				uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.suppressed",
-					observability.String("reason", "budget_not_found"),
-					observability.String("user_id", in.UserID.String()),
-					observability.String("competence", in.Competence.String()),
-				)
-				return struct{}{}, nil
-			}
-			return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: buscar orçamento: %w", budgetErr)
-		}
-
-		if !budget.IsActive() {
-			uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.suppressed",
-				observability.String("reason", "budget_not_active"),
-				observability.String("user_id", in.UserID.String()),
-				observability.String("competence", in.Competence.String()),
-			)
-			return struct{}{}, nil
-		}
-
-		spentCents := sumByRoot[in.RootSlug]
-
-		var plannedCents int64
-		for _, alloc := range budget.Allocations() {
-			if alloc.RootSlug() == in.RootSlug {
-				plannedCents = alloc.PlannedCents()
-				break
-			}
-		}
-
-		if plannedCents <= 0 {
-			return struct{}{}, nil
-		}
-
-		currentlyCrossed, crossedErr := uc.thresholdStates.GetCurrentlyCrossed(ctx, tx, in.UserID, in.Competence, in.RootSlug)
-		if crossedErr != nil {
-			return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: obter estado dos limiares: %w", crossedErr)
-		}
-
-		transitions, evalErr := services.EvaluateThresholds(spentCents, plannedCents, currentlyCrossed)
-		if evalErr != nil {
-			return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: avaliar limiares: %w", evalErr)
-		}
-
-		now := time.Now().UTC()
-
-		for _, t := range transitions {
-			key := entities.ThresholdKey{
-				UserID:     in.UserID,
-				Competence: in.Competence,
-				RootSlug:   in.RootSlug,
-				Threshold:  t.Threshold,
-			}
-
-			transitioned, upsertErr := uc.thresholdStates.UpsertIfTransition(ctx, tx, key, t.NowCrossed, in.CommittedAt)
-			if upsertErr != nil {
-				return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: upsert estado: %w", upsertErr)
-			}
-
-			if !transitioned {
-				if !t.NowCrossed && t.WasCrossed {
-					uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.suppressed_stale",
-						observability.String("root_slug", in.RootSlug.String()),
-						observability.String("threshold", t.Threshold.String()),
-					)
-				}
-				continue
-			}
-
-			if !t.NowCrossed {
-				continue
-			}
-
-			alertState := resolveAlertState(in.Competence, in.CutoffCompetenceBR)
-
-			if alertState == entities.AlertStateSuppressedRetroactive {
-				alert := entities.NewAlert(in.UserID, in.Competence, in.RootSlug, t.Threshold,
-					entities.AlertStateSuppressedRetroactive, in.CommittedAt, spentCents, plannedCents, now)
-				if insertErr := uc.alerts.Insert(ctx, tx, alert); insertErr != nil {
-					return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: inserir alerta retroativo: %w", insertErr)
-				}
-				uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.suppressed_retroactive",
-					observability.String("root_slug", in.RootSlug.String()),
-					observability.String("threshold", t.Threshold.String()),
-				)
-				continue
-			}
-
-			count, countErr := uc.alerts.CountDelivered(ctx, tx, key)
-			if countErr != nil {
-				return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: contar alertas: %w", countErr)
-			}
-
-			if count >= maxDeliveredAlerts {
-				alert := entities.NewAlert(in.UserID, in.Competence, in.RootSlug, t.Threshold,
-					entities.AlertStateRateLimited, in.CommittedAt, spentCents, plannedCents, now)
-				if insertErr := uc.alerts.Insert(ctx, tx, alert); insertErr != nil {
-					return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: inserir alerta rate_limited: %w", insertErr)
-				}
-				uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.rate_limited",
-					observability.String("root_slug", in.RootSlug.String()),
-					observability.String("threshold", t.Threshold.String()),
-				)
-				continue
-			}
-
-			alert := entities.NewAlert(in.UserID, in.Competence, in.RootSlug, t.Threshold,
-				entities.AlertStateDelivered, in.CommittedAt, spentCents, plannedCents, now)
-			if insertErr := uc.alerts.Insert(ctx, tx, alert); insertErr != nil {
-				return struct{}{}, fmt.Errorf("budgets.usecase.evaluate_alert: inserir alerta: %w", insertErr)
-			}
-		}
-
-		return struct{}{}, nil
+		return struct{}{}, uc.executeInTx(ctx, tx, in)
 	})
 
 	if execErr != nil {
@@ -200,9 +77,172 @@ func (uc *EvaluateAlert) Execute(ctx context.Context, in EvaluateAlertInput) err
 	return nil
 }
 
-func resolveAlertState(expenseCompetence, cutoff valueobjects.Competence) entities.AlertState {
-	if expenseCompetence.Before(cutoff) {
-		return entities.AlertStateSuppressedRetroactive
+func (uc *EvaluateAlert) executeInTx(ctx context.Context, tx database.DBTX, in EvaluateAlertInput) error {
+	expenses := uc.factory.ExpenseRepository(tx)
+	budgets := uc.factory.BudgetRepository(tx)
+	thresholdStates := uc.factory.ThresholdStateRepository(tx)
+	alerts := uc.factory.AlertRepository(tx)
+
+	spentByRoot, budget, err := uc.loadBudgetContext(ctx, expenses, budgets, in)
+	if err != nil || budget.ID() == uuid.Nil {
+		return err
 	}
-	return entities.AlertStateDelivered
+
+	plannedCents := uc.plannedCents(budget, in.RootSlug)
+	if plannedCents <= 0 {
+		return nil
+	}
+
+	spentCents := spentByRoot[in.RootSlug]
+	currentlyCrossed, err := thresholdStates.GetCurrentlyCrossed(ctx, in.UserID, in.Competence, in.RootSlug)
+	if err != nil {
+		return fmt.Errorf("budgets.usecase.evaluate_alert: obter estado dos limiares: %w", err)
+	}
+
+	transitions, err := services.EvaluateThresholds(spentCents, plannedCents, currentlyCrossed)
+	if err != nil {
+		return fmt.Errorf("budgets.usecase.evaluate_alert: avaliar limiares: %w", err)
+	}
+
+	for _, transition := range transitions {
+		if err := uc.handleTransition(ctx, thresholdStates, alerts, in, transition, spentCents, plannedCents, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (uc *EvaluateAlert) loadBudgetContext(ctx context.Context, expenses interfaces.ExpenseRepository, budgets interfaces.BudgetRepository, in EvaluateAlertInput) (map[valueobjects.RootSlug]int64, entities.Budget, error) {
+	spentByRoot, err := expenses.SumByRoot(ctx, in.UserID, in.Competence)
+	if err != nil {
+		return nil, entities.Budget{}, fmt.Errorf("budgets.usecase.evaluate_alert: somar despesas: %w", err)
+	}
+
+	budget, err := budgets.GetByUserCompetence(ctx, in.UserID, in.Competence)
+	if err != nil {
+		if errors.Is(err, interfaces.ErrBudgetNotFound) {
+			uc.logSuppressed(ctx, "budget_not_found", in)
+			return nil, entities.Budget{}, nil
+		}
+		return nil, entities.Budget{}, fmt.Errorf("budgets.usecase.evaluate_alert: buscar orçamento: %w", err)
+	}
+
+	if !budget.IsActive() {
+		uc.logSuppressed(ctx, "budget_not_active", in)
+		return nil, entities.Budget{}, nil
+	}
+
+	return spentByRoot, budget, nil
+}
+
+func (uc *EvaluateAlert) plannedCents(budget entities.Budget, rootSlug valueobjects.RootSlug) int64 {
+	for _, allocation := range budget.Allocations() {
+		if allocation.RootSlug() == rootSlug {
+			return allocation.PlannedCents()
+		}
+	}
+	return 0
+}
+
+func (uc *EvaluateAlert) handleTransition(
+	ctx context.Context,
+	thresholdStates interfaces.ThresholdStateRepository,
+	alerts interfaces.AlertRepository,
+	in EvaluateAlertInput,
+	transition services.Transition,
+	spentCents int64,
+	plannedCents int64,
+	now time.Time,
+) error {
+	key := entities.ThresholdKey{
+		UserID:     in.UserID,
+		Competence: in.Competence,
+		RootSlug:   in.RootSlug,
+		Threshold:  transition.Threshold,
+	}
+
+	transitioned, err := thresholdStates.UpsertIfTransition(ctx, key, transition.NowCrossed, in.CommittedAt)
+	if err != nil {
+		return fmt.Errorf("budgets.usecase.evaluate_alert: upsert estado: %w", err)
+	}
+	if !transitioned {
+		uc.logStaleTransition(ctx, in.RootSlug, transition)
+		return nil
+	}
+	if !transition.NowCrossed {
+		return nil
+	}
+
+	return uc.insertAlert(ctx, alerts, in, key, transition, spentCents, plannedCents, now)
+}
+
+func (uc *EvaluateAlert) insertAlert(
+	ctx context.Context,
+	alerts interfaces.AlertRepository,
+	in EvaluateAlertInput,
+	key entities.ThresholdKey,
+	transition services.Transition,
+	spentCents int64,
+	plannedCents int64,
+	now time.Time,
+) error {
+	if uc.resolver.Resolve(in.Competence, in.CutoffCompetenceBR, 0) == entities.AlertStateSuppressedRetroactive {
+		return uc.insertAlertWithState(ctx, alerts, in, transition, spentCents, plannedCents, now, entities.AlertStateSuppressedRetroactive, "budgets.usecase.evaluate_alert.suppressed_retroactive", "inserir alerta retroativo")
+	}
+
+	count, err := alerts.CountDelivered(ctx, key)
+	if err != nil {
+		return fmt.Errorf("budgets.usecase.evaluate_alert: contar alertas: %w", err)
+	}
+
+	state := uc.resolver.Resolve(in.Competence, in.CutoffCompetenceBR, int(count))
+	if state == entities.AlertStateRateLimited {
+		return uc.insertAlertWithState(ctx, alerts, in, transition, spentCents, plannedCents, now, entities.AlertStateRateLimited, "budgets.usecase.evaluate_alert.rate_limited", "inserir alerta rate_limited")
+	}
+
+	return uc.insertAlertWithState(ctx, alerts, in, transition, spentCents, plannedCents, now, entities.AlertStateDelivered, "", "inserir alerta")
+}
+
+func (uc *EvaluateAlert) insertAlertWithState(
+	ctx context.Context,
+	alerts interfaces.AlertRepository,
+	in EvaluateAlertInput,
+	transition services.Transition,
+	spentCents int64,
+	plannedCents int64,
+	now time.Time,
+	state entities.AlertState,
+	logKey string,
+	errorContext string,
+) error {
+	alert := entities.NewAlert(in.UserID, in.Competence, in.RootSlug, transition.Threshold, state, in.CommittedAt, spentCents, plannedCents, now)
+	if err := alerts.Insert(ctx, alert); err != nil {
+		return fmt.Errorf("budgets.usecase.evaluate_alert: %s: %w", errorContext, err)
+	}
+	if logKey != "" {
+		uc.o11y.Logger().Warn(ctx, logKey,
+			observability.String("root_slug", in.RootSlug.String()),
+			observability.String("threshold", transition.Threshold.String()),
+		)
+	}
+	return nil
+}
+
+func (uc *EvaluateAlert) logSuppressed(ctx context.Context, reason string, in EvaluateAlertInput) {
+	uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.suppressed",
+		observability.String("reason", reason),
+		observability.String("user_id", in.UserID.String()),
+		observability.String("competence", in.Competence.String()),
+	)
+}
+
+func (uc *EvaluateAlert) logStaleTransition(ctx context.Context, rootSlug valueobjects.RootSlug, transition services.Transition) {
+	if transition.NowCrossed || !transition.WasCrossed {
+		return
+	}
+	uc.o11y.Logger().Warn(ctx, "budgets.usecase.evaluate_alert.suppressed_stale",
+		observability.String("root_slug", rootSlug.String()),
+		observability.String("threshold", transition.Threshold.String()),
+	)
 }

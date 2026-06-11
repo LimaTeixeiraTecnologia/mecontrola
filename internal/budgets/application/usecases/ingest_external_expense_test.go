@@ -18,6 +18,7 @@ import (
 type IngestExternalExpenseSuite struct {
 	suite.Suite
 	ctx     context.Context
+	factory *mockInterfaces.RepositoryFactory
 	pending *mockInterfaces.PendingEventRepository
 	uow     *uowMocks.UnitOfWorkVoid
 	useCase *usecases.IngestExternalExpense
@@ -29,9 +30,11 @@ func TestIngestExternalExpenseSuite(t *testing.T) {
 
 func (s *IngestExternalExpenseSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.pending = mockInterfaces.NewPendingEventRepository(s.T())
+	s.factory.EXPECT().PendingEventRepository(nil).Return(s.pending).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
-	s.useCase = usecases.NewIngestExternalExpense(s.pending, nil, nil, s.uow, noop.NewProvider())
+	s.useCase = usecases.NewIngestExternalExpense(s.factory, nil, nil, s.uow, noop.NewProvider())
 }
 
 func (s *IngestExternalExpenseSuite) validInput() usecases.IngestExternalExpenseInput {
@@ -106,9 +109,9 @@ func (s *IngestExternalExpenseSuite) TestBug3_MissingOccurredAtReturnsStructured
 }
 
 func (s *IngestExternalExpenseSuite) TestBug4_MetricsCountersAreRegisteredAtConstruction() {
-	pending := mockInterfaces.NewPendingEventRepository(s.T())
+	factory := mockInterfaces.NewRepositoryFactory(s.T())
 	uow := uowMocks.NewUnitOfWorkVoid(s.T())
-	uc := usecases.NewIngestExternalExpense(pending, nil, nil, uow, noop.NewProvider())
+	uc := usecases.NewIngestExternalExpense(factory, nil, nil, uow, noop.NewProvider())
 	s.NotNil(uc, "constructor must register counters budgets_external_expense_source_rejected_total and budgets_external_expense_invalid_fields_total without panicking (RF-39c)")
 
 	in := s.validInput()

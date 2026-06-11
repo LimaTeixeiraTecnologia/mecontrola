@@ -73,7 +73,7 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 				saleErrors = append(saleErrors, fmt.Errorf("sale %s: %w", sale.ID, err))
 				continue
 			}
-			if sale.Status == "refunded" || sale.Status == "chargedback" || sale.Status == "paid" || sale.Status == "approved" {
+			if _, ok := resolveReconcileAction(sale); ok {
 				uc.corrections.Add(ctx, 1, observability.String("correction_type", sale.Status))
 			}
 		}
@@ -101,31 +101,44 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 	return nil
 }
 
+type reconcileAction struct {
+	trigger string
+	refund  bool
+}
+
+func resolveReconcileAction(sale interfaces.KiwifySale) (reconcileAction, bool) {
+	switch sale.Status {
+	case "refunded":
+		return reconcileAction{trigger: "order_refunded", refund: true}, true
+	case "chargedback":
+		return reconcileAction{trigger: "chargeback", refund: true}, true
+	case "paid", "approved":
+		return reconcileAction{trigger: sale.Status, refund: false}, true
+	default:
+		return reconcileAction{}, false
+	}
+}
+
 func (uc *ReconcileSubscriptions) reconcileSale(ctx context.Context, sale interfaces.KiwifySale) error {
-	if sale.Status == "refunded" || sale.Status == "chargedback" {
-		trigger := "order_refunded"
-		if sale.Status == "chargedback" {
-			trigger = "chargeback"
-		}
+	action, ok := resolveReconcileAction(sale)
+	if !ok {
+		return nil
+	}
+	if action.refund {
 		return uc.refund.Execute(ctx, input.ProcessRefundOrChargebackInput{
 			SaleID:     sale.ID,
 			OrderID:    sale.OrderID,
-			Trigger:    trigger,
+			Trigger:    action.trigger,
 			OccurredAt: sale.UpdatedAt,
 		})
 	}
-
-	if sale.Status == "paid" || sale.Status == "approved" {
-		return uc.saleApproved.Execute(ctx, input.ProcessSaleApprovedInput{
-			SaleID:             sale.ID,
-			KiwifyProductID:    sale.KiwifyProductID,
-			OrderID:            sale.OrderID,
-			FunnelToken:        sale.FunnelToken,
-			CustomerEmail:      sale.CustomerEmail,
-			CustomerMobileE164: sale.CustomerMobileE164,
-			OccurredAt:         sale.OccurredAt,
-		})
-	}
-
-	return nil
+	return uc.saleApproved.Execute(ctx, input.ProcessSaleApprovedInput{
+		SaleID:             sale.ID,
+		KiwifyProductID:    sale.KiwifyProductID,
+		OrderID:            sale.OrderID,
+		FunnelToken:        sale.FunnelToken,
+		CustomerEmail:      sale.CustomerEmail,
+		CustomerMobileE164: sale.CustomerMobileE164,
+		OccurredAt:         sale.OccurredAt,
+	})
 }

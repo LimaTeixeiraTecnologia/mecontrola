@@ -18,58 +18,36 @@ const (
 	StatusRefunded
 )
 
-func (s Status) IsActiveForBilling() bool {
-	switch s {
-	case StatusActive, StatusPastDue, StatusCanceledPending:
-		return true
-	default:
-		return false
-	}
+type statusInfo struct {
+	wire             string
+	activeForBilling bool
+	terminal         bool
 }
 
-func (s Status) IsTerminal() bool {
-	switch s {
-	case StatusExpired, StatusRefunded:
-		return true
-	default:
-		return false
-	}
+var statusTable = map[Status]statusInfo{
+	StatusTrialing:        {wire: "TRIALING"},
+	StatusActive:          {wire: "ACTIVE", activeForBilling: true},
+	StatusPastDue:         {wire: "PAST_DUE", activeForBilling: true},
+	StatusCanceledPending: {wire: "CANCELED_PENDING", activeForBilling: true},
+	StatusExpired:         {wire: "EXPIRED", terminal: true},
+	StatusRefunded:        {wire: "REFUNDED", terminal: true},
 }
+
+var statusByWire = func() map[string]Status {
+	m := make(map[string]Status, len(statusTable))
+	for s, info := range statusTable {
+		m[info.wire] = s
+	}
+	return m
+}()
+
+func (s Status) String() string           { return statusTable[s].wire }
+func (s Status) IsActiveForBilling() bool { return statusTable[s].activeForBilling }
+func (s Status) IsTerminal() bool         { return statusTable[s].terminal }
 
 func ParseStatus(s string) (Status, error) {
-	switch s {
-	case "TRIALING":
-		return StatusTrialing, nil
-	case "ACTIVE":
-		return StatusActive, nil
-	case "PAST_DUE":
-		return StatusPastDue, nil
-	case "CANCELED_PENDING":
-		return StatusCanceledPending, nil
-	case "EXPIRED":
-		return StatusExpired, nil
-	case "REFUNDED":
-		return StatusRefunded, nil
-	default:
-		return 0, fmt.Errorf("billing: %q: %w", s, ErrUnknownStatus)
+	if st, ok := statusByWire[s]; ok {
+		return st, nil
 	}
-}
-
-func (s Status) String() string {
-	switch s {
-	case StatusTrialing:
-		return "TRIALING"
-	case StatusActive:
-		return "ACTIVE"
-	case StatusPastDue:
-		return "PAST_DUE"
-	case StatusCanceledPending:
-		return "CANCELED_PENDING"
-	case StatusExpired:
-		return "EXPIRED"
-	case StatusRefunded:
-		return "REFUNDED"
-	default:
-		return ""
-	}
+	return 0, fmt.Errorf("billing: %q: %w", s, ErrUnknownStatus)
 }

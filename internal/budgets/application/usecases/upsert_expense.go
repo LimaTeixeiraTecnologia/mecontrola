@@ -14,29 +14,14 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/mappers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
-var ErrUpsertExpenseExplicitVersion = errors.New("budgets: version não deve ser fornecido na criação de despesa")
-
-var ErrUpsertExpenseVersionRequired = errors.New("budgets: expected_version obrigatório para edição de despesa")
-
-var ErrUpsertExpenseInvalidUserID = errors.New("budgets: user_id inválido na despesa")
-
-var ErrUpsertExpenseInvalidSubcategory = errors.New("budgets: subcategory_id inválido")
-
-var ErrUpsertExpenseInvalidCompetence = errors.New("budgets: competence inválida na despesa")
-
-var ErrUpsertExpenseInvalidSource = errors.New("budgets: source inválido na despesa")
-
-var ErrUpsertExpenseInvalidExternalID = errors.New("budgets: external_transaction_id inválido")
-
-var ErrUpsertExpenseInvalidAmount = errors.New("budgets: amount_cents deve ser maior que zero")
-
 type UpsertExpense struct {
-	expenses   interfaces.ExpenseRepository
-	budgets    interfaces.BudgetRepository
+	factory    interfaces.RepositoryFactory
 	categories interfaces.CategoriesReader
 	publisher  interfaces.ExpenseCommittedPublisher
 	autoDraft  *CreateOrAutoDraftForExpense
@@ -46,8 +31,7 @@ type UpsertExpense struct {
 }
 
 func NewUpsertExpense(
-	expenses interfaces.ExpenseRepository,
-	budgets interfaces.BudgetRepository,
+	factory interfaces.RepositoryFactory,
 	categories interfaces.CategoriesReader,
 	publisher interfaces.ExpenseCommittedPublisher,
 	autoDraft *CreateOrAutoDraftForExpense,
@@ -56,8 +40,7 @@ func NewUpsertExpense(
 	loc *time.Location,
 ) *UpsertExpense {
 	return &UpsertExpense{
-		expenses:   expenses,
-		budgets:    budgets,
+		factory:    factory,
 		categories: categories,
 		publisher:  publisher,
 		autoDraft:  autoDraft,
@@ -71,235 +54,193 @@ func (uc *UpsertExpense) Execute(ctx context.Context, in input.UpsertExpenseInpu
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.upsert_expense")
 	defer span.End()
 
-	resolved, resErr := uc.resolveInput(ctx, in)
-	if resErr != nil {
-		return output.ExpenseOutput{}, resErr
+	cmd, err := commands.NewUpsertExpenseCommand(
+		in.UserID, in.SubcategoryID, in.Source, in.ExternalTransactionID,
+		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion,
+	)
+	if err != nil {
+		return output.ExpenseOutput{}, err
 	}
 
-	expense, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Expense, error) {
-		return uc.ExecuteInTx(ctx, tx, resolved)
+	rootSlug, err := uc.resolveRootSlug(ctx, cmd.SubcategoryID)
+	if err != nil {
+		return output.ExpenseOutput{}, err
+	}
+
+	expense, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Expense, error) {
+		return uc.executeInTx(ctx, tx, cmd, rootSlug)
 	})
-
-	if execErr != nil {
-		span.RecordError(execErr)
-		uc.o11y.Logger().Warn(ctx, "budgets.usecase.upsert_expense.failed",
-			observability.String("user_id", in.UserID),
-			observability.String("source", in.Source),
-			observability.String("external_transaction_id", in.ExternalTransactionID),
-			observability.Error(execErr),
-		)
-		return output.ExpenseOutput{}, execErr
+	if err != nil {
+		uc.logFailure(ctx, span, in, err)
+		return output.ExpenseOutput{}, err
 	}
 
-	return mapExpenseOutput(expense), nil
+	return mappers.M.Expense(expense), nil
 }
 
 func (uc *UpsertExpense) ExecuteWithTx(ctx context.Context, tx database.DBTX, in input.UpsertExpenseInput) (output.ExpenseOutput, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.upsert_expense.with_tx")
 	defer span.End()
 
-	resolved, resErr := uc.resolveInput(ctx, in)
-	if resErr != nil {
-		return output.ExpenseOutput{}, resErr
+	cmd, err := commands.NewUpsertExpenseCommand(
+		in.UserID, in.SubcategoryID, in.Source, in.ExternalTransactionID,
+		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion,
+	)
+	if err != nil {
+		return output.ExpenseOutput{}, err
 	}
 
-	expense, execErr := uc.ExecuteInTx(ctx, tx, resolved)
-	if execErr != nil {
-		span.RecordError(execErr)
-		uc.o11y.Logger().Warn(ctx, "budgets.usecase.upsert_expense.failed",
-			observability.String("user_id", in.UserID),
-			observability.String("source", in.Source),
-			observability.String("external_transaction_id", in.ExternalTransactionID),
-			observability.Error(execErr),
-		)
-		return output.ExpenseOutput{}, execErr
+	rootSlug, err := uc.resolveRootSlug(ctx, cmd.SubcategoryID)
+	if err != nil {
+		return output.ExpenseOutput{}, err
 	}
 
-	return mapExpenseOutput(expense), nil
+	expense, err := uc.executeInTx(ctx, tx, cmd, rootSlug)
+	if err != nil {
+		uc.logFailure(ctx, span, in, err)
+		return output.ExpenseOutput{}, err
+	}
+
+	return mappers.M.Expense(expense), nil
 }
 
-func (uc *UpsertExpense) resolveInput(ctx context.Context, in input.UpsertExpenseInput) (upsertExpenseResolved, error) {
-	userID, err := uuid.Parse(in.UserID)
-	if err != nil {
-		return upsertExpenseResolved{}, ErrUpsertExpenseInvalidUserID
-	}
-
-	subcategoryID, err := uuid.Parse(in.SubcategoryID)
-	if err != nil {
-		return upsertExpenseResolved{}, ErrUpsertExpenseInvalidSubcategory
-	}
-
-	source, err := valueobjects.NewProducerSource(in.Source)
-	if err != nil {
-		return upsertExpenseResolved{}, ErrUpsertExpenseInvalidSource
-	}
-
-	extID, err := valueobjects.NewExternalTransactionID(in.ExternalTransactionID)
-	if err != nil {
-		return upsertExpenseResolved{}, ErrUpsertExpenseInvalidExternalID
-	}
-
-	competence, err := valueobjects.NewCompetence(in.Competence)
-	if err != nil {
-		return upsertExpenseResolved{}, ErrUpsertExpenseInvalidCompetence
-	}
-
-	if in.AmountCents <= 0 {
-		return upsertExpenseResolved{}, ErrUpsertExpenseInvalidAmount
-	}
-
+func (uc *UpsertExpense) resolveRootSlug(ctx context.Context, subcategoryID uuid.UUID) (valueobjects.RootSlug, error) {
 	rootSlugStr, _, catErr := uc.categories.ValidateExpenseSubcategory(ctx, subcategoryID)
 	if catErr != nil {
-		return upsertExpenseResolved{}, fmt.Errorf("budgets.usecase.upsert_expense: validar subcategoria: %w", catErr)
+		return 0, fmt.Errorf("budgets.usecase.upsert_expense: validar subcategoria: %w", catErr)
 	}
-
 	rootSlug, err := valueobjects.ParseRootSlug(rootSlugStr)
 	if err != nil {
-		return upsertExpenseResolved{}, fmt.Errorf("budgets.usecase.upsert_expense: root slug inválido: %w", err)
+		return 0, fmt.Errorf("budgets.usecase.upsert_expense: root slug inválido: %w", err)
 	}
-
-	return upsertExpenseResolved{
-		userID:        userID,
-		source:        source,
-		extID:         extID,
-		subcategoryID: subcategoryID,
-		rootSlug:      rootSlug,
-		competence:    competence,
-		amountCents:   in.AmountCents,
-		occurredAt:    in.OccurredAt,
-		expectedVer:   in.ExpectedVersion,
-	}, nil
+	return rootSlug, nil
 }
 
-type upsertExpenseResolved struct {
-	userID        uuid.UUID
-	source        valueobjects.ProducerSource
-	extID         valueobjects.ExternalTransactionID
-	subcategoryID uuid.UUID
-	rootSlug      valueobjects.RootSlug
-	competence    valueobjects.Competence
-	amountCents   int64
-	occurredAt    time.Time
-	expectedVer   *int64
-}
-
-func (uc *UpsertExpense) ExecuteInTx(ctx context.Context, tx database.DBTX, r upsertExpenseResolved) (entities.Expense, error) {
+func (uc *UpsertExpense) executeInTx(ctx context.Context, tx database.DBTX, cmd commands.UpsertExpenseCommand, rootSlug valueobjects.RootSlug) (entities.Expense, error) {
+	expenses := uc.factory.ExpenseRepository(tx)
 	identity := entities.ExpenseIdentity{
-		UserID:                r.userID,
-		Source:                r.source,
-		ExternalTransactionID: r.extID,
+		UserID:                cmd.UserID,
+		Source:                cmd.Source,
+		ExternalTransactionID: cmd.ExtID,
 	}
 
-	existing, tombstone, getErr := uc.expenses.GetByIdentity(ctx, tx, identity)
+	existing, tombstone, getErr := expenses.GetByIdentity(ctx, identity)
 
 	if tombstone.IsPresent() {
 		return entities.Expense{}, interfaces.ErrExpenseTombstoneConflict
 	}
 
 	now := time.Now().UTC()
-	committedAt := now
 	cutoff := valueobjects.CompetenceFromTime(now, uc.loc)
 
 	if getErr != nil {
-		if !errors.Is(getErr, interfaces.ErrExpenseNotFound) {
-			return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: ler despesa: %w", getErr)
-		}
-
-		if r.expectedVer != nil {
-			return entities.Expense{}, ErrUpsertExpenseExplicitVersion
-		}
-
-		occurredAt := r.occurredAt
-		if occurredAt.IsZero() {
-			occurredAt = now
-		}
-
-		newExpense, newErr := entities.NewExpense(r.userID, r.source, r.extID, r.subcategoryID, r.rootSlug, r.competence, r.amountCents, occurredAt, now)
-		if newErr != nil {
-			return entities.Expense{}, newErr
-		}
-
-		if autoDraftErr := uc.autoDraft.EnsureExists(ctx, tx, r.userID, r.competence, now); autoDraftErr != nil {
-			return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: auto draft: %w", autoDraftErr)
-		}
-
-		if insertErr := uc.expenses.Insert(ctx, tx, newExpense); insertErr != nil {
-			return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: inserir despesa: %w", insertErr)
-		}
-
-		env := interfaces.ExpenseCommittedEnvelope{
-			UserID:             r.userID,
-			Competence:         r.competence,
-			SubcategoryID:      r.subcategoryID,
-			RootSlug:           r.rootSlug,
-			MutationKind:       valueobjects.MutationKindCreate,
-			CommittedAt:        committedAt,
-			CutoffCompetenceBR: cutoff,
-			ExpenseID:          newExpense.ID(),
-		}
-		if pubErr := uc.publisher.Publish(ctx, tx, env); pubErr != nil {
-			return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: publicar evento: %w", pubErr)
-		}
-
-		return newExpense, nil
+		return uc.createExpense(ctx, tx, expenses, cmd, rootSlug, getErr, now, cutoff)
 	}
 
 	if existing.IsDeleted() {
 		return entities.Expense{}, interfaces.ErrExpenseTombstoneConflict
 	}
 
-	if r.expectedVer == nil {
+	if cmd.ExpectedVersion == nil {
 		return existing, nil
 	}
 
-	occurredAt := r.occurredAt
+	return uc.updateExpense(ctx, tx, expenses, existing, cmd, rootSlug, now, cutoff)
+}
+
+func (uc *UpsertExpense) createExpense(
+	ctx context.Context,
+	tx database.DBTX,
+	expenses interfaces.ExpenseRepository,
+	cmd commands.UpsertExpenseCommand,
+	rootSlug valueobjects.RootSlug,
+	getErr error,
+	now time.Time,
+	cutoff valueobjects.Competence,
+) (entities.Expense, error) {
+	if !errors.Is(getErr, interfaces.ErrExpenseNotFound) {
+		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: ler despesa: %w", getErr)
+	}
+	if cmd.ExpectedVersion != nil {
+		return entities.Expense{}, ErrUpsertExpenseExplicitVersion
+	}
+
+	occurredAt := cmd.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = now
+	}
+
+	expense, err := entities.NewExpense(cmd.UserID, cmd.Source, cmd.ExtID, cmd.SubcategoryID, rootSlug, cmd.Competence, cmd.AmountCents, occurredAt, now)
+	if err != nil {
+		return entities.Expense{}, err
+	}
+	if err := uc.autoDraft.EnsureExists(ctx, tx, cmd.UserID, cmd.Competence, now); err != nil {
+		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: auto draft: %w", err)
+	}
+	if err := expenses.Insert(ctx, expense); err != nil {
+		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: inserir despesa: %w", err)
+	}
+	if err := uc.publishCommitted(ctx, tx, expense.ID(), cmd, rootSlug, valueobjects.MutationKindCreate, now, cutoff); err != nil {
+		return entities.Expense{}, err
+	}
+	return expense, nil
+}
+
+func (uc *UpsertExpense) updateExpense(
+	ctx context.Context,
+	tx database.DBTX,
+	expenses interfaces.ExpenseRepository,
+	existing entities.Expense,
+	cmd commands.UpsertExpenseCommand,
+	rootSlug valueobjects.RootSlug,
+	now time.Time,
+	cutoff valueobjects.Competence,
+) (entities.Expense, error) {
+	occurredAt := cmd.OccurredAt
 	if occurredAt.IsZero() {
 		occurredAt = existing.OccurredAt()
 	}
-
-	if editErr := existing.Edit(r.subcategoryID, r.rootSlug, r.competence, r.amountCents, occurredAt, *r.expectedVer, now); editErr != nil {
-		if errors.Is(editErr, entities.ErrExpenseVersionMismatch) {
+	if err := existing.Edit(cmd.SubcategoryID, rootSlug, cmd.Competence, cmd.AmountCents, occurredAt, *cmd.ExpectedVersion, now); err != nil {
+		if errors.Is(err, entities.ErrExpenseVersionMismatch) {
 			return entities.Expense{}, interfaces.ErrExpenseConflict
 		}
-		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: editar despesa: %w", editErr)
+		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: editar despesa: %w", err)
 	}
-
-	if updateErr := uc.expenses.Update(ctx, tx, existing, *r.expectedVer); updateErr != nil {
-		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: atualizar despesa: %w", updateErr)
+	if err := expenses.Update(ctx, existing, *cmd.ExpectedVersion); err != nil {
+		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: atualizar despesa: %w", err)
 	}
-
-	env := interfaces.ExpenseCommittedEnvelope{
-		UserID:             r.userID,
-		Competence:         r.competence,
-		SubcategoryID:      r.subcategoryID,
-		RootSlug:           r.rootSlug,
-		MutationKind:       valueobjects.MutationKindUpdate,
-		CommittedAt:        committedAt,
-		CutoffCompetenceBR: cutoff,
-		ExpenseID:          existing.ID(),
+	if err := uc.publishCommitted(ctx, tx, existing.ID(), cmd, rootSlug, valueobjects.MutationKindUpdate, now, cutoff); err != nil {
+		return entities.Expense{}, err
 	}
-	if pubErr := uc.publisher.Publish(ctx, tx, env); pubErr != nil {
-		return entities.Expense{}, fmt.Errorf("budgets.usecase.upsert_expense: publicar evento: %w", pubErr)
-	}
-
 	return existing, nil
 }
 
-func mapExpenseOutput(e entities.Expense) output.ExpenseOutput {
-	return output.ExpenseOutput{
-		ID:                    e.ID().String(),
-		UserID:                e.UserID().String(),
-		Source:                e.Source().String(),
-		ExternalTransactionID: e.ExternalTransactionID().String(),
-		SubcategoryID:         e.SubcategoryID().String(),
-		RootSlug:              e.RootSlug().String(),
-		Competence:            e.Competence().String(),
-		AmountCents:           e.AmountCents(),
-		OccurredAt:            e.OccurredAt(),
-		Version:               e.Version(),
-		TombstoneVersion:      e.TombstoneVersion(),
-		DeletedAt:             e.DeletedAt(),
-		CreatedAt:             e.CreatedAt(),
-		UpdatedAt:             e.UpdatedAt(),
+func (uc *UpsertExpense) publishCommitted(
+	ctx context.Context,
+	tx database.DBTX,
+	expenseID uuid.UUID,
+	cmd commands.UpsertExpenseCommand,
+	rootSlug valueobjects.RootSlug,
+	mutationKind valueobjects.MutationKind,
+	committedAt time.Time,
+	cutoff valueobjects.Competence,
+) error {
+	envelope := interfaces.NewExpenseCommittedEnvelope(
+		expenseID, cmd.UserID, cmd.SubcategoryID, rootSlug, cmd.Competence,
+		mutationKind, committedAt, cutoff,
+	)
+	if err := uc.publisher.Publish(ctx, tx, envelope); err != nil {
+		return fmt.Errorf("budgets.usecase.upsert_expense: publicar evento: %w", err)
 	}
+	return nil
+}
+
+func (uc *UpsertExpense) logFailure(ctx context.Context, span observability.Span, in input.UpsertExpenseInput, err error) {
+	span.RecordError(err)
+	uc.o11y.Logger().Warn(ctx, "budgets.usecase.upsert_expense.failed",
+		observability.String("user_id", in.UserID),
+		observability.String("source", in.Source),
+		observability.String("external_transaction_id", in.ExternalTransactionID),
+		observability.Error(err),
+	)
 }

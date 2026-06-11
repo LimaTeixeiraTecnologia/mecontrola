@@ -19,14 +19,15 @@ import (
 )
 
 type pendingEventRepository struct {
+	db   database.DBTX
 	o11y observability.Observability
 }
 
-func NewPendingEventRepository(o11y observability.Observability) interfaces.PendingEventRepository {
-	return &pendingEventRepository{o11y: o11y}
+func NewPendingEventRepository(o11y observability.Observability, db database.DBTX) interfaces.PendingEventRepository {
+	return &pendingEventRepository{db: db, o11y: o11y}
 }
 
-func (r *pendingEventRepository) Insert(ctx context.Context, db database.DBTX, p entities.PendingEvent) error {
+func (r *pendingEventRepository) Insert(ctx context.Context, p entities.PendingEvent) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.pending_event.insert")
 	defer span.End()
 
@@ -38,7 +39,7 @@ func (r *pendingEventRepository) Insert(ctx context.Context, db database.DBTX, p
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
-	_, err := db.ExecContext(ctx, query,
+	_, err := r.db.ExecContext(ctx, query,
 		p.ID(), p.EventID(), p.Source().String(), p.UserID(),
 		p.ExternalTransactionID().String(),
 		p.ExpectedVersion(), int(p.MutationKind()), p.Payload(),
@@ -55,7 +56,7 @@ func (r *pendingEventRepository) Insert(ctx context.Context, db database.DBTX, p
 	return nil
 }
 
-func (r *pendingEventRepository) ListReady(ctx context.Context, db database.DBTX, limit int) ([]entities.PendingEvent, error) {
+func (r *pendingEventRepository) ListReady(ctx context.Context, limit int) ([]entities.PendingEvent, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.pending_event.list_ready")
 	defer span.End()
 
@@ -74,7 +75,7 @@ func (r *pendingEventRepository) ListReady(ctx context.Context, db database.DBTX
 		   FOR UPDATE SKIP LOCKED
 	`
 
-	rows, err := db.QueryContext(ctx, query, limit)
+	rows, err := r.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("budgets/postgres: list_ready: %w", err)
@@ -84,7 +85,7 @@ func (r *pendingEventRepository) ListReady(ctx context.Context, db database.DBTX
 	return r.scanPendingEvents(rows)
 }
 
-func (r *pendingEventRepository) Transition(ctx context.Context, db database.DBTX, id uuid.UUID, to entities.PendingState, reason string) error {
+func (r *pendingEventRepository) Transition(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.pending_event.transition")
 	defer span.End()
 
@@ -97,7 +98,7 @@ func (r *pendingEventRepository) Transition(ctx context.Context, db database.DBT
 	`
 
 	now := time.Now().UTC()
-	result, err := db.ExecContext(ctx, query, int(to), nullableString(reason), now, id)
+	result, err := r.db.ExecContext(ctx, query, int(to), nullableString(reason), now, id)
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("budgets/postgres: transition pending_event: %w", err)

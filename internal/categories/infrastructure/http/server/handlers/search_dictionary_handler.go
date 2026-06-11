@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
-	"unicode"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/responses"
@@ -58,7 +56,7 @@ func (h *SearchDictionaryHandler) Handle(w http.ResponseWriter, r *http.Request)
 	q := r.URL.Query().Get("q")
 	kindStr := r.URL.Query().Get("kind")
 
-	kind, ok := h.parseKind(w, r, start, kindStr)
+	kind, ok := h.parseKind(ctx, w, r, start, span, kindStr)
 	if !ok {
 		return
 	}
@@ -67,145 +65,95 @@ func (h *SearchDictionaryHandler) Handle(w http.ResponseWriter, r *http.Request)
 
 	out, err := h.usecase.Execute(ctx, in)
 	if err != nil {
-		h.handleError(ctx, w, r, start, span, kindStr, q, err)
+		h.handleError(ctx, w, r, start, span, kindStr, in, err)
 		return
 	}
 
 	w.Header().Set("ETag", formatETag(out.Version))
 
 	if newETagHelper().checkIfNoneMatch(r, out.Version) {
-		h.writeNotModified(ctx, w, r, start, kindStr, q, out)
+		h.writeNotModified(ctx, w, r, start, span, kindStr, in, out)
 		return
 	}
 
-	h.writeSuccess(ctx, w, r, start, kindStr, q, out)
+	h.writeSuccess(ctx, w, r, start, span, kindStr, in, out)
 }
 
-func (h *SearchDictionaryHandler) parseKind(w http.ResponseWriter, r *http.Request, start time.Time, kindStr string) (valueobjects.Kind, bool) {
+func (h *SearchDictionaryHandler) parseKind(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr string) (valueobjects.Kind, bool) {
 	if kindStr == "" {
-		d := time.Since(start)
-		h.recordMetrics(r.Context(), kindStr, "invalid_kind", "", "")
-		h.recordDuration(r.Context(), d, kindStr, "invalid_kind")
-		h.logRequest(r, "invalid_kind", d)
-		version := h.currentVersion(r.Context())
-		w.Header().Set("ETag", formatETag(version))
-		writeProblem(w, http.StatusUnprocessableEntity, "kind is required", "invalid_kind", version)
+		h.respondProblem(ctx, w, r, start, span, kindStr, "", "", "invalid_kind", http.StatusUnprocessableEntity, "kind is required")
 		return 0, false
 	}
 
 	kind, err := valueobjects.ParseKind(kindStr)
 	if err != nil {
-		d := time.Since(start)
-		h.recordMetrics(r.Context(), kindStr, "invalid_kind", "", "")
-		h.recordDuration(r.Context(), d, kindStr, "invalid_kind")
-		h.logRequest(r, "invalid_kind", d)
-		version := h.currentVersion(r.Context())
-		w.Header().Set("ETag", formatETag(version))
-		writeProblem(w, http.StatusUnprocessableEntity, "invalid kind", "invalid_kind", version)
+		h.respondProblem(ctx, w, r, start, span, kindStr, "", "", "invalid_kind", http.StatusUnprocessableEntity, "invalid kind")
 		return 0, false
 	}
 	return kind, true
 }
 
-func (h *SearchDictionaryHandler) handleError(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr, q string, err error) {
+func (h *SearchDictionaryHandler) handleError(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr string, in *input.SearchDictionaryInput, err error) {
 	span.RecordError(err)
-	d := time.Since(start)
-	if errors.Is(err, valueobjects.ErrInvalidQuery) {
-		h.recordMetrics(ctx, kindStr, "invalid_query", h.calcQLenBucket(q), "")
-		h.recordDuration(ctx, d, kindStr, "invalid_query")
-		h.logRequest(r, "invalid_query", d)
-		version := h.currentVersion(ctx)
-		w.Header().Set("ETag", formatETag(version))
-		writeProblem(w, http.StatusUnprocessableEntity, "invalid query", "invalid_query", version)
-		return
+	bucket := qLenBucket(in.NormalizedQuery())
+
+	switch {
+	case errors.Is(err, valueobjects.ErrInvalidQuery):
+		h.respondProblem(ctx, w, r, start, span, kindStr, bucket, "", "invalid_query", http.StatusUnprocessableEntity, "invalid query")
+	case errors.Is(err, valueobjects.ErrInvalidKind):
+		h.respondProblem(ctx, w, r, start, span, kindStr, "", "", "invalid_kind", http.StatusUnprocessableEntity, "invalid kind")
+	default:
+		h.o11y.Logger().Error(ctx, "categories.search.failed", observability.Error(err))
+		h.respondProblem(ctx, w, r, start, span, kindStr, "", "", "error", http.StatusInternalServerError, "internal error")
 	}
-	if errors.Is(err, valueobjects.ErrInvalidKind) {
-		h.recordMetrics(ctx, kindStr, "invalid_kind", "", "")
-		h.recordDuration(ctx, d, kindStr, "invalid_kind")
-		h.logRequest(r, "invalid_kind", d)
-		version := h.currentVersion(ctx)
-		w.Header().Set("ETag", formatETag(version))
-		writeProblem(w, http.StatusUnprocessableEntity, "invalid kind", "invalid_kind", version)
-		return
-	}
-	h.o11y.Logger().Error(ctx, "categories.search.failed", observability.Error(err))
-	h.recordMetrics(ctx, kindStr, "error", "", "")
-	h.recordDuration(ctx, d, kindStr, "error")
-	h.logRequest(r, "error", d)
-	version := h.currentVersion(ctx)
-	w.Header().Set("ETag", formatETag(version))
-	writeProblem(w, http.StatusInternalServerError, "internal error", "", version)
 }
 
-func (h *SearchDictionaryHandler) writeNotModified(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, kindStr, q string, out *output.DictionarySearchOutput) {
+func (h *SearchDictionaryHandler) respondProblem(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr, bucket, signalTypeTop, outcome string, status int, detail string) {
 	d := time.Since(start)
-	outcome := h.determineOutcome(out)
-	h.recordMetrics(ctx, kindStr, outcome, h.calcQLenBucket(q), out.SignalTypeTop)
+	span.SetAttributes(observability.String("outcome", outcome))
+	h.recordMetrics(ctx, kindStr, outcome, bucket, signalTypeTop)
+	h.recordDuration(ctx, d, kindStr, outcome)
+	h.logRequest(r, outcome, d)
+	version := h.currentVersion(ctx)
+	w.Header().Set("ETag", formatETag(version))
+	writeProblem(w, status, detail, problemCode(outcome), version)
+}
+
+func (h *SearchDictionaryHandler) writeNotModified(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr string, in *input.SearchDictionaryInput, out *output.DictionarySearchOutput) {
+	d := time.Since(start)
+	outcome := resolveOutcomeLabel(out)
+	span.SetAttributes(observability.String("outcome", outcome))
+	h.recordMetrics(ctx, kindStr, outcome, qLenBucket(in.NormalizedQuery()), out.SignalTypeTop)
 	h.recordDuration(ctx, d, kindStr, outcome)
 	h.logRequest(r, outcome, d)
 	w.WriteHeader(http.StatusNotModified)
 }
 
-func (h *SearchDictionaryHandler) writeSuccess(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, kindStr, q string, out *output.DictionarySearchOutput) {
+func (h *SearchDictionaryHandler) writeSuccess(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, kindStr string, in *input.SearchDictionaryInput, out *output.DictionarySearchOutput) {
 	d := time.Since(start)
-	outcome := h.determineOutcome(out)
-	h.recordMetrics(ctx, kindStr, outcome, h.calcQLenBucket(q), out.SignalTypeTop)
+	outcome := resolveOutcomeLabel(out)
+	span.SetAttributes(observability.String("outcome", outcome))
+	h.recordMetrics(ctx, kindStr, outcome, qLenBucket(in.NormalizedQuery()), out.SignalTypeTop)
 	h.recordDuration(ctx, d, kindStr, outcome)
 	h.logRequest(r, outcome, d)
 	responses.JSON(w, http.StatusOK, out)
 }
 
-func (h *SearchDictionaryHandler) determineOutcome(out *output.DictionarySearchOutput) string {
-	if out.Result == "no_match" {
-		return "no_match"
+func resolveOutcomeLabel(out *output.DictionarySearchOutput) string {
+	if out.Outcome.IsValid() {
+		return out.Outcome.String()
 	}
-	if len(out.Candidates) == 0 {
-		return "no_match"
-	}
-	if out.IsAmbiguous {
-		return "ambiguous"
-	}
-	return "matched"
+	return valueobjects.ClassifyOutcome(len(out.Candidates)).String()
 }
 
-func (h *SearchDictionaryHandler) calcQLenBucket(q string) string {
-	normalized := h.normalizeQuery(q)
-	length := len(normalized)
-	switch {
-	case length >= 3 && length <= 4:
-		return "3-4"
-	case length >= 5 && length <= 8:
-		return "5-8"
-	case length >= 9 && length <= 16:
-		return "9-16"
-	case length >= 17 && length <= 32:
-		return "17-32"
-	case length >= 33:
-		return "33+"
-	default:
-		return ""
-	}
-}
-
-func (h *SearchDictionaryHandler) normalizeQuery(q string) string {
-	trimmed := strings.TrimSpace(q)
-	var result strings.Builder
-	for _, r := range trimmed {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
-}
-
-func (h *SearchDictionaryHandler) recordMetrics(ctx context.Context, kind, outcome, qLenBucket, signalTypeTop string) {
+func (h *SearchDictionaryHandler) recordMetrics(ctx context.Context, kind, outcome, qLenBucketLabel, signalTypeTop string) {
 	fields := []observability.Field{
 		observability.String("endpoint", "search_dictionary"),
 		observability.String("kind", kind),
 		observability.String("outcome", outcome),
 	}
-	if qLenBucket != "" {
-		fields = append(fields, observability.String("q_len_bucket", qLenBucket))
+	if qLenBucketLabel != "" {
+		fields = append(fields, observability.String("q_len_bucket", qLenBucketLabel))
 	}
 	if signalTypeTop != "" {
 		fields = append(fields, observability.String("signal_type_top", signalTypeTop))
@@ -239,4 +187,13 @@ func (h *SearchDictionaryHandler) currentVersion(ctx context.Context) int64 {
 		return 0
 	}
 	return v
+}
+
+func problemCode(outcome string) string {
+	switch outcome {
+	case "invalid_query", "invalid_kind":
+		return outcome
+	default:
+		return ""
+	}
 }

@@ -22,6 +22,7 @@ import (
 type DeleteExpenseSuite struct {
 	suite.Suite
 	ctx       context.Context
+	factory   *mockInterfaces.RepositoryFactory
 	expenses  *mockInterfaces.ExpenseRepository
 	publisher *mockInterfaces.ExpenseCommittedPublisher
 	uow       *uowMocks.UnitOfWorkVoid
@@ -34,11 +35,13 @@ func TestDeleteExpenseSuite(t *testing.T) {
 
 func (s *DeleteExpenseSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.expenses = mockInterfaces.NewExpenseRepository(s.T())
+	s.factory.EXPECT().ExpenseRepository(mock.Anything).Return(s.expenses).Maybe()
 	s.publisher = mockInterfaces.NewExpenseCommittedPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	s.useCase = usecases.NewDeleteExpense(s.expenses, s.publisher, s.uow, noop.NewProvider(), loc)
+	s.useCase = usecases.NewDeleteExpense(s.factory, s.publisher, s.uow, noop.NewProvider(), loc)
 }
 
 func (s *DeleteExpenseSuite) buildExisting(userID uuid.UUID, extIDStr string) entities.Expense {
@@ -66,12 +69,12 @@ func (s *DeleteExpenseSuite) TestSoftDelete_Success() {
 	existing := s.buildExisting(userID, in.ExternalTransactionID)
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		SoftDelete(s.ctx, mock.Anything, mock.Anything, int64(1)).
+		SoftDelete(s.ctx, mock.Anything, int64(1)).
 		Return(int64(2), nil).
 		Once()
 
@@ -94,7 +97,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_IdempotentRetry() {
 	tombstone := entities.NewExpenseTombstone(userID, source, extID, 2, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(entities.Expense{}, tombstone, nil).
 		Once()
 
@@ -110,12 +113,12 @@ func (s *DeleteExpenseSuite) TestSoftDelete_VersionConflict() {
 	existing := s.buildExisting(userID, in.ExternalTransactionID)
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		SoftDelete(s.ctx, mock.Anything, mock.Anything, int64(99)).
+		SoftDelete(s.ctx, mock.Anything, int64(99)).
 		Return(int64(0), interfaces.ErrExpenseConflict).
 		Once()
 
@@ -129,7 +132,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_NotFound() {
 	in := s.validInput(userID)
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything, mock.Anything).
+		GetByIdentity(s.ctx, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 

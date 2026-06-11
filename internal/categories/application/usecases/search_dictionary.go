@@ -13,6 +13,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
 const searchCandidateLimit = 100
@@ -56,6 +57,7 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 	if len(entries) == 0 {
 		return &output.DictionarySearchOutput{
 			Result:  "no_match",
+			Outcome: valueobjects.SearchOutcomeNoMatch,
 			Version: version,
 		}, nil
 	}
@@ -66,9 +68,11 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 	}
 	candidates, hasMore := uc.resolver.Resolve(entries, categories)
 
-	if len(candidates) == 0 {
+	outcome := valueobjects.ClassifyOutcome(len(candidates))
+	if outcome == valueobjects.SearchOutcomeNoMatch {
 		return &output.DictionarySearchOutput{
 			Result:  "no_match",
+			Outcome: outcome,
 			Version: version,
 		}, nil
 	}
@@ -78,19 +82,14 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 		candidateOutputs = append(candidateOutputs, output.NewCandidateOutputFromService(c))
 	}
 
-	result := &output.DictionarySearchOutput{
-		Result:     "candidates",
-		Candidates: candidateOutputs,
-		HasMore:    hasMore,
-		Version:    version,
-	}
-
-	if len(candidates) > 0 {
-		result.SignalTypeTop = candidates[0].SignalType.String()
-		result.IsAmbiguous = len(candidates) > 1
-	}
-
-	return result, nil
+	return &output.DictionarySearchOutput{
+		Result:        "candidates",
+		Candidates:    candidateOutputs,
+		HasMore:       hasMore,
+		SignalTypeTop: candidates[0].SignalType.String(),
+		Outcome:       outcome,
+		Version:       version,
+	}, nil
 }
 
 func (uc *SearchDictionary) buildCategoryMap(ctx context.Context, entries []entities.DictionaryEntry) (map[uuid.UUID]entities.Category, error) {

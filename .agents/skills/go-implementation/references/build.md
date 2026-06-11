@@ -7,7 +7,7 @@ Load complete when: tarefa envolve Dockerfile, pipeline de CI/CD, build de image
 -->
 
 ## Objetivo
-Manter builds reprodutíveis, imagens mínimas e gates de qualidade no pipeline.
+Manter builds reprodutíveis, imagens mínimas e gates de qualidade sem transformar validação localizada em falso positivo global.
 
 ## Diretrizes
 
@@ -70,16 +70,19 @@ run: build
 
 ### CI — Gates de Qualidade
 
-- Pipeline mínimo para PR:
-  1. `go vet ./...`
-  2. `golangci-lint run ./...`
-  3. `go test -race -count=1 ./...`
-  4. `govulncheck ./...`
-- Rodar testes com `-race` para detectar data races.
-- Usar `-count=1` para desabilitar cache de teste em CI.
-- Falhar o pipeline em qualquer warning de lint — não usar `--allow-errors`.
-- Rodar `govulncheck` para vulnerabilidades conhecidas em dependências.
-- Rodar `gosec ./...` como gate de segurança estática quando o projeto adotar.
+- Pipeline mínimo para PR continua recomendando:
+  1. `go vet`
+  2. `golangci-lint run`
+  3. `go test -race -count=1`
+  4. `govulncheck`
+- O escopo desses comandos deve seguir o `validation_profile` da skill:
+  - `local-minimal`: pacote ou arquivos tocados;
+  - `boundary`: pacote alterado + bounded context ou entrypoint afetado;
+  - `global`: repositório inteiro somente para mudanças transversais.
+- Rodar `-race` quando houver concorrência, mutação relevante ou profile `boundary/global`.
+- Usar `-count=1` para desabilitar cache em validações relevantes.
+- Falhar o pipeline em warning de lint apenas no escopo em que o lint foi deliberadamente aplicado.
+- Rodar `govulncheck` e `gosec` quando a superfície alterada envolver dependências, configuração de runtime, segurança ou build pipeline.
 
 ### Build Flags
 
@@ -119,19 +122,49 @@ go test -tags=integration ./...
 - Pipeline de CI sem gate de teste.
 - Ignorar falhas de lint com flags de supressão global.
 
-## Checklist de Validação (R0–R7) `[HARD]`
+## Perfis de Validação
 
-Executar e reportar o resultado de cada item antes de declarar a tarefa concluída. Qualquer
-resultado diferente do esperado é `[HARD]` (bloqueante de merge). Itens marcados "revisão manual"
-exigem inspeção do diff implementado.
+- `local-minimal`
+  - formatter nos arquivos alterados;
+  - `go build`, `go vet`, `go test -count=1` no pacote ou diretório alterado;
+  - `golangci-lint` apenas se o projeto já o usar e o custo for proporcional.
+- `boundary`
+  - tudo de `local-minimal`;
+  - ampliar para bounded context, entrypoint ou pacote consumidor concreto;
+  - usar `-race` quando houver mutação relevante, concorrência ou fronteira de I/O.
+- `global`
+  - usar apenas quando a mudança tocar wiring amplo, configuração global, contratos compartilhados ou múltiplos módulos;
+  - aí sim executar `go build ./...`, `go vet ./...`, `go test ./... -count=1 -race` e lint amplo quando disponível.
+
+## Resolvedor de Escopo
+
+Quando o projeto tiver `.agents/scripts/resolve-validation-scope.sh`, usar esse script como fonte
+primaria para `scope_build`, `scope_vet`, `scope_test`, `scope_lint` e `race_required`, em vez de
+decidir o escopo manualmente.
+
+```bash
+bash .agents/scripts/resolve-validation-scope.sh <arquivos...>
+echo "<diff>" | bash .agents/scripts/resolve-validation-scope.sh <arquivos...>
+```
+
+Prioridade:
+1. `resolve-validation-scope.sh`
+2. `validation_profile` + leitura do diff
+3. fallback manual seguro
+
+## Checklist de Validação (R0-R7)
+
+Executar e reportar o resultado de cada item no escopo coerente com o `validation_profile`. Qualquer
+resultado diferente do esperado e baseado em regra objetiva continua bloqueante; checks heurísticos
+devem ser confirmados pela leitura do diff antes de virar finding `[HARD]`.
 
 ```bash
 # ── R0: init() inexistente ───────────────────────────────────────────────────
-grep -rn "^func init()" --include="*.go" .
+grep -rn "^func init()" --include="*.go" <escopo-go>
 # Esperado: NENHUMA linha
 
 # ── R1: funções standalone proibidas (exceto main/New*/TestXxx/pkg utilitário) ─
-grep -rn "^func [^(]" --include="*.go" . \
+grep -rn "^func [^(]" --include="*.go" <escopo-go> \
   | grep -v "_test.go" | grep -v "func main()" | grep -v "func New" | grep -v "^cmd/"
 # Esperado: NENHUMA linha (exceto pkg/ utilitários sem estado declarados)
 
@@ -139,21 +172,21 @@ grep -rn "^func [^(]" --include="*.go" . \
 # Revisão manual: "Esta variável local existe apenas para renomear um campo?" → PROIBIDA
 
 # ── R3: mockery.yml presente e mocks atualizados ─────────────────────────────
-test -f mockery.yml && echo "mockery.yml: OK" || echo "[HARD] AUSENTE — criar mockery.yml"
+test -f mockery.yml && echo "mockery.yml: OK" || echo "[HARD contextual] AUSENTE — necessario apenas se o diff exigir mockery"
 mockery --config mockery.yml --dry-run 2>&1 | grep -i "error\|differ" \
-  && echo "[HARD] MOCKS DESATUALIZADOS" || echo "Mocks: OK"
+  && echo "[HARD contextual] MOCKS DESATUALIZADOS" || echo "Mocks: OK"
 
 # ── R4: padrão testify/suite em testes de use case / service / handler ───────
-find . -path "*/internal/*_test.go" | xargs grep -L "suite\.Suite" 2>/dev/null && echo "[HARD] FALTAM SUITES"
-find . -path "*/internal/*_test.go" | xargs grep -L "SetupTest"   2>/dev/null && echo "[HARD] FALTAM SetupTest"
-find . -path "*/internal/*_test.go" | xargs grep -L "suite\.Run"  2>/dev/null && echo "[HARD] FALTAM suite.Run"
+find <escopo-go> -path "*/internal/*_test.go" | xargs grep -L "suite\.Suite" 2>/dev/null && echo "[HARD contextual] SUITE AUSENTE onde o pacote exige suite"
+find <escopo-go> -path "*/internal/*_test.go" | xargs grep -L "SetupTest"   2>/dev/null && echo "[HARD contextual] SetupTest ausente onde a suite exige reset"
+find <escopo-go> -path "*/internal/*_test.go" | xargs grep -L "suite\.Run"  2>/dev/null && echo "[HARD contextual] suite.Run ausente onde a suite e o padrao"
 
 # ── R5/R6: os.Exit / log.Fatal fora de main ──────────────────────────────────
-grep -rn "os\.Exit\|log\.Fatal" --include="*.go" . | grep -v "^cmd/"
+grep -rn "os\.Exit\|log\.Fatal" --include="*.go" <escopo-go> | grep -v "^cmd/"
 # Esperado: NENHUMA linha
 
 # ── R5: panic fora de inicialização ──────────────────────────────────────────
-grep -rn "\bpanic(" --include="*.go" . | grep -v "_test.go" | grep -v "template\.Must\|regexp\.MustCompile"
+grep -rn "\bpanic(" --include="*.go" <escopo-go> | grep -v "_test.go" | grep -v "template\.Must\|regexp\.MustCompile"
 # Esperado: NENHUMA linha (exceto template.Must / regexp.MustCompile em main)
 
 # ── R5: goroutines fire-and-forget — revisão manual ──────────────────────────
@@ -166,12 +199,13 @@ grep -rn "\bpanic(" --include="*.go" . | grep -v "_test.go" | grep -v "template\
 # Nenhum campo de struct deve ter tipo context.Context.
 
 # ── R7: interface{} proibido — usar any ──────────────────────────────────────
-grep -rn "interface{}" --include="*.go" . | grep -v "_test.go" | grep -v "vendor/"
+grep -rn "interface{}" --include="*.go" <escopo-go> | grep -v "_test.go" | grep -v "vendor/"
 # Esperado: NENHUMA linha
 
 # ── Gate de qualidade final ──────────────────────────────────────────────────
-go build ./...
-go vet ./...
-go test ./... -count=1 -race
-golangci-lint run --timeout=5m 2>/dev/null || echo "[SOFT] golangci-lint não disponível"
+go build <escopo-build>
+go vet <escopo-vet>
+go test <escopo-test> -count=1
+go test <escopo-test> -count=1 -race    # usar quando o profile exigir
+golangci-lint run <escopo-lint> --timeout=5m 2>/dev/null || echo "[ADVISORY] golangci-lint nao disponivel ou fora do profile"
 ```

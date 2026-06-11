@@ -16,14 +16,15 @@ import (
 )
 
 type thresholdStateRepository struct {
+	db   database.DBTX
 	o11y observability.Observability
 }
 
-func NewThresholdStateRepository(o11y observability.Observability) interfaces.ThresholdStateRepository {
-	return &thresholdStateRepository{o11y: o11y}
+func NewThresholdStateRepository(o11y observability.Observability, db database.DBTX) interfaces.ThresholdStateRepository {
+	return &thresholdStateRepository{db: db, o11y: o11y}
 }
 
-func (r *thresholdStateRepository) UpsertIfTransition(ctx context.Context, db database.DBTX, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time) (bool, error) {
+func (r *thresholdStateRepository) UpsertIfTransition(ctx context.Context, k entities.ThresholdKey, nowCrossed bool, committedAt time.Time) (bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.threshold_state.upsert_if_transition")
 	defer span.End()
 
@@ -104,7 +105,7 @@ func (r *thresholdStateRepository) UpsertIfTransition(ctx context.Context, db da
 		uncrossedAfterTS = &t
 	}
 
-	row := db.QueryRowContext(ctx, query,
+	row := r.db.QueryRowContext(ctx, query,
 		k.UserID, k.Competence.String(), k.RootSlug.String(), k.Threshold.Int(),
 		nowCrossed, committedAt,
 		crossedAfterTS, uncrossedAfterTS,
@@ -127,7 +128,7 @@ func (r *thresholdStateRepository) UpsertIfTransition(ctx context.Context, db da
 	return beforeCrossed.Bool != afterCrossed, nil
 }
 
-func (r *thresholdStateRepository) GetCurrentlyCrossed(ctx context.Context, db database.DBTX, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error) {
+func (r *thresholdStateRepository) GetCurrentlyCrossed(ctx context.Context, userID uuid.UUID, competence valueobjects.Competence, rootSlug valueobjects.RootSlug) (map[valueobjects.Threshold]bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.threshold_state.get_currently_crossed")
 	defer span.End()
 
@@ -144,12 +145,12 @@ func (r *thresholdStateRepository) GetCurrentlyCrossed(ctx context.Context, db d
 		valueobjects.Threshold100: false,
 	}
 
-	rows, err := db.QueryContext(ctx, query, userID, competence.String(), rootSlug.String())
+	rows, err := r.db.QueryContext(ctx, query, userID, competence.String(), rootSlug.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("budgets/postgres: get_currently_crossed: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var rawThreshold int

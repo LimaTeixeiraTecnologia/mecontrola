@@ -54,7 +54,7 @@ func Run() error {
 		ServiceName:     cfg.HTTPConfig.ServiceNameAPI,
 		ServiceVersion:  cfg.O11yConfig.ServiceVersion,
 		TraceSampleRate: cfg.O11yConfig.TraceSampleRate,
-		OTLPEndpoint:    cfg.O11yConfig.ExporterEndpoint,
+		OTLPEndpoint:    cfg.O11yConfig.NormalizedExporterEndpoint(),
 		Insecure:        cfg.O11yConfig.ExporterInsecure,
 		LogLevel:        observability.LogLevel(cfg.O11yConfig.LogLevel),
 		OTLPProtocol:    otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
@@ -77,6 +77,7 @@ func Run() error {
 		manager.WithObservability(o11y),
 		manager.WithShutdownTimeout(10*time.Second),
 		manager.WithPoolStatsInterval(30*time.Second),
+		manager.WithStartupMigrationDir(".migrations-disabled"),
 	)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -168,7 +169,10 @@ func Run() error {
 	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
 
-	cardModule := card.NewCardModule(cfg, o11y, dbManager)
+	cardModule, err := card.NewCardModule(cfg, o11y, dbManager)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo card: %w", err)
+	}
 	if cardModule.CardRouter != nil {
 		srv.RegisterRouters(cardModule.CardRouter)
 	}

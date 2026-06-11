@@ -6,26 +6,15 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 )
 
-func TestSaoPauloLocation(t *testing.T) {
-	loc := services.SaoPauloLocation()
+func TestNewSaoPauloLocation(t *testing.T) {
+	loc, err := services.NewSaoPauloLocation()
+	if err != nil {
+		t.Fatalf("NewSaoPauloLocation() error = %v", err)
+	}
 	if loc == nil {
-		t.Fatal("SaoPauloLocation() returned nil")
+		t.Fatal("NewSaoPauloLocation() returned nil location")
 	}
 	if loc.String() != "America/Sao_Paulo" {
 		t.Errorf("location name: got %q, want %q", loc.String(), "America/Sao_Paulo")
-	}
-
-	loc2 := services.SaoPauloLocation()
-	if loc != loc2 {
-		t.Error("SaoPauloLocation() must return the same pointer (sync.Once)")
-	}
-}
-
-func TestMustLoadSaoPauloOrExit(t *testing.T) {
-	services.MustLoadSaoPauloOrExit()
-
-	loc := services.SaoPauloLocation()
-	if loc == nil {
-		t.Fatal("location must not be nil after MustLoadSaoPauloOrExit")
 	}
 }

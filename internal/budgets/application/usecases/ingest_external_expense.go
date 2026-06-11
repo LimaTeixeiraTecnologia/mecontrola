@@ -10,10 +10,10 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	budgetsconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/config"
@@ -49,7 +49,7 @@ type IngestExternalExpenseInput struct {
 }
 
 type IngestExternalExpense struct {
-	pending        interfaces.PendingEventRepository
+	factory        interfaces.RepositoryFactory
 	upsert         *UpsertExpense
 	delete         *DeleteExpense
 	uow            uow.UnitOfWork[struct{}]
@@ -59,7 +59,7 @@ type IngestExternalExpense struct {
 }
 
 func NewIngestExternalExpense(
-	pending interfaces.PendingEventRepository,
+	factory interfaces.RepositoryFactory,
 	upsert *UpsertExpense,
 	del *DeleteExpense,
 	u uow.UnitOfWork[struct{}],
@@ -76,7 +76,7 @@ func NewIngestExternalExpense(
 		"1",
 	)
 	return &IngestExternalExpense{
-		pending:        pending,
+		factory:        factory,
 		upsert:         upsert,
 		delete:         del,
 		uow:            u,
@@ -90,11 +90,35 @@ func (uc *IngestExternalExpense) Execute(ctx context.Context, in IngestExternalE
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.ingest_external_expense")
 	defer span.End()
 
+	if err := uc.preValidate(ctx, in); err != nil {
+		return err
+	}
+
+	cmd, err := commands.NewIngestExternalExpenseCommand(
+		in.EventID, in.UserID, in.Source, in.ExternalTransactionID,
+		in.SubcategoryID, in.Competence, in.Operation, in.Version, in.AmountCents, in.OccurredAt,
+	)
+	if err != nil {
+		return uc.mapCommandError(ctx, in, err)
+	}
+
+	if cmd.MutationKind == valueobjects.MutationKindCreate {
+		return uc.applyCreate(ctx, in)
+	}
+
+	if err := uc.applyMutation(ctx, in, cmd.MutationKind); err == nil {
+		return nil
+	} else if !errors.Is(err, interfaces.ErrExpenseConflict) && !errors.Is(err, interfaces.ErrExpenseNotFound) {
+		return err
+	}
+
+	return uc.queuePending(ctx, cmd, in)
+}
+
+func (uc *IngestExternalExpense) preValidate(ctx context.Context, in IngestExternalExpenseInput) error {
 	if !budgetsconfig.IsAllowedProducerSource(in.Source) {
 		uc.sourceRejected.Add(ctx, 1)
-		uc.o11y.Logger().Warn(ctx, "budgets.usecase.ingest_external_expense.source_rejected",
-			observability.String("source", in.Source),
-		)
+		uc.o11y.Logger().Warn(ctx, "budgets.usecase.ingest_external_expense.source_rejected", observability.String("source", in.Source))
 		return ErrIngestExternalExpenseSourceRejected
 	}
 
@@ -107,112 +131,105 @@ func (uc *IngestExternalExpense) Execute(ctx context.Context, in IngestExternalE
 		return fmt.Errorf("%w: %s", ErrIngestExternalExpenseInvalidFields, reason)
 	}
 
-	mutationKind, err := valueobjects.ParseMutationKind(in.Operation)
-	if err != nil {
-		return ErrIngestExternalExpenseInvalidOperation
-	}
+	return nil
+}
 
-	if mutationKind == valueobjects.MutationKindCreate && in.Version != 1 {
+func (uc *IngestExternalExpense) mapCommandError(ctx context.Context, in IngestExternalExpenseInput, err error) error {
+	switch {
+	case errors.Is(err, commands.ErrCommandInvalidEventID):
+		return ErrIngestExternalExpenseInvalidEventID
+	case errors.Is(err, commands.ErrCommandInvalidUserID):
+		return ErrIngestExternalExpenseInvalidUserID
+	case errors.Is(err, commands.ErrCommandInvalidSource):
+		return ErrIngestExternalExpenseInvalidSource
+	case errors.Is(err, commands.ErrCommandInvalidExternalID):
+		return ErrIngestExternalExpenseInvalidExternalID
+	case errors.Is(err, commands.ErrCommandInvalidMutationKind):
+		return ErrIngestExternalExpenseInvalidOperation
+	case errors.Is(err, commands.ErrCommandVersionRequired):
 		uc.invalidFields.Add(ctx, 1, observability.String("reason", "create_version_not_one"))
 		uc.o11y.Logger().Warn(ctx, "budgets.usecase.ingest_external_expense.invalid_version_for_create",
 			observability.String("event_id", in.EventID),
 			observability.Int64("version", in.Version),
 		)
 		return ErrIngestExternalExpenseInvalidVersionForCreate
-	}
-
-	if mutationKind != valueobjects.MutationKindDelete && in.AmountCents <= 0 {
+	case errors.Is(err, commands.ErrCommandInvalidAmount):
 		uc.o11y.Logger().Warn(ctx, "budgets.usecase.ingest_external_expense.invalid_amount",
 			observability.String("event_id", in.EventID),
 			observability.Int64("amount_cents", in.AmountCents),
 		)
 		return ErrUpsertExpenseInvalidAmount
 	}
+	return err
+}
 
-	eventID, err := uuid.Parse(in.EventID)
-	if err != nil {
-		return ErrIngestExternalExpenseInvalidEventID
+func (uc *IngestExternalExpense) applyCreate(ctx context.Context, in IngestExternalExpenseInput) error {
+	_, err := uc.upsert.Execute(ctx, input.UpsertExpenseInput{
+		UserID:                in.UserID,
+		Source:                in.Source,
+		ExternalTransactionID: in.ExternalTransactionID,
+		SubcategoryID:         in.SubcategoryID,
+		Competence:            in.Competence,
+		AmountCents:           in.AmountCents,
+		OccurredAt:            in.OccurredAt,
+	})
+	if err == nil || errors.Is(err, interfaces.ErrExpenseConflict) {
+		return nil
 	}
+	return fmt.Errorf("budgets.usecase.ingest_external_expense: upsert direto: %w", err)
+}
 
-	userID, err := uuid.Parse(in.UserID)
-	if err != nil {
-		return ErrIngestExternalExpenseInvalidUserID
-	}
-
-	source, err := valueobjects.NewProducerSource(in.Source)
-	if err != nil {
-		return ErrIngestExternalExpenseInvalidSource
-	}
-
-	extID, err := valueobjects.NewExternalTransactionID(in.ExternalTransactionID)
-	if err != nil {
-		return ErrIngestExternalExpenseInvalidExternalID
-	}
-
-	if mutationKind == valueobjects.MutationKindCreate {
-		_, execErr := uc.upsert.Execute(ctx, input.UpsertExpenseInput{
+func (uc *IngestExternalExpense) applyMutation(ctx context.Context, in IngestExternalExpenseInput, mutationKind valueobjects.MutationKind) error {
+	expectedVersion := in.Version - 1
+	if mutationKind == valueobjects.MutationKindDelete {
+		err := uc.delete.Execute(ctx, input.DeleteExpenseInput{
 			UserID:                in.UserID,
 			Source:                in.Source,
 			ExternalTransactionID: in.ExternalTransactionID,
-			SubcategoryID:         in.SubcategoryID,
-			Competence:            in.Competence,
-			AmountCents:           in.AmountCents,
-			OccurredAt:            in.OccurredAt,
+			ExpectedVersion:       expectedVersion,
 		})
-		if execErr == nil || errors.Is(execErr, interfaces.ErrExpenseConflict) {
+		if err == nil {
 			return nil
 		}
-		return fmt.Errorf("budgets.usecase.ingest_external_expense: upsert direto: %w", execErr)
+		return fmt.Errorf("budgets.usecase.ingest_external_expense: aplicar direto: %w", err)
 	}
 
-	if mutationKind != valueobjects.MutationKindCreate {
-		expectedVersion := in.Version - 1
-		var execErr error
-		if mutationKind == valueobjects.MutationKindDelete {
-			execErr = uc.delete.Execute(ctx, input.DeleteExpenseInput{
-				UserID:                in.UserID,
-				Source:                in.Source,
-				ExternalTransactionID: in.ExternalTransactionID,
-				ExpectedVersion:       expectedVersion,
-			})
-		} else {
-			_, execErr = uc.upsert.Execute(ctx, input.UpsertExpenseInput{
-				UserID:                in.UserID,
-				Source:                in.Source,
-				ExternalTransactionID: in.ExternalTransactionID,
-				SubcategoryID:         in.SubcategoryID,
-				Competence:            in.Competence,
-				AmountCents:           in.AmountCents,
-				OccurredAt:            in.OccurredAt,
-				ExpectedVersion:       &expectedVersion,
-			})
-		}
-		if execErr == nil {
-			return nil
-		}
-		if !errors.Is(execErr, interfaces.ErrExpenseConflict) && !errors.Is(execErr, interfaces.ErrExpenseNotFound) {
-			return fmt.Errorf("budgets.usecase.ingest_external_expense: aplicar direto: %w", execErr)
-		}
+	_, err := uc.upsert.Execute(ctx, input.UpsertExpenseInput{
+		UserID:                in.UserID,
+		Source:                in.Source,
+		ExternalTransactionID: in.ExternalTransactionID,
+		SubcategoryID:         in.SubcategoryID,
+		Competence:            in.Competence,
+		AmountCents:           in.AmountCents,
+		OccurredAt:            in.OccurredAt,
+		ExpectedVersion:       &expectedVersion,
+	})
+	if err == nil {
+		return nil
 	}
+	return fmt.Errorf("budgets.usecase.ingest_external_expense: aplicar direto: %w", err)
+}
 
-	pendingPayload, marshalErr := uc.buildPendingPayload(in)
+func (uc *IngestExternalExpense) queuePending(ctx context.Context, cmd commands.IngestExternalExpenseCommand, in IngestExternalExpenseInput) error {
+	pendingPayload, marshalErr := buildPendingPayload(in)
 	if marshalErr != nil {
 		return fmt.Errorf("budgets.usecase.ingest_external_expense: serializar payload pendente: %w", marshalErr)
 	}
 
 	pendingEvt := entities.NewPendingEvent(
-		eventID,
-		source,
-		userID,
-		extID,
-		in.Version,
-		mutationKind,
+		cmd.EventID,
+		cmd.Source,
+		cmd.UserID,
+		cmd.ExtID,
+		cmd.Version,
+		cmd.MutationKind,
 		pendingPayload,
 		time.Now().UTC(),
 	)
 
 	_, insertErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		if err := uc.pending.Insert(ctx, tx, pendingEvt); err != nil {
+		pending := uc.factory.PendingEventRepository(tx)
+		if err := pending.Insert(ctx, pendingEvt); err != nil {
 			if errors.Is(err, interfaces.ErrPendingEventDuplicate) {
 				return struct{}{}, nil
 			}
@@ -244,7 +261,7 @@ func missingFieldReason(in IngestExternalExpenseInput) string {
 	}
 }
 
-func (uc *IngestExternalExpense) buildPendingPayload(in IngestExternalExpenseInput) ([]byte, error) {
+func buildPendingPayload(in IngestExternalExpenseInput) ([]byte, error) {
 	type pendingPayload struct {
 		SubcategoryID string    `json:"subcategory_id"`
 		Competence    string    `json:"competence"`

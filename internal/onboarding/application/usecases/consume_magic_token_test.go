@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
@@ -260,7 +261,9 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			in := scenario.setup()
-			uc := usecases.NewConsumeMagicToken(&unitOfWorkConsume{}, s.factory, s.identityGW, s.binder, s.publisher, id.NewUUIDGenerator(), noop.NewProvider())
+			idGen := id.NewUUIDGenerator()
+			bind := binding.NewSubscriptionBindingService(s.identityGW, s.binder, s.publisher, idGen)
+			uc := usecases.NewConsumeMagicToken(&unitOfWorkConsume{}, s.factory, bind, idGen, noop.NewProvider())
 			result, err := uc.Execute(context.Background(), in)
 			scenario.expect(result, err)
 		})

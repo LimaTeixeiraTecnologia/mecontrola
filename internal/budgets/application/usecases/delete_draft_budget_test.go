@@ -23,6 +23,7 @@ import (
 type DeleteDraftBudgetSuite struct {
 	suite.Suite
 	ctx     context.Context
+	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	uow     *uowMocks.UnitOfWorkVoid
 	useCase *usecases.DeleteDraftBudget
@@ -34,9 +35,11 @@ func TestDeleteDraftBudgetSuite(t *testing.T) {
 
 func (s *DeleteDraftBudgetSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
+	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
-	s.useCase = usecases.NewDeleteDraftBudget(s.repo, s.uow, noop.NewProvider())
+	s.useCase = usecases.NewDeleteDraftBudget(s.factory, s.uow, noop.NewProvider())
 }
 
 func (s *DeleteDraftBudgetSuite) TestExecute_InvalidUserID() {
@@ -62,7 +65,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_BudgetNotFound() {
 	comp, _ := valueobjects.NewCompetence("2026-06")
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
@@ -90,7 +93,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_ActiveBudgetRejected() {
 	)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(activeBudget, nil).
 		Once()
 
@@ -110,12 +113,12 @@ func (s *DeleteDraftBudgetSuite) TestExecute_DraftDeletedSuccessfully() {
 	draft := entities.NewBudget(userID, comp, 100000, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		DeleteDraft(s.ctx, mock.Anything, userID, comp).
+		DeleteDraft(s.ctx, userID, comp).
 		Return(nil).
 		Once()
 
@@ -135,12 +138,12 @@ func (s *DeleteDraftBudgetSuite) TestExecute_DeleteRepositoryError() {
 	draft := entities.NewBudget(userID, comp, 100000, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		DeleteDraft(s.ctx, mock.Anything, userID, comp).
+		DeleteDraft(s.ctx, userID, comp).
 		Return(errors.New("db error")).
 		Once()
 

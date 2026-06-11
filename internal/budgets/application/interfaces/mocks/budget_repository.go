@@ -7,7 +7,6 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/google/uuid"
@@ -42,16 +41,16 @@ func (_m *BudgetRepository) EXPECT() *BudgetRepository_Expecter {
 }
 
 // Activate provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) Activate(ctx context.Context, db database.DBTX, b entities.Budget) error {
-	ret := _mock.Called(ctx, db, b)
+func (_mock *BudgetRepository) Activate(ctx context.Context, b entities.Budget) error {
+	ret := _mock.Called(ctx, b)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Activate")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Budget) error); ok {
-		r0 = returnFunc(ctx, db, b)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Budget) error); ok {
+		r0 = returnFunc(ctx, b)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -65,30 +64,24 @@ type BudgetRepository_Activate_Call struct {
 
 // Activate is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - b entities.Budget
-func (_e *BudgetRepository_Expecter) Activate(ctx interface{}, db interface{}, b interface{}) *BudgetRepository_Activate_Call {
-	return &BudgetRepository_Activate_Call{Call: _e.mock.On("Activate", ctx, db, b)}
+func (_e *BudgetRepository_Expecter) Activate(ctx interface{}, b interface{}) *BudgetRepository_Activate_Call {
+	return &BudgetRepository_Activate_Call{Call: _e.mock.On("Activate", ctx, b)}
 }
 
-func (_c *BudgetRepository_Activate_Call) Run(run func(ctx context.Context, db database.DBTX, b entities.Budget)) *BudgetRepository_Activate_Call {
+func (_c *BudgetRepository_Activate_Call) Run(run func(ctx context.Context, b entities.Budget)) *BudgetRepository_Activate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.Budget
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.Budget
-		if args[2] != nil {
-			arg2 = args[2].(entities.Budget)
+			arg1 = args[1].(entities.Budget)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -99,22 +92,22 @@ func (_c *BudgetRepository_Activate_Call) Return(err error) *BudgetRepository_Ac
 	return _c
 }
 
-func (_c *BudgetRepository_Activate_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, b entities.Budget) error) *BudgetRepository_Activate_Call {
+func (_c *BudgetRepository_Activate_Call) RunAndReturn(run func(ctx context.Context, b entities.Budget) error) *BudgetRepository_Activate_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // CreateDraft provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) CreateDraft(ctx context.Context, db database.DBTX, b entities.Budget) error {
-	ret := _mock.Called(ctx, db, b)
+func (_mock *BudgetRepository) CreateDraft(ctx context.Context, b entities.Budget) error {
+	ret := _mock.Called(ctx, b)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateDraft")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, entities.Budget) error); ok {
-		r0 = returnFunc(ctx, db, b)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Budget) error); ok {
+		r0 = returnFunc(ctx, b)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -128,30 +121,24 @@ type BudgetRepository_CreateDraft_Call struct {
 
 // CreateDraft is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - b entities.Budget
-func (_e *BudgetRepository_Expecter) CreateDraft(ctx interface{}, db interface{}, b interface{}) *BudgetRepository_CreateDraft_Call {
-	return &BudgetRepository_CreateDraft_Call{Call: _e.mock.On("CreateDraft", ctx, db, b)}
+func (_e *BudgetRepository_Expecter) CreateDraft(ctx interface{}, b interface{}) *BudgetRepository_CreateDraft_Call {
+	return &BudgetRepository_CreateDraft_Call{Call: _e.mock.On("CreateDraft", ctx, b)}
 }
 
-func (_c *BudgetRepository_CreateDraft_Call) Run(run func(ctx context.Context, db database.DBTX, b entities.Budget)) *BudgetRepository_CreateDraft_Call {
+func (_c *BudgetRepository_CreateDraft_Call) Run(run func(ctx context.Context, b entities.Budget)) *BudgetRepository_CreateDraft_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 entities.Budget
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 entities.Budget
-		if args[2] != nil {
-			arg2 = args[2].(entities.Budget)
+			arg1 = args[1].(entities.Budget)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -162,22 +149,22 @@ func (_c *BudgetRepository_CreateDraft_Call) Return(err error) *BudgetRepository
 	return _c
 }
 
-func (_c *BudgetRepository_CreateDraft_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, b entities.Budget) error) *BudgetRepository_CreateDraft_Call {
+func (_c *BudgetRepository_CreateDraft_Call) RunAndReturn(run func(ctx context.Context, b entities.Budget) error) *BudgetRepository_CreateDraft_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // DeleteDraft provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) DeleteDraft(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) error {
-	ret := _mock.Called(ctx, db, userID, c)
+func (_mock *BudgetRepository) DeleteDraft(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) error {
+	ret := _mock.Called(ctx, userID, c)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeleteDraft")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) error); ok {
-		r0 = returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
+		r0 = returnFunc(ctx, userID, c)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -191,36 +178,30 @@ type BudgetRepository_DeleteDraft_Call struct {
 
 // DeleteDraft is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - userID uuid.UUID
 //   - c valueobjects.Competence
-func (_e *BudgetRepository_Expecter) DeleteDraft(ctx interface{}, db interface{}, userID interface{}, c interface{}) *BudgetRepository_DeleteDraft_Call {
-	return &BudgetRepository_DeleteDraft_Call{Call: _e.mock.On("DeleteDraft", ctx, db, userID, c)}
+func (_e *BudgetRepository_Expecter) DeleteDraft(ctx interface{}, userID interface{}, c interface{}) *BudgetRepository_DeleteDraft_Call {
+	return &BudgetRepository_DeleteDraft_Call{Call: _e.mock.On("DeleteDraft", ctx, userID, c)}
 }
 
-func (_c *BudgetRepository_DeleteDraft_Call) Run(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence)) *BudgetRepository_DeleteDraft_Call {
+func (_c *BudgetRepository_DeleteDraft_Call) Run(run func(ctx context.Context, userID uuid.UUID, c valueobjects.Competence)) *BudgetRepository_DeleteDraft_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 uuid.UUID
+		var arg2 valueobjects.Competence
 		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
-		}
-		var arg3 valueobjects.Competence
-		if args[3] != nil {
-			arg3 = args[3].(valueobjects.Competence)
+			arg2 = args[2].(valueobjects.Competence)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -231,14 +212,14 @@ func (_c *BudgetRepository_DeleteDraft_Call) Return(err error) *BudgetRepository
 	return _c
 }
 
-func (_c *BudgetRepository_DeleteDraft_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) error) *BudgetRepository_DeleteDraft_Call {
+func (_c *BudgetRepository_DeleteDraft_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) error) *BudgetRepository_DeleteDraft_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetByUserCompetence provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) GetByUserCompetence(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error) {
-	ret := _mock.Called(ctx, db, userID, c)
+func (_mock *BudgetRepository) GetByUserCompetence(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error) {
+	ret := _mock.Called(ctx, userID, c)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetByUserCompetence")
@@ -246,16 +227,16 @@ func (_mock *BudgetRepository) GetByUserCompetence(ctx context.Context, db datab
 
 	var r0 entities.Budget
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) (entities.Budget, error)); ok {
-		return returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) (entities.Budget, error)); ok {
+		return returnFunc(ctx, userID, c)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) entities.Budget); ok {
-		r0 = returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) entities.Budget); ok {
+		r0 = returnFunc(ctx, userID, c)
 	} else {
 		r0 = ret.Get(0).(entities.Budget)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence) error); ok {
-		r1 = returnFunc(ctx, db, userID, c)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
+		r1 = returnFunc(ctx, userID, c)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -269,36 +250,30 @@ type BudgetRepository_GetByUserCompetence_Call struct {
 
 // GetByUserCompetence is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - userID uuid.UUID
 //   - c valueobjects.Competence
-func (_e *BudgetRepository_Expecter) GetByUserCompetence(ctx interface{}, db interface{}, userID interface{}, c interface{}) *BudgetRepository_GetByUserCompetence_Call {
-	return &BudgetRepository_GetByUserCompetence_Call{Call: _e.mock.On("GetByUserCompetence", ctx, db, userID, c)}
+func (_e *BudgetRepository_Expecter) GetByUserCompetence(ctx interface{}, userID interface{}, c interface{}) *BudgetRepository_GetByUserCompetence_Call {
+	return &BudgetRepository_GetByUserCompetence_Call{Call: _e.mock.On("GetByUserCompetence", ctx, userID, c)}
 }
 
-func (_c *BudgetRepository_GetByUserCompetence_Call) Run(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence)) *BudgetRepository_GetByUserCompetence_Call {
+func (_c *BudgetRepository_GetByUserCompetence_Call) Run(run func(ctx context.Context, userID uuid.UUID, c valueobjects.Competence)) *BudgetRepository_GetByUserCompetence_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 uuid.UUID
+		var arg2 valueobjects.Competence
 		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
-		}
-		var arg3 valueobjects.Competence
-		if args[3] != nil {
-			arg3 = args[3].(valueobjects.Competence)
+			arg2 = args[2].(valueobjects.Competence)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -309,14 +284,14 @@ func (_c *BudgetRepository_GetByUserCompetence_Call) Return(budget entities.Budg
 	return _c
 }
 
-func (_c *BudgetRepository_GetByUserCompetence_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error)) *BudgetRepository_GetByUserCompetence_Call {
+func (_c *BudgetRepository_GetByUserCompetence_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error)) *BudgetRepository_GetByUserCompetence_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // IsSignaledAbandoned provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) IsSignaledAbandoned(ctx context.Context, db database.DBTX, budgetID uuid.UUID) (bool, error) {
-	ret := _mock.Called(ctx, db, budgetID)
+func (_mock *BudgetRepository) IsSignaledAbandoned(ctx context.Context, budgetID uuid.UUID) (bool, error) {
+	ret := _mock.Called(ctx, budgetID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for IsSignaledAbandoned")
@@ -324,16 +299,16 @@ func (_mock *BudgetRepository) IsSignaledAbandoned(ctx context.Context, db datab
 
 	var r0 bool
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID) (bool, error)); ok {
-		return returnFunc(ctx, db, budgetID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) (bool, error)); ok {
+		return returnFunc(ctx, budgetID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID) bool); ok {
-		r0 = returnFunc(ctx, db, budgetID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) bool); ok {
+		r0 = returnFunc(ctx, budgetID)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, uuid.UUID) error); ok {
-		r1 = returnFunc(ctx, db, budgetID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, budgetID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -347,30 +322,24 @@ type BudgetRepository_IsSignaledAbandoned_Call struct {
 
 // IsSignaledAbandoned is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - budgetID uuid.UUID
-func (_e *BudgetRepository_Expecter) IsSignaledAbandoned(ctx interface{}, db interface{}, budgetID interface{}) *BudgetRepository_IsSignaledAbandoned_Call {
-	return &BudgetRepository_IsSignaledAbandoned_Call{Call: _e.mock.On("IsSignaledAbandoned", ctx, db, budgetID)}
+func (_e *BudgetRepository_Expecter) IsSignaledAbandoned(ctx interface{}, budgetID interface{}) *BudgetRepository_IsSignaledAbandoned_Call {
+	return &BudgetRepository_IsSignaledAbandoned_Call{Call: _e.mock.On("IsSignaledAbandoned", ctx, budgetID)}
 }
 
-func (_c *BudgetRepository_IsSignaledAbandoned_Call) Run(run func(ctx context.Context, db database.DBTX, budgetID uuid.UUID)) *BudgetRepository_IsSignaledAbandoned_Call {
+func (_c *BudgetRepository_IsSignaledAbandoned_Call) Run(run func(ctx context.Context, budgetID uuid.UUID)) *BudgetRepository_IsSignaledAbandoned_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 uuid.UUID
-		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
+			arg1 = args[1].(uuid.UUID)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -381,14 +350,14 @@ func (_c *BudgetRepository_IsSignaledAbandoned_Call) Return(b bool, err error) *
 	return _c
 }
 
-func (_c *BudgetRepository_IsSignaledAbandoned_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, budgetID uuid.UUID) (bool, error)) *BudgetRepository_IsSignaledAbandoned_Call {
+func (_c *BudgetRepository_IsSignaledAbandoned_Call) RunAndReturn(run func(ctx context.Context, budgetID uuid.UUID) (bool, error)) *BudgetRepository_IsSignaledAbandoned_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListAbandonedDrafts provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) ListAbandonedDrafts(ctx context.Context, db database.DBTX, before valueobjects.Competence, limit int) ([]entities.Budget, error) {
-	ret := _mock.Called(ctx, db, before, limit)
+func (_mock *BudgetRepository) ListAbandonedDrafts(ctx context.Context, before valueobjects.Competence, limit int) ([]entities.Budget, error) {
+	ret := _mock.Called(ctx, before, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListAbandonedDrafts")
@@ -396,18 +365,18 @@ func (_mock *BudgetRepository) ListAbandonedDrafts(ctx context.Context, db datab
 
 	var r0 []entities.Budget
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, valueobjects.Competence, int) ([]entities.Budget, error)); ok {
-		return returnFunc(ctx, db, before, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, valueobjects.Competence, int) ([]entities.Budget, error)); ok {
+		return returnFunc(ctx, before, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, valueobjects.Competence, int) []entities.Budget); ok {
-		r0 = returnFunc(ctx, db, before, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, valueobjects.Competence, int) []entities.Budget); ok {
+		r0 = returnFunc(ctx, before, limit)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]entities.Budget)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, valueobjects.Competence, int) error); ok {
-		r1 = returnFunc(ctx, db, before, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, valueobjects.Competence, int) error); ok {
+		r1 = returnFunc(ctx, before, limit)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -421,22 +390,96 @@ type BudgetRepository_ListAbandonedDrafts_Call struct {
 
 // ListAbandonedDrafts is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - before valueobjects.Competence
 //   - limit int
-func (_e *BudgetRepository_Expecter) ListAbandonedDrafts(ctx interface{}, db interface{}, before interface{}, limit interface{}) *BudgetRepository_ListAbandonedDrafts_Call {
-	return &BudgetRepository_ListAbandonedDrafts_Call{Call: _e.mock.On("ListAbandonedDrafts", ctx, db, before, limit)}
+func (_e *BudgetRepository_Expecter) ListAbandonedDrafts(ctx interface{}, before interface{}, limit interface{}) *BudgetRepository_ListAbandonedDrafts_Call {
+	return &BudgetRepository_ListAbandonedDrafts_Call{Call: _e.mock.On("ListAbandonedDrafts", ctx, before, limit)}
 }
 
-func (_c *BudgetRepository_ListAbandonedDrafts_Call) Run(run func(ctx context.Context, db database.DBTX, before valueobjects.Competence, limit int)) *BudgetRepository_ListAbandonedDrafts_Call {
+func (_c *BudgetRepository_ListAbandonedDrafts_Call) Run(run func(ctx context.Context, before valueobjects.Competence, limit int)) *BudgetRepository_ListAbandonedDrafts_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 valueobjects.Competence
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
+			arg1 = args[1].(valueobjects.Competence)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *BudgetRepository_ListAbandonedDrafts_Call) Return(budgets []entities.Budget, err error) *BudgetRepository_ListAbandonedDrafts_Call {
+	_c.Call.Return(budgets, err)
+	return _c
+}
+
+func (_c *BudgetRepository_ListAbandonedDrafts_Call) RunAndReturn(run func(ctx context.Context, before valueobjects.Competence, limit int) ([]entities.Budget, error)) *BudgetRepository_ListAbandonedDrafts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListFutureNotActivated provides a mock function for the type BudgetRepository
+func (_mock *BudgetRepository) ListFutureNotActivated(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error) {
+	ret := _mock.Called(ctx, userID, from, max)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListFutureNotActivated")
+	}
+
+	var r0 []entities.Budget
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence, int) ([]entities.Budget, error)); ok {
+		return returnFunc(ctx, userID, from, max)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence, int) []entities.Budget); ok {
+		r0 = returnFunc(ctx, userID, from, max)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Budget)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence, int) error); ok {
+		r1 = returnFunc(ctx, userID, from, max)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// BudgetRepository_ListFutureNotActivated_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFutureNotActivated'
+type BudgetRepository_ListFutureNotActivated_Call struct {
+	*mock.Call
+}
+
+// ListFutureNotActivated is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - from valueobjects.Competence
+//   - max int
+func (_e *BudgetRepository_Expecter) ListFutureNotActivated(ctx interface{}, userID interface{}, from interface{}, max interface{}) *BudgetRepository_ListFutureNotActivated_Call {
+	return &BudgetRepository_ListFutureNotActivated_Call{Call: _e.mock.On("ListFutureNotActivated", ctx, userID, from, max)}
+}
+
+func (_c *BudgetRepository_ListFutureNotActivated_Call) Run(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int)) *BudgetRepository_ListFutureNotActivated_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
 		}
 		var arg2 valueobjects.Competence
 		if args[2] != nil {
@@ -456,113 +499,27 @@ func (_c *BudgetRepository_ListAbandonedDrafts_Call) Run(run func(ctx context.Co
 	return _c
 }
 
-func (_c *BudgetRepository_ListAbandonedDrafts_Call) Return(budgets []entities.Budget, err error) *BudgetRepository_ListAbandonedDrafts_Call {
-	_c.Call.Return(budgets, err)
-	return _c
-}
-
-func (_c *BudgetRepository_ListAbandonedDrafts_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, before valueobjects.Competence, limit int) ([]entities.Budget, error)) *BudgetRepository_ListAbandonedDrafts_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ListFutureNotActivated provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) ListFutureNotActivated(ctx context.Context, db database.DBTX, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error) {
-	ret := _mock.Called(ctx, db, userID, from, max)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ListFutureNotActivated")
-	}
-
-	var r0 []entities.Budget
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence, int) ([]entities.Budget, error)); ok {
-		return returnFunc(ctx, db, userID, from, max)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence, int) []entities.Budget); ok {
-		r0 = returnFunc(ctx, db, userID, from, max)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]entities.Budget)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, database.DBTX, uuid.UUID, valueobjects.Competence, int) error); ok {
-		r1 = returnFunc(ctx, db, userID, from, max)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// BudgetRepository_ListFutureNotActivated_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFutureNotActivated'
-type BudgetRepository_ListFutureNotActivated_Call struct {
-	*mock.Call
-}
-
-// ListFutureNotActivated is a helper method to define mock.On call
-//   - ctx context.Context
-//   - db database.DBTX
-//   - userID uuid.UUID
-//   - from valueobjects.Competence
-//   - max int
-func (_e *BudgetRepository_Expecter) ListFutureNotActivated(ctx interface{}, db interface{}, userID interface{}, from interface{}, max interface{}) *BudgetRepository_ListFutureNotActivated_Call {
-	return &BudgetRepository_ListFutureNotActivated_Call{Call: _e.mock.On("ListFutureNotActivated", ctx, db, userID, from, max)}
-}
-
-func (_c *BudgetRepository_ListFutureNotActivated_Call) Run(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, from valueobjects.Competence, max int)) *BudgetRepository_ListFutureNotActivated_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 database.DBTX
-		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 uuid.UUID
-		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
-		}
-		var arg3 valueobjects.Competence
-		if args[3] != nil {
-			arg3 = args[3].(valueobjects.Competence)
-		}
-		var arg4 int
-		if args[4] != nil {
-			arg4 = args[4].(int)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-			arg3,
-			arg4,
-		)
-	})
-	return _c
-}
-
 func (_c *BudgetRepository_ListFutureNotActivated_Call) Return(budgets []entities.Budget, err error) *BudgetRepository_ListFutureNotActivated_Call {
 	_c.Call.Return(budgets, err)
 	return _c
 }
 
-func (_c *BudgetRepository_ListFutureNotActivated_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error)) *BudgetRepository_ListFutureNotActivated_Call {
+func (_c *BudgetRepository_ListFutureNotActivated_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error)) *BudgetRepository_ListFutureNotActivated_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // SignalAbandoned provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) SignalAbandoned(ctx context.Context, db database.DBTX, budgetID uuid.UUID) error {
-	ret := _mock.Called(ctx, db, budgetID)
+func (_mock *BudgetRepository) SignalAbandoned(ctx context.Context, budgetID uuid.UUID) error {
+	ret := _mock.Called(ctx, budgetID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SignalAbandoned")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, uuid.UUID) error); ok {
-		r0 = returnFunc(ctx, db, budgetID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) error); ok {
+		r0 = returnFunc(ctx, budgetID)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -576,30 +533,24 @@ type BudgetRepository_SignalAbandoned_Call struct {
 
 // SignalAbandoned is a helper method to define mock.On call
 //   - ctx context.Context
-//   - db database.DBTX
 //   - budgetID uuid.UUID
-func (_e *BudgetRepository_Expecter) SignalAbandoned(ctx interface{}, db interface{}, budgetID interface{}) *BudgetRepository_SignalAbandoned_Call {
-	return &BudgetRepository_SignalAbandoned_Call{Call: _e.mock.On("SignalAbandoned", ctx, db, budgetID)}
+func (_e *BudgetRepository_Expecter) SignalAbandoned(ctx interface{}, budgetID interface{}) *BudgetRepository_SignalAbandoned_Call {
+	return &BudgetRepository_SignalAbandoned_Call{Call: _e.mock.On("SignalAbandoned", ctx, budgetID)}
 }
 
-func (_c *BudgetRepository_SignalAbandoned_Call) Run(run func(ctx context.Context, db database.DBTX, budgetID uuid.UUID)) *BudgetRepository_SignalAbandoned_Call {
+func (_c *BudgetRepository_SignalAbandoned_Call) Run(run func(ctx context.Context, budgetID uuid.UUID)) *BudgetRepository_SignalAbandoned_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 database.DBTX
+		var arg1 uuid.UUID
 		if args[1] != nil {
-			arg1 = args[1].(database.DBTX)
-		}
-		var arg2 uuid.UUID
-		if args[2] != nil {
-			arg2 = args[2].(uuid.UUID)
+			arg1 = args[1].(uuid.UUID)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -610,7 +561,7 @@ func (_c *BudgetRepository_SignalAbandoned_Call) Return(err error) *BudgetReposi
 	return _c
 }
 
-func (_c *BudgetRepository_SignalAbandoned_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, budgetID uuid.UUID) error) *BudgetRepository_SignalAbandoned_Call {
+func (_c *BudgetRepository_SignalAbandoned_Call) RunAndReturn(run func(ctx context.Context, budgetID uuid.UUID) error) *BudgetRepository_SignalAbandoned_Call {
 	_c.Call.Return(run)
 	return _c
 }

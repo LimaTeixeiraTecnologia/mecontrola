@@ -14,82 +14,54 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
-const maxRecurrenceMonths = 12
-
 type CreateRecurrence struct {
-	budgets interfaces.BudgetRepository
-	uow     uow.UnitOfWork[struct{}]
-	o11y    observability.Observability
+	factory   interfaces.RepositoryFactory
+	uow       uow.UnitOfWork[struct{}]
+	o11y      observability.Observability
+	validator *services.RecurrenceSourceValidator
+	cloner    *services.BudgetClonerForRecurrence
 }
 
 func NewCreateRecurrence(
-	budgets interfaces.BudgetRepository,
+	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork[struct{}],
 	o11y observability.Observability,
 ) *CreateRecurrence {
-	return &CreateRecurrence{budgets: budgets, uow: u, o11y: o11y}
+	validator := services.NewRecurrenceSourceValidator()
+	return &CreateRecurrence{
+		factory:   factory,
+		uow:       u,
+		o11y:      o11y,
+		validator: validator,
+		cloner:    services.NewBudgetClonerForRecurrence(validator),
+	}
 }
 
 func (uc *CreateRecurrence) Execute(ctx context.Context, in input.CreateRecurrenceInput) (output.RecurrenceResultOutput, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.create_recurrence")
 	defer span.End()
 
-	userID, err := uuid.Parse(in.UserID)
+	cmd, err := commands.NewCreateRecurrenceCommand(in.UserID, in.SourceCompetence, in.Months)
 	if err != nil {
-		return output.RecurrenceResultOutput{}, ErrBudgetInvalidUserID
+		return output.RecurrenceResultOutput{}, err
 	}
 
-	sourceComp, err := valueobjects.NewCompetence(in.SourceCompetence)
-	if err != nil {
-		return output.RecurrenceResultOutput{}, ErrBudgetInvalidCompetence
+	sourceBudget, sourceErr := uc.loadAndValidateSource(ctx, cmd)
+	if sourceErr != nil {
+		return output.RecurrenceResultOutput{}, sourceErr
 	}
 
-	months := in.Months
-	if months < 1 || months > maxRecurrenceMonths {
-		return output.RecurrenceResultOutput{}, ErrRecurrenceInvalidMonths
-	}
-
-	var sourceBudget entities.Budget
-	var sourceValidErr error
-
-	_, preErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		b, findErr := uc.budgets.GetByUserCompetence(ctx, tx, userID, sourceComp)
-		if findErr != nil {
-			sourceValidErr = ErrRecurrenceSourceInvalid
-			return struct{}{}, findErr
-		}
-
-		if err := validateRecurrenceSource(b); err != nil {
-			sourceValidErr = err
-			return struct{}{}, err
-		}
-
-		sourceBudget = b
-		return struct{}{}, nil
-	})
-
-	if preErr != nil {
-		if sourceValidErr != nil {
-			return output.RecurrenceResultOutput{}, sourceValidErr
-		}
-		return output.RecurrenceResultOutput{}, preErr
-	}
-
-	results := make([]output.RecurrenceResultEntry, 0, months)
-	now := time.Now().UTC()
-
-	current := sourceComp
-	for range months {
+	results := make([]output.RecurrenceResultEntry, 0, cmd.Months)
+	current := cmd.SourceCompetence
+	for range cmd.Months {
 		current = current.Next()
-		comp := current
-
-		entry := processRecurrenceMonth(ctx, uc, userID, comp, sourceBudget, now)
-		results = append(results, entry)
+		results = append(results, uc.processMonth(ctx, cmd.UserID, current, sourceBudget))
 	}
 
 	return output.RecurrenceResultOutput{
@@ -98,117 +70,68 @@ func (uc *CreateRecurrence) Execute(ctx context.Context, in input.CreateRecurren
 	}, nil
 }
 
-func validateRecurrenceSource(b entities.Budget) error {
-	if b.TotalCents() <= 0 {
-		return ErrRecurrenceSourceNegativeTotal
-	}
+func (uc *CreateRecurrence) loadAndValidateSource(ctx context.Context, cmd commands.CreateRecurrenceCommand) (entities.Budget, error) {
+	var sourceBudget entities.Budget
+	var validationErr error
 
-	if b.AutoDraft() {
-		allocs := b.Allocations()
-		if len(allocs) == 0 {
-			return ErrRecurrenceSourceAutoDraftWithoutAllocs
+	_, txErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+		budgets := uc.factory.BudgetRepository(tx)
+		b, findErr := budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.SourceCompetence)
+		if findErr != nil {
+			validationErr = ErrRecurrenceSourceInvalid
+			return struct{}{}, findErr
 		}
-	}
 
-	if b.IsDraft() {
-		sum := 0
-		for _, a := range b.Allocations() {
-			sum += a.BasisPoints()
+		if validateErr := uc.validator.Validate(b); validateErr != nil {
+			validationErr = validateErr
+			return struct{}{}, validateErr
 		}
-		if sum != 10000 {
-			return ErrRecurrenceSourceDraftWithoutFullAllocs
-		}
-	}
 
-	return nil
+		sourceBudget = b
+		return struct{}{}, nil
+	})
+
+	if txErr != nil {
+		if validationErr != nil {
+			return entities.Budget{}, validationErr
+		}
+		return entities.Budget{}, txErr
+	}
+	return sourceBudget, nil
 }
 
-func processRecurrenceMonth(
+func (uc *CreateRecurrence) processMonth(
 	ctx context.Context,
-	uc *CreateRecurrence,
 	userID uuid.UUID,
 	comp valueobjects.Competence,
 	source entities.Budget,
-	now time.Time,
 ) output.RecurrenceResultEntry {
 	var status output.RecurrenceStatus
 	var reason string
 
 	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		existing, findErr := uc.budgets.GetByUserCompetence(ctx, tx, userID, comp)
+		budgets := uc.factory.BudgetRepository(tx)
+		existing, findErr := budgets.GetByUserCompetence(ctx, userID, comp)
 		if findErr != nil && !errors.Is(findErr, interfaces.ErrBudgetNotFound) {
 			return struct{}{}, fmt.Errorf("budgets.usecase.create_recurrence: buscar competência %s: %w", comp, findErr)
 		}
 
 		if findErr == nil {
-			if existing.IsActive() {
-				status = output.RecurrenceStatusConflict
-				reason = "orçamento já ativado"
-				return struct{}{}, nil
-			}
-
-			updatedAllocs := buildAllocsFromSource(existing.ID(), source)
-			existing.SetAllocations(updatedAllocs)
-
-			budget := entities.HydrateBudget(
-				existing.ID(),
-				existing.UserID(),
-				existing.Competence(),
-				source.TotalCents(),
-				entities.BudgetStateDraft,
-				nil,
-				existing.AutoDraft(),
-				updatedAllocs,
-				existing.CreatedAt(),
-				now,
-			)
-
-			if activateErr := uc.budgets.Activate(ctx, tx, budget); activateErr != nil {
-				return struct{}{}, fmt.Errorf("budgets.usecase.create_recurrence: atualizar rascunho %s: %w", comp, activateErr)
-			}
-
-			if existing.AutoDraft() {
-				status = output.RecurrenceStatusCompletedFromDraft
-			} else {
-				status = output.RecurrenceStatusUpdated
-			}
-			return struct{}{}, nil
+			s, r, updateErr := uc.upgradeExisting(ctx, budgets, existing, source, comp)
+			status = s
+			reason = r
+			return struct{}{}, updateErr
 		}
 
-		allocInputs := make([]services.AllocationInput, 0, len(source.Allocations()))
-		for _, a := range source.Allocations() {
-			allocInputs = append(allocInputs, services.AllocationInput{
-				RootSlug:    a.RootSlug(),
-				BasisPoints: a.BasisPoints(),
-			})
-		}
-		distributed := services.Distribute(source.TotalCents(), allocInputs)
-
-		newBudget := entities.NewBudget(userID, comp, source.TotalCents(), now)
-		allocs := make([]entities.Allocation, 0, len(distributed))
-		for _, r := range distributed {
-			allocs = append(allocs, entities.NewAllocation(newBudget.ID(), r.RootSlug, r.BasisPoints, r.PlannedCents))
-		}
-		newBudget.SetAllocations(allocs)
-
-		if createErr := uc.budgets.CreateDraft(ctx, tx, newBudget); createErr != nil {
-			if errors.Is(createErr, interfaces.ErrBudgetConflict) {
-				status = output.RecurrenceStatusConflict
-				reason = "conflito ao criar orçamento"
-				return struct{}{}, nil
-			}
-			return struct{}{}, fmt.Errorf("budgets.usecase.create_recurrence: criar %s: %w", comp, createErr)
-		}
-
-		status = output.RecurrenceStatusCreated
-		return struct{}{}, nil
+		s, r, createErr := uc.createFromSource(ctx, budgets, userID, comp, source)
+		status = s
+		reason = r
+		return struct{}{}, createErr
 	})
 
-	if err != nil {
-		if status == "" {
-			status = output.RecurrenceStatusFailure
-			reason = err.Error()
-		}
+	if err != nil && status == "" {
+		status = output.RecurrenceStatusFailure
+		reason = err.Error()
 	}
 
 	return output.RecurrenceResultEntry{
@@ -218,18 +141,61 @@ func processRecurrenceMonth(
 	}
 }
 
-func buildAllocsFromSource(budgetID uuid.UUID, source entities.Budget) []entities.Allocation {
-	allocInputs := make([]services.AllocationInput, 0, len(source.Allocations()))
-	for _, a := range source.Allocations() {
-		allocInputs = append(allocInputs, services.AllocationInput{
-			RootSlug:    a.RootSlug(),
-			BasisPoints: a.BasisPoints(),
-		})
+func (uc *CreateRecurrence) upgradeExisting(
+	ctx context.Context,
+	budgets interfaces.BudgetRepository,
+	existing entities.Budget,
+	source entities.Budget,
+	comp valueobjects.Competence,
+) (output.RecurrenceStatus, string, error) {
+	if existing.IsActive() {
+		return output.RecurrenceStatusConflict, "orçamento já ativado", nil
 	}
-	distributed := services.Distribute(source.TotalCents(), allocInputs)
-	allocs := make([]entities.Allocation, 0, len(distributed))
-	for _, r := range distributed {
-		allocs = append(allocs, entities.NewAllocation(budgetID, r.RootSlug, r.BasisPoints, r.PlannedCents))
+
+	updatedAllocs := uc.cloner.Rebase(existing, source)
+	existing.SetAllocations(updatedAllocs)
+
+	budget := entities.HydrateBudget(
+		existing.ID(),
+		existing.UserID(),
+		existing.Competence(),
+		source.TotalCents(),
+		entities.BudgetStateDraft,
+		nil,
+		existing.AutoDraft(),
+		updatedAllocs,
+		existing.CreatedAt(),
+		time.Now().UTC(),
+	)
+
+	if err := budgets.Activate(ctx, budget); err != nil {
+		return "", "", fmt.Errorf("budgets.usecase.create_recurrence: atualizar rascunho %s: %w", comp, err)
 	}
-	return allocs
+
+	if existing.AutoDraft() {
+		return output.RecurrenceStatusCompletedFromDraft, "", nil
+	}
+	return output.RecurrenceStatusUpdated, "", nil
+}
+
+func (uc *CreateRecurrence) createFromSource(
+	ctx context.Context,
+	budgets interfaces.BudgetRepository,
+	userID uuid.UUID,
+	comp valueobjects.Competence,
+	source entities.Budget,
+) (output.RecurrenceStatus, string, error) {
+	newBudget, cloneErr := uc.cloner.Clone(source, comp, userID, time.Now().UTC())
+	if cloneErr != nil {
+		return "", "", fmt.Errorf("budgets.usecase.create_recurrence: clonar %s: %w", comp, cloneErr)
+	}
+
+	if err := budgets.CreateDraft(ctx, newBudget); err != nil {
+		if errors.Is(err, interfaces.ErrBudgetConflict) {
+			return output.RecurrenceStatusConflict, "conflito ao criar orçamento", nil
+		}
+		return "", "", fmt.Errorf("budgets.usecase.create_recurrence: criar %s: %w", comp, err)
+	}
+
+	return output.RecurrenceStatusCreated, "", nil
 }

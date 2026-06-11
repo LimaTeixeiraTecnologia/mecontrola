@@ -23,6 +23,7 @@ import (
 type ActivateBudgetSuite struct {
 	suite.Suite
 	ctx     context.Context
+	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	uow     *uowMocks.UnitOfWorkBudget
 	useCase *usecases.ActivateBudget
@@ -34,9 +35,11 @@ func TestActivateBudgetSuite(t *testing.T) {
 
 func (s *ActivateBudgetSuite) SetupTest() {
 	s.ctx = context.Background()
+	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
+	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkBudget(s.T())
-	s.useCase = usecases.NewActivateBudget(s.repo, s.uow, noop.NewProvider())
+	s.useCase = usecases.NewActivateBudget(s.factory, s.uow, noop.NewProvider())
 }
 
 func buildDraftBudgetWithAllocations(userID uuid.UUID, comp valueobjects.Competence, total int64) entities.Budget {
@@ -74,7 +77,7 @@ func (s *ActivateBudgetSuite) TestExecute_BudgetNotFound() {
 
 	comp, _ := valueobjects.NewCompetence("2026-06")
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
@@ -102,7 +105,7 @@ func (s *ActivateBudgetSuite) TestExecute_AlreadyActive() {
 	)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(activeBudget, nil).
 		Once()
 
@@ -121,12 +124,12 @@ func (s *ActivateBudgetSuite) TestExecute_ActivationSuccess_WithDistribution() {
 	draft := buildDraftBudgetWithAllocations(userID, comp, 10000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything, mock.Anything).
+		Activate(s.ctx, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -149,12 +152,12 @@ func (s *ActivateBudgetSuite) TestExecute_CentDistributionCorrect() {
 	draft := buildDraftBudgetWithAllocations(userID, comp, 1001)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything, mock.Anything).
+		Activate(s.ctx, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -178,12 +181,12 @@ func (s *ActivateBudgetSuite) TestExecute_ActivateRepositoryError() {
 	draft := buildDraftBudgetWithAllocations(userID, comp, 10000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything, mock.Anything).
+		Activate(s.ctx, mock.Anything).
 		Return(errors.New("db error")).
 		Once()
 
@@ -202,12 +205,12 @@ func (s *ActivateBudgetSuite) TestExecute_ActivateConflict() {
 	draft := buildDraftBudgetWithAllocations(userID, comp, 10000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything, mock.Anything).
+		Activate(s.ctx, mock.Anything).
 		Return(interfaces.ErrBudgetConflict).
 		Once()
 
@@ -231,7 +234,7 @@ func (s *ActivateBudgetSuite) TestExecute_AllocationSumNot10000() {
 	})
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, userID, comp).
+		GetByUserCompetence(s.ctx, userID, comp).
 		Return(b, nil).
 		Once()
 

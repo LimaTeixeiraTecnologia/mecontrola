@@ -79,21 +79,24 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 
 ## R-ADAPTER-001.3 — Matriz de Referencias go-implementation por Tipo de Adapter [HARD]
 
-Ao implementar qualquer arquivo nos quatro caminhos de adapter, carregar apenas as referencias da
-coluna correspondente. Nunca carregar mais de 4 simultaneas; se conflito, priorizar as 3 mais
+Ao implementar qualquer arquivo nos quatro caminhos de adapter, a fonte primaria de selecao passa a
+ser `.agents/skills/go-implementation/references/INDEX.yaml` (schema 2). Este arquivo existe para
+compatibilidade e reforco da regra, nao como sistema paralelo.
+
+Nunca carregar mais de 4 referencias adicionais simultaneas; se conflito, priorizar as 3 mais
 criticas e registrar as demais como contexto nao carregado.
 
 | Tipo de Adapter | Referencias obrigatorias | Referencias sob demanda |
 |-----------------|--------------------------|------------------------|
-| HTTP Handler | `architecture.md`, `api.md` | `observability.md` (se span/tracer), `security.md` (se auth/middleware), `examples-infrastructure.md` (se lifecycle/shutdown) |
-| Consumer | `architecture.md`, `messaging.md` | `observability.md` (se span/tracer), `examples-infrastructure.md` (se lifecycle), `testing.md` (se novo consumer com suite) |
-| Job Handler | `architecture.md` | `graceful-lifecycle.md` (se shutdown/drain), `observability.md` (se span/tracer), `examples-infrastructure.md` (se lifecycle) |
-| Producer | `architecture.md`, `messaging.md` | `observability.md` (se span/tracer), `persistence.md` (se outbox com tx explicita) |
+| HTTP Handler | `architecture.md`, `api.md`, `http-handler.md` | `observability.md` (se span/tracer), `security.md` (se auth/middleware), `testing-unit.md` |
+| Consumer | `architecture.md`, `messaging.md`, `consumer.md` | `observability.md` (se span/tracer), `testing-unit.md`, `graceful-lifecycle.md` |
+| Job Handler | `architecture.md`, `job-handler.md` | `graceful-lifecycle.md` (se shutdown/drain), `observability.md` (se span/tracer), `testing-unit.md` |
+| Producer | `architecture.md`, `messaging.md`, `producer.md` | `observability.md` (se span/tracer), `persistence.md` (se outbox com tx explicita), `testing-unit.md` |
 
 Regra de carregamento dos exemplos concretos:
 
 - `examples-domain-flow.md`: apenas se a tarefa cobrir fluxo end-to-end (dominio + adapter).
-- `examples-testing.md`: apenas se a tarefa incluir novo teste com suite/mockery.
+- `examples-testing.md`: apenas se a tarefa incluir novo teste cuja forma exija suite stateful ou mockery.
 - `examples-infrastructure.md`: apenas se a tarefa envolver graceful shutdown, paginacao ou lifecycle.
 
 Proibido: carregar `patterns-structural.md` para qualquer adapter — Factory, Adapter, Decorator
