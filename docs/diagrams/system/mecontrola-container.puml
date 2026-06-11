@@ -1,0 +1,72 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ./_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+LAYOUT_LANDSCAPE()
+
+title Container diagram for MeControla
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+AddRelTag("async", $lineColor="#C65D00", $textColor="#C65D00", $lineStyle=DashedLine(), $legendText="async via outbox/dispatcher")
+AddElementTag("logical-db", $bgColor="#2E8B57", $fontColor="#FFFFFF", $borderColor="#256F45", $legendText="logical datastore")
+AddElementTag("process", $bgColor="#1F4B99", $fontColor="#FFFFFF", $borderColor="#173A77", $legendText="runtime process")
+
+Person(apiClient, "API Client", "Aplicacao cliente ou operador que chama endpoints HTTP")
+Person(waUser, "WhatsApp End User", "Usuario final que interage com o bot e ativa onboarding")
+
+System_Ext(kiwify, "Kiwify", "Gateway externo de checkout, vendas, assinatura e webhook")
+System_Ext(meta, "Meta WhatsApp Cloud API", "API externa para webhook inbound e envio outbound WhatsApp")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(apiServer, "HTTP API Server", "Go, Chi, cmd/server", "Recebe APIs publicas, APIs autenticadas, webhooks de Kiwify e webhooks de WhatsApp", $tags="process")
+  Container(workerProc, "Background Worker", "Go, worker.Manager, cmd/worker", "Executa dispatcher do outbox, jobs cron e consumers de eventos", $tags="process")
+
+  ContainerDb(pgCore, "PostgreSQL Core", "PostgreSQL", "Tabelas transacionais dos modulos billing, budgets, card, categories, identity e onboarding", $tags="logical-db")
+  ContainerDb(pgOutbox, "Outbox Events Store", "PostgreSQL table outbox_events", "Persistencia de eventos assincronos antes do dispatch", $tags="logical-db")
+  ContainerDb(pgKiwify, "Billing Event Audit Store", "PostgreSQL table kiwify_events", "Audita envelopes e assinatura de webhooks Kiwify", $tags="logical-db")
+  ContainerDb(pgBilling, "Billing Subscription Store", "PostgreSQL tables subscriptions, plans, processed_events, checkpoints", "Estado de assinatura, catalogo de planos, idempotencia e checkpoint de reconciliacao", $tags="logical-db")
+  ContainerDb(pgIdentity, "Identity Store", "PostgreSQL tables users, entitlements, auth_events, subscription projection", "Usuarios, projection de assinatura e trilha de autenticacao", $tags="logical-db")
+  ContainerDb(pgOnboarding, "Onboarding Store", "PostgreSQL tables magic_tokens, support_signals, subscription bindings", "Estado de onboarding, tokens e vinculo assinatura-usuario", $tags="logical-db")
+  ContainerDb(pgBudgets, "Budgets Store", "PostgreSQL tables budgets, expenses, alerts, threshold_states, pending_events", "Orcamentos, despesas, alertas e backlog de eventos pendentes", $tags="logical-db")
+  ContainerDb(pgCard, "Card Store", "PostgreSQL + idempotency storage", "Cartoes, soft delete e chaves de idempotencia do modulo card", $tags="logical-db")
+  ContainerDb(pgCategories, "Categories Store", "PostgreSQL tables categories, dictionary, version", "Catalogo editorial, dicionario e controle de versao/ETag", $tags="logical-db")
+  ContainerDb(pgWaInfra, "WhatsApp Infra Store", "PostgreSQL tables whatsapp_dedup + limiter state", "Deduplicacao de WAMID e rate limiting por usuario", $tags="logical-db")
+}
+
+Rel(apiClient, apiServer, "[sync] chama APIs e webhooks internos", "HTTPS/JSON", $tags="sync")
+Rel(waUser, meta, "[sync] envia mensagem ao numero do bot", "WhatsApp network", $tags="sync")
+
+Rel(kiwify, apiServer, "[sync] envia POST /api/v1/billing/webhooks/kiwify", "HTTPS webhook", $tags="sync")
+Rel(meta, apiServer, "[sync] envia GET /api/v1/whatsapp/verify e POST /api/v1/whatsapp/inbound", "HTTPS webhook", $tags="sync")
+
+Rel(apiServer, pgCore, "[sync] le/escreve estado HTTP dos modulos", "SQL", $tags="sync")
+Rel(apiServer, pgKiwify, "[sync] audita envelopes Kiwify recebidos", "SQL", $tags="sync")
+Rel(apiServer, pgBilling, "[sync] upsert de assinatura e processed_events", "SQL", $tags="sync")
+Rel(apiServer, pgIdentity, "[sync] upsert usuario, establish principal e projections locais", "SQL", $tags="sync")
+Rel(apiServer, pgOnboarding, "[sync] cria checkout session, tokens e binds", "SQL", $tags="sync")
+Rel(apiServer, pgBudgets, "[sync] CRUD de budgets/expenses/alerts", "SQL", $tags="sync")
+Rel(apiServer, pgCard, "[sync] CRUD de cartoes e idempotency keys", "SQL", $tags="sync")
+Rel(apiServer, pgCategories, "[sync] leitura de categorias e dicionario", "SQL", $tags="sync")
+Rel(apiServer, pgWaInfra, "[sync] dedup WAMID e rate limit do dispatcher", "SQL", $tags="sync")
+
+Rel(apiServer, kiwify, "[sync] reconciliacao e consultas de vendas quando acionado por jobs/use cases", "HTTPS API via internal/platform/httpclient", $tags="sync")
+Rel(apiServer, meta, "[sync] envia mensagens de onboarding e respostas WhatsApp", "HTTPS API via internal/platform/httpclient", $tags="sync")
+
+Rel(apiServer, pgOutbox, "[async] publica eventos de billing, budgets, identity e onboarding", "SQL insert into outbox_events", $tags="async")
+Rel(workerProc, pgOutbox, "[async] varre, dispatcha e reapeia eventos persistidos", "SQL poll + ack", $tags="async")
+
+Rel(workerProc, pgCore, "[sync] executa jobs e consumers sobre tabelas dos modulos", "SQL", $tags="sync")
+Rel(workerProc, pgBilling, "[sync] reconciliacao, expiracao de grace e housekeeping", "SQL", $tags="sync")
+Rel(workerProc, pgIdentity, "[sync] projection de auth/subscription e housekeeping", "SQL", $tags="sync")
+Rel(workerProc, pgOnboarding, "[sync] outreach, expiracao de token e limpeza", "SQL", $tags="sync")
+Rel(workerProc, pgBudgets, "[sync] alertas, pending reaper e retention purge", "SQL", $tags="sync")
+
+Rel(workerProc, kiwify, "[sync] consulta Kiwify ListSalesUpdatedSince durante reconciliacao", "HTTPS API via internal/platform/httpclient", $tags="sync")
+Rel(workerProc, meta, "[sync] envia mensagens outbound de outreach/confirmacao", "HTTPS API via internal/platform/httpclient", $tags="sync")
+
+Rel(workerProc, pgOutbox, "[async] consome envelopes e entrega para events.Dispatcher", "outbox dispatcher job", $tags="async")
+Rel(pgOutbox, workerProc, "[async] fornece eventos billing.subscription.*, budgets.expense.committed.v1, onboarding.subscription_bound, auth.*", "outbox envelope", $tags="async")
+
+SHOW_LEGEND()
+@enduml

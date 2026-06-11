@@ -1,0 +1,69 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ./_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+LAYOUT_LANDSCAPE()
+
+title Async container relations for MeControla
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+AddRelTag("async", $lineColor="#C65D00", $textColor="#C65D00", $lineStyle=DashedLine(), $legendText="async via outbox/dispatcher")
+AddElementTag("process", $bgColor="#1F4B99", $fontColor="#FFFFFF", $borderColor="#173A77", $legendText="runtime process")
+AddElementTag("logical-db", $bgColor="#2E8B57", $fontColor="#FFFFFF", $borderColor="#256F45", $legendText="logical datastore")
+
+System_Boundary(mecontrola, "MeControla async runtime") {
+  Container(apiServer, "HTTP API Server", "Go, Chi", "Origem de publicacao sincrona de eventos apos requests/webhooks", $tags="process")
+  Container(workerProc, "Background Worker", "Go, worker.Manager", "Executa dispatcher do outbox, jobs e event handlers", $tags="process")
+
+  ContainerQueue(outboxStore, "Outbox Events Store", "PostgreSQL table outbox_events", "Fila logica persistente de envelopes assincronos", $tags="logical-db")
+
+  Container(billingProducer, "Billing Producer", "billing SubscriptionEventPublisher", "Publica billing.subscription.* e billing.subscription.activated_without_token")
+  Container(budgetsProducer, "Budgets Producer", "budgets ExpenseCommittedPublisher", "Publica budgets.expense.committed.v1")
+  Container(identityProducer, "Identity Producer", "identity outbox publisher + whatsapp dispatcher", "Publica auth.failed, auth.principal_established e user.deleted")
+  Container(onboardingProducer, "Onboarding Producer", "onboarding OnboardingEventPublisher", "Publica onboarding.subscription_bound")
+
+  Container(billingConsumers, "Billing Event Handlers", "billing notification handler", "Consome eventos de assinatura para notificacao")
+  Container(identityConsumers, "Identity Event Handlers", "subscription projector + auth events consumer", "Consome billing.subscription.*, onboarding.subscription_bound, auth.* e user.deleted")
+  Container(onboardingConsumers, "Onboarding Event Handlers", "subscription paid consumers", "Consome billing.subscription.activated e billing.subscription.activated_without_token")
+  Container(budgetsConsumers, "Budgets Event Handlers", "expense committed + external expense consumers", "Consome budgets.expense.committed.v1 e external.expense.v1")
+
+  Container(billingJobs, "Billing Jobs", "reconciliation + grace expiration + housekeeping", "Produz e corrige estado de subscription")
+  Container(identityJobs, "Identity Jobs", "auth events housekeeping", "Limpa trilha de auth_events")
+  Container(onboardingJobs, "Onboarding Jobs", "outreach + token expiration + meta cleanup", "Dispara mensagens e manutencao de onboarding")
+  Container(budgetsJobs, "Budgets Jobs", "draft reaper + pending reaper + retention purge", "Processa pendencias e higieniza historico")
+}
+
+Rel(apiServer, billingProducer, "[sync] webhook/order flow termina em publish activated|renewed|past_due|canceled|refunded|expired", "in-process", $tags="sync")
+Rel(apiServer, budgetsProducer, "[sync] create/update/delete expense termina em publish budgets.expense.committed.v1", "in-process", $tags="sync")
+Rel(apiServer, identityProducer, "[sync] WhatsApp dispatcher e identity use cases montam eventos auth.* e user.deleted", "in-process", $tags="sync")
+Rel(apiServer, onboardingProducer, "[sync] consume token/bind subscription publica onboarding.subscription_bound", "in-process", $tags="sync")
+
+Rel(billingProducer, outboxStore, "[async] billing.subscription.activated|activated_without_token|renewed|past_due|canceled|refunded|expired_after_grace", "SQL insert", $tags="async")
+Rel(budgetsProducer, outboxStore, "[async] budgets.expense.committed.v1", "SQL insert", $tags="async")
+Rel(identityProducer, outboxStore, "[async] auth.failed | auth.principal_established | user.deleted", "SQL insert", $tags="async")
+Rel(onboardingProducer, outboxStore, "[async] onboarding.subscription_bound", "SQL insert", $tags="async")
+
+Rel(workerProc, outboxStore, "[async] dispatcher job busca envelopes pendentes e entrega ao events.Dispatcher", "SQL poll + dispatch", $tags="async")
+
+Rel(outboxStore, identityConsumers, "[async] billing.subscription.* -> subscription projection", "outbox envelope", $tags="async")
+Rel(outboxStore, identityConsumers, "[async] onboarding.subscription_bound -> entitlement/subscription binding projection", "outbox envelope", $tags="async")
+Rel(outboxStore, identityConsumers, "[async] auth.principal_established|auth.failed|auth.unknown_user|user.deleted -> auth_events", "outbox envelope", $tags="async")
+
+Rel(outboxStore, onboardingConsumers, "[async] billing.subscription.activated -> mark token paid", "outbox envelope", $tags="async")
+Rel(outboxStore, onboardingConsumers, "[async] billing.subscription.activated_without_token -> handle paid without token", "outbox envelope", $tags="async")
+
+Rel(outboxStore, billingConsumers, "[async] billing.subscription.past_due|refunded|expired_after_grace -> notification flow", "outbox envelope", $tags="async")
+Rel(outboxStore, budgetsConsumers, "[async] budgets.expense.committed.v1 -> evaluate alert", "outbox envelope", $tags="async")
+Rel(outboxStore, budgetsConsumers, "[async] external.expense.v1 -> ingest external expense", "outbox envelope", $tags="async")
+
+Rel(workerProc, billingJobs, "[sync] agenda e executa", "cron", $tags="sync")
+Rel(workerProc, identityJobs, "[sync] agenda e executa", "cron", $tags="sync")
+Rel(workerProc, onboardingJobs, "[sync] agenda e executa", "cron", $tags="sync")
+Rel(workerProc, budgetsJobs, "[sync] agenda e executa", "cron", $tags="sync")
+
+Rel(billingJobs, billingProducer, "[sync] reconciliacao e grace expiration podem republicar eventos de assinatura", "in-process", $tags="sync")
+Rel(budgetsJobs, budgetsConsumers, "[sync] pending events reaper reaplica create/update/delete e reavalia alertas", "in-process", $tags="sync")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,21 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ../system/_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container diagram for Onboarding - ONB-02 Token state
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+
+Person(apiClient, "API Client", "Cliente do fluxo de obrigado/ativacao")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(apiServer, "HTTP API Server", "Go, Chi", "Executa GET /api/v1/onboarding/tokens/{token}/state")
+  ContainerDb(onboardingDb, "Onboarding Store", "PostgreSQL", "magic_tokens")
+}
+
+Rel(apiClient, apiServer, "[sync] GET /api/v1/onboarding/tokens/{token}/state", "HTTPS/JSON", $tags="sync")
+Rel(apiServer, onboardingDb, "[sync] le estado do token e readiness para ativacao", "SQL", $tags="sync")
+
+SHOW_LEGEND()
+@enduml

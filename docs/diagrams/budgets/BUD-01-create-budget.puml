@@ -1,0 +1,21 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ../system/_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container diagram for Budgets - BUD-01 Create budget
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+
+Person(apiClient, "API Client", "Cliente autenticado")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(apiServer, "HTTP API Server", "Go, Chi", "Executa o endpoint de budgets")
+  ContainerDb(budgetsDb, "Budgets Store", "PostgreSQL", "budgets e allocations")
+}
+
+Rel(apiClient, apiServer, "[sync] POST /api/v1/budgets/", "HTTPS/JSON", $tags="sync")
+Rel(apiServer, budgetsDb, "[sync] cria budget e allocations", "SQL", $tags="sync")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,21 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ../system/_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container diagram for Card - CARD-02 List cards
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+
+Person(apiClient, "API Client", "Cliente autenticado")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(apiServer, "HTTP API Server", "Go, Chi", "Executa GET /api/v1/cards/")
+  ContainerDb(cardDb, "Card Store", "PostgreSQL", "cards")
+}
+
+Rel(apiClient, apiServer, "[sync] GET /api/v1/cards/", "HTTPS/JSON", $tags="sync")
+Rel(apiServer, cardDb, "[sync] lista cartoes por user_id", "SQL", $tags="sync")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,18 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ../system/_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container diagram for Onboarding - ONB-08 Token expiration
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(workerProc, "Background Worker", "Go", "Executa onboarding-token-expiration")
+  ContainerDb(onboardingDb, "Onboarding Store", "PostgreSQL", "magic_tokens")
+}
+
+Rel(workerProc, onboardingDb, "[sync] expira tokens vencidos", "SQL update", $tags="sync")
+
+SHOW_LEGEND()
+@enduml

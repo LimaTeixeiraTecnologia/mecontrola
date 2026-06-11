@@ -1,0 +1,18 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ../system/_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container diagram for Identity - IDN-07 Auth events housekeeping
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(workerProc, "Background Worker", "Go", "Executa o job identity-auth-events-housekeeping")
+  ContainerDb(identityDb, "Identity Store", "PostgreSQL", "auth_events")
+}
+
+Rel(workerProc, identityDb, "[sync] limpa auth_events antigos", "SQL delete", $tags="sync")
+
+SHOW_LEGEND()
+@enduml

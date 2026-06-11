@@ -1,0 +1,26 @@
+@startuml
+!define RELATIVE_INCLUDE 1
+!include ../system/_plantuml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container diagram for Budgets - BUD-03 Update expense
+
+AddRelTag("sync", $lineColor="#2F6BFF", $textColor="#2F6BFF", $legendText="sync call")
+AddRelTag("async", $lineColor="#C65D00", $textColor="#C65D00", $lineStyle=DashedLine(), $legendText="async via outbox")
+
+Person(apiClient, "API Client", "Cliente autenticado")
+
+System_Boundary(mecontrola, "MeControla") {
+  Container(apiServer, "HTTP API Server", "Go, Chi", "Executa PATCH /api/v1/budgets/expenses/{id}")
+  Container(categoriesRuntime, "Categories Reader", "Go", "Valida subcategoria e resolve root_slug")
+  ContainerDb(budgetsDb, "Budgets Store", "PostgreSQL", "expenses versionadas")
+  ContainerDb(outboxStore, "Outbox Events Store", "PostgreSQL", "budgets.expense.committed.v1")
+}
+
+Rel(apiClient, apiServer, "[sync] PATCH /api/v1/budgets/expenses/{id}", "HTTPS/JSON", $tags="sync")
+Rel(apiServer, categoriesRuntime, "[sync] validate subcategory and resolve root_slug", "in-process adapter", $tags="sync")
+Rel(apiServer, budgetsDb, "[sync] atualiza expense respeitando expected_version", "SQL", $tags="sync")
+Rel(apiServer, outboxStore, "[async] republica budgets.expense.committed.v1", "SQL insert", $tags="async")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "slug": "modulo-lancamentos-mensais-income-outcome",
+  "title": "",
+  "created_at": "2026-06-11T20:30:07Z",
+  "language": "pt-BR",
+  "status": "draft",
+  "decision_brief": {
+    "file": "decision-brief.md",
+    "title": ""
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "assumptions": {
+    "file": "assumptions.md"
+  },
+  "option_scorecard": {
+    "file": "option-scorecard.md"
+  },
+  "alternatives": [],
+  "recommended_alternative": "",
+  "decisions": [],
+  "readiness": {
+    "status": "draft",
+    "blockers": []
+  }
+}
