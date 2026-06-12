@@ -10,12 +10,14 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type MarkTokenPaid struct {
 	mgr        manager.Manager
 	factory    appinterfaces.RepositoryFactory
+	workflow   services.MagicTokenWorkflow
 	o11y       observability.Observability
 	tokensPaid observability.Counter
 }
@@ -23,6 +25,7 @@ type MarkTokenPaid struct {
 func NewMarkTokenPaid(
 	mgr manager.Manager,
 	factory appinterfaces.RepositoryFactory,
+	workflow services.MagicTokenWorkflow,
 	o11y observability.Observability,
 ) *MarkTokenPaid {
 	tokensPaid := o11y.Metrics().Counter(
@@ -30,7 +33,7 @@ func NewMarkTokenPaid(
 		"Total de tokens marcados como pagos",
 		"1",
 	)
-	return &MarkTokenPaid{mgr: mgr, factory: factory, o11y: o11y, tokensPaid: tokensPaid}
+	return &MarkTokenPaid{mgr: mgr, factory: factory, workflow: workflow, o11y: o11y, tokensPaid: tokensPaid}
 }
 
 func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInput) error {
@@ -53,25 +56,33 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 		return fmt.Errorf("onboarding: mark token paid: find token: %w", err)
 	}
 
-	updated, err := token.MarkPaid(in.SubscriptionID, in.CustomerMobileE164, in.CustomerEmail, in.ExternalSaleID, in.PaidAt)
+	decision, err := uc.workflow.DecideMarkPaid(token, services.MarkPaidCommand{
+		SubscriptionID:     in.SubscriptionID,
+		CustomerMobileE164: in.CustomerMobileE164,
+		CustomerEmail:      in.CustomerEmail,
+		ExternalSaleID:     in.ExternalSaleID,
+		PaidAt:             in.PaidAt,
+	})
 	if err != nil {
-		return fmt.Errorf("onboarding: mark token paid: transition: %w", err)
+		return fmt.Errorf("onboarding: mark token paid: decide: %w", err)
 	}
 
-	if updated.Status() == token.Status() {
+	if decision.Outcome == services.MarkPaidOutcomeNoChange {
 		slog.InfoContext(ctx, "onboarding.token.mark_paid.noop",
-			"token_hash_prefix", token.ID(),
+			"token_id", token.ID(),
+			"token_hash_prefix", clearToken.HashPrefix(),
 		)
 		return nil
 	}
 
-	if err := repo.UpdateMarkPaid(ctx, updated); err != nil {
+	if err := repo.UpdateMarkPaid(ctx, decision.Token); err != nil {
 		return fmt.Errorf("onboarding: mark token paid: update: %w", err)
 	}
 
 	uc.tokensPaid.Add(ctx, 1)
 	slog.InfoContext(ctx, "onboarding.token.marked_paid",
-		"token_hash_prefix", updated.ID(),
+		"token_id", decision.Token.ID(),
+		"token_hash_prefix", clearToken.HashPrefix(),
 		"external_sale_id", in.ExternalSaleID,
 	)
 

@@ -8,6 +8,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/events"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -16,6 +17,7 @@ import (
 type SubscriptionBindingService struct {
 	identityGateway    appinterfaces.IdentityGateway
 	subscriptionBinder appinterfaces.SubscriptionBinder
+	workflow           services.MagicTokenWorkflow
 	publisher          outbox.Publisher
 	idGen              id.Generator
 }
@@ -23,12 +25,14 @@ type SubscriptionBindingService struct {
 func NewSubscriptionBindingService(
 	identityGateway appinterfaces.IdentityGateway,
 	subscriptionBinder appinterfaces.SubscriptionBinder,
+	workflow services.MagicTokenWorkflow,
 	publisher outbox.Publisher,
 	idGen id.Generator,
 ) *SubscriptionBindingService {
 	return &SubscriptionBindingService{
 		identityGateway:    identityGateway,
 		subscriptionBinder: subscriptionBinder,
+		workflow:           workflow,
 		publisher:          publisher,
 		idGen:              idGen,
 	}
@@ -51,16 +55,21 @@ func (s *SubscriptionBindingService) BindAndConsume(
 		return entities.MagicToken{}, fmt.Errorf("onboarding/binding: bind subscription: %w", err)
 	}
 
-	consumed, err := magicToken.MarkConsumed(userResult.UserID, fromE164, path, now)
+	decision, err := s.workflow.DecideConsume(magicToken, services.ConsumeCommand{
+		UserID:         userResult.UserID,
+		FromE164:       fromE164,
+		ActivationPath: path,
+		EventID:        s.idGen.NewID(),
+	}, now)
 	if err != nil {
-		return entities.MagicToken{}, fmt.Errorf("onboarding/binding: mark consumed: %w", err)
+		return entities.MagicToken{}, fmt.Errorf("onboarding/binding: decide consume: %w", err)
 	}
 
-	if err := tokenRepo.UpdateMarkConsumed(ctx, consumed); err != nil {
+	if err := tokenRepo.UpdateMarkConsumed(ctx, decision.Token); err != nil {
 		return entities.MagicToken{}, fmt.Errorf("onboarding/binding: update consumed: %w", err)
 	}
 
-	evt, err := events.NewSubscriptionBoundEvent(s.idGen.NewID(), userResult.UserID, consumed, path, now)
+	evt, err := events.NewSubscriptionBoundEvent(decision.Event)
 	if err != nil {
 		return entities.MagicToken{}, fmt.Errorf("onboarding/binding: %w", err)
 	}
@@ -69,5 +78,5 @@ func (s *SubscriptionBindingService) BindAndConsume(
 		return entities.MagicToken{}, fmt.Errorf("onboarding/binding: publish event: %w", err)
 	}
 
-	return consumed, nil
+	return decision.Token, nil
 }

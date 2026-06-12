@@ -56,11 +56,7 @@ func (t Token) HashHex() string {
 }
 
 func (t Token) HashPrefix() string {
-	h := hex.EncodeToString(t.hash[:])
-	if len(h) > 8 {
-		return h[:8]
-	}
-	return h
+	return TokenHashPrefix(t.hash[:])
 }
 
 func (t Token) String() string {

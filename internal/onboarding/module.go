@@ -16,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/checkout"
 	onboardingconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/config"
 	onboardingcrypto "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/crypto"
@@ -220,11 +221,12 @@ func (b *moduleBuilder) buildUseCases(
 	urlBuilder := checkout.NewKiwifyURLBuilder(b.runtimeCfg.CheckoutURLs, b.runtimeCfg.KiwifyAllowedHosts)
 	checkoutUoW := uow.New[entities.MagicToken](b.mgr, uow.WithObservability(b.o11y))
 	consumeUoW := uow.New[usecases.ConsumeInternalResult](b.mgr, uow.WithObservability(b.o11y))
-	bindingService := binding.NewSubscriptionBindingService(identityGateway, subscriptionBinder, b.publisher, b.idGen)
+	workflow := domainservices.NewMagicTokenWorkflow()
+	bindingService := binding.NewSubscriptionBindingService(identityGateway, subscriptionBinder, workflow, b.publisher, b.idGen)
 
 	return moduleRuntime{
 		createCheckout:         usecases.NewCreateCheckoutSession(checkoutUoW, b.factory, urlBuilder, tokenCipher, b.idGen, b.runtimeCfg.TokenTTL, b.o11y),
-		markTokenPaid:          usecases.NewMarkTokenPaid(b.mgr, b.factory, b.o11y),
+		markTokenPaid:          usecases.NewMarkTokenPaid(b.mgr, b.factory, workflow, b.o11y),
 		consumeToken:           usecases.NewConsumeMagicToken(consumeUoW, b.factory, bindingService, b.idGen, b.o11y),
 		fallbackActivation:     usecases.NewTryFallbackActivation(consumeUoW, b.factory, bindingService, b.o11y),
 		getTokenState:          usecases.NewGetTokenState(b.mgr, b.factory, b.waCfg.BotNumberE164, b.waCfg.BotNumberDisplay, b.o11y),

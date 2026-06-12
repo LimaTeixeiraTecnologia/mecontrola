@@ -15,6 +15,7 @@ import (
 	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
@@ -90,7 +91,7 @@ func (s *MarkTokenPaidSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			in := scenario.setup()
-			uc := usecases.NewMarkTokenPaid(s.mgr, s.factory, noop.NewProvider())
+			uc := usecases.NewMarkTokenPaid(s.mgr, s.factory, services.NewMagicTokenWorkflow(), noop.NewProvider())
 			err := uc.Execute(context.Background(), in)
 			scenario.expect(in, err)
 		})

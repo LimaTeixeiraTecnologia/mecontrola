@@ -89,7 +89,7 @@ func (uc *ExpireTokens) emitOrphanSignal(
 	expiredAt time.Time,
 ) error {
 	payload, err := json.Marshal(map[string]any{
-		"token_hash_prefix": tokenHashPrefix(token.TokenHash()),
+		"token_hash_prefix": valueobjects.TokenHashPrefix(token.TokenHash()),
 		"external_sale_id":  token.ExternalSaleID(),
 		"expired_at":        expiredAt,
 		"has_paid_state":    true,
@@ -105,12 +105,4 @@ func (uc *ExpireTokens) emitOrphanSignal(
 		return fmt.Errorf("onboarding: expire tokens: insert signal: %w", err)
 	}
 	return nil
-}
-
-func tokenHashPrefix(hash []byte) string {
-	raw := fmt.Sprintf("%x", hash)
-	if len(raw) > 8 {
-		return raw[:8]
-	}
-	return raw
 }

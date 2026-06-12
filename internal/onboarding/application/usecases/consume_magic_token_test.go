@@ -20,6 +20,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -262,7 +263,7 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 			s.SetupTest()
 			in := scenario.setup()
 			idGen := id.NewUUIDGenerator()
-			bind := binding.NewSubscriptionBindingService(s.identityGW, s.binder, s.publisher, idGen)
+			bind := binding.NewSubscriptionBindingService(s.identityGW, s.binder, services.NewMagicTokenWorkflow(), s.publisher, idGen)
 			uc := usecases.NewConsumeMagicToken(&unitOfWorkConsume{}, s.factory, bind, idGen, noop.NewProvider())
 			result, err := uc.Execute(context.Background(), in)
 			scenario.expect(result, err)
