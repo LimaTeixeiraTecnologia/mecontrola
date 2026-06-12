@@ -12,16 +12,16 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Base — migration 000014 + cross-module GetCardForUser | pending | — | — | — |
-| 2.0 | Domain primitives — VOs, option, commands, entities, events | pending | 1.0 | — | — |
-| 3.0 | Domain services — splitter, cycle resolver (clamp), workflows Decide* | pending | 2.0 | — | — |
-| 4.0 | Application contracts — interfaces, DTOs, CategoriesCache, CardLookup adapter | pending | 2.0 | — | — |
-| 5.0 | Use cases Transaction + repo + producer + integration tests | pending | 3.0, 4.0 | Com 6.0 | — |
-| 6.0 | Use cases CardPurchase + repos + producer + cascade com ApplyDelta | pending | 3.0, 4.0 | Com 5.0 | — |
-| 7.0 | Use cases Recurring + Materializer job double-layer + Reconciler job | pending | 5.0, 6.0 | Com 8.0 | — |
-| 8.0 | MonthlySummary projection + consumer com coalescing 1500ms | pending | 5.0, 6.0 | Com 7.0 | — |
-| 9.0 | HTTP layer + module.go + wiring cmd/api e cmd/worker + feature flag | pending | 5.0, 6.0, 7.0, 8.0 | Não | — |
-| 10.0 | Observability — dashboard Grafana + alertas + runbook + governance rule | pending | 5.0, 6.0, 7.0, 8.0, 9.0 | Não | otel-grafana-dashboards |
+| 1.0 | Base — migration 000014 + cross-module GetCardForUser | done | — | — | — |
+| 2.0 | Domain primitives — VOs, option, commands, entities, events | done | 1.0 | — | — |
+| 3.0 | Domain services — splitter, cycle resolver (clamp), workflows Decide* | done | 2.0 | — | — |
+| 4.0 | Application contracts — interfaces, DTOs, CategoriesCache, CardLookup adapter | done | 2.0 | — | — |
+| 5.0 | Use cases Transaction + repo + producer + integration tests | done | 3.0, 4.0 | Com 6.0 | — |
+| 6.0 | Use cases CardPurchase + repos + producer + cascade com ApplyDelta | done | 3.0, 4.0 | Com 5.0 | — |
+| 7.0 | Use cases Recurring + Materializer job double-layer + Reconciler job | done | 5.0, 6.0 | Com 8.0 | — |
+| 8.0 | MonthlySummary projection + consumer com coalescing 1500ms | done | 5.0, 6.0 | Com 7.0 | — |
+| 9.0 | HTTP layer + module.go + wiring cmd/api e cmd/worker + feature flag | done | 5.0, 6.0, 7.0, 8.0 | Não | — |
+| 10.0 | Observability — dashboard Grafana + alertas + runbook + governance rule | done | 5.0, 6.0, 7.0, 8.0, 9.0 | Não | otel-grafana-dashboards |
 
 ## Dependências Críticas
 - **1.0** desbloqueia tudo: schema base (`000014`) + `internal/card.GetCardForUser` consumido por adapter outbound de `transactions`.

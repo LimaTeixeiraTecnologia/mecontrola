@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-monthly/6.0_execution_report.md
+summary: "Use cases CardPurchase (Create/Update/Delete/Get/List/GetCardInvoice) + repositórios postgres + producer implementados com cascade ApplyDelta, optimistic locking e integration tests"
+timestamp: "2026-06-12T00:00:00Z"

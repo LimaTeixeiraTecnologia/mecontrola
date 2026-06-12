@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/suite"
@@ -491,6 +492,87 @@ func (s *MigrationSuite) assertDictionaryUnaccentNormalization() {
 	`).Scan(&result)
 	s.Require().NoError(err)
 	s.Equal("gas encanado", result, "normalização de gás encanado deve ser gas encanado")
+}
+
+func (s *MigrationSuite) TestTransactionsBaselineMigrationUpDownUp() {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
+
+	s.assertTablePresent("mecontrola.transactions")
+	s.assertTablePresent("mecontrola.transactions_card_purchases")
+	s.assertTablePresent("mecontrola.transactions_card_invoices")
+	s.assertTablePresent("mecontrola.transactions_card_invoice_items")
+	s.assertTablePresent("mecontrola.transactions_recurring_templates")
+	s.assertTablePresent("mecontrola.transactions_recurring_materializations")
+	s.assertTablePresent("mecontrola.transactions_monthly_summary")
+
+	s.assertTransactionsConstraints()
+
+	s.Require().NoError(migrator.Down(s.ctx, 1))
+
+	s.assertTableMissing("mecontrola.transactions")
+	s.assertTableMissing("mecontrola.transactions_card_purchases")
+	s.assertTableMissing("mecontrola.transactions_card_invoices")
+	s.assertTableMissing("mecontrola.transactions_card_invoice_items")
+	s.assertTableMissing("mecontrola.transactions_recurring_templates")
+	s.assertTableMissing("mecontrola.transactions_recurring_materializations")
+	s.assertTableMissing("mecontrola.transactions_monthly_summary")
+
+	upErr2 := migrator.Up(s.ctx)
+	s.Require().True(upErr2 == nil || errors.Is(upErr2, migration.ErrNoChange), "re-up deve ser idempotente: %v", upErr2)
+
+	s.assertTablePresent("mecontrola.transactions")
+	s.assertTablePresent("mecontrola.transactions_card_purchases")
+	s.assertTablePresent("mecontrola.transactions_card_invoices")
+	s.assertTablePresent("mecontrola.transactions_card_invoice_items")
+	s.assertTablePresent("mecontrola.transactions_recurring_templates")
+	s.assertTablePresent("mecontrola.transactions_recurring_materializations")
+	s.assertTablePresent("mecontrola.transactions_monthly_summary")
+}
+
+func (s *MigrationSuite) assertTransactionsConstraints() {
+	userID := "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"
+	insertUserErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511988880010', 'ACTIVE', now(), now())
+		ON CONFLICT DO NOTHING
+	`, userID)
+	s.Require().NoError(insertUserErr)
+
+	invalidAmountErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, category_name_snapshot, ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 1, 1, 0, 'teste',
+			gen_random_uuid(), 'cat', '2026-06', now(), now(), now()
+		)
+	`, userID)
+	s.Require().Error(invalidAmountErr, "amount_cents=0 deve violar check constraint")
+
+	cardID := uuid.New()
+	cardInvoiceID := uuid.New()
+	insertInvoiceErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.transactions_card_invoices (
+			id, user_id, card_id, ref_month, closing_at, due_at, created_at, updated_at
+		) VALUES ($1, $2, $3, '2026-06', now(), now(), now(), now())
+	`, cardInvoiceID, userID, cardID)
+	s.Require().NoError(insertInvoiceErr)
+
+	dupInvoiceErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.transactions_card_invoices (
+			id, user_id, card_id, ref_month, closing_at, due_at, created_at, updated_at
+		) VALUES (gen_random_uuid(), $1, $2, '2026-06', now(), now(), now(), now())
+	`, userID, cardID)
+	s.Require().Error(dupInvoiceErr, "duplicate (user_id, card_id, ref_month) deve violar transactions_card_invoices_uk")
+	s.Contains(dupInvoiceErr.Error(), "transactions_card_invoices_uk")
 }
 
 func (s *MigrationSuite) TestBudgetsMigrationUpAndDown() {

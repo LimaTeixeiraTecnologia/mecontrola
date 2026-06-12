@@ -26,6 +26,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
 func New() *cobra.Command {
@@ -186,6 +187,15 @@ func Run() error {
 		srv.RegisterRouters(budgetsModule.BudgetsRouter)
 	}
 	o11y.Logger().Info(ctx, "budgets module wired", observability.Bool("router_registered", budgetsModule.BudgetsRouter != nil))
+
+	transactionsModule, err := transactions.NewTransactionsModule(cfg, o11y, dbManager, cardModule, categoriesModule)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo transactions: %w", err)
+	}
+	if transactionsModule.Router != nil {
+		srv.RegisterRouters(transactionsModule.Router)
+	}
+	o11y.Logger().Info(ctx, "transactions module wired", observability.Bool("router_registered", transactionsModule.Router != nil))
 
 	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule)
 	srv.RegisterRouters(waWebhookRouter)

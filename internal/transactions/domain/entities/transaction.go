@@ -1,0 +1,166 @@
+package entities
+
+import (
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
+)
+
+var ErrTransactionVersionMismatch = errors.New("transactions: versão esperada não corresponde à versão atual")
+var ErrTransactionAlreadyDeleted = errors.New("transactions: lançamento já excluído")
+
+type Transaction struct {
+	id                      uuid.UUID
+	userID                  valueobjects.UserID
+	direction               valueobjects.Direction
+	paymentMethod           valueobjects.PaymentMethod
+	amount                  valueobjects.Money
+	description             valueobjects.Description
+	categoryID              valueobjects.CategoryID
+	subcategoryID           option.Option[valueobjects.SubcategoryID]
+	categoryNameSnapshot    string
+	subcategoryNameSnapshot string
+	refMonth                valueobjects.RefMonth
+	occurredAt              time.Time
+	version                 int64
+	deletedAt               *time.Time
+	createdAt               time.Time
+	updatedAt               time.Time
+}
+
+func NewTransaction(
+	id uuid.UUID,
+	userID valueobjects.UserID,
+	direction valueobjects.Direction,
+	paymentMethod valueobjects.PaymentMethod,
+	amount valueobjects.Money,
+	description valueobjects.Description,
+	categoryID valueobjects.CategoryID,
+	subcategoryID option.Option[valueobjects.SubcategoryID],
+	categoryNameSnapshot string,
+	subcategoryNameSnapshot string,
+	refMonth valueobjects.RefMonth,
+	occurredAt time.Time,
+	now time.Time,
+) Transaction {
+	return Transaction{
+		id:                      id,
+		userID:                  userID,
+		direction:               direction,
+		paymentMethod:           paymentMethod,
+		amount:                  amount,
+		description:             description,
+		categoryID:              categoryID,
+		subcategoryID:           subcategoryID,
+		categoryNameSnapshot:    categoryNameSnapshot,
+		subcategoryNameSnapshot: subcategoryNameSnapshot,
+		refMonth:                refMonth,
+		occurredAt:              occurredAt,
+		version:                 1,
+		createdAt:               now,
+		updatedAt:               now,
+	}
+}
+
+func Reconstitute(
+	id uuid.UUID,
+	userID valueobjects.UserID,
+	direction valueobjects.Direction,
+	paymentMethod valueobjects.PaymentMethod,
+	amount valueobjects.Money,
+	description valueobjects.Description,
+	categoryID valueobjects.CategoryID,
+	subcategoryID option.Option[valueobjects.SubcategoryID],
+	categoryNameSnapshot string,
+	subcategoryNameSnapshot string,
+	refMonth valueobjects.RefMonth,
+	occurredAt time.Time,
+	version int64,
+	deletedAt *time.Time,
+	createdAt time.Time,
+	updatedAt time.Time,
+) Transaction {
+	return Transaction{
+		id:                      id,
+		userID:                  userID,
+		direction:               direction,
+		paymentMethod:           paymentMethod,
+		amount:                  amount,
+		description:             description,
+		categoryID:              categoryID,
+		subcategoryID:           subcategoryID,
+		categoryNameSnapshot:    categoryNameSnapshot,
+		subcategoryNameSnapshot: subcategoryNameSnapshot,
+		refMonth:                refMonth,
+		occurredAt:              occurredAt,
+		version:                 version,
+		deletedAt:               deletedAt,
+		createdAt:               createdAt,
+		updatedAt:               updatedAt,
+	}
+}
+
+func (t *Transaction) ID() uuid.UUID                             { return t.id }
+func (t *Transaction) UserID() valueobjects.UserID               { return t.userID }
+func (t *Transaction) Direction() valueobjects.Direction         { return t.direction }
+func (t *Transaction) PaymentMethod() valueobjects.PaymentMethod { return t.paymentMethod }
+func (t *Transaction) Amount() valueobjects.Money                { return t.amount }
+func (t *Transaction) Description() valueobjects.Description     { return t.description }
+func (t *Transaction) CategoryID() valueobjects.CategoryID       { return t.categoryID }
+func (t *Transaction) SubcategoryID() option.Option[valueobjects.SubcategoryID] {
+	return t.subcategoryID
+}
+func (t *Transaction) CategoryNameSnapshot() string    { return t.categoryNameSnapshot }
+func (t *Transaction) SubcategoryNameSnapshot() string { return t.subcategoryNameSnapshot }
+func (t *Transaction) RefMonth() valueobjects.RefMonth { return t.refMonth }
+func (t *Transaction) OccurredAt() time.Time           { return t.occurredAt }
+func (t *Transaction) Version() int64                  { return t.version }
+func (t *Transaction) DeletedAt() *time.Time           { return t.deletedAt }
+func (t *Transaction) CreatedAt() time.Time            { return t.createdAt }
+func (t *Transaction) UpdatedAt() time.Time            { return t.updatedAt }
+
+func (t *Transaction) Update(
+	direction valueobjects.Direction,
+	paymentMethod valueobjects.PaymentMethod,
+	amount valueobjects.Money,
+	description valueobjects.Description,
+	categoryID valueobjects.CategoryID,
+	subcategoryID option.Option[valueobjects.SubcategoryID],
+	categoryNameSnapshot string,
+	subcategoryNameSnapshot string,
+	refMonth valueobjects.RefMonth,
+	occurredAt time.Time,
+	now time.Time,
+) {
+	t.direction = direction
+	t.paymentMethod = paymentMethod
+	t.amount = amount
+	t.description = description
+	t.categoryID = categoryID
+	t.subcategoryID = subcategoryID
+	t.categoryNameSnapshot = categoryNameSnapshot
+	t.subcategoryNameSnapshot = subcategoryNameSnapshot
+	t.refMonth = refMonth
+	t.occurredAt = occurredAt
+	t.version++
+	t.updatedAt = now
+}
+
+func (t *Transaction) SetCategorySnapshots(categoryName, subcategoryName string) {
+	t.categoryNameSnapshot = categoryName
+	t.subcategoryNameSnapshot = subcategoryName
+}
+
+func (t *Transaction) SoftDelete(now time.Time) error {
+	if t.deletedAt != nil {
+		return ErrTransactionAlreadyDeleted
+	}
+	t.deletedAt = &now
+	t.version++
+	t.updatedAt = now
+	return nil
+}

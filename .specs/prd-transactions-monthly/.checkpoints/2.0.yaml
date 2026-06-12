@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-monthly/2.0_execution_report.md
+summary: "Task 2.0 domain primitives implementada: Option[T], 12 VOs, 7 commands, 6 entities, 9 events — 100% coverage em valueobjects e option, zero comentários, todos os gates R0-R7 passados"
+timestamp: "2026-06-12T00:00:00Z"

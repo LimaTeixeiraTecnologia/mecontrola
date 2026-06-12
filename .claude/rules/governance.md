@@ -36,6 +36,10 @@ Se duas regras do mesmo nível conflitarem:
 - Não executar ações de git destrutivas ou publicações remotas sem pedido explícito.
 - Se faltar input obrigatório e não houver inferência segura, a execução deve pausar ou falhar de forma explícita.
 
+## Regras de Modulo
+
+- `transactions-workflows.md` — codifica o gate hard ADR-006 para o modulo `internal/transactions`: `Decide*` puro obrigatorio, validacao so em smart constructors, producers so mapeiam domain event, cardinalidade controlada em metricas. Ver `.claude/rules/transactions-workflows.md`.
+
 ## Proibido
 - Aprovação sem evidência.
 - Loops infinitos de remediação.

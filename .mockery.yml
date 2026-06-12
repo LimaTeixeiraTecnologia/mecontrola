@@ -95,3 +95,17 @@ packages:
       PendingEventRepository: {}
       RepositoryFactory: {}
       ExpenseCommittedPublisher: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces:
+    interfaces:
+      RepositoryFactory: {}
+      TransactionRepository: {}
+      CardPurchaseRepository: {}
+      CardInvoiceRepository: {}
+      RecurringTemplateRepository: {}
+      MonthlySummaryRepository: {}
+      RecurringMaterializationRepository: {}
+      CardLookup: {}
+      CategoryValidator: {}
+      TransactionEventPublisher: {}
+      CardPurchaseEventPublisher: {}
+      RecurringTemplateEventPublisher: {}

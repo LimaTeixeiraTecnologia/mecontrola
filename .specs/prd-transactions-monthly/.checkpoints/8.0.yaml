@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-monthly/8.0_execution_report.md
+summary: MonthlySummary projection + consumer com coalescing 1500ms implementados e todos os testes passando
+timestamp: 2026-06-12T00:00:00Z

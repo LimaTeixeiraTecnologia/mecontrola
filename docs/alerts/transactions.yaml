@@ -1,0 +1,45 @@
+groups:
+  - name: transactions
+    rules:
+      - alert: TransactionsMonthlySummaryDriftDetected
+        expr: increase(transactions_monthly_summary_drift_total{kind="detected"}[1d]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          module: transactions
+        annotations:
+          summary: "Drift detectado no resumo mensal de transacoes"
+          description: "O job de reconciliacao detectou divergencia entre a projecao MonthlySummary e a soma real das transacoes. Investigar evento perdido ou falha de reprocessamento."
+          runbook_url: "https://github.com/LimaTeixeiraTecnologia/mecontrola/blob/main/docs/runbooks/transactions.md#cenario-2-drift-detectado"
+
+      - alert: TransactionsWriteLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(transactions_write_duration_seconds_bucket[5m]))) > 0.3
+        for: 10m
+        labels:
+          severity: critical
+          module: transactions
+        annotations:
+          summary: "Latencia de escrita p99 acima de 300ms"
+          description: "O percentil 99 de duracao das operacoes de escrita do modulo transactions esta acima de 300ms ha mais de 10 minutos. Verificar lentidao no banco de dados ou lock contention."
+          runbook_url: "https://github.com/LimaTeixeiraTecnologia/mecontrola/blob/main/docs/runbooks/transactions.md"
+
+      - alert: TransactionsOutboxConsumerLagHigh
+        expr: transactions_outbox_consumer_lag_seconds > 5
+        for: 5m
+        labels:
+          severity: critical
+          module: transactions
+        annotations:
+          summary: "Consumer do outbox de transactions com lag acima de 5s"
+          description: "O consumer MonthlySummaryRecomputeConsumer esta processando eventos com atraso superior a 5 segundos ha mais de 5 minutos. O coalescer pode estar retendo eventos ou o worker pode estar travado."
+          runbook_url: "https://github.com/LimaTeixeiraTecnologia/mecontrola/blob/main/docs/runbooks/transactions.md#cenario-1-consumer-travado"
+
+      - alert: TransactionsOutboxDeadLetterIncreasing
+        expr: increase(transactions_outbox_dead_letter_total[15m]) > 0
+        labels:
+          severity: critical
+          module: transactions
+        annotations:
+          summary: "Eventos no dead-letter do modulo transactions"
+          description: "Eventos do modulo transactions foram movidos para dead-letter nos ultimos 15 minutos. Verificar logs do consumer, payload malformado ou falha de idempotencia."
+          runbook_url: "https://github.com/LimaTeixeiraTecnologia/mecontrola/blob/main/docs/runbooks/transactions.md#cenario-3-dead-letter"

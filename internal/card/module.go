@@ -21,7 +21,7 @@ import (
 type CardModule struct {
 	RepositoryFactory interfaces.RepositoryFactory
 	CardRouter        *httpserver.CardRouter
-	CardLookup        *usecases.InvoiceFor
+	CardLookup        *usecases.GetCardForUser
 }
 
 func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr manager.Manager) (CardModule, error) {
@@ -43,6 +43,7 @@ func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr mana
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
 	softDelete := usecases.NewSoftDeleteCard(deleteUoW, factory, idemStorage, o11y)
 	invoiceFor := usecases.NewInvoiceFor(factory, mgr, loc, o11y)
+	getCardForUser := usecases.NewGetCardForUser(factory, mgr, o11y)
 
 	createHandler := handlers.NewCreateCardHandler(createCard, o11y)
 	listHandler := handlers.NewListCardsHandler(listCards, o11y)
@@ -56,6 +57,6 @@ func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr mana
 	return CardModule{
 		RepositoryFactory: factory,
 		CardRouter:        router,
-		CardLookup:        invoiceFor,
+		CardLookup:        getCardForUser,
 	}, nil
 }

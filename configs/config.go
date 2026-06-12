@@ -11,17 +11,28 @@ import (
 )
 
 type Config struct {
-	AppConfig        AppConfig        `mapstructure:",squash"`
-	HTTPConfig       HTTPConfig       `mapstructure:",squash"`
-	DBConfig         DBConfig         `mapstructure:",squash"`
-	O11yConfig       O11yConfig       `mapstructure:",squash"`
-	OutboxConfig     OutboxConfig     `mapstructure:",squash"`
-	KiwifyConfig     KiwifyConfig     `mapstructure:",squash"`
-	BillingConfig    BillingConfig    `mapstructure:",squash"`
-	OnboardingConfig OnboardingConfig `mapstructure:",squash"`
-	WhatsAppConfig   WhatsAppConfig   `mapstructure:",squash"`
-	IdentityConfig   IdentityConfig   `mapstructure:",squash"`
-	BudgetsConfig    BudgetsConfig    `mapstructure:",squash"`
+	AppConfig          AppConfig          `mapstructure:",squash"`
+	HTTPConfig         HTTPConfig         `mapstructure:",squash"`
+	DBConfig           DBConfig           `mapstructure:",squash"`
+	O11yConfig         O11yConfig         `mapstructure:",squash"`
+	OutboxConfig       OutboxConfig       `mapstructure:",squash"`
+	KiwifyConfig       KiwifyConfig       `mapstructure:",squash"`
+	BillingConfig      BillingConfig      `mapstructure:",squash"`
+	OnboardingConfig   OnboardingConfig   `mapstructure:",squash"`
+	WhatsAppConfig     WhatsAppConfig     `mapstructure:",squash"`
+	IdentityConfig     IdentityConfig     `mapstructure:",squash"`
+	BudgetsConfig      BudgetsConfig      `mapstructure:",squash"`
+	TransactionsConfig TransactionsConfig `mapstructure:",squash"`
+}
+
+type TransactionsConfig struct {
+	Enabled                               bool          `mapstructure:"TRANSACTIONS_ENABLED"`
+	IdempotencyTTL                        time.Duration `mapstructure:"TRANSACTIONS_IDEMPOTENCY_TTL"`
+	MonthlySummaryDebounceWindow          time.Duration `mapstructure:"TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW"`
+	RecurringMaterializerCron             string        `mapstructure:"TRANSACTIONS_RECURRING_MATERIALIZER_CRON"`
+	MonthlySummaryReconcilerCron          string        `mapstructure:"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON"`
+	MonthlySummaryReconcilerLookbackHours int           `mapstructure:"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS"`
+	BrazilTimezone                        string        `mapstructure:"TRANSACTIONS_BRAZIL_TIMEZONE"`
 }
 
 type IdentityConfig struct {
@@ -272,6 +283,7 @@ func (l *configLoader) load() (*Config, error) {
 	l.setBudgetsDefaults()
 	l.setOnboardingDefaults()
 	l.setWhatsAppDefaults()
+	l.setTransactionsDefaults()
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -381,6 +393,13 @@ func (l *configLoader) envKeys() []string {
 		"BUDGETS_ABANDONED_DRAFT_CRON",
 		"BUDGETS_RETENTION_PURGE_CRON",
 		"BUDGETS_RETENTION_PURGE_BATCH_SIZE",
+		"TRANSACTIONS_ENABLED",
+		"TRANSACTIONS_IDEMPOTENCY_TTL",
+		"TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW",
+		"TRANSACTIONS_RECURRING_MATERIALIZER_CRON",
+		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON",
+		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS",
+		"TRANSACTIONS_BRAZIL_TIMEZONE",
 	}
 }
 
@@ -403,6 +422,16 @@ func (l *configLoader) setBudgetsDefaults() {
 	l.v.SetDefault("BUDGETS_ABANDONED_DRAFT_CRON", "0 3 * * *")
 	l.v.SetDefault("BUDGETS_RETENTION_PURGE_CRON", "0 4 1 * *")
 	l.v.SetDefault("BUDGETS_RETENTION_PURGE_BATCH_SIZE", 500)
+}
+
+func (l *configLoader) setTransactionsDefaults() {
+	l.v.SetDefault("TRANSACTIONS_ENABLED", false)
+	l.v.SetDefault("TRANSACTIONS_IDEMPOTENCY_TTL", 24*time.Hour)
+	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW", 1500*time.Millisecond)
+	l.v.SetDefault("TRANSACTIONS_RECURRING_MATERIALIZER_CRON", "@daily")
+	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON", "@daily")
+	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS", 48)
+	l.v.SetDefault("TRANSACTIONS_BRAZIL_TIMEZONE", "America/Sao_Paulo")
 }
 
 func (l *configLoader) setBillingDefaults() {

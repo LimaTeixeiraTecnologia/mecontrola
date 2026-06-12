@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-monthly/7.0_execution_report.md
+summary: "Task 7.0 concluída: 5 CRUD use cases RecurringTemplate + MaterializeRecurringForDay (double-layer) + ReconcileMonthlySummary + repos + producer + 2 jobs + integration tests; cobertura 85.1%"
+timestamp: "2026-06-12T00:00:00Z"

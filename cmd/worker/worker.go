@@ -22,12 +22,14 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
 func New() *cobra.Command {
@@ -132,7 +134,7 @@ type workerRuntime struct {
 	dbManager manager.Manager
 }
 
-func (r *workerRuntime) newManager() (*worker.Manager, error) {
+func (r *workerRuntime) newManager() (*worker.Manager, error) { //nolint:revive // composition root agrega bootstrap de módulos; refatorar fragmentaria a ordem de lifecycle crítica
 	outboxFactory := outbox.NewRepositoryFactory(r.o11y)
 	dispatcherUoW := uow.New[[]outbox.Row](r.dbManager, uow.WithObservability(r.o11y))
 	reaperUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
@@ -147,6 +149,14 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
+	}
+	cardModule, err := card.NewCardModule(r.cfg, r.o11y, r.dbManager)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
+	}
+	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.dbManager, cardModule, categoriesModule)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
 	}
 
 	onboardingModule, err := onboarding.NewOnboardingModule(
@@ -181,6 +191,11 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 			return nil, fmt.Errorf("worker: registrar handler budgets %s: %w", reg.EventType, err)
 		}
 	}
+	for _, reg := range transactionsModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler transactions %s: %w", reg.EventType, err)
+		}
+	}
 
 	jobs := make([]worker.Job, 0, 10)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
@@ -201,6 +216,12 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) {
 		budgetsModule.PendingEventsReaper,
 		budgetsModule.RetentionPurge,
 	)
+	if transactionsModule.RecurringMaterializerJob != nil {
+		jobs = append(jobs, transactionsModule.RecurringMaterializerJob)
+	}
+	if transactionsModule.MonthlySummaryReconcilerJob != nil {
+		jobs = append(jobs, transactionsModule.MonthlySummaryReconcilerJob)
+	}
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	return worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger), nil
