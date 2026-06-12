@@ -56,7 +56,7 @@ func (uc *ProcessSubscriptionCanceled) Execute(ctx context.Context, in input.Pro
 		}
 
 		transitionSvc := services.NewTransitionService()
-		if transitionSvc.IsRegression(existing.Status(), services.TriggerSubscriptionCanceled, in.OccurredAt, existing.LastEventAt()) {
+		if transitionSvc.DecideCancellation(existing.Status(), in.OccurredAt, existing.LastEventAt()) == services.DecisionSkipAsRegression {
 			if supersededErr := processedRepo.MarkSuperseded(ctx, eventKey); supersededErr != nil {
 				return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_canceled: mark superseded: %w", supersededErr)
 			}

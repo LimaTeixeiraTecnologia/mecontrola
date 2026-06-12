@@ -90,7 +90,7 @@ func (uc *ProcessSubscriptionRenewed) applyRenewal(ctx context.Context, tx datab
 
 func (uc *ProcessSubscriptionRenewed) extendExisting(ctx context.Context, tx database.DBTX, subRepo interfaces.SubscriptionRepository, processedRepo interfaces.ProcessedEventRepository, existing entities.Subscription, in input.ProcessSubscriptionRenewedInput, eventKey string) (entities.Subscription, error) {
 	transitionSvc := services.NewTransitionService()
-	if transitionSvc.IsRegression(existing.Status(), services.TriggerSubscriptionRenewed, in.OccurredAt, existing.LastEventAt()) {
+	if transitionSvc.DecideRenewal(existing.Status(), in.OccurredAt, existing.LastEventAt()) == services.DecisionSkipAsRegression {
 		if supersededErr := processedRepo.MarkSuperseded(ctx, eventKey); supersededErr != nil {
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: mark superseded: %w", supersededErr)
 		}

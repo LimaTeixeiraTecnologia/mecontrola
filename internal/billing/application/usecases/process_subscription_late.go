@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -16,8 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
 )
-
-const graceDuration = 3 * 24 * time.Hour
 
 type ProcessSubscriptionLate struct {
 	uow       uow.UnitOfWork[entities.Subscription]
@@ -58,14 +55,14 @@ func (uc *ProcessSubscriptionLate) Execute(ctx context.Context, in input.Process
 		}
 
 		transitionSvc := services.NewTransitionService()
-		if transitionSvc.IsRegression(existing.Status(), services.TriggerSubscriptionLate, in.OccurredAt, existing.LastEventAt()) {
+		if transitionSvc.DecidePastDue(existing.Status(), in.OccurredAt, existing.LastEventAt()) == services.DecisionSkipAsRegression {
 			if supersededErr := processedRepo.MarkSuperseded(ctx, eventKey); supersededErr != nil {
 				return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_late: mark superseded: %w", supersededErr)
 			}
 			return existing, ErrEventSuperseded
 		}
 
-		graceEnd := in.OccurredAt.Add(graceDuration)
+		graceEnd := in.OccurredAt.Add(valueobjects.DefaultGraceWindow.Duration())
 		if applyErr := subRepo.ApplyTransition(ctx, existing.ID(), valueobjects.StatusPastDue, graceEnd, in.OccurredAt); applyErr != nil {
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_late: apply transition: %w", applyErr)
 		}

@@ -188,6 +188,61 @@ func (s *TransitionsSuite) TestTransitionService() {
 				assert.False(s.T(), transitionService.IsRegression(args.current, args.trigger, args.occurredAt, args.lastEventAt))
 			},
 		},
+		{
+			name: "deve aplicar renewal quando evento mais novo que o ultimo",
+			args: args{
+				current:     valueobjects.StatusPastDue,
+				occurredAt:  now.Add(2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.Equal(s.T(), services.DecisionApply, transitionService.DecideRenewal(args.current, args.occurredAt, args.lastEventAt))
+			},
+		},
+		{
+			name: "deve marcar renewal antigo apos late recente como regressao",
+			args: args{
+				current:     valueobjects.StatusPastDue,
+				occurredAt:  now.Add(-2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.Equal(s.T(), services.DecisionSkipAsRegression, transitionService.DecideRenewal(args.current, args.occurredAt, args.lastEventAt))
+			},
+		},
+		{
+			name: "deve aplicar past due quando status atual permite transicao",
+			args: args{
+				current:     valueobjects.StatusActive,
+				occurredAt:  now,
+				lastEventAt: time.Time{},
+			},
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.Equal(s.T(), services.DecisionApply, transitionService.DecidePastDue(args.current, args.occurredAt, args.lastEventAt))
+			},
+		},
+		{
+			name: "deve aplicar cancelamento em assinatura ativa",
+			args: args{
+				current:     valueobjects.StatusActive,
+				occurredAt:  now,
+				lastEventAt: time.Time{},
+			},
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.Equal(s.T(), services.DecisionApply, transitionService.DecideCancellation(args.current, args.occurredAt, args.lastEventAt))
+			},
+		},
+		{
+			name: "deve marcar cancelamento antigo apos evento recente como regressao",
+			args: args{
+				current:     valueobjects.StatusActive,
+				occurredAt:  now.Add(-2 * time.Hour),
+				lastEventAt: now,
+			},
+			expect: func(args args, transitionService services.TransitionService) {
+				assert.Equal(s.T(), services.DecisionSkipAsRegression, transitionService.DecideCancellation(args.current, args.occurredAt, args.lastEventAt))
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
