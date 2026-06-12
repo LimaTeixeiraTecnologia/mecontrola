@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -13,9 +14,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 )
 
@@ -23,6 +25,7 @@ type UpdateCard struct {
 	uow     uow.UnitOfWork[entities.Card]
 	factory interfaces.RepositoryFactory
 	idem    idempotency.Storage
+	decider services.UpdateCardDecider
 	o11y    observability.Observability
 }
 
@@ -32,7 +35,13 @@ func NewUpdateCard(
 	idem idempotency.Storage,
 	o11y observability.Observability,
 ) *UpdateCard {
-	return &UpdateCard{uow: u, factory: factory, idem: idem, o11y: o11y}
+	return &UpdateCard{
+		uow:     u,
+		factory: factory,
+		idem:    idem,
+		decider: services.NewUpdateCardDecider(),
+		o11y:    o11y,
+	}
 }
 
 func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.Card, error) {
@@ -54,65 +63,27 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 			return entities.Card{}, getErr
 		}
 		if existing.IsDeleted() {
-			return entities.Card{}, domain.ErrCardNotFound
+			return entities.Card{}, fmt.Errorf("card/update: %w", domain.ErrCardNotFound)
 		}
 
-		name := existing.Name
-		if in.Name != nil {
-			n, vErr := valueobjects.NewCardName(*in.Name)
-			if vErr != nil {
-				span.SetAttributes(observability.String("outcome", "invalid"))
-				return entities.Card{}, vErr
-			}
-			name = n
+		decided, decErr := u.decider.Decide(existing, services.UpdateCardCommand{
+			Name:       in.Name,
+			Nickname:   in.Nickname,
+			ClosingDay: in.ClosingDay,
+			DueDay:     in.DueDay,
+		}, time.Now().UTC())
+		if decErr != nil {
+			span.SetAttributes(observability.String("outcome", "invalid"))
+			return entities.Card{}, decErr
 		}
 
-		nickname := existing.Nickname
-		if in.Nickname != nil {
-			nk, vErr := valueobjects.NewNickname(*in.Nickname)
-			if vErr != nil {
-				span.SetAttributes(observability.String("outcome", "invalid"))
-				return entities.Card{}, vErr
-			}
-			nickname = nk
-		}
-
-		cycle := existing.Cycle
-		if in.ClosingDay != nil || in.DueDay != nil {
-			cd := existing.Cycle.ClosingDay
-			dd := existing.Cycle.DueDay
-			if in.ClosingDay != nil {
-				cd = *in.ClosingDay
-			}
-			if in.DueDay != nil {
-				dd = *in.DueDay
-			}
-			c, vErr := valueobjects.NewBillingCycle(cd, dd)
-			if vErr != nil {
-				span.SetAttributes(observability.String("outcome", "invalid"))
-				return entities.Card{}, vErr
-			}
-			cycle = c
-		}
-
-		updated := entities.HydrateCard(
-			existing.ID,
-			existing.UserID,
-			name,
-			nickname,
-			cycle,
-			existing.CreatedAt,
-			existing.UpdatedAt,
-			existing.DeletedAt,
-		)
-
-		persisted, updateErr := repo.UpdateByIDForUser(ctx, updated)
+		persisted, updateErr := repo.UpdateByIDForUser(ctx, decided)
 		if updateErr != nil {
 			return entities.Card{}, updateErr
 		}
 
 		if hasIdem {
-			body, marshalErr := json.Marshal(toCardOutput(persisted))
+			body, marshalErr := json.Marshal(mappers.ToCardOutput(persisted))
 			if marshalErr != nil {
 				return entities.Card{}, fmt.Errorf("update_card: marshal output: %w", marshalErr)
 			}
@@ -150,5 +121,5 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 		observability.String("card_id", card.ID.String()),
 		observability.String("user_id", card.UserID.String()),
 	)
-	return toCardOutput(card), nil
+	return mappers.ToCardOutput(card), nil
 }

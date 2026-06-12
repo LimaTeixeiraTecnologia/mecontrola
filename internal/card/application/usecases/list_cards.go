@@ -2,10 +2,7 @@ package usecases
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -13,13 +10,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/pagination"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 )
-
-type cursorPayload struct {
-	CreatedAt time.Time `json:"created_at"`
-	ID        string    `json:"id"`
-}
 
 type ListCards struct {
 	factory interfaces.RepositoryFactory
@@ -44,9 +38,9 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 	defer span.End()
 
 	if in.Cursor != "" {
-		if err := validateCursor(in.Cursor); err != nil {
+		if _, err := pagination.Decode(in.Cursor); err != nil {
 			span.SetAttributes(observability.String("outcome", "invalid"))
-			return output.CardList{}, err
+			return output.CardList{}, fmt.Errorf("%w: %s", domain.ErrInvalidCursor, err.Error())
 		}
 	}
 
@@ -58,55 +52,13 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 		return output.CardList{}, err
 	}
 
-	out := make([]output.Card, 0, len(cards))
-	for _, c := range cards {
-		out = append(out, toCardOutput(c))
-	}
+	result := mappers.ToCardListOutput(cards, nextCursor)
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	u.o11y.Logger().Info(ctx, "card.list.served",
 		observability.String("user_id", in.UserID.String()),
-		observability.Int("count", len(out)),
+		observability.Int("count", len(result.Items)),
 	)
 
-	var next *string
-	if nextCursor != "" {
-		nc := nextCursor
-		next = &nc
-	}
-
-	return output.CardList{
-		Items:      out,
-		NextCursor: next,
-	}, nil
-}
-
-func validateCursor(cursor string) error {
-	raw, err := base64.URLEncoding.DecodeString(cursor)
-	if err != nil {
-		return fmt.Errorf("%w: base64 decode: %s", domain.ErrInvalidCursor, err)
-	}
-
-	var p cursorPayload
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return fmt.Errorf("%w: json unmarshal: %s", domain.ErrInvalidCursor, err)
-	}
-
-	if p.CreatedAt.IsZero() {
-		return fmt.Errorf("%w: created_at is zero", domain.ErrInvalidCursor)
-	}
-
-	if p.ID == "" {
-		return fmt.Errorf("%w: id is empty", domain.ErrInvalidCursor)
-	}
-
-	return nil
-}
-
-func EncodeCursor(createdAt time.Time, id string) (string, error) {
-	raw, err := json.Marshal(cursorPayload{CreatedAt: createdAt, ID: id})
-	if err != nil {
-		return "", fmt.Errorf("encode cursor: %w", err)
-	}
-	return base64.URLEncoding.EncodeToString(raw), nil
+	return result, nil
 }

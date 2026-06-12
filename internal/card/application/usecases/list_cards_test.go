@@ -12,6 +12,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/pagination"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
@@ -61,11 +62,11 @@ func (s *ListCardsSuite) TestExecute_HappyPath() {
 
 func (s *ListCardsSuite) TestExecute_WithCursor() {
 	userID := uuid.New()
-	cursor, err := usecases.EncodeCursor(time.Now().UTC(), uuid.New().String())
+	cursor, err := pagination.Encode(time.Now().UTC(), uuid.New().String())
 	s.Require().NoError(err)
 
 	cards := []entities.Card{s.makeCard(userID)}
-	nextCursor, encErr := usecases.EncodeCursor(time.Now().UTC().Add(-time.Hour), uuid.New().String())
+	nextCursor, encErr := pagination.Encode(time.Now().UTC().Add(-time.Hour), uuid.New().String())
 	s.Require().NoError(encErr)
 
 	in := input.ListCards{UserID: userID, Cursor: cursor, Limit: 5}

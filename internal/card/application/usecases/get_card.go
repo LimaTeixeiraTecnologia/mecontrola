@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -9,6 +10,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 )
 
@@ -46,9 +48,9 @@ func (u *GetCard) Execute(ctx context.Context, in input.GetCard) (output.Card, e
 
 	if card.IsDeleted() {
 		span.SetAttributes(observability.String("outcome", "not_found"))
-		return output.Card{}, domain.ErrCardNotFound
+		return output.Card{}, fmt.Errorf("card/get_card: %w", domain.ErrCardNotFound)
 	}
 
 	span.SetAttributes(observability.String("outcome", "success"))
-	return toCardOutput(card), nil
+	return mappers.ToCardOutput(card), nil
 }

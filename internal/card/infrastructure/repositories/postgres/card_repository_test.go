@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/pagination"
 	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 )
 
@@ -35,10 +36,11 @@ func TestEncodeDecode_Cursor(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			encoded := encodeCursor(sc.createdAt, sc.id)
+			encoded, err := pagination.Encode(sc.createdAt, sc.id)
+			require.NoError(t, err)
 			assert.NotEmpty(t, encoded)
 
-			decoded, err := decodeCursor(encoded)
+			decoded, err := pagination.Decode(encoded)
 			require.NoError(t, err)
 			assert.Equal(t, sc.id, decoded.ID)
 			assert.True(t, sc.createdAt.UTC().Equal(decoded.CreatedAt.UTC()))
@@ -65,7 +67,7 @@ func TestDecodeCursor_Invalid(t *testing.T) {
 		{
 			name: "json válido mas campos vazios",
 			cursor: func() string {
-				b, _ := json.Marshal(cursorPayload{})
+				b, _ := json.Marshal(pagination.Cursor{})
 				return base64.URLEncoding.EncodeToString(b)
 			}(),
 			wantErr: true,
@@ -74,7 +76,7 @@ func TestDecodeCursor_Invalid(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			_, err := decodeCursor(sc.cursor)
+			_, err := pagination.Decode(sc.cursor)
 			if sc.wantErr {
 				assert.Error(t, err)
 			} else {

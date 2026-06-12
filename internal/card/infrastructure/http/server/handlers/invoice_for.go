@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -56,7 +55,7 @@ func (h *InvoiceForHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	purchase, err := time.Parse("2006-01-02", forParam)
+	in, err := input.NewInvoiceFor(cardID, principal.UserID, forParam)
 	if err != nil {
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, "data inválida; use YYYY-MM-DD",
@@ -64,11 +63,7 @@ func (h *InvoiceForHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.usecase.Execute(ctx, input.InvoiceFor{
-		CardID:   cardID,
-		UserID:   principal.UserID,
-		Purchase: purchase,
-	})
+	out, err := h.usecase.Execute(ctx, in)
 	if err != nil {
 		span.RecordError(err)
 		mapCardError(w, span, err)

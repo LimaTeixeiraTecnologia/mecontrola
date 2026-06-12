@@ -3,8 +3,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,17 +15,13 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/pagination"
 	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
 )
 
 const prefixCardRepository = "card.repository.pg:"
-
-type cursorPayload struct {
-	CreatedAt time.Time `json:"created_at"`
-	ID        string    `json:"id"`
-}
 
 type cardRepository struct {
 	o11y observability.Observability
@@ -129,7 +123,7 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 		`
 		rows, err = r.db.QueryContext(ctx, query, userID, fetch)
 	} else {
-		cp, decErr := decodeCursor(cursor)
+		cp, decErr := pagination.Decode(cursor)
 		if decErr != nil {
 			return nil, "", fmt.Errorf("%s %w", prefixCardRepository, carddomain.ErrInvalidCursor)
 		}
@@ -181,7 +175,11 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 	if len(cards) > limit {
 		cards = cards[:limit]
 		last := cards[len(cards)-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.ID.String())
+		encoded, encErr := pagination.Encode(last.CreatedAt, last.ID.String())
+		if encErr != nil {
+			return nil, "", fmt.Errorf("%s list_by_user encode_cursor: %w", prefixCardRepository, encErr)
+		}
+		nextCursor = encoded
 	}
 
 	return cards, nextCursor, nil
@@ -322,25 +320,4 @@ func (r *cardRepository) hydrate(
 	}
 
 	return entities.HydrateCard(parsedID, parsedUserID, cardName, nick, cycle, createdAt, updatedAt, deletedAt), nil
-}
-
-func encodeCursor(t time.Time, id string) string {
-	payload := cursorPayload{CreatedAt: t.UTC(), ID: id}
-	b, _ := json.Marshal(payload)
-	return base64.URLEncoding.EncodeToString(b)
-}
-
-func decodeCursor(cursor string) (cursorPayload, error) {
-	b, err := base64.URLEncoding.DecodeString(cursor)
-	if err != nil {
-		return cursorPayload{}, fmt.Errorf("decode base64: %w", err)
-	}
-	var cp cursorPayload
-	if err := json.Unmarshal(b, &cp); err != nil {
-		return cursorPayload{}, fmt.Errorf("decode json: %w", err)
-	}
-	if cp.ID == "" || cp.CreatedAt.IsZero() {
-		return cursorPayload{}, fmt.Errorf("invalid cursor fields")
-	}
-	return cp, nil
 }

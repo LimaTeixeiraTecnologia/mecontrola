@@ -3,7 +3,6 @@ package usecases
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -14,7 +13,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
-	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
@@ -80,7 +79,7 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 			return entities.Card{}, insertErr
 		}
 		if hasIdem {
-			body, marshalErr := json.Marshal(toCardOutput(c))
+			body, marshalErr := json.Marshal(mappers.ToCardOutput(c))
 			if marshalErr != nil {
 				return entities.Card{}, fmt.Errorf("create_card: marshal output: %w", marshalErr)
 			}
@@ -119,41 +118,5 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		observability.String("card_id", card.ID.String()),
 		observability.String("user_id", card.UserID.String()),
 	)
-	return toCardOutput(card), nil
-}
-
-func toCardOutput(c entities.Card) output.Card {
-	return output.Card{
-		ID:         c.ID.String(),
-		UserID:     c.UserID.String(),
-		Name:       c.Name.String(),
-		Nickname:   c.Nickname.String(),
-		ClosingDay: c.Cycle.ClosingDay,
-		DueDay:     c.Cycle.DueDay,
-		CreatedAt:  c.CreatedAt,
-		UpdatedAt:  c.UpdatedAt,
-		DeletedAt:  c.DeletedAt,
-	}
-}
-
-func classifyCardOutcome(err error) string {
-	switch {
-	case errors.Is(err, domain.ErrCardNotFound):
-		return "not_found"
-	case errors.Is(err, domain.ErrNicknameConflict):
-		return "conflict"
-	case isCardValidationError(err):
-		return "invalid"
-	default:
-		return "internal_error"
-	}
-}
-
-func isCardValidationError(err error) bool {
-	return errors.Is(err, domain.ErrInvalidCardName) ||
-		errors.Is(err, domain.ErrInvalidNickname) ||
-		errors.Is(err, domain.ErrInvalidClosingDay) ||
-		errors.Is(err, domain.ErrInvalidDueDay) ||
-		errors.Is(err, domain.ErrInvalidPurchaseDate) ||
-		errors.Is(err, domain.ErrInvalidCursor)
+	return mappers.ToCardOutput(card), nil
 }

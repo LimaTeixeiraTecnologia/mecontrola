@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -10,6 +11,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 )
@@ -41,7 +43,7 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 
 	if in.Purchase.IsZero() {
 		span.SetAttributes(observability.String("outcome", "invalid"))
-		return output.Invoice{}, domain.ErrInvalidPurchaseDate
+		return output.Invoice{}, fmt.Errorf("card/invoice_for: %w", domain.ErrInvalidPurchaseDate)
 	}
 
 	repo := u.factory.CardRepository(u.mgr.DBTX(ctx))
@@ -55,7 +57,7 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 
 	if card.IsDeleted() {
 		span.SetAttributes(observability.String("outcome", "not_found"))
-		return output.Invoice{}, domain.ErrCardNotFound
+		return output.Invoice{}, fmt.Errorf("card/invoice_for: %w", domain.ErrCardNotFound)
 	}
 
 	invoice := services.InvoiceFor(in.Purchase, card.Cycle, u.loc)
@@ -66,8 +68,5 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 		observability.String("user_id", in.UserID.String()),
 	)
 
-	return output.Invoice{
-		ClosingDate: invoice.ClosingDate.In(u.loc).Format("2006-01-02"),
-		DueDate:     invoice.DueDate.In(u.loc).Format("2006-01-02"),
-	}, nil
+	return mappers.ToInvoiceOutput(invoice, u.loc), nil
 }
