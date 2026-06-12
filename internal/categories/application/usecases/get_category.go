@@ -7,25 +7,25 @@ import (
 	"sort"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"golang.org/x/text/collate"
-	"golang.org/x/text/language"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 )
 
 var ErrCategoryNotFound = errors.New("category not found")
 
 type GetCategory struct {
-	repo    interfaces.CategoryRepository
-	version interfaces.VersionReader
-	o11y    observability.Observability
+	repo     interfaces.CategoryRepository
+	version  interfaces.VersionReader
+	collator *services.PTBRCollator
+	o11y     observability.Observability
 }
 
-func NewGetCategory(repo interfaces.CategoryRepository, version interfaces.VersionReader, o11y observability.Observability) *GetCategory {
-	return &GetCategory{repo: repo, version: version, o11y: o11y}
+func NewGetCategory(repo interfaces.CategoryRepository, version interfaces.VersionReader, collator *services.PTBRCollator, o11y observability.Observability) *GetCategory {
+	return &GetCategory{repo: repo, version: version, collator: collator, o11y: o11y}
 }
 
 func (uc *GetCategory) Execute(ctx context.Context, in *input.GetCategoryInput) (*output.CategoryDetailOutput, error) {
@@ -102,9 +102,8 @@ func (uc *GetCategory) buildPath(ctx context.Context, category entities.Category
 }
 
 func (uc *GetCategory) buildSubcategoryOutputs(categories []entities.Category, version int64) []output.CategoryOutput {
-	cl := collate.New(language.BrazilianPortuguese, collate.IgnoreCase)
 	sort.Slice(categories, func(i, j int) bool {
-		return cl.CompareString(categories[i].Name, categories[j].Name) < 0
+		return uc.collator.Less(categories[i].Name, categories[j].Name)
 	})
 
 	result := make([]output.CategoryOutput, 0, len(categories))

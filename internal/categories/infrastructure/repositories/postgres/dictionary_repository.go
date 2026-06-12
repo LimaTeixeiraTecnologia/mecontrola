@@ -74,23 +74,7 @@ func (r *dictionaryRepository) Search(ctx context.Context, q interfaces.Dictiona
 	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.dictionary.search")
 	defer span.End()
 
-	const query = `
-		SELECT id, category_id, kind, term, signal_type, confidence, is_ambiguous, deprecated_at
-		FROM mecontrola.category_dictionary
-		WHERE kind = $1
-		  AND term_normalized = lower(mecontrola.immutable_unaccent($2))
-		  AND deprecated_at IS NULL
-		ORDER BY
-			CASE signal_type
-				WHEN 'canonical_name' THEN 1
-				WHEN 'alias' THEN 2
-				WHEN 'phrase' THEN 3
-				WHEN 'merchant' THEN 4
-				WHEN 'segment' THEN 5
-			END,
-			term COLLATE "pt-BR-x-icu"
-		LIMIT $3
-	`
+	query := buildSearchQuery(q.IncludeDeprecated)
 
 	rows, qerr := r.db.QueryContext(ctx, query, q.Kind.String(), q.Term, q.Limit)
 	if qerr != nil {
@@ -104,6 +88,30 @@ func (r *dictionaryRepository) Search(ctx context.Context, q interfaces.Dictiona
 	}()
 
 	return r.scanEntries(rows)
+}
+
+func buildSearchQuery(includeDeprecated bool) string {
+	deprecatedFilter := "AND deprecated_at IS NULL"
+	if includeDeprecated {
+		deprecatedFilter = ""
+	}
+	return `
+		SELECT id, category_id, kind, term, signal_type, confidence, is_ambiguous, deprecated_at
+		FROM mecontrola.category_dictionary
+		WHERE kind = $1
+		  AND term_normalized = lower(mecontrola.immutable_unaccent($2))
+		  ` + deprecatedFilter + `
+		ORDER BY
+			CASE signal_type
+				WHEN 'canonical_name' THEN 1
+				WHEN 'alias' THEN 2
+				WHEN 'phrase' THEN 3
+				WHEN 'merchant' THEN 4
+				WHEN 'segment' THEN 5
+			END,
+			term COLLATE "pt-BR-x-icu"
+		LIMIT $3
+	`
 }
 
 func (r *dictionaryRepository) buildListQuery(q interfaces.DictionaryQuery, pageSize int) (string, []any) {

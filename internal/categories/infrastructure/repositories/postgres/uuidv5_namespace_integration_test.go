@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/factories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
 type UUIDv5NamespaceSuite struct {
@@ -38,13 +39,16 @@ func (s *UUIDv5NamespaceSuite) TestSeedIDsAreDeterministicRecomputable() {
 	checked := 0
 	for rows.Next() {
 		var persistedID uuid.UUID
-		var kind, slug string
-		s.Require().NoError(rows.Scan(&persistedID, &kind, &slug))
+		var kind, slugRaw string
+		s.Require().NoError(rows.Scan(&persistedID, &kind, &slugRaw))
+
+		slug, err := valueobjects.NewSlug(slugRaw)
+		s.Require().NoErrorf(err, "invalid slug persisted (kind=%s, slug=%s): %v", kind, slugRaw, err)
 
 		recomputed := factories.NewCategoryID(kind, slug)
 		s.Equalf(persistedID.String(), recomputed.String(),
 			"UUIDv5 drift detected for (kind=%s, slug=%s): persisted=%s recomputed=%s",
-			kind, slug, persistedID, recomputed)
+			kind, slugRaw, persistedID, recomputed)
 		checked++
 	}
 	s.Require().NoError(rows.Err())

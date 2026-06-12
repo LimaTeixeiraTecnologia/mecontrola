@@ -15,6 +15,7 @@ import (
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
@@ -35,7 +36,7 @@ func (s *GetCategorySuite) SetupTest() {
 	s.ctx = context.Background()
 	s.repo = mockInterfaces.NewCategoryRepository(s.T())
 	s.versionReader = mockInterfaces.NewVersionReader(s.T())
-	s.useCase = usecases.NewGetCategory(s.repo, s.versionReader, noop.NewProvider())
+	s.useCase = usecases.NewGetCategory(s.repo, s.versionReader, services.NewPTBRCollator(), noop.NewProvider())
 }
 
 func (s *GetCategorySuite) TestExecute_RootWithSubcategories() {

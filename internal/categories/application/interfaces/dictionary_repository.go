@@ -16,9 +16,10 @@ type DictionaryQuery struct {
 }
 
 type DictionarySearchQuery struct {
-	Kind  valueobjects.Kind
-	Term  string
-	Limit int
+	Kind              valueobjects.Kind
+	Term              string
+	Limit             int
+	IncludeDeprecated bool
 }
 
 type DictionaryRepository interface {

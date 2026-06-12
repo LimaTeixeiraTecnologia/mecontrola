@@ -1,12 +1,14 @@
 package factories_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/factories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
 type CategoryIDSuite struct {
@@ -17,35 +19,28 @@ func TestCategoryIDSuite(t *testing.T) {
 	suite.Run(t, new(CategoryIDSuite))
 }
 
+func (s *CategoryIDSuite) newSlug(raw string) valueobjects.Slug {
+	slug, err := valueobjects.NewSlug(raw)
+	s.Require().NoError(err)
+	return slug
+}
+
 func (s *CategoryIDSuite) TestNewCategoryID() {
 	scenarios := []struct {
-		name     string
-		kind     string
-		slug     string
-		expected uuid.UUID
+		name string
+		kind string
+		slug string
 	}{
-		{
-			name:     "deve gerar ID deterministico para expense/aluguel",
-			kind:     "expense",
-			slug:     "aluguel",
-			expected: uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"),
-		},
-		{
-			name: "deve gerar ID deterministico para income/salario",
-			kind: "income",
-			slug: "salario",
-		},
-		{
-			name: "deve gerar ID deterministico para expense/supermercado",
-			kind: "expense",
-			slug: "supermercado",
-		},
+		{name: "deve gerar ID deterministico para expense/aluguel", kind: "expense", slug: "aluguel"},
+		{name: "deve gerar ID deterministico para income/salario", kind: "income", slug: "salario"},
+		{name: "deve gerar ID deterministico para expense/supermercado", kind: "expense", slug: "supermercado"},
 	}
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			id1 := factories.NewCategoryID(scenario.kind, scenario.slug)
-			id2 := factories.NewCategoryID(scenario.kind, scenario.slug)
+			slug := s.newSlug(scenario.slug)
+			id1 := factories.NewCategoryID(scenario.kind, slug)
+			id2 := factories.NewCategoryID(scenario.kind, slug)
 
 			s.Equal(id1, id2, "ID deve ser deterministico")
 			s.NotEqual(uuid.Nil, id1, "ID nao deve ser nil")
@@ -54,9 +49,9 @@ func (s *CategoryIDSuite) TestNewCategoryID() {
 }
 
 func (s *CategoryIDSuite) TestNewCategoryIDDifferentInputs() {
-	id1 := factories.NewCategoryID("expense", "aluguel")
-	id2 := factories.NewCategoryID("expense", "supermercado")
-	id3 := factories.NewCategoryID("income", "aluguel")
+	id1 := factories.NewCategoryID("expense", s.newSlug("aluguel"))
+	id2 := factories.NewCategoryID("expense", s.newSlug("supermercado"))
+	id3 := factories.NewCategoryID("income", s.newSlug("aluguel"))
 
 	s.NotEqual(id1, id2, "slugs diferentes devem gerar IDs diferentes")
 	s.NotEqual(id1, id3, "kinds diferentes devem gerar IDs diferentes")
@@ -75,17 +70,13 @@ func (s *CategoryIDSuite) TestNewCategoryID_MatchesPublishedSeedIDs() {
 		"expense:energia":                   "36916fab-eacc-50a3-8a53-93671c335952",
 	}
 	for key, want := range expected {
-		var kind, slug string
-		for i, r := range key {
-			if r == ':' {
-				kind = key[:i]
-				slug = key[i+1:]
-				break
-			}
-		}
+		parts := strings.SplitN(key, ":", 2)
+		s.Require().Len(parts, 2)
+		kind, slugRaw := parts[0], parts[1]
+		slug := s.newSlug(slugRaw)
 		got := factories.NewCategoryID(kind, slug)
 		s.Equalf(want, got.String(),
 			"namespace drift: NewCategoryID(%q, %q) = %s, expected %s (published in migrations/000005)",
-			kind, slug, got, want)
+			kind, slugRaw, got, want)
 	}
 }

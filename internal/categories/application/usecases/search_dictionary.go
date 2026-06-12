@@ -3,7 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
-	"strings"
+	"maps"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
@@ -34,7 +34,11 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 	ctx, span := uc.o11y.Tracer().Start(ctx, "categories.usecase.search")
 	defer span.End()
 
-	if err := in.Validate(); err != nil {
+	if !in.Kind.IsValid() {
+		return nil, valueobjects.ErrInvalidKind
+	}
+	query, err := in.SearchQuery()
+	if err != nil {
 		return nil, err
 	}
 
@@ -45,9 +49,10 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 	}
 
 	entries, err := uc.repo.Search(ctx, interfaces.DictionarySearchQuery{
-		Kind:  in.Kind,
-		Term:  strings.TrimSpace(in.Query),
-		Limit: searchCandidateLimit,
+		Kind:              in.Kind,
+		Term:              query.Trimmed(),
+		Limit:             searchCandidateLimit,
+		IncludeDeprecated: false,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -64,6 +69,7 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 
 	categories, err := uc.buildCategoryMap(ctx, entries)
 	if err != nil {
+		span.RecordError(err)
 		return nil, fmt.Errorf("buscar categorias: %w", err)
 	}
 	candidates, hasMore := uc.resolver.Resolve(entries, categories)
@@ -93,21 +99,69 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 }
 
 func (uc *SearchDictionary) buildCategoryMap(ctx context.Context, entries []entities.DictionaryEntry) (map[uuid.UUID]entities.Category, error) {
-	categories := make(map[uuid.UUID]entities.Category)
-	for _, e := range entries {
-		if _, exists := categories[e.CategoryID]; !exists {
-			cat, err := uc.categoryRepo.GetByID(ctx, e.CategoryID)
-			if err != nil {
-				continue
-			}
-			categories[e.CategoryID] = cat
-			if cat.ParentID != nil {
-				parent, err := uc.categoryRepo.GetByID(ctx, *cat.ParentID)
-				if err == nil {
-					categories[parent.ID] = parent
-				}
-			}
-		}
+	categoryIDs := distinctCategoryIDs(entries)
+	categories, err := uc.fetchByIDs(ctx, categoryIDs)
+	if err != nil {
+		return nil, err
 	}
+
+	parentIDs := missingParentIDs(categories)
+	if len(parentIDs) == 0 {
+		return categories, nil
+	}
+
+	parents, err := uc.fetchByIDs(ctx, parentIDs)
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(categories, parents)
 	return categories, nil
+}
+
+func (uc *SearchDictionary) fetchByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]entities.Category, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]entities.Category{}, nil
+	}
+	rows, err := uc.categoryRepo.ListByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]entities.Category, len(rows))
+	for _, c := range rows {
+		out[c.ID] = c
+	}
+	return out, nil
+}
+
+func distinctCategoryIDs(entries []entities.DictionaryEntry) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(entries))
+	ids := make([]uuid.UUID, 0, len(entries))
+	for _, e := range entries {
+		if _, ok := seen[e.CategoryID]; ok {
+			continue
+		}
+		seen[e.CategoryID] = struct{}{}
+		ids = append(ids, e.CategoryID)
+	}
+	return ids
+}
+
+func missingParentIDs(categories map[uuid.UUID]entities.Category) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(categories))
+	ids := make([]uuid.UUID, 0, len(categories))
+	for _, c := range categories {
+		if c.ParentID == nil {
+			continue
+		}
+		pid := *c.ParentID
+		if _, ok := categories[pid]; ok {
+			continue
+		}
+		if _, ok := seen[pid]; ok {
+			continue
+		}
+		seen[pid] = struct{}{}
+		ids = append(ids, pid)
+	}
+	return ids
 }

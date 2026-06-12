@@ -20,5 +20,6 @@ type CategoryQuery struct {
 
 type CategoryRepository interface {
 	List(ctx context.Context, q CategoryQuery) ([]entities.Category, error)
+	ListByIDs(ctx context.Context, ids []uuid.UUID) ([]entities.Category, error)
 	GetByID(ctx context.Context, id uuid.UUID) (entities.Category, error)
 }

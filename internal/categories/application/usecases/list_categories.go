@@ -6,23 +6,23 @@ import (
 	"sort"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"golang.org/x/text/collate"
-	"golang.org/x/text/language"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 )
 
 type ListCategories struct {
-	repo    interfaces.CategoryRepository
-	version interfaces.VersionReader
-	o11y    observability.Observability
+	repo     interfaces.CategoryRepository
+	version  interfaces.VersionReader
+	collator *services.PTBRCollator
+	o11y     observability.Observability
 }
 
-func NewListCategories(repo interfaces.CategoryRepository, version interfaces.VersionReader, o11y observability.Observability) *ListCategories {
-	return &ListCategories{repo: repo, version: version, o11y: o11y}
+func NewListCategories(repo interfaces.CategoryRepository, version interfaces.VersionReader, collator *services.PTBRCollator, o11y observability.Observability) *ListCategories {
+	return &ListCategories{repo: repo, version: version, collator: collator, o11y: o11y}
 }
 
 func (uc *ListCategories) Execute(ctx context.Context, in *input.ListCategoriesInput) (*output.ListCategoriesOutput, error) {
@@ -59,7 +59,7 @@ func (uc *ListCategories) Execute(ctx context.Context, in *input.ListCategoriesI
 }
 
 func (uc *ListCategories) buildFlatList(categories []entities.Category, version int64) *output.ListCategoriesOutput {
-	uc.sortCategoriesByNamePTBR(categories)
+	uc.sortByName(categories)
 
 	result := make([]output.CategoryTreeOutput, 0, len(categories))
 	for _, c := range categories {
@@ -91,12 +91,12 @@ func (uc *ListCategories) buildTree(categories []entities.Category, version int6
 		}
 	}
 
-	uc.sortCategoriesByNamePTBR(roots)
+	uc.sortByName(roots)
 
 	result := make([]output.CategoryTreeOutput, 0, len(roots))
 	for _, root := range roots {
 		subs := children[root.ID.String()]
-		uc.sortCategoriesByNamePTBR(subs)
+		uc.sortByName(subs)
 
 		subOutputs := make([]output.CategoryOutput, 0, len(subs))
 		for _, s := range subs {
@@ -130,9 +130,8 @@ func (uc *ListCategories) buildTree(categories []entities.Category, version int6
 	return &output.ListCategoriesOutput{Categories: result, Version: version}
 }
 
-func (uc *ListCategories) sortCategoriesByNamePTBR(categories []entities.Category) {
-	cl := collate.New(language.BrazilianPortuguese, collate.IgnoreCase)
+func (uc *ListCategories) sortByName(categories []entities.Category) {
 	sort.Slice(categories, func(i, j int) bool {
-		return cl.CompareString(categories[i].Name, categories[j].Name) < 0
+		return uc.collator.Less(categories[i].Name, categories[j].Name)
 	})
 }

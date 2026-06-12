@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -43,6 +44,48 @@ func (r *categoryRepository) List(ctx context.Context, q interfaces.CategoryQuer
 	}()
 
 	return r.scanCategories(rows)
+}
+
+func (r *categoryRepository) ListByIDs(ctx context.Context, ids []uuid.UUID) (categories []entities.Category, err error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.category.list_by_ids")
+	defer span.End()
+
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query, args := buildListByIDsQuery(ids)
+
+	rows, qerr := r.db.QueryContext(ctx, query, args...)
+	if qerr != nil {
+		span.RecordError(qerr)
+		return nil, fmt.Errorf("categories/postgres: list_by_ids: %w", qerr)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("categories/postgres: close list_by_ids rows: %w", cerr))
+		}
+	}()
+
+	return r.scanCategories(rows)
+}
+
+func buildListByIDsQuery(ids []uuid.UUID) (string, []any) {
+	args := make([]any, 0, len(ids))
+	var placeholders strings.Builder
+	for i, id := range ids {
+		if i > 0 {
+			placeholders.WriteString(", ")
+		}
+		fmt.Fprintf(&placeholders, "$%d", i+1)
+		args = append(args, id)
+	}
+	query := `
+		SELECT id, slug, name, kind, parent_id, allocation_type, deprecated_at
+		FROM mecontrola.categories
+		WHERE id IN (` + placeholders.String() + `)
+	`
+	return query, args
 }
 
 func (r *categoryRepository) GetByID(ctx context.Context, id uuid.UUID) (entities.Category, error) {

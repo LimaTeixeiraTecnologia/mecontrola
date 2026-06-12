@@ -62,10 +62,8 @@ func (s *SearchDictionarySuite) TestExecute_HappyPath_SingleMatch() {
 
 	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
 
-	s.categoryRepo.EXPECT().GetByID(s.ctx, categoryID).Return(entities.Category{
-		ID:   categoryID,
-		Name: "Aluguel",
-		Kind: valueobjects.KindExpense,
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID}).Return([]entities.Category{
+		{ID: categoryID, Name: "Aluguel", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
@@ -205,17 +203,16 @@ func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
 
 	s.repo.EXPECT().
 		Search(s.ctx, interfaces.DictionarySearchQuery{
-			Kind:  valueobjects.KindExpense,
-			Term:  "energia",
-			Limit: 100,
+			Kind:              valueobjects.KindExpense,
+			Term:              "energia",
+			Limit:             100,
+			IncludeDeprecated: false,
 		}).
 		Return(entries, nil).
 		Once()
 
-	s.categoryRepo.EXPECT().GetByID(s.ctx, categoryID).Return(entities.Category{
-		ID:   categoryID,
-		Name: "Energia",
-		Kind: valueobjects.KindExpense,
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID}).Return([]entities.Category{
+		{ID: categoryID, Name: "Energia", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
@@ -258,16 +255,9 @@ func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {
 
 	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
 
-	s.categoryRepo.EXPECT().GetByID(s.ctx, categoryID1).Return(entities.Category{
-		ID:   categoryID1,
-		Name: "Transporte Recorrente",
-		Kind: valueobjects.KindExpense,
-	}, nil).Once()
-
-	s.categoryRepo.EXPECT().GetByID(s.ctx, categoryID2).Return(entities.Category{
-		ID:   categoryID2,
-		Name: "Transporte Lazer",
-		Kind: valueobjects.KindExpense,
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID1, categoryID2}).Return([]entities.Category{
+		{ID: categoryID1, Name: "Transporte Recorrente", Kind: valueobjects.KindExpense},
+		{ID: categoryID2, Name: "Transporte Lazer", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
@@ -279,4 +269,103 @@ func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {
 	s.NotNil(result)
 	s.Equal("candidates", result.Result)
 	s.True(len(result.Candidates) > 0)
+}
+
+func (s *SearchDictionarySuite) TestExecute_FetchesMissingParents() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+
+	parentID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	childID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+	entries := []entities.DictionaryEntry{
+		{
+			ID:         uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			CategoryID: childID,
+			Kind:       valueobjects.KindExpense,
+			Term:       "aluguel",
+			SignalType: valueobjects.SignalTypeCanonicalName,
+			Confidence: valueobjects.ConfidenceHigh,
+		},
+	}
+
+	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
+
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{childID}).Return([]entities.Category{
+		{ID: childID, Name: "Aluguel", Kind: valueobjects.KindExpense, ParentID: &parentID},
+	}, nil).Once()
+
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{parentID}).Return([]entities.Category{
+		{ID: parentID, Name: "Custo Fixo", Kind: valueobjects.KindExpense},
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
+		Query: "aluguel",
+		Kind:  valueobjects.KindExpense,
+	})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal("candidates", result.Result)
+	s.Len(result.Candidates, 1)
+	s.Equal("Custo Fixo > Aluguel", result.Candidates[0].Path)
+	s.Equal(parentID, result.Candidates[0].RootCategoryID)
+}
+
+func (s *SearchDictionarySuite) TestExecute_SkipsParentFetchWhenAllRoots() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+
+	rootID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
+
+	entries := []entities.DictionaryEntry{
+		{
+			ID:         uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+			CategoryID: rootID,
+			Kind:       valueobjects.KindExpense,
+			Term:       "metas",
+			SignalType: valueobjects.SignalTypeCanonicalName,
+			Confidence: valueobjects.ConfidenceHigh,
+		},
+	}
+
+	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{rootID}).Return([]entities.Category{
+		{ID: rootID, Name: "Metas", Kind: valueobjects.KindExpense},
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
+		Query: "metas",
+		Kind:  valueobjects.KindExpense,
+	})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal("candidates", result.Result)
+}
+
+func (s *SearchDictionarySuite) TestExecute_PropagatesBatchFetchError() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+
+	categoryID := uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+	entries := []entities.DictionaryEntry{
+		{
+			ID:         uuid.MustParse("11111111-2222-3333-4444-555555555555"),
+			CategoryID: categoryID,
+			Kind:       valueobjects.KindExpense,
+			Term:       "energia",
+			SignalType: valueobjects.SignalTypeCanonicalName,
+			Confidence: valueobjects.ConfidenceHigh,
+		},
+	}
+
+	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
+	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID}).Return(nil, errors.New("db error")).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
+		Query: "energia",
+		Kind:  valueobjects.KindExpense,
+	})
+
+	s.Error(err)
+	s.Nil(result)
+	s.Contains(err.Error(), "buscar categorias")
 }
