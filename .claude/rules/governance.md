@@ -25,6 +25,7 @@ Se duas regras do mesmo nível conflitarem:
 - se a severidade empatar, prevalece a regra mais restritiva para correção, segurança e determinismo
 - convenção explícita local prevalece sobre o guia da Uber quando documentada nas referências
 - `go-implementation` prevalece sobre `object-calisthenics-go` quando houver conflito — object calisthenics é ferramenta de revisão e heurística de design, não substitui as diretrizes de implementação. Exemplo prático: `architecture.md` define "preferir tipos concretos por padrão"; OC regra #3 sugere "encapsular primitivos de domínio". Neste caso, encapsular apenas quando o valor carregar invariante de domínio (ex: `OrderID`, `Email`), não para primitivos sem regra de validação
+- `domain-modeling.md` (DMMF adaptado) prevalece sobre estilo idiomático genérico (Uber) para regras de **tipo e estado** — smart constructor, discriminated union, state-as-type, workflow pipeline. Estilo genérico continua autoritativo para layout, naming, imports e wrapping de erro. Anti-padrões rejeitados em `domain-modeling.md` (Result/Either customizado, currying, DSL de pipeline) são `hard`: não introduzir mesmo sob influência de F#/Scala/Rust.
 
 ## Política de Evidência
 - Toda alteração deve ser justificável pelo PRD, por regra explícita ou por necessidade técnica demonstrável.

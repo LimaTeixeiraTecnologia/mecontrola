@@ -130,6 +130,10 @@ references:
     file: patterns-structural.md
     topics: [singleton, prototype, flyweight]
     est_tokens: 700
+  - id: domain-modeling
+    file: domain-modeling.md
+    topics: [domain, ddd, dmmf, value-object, smart-constructor, sum-type, discriminated-union, state-machine, state-as-type, workflow, pure-core]
+    est_tokens: 900
 task_types:
   - id: usecase-read
     description: Leitura sem efeito colateral persistente.
@@ -148,7 +152,7 @@ task_types:
       file_patterns: ["**/application/usecases/**", "**/application/usecase*/**"]
       diff_signals: ["Create", "Update", "Delete", "Handle", "Command", "Execute(ctx context.Context"]
     required_refs: [interfaces, usecase-write]
-    optional_refs: [testing-unit, observability, messaging, resilience, examples-domain-flow]
+    optional_refs: [testing-unit, observability, messaging, resilience, examples-domain-flow, domain-modeling]
     forbidden_refs: [patterns-structural]
     validation_profile: boundary
   - id: repository
@@ -158,7 +162,7 @@ task_types:
       file_patterns: ["**/repository/**", "**/repositories/**", "**/persistence/**", "**/db/**", "**/database/**"]
       diff_signals: [".QueryContext", ".ExecContext", "sql.Open", "database/sql", "pgx", "gorm."]
     required_refs: [interfaces, persistence, repository]
-    optional_refs: [testing-unit, testing-integration, resilience, observability]
+    optional_refs: [testing-unit, testing-integration, resilience, observability, domain-modeling]
     forbidden_refs: []
     validation_profile: boundary
   - id: module-wiring
@@ -179,7 +183,7 @@ task_types:
       diff_signals: ["http.ResponseWriter", "chi.Router", "fiber.", "grpc.Server", "Bind(", "Decode("]
     required_refs: [api, http-handler]
     optional_refs: [security, observability, testing-unit, examples-infrastructure]
-    forbidden_refs: [patterns-structural]
+    forbidden_refs: [patterns-structural, domain-modeling]
     validation_profile: boundary
   - id: consumer
     description: Consumer inbound por banco/outbox ou broker.
@@ -189,7 +193,7 @@ task_types:
       diff_signals: ["Consume(", "HandleMessage", "event.ID", "Registry", "consumer.NewAdapter"]
     required_refs: [messaging, consumer]
     optional_refs: [observability, testing-unit, graceful-lifecycle]
-    forbidden_refs: [patterns-structural]
+    forbidden_refs: [patterns-structural, domain-modeling]
     validation_profile: boundary
   - id: job-handler
     description: Job handler ligado a worker/cron.
@@ -199,7 +203,7 @@ task_types:
       diff_signals: ["cron.", "job.NewAdapter", "Run(", "Schedule"]
     required_refs: [job-handler]
     optional_refs: [graceful-lifecycle, observability, testing-unit, examples-infrastructure]
-    forbidden_refs: [patterns-structural]
+    forbidden_refs: [patterns-structural, domain-modeling]
     validation_profile: boundary
   - id: producer
     description: Producer outbound de evento ou outbox.
@@ -209,7 +213,7 @@ task_types:
       diff_signals: ["Publish(", "json.Marshal", "outbox.Publisher", "Dispatch("]
     required_refs: [messaging, producer]
     optional_refs: [persistence, observability, testing-unit]
-    forbidden_refs: [patterns-structural]
+    forbidden_refs: [patterns-structural, domain-modeling]
     validation_profile: boundary
   - id: testing-unit
     description: Mudanca centrada em testes unitarios.
@@ -230,6 +234,23 @@ task_types:
     required_refs: [testing, testing-integration]
     optional_refs: [persistence, messaging, examples-testing]
     forbidden_refs: []
+    validation_profile: boundary
+  - id: domain-model
+    description: Modelagem de VO, entity, command, evento ou maquina de estado de dominio.
+    priority: 70
+    match:
+      file_patterns:
+        - "**/domain/valueobjects/**"
+        - "**/domain/entities/**"
+        - "**/domain/services/**"
+        - "**/domain/commands/**"
+        - "**/application/events/**"
+      diff_signals:
+        - "interface\\{ is[A-Z][a-zA-Z]+State\\(\\)"
+        - "func \\([A-Z][a-zA-Z]+\\) is[A-Z][a-zA-Z]+State\\(\\)"
+    required_refs: [domain-modeling]
+    optional_refs: [interfaces, examples-domain-flow, testing-unit]
+    forbidden_refs: [patterns-structural]
     validation_profile: boundary
   - id: cross-cutting
     description: Mudanca transversal nao coberta por uma unica superficie.

@@ -54,6 +54,7 @@ Regras de classificacao:
 2. Carregar `optional_refs` apenas se a superficie alterada realmente exigir.
 3. Respeitar `forbidden_refs`.
 4. Nunca carregar mais de 4 referencias simultaneas alem do entrypoint e `architecture.md`; se houver mais candidatas, priorizar as 3 criticas e registrar as nao carregadas.
+5. **Carga forcada por arquivo de modelagem `[HARD]`**: se o diff incluir adicao ou modificacao em `**/domain/entities/**`, `**/domain/valueobjects/**`, `**/domain/commands/**` ou `**/application/events/**`, carregar `domain-modeling` adicionalmente ao `task_type` vencedor, mesmo quando ele nao for `domain-model`. Esta carga **nao conta** contra `max_additional_references`. Excecao unica: o `task_type` vencedor lista `domain-modeling` em `forbidden_refs` (adapters finos) — nesse caso registrar a lacuna e nao carregar, indicando que adapter nao deve modelar dominio.
 
 ### Etapa 4: Modelar antes de editar
 1. Identificar o menor conjunto seguro de mudancas.
@@ -112,6 +113,8 @@ Nao promover para `[HARD]` uma regra que dependa de heuristica fraca ou de inter
 | R5 | Estilo e erros idiomaticos | `[HARD]` salvo marcacao | referencias tematicas |
 | R6 | Contratos Go (`context`, DI, interface no consumidor) | `[HARD]` | `references/interfaces.md` e referencias granulares |
 | R7 | Recursos modernos do Go conforme `go.mod` | `[HARD]` | `references/generics.md`, `references/observability.md` |
+| R6.8 | Smart constructor para tipo de dominio com invariante | `[HARD contextual]` | `references/domain-modeling.md` |
+| R6.9 | Discriminated union para estados com campos exclusivos por variante | `[HARD contextual]` | `references/domain-modeling.md` |
 
 ### R2 — Proibir atribuicao direta de campo sem transformacao `[HARD contextual]`
 
@@ -158,6 +161,8 @@ Ativar a regra quando o diff tocar mapeamento de DTO, projection, presenter, ser
 - **6.4** `var _ Interface = (*Type)(nil)` PROIBIDO `[HARD]`.
 - **6.6** Use case de escrita com Command Object em linguagem ubiqua `[HARD contextual]`.
 - **6.7** `clock.Clock` proibido em use case e repositorio `[HARD contextual]`.
+- **6.8** Tipo de dominio com invariante (VO, ID com regra, entity) exige campo nao exportado e construtor `New*(...) (T, error)` como unica porta de entrada `[HARD contextual]`. Ativar quando o diff introduzir VO ou entity em `**/domain/valueobjects/**` ou `**/domain/entities/**`. Detalhe em `references/domain-modeling.md` (Principio 1 e 2).
+- **6.9** Estado com campo exclusivo por variante (ex.: `graceEnd` so existe em `PastDue`) deve ser modelado como discriminated union via sealed interface, nao como `enum status + campo nullable` `[HARD contextual]`. Ativar apenas em aggregate novo ou refatoracao escopada; sem migracao retroativa. Detalhe em `references/domain-modeling.md` (Principio 3 e 4).
 
 ### R7 — Recursos modernos do Go
 
@@ -179,6 +184,10 @@ Antes de aplicar qualquer recurso, verificar `go.mod`. Se a versao declarada for
 - **Adapter:** para implementar interface do consumidor delegando a dependencia externa.
 - **Decorator:** para comportamento transversal como log, metrica ou retry.
 - **Facade:** para orchestrar dependencias em operacao de alto nivel.
+- **Smart Constructor (DMMF):** VO/ID com campo nao exportado + `New*(...) (T, error)` validador. Detalhe em `references/domain-modeling.md`.
+- **Discriminated Union (DMMF):** estados como variantes de sealed interface (`isXState()`) quando ha campo exclusivo por variante. Detalhe em `references/domain-modeling.md`.
+- **State-as-type (DMMF):** tipos distintos por etapa de maquina critica (`UnvalidatedOrder` -> `ValidatedOrder` -> `PricedOrder`); transicoes sao funcoes puras `(StateA, deps) -> (StateB, error)`. Aplicar seletivamente.
+- **Workflow pipeline (DMMF):** `Execute` decomposto em metodos privados pequenos (`validate`, `enrich`, `persist`, `publish`) chamados em sequencia com early return; sem framework, sem monad.
 
 ## Tratamento de Erros
 
