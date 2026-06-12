@@ -15,18 +15,17 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 const (
-	prefixEstablishPrincipal   = "identity.usecase.establish_principal:"
-	authSourceWhatsApp         = "whatsapp"
-	authKindPrincipalEstablish = "principal_established"
-	authKindUnknownUser        = "unknown_user"
-	reasonOutboxPublishFailed  = "outbox_publish_failed"
-	reasonDBUnavailable        = "db_unavailable"
-	reasonInternalError        = "internal_error"
+	prefixEstablishPrincipal  = "identity.usecase.establish_principal:"
+	authSourceWhatsApp        = "whatsapp"
+	reasonOutboxPublishFailed = "outbox_publish_failed"
+	reasonDBUnavailable       = "db_unavailable"
+	reasonInternalError       = "internal_error"
 )
 
 type EstablishResult struct {
@@ -54,34 +53,19 @@ func classifyEstablishErrorReason(err error) string {
 	return reasonInternalError
 }
 
-func newPrincipalEstablishedEvent(userID string, now time.Time) (outbox.Event, error) {
-	eid, err := uuid.NewV7()
-	if err != nil {
-		return outbox.Event{}, fmt.Errorf("generate principal_established event id: %w", err)
+func eventOutboxFromDecision(decision services.PrincipalDecision) (outbox.Event, error) {
+	userID := ""
+	if decision.Found {
+		userID = decision.UserID.String()
 	}
-	ev, err := newAuthEventOutbox(eid.String(), userID, authKindPrincipalEstablish, authSourceWhatsApp, "", now)
-	if err != nil {
-		return outbox.Event{}, fmt.Errorf("build principal_established event: %w", err)
-	}
-	return ev, nil
-}
-
-func newUnknownUserEvent(now time.Time) (outbox.Event, error) {
-	eid, err := uuid.NewV7()
-	if err != nil {
-		return outbox.Event{}, fmt.Errorf("generate unknown_user event id: %w", err)
-	}
-	ev, err := newAuthEventOutbox(eid.String(), "", authKindUnknownUser, authSourceWhatsApp, "", now)
-	if err != nil {
-		return outbox.Event{}, fmt.Errorf("build unknown_user event: %w", err)
-	}
-	return ev, nil
+	return newAuthEventOutbox(decision.EventID.String(), userID, string(decision.EventKind), authSourceWhatsApp, "", decision.OccurredAt)
 }
 
 type EstablishPrincipal struct {
 	uow              uow.UnitOfWork[EstablishResult]
 	factory          interfaces.RepositoryFactory
 	publisher        outbox.Publisher
+	workflow         services.PrincipalWorkflow
 	o11y             observability.Observability
 	establishedTotal observability.Counter
 	failedTotal      observability.Counter
@@ -120,6 +104,7 @@ func NewEstablishPrincipal(
 		uow:              u,
 		factory:          factory,
 		publisher:        publisher,
+		workflow:         services.PrincipalWorkflow{},
 		o11y:             o11y,
 		establishedTotal: establishedTotal,
 		failedTotal:      failedTotal,
@@ -188,21 +173,24 @@ func (u *EstablishPrincipal) resolvePrincipal(
 		return EstablishResult{}, errLookup{wrapped: fmt.Errorf("lookup: %w", lookupErr)}
 	}
 
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return EstablishResult{}, fmt.Errorf("generate auth event id: %w", err)
+	}
 	now := time.Now().UTC()
 
-	if !found {
-		ev, buildErr := newUnknownUserEvent(now)
-		if buildErr != nil {
-			return EstablishResult{}, buildErr
+	var userID uuid.UUID
+	if found {
+		parsed, parseErr := uuid.Parse(user.ID())
+		if parseErr != nil {
+			return EstablishResult{}, fmt.Errorf("parse user id: %w", parseErr)
 		}
-		if pubErr := u.publishAuthOutcome(ctx, ev); pubErr != nil {
-			return EstablishResult{}, pubErr
-		}
-		return EstablishResult{Found: false}, nil
+		userID = parsed
 	}
 
-	userID := user.ID()
-	ev, buildErr := newPrincipalEstablishedEvent(userID, now)
+	decision := u.workflow.DecidePrincipal(userID, found, eventID, now)
+
+	ev, buildErr := eventOutboxFromDecision(decision)
 	if buildErr != nil {
 		return EstablishResult{}, buildErr
 	}
@@ -210,12 +198,11 @@ func (u *EstablishPrincipal) resolvePrincipal(
 		return EstablishResult{}, pubErr
 	}
 
-	uid, parseErr := uuid.Parse(userID)
-	if parseErr != nil {
-		return EstablishResult{}, fmt.Errorf("parse user id: %w", parseErr)
+	if !decision.Found {
+		return EstablishResult{Found: false}, nil
 	}
 	return EstablishResult{
-		Principal: auth.Principal{UserID: uid, Source: auth.SourceWhatsApp},
+		Principal: auth.Principal{UserID: decision.UserID, Source: auth.SourceWhatsApp},
 		Found:     true,
 	}, nil
 }

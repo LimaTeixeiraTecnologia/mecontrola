@@ -55,7 +55,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 			name: "deve inserir evento principal_established sem erro",
 			buildEvent: func() entities.AuthEvent {
 				uid := uuid.New()
-				ev, err := entities.NewAuthEvent(&uid, entities.AuthEventKindPrincipalEstablished, entities.AuthEventSourceWhatsApp, nil)
+				ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
 				s.Require().NoError(err)
 				return ev
 			},
@@ -64,7 +64,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 		{
 			name: "deve inserir evento unknown_user sem user_id",
 			buildEvent: func() entities.AuthEvent {
-				ev, err := entities.NewAuthEvent(nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil)
+				ev, err := entities.NewUnknownUser(entities.AuthEventSourceWhatsApp)
 				s.Require().NoError(err)
 				return ev
 			},
@@ -73,8 +73,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 		{
 			name: "deve inserir evento failed com reason invalid_signature",
 			buildEvent: func() entities.AuthEvent {
-				reason := entities.AuthEventReasonInvalidSignature
-				ev, err := entities.NewAuthEvent(nil, entities.AuthEventKindFailed, entities.AuthEventSourceWhatsApp, &reason)
+				ev, err := entities.NewAuthFailed(entities.AuthEventReasonInvalidSignature, entities.AuthEventSourceWhatsApp, nil)
 				s.Require().NoError(err)
 				return ev
 			},
@@ -83,8 +82,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 		{
 			name: "deve inserir evento failed com reason invalid_payload",
 			buildEvent: func() entities.AuthEvent {
-				reason := entities.AuthEventReasonInvalidPayload
-				ev, err := entities.NewAuthEvent(nil, entities.AuthEventKindFailed, entities.AuthEventSourceWhatsApp, &reason)
+				ev, err := entities.NewAuthFailed(entities.AuthEventReasonInvalidPayload, entities.AuthEventSourceWhatsApp, nil)
 				s.Require().NoError(err)
 				return ev
 			},
@@ -110,7 +108,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsertIdempotence() {
 	s.Run("deve ser idempotente por PK — segundo insert e no-op", func() {
 		repo := s.newRepo()
 		uid := uuid.New()
-		ev, err := entities.NewAuthEvent(&uid, entities.AuthEventKindPrincipalEstablished, entities.AuthEventSourceWhatsApp, nil)
+		ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
 		s.Require().NoError(err)
 
 		s.Require().NoError(repo.Insert(s.ctx, ev))
@@ -178,13 +176,13 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestAnonymizeByUserID() {
 		uid := uuid.New()
 
 		for range 2 {
-			ev, err := entities.NewAuthEvent(&uid, entities.AuthEventKindPrincipalEstablished, entities.AuthEventSourceWhatsApp, nil)
+			ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
 			s.Require().NoError(err)
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}
 
 		otherUID := uuid.New()
-		otherEv, err := entities.NewAuthEvent(&otherUID, entities.AuthEventKindPrincipalEstablished, entities.AuthEventSourceWhatsApp, nil)
+		otherEv, err := entities.NewPrincipalEstablished(otherUID, entities.AuthEventSourceWhatsApp)
 		s.Require().NoError(err)
 		s.Require().NoError(repo.Insert(s.ctx, otherEv))
 
@@ -209,7 +207,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestAnonymizeByUserID() {
 		repo := s.newRepo()
 		uid := uuid.New()
 
-		ev, err := entities.NewAuthEvent(&uid, entities.AuthEventKindPrincipalEstablished, entities.AuthEventSourceWhatsApp, nil)
+		ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
 		s.Require().NoError(err)
 		s.Require().NoError(repo.Insert(s.ctx, ev))
 
@@ -233,7 +231,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestDeleteOlderThan() {
 		}
 
 		for range 2 {
-			ev, err := entities.NewAuthEvent(nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil)
+			ev, err := entities.NewUnknownUser(entities.AuthEventSourceWhatsApp)
 			s.Require().NoError(err)
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}
@@ -270,7 +268,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestBenchmarkInsert() {
 	s.Run("deve completar 100 inserts sem erro", func() {
 		repo := s.newRepo()
 		for range 100 {
-			ev, err := entities.NewAuthEvent(nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil)
+			ev, err := entities.NewUnknownUser(entities.AuthEventSourceWhatsApp)
 			s.Require().NoError(err)
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}

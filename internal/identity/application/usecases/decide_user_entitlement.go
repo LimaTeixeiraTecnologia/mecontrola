@@ -13,6 +13,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
 )
 
 type entitlementView struct {
@@ -48,8 +49,8 @@ func (u *DecideUserEntitlement) Execute(ctx context.Context, userID string) (out
 	record, err := entitlementRepo.FindByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, application.ErrEntitlementNotFound) {
-			entitled, reason := domain.IsEntitled(nil, time.Now().UTC())
-			return output.NewEntitlementDecision(entitled, reason, "", "", time.Time{}, time.Time{}), nil
+			decision := services.EntitlementDecider{}.Decide(nil, time.Now().UTC())
+			return output.NewEntitlementDecision(decision.Entitled, decision.Reason, "", "", time.Time{}, time.Time{}), nil
 		}
 		span.RecordError(err)
 		u.o11y.Logger().Error(ctx, "identity.usecase.decide_user_entitlement.failed",
@@ -66,6 +67,6 @@ func (u *DecideUserEntitlement) Execute(ctx context.Context, userID string) (out
 		graceEnd:       record.GraceEnd,
 	}
 
-	entitled, reason := domain.IsEntitled(sub, time.Now().UTC())
-	return output.NewEntitlementDecision(entitled, reason, record.SubscriptionID, record.Status, record.PeriodEnd, record.GraceEnd), nil
+	decision := services.EntitlementDecider{}.Decide(sub, time.Now().UTC())
+	return output.NewEntitlementDecision(decision.Entitled, decision.Reason, record.SubscriptionID, record.Status, record.PeriodEnd, record.GraceEnd), nil
 }

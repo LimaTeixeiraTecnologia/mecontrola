@@ -15,6 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
 
@@ -46,48 +47,60 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 	result, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
 		userRepo := u.factory.UserRepository(tx)
 
+		var activeFound *entities.User
 		existing, findErr := userRepo.FindByWhatsAppNumber(ctx, whatsapp)
 		switch {
 		case findErr == nil:
-			existing.SetDisplayNameIfEmpty(in.DisplayName)
-			existing.SetEmailIfEmpty(email)
-			persisted, upsertErr := userRepo.UpsertByWhatsAppNumber(ctx, existing, time.Now().UTC())
-			if upsertErr != nil {
-				return entities.User{}, fmt.Errorf("%s upsert update: %w", prefixUpsertUser, upsertErr)
-			}
-			return persisted, nil
-
+			activeFound = &existing
 		case errors.Is(findErr, application.ErrUserNotFound):
-
 		default:
 			return entities.User{}, fmt.Errorf("%s find by whatsapp: %w", prefixUpsertUser, findErr)
 		}
 
-		deleted, findDelErr := userRepo.FindByWhatsAppNumberIncludingDeleted(ctx, whatsapp)
-		switch {
-		case findDelErr == nil && deleted.CanReanimate(time.Now().UTC()):
-			deleted.Reanimate(time.Now().UTC())
-			deleted.SetDisplayNameIfEmpty(in.DisplayName)
-			deleted.SetEmailIfEmpty(email)
-			persisted, reanErr := userRepo.Reanimate(ctx, deleted, time.Now().UTC())
+		var deletedFound *entities.User
+		if activeFound == nil {
+			deleted, findDelErr := userRepo.FindByWhatsAppNumberIncludingDeleted(ctx, whatsapp)
+			switch {
+			case findDelErr == nil:
+				deletedFound = &deleted
+			case errors.Is(findDelErr, application.ErrUserNotFound):
+			default:
+				return entities.User{}, fmt.Errorf("%s find including deleted: %w", prefixUpsertUser, findDelErr)
+			}
+		}
+
+		now := time.Now().UTC()
+		action := services.UserUpsertWorkflow{}.DecideUpsertAction(
+			activeFound,
+			deletedFound,
+			whatsapp,
+			email,
+			in.DisplayName,
+			now,
+		)
+
+		switch a := action.(type) {
+		case services.UpsertUpdateExisting:
+			persisted, upsertErr := userRepo.UpsertByWhatsAppNumber(ctx, a.Existing, now)
+			if upsertErr != nil {
+				return entities.User{}, fmt.Errorf("%s upsert update: %w", prefixUpsertUser, upsertErr)
+			}
+			return persisted, nil
+		case services.UpsertReanimate:
+			persisted, reanErr := userRepo.Reanimate(ctx, a.Deleted, now)
 			if reanErr != nil {
 				return entities.User{}, fmt.Errorf("%s reanimate: %w", prefixUpsertUser, reanErr)
 			}
 			return persisted, nil
-
-		case findDelErr != nil && !errors.Is(findDelErr, application.ErrUserNotFound):
-			return entities.User{}, fmt.Errorf("%s find including deleted: %w", prefixUpsertUser, findDelErr)
+		case services.UpsertCreateNew:
+			persisted, upsertErr := userRepo.UpsertByWhatsAppNumber(ctx, a.Candidate, now)
+			if upsertErr != nil {
+				return entities.User{}, fmt.Errorf("%s upsert insert: %w", prefixUpsertUser, upsertErr)
+			}
+			return persisted, nil
+		default:
+			return entities.User{}, fmt.Errorf("%s unknown upsert action", prefixUpsertUser)
 		}
-
-		candidate := entities.New(whatsapp,
-			entities.WithEmail(email),
-			entities.WithDisplayName(in.DisplayName),
-		)
-		persisted, upsertErr := userRepo.UpsertByWhatsAppNumber(ctx, candidate, time.Now().UTC())
-		if upsertErr != nil {
-			return entities.User{}, fmt.Errorf("%s upsert insert: %w", prefixUpsertUser, upsertErr)
-		}
-		return persisted, nil
 	})
 
 	if err != nil {

@@ -26,11 +26,22 @@ type subscriptionRefPayload struct {
 	SubscriptionID string `json:"subscription_id"`
 }
 
-type entitlementPlan struct {
-	record     interfaces.EntitlementRecord
-	pendingRaw []byte
-	isPending  bool
+type EntitlementPlan interface {
+	isEntitlementPlan()
 }
+
+type PendingEntitlement struct {
+	SubscriptionID string
+	FunnelToken    string
+	PayloadRaw     []byte
+}
+
+type CommittedEntitlement struct {
+	Record interfaces.EntitlementRecord
+}
+
+func (PendingEntitlement) isEntitlementPlan()   {}
+func (CommittedEntitlement) isEntitlementPlan() {}
 
 type ProjectSubscriptionEvent struct {
 	factory interfaces.RepositoryFactory
@@ -83,17 +94,21 @@ func extractSubscriptionRef(raw json.RawMessage, eventType string) (string, erro
 	return payload.SubscriptionID, nil
 }
 
-func planEntitlementUpsert(projection interfaces.SubscriptionProjectionRecord) (entitlementPlan, error) {
+func decideEntitlementPlan(projection interfaces.SubscriptionProjectionRecord) (EntitlementPlan, error) {
 	if projection.UserID == "" {
 		raw, err := json.Marshal(projection)
 		if err != nil {
-			return entitlementPlan{}, fmt.Errorf("marshal pending projection: %w", err)
+			return nil, fmt.Errorf("marshal pending projection: %w", err)
 		}
-		return entitlementPlan{pendingRaw: raw, isPending: true}, nil
+		return PendingEntitlement{
+			SubscriptionID: projection.SubscriptionID,
+			FunnelToken:    projection.FunnelToken,
+			PayloadRaw:     raw,
+		}, nil
 	}
 
-	return entitlementPlan{
-		record: interfaces.EntitlementRecord{
+	return CommittedEntitlement{
+		Record: interfaces.EntitlementRecord{
 			UserID:         projection.UserID,
 			SubscriptionID: projection.SubscriptionID,
 			Status:         projection.Status,
@@ -109,31 +124,33 @@ func (u *ProjectSubscriptionEvent) projectCurrent(ctx context.Context, subscript
 		return fmt.Errorf("%s current: %w", prefixProjectSubscriptionEvent, err)
 	}
 
-	plan, err := planEntitlementUpsert(projection)
+	plan, err := decideEntitlementPlan(projection)
 	if err != nil {
 		return fmt.Errorf("%s plan: %w", prefixProjectSubscriptionEvent, err)
 	}
 
 	repo := u.factory.EntitlementRepository(u.mgr.DBTX(ctx))
 
-	if plan.isPending {
-		if err := repo.UpsertPending(ctx, projection.SubscriptionID, projection.FunnelToken, plan.pendingRaw); err != nil {
+	switch p := plan.(type) {
+	case PendingEntitlement:
+		if err := repo.UpsertPending(ctx, p.SubscriptionID, p.FunnelToken, p.PayloadRaw); err != nil {
 			return fmt.Errorf("%s pending upsert: %w", prefixProjectSubscriptionEvent, err)
 		}
 		u.o11y.Logger().Info(ctx, "identity.entitlement.pending",
 			observability.String("subscription_id", subscriptionID),
 		)
 		return nil
+	case CommittedEntitlement:
+		if err := repo.Upsert(ctx, p.Record); err != nil {
+			return fmt.Errorf("%s upsert: %w", prefixProjectSubscriptionEvent, err)
+		}
+		u.o11y.Logger().Info(ctx, "identity.entitlement.projected",
+			observability.String("user_id", p.Record.UserID),
+			observability.String("subscription_id", subscriptionID),
+			observability.String("status", p.Record.Status),
+		)
+		return nil
+	default:
+		return fmt.Errorf("%s unknown entitlement plan variant", prefixProjectSubscriptionEvent)
 	}
-
-	if err := repo.Upsert(ctx, plan.record); err != nil {
-		return fmt.Errorf("%s upsert: %w", prefixProjectSubscriptionEvent, err)
-	}
-
-	u.o11y.Logger().Info(ctx, "identity.entitlement.projected",
-		observability.String("user_id", projection.UserID),
-		observability.String("subscription_id", subscriptionID),
-		observability.String("status", projection.Status),
-	)
-	return nil
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 )
 
-func TestPlanEntitlementUpsert_Pending(t *testing.T) {
+func TestDecideEntitlementPlan_Pending(t *testing.T) {
 	t.Parallel()
 
 	projection := interfaces.SubscriptionProjectionRecord{
@@ -21,19 +21,21 @@ func TestPlanEntitlementUpsert_Pending(t *testing.T) {
 		UserID:         "",
 	}
 
-	plan, err := planEntitlementUpsert(projection)
+	plan, err := decideEntitlementPlan(projection)
 	require.NoError(t, err)
-	require.True(t, plan.isPending)
-	require.NotEmpty(t, plan.pendingRaw)
-	require.Equal(t, interfaces.EntitlementRecord{}, plan.record)
+	pending, ok := plan.(PendingEntitlement)
+	require.True(t, ok)
+	require.Equal(t, "sub-1", pending.SubscriptionID)
+	require.Equal(t, "tok-1", pending.FunnelToken)
+	require.NotEmpty(t, pending.PayloadRaw)
 
 	var decoded interfaces.SubscriptionProjectionRecord
-	require.NoError(t, json.Unmarshal(plan.pendingRaw, &decoded))
+	require.NoError(t, json.Unmarshal(pending.PayloadRaw, &decoded))
 	require.Equal(t, projection.SubscriptionID, decoded.SubscriptionID)
 	require.Equal(t, projection.FunnelToken, decoded.FunnelToken)
 }
 
-func TestPlanEntitlementUpsert_Active(t *testing.T) {
+func TestDecideEntitlementPlan_Active(t *testing.T) {
 	t.Parallel()
 
 	projection := interfaces.SubscriptionProjectionRecord{
@@ -45,15 +47,15 @@ func TestPlanEntitlementUpsert_Active(t *testing.T) {
 		UserID:         "user-123",
 	}
 
-	plan, err := planEntitlementUpsert(projection)
+	plan, err := decideEntitlementPlan(projection)
 	require.NoError(t, err)
-	require.False(t, plan.isPending)
-	require.Nil(t, plan.pendingRaw)
-	require.Equal(t, "user-123", plan.record.UserID)
-	require.Equal(t, "sub-2", plan.record.SubscriptionID)
-	require.Equal(t, "active", plan.record.Status)
-	require.Equal(t, projection.PeriodEnd, plan.record.PeriodEnd)
-	require.Equal(t, projection.GraceEnd, plan.record.GraceEnd)
+	committed, ok := plan.(CommittedEntitlement)
+	require.True(t, ok)
+	require.Equal(t, "user-123", committed.Record.UserID)
+	require.Equal(t, "sub-2", committed.Record.SubscriptionID)
+	require.Equal(t, "active", committed.Record.Status)
+	require.Equal(t, projection.PeriodEnd, committed.Record.PeriodEnd)
+	require.Equal(t, projection.GraceEnd, committed.Record.GraceEnd)
 }
 
 func TestExtractSubscriptionRef(t *testing.T) {

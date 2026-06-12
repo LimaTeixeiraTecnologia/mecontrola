@@ -1,6 +1,7 @@
 package entities
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,11 @@ const (
 	AuthEventReasonDBUnavailable    AuthEventReason = "db_unavailable"
 )
 
+var (
+	ErrPrincipalEstablishedRequiresUserID = errors.New("principal_established requires non-zero user id")
+	ErrAuthFailedRequiresReason           = errors.New("auth_failed requires non-empty reason")
+)
+
 type AuthEvent struct {
 	id         uuid.UUID
 	occurredAt time.Time
@@ -40,7 +46,25 @@ type AuthEvent struct {
 	reason     *AuthEventReason
 }
 
-func NewAuthEvent(userID *uuid.UUID, kind AuthEventKind, source AuthEventSource, reason *AuthEventReason) (AuthEvent, error) {
+func NewPrincipalEstablished(userID uuid.UUID, source AuthEventSource) (AuthEvent, error) {
+	if userID == uuid.Nil {
+		return AuthEvent{}, ErrPrincipalEstablishedRequiresUserID
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return AuthEvent{}, err
+	}
+	uid := userID
+	return AuthEvent{
+		id:         id,
+		occurredAt: time.Now().UTC(),
+		userID:     &uid,
+		kind:       AuthEventKindPrincipalEstablished,
+		source:     source,
+	}, nil
+}
+
+func NewUnknownUser(source AuthEventSource) (AuthEvent, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return AuthEvent{}, err
@@ -48,10 +72,27 @@ func NewAuthEvent(userID *uuid.UUID, kind AuthEventKind, source AuthEventSource,
 	return AuthEvent{
 		id:         id,
 		occurredAt: time.Now().UTC(),
-		userID:     userID,
-		kind:       kind,
+		kind:       AuthEventKindUnknownUser,
 		source:     source,
-		reason:     reason,
+	}, nil
+}
+
+func NewAuthFailed(reason AuthEventReason, source AuthEventSource, userID *uuid.UUID) (AuthEvent, error) {
+	if reason == "" {
+		return AuthEvent{}, ErrAuthFailedRequiresReason
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return AuthEvent{}, err
+	}
+	r := reason
+	return AuthEvent{
+		id:         id,
+		occurredAt: time.Now().UTC(),
+		userID:     userID,
+		kind:       AuthEventKindFailed,
+		source:     source,
+		reason:     &r,
 	}, nil
 }
 
