@@ -15,7 +15,7 @@ tasks:
     desc: Sobe apenas a infraestrutura local (postgres e otel-lgtm) sem a aplicacao.
     cmds:
       - "{{.COMPOSE_CMD}} up -d {{.INFRA_SERVICES}}"
-      - echo "Infra disponivel: postgres em localhost:5432, Grafana em http://localhost:3000"
+      - 'echo "Infra disponivel: postgres em localhost:5432, Grafana em http://localhost:3000"'
 
   up:
     desc: Sobe o ambiente local com ordem deterministica (infra, migrate, app).
@@ -23,12 +23,18 @@ tasks:
       - "{{.COMPOSE_CMD}} up -d {{.INFRA_SERVICES}}"
       - "{{.COMPOSE_CMD}} run --rm migrate"
       - "{{.COMPOSE_CMD}} up -d {{.APP_SERVICES}}"
-      - echo "Ambiente local disponivel em http://localhost:8080 e http://localhost:3000"
+      - 'echo "Ambiente local disponivel em http://localhost:8080 e http://localhost:3000"'
 
   down:
     desc: Para e remove os containers locais.
     cmds:
       - "{{.COMPOSE_CMD}} down"
+
+  destroy:
+    desc: Para tudo e remove volumes locais (apaga dados locais).
+    prompt: Isso apagara todos os dados locais. Continuar?
+    cmds:
+      - "{{.COMPOSE_CMD}} down -v"
 
   seed:
     desc: Alias para subida local com migrations antes da app.

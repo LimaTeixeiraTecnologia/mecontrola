@@ -1,13 +1,13 @@
 {
   "version": 1,
   "slug": "modulo-lancamentos-mensais-income-outcome",
-  "title": "",
+  "title": "Modulo de Lancamentos Mensais (Income/Outcome) com Fatura de Cartao",
   "created_at": "2026-06-11T20:30:07Z",
   "language": "pt-BR",
-  "status": "draft",
+  "status": "done",
   "decision_brief": {
     "file": "decision-brief.md",
-    "title": ""
+    "title": "Modulo de Lancamentos Mensais (Income/Outcome) com Fatura de Cartao"
   },
   "transcript": {
     "file": "transcript.md"
@@ -18,11 +18,28 @@
   "option_scorecard": {
     "file": "option-scorecard.md"
   },
-  "alternatives": [],
-  "recommended_alternative": "",
-  "decisions": [],
+  "alternatives": [
+    "Alternativa 1 - Tabela unica transactions",
+    "Alternativa 2 - Transactions + CardPurchase + CardInvoice/Items",
+    "Alternativa 3 - LedgerEntry append-only com projetores",
+    "Alternativa 4 - Transactions + Summary materializado"
+  ],
+  "recommended_alternative": "Alternativa 2 - Transactions + CardPurchase + CardInvoice/Items",
+  "decisions": [
+    "Adotar Alternativa 2 (Transactions + CardPurchase + CardInvoice/Items) como direcao de modelagem do novo modulo de lancamentos mensais.",
+    "Manter projecao monthly_summary(user_id, ref_month, income, outcome, total) via consumer reativo do outbox com consistencia eventual.",
+    "Expandir parcelamento de cartao na criacao em 1 CardPurchase (compra-pai) + N CardInvoiceItem linkados via purchase_id, com update/delete em cascata.",
+    "Aplicar snapshot estatico das datas closing_day/due_day do internal/card no momento da criacao do lancamento de credito; mudanca posterior nao retroage no MVP.",
+    "Publicar via outbox os eventos TransactionCreated/Updated/Deleted e CardPurchaseCreated/Updated/Deleted; internal/budgets consome para atualizar consumo por categoria.",
+    "Tornar obrigatorio Idempotency-Key middleware em todas as mutacoes e optimistic locking via coluna version, em linha com internal/budgets, internal/card e internal/identity.",
+    "Aceitar que edicao de compra parcelada cascateia em todas as parcelas, inclusive em faturas ja fechadas, sem bloqueio de imutabilidade no MVP.",
+    "Definir como criterios production-ready do MVP: idempotencia + outbox, observabilidade OTel completa, paginacao cursor + guarda multi-tenant por user_id, testes de integracao com testcontainers Postgres e testes unitarios com mockery.",
+    "Suportar no MVP as formas de pagamento Debito em conta, Pix, Cartao de credito, Cartao de debito, TED e DOC, validando nomenclatura e status do DOC contra BACEN/SPB no discovery tecnico.",
+    "Excluir do MVP transferencia entre contas, multi-moeda e anexos/comprovantes; lancamento recorrente permanece como decisao pendente com default fora.",
+    "Encaminhar como proximo passo a skill technical-discovery-production para definir contratos REST, schema SQL, formato dos eventos do outbox e fronteiras com internal/card e internal/categories."
+  ],
   "readiness": {
-    "status": "draft",
+    "status": "done",
     "blockers": []
   }
 }

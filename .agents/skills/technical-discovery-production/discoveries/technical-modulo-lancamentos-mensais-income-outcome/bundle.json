@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "slug": "modulo-lancamentos-mensais-income-outcome",
+  "title": "internal/transactions - Modulo de Lancamentos Mensais (Income/Outcome) com Fatura de Cartao e Recorrencia",
+  "created_at": "2026-06-11T22:16:12Z",
+  "language": "pt-BR",
+  "status": "done",
+  "discovery": {
+    "file": "discovery.md",
+    "title": "internal/transactions - Modulo de Lancamentos Mensais (Income/Outcome) com Fatura de Cartao e Recorrencia"
+  },
+  "transcript": {
+    "file": "transcript.md"
+  },
+  "readiness": {
+    "status": "done",
+    "blockers": []
+  },
+  "planned_epics": [
+    "Epic 01 - Esqueleto e Schema do Modulo",
+    "Epic 02 - CRUD de Lancamentos Avulsos (Transaction)",
+    "Epic 03 - Compra de Cartao com Fatura e Parcelamento (CardPurchase + CardInvoice + CardInvoiceItem)",
+    "Epic 04 - Projecao Mensal (monthly_summary) e Reconciliacao",
+    "Epic 05 - Lancamento Recorrente (RecurringTemplate)",
+    "Epic 06 - Observabilidade, Operacao e Go-Live"
+  ]
+}
