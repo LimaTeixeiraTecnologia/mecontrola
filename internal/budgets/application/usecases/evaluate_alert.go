@@ -32,10 +32,9 @@ type EvaluateAlertInput struct {
 }
 
 type EvaluateAlert struct {
-	factory  interfaces.RepositoryFactory
-	uow      uow.UnitOfWork[struct{}]
-	o11y     observability.Observability
-	resolver *services.AlertStateResolver
+	factory interfaces.RepositoryFactory
+	uow     uow.UnitOfWork[struct{}]
+	o11y    observability.Observability
 }
 
 func NewEvaluateAlert(
@@ -44,10 +43,9 @@ func NewEvaluateAlert(
 	o11y observability.Observability,
 ) *EvaluateAlert {
 	return &EvaluateAlert{
-		factory:  factory,
-		uow:      u,
-		o11y:     o11y,
-		resolver: services.NewAlertStateResolver(),
+		factory: factory,
+		uow:     u,
+		o11y:    o11y,
 	}
 }
 
@@ -187,8 +185,11 @@ func (uc *EvaluateAlert) insertAlert(
 	plannedCents int64,
 	now time.Time,
 ) error {
-	if uc.resolver.Resolve(in.Competence, in.CutoffCompetenceBR, 0) == entities.AlertStateSuppressedRetroactive {
-		return uc.insertAlertWithState(ctx, alerts, in, transition, spentCents, plannedCents, now, entities.AlertStateSuppressedRetroactive, "budgets.usecase.evaluate_alert.suppressed_retroactive", "inserir alerta retroativo")
+	isRetroactive := services.IsRetroactiveAlert(in.Competence, in.CutoffCompetenceBR)
+
+	if isRetroactive {
+		decision := services.DecideAlertForInsert(true, 0)
+		return uc.persistDecidedAlert(ctx, alerts, in, transition, spentCents, plannedCents, now, decision)
 	}
 
 	count, err := alerts.CountDelivered(ctx, key)
@@ -196,15 +197,11 @@ func (uc *EvaluateAlert) insertAlert(
 		return fmt.Errorf("budgets.usecase.evaluate_alert: contar alertas: %w", err)
 	}
 
-	state := uc.resolver.Resolve(in.Competence, in.CutoffCompetenceBR, int(count))
-	if state == entities.AlertStateRateLimited {
-		return uc.insertAlertWithState(ctx, alerts, in, transition, spentCents, plannedCents, now, entities.AlertStateRateLimited, "budgets.usecase.evaluate_alert.rate_limited", "inserir alerta rate_limited")
-	}
-
-	return uc.insertAlertWithState(ctx, alerts, in, transition, spentCents, plannedCents, now, entities.AlertStateDelivered, "", "inserir alerta")
+	decision := services.DecideAlertForInsert(false, int(count))
+	return uc.persistDecidedAlert(ctx, alerts, in, transition, spentCents, plannedCents, now, decision)
 }
 
-func (uc *EvaluateAlert) insertAlertWithState(
+func (uc *EvaluateAlert) persistDecidedAlert(
 	ctx context.Context,
 	alerts interfaces.AlertRepository,
 	in EvaluateAlertInput,
@@ -212,16 +209,14 @@ func (uc *EvaluateAlert) insertAlertWithState(
 	spentCents int64,
 	plannedCents int64,
 	now time.Time,
-	state entities.AlertState,
-	logKey string,
-	errorContext string,
+	decision services.AlertDecision,
 ) error {
-	alert := entities.NewAlert(in.UserID, in.Competence, in.RootSlug, transition.Threshold, state, in.CommittedAt, spentCents, plannedCents, now)
+	alert := entities.NewAlert(in.UserID, in.Competence, in.RootSlug, transition.Threshold, decision.State, in.CommittedAt, spentCents, plannedCents, now)
 	if err := alerts.Insert(ctx, alert); err != nil {
-		return fmt.Errorf("budgets.usecase.evaluate_alert: %s: %w", errorContext, err)
+		return fmt.Errorf("budgets.usecase.evaluate_alert: %s: %w", decision.ErrorContext, err)
 	}
-	if logKey != "" {
-		uc.o11y.Logger().Warn(ctx, logKey,
+	if decision.LogKey != "" {
+		uc.o11y.Logger().Warn(ctx, decision.LogKey,
 			observability.String("root_slug", in.RootSlug.String()),
 			observability.String("threshold", transition.Threshold.String()),
 		)

@@ -14,6 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
@@ -108,11 +109,14 @@ func (uc *DeleteExpense) executeInTx(ctx context.Context, tx database.DBTX, cmd 
 		return fmt.Errorf("budgets.usecase.delete_expense: soft delete: %w", softDeleteErr)
 	}
 
-	envelope := interfaces.NewExpenseCommittedEnvelope(
+	evt, evtErr := events.NewExpenseCommitted(
 		existing.ID(), cmd.UserID, existing.SubcategoryID(), existing.RootSlug(), existing.Competence(),
 		valueobjects.MutationKindDelete, now, cutoff,
 	)
-	if pubErr := uc.publisher.Publish(ctx, tx, envelope); pubErr != nil {
+	if evtErr != nil {
+		return fmt.Errorf("budgets.usecase.delete_expense: construir evento: %w", evtErr)
+	}
+	if pubErr := uc.publisher.Publish(ctx, tx, evt); pubErr != nil {
 		return fmt.Errorf("budgets.usecase.delete_expense: publicar evento: %w", pubErr)
 	}
 

@@ -133,9 +133,11 @@ func (_c *RecurringMaterializationRepository_InsertIfAbsent_Call) RunAndReturn(r
 // IsCompleted provides a mock function for the type RecurringMaterializationRepository
 func (_mock *RecurringMaterializationRepository) IsCompleted(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth) (bool, error) {
 	ret := _mock.Called(ctx, templateID, refMonth)
+
 	if len(ret) == 0 {
 		panic("no return value specified for IsCompleted")
 	}
+
 	var r0 bool
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.RefMonth) (bool, error)); ok {
@@ -154,49 +156,98 @@ func (_mock *RecurringMaterializationRepository) IsCompleted(ctx context.Context
 	return r0, r1
 }
 
-type RecurringMaterializationRepository_IsCompleted_Call struct{ *mock.Call }
+// RecurringMaterializationRepository_IsCompleted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsCompleted'
+type RecurringMaterializationRepository_IsCompleted_Call struct {
+	*mock.Call
+}
 
-func (_e *RecurringMaterializationRepository_Expecter) IsCompleted(ctx, templateID, refMonth interface{}) *RecurringMaterializationRepository_IsCompleted_Call {
+// IsCompleted is a helper method to define mock.On call
+//   - ctx context.Context
+//   - templateID uuid.UUID
+//   - refMonth valueobjects.RefMonth
+func (_e *RecurringMaterializationRepository_Expecter) IsCompleted(ctx interface{}, templateID interface{}, refMonth interface{}) *RecurringMaterializationRepository_IsCompleted_Call {
 	return &RecurringMaterializationRepository_IsCompleted_Call{Call: _e.mock.On("IsCompleted", ctx, templateID, refMonth)}
 }
 
 func (_c *RecurringMaterializationRepository_IsCompleted_Call) Run(run func(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth)) *RecurringMaterializationRepository_IsCompleted_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uuid.UUID), args[2].(valueobjects.RefMonth))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 valueobjects.RefMonth
+		if args[2] != nil {
+			arg2 = args[2].(valueobjects.RefMonth)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
 
-func (_c *RecurringMaterializationRepository_IsCompleted_Call) Return(completed bool, err error) *RecurringMaterializationRepository_IsCompleted_Call {
-	_c.Call.Return(completed, err)
+func (_c *RecurringMaterializationRepository_IsCompleted_Call) Return(b bool, err error) *RecurringMaterializationRepository_IsCompleted_Call {
+	_c.Call.Return(b, err)
 	return _c
 }
 
-func (_c *RecurringMaterializationRepository_IsCompleted_Call) RunAndReturn(run func(context.Context, uuid.UUID, valueobjects.RefMonth) (bool, error)) *RecurringMaterializationRepository_IsCompleted_Call {
+func (_c *RecurringMaterializationRepository_IsCompleted_Call) RunAndReturn(run func(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth) (bool, error)) *RecurringMaterializationRepository_IsCompleted_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // MarkCompleted provides a mock function for the type RecurringMaterializationRepository
-func (_mock *RecurringMaterializationRepository) MarkCompleted(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth, transactionID, purchaseID *uuid.UUID) error {
+func (_mock *RecurringMaterializationRepository) MarkCompleted(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth, transactionID *uuid.UUID, purchaseID *uuid.UUID) error {
 	ret := _mock.Called(ctx, templateID, refMonth, transactionID, purchaseID)
+
 	if len(ret) == 0 {
 		panic("no return value specified for MarkCompleted")
 	}
+
+	var r0 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.RefMonth, *uuid.UUID, *uuid.UUID) error); ok {
-		return returnFunc(ctx, templateID, refMonth, transactionID, purchaseID)
+		r0 = returnFunc(ctx, templateID, refMonth, transactionID, purchaseID)
+	} else {
+		r0 = ret.Error(0)
 	}
-	return ret.Error(0)
+	return r0
 }
 
-type RecurringMaterializationRepository_MarkCompleted_Call struct{ *mock.Call }
+// RecurringMaterializationRepository_MarkCompleted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkCompleted'
+type RecurringMaterializationRepository_MarkCompleted_Call struct {
+	*mock.Call
+}
 
-func (_e *RecurringMaterializationRepository_Expecter) MarkCompleted(ctx, templateID, refMonth, transactionID, purchaseID interface{}) *RecurringMaterializationRepository_MarkCompleted_Call {
+// MarkCompleted is a helper method to define mock.On call
+//   - ctx context.Context
+//   - templateID uuid.UUID
+//   - refMonth valueobjects.RefMonth
+//   - transactionID *uuid.UUID
+//   - purchaseID *uuid.UUID
+func (_e *RecurringMaterializationRepository_Expecter) MarkCompleted(ctx interface{}, templateID interface{}, refMonth interface{}, transactionID interface{}, purchaseID interface{}) *RecurringMaterializationRepository_MarkCompleted_Call {
 	return &RecurringMaterializationRepository_MarkCompleted_Call{Call: _e.mock.On("MarkCompleted", ctx, templateID, refMonth, transactionID, purchaseID)}
 }
 
-func (_c *RecurringMaterializationRepository_MarkCompleted_Call) Run(run func(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth, transactionID, purchaseID *uuid.UUID)) *RecurringMaterializationRepository_MarkCompleted_Call {
+func (_c *RecurringMaterializationRepository_MarkCompleted_Call) Run(run func(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth, transactionID *uuid.UUID, purchaseID *uuid.UUID)) *RecurringMaterializationRepository_MarkCompleted_Call {
 	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 valueobjects.RefMonth
+		if args[2] != nil {
+			arg2 = args[2].(valueobjects.RefMonth)
+		}
 		var arg3 *uuid.UUID
 		if args[3] != nil {
 			arg3 = args[3].(*uuid.UUID)
@@ -205,7 +256,13 @@ func (_c *RecurringMaterializationRepository_MarkCompleted_Call) Run(run func(ct
 		if args[4] != nil {
 			arg4 = args[4].(*uuid.UUID)
 		}
-		run(args[0].(context.Context), args[1].(uuid.UUID), args[2].(valueobjects.RefMonth), arg3, arg4)
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
 	})
 	return _c
 }
@@ -215,7 +272,7 @@ func (_c *RecurringMaterializationRepository_MarkCompleted_Call) Return(err erro
 	return _c
 }
 
-func (_c *RecurringMaterializationRepository_MarkCompleted_Call) RunAndReturn(run func(context.Context, uuid.UUID, valueobjects.RefMonth, *uuid.UUID, *uuid.UUID) error) *RecurringMaterializationRepository_MarkCompleted_Call {
+func (_c *RecurringMaterializationRepository_MarkCompleted_Call) RunAndReturn(run func(ctx context.Context, templateID uuid.UUID, refMonth valueobjects.RefMonth, transactionID *uuid.UUID, purchaseID *uuid.UUID) error) *RecurringMaterializationRepository_MarkCompleted_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -117,11 +117,20 @@ func (p *PendingEvent) Transition(to PendingState, reason string, now time.Time)
 	if p.IsTerminal() {
 		return fmt.Errorf("budgets: estado atual %d é terminal: %w", p.state, ErrPendingStateTransitionInvalid)
 	}
-	if to == PendingStatePending {
-		return fmt.Errorf("budgets: não é possível transitar para pending: %w", ErrPendingStateTransitionInvalid)
+	if !isValidPendingTransitionTarget(to) {
+		return fmt.Errorf("budgets: alvo %d inválido: %w", to, ErrPendingStateTransitionInvalid)
 	}
 	p.state = to
 	p.reason = reason
 	p.transitionedAt = &now
 	return nil
+}
+
+func isValidPendingTransitionTarget(to PendingState) bool {
+	switch to {
+	case PendingStateApplied, PendingStateFailed, PendingStateExpired:
+		return true
+	default:
+		return false
+	}
 }

@@ -107,6 +107,10 @@ func (b *Budget) SetAllocations(allocs []Allocation) {
 	b.allocations = allocs
 }
 
+func (b *Budget) AddAllocation(a Allocation) {
+	b.allocations = append(b.allocations, a)
+}
+
 func (b *Budget) Activate(now time.Time) error {
 	if b.state == BudgetStateActive {
 		return ErrBudgetAlreadyActive

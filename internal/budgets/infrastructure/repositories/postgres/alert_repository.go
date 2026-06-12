@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
@@ -17,6 +18,19 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
+
+func visibleStatesClause(startIdx int) (string, []any, int) {
+	states := entities.VisibleAlertStates()
+	placeholders := make([]string, 0, len(states))
+	args := make([]any, 0, len(states))
+	idx := startIdx
+	for _, st := range states {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", idx))
+		args = append(args, int(st))
+		idx++
+	}
+	return "state IN (" + strings.Join(placeholders, ", ") + ")", args, idx
+}
 
 type alertRepository struct {
 	db   database.DBTX
@@ -54,19 +68,21 @@ func (r *alertRepository) CountDelivered(ctx context.Context, k entities.Thresho
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.alert.count_delivered")
 	defer span.End()
 
-	const query = `
+	statesClause, stateArgs, _ := visibleStatesClause(5)
+	query := `
 		SELECT COUNT(*)
 		  FROM mecontrola.budgets_alerts
 		 WHERE user_id    = $1
 		   AND competence = $2
 		   AND root_slug  = $3
 		   AND threshold  = $4
-		   AND state IN (1, 2)
-	`
+		   AND ` + statesClause
 
-	row := r.db.QueryRowContext(ctx, query,
+	args := append([]any{
 		k.UserID, k.Competence.String(), k.RootSlug.String(), k.Threshold.Int(),
-	)
+	}, stateArgs...)
+
+	row := r.db.QueryRowContext(ctx, query, args...)
 
 	var count int64
 	if err := row.Scan(&count); err != nil {
@@ -124,15 +140,16 @@ func (r *alertRepository) buildListForUserQuery(userID uuid.UUID, q input.AlertQ
 		return alertListQuery{}, err
 	}
 
+	statesClause, stateArgs, nextIdx := visibleStatesClause(2)
 	query := `
 		SELECT id, user_id, competence, root_slug, threshold, state,
 		       triggered_by_committed_at, spent_cents, planned_cents, created_at
 		  FROM mecontrola.budgets_alerts
 		 WHERE user_id = $1
-		   AND state IN (1, 2)
+		   AND ` + statesClause + `
 	`
-	args := []any{userID}
-	index := 2
+	args := append([]any{userID}, stateArgs...)
+	index := nextIdx
 
 	query, args, index = r.appendListForUserFilters(query, args, index, q)
 	if !cursorTime.IsZero() {

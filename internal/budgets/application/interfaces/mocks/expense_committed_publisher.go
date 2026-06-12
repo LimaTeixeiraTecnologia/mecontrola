@@ -8,7 +8,7 @@ import (
 	"context"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -40,16 +40,16 @@ func (_m *ExpenseCommittedPublisher) EXPECT() *ExpenseCommittedPublisher_Expecte
 }
 
 // Publish provides a mock function for the type ExpenseCommittedPublisher
-func (_mock *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBTX, env interfaces.ExpenseCommittedEnvelope) error {
-	ret := _mock.Called(ctx, db, env)
+func (_mock *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBTX, evt events.ExpenseCommitted) error {
+	ret := _mock.Called(ctx, db, evt)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Publish")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, interfaces.ExpenseCommittedEnvelope) error); ok {
-		r0 = returnFunc(ctx, db, env)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, database.DBTX, events.ExpenseCommitted) error); ok {
+		r0 = returnFunc(ctx, db, evt)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -64,12 +64,12 @@ type ExpenseCommittedPublisher_Publish_Call struct {
 // Publish is a helper method to define mock.On call
 //   - ctx context.Context
 //   - db database.DBTX
-//   - env interfaces.ExpenseCommittedEnvelope
-func (_e *ExpenseCommittedPublisher_Expecter) Publish(ctx interface{}, db interface{}, env interface{}) *ExpenseCommittedPublisher_Publish_Call {
-	return &ExpenseCommittedPublisher_Publish_Call{Call: _e.mock.On("Publish", ctx, db, env)}
+//   - evt events.ExpenseCommitted
+func (_e *ExpenseCommittedPublisher_Expecter) Publish(ctx interface{}, db interface{}, evt interface{}) *ExpenseCommittedPublisher_Publish_Call {
+	return &ExpenseCommittedPublisher_Publish_Call{Call: _e.mock.On("Publish", ctx, db, evt)}
 }
 
-func (_c *ExpenseCommittedPublisher_Publish_Call) Run(run func(ctx context.Context, db database.DBTX, env interfaces.ExpenseCommittedEnvelope)) *ExpenseCommittedPublisher_Publish_Call {
+func (_c *ExpenseCommittedPublisher_Publish_Call) Run(run func(ctx context.Context, db database.DBTX, evt events.ExpenseCommitted)) *ExpenseCommittedPublisher_Publish_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -79,9 +79,9 @@ func (_c *ExpenseCommittedPublisher_Publish_Call) Run(run func(ctx context.Conte
 		if args[1] != nil {
 			arg1 = args[1].(database.DBTX)
 		}
-		var arg2 interfaces.ExpenseCommittedEnvelope
+		var arg2 events.ExpenseCommitted
 		if args[2] != nil {
-			arg2 = args[2].(interfaces.ExpenseCommittedEnvelope)
+			arg2 = args[2].(events.ExpenseCommitted)
 		}
 		run(
 			arg0,
@@ -97,7 +97,7 @@ func (_c *ExpenseCommittedPublisher_Publish_Call) Return(err error) *ExpenseComm
 	return _c
 }
 
-func (_c *ExpenseCommittedPublisher_Publish_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, env interfaces.ExpenseCommittedEnvelope) error) *ExpenseCommittedPublisher_Publish_Call {
+func (_c *ExpenseCommittedPublisher_Publish_Call) RunAndReturn(run func(ctx context.Context, db database.DBTX, evt events.ExpenseCommitted) error) *ExpenseCommittedPublisher_Publish_Call {
 	_c.Call.Return(run)
 	return _c
 }

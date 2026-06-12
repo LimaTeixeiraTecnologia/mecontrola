@@ -8,7 +8,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
@@ -45,15 +45,15 @@ func NewExpenseCommittedPublisher(
 	}
 }
 
-func (p *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBTX, env interfaces.ExpenseCommittedEnvelope) error {
+func (p *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBTX, evt events.ExpenseCommitted) error {
 	payload := expenseCommittedPayload{
-		UserID:             env.UserID.String(),
-		Competence:         env.Competence.String(),
-		SubcategoryID:      env.SubcategoryID.String(),
-		RootSlug:           env.RootSlug.String(),
-		MutationKind:       env.MutationKind.String(),
-		CommittedAt:        env.CommittedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		CutoffCompetenceBR: env.CutoffCompetenceBR.String(),
+		UserID:             evt.UserID.String(),
+		Competence:         evt.Competence.String(),
+		SubcategoryID:      evt.SubcategoryID.String(),
+		RootSlug:           evt.RootSlug.String(),
+		MutationKind:       evt.MutationKind.String(),
+		CommittedAt:        evt.CommittedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		CutoffCompetenceBR: evt.CutoffCompetenceBR.String(),
 	}
 
 	raw, err := json.Marshal(payload)
@@ -61,13 +61,13 @@ func (p *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBT
 		return fmt.Errorf("budgets/producer: marshal payload: %w", err)
 	}
 
-	evt, err := outbox.NewEvent(outbox.EventInput{
+	outboxEvt, err := outbox.NewEvent(outbox.EventInput{
 		ID:            p.idGen.NewID(),
 		Type:          eventTypeExpenseCommitted,
 		AggregateType: aggregateTypeExpense,
-		AggregateID:   env.ExpenseID.String(),
+		AggregateID:   evt.ExpenseID.String(),
 		Payload:       raw,
-		OccurredAt:    env.CommittedAt,
+		OccurredAt:    evt.CommittedAt,
 	})
 	if err != nil {
 		return fmt.Errorf("budgets/producer: new event: %w", err)
@@ -76,7 +76,7 @@ func (p *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBT
 	storage := p.outboxFactory.OutboxRepository(db)
 	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
 
-	if err := publisher.Publish(ctx, evt); err != nil {
+	if err := publisher.Publish(ctx, outboxEvt); err != nil {
 		return fmt.Errorf("budgets/producer: publish: %w", err)
 	}
 	return nil

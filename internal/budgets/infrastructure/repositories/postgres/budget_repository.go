@@ -315,7 +315,7 @@ func (r *budgetRepository) scanBudgetList(rows database.Rows) ([]entities.Budget
 			}
 			b := byID[budgetID]
 			alloc := entities.NewAllocation(budgetID, slug, int(basisPoints.Int32), plannedCents.Int64)
-			b.SetAllocations(append(b.Allocations(), alloc))
+			b.AddAllocation(alloc)
 		}
 	}
 

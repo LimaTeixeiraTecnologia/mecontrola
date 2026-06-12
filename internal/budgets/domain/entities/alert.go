@@ -96,3 +96,7 @@ func (a Alert) CreatedAt() time.Time                { return a.createdAt }
 func (a Alert) IsVisibleToUser() bool {
 	return a.state == AlertStatePendingDelivery || a.state == AlertStateDelivered
 }
+
+func VisibleAlertStates() []AlertState {
+	return []AlertState{AlertStatePendingDelivery, AlertStateDelivered}
+}

@@ -62,7 +62,7 @@ func (uc *CreateBudget) persist(ctx context.Context, tx database.DBTX, cmd comma
 	budget := entities.NewBudget(cmd.UserID, cmd.Competence, cmd.TotalCents, now)
 
 	for _, a := range cmd.Allocations {
-		budget.SetAllocations(append(budget.Allocations(), entities.NewAllocation(budget.ID(), a.RootSlug, a.BasisPoints.Int(), 0)))
+		budget.AddAllocation(entities.NewAllocation(budget.ID(), a.RootSlug, a.BasisPoints.Int(), 0))
 	}
 
 	if err := budgets.CreateDraft(ctx, budget); err != nil {

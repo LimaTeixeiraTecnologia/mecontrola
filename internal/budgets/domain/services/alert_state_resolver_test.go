@@ -10,72 +10,100 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
-type AlertStateResolverSuite struct {
+type AlertWorkflowSuite struct {
 	suite.Suite
 }
 
-func TestAlertStateResolverSuite(t *testing.T) {
-	suite.Run(t, new(AlertStateResolverSuite))
+func TestAlertWorkflowSuite(t *testing.T) {
+	suite.Run(t, new(AlertWorkflowSuite))
 }
 
-func comp(s *AlertStateResolverSuite, raw string) valueobjects.Competence {
+func (s *AlertWorkflowSuite) comp(raw string) valueobjects.Competence {
 	c, err := valueobjects.NewCompetence(raw)
 	s.Require().NoError(err)
 	return c
 }
 
-func (s *AlertStateResolverSuite) TestResolve() {
+func (s *AlertWorkflowSuite) TestIsRetroactiveAlert() {
+	type tc struct {
+		name    string
+		expense string
+		cutoff  string
+		want    bool
+	}
+
+	cases := []tc{
+		{name: "competência atual não é retroativa", expense: "2026-06", cutoff: "2026-06", want: false},
+		{name: "competência futura não é retroativa", expense: "2026-07", cutoff: "2026-06", want: false},
+		{name: "competência anterior é retroativa", expense: "2026-05", cutoff: "2026-06", want: true},
+	}
+
+	for _, c := range cases {
+		s.Run(c.name, func() {
+			s.Equal(c.want, services.IsRetroactiveAlert(s.comp(c.expense), s.comp(c.cutoff)))
+		})
+	}
+}
+
+func (s *AlertWorkflowSuite) TestDecideAlertForInsert() {
 	type tc struct {
 		name           string
-		expense        string
-		cutoff         string
+		isRetroactive  bool
 		deliveredCount int
-		want           entities.AlertState
+		wantState      entities.AlertState
+		wantLogKey     string
+		wantErrCtx     string
 	}
 
 	cases := []tc{
 		{
-			name:           "competência atual sem limite — Delivered",
-			expense:        "2026-06",
-			cutoff:         "2026-06",
-			deliveredCount: 0,
-			want:           entities.AlertStateDelivered,
+			name:           "retroativo prevalece sobre rate-limit",
+			isRetroactive:  true,
+			deliveredCount: services.MaxDeliveredAlerts + 99,
+			wantState:      entities.AlertStateSuppressedRetroactive,
+			wantLogKey:     "budgets.usecase.evaluate_alert.suppressed_retroactive",
+			wantErrCtx:     "inserir alerta retroativo",
 		},
 		{
-			name:           "competência futura — Delivered",
-			expense:        "2026-07",
-			cutoff:         "2026-06",
-			deliveredCount: 0,
-			want:           entities.AlertStateDelivered,
-		},
-		{
-			name:           "competência anterior — SuppressedRetroactive",
-			expense:        "2026-05",
-			cutoff:         "2026-06",
-			deliveredCount: 0,
-			want:           entities.AlertStateSuppressedRetroactive,
-		},
-		{
-			name:           "count >= max — RateLimited",
-			expense:        "2026-06",
-			cutoff:         "2026-06",
+			name:           "rate-limited quando count == max",
+			isRetroactive:  false,
 			deliveredCount: services.MaxDeliveredAlerts,
-			want:           entities.AlertStateRateLimited,
+			wantState:      entities.AlertStateRateLimited,
+			wantLogKey:     "budgets.usecase.evaluate_alert.rate_limited",
+			wantErrCtx:     "inserir alerta rate_limited",
 		},
 		{
-			name:           "retroativo com count alto prevalece — SuppressedRetroactive",
-			expense:        "2026-05",
-			cutoff:         "2026-06",
-			deliveredCount: services.MaxDeliveredAlerts + 10,
-			want:           entities.AlertStateSuppressedRetroactive,
+			name:           "rate-limited quando count > max",
+			isRetroactive:  false,
+			deliveredCount: services.MaxDeliveredAlerts + 1,
+			wantState:      entities.AlertStateRateLimited,
+			wantLogKey:     "budgets.usecase.evaluate_alert.rate_limited",
+			wantErrCtx:     "inserir alerta rate_limited",
+		},
+		{
+			name:           "delivered quando dentro do limite",
+			isRetroactive:  false,
+			deliveredCount: services.MaxDeliveredAlerts - 1,
+			wantState:      entities.AlertStateDelivered,
+			wantLogKey:     "",
+			wantErrCtx:     "inserir alerta",
+		},
+		{
+			name:           "delivered quando count zero",
+			isRetroactive:  false,
+			deliveredCount: 0,
+			wantState:      entities.AlertStateDelivered,
+			wantLogKey:     "",
+			wantErrCtx:     "inserir alerta",
 		},
 	}
 
-	resolver := services.NewAlertStateResolver()
 	for _, c := range cases {
 		s.Run(c.name, func() {
-			got := resolver.Resolve(comp(s, c.expense), comp(s, c.cutoff), c.deliveredCount)
-			s.Equal(c.want, got)
+			got := services.DecideAlertForInsert(c.isRetroactive, c.deliveredCount)
+			s.Equal(c.wantState, got.State)
+			s.Equal(c.wantLogKey, got.LogKey)
+			s.Equal(c.wantErrCtx, got.ErrorContext)
 		})
 	}
 }

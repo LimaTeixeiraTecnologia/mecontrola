@@ -57,6 +57,8 @@ func (s *PendingEventSuite) TestTransition() {
 		{name: "pending -> failed", to: entities.PendingStateFailed, wantErr: false},
 		{name: "pending -> expired", to: entities.PendingStateExpired, wantErr: false},
 		{name: "pending -> pending inválido", to: entities.PendingStatePending, wantErr: true},
+		{name: "pending -> zero inválido", to: entities.PendingState(0), wantErr: true},
+		{name: "pending -> valor fora do enum inválido", to: entities.PendingState(99), wantErr: true},
 	}
 
 	for _, tc := range cases {

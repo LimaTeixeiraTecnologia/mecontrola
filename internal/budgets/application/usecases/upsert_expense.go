@@ -17,6 +17,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/mappers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
@@ -225,11 +226,14 @@ func (uc *UpsertExpense) publishCommitted(
 	committedAt time.Time,
 	cutoff valueobjects.Competence,
 ) error {
-	envelope := interfaces.NewExpenseCommittedEnvelope(
+	evt, err := events.NewExpenseCommitted(
 		expenseID, cmd.UserID, cmd.SubcategoryID, rootSlug, cmd.Competence,
 		mutationKind, committedAt, cutoff,
 	)
-	if err := uc.publisher.Publish(ctx, tx, envelope); err != nil {
+	if err != nil {
+		return fmt.Errorf("budgets.usecase.upsert_expense: construir evento: %w", err)
+	}
+	if err := uc.publisher.Publish(ctx, tx, evt); err != nil {
 		return fmt.Errorf("budgets.usecase.upsert_expense: publicar evento: %w", err)
 	}
 	return nil
