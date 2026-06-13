@@ -18,13 +18,14 @@ func TestNewAuthEventOutbox_PrincipalEstablished(t *testing.T) {
 	userID := uuid.New().String()
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	ev, err := newAuthEventOutbox(eventID, userID, "principal_established", "whatsapp", "", now)
+	ev, err := newAuthEventOutbox(eventID, userID, "principal_established", "whatsapp", "", "", "", now)
 	require.NoError(t, err)
 
 	require.Equal(t, eventID, ev.ID)
 	require.Equal(t, "auth.principal_established", ev.Type)
 	require.Equal(t, "auth_event", ev.AggregateType)
 	require.Equal(t, userID, ev.AggregateID)
+	require.Equal(t, userID, ev.AggregateUserID)
 	require.Equal(t, now, ev.OccurredAt)
 
 	var decoded authEventPayload
@@ -43,11 +44,12 @@ func TestNewAuthEventOutbox_UnknownUser(t *testing.T) {
 	eventID := uuid.New().String()
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	ev, err := newAuthEventOutbox(eventID, "", "unknown_user", "whatsapp", "", now)
+	ev, err := newAuthEventOutbox(eventID, "", "unknown_user", "whatsapp", "", "", "", now)
 	require.NoError(t, err)
 
 	require.Equal(t, eventID, ev.AggregateID)
 	require.Equal(t, "auth.unknown_user", ev.Type)
+	require.Empty(t, ev.AggregateUserID)
 
 	var decoded authEventPayload
 	require.NoError(t, json.Unmarshal(ev.Payload, &decoded))
@@ -61,7 +63,7 @@ func TestNewAuthEventOutbox_WithReason(t *testing.T) {
 	eventID := uuid.New().String()
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	ev, err := newAuthEventOutbox(eventID, "", "failed", "whatsapp", "invalid_signature", now)
+	ev, err := newAuthEventOutbox(eventID, "", "failed", "whatsapp", "invalid_signature", "", "", now)
 	require.NoError(t, err)
 
 	var decoded authEventPayload

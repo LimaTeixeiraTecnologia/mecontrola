@@ -91,11 +91,12 @@ func buildUserDeletedEvent(userID string, deletedAt time.Time) (outbox.Event, er
 		return outbox.Event{}, fmt.Errorf("marshal user.deleted payload: %w", err)
 	}
 	return outbox.Event{
-		ID:            eventID,
-		Type:          "user.deleted",
-		AggregateType: "user",
-		AggregateID:   userID,
-		Payload:       rawPayload,
-		OccurredAt:    deletedAt,
+		ID:              eventID,
+		Type:            "user.deleted",
+		AggregateType:   "user",
+		AggregateID:     userID,
+		AggregateUserID: userID,
+		Payload:         rawPayload,
+		OccurredAt:      deletedAt,
 	}, nil
 }

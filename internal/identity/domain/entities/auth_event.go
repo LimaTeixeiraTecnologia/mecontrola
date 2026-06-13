@@ -19,17 +19,22 @@ type AuthEventSource string
 
 const (
 	AuthEventSourceWhatsApp AuthEventSource = "whatsapp"
+	AuthEventSourceGateway  AuthEventSource = "gateway"
 )
 
 type AuthEventReason string
 
 const (
-	AuthEventReasonInvalidSignature AuthEventReason = "invalid_signature"
-	AuthEventReasonUnknownWaID      AuthEventReason = "unknown_wa_id"
-	AuthEventReasonInvalidCountry   AuthEventReason = "invalid_country"
-	AuthEventReasonInvalidPayload   AuthEventReason = "invalid_payload"
-	AuthEventReasonRateLimited      AuthEventReason = "rate_limited"
-	AuthEventReasonDBUnavailable    AuthEventReason = "db_unavailable"
+	AuthEventReasonInvalidSignature        AuthEventReason = "invalid_signature"
+	AuthEventReasonUnknownWaID             AuthEventReason = "unknown_wa_id"
+	AuthEventReasonInvalidCountry          AuthEventReason = "invalid_country"
+	AuthEventReasonInvalidPayload          AuthEventReason = "invalid_payload"
+	AuthEventReasonRateLimited             AuthEventReason = "rate_limited"
+	AuthEventReasonDBUnavailable           AuthEventReason = "db_unavailable"
+	AuthEventReasonGatewayMissingHeader    AuthEventReason = "gateway_missing_header"
+	AuthEventReasonGatewayInvalidTimestamp AuthEventReason = "gateway_invalid_timestamp"
+	AuthEventReasonGatewayStaleTimestamp   AuthEventReason = "gateway_stale_timestamp"
+	AuthEventReasonGatewayInvalidSignature AuthEventReason = "gateway_invalid_signature"
 )
 
 var (
@@ -44,9 +49,11 @@ type AuthEvent struct {
 	kind       AuthEventKind
 	source     AuthEventSource
 	reason     *AuthEventReason
+	requestID  string
+	clientIP   string
 }
 
-func NewPrincipalEstablished(userID uuid.UUID, source AuthEventSource) (AuthEvent, error) {
+func NewPrincipalEstablished(userID uuid.UUID, source AuthEventSource, requestID, clientIP string) (AuthEvent, error) {
 	if userID == uuid.Nil {
 		return AuthEvent{}, ErrPrincipalEstablishedRequiresUserID
 	}
@@ -61,6 +68,8 @@ func NewPrincipalEstablished(userID uuid.UUID, source AuthEventSource) (AuthEven
 		userID:     &uid,
 		kind:       AuthEventKindPrincipalEstablished,
 		source:     source,
+		requestID:  requestID,
+		clientIP:   clientIP,
 	}, nil
 }
 
@@ -77,7 +86,7 @@ func NewUnknownUser(source AuthEventSource) (AuthEvent, error) {
 	}, nil
 }
 
-func NewAuthFailed(reason AuthEventReason, source AuthEventSource, userID *uuid.UUID) (AuthEvent, error) {
+func NewAuthFailed(reason AuthEventReason, source AuthEventSource, userID *uuid.UUID, requestID, clientIP string) (AuthEvent, error) {
 	if reason == "" {
 		return AuthEvent{}, ErrAuthFailedRequiresReason
 	}
@@ -93,10 +102,12 @@ func NewAuthFailed(reason AuthEventReason, source AuthEventSource, userID *uuid.
 		kind:       AuthEventKindFailed,
 		source:     source,
 		reason:     &r,
+		requestID:  requestID,
+		clientIP:   clientIP,
 	}, nil
 }
 
-func HydrateAuthEvent(id uuid.UUID, occurredAt time.Time, userID *uuid.UUID, kind AuthEventKind, source AuthEventSource, reason *AuthEventReason) AuthEvent {
+func HydrateAuthEvent(id uuid.UUID, occurredAt time.Time, userID *uuid.UUID, kind AuthEventKind, source AuthEventSource, reason *AuthEventReason, requestID, clientIP string) AuthEvent {
 	return AuthEvent{
 		id:         id,
 		occurredAt: occurredAt,
@@ -104,6 +115,8 @@ func HydrateAuthEvent(id uuid.UUID, occurredAt time.Time, userID *uuid.UUID, kin
 		kind:       kind,
 		source:     source,
 		reason:     reason,
+		requestID:  requestID,
+		clientIP:   clientIP,
 	}
 }
 
@@ -113,3 +126,5 @@ func (e AuthEvent) UserID() *uuid.UUID       { return e.userID }
 func (e AuthEvent) Kind() AuthEventKind      { return e.kind }
 func (e AuthEvent) Source() AuthEventSource  { return e.source }
 func (e AuthEvent) Reason() *AuthEventReason { return e.reason }
+func (e AuthEvent) RequestID() string        { return e.requestID }
+func (e AuthEvent) ClientIP() string         { return e.clientIP }

@@ -2,6 +2,9 @@ package identity
 
 import (
 	"context"
+	"encoding/hex"
+	"net/http"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -11,8 +14,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server/handlers"
+	identitymiddleware "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server/middleware"
 	jobhandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
@@ -41,6 +46,7 @@ type IdentityModule struct {
 	SubscriptionBoundProjector *consumers.SubscriptionBoundProjector
 	AuthEventsConsumer         *consumers.AuthEventsConsumer
 	AuthEventsHousekeepingJob  *jobhandlers.AuthEventsHousekeepingJob
+	RecordGatewayAuthFailure   *usecases.RecordGatewayAuthFailure
 	WhatsAppLimiter            *ratelimit.Limiter
 	WhatsAppDedupRepository    dedup.MessageRepository
 	OutboxPublisher            outbox.Publisher
@@ -56,21 +62,23 @@ type moduleBuilder struct {
 }
 
 type moduleRuntime struct {
-	upsertUser             *usecases.UpsertUserByWhatsApp
-	findUserByID           *usecases.FindUserByID
-	findUserByWhatsApp     *usecases.FindUserByWhatsApp
-	markUserDeleted        *usecases.MarkUserDeleted
-	establishPrincipal     *usecases.EstablishPrincipal
-	subscriptionProjector  *consumers.SubscriptionEventProjector
-	subscriptionBound      *consumers.SubscriptionBoundProjector
-	authEventsConsumer     *consumers.AuthEventsConsumer
-	authEventsHousekeeping *jobhandlers.AuthEventsHousekeepingJob
+	upsertUser               *usecases.UpsertUserByWhatsApp
+	findUserByID             *usecases.FindUserByID
+	findUserByWhatsApp       *usecases.FindUserByWhatsApp
+	markUserDeleted          *usecases.MarkUserDeleted
+	establishPrincipal       *usecases.EstablishPrincipal
+	subscriptionProjector    *consumers.SubscriptionEventProjector
+	subscriptionBound        *consumers.SubscriptionBoundProjector
+	authEventsConsumer       *consumers.AuthEventsConsumer
+	authEventsHousekeeping   *jobhandlers.AuthEventsHousekeepingJob
+	recordGatewayAuthFailure *usecases.RecordGatewayAuthFailure
 }
 
 type identityPublisher struct {
 	mgr           manager.Manager
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
+	o11y          observability.Observability
 }
 
 type lazyEntitlementReader struct {
@@ -84,13 +92,13 @@ func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mg
 		o11y:      o11y,
 		mgr:       mgr,
 		factory:   repositories.NewRepositoryFactory(o11y),
-		publisher: newIdentityPublisher(mgr, outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig),
+		publisher: newIdentityPublisher(mgr, outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, o11y),
 	}
 	return builder.Build()
 }
 
-func newIdentityPublisher(mgr manager.Manager, outboxFactory outbox.OutboxRepositoryFactory, cfg configs.OutboxConfig) outbox.Publisher {
-	return &identityPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg}
+func newIdentityPublisher(mgr manager.Manager, outboxFactory outbox.OutboxRepositoryFactory, cfg configs.OutboxConfig, o11y observability.Observability) outbox.Publisher {
+	return &identityPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
 }
 
 func (b *moduleBuilder) Build() IdentityModule {
@@ -111,6 +119,7 @@ func (b *moduleBuilder) Build() IdentityModule {
 		SubscriptionBoundProjector: runtime.subscriptionBound,
 		AuthEventsConsumer:         runtime.authEventsConsumer,
 		AuthEventsHousekeepingJob:  runtime.authEventsHousekeeping,
+		RecordGatewayAuthFailure:   runtime.recordGatewayAuthFailure,
 		WhatsAppLimiter:            ratelimit.New(b.o11y),
 		WhatsAppDedupRepository:    dedupRepository,
 		OutboxPublisher:            b.publisher,
@@ -131,17 +140,19 @@ func (b *moduleBuilder) buildRuntime() moduleRuntime {
 	subscriptionProjector, subscriptionBound := b.buildSubscriptionConsumers()
 	authEventsConsumer := b.buildAuthEventsConsumer()
 	authEventsHousekeeping := b.buildAuthEventsHousekeeping()
+	recordGatewayAuthFailure := usecases.NewRecordGatewayAuthFailure(b.publisher, b.o11y)
 
 	return moduleRuntime{
-		upsertUser:             upsertUser,
-		findUserByID:           findUserByID,
-		findUserByWhatsApp:     findUserByWhatsApp,
-		markUserDeleted:        markUserDeleted,
-		establishPrincipal:     establishPrincipal,
-		subscriptionProjector:  subscriptionProjector,
-		subscriptionBound:      subscriptionBound,
-		authEventsConsumer:     authEventsConsumer,
-		authEventsHousekeeping: authEventsHousekeeping,
+		upsertUser:               upsertUser,
+		findUserByID:             findUserByID,
+		findUserByWhatsApp:       findUserByWhatsApp,
+		markUserDeleted:          markUserDeleted,
+		establishPrincipal:       establishPrincipal,
+		subscriptionProjector:    subscriptionProjector,
+		subscriptionBound:        subscriptionBound,
+		authEventsConsumer:       authEventsConsumer,
+		authEventsHousekeeping:   authEventsHousekeeping,
+		recordGatewayAuthFailure: recordGatewayAuthFailure,
 	}
 }
 
@@ -184,12 +195,35 @@ func (b *moduleBuilder) buildEventHandlers(runtime moduleRuntime) []EventHandler
 	}
 }
 
+func NewRequireGatewayAuth(cfg configs.IdentityConfig, failureUseCase *usecases.RecordGatewayAuthFailure, o11y observability.Observability) func(http.Handler) http.Handler {
+	var current, next []byte
+	if decoded, err := hex.DecodeString(cfg.GatewaySharedSecretCurrent); err == nil {
+		current = decoded
+	}
+	if cfg.GatewaySharedSecretNext != "" {
+		if decoded, err := hex.DecodeString(cfg.GatewaySharedSecretNext); err == nil {
+			next = decoded
+		}
+	}
+	window := cfg.GatewayAuthWindow
+	if window <= 0 {
+		window = 60 * time.Second
+	}
+	deps := identitymiddleware.RequireGatewayAuthDeps{
+		Secrets:       services.SecretPair{Current: current, Next: next},
+		Window:        window,
+		FailureLogger: failureUseCase,
+		O11y:          o11y,
+	}
+	return identitymiddleware.RequireGatewayAuth(deps)
+}
+
 func (r *lazyEntitlementReader) FindByUserID(ctx context.Context, userID string) (interfaces.EntitlementRecord, error) {
 	return r.factory.EntitlementRepository(r.mgr.DBTX(ctx)).FindByUserID(ctx, userID)
 }
 
 func (p *identityPublisher) Publish(ctx context.Context, evt outbox.Event) error {
 	storage := p.outboxFactory.OutboxRepository(p.mgr.DBTX(ctx))
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	return publisher.Publish(ctx, evt)
 }

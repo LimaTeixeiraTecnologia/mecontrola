@@ -2,6 +2,7 @@ package configs_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -678,10 +679,149 @@ func (s *ConfigSuite) TestValidate() {
 				s.assertConfigError(err, "KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN inválido")
 			},
 		},
+		{
+			name: "deve rejeitar production sem gateway secret current",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretCurrent = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT é obrigatório em production")
+			},
+		},
+		{
+			name: "deve rejeitar production com gateway secret com entropia insuficiente (menos de 32 bytes)",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretCurrent = strings.Repeat("a1", 16)
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ter ao menos 32 bytes")
+			},
+		},
+		{
+			name: "deve rejeitar production com gateway secret hex invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretCurrent = strings.Repeat("ZZ", 32)
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ser hex válido")
+			},
+		},
+		{
+			name: "deve aceitar production com gateway secret de exatamente 32 bytes",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretCurrent = strings.Repeat("a1", 32)
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve aceitar production com gateway secret next opcional ausente",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretNext = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve aceitar non-production sem gateway secret",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.IdentityConfig.GatewaySharedSecretCurrent = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "ValidateCORS_deve rejeitar production com CORS_ALLOWED_ORIGINS vazio",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.HTTPConfig.CORSAllowedOrigins = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "CORS_ALLOWED_ORIGINS obrigatorio em production")
+			},
+		},
+		{
+			name: "ValidateCORS_deve rejeitar production com CORS_ALLOWED_ORIGINS=*",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.HTTPConfig.CORSAllowedOrigins = "*"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "CORS_ALLOWED_ORIGINS=* proibido em production")
+			},
+		},
+		{
+			name: "ValidateCORS_deve aceitar production com CORS_ALLOWED_ORIGINS lista valida",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.HTTPConfig.CORSAllowedOrigins = "https://app.mecontrola.com.br,https://checkout.mecontrola.com.br"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "ValidateCORS_deve aceitar development com CORS_ALLOWED_ORIGINS qualquer valor",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.HTTPConfig.CORSAllowedOrigins = "*"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
-		scenario := scenario
 		s.Run(scenario.name, func() {
 			scenario.setup()
 			cfg := scenario.args.build()
@@ -753,6 +893,8 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.T().Setenv("DB_SSL_MODE", "require")
 				s.T().Setenv("OTEL_TRACE_SAMPLE_RATE", "0.2")
 				s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
+				s.T().Setenv("IDENTITY_GATEWAY_SHARED_SECRET_CURRENT", strings.Repeat("a1", 32))
+				s.T().Setenv("CORS_ALLOWED_ORIGINS", "https://app.mecontrola.com.br,https://checkout.mecontrola.com.br")
 			},
 			expect: func(cfg *configs.Config, err error) {
 				s.Require().NoError(err)
@@ -927,7 +1069,6 @@ func (s *ConfigSuite) TestLoadConfig() {
 	}
 
 	for _, scenario := range scenarios {
-		scenario := scenario
 		s.Run(scenario.name, func() {
 			path := scenario.args.path()
 			loadConfig := configs.LoadConfig
@@ -971,7 +1112,6 @@ func (s *ConfigSuite) TestNormalizedExporterEndpoint() {
 	}
 
 	for _, scenario := range scenarios {
-		scenario := scenario
 		s.Run(scenario.name, func() {
 			s.Equal(scenario.expected, scenario.config.NormalizedExporterEndpoint())
 		})
@@ -1106,7 +1246,6 @@ func (s *ConfigSuite) TestDBConfigAccessors() {
 	}
 
 	for _, scenario := range scenarios {
-		scenario := scenario
 		s.Run(scenario.name, func() {
 			scenario.setup()
 			db := scenario.args.build()
@@ -1157,7 +1296,6 @@ func (s *ConfigSuite) TestInsecurePlaceholders() {
 	}
 
 	for _, scenario := range scenarios {
-		scenario := scenario
 		s.Run(scenario.name, func() {
 			scenario.setup()
 			values := scenario.args.values()
@@ -1258,7 +1396,6 @@ func (s *ConfigSuite) TestKiwifySafe() {
 	}
 
 	for _, scenario := range scenarios {
-		scenario := scenario
 		s.Run(scenario.name, func() {
 			scenario.setup()
 			kiwifyConfig := scenario.args.build()
@@ -1290,6 +1427,8 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.DBConfig.Password = "productionStrongPassword123!"
 	cfg.DBConfig.User = "mecontrola"
 	cfg.O11yConfig.TraceSampleRate = 0.2
+	cfg.IdentityConfig.GatewaySharedSecretCurrent = strings.Repeat("a1", 32)
+	cfg.HTTPConfig.CORSAllowedOrigins = "https://app.mecontrola.com.br,https://checkout.mecontrola.com.br"
 	return cfg
 }
 

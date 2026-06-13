@@ -202,6 +202,71 @@ func (s *NewEventSuite) TestNewEvent() {
 			},
 		},
 		{
+			name: "deve aceitar aggregate user id uuid valido",
+			args: args{
+				input: outbox.EventInput{
+					Type:            "test.event",
+					AggregateType:   "A",
+					AggregateID:     "1",
+					AggregateUserID: uuid.NewString(),
+					Payload:         []byte(`{}`),
+				},
+			},
+			setup: func() {},
+			expect: func(event outbox.Event, err error) {
+				s.NoError(err)
+				s.NotEmpty(event.AggregateUserID)
+			},
+		},
+		{
+			name: "deve retornar erro para aggregate user id invalido",
+			args: args{
+				input: outbox.EventInput{
+					Type:            "test.event",
+					AggregateType:   "A",
+					AggregateID:     "1",
+					AggregateUserID: "not-a-uuid",
+					Payload:         []byte(`{}`),
+				},
+			},
+			setup: func() {},
+			expect: func(_ outbox.Event, err error) {
+				s.ErrorIs(err, outbox.ErrInvalidAggregateUserID)
+			},
+		},
+		{
+			name: "deve aceitar sem aggregate user id para evento nao sistema com warn",
+			args: args{
+				input: outbox.EventInput{
+					Type:          "test.event",
+					AggregateType: "A",
+					AggregateID:   "1",
+					Payload:       []byte(`{}`),
+				},
+			},
+			setup: func() {},
+			expect: func(event outbox.Event, err error) {
+				s.NoError(err)
+				s.Empty(event.AggregateUserID)
+			},
+		},
+		{
+			name: "deve aceitar sem aggregate user id para evento de sistema sem warn",
+			args: args{
+				input: outbox.EventInput{
+					Type:          "system.heartbeat",
+					AggregateType: "A",
+					AggregateID:   "1",
+					Payload:       []byte(`{}`),
+				},
+			},
+			setup: func() {},
+			expect: func(event outbox.Event, err error) {
+				s.NoError(err)
+				s.Empty(event.AggregateUserID)
+			},
+		},
+		{
 			name: "deve retornar erro para payload invalido",
 			args: args{
 				input: outbox.EventInput{

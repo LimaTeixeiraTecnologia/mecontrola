@@ -64,3 +64,30 @@ tasks:
           exit 1
         fi
         echo "PASS lint:pci: nenhum termo PCI detectado em codigo de producao"
+
+  user-isolation:
+    desc: |
+      Gate de defesa em profundidade per-user: toda query UPDATE/DELETE em repositorios
+      postgres de modulos per-user (budgets, card, transactions) DEVE conter "user_id"
+      na clausula WHERE. Excecoes automaticas: jobs de retencao (Purge/Cleanup/Reap) e
+      queries com filtro temporal "now() - interval". Falha o build com lista de violacoes.
+    cmds:
+      - bash deployment/scripts/lint-repo-user-id.sh
+
+  auth-bypass:
+    desc: |
+      Gate M-09 (RF-21): todo router que usa InjectPrincipalFromHeader(WithO11y)? DEVE ter
+      RequireGatewayAuth nas 3 linhas anteriores. Falha o CI com arquivo:linha quando a
+      ordem for violada ou o gate estiver ausente. Exclui _test.go e mocks/.
+    cmds:
+      - bash deployment/scripts/lint-auth-bypass.sh
+
+  outbox-user-id:
+    desc: |
+      Gate: todo construtor de outbox.EventInput/Event em codigo de producao deve popular
+      AggregateUserID, exceto event types na allowlist de sistema (ADR-004).
+      Allowlist declarada em internal/platform/outbox/system_event_allowlist.go.
+      Falha CI com lista de violacoes; PASS com mensagem clara.
+      Ver .specs/prd-outbox-aggregate-user-id/prd.md RF-16, RF-17.
+    cmds:
+      - bash deployment/scripts/lint-outbox-user-id.sh

@@ -56,7 +56,7 @@ func (s *StoragePostgresSuite) TestInsert() {
 				meta, err := json.Marshal(event.Metadata)
 				s.Require().NoError(err)
 				dbtx.EXPECT().ExecContext(mock.Anything, mock.AnythingOfType("string"),
-					event.ID, event.Type, event.AggregateType, event.AggregateID,
+					event.ID, event.Type, event.AggregateType, event.AggregateID, nil,
 					event.Payload, meta,
 					int(outbox.StatusPending), 15, event.OccurredAt, event.OccurredAt,
 				).Return(dbmocks.NewMockResult(s.T()), nil).Once()
@@ -72,7 +72,7 @@ func (s *StoragePostgresSuite) TestInsert() {
 				event := s.newEvent()
 				dbtx.EXPECT().ExecContext(mock.Anything, mock.AnythingOfType("string"), mock.Anything,
 					mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-					mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+					mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 				).Return(nil, errors.New("db error")).Once()
 				return dbtx, outbox.NewPostgresStorage(dbtx), event
 			},

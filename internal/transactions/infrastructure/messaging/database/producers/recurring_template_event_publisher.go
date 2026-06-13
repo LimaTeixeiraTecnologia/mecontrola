@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -22,15 +23,18 @@ const eventTypeRecurringTemplateDeleted = "transactions.recurring_template.delet
 type recurringTemplateEventPublisher struct {
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
+	o11y          observability.Observability
 }
 
 func NewRecurringTemplateEventPublisher(
 	outboxFactory outbox.OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
+	o11y observability.Observability,
 ) interfaces.RecurringTemplateEventPublisher {
 	return &recurringTemplateEventPublisher{
 		outboxFactory: outboxFactory,
 		cfg:           cfg,
+		o11y:          o11y,
 	}
 }
 
@@ -41,19 +45,20 @@ func (p *recurringTemplateEventPublisher) PublishCreated(ctx context.Context, db
 	}
 
 	event, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID.String(),
-		Type:          eventTypeRecurringTemplateCreated,
-		AggregateType: aggregateTypeRecurringTemplate,
-		AggregateID:   evt.AggregateID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.OccurredAt,
+		ID:              evt.EventID.String(),
+		Type:            eventTypeRecurringTemplateCreated,
+		AggregateType:   aggregateTypeRecurringTemplate,
+		AggregateID:     evt.AggregateID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.OccurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("transactions/producer: new event recurring_template created: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	if err := publisher.Publish(ctx, event); err != nil {
 		return fmt.Errorf("transactions/producer: publish recurring_template created: %w", err)
 	}
@@ -67,19 +72,20 @@ func (p *recurringTemplateEventPublisher) PublishUpdated(ctx context.Context, db
 	}
 
 	event, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID.String(),
-		Type:          eventTypeRecurringTemplateUpdated,
-		AggregateType: aggregateTypeRecurringTemplate,
-		AggregateID:   evt.AggregateID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.OccurredAt,
+		ID:              evt.EventID.String(),
+		Type:            eventTypeRecurringTemplateUpdated,
+		AggregateType:   aggregateTypeRecurringTemplate,
+		AggregateID:     evt.AggregateID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.OccurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("transactions/producer: new event recurring_template updated: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	if err := publisher.Publish(ctx, event); err != nil {
 		return fmt.Errorf("transactions/producer: publish recurring_template updated: %w", err)
 	}
@@ -93,19 +99,20 @@ func (p *recurringTemplateEventPublisher) PublishDeleted(ctx context.Context, db
 	}
 
 	event, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID.String(),
-		Type:          eventTypeRecurringTemplateDeleted,
-		AggregateType: aggregateTypeRecurringTemplate,
-		AggregateID:   evt.AggregateID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.OccurredAt,
+		ID:              evt.EventID.String(),
+		Type:            eventTypeRecurringTemplateDeleted,
+		AggregateType:   aggregateTypeRecurringTemplate,
+		AggregateID:     evt.AggregateID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.OccurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("transactions/producer: new event recurring_template deleted: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	if err := publisher.Publish(ctx, event); err != nil {
 		return fmt.Errorf("transactions/producer: publish recurring_template deleted: %w", err)
 	}

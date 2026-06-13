@@ -65,7 +65,7 @@ func (s *WebhookIntegSuite) SetupSuite() {
 	outboxCfg := configs.OutboxConfig{RetryMaxAttempts: 5}
 	idGen := id.NewUUIDGenerator()
 
-	publisher := producers.NewSubscriptionEventPublisher(outboxFactory, outboxCfg, idGen)
+	publisher := producers.NewSubscriptionEventPublisher(outboxFactory, outboxCfg, idGen, noop.NewProvider())
 	saleUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
 	renewedUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
 	lateUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))

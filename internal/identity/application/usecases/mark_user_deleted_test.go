@@ -14,6 +14,7 @@ import (
 	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
@@ -54,8 +55,8 @@ func (s *MarkUserDeletedSuite) TestExecute() {
 			setup: func(deps dependencies) {
 				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().MarkDeleted(mock.Anything, "a0a0a0a0-0000-0000-0000-000000000001", mock.Anything).Return(nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev any) bool {
-					return true // user.deleted event published
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+					return ev.AggregateUserID == "a0a0a0a0-0000-0000-0000-000000000001"
 				})).Return(nil).Once()
 			},
 			expect: func(err error) {

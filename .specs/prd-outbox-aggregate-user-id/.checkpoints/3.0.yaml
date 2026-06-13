@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-outbox-aggregate-user-id/3.0_execution_report.md
+summary: "AggregateUserID populado nos 3 producers de transactions; 9 asercoes adicionadas nos testes de integracao"
+timestamp: 2026-06-13T00:00:00Z

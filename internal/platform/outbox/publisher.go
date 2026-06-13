@@ -5,18 +5,35 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
 
 type postgresPublisher struct {
-	storage Storage
-	cfg     configs.OutboxConfig
+	storage       Storage
+	cfg           configs.OutboxConfig
+	insertedTotal observability.Counter
+	o11y          observability.Observability
 }
 
 func NewPostgresPublisher(storage Storage, cfg configs.OutboxConfig) Publisher {
 	return &postgresPublisher{storage: storage, cfg: cfg}
+}
+
+func NewObservablePostgresPublisher(storage Storage, cfg configs.OutboxConfig, o11y observability.Observability) Publisher {
+	insertedTotal := o11y.Metrics().Counter(
+		"outbox_events_inserted_total",
+		"Total de eventos inseridos no outbox por presenca de aggregate_user_id",
+		"1",
+	)
+	return &postgresPublisher{
+		storage:       storage,
+		cfg:           cfg,
+		o11y:          o11y,
+		insertedTotal: insertedTotal,
+	}
 }
 
 func (p *postgresPublisher) Publish(ctx context.Context, evt Event) error {
@@ -45,6 +62,14 @@ func (p *postgresPublisher) Publish(ctx context.Context, evt Event) error {
 
 	if err := p.storage.Insert(ctx, evt, p.cfg.RetryMaxAttempts); err != nil {
 		return err
+	}
+
+	if p.insertedTotal != nil {
+		hasUserID := "false"
+		if evt.AggregateUserID != "" {
+			hasUserID = "true"
+		}
+		p.insertedTotal.Add(ctx, 1, observability.String("has_user_id", hasUserID))
 	}
 	return nil
 }

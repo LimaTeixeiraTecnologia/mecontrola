@@ -82,6 +82,7 @@ type managerPublisher struct {
 	mgr           manager.Manager
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
+	o11y          observability.Observability
 }
 
 type identityGatewayAdapter struct {
@@ -125,7 +126,7 @@ func newModuleBuilder(
 		identityModule: identityModule,
 		o11y:           o11y,
 		factory:        factory,
-		publisher:      newManagerPublisher(mgr, outbox.NewRepositoryFactory(o11y), outboxCfg),
+		publisher:      newManagerPublisher(mgr, outbox.NewRepositoryFactory(o11y), outboxCfg, o11y),
 		idGen:          id.NewUUIDGenerator(),
 	}, nil
 }
@@ -134,8 +135,9 @@ func newManagerPublisher(
 	mgr manager.Manager,
 	outboxFactory outbox.OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
+	o11y observability.Observability,
 ) outbox.Publisher {
-	return &managerPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg}
+	return &managerPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
 }
 
 func newIdentityGatewayAdapter(identityModule identity.IdentityModule) appinterfaces.IdentityGateway {
@@ -332,7 +334,7 @@ func (b *moduleBuilder) buildEventHandlers(
 
 func (p *managerPublisher) Publish(ctx context.Context, evt outbox.Event) error {
 	storage := p.outboxFactory.OutboxRepository(p.mgr.DBTX(ctx))
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	return publisher.Publish(ctx, evt)
 }
 

@@ -18,14 +18,18 @@ type authEventPayload struct {
 	Source     string  `json:"source"`
 	Reason     *string `json:"reason"`
 	OccurredAt string  `json:"occurred_at"`
+	RequestID  string  `json:"request_id,omitempty"`
+	ClientIP   string  `json:"client_ip,omitempty"`
 }
 
-func newAuthEventOutbox(eventID, userID, kind, source, reason string, now time.Time) (outbox.Event, error) {
+func newAuthEventOutbox(eventID, userID, kind, source, reason, requestID, clientIP string, now time.Time) (outbox.Event, error) {
 	payload := authEventPayload{
 		EventID:    eventID,
 		Kind:       kind,
 		Source:     source,
 		OccurredAt: now.Format(time.RFC3339),
+		RequestID:  requestID,
+		ClientIP:   clientIP,
 	}
 	if userID != "" {
 		payload.UserID = &userID
@@ -45,12 +49,13 @@ func newAuthEventOutbox(eventID, userID, kind, source, reason string, now time.T
 	}
 
 	return outbox.Event{
-		ID:            eventID,
-		Type:          "auth." + kind,
-		AggregateType: "auth_event",
-		AggregateID:   aggregateID,
-		Payload:       rawPayload,
-		OccurredAt:    now,
+		ID:              eventID,
+		Type:            "auth." + kind,
+		AggregateType:   "auth_event",
+		AggregateID:     aggregateID,
+		AggregateUserID: userID,
+		Payload:         rawPayload,
+		OccurredAt:      now,
 	}, nil
 }
 
@@ -92,5 +97,7 @@ func parseAuthEvent(raw []byte) (entities.AuthEvent, error) {
 		entities.AuthEventKind(p.Kind),
 		entities.AuthEventSource(p.Source),
 		reason,
+		p.RequestID,
+		p.ClientIP,
 	), nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
@@ -31,17 +32,20 @@ type ExpenseCommittedPublisher struct {
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
 	idGen         id.Generator
+	o11y          observability.Observability
 }
 
 func NewExpenseCommittedPublisher(
 	outboxFactory outbox.OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
 	idGen id.Generator,
+	o11y observability.Observability,
 ) *ExpenseCommittedPublisher {
 	return &ExpenseCommittedPublisher{
 		outboxFactory: outboxFactory,
 		cfg:           cfg,
 		idGen:         idGen,
+		o11y:          o11y,
 	}
 }
 
@@ -62,19 +66,20 @@ func (p *ExpenseCommittedPublisher) Publish(ctx context.Context, db database.DBT
 	}
 
 	outboxEvt, err := outbox.NewEvent(outbox.EventInput{
-		ID:            p.idGen.NewID(),
-		Type:          eventTypeExpenseCommitted,
-		AggregateType: aggregateTypeExpense,
-		AggregateID:   evt.ExpenseID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.CommittedAt,
+		ID:              p.idGen.NewID(),
+		Type:            eventTypeExpenseCommitted,
+		AggregateType:   aggregateTypeExpense,
+		AggregateID:     evt.ExpenseID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.CommittedAt,
 	})
 	if err != nil {
 		return fmt.Errorf("budgets/producer: new event: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 
 	if err := publisher.Publish(ctx, outboxEvt); err != nil {
 		return fmt.Errorf("budgets/producer: publish: %w", err)

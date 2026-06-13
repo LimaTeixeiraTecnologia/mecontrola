@@ -61,33 +61,9 @@ func NewIngestExternalExpenseCommand(
 		errs = append(errs, ErrCommandInvalidMutationKind)
 	}
 
-	parsedSubID := uuid.Nil
-	if subcategoryID != "" {
-		parsedSubID, err = uuid.Parse(subcategoryID)
-		if err != nil {
-			errs = append(errs, ErrCommandInvalidSubcategory)
-		}
-	}
-
-	parsedCompetence := valueobjects.Competence{}
-	if competence != "" {
-		parsedCompetence, err = valueobjects.NewCompetence(competence)
-		if err != nil {
-			errs = append(errs, ErrCommandInvalidCompetence)
-		}
-	}
-
-	if parsedKind != valueobjects.MutationKindDelete && amountCents <= 0 {
-		errs = append(errs, ErrCommandInvalidAmount)
-	}
-
-	if occurredAt.IsZero() {
-		errs = append(errs, ErrCommandInvalidOccurredAt)
-	}
-
-	if parsedKind == valueobjects.MutationKindCreate && version != 1 {
-		errs = append(errs, ErrCommandVersionRequired)
-	}
+	parsedSubID, parsedCompetence, optErrs := parseIngestOptionalFields(subcategoryID, competence)
+	errs = append(errs, optErrs...)
+	errs = append(errs, validateIngestScalars(parsedKind, amountCents, version, occurredAt)...)
 
 	if len(errs) > 0 {
 		return IngestExternalExpenseCommand{}, errors.Join(errs...)
@@ -105,4 +81,41 @@ func NewIngestExternalExpenseCommand(
 		AmountCents:   amountCents,
 		OccurredAt:    occurredAt,
 	}, nil
+}
+
+func parseIngestOptionalFields(subcategoryID, competence string) (uuid.UUID, valueobjects.Competence, []error) {
+	var errs []error
+	parsedSubID := uuid.Nil
+	if subcategoryID != "" {
+		id, err := uuid.Parse(subcategoryID)
+		if err != nil {
+			errs = append(errs, ErrCommandInvalidSubcategory)
+		} else {
+			parsedSubID = id
+		}
+	}
+	parsedCompetence := valueobjects.Competence{}
+	if competence != "" {
+		c, err := valueobjects.NewCompetence(competence)
+		if err != nil {
+			errs = append(errs, ErrCommandInvalidCompetence)
+		} else {
+			parsedCompetence = c
+		}
+	}
+	return parsedSubID, parsedCompetence, errs
+}
+
+func validateIngestScalars(kind valueobjects.MutationKind, amountCents, version int64, occurredAt time.Time) []error {
+	var errs []error
+	if kind != valueobjects.MutationKindDelete && amountCents <= 0 {
+		errs = append(errs, ErrCommandInvalidAmount)
+	}
+	if occurredAt.IsZero() {
+		errs = append(errs, ErrCommandInvalidOccurredAt)
+	}
+	if kind == valueobjects.MutationKindCreate && version != 1 {
+		errs = append(errs, ErrCommandVersionRequired)
+	}
+	return errs
 }

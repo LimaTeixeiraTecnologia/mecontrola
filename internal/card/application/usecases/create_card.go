@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -15,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 )
@@ -23,6 +25,7 @@ type CreateCard struct {
 	uow     uow.UnitOfWork[entities.Card]
 	factory interfaces.RepositoryFactory
 	idem    idempotency.Storage
+	decider services.CreateCardDecider
 	o11y    observability.Observability
 }
 
@@ -32,7 +35,13 @@ func NewCreateCard(
 	idem idempotency.Storage,
 	o11y observability.Observability,
 ) *CreateCard {
-	return &CreateCard{uow: u, factory: factory, idem: idem, o11y: o11y}
+	return &CreateCard{
+		uow:     u,
+		factory: factory,
+		idem:    idem,
+		decider: services.NewCreateCardDecider(),
+		o11y:    o11y,
+	}
 }
 
 func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.Card, error) {
@@ -67,14 +76,18 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 
 	ic, hasIdem := idempotency.FromContext(ctx)
 
+	cardID := entities.NewCardID()
+	now := time.Now().UTC()
+	cmd := services.CreateCardCommand{
+		UserID:   in.UserID,
+		Name:     name,
+		Nickname: nickname,
+		Cycle:    cycle,
+	}
+
 	card, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Card, error) {
 		repo := u.factory.CardRepository(tx)
-		c := entities.NewCard(entities.NewCardInput{
-			UserID:   in.UserID,
-			Name:     name,
-			Nickname: nickname,
-			Cycle:    cycle,
-		})
+		c := u.decider.Decide(cmd, cardID, now)
 		if insertErr := repo.Insert(ctx, c); insertErr != nil {
 			return entities.Card{}, insertErr
 		}

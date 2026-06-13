@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-gateway-auth-forensics/8.0_execution_report.md
+summary: "Gate lint:auth-bypass + runbook gateway-auth + dashboard auth-module.json + microbenchmark 2713 ns/op — todos os criterios PASS"
+timestamp: "2026-06-12T00:00:00Z"

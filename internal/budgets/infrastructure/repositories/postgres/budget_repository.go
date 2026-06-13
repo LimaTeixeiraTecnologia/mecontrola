@@ -95,11 +95,11 @@ func (r *budgetRepository) Activate(ctx context.Context, b entities.Budget) erro
 		       total_cents  = $2,
 		       activated_at = $3,
 		       updated_at   = $4
-		 WHERE id = $5
+		 WHERE id = $5 AND user_id = $6
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
-		int(b.State()), b.TotalCents(), b.ActivatedAt(), b.UpdatedAt(), b.ID(),
+		int(b.State()), b.TotalCents(), b.ActivatedAt(), b.UpdatedAt(), b.ID(), b.UserID(),
 	)
 	if err != nil {
 		span.RecordError(err)

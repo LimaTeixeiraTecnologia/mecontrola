@@ -23,6 +23,8 @@ includes:
     taskfile: ./taskfiles/local.yml
   ngrok:
     taskfile: ./taskfiles/ngrok.yml
+  smoke:
+    taskfile: ./taskfiles/smoke.yml
 
 silent: true
 

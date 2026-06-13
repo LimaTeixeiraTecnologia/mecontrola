@@ -47,6 +47,20 @@ func (s *StoragePostgresIntegrationSuite) newEvent(id string) outbox.Event {
 	return event
 }
 
+func (s *StoragePostgresIntegrationSuite) newEventWithUserID(userID string) outbox.Event {
+	event, err := outbox.NewEvent(outbox.EventInput{
+		Type:            "billing.subscription.activated",
+		AggregateType:   "subscription",
+		AggregateID:     uuid.NewString(),
+		AggregateUserID: userID,
+		Payload:         []byte(`{"foo":"bar"}`),
+		Metadata:        map[string]string{"source": "test"},
+		OccurredAt:      time.Now().UTC().Add(-time.Minute),
+	})
+	s.Require().NoError(err)
+	return event
+}
+
 func (s *StoragePostgresIntegrationSuite) countStatus(mgr manager.Manager, id string) int {
 	ctx := context.Background()
 	var status int
@@ -176,6 +190,37 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.Equal(1, s.countRows(mgr, recentEvent.ID))
 			},
 			expect: func(manager.Manager, *observed) {},
+		},
+		{
+			name:  "deve round-trip aggregate_user_id em Insert e ClaimBatch",
+			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
+			act: func(mgr manager.Manager, storage outbox.OutboxRepository, state *observed) {
+				ctx := context.Background()
+				userID := uuid.NewString()
+				eventWithUser := s.newEventWithUserID(userID)
+				eventNoUser := s.newEvent("")
+
+				s.NoError(storage.Insert(ctx, eventWithUser, 5))
+				s.NoError(storage.Insert(ctx, eventNoUser, 5))
+
+				rows, err := storage.ClaimBatch(ctx, "worker-rt", 10)
+				s.Require().NoError(err)
+				state.rows = rows
+			},
+			expect: func(_ manager.Manager, state *observed) {
+				s.Len(state.rows, 2)
+				withUser := 0
+				withoutUser := 0
+				for _, r := range state.rows {
+					if r.AggregateUserID != "" {
+						withUser++
+					} else {
+						withoutUser++
+					}
+				}
+				s.Equal(1, withUser, "deve haver exatamente 1 evento com AggregateUserID")
+				s.Equal(1, withoutUser, "deve haver exatamente 1 evento sem AggregateUserID")
+			},
 		},
 		{
 			name:  "deve resetar eventos stuck para pending",

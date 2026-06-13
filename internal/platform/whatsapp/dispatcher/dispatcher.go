@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +32,10 @@ const (
 	OutcomeRateLimited RouteOutcome = "rate_limited"
 	OutcomeDuplicate   RouteOutcome = "duplicate"
 	OutcomeInvalid     RouteOutcome = "invalid"
+	OutcomeStaleTS     RouteOutcome = "stale_webhook"
 )
+
+const timestampWindow = 5 * time.Minute
 
 type EstablishPrincipalUseCase interface {
 	Execute(ctx context.Context, in input.EstablishPrincipalInput) (auth.Principal, error)
@@ -51,6 +55,7 @@ type Dispatcher struct {
 	o11y            observability.Observability
 	routeTotal      observability.Counter
 	rateLimitHits   observability.Counter
+	staleWebhook    observability.Counter
 }
 
 func New(
@@ -72,6 +77,11 @@ func New(
 		"Total de mensagens bloqueadas pelo rate limiter por user",
 		"1",
 	)
+	staleWebhook := o11y.Metrics().Counter(
+		"whatsapp_stale_webhook_total",
+		"Total de webhooks WhatsApp fora da janela de timestamp ou com timestamp invalido",
+		"1",
+	)
 	return &Dispatcher{
 		dedup:           dedupRepo,
 		establish:       establish,
@@ -82,6 +92,7 @@ func New(
 		o11y:            o11y,
 		routeTotal:      routeTotal,
 		rateLimitHits:   rateLimitHits,
+		staleWebhook:    staleWebhook,
 	}
 }
 
@@ -129,6 +140,11 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 		return d.finish(ctx, span, OutcomeDuplicate, false, true), nil
 	}
 
+	if staleReason, stale := d.checkTimestamp(msg.Timestamp); stale {
+		d.rejectStale(ctx, staleReason, msg.WAMID)
+		return d.finish(ctx, span, OutcomeStaleTS, false, false), nil
+	}
+
 	if matches := ativarRegex.FindStringSubmatch(strings.TrimSpace(msg.Text)); matches != nil {
 		return d.finish(ctx, span, d.onboardingRoute(ctx, msg), true, false), nil
 	}
@@ -165,6 +181,35 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 
 	ctx = auth.WithPrincipal(ctx, principal)
 	return d.finish(ctx, span, d.agentRoute(ctx, msg), false, false), nil
+}
+
+func (d *Dispatcher) checkTimestamp(raw string) (string, bool) {
+	ts, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return "invalid_webhook_timestamp", true
+	}
+	delta := time.Now().UTC().Sub(time.Unix(ts, 0).UTC())
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > timestampWindow {
+		return "stale_webhook", true
+	}
+	return "", false
+}
+
+func (d *Dispatcher) rejectStale(ctx context.Context, reason, wamid string) {
+	d.staleWebhook.Add(ctx, 1, observability.String("reason", reason))
+	d.o11y.Logger().Warn(ctx, "dispatcher.stale_webhook",
+		observability.String("reason", reason),
+		observability.String("wamid", wamid),
+	)
+	if pubErr := d.publishAuthFailed(ctx, "", reason); pubErr != nil {
+		d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.publish_failed",
+			observability.String("reason", reason),
+			observability.Error(pubErr),
+		)
+	}
 }
 
 type authFailedPayload struct {
@@ -208,12 +253,13 @@ func (d *Dispatcher) publishAuthFailed(ctx context.Context, userID, reason strin
 	}
 
 	ev := outbox.Event{
-		ID:            eventID,
-		Type:          "auth.failed",
-		AggregateType: "auth_event",
-		AggregateID:   aggregateID,
-		Payload:       rawPayload,
-		OccurredAt:    now,
+		ID:              eventID,
+		Type:            "auth.failed",
+		AggregateType:   "auth_event",
+		AggregateID:     aggregateID,
+		AggregateUserID: userID,
+		Payload:         rawPayload,
+		OccurredAt:      now,
 	}
 
 	return d.publisher.Publish(ctx, ev)

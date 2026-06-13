@@ -102,19 +102,19 @@ func (uc *RunPendingEventsReaper) processOne(ctx context.Context, tx database.DB
 
 	switch outcome {
 	case PendingEventOutcomeApplied:
-		if transErr := pending.Transition(ctx, evt.ID(), entities.PendingStateApplied, "applied"); transErr != nil {
+		if transErr := pending.Transition(ctx, evt.ID(), evt.UserID(), entities.PendingStateApplied, "applied"); transErr != nil {
 			return fmt.Errorf("budgets.usecase.run_pending_events_reaper: transitar applied: %w", transErr)
 		}
 		uc.applied.Add(ctx, 1)
 
 	case PendingEventOutcomeExpired:
-		if transErr := pending.Transition(ctx, evt.ID(), entities.PendingStateExpired, "ttl_exceeded"); transErr != nil {
+		if transErr := pending.Transition(ctx, evt.ID(), evt.UserID(), entities.PendingStateExpired, "ttl_exceeded"); transErr != nil {
 			return fmt.Errorf("budgets.usecase.run_pending_events_reaper: transitar expired: %w", transErr)
 		}
 		uc.expired.Add(ctx, 1)
 
 	case PendingEventOutcomeObsoleteIdempotent:
-		if transErr := pending.Transition(ctx, evt.ID(), entities.PendingStateApplied, "obsolete_idempotent"); transErr != nil {
+		if transErr := pending.Transition(ctx, evt.ID(), evt.UserID(), entities.PendingStateApplied, "obsolete_idempotent"); transErr != nil {
 			return fmt.Errorf("budgets.usecase.run_pending_events_reaper: transitar obsolete: %w", transErr)
 		}
 

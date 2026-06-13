@@ -1,8 +1,10 @@
 package configs
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -11,18 +13,24 @@ import (
 )
 
 type Config struct {
-	AppConfig          AppConfig          `mapstructure:",squash"`
-	HTTPConfig         HTTPConfig         `mapstructure:",squash"`
-	DBConfig           DBConfig           `mapstructure:",squash"`
-	O11yConfig         O11yConfig         `mapstructure:",squash"`
-	OutboxConfig       OutboxConfig       `mapstructure:",squash"`
-	KiwifyConfig       KiwifyConfig       `mapstructure:",squash"`
-	BillingConfig      BillingConfig      `mapstructure:",squash"`
-	OnboardingConfig   OnboardingConfig   `mapstructure:",squash"`
-	WhatsAppConfig     WhatsAppConfig     `mapstructure:",squash"`
-	IdentityConfig     IdentityConfig     `mapstructure:",squash"`
-	BudgetsConfig      BudgetsConfig      `mapstructure:",squash"`
-	TransactionsConfig TransactionsConfig `mapstructure:",squash"`
+	AppConfig          AppConfig           `mapstructure:",squash"`
+	HTTPConfig         HTTPConfig          `mapstructure:",squash"`
+	DBConfig           DBConfig            `mapstructure:",squash"`
+	O11yConfig         O11yConfig          `mapstructure:",squash"`
+	OutboxConfig       OutboxConfig        `mapstructure:",squash"`
+	KiwifyConfig       KiwifyConfig        `mapstructure:",squash"`
+	BillingConfig      BillingConfig       `mapstructure:",squash"`
+	OnboardingConfig   OnboardingConfig    `mapstructure:",squash"`
+	WhatsAppConfig     WhatsAppConfig      `mapstructure:",squash"`
+	IdentityConfig     IdentityConfig      `mapstructure:",squash"`
+	BudgetsConfig      BudgetsConfig       `mapstructure:",squash"`
+	TransactionsConfig TransactionsConfig  `mapstructure:",squash"`
+	AuthRateLimit      AuthRateLimitConfig `mapstructure:",squash"`
+}
+
+type AuthRateLimitConfig struct {
+	PerUserPerMin int `mapstructure:"AUTH_RATE_LIMIT_PER_USER_PER_MIN"`
+	PerUserBurst  int `mapstructure:"AUTH_RATE_LIMIT_PER_USER_BURST"`
 }
 
 type TransactionsConfig struct {
@@ -36,9 +44,12 @@ type TransactionsConfig struct {
 }
 
 type IdentityConfig struct {
-	AuthEventsHousekeepingSchedule string `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE"`
-	AuthEventsHousekeepingBatch    int    `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH"`
-	AuthEventsRetentionDays        int    `mapstructure:"IDENTITY_AUTH_EVENTS_RETENTION_DAYS"`
+	AuthEventsHousekeepingSchedule string        `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE"`
+	AuthEventsHousekeepingBatch    int           `mapstructure:"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH"`
+	AuthEventsRetentionDays        int           `mapstructure:"IDENTITY_AUTH_EVENTS_RETENTION_DAYS"`
+	GatewaySharedSecretCurrent     string        `mapstructure:"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT"`
+	GatewaySharedSecretNext        string        `mapstructure:"IDENTITY_GATEWAY_SHARED_SECRET_NEXT"`
+	GatewayAuthWindow              time.Duration `mapstructure:"IDENTITY_GATEWAY_AUTH_WINDOW"`
 }
 
 type BudgetsConfig struct {
@@ -70,24 +81,26 @@ type OnboardingConfig struct {
 }
 
 type WhatsAppConfig struct {
-	PhoneNumberID        string `mapstructure:"META_PHONE_NUMBER_ID"`
-	AccessToken          string `mapstructure:"META_ACCESS_TOKEN"`
-	AppSecret            string `mapstructure:"META_APP_SECRET"`
-	AppSecretNext        string `mapstructure:"META_APP_SECRET_NEXT"`
-	VerifyToken          string `mapstructure:"META_VERIFY_TOKEN"`
-	OutreachTemplateName string `mapstructure:"META_OUTREACH_TEMPLATE_NAME"`
-	BotNumberE164        string `mapstructure:"META_BOT_NUMBER_E164"`
-	BotNumberDisplay     string `mapstructure:"META_BOT_NUMBER_DISPLAY"`
-	WelcomeActivated     string `mapstructure:"WA_MSG_WELCOME_ACTIVATED"`
-	AlreadyActive        string `mapstructure:"WA_MSG_ALREADY_ACTIVE"`
-	CodeAlreadyUsed      string `mapstructure:"WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
-	PaymentProcessing    string `mapstructure:"WA_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
-	CodeExpired          string `mapstructure:"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
-	CodeInvalid          string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
-	SystemUnavailable    string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
-	PleaseUseAtivar      string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
-	InvalidCountry       string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
-	AgentStubReceived    string `mapstructure:"WA_MSG_AGENT_STUB_RECEIVED"`
+	PhoneNumberID          string `mapstructure:"META_PHONE_NUMBER_ID"`
+	AccessToken            string `mapstructure:"META_ACCESS_TOKEN"`
+	AppSecret              string `mapstructure:"META_APP_SECRET"`
+	AppSecretNext          string `mapstructure:"META_APP_SECRET_NEXT"`
+	VerifyToken            string `mapstructure:"META_VERIFY_TOKEN"`
+	OutreachTemplateName   string `mapstructure:"META_OUTREACH_TEMPLATE_NAME"`
+	BotNumberE164          string `mapstructure:"META_BOT_NUMBER_E164"`
+	BotNumberDisplay       string `mapstructure:"META_BOT_NUMBER_DISPLAY"`
+	WelcomeActivated       string `mapstructure:"WA_MSG_WELCOME_ACTIVATED"`
+	AlreadyActive          string `mapstructure:"WA_MSG_ALREADY_ACTIVE"`
+	CodeAlreadyUsed        string `mapstructure:"WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
+	PaymentProcessing      string `mapstructure:"WA_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
+	CodeExpired            string `mapstructure:"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
+	CodeInvalid            string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
+	SystemUnavailable      string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
+	PleaseUseAtivar        string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
+	InvalidCountry         string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
+	AgentStubReceived      string `mapstructure:"WA_MSG_AGENT_STUB_RECEIVED"`
+	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
+	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
 }
 
 type KiwifyConfig struct {
@@ -260,23 +273,7 @@ func (l *configLoader) load() (*Config, error) {
 		_ = l.v.BindEnv(key)
 	}
 
-	l.v.SetDefault("PORT", 8080)
-	l.v.SetDefault("APP_MODE", "server")
-	l.v.SetDefault("ENVIRONMENT", "local")
-	l.v.SetDefault("LOG_LEVEL", "info")
-	l.v.SetDefault("LOG_FORMAT", "json")
-	l.v.SetDefault("OTEL_SERVICE_VERSION", "dev")
-	l.v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
-	l.v.SetDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-	l.v.SetDefault("OTEL_EXPORTER_OTLP_INSECURE", true)
-	l.v.SetDefault("DB_PORT", 5432)
-	l.v.SetDefault("DB_SSL_MODE", "disable")
-	l.v.SetDefault("DB_MAX_CONNS", 10)
-	l.v.SetDefault("DB_MIN_CONNS", 2)
-	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
-	l.v.SetDefault("DB_CONN_MAX_LIFETIME", 30*time.Minute)
-	l.v.SetDefault("DB_CONN_MAX_IDLE_TIME", 5*time.Minute)
-
+	l.setCoreDefaults()
 	l.setOutboxDefaults()
 	l.setKiwifyDefaults()
 	l.setBillingDefaults()
@@ -284,6 +281,8 @@ func (l *configLoader) load() (*Config, error) {
 	l.setOnboardingDefaults()
 	l.setWhatsAppDefaults()
 	l.setTransactionsDefaults()
+	l.setIdentityDefaults()
+	l.setAuthRateLimitDefaults()
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -388,6 +387,8 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
 		"WA_MSG_INVALID_COUNTRY",
 		"WA_MSG_AGENT_STUB_RECEIVED",
+		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
+		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
 		"BUDGETS_PENDING_REAPER_INTERVAL",
 		"BUDGETS_PENDING_TTL_HOURS",
 		"BUDGETS_ABANDONED_DRAFT_CRON",
@@ -400,6 +401,11 @@ func (l *configLoader) envKeys() []string {
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON",
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS",
 		"TRANSACTIONS_BRAZIL_TIMEZONE",
+		"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT",
+		"IDENTITY_GATEWAY_SHARED_SECRET_NEXT",
+		"IDENTITY_GATEWAY_AUTH_WINDOW",
+		"AUTH_RATE_LIMIT_PER_USER_PER_MIN",
+		"AUTH_RATE_LIMIT_PER_USER_BURST",
 	}
 }
 
@@ -432,6 +438,34 @@ func (l *configLoader) setTransactionsDefaults() {
 	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON", "@daily")
 	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS", 48)
 	l.v.SetDefault("TRANSACTIONS_BRAZIL_TIMEZONE", "America/Sao_Paulo")
+}
+
+func (l *configLoader) setCoreDefaults() {
+	l.v.SetDefault("PORT", 8080)
+	l.v.SetDefault("APP_MODE", "server")
+	l.v.SetDefault("ENVIRONMENT", "local")
+	l.v.SetDefault("LOG_LEVEL", "info")
+	l.v.SetDefault("LOG_FORMAT", "json")
+	l.v.SetDefault("OTEL_SERVICE_VERSION", "dev")
+	l.v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 1.0)
+	l.v.SetDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+	l.v.SetDefault("OTEL_EXPORTER_OTLP_INSECURE", true)
+	l.v.SetDefault("DB_PORT", 5432)
+	l.v.SetDefault("DB_SSL_MODE", "disable")
+	l.v.SetDefault("DB_MAX_CONNS", 10)
+	l.v.SetDefault("DB_MIN_CONNS", 2)
+	l.v.SetDefault("DB_MAX_IDLE_CONNS", 5)
+	l.v.SetDefault("DB_CONN_MAX_LIFETIME", 30*time.Minute)
+	l.v.SetDefault("DB_CONN_MAX_IDLE_TIME", 5*time.Minute)
+}
+
+func (l *configLoader) setIdentityDefaults() {
+	l.v.SetDefault("IDENTITY_GATEWAY_AUTH_WINDOW", 60*time.Second)
+}
+
+func (l *configLoader) setAuthRateLimitDefaults() {
+	l.v.SetDefault("AUTH_RATE_LIMIT_PER_USER_PER_MIN", 120)
+	l.v.SetDefault("AUTH_RATE_LIMIT_PER_USER_BURST", 60)
 }
 
 func (l *configLoader) setBillingDefaults() {
@@ -635,6 +669,45 @@ func (c *Config) validateProduction() []string {
 	}
 
 	errs = append(errs, c.validateProductionKiwify()...)
+	errs = append(errs, c.validateProductionIdentity()...)
+	errs = append(errs, c.validateProductionCORS()...)
+	return errs
+}
+
+func (c *Config) validateProductionCORS() []string {
+	origins := strings.TrimSpace(c.HTTPConfig.CORSAllowedOrigins)
+	if origins == "" {
+		return []string{"CORS_ALLOWED_ORIGINS obrigatorio em production"}
+	}
+	parts := strings.Split(origins, ",")
+	trimmed := make([]string, len(parts))
+	for i, p := range parts {
+		trimmed[i] = strings.TrimSpace(p)
+	}
+	if slices.Contains(trimmed, "*") {
+		return []string{"CORS_ALLOWED_ORIGINS=* proibido em production"}
+	}
+	return nil
+}
+
+func (c *Config) validateProductionIdentity() []string {
+	var errs []string
+	secret := c.IdentityConfig.GatewaySharedSecretCurrent
+	if secret == "" {
+		errs = append(errs, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT é obrigatório em production")
+		return errs
+	}
+	decoded, err := hex.DecodeString(secret)
+	if err != nil {
+		errs = append(errs, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ser hex válido em production")
+		return errs
+	}
+	if len(decoded) < 32 {
+		errs = append(errs, fmt.Sprintf(
+			"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ter ao menos 32 bytes em production (atual: %d bytes)",
+			len(decoded),
+		))
+	}
 	return errs
 }
 
@@ -806,6 +879,8 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para ativar sua conta, envie: ATIVAR seguido do seu codigo de ativacao.")
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
 	l.v.SetDefault("WA_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
+	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
+	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
 }
 
 func validateKiwifyHTTP(k KiwifyConfig) []string {

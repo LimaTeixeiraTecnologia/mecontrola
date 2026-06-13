@@ -7,20 +7,22 @@ import (
 )
 
 type Envelope struct {
-	ID         string            `json:"id"`
-	EventType  string            `json:"event_type"`
-	OccurredAt time.Time         `json:"occurred_at"`
-	Metadata   map[string]string `json:"metadata"`
-	Payload    json.RawMessage   `json:"payload"`
+	ID              string            `json:"id"`
+	EventType       string            `json:"event_type"`
+	AggregateUserID string            `json:"aggregate_user_id,omitempty"`
+	OccurredAt      time.Time         `json:"occurred_at"`
+	Metadata        map[string]string `json:"metadata"`
+	Payload         json.RawMessage   `json:"payload"`
 }
 
 func Pack(row Row) Envelope {
 	return Envelope{
-		ID:         row.ID,
-		EventType:  row.Type,
-		OccurredAt: row.OccurredAt,
-		Metadata:   row.Metadata,
-		Payload:    json.RawMessage(row.Payload),
+		ID:              row.ID,
+		EventType:       row.Type,
+		AggregateUserID: row.AggregateUserID,
+		OccurredAt:      row.OccurredAt,
+		Metadata:        row.Metadata,
+		Payload:         json.RawMessage(row.Payload),
 	}
 }
 

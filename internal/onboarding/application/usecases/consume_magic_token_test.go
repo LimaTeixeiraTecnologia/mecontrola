@@ -200,7 +200,7 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 			setup: func() input.ConsumeMagicTokenInput {
 				fromE164 := "+5511999999999"
 				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "user-123"}, nil).Once()
+				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
 				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
 				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
@@ -216,8 +216,8 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 			setup: func() input.ConsumeMagicTokenInput {
 				fromE164 := "+5511999999999"
 				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "user-123"}, nil).Once()
-				s.binder.EXPECT().BindUser(mock.Anything, "sub-001", "user-123").Return(nil).Once()
+				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
+				s.binder.EXPECT().BindUser(mock.Anything, "sub-001", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").Return(nil).Once()
 				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
 				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, event outbox.Event) error {
 					s.events = append(s.events, event)

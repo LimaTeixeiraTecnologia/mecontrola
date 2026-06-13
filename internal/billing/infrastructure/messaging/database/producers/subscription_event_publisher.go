@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -18,14 +19,16 @@ type SubscriptionEventPublisher struct {
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
 	idGen         id.Generator
+	o11y          observability.Observability
 }
 
 func NewSubscriptionEventPublisher(
 	outboxFactory outbox.OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
 	idGen id.Generator,
+	o11y observability.Observability,
 ) *SubscriptionEventPublisher {
-	return &SubscriptionEventPublisher{outboxFactory: outboxFactory, cfg: cfg, idGen: idGen}
+	return &SubscriptionEventPublisher{outboxFactory: outboxFactory, cfg: cfg, idGen: idGen, o11y: o11y}
 }
 
 func (p *SubscriptionEventPublisher) PublishActivated(
@@ -50,7 +53,7 @@ func (p *SubscriptionEventPublisher) PublishActivated(
 		PaidAt:             sub.LastEventAt().UTC(),
 		OccurredAt:         sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionActivated, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionActivated, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -74,7 +77,7 @@ func (p *SubscriptionEventPublisher) PublishActivatedWithoutToken(
 		PaidAt:             sub.LastEventAt().UTC(),
 		OccurredAt:         sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionActivatedWithoutToken, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionActivatedWithoutToken, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -94,7 +97,7 @@ func (p *SubscriptionEventPublisher) PublishRenewed(
 		PeriodEnd:         sub.PeriodEnd().UTC(),
 		OccurredAt:        sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionRenewed, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionRenewed, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -112,7 +115,7 @@ func (p *SubscriptionEventPublisher) PublishPastDue(
 		GraceEnd:       sub.GraceEnd().UTC(),
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionPastDue, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionPastDue, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -129,7 +132,7 @@ func (p *SubscriptionEventPublisher) PublishCanceled(
 		PeriodEnd:      sub.PeriodEnd().UTC(),
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionCanceled, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionCanceled, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -145,7 +148,7 @@ func (p *SubscriptionEventPublisher) PublishRefunded(
 		SubscriptionID: subscriptionID,
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionRefunded, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionRefunded, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -164,7 +167,7 @@ func (p *SubscriptionEventPublisher) PublishExpired(
 		GraceEnd:       graceEnd.UTC(),
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, EventTypeSubscriptionExpired, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionExpired, payload); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -174,6 +177,7 @@ func (p *SubscriptionEventPublisher) publish(
 	ctx context.Context,
 	tx database.DBTX,
 	aggregateID string,
+	aggregateUserID string,
 	eventType string,
 	payload any,
 ) error {
@@ -183,19 +187,20 @@ func (p *SubscriptionEventPublisher) publish(
 	}
 
 	evt, err := outbox.NewEvent(outbox.EventInput{
-		ID:            p.idGen.NewID(),
-		Type:          eventType,
-		AggregateType: "Subscription",
-		AggregateID:   aggregateID,
-		Payload:       raw,
-		OccurredAt:    time.Now().UTC(),
+		ID:              p.idGen.NewID(),
+		Type:            eventType,
+		AggregateType:   "Subscription",
+		AggregateID:     aggregateID,
+		AggregateUserID: aggregateUserID,
+		Payload:         raw,
+		OccurredAt:      time.Now().UTC(),
 	})
 	if err != nil {
 		return fmt.Errorf("new event: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(tx)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 
 	if err := publisher.Publish(ctx, evt); err != nil {
 		return fmt.Errorf("publish: %w", err)

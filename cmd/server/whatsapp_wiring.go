@@ -12,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	identityserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wahandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
@@ -70,10 +71,24 @@ func composeWhatsAppWebhookRouter(
 	verifyHandler := wahandlers.NewVerifyHandler(cfg.WhatsAppConfig.VerifyToken)
 	inboundHandler := wahandlers.NewInboundHandler(disp, o11y)
 
+	waRateLimiter := middleware.NewRateLimiter(
+		cfg.WhatsAppConfig.WebhookRateLimitPerMin,
+		cfg.WhatsAppConfig.WebhookRateLimitBurst,
+		nil,
+	)
+
+	waRateLimitExceededTotal := o11y.Metrics().Counter(
+		"whatsapp_webhook_rate_limit_exceeded_total",
+		"Total de requisicoes bloqueadas pelo rate limit do webhook WhatsApp",
+		"1",
+	)
+
 	return identityserver.NewWhatsAppWebhookRouter(
 		verifyHandler,
 		inboundHandler,
 		cfg.WhatsAppConfig.AppSecret,
 		cfg.WhatsAppConfig.AppSecretNext,
+		waRateLimiter.Middleware,
+		func() { waRateLimitExceededTotal.Increment(context.Background()) },
 	)
 }

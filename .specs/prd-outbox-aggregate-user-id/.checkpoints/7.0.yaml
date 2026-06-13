@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-outbox-aggregate-user-id/7.0_execution_report.md
+summary: Gate lint:outbox-user-id criado com script Python3 embutido em bash e receita Taskfile; PASS no estado pos-callers, FAIL confirmado adversarialmente.
+timestamp: 2026-06-13T00:00:00Z

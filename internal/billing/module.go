@@ -64,7 +64,7 @@ type noopNotificationSender struct{}
 
 func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) (BillingModule, error) {
 	factory := repositories.NewRepositoryFactory(o11y)
-	publisher := producers.NewSubscriptionEventPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator())
+	publisher := producers.NewSubscriptionEventPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator(), o11y)
 	builder := moduleBuilder{
 		cfg:        cfg,
 		o11y:       o11y,

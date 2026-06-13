@@ -125,7 +125,7 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 				fromE164 := "+5511999990003"
 				token := buildPaidTokenWithOutreach(fromE164)
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "uid-fallback"}, nil).Once()
+				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}, nil).Once()
 				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
 				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()

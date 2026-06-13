@@ -95,7 +95,8 @@ func (s *CardRouterSuite) SetupTest() {
 	deleteH := handlers.NewDeleteCardHandler(s.deleteUC, o11y)
 	invoiceH := handlers.NewInvoiceForHandler(s.invoiceUC, o11y)
 
-	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, s.idemStorage, o11y)
+	passthrough := func(next http.Handler) http.Handler { return next }
+	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
 
 	r := chi.NewRouter()
 	cardRouter.Register(r)

@@ -85,7 +85,7 @@ func (r *pendingEventRepository) ListReady(ctx context.Context, limit int) ([]en
 	return r.scanPendingEvents(rows)
 }
 
-func (r *pendingEventRepository) Transition(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string) error {
+func (r *pendingEventRepository) Transition(ctx context.Context, id, userID uuid.UUID, to entities.PendingState, reason string) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.pending_event.transition")
 	defer span.End()
 
@@ -94,11 +94,11 @@ func (r *pendingEventRepository) Transition(ctx context.Context, id uuid.UUID, t
 		   SET state           = $1,
 		       reason          = $2,
 		       transitioned_at = $3
-		 WHERE id = $4
+		 WHERE id = $4 AND user_id = $5
 	`
 
 	now := time.Now().UTC()
-	result, err := r.db.ExecContext(ctx, query, int(to), nullableString(reason), now, id)
+	result, err := r.db.ExecContext(ctx, query, int(to), nullableString(reason), now, id, userID)
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("budgets/postgres: transition pending_event: %w", err)

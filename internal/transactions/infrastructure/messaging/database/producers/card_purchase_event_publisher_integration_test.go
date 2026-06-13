@@ -21,25 +21,19 @@ import (
 
 type CardPurchaseEventPublisherIntegrationSuite struct {
 	suite.Suite
-	publisher *producers.CardPurchaseEventPublisher
 }
 
 func TestCardPurchaseEventPublisherIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(CardPurchaseEventPublisherIntegrationSuite))
 }
 
-func (s *CardPurchaseEventPublisherIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	_ = mgr
-
-	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	cfg := configs.OutboxConfig{RetryMaxAttempts: 3}
-	s.publisher = producers.NewCardPurchaseEventPublisher(outboxFactory, cfg)
-}
-
 func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishCreated_SingleEventWithRefMonths() {
 	mgr, _ := testcontainer.Postgres(s.T())
-	db := mgr.DBTX(context.Background())
+	ctx := context.Background()
+	db := mgr.DBTX(ctx)
+
+	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
+	publisher := producers.NewCardPurchaseEventPublisher(outboxFactory, configs.OutboxConfig{RetryMaxAttempts: 3}, noop.NewProvider())
 
 	rm1, _ := valueobjects.NewRefMonth("2024-01")
 	rm2, _ := valueobjects.NewRefMonth("2024-02")
@@ -56,13 +50,28 @@ func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishCreated_SingleEv
 		RefMonthsAffected: []valueobjects.RefMonth{rm1, rm2, rm3},
 	}
 
-	err := s.publisher.PublishCreated(context.Background(), db, evt)
+	s.Require().NoError(publisher.PublishCreated(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-cp-created", 100)
 	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento card_purchase.created nao encontrado no outbox")
 }
 
 func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishUpdated_WithInvoiceDeltas() {
 	mgr, _ := testcontainer.Postgres(s.T())
-	db := mgr.DBTX(context.Background())
+	ctx := context.Background()
+	db := mgr.DBTX(ctx)
+
+	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
+	publisher := producers.NewCardPurchaseEventPublisher(outboxFactory, configs.OutboxConfig{RetryMaxAttempts: 3}, noop.NewProvider())
 
 	rm1, _ := valueobjects.NewRefMonth("2024-01")
 
@@ -78,13 +87,28 @@ func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishUpdated_WithInvo
 		InvoiceDeltas:     map[string]int64{"2024-01": -500},
 	}
 
-	err := s.publisher.PublishUpdated(context.Background(), db, evt)
+	s.Require().NoError(publisher.PublishUpdated(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-cp-updated", 100)
 	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento card_purchase.updated nao encontrado no outbox")
 }
 
 func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishDeleted_WithNegativeDeltas() {
 	mgr, _ := testcontainer.Postgres(s.T())
-	db := mgr.DBTX(context.Background())
+	ctx := context.Background()
+	db := mgr.DBTX(ctx)
+
+	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
+	publisher := producers.NewCardPurchaseEventPublisher(outboxFactory, configs.OutboxConfig{RetryMaxAttempts: 3}, noop.NewProvider())
 
 	rm1, _ := valueobjects.NewRefMonth("2024-05")
 
@@ -98,6 +122,17 @@ func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishDeleted_WithNega
 		InvoiceDeltas:     map[string]int64{"2024-05": -2000},
 	}
 
-	err := s.publisher.PublishDeleted(context.Background(), db, evt)
+	s.Require().NoError(publisher.PublishDeleted(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-cp-deleted", 100)
 	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento card_purchase.deleted nao encontrado no outbox")
 }

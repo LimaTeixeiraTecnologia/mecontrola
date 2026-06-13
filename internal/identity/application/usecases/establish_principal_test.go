@@ -18,6 +18,7 @@ import (
 	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
@@ -75,7 +76,9 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 			setup: func(deps dependencies) {
 				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+					return ev.AggregateUserID == "a0a0a0a0-0000-0000-0000-000000000001"
+				})).Return(nil).Once()
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -89,8 +92,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 			setup: func(deps dependencies) {
 				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev any) bool {
-					return true // outbox event for unknown_user
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+					return ev.AggregateUserID == ""
 				})).Return(nil).Once()
 			},
 			expect: func(p auth.Principal, err error) {
@@ -124,6 +127,81 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 			expect: func(p auth.Principal, err error) {
 				s.Require().Error(err)
 				s.Contains(err.Error(), "outbox unavailable")
+				s.True(p.IsZero())
+			},
+		},
+		{
+			name: "deve persistir request_id e client_ip quando fornecidos",
+			args: args{in: input.EstablishPrincipalInput{
+				WhatsAppNumber: validWA,
+				RequestID:      "req-abc-123",
+				ClientIPRaw:    "1.2.3.4",
+			}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
+			name: "deve aceitar client_ip vazio (NULL semantico) sem erro",
+			args: args{in: input.EstablishPrincipalInput{
+				WhatsAppNumber: validWA,
+				RequestID:      "req-xyz-999",
+				ClientIPRaw:    "",
+			}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
+			name: "deve aceitar input sem request_id e sem client_ip (compat retroativa)",
+			args: args{in: input.EstablishPrincipalInput{
+				WhatsAppNumber: validWA,
+			}},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
+			name: "deve retornar erro para client_ip invalido",
+			args: args{in: input.EstablishPrincipalInput{
+				WhatsAppNumber: validWA,
+				ClientIPRaw:    "not-an-ip",
+			}},
+			setup: func(deps dependencies) {},
+			expect: func(p auth.Principal, err error) {
+				s.Require().Error(err)
+				s.Contains(err.Error(), "parse client_ip")
+				s.True(p.IsZero())
+			},
+		},
+		{
+			name: "deve retornar erro para request_id invalido (muito longo)",
+			args: args{in: input.EstablishPrincipalInput{
+				WhatsAppNumber: validWA,
+				RequestID:      string(make([]byte, 129)),
+			}},
+			setup: func(deps dependencies) {},
+			expect: func(p auth.Principal, err error) {
+				s.Require().Error(err)
+				s.Contains(err.Error(), "parse request_id")
 				s.True(p.IsZero())
 			},
 		},

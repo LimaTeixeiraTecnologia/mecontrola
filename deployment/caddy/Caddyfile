@@ -3,13 +3,23 @@
 }
 
 {$APP_DOMAIN} {
-	reverse_proxy server:{$PORT:-8080}
+	# Block admin/debug/metrics endpoints from external access (RF-07)
+	@admin path /admin* /debug/pprof* /metrics*
+	respond @admin 404
+
+	reverse_proxy server:{$PORT:-8080} {
+		# Strip gateway/internal headers injected externally (RF-08)
+		header_up -X-User-ID
+		header_up -X-Gateway-Auth
+		header_up -X-Gateway-Timestamp
+	}
 
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "()"
+		X-Frame-Options "DENY"
 		Content-Security-Policy "default-src 'none'; connect-src 'self'; frame-ancestors 'none'"
 		-Server
 	}

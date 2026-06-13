@@ -15,6 +15,7 @@ var ErrTransitionNotAllowed = errors.New("billing: transition not allowed")
 
 type Subscription struct {
 	id          string
+	userID      string
 	plan        valueobjects.Plan
 	funnelToken valueobjects.FunnelToken
 	status      valueobjects.Status
@@ -53,8 +54,36 @@ func Hydrate(
 	}
 }
 
+func HydrateWithUser(
+	id string,
+	userID string,
+	funnelToken valueobjects.FunnelToken,
+	plan valueobjects.Plan,
+	status valueobjects.Status,
+	periodStart time.Time,
+	periodEnd time.Time,
+	graceEnd time.Time,
+	lastEventAt time.Time,
+) Subscription {
+	return Subscription{
+		id:          id,
+		userID:      userID,
+		plan:        plan,
+		funnelToken: funnelToken,
+		status:      status,
+		periodStart: periodStart,
+		periodEnd:   periodEnd,
+		graceEnd:    graceEnd,
+		lastEventAt: lastEventAt,
+	}
+}
+
 func (s Subscription) ID() string {
 	return s.id
+}
+
+func (s Subscription) UserID() string {
+	return s.userID
 }
 
 func (s Subscription) PeriodStart() time.Time {

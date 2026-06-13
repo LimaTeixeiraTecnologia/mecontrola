@@ -91,9 +91,9 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 
 	cardLookup := client.NewCardLookupAdapter(b.cardModule.CardLookup, b.o11y)
 
-	txPublisher := producers.NewTransactionEventPublisher(outboxFactory, b.cfg.OutboxConfig)
-	cpPublisher := producers.NewCardPurchaseEventPublisher(outboxFactory, b.cfg.OutboxConfig)
-	rtPublisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, b.cfg.OutboxConfig)
+	txPublisher := producers.NewTransactionEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
+	cpPublisher := producers.NewCardPurchaseEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
+	rtPublisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
 
 	txWorkflow := services.TransactionWorkflow{}
 	cpWorkflow := services.NewCardPurchaseWorkflow()

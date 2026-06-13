@@ -2,6 +2,7 @@ package card
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -16,6 +17,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/http/server/handlers"
 	cardrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/ratelimit"
 )
 
 type CardModule struct {
@@ -24,7 +26,7 @@ type CardModule struct {
 	CardLookup        *usecases.GetCardForUser
 }
 
-func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr manager.Manager) (CardModule, error) {
+func NewCardModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager, gatewayAuth func(http.Handler) http.Handler) (CardModule, error) {
 	loc, err := services.NewSaoPauloLocation()
 	if err != nil {
 		return CardModule{}, fmt.Errorf("card.module: %w", err)
@@ -52,7 +54,14 @@ func NewCardModule(_ *configs.Config, o11y observability.Observability, mgr mana
 	deleteHandler := handlers.NewDeleteCardHandler(softDelete, o11y)
 	invoiceForHandler := handlers.NewInvoiceForHandler(invoiceFor, o11y)
 
-	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, deleteHandler, invoiceForHandler, idemStorage, o11y)
+	userRateLimit := ratelimit.NewRateLimitMiddleware(ratelimit.RateLimitConfig{
+		PerMinute: cfg.AuthRateLimit.PerUserPerMin,
+		Burst:     cfg.AuthRateLimit.PerUserBurst,
+		Extractor: ratelimit.ByUserID,
+		Scope:     "user",
+	}, o11y)
+
+	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, deleteHandler, invoiceForHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
 
 	return CardModule{
 		RepositoryFactory: factory,

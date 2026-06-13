@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -24,9 +25,9 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 	}
 	const q = `
 		INSERT INTO outbox_events
-			(id, event_type, aggregate_type, aggregate_id, payload, metadata,
+			(id, event_type, aggregate_type, aggregate_id, aggregate_user_id, payload, metadata,
 			 status, attempts, max_attempts, next_attempt_at, occurred_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,now(),now())
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$11,now(),now())
 		ON CONFLICT (id) DO NOTHING`
 
 	_, err = s.db.ExecContext(ctx, q,
@@ -34,6 +35,7 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 		evt.Type,
 		evt.AggregateType,
 		evt.AggregateID,
+		nilIfEmpty(evt.AggregateUserID),
 		evt.Payload,
 		meta,
 		int(StatusPending),
@@ -49,7 +51,7 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 
 func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batchSize int) ([]Row, error) {
 	const selectQ = `
-		SELECT id, event_type, aggregate_type, aggregate_id, payload, metadata,
+		SELECT id, event_type, aggregate_type, aggregate_id, aggregate_user_id, payload, metadata,
 		       attempts, max_attempts, occurred_at
 		  FROM outbox_events
 		 WHERE status = $1
@@ -67,11 +69,13 @@ func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batch
 	for rows.Next() {
 		var r Row
 		var meta []byte
+		var aggregateUserID sql.NullString
 		if err := rows.Scan(
 			&r.ID,
 			&r.Type,
 			&r.AggregateType,
 			&r.AggregateID,
+			&aggregateUserID,
 			&r.Payload,
 			&meta,
 			&r.Attempts,
@@ -80,6 +84,9 @@ func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batch
 		); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("outbox: claim batch scan: %w", err)
+		}
+		if aggregateUserID.Valid {
+			r.AggregateUserID = aggregateUserID.String
 		}
 		m, err := unmarshalMetadata(meta)
 		if err != nil {
@@ -213,4 +220,11 @@ func unmarshalMetadata(b []byte) (map[string]string, error) {
 		return nil, fmt.Errorf("outbox: unmarshal metadata: %w", err)
 	}
 	return m, nil
+}
+
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

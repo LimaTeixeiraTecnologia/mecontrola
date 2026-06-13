@@ -727,6 +727,66 @@ func (s *MigrationSuite) assertBudgetsPendingEventIdempotency() {
 	s.Contains(dupErr.Error(), "budgets_expense_events_pending_event_uk")
 }
 
+func (s *MigrationSuite) TestOutboxAggregateUserIDMigrationUpDownUp() {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
+
+	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
+
+	s.Require().NoError(migrator.Down(s.ctx, 1))
+
+	s.assertColumnMissing("mecontrola.outbox_events", "aggregate_user_id")
+
+	upErr2 := migrator.Up(s.ctx)
+	s.Require().True(upErr2 == nil || errors.Is(upErr2, migration.ErrNoChange), "re-up deve ser idempotente: %v", upErr2)
+
+	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
+}
+
+func (s *MigrationSuite) assertColumnPresent(table, column string) {
+	parts := splitTableName(table)
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = $2
+		  AND column_name = $3
+	`, parts[0], parts[1], column).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(1), count, "coluna %s deve existir em %s", column, table)
+}
+
+func (s *MigrationSuite) assertColumnMissing(table, column string) {
+	parts := splitTableName(table)
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = $2
+		  AND column_name = $3
+	`, parts[0], parts[1], column).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(0), count, "coluna %s nao deve existir em %s", column, table)
+}
+
+func splitTableName(qualified string) [2]string {
+	for i := 0; i < len(qualified); i++ {
+		if qualified[i] == '.' {
+			return [2]string{qualified[:i], qualified[i+1:]}
+		}
+	}
+	return [2]string{"public", qualified}
+}
+
 func execSQL(mgr manager.Manager, ctx context.Context, query string, args ...any) error {
 	_, err := mgr.DBTX(ctx).ExecContext(ctx, query, args...)
 	return err

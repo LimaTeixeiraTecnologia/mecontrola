@@ -7,6 +7,8 @@ import (
 	"time"
 
 	dbmocks "github.com/JailtonJunior94/devkit-go/pkg/database/mocks"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -44,7 +46,7 @@ func (s *SubscriptionEventPublisherSuite) SetupTest() {
 func (s *SubscriptionEventPublisherSuite) newPublisher() *producers.SubscriptionEventPublisher {
 	cfg := configs.OutboxConfig{RetryMaxAttempts: 5}
 	idGen := id.NewUUIDGenerator()
-	return producers.NewSubscriptionEventPublisher(s.repoFactory, cfg, idGen)
+	return producers.NewSubscriptionEventPublisher(s.repoFactory, cfg, idGen, noop.NewProvider())
 }
 
 func (s *SubscriptionEventPublisherSuite) newActiveSubscription(token string) entities.Subscription {
@@ -237,4 +239,41 @@ func (s *SubscriptionEventPublisherSuite) TestPublish_PropagatesError() {
 			s.ErrorContains(err, "db failure")
 		})
 	}
+}
+
+func (s *SubscriptionEventPublisherSuite) TestPublish_SetsAggregateUserID() {
+	expectedUserID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+
+	plan, err := valueobjects.NewPlan("MONTHLY", 30)
+	s.Require().NoError(err)
+	ft, err := valueobjects.NewFunnelToken("token-user-001")
+	s.Require().NoError(err)
+
+	sub := entities.HydrateWithUser(
+		s.subscriptionID,
+		expectedUserID.String(),
+		ft,
+		plan,
+		valueobjects.StatusActive,
+		s.occurredAt,
+		s.occurredAt.Add(30*24*time.Hour),
+		time.Time{},
+		s.occurredAt,
+	)
+
+	s.repoFactory.EXPECT().
+		OutboxRepository(s.tx).
+		Return(s.storage).
+		Once()
+
+	s.storage.EXPECT().
+		Insert(mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+			return evt.AggregateUserID == expectedUserID.String()
+		}), 5).
+		Return(nil).
+		Once()
+
+	publisher := s.newPublisher()
+	pubErr := publisher.PublishActivated(context.Background(), s.tx, sub, s.subscriptionID, "token-user-001", "+5511999999999", "user@example.com", "sale-user-001")
+	s.NoError(pubErr)
 }

@@ -38,7 +38,7 @@ func (s *TransactionEventPublisherSuite) TestPublishCreated_SameTX_Persists() {
 	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	evt := entities.TransactionCreated{
@@ -50,6 +50,18 @@ func (s *TransactionEventPublisherSuite) TestPublishCreated_SameTX_Persists() {
 	}
 
 	s.Require().NoError(publisher.PublishCreated(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-created", 100)
+	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento criado nao encontrado no outbox")
 }
 
 func (s *TransactionEventPublisherSuite) TestPublishCreated_RollbackDiscardsEvent() {
@@ -57,7 +69,7 @@ func (s *TransactionEventPublisherSuite) TestPublishCreated_RollbackDiscardsEven
 	ctx := context.Background()
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	tx, err := mgr.BeginTx(ctx, database.TxOptions{})
 	s.Require().NoError(err)
@@ -91,7 +103,7 @@ func (s *TransactionEventPublisherSuite) TestPublishUpdated_Success() {
 	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	evt := entities.TransactionUpdated{
@@ -104,6 +116,18 @@ func (s *TransactionEventPublisherSuite) TestPublishUpdated_Success() {
 	}
 
 	s.Require().NoError(publisher.PublishUpdated(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-updated", 100)
+	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento atualizado nao encontrado no outbox")
 }
 
 func (s *TransactionEventPublisherSuite) TestPublishDeleted_Success() {
@@ -112,7 +136,7 @@ func (s *TransactionEventPublisherSuite) TestPublishDeleted_Success() {
 	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	evt := entities.TransactionDeleted{
@@ -125,4 +149,16 @@ func (s *TransactionEventPublisherSuite) TestPublishDeleted_Success() {
 	}
 
 	s.Require().NoError(publisher.PublishDeleted(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-deleted", 100)
+	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento deletado nao encontrado no outbox")
 }

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-gateway-auth-forensics/3.0_execution_report.md
+summary: "Migration 000015 criada, entity AuthEvent com campos forenses, repo mapeado, 15 pkgs ok"
+timestamp: "2026-06-12T00:00:00Z"

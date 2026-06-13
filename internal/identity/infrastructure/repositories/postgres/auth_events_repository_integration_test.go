@@ -55,7 +55,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 			name: "deve inserir evento principal_established sem erro",
 			buildEvent: func() entities.AuthEvent {
 				uid := uuid.New()
-				ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
+				ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp, "", "")
 				s.Require().NoError(err)
 				return ev
 			},
@@ -73,7 +73,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 		{
 			name: "deve inserir evento failed com reason invalid_signature",
 			buildEvent: func() entities.AuthEvent {
-				ev, err := entities.NewAuthFailed(entities.AuthEventReasonInvalidSignature, entities.AuthEventSourceWhatsApp, nil)
+				ev, err := entities.NewAuthFailed(entities.AuthEventReasonInvalidSignature, entities.AuthEventSourceWhatsApp, nil, "", "")
 				s.Require().NoError(err)
 				return ev
 			},
@@ -82,7 +82,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 		{
 			name: "deve inserir evento failed com reason invalid_payload",
 			buildEvent: func() entities.AuthEvent {
-				ev, err := entities.NewAuthFailed(entities.AuthEventReasonInvalidPayload, entities.AuthEventSourceWhatsApp, nil)
+				ev, err := entities.NewAuthFailed(entities.AuthEventReasonInvalidPayload, entities.AuthEventSourceWhatsApp, nil, "", "")
 				s.Require().NoError(err)
 				return ev
 			},
@@ -108,7 +108,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsertIdempotence() {
 	s.Run("deve ser idempotente por PK — segundo insert e no-op", func() {
 		repo := s.newRepo()
 		uid := uuid.New()
-		ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
+		ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp, "", "")
 		s.Require().NoError(err)
 
 		s.Require().NoError(repo.Insert(s.ctx, ev))
@@ -129,6 +129,8 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {
 			entities.AuthEventKind("invalid_kind"),
 			entities.AuthEventSourceWhatsApp,
 			nil,
+			"",
+			"",
 		)
 		err = repo.Insert(s.ctx, invalidEv)
 		s.Require().Error(err, "deve falhar com CHECK constraint violation em kind")
@@ -146,6 +148,8 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {
 			entities.AuthEventKindUnknownUser,
 			entities.AuthEventSource("invalid_source"),
 			nil,
+			"",
+			"",
 		)
 		err = repo.Insert(s.ctx, invalidEv)
 		s.Require().Error(err, "deve falhar com CHECK constraint violation em source")
@@ -164,6 +168,8 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {
 			entities.AuthEventKindFailed,
 			entities.AuthEventSourceWhatsApp,
 			&invalidReason,
+			"",
+			"",
 		)
 		err = repo.Insert(s.ctx, invalidEv)
 		s.Require().Error(err, "deve falhar com CHECK constraint violation em reason")
@@ -176,13 +182,13 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestAnonymizeByUserID() {
 		uid := uuid.New()
 
 		for range 2 {
-			ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
+			ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp, "", "")
 			s.Require().NoError(err)
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}
 
 		otherUID := uuid.New()
-		otherEv, err := entities.NewPrincipalEstablished(otherUID, entities.AuthEventSourceWhatsApp)
+		otherEv, err := entities.NewPrincipalEstablished(otherUID, entities.AuthEventSourceWhatsApp, "", "")
 		s.Require().NoError(err)
 		s.Require().NoError(repo.Insert(s.ctx, otherEv))
 
@@ -207,7 +213,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestAnonymizeByUserID() {
 		repo := s.newRepo()
 		uid := uuid.New()
 
-		ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp)
+		ev, err := entities.NewPrincipalEstablished(uid, entities.AuthEventSourceWhatsApp, "", "")
 		s.Require().NoError(err)
 		s.Require().NoError(repo.Insert(s.ctx, ev))
 
@@ -226,7 +232,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestDeleteOlderThan() {
 		for range 5 {
 			id, err := uuid.NewV7()
 			s.Require().NoError(err)
-			ev := entities.HydrateAuthEvent(id, oldTime, nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil)
+			ev := entities.HydrateAuthEvent(id, oldTime, nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil, "", "")
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}
 

@@ -170,7 +170,8 @@ func Run() error {
 	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
 
-	cardModule, err := card.NewCardModule(cfg, o11y, dbManager)
+	gatewayAuthMiddleware := identity.NewRequireGatewayAuth(cfg.IdentityConfig, identityModule.RecordGatewayAuthFailure, o11y)
+	cardModule, err := card.NewCardModule(cfg, o11y, dbManager, gatewayAuthMiddleware)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
@@ -208,8 +209,5 @@ func Run() error {
 }
 
 func resolveCORSOrigins(cfg *configs.Config) string {
-	if origins := cfg.HTTPConfig.CORSAllowedOrigins; origins != "" {
-		return origins
-	}
-	return "*"
+	return cfg.HTTPConfig.CORSAllowedOrigins
 }

@@ -56,7 +56,7 @@ func (s *OutboxProducerIntegSuite) SetupSuite() {
 	outboxCfg := configs.OutboxConfig{RetryMaxAttempts: 5}
 	idGen := id.NewUUIDGenerator()
 
-	s.publisher = producers.NewSubscriptionEventPublisher(s.outboxFactory, outboxCfg, idGen)
+	s.publisher = producers.NewSubscriptionEventPublisher(s.outboxFactory, outboxCfg, idGen, noop.NewProvider())
 
 	saleUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
 	s.processSaleUC = usecases.NewProcessSaleApproved(saleUoW, s.factory, s.publisher, o11y)

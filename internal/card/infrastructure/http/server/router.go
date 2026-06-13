@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +22,8 @@ type CardRouter struct {
 	invoiceForHandler *handlers.InvoiceForHandler
 	idemStorage       idempotency.Storage
 	o11y              observability.Observability
+	gatewayAuth       func(http.Handler) http.Handler
+	userRateLimit     func(http.Handler) http.Handler
 }
 
 func NewCardRouter(
@@ -32,6 +35,8 @@ func NewCardRouter(
 	invoiceFor *handlers.InvoiceForHandler,
 	idemStorage idempotency.Storage,
 	o11y observability.Observability,
+	gatewayAuth func(http.Handler) http.Handler,
+	userRateLimit func(http.Handler) http.Handler,
 ) *CardRouter {
 	return &CardRouter{
 		createHandler:     create,
@@ -42,6 +47,8 @@ func NewCardRouter(
 		invoiceForHandler: invoiceFor,
 		idemStorage:       idemStorage,
 		o11y:              o11y,
+		gatewayAuth:       gatewayAuth,
+		userRateLimit:     userRateLimit,
 	}
 }
 
@@ -49,8 +56,10 @@ func (rt *CardRouter) Register(r chi.Router) {
 	idemMiddleware := idempotency.Middleware("card", rt.idemStorage, 24*time.Hour, rt.o11y)
 
 	r.Route("/api/v1/cards", func(sub chi.Router) {
+		sub.Use(rt.gatewayAuth)
 		sub.Use(middleware.InjectPrincipalFromHeaderWithO11y(rt.o11y))
 		sub.Use(middleware.RequireUserWithO11y(rt.o11y))
+		sub.Use(rt.userRateLimit)
 
 		sub.With(idemMiddleware).Post("/", rt.createHandler.Handle)
 		sub.Get("/", rt.listHandler.Handle)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -22,15 +23,18 @@ const eventTypeTransactionDeleted = "transactions.transaction.deleted.v1"
 type transactionEventPublisher struct {
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
+	o11y          observability.Observability
 }
 
 func NewTransactionEventPublisher(
 	outboxFactory outbox.OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
+	o11y observability.Observability,
 ) interfaces.TransactionEventPublisher {
 	return &transactionEventPublisher{
 		outboxFactory: outboxFactory,
 		cfg:           cfg,
+		o11y:          o11y,
 	}
 }
 
@@ -41,19 +45,20 @@ func (p *transactionEventPublisher) PublishCreated(ctx context.Context, db datab
 	}
 
 	event, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID.String(),
-		Type:          eventTypeTransactionCreated,
-		AggregateType: aggregateTypeTransaction,
-		AggregateID:   evt.AggregateID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.OccurredAt,
+		ID:              evt.EventID.String(),
+		Type:            eventTypeTransactionCreated,
+		AggregateType:   aggregateTypeTransaction,
+		AggregateID:     evt.AggregateID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.OccurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("transactions/producer: new event created: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	if err := publisher.Publish(ctx, event); err != nil {
 		return fmt.Errorf("transactions/producer: publish created: %w", err)
 	}
@@ -67,19 +72,20 @@ func (p *transactionEventPublisher) PublishUpdated(ctx context.Context, db datab
 	}
 
 	event, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID.String(),
-		Type:          eventTypeTransactionUpdated,
-		AggregateType: aggregateTypeTransaction,
-		AggregateID:   evt.AggregateID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.OccurredAt,
+		ID:              evt.EventID.String(),
+		Type:            eventTypeTransactionUpdated,
+		AggregateType:   aggregateTypeTransaction,
+		AggregateID:     evt.AggregateID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.OccurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("transactions/producer: new event updated: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	if err := publisher.Publish(ctx, event); err != nil {
 		return fmt.Errorf("transactions/producer: publish updated: %w", err)
 	}
@@ -93,19 +99,20 @@ func (p *transactionEventPublisher) PublishDeleted(ctx context.Context, db datab
 	}
 
 	event, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID.String(),
-		Type:          eventTypeTransactionDeleted,
-		AggregateType: aggregateTypeTransaction,
-		AggregateID:   evt.AggregateID.String(),
-		Payload:       raw,
-		OccurredAt:    evt.OccurredAt,
+		ID:              evt.EventID.String(),
+		Type:            eventTypeTransactionDeleted,
+		AggregateType:   aggregateTypeTransaction,
+		AggregateID:     evt.AggregateID.String(),
+		AggregateUserID: evt.UserID.String(),
+		Payload:         raw,
+		OccurredAt:      evt.OccurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("transactions/producer: new event deleted: %w", err)
 	}
 
 	storage := p.outboxFactory.OutboxRepository(db)
-	publisher := outbox.NewPostgresPublisher(storage, p.cfg)
+	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	if err := publisher.Publish(ctx, event); err != nil {
 		return fmt.Errorf("transactions/producer: publish deleted: %w", err)
 	}

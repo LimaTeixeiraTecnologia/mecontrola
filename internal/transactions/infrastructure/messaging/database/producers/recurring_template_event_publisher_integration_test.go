@@ -31,7 +31,7 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishCreated_Persists() {
 	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	evt := entities.RecurringTemplateCreated{
 		EventID:     uuid.New(),
@@ -41,6 +41,18 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishCreated_Persists() {
 	}
 
 	s.Require().NoError(publisher.PublishCreated(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-rt-created", 100)
+	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento recurring_template.created nao encontrado no outbox")
 }
 
 func (s *RecurringTemplateEventPublisherSuite) TestPublishUpdated_Persists() {
@@ -49,7 +61,7 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishUpdated_Persists() {
 	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	evt := entities.RecurringTemplateUpdated{
 		EventID:     uuid.New(),
@@ -59,6 +71,18 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishUpdated_Persists() {
 	}
 
 	s.Require().NoError(publisher.PublishUpdated(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-rt-updated", 100)
+	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento recurring_template.updated nao encontrado no outbox")
 }
 
 func (s *RecurringTemplateEventPublisherSuite) TestPublishDeleted_Persists() {
@@ -67,7 +91,7 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishDeleted_Persists() {
 	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
-	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg())
+	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
 	evt := entities.RecurringTemplateDeleted{
 		EventID:     uuid.New(),
@@ -77,4 +101,16 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishDeleted_Persists() {
 	}
 
 	s.Require().NoError(publisher.PublishDeleted(ctx, db, evt))
+
+	storage := outbox.NewPostgresStorage(db)
+	rows, err := storage.ClaimBatch(ctx, "test-rt-deleted", 100)
+	s.Require().NoError(err)
+	found := false
+	for _, row := range rows {
+		if row.AggregateID == evt.AggregateID.String() {
+			found = true
+			s.Equal(evt.UserID.String(), row.AggregateUserID)
+		}
+	}
+	s.True(found, "evento recurring_template.deleted nao encontrado no outbox")
 }

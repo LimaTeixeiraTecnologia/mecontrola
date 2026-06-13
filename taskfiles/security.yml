@@ -117,6 +117,53 @@ tasks:
       - go list -m -u all
       - go mod verify
 
+  # ── VPS firewall ufw ─────────────────────────────────────────────────────────
+  vps:firewall:
+    desc: >-
+      Aplica regras ufw idempotentes no VPS via SSH (22/80/443, deny incoming).
+      Passa --force-enable para habilitar o ufw apos aplicar as regras.
+      Requer VPS_HOST. Opcional: VPS_USER (default root), FORCE_ENABLE (default false).
+      Uso: task security:vps:firewall VPS_HOST=<ip>
+           task security:vps:firewall VPS_HOST=<ip> FORCE_ENABLE=true
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST")}}'
+      VPS_USER: '{{.VPS_USER | default "root"}}'
+      FORCE_ENABLE: '{{.FORCE_ENABLE | default "false"}}'
+      SCRIPT_REMOTE: '/tmp/vps-firewall-$(date +%s).sh'
+    requires:
+      vars: [VPS_HOST]
+    cmds:
+      - |
+        EXTRA_FLAG=""
+        if [ "{{.FORCE_ENABLE}}" = "true" ]; then
+          EXTRA_FLAG="--force-enable"
+        fi
+        echo "==> Copiando script para {{.VPS_USER}}@{{.VPS_HOST}}:{{.SCRIPT_REMOTE}}..."
+        scp deployment/scripts/vps-firewall.sh {{.VPS_USER}}@{{.VPS_HOST}}:{{.SCRIPT_REMOTE}}
+        echo "==> Executando script remoto..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "chmod +x {{.SCRIPT_REMOTE}} && sudo bash {{.SCRIPT_REMOTE}} $EXTRA_FLAG && rm -f {{.SCRIPT_REMOTE}}"
+        echo "==> vps:firewall concluido."
+
+  # ── backup-restore-smoke ─────────────────────────────────────────────────────
+  backup-restore-smoke:
+    desc: >-
+      Baixa o ultimo dump cifrado (rclone+age), restaura em Postgres efemero e executa
+      smoke queries nas 3 tabelas criticas (users, cards, transactions).
+      Requer: rclone, age, docker, psql configurados no host.
+      Variaveis obrigatorias: BACKUP_REMOTE, AGE_KEY_FILE (ou PG_RESTORE_ENV_FILE).
+      Uso: task security:backup-restore-smoke
+    preconditions:
+      - sh: command -v rclone >/dev/null 2>&1
+        msg: "rclone ausente. Instale: curl https://rclone.org/install.sh | sudo bash"
+      - sh: command -v age >/dev/null 2>&1
+        msg: "age ausente. Instale: brew install age  ou  apt install age"
+      - sh: command -v docker >/dev/null 2>&1
+        msg: "docker ausente. Instale: https://docs.docker.com/get-docker/"
+      - sh: command -v psql >/dev/null 2>&1
+        msg: "psql ausente. Instale: apt install postgresql-client  ou  brew install libpq"
+    cmds:
+      - bash deployment/scripts/pg-restore-smoke.sh
+
   # ── scan (alias completo local) ──────────────────────────────────────────────
   scan:
     desc: Roda toda a verificacao de seguranca local (vulncheck + audit).

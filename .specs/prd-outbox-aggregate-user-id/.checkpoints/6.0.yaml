@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-outbox-aggregate-user-id/6.0_execution_report.md
+summary: "AggregateUserID populado em subscription_bound.go e dispatcher whatsapp; allowlist auth.failed adicionada; testes atualizados e PASS"
+timestamp: "2026-06-13T11:30:00Z"

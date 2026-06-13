@@ -45,62 +45,7 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 	}
 
 	result, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
-		userRepo := u.factory.UserRepository(tx)
-
-		var activeFound *entities.User
-		existing, findErr := userRepo.FindByWhatsAppNumber(ctx, whatsapp)
-		switch {
-		case findErr == nil:
-			activeFound = &existing
-		case errors.Is(findErr, application.ErrUserNotFound):
-		default:
-			return entities.User{}, fmt.Errorf("%s find by whatsapp: %w", prefixUpsertUser, findErr)
-		}
-
-		var deletedFound *entities.User
-		if activeFound == nil {
-			deleted, findDelErr := userRepo.FindByWhatsAppNumberIncludingDeleted(ctx, whatsapp)
-			switch {
-			case findDelErr == nil:
-				deletedFound = &deleted
-			case errors.Is(findDelErr, application.ErrUserNotFound):
-			default:
-				return entities.User{}, fmt.Errorf("%s find including deleted: %w", prefixUpsertUser, findDelErr)
-			}
-		}
-
-		now := time.Now().UTC()
-		action := services.UserUpsertWorkflow{}.DecideUpsertAction(
-			activeFound,
-			deletedFound,
-			whatsapp,
-			email,
-			in.DisplayName,
-			now,
-		)
-
-		switch a := action.(type) {
-		case services.UpsertUpdateExisting:
-			persisted, upsertErr := userRepo.UpsertByWhatsAppNumber(ctx, a.Existing, now)
-			if upsertErr != nil {
-				return entities.User{}, fmt.Errorf("%s upsert update: %w", prefixUpsertUser, upsertErr)
-			}
-			return persisted, nil
-		case services.UpsertReanimate:
-			persisted, reanErr := userRepo.Reanimate(ctx, a.Deleted, now)
-			if reanErr != nil {
-				return entities.User{}, fmt.Errorf("%s reanimate: %w", prefixUpsertUser, reanErr)
-			}
-			return persisted, nil
-		case services.UpsertCreateNew:
-			persisted, upsertErr := userRepo.UpsertByWhatsAppNumber(ctx, a.Candidate, now)
-			if upsertErr != nil {
-				return entities.User{}, fmt.Errorf("%s upsert insert: %w", prefixUpsertUser, upsertErr)
-			}
-			return persisted, nil
-		default:
-			return entities.User{}, fmt.Errorf("%s unknown upsert action", prefixUpsertUser)
-		}
+		return u.persistUpsert(ctx, tx, whatsapp, email, in.DisplayName)
 	})
 
 	if err != nil {
@@ -126,6 +71,64 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 		CreatedAt:      result.CreatedAt(),
 		UpdatedAt:      result.UpdatedAt(),
 	}, nil
+}
+
+func (u *UpsertUserByWhatsApp) persistUpsert(
+	ctx context.Context,
+	tx database.DBTX,
+	whatsapp valueobjects.WhatsAppNumber,
+	email valueobjects.Email,
+	displayName string,
+) (entities.User, error) {
+	userRepo := u.factory.UserRepository(tx)
+
+	var activeFound *entities.User
+	existing, findErr := userRepo.FindByWhatsAppNumber(ctx, whatsapp)
+	switch {
+	case findErr == nil:
+		activeFound = &existing
+	case errors.Is(findErr, application.ErrUserNotFound):
+	default:
+		return entities.User{}, fmt.Errorf("%s find by whatsapp: %w", prefixUpsertUser, findErr)
+	}
+
+	var deletedFound *entities.User
+	if activeFound == nil {
+		deleted, findDelErr := userRepo.FindByWhatsAppNumberIncludingDeleted(ctx, whatsapp)
+		switch {
+		case findDelErr == nil:
+			deletedFound = &deleted
+		case errors.Is(findDelErr, application.ErrUserNotFound):
+		default:
+			return entities.User{}, fmt.Errorf("%s find including deleted: %w", prefixUpsertUser, findDelErr)
+		}
+	}
+
+	now := time.Now().UTC()
+	action := services.UserUpsertWorkflow{}.DecideUpsertAction(activeFound, deletedFound, whatsapp, email, displayName, now)
+
+	switch a := action.(type) {
+	case services.UpsertUpdateExisting:
+		persisted, err := userRepo.UpsertByWhatsAppNumber(ctx, a.Existing, now)
+		if err != nil {
+			return entities.User{}, fmt.Errorf("%s upsert update: %w", prefixUpsertUser, err)
+		}
+		return persisted, nil
+	case services.UpsertReanimate:
+		persisted, err := userRepo.Reanimate(ctx, a.Deleted, now)
+		if err != nil {
+			return entities.User{}, fmt.Errorf("%s reanimate: %w", prefixUpsertUser, err)
+		}
+		return persisted, nil
+	case services.UpsertCreateNew:
+		persisted, err := userRepo.UpsertByWhatsAppNumber(ctx, a.Candidate, now)
+		if err != nil {
+			return entities.User{}, fmt.Errorf("%s upsert insert: %w", prefixUpsertUser, err)
+		}
+		return persisted, nil
+	default:
+		return entities.User{}, fmt.Errorf("%s unknown upsert action", prefixUpsertUser)
+	}
 }
 
 func (u *UpsertUserByWhatsApp) parseInput(

@@ -40,6 +40,9 @@ packages:
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server/handlers:
     interfaces:
       upsertUseCase: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server/middleware:
+    interfaces:
+      gatewayAuthFailureLogger: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers:
     interfaces:
       projectAuthEventUseCase: {}

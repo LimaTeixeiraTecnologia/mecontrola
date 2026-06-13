@@ -24,7 +24,8 @@ var ErrConcurrentActiveSub = errors.New("billing: user already has an active sub
 var ErrSubscriptionNotFound = errors.New("billing: subscription not found")
 
 const subscriptionSelectColumns = `id, funnel_token, kiwify_order_id,
-		       plan_code, status, period_start, period_end, grace_end, last_event_at`
+		       plan_code, status, period_start, period_end, grace_end, last_event_at,
+		       user_id`
 
 type subscriptionRepository struct {
 	o11y observability.Observability
@@ -294,11 +295,13 @@ func (r *subscriptionRepository) scanRow(
 		id, funnelToken, orderID, planCode, status string
 		periodStart, periodEnd, lastEventAt        time.Time
 		graceEnd                                   sql.NullTime
+		userID                                     sql.NullString
 	)
 
 	err := row.Scan(
 		&id, &funnelToken, &orderID,
 		&planCode, &status, &periodStart, &periodEnd, &graceEnd, &lastEventAt,
+		&userID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return entities.Subscription{}, fmt.Errorf("billing/postgres: %s: %w", op, ErrSubscriptionNotFound)
@@ -337,7 +340,12 @@ func (r *subscriptionRepository) scanRow(
 		graceEndVal = graceEnd.Time
 	}
 
-	return entities.Hydrate(id, ft, plan, parsedStatus, periodStart, periodEnd, graceEndVal, lastEventAt), nil
+	var userIDVal string
+	if userID.Valid {
+		userIDVal = userID.String
+	}
+
+	return entities.HydrateWithUser(id, userIDVal, ft, plan, parsedStatus, periodStart, periodEnd, graceEndVal, lastEventAt), nil
 }
 
 func resolvePlanFromCode(code string) (valueobjects.Plan, error) {

@@ -19,6 +19,8 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
+	"net/http"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -150,7 +152,8 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) { //nolint:revive 
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
-	cardModule, err := card.NewCardModule(r.cfg, r.o11y, r.dbManager)
+	passthroughGateway := func(next http.Handler) http.Handler { return next }
+	cardModule, err := card.NewCardModule(r.cfg, r.o11y, r.dbManager, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}

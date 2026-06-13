@@ -57,6 +57,55 @@ func (s *EnvelopeSuite) TestPack() {
 				s.Equal(occurred, result.OccurredAt)
 				s.Equal(map[string]string{"trace_id": "t1"}, result.Metadata)
 				s.Equal(json.RawMessage(`{"key":"val"}`), result.Payload)
+				s.Empty(result.AggregateUserID)
+			},
+		},
+		{
+			name: "deve incluir aggregate user id no envelope quando presente",
+			args: args{
+				row: outbox.Row{
+					Event: outbox.Event{
+						ID:              "def-456",
+						Type:            "test.event",
+						Payload:         []byte(`{}`),
+						Metadata:        map[string]string{},
+						OccurredAt:      occurred,
+						AggregateType:   "T",
+						AggregateID:     "2",
+						AggregateUserID: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+					},
+					Attempts:    0,
+					MaxAttempts: 15,
+				},
+			},
+			setup: func() {},
+			expect: func(result outbox.Envelope) {
+				s.Equal("3fa85f64-5717-4562-b3fc-2c963f66afa6", result.AggregateUserID)
+			},
+		},
+		{
+			name: "deve omitir aggregate user id do json quando ausente",
+			args: args{
+				row: outbox.Row{
+					Event: outbox.Event{
+						ID:            "ghi-789",
+						Type:          "test.event",
+						Payload:       []byte(`{}`),
+						Metadata:      map[string]string{},
+						OccurredAt:    occurred,
+						AggregateType: "T",
+						AggregateID:   "3",
+					},
+					Attempts:    0,
+					MaxAttempts: 15,
+				},
+			},
+			setup: func() {},
+			expect: func(result outbox.Envelope) {
+				s.Empty(result.AggregateUserID)
+				b, err := json.Marshal(result)
+				s.NoError(err)
+				s.NotContains(string(b), "aggregate_user_id")
 			},
 		},
 	}

@@ -165,16 +165,16 @@ func (_c *PendingEventRepository_ListReady_Call) RunAndReturn(run func(ctx conte
 }
 
 // Transition provides a mock function for the type PendingEventRepository
-func (_mock *PendingEventRepository) Transition(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string) error {
-	ret := _mock.Called(ctx, id, to, reason)
+func (_mock *PendingEventRepository) Transition(ctx context.Context, id uuid.UUID, userID uuid.UUID, to entities.PendingState, reason string) error {
+	ret := _mock.Called(ctx, id, userID, to, reason)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Transition")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, entities.PendingState, string) error); ok {
-		r0 = returnFunc(ctx, id, to, reason)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID, entities.PendingState, string) error); ok {
+		r0 = returnFunc(ctx, id, userID, to, reason)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -189,13 +189,14 @@ type PendingEventRepository_Transition_Call struct {
 // Transition is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id uuid.UUID
+//   - userID uuid.UUID
 //   - to entities.PendingState
 //   - reason string
-func (_e *PendingEventRepository_Expecter) Transition(ctx interface{}, id interface{}, to interface{}, reason interface{}) *PendingEventRepository_Transition_Call {
-	return &PendingEventRepository_Transition_Call{Call: _e.mock.On("Transition", ctx, id, to, reason)}
+func (_e *PendingEventRepository_Expecter) Transition(ctx interface{}, id interface{}, userID interface{}, to interface{}, reason interface{}) *PendingEventRepository_Transition_Call {
+	return &PendingEventRepository_Transition_Call{Call: _e.mock.On("Transition", ctx, id, userID, to, reason)}
 }
 
-func (_c *PendingEventRepository_Transition_Call) Run(run func(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string)) *PendingEventRepository_Transition_Call {
+func (_c *PendingEventRepository_Transition_Call) Run(run func(ctx context.Context, id uuid.UUID, userID uuid.UUID, to entities.PendingState, reason string)) *PendingEventRepository_Transition_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -205,19 +206,24 @@ func (_c *PendingEventRepository_Transition_Call) Run(run func(ctx context.Conte
 		if args[1] != nil {
 			arg1 = args[1].(uuid.UUID)
 		}
-		var arg2 entities.PendingState
+		var arg2 uuid.UUID
 		if args[2] != nil {
-			arg2 = args[2].(entities.PendingState)
+			arg2 = args[2].(uuid.UUID)
 		}
-		var arg3 string
+		var arg3 entities.PendingState
 		if args[3] != nil {
-			arg3 = args[3].(string)
+			arg3 = args[3].(entities.PendingState)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -228,7 +234,7 @@ func (_c *PendingEventRepository_Transition_Call) Return(err error) *PendingEven
 	return _c
 }
 
-func (_c *PendingEventRepository_Transition_Call) RunAndReturn(run func(ctx context.Context, id uuid.UUID, to entities.PendingState, reason string) error) *PendingEventRepository_Transition_Call {
+func (_c *PendingEventRepository_Transition_Call) RunAndReturn(run func(ctx context.Context, id uuid.UUID, userID uuid.UUID, to entities.PendingState, reason string) error) *PendingEventRepository_Transition_Call {
 	_c.Call.Return(run)
 	return _c
 }

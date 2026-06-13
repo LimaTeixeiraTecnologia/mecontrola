@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"maps"
 	"time"
 
@@ -14,32 +15,35 @@ import (
 )
 
 var (
-	ErrEventIDMissing       = errors.New("outbox: event id is required and must be a valid uuid")
-	ErrEventTypeMissing     = errors.New("outbox: event type is required")
-	ErrAggregateTypeMissing = errors.New("outbox: aggregate type is required")
-	ErrAggregateIDMissing   = errors.New("outbox: aggregate id is required")
-	ErrInvalidPayload       = errors.New("outbox: payload must be a valid json object")
-	ErrOccurredAtZero       = errors.New("outbox: occurred_at must not be zero")
+	ErrEventIDMissing         = errors.New("outbox: event id is required and must be a valid uuid")
+	ErrEventTypeMissing       = errors.New("outbox: event type is required")
+	ErrAggregateTypeMissing   = errors.New("outbox: aggregate type is required")
+	ErrAggregateIDMissing     = errors.New("outbox: aggregate id is required")
+	ErrInvalidPayload         = errors.New("outbox: payload must be a valid json object")
+	ErrOccurredAtZero         = errors.New("outbox: occurred_at must not be zero")
+	ErrInvalidAggregateUserID = errors.New("outbox: aggregate_user_id must be a valid uuid")
 )
 
 type Event struct {
-	ID            string
-	Type          string
-	AggregateType string
-	AggregateID   string
-	Payload       []byte
-	Metadata      map[string]string
-	OccurredAt    time.Time
+	ID              string
+	Type            string
+	AggregateType   string
+	AggregateID     string
+	AggregateUserID string
+	Payload         []byte
+	Metadata        map[string]string
+	OccurredAt      time.Time
 }
 
 type EventInput struct {
-	ID            string
-	Type          string
-	AggregateType string
-	AggregateID   string
-	Payload       []byte
-	Metadata      map[string]string
-	OccurredAt    time.Time
+	ID              string
+	Type            string
+	AggregateType   string
+	AggregateID     string
+	AggregateUserID string
+	Payload         []byte
+	Metadata        map[string]string
+	OccurredAt      time.Time
 }
 
 func NewEvent(input EventInput) (Event, error) {
@@ -59,6 +63,13 @@ func NewEvent(input EventInput) (Event, error) {
 	}
 	if input.AggregateID == "" {
 		return Event{}, ErrAggregateIDMissing
+	}
+	if input.AggregateUserID != "" {
+		if _, err := uuid.Parse(input.AggregateUserID); err != nil {
+			return Event{}, ErrInvalidAggregateUserID
+		}
+	} else if !isSystemEvent(input.Type) {
+		slog.Warn("outbox.event.missing_aggregate_user_id", "event_type", input.Type)
 	}
 	if !json.Valid(input.Payload) {
 		return Event{}, ErrInvalidPayload
@@ -82,13 +93,14 @@ func NewEvent(input EventInput) (Event, error) {
 	maps.Copy(meta, input.Metadata)
 
 	return Event{
-		ID:            id,
-		Type:          input.Type,
-		AggregateType: input.AggregateType,
-		AggregateID:   input.AggregateID,
-		Payload:       payload,
-		Metadata:      meta,
-		OccurredAt:    occurredAt,
+		ID:              id,
+		Type:            input.Type,
+		AggregateType:   input.AggregateType,
+		AggregateID:     input.AggregateID,
+		AggregateUserID: input.AggregateUserID,
+		Payload:         payload,
+		Metadata:        meta,
+		OccurredAt:      occurredAt,
 	}, nil
 }
 

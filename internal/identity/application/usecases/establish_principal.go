@@ -53,12 +53,12 @@ func classifyEstablishErrorReason(err error) string {
 	return reasonInternalError
 }
 
-func eventOutboxFromDecision(decision services.PrincipalDecision) (outbox.Event, error) {
+func eventOutboxFromDecision(decision services.PrincipalDecision, requestID, clientIP string) (outbox.Event, error) {
 	userID := ""
 	if decision.Found {
 		userID = decision.UserID.String()
 	}
-	return newAuthEventOutbox(decision.EventID.String(), userID, string(decision.EventKind), authSourceWhatsApp, "", decision.OccurredAt)
+	return newAuthEventOutbox(decision.EventID.String(), userID, string(decision.EventKind), authSourceWhatsApp, "", requestID, clientIP, decision.OccurredAt)
 }
 
 type EstablishPrincipal struct {
@@ -126,8 +126,21 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 		return auth.Principal{}, fmt.Errorf("%s parse whatsapp: %w", prefixEstablishPrincipal, err)
 	}
 
+	var rid valueobjects.RequestID
+	if in.RequestID != "" {
+		rid, err = valueobjects.NewRequestID(in.RequestID)
+		if err != nil {
+			return auth.Principal{}, fmt.Errorf("%s parse request_id: %w", prefixEstablishPrincipal, err)
+		}
+	}
+
+	cip, err := valueobjects.NewClientIP(in.ClientIPRaw)
+	if err != nil {
+		return auth.Principal{}, fmt.Errorf("%s parse client_ip: %w", prefixEstablishPrincipal, err)
+	}
+
 	res, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
-		return u.resolvePrincipal(ctx, tx, wa)
+		return u.resolvePrincipal(ctx, tx, wa, rid, cip)
 	})
 
 	elapsed := time.Since(start).Seconds()
@@ -142,6 +155,8 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 			observability.String("layer", "usecase"),
 			observability.String("operation", "establish_principal"),
 			observability.String("whatsapp", wa.Masked()),
+			observability.String("request_id", rid.String()),
+			observability.String("client_ip", cip.String()),
 			observability.Error(err),
 		)
 		return auth.Principal{}, fmt.Errorf("%s %w", prefixEstablishPrincipal, err)
@@ -165,6 +180,8 @@ func (u *EstablishPrincipal) resolvePrincipal(
 	ctx context.Context,
 	tx database.DBTX,
 	wa valueobjects.WhatsAppNumber,
+	rid valueobjects.RequestID,
+	cip valueobjects.ClientIP,
 ) (EstablishResult, error) {
 	userRepo := u.factory.UserRepository(tx)
 
@@ -190,7 +207,7 @@ func (u *EstablishPrincipal) resolvePrincipal(
 
 	decision := u.workflow.DecidePrincipal(userID, found, eventID, now)
 
-	ev, buildErr := eventOutboxFromDecision(decision)
+	ev, buildErr := eventOutboxFromDecision(decision, rid.String(), cip.String())
 	if buildErr != nil {
 		return EstablishResult{}, buildErr
 	}

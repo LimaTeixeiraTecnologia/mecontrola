@@ -2,6 +2,7 @@ package card_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
@@ -40,7 +41,8 @@ func TestNewCardModule_FieldsNotNil(t *testing.T) {
 	mgr := &stubManager{}
 	cfg := &configs.Config{}
 
-	m, err := card.NewCardModule(cfg, o11y, manager.Manager(mgr))
+	passthrough := func(next http.Handler) http.Handler { return next }
+	m, err := card.NewCardModule(cfg, o11y, manager.Manager(mgr), passthrough)
 
 	assert.NoError(t, err, "NewCardModule nao deve retornar erro")
 	assert.NotNil(t, m.RepositoryFactory, "RepositoryFactory deve ser nao-nil")

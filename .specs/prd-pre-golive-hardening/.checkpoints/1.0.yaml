@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-pre-golive-hardening/1.0_execution_report.md
+summary: "CORS guard adicionado em Config.Validate() — production sem lista valida ou com wildcard falha boot; 4 testes passando"
+timestamp: "2026-06-12T00:00:00Z"

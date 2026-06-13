@@ -90,14 +90,14 @@ func (r *expenseRepository) Update(ctx context.Context, e entities.Expense, expe
 		       occurred_at    = $5,
 		       version        = $6,
 		       updated_at     = $7
-		 WHERE id = $8 AND version = $9 AND deleted_at IS NULL
+		 WHERE id = $8 AND user_id = $9 AND version = $10 AND deleted_at IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		e.SubcategoryID(), e.RootSlug().String(), e.Competence().String(),
 		e.AmountCents(), e.OccurredAt(),
 		e.Version(), e.UpdatedAt(),
-		e.ID(), expectedVersion,
+		e.ID(), e.UserID(), expectedVersion,
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -124,13 +124,13 @@ func (r *expenseRepository) SoftDelete(ctx context.Context, e entities.Expense, 
 		       tombstone_version = $2,
 		       deleted_at        = $3,
 		       updated_at        = $4
-		 WHERE id = $5 AND version = $6 AND deleted_at IS NULL
+		 WHERE id = $5 AND user_id = $6 AND version = $7 AND deleted_at IS NULL
 		 RETURNING version
 	`
 
 	row := r.db.QueryRowContext(ctx, query,
 		e.Version(), e.TombstoneVersion(), e.DeletedAt(), e.UpdatedAt(),
-		e.ID(), expectedVersion,
+		e.ID(), e.UserID(), expectedVersion,
 	)
 
 	var tombstoneVersion int64

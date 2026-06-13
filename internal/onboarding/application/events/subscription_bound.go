@@ -37,12 +37,13 @@ func NewSubscriptionBoundEvent(evt entities.SubscriptionBound) (outbox.Event, er
 	}
 
 	envelope, err := outbox.NewEvent(outbox.EventInput{
-		ID:            evt.EventID,
-		Type:          eventTypeSubscriptionBound,
-		AggregateType: aggregateTypeOnboardingToken,
-		AggregateID:   evt.TokenID,
-		Payload:       raw,
-		OccurredAt:    evt.BoundAt,
+		ID:              evt.EventID,
+		Type:            eventTypeSubscriptionBound,
+		AggregateType:   aggregateTypeOnboardingToken,
+		AggregateID:     evt.TokenID,
+		AggregateUserID: evt.UserID,
+		Payload:         raw,
+		OccurredAt:      evt.BoundAt,
 	})
 	if err != nil {
 		return outbox.Event{}, fmt.Errorf("onboarding/event: new event: %w", err)

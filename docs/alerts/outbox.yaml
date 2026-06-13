@@ -1,0 +1,24 @@
+groups:
+  - name: outbox
+    rules:
+      - alert: OutboxMissingUserID
+        expr: |
+          (
+            rate(outbox_events_inserted_total{has_user_id="false"}[5m])
+            /
+            rate(outbox_events_inserted_total[5m])
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          module: platform
+          component: outbox
+        annotations:
+          summary: "Outbox events sem aggregate_user_id acima de 1%"
+          description: |
+            A taxa de eventos inseridos no outbox sem aggregate_user_id ultrapassou 1% do
+            total por mais de 10 minutos. Isso indica que um ou mais callers nao estao
+            populando AggregateUserID no EventInput. Consulte logs estruturados com
+            msg="outbox.event.missing_aggregate_user_id" para identificar o event_type
+            responsavel.
+          runbook_url: "https://github.com/LimaTeixeiraTecnologia/mecontrola/blob/main/docs/runbooks/outbox-aggregate-user-id.md"

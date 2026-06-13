@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-pre-golive-hardening/6.0_execution_report.md
+summary: Caddyfile hardening completo — TLS, 5 security headers, bloqueio admin/pprof/metrics, strip de 3 headers de gateway, smoke test 12/12 checks passando
+timestamp: 2026-06-12T01:22:00Z

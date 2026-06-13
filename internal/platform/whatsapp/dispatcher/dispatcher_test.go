@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
@@ -14,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
@@ -38,8 +41,13 @@ func (m *mockEstablish) Execute(ctx context.Context, in input.EstablishPrincipal
 	return args.Get(0).(auth.Principal), args.Error(1)
 }
 
+func payloadWithTimestamp(text, ts string) json.RawMessage {
+	return json.RawMessage(`{"object":"whatsapp_business_account","entry":[{"id":"1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"5511999999999","phone_number_id":"123"},"messages":[{"from":"5511987654321","id":"wamid.test","timestamp":"` + ts + `","type":"text","text":{"body":"` + text + `"}}]}}]}]}`)
+}
+
 func validPayload(text string) json.RawMessage {
-	return json.RawMessage(`{"object":"whatsapp_business_account","entry":[{"id":"1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"5511999999999","phone_number_id":"123"},"messages":[{"from":"5511987654321","id":"wamid.test","timestamp":"1700000000","type":"text","text":{"body":"` + text + `"}}]}}]}]}`)
+	ts := fmt.Sprintf("%d", time.Now().UTC().Unix())
+	return payloadWithTimestamp(text, ts)
 }
 
 type DispatcherSuite struct {
@@ -121,7 +129,9 @@ func (s *DispatcherSuite) TestRoute() {
 				e.On("Execute", mock.Anything, mock.Anything).Return(principal, nil)
 			},
 			setupPublisher: func(p *outboxmocks.Publisher) {
-				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+				p.On("Publish", mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+					return evt.AggregateUserID == userID.String()
+				})).Return(nil)
 			},
 			limiter: func() *ratelimit.Limiter {
 				l := ratelimit.New(s.o11y)
@@ -286,4 +296,94 @@ func (s *DispatcherSuite) TestRoute_EstablishPrincipal_DBError_PropagatesErrorFo
 
 	s.Error(err, "DB error em EstablishPrincipal MUST propagar para Meta retry")
 	s.Equal(dispatcher.OutcomeInvalid, outcome)
+}
+
+func (s *DispatcherSuite) TestTimestampValidation() {
+	now := time.Now().UTC()
+
+	scenarios := []struct {
+		name            string
+		timestamp       string
+		setupPublisher  func(p *outboxmocks.Publisher)
+		expectedOutcome dispatcher.RouteOutcome
+	}{
+		{
+			name:            "timestamp within window returns normal outcome",
+			timestamp:       fmt.Sprintf("%d", now.Unix()),
+			setupPublisher:  func(p *outboxmocks.Publisher) {},
+			expectedOutcome: dispatcher.OutcomeOnboarding,
+		},
+		{
+			name:      "timestamp +6min in future returns stale_webhook",
+			timestamp: fmt.Sprintf("%d", now.Add(6*time.Minute).Unix()),
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
+		{
+			name:      "timestamp -6min in past returns stale_webhook",
+			timestamp: fmt.Sprintf("%d", now.Add(-6*time.Minute).Unix()),
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
+		{
+			name:      "absent timestamp returns stale_webhook with invalid_webhook_timestamp",
+			timestamp: "",
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
+		{
+			name:      "invalid timestamp string returns stale_webhook with invalid_webhook_timestamp",
+			timestamp: "not-a-number",
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			raw := payloadWithTimestamp("oi", sc.timestamp)
+
+			dedupMock := &mockDedup{}
+			dedupMock.On("InsertIfAbsent", mock.Anything, mock.Anything).Return(true, nil)
+			defer dedupMock.AssertExpectations(s.T())
+
+			establishMock := &mockEstablish{}
+			publisherMock := outboxmocks.NewPublisher(s.T())
+			sc.setupPublisher(publisherMock)
+
+			if sc.expectedOutcome != dispatcher.OutcomeStaleTS {
+				establishMock.On("Execute", mock.Anything, mock.Anything).Return(auth.Principal{}, application.ErrUnknownUser)
+			}
+			defer establishMock.AssertExpectations(s.T())
+
+			limiter := s.newLimiter()
+			_ = limiter.Start(s.ctx)
+			s.T().Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), ratelimit.DefaultShutdownTimeout)
+				defer cancel()
+				_ = limiter.Shutdown(ctx)
+			})
+
+			onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
+				return dispatcher.OutcomeOnboarding
+			}
+			agentRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
+				return dispatcher.OutcomeAgent
+			}
+
+			sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, onboarding, agentRoute, s.o11y)
+			outcome, err := sut.Route(s.ctx, raw)
+
+			s.NoError(err)
+			s.Equal(sc.expectedOutcome, outcome)
+		})
+	}
 }

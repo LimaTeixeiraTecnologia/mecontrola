@@ -83,7 +83,7 @@ func NewBudgetsModule(
 		o11y:             o11y,
 		mgr:              mgr,
 		categoriesModule: categoriesModule,
-		publisher:        producers.NewExpenseCommittedPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator()),
+		publisher:        producers.NewExpenseCommittedPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator(), o11y),
 	}
 	return builder.Build()
 }
