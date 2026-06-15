@@ -1,0 +1,32 @@
+@startuml Onboarding - Fluxo: Checkout → Pagamento → Ativação WhatsApp
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Onboarding — Fluxo 1: Checkout → Pagamento → Ativação WhatsApp
+
+Person(user, "Usuário")
+System_Ext(kiwify, "Kiwify")
+System_Ext(billing, "Billing Module")
+Container(http_api, "HTTP API", "Go/Chi", "")
+Container(worker, "Worker", "Go", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+
+Rel(user, http_api, "1. POST /api/v1/onboarding/checkout\n{ plan_id }")
+Rel(http_api, postgres, "2. Gera MagicToken (PENDING),\nencryta, persiste")
+Rel(http_api, kiwify, "3. Cria sessão de checkout\ncom token em plaintext")
+Rel(kiwify, http_api, "4. Retorna CheckoutURL")
+Rel(http_api, user, "5. { checkout_url }")
+
+Rel(user, kiwify, "6. Acessa URL e confirma pagamento")
+Rel(kiwify, billing, "7. Webhook: sale_approved")
+Rel(billing, outbox, "8. Publica billing.subscription.activated\n{ funnel_token, subscription_id, ... }")
+
+Rel(outbox, worker, "9. SubscriptionPaidConsumer")
+Rel(worker, postgres, "10. MarkTokenPaid: PENDING → PAID")
+
+Rel(user, http_api, "11. WhatsApp: 'ATIVAR <token>'")
+Rel(http_api, postgres, "12. ConsumeMagicToken: valida hash\nPAID → CONSUMED")
+Rel(http_api, outbox, "13. Publica onboarding.subscription_bound")
+Rel(http_api, user, "14. 'Bem-vindo!'")
+
+@enduml

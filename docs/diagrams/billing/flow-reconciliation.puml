@@ -1,0 +1,19 @@
+@startuml Billing - Fluxo: Reconciliação com Kiwify
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Billing — Fluxo 2: Reconciliação com Kiwify\n(billing-reconciliation job)
+
+Container(worker, "Worker / billing-reconciliation", "Go", "Cron: configurável")
+ContainerDb(postgres, "PostgreSQL", "", "")
+System_Ext(kiwify, "Kiwify API")
+ContainerQueue(outbox, "Outbox", "", "")
+
+Rel(worker, postgres, "1. Lê reconciliation_checkpoint\n(última janela processada)")
+Rel(worker, kiwify, "2. GET /sales\n?updated_since={checkpoint}\n&updated_before={now}")
+Rel(kiwify, worker, "3. Retorna lista paginada de\nvendas atualizadas")
+Rel(worker, postgres, "4. Para cada venda:\ncompara status local vs Kiwify")
+Rel(worker, postgres, "5. Detecta discrepância:\natualiza subscription local")
+Rel(worker, outbox, "6. Publica evento de correção\n(ex: billing.subscription.past_due)")
+Rel(worker, postgres, "7. Atualiza reconciliation_checkpoint\n= now")
+
+@enduml

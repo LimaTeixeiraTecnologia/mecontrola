@@ -1,0 +1,19 @@
+@startuml Identity - Fluxo: Upsert User por WhatsApp
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Identity — Fluxo 1: Upsert User por WhatsApp\n(criar / atualizar / reanimar em 180d)
+
+Person(caller, "Caller (Onboarding ou Gateway)")
+Container(http_api, "HTTP API", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(caller, http_api, "1. POST /api/v1/identity/users\n{ whatsapp, email, displayName }")
+Rel(http_api, http_api, "2. Parse WhatsApp VO (valida formato E164)\nParse Email VO (valida formato)")
+Rel(http_api, postgres, "3. Busca user ACTIVE por whatsapp")
+Rel(http_api, postgres, "4. Se não encontrado:\n   busca user DELETED por whatsapp")
+Rel(http_api, postgres, "5a. ACTIVE encontrado:\n    SetDisplayNameIfEmpty / SetEmailIfEmpty\n    UPDATE users")
+Rel(http_api, postgres, "5b. DELETED encontrado + CanReanimate (< 180d):\n    Reanimate (limpa email/displayName)\n    UPDATE + re-apply displayName/email")
+Rel(http_api, postgres, "5c. Não encontrado ou DELETED > 180d:\n    CREATE novo User")
+Rel(http_api, caller, "6. 200/201 { id, whatsapp, email,\n   displayName, status, createdAt, updatedAt }")
+
+@enduml

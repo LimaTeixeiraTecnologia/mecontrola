@@ -1,0 +1,18 @@
+@startuml Categories - Fluxo: Busca Semântica no Dicionário
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Categories — Fluxo 2: Busca Semântica no Dicionário
+
+Person(user, "Usuário")
+Container(http_api, "HTTP API", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(user, http_api, "1. GET /api/v1/category-dictionary/search\n?q=ifood&kind=expense")
+Rel(http_api, http_api, "2. Normaliza query:\n   lowercase, remove acentos, trim")
+Rel(http_api, postgres, "3. SELECT dictionary\nWHERE signal ILIKE '%ifood%'\nAND kind = 'expense'\nLIMIT page_size")
+Rel(http_api, user, "4. 200 OK { suggestions: [\n   { term, categoryID,\n     categorySlug, rootSlug }\n] }")
+Rel(user, http_api, "5. GET /api/v1/category-dictionary\n?kind=expense&cursor=...&page_size=20\n(listagem paginada completa)")
+Rel(http_api, postgres, "6. SELECT dictionary\nWHERE kind = 'expense'\nAND id > cursor\nLIMIT page_size + 1")
+Rel(http_api, user, "7. 200 OK { entries[], nextCursor }")
+
+@enduml

@@ -1,0 +1,31 @@
+@startuml Categories - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Categories Module
+' Todos os containers, atores externos e endpoints.
+' Módulo read-only: sem consumers, producers ou jobs.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Categories — C4 Container View (Geral)
+
+Person(user, "Usuário Autenticado", "Navega e busca categorias para\nclassificar transações e orçamentos.")
+System_Ext(agent_mod, "Agent Module", "Carrega catálogo no contexto\ndo prompt para o LLM.")
+System_Ext(budgets_mod, "Budgets Module", "Valida rootSlug e subcategoryID\nna criação de orçamentos.")
+System_Ext(transactions_mod, "Transactions Module", "Valida categoryID ao registrar\ntransações.")
+
+System_Boundary(categories, "Categories Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Endpoints de listagem e busca (read-only).\n--\nGET /api/v1/categories\nGET /api/v1/categories/{id}\nGET /api/v1/category-dictionary\nGET /api/v1/category-dictionary/search\n--\nSuporta ETag (If-None-Match) em todos os 4 endpoints.\nSem endpoints de escrita — dados via admin/data loader.")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Catálogo de categorias e dicionário semântico.\n--\nTabelas:\n  categories (hierarquia, kind: income/expense)\n  dictionary (sugestões de categorização)\n  signal_types")
+}
+
+Rel(user, http_api, "GET /api/v1/categories?kind=expense\nGET /api/v1/categories/{id}\nGET /api/v1/category-dictionary/search?q=mercado\nGET /api/v1/category-dictionary?cursor=...&page_size=20", "HTTPS/JSON")
+Rel(http_api, postgres, "SELECT categories, dictionary (read-only)", "SQL")
+Rel(agent_mod, http_api, "Carrega catálogo para contexto do prompt", "Internal call")
+Rel(budgets_mod, http_api, "Valida rootSlug e subcategoryID", "Internal call")
+Rel(transactions_mod, http_api, "Valida categoryID", "Internal call")
+
+@enduml

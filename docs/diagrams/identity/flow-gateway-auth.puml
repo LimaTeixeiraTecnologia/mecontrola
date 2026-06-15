@@ -1,0 +1,17 @@
+@startuml Identity - Fluxo: Gateway Auth Middleware
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Identity — Fluxo 5: Gateway Auth Middleware (HMAC-SHA256)\nResultados: valid / rotated / stale_timestamp / invalid_signature / missing_header
+
+System_Ext(gateway, "API Gateway")
+Container(http_api, "HTTP API / RequireGatewayAuth", "Go/Chi", "")
+ContainerQueue(outbox, "Outbox", "", "")
+
+Rel(gateway, http_api, "1. Request com headers:\n   X-Gateway-Auth (HMAC-SHA256)\n   X-Gateway-Timestamp\n   X-Request-Id\n   X-User-Id\n   X-Forwarded-For")
+Rel(http_api, http_api, "2. Valida presença dos headers obrigatórios\n   → missing_header → 401")
+Rel(http_api, http_api, "3. VerifyGatewayRequest (domain service puro):\n   Verifica timestamp dentro de janela 60s\n   → stale_timestamp → 401")
+Rel(http_api, http_api, "4. HMAC-SHA256 com secret current:\n   → valid → passa para handler\n   HMAC-SHA256 com secret next (rotation):\n   → rotated → passa para handler\n   Ambos falham:\n   → invalid_signature → 401")
+Rel(http_api, outbox, "5. Inválido (qualquer razão):\n   RecordGatewayAuthFailure\n   Publica auth.failed\n   { reason, source=gateway, request_id, client_ip }\n   Retorna 401 Unauthorized")
+Rel(http_api, gateway, "6. Válido:\n   Injeta Principal no contexto\n   Passa para o próximo handler")
+
+@enduml

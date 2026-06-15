@@ -1,0 +1,16 @@
+@startuml Transactions - Fluxo: Recurring Materializer
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Transactions — Fluxo 2: Recurring Materializer (job diário)\n(DMMF: DecideMaterializeForDay — função pura, sem IO)
+
+Container(worker, "Worker / transactions-recurring-materializer", "Go", "Cron: diariamente")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+
+Rel(worker, postgres, "1. SELECT recurring_templates\nWHERE nextDate <= today\nAND deleted_at IS NULL")
+Rel(worker, worker, "2. DecideMaterializeForDay\n   (template, today, ids[] pré-gerados)\n   — puro: sem time.Now(), sem IO,\n     recebe ids e now como parâmetros")
+Rel(worker, postgres, "3. INSERT transactions\npara cada recorrência do dia")
+Rel(worker, outbox, "4. Publica transactions.transaction.created.v1\npara cada transação materializada")
+Rel(worker, postgres, "5. UPDATE recurring_templates\nSET nextDate = próxima ocorrência\n(daily+1d / weekly+7d / monthly+1m)")
+
+@enduml

@@ -1,0 +1,17 @@
+@startuml Onboarding - Fluxo: Outreach Job
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Onboarding — Fluxo 2: Outreach Job (tokens PAID sem ativação após 24h)
+
+Container(worker, "Worker / outreach_job", "Go", "Cron: a cada 5 minutos")
+ContainerDb(postgres, "PostgreSQL", "", "")
+System_Ext(meta_api, "Meta WhatsApp Cloud API")
+
+Rel(worker, postgres, "1. Busca tokens PAID com paid_at > 24h\ne sem outreach_sent_at")
+Rel(worker, postgres, "2. Decrypta activationTokenCiphertext")
+Rel(worker, meta_api, "3. SendActivationTemplate\n(toE164, templateName, token)")
+Rel(worker, postgres, "4a. Sucesso (2xx): marca outreach_sent_at")
+Rel(worker, postgres, "4b. Erro 5xx: reseta para retry")
+Rel(worker, postgres, "4c. Erro 4xx: não reenviar\n(token inválido no lado Meta)")
+
+@enduml

@@ -1,0 +1,18 @@
+@startuml Card - Fluxo: Cálculo de Fatura
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Card — Fluxo 2: Cálculo de Fatura (InvoiceFor)\n(agrupa card_purchases pelo ciclo de fechamento)
+
+Person(user, "Usuário")
+Container(http_api, "HTTP API / InvoiceForHandler", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+System_Ext(transactions_mod, "Transactions Module")
+
+Rel(user, http_api, "1. GET /api/v1/cards/{id}/invoices\n?for=2026-06-15")
+Rel(http_api, postgres, "2. SELECT closing_day, due_day\nFROM cards WHERE id = {id}")
+Rel(http_api, http_api, "3. Calcula ciclo da fatura:\n   closing_day=3:\n   ciclo = 2026-05-04 até 2026-06-03\n   vencimento = 2026-06-10")
+Rel(http_api, transactions_mod, "4. Busca card_purchases\nno intervalo do ciclo\n(closing_day anterior → closing_day atual)")
+Rel(http_api, http_api, "5. Agrupa por data, calcula totalCents")
+Rel(http_api, user, "6. 200 OK\n{ invoiceDate: '2026-06-03',\n  dueDate: '2026-06-10',\n  totalCents: 45000,\n  purchases: [ { date, description,\n    amountCents, installments } ] }")
+
+@enduml

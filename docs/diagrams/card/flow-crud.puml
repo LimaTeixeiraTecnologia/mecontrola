@@ -1,0 +1,25 @@
+@startuml Card - Fluxo: CRUD de Cartão
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Card — Fluxo 1: CRUD de Cartão\n(com validação de nickname único e soft delete em cascade)
+
+Person(user, "Usuário")
+Container(http_api, "HTTP API", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(user, http_api, "1. POST /api/v1/cards\n{ name: 'Nubank', nickname: 'nu',\n  closingDay: 3, dueDay: 10 }")
+Rel(http_api, postgres, "2. SELECT cards\nWHERE user_id = {userID}\nAND nickname = 'nu'\nAND deleted_at IS NULL")
+Rel(http_api, user, "2a. Nickname em uso:\n    409 Conflict")
+Rel(http_api, postgres, "3. INSERT cards")
+Rel(http_api, user, "4. 201 Created\nLocation: /api/v1/cards/{id}")
+
+Rel(user, http_api, "5. PUT /api/v1/cards/{id}\n{ nickname: 'nu2' }")
+Rel(http_api, postgres, "6. Valida nickname único (exceto o próprio id)\nUPDATE cards")
+Rel(http_api, user, "7. 200 OK { card }")
+
+Rel(user, http_api, "8. DELETE /api/v1/cards/{id}")
+Rel(http_api, postgres, "9. UPDATE cards\nSET deleted_at = now()\nWHERE id = {id} AND user_id = {userID}")
+Rel(http_api, postgres, "10. card_purchases NÃO são deletadas.\nSão filtradas via JOIN com cards\n(WHERE cards.deleted_at IS NULL)")
+Rel(http_api, user, "11. 204 No Content")
+
+@enduml

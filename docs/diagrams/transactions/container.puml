@@ -1,0 +1,44 @@
+@startuml Transactions - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Transactions Module
+' Todos os containers, atores externos, endpoints,
+' consumers, jobs e eventos publicados/consumidos.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Transactions — C4 Container View (Geral)
+
+Person(user, "Usuário Autenticado", "Registra e consulta transações\nfinanceiras, compras com cartão\ne templates de recorrência.")
+System_Ext(categories_mod, "Categories Module", "Valida categoryID da transação.")
+System_Ext(card_mod, "Card Module", "Valida cardID para\ncompras com cartão.")
+System_Ext(budgets_mod, "Budgets Module", "Consome budgets.expense.committed.v1\npara avaliação de alertas.")
+
+System_Boundary(transactions, "Transactions Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Endpoints de transações, compras e recorrências.\n--\nPOST   /api/v1/transactions\nGET    /api/v1/transactions\nGET    /api/v1/transactions/{id}\nPATCH  /api/v1/transactions/{id}\nDELETE /api/v1/transactions/{id}\nPOST   /api/v1/card-purchases\nGET    /api/v1/card-purchases\nGET    /api/v1/card-purchases/{id}\nPATCH  /api/v1/card-purchases/{id}\nDELETE /api/v1/card-purchases/{id}\nGET    /api/v1/cards/{card_id}/invoices/{ref_month}\nPOST   /api/v1/recurring-templates\nGET    /api/v1/recurring-templates\nGET    /api/v1/recurring-templates/{id}\nPATCH  /api/v1/recurring-templates/{id}\nDELETE /api/v1/recurring-templates/{id}\nGET    /api/v1/months/{ref_month}\nGET    /api/v1/months/{ref_month}/entries")
+
+  Container(worker, "Worker", "Go", "Consumer com Coalescer e jobs de materialização.\n--\nConsumers:\n  transactions.* events\n    → MonthlySummaryRecomputeConsumer\n    (Coalescer: debounce por userID+refMonth)\n--\nJobs:\n  transactions-recurring-materializer (diário)\n  transactions-monthly-summary-reconciler (diário)")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Persistência do módulo.\n--\nTabelas:\n  transactions\n  card_purchases\n  recurring_templates\n  monthly_summary\n  monthly_summary_coalescer")
+
+  ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  transactions.transaction.{created,updated,deleted}.v1\n  transactions.card_purchase.{created,updated,deleted}.v1\n  budgets.expense.committed.v1\n  recurring_template lifecycle events")
+}
+
+Rel(user, http_api, "CRUD /api/v1/transactions\n{ date, amountCents, categoryID, direction }", "HTTPS/JSON")
+Rel(user, http_api, "POST /api/v1/card-purchases\n{ cardID, date, amountCents, installments }", "HTTPS/JSON")
+Rel(user, http_api, "CRUD /api/v1/recurring-templates\n{ frequency, nextDate, amountCents }", "HTTPS/JSON")
+Rel(user, http_api, "GET /api/v1/months/{ref_month}\nGET /api/v1/months/{ref_month}/entries", "HTTPS/JSON")
+
+Rel(http_api, categories_mod, "Valida categoryID", "Internal call")
+Rel(http_api, card_mod, "Valida cardID", "Internal call")
+Rel(http_api, postgres, "CRUD transactions, card_purchases,\nrecurring_templates, monthly_summary", "SQL")
+Rel(http_api, outbox, "Publica transactions.* e\nbudgets.expense.committed", "SQL INSERT")
+
+Rel(outbox, worker, "transactions.* events\n→ MonthlySummaryRecomputeConsumer\n(com Coalescer/debounce)", "Outbox event")
+Rel(worker, postgres, "Recomputa monthly_summary\nMaterializa recorrentes do dia\nReconcilia resumo mensal", "SQL")
+Rel(worker, outbox, "Publica transactions.transaction.created.v1\npara cada recorrência materializada", "SQL INSERT")
+Rel(outbox, budgets_mod, "budgets.expense.committed.v1", "Event")
+
+@enduml

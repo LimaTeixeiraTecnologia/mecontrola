@@ -1,0 +1,14 @@
+@startuml Onboarding - Fluxo: Expiração de Token Orphan
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Onboarding — Fluxo 3: Expiração de Token Orphan (token_expiration_job)
+
+Container(worker, "Worker / token_expiration_job", "Go", "Cron: configurável")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(worker, postgres, "1. Busca tokens com expires_at < now()")
+Rel(worker, postgres, "2. Transita status → EXPIRED")
+Rel(worker, postgres, "3a. Token estava PAID:\n    cria SupportSignal(orphan_expired_subscription)\n    { subscription_id, customer_email, paid_at }")
+Rel(worker, postgres, "3b. Token estava PENDING:\n    apenas marca EXPIRED (sem signal)")
+
+@enduml

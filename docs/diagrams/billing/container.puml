@@ -1,0 +1,42 @@
+@startuml Billing - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Billing Module
+' Todos os containers, atores externos, endpoints,
+' consumers, jobs e eventos publicados/consumidos.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Billing — C4 Container View (Geral)
+
+System_Ext(kiwify, "Kiwify", "Gateway de pagamento.\nEnvia webhooks de eventos de venda\ne disponibiliza API de consulta de vendas.")
+System_Ext(notification_svc, "Notification Service", "Interface NotificationSender.\nEnvia notificações ao usuário sobre\nmudanças de status da subscription.")
+System_Ext(onboarding_mod, "Onboarding Module", "Consome billing.subscription.activated\ne billing.subscription.activated_without_token.")
+System_Ext(identity_mod, "Identity Module", "Consome billing.subscription.*\npara projetar entitlements.")
+
+System_Boundary(billing, "Billing Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Webhook receptor de eventos Kiwify.\n--\nPOST /api/v1/billing/webhooks/kiwify\n--\nMiddleware:\n  Validação HMAC-SHA1 (X-Kiwify-Event-Token)\n  Rate limiting")
+
+  Container(worker, "Worker", "Go", "Consumer de notificação e jobs de manutenção.\n--\nConsumers:\n  billing.subscription.* → NotificationHandler\n--\nJobs:\n  billing-reconciliation (configurável)\n  billing-grace-expiration (30 min)\n  billing-kiwify-events-housekeeping (diário)")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Persistência do módulo.\n--\nTabelas:\n  subscriptions\n  kiwify_events (auditoria de webhooks)\n  reconciliation_checkpoint")
+
+  ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  billing.subscription.activated\n  billing.subscription.activated_without_token\n  billing.subscription.renewed\n  billing.subscription.past_due\n  billing.subscription.canceled\n  billing.subscription.refunded\n  billing.subscription.expired_after_grace")
+}
+
+Rel(kiwify, http_api, "POST /webhook/kiwify\n{ trigger, data: { sale, subscription } }", "HTTPS/JSON")
+Rel(http_api, postgres, "Persiste kiwify_event (idempotência)\nUpsert subscription", "SQL")
+Rel(http_api, outbox, "Publica billing.subscription.* event", "SQL INSERT")
+
+Rel(worker, kiwify, "billing-reconciliation:\nGET /sales?updated_since={checkpoint}", "HTTPS")
+Rel(worker, postgres, "Compara estado local vs Kiwify\nCorrege discrepâncias\nAtualiza checkpoint", "SQL")
+Rel(worker, outbox, "Publica eventos de correção\ne expired_after_grace", "SQL INSERT")
+Rel(worker, postgres, "billing-kiwify-events-housekeeping:\nDeleta kiwify_events antigos", "SQL")
+Rel(worker, notification_svc, "NotifyTransition(subscriptionStatus)", "Internal call")
+
+Rel(outbox, onboarding_mod, "billing.subscription.activated\nbilling.subscription.activated_without_token", "Event")
+Rel(outbox, identity_mod, "billing.subscription.{activated,renewed,\npast_due,canceled,refunded}", "Event")
+
+@enduml

@@ -1,0 +1,43 @@
+@startuml Agent - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Agent Module
+' Todos os containers, atores externos, LLM providers,
+' adapters de módulos e eventos publicados.
+' Sem endpoints HTTP diretos — acionado via canais de mensagem.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Agent — C4 Container View (Geral)
+
+Person(user, "Usuário", "Envia mensagens em linguagem natural\nvia WhatsApp ou Telegram.")
+System_Ext(wa_channel, "WhatsApp / Telegram", "Canal de entrada de mensagens.\nAcionado pelos dispatchers de\nOnboarding e Identity.")
+System_Ext(openrouter, "OpenRouter API", "Proxy unificado de LLMs.\nhttps://openrouter.ai/api/v1/chat/completions\nModelo configurável via ModelSlug\n(ex: claude-3.5-sonnet, gpt-4o).\nFallback chain gerenciado pelo circuit breaker.")
+System_Ext(budgets_mod, "Budgets Module", "Adapter: lê orçamentos,\nregistra despesas.")
+System_Ext(transactions_mod, "Transactions Module", "Adapter: cria e lista transações,\ncompras com cartão.")
+System_Ext(cards_mod, "Card Module", "Adapter: lista cartões,\ncalcula faturas.")
+System_Ext(categories_mod, "Categories Module", "Adapter: fornece catálogo de\ncategorias para o prompt.")
+
+System_Boundary(agent, "Agent Module") {
+
+  Container(worker, "Worker / Message Handler", "Go", "Ponto de entrada de mensagens inbound.\nSem endpoints HTTP diretos — acionado via\nbuildWhatsAppAgentRoute() e buildTelegramAgentRoute().\n--\nHandleInboundMessage:\n  1. PromptContextLoader\n     (categorias + cartões + permissões)\n  2. PromptBuilder (systemPrompt estruturado)\n  3. LLMProvider.Interpret (OpenRouter)\n  4. IntentValidator (valida JSON do LLM)\n  5. IntentDispatcher (roteia para módulo)\n  6. Responde ao usuário via canal\n--\nCircuit breaker (MaxFailures=5, Window=30s,\nOpenDuration=60s) com fallback chain via OpenRouter")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Auditoria de eventos do agente.\n--\nTabelas:\n  agent_events\n    (outcome, provider, tokens,\n     latency, module, action)")
+
+  ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  agent.intent.executed.v1\n  agent.intent.rejected.v1")
+}
+
+Rel(user, wa_channel, "Mensagem em linguagem natural", "WhatsApp/Telegram")
+Rel(wa_channel, worker, "Evento de mensagem inbound\n{ userID, channel, text }", "Internal event")
+
+Rel(worker, categories_mod, "PromptContextLoader:\ncarrega catálogo de categorias", "Internal call")
+Rel(worker, cards_mod, "PromptContextLoader:\ncarrega cartões do usuário", "Internal call")
+Rel(worker, openrouter, "LLMProvider.Interpret\n{ model, systemPrompt, userMessage }\nAuthorization: Bearer $OPENROUTER_API_KEY", "HTTPS/JSON")
+Rel(worker, budgets_mod, "IntentDispatcher:\nregistra despesa em orçamento", "Internal call")
+Rel(worker, transactions_mod, "IntentDispatcher:\ncria transação ou card purchase", "Internal call")
+Rel(worker, postgres, "INSERT agent_events (auditoria)", "SQL")
+Rel(worker, outbox, "Publica agent.intent.{executed,rejected}.v1", "SQL INSERT")
+Rel(worker, wa_channel, "Envia resposta ao usuário", "WhatsApp/Telegram")
+
+@enduml

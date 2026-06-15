@@ -1,0 +1,181 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag da imagem a publicar na VPS (SHA curto ou semver)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'cd-manual' || format('cd-{0}', github.event.workflow_run.head_sha) }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/limateixeiratecnologia/mecontrola
+
+jobs:
+  gate:
+    name: Gate (CI passed)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      image-tag: ${{ steps.load.outputs.image-tag }}
+      image-digest: ${{ steps.load.outputs.image-digest }}
+    steps:
+      - name: Download image meta from CI run
+        uses: actions/download-artifact@v4
+        with:
+          name: image-meta
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image meta
+        id: load
+        run: |
+          IMAGE_TAG=$(grep '^image-tag=' image-meta.txt | cut -d= -f2)
+          IMAGE_DIGEST=$(grep '^image-digest=' image-meta.txt | cut -d= -f2)
+          if [ -z "$IMAGE_TAG" ] || [ -z "$IMAGE_DIGEST" ]; then
+            echo "ERROR: image-meta.txt is missing required fields" >&2
+            cat image-meta.txt >&2
+            exit 1
+          fi
+          echo "image-tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "image-digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: gate
+    if: needs.gate.result == 'success'
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          IMAGE_TAG: ${{ needs.gate.outputs.image-tag }}
+        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
+
+  smoke:
+    name: Auth Smoke (staging)
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Extract task version
+        id: task-ver
+        run: |
+          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ steps.task-ver.outputs.version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auth smoke test
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
+          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
+          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
+          DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: task auth:smoke
+
+  deploy-manual:
+    name: Deploy to VPS (manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
+
+  smoke-manual:
+    name: Auth Smoke (staging, manual)
+    runs-on: ubuntu-latest
+    needs: deploy-manual
+    if: needs.deploy-manual.result == 'success'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Extract task version
+        id: task-ver
+        run: |
+          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: ${{ steps.task-ver.outputs.version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auth smoke test
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
+          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
+          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
+          DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: task auth:smoke

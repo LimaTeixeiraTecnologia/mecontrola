@@ -1,0 +1,19 @@
+@startuml Agent - Fluxo: Circuit Breaker e Fallback Chain
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Agent — Fluxo 2: Circuit Breaker + Fallback Chain\n(Claude → OpenAI → degradação graceful)
+
+Container(worker, "Worker / LLMProvider", "Go", "")
+System_Ext(openrouter, "OpenRouter API")
+System_Ext(channel, "WhatsApp / Telegram")
+
+Rel(worker, openrouter, "1. LLMProvider.Interpret\n{ model: ModelSlug, prompt }")
+Rel(openrouter, worker, "2. Erro 5xx ou timeout")
+Rel(worker, worker, "3. CircuitBreaker registra falha.\n   MaxFailures=5, FailureWindow=30s\n   Se threshold atingido:\n   CircuitOpen por OpenDuration=60s\n   (próximas chamadas falham imediato\n    até HalfOpen tentar novamente)")
+Rel(worker, openrouter, "4. HalfOpen: tenta novamente\ncom ModelSlug alternativo (fallback chain)")
+Rel(openrouter, worker, "5a. Sucesso: JSON com intent\n   → CircuitClosed, fluxo normal")
+Rel(openrouter, worker, "5b. Erro: continua CircuitOpen")
+Rel(worker, channel, "6a. Sucesso:\n   responde normalmente ao usuário")
+Rel(worker, channel, "6b. CircuitOpen / falha total:\n   resposta de degradação graceful\n   'Estou com dificuldades no momento,\n    tente novamente em alguns minutos'")
+
+@enduml

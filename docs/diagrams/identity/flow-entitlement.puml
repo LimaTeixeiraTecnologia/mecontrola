@@ -1,0 +1,21 @@
+@startuml Identity - Fluxo: Subscription Event → Entitlement
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Identity — Fluxo 3: Subscription Event → Entitlement\n(pending → committed quando subscription_bound chega)
+
+System_Ext(billing, "Billing Module")
+System_Ext(onboarding, "Onboarding Module")
+ContainerQueue(outbox_ext, "Outbox (externo)", "", "")
+Container(worker, "Worker / SubscriptionEventProjector", "Go", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(billing, outbox_ext, "1a. Publica billing.subscription.activated\n{ subscription_id, status, period_end, funnel_token }")
+Rel(onboarding, outbox_ext, "1b. Publica onboarding.subscription_bound\n{ subscription_id, user_id, bound_at }")
+
+Rel(outbox_ext, worker, "2. SubscriptionEventProjector\nou SubscriptionBoundProjector")
+Rel(worker, postgres, "3. Query subscription_projection\npor subscription_id")
+Rel(worker, postgres, "4a. billing.subscription.activated\n    + UserID vazio:\n    upsert PendingEntitlement\n    (aguarda subscription_bound)")
+Rel(worker, postgres, "4b. billing.subscription.activated\n    + UserID preenchido:\n    upsert CommittedEntitlement\n    { user_id, status, period_end, grace_end }")
+Rel(worker, postgres, "4c. onboarding.subscription_bound:\n    resolve PendingEntitlement → CommittedEntitlement\n    (set user_id na projeção)")
+
+@enduml

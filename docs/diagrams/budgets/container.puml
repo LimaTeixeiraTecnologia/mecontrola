@@ -1,0 +1,36 @@
+@startuml Budgets - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Budgets Module
+' Todos os containers, atores externos, endpoints,
+' consumers, jobs e eventos publicados/consumidos.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Budgets — C4 Container View (Geral)
+
+Person(user, "Usuário Autenticado", "Gerencia orçamentos mensais\ne acompanha alertas de gastos.")
+System_Ext(transactions_mod, "Transactions Module", "Publica budgets.expense.committed.v1\nquando uma transação é registrada.")
+System_Ext(categories_mod, "Categories Module", "Referência de categorias e slugs\npara alocação de orçamento.")
+
+System_Boundary(budgets, "Budgets Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Endpoints de gerenciamento de orçamentos.\n--\nPOST   /api/v1/budgets/\nPATCH  /api/v1/budgets/{competence}/activate\nDELETE /api/v1/budgets/{competence}\nGET    /api/v1/budgets/{competence}/summary\nGET    /api/v1/budgets/alerts\nPOST   /api/v1/budgets/expenses\nPATCH  /api/v1/budgets/expenses/{id}\nDELETE /api/v1/budgets/expenses/{id}\nPOST   /api/v1/budgets/recurrence\n  { source_competence, months }")
+
+  Container(worker, "Worker", "Go", "Consumers de despesas e jobs de manutenção.\n--\nConsumers:\n  budgets.expense.committed.v1 → EvaluateAlert\n  external.expense.* → IngestExternalExpense\n--\nJobs:\n  budgets-pending-events-reaper (configurável)\n  budgets-abandoned-draft-reaper (03:00 UTC diário)")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Persistência do módulo.\n--\nTabelas:\n  budgets\n  budget_allocations (basis points por categoria)\n  budget_expenses\n  budget_alerts\n  budget_recurrences")
+
+  ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  budgets.expense.committed.v1")
+}
+
+Rel(user, http_api, "POST /budgets { competence, totalCents, allocations[] }\nPATCH /budgets/{competence}/activate\nGET /budgets/{competence}/summary\nGET /budgets/alerts?threshold=80\nPOST /budgets/expenses { subcategoryID, amountCents }\nPATCH/DELETE /budgets/expenses/{id}\nPOST /budgets/recurrence", "HTTPS/JSON")
+Rel(http_api, postgres, "CRUD budgets, allocations,\nexpenses, recurrences", "SQL")
+Rel(http_api, outbox, "Publica budgets.expense.committed.v1", "SQL INSERT")
+Rel(http_api, categories_mod, "Valida subcategoryID e rootSlug", "Internal call")
+
+Rel(transactions_mod, worker, "budgets.expense.committed.v1\n{ userID, competence, subcategoryID,\n  rootSlug, mutationKind }", "Outbox event")
+Rel(worker, postgres, "EvaluateAlert: calcula % gasto vs alocação\nIngestExternalExpense: registra despesa externa\nbudgets-pending-events-reaper: republica falhos\nbadgets-abandoned-draft-reaper: sinaliza DRAFTs", "SQL")
+
+@enduml

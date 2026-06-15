@@ -1,0 +1,22 @@
+@startuml Identity - Fluxo: Establish Principal
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Identity — Fluxo 2: Establish Principal\n(WhatsApp → UserID, com multi-path e auditoria)
+
+System_Ext(gateway, "API Gateway")
+Container(http_api, "HTTP API / EstablishPrincipal", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+Container(worker, "Worker / AuthEventsConsumer", "Go", "")
+
+Rel(gateway, http_api, "1. Requisição com\nX-User-Id (whatsapp número)")
+Rel(http_api, postgres, "2a. Path novo: lookup user_identities\n    WHERE channel='whatsapp' AND external_id={wa_id}")
+Rel(http_api, postgres, "2b. Fallback legacy: lookup users\n    WHERE whatsapp={wa_id} AND status=ACTIVE")
+Rel(http_api, outbox, "3a. Encontrado:\n    Publica auth.principal_established\n    { user_id, source=whatsapp, request_id, client_ip }")
+Rel(http_api, outbox, "3b. Não encontrado:\n    Publica auth.unknown_user\n    { source=whatsapp }")
+Rel(http_api, gateway, "4a. Retorna Principal { userID }")
+Rel(http_api, gateway, "4b. Retorna ErrUnknownUser → 401")
+Rel(outbox, worker, "5. AuthEventsConsumer → ProjectAuthEvent")
+Rel(worker, postgres, "6. INSERT auth_events (auditoria)")
+
+@enduml

@@ -1,0 +1,20 @@
+@startuml Categories - Fluxo: Listagem com Cache ETag
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Categories — Fluxo 1: Listagem com Cache ETag (If-None-Match)
+
+Person(user, "Usuário / Client")
+Container(http_api, "HTTP API", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(user, http_api, "1. GET /api/v1/categories?kind=expense\n(primeira requisição, sem If-None-Match)")
+Rel(http_api, postgres, "2. VersionReader.Current(ctx)\n→ etag hash do catálogo atual")
+Rel(http_api, postgres, "3. SELECT categories\nORDER BY kind, parent_id, slug")
+Rel(http_api, user, "4. 200 OK { categories[] }\nETag: \"v1-abc123\"")
+
+Rel(user, http_api, "5. GET /api/v1/categories\nIf-None-Match: \"v1-abc123\"")
+Rel(http_api, postgres, "6. VersionReader.Current(ctx)\n→ etag hash")
+Rel(http_api, user, "7a. Catálogo não mudou:\n    304 Not Modified (sem body)")
+Rel(http_api, user, "7b. Catálogo mudou:\n    200 OK { categories[] }\n    ETag: \"v2-xyz456\"")
+
+@enduml

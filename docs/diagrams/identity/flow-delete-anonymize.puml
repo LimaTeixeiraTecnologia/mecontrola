@@ -1,0 +1,19 @@
+@startuml Identity - Fluxo: User Deleted → Anonymize Auth Events
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Identity — Fluxo 4: User Deleted → Anonymize Auth Events
+
+System_Ext(caller, "Caller (deleção de conta)")
+Container(http_api, "HTTP API / MarkUserDeleted", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+Container(worker, "Worker / AuthEventsConsumer", "Go", "")
+
+Rel(caller, http_api, "1. Requisição de deleção de usuário\n{ user_id }")
+Rel(http_api, postgres, "2. MarkUserDeleted:\n   status → DELETED, set deletedAt")
+Rel(http_api, outbox, "3. Publica user.deleted\n{ user_id, occurred_at }")
+Rel(outbox, worker, "4. AuthEventsConsumer\nrecebe user.deleted")
+Rel(worker, worker, "5. AnonymizeUserAuthEvents:\nparse payload → extrai user_id")
+Rel(worker, postgres, "6. UPDATE auth_events\nSET request_id='', client_ip=''\nWHERE user_id = {user_id}\n(limpa PII de auditoria)")
+
+@enduml

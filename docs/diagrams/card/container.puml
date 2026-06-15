@@ -1,0 +1,27 @@
+@startuml Card - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Card Module
+' Todos os containers, atores externos e endpoints.
+' Sem consumers, producers ou jobs próprios.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Card — C4 Container View (Geral)
+
+Person(user, "Usuário Autenticado", "Cadastra cartões de crédito/débito,\nconsulta compras e calcula faturas.")
+System_Ext(transactions_mod, "Transactions Module", "Lê card_purchases para calcular\nfaturas por ciclo de fechamento.\nValida cardID ao registrar compras.")
+
+System_Boundary(card, "Card Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Endpoints de gerenciamento de cartões e faturas.\n--\nPOST   /api/v1/cards\nGET    /api/v1/cards\nGET    /api/v1/cards/{id}\nPUT    /api/v1/cards/{id}\nDELETE /api/v1/cards/{id}\nGET    /api/v1/cards/{id}/invoices\n--\nSem consumers, producers ou jobs.\nMódulo predominantemente read-heavy.")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Cadastro de cartões do usuário.\n--\nTabelas:\n  cards (user_id, name, nickname,\n         closing_day, due_day, deleted_at)")
+}
+
+Rel(user, http_api, "POST /api/v1/cards { name, nickname, closingDay, dueDay }\nGET  /api/v1/cards?cursor=...&limit=20\nGET  /api/v1/cards/{id}\nPUT  /api/v1/cards/{id}\nDELETE /api/v1/cards/{id}\nGET  /api/v1/cards/{id}/invoices?for=YYYY-MM-DD", "HTTPS/JSON")
+Rel(http_api, postgres, "CRUD cards (nickname único por userID)\nSoft delete: atualiza deleted_at no cartão\n(card_purchases filtradas via JOIN)", "SQL")
+Rel(http_api, transactions_mod, "Lê card_purchases para cálculo de fatura\n(agrupa por ciclo closing_day)", "Internal call")
+
+@enduml

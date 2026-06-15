@@ -1,0 +1,16 @@
+@startuml Billing - Fluxo: Grace Expiration
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Billing — Fluxo 3: Grace Expiration\n(billing-grace-expiration job, a cada 30 min)
+
+Container(worker, "Worker / billing-grace-expiration", "Go", "Cron: a cada 30 min")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+System_Ext(notification_svc, "Notification Service")
+
+Rel(worker, postgres, "1. Busca subscriptions com\nstatus = PAST_DUE\ne grace_ends_at < now()\n(graça padrão: 3 dias após past_due)")
+Rel(worker, postgres, "2. Transita status → EXPIRED_AFTER_GRACE")
+Rel(worker, outbox, "3. Publica billing.subscription.expired_after_grace\n{ subscription_id, user_id, expired_at }")
+Rel(worker, notification_svc, "4. NotifyTransition\n(expired_after_grace)")
+
+@enduml

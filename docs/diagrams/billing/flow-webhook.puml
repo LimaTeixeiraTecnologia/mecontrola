@@ -1,0 +1,23 @@
+@startuml Billing - Fluxo: Webhook Kiwify → Publicação de Evento
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Billing — Fluxo 1: Webhook Kiwify → Publicação de Evento
+
+System_Ext(kiwify, "Kiwify")
+Container(http_api, "HTTP API / KiwifyWebhookHandler", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+
+Rel(kiwify, http_api, "1. POST /api/v1/billing/webhooks/kiwify\n{ trigger: 'sale_approved' | 'subscription_renewed' | ... }")
+Rel(http_api, http_api, "2. Valida assinatura HMAC-SHA1\n(X-Kiwify-Event-Token header)")
+Rel(http_api, postgres, "3. INSERT kiwify_event\n(idempotência por external_sale_id)")
+Rel(http_api, postgres, "4. Upsert subscription\n{ status, period_end, funnel_token, ... }")
+Rel(http_api, outbox, "5a. sale_approved + funnel_token:\n    billing.subscription.activated")
+Rel(http_api, outbox, "5b. sale_approved sem funnel_token:\n    billing.subscription.activated_without_token")
+Rel(http_api, outbox, "5c. subscription_renewed:\n    billing.subscription.renewed")
+Rel(http_api, outbox, "5d. subscription_late:\n    billing.subscription.past_due")
+Rel(http_api, outbox, "5e. subscription_canceled:\n    billing.subscription.canceled")
+Rel(http_api, outbox, "5f. refund / chargeback:\n    billing.subscription.refunded")
+Rel(http_api, kiwify, "6. 202 Accepted")
+
+@enduml

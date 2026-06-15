@@ -5,21 +5,6 @@ version: '3'
 # quando interfaces mudam.
 
 tasks:
-  generate:
-    desc: Gera mocks a partir das interfaces do projeto.
-    preconditions:
-      - sh: command -v mockery >/dev/null 2>&1
-        msg: "mockery ausente. Instale: go install github.com/vektra/mockery/v2@latest"
-    cmds:
-      - mockery
-    sources:
-      - .mockery.yaml
-      - '**/*.go'
-      - exclude: '**/mocks/**'
-      - exclude: '**/*_test.go'
-    generates:
-      - '**/mocks/**/*.go'
-
   mocks:
     desc: Gera mocks usando mockery.yml na raiz do projeto.
     preconditions:
@@ -48,6 +33,6 @@ tasks:
   verify:
     desc: Falha se os mocks estiverem desatualizados (uso em CI).
     cmds:
-      - task: generate
+      - task: mocks
       - cmd: git diff --exit-code
         platforms: [linux, darwin]

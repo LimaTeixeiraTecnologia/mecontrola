@@ -1,0 +1,19 @@
+@startuml Budgets - Fluxo: Expense Committed via Transactions
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Budgets — Fluxo 2: Expense Committed (via Transactions Module)
+
+System_Ext(transactions, "Transactions Module")
+ContainerQueue(outbox_txn, "Outbox (Transactions)", "", "")
+Container(worker, "Worker / ExpenseCommittedConsumer", "Go", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+
+Rel(transactions, outbox_txn, "1. Publica budgets.expense.committed.v1\n{ userID, competence, subcategoryID,\n  rootSlug, mutationKind, committedAt,\n  cutoffCompetenceBR }")
+Rel(outbox_txn, worker, "2. Consumer: ExpenseCommittedConsumer")
+Rel(worker, postgres, "3. Busca orçamento ACTIVE\npor userID + competence")
+Rel(worker, postgres, "4. Busca alocação da categoria (rootSlug)\nem budget_allocations")
+Rel(worker, postgres, "5. Agrega totalGasto por rootSlug\nem budget_expenses")
+Rel(worker, postgres, "6. Calcula % = totalGasto / allocatedCents × 100")
+Rel(worker, postgres, "7. Se % > threshold configurado:\n    upsert budget_alert")
+
+@enduml

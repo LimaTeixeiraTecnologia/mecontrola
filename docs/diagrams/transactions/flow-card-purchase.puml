@@ -1,0 +1,20 @@
+@startuml Transactions - Fluxo: Card Purchase → Invoice
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Transactions — Fluxo 3: Card Purchase (parcelado) → Cálculo de Fatura
+
+Person(user, "Usuário")
+Container(http_api, "HTTP API", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+System_Ext(card_mod, "Card Module")
+
+Rel(user, http_api, "1. POST /api/v1/card-purchases\n{ cardID, date, amountCents: 30000,\n  installments: 3, categoryID }")
+Rel(http_api, card_mod, "2. Valida cardID\n(lê closing_day, due_day)")
+Rel(http_api, http_api, "3. DecideCreate (puro):\n   calcula ref_months_affected[]\n   para cada parcela\n   (3 meses → [2026-06, 2026-07, 2026-08])")
+Rel(http_api, postgres, "4. INSERT card_purchases\n(installments=3, installment_index=1,2,3\ninstallmentCents=10000 cada)")
+Rel(http_api, outbox, "5. Publica transactions.card_purchase.created.v1\n{ cardPurchaseID, userID,\n  refMonthsAffected: [2026-06, ...] }")
+Rel(user, http_api, "6. GET /api/v1/card-purchases\n(lista compras do usuário)\nGET /api/v1/cards/{card_id}/invoices/{ref_month}\n(fatura do cartão para o mês)")
+Rel(http_api, user, "7. { invoiceDate, dueDate,\n   totalCents, purchases[] }")
+
+@enduml

@@ -1,0 +1,41 @@
+@startuml Identity - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Identity Module
+' Todos os containers, atores externos, endpoints,
+' consumers, jobs e eventos publicados/consumidos.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Identity — C4 Container View (Geral)
+
+Person(user_wa, "Usuário WhatsApp", "Principal canal de identificação.\nEnvia mensagens via WhatsApp.")
+Person(user_tg, "Usuário Telegram", "Canal alternativo.\nVinculado após ativação WhatsApp.")
+System_Ext(gateway, "API Gateway", "Proxy reverso com autenticação\nHMAC-SHA256. Headers:\nX-Gateway-Auth, X-Gateway-Timestamp,\nX-User-Id, X-Request-Id.")
+System_Ext(billing_mod, "Billing Module", "Publica eventos de ciclo de vida\nde subscription.")
+System_Ext(onboarding_mod, "Onboarding Module", "Publica onboarding.subscription_bound\nquando token é consumido.")
+
+System_Boundary(identity, "Identity Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Endpoints de usuário e webhooks de canal.\n--\nPOST /api/v1/identity/users\nPOST /api/v1/channels/telegram/webhook\n--\nMiddleware:\n  RequireGatewayAuth (HMAC-SHA256, janela 60s)\n  InjectPrincipalFromHeader\n  RequireUser\n  Rate limiting (Telegram webhook)")
+
+  Container(worker, "Worker", "Go", "Consumers de eventos e jobs de housekeeping.\n--\nConsumers:\n  billing.subscription.* → ProjectSubscriptionEvent\n  onboarding.subscription_bound → SubscriptionBoundProjector\n  auth.* + user.deleted → AuthEventsConsumer\n--\nJobs:\n  identity-auth-events-housekeeping (@monthly)")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Persistência do módulo.\n--\nTabelas:\n  users\n  user_identities\n  auth_events\n  entitlements\n  subscription_projection")
+
+  ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  auth.principal_established\n  auth.failed\n  auth.unknown_user\n  user.deleted")
+}
+
+Rel(user_wa, http_api, "POST /api/v1/identity/users\n{ whatsapp, email, displayName }", "HTTPS/JSON")
+Rel(user_tg, http_api, "POST /api/v1/channels/telegram/webhook\n{ update_id, message }", "HTTPS/JSON")
+Rel(gateway, http_api, "Requisições com HMAC\n(X-Gateway-Auth, X-Gateway-Timestamp)", "HTTPS")
+
+Rel(http_api, postgres, "Upsert User e UserIdentity\n(criar / atualizar / reanimar)", "SQL")
+Rel(http_api, outbox, "Publica auth.* events", "SQL INSERT")
+
+Rel(billing_mod, worker, "billing.subscription.{activated,renewed,\npast_due,canceled,refunded}", "Outbox event")
+Rel(onboarding_mod, worker, "onboarding.subscription_bound", "Outbox event")
+Rel(worker, postgres, "ProjectSubscriptionEvent: upsert entitlements\nAuthEventsConsumer: insert auth_events\nHousekeeping: delete auth_events > 180d", "SQL")
+
+@enduml

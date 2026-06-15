@@ -71,36 +71,6 @@ tasks:
       - task: test:unit
       - task: security:vulncheck
 
-  build:
-    desc: Alias de alto nivel para compilar o binario da aplicacao.
-    cmds:
-      - task: build:build
-
-  lint:
-    desc: Alias de alto nivel para executar o linter estatico.
-    cmds:
-      - task: lint:run
-
-  test:
-    desc: Alias de alto nivel para executar a bateria de testes.
-    cmds:
-      - task: test:all
-
-  vulncheck:
-    desc: Alias de alto nivel para executar o scan local de vulnerabilidades.
-    cmds:
-      - task: security:vulncheck
-
-  mocks:
-    desc: Alias de alto nivel para gerar mocks via mockery.yml.
-    cmds:
-      - task: mocks:mocks
-
-  ci:
-    desc: Pipeline completa usada na esteira (lint, testes, seguranca, build).
-    cmds:
-      - task: ci:pipeline
-
   bench:outbox:
     desc: Executa benchmarks do pacote outbox e captura baseline em docs/benchmarks/outbox-baseline.md.
     cmds:
@@ -162,72 +132,6 @@ tasks:
         msg: "Docker nao esta disponivel; suba as dependencias antes dos testes de integracao."
     cmds:
       - go test -race -count=1 -tags=integration ./internal/card/... ./internal/platform/idempotency/...
-
-  loadtest:card:
-    desc: Executa load test k6 contra homologacao (requer BASE_URL, X_USER_ID).
-    preconditions:
-      - sh: '[ -n "${BASE_URL:-}" ]'
-        msg: "BASE_URL nao definido. Exporte BASE_URL=https://<host-homologacao> antes de executar."
-      - sh: '[ -n "${X_USER_ID:-}" ]'
-        msg: "X_USER_ID nao definido. Exporte X_USER_ID=<uuid-usuario-teste> antes de executar."
-    cmds:
-      - docker run --rm
-          -e BASE_URL=$BASE_URL
-          -e X_USER_ID=$X_USER_ID
-          -v ./loadtest:/loadtest
-          grafana/k6 run /loadtest/card/m02_post_create.js
-      - docker run --rm
-          -e BASE_URL=$BASE_URL
-          -e X_USER_ID=$X_USER_ID
-          -v ./loadtest:/loadtest
-          grafana/k6 run /loadtest/card/m03_get_list.js
-      - docker run --rm
-          -e BASE_URL=$BASE_URL
-          -e X_USER_ID=$X_USER_ID
-          -v ./loadtest:/loadtest
-          grafana/k6 run /loadtest/card/m04_invoice_for.js
-
-  loadtest:card:mixed:
-    desc: Executa cenario misto de load test k6 (50/30/20 list/get/invoice_for por 5 min).
-    preconditions:
-      - sh: '[ -n "${BASE_URL:-}" ]'
-        msg: "BASE_URL nao definido."
-      - sh: '[ -n "${X_USER_ID:-}" ]'
-        msg: "X_USER_ID nao definido."
-    cmds:
-      - docker run --rm
-          -e BASE_URL=$BASE_URL
-          -e X_USER_ID=$X_USER_ID
-          -v ./loadtest:/loadtest
-          grafana/k6 run /loadtest/card/mixed.js
-
-  loadtest:card:setup:
-    desc: Executa bootstrap de dados de teste para load test (cria usuarios e cartoes base).
-    preconditions:
-      - sh: '[ -n "${BASE_URL:-}" ]'
-        msg: "BASE_URL nao definido."
-      - sh: '[ -n "${X_USER_ID:-}" ]'
-        msg: "X_USER_ID nao definido."
-    cmds:
-      - docker run --rm
-          -e BASE_URL=$BASE_URL
-          -e X_USER_ID=$X_USER_ID
-          -v ./loadtest:/loadtest
-          grafana/k6 run /loadtest/card/setup.js
-
-  loadtest:card:teardown:
-    desc: Executa cleanup dos dados de teste criados pelo setup do load test.
-    preconditions:
-      - sh: '[ -n "${BASE_URL:-}" ]'
-        msg: "BASE_URL nao definido."
-      - sh: '[ -n "${X_USER_ID:-}" ]'
-        msg: "X_USER_ID nao definido."
-    cmds:
-      - docker run --rm
-          -e BASE_URL=$BASE_URL
-          -e X_USER_ID=$X_USER_ID
-          -v ./loadtest:/loadtest
-          grafana/k6 run /loadtest/card/teardown.js
 
   card:audit:
     desc: Auditoria R0-R7 do modulo card — gates de init, panic, clock, interface-assertion e zero-comentarios.

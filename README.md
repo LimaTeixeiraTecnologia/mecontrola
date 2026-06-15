@@ -5,609 +5,539 @@
 ![SBOM Available](https://img.shields.io/badge/SBOM-SPDX--JSON-blue)
 ![Governance](https://img.shields.io/badge/governance-ai--spec-purple)
 
-Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com bootstrap separado para HTTP server, worker e migrações.
+Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp e Telegram, com bootstrap separado para server, worker e migrations.
 
-## Estado atual do projeto
-
-- **Arquitetura:** monolito modular com bounded contexts em `internal/`
-- **Módulos ativos no bootstrap:** `identity`, `billing`, `onboarding`, `categories`, `card`, `budgets` e `platform`
-- **Entrypoints principais:** `cmd/server`, `cmd/worker` e `cmd/migrate`
-- **Mensageria interna:** outbox transacional + dispatcher no worker
-- **HTTP inbound:** Chi
-- **Deploy alvo:** VPS com Docker Compose, GHCR, cosign e Caddy
+---
 
 ## Stack
 
-| Componente | Versão / detalhe atual |
+Componentes, versões e registros de imagem usados em produção.
+
+| Componente | Versão / detalhe |
 |---|---|
 | Go | `1.26.4` |
-| devkit-go | `v0.5.0` |
-| Router HTTP | `github.com/go-chi/chi/v5 v5.3.0` |
-| CLI | Cobra |
+| Router HTTP | `go-chi/chi v5.3.0` |
 | Banco | PostgreSQL 16 (`postgres:16-alpine`) |
 | Observabilidade local | `grafana/otel-lgtm:0.7.5` |
 | Proxy de produção | Caddy 2 |
-| Automação local | Task `3.51.1` |
+| Automação | Task `3.51.1` |
 | Registro de imagem | `ghcr.io/limateixeiratecnologia/mecontrola` |
-| Supply chain | Trivy + cosign + SBOM SPDX-JSON |
+| Supply chain | Trivy + cosign keyless + SBOM SPDX-JSON |
+
+---
 
 ## Módulos e responsabilidades
 
-| Módulo | Responsabilidade atual |
+Monolito modular com 9 bounded contexts em `internal/`. Cada módulo segue as camadas Domain → Application → Infrastructure e se registra no bootstrap via `module.go`. O módulo `platform` provê capacidades transversais (outbox, worker, canais de mensagem) consumidas pelos demais.
+
+| Módulo | Responsabilidade |
 |---|---|
-| `internal/identity` | usuários, principal/auth, projeções de assinatura, webhook WhatsApp inbound e housekeeping de `auth_events` |
-| `internal/billing` | webhook Kiwify, reconciliação de assinaturas, grace period, housekeeping de eventos e publicação de eventos de assinatura |
-| `internal/onboarding` | checkout/magic token, ativação via WhatsApp, outreach, expiração de tokens e limpeza de mensagens Meta processadas |
-| `internal/categories` | catálogo de categorias e dicionário de categorias com busca HTTP |
-| `internal/card` | CRUD de cartões, listagem, consulta e cálculo de fatura por competência |
-| `internal/budgets` | orçamentos mensais, recorrência, despesas, resumo mensal, alertas e jobs de retenção/reprocessamento |
-| `internal/platform` | eventos, outbox, worker manager, HTTP client compartilhado, idempotência e capacidades transversais |
+| `internal/identity` | Usuários, principal/auth, entitlements, gateway HMAC-SHA256, housekeeping de `auth_events` |
+| `internal/billing` | Webhook Kiwify, reconciliação de assinaturas, grace period PAST_DUE (3 dias), housekeeping de eventos |
+| `internal/onboarding` | Magic token, ativação via WhatsApp/Telegram, outreach, expiração de tokens, limpeza de mensagens Meta |
+| `internal/categories` | Catálogo de categorias, dicionário com busca HTTP e ETag cache |
+| `internal/card` | CRUD de cartões, listagem paginada, fatura por competência, conformidade PCI RF-16 |
+| `internal/budgets` | Orçamentos mensais, despesas, recorrência, resumo mensal, reaper/purge jobs |
+| `internal/transactions` | Transações financeiras (DMMF/Decide\*), idempotência, resumo mensal, recorrência materializada |
+| `internal/agent` | Integração LLM via OpenRouter, circuit breaker, intent dispatch multicanal (WhatsApp/Telegram) |
+| `internal/platform` | Outbox transacional, worker manager, WhatsApp Cloud API, Telegram Bot, idempotência, rate limit |
 
-## Rotas HTTP atuais
+---
 
-| Método | Rota | Origem |
-|---|---|---|
-| `GET` | `/health` | health endpoint do servidor |
-| `GET` | `/ready` | readiness com checagem de banco |
-| `POST` | `/api/v1/identity/users/` | identity |
-| `GET` | `/api/v1/whatsapp/verify` | webhook Meta |
-| `POST` | `/api/v1/whatsapp/inbound` | webhook Meta inbound |
-| `POST` | `/api/v1/billing/webhooks/kiwify` | webhook Kiwify |
-| `POST` | `/api/v1/onboarding/checkout` | onboarding |
-| `GET` | `/api/v1/onboarding/tokens/{token}/state` | onboarding |
-| `GET` | `/api/v1/categories/` | categories |
-| `GET` | `/api/v1/categories/{id}` | categories |
-| `GET` | `/api/v1/category-dictionary/` | categories |
-| `GET` | `/api/v1/category-dictionary/search` | categories |
-| `POST` | `/api/v1/cards/` | card |
-| `GET` | `/api/v1/cards/` | card |
-| `GET` | `/api/v1/cards/{id}/` | card |
-| `PUT` | `/api/v1/cards/{id}/` | card |
-| `DELETE` | `/api/v1/cards/{id}/` | card |
-| `GET` | `/api/v1/cards/{id}/invoices` | card |
-| `POST` | `/api/v1/budgets/` | budgets |
-| `POST` | `/api/v1/budgets/recurrence` | budgets |
-| `GET` | `/api/v1/budgets/alerts` | budgets |
-| `POST` | `/api/v1/budgets/expenses` | budgets |
-| `PATCH` | `/api/v1/budgets/expenses/{id}` | budgets |
-| `DELETE` | `/api/v1/budgets/expenses/{id}` | budgets |
-| `POST` | `/api/v1/budgets/{competence}/activate` | budgets |
-| `DELETE` | `/api/v1/budgets/{competence}` | budgets |
-| `GET` | `/api/v1/budgets/{competence}/summary` | budgets |
+## Entrypoints
 
-Consulte também:
+O binário expõe 4 subcomandos Cobra. `server` e `worker` rodam em paralelo; `migrate` é one-shot e sai após aplicar as mudanças.
 
-- [docs/postman/README.md](docs/postman/README.md)
-- [internal/categories/openapi.yaml](internal/categories/openapi.yaml)
-- [internal/budgets/openapi.yaml](internal/budgets/openapi.yaml)
-
-## Estrutura do repositório
-
-```text
-cmd/
-  main.go
-  migrate/
-  server/
-  worker/
-configs/
-deployment/
-  caddy/
-  compose/
-  docker/
-  grafana/
-  promtail/
-  runbooks/
-  scripts/
-  telemetry/
-docs/
-  adrs/
-  discoveries/
-  epics/
-  grafana/
-  postman/
-  refactors/
-  runbooks/
-  runs/
-internal/
-  billing/
-  budgets/
-  card/
-  categories/
-  identity/
-  onboarding/
-  platform/
-migrations/
-taskfiles/
+```bash
+mecontrola server          # HTTP server (Chi, porta configurada em PORT)
+mecontrola worker          # Worker de background (outbox dispatcher, jobs agendados)
+mecontrola migrate         # Aplica todas as migrations pendentes e sai
+mecontrola migrate-down    # Reverte migrations (flag --steps N opcional)
 ```
 
-## Ambiente local
+---
 
-### Pré-requisitos
+## Configuração (.env)
 
-| Ferramenta | Obrigatório |
-|---|---|
-| Docker Engine + Compose v2 | sim |
-| Task `3.51.1` | sim |
-| Go `1.26.4` | sim |
-| `golangci-lint` | para `task lint:run` |
-| `govulncheck` + `trivy` | para `task security:vulncheck` |
+Copie `.env.example` para `.env` e preencha os valores marcados com `CHANGE_ME_*`. Esses valores são rejeitados pelo `Config.Validate()` quando `ENVIRONMENT=production`. Em produção o arquivo fica em `chmod 600`, dono root, na raiz do repositório.
 
-### Setup
-
-```sh
-git clone https://github.com/LimaTeixeiraTecnologia/mecontrola.git
-cd mecontrola
+```bash
 cp .env.example .env
-task setup
 ```
 
-### Variáveis mínimas para bootstrap local
-
-Hoje o bootstrap de `server` e `worker` instancia `identity`, `billing`, `onboarding`, `categories`, `card` e `budgets` logo na subida. Por isso, além do banco, o `.env` precisa ter valores válidos para os pontos abaixo.
-
-Use valores de desenvolvimento, por exemplo:
+### Aplicação
 
 ```env
-DB_PASSWORD=mecontrola_local_password
-
-ONBOARDING_TOKEN_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
-META_PHONE_NUMBER_ID=local-phone-number-id
-META_ACCESS_TOKEN=local-meta-access-token
-META_APP_SECRET=local-meta-app-secret
-META_VERIFY_TOKEN=local-meta-verify-token
-
-KIWIFY_PRODUCT_ID_MONTHLY=local-monthly
-KIWIFY_PRODUCT_ID_QUARTERLY=local-quarterly
-KIWIFY_PRODUCT_ID_ANNUAL=local-annual
-KIWIFY_WEBHOOK_SECRET=local-kiwify-webhook-secret
+ENVIRONMENT=local          # local | production
+APP_MODE=server
 ```
 
-Se quiser exercitar fluxos reais, complete também as credenciais de Meta Cloud API e Kiwify no `.env`.
+### HTTP
 
-### Subir o ambiente
-
-O `compose` base aponta por padrão para `ghcr.io/limateixeiratecnologia/mecontrola:latest`. Se você não tiver acesso de pull ao GHCR privado, use a imagem local.
-
-Construindo imagem local:
-
-```sh
-task build:docker:build IMAGE_TAG=dev
-IMAGE_NAME=mecontrola IMAGE_TAG=dev task local:seed
+```env
+PORT=8080
+SERVICE_NAME_API=mecontrola-api
+SERVICE_NAME_WORKER=mecontrola-worker
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+AUTH_RATE_LIMIT_PER_USER_PER_MIN=120
+AUTH_RATE_LIMIT_PER_USER_BURST=60
 ```
 
-Se você tiver acesso ao GHCR e quiser usar a imagem remota publicada:
+> Em `production`: lista explícita obrigatória. Wildcard `*` ou valor vazio causam erro de boot.
 
-```sh
-task local:seed
+### Banco de dados
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=mecontrola
+DB_PASSWORD=CHANGE_ME_USE_STRONG_PASSWORD
+DB_NAME=mecontrola_db
+DB_SSL_MODE=disable
+DB_MAX_CONNS=10
+DB_MIN_CONNS=2
+DB_MAX_IDLE_CONNS=5
+DB_CONN_MAX_LIFETIME=30m
+DB_CONN_MAX_IDLE_TIME=5m
+
+# Para testes de integração
+DATABASE_URL=postgres://mecontrola:CHANGE_ME_USE_STRONG_PASSWORD@localhost:5432/mecontrola_db?sslmode=disable
 ```
 
-Isso sobe:
+### Observabilidade (OpenTelemetry)
 
-- `postgres`
-- `otel-lgtm`
-- executa `migrate`
-- sobe `server`
-- sobe `worker`
+Stack local via `docker compose` sobe `grafana/otel-lgtm:0.7.5` em `localhost`. Em produção, apontar para Grafana Cloud ou instância dedicada.
 
-Resultado validado localmente em `2026-06-11`:
-
-- `task build:docker:build IMAGE_TAG=dev` construiu a imagem local `mecontrola:dev`
-- `IMAGE_NAME=mecontrola IMAGE_TAG=dev task local:seed` subiu `postgres`, `otel-lgtm`, `server` e `worker`
-- o passo final de `migrate` aplicou as migrations com sucesso em banco limpo
-- uma segunda execução explícita de `migrate` terminou com sucesso, sem reaplicar a migration inicial
-- o fluxo local foi ajustado para não subir `migrate` implicitamente dentro de `task local:up`, evitando corrida com `task local:seed`
-- o endpoint OTLP local foi alinhado para `grpc` em formato `host:port`, sem `http://`
-- a tabela de versionamento do `golang-migrate` ficou fixada em `public.schema_migrations`, evitando divergência de schema entre a primeira execução e os reruns
-- `task local:up` passou a subir o ambiente na ordem `infra -> migrate -> app`, evitando crash de bootstrap em banco vazio
-
-### Troubleshooting do bootstrap local
-
-Se `task local:seed` falhar no `migrate` com erro parecido com:
-
-```text
-relation "outbox_events" already exists
+```env
+OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+OTEL_EXPORTER_OTLP_INSECURE=true
+OTEL_TRACE_SAMPLE_RATE=1.0
+OTEL_SERVICE_VERSION=dev
+LOG_LEVEL=debug
+LOG_FORMAT=json
 ```
 
-no estado atual do repositório, o cenário mais provável é volume local do Postgres carregando resíduos de execuções antigas, anteriores à correção do fluxo de migrations. A causa raiz original foi eliminada:
+### Docker Compose local (otel-lgtm)
 
-- `task local:up` não sobe mais o serviço `migrate` implicitamente
-- o `cmd/migrate` usa tabela de controle fixa em `public.schema_migrations`
-- o runtime não executa startup migrations paralelas no bootstrap local atual
-
-Para recriar o ambiente do zero:
-
-```sh
-task local:reset
-IMAGE_NAME=mecontrola IMAGE_TAG=dev task local:seed
+```env
+OTEL_LGTM_ADMIN_USER=admin
+OTEL_LGTM_ADMIN_PASSWORD=admin@dev
 ```
 
-Se você quiser manter os dados locais, não rode `local:reset`; primeiro inspecione o estado atual das migrations e do schema antes de aplicar nova remediation.
+### Outbox transacional (RF-26 / D-03)
 
-Observações:
+```env
+OUTBOX_DISPATCHER_ENABLED=true
+OUTBOX_DISPATCHER_TICK_INTERVAL=500ms
+OUTBOX_DISPATCHER_BATCH_SIZE=50
+OUTBOX_DISPATCHER_HANDLER_TIMEOUT=10s
+OUTBOX_RETRY_MAX_ATTEMPTS=15
+OUTBOX_RETRY_BASE_BACKOFF=2s
+OUTBOX_RETRY_MAX_BACKOFF=5m
+OUTBOX_HOUSEKEEPING_RETENTION_DAYS=90
+OUTBOX_HOUSEKEEPING_SCHEDULE=@daily
+OUTBOX_REAPER_INTERVAL=@every 1m
+OUTBOX_REAPER_STUCK_AFTER=5m
+```
 
-- `task local:up` e os bootstraps de `ngrok` sobem apenas `postgres`, `otel-lgtm`, `server`, `worker` e, quando aplicável, `caddy`
-- `task local:up`, `task local:seed` e os bootstraps de `ngrok` executam `migrate` antes de iniciar a app
-- para OTLP `grpc`, use endpoint local em formato `localhost:4317` ou `otel-lgtm:4317`, sem prefixo `http://`
+### Kiwify
 
-### Endpoints locais
+```env
+KIWIFY_API_BASE_URL=https://public-api.kiwify.com
+KIWIFY_CLIENT_ID=CHANGE_ME_generate_secure_client_id
+KIWIFY_CLIENT_SECRET=CHANGE_ME_generate_secure_secret_key_min_64_chars
+KIWIFY_ACCOUNT_ID=CHANGE_ME_generate_secure_account_id
+KIWIFY_PRODUCT_ID_MONTHLY=CHANGE_ME_product_id_monthly
+KIWIFY_PRODUCT_ID_QUARTERLY=CHANGE_ME_product_id_quarterly
+KIWIFY_PRODUCT_ID_ANNUAL=CHANGE_ME_product_id_annual
+KIWIFY_WEBHOOK_SECRET=CHANGE_ME_generate_secure_webhook_secret
+KIWIFY_WEBHOOK_SECRET_NEXT=
+KIWIFY_RECONCILIATION_INTERVAL=@hourly
+KIWIFY_RECONCILIATION_BATCH_SIZE=200
+KIWIFY_HTTP_TIMEOUT=10s
+KIWIFY_HTTP_RETRY_MAX_ATTEMPTS=3
+KIWIFY_HTTP_RETRY_BACKOFF=1s
+```
+
+### Billing
+
+```env
+BILLING_ENTITLEMENT_CACHE_CAPACITY=50000
+BILLING_ENTITLEMENT_CACHE_TTL=5m
+BILLING_ANONYMIZATION_SCHEDULE=@daily
+BILLING_ANONYMIZATION_RETENTION_DAYS=365
+BILLING_GRACE_EXPIRATION_SCHEDULE=@daily
+```
+
+### Budgets
+
+```env
+BUDGETS_PENDING_REAPER_INTERVAL=@every 30s
+BUDGETS_PENDING_TTL_HOURS=24
+BUDGETS_ABANDONED_DRAFT_CRON=0 3 * * *
+BUDGETS_RETENTION_PURGE_CRON=0 4 1 * *
+BUDGETS_RETENTION_PURGE_BATCH_SIZE=500
+```
+
+### Transactions
+
+```env
+TRANSACTIONS_ENABLED=false
+TRANSACTIONS_IDEMPOTENCY_TTL=24h
+TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW=1500ms
+TRANSACTIONS_RECURRING_MATERIALIZER_CRON=@daily
+TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON=@daily
+TRANSACTIONS_BRAZIL_TIMEZONE=America/Sao_Paulo
+```
+
+### Onboarding
+
+```env
+ONBOARDING_TOKEN_TTL_DAYS=7
+ONBOARDING_OUTREACH_GAP_HOURS=2
+ONBOARDING_OUTREACH_ENABLED=false
+ONBOARDING_CHECKOUT_RATE_LIMIT_PER_MIN=10
+ONBOARDING_CHECKOUT_RATE_LIMIT_BURST=5
+ONBOARDING_STATE_RATE_LIMIT_PER_MIN=30
+ONBOARDING_TOKEN_ENCRYPTION_KEY=CHANGE_ME_32_byte_token_encryption_key
+ONBOARDING_TOKEN_EXPIRATION_SCHEDULE=0 3 * * *
+ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS=5
+ONBOARDING_META_RETENTION_DAYS=30
+ONBOARDING_META_CLEANUP_SCHEDULE=30 3 * * *
+```
+
+### WhatsApp / Meta Cloud API
+
+```env
+META_PHONE_NUMBER_ID=CHANGE_ME_meta_phone_number_id
+META_ACCESS_TOKEN=CHANGE_ME_meta_access_token
+META_APP_SECRET=CHANGE_ME_meta_app_secret
+META_APP_SECRET_NEXT=
+META_VERIFY_TOKEN=CHANGE_ME_meta_verify_token
+META_BOT_NUMBER_E164=+5511900000000
+META_BOT_NUMBER_DISPLAY=+55 11 9XXXX-XXXX
+WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN=600
+WHATSAPP_WEBHOOK_RATE_LIMIT_BURST=100
+```
+
+### Telegram
+
+```env
+TELEGRAM_ENABLED=false
+TELEGRAM_BOT_TOKEN=CHANGE_ME_telegram_bot_token
+TELEGRAM_BOT_ID=0
+TELEGRAM_BOT_USERNAME=CHANGE_ME_bot_username
+TELEGRAM_SECRET_TOKEN=CHANGE_ME_telegram_secret_token
+TELEGRAM_SECRET_TOKEN_NEXT=
+TELEGRAM_WEBHOOK_PATH=/api/v1/channels/telegram/webhook
+TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN=600
+TELEGRAM_OUTBOUND_TIMEOUT=10s
+```
+
+### Agent / LLM (OpenRouter)
+
+```env
+AGENT_MODE=stub            # stub | live
+OPENROUTER_API_KEY=CHANGE_ME_openrouter_api_key
+AGENT_LLM_HTTP_REFERER=https://mecontrola.app
+AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
+AGENT_LLM_FALLBACK_MODELS=openai/gpt-5-nano,mistralai/mistral-small-3.2-24b-instruct,anthropic/claude-haiku-4.5
+AGENT_LLM_MAX_TOKENS=256
+AGENT_LLM_TEMPERATURE=0
+AGENT_LLM_REQUEST_TIMEOUT=8s
+AGENT_LLM_CIRCUIT_FAILURES=5
+AGENT_LLM_CIRCUIT_WINDOW=30s
+AGENT_LLM_CIRCUIT_COOLDOWN=60s
+```
+
+### Gateway Auth (HMAC-SHA256)
+
+Autenticação interna entre o agent LLM e a API. O segredo deve ser gerado com `openssl rand -hex 32`. `NEXT` é opcional e usado durante rotação.
+
+```env
+IDENTITY_GATEWAY_SHARED_SECRET_CURRENT=CHANGE_ME_openssl_rand_hex_32
+IDENTITY_GATEWAY_SHARED_SECRET_NEXT=
+IDENTITY_GATEWAY_AUTH_WINDOW=60s
+IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE=@daily
+IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH=500
+IDENTITY_AUTH_EVENTS_RETENTION_DAYS=90
+```
+
+---
+
+## Subir só a infra
+
+Use quando quiser rodar o server/worker via `go run`, `task run` ou debug no VS Code — sem precisar dos containers da aplicação. Sobe PostgreSQL e Grafana LGTM (observabilidade) apenas.
+
+```bash
+task local:infra
+```
+
+Equivalente manual:
+
+```bash
+docker compose --env-file .env \
+  -f deployment/compose/compose.yml \
+  -f deployment/compose/compose.local.yml \
+  up -d postgres otel-lgtm
+```
+
+Endpoints disponíveis após subir:
+
+| Serviço | Endereço |
+|---|---|
+| PostgreSQL | `localhost:5432` |
+| Grafana | `http://localhost:3000` (admin / admin@dev) |
+| OTLP gRPC | `localhost:4317` |
+| OTLP HTTP | `localhost:4318` |
+
+---
+
+## Subir tudo (infra + migrate + server + worker)
+
+Sobe o ambiente completo em sequência determinística. Use no dia a dia quando não precisar de debug com breakpoints. O `migrate` roda como one-shot e sai; `server` e `worker` ficam em background.
+
+```bash
+task local:up
+```
+
+Sequência executada internamente:
+
+1. `docker compose up -d postgres otel-lgtm` — aguarda healthcheck do postgres
+2. `docker compose run --rm migrate` — aplica migrations pendentes e sai
+3. `docker compose up -d server worker` — sobe e fica em background
+
+Endpoints após subir:
 
 | Serviço | Endereço |
 |---|---|
 | API | `http://localhost:8080` |
 | Health | `http://localhost:8080/health` |
-| Ready | `http://localhost:8080/ready` |
-| Grafana local | `http://localhost:3000` |
-| OTLP gRPC | `localhost:4317` |
-| OTLP HTTP | `localhost:4318` |
-| PostgreSQL | `localhost:5432` |
+| Grafana | `http://localhost:3000` |
 
-Credenciais padrão do LGTM local:
+Outros comandos de gerenciamento do ambiente local:
 
-```text
-admin / admin@dev
+```bash
+task local:down       # para e remove containers (preserva volumes)
+task local:destroy    # para + remove volumes (apaga dados) — pede confirmação
+task local:logs       # tail de todos os containers (Ctrl+C para sair)
+task local:ps         # status dos containers
 ```
 
-### Comandos locais úteis
+---
 
-```sh
-task local:up
-task local:down
-task local:logs
-task local:ps
-task local:reset
-task --list-all
+## Debug no VS Code
+
+O projeto vem com `.vscode/launch.json` configurado para debugar `server`, `worker` e `migrate` individualmente ou em conjunto. Não é necessário subir os containers da app — apenas a infra.
+
+**Pré-requisitos:** extensão [Go for VS Code](https://marketplace.visualstudio.com/items?itemName=golang.go) instalada, `.env` preenchido, infra no ar.
+
+```bash
+task local:infra   # postgres + otel-lgtm
+task migrate:up    # aplica migrations
+# VS Code: F5 → selecionar configuração
 ```
 
-### Webhooks locais com ngrok
+Configurações disponíveis em `.vscode/launch.json`:
 
-Use `ngrok` apenas para desenvolvimento local e homologação manual. Ele não faz parte do deployment publicado na VPS.
+| Configuração | Comando | Quando usar |
+|---|---|---|
+| `migrate` | `cmd migrate` + `.env` | Aplicar migrations em debug |
+| `server` | `cmd server` + `.env` | Debugar o HTTP server com breakpoints |
+| `worker` | `cmd worker` + `.env` | Debugar jobs em background |
+| `server + worker` | ambos simultâneos | Debugar fluxo completo; `stopAll: true` ao encerrar |
 
-#### Passo 1. Confirmar pré-requisitos
+> Alternativa via CLI: `dlv debug ./cmd -- server`
 
-Você precisa ter:
+---
 
-- `.env` criado na raiz do projeto
-- Docker Engine + Docker Compose v2
-- `curl`
-- `ngrok` instalado e autenticado localmente
+## Comandos Task
 
-Para validar tudo de uma vez:
+O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` para ver todas as tasks disponíveis.
 
-```sh
-task ngrok:check
-```
+### Setup e inicialização
 
-Se o comando falhar:
+| Task | Objetivo | Quando executar |
+|---|---|---|
+| `task setup` | Instala pre-commit hooks, gitsign e configura assinatura de commits | Uma vez ao clonar |
+| `task mocks:mocks` | Regenera mocks via mockery conforme `.mockery.yml` | Após alterar interfaces |
+| `task mocks:verify` | Falha se os mocks estiverem desatualizados (uso em CI) | — |
 
-- copie `.env.example` para `.env` caso o arquivo ainda não exista
-- confirme que `ngrok config check` passa localmente
-- confirme que `docker compose version` funciona no terminal
+### Build
 
-#### Passo 2. Garantir variáveis mínimas no `.env`
+| Task | Objetivo |
+|---|---|
+| `task build:build` | Compila binário para o SO atual em `bin/mecontrola` |
+| `task build:build:all` | Cross-compile linux/darwin/windows × amd64/arm64 em `bin/` |
+| `task build:docker:build IMAGE_TAG=<tag>` | Build da imagem Docker multi-stage distroless (≤30 MB, USER 65532) |
+| `task build:clean` | Remove `bin/` e `.task/` |
+| `task run` | Compila e executa o server localmente — requer infra no ar |
 
-O ambiente local precisa subir `server`, `worker`, `postgres` e, opcionalmente, `caddy`. Antes de abrir o túnel, confirme pelo menos os valores mínimos já descritos neste README.
+### Desenvolvimento local
 
-Se você for receber callbacks reais de Meta ou Kiwify, substitua os valores locais pelos segredos e IDs reais do ambiente que será testado.
+| Task | Objetivo |
+|---|---|
+| `task local:infra` | Sobe postgres + otel-lgtm sem aplicação |
+| `task local:up` | Sequência completa: infra → migrate → server + worker |
+| `task local:down` | Para e remove containers (preserva volumes) |
+| `task local:destroy` | Para + remove volumes (apaga dados) — pede confirmação |
+| `task local:logs` | Tail de todos os containers |
+| `task local:ps` | Status dos containers |
 
-#### Passo 3. Escolher como expor a aplicação
+### Migrations
 
-Opção mais simples, expondo o `server` direto em `127.0.0.1:8080`:
-
-```sh
-IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:server
-```
-
-Essa opção:
-
-- valida pré-requisitos
-- sobe `postgres`, `server`, `worker` e `otel-lgtm`
-- espera o `health` responder em `http://127.0.0.1:8080/health`
-- abre o túnel `ngrok` em foreground
-
-Opção mais próxima da borda de produção, passando pelo `caddy` local:
-
-```sh
-IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:caddy
-```
-
-Essa opção:
-
-- valida pré-requisitos
-- sobe o mesmo ambiente local com `--profile proxy`
-- espera o `health` responder em `http://127.0.0.1:80/health`
-- abre o túnel `ngrok` apontando para o `caddy`
-
-Quando usar cada uma:
-
-- `task ngrok:server`: menor atrito para testar callbacks e webhooks locais.
-- `task ngrok:caddy`: útil para validar o tráfego passando pela mesma borda reversa usada em produção.
-
-#### Passo 4. Manter o túnel aberto
-
-Os comandos `task ngrok:server` e `task ngrok:caddy` deixam o `ngrok` rodando em foreground. Não feche esse terminal enquanto o provedor externo precisar acessar sua máquina.
-
-Se o processo for interrompido:
-
-- a URL pública muda quando um novo túnel for criado
-- você precisará atualizar novamente a URL cadastrada na Meta ou na Kiwify
-
-#### Passo 5. Descobrir as URLs públicas geradas
-
-Em outro terminal, descubra as URLs públicas montadas para os webhooks:
-
-```sh
-task ngrok:urls
-```
-
-Saídas esperadas:
-
-- `https://<host-ngrok>/api/v1/whatsapp/verify`
-- `https://<host-ngrok>/api/v1/whatsapp/inbound`
-- `https://<host-ngrok>/api/v1/billing/webhooks/kiwify`
-
-O comando lê a API local do `ngrok` em `127.0.0.1:4040`. Se ele falhar, o túnel ainda não foi iniciado ou não está acessível.
-
-#### Passo 6. Cadastrar a URL no provedor externo
-
-Para Meta WhatsApp, use as URLs do passo anterior nos endpoints do webhook:
-
-- verificação: `https://<host-ngrok>/api/v1/whatsapp/verify`
-- inbound: `https://<host-ngrok>/api/v1/whatsapp/inbound`
-
-Para Kiwify, use:
-
-- `https://<host-ngrok>/api/v1/billing/webhooks/kiwify`
-
-Antes de apontar o provedor para a URL do `ngrok`, confirme localmente que o endpoint responde:
-
-```sh
-curl -i http://127.0.0.1:8080/health
-curl -i http://127.0.0.1:8080/ready
-```
-
-Se estiver usando `task ngrok:caddy`, você também pode validar:
-
-```sh
-curl -i http://127.0.0.1/health
-```
-
-#### Passo 7. Usar domínio reservado do ngrok, se necessário
-
-Se você tiver domínio reservado no ngrok, pode sobrescrever em tempo de execução:
-
-```sh
-IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:server NGROK_DOMAIN=mecontrola-dev.ngrok.app
-```
-
-O mesmo vale para a opção com proxy:
-
-```sh
-IMAGE_NAME=mecontrola IMAGE_TAG=dev task ngrok:caddy NGROK_DOMAIN=mecontrola-dev.ngrok.app
-```
-
-#### Passo 8. Encerrar o túnel e o ambiente local
-
-Para encerrar o `ngrok`, volte ao terminal onde a tarefa está rodando e use `Ctrl+C`.
-
-Para desligar os containers locais:
-
-```sh
-task local:down
-```
-
-Se quiser relembrar essas instruções rapidamente no terminal:
-
-```sh
-task ngrok:stop:tips
-```
-
-## CLI da aplicação
-
-```sh
-go run ./cmd --help
-```
-
-Subcomandos atuais:
-
-```text
-mecontrola server
-mecontrola worker
-mecontrola migrate
-mecontrola migrate-down --steps 1
-```
-
-## Desenvolvimento
-
-### Rodar localmente fora do Docker Compose
-
-```sh
-task build
-./bin/mecontrola server
-./bin/mecontrola worker
-./bin/mecontrola migrate
-```
+| Task | Objetivo |
+|---|---|
+| `task migrate:up` | Aplica todas as migrations pendentes (lê `.env`) |
+| `task migrate:down` | Reverte todas as migrations |
+| `task migrate:create -- <nome>` | Cria novo par de arquivos SQL numerado em `migrations/` |
 
 ### Testes
 
-```sh
-task test:unit
-task test:integration
-task test:coverage
-task test:coverage:identity
-task card:test
-task card:integration
+| Task | Objetivo | Depende de |
+|---|---|---|
+| `task test:all` | Unitários + integração | Docker (integração) |
+| `task test:unit` | Unitários com `-race` e cobertura em `coverage/unit.out` | — |
+| `task test:integration` | Integração com testcontainers | Docker disponível |
+| `task test:coverage` | Relatório HTML em `coverage/coverage.html` | `test:unit` |
+| `task test:watch` | Re-executa unitários ao salvar | — |
+| `task card:test` | Unitários do módulo card com `-race` | — |
+| `task card:integration` | Integração do módulo card | Docker disponível |
+
+### Lint e qualidade
+
+| Task | Objetivo |
+|---|---|
+| `task lint:run` | golangci-lint + gates: auth-bypass, outbox-user-id |
+| `task lint:fix` | Aplica correções automáticas do linter |
+| `task lint:fmt` | gofmt + goimports |
+| `task lint:fmt:check` | Falha se arquivo não formatado (uso em CI) |
+| `task lint:tidy` | `go mod tidy` + verifica drift em `go.mod`/`go.sum` |
+| `task lint:pci` | Gate RF-16: bloqueia PAN/CVV/CVC/track/PIN em produção |
+| `task lint:user-isolation` | Gate: UPDATE/DELETE sem `user_id` na WHERE em repos per-user |
+| `task lint:auth-bypass` | Gate M-09: `RequireGatewayAuth` obrigatório antes de `InjectPrincipal` |
+| `task lint:outbox-user-id` | Gate: `AggregateUserID` obrigatório em `EventInput` |
+| `task card:lint` | golangci-lint escopo card (inclui regra forbidigo PCI) |
+| `task card:audit` | Auditoria R0–R7: init, panic, clock, interface-assertion, zero-comentários, SQL em adapter, PCI |
+
+### Validação rápida
+
+| Task | Objetivo |
+|---|---|
+| `task check` | `lint:run` + `test:unit` + `security:vulncheck` — executar antes de abrir PR |
+| `task ci:pipeline` | Pipeline CI completa (lint + testes + segurança + build) |
+| `task ci:fast` | Subconjunto rápido para feedback em PR (lint + testes unitários) |
+
+### Segurança
+
+| Task | Objetivo | Requer |
+|---|---|---|
+| `task security:vulncheck` | govulncheck + trivy fs HIGH/CRITICAL | govulncheck, trivy |
+| `task security:scan` | vulncheck + audit | govulncheck, trivy |
+| `task security:audit` | `go list -m -u all` + `go mod verify` | — |
+| `task security:image-scan IMAGE_SHA=<sha>` | Trivy na imagem do GHCR | trivy, acesso GHCR |
+| `task security:sbom IMAGE_SHA=<sha>` | Gera `sbom.spdx.json` da imagem | trivy, acesso GHCR |
+| `task security:verify-image IMAGE_SHA=<sha>` | Verifica assinatura cosign keyless | cosign |
+| `task security:vps:firewall VPS_HOST=<ip>` | Aplica regras ufw no VPS via SSH (22/80/443) | SSH + sudo no VPS |
+| `task security:backup-restore-smoke` | Restaura último dump cifrado e executa smoke queries | rclone, age, docker, psql |
+
+### ngrok — webhooks locais
+
+Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
+
+| Task | Objetivo |
+|---|---|
+| `task ngrok:check` | Valida pré-requisitos (docker, ngrok configurado, `.env`, curl) |
+| `task ngrok:server` | Sobe ambiente completo + abre túnel ngrok → `127.0.0.1:8080` |
+| `task ngrok:caddy` | Sobe ambiente com perfil proxy + túnel → `:80` |
+| `task ngrok:urls` | Imprime URLs públicas dos webhooks ativos (Meta verify/inbound, Kiwify) |
+| `task ngrok:stop:tips` | Exibe como encerrar o túnel e desligar os containers |
+
+### Smoke tests — staging
+
+| Task | Objetivo | Variáveis necessárias |
+|---|---|---|
+| `task auth:smoke` | Smoke HMAC-SHA256 do webhook WhatsApp em staging | `WEBHOOK_URL`, `META_APP_SECRET`, `SMOKE_WA` |
+| `task onboarding:smoke` | Smoke do fluxo ATIVAR end-to-end | `META_APP_SECRET`, `STAGING_WEBHOOK_URL` |
+
+### Benchmarks
+
+| Task | Objetivo |
+|---|---|
+| `task bench:outbox` | Benchmark do outbox publisher com 5 runs |
+
+---
+
+## Sequências comuns
+
+Receitas prontas para os fluxos mais frequentes.
+
+**Primeira vez (clone do zero):**
+
+```bash
+cp .env.example .env   # preencher CHANGE_ME_* e ajustar valores locais
+task setup             # pre-commit + gitsign
+task local:up          # infra + migrate + server + worker
 ```
 
-### Lint, segurança e validação rápida
+**Ciclo de desenvolvimento diário:**
 
-```sh
-task lint:run
-task lint:fmt
-task lint:fmt:check
-task lint:pci
-task security:vulncheck
+```bash
+# Com Docker (server/worker em container):
+task local:up
+
+# Com debug no VS Code (server/worker no debugger):
+task local:infra && task migrate:up
+# → F5 no VS Code, selecionar "server + worker"
+
+# Antes de abrir PR:
 task check
 ```
 
-### Mocks, benchmarks e auditorias
+**Reset completo do banco:**
 
-```sh
-task mocks
-task bench:outbox
-task card:audit
+```bash
+task local:destroy   # remove volumes (confirma prompt)
+task local:up        # recria do zero
 ```
 
-### Smokes disponíveis
+**Testar webhook com ngrok:**
 
-```sh
-task auth:smoke
-task onboarding:smoke
+```bash
+task ngrok:server    # sobe ambiente completo + abre túnel
+task ngrok:urls      # copia URLs → configurar no Meta/Kiwify Dashboard
+# Ctrl+C para encerrar o túnel
+task local:down      # para os containers
 ```
 
-### Load tests disponíveis
+---
 
-```sh
-task loadtest:card
-task loadtest:card:mixed
-task loadtest:card:setup
-task loadtest:card:teardown
+## CI/CD
+
+Dois workflows GitHub Actions independentes: CI valida qualidade e segurança a cada PR; CD publica e implanta a imagem somente na main.
+
+**CI (`.github/workflows/ci.yml`):**
+
+```
+lint → fmt:check → tidy → test:unit → test:integration → govulncheck → trivy fs → auth:smoke (main)
 ```
 
-## Worker atual
+**CD (`.github/workflows/cd.yml`):**
 
-O `cmd/worker` monta um `worker.Manager` com jobs e handlers dos módulos. Hoje ele inclui:
-
-- dispatcher, reaper e housekeeping do outbox
-- housekeeping de `auth_events`
-- reconciliação de billing
-- housekeeping de eventos Kiwify
-- expiração de grace period
-- outreach de onboarding
-- expiração de tokens de onboarding
-- limpeza de mensagens Meta já processadas
-- reaper de rascunhos abandonados em budgets
-- reaper de eventos pendentes em budgets
-- purge de retenção em budgets
-
-## Build e imagem Docker
-
-### Binário
-
-```sh
-task build
-task build:build:all
+```
+build → push GHCR → trivy image → gerar SBOM → cosign sign + attest → deploy VPS
 ```
 
-### Imagem
+---
 
-Build local:
+## Governance
 
-```sh
-task build:docker:build IMAGE_TAG=dev
-```
+Referências canônicas para regras de arquitetura, ADRs e especificações de produto.
 
-Build para tag versionada:
-
-```sh
-SHA=$(git rev-parse --short HEAD)
-task build:docker:build IMAGE_TAG=${SHA}
-task security:image-scan IMAGE_SHA=${SHA}
-task security:sbom IMAGE_SHA=${SHA}
-```
-
-## CI/CD atual
-
-### CI
-
-O workflow `.github/workflows/ci.yml` executa:
-
-- lint
-- formatação
-- testes unitários
-- testes de integração
-- `govulncheck` + `trivy fs`
-- governança (`ai-spec`, conventional commits, validação do Taskfile)
-- `auth:smoke` em `main`
-
-### CD
-
-O workflow `.github/workflows/cd.yml` faz:
-
-1. build e push da imagem para GHCR
-2. scan Trivy da imagem
-3. geração de SBOM
-4. assinatura e attestations com cosign
-5. deploy para VPS via `deployment/scripts/deploy.sh`
-
-Em `workflow_dispatch`, o deploy aceita `image_tag` explícita.
-
-## Deploy em produção
-
-Os arquivos de compose atuais são:
-
-- `deployment/compose/compose.yml`
-- `deployment/compose/compose.prod.yml`
-
-O script operacional atual é:
-
-```sh
-bash deployment/scripts/deploy.sh <image-tag>
-```
-
-Fluxo resumido do deploy:
-
-```text
-git push / workflow_dispatch
-  -> build e push GHCR
-  -> trivy image
-  -> sbom
-  -> cosign sign + attest
-  -> SSH na VPS
-  -> docker compose pull
-  -> migrate
-  -> up -d server worker
-  -> smoke em /health
-```
-
-Em produção, `server` e `worker` rodam com:
-
-- `read_only: true`
-- `tmpfs` para `/tmp`
-- `cap_drop: [ALL]`
-- `no-new-privileges`
-- `user 65532:65532`
-
-## Segurança
-
-### Verificar assinatura da imagem
-
-```sh
-cosign verify \
-  --certificate-identity-regexp '^https://github\.com/LimaTeixeiraTecnologia/mecontrola/' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  ghcr.io/limateixeiratecnologia/mecontrola:<sha>
-```
-
-### Scan local
-
-```sh
-task security:vulncheck
-task security:scan
-```
-
-Para reporte de vulnerabilidades, consulte [SECURITY.md](SECURITY.md).
-
-## Governança
-
-As regras operacionais do repositório estão em:
-
-- [AGENTS.md](AGENTS.md)
-- [CLAUDE.md](CLAUDE.md)
-- [GEMINI.md](GEMINI.md)
-
-As automações de desenvolvimento usam:
-
-- [Taskfile.yml](Taskfile.yml)
-- [taskfiles/](taskfiles/)
-- [migrations/](migrations/)
-- [deployment/](deployment/)
+| Artefato | Localização | Conteúdo |
+|---|---|---|
+| Regras e skills | `AGENTS.md` | Fonte canônica de arquitetura, ADRs e regras obrigatórias |
+| PRDs e techspecs | `.specs/` | Especificações por módulo |
+| Diagramas C4 | `docs/diagrams/` | PlantUML por módulo (container + fluxos) |
+| Coleção Postman | `docs/postman/` | Endpoints + environment |

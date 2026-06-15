@@ -1,19 +1,13 @@
-name: CI/CD
+name: CI
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Tag da imagem a publicar na VPS (SHA curto ou semver)"
-        required: true
-        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -54,18 +48,16 @@ jobs:
           path: .task/
           key: task-${{ runner.os }}-${{ hashFiles('Taskfile.yml', 'taskfiles/**') }}
 
-      - name: Cache mockery artifacts
+      - name: Cache golangci-lint artifacts
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/golangci-lint
+          path: ~/.cache/golangci-lint
           key: golangci-${{ runner.os }}-${{ hashFiles('.golangci.yml') }}
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     needs: setup
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +84,6 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: setup
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -119,7 +110,6 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: setup
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -166,7 +156,6 @@ jobs:
     name: Security
     runs-on: ubuntu-latest
     needs: setup
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -203,7 +192,6 @@ jobs:
     name: Governance
     runs-on: ubuntu-latest
     needs: setup
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -225,7 +213,7 @@ jobs:
         run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
 
       - name: Check conventional commits (push)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.before }}" "${{ github.sha }}"
 
       - name: ai-spec doctor
@@ -237,7 +225,6 @@ jobs:
     name: Card Audit (R0-R7 + anti-PCI)
     runs-on: ubuntu-latest
     needs: setup
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -257,7 +244,7 @@ jobs:
   coverage-comment:
     name: Coverage Comment
     runs-on: ubuntu-latest
-    needs: [unit, integration]
+    needs: [unit]
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -329,6 +316,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Save image meta artifact
+        run: |
+          echo "image-tag=${{ steps.meta.outputs.image-tag }}" > image-meta.txt
+          echo "image-digest=${{ steps.build.outputs.digest }}" >> image-meta.txt
+
+      - name: Upload image meta for CD
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-meta
+          path: image-meta.txt
+          retention-days: 7
+
   scan-and-attest:
     name: Scan, Sign & Attest Image
     runs-on: ubuntu-latest
@@ -381,8 +380,6 @@ jobs:
           cosign-release: v2.4.3
 
       - name: Sign image with cosign (keyless OIDC)
-        env:
-          COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign --yes ${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.image-digest }}
 
@@ -400,115 +397,3 @@ jobs:
           subject-digest: ${{ needs.build-image.outputs.image-digest }}
           sbom-path: sbom.spdx.json
           push-to-registry: true
-
-  deploy:
-    name: Deploy to VPS
-    runs-on: ubuntu-latest
-    needs: [build-image, scan-and-attest]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      - name: Deploy to VPS
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          IMAGE_TAG: ${{ needs.build-image.outputs.image-tag }}
-        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
-
-  deploy-manual:
-    name: Deploy to VPS (manual)
-    runs-on: ubuntu-latest
-    needs: setup
-    if: github.event_name == 'workflow_dispatch'
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      - name: Deploy to VPS
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
-        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
-
-  auth-smoke:
-    name: Auth Smoke (staging)
-    runs-on: ubuntu-latest
-    needs: [setup, deploy]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: arduino/setup-task@v2
-        with:
-          version: ${{ needs.setup.outputs.task-version }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auth smoke test
-        env:
-          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
-          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
-          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          DB_URL: ${{ secrets.STAGING_DB_URL }}
-        run: task auth:smoke
-
-  auth-smoke-manual:
-    name: Auth Smoke (staging, manual)
-    runs-on: ubuntu-latest
-    needs: [setup, deploy-manual]
-    if: github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: arduino/setup-task@v2
-        with:
-          version: ${{ needs.setup.outputs.task-version }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auth smoke test
-        env:
-          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
-          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
-          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          DB_URL: ${{ secrets.STAGING_DB_URL }}
-        run: task auth:smoke

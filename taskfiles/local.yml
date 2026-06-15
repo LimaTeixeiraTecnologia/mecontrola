@@ -36,11 +36,6 @@ tasks:
     cmds:
       - "{{.COMPOSE_CMD}} down -v"
 
-  seed:
-    desc: Alias para subida local com migrations antes da app.
-    cmds:
-      - task: up
-
   logs:
     desc: Exibe logs dos containers locais (Ctrl+C para sair).
     cmds:
@@ -50,9 +45,3 @@ tasks:
     desc: Lista status dos containers locais.
     cmds:
       - "{{.COMPOSE_CMD}} ps"
-
-  reset:
-    desc: Para containers e remove volumes (apaga dados locais).
-    prompt: Isso apagara todos os dados locais. Continuar?
-    cmds:
-      - "{{.COMPOSE_CMD}} down -v"

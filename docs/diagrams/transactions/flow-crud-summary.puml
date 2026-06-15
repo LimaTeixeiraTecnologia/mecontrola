@@ -1,0 +1,20 @@
+@startuml Transactions - Fluxo: CRUD Transaction → Monthly Summary
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Dynamic.puml
+
+title Transactions — Fluxo 1: CRUD Transaction → Recomputa Monthly Summary\n(com Coalescer/debounce por userID+refMonth)
+
+Person(user, "Usuário")
+Container(http_api, "HTTP API", "Go/Chi", "")
+ContainerDb(postgres, "PostgreSQL", "", "")
+ContainerQueue(outbox, "Outbox", "", "")
+Container(worker, "Worker / MonthlySummaryRecomputeConsumer", "Go", "")
+
+Rel(user, http_api, "1. POST /api/v1/transactions\n{ date, amountCents, categoryID,\n  direction=outcome, description }")
+Rel(http_api, http_api, "2. DecideCreate (puro):\n   valida amount > 0, direction válido,\n   categoryID existe")
+Rel(http_api, postgres, "3. INSERT transactions")
+Rel(http_api, outbox, "4. Publica transactions.transaction.created.v1\n{ transactionID, userID, refMonthsAffected[] }")
+Rel(outbox, worker, "5. MonthlySummaryRecomputeConsumer\n(Coalescer: debounce — agrupa eventos do\nmesmo userID+refMonth em janela temporal)")
+Rel(worker, postgres, "6. Recomputa monthly_summary:\n   totalIncomeCents, totalOutcomeCents,\n   totalByCategoryCents por ref_month")
+Rel(user, http_api, "7. GET /api/v1/months/2026-06\n(retorna resumo do mês atualizado)\nGET /api/v1/months/2026-06/entries\n(retorna entradas detalhadas)")
+
+@enduml

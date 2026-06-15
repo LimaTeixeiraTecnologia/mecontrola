@@ -1,0 +1,48 @@
+@startuml Onboarding - Container Diagram [GERAL]
+' ============================================================
+' VISÃO GERAL — Onboarding Module
+' Todos os containers, atores externos, endpoints,
+' consumers, jobs e eventos publicados/consumidos.
+' Para fluxos passo a passo, ver flow-*.puml neste diretório.
+' ============================================================
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Onboarding — C4 Container View (Geral)
+
+Person(user, "Usuário", "Acessa via link de checkout\ne ativa pelo WhatsApp ou Telegram")
+System_Ext(kiwify, "Kiwify", "Gateway de pagamento.\nGera sessão de checkout e\nnotifica pagamentos via webhook.")
+System_Ext(meta_api, "Meta WhatsApp Cloud API", "Envia templates e mensagens\nde texto ao usuário via WhatsApp.")
+System_Ext(telegram_api, "Telegram Bot API", "Canal alternativo de ativação.\nRecebe /ativar <token> do usuário.")
+System_Ext(billing_module, "Billing Module", "Publica eventos de\nativação de subscription.")
+System_Ext(identity_module, "Identity Module", "UpsertUserByWhatsApp,\nLinkChannelToUser.")
+
+System_Boundary(onboarding, "Onboarding Module") {
+
+  Container(http_api, "HTTP API", "Go / Chi", "Endpoints públicos de onboarding.\n--\nPOST /api/v1/onboarding/checkout\nGET  /api/v1/onboarding/tokens/{token}/state\n--\nMiddleware:\n  Rate limiting (por IP)\n  CORS (whitelist de origins)")
+
+  Container(worker, "Worker", "Go", "Consumers e jobs agendados.\n--\nConsumers:\n  billing.subscription.activated\n    → MarkTokenPaid\n  billing.subscription.activated_without_token\n    → HandlePaidWithoutToken\n--\nJobs:\n  outreach_job (a cada 5 min)\n  token_expiration_job\n  meta_processed_messages_cleanup_job")
+
+  ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "Persistência do módulo.\n--\nTabelas:\n  magic_tokens\n  support_signals\n  meta_processed_messages\n  consumer_lookup_attempts")
+
+  ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  onboarding.subscription_bound")
+}
+
+Rel(user, http_api, "POST /onboarding/checkout\nGET /onboarding/tokens/{token}/state", "HTTPS/JSON")
+Rel(http_api, kiwify, "Gera URL de checkout com token", "HTTPS")
+Rel(http_api, postgres, "Cria MagicToken (PENDING)", "SQL")
+
+Rel(billing_module, worker, "billing.subscription.activated\nbilling.subscription.activated_without_token", "Outbox event")
+Rel(worker, postgres, "Transita token PENDING→PAID\nCria SupportSignal", "SQL")
+Rel(worker, meta_api, "outreach_job: envia template\nWhatsApp com token", "HTTPS")
+Rel(worker, postgres, "Marca outreach_sent_at\nTransita para EXPIRED", "SQL")
+Rel(worker, outbox, "Publica onboarding.subscription_bound", "SQL INSERT")
+
+Rel(user, http_api, "ATIVAR <token> via WhatsApp", "WhatsApp → Handler")
+Rel(http_api, identity_module, "UpsertUserByWhatsApp\nLinkChannelToUser", "Internal call")
+Rel(http_api, outbox, "Publica subscription_bound\n(PAID → CONSUMED)", "SQL INSERT")
+
+Rel(user, http_api, "/ativar <token> via Telegram", "Telegram → Handler")
+Rel(http_api, identity_module, "LinkChannelToUser\n(channel=telegram)", "Internal call")
+
+@enduml
