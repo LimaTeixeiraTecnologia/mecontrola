@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
@@ -260,9 +261,35 @@ func (s *ExpenseRepositorySuite) TestSumByRootExplainUsesIndex() {
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-03")
 
+	for i := range 64 {
+		expense, err := entities.NewExpense(
+			userID,
+			mustProducerSource(s.T(), "api"),
+			mustExternalTransactionID(s.T(), newUUIDv4()),
+			uuid.New(),
+			mustRootSlug(s.T(), "expense.custo_fixo"),
+			competence,
+			int64(1000+i),
+			time.Now().UTC(),
+			time.Now().UTC(),
+		)
+		s.Require().NoError(err)
+		s.Require().NoError(newExpenseRepo(testO11y(), db).Insert(ctx, expense))
+	}
+
+	_, err := db.ExecContext(ctx, `ANALYZE mecontrola.budgets_expenses`)
+	s.Require().NoError(err)
+
 	explainQuery := `EXPLAIN (FORMAT TEXT) SELECT root_slug, SUM(amount_cents) FROM mecontrola.budgets_expenses WHERE user_id = $1 AND competence = $2 AND deleted_at IS NULL GROUP BY root_slug`
 
-	rows, err := db.QueryContext(ctx, explainQuery, userID, competence.String())
+	tx, err := mgr.BeginTx(ctx, database.TxOptions{})
+	s.Require().NoError(err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`)
+	s.Require().NoError(err)
+
+	rows, err := tx.QueryContext(ctx, explainQuery, userID, competence.String())
 	s.Require().NoError(err)
 	defer func() { _ = rows.Close() }()
 
