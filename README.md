@@ -9,6 +9,43 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp e Te
 
 ---
 
+## Índice
+
+- [Pré-requisitos](#pré-requisitos)
+- [Stack](#stack)
+- [Módulos e responsabilidades](#módulos-e-responsabilidades)
+- [Entrypoints](#entrypoints)
+- [Configuração (.env)](#configuração-env)
+- [Subir só a infra](#subir-só-a-infra)
+- [Subir tudo (infra + migrate + server + worker)](#subir-tudo-infra--migrate--server--worker)
+- [Debug no VS Code](#debug-no-vs-code)
+- [Comandos Task](#comandos-task)
+- [Sequências comuns](#sequências-comuns)
+- [CI/CD](#cicd)
+- [Contribuição](#contribuição)
+- [Governance](#governance)
+
+---
+
+## Pré-requisitos
+
+Ferramentas necessárias para desenvolvimento local. Execute `task setup` após instalar para configurar hooks e assinatura de commits.
+
+| Ferramenta | Versão mínima | Obrigatório | Instalação |
+|---|---|---|---|
+| Docker Engine + Compose v2 | Docker 24+ | Sim | [docs.docker.com](https://docs.docker.com/engine/install/) |
+| Go | 1.26+ | Sim (desenvolvimento) | [go.dev/dl](https://go.dev/dl/) |
+| Task | 3.51.1 | Sim | `go install github.com/go-task/task/v3/cmd/task@v3.51.1` |
+| golangci-lint | v2.12.2 | Sim (lint) | instalado via `task setup` |
+| mockery | v2.53.3 | Sim (mocks) | instalado via `task setup` |
+| govulncheck | v1.1.4 | Sim (security) | instalado via `task setup` |
+| trivy | v0.62.1 | Sim (security/CI) | instalado via `task setup` |
+| cosign | v2.4.3 | Para assinar imagens | instalado via `task setup` |
+| gitsign | v0.12.0 | Para assinar commits | instalado via `task setup` |
+| ngrok | qualquer | Opcional (webhooks locais) | [ngrok.com/download](https://ngrok.com/download) |
+
+---
+
 ## Stack
 
 Componentes, versões e registros de imagem usados em produção.
@@ -18,6 +55,7 @@ Componentes, versões e registros de imagem usados em produção.
 | Go | `1.26.4` |
 | Router HTTP | `go-chi/chi v5.3.0` |
 | Banco | PostgreSQL 16 (`postgres:16-alpine`) |
+| Connection Pooler | pgBouncer (`bitnami/pgbouncer:1`, pool mode: transaction) |
 | Observabilidade local | `grafana/otel-lgtm:0.7.5` |
 | Proxy de produção | Caddy 2 |
 | Automação | Task `3.51.1` |
@@ -362,6 +400,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 |---|---|---|
 | `task setup` | Instala pre-commit hooks, gitsign e configura assinatura de commits | Uma vez ao clonar |
 | `task mocks:mocks` | Regenera mocks via mockery conforme `.mockery.yml` | Após alterar interfaces |
+| `task mocks:clean` | Remove todos os mocks gerados | Antes de regenerar do zero |
 | `task mocks:verify` | Falha se os mocks estiverem desatualizados (uso em CI) | — |
 
 ### Build
@@ -369,7 +408,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | Task | Objetivo |
 |---|---|
 | `task build:build` | Compila binário para o SO atual em `bin/mecontrola` |
-| `task build:build:all` | Cross-compile linux/darwin/windows × amd64/arm64 em `bin/` |
+| `task build:all` | Cross-compile linux/darwin/windows × amd64/arm64 em `bin/` |
 | `task build:docker:build IMAGE_TAG=<tag>` | Build da imagem Docker multi-stage distroless (≤30 MB, USER 65532) |
 | `task build:clean` | Remove `bin/` e `.task/` |
 | `task run` | Compila e executa o server localmente — requer infra no ar |
@@ -401,6 +440,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task test:unit` | Unitários com `-race` e cobertura em `coverage/unit.out` | — |
 | `task test:integration` | Integração com testcontainers | Docker disponível |
 | `task test:coverage` | Relatório HTML em `coverage/coverage.html` | `test:unit` |
+| `task test:coverage:identity` | Cobertura do módulo identity com validação de pontos críticos (RF-17) | `test:unit` |
 | `task test:watch` | Re-executa unitários ao salvar | — |
 | `task card:test` | Unitários do módulo card com `-race` | — |
 | `task card:integration` | Integração do módulo card | Docker disponível |
@@ -418,6 +458,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task lint:user-isolation` | Gate: UPDATE/DELETE sem `user_id` na WHERE em repos per-user |
 | `task lint:auth-bypass` | Gate M-09: `RequireGatewayAuth` obrigatório antes de `InjectPrincipal` |
 | `task lint:outbox-user-id` | Gate: `AggregateUserID` obrigatório em `EventInput` |
+| `task lint:outbox-user-id:test` | Regressão do gate outbox-user-id com fixtures (missing field, empty, populated, allowlist) |
 | `task card:lint` | golangci-lint escopo card (inclui regra forbidigo PCI) |
 | `task card:audit` | Auditoria R0–R7: init, panic, clock, interface-assertion, zero-comentários, SQL em adapter, PCI |
 
@@ -438,8 +479,9 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task security:audit` | `go list -m -u all` + `go mod verify` | — |
 | `task security:image-scan IMAGE_SHA=<sha>` | Trivy na imagem do GHCR | trivy, acesso GHCR |
 | `task security:sbom IMAGE_SHA=<sha>` | Gera `sbom.spdx.json` da imagem | trivy, acesso GHCR |
+| `task security:sign-image IMAGE_REF=<ref> IMAGE_SHA=<sha>` | Assina imagem via cosign keyless + gera SBOM e provenance attestations | cosign, OIDC GitHub Actions |
 | `task security:verify-image IMAGE_SHA=<sha>` | Verifica assinatura cosign keyless | cosign |
-| `task security:vps:firewall VPS_HOST=<ip>` | Aplica regras ufw no VPS via SSH (22/80/443) | SSH + sudo no VPS |
+| `task security:vps:firewall VPS_HOST=<ip>` | Aplica regras ufw no VPS via SSH (22/80/443) — `--force-enable` ativa o ufw | SSH + sudo no VPS |
 | `task security:backup-restore-smoke` | Restaura último dump cifrado e executa smoke queries | rclone, age, docker, psql |
 
 ### ngrok — webhooks locais
@@ -458,8 +500,10 @@ Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
 
 | Task | Objetivo | Variáveis necessárias |
 |---|---|---|
-| `task auth:smoke` | Smoke HMAC-SHA256 do webhook WhatsApp em staging | `WEBHOOK_URL`, `META_APP_SECRET`, `SMOKE_WA` |
-| `task onboarding:smoke` | Smoke do fluxo ATIVAR end-to-end | `META_APP_SECRET`, `STAGING_WEBHOOK_URL` |
+| `task auth:smoke` | Smoke HMAC-SHA256 do webhook WhatsApp em staging | `WEBHOOK_URL`, `META_APP_SECRET`, `SMOKE_WA`, `DB_URL` (opcional) |
+| `task onboarding:smoke` | Smoke do fluxo ATIVAR end-to-end | `META_APP_SECRET`, `STAGING_WEBHOOK_URL`, `STAGING_PHONE_FROM` |
+| `task smoke:outbox-user-id` | Valida que eventos reais populam `aggregate_user_id` em `outbox_events` (staging) | `DATABASE_URL` |
+| `task smoke:outbox-user-id-adversarial` | Insere evento sem `aggregate_user_id` para validar alertas e housekeeping | `DATABASE_URL`, `METRICS_URL` (default: `http://localhost:8080/metrics`) |
 
 ### Benchmarks
 
@@ -515,19 +559,49 @@ task local:down      # para os containers
 
 ## CI/CD
 
-Dois workflows GitHub Actions independentes: CI valida qualidade e segurança a cada PR; CD publica e implanta a imagem somente na main.
+Dois workflows GitHub Actions independentes. CI valida qualidade e segurança a cada PR e na main; CD implanta na VPS somente após CI verde na main (ou via dispatch manual).
 
-**CI (`.github/workflows/ci.yml`):**
+### CI (`.github/workflows/ci.yml`)
+
+Ativado em `pull_request` (branches: main) e `push` (branch: main).
+
+| Job | Quando | O que faz |
+|---|---|---|
+| `lint` | sempre | `lint:run` + `lint:fmt:check` + `lint:pci` |
+| `unit` | sempre | `test:unit` + upload de artefato de cobertura |
+| `integration` | sempre | `test:integration` com testcontainers |
+| `security` | sempre | `security:vulncheck` (govulncheck + trivy fs) |
+| `governance` | sempre | ai-spec doctor + lint, conventional commits, validação do Taskfile |
+| `card-audit` | sempre | `card:audit` (gates R0–R7 + anti-PCI) |
+| `coverage-comment` | apenas PR | Posta relatório de cobertura como comentário no PR |
+| `build-image` | apenas main | Build + push da imagem para GHCR com tag = SHA curto |
+| `scan-and-attest` | apenas main | Trivy image scan + SBOM SPDX-JSON + cosign sign + attestations |
+
+### CD (`.github/workflows/cd.yml`)
+
+Ativado automaticamente após CI verde na main, ou manualmente via `workflow_dispatch` com `image_tag` customizado.
 
 ```
-lint → fmt:check → tidy → test:unit → test:integration → govulncheck → trivy fs → auth:smoke (main)
+Automático (workflow_run):
+  gate (download image-meta do CI) → deploy VPS → smoke (auth:smoke staging)
+
+Manual (workflow_dispatch com image_tag):
+  deploy VPS → smoke (auth:smoke staging)
 ```
 
-**CD (`.github/workflows/cd.yml`):**
+### Dependabot (`.github/workflows/auto-merge.yml`)
 
-```
-build → push GHCR → trivy image → gerar SBOM → cosign sign + attest → deploy VPS
-```
+Dependabot atualiza semanalmente (gomod, github-actions, docker). PRs de minor/patch são aprovados e mergeados automaticamente via squash. PRs de major ficam abertos para revisão manual.
+
+---
+
+## Contribuição
+
+1. **Abra uma issue** antes de iniciar qualquer mudança de escopo maior para alinhar contexto e abordagem.
+2. **Siga Conventional Commits** — o gate `governance` no CI rejeita commits que não seguem o padrão (`feat:`, `fix:`, `chore:`, etc.).
+3. **Execute `task check`** antes de abrir PR — roda lint, testes unitários e vulncheck localmente.
+4. **Execute `task setup`** ao clonar — instala pre-commit hooks e configura gitsign para assinatura de commits.
+5. **Não flexibilize regras de arquitetura** — as regras em `AGENTS.md` são inegociáveis e verificadas automaticamente no CI.
 
 ---
 
