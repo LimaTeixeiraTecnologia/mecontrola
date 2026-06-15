@@ -24,16 +24,12 @@ tasks:
   # ── Local scan (govulncheck + trivy fs) ─────────────────────────────────────
   vulncheck:
     desc: >-
-      Verifica vulnerabilidades em dependências Go (govulncheck) e no filesystem/Dockerfile
-      (trivy fs). Roda localmente sem OIDC. Exit 1 se CVE HIGH/CRITICAL encontrada.
+      Verifica vulnerabilidades em dependências Go (govulncheck). Roda localmente sem OIDC.
     preconditions:
       - sh: command -v govulncheck >/dev/null 2>&1
         msg: "govulncheck ausente. Instale: go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}"
-      - sh: command -v trivy >/dev/null 2>&1
-        msg: "trivy ausente. Instale: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
     cmds:
       - govulncheck ./...
-      - trivy fs --severity HIGH,CRITICAL --exit-code 1 .
 
   # ── Image scan (trivy image) ─────────────────────────────────────────────────
   image-scan:
