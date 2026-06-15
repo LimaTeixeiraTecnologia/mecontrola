@@ -29,6 +29,7 @@ services:
     volumes:
       - ../../.env:/app/.env:ro
     environment:
+      DB_HOST: postgres
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
     depends_on:
       postgres:
@@ -38,11 +39,11 @@ services:
 
   server:
     ports:
-      # Acesso direto ao servidor sem Caddy
       - "127.0.0.1:8080:8080"
     volumes:
       - ../../.env:/app/.env:ro
     environment:
+      DB_HOST: postgres
       ENVIRONMENT: local
       LOG_LEVEL: debug
       LOG_FORMAT: json
@@ -57,6 +58,7 @@ services:
     volumes:
       - ../../.env:/app/.env:ro
     environment:
+      DB_HOST: postgres
       ENVIRONMENT: local
       LOG_LEVEL: debug
       LOG_FORMAT: json

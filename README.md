@@ -158,10 +158,23 @@ LOG_FORMAT=json
 
 ### Docker Compose local (otel-lgtm)
 
+Variáveis do container `grafana/otel-lgtm` usado em dev local (`task local:infra` / `task local:up`):
+
 ```env
 OTEL_LGTM_ADMIN_USER=admin
 OTEL_LGTM_ADMIN_PASSWORD=admin@dev
 ```
+
+### Stack de observabilidade completa (profile `observability`)
+
+O serviço `grafana` (Grafana standalone) é ativado apenas com `--profile observability`. A variável abaixo tem default `admin@dev` para dev local, mas **deve ser definida explicitamente em produção**.
+
+```env
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=CHANGE_ME_use_strong_password
+```
+
+> Em produção: defina `GRAFANA_ADMIN_PASSWORD` com valor forte. O default `admin@dev` é aceito apenas em dev local.
 
 ### Outbox transacional (RF-26 / D-03)
 

@@ -185,6 +185,7 @@ jobs:
         with:
           version: ${{ steps.trivy-version.outputs.version }}
           cache: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - run: task security:vulncheck
 
@@ -218,7 +219,7 @@ jobs:
 
       - name: ai-spec doctor
         run: |
-          ai-spec doctor
+          ai-spec doctor .
           ai-spec lint
 
   card-audit:
@@ -359,6 +360,7 @@ jobs:
         with:
           version: ${{ steps.trivy-version.outputs.version }}
           cache: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scan image for vulnerabilities
         run: |

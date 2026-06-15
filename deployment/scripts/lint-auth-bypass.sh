@@ -20,13 +20,13 @@ while IFS= read -r file; do
       continue
     fi
 
-    previous_use=$(sed -n "${start},${end}p" "$file" | grep -E 'sub\.Use\(' | tail -n1 || true)
+    previous_use=$(sed -n "${start},${end}p" "$file" | grep -E '[[:alnum:]_]+\.Use\(' | tail -n1 || true)
     if [[ -z "$previous_use" ]]; then
       violations+=("${file}:${match_line}: InjectPrincipalFromHeader sem middleware anterior verificavel")
       continue
     fi
 
-    if ! echo "$previous_use" | grep -qE 'sub\.Use\([^)]*(RequireGatewayAuth|gatewayAuthMiddleware|rt\.gatewayAuth)'; then
+    if ! echo "$previous_use" | grep -qE '[[:alnum:]_]+\.Use\([^)]*(RequireGatewayAuth|gatewayAuthMiddleware|rt\.gatewayAuth)'; then
       violations+=("${file}:${match_line}: InjectPrincipalFromHeader sem RequireGatewayAuth nas ${WINDOW} linhas anteriores")
     fi
   done < <(grep -nE "$INJECT_PATTERN" "$file" | cut -d: -f1)
