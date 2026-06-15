@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/2.0_execution_report.md
-summary: "Domínio puro implementado: VOs WhatsAppNumber/Email, pii.MaskDisplayName, IsEntitled com 11 transições, policies.ReanimationWindow, entities.NewID — cobertura 100% em todos os pacotes"
-timestamp: "2026-06-05T12:00:00Z"

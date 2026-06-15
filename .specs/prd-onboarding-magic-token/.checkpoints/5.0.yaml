@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-magic-token/5.0_execution_report.md
-summary: "Fallback E.164 gated por outreach implementado com metrica onboarding_tokens_consumed_total e 7 testes unitarios"
-timestamp: 2026-06-08T00:00:00Z

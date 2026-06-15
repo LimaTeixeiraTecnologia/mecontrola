@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-transactions-monthly/3.0_execution_report.md
-summary: "Domain services (splitter, BillingCycleResolver com clamp, RefMonthResolver, TransactionWorkflow, CardPurchaseWorkflow, RecurringWorkflow) implementados com 99.2% de cobertura e todos os gates HARD passando"
-timestamp: "2026-06-12T00:00:00Z"

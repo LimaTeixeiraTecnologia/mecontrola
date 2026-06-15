@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-card-crud-mvp/1.0_execution_report.md
-summary: Migrations 000007 (idempotency_keys) e 000008 (cards) criadas com constraints, indexes parciais, down idempotente por rename; testes de integracao verdes
-timestamp: 2026-06-09T17:50:00Z

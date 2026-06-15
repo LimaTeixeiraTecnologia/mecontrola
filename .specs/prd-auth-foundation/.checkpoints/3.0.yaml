@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-auth-foundation/3.0_execution_report.md
-summary: "Migrations 0014/0015, entidade AuthEvent (UUID v7), porta AuthEventsRepository, repositório Postgres, usecase CleanupAuthEvents com métricas, job AuthEventsHousekeepingJob e testes criados; factory e mocks atualizados; 100% testes unitários passando."
-timestamp: "2026-06-08T21:10:00Z"

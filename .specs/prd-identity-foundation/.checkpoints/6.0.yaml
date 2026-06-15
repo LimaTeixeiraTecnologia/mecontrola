@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/6.0_execution_report.md
-summary: UserRepository Postgres + RepositoryFactory implementados com sqlnull, testes de integração CA-04 a-h passando
-timestamp: 2026-06-05T12:00:00Z

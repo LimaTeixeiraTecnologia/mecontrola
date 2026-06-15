@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/10.0_execution_report.md
-summary: Refactor outbox para UoW + RepositoryFactory concluído; storage usa database.DBTX, BeginTx removido, todos os testes passam
-timestamp: 2026-06-05T00:00:00Z

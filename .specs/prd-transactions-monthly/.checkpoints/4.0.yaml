@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-transactions-monthly/4.0_execution_report.md
-summary: "12 interfaces, 6 DTOs input, 6 DTOs output, CategoriesCache, categories_reader_adapter, CardLookup adapter com testes unitários e 12 mocks gerados"
-timestamp: 2026-06-12T14:55:00Z

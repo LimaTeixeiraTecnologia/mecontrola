@@ -1,4 +1,0 @@
-status: done
-report_path: /Users/jailtonjunior/Git/mecontrola/.specs/prd-billing-pipeline/2.0_execution_report.md
-summary: Implementado dominio puro de billing com agregado Subscription, value objects, tabela de transicoes 6x6, cross-check com identity e testes verdes.
-timestamp: 2026-06-06T00:54:26Z

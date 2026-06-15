@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/9.0_execution_report.md
-summary: Regras depguard e forbidigo adicionadas ao .golangci.yml; golangci-lint verde em ./internal/identity/... e ./internal/platform/...
-timestamp: 2026-06-05T18:10:00Z

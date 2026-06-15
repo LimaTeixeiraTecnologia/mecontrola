@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-auth-foundation/6.0_execution_report.md
-summary: "Strangler Fig atômico concluído — pacotes internal/platform/whatsapp/{signature,payload,dedup} criados, onboarding migrado, arquivos antigos deletados, prd-onboarding-magic-token bumped para spec-version 2"
-timestamp: 2026-06-08T18:05:00Z

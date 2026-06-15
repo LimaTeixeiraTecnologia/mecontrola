@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-identity-foundation/7.0_execution_report.md
-summary: "HTTP router placeholder UserRouter + handler UpsertUserByWhatsAppHandler com devkit-go/pkg/responses implementados e testados"
-timestamp: 2026-06-05T00:00:00Z

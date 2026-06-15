@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-magic-token/1.0_execution_report.md
-summary: "Fundacoes de dominio, persistencia e contratos do onboarding implementadas com token opaco, status, transitions, entidades, interfaces e migrations"
-timestamp: "2026-06-08T00:00:00Z"

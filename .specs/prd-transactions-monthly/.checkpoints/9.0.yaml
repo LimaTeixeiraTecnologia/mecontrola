@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-transactions-monthly/9.0_execution_report.md
-summary: HTTP layer (18 handlers), module.go, repository factory, router, wiring cmd/api + cmd/worker com feature flag TransactionsConfig.Enabled implementados e validados
-timestamp: 2026-06-12T14:00:00Z

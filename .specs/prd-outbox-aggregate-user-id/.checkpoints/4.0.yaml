@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-outbox-aggregate-user-id/4.0_execution_report.md
-summary: "AggregateUserID populado em expense_committed_publisher (budgets) e subscription_event_publisher (billing) com testes de asserção passando"
-timestamp: "2026-06-13T00:00:00Z"

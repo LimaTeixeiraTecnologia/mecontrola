@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-billing-pipeline/5.0_execution_report.md
-summary: "Use cases billing (5 webhook + reconcile) implementados com idempotência, ordering e 31 testes passando"
-timestamp: 2026-06-06T09:45:00Z

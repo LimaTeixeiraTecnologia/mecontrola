@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-pre-golive-hardening/8.0_execution_report.md
-summary: "Script pg-restore-smoke.sh + runbook backup-restore.md + task security:backup-restore-smoke implementados e validados"
-timestamp: "2026-06-13T01:21:00Z"

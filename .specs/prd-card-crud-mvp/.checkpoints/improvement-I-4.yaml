@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-card-crud-mvp/improvement-I-4_execution_report.md
-summary: "Gate lint:pci adicionado (taskfiles/lint.yml), docs/lint-pci.md publicado e step incluido no job lint do CI."
-timestamp: 2026-06-10T00:30:13Z

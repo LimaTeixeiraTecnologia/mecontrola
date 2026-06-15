@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-card-crud-mvp/10.0_execution_report.md
-summary: "Scripts k6 (10.1-10.7) criados e versionados; task loadtest:card funcional; execucao real pendente de homologacao (10.8-10.9)"
-timestamp: "2026-06-09T22:05:00Z"

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-auth-foundation/2.0_execution_report.md
-summary: auth.Principal + RequireUser + depguard/forbidigo golangci rules implementados e testados
-timestamp: 2026-06-08T00:00:00Z

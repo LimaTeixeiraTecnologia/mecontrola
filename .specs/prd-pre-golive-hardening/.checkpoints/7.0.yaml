@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-pre-golive-hardening/7.0_execution_report.md
-summary: "Firewall ufw idempotente + SSH hardening implementados com runbook e receita Task"
-timestamp: "2026-06-12T00:00:00Z"

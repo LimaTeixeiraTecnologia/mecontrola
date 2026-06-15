@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-outbox-aggregate-user-id/5.0_execution_report.md
-summary: "AggregateUserID populado nos 3 sites de identity (auth_event_payload, mark_user_deleted, module inspecionado); testes atualizados e passando"
-timestamp: "2026-06-13T00:00:00Z"

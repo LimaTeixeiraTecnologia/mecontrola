@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-transactions-monthly/5.0_execution_report.md
-summary: Use cases Transaction (Create/Update/Delete/Get/List), TransactionRepository (Postgres), TransactionEventPublisher implementados com testes unitários ≥85% e integration tests passando
-timestamp: 2026-06-12T00:00:00Z

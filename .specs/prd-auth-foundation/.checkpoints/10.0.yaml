@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-auth-foundation/10.0_execution_report.md
-summary: "Observabilidade completa (11 metricas + 4 spans + meta_signature_status_total migrado), dashboard Grafana, k6 load test script, smoke test Go, recipe auth:smoke em Taskfile, job CI auth-smoke; 10.12 bloqueador externo (staging real)"
-timestamp: "2026-06-09T00:00:00Z"
