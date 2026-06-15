@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -25,7 +26,8 @@ func NewKiwifyEventsHousekeepingJob(
 	}
 }
 
-func (j *KiwifyEventsHousekeepingJob) Name() string { return "billing-kiwify-events-housekeeping" }
+func (j *KiwifyEventsHousekeepingJob) Name() string           { return "billing-kiwify-events-housekeeping" }
+func (j *KiwifyEventsHousekeepingJob) Timeout() time.Duration { return 2 * time.Minute }
 func (j *KiwifyEventsHousekeepingJob) Schedule() string {
 	if j.cfg.KiwifyEventsHousekeepingSchedule != "" {
 		return j.cfg.KiwifyEventsHousekeepingSchedule

@@ -161,7 +161,7 @@ func TestVerifyGatewayRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := VerifyGatewayRequest(tc.req, tc.secrets, tc.now, tc.window)
+			got := GatewayRequestVerifier{}.VerifyGatewayRequest(tc.req, tc.secrets, tc.now, tc.window)
 			if got.Kind != tc.wantKind {
 				t.Errorf("VerifyGatewayRequest() Kind = %v, want %v", got.Kind, tc.wantKind)
 			}

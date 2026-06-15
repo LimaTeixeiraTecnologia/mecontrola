@@ -52,5 +52,5 @@ func (u *GetCard) Execute(ctx context.Context, in input.GetCard) (output.Card, e
 	}
 
 	span.SetAttributes(observability.String("outcome", "success"))
-	return mappers.ToCardOutput(card), nil
+	return mappers.M.ToCardOutput(card), nil
 }

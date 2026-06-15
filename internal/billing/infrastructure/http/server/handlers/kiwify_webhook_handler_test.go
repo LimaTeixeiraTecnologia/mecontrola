@@ -169,7 +169,7 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 			expectStatus: http.StatusUnauthorized,
 		},
 		{
-			name:    "deve auditar assinatura invalida",
+			name:    "deve rejeitar assinatura invalida no middleware",
 			payload: kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request {
 				req := httptest.NewRequest(http.MethodPost, "/?signature=wrong", strings.NewReader(string(payload)))
@@ -177,7 +177,6 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 				return req
 			},
 			expectStatus: http.StatusUnauthorized,
-			expectAudit:  middleware.SignatureStatusInvalid,
 		},
 		{
 			name:    "deve responder 415 para content type invalido",

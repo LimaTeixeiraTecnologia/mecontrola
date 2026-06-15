@@ -25,11 +25,11 @@ func (s *CursorSuite) TestEncode_NormalizesToUTC() {
 	s.Require().NoError(err)
 	local := time.Date(2026, 1, 10, 9, 0, 0, 0, loc)
 
-	encoded, err := pagination.Encode(local, "abc")
+	encoded, err := pagination.C.Encode(local, "abc")
 	s.Require().NoError(err)
 	s.NotEmpty(encoded)
 
-	decoded, err := pagination.Decode(encoded)
+	decoded, err := pagination.C.Decode(encoded)
 	s.Require().NoError(err)
 	s.True(decoded.CreatedAt.Equal(local.UTC()))
 	s.Equal(time.UTC, decoded.CreatedAt.Location())
@@ -55,10 +55,10 @@ func (s *CursorSuite) TestEncodeDecode_RoundTripPreservesValues() {
 
 	for _, sc := range scenarios {
 		s.Run(sc.name, func() {
-			encoded, err := pagination.Encode(sc.createdAt, sc.id)
+			encoded, err := pagination.C.Encode(sc.createdAt, sc.id)
 			s.Require().NoError(err)
 
-			decoded, err := pagination.Decode(encoded)
+			decoded, err := pagination.C.Decode(encoded)
 			s.Require().NoError(err)
 			s.Equal(sc.id, decoded.ID)
 			s.True(sc.createdAt.UTC().Equal(decoded.CreatedAt))
@@ -67,14 +67,14 @@ func (s *CursorSuite) TestEncodeDecode_RoundTripPreservesValues() {
 }
 
 func (s *CursorSuite) TestDecode_InvalidBase64ReturnsSentinel() {
-	_, err := pagination.Decode("!!!nope!!!")
+	_, err := pagination.C.Decode("!!!nope!!!")
 	s.Require().Error(err)
 	s.True(errors.Is(err, pagination.ErrInvalidCursor))
 }
 
 func (s *CursorSuite) TestDecode_InvalidJSONReturnsSentinel() {
 	encoded := base64.URLEncoding.EncodeToString([]byte("not json"))
-	_, err := pagination.Decode(encoded)
+	_, err := pagination.C.Decode(encoded)
 	s.Require().Error(err)
 	s.True(errors.Is(err, pagination.ErrInvalidCursor))
 }
@@ -95,7 +95,7 @@ func (s *CursorSuite) TestDecode_EmptyFieldsReturnSentinel() {
 			s.Require().NoError(err)
 			encoded := base64.URLEncoding.EncodeToString(raw)
 
-			_, decErr := pagination.Decode(encoded)
+			_, decErr := pagination.C.Decode(encoded)
 			s.Require().Error(decErr)
 			s.True(errors.Is(decErr, pagination.ErrInvalidCursor))
 		})

@@ -36,11 +36,11 @@ func TestEncodeDecode_Cursor(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			encoded, err := pagination.Encode(sc.createdAt, sc.id)
+			encoded, err := pagination.C.Encode(sc.createdAt, sc.id)
 			require.NoError(t, err)
 			assert.NotEmpty(t, encoded)
 
-			decoded, err := pagination.Decode(encoded)
+			decoded, err := pagination.C.Decode(encoded)
 			require.NoError(t, err)
 			assert.Equal(t, sc.id, decoded.ID)
 			assert.True(t, sc.createdAt.UTC().Equal(decoded.CreatedAt.UTC()))
@@ -76,7 +76,7 @@ func TestDecodeCursor_Invalid(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			_, err := pagination.Decode(sc.cursor)
+			_, err := pagination.C.Decode(sc.cursor)
 			if sc.wantErr {
 				assert.Error(t, err)
 			} else {

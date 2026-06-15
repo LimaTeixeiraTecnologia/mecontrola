@@ -33,7 +33,7 @@ func TestRedactCardLogFields_NoPII(t *testing.T) {
 		nil,
 	)
 
-	fields := cardobs.RedactCardLogFields(card)
+	fields := cardobs.Redactor{}.RedactCardLogFields(card)
 
 	keys := make(map[string]bool, len(fields))
 	for _, f := range fields {
@@ -59,7 +59,7 @@ func TestRedactCardLogFields_Values(t *testing.T) {
 
 	card := entities.HydrateCard(cardID, userID, name, nickname, cycle, time.Now().UTC(), time.Now().UTC(), nil)
 
-	fields := cardobs.RedactCardLogFields(card)
+	fields := cardobs.Redactor{}.RedactCardLogFields(card)
 
 	fieldMap := make(map[string]string, len(fields))
 	for _, f := range fields {

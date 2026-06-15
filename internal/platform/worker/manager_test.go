@@ -56,6 +56,7 @@ func (s *ManagerSuite) TestStart() {
 
 				jobMock.EXPECT().Name().Return("job1").Times(3)
 				jobMock.EXPECT().Schedule().Return("@every 1h").Once()
+				jobMock.EXPECT().Timeout().Return(0).Once()
 
 				consumerMock.EXPECT().Name().Return("consumer1").Twice()
 				consumerMock.EXPECT().Start(mock.Anything).RunAndReturn(func(ctx context.Context) error {

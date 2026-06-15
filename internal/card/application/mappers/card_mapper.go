@@ -10,14 +10,14 @@ import (
 
 const invoiceDateLayout = "2006-01-02"
 
-func ToInvoiceOutput(invoice services.Invoice, tz *time.Location) output.Invoice {
+func (Mapper) ToInvoiceOutput(invoice services.Invoice, tz *time.Location) output.Invoice {
 	return output.Invoice{
 		ClosingDate: invoice.ClosingDate.In(tz).Format(invoiceDateLayout),
 		DueDate:     invoice.DueDate.In(tz).Format(invoiceDateLayout),
 	}
 }
 
-func ToCardOutput(c entities.Card) output.Card {
+func (Mapper) ToCardOutput(c entities.Card) output.Card {
 	return output.Card{
 		ID:         c.ID.String(),
 		UserID:     c.UserID.String(),
@@ -31,10 +31,10 @@ func ToCardOutput(c entities.Card) output.Card {
 	}
 }
 
-func ToCardListOutput(cards []entities.Card, nextCursor string) output.CardList {
+func (m Mapper) ToCardListOutput(cards []entities.Card, nextCursor string) output.CardList {
 	items := make([]output.Card, 0, len(cards))
 	for _, c := range cards {
-		items = append(items, ToCardOutput(c))
+		items = append(items, m.ToCardOutput(c))
 	}
 	var next *string
 	if nextCursor != "" {

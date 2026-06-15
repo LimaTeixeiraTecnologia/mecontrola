@@ -136,7 +136,7 @@ func (s *ThresholdEvaluatorSuite) TestEvaluateThresholds() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			transitions, err := services.EvaluateThresholds(tc.spent, tc.planned, tc.currentlyCrossed)
+			transitions, err := services.ThresholdEvaluator{}.EvaluateThresholds(tc.spent, tc.planned, tc.currentlyCrossed)
 			if tc.wantErr {
 				s.Error(err)
 				s.ErrorIs(err, services.ErrThresholdPlannedZero)

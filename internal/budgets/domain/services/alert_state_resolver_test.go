@@ -40,7 +40,7 @@ func (s *AlertWorkflowSuite) TestIsRetroactiveAlert() {
 
 	for _, c := range cases {
 		s.Run(c.name, func() {
-			s.Equal(c.want, services.IsRetroactiveAlert(s.comp(c.expense), s.comp(c.cutoff)))
+			s.Equal(c.want, services.AlertWorkflow{}.IsRetroactiveAlert(s.comp(c.expense), s.comp(c.cutoff)))
 		})
 	}
 }
@@ -100,7 +100,7 @@ func (s *AlertWorkflowSuite) TestDecideAlertForInsert() {
 
 	for _, c := range cases {
 		s.Run(c.name, func() {
-			got := services.DecideAlertForInsert(c.isRetroactive, c.deliveredCount)
+			got := services.AlertWorkflow{}.DecideAlertForInsert(c.isRetroactive, c.deliveredCount)
 			s.Equal(c.wantState, got.State)
 			s.Equal(c.wantLogKey, got.LogKey)
 			s.Equal(c.wantErrCtx, got.ErrorContext)

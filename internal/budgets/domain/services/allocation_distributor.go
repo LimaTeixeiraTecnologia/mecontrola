@@ -15,7 +15,9 @@ type AllocationResult struct {
 	PlannedCents int64
 }
 
-func Distribute(totalCents int64, inputs []AllocationInput) []AllocationResult {
+type AllocationDistributor struct{}
+
+func (AllocationDistributor) Distribute(totalCents int64, inputs []AllocationInput) []AllocationResult {
 	results := make([]AllocationResult, len(inputs))
 	var sumRaw int64
 	for i, inp := range inputs {

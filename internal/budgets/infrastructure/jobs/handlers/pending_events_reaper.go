@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -22,8 +23,9 @@ func NewPendingEventsReaper(
 	return &PendingEventsReaper{usecase: usecase, cfg: cfg}
 }
 
-func (j *PendingEventsReaper) Name() string     { return "budgets-pending-events-reaper" }
-func (j *PendingEventsReaper) Schedule() string { return j.cfg.PendingReaperInterval }
+func (j *PendingEventsReaper) Name() string           { return "budgets-pending-events-reaper" }
+func (j *PendingEventsReaper) Schedule() string       { return j.cfg.PendingReaperInterval }
+func (j *PendingEventsReaper) Timeout() time.Duration { return 2 * time.Minute }
 
 func (j *PendingEventsReaper) Run(ctx context.Context) error {
 	return j.usecase.Execute(ctx)

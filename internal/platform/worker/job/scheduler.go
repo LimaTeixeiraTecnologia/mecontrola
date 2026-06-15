@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/robfig/cron/v3"
 )
@@ -15,6 +16,7 @@ type runner interface {
 	Schedule() string
 	Run(context.Context) error
 	OverlapPolicy() OverlapPolicy
+	Timeout() time.Duration
 }
 
 type registeredJob struct {
@@ -23,6 +25,7 @@ type registeredJob struct {
 	overlapPolicy OverlapPolicy
 	run           func(context.Context) error
 	running       atomic.Bool
+	timeout       time.Duration
 }
 
 type Scheduler struct {
@@ -48,8 +51,26 @@ func (s *Scheduler) Register(j runner) error {
 		schedule:      j.Schedule(),
 		overlapPolicy: j.OverlapPolicy(),
 		run:           j.Run,
+		timeout:       j.Timeout(),
 	})
 	return nil
+}
+
+func (s *Scheduler) runSafe(ctx context.Context, rj *registeredJob) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.ErrorContext(ctx, "job panic recovered", "name", rj.name, "panic", r)
+		}
+	}()
+	runCtx := ctx
+	if rj.timeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, rj.timeout)
+		defer cancel()
+	}
+	if err := rj.run(runCtx); err != nil {
+		s.logger.ErrorContext(ctx, "job error", "name", rj.name, "error", err)
+	}
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
@@ -62,15 +83,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 					return
 				}
 				defer rj.running.Store(false)
-				if err := rj.run(ctx); err != nil {
-					s.logger.ErrorContext(ctx, "job error", "name", rj.name, "error", err)
-				}
+				s.runSafe(ctx, rj)
 				return
 			}
 			s.allowWg.Go(func() {
-				if err := rj.run(ctx); err != nil {
-					s.logger.ErrorContext(ctx, "job error", "name", rj.name, "error", err)
-				}
+				s.runSafe(ctx, rj)
 			})
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "falha ao registrar job no cron", "name", rj.name, "error", err)

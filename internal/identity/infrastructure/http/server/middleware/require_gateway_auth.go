@@ -46,7 +46,7 @@ func RequireGatewayAuth(deps RequireGatewayAuthDeps) func(http.Handler) http.Han
 			uid := r.Header.Get(headerUserID)
 			rid := resolveRequestID(r.Header.Get(headerRequestID), span.TraceID())
 			cip := resolveClientIP(ctx, deps.O11y, r.Header.Get(headerForwardedFor))
-			result := services.VerifyGatewayRequest(
+			result := services.GatewayRequestVerifier{}.VerifyGatewayRequest(
 				services.VerifyRequest{UserIDRaw: uid, SignatureRaw: r.Header.Get(headerGatewayAuth), TimestampRaw: r.Header.Get(headerGatewayTS)},
 				deps.Secrets, time.Now().UTC(), deps.Window,
 			)

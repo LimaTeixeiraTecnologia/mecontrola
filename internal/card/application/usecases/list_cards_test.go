@@ -62,11 +62,11 @@ func (s *ListCardsSuite) TestExecute_HappyPath() {
 
 func (s *ListCardsSuite) TestExecute_WithCursor() {
 	userID := uuid.New()
-	cursor, err := pagination.Encode(time.Now().UTC(), uuid.New().String())
+	cursor, err := pagination.C.Encode(time.Now().UTC(), uuid.New().String())
 	s.Require().NoError(err)
 
 	cards := []entities.Card{s.makeCard(userID)}
-	nextCursor, encErr := pagination.Encode(time.Now().UTC().Add(-time.Hour), uuid.New().String())
+	nextCursor, encErr := pagination.C.Encode(time.Now().UTC().Add(-time.Hour), uuid.New().String())
 	s.Require().NoError(encErr)
 
 	in := input.ListCards{UserID: userID, Cursor: cursor, Limit: 5}

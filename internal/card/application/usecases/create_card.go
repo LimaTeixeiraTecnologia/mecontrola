@@ -92,7 +92,7 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 			return entities.Card{}, insertErr
 		}
 		if hasIdem {
-			body, marshalErr := json.Marshal(mappers.ToCardOutput(c))
+			body, marshalErr := json.Marshal(mappers.M.ToCardOutput(c))
 			if marshalErr != nil {
 				return entities.Card{}, fmt.Errorf("create_card: marshal output: %w", marshalErr)
 			}
@@ -131,5 +131,5 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		observability.String("card_id", card.ID.String()),
 		observability.String("user_id", card.UserID.String()),
 	)
-	return mappers.ToCardOutput(card), nil
+	return mappers.M.ToCardOutput(card), nil
 }

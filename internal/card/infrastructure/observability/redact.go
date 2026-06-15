@@ -7,7 +7,9 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 )
 
-func RedactCardLogFields(card entities.Card) []observability.Field {
+type Redactor struct{}
+
+func (Redactor) RedactCardLogFields(card entities.Card) []observability.Field {
 	return []observability.Field{
 		observability.String("card_id", card.ID.String()),
 		observability.String("user_id", card.UserID.String()),
@@ -16,7 +18,7 @@ func RedactCardLogFields(card entities.Card) []observability.Field {
 	}
 }
 
-func RedactOutputCardLogFields(card output.Card) []observability.Field {
+func (Redactor) RedactOutputCardLogFields(card output.Card) []observability.Field {
 	return []observability.Field{
 		observability.String("card_id", card.ID),
 		observability.String("user_id", card.UserID),

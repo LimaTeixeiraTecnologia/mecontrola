@@ -16,7 +16,9 @@ type Transition struct {
 	IsRealTransition bool
 }
 
-func EvaluateThresholds(spentCents int64, plannedCents int64, currentlyCrossed map[valueobjects.Threshold]bool) ([]Transition, error) {
+type ThresholdEvaluator struct{}
+
+func (ThresholdEvaluator) EvaluateThresholds(spentCents int64, plannedCents int64, currentlyCrossed map[valueobjects.Threshold]bool) ([]Transition, error) {
 	if plannedCents <= 0 {
 		return nil, fmt.Errorf("budgets: planned=%d: %w", plannedCents, ErrThresholdPlannedZero)
 	}

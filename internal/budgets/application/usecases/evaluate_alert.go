@@ -97,7 +97,7 @@ func (uc *EvaluateAlert) executeInTx(ctx context.Context, tx database.DBTX, in E
 		return fmt.Errorf("budgets.usecase.evaluate_alert: obter estado dos limiares: %w", err)
 	}
 
-	transitions, err := services.EvaluateThresholds(spentCents, plannedCents, currentlyCrossed)
+	transitions, err := services.ThresholdEvaluator{}.EvaluateThresholds(spentCents, plannedCents, currentlyCrossed)
 	if err != nil {
 		return fmt.Errorf("budgets.usecase.evaluate_alert: avaliar limiares: %w", err)
 	}
@@ -185,10 +185,10 @@ func (uc *EvaluateAlert) insertAlert(
 	plannedCents int64,
 	now time.Time,
 ) error {
-	isRetroactive := services.IsRetroactiveAlert(in.Competence, in.CutoffCompetenceBR)
+	isRetroactive := services.AlertWorkflow{}.IsRetroactiveAlert(in.Competence, in.CutoffCompetenceBR)
 
 	if isRetroactive {
-		decision := services.DecideAlertForInsert(true, 0)
+		decision := services.AlertWorkflow{}.DecideAlertForInsert(true, 0)
 		return uc.persistDecidedAlert(ctx, alerts, in, transition, spentCents, plannedCents, now, decision)
 	}
 
@@ -197,7 +197,7 @@ func (uc *EvaluateAlert) insertAlert(
 		return fmt.Errorf("budgets.usecase.evaluate_alert: contar alertas: %w", err)
 	}
 
-	decision := services.DecideAlertForInsert(false, int(count))
+	decision := services.AlertWorkflow{}.DecideAlertForInsert(false, int(count))
 	return uc.persistDecidedAlert(ctx, alerts, in, transition, spentCents, plannedCents, now, decision)
 }
 

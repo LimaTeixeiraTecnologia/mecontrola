@@ -15,7 +15,11 @@ type Cursor struct {
 	ID        string    `json:"id"`
 }
 
-func Encode(createdAt time.Time, id string) (string, error) {
+type Coder struct{}
+
+var C = Coder{}
+
+func (Coder) Encode(createdAt time.Time, id string) (string, error) {
 	raw, err := json.Marshal(Cursor{CreatedAt: createdAt.UTC(), ID: id})
 	if err != nil {
 		return "", fmt.Errorf("encode cursor: %w", err)
@@ -23,7 +27,7 @@ func Encode(createdAt time.Time, id string) (string, error) {
 	return base64.URLEncoding.EncodeToString(raw), nil
 }
 
-func Decode(cursor string) (Cursor, error) {
+func (Coder) Decode(cursor string) (Cursor, error) {
 	raw, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
 		return Cursor{}, fmt.Errorf("%w: base64 decode: %s", ErrInvalidCursor, err)

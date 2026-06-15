@@ -87,7 +87,7 @@ func (h *UpdateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	h.o11y.Logger().Info(ctx, "card.update.completed",
-		cardobs.RedactOutputCardLogFields(out)...,
+		cardobs.Redactor{}.RedactOutputCardLogFields(out)...,
 	)
 
 	responses.JSON(w, http.StatusOK, out)

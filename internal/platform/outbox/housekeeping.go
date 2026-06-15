@@ -33,8 +33,9 @@ func NewHousekeepingJob(
 	}
 }
 
-func (h *HousekeepingJob) Name() string     { return "outbox-housekeeping" }
-func (h *HousekeepingJob) Schedule() string { return h.cfg.HousekeepingSchedule }
+func (h *HousekeepingJob) Name() string           { return "outbox-housekeeping" }
+func (h *HousekeepingJob) Schedule() string       { return h.cfg.HousekeepingSchedule }
+func (h *HousekeepingJob) Timeout() time.Duration { return 5 * time.Minute }
 
 func (h *HousekeepingJob) Run(ctx context.Context) error {
 	retention := time.Duration(h.cfg.HousekeepingRetentionDays) * 24 * time.Hour

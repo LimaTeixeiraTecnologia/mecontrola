@@ -37,7 +37,7 @@ func (s *CardMapperSuite) makeCard(deleted *time.Time) entities.Card {
 
 func (s *CardMapperSuite) TestToCardOutput_PreservesAllFields() {
 	card := s.makeCard(nil)
-	out := mappers.ToCardOutput(card)
+	out := mappers.M.ToCardOutput(card)
 
 	s.Equal(card.ID.String(), out.ID)
 	s.Equal(card.UserID.String(), out.UserID)
@@ -53,14 +53,14 @@ func (s *CardMapperSuite) TestToCardOutput_PreservesAllFields() {
 func (s *CardMapperSuite) TestToCardOutput_PropagatesDeletedAt() {
 	deletedAt := time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)
 	card := s.makeCard(&deletedAt)
-	out := mappers.ToCardOutput(card)
+	out := mappers.M.ToCardOutput(card)
 
 	s.Require().NotNil(out.DeletedAt)
 	s.Equal(deletedAt, *out.DeletedAt)
 }
 
 func (s *CardMapperSuite) TestToCardListOutput_EmptySliceProducesEmptyItemsAndNilCursor() {
-	out := mappers.ToCardListOutput(nil, "")
+	out := mappers.M.ToCardListOutput(nil, "")
 	s.NotNil(out.Items)
 	s.Empty(out.Items)
 	s.Nil(out.NextCursor)
@@ -68,7 +68,7 @@ func (s *CardMapperSuite) TestToCardListOutput_EmptySliceProducesEmptyItemsAndNi
 
 func (s *CardMapperSuite) TestToCardListOutput_PopulatesItemsAndCursor() {
 	cards := []entities.Card{s.makeCard(nil), s.makeCard(nil)}
-	out := mappers.ToCardListOutput(cards, "next-token")
+	out := mappers.M.ToCardListOutput(cards, "next-token")
 
 	s.Len(out.Items, 2)
 	s.Require().NotNil(out.NextCursor)
@@ -83,7 +83,7 @@ func (s *CardMapperSuite) TestToInvoiceOutput_FormatsInGivenTimezone() {
 		DueDate:     time.Date(2026, 1, 17, 3, 0, 0, 0, time.UTC),
 	}
 
-	out := mappers.ToInvoiceOutput(invoice, tz)
+	out := mappers.M.ToInvoiceOutput(invoice, tz)
 
 	s.Equal("2026-01-10", out.ClosingDate)
 	s.Equal("2026-01-17", out.DueDate)
@@ -97,7 +97,7 @@ func (s *CardMapperSuite) TestToInvoiceOutput_TimezoneAffectsLocalDay() {
 		DueDate:     time.Date(2026, 1, 17, 1, 0, 0, 0, time.UTC),
 	}
 
-	out := mappers.ToInvoiceOutput(invoice, tz)
+	out := mappers.M.ToInvoiceOutput(invoice, tz)
 
 	s.Equal("2026-01-09", out.ClosingDate)
 	s.Equal("2026-01-16", out.DueDate)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker/job"
@@ -21,7 +22,7 @@ func NewOutreachJob(useCase *usecases.SendOutreach, enabled bool) *job.Adapter {
 		useCase: useCase,
 		enabled: enabled,
 	}
-	return job.NewAdapter("onboarding.outreach_job", outreachJobSchedule, h.run)
+	return job.NewAdapterWithTimeout("onboarding.outreach_job", outreachJobSchedule, h.run, 2*time.Minute)
 }
 
 func (j *OutreachJob) run(ctx context.Context) error {

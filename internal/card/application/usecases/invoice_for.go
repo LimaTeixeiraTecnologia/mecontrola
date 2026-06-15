@@ -60,7 +60,7 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 		return output.Invoice{}, fmt.Errorf("card/invoice_for: %w", domain.ErrCardNotFound)
 	}
 
-	invoice := services.InvoiceFor(in.Purchase, card.Cycle, u.loc)
+	invoice := services.BillingCycleService{}.InvoiceFor(in.Purchase, card.Cycle, u.loc)
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	u.o11y.Logger().Info(ctx, "card.invoice_for.computed",
@@ -68,5 +68,5 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 		observability.String("user_id", in.UserID.String()),
 	)
 
-	return mappers.ToInvoiceOutput(invoice, u.loc), nil
+	return mappers.M.ToInvoiceOutput(invoice, u.loc), nil
 }

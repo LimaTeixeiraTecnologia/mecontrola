@@ -69,7 +69,7 @@ func (h *CreateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		observability.String("outcome", "success"),
 	)
 	h.o11y.Logger().Info(ctx, "card.create.completed",
-		cardobs.RedactOutputCardLogFields(out)...,
+		cardobs.Redactor{}.RedactOutputCardLogFields(out)...,
 	)
 
 	w.Header().Set("Location", "/api/v1/cards/"+out.ID)

@@ -11,11 +11,13 @@ type AlertDecision struct {
 	ErrorContext string
 }
 
-func IsRetroactiveAlert(expenseCompetence, cutoff valueobjects.Competence) bool {
+type AlertWorkflow struct{}
+
+func (AlertWorkflow) IsRetroactiveAlert(expenseCompetence, cutoff valueobjects.Competence) bool {
 	return expenseCompetence.Before(cutoff)
 }
 
-func DecideAlertForInsert(isRetroactive bool, deliveredCount int) AlertDecision {
+func (AlertWorkflow) DecideAlertForInsert(isRetroactive bool, deliveredCount int) AlertDecision {
 	if isRetroactive {
 		return AlertDecision{
 			State:        entities.AlertStateSuppressedRetroactive,

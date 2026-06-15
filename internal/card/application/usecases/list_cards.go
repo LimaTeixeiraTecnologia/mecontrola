@@ -38,7 +38,7 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 	defer span.End()
 
 	if in.Cursor != "" {
-		if _, err := pagination.Decode(in.Cursor); err != nil {
+		if _, err := pagination.C.Decode(in.Cursor); err != nil {
 			span.SetAttributes(observability.String("outcome", "invalid"))
 			return output.CardList{}, fmt.Errorf("%w: %s", domain.ErrInvalidCursor, err.Error())
 		}
@@ -52,7 +52,7 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 		return output.CardList{}, err
 	}
 
-	result := mappers.ToCardListOutput(cards, nextCursor)
+	result := mappers.M.ToCardListOutput(cards, nextCursor)
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	u.o11y.Logger().Info(ctx, "card.list.served",

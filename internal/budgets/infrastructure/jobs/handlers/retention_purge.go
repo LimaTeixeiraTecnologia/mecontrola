@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -22,7 +23,8 @@ func NewRetentionPurge(
 	return &RetentionPurge{usecase: usecase, cfg: cfg}
 }
 
-func (j *RetentionPurge) Name() string { return "budgets-retention-purge" }
+func (j *RetentionPurge) Name() string           { return "budgets-retention-purge" }
+func (j *RetentionPurge) Timeout() time.Duration { return 5 * time.Minute }
 
 func (j *RetentionPurge) Schedule() string {
 	if j.cfg.RetentionPurgeCron != "" {

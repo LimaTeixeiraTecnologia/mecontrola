@@ -123,7 +123,7 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 		`
 		rows, err = r.db.QueryContext(ctx, query, userID, fetch)
 	} else {
-		cp, decErr := pagination.Decode(cursor)
+		cp, decErr := pagination.C.Decode(cursor)
 		if decErr != nil {
 			return nil, "", fmt.Errorf("%s %w", prefixCardRepository, carddomain.ErrInvalidCursor)
 		}
@@ -175,7 +175,7 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 	if len(cards) > limit {
 		cards = cards[:limit]
 		last := cards[len(cards)-1]
-		encoded, encErr := pagination.Encode(last.CreatedAt, last.ID.String())
+		encoded, encErr := pagination.C.Encode(last.CreatedAt, last.ID.String())
 		if encErr != nil {
 			return nil, "", fmt.Errorf("%s list_by_user encode_cursor: %w", prefixCardRepository, encErr)
 		}

@@ -6,6 +6,7 @@ package mocks
 
 import (
 	"context"
+	"time"
 
 	mock "github.com/stretchr/testify/mock"
 )
@@ -128,6 +129,48 @@ func (_c *Job_Run_Call) Return(err error) *Job_Run_Call {
 }
 
 func (_c *Job_Run_Call) RunAndReturn(run func(context1 context.Context) error) *Job_Run_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Timeout provides a mock function for the type Job
+func (_mock *Job) Timeout() time.Duration {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Timeout")
+	}
+
+	var r0 time.Duration
+	if returnFunc, ok := ret.Get(0).(func() time.Duration); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(time.Duration)
+	}
+	return r0
+}
+
+type Job_Timeout_Call struct {
+	*mock.Call
+}
+
+func (_e *Job_Expecter) Timeout() *Job_Timeout_Call {
+	return &Job_Timeout_Call{Call: _e.mock.On("Timeout")}
+}
+
+func (_c *Job_Timeout_Call) Run(run func()) *Job_Timeout_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *Job_Timeout_Call) Return(d time.Duration) *Job_Timeout_Call {
+	_c.Call.Return(d)
+	return _c
+}
+
+func (_c *Job_Timeout_Call) RunAndReturn(run func() time.Duration) *Job_Timeout_Call {
 	_c.Call.Return(run)
 	return _c
 }

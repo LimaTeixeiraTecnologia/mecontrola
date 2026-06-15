@@ -50,48 +50,54 @@ func newHandler(secretCurrent, secretNext string) http.Handler {
 func (s *HmacSignatureSuite) TestHMACSignature() {
 	payload := []byte(`{"webhook_event_type":"order_approved"}`)
 	scenarios := []struct {
-		name           string
-		path           string
-		headerValue    string
-		secretCurrent  string
-		secretNext     string
-		expectedStatus string
+		name               string
+		path               string
+		headerValue        string
+		secretCurrent      string
+		secretNext         string
+		expectedHTTPStatus int
+		expectedSigStatus  string
 	}{
 		{
-			name:           "deve validar assinatura pela query string",
-			path:           "/?signature=" + buildSignature(payload, testSecret),
-			secretCurrent:  testSecret,
-			expectedStatus: middleware.SignatureStatusValid,
+			name:               "deve validar assinatura pela query string",
+			path:               "/?signature=" + buildSignature(payload, testSecret),
+			secretCurrent:      testSecret,
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedSigStatus:  middleware.SignatureStatusValid,
 		},
 		{
-			name:           "deve validar assinatura pelo header como fallback",
-			path:           "/",
-			headerValue:    buildSignature(payload, testSecret),
-			secretCurrent:  testSecret,
-			expectedStatus: middleware.SignatureStatusValid,
+			name:               "deve validar assinatura pelo header como fallback",
+			path:               "/",
+			headerValue:        buildSignature(payload, testSecret),
+			secretCurrent:      testSecret,
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedSigStatus:  middleware.SignatureStatusValid,
 		},
 		{
-			name:           "deve priorizar a assinatura da query sobre o header",
-			path:           "/?signature=" + buildSignature(payload, testSecret),
-			headerValue:    "wronginheader",
-			secretCurrent:  testSecret,
-			expectedStatus: middleware.SignatureStatusValid,
+			name:               "deve priorizar a assinatura da query sobre o header",
+			path:               "/?signature=" + buildSignature(payload, testSecret),
+			headerValue:        "wronginheader",
+			secretCurrent:      testSecret,
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedSigStatus:  middleware.SignatureStatusValid,
 		},
 		{
-			name:           "deve marcar assinatura invalida",
-			path:           "/?signature=invalidhex",
-			secretCurrent:  testSecret,
-			expectedStatus: middleware.SignatureStatusInvalid,
+			name:               "deve rejeitar assinatura invalida no middleware",
+			path:               "/?signature=invalidhex",
+			secretCurrent:      testSecret,
+			expectedHTTPStatus: http.StatusUnauthorized,
+			expectedSigStatus:  "",
 		},
 		{
-			name:           "deve aceitar segredo rotacionado",
-			path:           "/?signature=" + buildSignature(payload, testSecretNext),
-			secretCurrent:  testSecret,
-			secretNext:     testSecretNext,
-			expectedStatus: middleware.SignatureStatusRotated,
+			name:               "deve aceitar segredo rotacionado",
+			path:               "/?signature=" + buildSignature(payload, testSecretNext),
+			secretCurrent:      testSecret,
+			secretNext:         testSecretNext,
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedSigStatus:  middleware.SignatureStatusRotated,
 		},
 		{
-			name: "deve comparar em tempo constante para assinatura alterada",
+			name: "deve rejeitar assinatura alterada no middleware",
 			path: func() string {
 				realSig := buildSignature(payload, testSecret)
 				tampered := realSig[:len(realSig)-1] + "0"
@@ -100,8 +106,9 @@ func (s *HmacSignatureSuite) TestHMACSignature() {
 				}
 				return "/?signature=" + tampered
 			}(),
-			secretCurrent:  testSecret,
-			expectedStatus: middleware.SignatureStatusInvalid,
+			secretCurrent:      testSecret,
+			expectedHTTPStatus: http.StatusUnauthorized,
+			expectedSigStatus:  "",
 		},
 	}
 
@@ -116,8 +123,10 @@ func (s *HmacSignatureSuite) TestHMACSignature() {
 
 			handler.ServeHTTP(rr, req)
 
-			assert.Equal(s.T(), http.StatusAccepted, rr.Code)
-			assert.Equal(s.T(), scenario.expectedStatus, rr.Header().Get("X-Sig-Status"))
+			assert.Equal(s.T(), scenario.expectedHTTPStatus, rr.Code)
+			if scenario.expectedSigStatus != "" {
+				assert.Equal(s.T(), scenario.expectedSigStatus, rr.Header().Get("X-Sig-Status"))
+			}
 		})
 	}
 }

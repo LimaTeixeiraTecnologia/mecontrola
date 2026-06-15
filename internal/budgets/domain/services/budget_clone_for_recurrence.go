@@ -46,7 +46,7 @@ func (c *BudgetClonerForRecurrence) rebuildAllocations(budgetID uuid.UUID, sourc
 			BasisPoints: a.BasisPoints(),
 		})
 	}
-	distributed := Distribute(source.TotalCents(), inputs)
+	distributed := AllocationDistributor{}.Distribute(source.TotalCents(), inputs)
 	allocs := make([]entities.Allocation, 0, len(distributed))
 	for _, r := range distributed {
 		allocs = append(allocs, entities.NewAllocation(budgetID, r.RootSlug, r.BasisPoints, r.PlannedCents))

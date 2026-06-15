@@ -23,7 +23,9 @@ type SecretPair struct {
 	Next    []byte
 }
 
-func VerifyGatewayRequest(req VerifyRequest, secrets SecretPair, now time.Time, window time.Duration) GatewayAuthResult {
+type GatewayRequestVerifier struct{}
+
+func (GatewayRequestVerifier) VerifyGatewayRequest(req VerifyRequest, secrets SecretPair, now time.Time, window time.Duration) GatewayAuthResult {
 	if req.UserIDRaw == "" || req.SignatureRaw == "" || req.TimestampRaw == "" {
 		return GatewayAuthResult{Kind: GatewayAuthMissingHeader}
 	}

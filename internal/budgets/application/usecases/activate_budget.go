@@ -80,7 +80,7 @@ func (uc *ActivateBudget) persist(ctx context.Context, tx database.DBTX, cmd com
 		})
 	}
 
-	distributed := services.Distribute(budget.TotalCents(), allocInputs)
+	distributed := services.AllocationDistributor{}.Distribute(budget.TotalCents(), allocInputs)
 	updatedAllocs := make([]entities.Allocation, 0, len(distributed))
 	for _, r := range distributed {
 		updatedAllocs = append(updatedAllocs, entities.NewAllocation(budget.ID(), r.RootSlug, r.BasisPoints, r.PlannedCents))

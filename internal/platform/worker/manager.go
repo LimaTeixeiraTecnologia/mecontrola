@@ -42,7 +42,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.scheduler = job.NewScheduler(m.logger)
 
 	for _, j := range m.jobs {
-		adapter := job.NewAdapter(j.Name(), j.Schedule(), j.Run)
+		adapter := job.NewAdapterWithTimeout(j.Name(), j.Schedule(), j.Run, j.Timeout())
 		if err := m.scheduler.Register(adapter); err != nil {
 			cancel()
 			return fmt.Errorf("worker: registrar job %q: %w", j.Name(), err)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -22,7 +23,8 @@ func NewAbandonedDraftReaper(
 	return &AbandonedDraftReaper{usecase: usecase, cfg: cfg}
 }
 
-func (j *AbandonedDraftReaper) Name() string { return "budgets-abandoned-draft-reaper" }
+func (j *AbandonedDraftReaper) Name() string           { return "budgets-abandoned-draft-reaper" }
+func (j *AbandonedDraftReaper) Timeout() time.Duration { return 2 * time.Minute }
 
 func (j *AbandonedDraftReaper) Schedule() string {
 	if j.cfg.AbandonedDraftCron != "" {

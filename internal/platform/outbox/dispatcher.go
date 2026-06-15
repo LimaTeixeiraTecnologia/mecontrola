@@ -45,8 +45,9 @@ func NewDispatcherJob(
 	}
 }
 
-func (d *DispatcherJob) Name() string     { return "outbox-dispatcher" }
-func (d *DispatcherJob) Schedule() string { return "@every " + d.cfg.DispatcherTickInterval.String() }
+func (d *DispatcherJob) Name() string           { return "outbox-dispatcher" }
+func (d *DispatcherJob) Schedule() string       { return "@every " + d.cfg.DispatcherTickInterval.String() }
+func (d *DispatcherJob) Timeout() time.Duration { return 5 * time.Minute }
 
 func (d *DispatcherJob) Run(ctx context.Context) error {
 	rows, err := d.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) ([]Row, error) {

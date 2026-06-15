@@ -95,7 +95,7 @@ func (s *AllocationDistributorSuite) TestDistribute() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			results := services.Distribute(tc.total, allInputs(tc.bps))
+			results := services.AllocationDistributor{}.Distribute(tc.total, allInputs(tc.bps))
 			s.Equal(tc.wantTotal, sumPlanned(results), "soma deve ser igual ao total")
 			if tc.wantFirst > 0 {
 				s.Equal(tc.wantFirst, results[0].PlannedCents, "primeiro elemento (custo_fixo)")
@@ -106,8 +106,8 @@ func (s *AllocationDistributorSuite) TestDistribute() {
 
 func (s *AllocationDistributorSuite) TestOrdemDeterministicaParaResidual() {
 	inputs := allInputs([5]int{2000, 2000, 2000, 2000, 2000})
-	r1 := services.Distribute(10003, inputs)
-	r2 := services.Distribute(10003, inputs)
+	r1 := services.AllocationDistributor{}.Distribute(10003, inputs)
+	r2 := services.AllocationDistributor{}.Distribute(10003, inputs)
 	for i := range r1 {
 		s.Equal(r1[i].PlannedCents, r2[i].PlannedCents, "distribuição deve ser determinística")
 	}
@@ -124,7 +124,7 @@ func (s *AllocationDistributorSuite) TestOrdemDeterministicaParaResidual() {
 
 func (s *AllocationDistributorSuite) TestResidualNegativo() {
 	inputs := allInputs([5]int{2000, 2000, 2000, 2000, 2000})
-	results := services.Distribute(9997, inputs)
+	results := services.AllocationDistributor{}.Distribute(9997, inputs)
 	sum := sumPlanned(results)
 	s.Equal(int64(9997), sum)
 

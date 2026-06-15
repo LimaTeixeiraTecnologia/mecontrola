@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/spf13/cobra"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -244,6 +246,8 @@ func Run() error {
 		o11y.Logger().Info(ctx, "telegram webhook router skipped (TELEGRAM_ENABLED=false)")
 	}
 
+	srv.RegisterRouters(&readinessRouter{ctx: ctx})
+
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)
 	}
@@ -252,4 +256,19 @@ func Run() error {
 
 func resolveCORSOrigins(cfg *configs.Config) string {
 	return cfg.HTTPConfig.CORSAllowedOrigins
+}
+
+type readinessRouter struct {
+	ctx context.Context
+}
+
+func (rt *readinessRouter) Register(r chi.Router) {
+	r.Get("/readiness", func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case <-rt.ctx.Done():
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	})
 }

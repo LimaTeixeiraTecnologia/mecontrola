@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -25,7 +26,8 @@ func NewAuthEventsHousekeepingJob(
 	}
 }
 
-func (j *AuthEventsHousekeepingJob) Name() string { return "identity-auth-events-housekeeping" }
+func (j *AuthEventsHousekeepingJob) Name() string           { return "identity-auth-events-housekeeping" }
+func (j *AuthEventsHousekeepingJob) Timeout() time.Duration { return 2 * time.Minute }
 
 func (j *AuthEventsHousekeepingJob) Schedule() string {
 	if j.cfg.AuthEventsHousekeepingSchedule != "" {

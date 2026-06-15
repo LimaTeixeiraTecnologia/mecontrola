@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -29,8 +30,9 @@ func NewMonthlySummaryReconcilerJob(
 	}
 }
 
-func (j *MonthlySummaryReconcilerJob) Name() string     { return "transactions-monthly-summary-reconciler" }
-func (j *MonthlySummaryReconcilerJob) Schedule() string { return j.schedule }
+func (j *MonthlySummaryReconcilerJob) Name() string           { return "transactions-monthly-summary-reconciler" }
+func (j *MonthlySummaryReconcilerJob) Schedule() string       { return j.schedule }
+func (j *MonthlySummaryReconcilerJob) Timeout() time.Duration { return 5 * time.Minute }
 
 func (j *MonthlySummaryReconcilerJob) Run(ctx context.Context) error {
 	return j.usecase.Execute(ctx)

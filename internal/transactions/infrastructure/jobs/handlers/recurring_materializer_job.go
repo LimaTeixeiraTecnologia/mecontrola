@@ -33,8 +33,9 @@ func NewRecurringMaterializerJob(
 	}
 }
 
-func (j *RecurringMaterializerJob) Name() string     { return "transactions-recurring-materializer" }
-func (j *RecurringMaterializerJob) Schedule() string { return j.schedule }
+func (j *RecurringMaterializerJob) Name() string           { return "transactions-recurring-materializer" }
+func (j *RecurringMaterializerJob) Schedule() string       { return j.schedule }
+func (j *RecurringMaterializerJob) Timeout() time.Duration { return 5 * time.Minute }
 
 func (j *RecurringMaterializerJob) Run(ctx context.Context) error {
 	today := time.Now().In(j.brazilLoc)

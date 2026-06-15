@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -23,8 +24,9 @@ func NewGraceExpirationJob(uc processGraceExpiredUseCase, cfg configs.BillingCon
 	return &GraceExpirationJob{usecase: uc, schedule: schedule}
 }
 
-func (j *GraceExpirationJob) Name() string     { return "billing-grace-expiration" }
-func (j *GraceExpirationJob) Schedule() string { return j.schedule }
+func (j *GraceExpirationJob) Name() string           { return "billing-grace-expiration" }
+func (j *GraceExpirationJob) Schedule() string       { return j.schedule }
+func (j *GraceExpirationJob) Timeout() time.Duration { return 2 * time.Minute }
 
 func (j *GraceExpirationJob) Run(ctx context.Context) error {
 	return j.usecase.Execute(ctx)

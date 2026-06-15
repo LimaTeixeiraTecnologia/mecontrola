@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -32,8 +33,9 @@ func NewReaperJob(
 	}
 }
 
-func (r *ReaperJob) Name() string     { return "outbox-reaper" }
-func (r *ReaperJob) Schedule() string { return r.cfg.ReaperInterval }
+func (r *ReaperJob) Name() string           { return "outbox-reaper" }
+func (r *ReaperJob) Schedule() string       { return r.cfg.ReaperInterval }
+func (r *ReaperJob) Timeout() time.Duration { return 2 * time.Minute }
 
 func (r *ReaperJob) Run(ctx context.Context) error {
 	_, err := r.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
