@@ -45,10 +45,6 @@ type TransactionsAdapter struct {
 	defaultLimit  int
 }
 
-func NewTransactionsAdapter(listUseCase ListTransactionsUseCase) *TransactionsAdapter {
-	return &TransactionsAdapter{listUseCase: listUseCase, defaultLimit: 10}
-}
-
 func NewTransactionsAdapterFull(
 	listUseCase ListTransactionsUseCase,
 	createUseCase CreateTransactionUseCase,

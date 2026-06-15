@@ -1,35 +1,39 @@
 # Runbook: Deploy MeControla
 
-**Referências:** ADR-011 (Docker + Fly), ADR-012 (supply chain scan), ADR-013 (cosign keyless)
+**Referências:** ADR-011 (Docker + VPS), ADR-012 (supply chain scan), ADR-013 (cosign keyless)
 
 ## Visão Geral
 
-O deploy é executado automaticamente pelo workflow `.github/workflows/cd.yml` a cada push em `main`.
+O deploy é executado automaticamente pelo workflow `.github/workflows/cd.yml` a cada push bem-sucedido em `main`.
 Este runbook documenta o fluxo manual equivalente para execução em emergências ou validação local.
 
-## Pipeline de Deploy
+## Pipeline de Deploy (automático)
 
 ```
-task build:docker:build  →  task security:image-scan  →  task security:sbom
-  →  task security:sign-image  →  flyctl deploy --strategy=rolling
+push main
+  → CI (ci.yml): lint + unit + integration + security + build-image + scan-and-attest
+  → CD (cd.yml): gate → deploy VPS SSH → smoke
 ```
 
-## Pré-requisitos
+O job `gate` valida que o CI passou e extrai `image-tag` + `image-digest` do artefato `image-meta`.
+O job `deploy` executa `deployment/scripts/deploy.sh` na VPS via SSH.
+O job `smoke` executa `task auth:smoke` contra a URL de staging.
+
+## Fluxo Manual (emergências)
+
+### Pré-requisitos
 
 | Ferramenta | Instalação |
 |---|---|
 | `docker` | https://docs.docker.com/get-docker/ |
-| `flyctl` | `brew install flyctl` |
 | `trivy` | `brew install trivy` |
 | `cosign` | `brew install cosign` |
 | `task` | `brew install go-task` |
+| `ssh` | nativo no sistema |
 
 ```sh
-flyctl auth login
 docker login ghcr.io -u <github-user> -p <github-pat>
 ```
-
-## Passo a Passo
 
 ### 1. Build da imagem
 
@@ -54,35 +58,30 @@ task security:image-scan IMAGE_SHA=${SHA}
 
 ```sh
 task security:sbom IMAGE_SHA=${SHA}
-# Gera: sbom.spdx.json
 ```
 
 ### 5. Assinar com cosign (requer OIDC — apenas no CI)
 
 ```sh
-# Executado automaticamente pelo cd.yml com id-token: write
 task security:sign-image \
   IMAGE_REF=ghcr.io/limateixeiratecnologia/mecontrola:${SHA} \
   IMAGE_SHA=<digest-sha256>
 ```
 
-### 6. Deploy no Fly.io
+### 6. Deploy na VPS
 
 ```sh
-flyctl deploy \
-  --strategy rolling \
-  --image ghcr.io/limateixeiratecnologia/mecontrola:${SHA} \
-  --app mecontrola
+VPS_HOST=<host> VPS_USER=<user> VPS_DEPLOY_PATH=<path> \
+  bash deployment/scripts/deploy.sh "${SHA}"
 ```
+
+O script executa na VPS: `docker compose pull` → `migrate` → `up -d server worker` →
+healthcheck `/health` com retry 12× (interval 5s) → rollback automático se falhar.
 
 ### 7. Smoke test pós-deploy
 
 ```sh
-flyctl status -a mecontrola | grep started
-curl -s https://mecontrola.fly.dev/health | jq .
-curl -s https://mecontrola.fly.dev/ready | jq .
-flyctl logs -a mecontrola -p app
-flyctl logs -a mecontrola -p worker
+WEBHOOK_URL=<staging_url> META_APP_SECRET=<secret> task auth:smoke
 ```
 
 ## Verificar Assinatura
@@ -94,10 +93,12 @@ cosign verify \
   ghcr.io/limateixeiratecnologia/mecontrola:<sha>
 ```
 
-## Monitoramento
+## Monitoramento Pós-Deploy
 
 | Condição | Ação |
 |---|---|
-| `state ≠ started` após 5 min | `flyctl logs -a mecontrola` |
+| Healthcheck `/health` falha após deploy | Script reverte automaticamente; verificar `ssh VPS docker compose logs server` |
 | CVE HIGH/CRITICAL no scan | Adicionar `.trivyignore` + abrir issue urgente |
-| `cosign verify` falha | NÃO fazer deploy; investigar pipeline CI |
+| `cosign verify` falha | NÃO fazer deploy manual; investigar pipeline CI |
+| Worker não inicia | `ssh VPS docker compose logs worker` |
+| Migração falha | `ssh VPS docker compose logs migrate`; reverter migration manualmente |
