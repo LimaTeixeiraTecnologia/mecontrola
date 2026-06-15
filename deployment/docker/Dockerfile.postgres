@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.postgres — postgres:16 (Debian) com pgBackRest instalado.
+# Necessário para archive_mode=on e PITR via pgBackRest no VPS.
+# Build: docker build -f deployment/docker/Dockerfile.postgres -t mecontrola-postgres:latest .
+#        (executar da raiz do repositório — COPY usa path relativo ao repo root)
+# Uso: POSTGRES_IMAGE=mecontrola-postgres:latest no .env de produção.
+
+FROM postgres:16
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pgbackrest \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY deployment/pgbackrest/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
+
+RUN mkdir -p /var/log/pgbackrest \
+    && chown postgres:postgres /var/log/pgbackrest \
+    && chmod 750 /var/log/pgbackrest

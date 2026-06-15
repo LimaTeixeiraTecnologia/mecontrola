@@ -1,0 +1,97 @@
+groups:
+  - name: mecontrola.infra
+    interval: 1m
+    rules:
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} /
+           node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"}) * 100 < 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disco > 80% utilizado em {{ $labels.instance }}"
+          description: "Disponível: {{ $value | humanizePercentage }}. Adicione espaço ou limpe logs/backups antes de atingir 100%."
+
+      - alert: MemoryPressure
+        expr: |
+          (node_memory_MemAvailable_bytes /
+           node_memory_MemTotal_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAM > 90% utilizada em {{ $labels.instance }}"
+          description: "Disponível: {{ $value | humanizePercentage }}. Verifique containers com memory leak ou reduza limits."
+
+  - name: mecontrola.postgres
+    interval: 1m
+    rules:
+      - alert: PostgreSQLDown
+        expr: health_probe_status{probe="database"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL não responde ({{ $labels.job }})"
+          description: "health_probe_status{probe=database} == 0 por mais de 1 minuto. Verifique container postgres e logs."
+
+      - alert: PostgreSQLCacheHitLow
+        expr: |
+          (pg_stat_database_blks_hit /
+           (pg_stat_database_blks_hit + pg_stat_database_blks_read + 1)) * 100 < 95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache hit ratio < 95% no PostgreSQL"
+          description: "Cache hit: {{ $value | humanize }}%. Considere aumentar shared_buffers."
+
+      - alert: PostgreSQLBufferHitLow
+        expr: |
+          (pg_stat_bgwriter_buffers_clean /
+           (pg_stat_bgwriter_buffers_clean + pg_stat_bgwriter_buffers_backend + 1)) * 100 < 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Buffer hit ratio < 90% no PostgreSQL"
+          description: "Buffer backend writes elevados: {{ $value | humanize }}%. Ajuste bgwriter_lru_maxpages ou shared_buffers."
+
+  - name: mecontrola.api
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_request_error_count_total[5m])) /
+          sum(rate(http_server_request_count_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Taxa de erro 5xx > 1% nas requisições HTTP"
+          description: "Taxa atual: {{ $value | humanizePercentage }}. Verifique logs da aplicação e traces recentes."
+
+  - name: mecontrola.ssl
+    interval: 1h
+    rules:
+      - alert: SSLCertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox_ssl"} - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Certificado SSL expira em menos de 30 dias"
+          description: "Domínio: {{ $labels.instance }}. Dias restantes: {{ $value | printf \"%.0f\" }}. Verifique renovação automática do Caddy (ACME)."
+
+  - name: mecontrola.backup
+    interval: 1h
+    rules:
+      - alert: BackupTooOld
+        expr: (time() - backup_last_success_timestamp_seconds) > 25 * 3600
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Último backup bem-sucedido há mais de 25 horas"
+          description: "Último sucesso: {{ $value | humanizeDuration }} atrás. Verifique cron de backup e logs do pgBackRest."

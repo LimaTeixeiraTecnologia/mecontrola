@@ -146,21 +146,21 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo identity: %w", err)
 	}
-	categoriesModule := categories.NewCategoriesModule(r.dbManager, r.o11y)
+	passthroughGateway := func(next http.Handler) http.Handler { return next }
+	categoriesModule := categories.NewCategoriesModule(r.dbManager, r.o11y, passthroughGateway)
 	billingModule, err := billing.NewBillingModule(r.cfg, r.o11y, r.dbManager)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
 	}
-	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule)
+	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
-	passthroughGateway := func(next http.Handler) http.Handler { return next }
 	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.dbManager, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}
-	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.dbManager, cardModule, categoriesModule)
+	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.dbManager, cardModule, categoriesModule, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
 	}

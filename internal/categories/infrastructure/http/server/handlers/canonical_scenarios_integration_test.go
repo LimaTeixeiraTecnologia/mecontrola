@@ -49,7 +49,8 @@ func (s *CanonicalScenariosIntegrationSuite) SetupSuite() {
 	s.mgr = s.setupTestDB()
 	o11y := noop.NewProvider()
 
-	categoriesModule := categories.NewCategoriesModule(s.mgr, o11y)
+	passthroughGateway := func(next http.Handler) http.Handler { return next }
+	categoriesModule := categories.NewCategoriesModule(s.mgr, o11y, passthroughGateway)
 
 	s.router = chi.NewRouter()
 	s.router.Use(s.authMiddleware)

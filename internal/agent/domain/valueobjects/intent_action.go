@@ -38,8 +38,6 @@ func NewIntentAction(raw string) (IntentAction, error) {
 func IntentActionList() IntentAction   { return IntentAction{value: actionList} }
 func IntentActionGet() IntentAction    { return IntentAction{value: actionGet} }
 func IntentActionCreate() IntentAction { return IntentAction{value: actionCreate} }
-func IntentActionUpdate() IntentAction { return IntentAction{value: actionUpdate} }
-func IntentActionDelete() IntentAction { return IntentAction{value: actionDelete} }
 
 func (a IntentAction) String() string { return a.value }
 func (a IntentAction) IsZero() bool   { return a.value == "" }

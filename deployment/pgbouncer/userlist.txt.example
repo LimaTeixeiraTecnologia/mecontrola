@@ -1,0 +1,14 @@
+# deployment/pgbouncer/userlist.txt.example
+#
+# Copie para userlist.txt e preencha com o hash SCRAM-SHA-256 real.
+# NÃO comite userlist.txt com senhas reais.
+#
+# Para gerar o hash SCRAM-SHA-256:
+#   psql -U postgres -c "SELECT concat('\"', usename, '\" \"', passwd, '\"') FROM pg_shadow WHERE usename='mecontrola';"
+#
+# O resultado tem o formato:
+#   "mecontrola" "SCRAM-SHA-256$4096:BASE64_SALT$BASE64_KEY:BASE64_HASH"
+#
+# Cole o resultado abaixo (uma linha por usuário):
+
+"mecontrola" "SCRAM-SHA-256$4096:CHANGE_ME_salt$CHANGE_ME_key:CHANGE_ME_hash"

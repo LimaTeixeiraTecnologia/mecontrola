@@ -3,6 +3,7 @@ package budgets
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -51,6 +52,7 @@ type moduleBuilder struct {
 	mgr              manager.Manager
 	categoriesModule *categories.CategoriesModule
 	publisher        *producers.ExpenseCommittedPublisher
+	gatewayAuth      func(http.Handler) http.Handler
 }
 
 type moduleRepositories struct {
@@ -78,6 +80,7 @@ func NewBudgetsModule(
 	o11y observability.Observability,
 	mgr manager.Manager,
 	categoriesModule *categories.CategoriesModule,
+	gatewayAuth func(http.Handler) http.Handler,
 ) (*BudgetsModule, error) {
 	builder := moduleBuilder{
 		cfg:              cfg,
@@ -85,6 +88,7 @@ func NewBudgetsModule(
 		mgr:              mgr,
 		categoriesModule: categoriesModule,
 		publisher:        producers.NewExpenseCommittedPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator(), o11y),
+		gatewayAuth:      gatewayAuth,
 	}
 	return builder.Build()
 }
@@ -199,6 +203,7 @@ func (b *moduleBuilder) buildRouter(useCases moduleUseCases) *budgetsserver.Budg
 		deleteExpenseHandler,
 		getMonthlySummaryHandler,
 		listAlertsHandler,
+		b.gatewayAuth,
 	)
 }
 

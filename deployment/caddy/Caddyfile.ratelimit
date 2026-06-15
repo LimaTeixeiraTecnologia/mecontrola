@@ -1,0 +1,42 @@
+# Caddyfile com rate limiting via mholt/caddy-ratelimit.
+# Requer imagem xcaddy: docker build -f deployment/docker/Dockerfile.caddy -t mecontrola-caddy:latest .
+# Em producao: CADDY_IMAGE=mecontrola-caddy:latest
+# Em compose.prod.yml, override do volume: ../caddy/Caddyfile.ratelimit:/etc/caddy/Caddyfile:ro
+
+{
+	email {$CADDY_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
+	respond @admin 404
+
+	rate_limit {remote.ip} {$CADDY_RATE_LIMIT_REQUESTS:-100}r/m
+
+	@auth_endpoints path /api/v*/auth/* /api/v*/sessions/*
+	rate_limit @auth_endpoints {remote.ip} {$CADDY_RATE_LIMIT_AUTH:-20}r/m
+
+	reverse_proxy server:{$PORT:-8080} {
+		header_up -X-User-ID
+		header_up -X-Gateway-Auth
+		header_up -X-Gateway-Timestamp
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'none'; connect-src 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	encode gzip zstd
+
+	log {
+		output stderr
+		format json
+		level INFO
+	}
+}

@@ -3,6 +3,7 @@ package transactions
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -54,6 +55,7 @@ type transactionsModuleBuilder struct {
 	mgr              manager.Manager
 	cardModule       card.CardModule
 	categoriesModule *categories.CategoriesModule
+	gatewayAuth      func(http.Handler) http.Handler
 }
 
 func NewTransactionsModule(
@@ -62,6 +64,7 @@ func NewTransactionsModule(
 	mgr manager.Manager,
 	cardModule card.CardModule,
 	categoriesModule *categories.CategoriesModule,
+	gatewayAuth func(http.Handler) http.Handler,
 ) (TransactionsModule, error) {
 	if !cfg.TransactionsConfig.Enabled {
 		return TransactionsModule{}, nil
@@ -73,6 +76,7 @@ func NewTransactionsModule(
 		mgr:              mgr,
 		cardModule:       cardModule,
 		categoriesModule: categoriesModule,
+		gatewayAuth:      gatewayAuth,
 	}
 	return builder.build()
 }
@@ -276,6 +280,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		idemStorage,
 		idemTTL,
 		b.o11y,
+		b.gatewayAuth,
 	)
 
 	recomputeConsumer := consumers.NewMonthlySummaryRecomputeConsumer(recomputeMS, debounceWindow, b.o11y)

@@ -23,6 +23,9 @@ RUN go build \
       -o /out/mecontrola \
       ./cmd
 
+# ---- tools ----
+FROM alpine:3.20 AS tools
+
 # ---- runtime ----
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -32,6 +35,8 @@ USER nonroot
 WORKDIR /app
 
 COPY --from=builder /out/mecontrola /app/mecontrola
+COPY --from=tools /usr/bin/wget /usr/bin/wget
+COPY --from=tools /usr/bin/pgrep /usr/bin/pgrep
 
 ENTRYPOINT ["/app/mecontrola"]
 CMD ["server"]

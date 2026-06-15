@@ -153,7 +153,7 @@ func Run() error {
 
 	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
 
-	categoriesModule := categories.NewCategoriesModule(dbManager, o11y)
+	categoriesModule := categories.NewCategoriesModule(dbManager, o11y, identityModule.GatewayAuthMiddleware)
 	if categoriesModule.CategoryRouter != nil {
 		srv.RegisterRouters(categoriesModule.CategoryRouter)
 	}
@@ -192,7 +192,7 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "card module wired", observability.Bool("router_registered", cardModule.CardRouter != nil))
 
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, dbManager, categoriesModule)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, dbManager, categoriesModule, identityModule.GatewayAuthMiddleware)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo budgets: %w", err)
 	}
@@ -201,7 +201,7 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "budgets module wired", observability.Bool("router_registered", budgetsModule.BudgetsRouter != nil))
 
-	transactionsModule, err := transactions.NewTransactionsModule(cfg, o11y, dbManager, cardModule, categoriesModule)
+	transactionsModule, err := transactions.NewTransactionsModule(cfg, o11y, dbManager, cardModule, categoriesModule, identityModule.GatewayAuthMiddleware)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo transactions: %w", err)
 	}

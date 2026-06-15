@@ -165,6 +165,7 @@ func buildRouter(t *testing.T) *txserver.TransactionsRouter {
 		idemStorage,
 		24*time.Hour,
 		o11y,
+		func(next http.Handler) http.Handler { return next },
 	)
 }
 

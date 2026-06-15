@@ -2,6 +2,7 @@ package categories
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -22,7 +23,7 @@ type CategoriesModule struct {
 	ListCategoriesUC    *usecases.ListCategories
 }
 
-func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) *CategoriesModule {
+func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability, gatewayAuth func(http.Handler) http.Handler) *CategoriesModule {
 	db := mgr.DBTX(context.Background())
 
 	categoryRepo := postgres.NewCategoryRepository(o11y, db)
@@ -48,6 +49,7 @@ func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) 
 		getCategoryHandler,
 		listDictionaryHandler,
 		searchDictionaryHandler,
+		gatewayAuth,
 	)
 
 	return &CategoriesModule{

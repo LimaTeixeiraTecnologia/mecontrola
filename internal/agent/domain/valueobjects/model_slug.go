@@ -36,8 +36,6 @@ func NewModelSlug(raw string) (ModelSlug, error) {
 
 func ModelSlugGeminiFlashLite() ModelSlug { return ModelSlug{value: modelGeminiFlashLite} }
 func ModelSlugGPT5Nano() ModelSlug        { return ModelSlug{value: modelGPT5Nano} }
-func ModelSlugMistralSmall() ModelSlug    { return ModelSlug{value: modelMistralSmall} }
-func ModelSlugClaudeHaiku45() ModelSlug   { return ModelSlug{value: modelClaudeHaiku45} }
 
 func (m ModelSlug) String() string { return m.value }
 func (m ModelSlug) IsZero() bool   { return m.value == "" }

@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.caddy — xcaddy com mholt/caddy-ratelimit.
+# Necessário para rate_limit no Caddyfile.
+# Build: docker build -f deployment/docker/Dockerfile.caddy -t mecontrola-caddy:latest .
+# Uso: CADDY_IMAGE=mecontrola-caddy:latest no .env de produção.
+
+FROM caddy:2-builder AS builder
+
+RUN xcaddy build \
+    --with github.com/mholt/caddy-ratelimit
+
+FROM caddy:2-alpine
+
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+
+EXPOSE 80 443
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD wget -qO- http://localhost:2019/ || exit 1

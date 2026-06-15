@@ -1,0 +1,8 @@
+[
+  {
+    "targets": ["CHANGE_ME_yourdomain.com:443"],
+    "labels": {
+      "job": "blackbox_ssl"
+    }
+  }
+]

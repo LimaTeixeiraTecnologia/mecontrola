@@ -68,6 +68,7 @@ func (s *CategoryRouterSuite) SetupTest() {
 		getCategoryHandler,
 		listDictionaryHandler,
 		searchDictionaryHandler,
+		func(next http.Handler) http.Handler { return next },
 	)
 }
 

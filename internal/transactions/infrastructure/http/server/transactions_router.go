@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +35,7 @@ type TransactionsRouter struct {
 	idemStorage             idempotency.Storage
 	idemTTL                 time.Duration
 	o11y                    observability.Observability
+	gatewayAuth             func(http.Handler) http.Handler
 }
 
 func NewTransactionsRouter(
@@ -58,6 +60,7 @@ func NewTransactionsRouter(
 	idemStorage idempotency.Storage,
 	idemTTL time.Duration,
 	o11y observability.Observability,
+	gatewayAuth func(http.Handler) http.Handler,
 ) *TransactionsRouter {
 	return &TransactionsRouter{
 		createTransaction:       createTx,
@@ -81,6 +84,7 @@ func NewTransactionsRouter(
 		idemStorage:             idemStorage,
 		idemTTL:                 idemTTL,
 		o11y:                    o11y,
+		gatewayAuth:             gatewayAuth,
 	}
 }
 
@@ -88,6 +92,8 @@ func (rt *TransactionsRouter) Register(r chi.Router) {
 	idem := idempotency.Middleware("transactions", rt.idemStorage, rt.idemTTL, rt.o11y)
 
 	r.Group(func(g chi.Router) {
+		g.Use(rt.gatewayAuth)
+		g.Use(middleware.InjectPrincipalFromHeaderWithO11y(rt.o11y))
 		g.Use(middleware.RequireUser)
 
 		g.Route("/api/v1/transactions", func(sub chi.Router) {

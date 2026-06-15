@@ -1,0 +1,66 @@
+# alertmanager.yml — preencher os valores CHANGE_ME antes do deploy.
+# AlertManager NAO expande variaveis de ambiente no arquivo de configuracao.
+# Para usar variaveis de ambiente, execute antes do deploy:
+#   envsubst < alertmanager.yml > alertmanager.rendered.yml
+#   (e monte alertmanager.rendered.yml no container)
+
+global:
+  resolve_timeout: 5m
+  smtp_from: "CHANGE_ME_alerts@yourdomain.com"
+  smtp_smarthost: "CHANGE_ME_smtp.yourdomain.com:587"
+  smtp_auth_username: "CHANGE_ME_smtp_user"
+  smtp_auth_password: "CHANGE_ME_smtp_password"
+  smtp_require_tls: true
+
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: "email-default"
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: "email-critical"
+      repeat_interval: 1h
+    - matchers:
+        - severity = warning
+      receiver: "email-default"
+      repeat_interval: 6h
+
+receivers:
+  - name: "email-default"
+    email_configs:
+      - to: "CHANGE_ME_oncall@yourdomain.com"
+        send_resolved: true
+        headers:
+          Subject: "[MeControla] {{ .GroupLabels.alertname }} — {{ .Status | toUpper }}"
+        body: |
+          {{ range .Alerts }}
+          Alerta: {{ .Annotations.summary }}
+          Detalhes: {{ .Annotations.description }}
+          Severidade: {{ .Labels.severity }}
+          Início: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+          {{ end }}
+
+  - name: "email-critical"
+    email_configs:
+      - to: "CHANGE_ME_oncall@yourdomain.com"
+        send_resolved: true
+        headers:
+          Subject: "[MeControla][CRITICO] {{ .GroupLabels.alertname }} — {{ .Status | toUpper }}"
+        body: |
+          {{ range .Alerts }}
+          ALERTA CRITICO
+          Alerta: {{ .Annotations.summary }}
+          Detalhes: {{ .Annotations.description }}
+          Severidade: {{ .Labels.severity }}
+          Início: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+          {{ end }}
+
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal: ["alertname"]
