@@ -43,13 +43,13 @@ jobs:
           cache: true
 
       - name: Cache .task/
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .task/
           key: task-${{ runner.os }}-${{ hashFiles('Taskfile.yml', 'taskfiles/**') }}
 
       - name: Cache golangci-lint artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/golangci-lint
           key: golangci-${{ runner.os }}-${{ hashFiles('.golangci.yml') }}
