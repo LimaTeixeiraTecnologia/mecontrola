@@ -36,7 +36,7 @@ jobs:
       image-digest: ${{ steps.load.outputs.image-digest }}
     steps:
       - name: Download image meta from CI run
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: image-meta
           run-id: ${{ github.event.workflow_run.id }}
