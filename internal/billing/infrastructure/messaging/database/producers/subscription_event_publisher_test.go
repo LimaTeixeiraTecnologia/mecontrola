@@ -277,3 +277,24 @@ func (s *SubscriptionEventPublisherSuite) TestPublish_SetsAggregateUserID() {
 	pubErr := publisher.PublishActivated(context.Background(), s.tx, sub, s.subscriptionID, "token-user-001", "+5511999999999", "user@example.com", "sale-user-001")
 	s.NoError(pubErr)
 }
+
+func (s *SubscriptionEventPublisherSuite) TestPublish_UsesSubscriptionOccurredAt() {
+	sub := s.newPastDueSubscription()
+
+	s.repoFactory.EXPECT().
+		OutboxRepository(s.tx).
+		Return(s.storage).
+		Once()
+
+	s.storage.EXPECT().
+		Insert(mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+			return evt.Type == producers.EventTypeSubscriptionPastDue &&
+				evt.OccurredAt.Equal(sub.LastEventAt())
+		}), 5).
+		Return(nil).
+		Once()
+
+	publisher := s.newPublisher()
+	pubErr := publisher.PublishPastDue(context.Background(), s.tx, sub, s.subscriptionID)
+	s.NoError(pubErr)
+}

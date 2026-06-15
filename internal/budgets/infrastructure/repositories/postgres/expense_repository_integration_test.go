@@ -28,18 +28,17 @@ func TestExpenseRepositorySuite(t *testing.T) {
 
 func (s *ExpenseRepositorySuite) TestInsertAndGetByIdentity() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	identity := expense.Identity()
-	found, tombstone, err := repo.GetByIdentity(ctx, db, identity)
+	found, tombstone, err := repo.GetByIdentity(ctx, identity)
 	s.Require().NoError(err)
 	s.Assert().Equal(expense.ID(), found.ID())
 	s.Assert().Equal(int64(1), found.Version())
@@ -48,9 +47,8 @@ func (s *ExpenseRepositorySuite) TestInsertAndGetByIdentity() {
 
 func (s *ExpenseRepositorySuite) TestGetByIdentityNotFound() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	src, _ := valueobjects.NewProducerSource("api")
@@ -61,40 +59,38 @@ func (s *ExpenseRepositorySuite) TestGetByIdentityNotFound() {
 		ExternalTransactionID: extID,
 	}
 
-	_, _, err := repo.GetByIdentity(ctx, db, identity)
+	_, _, err := repo.GetByIdentity(ctx, identity)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrExpenseNotFound))
 }
 
 func (s *ExpenseRepositorySuite) TestInsertDuplicateConflict() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	expense2 := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
-	err := repo.Insert(ctx, db, expense2)
+	err := repo.Insert(ctx, expense2)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrExpenseConflict))
 }
 
 func (s *ExpenseRepositorySuite) TestUpdate() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	subcategoryID := uuid.New()
 	rootSlug := mustRootSlug(s.T(), "expense.conhecimento")
@@ -102,10 +98,10 @@ func (s *ExpenseRepositorySuite) TestUpdate() {
 	now := time.Now().UTC()
 	s.Require().NoError(expense.Edit(subcategoryID, rootSlug, competence, 20000, now, 1, now))
 
-	s.Require().NoError(repo.Update(ctx, db, expense, 1))
+	s.Require().NoError(repo.Update(ctx, expense, 1))
 
 	identity := expense.Identity()
-	found, _, err := repo.GetByIdentity(ctx, db, identity)
+	found, _, err := repo.GetByIdentity(ctx, identity)
 	s.Require().NoError(err)
 	s.Assert().Equal(int64(2), found.Version())
 	s.Assert().Equal(int64(20000), found.AmountCents())
@@ -113,15 +109,14 @@ func (s *ExpenseRepositorySuite) TestUpdate() {
 
 func (s *ExpenseRepositorySuite) TestUpdateVersionConflict() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	subcategoryID := uuid.New()
 	rootSlug := mustRootSlug(s.T(), "expense.conhecimento")
@@ -129,33 +124,32 @@ func (s *ExpenseRepositorySuite) TestUpdateVersionConflict() {
 	now := time.Now().UTC()
 	s.Require().NoError(expense.Edit(subcategoryID, rootSlug, competence, 20000, now, 1, now))
 
-	err := repo.Update(ctx, db, expense, 99)
+	err := repo.Update(ctx, expense, 99)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrExpenseConflict))
 }
 
 func (s *ExpenseRepositorySuite) TestSoftDelete() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	now := time.Now().UTC()
 	tombstoneVersion, softDeleteErr := expense.SoftDelete(1, now)
 	s.Require().NoError(softDeleteErr)
 
-	persistedTombstoneVersion, err := repo.SoftDelete(ctx, db, expense, 1)
+	persistedTombstoneVersion, err := repo.SoftDelete(ctx, expense, 1)
 	s.Require().NoError(err)
 	s.Assert().Equal(tombstoneVersion, persistedTombstoneVersion)
 
 	identity := expense.Identity()
-	found, tombstone, err := repo.GetByIdentity(ctx, db, identity)
+	found, tombstone, err := repo.GetByIdentity(ctx, identity)
 	s.Require().NoError(err)
 	s.Assert().True(found.IsDeleted())
 	s.Assert().True(tombstone.IsPresent())
@@ -164,54 +158,51 @@ func (s *ExpenseRepositorySuite) TestSoftDelete() {
 
 func (s *ExpenseRepositorySuite) TestSoftDeleteVersionConflict() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	now := time.Now().UTC()
 	_, softDeleteErr := expense.SoftDelete(1, now)
 	s.Require().NoError(softDeleteErr)
 
-	_, err := repo.SoftDelete(ctx, db, expense, 99)
+	_, err := repo.SoftDelete(ctx, expense, 99)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrExpenseConflict))
 }
 
 func (s *ExpenseRepositorySuite) TestTombstoneBlocksReuse() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	extID := newUUIDv4()
 	expense := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
 
-	s.Require().NoError(repo.Insert(ctx, db, expense))
+	s.Require().NoError(repo.Insert(ctx, expense))
 
 	now := time.Now().UTC()
 	_, softDeleteErr := expense.SoftDelete(1, now)
 	s.Require().NoError(softDeleteErr)
-	_, err := repo.SoftDelete(ctx, db, expense, 1)
+	_, err := repo.SoftDelete(ctx, expense, 1)
 	s.Require().NoError(err)
 
 	expense2 := newTestExpense(s.T(), userID, "api", extID, "2025-01", "expense.custo_fixo")
-	err = repo.Insert(ctx, db, expense2)
+	err = repo.Insert(ctx, expense2)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrExpenseConflict))
 }
 
 func (s *ExpenseRepositorySuite) TestSumByRoot() {
 	mgr := setupTestDB(s.T())
-	repo := newExpenseRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-02")
@@ -230,7 +221,7 @@ func (s *ExpenseRepositorySuite) TestSumByRoot() {
 			time.Now().UTC(),
 		)
 		s.Require().NoError(expErr)
-		s.Require().NoError(repo.Insert(ctx, db, e))
+		s.Require().NoError(repo.Insert(ctx, e))
 	}
 
 	deletedExtID := newUUIDv4()
@@ -246,13 +237,13 @@ func (s *ExpenseRepositorySuite) TestSumByRoot() {
 		time.Now().UTC(),
 	)
 	s.Require().NoError(delExpErr)
-	s.Require().NoError(repo.Insert(ctx, db, deletedExpense))
+	s.Require().NoError(repo.Insert(ctx, deletedExpense))
 	_, softDeleteErr := deletedExpense.SoftDelete(1, time.Now().UTC())
 	s.Require().NoError(softDeleteErr)
-	_, err := repo.SoftDelete(ctx, db, deletedExpense, 1)
+	_, err := repo.SoftDelete(ctx, deletedExpense, 1)
 	s.Require().NoError(err)
 
-	sums, err := repo.SumByRoot(ctx, db, userID, competence)
+	sums, err := repo.SumByRoot(ctx, userID, competence)
 	s.Require().NoError(err)
 
 	custoFixo := mustRootSlug(s.T(), "expense.custo_fixo")

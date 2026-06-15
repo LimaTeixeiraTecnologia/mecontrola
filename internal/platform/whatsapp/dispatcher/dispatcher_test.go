@@ -345,6 +345,36 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 			},
 			expectedOutcome: dispatcher.OutcomeStaleTS,
 		},
+		{
+			name:      "timestamp zero treated as invalid_webhook_timestamp",
+			timestamp: "0",
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
+		{
+			name:      "timestamp negative treated as invalid_webhook_timestamp",
+			timestamp: "-1",
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
+		{
+			name:            "timestamp 4min59s in past stays within window",
+			timestamp:       fmt.Sprintf("%d", now.Add(-(4*time.Minute + 59*time.Second)).Unix()),
+			setupPublisher:  func(p *outboxmocks.Publisher) {},
+			expectedOutcome: dispatcher.OutcomeOnboarding,
+		},
+		{
+			name:      "timestamp 5min1s in past returns stale_webhook",
+			timestamp: fmt.Sprintf("%d", now.Add(-(5*time.Minute + 1*time.Second)).Unix()),
+			setupPublisher: func(p *outboxmocks.Publisher) {
+				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
+			},
+			expectedOutcome: dispatcher.OutcomeStaleTS,
+		},
 	}
 
 	for _, sc := range scenarios {
@@ -352,7 +382,9 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 			raw := payloadWithTimestamp("oi", sc.timestamp)
 
 			dedupMock := &mockDedup{}
-			dedupMock.On("InsertIfAbsent", mock.Anything, mock.Anything).Return(true, nil)
+			if sc.expectedOutcome != dispatcher.OutcomeStaleTS {
+				dedupMock.On("InsertIfAbsent", mock.Anything, mock.Anything).Return(true, nil)
+			}
 			defer dedupMock.AssertExpectations(s.T())
 
 			establishMock := &mockEstablish{}

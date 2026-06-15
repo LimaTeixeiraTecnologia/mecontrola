@@ -73,7 +73,7 @@ type OnboardingCleanupRepository_DeleteConsumerLookupAttemptsOlderThan_Call stru
 //   - ctx context.Context
 //   - before time.Time
 //   - limit int
-func (_e *OnboardingCleanupRepository_Expecter) DeleteConsumerLookupAttemptsOlderThan(ctx interface{}, before interface{}, limit interface{}) *OnboardingCleanupRepository_DeleteConsumerLookupAttemptsOlderThan_Call {
+func (_e *OnboardingCleanupRepository_Expecter) DeleteConsumerLookupAttemptsOlderThan(ctx any, before any, limit any) *OnboardingCleanupRepository_DeleteConsumerLookupAttemptsOlderThan_Call {
 	return &OnboardingCleanupRepository_DeleteConsumerLookupAttemptsOlderThan_Call{Call: _e.mock.On("DeleteConsumerLookupAttemptsOlderThan", ctx, before, limit)}
 }
 
@@ -145,7 +145,7 @@ type OnboardingCleanupRepository_DeleteMetaProcessedOlderThan_Call struct {
 //   - ctx context.Context
 //   - before time.Time
 //   - limit int
-func (_e *OnboardingCleanupRepository_Expecter) DeleteMetaProcessedOlderThan(ctx interface{}, before interface{}, limit interface{}) *OnboardingCleanupRepository_DeleteMetaProcessedOlderThan_Call {
+func (_e *OnboardingCleanupRepository_Expecter) DeleteMetaProcessedOlderThan(ctx any, before any, limit any) *OnboardingCleanupRepository_DeleteMetaProcessedOlderThan_Call {
 	return &OnboardingCleanupRepository_DeleteMetaProcessedOlderThan_Call{Call: _e.mock.On("DeleteMetaProcessedOlderThan", ctx, before, limit)}
 }
 

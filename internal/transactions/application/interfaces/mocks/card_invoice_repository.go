@@ -68,7 +68,7 @@ type CardInvoiceRepository_ApplyDelta_Call struct {
 //   - invoiceID uuid.UUID
 //   - deltaCents int64
 //   - expectedVersion int64
-func (_e *CardInvoiceRepository_Expecter) ApplyDelta(ctx interface{}, invoiceID interface{}, deltaCents interface{}, expectedVersion interface{}) *CardInvoiceRepository_ApplyDelta_Call {
+func (_e *CardInvoiceRepository_Expecter) ApplyDelta(ctx any, invoiceID any, deltaCents any, expectedVersion any) *CardInvoiceRepository_ApplyDelta_Call {
 	return &CardInvoiceRepository_ApplyDelta_Call{Call: _e.mock.On("ApplyDelta", ctx, invoiceID, deltaCents, expectedVersion)}
 }
 
@@ -156,7 +156,7 @@ type CardInvoiceRepository_GetByMonth_Call struct {
 //   - userID uuid.UUID
 //   - cardID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *CardInvoiceRepository_Expecter) GetByMonth(ctx interface{}, userID interface{}, cardID interface{}, refMonth interface{}) *CardInvoiceRepository_GetByMonth_Call {
+func (_e *CardInvoiceRepository_Expecter) GetByMonth(ctx any, userID any, cardID any, refMonth any) *CardInvoiceRepository_GetByMonth_Call {
 	return &CardInvoiceRepository_GetByMonth_Call{Call: _e.mock.On("GetByMonth", ctx, userID, cardID, refMonth)}
 }
 
@@ -233,7 +233,7 @@ type CardInvoiceRepository_SumByMonth_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *CardInvoiceRepository_Expecter) SumByMonth(ctx interface{}, userID interface{}, refMonth interface{}) *CardInvoiceRepository_SumByMonth_Call {
+func (_e *CardInvoiceRepository_Expecter) SumByMonth(ctx any, userID any, refMonth any) *CardInvoiceRepository_SumByMonth_Call {
 	return &CardInvoiceRepository_SumByMonth_Call{Call: _e.mock.On("SumByMonth", ctx, userID, refMonth)}
 }
 
@@ -310,7 +310,7 @@ type CardInvoiceRepository_UpsertByMonth_Call struct {
 //   - refMonth valueobjects.RefMonth
 //   - closingAt time.Time
 //   - dueAt time.Time
-func (_e *CardInvoiceRepository_Expecter) UpsertByMonth(ctx interface{}, userID interface{}, cardID interface{}, refMonth interface{}, closingAt interface{}, dueAt interface{}) *CardInvoiceRepository_UpsertByMonth_Call {
+func (_e *CardInvoiceRepository_Expecter) UpsertByMonth(ctx any, userID any, cardID any, refMonth any, closingAt any, dueAt any) *CardInvoiceRepository_UpsertByMonth_Call {
 	return &CardInvoiceRepository_UpsertByMonth_Call{Call: _e.mock.On("UpsertByMonth", ctx, userID, cardID, refMonth, closingAt, dueAt)}
 }
 

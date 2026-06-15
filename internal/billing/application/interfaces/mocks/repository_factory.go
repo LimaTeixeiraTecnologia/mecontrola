@@ -63,7 +63,7 @@ type RepositoryFactory_KiwifyEventRepository_Call struct {
 
 // KiwifyEventRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) KiwifyEventRepository(db interface{}) *RepositoryFactory_KiwifyEventRepository_Call {
+func (_e *RepositoryFactory_Expecter) KiwifyEventRepository(db any) *RepositoryFactory_KiwifyEventRepository_Call {
 	return &RepositoryFactory_KiwifyEventRepository_Call{Call: _e.mock.On("KiwifyEventRepository", db)}
 }
 
@@ -116,7 +116,7 @@ type RepositoryFactory_PlanRepository_Call struct {
 
 // PlanRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) PlanRepository(db interface{}) *RepositoryFactory_PlanRepository_Call {
+func (_e *RepositoryFactory_Expecter) PlanRepository(db any) *RepositoryFactory_PlanRepository_Call {
 	return &RepositoryFactory_PlanRepository_Call{Call: _e.mock.On("PlanRepository", db)}
 }
 
@@ -169,7 +169,7 @@ type RepositoryFactory_ProcessedEventRepository_Call struct {
 
 // ProcessedEventRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) ProcessedEventRepository(db interface{}) *RepositoryFactory_ProcessedEventRepository_Call {
+func (_e *RepositoryFactory_Expecter) ProcessedEventRepository(db any) *RepositoryFactory_ProcessedEventRepository_Call {
 	return &RepositoryFactory_ProcessedEventRepository_Call{Call: _e.mock.On("ProcessedEventRepository", db)}
 }
 
@@ -222,7 +222,7 @@ type RepositoryFactory_ReconciliationCheckpointRepository_Call struct {
 
 // ReconciliationCheckpointRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) ReconciliationCheckpointRepository(db interface{}) *RepositoryFactory_ReconciliationCheckpointRepository_Call {
+func (_e *RepositoryFactory_Expecter) ReconciliationCheckpointRepository(db any) *RepositoryFactory_ReconciliationCheckpointRepository_Call {
 	return &RepositoryFactory_ReconciliationCheckpointRepository_Call{Call: _e.mock.On("ReconciliationCheckpointRepository", db)}
 }
 
@@ -275,7 +275,7 @@ type RepositoryFactory_SubscriptionRepository_Call struct {
 
 // SubscriptionRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) SubscriptionRepository(db interface{}) *RepositoryFactory_SubscriptionRepository_Call {
+func (_e *RepositoryFactory_Expecter) SubscriptionRepository(db any) *RepositoryFactory_SubscriptionRepository_Call {
 	return &RepositoryFactory_SubscriptionRepository_Call{Call: _e.mock.On("SubscriptionRepository", db)}
 }
 

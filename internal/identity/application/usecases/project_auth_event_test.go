@@ -127,6 +127,40 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 			},
 		},
 		{
+			name: "deve inserir auth event gateway com forensics",
+			args: func() args {
+				p := map[string]any{
+					"event_id":    uuid.New().String(),
+					"kind":        "failed",
+					"source":      "gateway",
+					"reason":      "gateway_invalid_signature",
+					"request_id":  "req-gateway-001",
+					"client_ip":   "10.0.0.1",
+					"occurred_at": time.Now().UTC().Format(time.RFC3339),
+				}
+				raw, err := json.Marshal(p)
+				s.Require().NoError(err)
+				return args{in: input.ProjectAuthEvent{
+					EventType: "auth.failed",
+					Payload:   raw,
+				}}
+			},
+			setup: func(deps dependencies) {
+				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
+				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
+					return ev.Kind() == entities.AuthEventKindFailed &&
+						ev.Source() == entities.AuthEventSourceGateway &&
+						ev.RequestID() == "req-gateway-001" &&
+						ev.ClientIP() == "10.0.0.1" &&
+						ev.Reason() != nil &&
+						*ev.Reason() == entities.AuthEventReasonGatewayInvalidSignature
+				})).Return(nil).Once()
+			},
+			expect: func(err error) {
+				s.Require().NoError(err)
+			},
+		},
+		{
 			name: "deve propagar erro do repositorio",
 			args: func() args {
 				return args{in: input.ProjectAuthEvent{

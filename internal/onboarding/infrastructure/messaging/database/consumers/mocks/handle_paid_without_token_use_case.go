@@ -63,7 +63,7 @@ type handlePaidWithoutTokenUseCase_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.HandlePaidWithoutTokenInput
-func (_e *handlePaidWithoutTokenUseCase_Expecter) Execute(ctx interface{}, in interface{}) *handlePaidWithoutTokenUseCase_Execute_Call {
+func (_e *handlePaidWithoutTokenUseCase_Expecter) Execute(ctx any, in any) *handlePaidWithoutTokenUseCase_Execute_Call {
 	return &handlePaidWithoutTokenUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

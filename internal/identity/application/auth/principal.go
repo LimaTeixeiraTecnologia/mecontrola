@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -10,6 +12,7 @@ type PrincipalSource string
 
 const (
 	SourceWhatsApp PrincipalSource = "whatsapp"
+	SourceTelegram PrincipalSource = "telegram"
 	SourceHeader   PrincipalSource = "header"
 )
 
@@ -34,4 +37,17 @@ func FromContext(ctx context.Context) (Principal, bool) {
 		return Principal{}, false
 	}
 	return p, true
+}
+
+var ErrSourceFromChannelUnknown = errors.New("identity: unknown channel for principal source")
+
+func SourceFromChannel(channel string) (PrincipalSource, error) {
+	switch channel {
+	case string(SourceTelegram):
+		return SourceTelegram, nil
+	case string(SourceWhatsApp):
+		return SourceWhatsApp, nil
+	default:
+		return SourceWhatsApp, fmt.Errorf("identity: %q: %w", channel, ErrSourceFromChannelUnknown)
+	}
 }

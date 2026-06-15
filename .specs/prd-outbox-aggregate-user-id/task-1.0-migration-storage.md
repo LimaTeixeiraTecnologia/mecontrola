@@ -19,7 +19,7 @@ Adiciona coluna `aggregate_user_id UUID NULL` em `mecontrola.outbox_events` com 
 
 ## Subtarefas
 
-- [ ] 1.1 Criar `migrations/000017_outbox_events_aggregate_user_id.up.sql` com `ALTER TABLE ... ADD COLUMN aggregate_user_id UUID NULL` + `CREATE INDEX CONCURRENTLY IF NOT EXISTS outbox_events_aggregate_user_id_idx ON ... (aggregate_user_id) WHERE aggregate_user_id IS NOT NULL`.
+- [ ] 1.1 Criar `migrations/000017_outbox_events_aggregate_user_id.up.sql` com `ALTER TABLE ... ADD COLUMN aggregate_user_id UUID NULL` + `CREATE INDEX IF NOT EXISTS outbox_events_aggregate_user_id_idx ON ... (aggregate_user_id) WHERE aggregate_user_id IS NOT NULL` (sem `CONCURRENTLY` — incompatível com tx do golang-migrate; coluna nasce 100% NULL, build do índice é instantâneo).
 - [ ] 1.2 Criar `migrations/000017_outbox_events_aggregate_user_id.down.sql` reversa.
 - [ ] 1.3 Atualizar `internal/platform/outbox/storage_postgres.go` `Insert`: adicionar `aggregate_user_id` na lista de colunas e `VALUES`, passar `nilIfEmpty(evt.AggregateUserID)` como param.
 - [ ] 1.4 Atualizar `ClaimBatch` SELECT + Scan: usar `sql.NullString` para `aggregate_user_id`; setar `r.AggregateUserID = ns.String` se Valid.
@@ -28,7 +28,7 @@ Adiciona coluna `aggregate_user_id UUID NULL` em `mecontrola.outbox_events` com 
 
 ## Detalhes de Implementação
 
-Ver techspec seção "Modelos de Dados". `ADD COLUMN UUID NULL` é metadata-only em Postgres (instantâneo). `CONCURRENTLY` evita lock para o index, mas exige rodar fora de transação — golang-migrate por padrão envolve em tx; usar `-- migrate:disable-transaction` se o framework permitir, ou criar o index pós-migration via script separado.
+Ver techspec seção "Modelos de Dados". `ADD COLUMN UUID NULL` é metadata-only em Postgres (instantâneo). Decisão deliberada de **não usar `CONCURRENTLY`**: golang-migrate envolve cada arquivo em transação e `CREATE INDEX CONCURRENTLY` exige rodar fora de tx — implementar isso exigiria split do arquivo, hook custom ou script pós-migration, complexidade incompatível com escopo v1. Como a coluna nasce 100% NULL, o índice parcial `WHERE aggregate_user_id IS NOT NULL` materializa zero linhas no momento do build; `AccessExclusiveLock` é instantâneo. Ver `1.0_execution_report.md`.
 
 ## Critérios de Sucesso
 

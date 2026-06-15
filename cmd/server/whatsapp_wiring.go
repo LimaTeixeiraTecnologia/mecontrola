@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"regexp"
 	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -13,28 +12,24 @@ import (
 	identityserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/channels"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wahandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 )
-
-var ativarTokenRegex = regexp.MustCompile(`(?i)^\s*ATIVAR\s+([A-Za-z0-9_\-]{40,45})\s*$`)
 
 func composeWhatsAppWebhookRouter(
 	cfg *configs.Config,
 	o11y observability.Observability,
 	identityModule identity.IdentityModule,
 	onboardingModule onboarding.OnboardingModule,
+	agentModule agent.AgentModule,
 ) *identityserver.WhatsAppWebhookRouter {
-	agentTemplates := map[string]string{
-		"agent_stub_received": cfg.WhatsAppConfig.AgentStubReceived,
-	}
-	stubAgent := agent.NewStubAgent(onboardingModule.WhatsAppGateway, agentTemplates, o11y)
 	processor := onboardingModule.WhatsAppMessageProcessor
 
 	onboardingRoute := func(ctx context.Context, msg payload.Message) wadispatcher.RouteOutcome {
-		if matches := ativarTokenRegex.FindStringSubmatch(strings.TrimSpace(msg.Text)); matches != nil {
-			if err := processor.HandleActivation(ctx, msg.From, matches[1]); err != nil {
+		if token, ok := channels.MatchActivationCommand(msg.Text); ok {
+			if err := processor.HandleActivation(ctx, msg.From, token); err != nil {
 				o11y.Logger().Warn(ctx, "whatsapp.dispatcher.onboarding_activation_failed",
 					observability.Error(err),
 				)
@@ -49,22 +44,13 @@ func composeWhatsAppWebhookRouter(
 		return wadispatcher.OutcomeFallback
 	}
 
-	agentRoute := func(ctx context.Context, msg payload.Message) wadispatcher.RouteOutcome {
-		if err := stubAgent.HandleMessage(ctx, msg); err != nil {
-			o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_failed",
-				observability.Error(err),
-			)
-		}
-		return wadispatcher.OutcomeAgent
-	}
-
 	disp := wadispatcher.New(
 		identityModule.WhatsAppDedupRepository,
 		identityModule.EstablishPrincipal,
 		identityModule.WhatsAppLimiter,
 		identityModule.OutboxPublisher,
 		onboardingRoute,
-		agentRoute,
+		agentModule.WhatsAppAgentRoute,
 		o11y,
 	)
 
@@ -74,7 +60,7 @@ func composeWhatsAppWebhookRouter(
 	waRateLimiter := middleware.NewRateLimiter(
 		cfg.WhatsAppConfig.WebhookRateLimitPerMin,
 		cfg.WhatsAppConfig.WebhookRateLimitBurst,
-		nil,
+		parseCSV(cfg.OnboardingConfig.TrustedProxies),
 	)
 
 	waRateLimitExceededTotal := o11y.Metrics().Counter(
@@ -91,4 +77,19 @@ func composeWhatsAppWebhookRouter(
 		waRateLimiter.Middleware,
 		func() { waRateLimitExceededTotal.Increment(context.Background()) },
 	)
+}
+
+func parseCSV(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	values := make([]string, 0)
+	for item := range strings.SplitSeq(raw, ",") {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		values = append(values, trimmed)
+	}
+	return values
 }

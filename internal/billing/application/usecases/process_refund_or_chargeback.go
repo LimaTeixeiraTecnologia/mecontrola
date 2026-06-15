@@ -62,8 +62,9 @@ func (uc *ProcessRefundOrChargeback) Execute(ctx context.Context, in input.Proce
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_refund_or_chargeback: apply transition: %w", applyErr)
 		}
 
-		updatedSub := entities.Hydrate(
+		updatedSub := entities.HydrateWithUser(
 			existing.ID(),
+			existing.UserID(),
 			existing.FunnelToken(),
 			existing.Plan(),
 			valueobjects.StatusRefunded,

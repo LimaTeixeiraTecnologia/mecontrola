@@ -29,12 +29,13 @@ func TestVerifyGatewayRequest(t *testing.T) {
 	sigWrongKey := signWith([]byte("completely-different-secret-xxxxx"), userID, ts)
 
 	tests := []struct {
-		name     string
-		req      VerifyRequest
-		secrets  SecretPair
-		now      time.Time
-		window   time.Duration
-		wantKind GatewayAuthResultKind
+		name                 string
+		req                  VerifyRequest
+		secrets              SecretPair
+		now                  time.Time
+		window               time.Duration
+		wantKind             GatewayAuthResultKind
+		wantTimestampFailure GatewayAuthTimestampFailureKind
 	}{
 		{
 			name:     "happy current",
@@ -77,36 +78,40 @@ func TestVerifyGatewayRequest(t *testing.T) {
 			wantKind: GatewayAuthMissingHeader,
 		},
 		{
-			name:     "timestamp not numeric",
-			req:      VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "abc"},
-			secrets:  SecretPair{Current: current},
-			now:      now,
-			window:   window,
-			wantKind: GatewayAuthInvalidTimestamp,
+			name:                 "timestamp not numeric",
+			req:                  VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "abc"},
+			secrets:              SecretPair{Current: current},
+			now:                  now,
+			window:               window,
+			wantKind:             GatewayAuthStaleTimestamp,
+			wantTimestampFailure: GatewayAuthTimestampFailureInvalid,
 		},
 		{
-			name:     "timestamp float string",
-			req:      VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "1700000000.5"},
-			secrets:  SecretPair{Current: current},
-			now:      now,
-			window:   window,
-			wantKind: GatewayAuthInvalidTimestamp,
+			name:                 "timestamp float string",
+			req:                  VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "1700000000.5"},
+			secrets:              SecretPair{Current: current},
+			now:                  now,
+			window:               window,
+			wantKind:             GatewayAuthStaleTimestamp,
+			wantTimestampFailure: GatewayAuthTimestampFailureInvalid,
 		},
 		{
-			name:     "timestamp +61s future",
-			req:      VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "1700000062"},
-			secrets:  SecretPair{Current: current},
-			now:      now,
-			window:   window,
-			wantKind: GatewayAuthStaleTimestamp,
+			name:                 "timestamp +61s future",
+			req:                  VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "1700000062"},
+			secrets:              SecretPair{Current: current},
+			now:                  now,
+			window:               window,
+			wantKind:             GatewayAuthStaleTimestamp,
+			wantTimestampFailure: GatewayAuthTimestampFailureStale,
 		},
 		{
-			name:     "timestamp -61s past",
-			req:      VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "1699999938"},
-			secrets:  SecretPair{Current: current},
-			now:      now,
-			window:   window,
-			wantKind: GatewayAuthStaleTimestamp,
+			name:                 "timestamp -61s past",
+			req:                  VerifyRequest{UserIDRaw: userID, SignatureRaw: sigCurrent, TimestampRaw: "1699999938"},
+			secrets:              SecretPair{Current: current},
+			now:                  now,
+			window:               window,
+			wantKind:             GatewayAuthStaleTimestamp,
+			wantTimestampFailure: GatewayAuthTimestampFailureStale,
 		},
 		{
 			name:     "signature wrong length 30 chars",
@@ -160,6 +165,9 @@ func TestVerifyGatewayRequest(t *testing.T) {
 			if got.Kind != tc.wantKind {
 				t.Errorf("VerifyGatewayRequest() Kind = %v, want %v", got.Kind, tc.wantKind)
 			}
+			if got.TimestampFailure != tc.wantTimestampFailure {
+				t.Errorf("VerifyGatewayRequest() TimestampFailure = %v, want %v", got.TimestampFailure, tc.wantTimestampFailure)
+			}
 		})
 	}
 }
@@ -173,7 +181,6 @@ func TestGatewayAuthResult_IsAuthorized(t *testing.T) {
 		{GatewayAuthRotated, true},
 		{GatewayAuthInvalidSignature, false},
 		{GatewayAuthStaleTimestamp, false},
-		{GatewayAuthInvalidTimestamp, false},
 		{GatewayAuthMissingHeader, false},
 	}
 

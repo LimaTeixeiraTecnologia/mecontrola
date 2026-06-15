@@ -81,6 +81,16 @@ tasks:
     cmds:
       - task: lint:run
 
+  test:
+    desc: Alias de alto nivel para executar a bateria de testes.
+    cmds:
+      - task: test:all
+
+  vulncheck:
+    desc: Alias de alto nivel para executar o scan local de vulnerabilidades.
+    cmds:
+      - task: security:vulncheck
+
   mocks:
     desc: Alias de alto nivel para gerar mocks via mockery.yml.
     cmds:

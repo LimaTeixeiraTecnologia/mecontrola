@@ -20,6 +20,7 @@ type UpsertByOrderParams struct {
 
 type ExpiredGraceCandidate struct {
 	SubscriptionID string
+	UserID         string
 	GraceEnd       time.Time
 	LastEventAt    time.Time
 }

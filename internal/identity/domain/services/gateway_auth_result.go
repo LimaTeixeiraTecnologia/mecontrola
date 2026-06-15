@@ -7,12 +7,19 @@ const (
 	GatewayAuthRotated
 	GatewayAuthInvalidSignature
 	GatewayAuthStaleTimestamp
-	GatewayAuthInvalidTimestamp
 	GatewayAuthMissingHeader
 )
 
+type GatewayAuthTimestampFailureKind uint8
+
+const (
+	GatewayAuthTimestampFailureInvalid GatewayAuthTimestampFailureKind = iota + 1
+	GatewayAuthTimestampFailureStale
+)
+
 type GatewayAuthResult struct {
-	Kind GatewayAuthResultKind
+	Kind             GatewayAuthResultKind
+	TimestampFailure GatewayAuthTimestampFailureKind
 }
 
 func (r GatewayAuthResult) IsAuthorized() bool {

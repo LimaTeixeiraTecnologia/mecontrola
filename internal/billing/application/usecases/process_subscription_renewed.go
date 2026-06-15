@@ -104,8 +104,9 @@ func (uc *ProcessSubscriptionRenewed) extendExisting(ctx context.Context, tx dat
 		return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_renewed: extend period: %w", extendErr)
 	}
 
-	renewed := entities.Hydrate(
+	renewed := entities.HydrateWithUser(
 		existing.ID(),
+		existing.UserID(),
 		existing.FunnelToken(),
 		existing.Plan(),
 		valueobjects.StatusActive,

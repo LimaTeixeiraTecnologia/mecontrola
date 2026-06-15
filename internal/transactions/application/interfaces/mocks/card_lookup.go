@@ -74,7 +74,7 @@ type CardLookup_GetForUser_Call struct {
 //   - ctx context.Context
 //   - cardID uuid.UUID
 //   - userID uuid.UUID
-func (_e *CardLookup_Expecter) GetForUser(ctx interface{}, cardID interface{}, userID interface{}) *CardLookup_GetForUser_Call {
+func (_e *CardLookup_Expecter) GetForUser(ctx any, cardID any, userID any) *CardLookup_GetForUser_Call {
 	return &CardLookup_GetForUser_Call{Call: _e.mock.On("GetForUser", ctx, cardID, userID)}
 }
 

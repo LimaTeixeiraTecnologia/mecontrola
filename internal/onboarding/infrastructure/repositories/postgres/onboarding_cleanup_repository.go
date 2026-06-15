@@ -25,10 +25,10 @@ func (r *onboardingCleanupRepository) DeleteMetaProcessedOlderThan(ctx context.C
 	defer span.End()
 
 	const query = `
-		DELETE FROM mecontrola.meta_processed_messages
-		 WHERE wamid IN (
-		     SELECT wamid FROM mecontrola.meta_processed_messages
-		      WHERE processed_at < $1
+		DELETE FROM mecontrola.channel_processed_messages
+		 WHERE (channel, message_id) IN (
+		     SELECT channel, message_id FROM mecontrola.channel_processed_messages
+		      WHERE channel = 'whatsapp' AND processed_at < $1
 		      LIMIT $2
 		 )
 	`

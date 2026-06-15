@@ -39,14 +39,13 @@ func (s *PendingEventRepositorySuite) newPendingEvent() entities.PendingEvent {
 
 func (s *PendingEventRepositorySuite) TestInsertAndListReady() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
 	p := s.newPendingEvent()
-	s.Require().NoError(repo.Insert(ctx, db, p))
+	s.Require().NoError(repo.Insert(ctx, p))
 
-	events, err := repo.ListReady(ctx, db, 10)
+	events, err := repo.ListReady(ctx, 10)
 	s.Require().NoError(err)
 	s.Require().NotEmpty(events)
 
@@ -62,9 +61,8 @@ func (s *PendingEventRepositorySuite) TestInsertAndListReady() {
 
 func (s *PendingEventRepositorySuite) TestInsertDuplicateEventID() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
 	eventID := uuid.New()
 	p1 := entities.NewPendingEvent(
@@ -82,24 +80,23 @@ func (s *PendingEventRepositorySuite) TestInsertDuplicateEventID() {
 		1, valueobjects.MutationKindCreate, []byte(`{}`), time.Now().UTC(),
 	)
 
-	s.Require().NoError(repo.Insert(ctx, db, p1))
-	err := repo.Insert(ctx, db, p2)
+	s.Require().NoError(repo.Insert(ctx, p1))
+	err := repo.Insert(ctx, p2)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrPendingEventDuplicate))
 }
 
 func (s *PendingEventRepositorySuite) TestTransitionToApplied() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
 	p := s.newPendingEvent()
-	s.Require().NoError(repo.Insert(ctx, db, p))
+	s.Require().NoError(repo.Insert(ctx, p))
 
-	s.Require().NoError(repo.Transition(ctx, db, p.ID(), entities.PendingStateApplied, "applied successfully"))
+	s.Require().NoError(repo.Transition(ctx, p.ID(), p.UserID(), entities.PendingStateApplied, "applied successfully"))
 
-	events, err := repo.ListReady(ctx, db, 10)
+	events, err := repo.ListReady(ctx, 10)
 	s.Require().NoError(err)
 
 	for _, e := range events {
@@ -109,16 +106,15 @@ func (s *PendingEventRepositorySuite) TestTransitionToApplied() {
 
 func (s *PendingEventRepositorySuite) TestTransitionToFailed() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
 	p := s.newPendingEvent()
-	s.Require().NoError(repo.Insert(ctx, db, p))
+	s.Require().NoError(repo.Insert(ctx, p))
 
-	s.Require().NoError(repo.Transition(ctx, db, p.ID(), entities.PendingStateFailed, "version mismatch"))
+	s.Require().NoError(repo.Transition(ctx, p.ID(), p.UserID(), entities.PendingStateFailed, "version mismatch"))
 
-	events, err := repo.ListReady(ctx, db, 10)
+	events, err := repo.ListReady(ctx, 10)
 	s.Require().NoError(err)
 
 	for _, e := range events {
@@ -128,20 +124,18 @@ func (s *PendingEventRepositorySuite) TestTransitionToFailed() {
 
 func (s *PendingEventRepositorySuite) TestTransitionNotFound() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
-	err := repo.Transition(ctx, db, uuid.New(), entities.PendingStateApplied, "")
+	err := repo.Transition(ctx, uuid.New(), uuid.New(), entities.PendingStateApplied, "")
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrPendingEventNotFound))
 }
 
 func (s *PendingEventRepositorySuite) TestListReadyOrderByReceivedAt() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
 	userID := uuid.New()
 	now := time.Now().UTC()
@@ -155,10 +149,10 @@ func (s *PendingEventRepositorySuite) TestListReadyOrderByReceivedAt() {
 			int64(i+1), valueobjects.MutationKindCreate, []byte(`{}`),
 			now.Add(time.Duration(i)*time.Second),
 		)
-		s.Require().NoError(repo.Insert(ctx, db, p))
+		s.Require().NoError(repo.Insert(ctx, p))
 	}
 
-	events, err := repo.ListReady(ctx, db, 10)
+	events, err := repo.ListReady(ctx, 10)
 	s.Require().NoError(err)
 
 	found := make([]entities.PendingEvent, 0)
@@ -179,16 +173,15 @@ func (s *PendingEventRepositorySuite) TestListReadyOrderByReceivedAt() {
 
 func (s *PendingEventRepositorySuite) TestListReadyLimitRespected() {
 	mgr := setupTestDB(s.T())
-	repo := newPendingEventRepo(testO11y())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
 
 	for i := 0; i < 5; i++ {
 		p := s.newPendingEvent()
-		s.Require().NoError(repo.Insert(ctx, db, p))
+		s.Require().NoError(repo.Insert(ctx, p))
 	}
 
-	events, err := repo.ListReady(ctx, db, 2)
+	events, err := repo.ListReady(ctx, 2)
 	s.Require().NoError(err)
 	s.Assert().LessOrEqual(len(events), 2)
 }

@@ -61,7 +61,7 @@ type expireTokensUseCase_Execute_Call struct {
 
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *expireTokensUseCase_Expecter) Execute(ctx interface{}) *expireTokensUseCase_Execute_Call {
+func (_e *expireTokensUseCase_Expecter) Execute(ctx any) *expireTokensUseCase_Execute_Call {
 	return &expireTokensUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx)}
 }
 

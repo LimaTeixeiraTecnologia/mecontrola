@@ -65,7 +65,7 @@ type ExpenseCommittedPublisher_Publish_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt events.ExpenseCommitted
-func (_e *ExpenseCommittedPublisher_Expecter) Publish(ctx interface{}, db interface{}, evt interface{}) *ExpenseCommittedPublisher_Publish_Call {
+func (_e *ExpenseCommittedPublisher_Expecter) Publish(ctx any, db any, evt any) *ExpenseCommittedPublisher_Publish_Call {
 	return &ExpenseCommittedPublisher_Publish_Call{Call: _e.mock.On("Publish", ctx, db, evt)}
 }
 

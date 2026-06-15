@@ -67,7 +67,7 @@ type CardPurchaseRepository_Create_Call struct {
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
 //   - p *entities.CardPurchase
-func (_e *CardPurchaseRepository_Expecter) Create(ctx interface{}, p interface{}) *CardPurchaseRepository_Create_Call {
+func (_e *CardPurchaseRepository_Expecter) Create(ctx any, p any) *CardPurchaseRepository_Create_Call {
 	return &CardPurchaseRepository_Create_Call{Call: _e.mock.On("Create", ctx, p)}
 }
 
@@ -136,7 +136,7 @@ type CardPurchaseRepository_GetByID_Call struct {
 //   - ctx context.Context
 //   - id uuid.UUID
 //   - userID uuid.UUID
-func (_e *CardPurchaseRepository_Expecter) GetByID(ctx interface{}, id interface{}, userID interface{}) *CardPurchaseRepository_GetByID_Call {
+func (_e *CardPurchaseRepository_Expecter) GetByID(ctx any, id any, userID any) *CardPurchaseRepository_GetByID_Call {
 	return &CardPurchaseRepository_GetByID_Call{Call: _e.mock.On("GetByID", ctx, id, userID)}
 }
 
@@ -219,7 +219,7 @@ type CardPurchaseRepository_ListByCardAndMonth_Call struct {
 //   - refMonth *valueobjects.RefMonth
 //   - cursor interfaces.Cursor
 //   - limit int
-func (_e *CardPurchaseRepository_Expecter) ListByCardAndMonth(ctx interface{}, userID interface{}, cardID interface{}, refMonth interface{}, cursor interface{}, limit interface{}) *CardPurchaseRepository_ListByCardAndMonth_Call {
+func (_e *CardPurchaseRepository_Expecter) ListByCardAndMonth(ctx any, userID any, cardID any, refMonth any, cursor any, limit any) *CardPurchaseRepository_ListByCardAndMonth_Call {
 	return &CardPurchaseRepository_ListByCardAndMonth_Call{Call: _e.mock.On("ListByCardAndMonth", ctx, userID, cardID, refMonth, cursor, limit)}
 }
 
@@ -297,7 +297,7 @@ type CardPurchaseRepository_ReplaceItems_Call struct {
 //   - ctx context.Context
 //   - purchaseID uuid.UUID
 //   - items []*entities.CardInvoiceItem
-func (_e *CardPurchaseRepository_Expecter) ReplaceItems(ctx interface{}, purchaseID interface{}, items interface{}) *CardPurchaseRepository_ReplaceItems_Call {
+func (_e *CardPurchaseRepository_Expecter) ReplaceItems(ctx any, purchaseID any, items any) *CardPurchaseRepository_ReplaceItems_Call {
 	return &CardPurchaseRepository_ReplaceItems_Call{Call: _e.mock.On("ReplaceItems", ctx, purchaseID, items)}
 }
 
@@ -362,7 +362,7 @@ type CardPurchaseRepository_SoftDelete_Call struct {
 //   - userID uuid.UUID
 //   - expectedVersion int64
 //   - now time.Time
-func (_e *CardPurchaseRepository_Expecter) SoftDelete(ctx interface{}, id interface{}, userID interface{}, expectedVersion interface{}, now interface{}) *CardPurchaseRepository_SoftDelete_Call {
+func (_e *CardPurchaseRepository_Expecter) SoftDelete(ctx any, id any, userID any, expectedVersion any, now any) *CardPurchaseRepository_SoftDelete_Call {
 	return &CardPurchaseRepository_SoftDelete_Call{Call: _e.mock.On("SoftDelete", ctx, id, userID, expectedVersion, now)}
 }
 
@@ -435,7 +435,7 @@ type CardPurchaseRepository_UpdateWithVersion_Call struct {
 //   - ctx context.Context
 //   - p *entities.CardPurchase
 //   - expectedVersion int64
-func (_e *CardPurchaseRepository_Expecter) UpdateWithVersion(ctx interface{}, p interface{}, expectedVersion interface{}) *CardPurchaseRepository_UpdateWithVersion_Call {
+func (_e *CardPurchaseRepository_Expecter) UpdateWithVersion(ctx any, p any, expectedVersion any) *CardPurchaseRepository_UpdateWithVersion_Call {
 	return &CardPurchaseRepository_UpdateWithVersion_Call{Call: _e.mock.On("UpdateWithVersion", ctx, p, expectedVersion)}
 }
 

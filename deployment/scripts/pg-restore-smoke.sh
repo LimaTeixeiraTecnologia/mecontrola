@@ -23,7 +23,7 @@ BACKUP_REMOTE="${BACKUP_REMOTE:?BACKUP_REMOTE e obrigatorio (ex: backup:mecontro
 AGE_KEY_FILE="${AGE_KEY_FILE:?AGE_KEY_FILE e obrigatorio (caminho da chave privada age)}"
 POSTGRES_DB="${POSTGRES_DB:-mecontrola_db}"
 POSTGRES_USER="${POSTGRES_USER:-mecontrola}"
-RESTORE_PORT="${RESTORE_PORT:-15432}"
+RESTORE_PORT="${RESTORE_PORT:-$((20000 + RANDOM % 5000))}"
 SMOKE_SCHEMA="${SMOKE_SCHEMA:-mecontrola}"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16-alpine}"
 RESTORE_PASSWORD="restore_smoke_$(date +%s)"
@@ -52,7 +52,7 @@ trap cleanup EXIT
 
 check_prereqs() {
   local missing=0
-  for cmd in rclone age docker psql; do
+  for cmd in rclone age docker psql pg_isready; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       error "Binario ausente: $cmd"
       missing=1
@@ -69,11 +69,11 @@ check_prereqs() {
 find_latest_backup() {
   log "Localizando ultimo dump em ${BACKUP_REMOTE}..."
   local latest
-  latest=$(rclone lsf "${BACKUP_REMOTE}/" --format "tp" 2>/dev/null \
+  latest=$(rclone lsf "${BACKUP_REMOTE}/" --format "pt" 2>/dev/null \
     | grep "\.sql\.gz\.age$" \
-    | sort -k2 -r \
+    | sort -t ';' -k2,2r \
     | head -1 \
-    | awk '{print $2}')
+    | cut -d ';' -f1)
   if [[ -z "$latest" ]]; then
     error "Nenhum dump .sql.gz.age encontrado em ${BACKUP_REMOTE}"
     exit 1
@@ -138,38 +138,57 @@ restore_dump() {
 run_smoke_queries() {
   local schema="$SMOKE_SCHEMA"
   local all_ok=1
-  local tables=("users" "cards" "transactions")
 
   log "Executando smoke queries no schema ${schema}..."
-  for table in "${tables[@]}"; do
-    local count
-    count=$(PGPASSWORD="$RESTORE_PASSWORD" psql \
-      -h 127.0.0.1 \
-      -p "$RESTORE_PORT" \
-      -U "$POSTGRES_USER" \
-      -d "$POSTGRES_DB" \
-      -t -A \
-      -c "SELECT count(*) FROM ${schema}.${table};" 2>/dev/null || echo "-1")
-    if [[ "$count" -lt 0 ]]; then
-      error "Smoke query falhou: ${schema}.${table} — tabela nao encontrada ou query com erro"
+
+  exec_query() {
+    local label="$1"
+    local query="$2"
+    local expect_min="${3:-1}"
+    local result
+    result=$(PGPASSWORD="$RESTORE_PASSWORD" psql \
+      -h 127.0.0.1 -p "$RESTORE_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+      -t -A -c "$query" 2>/dev/null || echo "-1")
+    if [[ "$result" == "-1" ]]; then
+      error "${label}: query falhou"
       all_ok=0
-    elif [[ "$count" -eq 0 ]]; then
-      log "AVISO: ${schema}.${table} existe mas count=0 — verifique se o dump esta completo"
-    else
-      log "OK: ${schema}.${table} count=${count}"
+      return
     fi
+    if [[ -n "$expect_min" && "$result" =~ ^[0-9]+$ && "$result" -lt "$expect_min" ]]; then
+      error "${label}: resultado=${result} < esperado_min=${expect_min}"
+      all_ok=0
+      return
+    fi
+    log "OK: ${label} -> ${result}"
+  }
+
+  for table in users cards transactions; do
+    exec_query "${schema}.${table} count" \
+      "SELECT count(*) FROM ${schema}.${table}" 1
   done
+
+  exec_query "transactions FK -> users valida" \
+    "SELECT count(*) FROM ${schema}.transactions t JOIN ${schema}.users u ON u.id = t.user_id" 1
+
+  exec_query "transactions freshness (max created_at)" \
+    "SELECT EXTRACT(EPOCH FROM (now() - max(created_at)))::int FROM ${schema}.transactions" ""
+
+  exec_query "schema_migrations version" \
+    "SELECT version FROM public.schema_migrations ORDER BY version DESC LIMIT 1" ""
 
   if [[ $all_ok -eq 0 ]]; then
     error "Uma ou mais smoke queries falharam"
     exit 1
   fi
-  log "Smoke queries OK: ${tables[*]}"
+  log "Smoke queries OK"
 }
 
 main() {
   log "=== pg-restore-smoke: inicio ==="
   check_prereqs
+  log "Cleanup proativo de containers orfaos pg-restore-smoke-*..."
+  docker ps -a --filter "name=pg-restore-smoke-" --format '{{.Names}}' \
+    | xargs -r docker rm -f >/dev/null 2>&1 || true
   local filename
   filename=$(find_latest_backup)
   download_backup "$filename"

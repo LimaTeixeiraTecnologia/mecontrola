@@ -45,8 +45,9 @@ func (s *ProcessSubscriptionLateSuite) activeSub(lastEventAt time.Time) entities
 	s.Require().NoError(err)
 	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	return entities.Hydrate(
+	return entities.HydrateWithUser(
 		"sub-001",
+		"user-001",
 		funnelToken,
 		plan,
 		valueobjects.StatusActive,
@@ -111,6 +112,7 @@ func (s *ProcessSubscriptionLateSuite) TestExecute() {
 						mock.Anything,
 						mock.MatchedBy(func(updated entities.Subscription) bool {
 							return updated.ID() == "sub-001" &&
+								updated.UserID() == "user-001" &&
 								updated.Status() == valueobjects.StatusPastDue &&
 								updated.GraceEnd().Equal(expectedGrace) &&
 								updated.LastEventAt().Equal(args.input.OccurredAt)

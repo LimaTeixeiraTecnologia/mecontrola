@@ -88,6 +88,15 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsert() {
 			},
 			expectErr: false,
 		},
+		{
+			name: "deve inserir evento failed gateway com request_id e client_ip",
+			buildEvent: func() entities.AuthEvent {
+				ev, err := entities.NewAuthFailed(entities.AuthEventReasonGatewayInvalidSignature, entities.AuthEventSourceGateway, nil, "req-gateway-001", "10.0.0.1")
+				s.Require().NoError(err)
+				return ev
+			},
+			expectErr: false,
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -114,6 +123,23 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsertIdempotence() {
 		s.Require().NoError(repo.Insert(s.ctx, ev))
 		s.Require().NoError(repo.Insert(s.ctx, ev))
 	})
+}
+
+func (s *AuthEventsRepositoryIntegrationSuite) TestInsertGatewayForensicsPersistsFields() {
+	repo := s.newRepo()
+	ev, err := entities.NewAuthFailed(entities.AuthEventReasonGatewayInvalidSignature, entities.AuthEventSourceGateway, nil, "req-gateway-002", "10.0.0.2")
+	s.Require().NoError(err)
+
+	s.Require().NoError(repo.Insert(s.ctx, ev))
+
+	var source, requestID, clientIP string
+	err = s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+		`SELECT source, request_id, host(client_ip) FROM auth_events WHERE id = $1`, ev.ID(),
+	).Scan(&source, &requestID, &clientIP)
+	s.Require().NoError(err)
+	s.Equal("gateway", source)
+	s.Equal("req-gateway-002", requestID)
+	s.Equal("10.0.0.2", clientIP)
 }
 
 func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {

@@ -67,7 +67,7 @@ type TransactionRepository_Create_Call struct {
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tx *entities.Transaction
-func (_e *TransactionRepository_Expecter) Create(ctx interface{}, tx interface{}) *TransactionRepository_Create_Call {
+func (_e *TransactionRepository_Expecter) Create(ctx any, tx any) *TransactionRepository_Create_Call {
 	return &TransactionRepository_Create_Call{Call: _e.mock.On("Create", ctx, tx)}
 }
 
@@ -136,7 +136,7 @@ type TransactionRepository_GetByID_Call struct {
 //   - ctx context.Context
 //   - id uuid.UUID
 //   - userID uuid.UUID
-func (_e *TransactionRepository_Expecter) GetByID(ctx interface{}, id interface{}, userID interface{}) *TransactionRepository_GetByID_Call {
+func (_e *TransactionRepository_Expecter) GetByID(ctx any, id any, userID any) *TransactionRepository_GetByID_Call {
 	return &TransactionRepository_GetByID_Call{Call: _e.mock.On("GetByID", ctx, id, userID)}
 }
 
@@ -218,7 +218,7 @@ type TransactionRepository_ListByMonth_Call struct {
 //   - refMonth valueobjects.RefMonth
 //   - cursor interfaces.Cursor
 //   - limit int
-func (_e *TransactionRepository_Expecter) ListByMonth(ctx interface{}, userID interface{}, refMonth interface{}, cursor interface{}, limit interface{}) *TransactionRepository_ListByMonth_Call {
+func (_e *TransactionRepository_Expecter) ListByMonth(ctx any, userID any, refMonth any, cursor any, limit any) *TransactionRepository_ListByMonth_Call {
 	return &TransactionRepository_ListByMonth_Call{Call: _e.mock.On("ListByMonth", ctx, userID, refMonth, cursor, limit)}
 }
 
@@ -293,7 +293,7 @@ type TransactionRepository_SoftDelete_Call struct {
 //   - userID uuid.UUID
 //   - expectedVersion int64
 //   - now time.Time
-func (_e *TransactionRepository_Expecter) SoftDelete(ctx interface{}, id interface{}, userID interface{}, expectedVersion interface{}, now interface{}) *TransactionRepository_SoftDelete_Call {
+func (_e *TransactionRepository_Expecter) SoftDelete(ctx any, id any, userID any, expectedVersion any, now any) *TransactionRepository_SoftDelete_Call {
 	return &TransactionRepository_SoftDelete_Call{Call: _e.mock.On("SoftDelete", ctx, id, userID, expectedVersion, now)}
 }
 
@@ -381,7 +381,7 @@ type TransactionRepository_SumByMonth_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *TransactionRepository_Expecter) SumByMonth(ctx interface{}, userID interface{}, refMonth interface{}) *TransactionRepository_SumByMonth_Call {
+func (_e *TransactionRepository_Expecter) SumByMonth(ctx any, userID any, refMonth any) *TransactionRepository_SumByMonth_Call {
 	return &TransactionRepository_SumByMonth_Call{Call: _e.mock.On("SumByMonth", ctx, userID, refMonth)}
 }
 
@@ -444,7 +444,7 @@ type TransactionRepository_UpdateWithVersion_Call struct {
 //   - ctx context.Context
 //   - tx *entities.Transaction
 //   - expectedVersion int64
-func (_e *TransactionRepository_Expecter) UpdateWithVersion(ctx interface{}, tx interface{}, expectedVersion interface{}) *TransactionRepository_UpdateWithVersion_Call {
+func (_e *TransactionRepository_Expecter) UpdateWithVersion(ctx any, tx any, expectedVersion any) *TransactionRepository_UpdateWithVersion_Call {
 	return &TransactionRepository_UpdateWithVersion_Call{Call: _e.mock.On("UpdateWithVersion", ctx, tx, expectedVersion)}
 }
 

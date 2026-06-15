@@ -73,7 +73,7 @@ type WhatsAppGateway_SendActivationTemplate_Call struct {
 //   - toE164 string
 //   - templateName string
 //   - token string
-func (_e *WhatsAppGateway_Expecter) SendActivationTemplate(ctx interface{}, toE164 interface{}, templateName interface{}, token interface{}) *WhatsAppGateway_SendActivationTemplate_Call {
+func (_e *WhatsAppGateway_Expecter) SendActivationTemplate(ctx any, toE164 any, templateName any, token any) *WhatsAppGateway_SendActivationTemplate_Call {
 	return &WhatsAppGateway_SendActivationTemplate_Call{Call: _e.mock.On("SendActivationTemplate", ctx, toE164, templateName, token)}
 }
 
@@ -141,7 +141,7 @@ type WhatsAppGateway_SendTextMessage_Call struct {
 //   - ctx context.Context
 //   - toE164 string
 //   - text string
-func (_e *WhatsAppGateway_Expecter) SendTextMessage(ctx interface{}, toE164 interface{}, text interface{}) *WhatsAppGateway_SendTextMessage_Call {
+func (_e *WhatsAppGateway_Expecter) SendTextMessage(ctx any, toE164 any, text any) *WhatsAppGateway_SendTextMessage_Call {
 	return &WhatsAppGateway_SendTextMessage_Call{Call: _e.mock.On("SendTextMessage", ctx, toE164, text)}
 }
 

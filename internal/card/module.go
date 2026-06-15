@@ -1,6 +1,7 @@
 package card
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -24,9 +25,11 @@ type CardModule struct {
 	RepositoryFactory interfaces.RepositoryFactory
 	CardRouter        *httpserver.CardRouter
 	CardLookup        *usecases.GetCardForUser
+	ListCardsUC       *usecases.ListCards
+	CreateCardUC      *usecases.CreateCard
 }
 
-func NewCardModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager, gatewayAuth func(http.Handler) http.Handler) (CardModule, error) {
+func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.Observability, mgr manager.Manager, gatewayAuth func(http.Handler) http.Handler) (CardModule, error) {
 	loc, err := services.NewSaoPauloLocation()
 	if err != nil {
 		return CardModule{}, fmt.Errorf("card.module: %w", err)
@@ -54,7 +57,7 @@ func NewCardModule(cfg *configs.Config, o11y observability.Observability, mgr ma
 	deleteHandler := handlers.NewDeleteCardHandler(softDelete, o11y)
 	invoiceForHandler := handlers.NewInvoiceForHandler(invoiceFor, o11y)
 
-	userRateLimit := ratelimit.NewRateLimitMiddleware(ratelimit.RateLimitConfig{
+	userRateLimit := ratelimit.NewRateLimitMiddleware(ctx, ratelimit.RateLimitConfig{
 		PerMinute: cfg.AuthRateLimit.PerUserPerMin,
 		Burst:     cfg.AuthRateLimit.PerUserBurst,
 		Extractor: ratelimit.ByUserID,
@@ -67,5 +70,7 @@ func NewCardModule(cfg *configs.Config, o11y observability.Observability, mgr ma
 		RepositoryFactory: factory,
 		CardRouter:        router,
 		CardLookup:        getCardForUser,
+		ListCardsUC:       listCards,
+		CreateCardUC:      createCard,
 	}, nil
 }

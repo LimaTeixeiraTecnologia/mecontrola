@@ -42,6 +42,7 @@ type BudgetsModule struct {
 	ExpenseCommittedConsumer *consumers.ExpenseCommittedConsumer
 	ExternalExpenseConsumer  *consumers.ExternalExpenseConsumer
 	EventHandlers            []BudgetsEventHandlerRegistration
+	ListAlertsUC             *usecases.ListAlerts
 }
 
 type moduleBuilder struct {
@@ -113,6 +114,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 			{EventType: "budgets.expense.committed.v1", Handler: expenseCommittedConsumer},
 			{EventType: "external.expense.v1", Handler: externalExpenseConsumer},
 		},
+		ListAlertsUC: useCases.listAlerts,
 	}, nil
 }
 

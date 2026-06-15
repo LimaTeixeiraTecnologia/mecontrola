@@ -47,8 +47,9 @@ func (s *ProcessRefundOrChargebackSuite) activeSub() entities.Subscription {
 	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
 	now := time.Now().UTC()
-	return entities.Hydrate(
+	return entities.HydrateWithUser(
 		"sub-001",
+		"user-001",
 		funnelToken,
 		plan,
 		valueobjects.StatusActive,
@@ -65,8 +66,9 @@ func (s *ProcessRefundOrChargebackSuite) canceledSub() entities.Subscription {
 	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
 	now := time.Now().UTC()
-	return entities.Hydrate(
+	return entities.HydrateWithUser(
 		"sub-001",
+		"user-001",
 		funnelToken,
 		plan,
 		valueobjects.StatusCanceledPending,
@@ -134,6 +136,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 						mock.Anything,
 						mock.MatchedBy(func(updated entities.Subscription) bool {
 							return updated.ID() == "sub-001" &&
+								updated.UserID() == "user-001" &&
 								updated.Status() == valueobjects.StatusRefunded &&
 								updated.GraceEnd().IsZero() &&
 								updated.LastEventAt().Equal(occurredAt)

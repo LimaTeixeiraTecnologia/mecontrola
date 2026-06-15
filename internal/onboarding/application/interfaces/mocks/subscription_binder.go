@@ -63,7 +63,7 @@ type SubscriptionBinder_BindUser_Call struct {
 //   - ctx context.Context
 //   - subscriptionID string
 //   - userID string
-func (_e *SubscriptionBinder_Expecter) BindUser(ctx interface{}, subscriptionID interface{}, userID interface{}) *SubscriptionBinder_BindUser_Call {
+func (_e *SubscriptionBinder_Expecter) BindUser(ctx any, subscriptionID any, userID any) *SubscriptionBinder_BindUser_Call {
 	return &SubscriptionBinder_BindUser_Call{Call: _e.mock.On("BindUser", ctx, subscriptionID, userID)}
 }
 

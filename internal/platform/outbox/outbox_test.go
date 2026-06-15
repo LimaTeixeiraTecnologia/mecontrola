@@ -1,6 +1,9 @@
 package outbox_test
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,6 +270,23 @@ func (s *NewEventSuite) TestNewEvent() {
 			},
 		},
 		{
+			name: "deve aceitar auth.failed sem aggregate user id como evento de sistema",
+			args: args{
+				input: outbox.EventInput{
+					Type:          "auth.failed",
+					AggregateType: "auth_event",
+					AggregateID:   "agg-1",
+					Payload:       []byte(`{}`),
+				},
+			},
+			setup: func() {},
+			expect: func(event outbox.Event, err error) {
+				s.NoError(err)
+				s.Empty(event.AggregateUserID)
+				s.Equal("auth.failed", event.Type)
+			},
+		},
+		{
 			name: "deve retornar erro para payload invalido",
 			args: args{
 				input: outbox.EventInput{
@@ -306,6 +326,39 @@ func (s *NewEventSuite) TestNewEvent() {
 			event, err := sut(scenario.args.input)
 
 			scenario.expect(event, err)
+		})
+	}
+}
+
+func (s *NewEventSuite) TestNewEventWarnOnMissingAggregateUserID() {
+	scenarios := []struct {
+		name      string
+		eventType string
+		wantWarn  bool
+	}{
+		{name: "evento de sistema auth.failed nao emite warn", eventType: "auth.failed", wantWarn: false},
+		{name: "evento de sistema system.heartbeat nao emite warn", eventType: "system.heartbeat", wantWarn: false},
+		{name: "evento de dominio nao listado emite warn", eventType: "domain.something", wantWarn: true},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			buf := &bytes.Buffer{}
+			handler := slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+			previous := slog.Default()
+			slog.SetDefault(slog.New(handler))
+			s.T().Cleanup(func() { slog.SetDefault(previous) })
+
+			_, err := outbox.NewEvent(outbox.EventInput{
+				Type:          scenario.eventType,
+				AggregateType: "A",
+				AggregateID:   "1",
+				Payload:       []byte(`{}`),
+			})
+			s.NoError(err)
+
+			emitted := strings.Contains(buf.String(), "outbox.event.missing_aggregate_user_id")
+			s.Equalf(scenario.wantWarn, emitted, "buffer=%q", buf.String())
 		})
 	}
 }

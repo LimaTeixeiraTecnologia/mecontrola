@@ -90,8 +90,9 @@ func (uc *ProcessSubscriptionGraceExpired) expireOne(ctx context.Context, cand i
 			return entities.Subscription{}, fmt.Errorf("apply transition: %w", applyErr)
 		}
 
-		expired := entities.Hydrate(
+		expired := entities.HydrateWithUser(
 			cand.SubscriptionID,
+			cand.UserID,
 			valueobjects.FunnelToken{},
 			valueobjects.Plan{},
 			valueobjects.StatusExpired,

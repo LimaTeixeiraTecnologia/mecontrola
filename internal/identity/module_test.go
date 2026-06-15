@@ -8,9 +8,11 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 )
 
 type stubDBTX struct{}
@@ -38,7 +40,8 @@ func (s *stubManager) Ping(_ context.Context) error     { return nil }
 func (s *stubManager) Shutdown(_ context.Context) error { return nil }
 
 func TestNewIdentityModule_FieldsNotNil(t *testing.T) {
-	module := identity.NewIdentityModule(&configs.Config{}, noop.NewProvider(), manager.Manager(&stubManager{}))
+	module, err := identity.NewIdentityModule(&configs.Config{}, noop.NewProvider(), manager.Manager(&stubManager{}))
+	require.NoError(t, err)
 
 	assert.NotNil(t, module.RepositoryFactory)
 	assert.NotNil(t, module.UserRouter)
@@ -47,6 +50,7 @@ func TestNewIdentityModule_FieldsNotNil(t *testing.T) {
 	assert.NotNil(t, module.FindUserByWhatsApp)
 	assert.NotNil(t, module.MarkUserDeleted)
 	assert.NotNil(t, module.EstablishPrincipal)
+	assert.NotNil(t, module.GatewayAuthMiddleware)
 	assert.NotNil(t, module.EntitlementReader)
 	assert.NotNil(t, module.SubscriptionProjector)
 	assert.NotNil(t, module.SubscriptionBoundProjector)
@@ -56,4 +60,15 @@ func TestNewIdentityModule_FieldsNotNil(t *testing.T) {
 	assert.NotNil(t, module.WhatsAppDedupRepository)
 	assert.NotNil(t, module.OutboxPublisher)
 	assert.Len(t, module.EventHandlers, 10)
+}
+
+func TestNewRequireGatewayAuth_InvalidSecretFails(t *testing.T) {
+	_, err := identity.NewRequireGatewayAuth(
+		configs.IdentityConfig{GatewaySharedSecretCurrent: "zz"},
+		usecases.NewRecordGatewayAuthFailure(nil, noop.NewProvider()),
+		noop.NewProvider(),
+	)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "decode gateway secret current")
 }

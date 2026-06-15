@@ -151,6 +151,50 @@ func (_c *RepositoryFactory_UserRepository_Call) RunAndReturn(run func(database.
 	return _c
 }
 
+func (_m *RepositoryFactory) UserIdentityRepository(db database.DBTX) interfaces.UserIdentityRepository {
+	ret := _m.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UserIdentityRepository")
+	}
+
+	var r0 interfaces.UserIdentityRepository
+	if rf, ok := ret.Get(0).(func(database.DBTX) interfaces.UserIdentityRepository); ok {
+		r0 = rf(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.UserIdentityRepository)
+		}
+	}
+
+	return r0
+}
+
+type RepositoryFactory_UserIdentityRepository_Call struct {
+	*mock.Call
+}
+
+func (_e *RepositoryFactory_Expecter) UserIdentityRepository(db any) *RepositoryFactory_UserIdentityRepository_Call {
+	return &RepositoryFactory_UserIdentityRepository_Call{Call: _e.mock.On("UserIdentityRepository", db)}
+}
+
+func (_c *RepositoryFactory_UserIdentityRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_UserIdentityRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(database.DBTX))
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_UserIdentityRepository_Call) Return(_a0 interfaces.UserIdentityRepository) *RepositoryFactory_UserIdentityRepository_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *RepositoryFactory_UserIdentityRepository_Call) RunAndReturn(run func(database.DBTX) interfaces.UserIdentityRepository) *RepositoryFactory_UserIdentityRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 func NewRepositoryFactory(t interface {
 	mock.TestingT
 	Cleanup(func())

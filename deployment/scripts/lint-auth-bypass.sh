@@ -5,7 +5,6 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
 
 INJECT_PATTERN='InjectPrincipalFromHeader(WithO11y)?'
-GATE_PATTERN='RequireGatewayAuth|gatewayAuth'
 WINDOW=3
 
 violations=()
@@ -21,8 +20,13 @@ while IFS= read -r file; do
       continue
     fi
 
-    context_block=$(sed -n "${start},${end}p" "$file")
-    if ! echo "$context_block" | grep -qE "$GATE_PATTERN"; then
+    previous_use=$(sed -n "${start},${end}p" "$file" | grep -E 'sub\.Use\(' | tail -n1 || true)
+    if [[ -z "$previous_use" ]]; then
+      violations+=("${file}:${match_line}: InjectPrincipalFromHeader sem middleware anterior verificavel")
+      continue
+    fi
+
+    if ! echo "$previous_use" | grep -qE 'sub\.Use\([^)]*(RequireGatewayAuth|gatewayAuthMiddleware|rt\.gatewayAuth)'; then
       violations+=("${file}:${match_line}: InjectPrincipalFromHeader sem RequireGatewayAuth nas ${WINDOW} linhas anteriores")
     fi
   done < <(grep -nE "$INJECT_PATTERN" "$file" | cut -d: -f1)

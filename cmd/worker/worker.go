@@ -94,7 +94,7 @@ func Run() error {
 	}
 
 	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager}
-	workerManager, err := runtime.newManager()
+	workerManager, err := runtime.newManager(ctx)
 	if err != nil {
 		return err
 	}
@@ -136,13 +136,16 @@ type workerRuntime struct {
 	dbManager manager.Manager
 }
 
-func (r *workerRuntime) newManager() (*worker.Manager, error) { //nolint:revive // composition root agrega bootstrap de módulos; refatorar fragmentaria a ordem de lifecycle crítica
+func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error) { //nolint:revive // composition root agrega bootstrap de módulos; refatorar fragmentaria a ordem de lifecycle crítica
 	outboxFactory := outbox.NewRepositoryFactory(r.o11y)
 	dispatcherUoW := uow.New[[]outbox.Row](r.dbManager, uow.WithObservability(r.o11y))
 	reaperUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
 	housekeepUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
 	eventsDispatcher := events.NewDispatcher()
-	identityModule := identity.NewIdentityModule(r.cfg, r.o11y, r.dbManager)
+	identityModule, err := identity.NewIdentityModule(r.cfg, r.o11y, r.dbManager)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo identity: %w", err)
+	}
 	categoriesModule := categories.NewCategoriesModule(r.dbManager, r.o11y)
 	billingModule, err := billing.NewBillingModule(r.cfg, r.o11y, r.dbManager)
 	if err != nil {
@@ -153,7 +156,7 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) { //nolint:revive 
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 	passthroughGateway := func(next http.Handler) http.Handler { return next }
-	cardModule, err := card.NewCardModule(r.cfg, r.o11y, r.dbManager, passthroughGateway)
+	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.dbManager, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}
@@ -166,6 +169,7 @@ func (r *workerRuntime) newManager() (*worker.Manager, error) { //nolint:revive 
 		r.dbManager,
 		r.cfg.OnboardingConfig,
 		r.cfg.WhatsAppConfig,
+		r.cfg.TelegramConfig,
 		r.cfg.OutboxConfig,
 		identityModule,
 		r.o11y,

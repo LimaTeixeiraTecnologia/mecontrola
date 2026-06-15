@@ -79,7 +79,7 @@ type MonthlySummaryRepository_Get_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *MonthlySummaryRepository_Expecter) Get(ctx interface{}, userID interface{}, refMonth interface{}) *MonthlySummaryRepository_Get_Call {
+func (_e *MonthlySummaryRepository_Expecter) Get(ctx any, userID any, refMonth any) *MonthlySummaryRepository_Get_Call {
 	return &MonthlySummaryRepository_Get_Call{Call: _e.mock.On("Get", ctx, userID, refMonth)}
 }
 
@@ -160,7 +160,7 @@ type MonthlySummaryRepository_ListActiveSince_Call struct {
 //   - since time.Time
 //   - cursor interfaces.Cursor
 //   - batchSize int
-func (_e *MonthlySummaryRepository_Expecter) ListActiveSince(ctx interface{}, since interface{}, cursor interface{}, batchSize interface{}) *MonthlySummaryRepository_ListActiveSince_Call {
+func (_e *MonthlySummaryRepository_Expecter) ListActiveSince(ctx any, since any, cursor any, batchSize any) *MonthlySummaryRepository_ListActiveSince_Call {
 	return &MonthlySummaryRepository_ListActiveSince_Call{Call: _e.mock.On("ListActiveSince", ctx, since, cursor, batchSize)}
 }
 
@@ -247,7 +247,7 @@ type MonthlySummaryRepository_ListEntries_Call struct {
 //   - refMonth valueobjects.RefMonth
 //   - cursor interfaces.Cursor
 //   - limit int
-func (_e *MonthlySummaryRepository_Expecter) ListEntries(ctx interface{}, userID interface{}, refMonth interface{}, cursor interface{}, limit interface{}) *MonthlySummaryRepository_ListEntries_Call {
+func (_e *MonthlySummaryRepository_Expecter) ListEntries(ctx any, userID any, refMonth any, cursor any, limit any) *MonthlySummaryRepository_ListEntries_Call {
 	return &MonthlySummaryRepository_ListEntries_Call{Call: _e.mock.On("ListEntries", ctx, userID, refMonth, cursor, limit)}
 }
 
@@ -323,7 +323,7 @@ type MonthlySummaryRepository_Upsert_Call struct {
 //   - incomeCents int64
 //   - outcomeCents int64
 //   - updatedAt time.Time
-func (_e *MonthlySummaryRepository_Expecter) Upsert(ctx interface{}, userID interface{}, refMonth interface{}, incomeCents interface{}, outcomeCents interface{}, updatedAt interface{}) *MonthlySummaryRepository_Upsert_Call {
+func (_e *MonthlySummaryRepository_Expecter) Upsert(ctx any, userID any, refMonth any, incomeCents any, outcomeCents any, updatedAt any) *MonthlySummaryRepository_Upsert_Call {
 	return &MonthlySummaryRepository_Upsert_Call{Call: _e.mock.On("Upsert", ctx, userID, refMonth, incomeCents, outcomeCents, updatedAt)}
 }
 

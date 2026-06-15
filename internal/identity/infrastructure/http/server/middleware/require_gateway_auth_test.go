@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -40,7 +40,7 @@ func makeHMAC(secret, userID, ts string) string {
 
 type RequireGatewayAuthSuite struct {
 	suite.Suite
-	o11y *noop.Provider
+	o11y *fake.Provider
 }
 
 func TestRequireGatewayAuthSuite(t *testing.T) {
@@ -48,7 +48,7 @@ func TestRequireGatewayAuthSuite(t *testing.T) {
 }
 
 func (s *RequireGatewayAuthSuite) SetupTest() {
-	s.o11y = noop.NewProvider()
+	s.o11y = fake.NewProvider()
 }
 
 func (s *RequireGatewayAuthSuite) buildDeps(logger *middlewaremocks.MockGatewayAuthFailureLogger) middleware.RequireGatewayAuthDeps {
@@ -249,7 +249,9 @@ func (s *RequireGatewayAuthSuite) TestFailureLoggerError_StillReturns401() {
 func (s *RequireGatewayAuthSuite) TestMissingHeader_WithXFF_ExtractsLastIP() {
 	logger := middlewaremocks.NewMockGatewayAuthFailureLogger(s.T())
 	logger.EXPECT().Handle(mock.Anything, mock.MatchedBy(func(in input.RecordGatewayAuthFailureInput) bool {
-		return in.Reason == "gateway_missing_header" && in.ClientIPRaw == "10.0.0.1"
+		return in.Reason == "gateway_missing_header" &&
+			in.ClientIPRaw == "10.0.0.1" &&
+			in.RequestID == "fake-trace-id"
 	})).Return(nil).Once()
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +260,28 @@ func (s *RequireGatewayAuthSuite) TestMissingHeader_WithXFF_ExtractsLastIP() {
 
 	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	req.Header.Set("X-Forwarded-For", "192.168.1.1, 10.0.0.1")
+	rr := httptest.NewRecorder()
+
+	handler := middleware.RequireGatewayAuth(s.buildDeps(logger))(next)
+	handler.ServeHTTP(rr, req)
+
+	s.Equal(http.StatusUnauthorized, rr.Code)
+}
+
+func (s *RequireGatewayAuthSuite) TestMissingHeader_WithInvalidXFF_DegradesToEmptyClientIPAndTraceIDRequestID() {
+	logger := middlewaremocks.NewMockGatewayAuthFailureLogger(s.T())
+	logger.EXPECT().Handle(mock.Anything, mock.MatchedBy(func(in input.RecordGatewayAuthFailureInput) bool {
+		return in.Reason == "gateway_missing_header" &&
+			in.ClientIPRaw == "" &&
+			in.RequestID == "fake-trace-id"
+	})).Return(nil).Once()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req.Header.Set("X-Forwarded-For", "not-an-ip")
 	rr := httptest.NewRecorder()
 
 	handler := middleware.RequireGatewayAuth(s.buildDeps(logger))(next)
@@ -298,7 +322,7 @@ func BenchmarkRequireGatewayAuth_Valid(b *testing.B) {
 	sig := makeHMAC(testSecret, testUserID, ts)
 
 	logger := &noopFailureLogger{}
-	o11y := noop.NewProvider()
+	o11y := fake.NewProvider()
 
 	deps := middleware.RequireGatewayAuthDeps{
 		Secrets: services.SecretPair{

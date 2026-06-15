@@ -71,7 +71,7 @@ type TokenCipher_Decrypt_Call struct {
 // Decrypt is a helper method to define mock.On call
 //   - ctx context.Context
 //   - ciphertext string
-func (_e *TokenCipher_Expecter) Decrypt(ctx interface{}, ciphertext interface{}) *TokenCipher_Decrypt_Call {
+func (_e *TokenCipher_Expecter) Decrypt(ctx any, ciphertext any) *TokenCipher_Decrypt_Call {
 	return &TokenCipher_Decrypt_Call{Call: _e.mock.On("Decrypt", ctx, ciphertext)}
 }
 
@@ -137,7 +137,7 @@ type TokenCipher_Encrypt_Call struct {
 // Encrypt is a helper method to define mock.On call
 //   - ctx context.Context
 //   - clearToken string
-func (_e *TokenCipher_Expecter) Encrypt(ctx interface{}, clearToken interface{}) *TokenCipher_Encrypt_Call {
+func (_e *TokenCipher_Expecter) Encrypt(ctx any, clearToken any) *TokenCipher_Encrypt_Call {
 	return &TokenCipher_Encrypt_Call{Call: _e.mock.On("Encrypt", ctx, clearToken)}
 }
 

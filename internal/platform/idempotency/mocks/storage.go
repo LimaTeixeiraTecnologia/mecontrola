@@ -74,7 +74,7 @@ type Storage_Get_Call struct {
 //   - scope string
 //   - key string
 //   - userID string
-func (_e *Storage_Expecter) Get(ctx interface{}, scope interface{}, key interface{}, userID interface{}) *Storage_Get_Call {
+func (_e *Storage_Expecter) Get(ctx any, scope any, key any, userID any) *Storage_Get_Call {
 	return &Storage_Get_Call{Call: _e.mock.On("Get", ctx, scope, key, userID)}
 }
 
@@ -141,7 +141,7 @@ type Storage_Put_Call struct {
 // Put is a helper method to define mock.On call
 //   - ctx context.Context
 //   - rec idempotency.Record
-func (_e *Storage_Expecter) Put(ctx interface{}, rec interface{}) *Storage_Put_Call {
+func (_e *Storage_Expecter) Put(ctx any, rec any) *Storage_Put_Call {
 	return &Storage_Put_Call{Call: _e.mock.On("Put", ctx, rec)}
 }
 

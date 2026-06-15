@@ -20,6 +20,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
@@ -97,20 +98,26 @@ func Run() error {
 		}
 	}()
 
-	srv, err := httpserver.New(
-		o11y,
+	serverOpts := []httpserver.Option{
 		httpserver.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
 		httpserver.WithServiceVersion(cfg.O11yConfig.ServiceVersion),
 		httpserver.WithEnvironment(cfg.AppConfig.Environment),
 		httpserver.WithPort(strconv.Itoa(cfg.HTTPConfig.Port)),
-		httpserver.WithCORS(resolveCORSOrigins(cfg)),
 		httpserver.WithMetrics(),
 		httpserver.WithTracing(),
 		httpserver.WithOTelMetrics(),
 		httpserver.WithHealthChecks(map[string]httpserver.HealthCheckFunc{
 			"database": dbManager.Ping,
 		}),
-		httpserver.WithShutdownTimeout(15*time.Second),
+		httpserver.WithShutdownTimeout(15 * time.Second),
+	}
+	if origins := resolveCORSOrigins(cfg); origins != "" {
+		serverOpts = append(serverOpts, httpserver.WithCORS(origins))
+	}
+
+	srv, err := httpserver.New(
+		o11y,
+		serverOpts...,
 	)
 	if err != nil {
 		return fmt.Errorf("run: failed to create http server: %w", err)
@@ -121,7 +128,10 @@ func Run() error {
 		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
 	)
 
-	identityModule := identity.NewIdentityModule(cfg, o11y, dbManager)
+	identityModule, err := identity.NewIdentityModule(cfg, o11y, dbManager)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo identity: %w", err)
+	}
 	if identityModule.UserRouter != nil {
 		srv.RegisterRouters(identityModule.UserRouter)
 	}
@@ -160,6 +170,7 @@ func Run() error {
 		dbManager,
 		cfg.OnboardingConfig,
 		cfg.WhatsAppConfig,
+		cfg.TelegramConfig,
 		cfg.OutboxConfig,
 		identityModule,
 		o11y,
@@ -170,8 +181,7 @@ func Run() error {
 	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
 
-	gatewayAuthMiddleware := identity.NewRequireGatewayAuth(cfg.IdentityConfig, identityModule.RecordGatewayAuthFailure, o11y)
-	cardModule, err := card.NewCardModule(cfg, o11y, dbManager, gatewayAuthMiddleware)
+	cardModule, err := card.NewCardModule(ctx, cfg, o11y, dbManager, identityModule.GatewayAuthMiddleware)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
@@ -198,9 +208,41 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "transactions module wired", observability.Bool("router_registered", transactionsModule.Router != nil))
 
-	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule)
+	agentModule, err := agent.NewAgentModule(
+		cfg,
+		o11y,
+		identityModule,
+		categoriesModule,
+		cardModule,
+		transactionsModule,
+		budgetsModule,
+		onboardingModule.WhatsAppGateway,
+	)
+	if err != nil {
+		return fmt.Errorf("run: inicializar modulo agent: %w", err)
+	}
+	o11y.Logger().Info(ctx, "agent module wired", observability.String("mode", agentModule.Mode))
+
+	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule, agentModule)
 	srv.RegisterRouters(waWebhookRouter)
 	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
+
+	if cfg.TelegramConfig.Enabled {
+		telegramOnboardingRoute := buildTelegramOnboardingRoute(o11y, cfg.TelegramConfig, onboardingModule.TelegramMessageProcessor)
+		tgRouter, tgErr := identityModule.BuildTelegramWebhookRouter(agentModule.TelegramAgentRoute, telegramOnboardingRoute)
+		if tgErr != nil {
+			return fmt.Errorf("run: compor telegram webhook router: %w", tgErr)
+		}
+		if tgRouter != nil {
+			srv.RegisterRouters(tgRouter)
+			o11y.Logger().Info(ctx, "telegram webhook router wired",
+				observability.String("path", cfg.TelegramConfig.WebhookPath),
+				observability.Int64("bot_id", cfg.TelegramConfig.BotID),
+			)
+		}
+	} else {
+		o11y.Logger().Info(ctx, "telegram webhook router skipped (TELEGRAM_ENABLED=false)")
+	}
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)

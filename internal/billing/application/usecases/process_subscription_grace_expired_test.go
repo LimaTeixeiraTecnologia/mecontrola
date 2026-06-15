@@ -42,6 +42,7 @@ func (s *ProcessSubscriptionGraceExpiredSuite) TestPastDueComGracaVencidaTransit
 	graceEnd := time.Now().UTC().Add(-time.Hour)
 	candidate := interfaces.ExpiredGraceCandidate{
 		SubscriptionID: "sub-001",
+		UserID:         "user-001",
 		GraceEnd:       graceEnd,
 		LastEventAt:    graceEnd.Add(-72 * time.Hour),
 	}
@@ -57,7 +58,7 @@ func (s *ProcessSubscriptionGraceExpiredSuite) TestPastDueComGracaVencidaTransit
 		Once()
 	s.publisherMock.EXPECT().
 		PublishExpired(s.ctx, mock.Anything, mock.MatchedBy(func(sub entities.Subscription) bool {
-			return sub.ID() == "sub-001" && sub.Status() == valueobjects.StatusExpired
+			return sub.ID() == "sub-001" && sub.UserID() == "user-001" && sub.Status() == valueobjects.StatusExpired
 		}), "sub-001", graceEnd).
 		Return(nil).
 		Once()

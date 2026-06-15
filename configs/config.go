@@ -22,6 +22,8 @@ type Config struct {
 	BillingConfig      BillingConfig       `mapstructure:",squash"`
 	OnboardingConfig   OnboardingConfig    `mapstructure:",squash"`
 	WhatsAppConfig     WhatsAppConfig      `mapstructure:",squash"`
+	TelegramConfig     TelegramConfig      `mapstructure:",squash"`
+	AgentConfig        AgentConfig         `mapstructure:",squash"`
 	IdentityConfig     IdentityConfig      `mapstructure:",squash"`
 	BudgetsConfig      BudgetsConfig       `mapstructure:",squash"`
 	TransactionsConfig TransactionsConfig  `mapstructure:",squash"`
@@ -101,6 +103,48 @@ type WhatsAppConfig struct {
 	AgentStubReceived      string `mapstructure:"WA_MSG_AGENT_STUB_RECEIVED"`
 	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
+}
+
+type AgentConfig struct {
+	Mode              string        `mapstructure:"AGENT_MODE"`
+	OpenRouterBaseURL string        `mapstructure:"OPENROUTER_BASE_URL"`
+	OpenRouterAPIKey  string        `mapstructure:"OPENROUTER_API_KEY"`
+	HTTPReferer       string        `mapstructure:"AGENT_LLM_HTTP_REFERER"`
+	XTitle            string        `mapstructure:"AGENT_LLM_X_TITLE"`
+	PrimaryModel      string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
+	FallbackModels    string        `mapstructure:"AGENT_LLM_FALLBACK_MODELS"`
+	MaxTokens         int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
+	RequestTimeout    time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
+	PromptPadTokens   int           `mapstructure:"AGENT_LLM_PROMPT_PAD_TOKENS"`
+	CircuitFailures   int           `mapstructure:"AGENT_LLM_CIRCUIT_FAILURES"`
+	CircuitWindow     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_WINDOW"`
+	CircuitCooldown   time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
+}
+
+type TelegramConfig struct {
+	Enabled                bool          `mapstructure:"TELEGRAM_ENABLED"`
+	BotToken               string        `mapstructure:"TELEGRAM_BOT_TOKEN"`
+	BotID                  int64         `mapstructure:"TELEGRAM_BOT_ID"`
+	BotUsername            string        `mapstructure:"TELEGRAM_BOT_USERNAME"`
+	APIBaseURL             string        `mapstructure:"TELEGRAM_API_BASE_URL"`
+	SecretToken            string        `mapstructure:"TELEGRAM_SECRET_TOKEN"`
+	SecretTokenNext        string        `mapstructure:"TELEGRAM_SECRET_TOKEN_NEXT"`
+	WebhookPath            string        `mapstructure:"TELEGRAM_WEBHOOK_PATH"`
+	WebhookRateLimitPerMin int           `mapstructure:"TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN"`
+	WebhookRateLimitBurst  int           `mapstructure:"TELEGRAM_WEBHOOK_RATE_LIMIT_BURST"`
+	OutboundTimeout        time.Duration `mapstructure:"TELEGRAM_OUTBOUND_TIMEOUT"`
+	AgentStubReceived      string        `mapstructure:"TELEGRAM_MSG_AGENT_STUB_RECEIVED"`
+	OnboardingFallback     string        `mapstructure:"TELEGRAM_MSG_ONBOARDING_FALLBACK"`
+	WelcomeActivated       string        `mapstructure:"TELEGRAM_MSG_WELCOME_ACTIVATED"`
+	AlreadyActive          string        `mapstructure:"TELEGRAM_MSG_ALREADY_ACTIVE"`
+	RequiresWhatsApp       string        `mapstructure:"TELEGRAM_MSG_REQUIRES_WHATSAPP_ACTIVATION"`
+	CodeAlreadyUsed        string        `mapstructure:"TELEGRAM_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
+	PaymentProcessing      string        `mapstructure:"TELEGRAM_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
+	CodeExpired            string        `mapstructure:"TELEGRAM_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
+	CodeInvalid            string        `mapstructure:"TELEGRAM_MSG_CODE_INVALID_CHECK_AGAIN"`
+	SystemUnavailable      string        `mapstructure:"TELEGRAM_MSG_SYSTEM_UNAVAILABLE_RETRY"`
+	PleaseUseAtivar        string        `mapstructure:"TELEGRAM_MSG_PLEASE_USE_ATIVAR_COMMAND"`
 }
 
 type KiwifyConfig struct {
@@ -280,6 +324,8 @@ func (l *configLoader) load() (*Config, error) {
 	l.setBudgetsDefaults()
 	l.setOnboardingDefaults()
 	l.setWhatsAppDefaults()
+	l.setTelegramDefaults()
+	l.setAgentDefaults()
 	l.setTransactionsDefaults()
 	l.setIdentityDefaults()
 	l.setAuthRateLimitDefaults()
@@ -527,6 +573,8 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validateOutbox()...)
 	errs = append(errs, c.validateBilling()...)
 	errs = append(errs, c.validateOnboarding()...)
+	errs = append(errs, c.validateIdentity()...)
+	errs = append(errs, c.validateRateLimits()...)
 	errs = append(errs, c.KiwifyConfig.validateProductIDs()...)
 
 	if c.AppConfig.Environment == "production" {
@@ -671,6 +719,55 @@ func (c *Config) validateProduction() []string {
 	errs = append(errs, c.validateProductionKiwify()...)
 	errs = append(errs, c.validateProductionIdentity()...)
 	errs = append(errs, c.validateProductionCORS()...)
+	errs = append(errs, c.validateProductionTelegram()...)
+	errs = append(errs, c.validateProductionAgent()...)
+	return errs
+}
+
+func (c *Config) validateProductionTelegram() []string {
+	if !c.TelegramConfig.Enabled {
+		return nil
+	}
+	var errs []string
+	if strings.TrimSpace(c.TelegramConfig.BotToken) == "" {
+		errs = append(errs, "TELEGRAM_BOT_TOKEN obrigatorio quando TELEGRAM_ENABLED=true em production")
+	}
+	if c.TelegramConfig.BotID <= 0 {
+		errs = append(errs, "TELEGRAM_BOT_ID deve ser > 0 quando TELEGRAM_ENABLED=true em production")
+	}
+	if strings.TrimSpace(c.TelegramConfig.SecretToken) == "" {
+		errs = append(errs, "TELEGRAM_SECRET_TOKEN obrigatorio quando TELEGRAM_ENABLED=true em production")
+	}
+	if strings.TrimSpace(c.TelegramConfig.APIBaseURL) == "" {
+		errs = append(errs, "TELEGRAM_API_BASE_URL obrigatorio quando TELEGRAM_ENABLED=true em production")
+	}
+	if c.TelegramConfig.OutboundTimeout <= 0 || c.TelegramConfig.OutboundTimeout > 30*time.Second {
+		errs = append(errs, "TELEGRAM_OUTBOUND_TIMEOUT deve estar no intervalo (0..30s] em production")
+	}
+	return errs
+}
+
+func (c *Config) validateProductionAgent() []string {
+	mode := strings.ToLower(strings.TrimSpace(c.AgentConfig.Mode))
+	if mode == "" || mode == "stub" {
+		return nil
+	}
+	if mode != "openrouter" {
+		return []string{fmt.Sprintf("AGENT_MODE invalido %q em production: stub|openrouter", c.AgentConfig.Mode)}
+	}
+	var errs []string
+	if strings.TrimSpace(c.AgentConfig.OpenRouterAPIKey) == "" {
+		errs = append(errs, "OPENROUTER_API_KEY obrigatorio quando AGENT_MODE=openrouter em production")
+	}
+	if strings.TrimSpace(c.AgentConfig.PrimaryModel) == "" {
+		errs = append(errs, "AGENT_LLM_PRIMARY_MODEL obrigatorio em production")
+	}
+	if c.AgentConfig.MaxTokens <= 0 || c.AgentConfig.MaxTokens > 4096 {
+		errs = append(errs, "AGENT_LLM_MAX_TOKENS deve estar no intervalo (0..4096] em production")
+	}
+	if c.AgentConfig.RequestTimeout <= 0 || c.AgentConfig.RequestTimeout > 30*time.Second {
+		errs = append(errs, "AGENT_LLM_REQUEST_TIMEOUT deve estar no intervalo (0..30s] em production")
+	}
 	return errs
 }
 
@@ -695,20 +792,52 @@ func (c *Config) validateProductionIdentity() []string {
 	secret := c.IdentityConfig.GatewaySharedSecretCurrent
 	if secret == "" {
 		errs = append(errs, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT é obrigatório em production")
-		return errs
+	} else {
+		errs = append(errs, validateGatewaySecret("IDENTITY_GATEWAY_SHARED_SECRET_CURRENT", secret)...)
 	}
-	decoded, err := hex.DecodeString(secret)
-	if err != nil {
-		errs = append(errs, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ser hex válido em production")
-		return errs
-	}
-	if len(decoded) < 32 {
-		errs = append(errs, fmt.Sprintf(
-			"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ter ao menos 32 bytes em production (atual: %d bytes)",
-			len(decoded),
-		))
+	if next := c.IdentityConfig.GatewaySharedSecretNext; next != "" {
+		errs = append(errs, validateGatewaySecret("IDENTITY_GATEWAY_SHARED_SECRET_NEXT", next)...)
 	}
 	return errs
+}
+
+func (c *Config) validateIdentity() []string {
+	var errs []string
+	if secret := c.IdentityConfig.GatewaySharedSecretCurrent; secret != "" {
+		errs = append(errs, validateGatewaySecret("IDENTITY_GATEWAY_SHARED_SECRET_CURRENT", secret)...)
+	}
+	if next := c.IdentityConfig.GatewaySharedSecretNext; next != "" {
+		errs = append(errs, validateGatewaySecret("IDENTITY_GATEWAY_SHARED_SECRET_NEXT", next)...)
+	}
+	return errs
+}
+
+func (c *Config) validateRateLimits() []string {
+	var errs []string
+	if c.AuthRateLimit.PerUserPerMin < 1 {
+		errs = append(errs, "AUTH_RATE_LIMIT_PER_USER_PER_MIN deve ser maior que zero")
+	}
+	if c.AuthRateLimit.PerUserBurst < 1 {
+		errs = append(errs, "AUTH_RATE_LIMIT_PER_USER_BURST deve ser maior que zero")
+	}
+	if c.WhatsAppConfig.WebhookRateLimitPerMin < 1 {
+		errs = append(errs, "WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN deve ser maior que zero")
+	}
+	if c.WhatsAppConfig.WebhookRateLimitBurst < 1 {
+		errs = append(errs, "WHATSAPP_WEBHOOK_RATE_LIMIT_BURST deve ser maior que zero")
+	}
+	return errs
+}
+
+func validateGatewaySecret(name, raw string) []string {
+	decoded, err := hex.DecodeString(raw)
+	if err != nil {
+		return []string{fmt.Sprintf("%s deve ser hex válido em production", name)}
+	}
+	if len(decoded) < 32 {
+		return []string{fmt.Sprintf("%s deve ter ao menos 32 bytes em production (atual: %d bytes)", name, len(decoded))}
+	}
+	return nil
 }
 
 func (c *Config) validateProductionKiwify() []string {
@@ -881,6 +1010,42 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
+}
+
+func (l *configLoader) setAgentDefaults() {
+	l.v.SetDefault("AGENT_MODE", "stub")
+	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
+	l.v.SetDefault("AGENT_LLM_HTTP_REFERER", "https://mecontrola.app")
+	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
+	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
+	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "openai/gpt-5-nano,mistralai/mistral-small-3.2-24b-instruct,anthropic/claude-haiku-4.5")
+	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
+	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
+	l.v.SetDefault("AGENT_LLM_REQUEST_TIMEOUT", 8*time.Second)
+	l.v.SetDefault("AGENT_LLM_PROMPT_PAD_TOKENS", 1100)
+	l.v.SetDefault("AGENT_LLM_CIRCUIT_FAILURES", 5)
+	l.v.SetDefault("AGENT_LLM_CIRCUIT_WINDOW", 30*time.Second)
+	l.v.SetDefault("AGENT_LLM_CIRCUIT_COOLDOWN", 60*time.Second)
+}
+
+func (l *configLoader) setTelegramDefaults() {
+	l.v.SetDefault("TELEGRAM_ENABLED", false)
+	l.v.SetDefault("TELEGRAM_API_BASE_URL", "https://api.telegram.org")
+	l.v.SetDefault("TELEGRAM_WEBHOOK_PATH", "/api/v1/channels/telegram/webhook")
+	l.v.SetDefault("TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
+	l.v.SetDefault("TELEGRAM_WEBHOOK_RATE_LIMIT_BURST", 100)
+	l.v.SetDefault("TELEGRAM_OUTBOUND_TIMEOUT", 10*time.Second)
+	l.v.SetDefault("TELEGRAM_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
+	l.v.SetDefault("TELEGRAM_MSG_ONBOARDING_FALLBACK", "Para ativar sua conta, abra o link enviado por e-mail e siga as instrucoes.")
+	l.v.SetDefault("TELEGRAM_MSG_WELCOME_ACTIVATED", "Sua conta foi vinculada ao Telegram com sucesso! Pode comecar a mandar suas mensagens financeiras por aqui.")
+	l.v.SetDefault("TELEGRAM_MSG_ALREADY_ACTIVE", "Seu Telegram ja esta vinculado a sua conta MeControla.")
+	l.v.SetDefault("TELEGRAM_MSG_REQUIRES_WHATSAPP_ACTIVATION", "Antes de usar o Telegram, ative sua conta no WhatsApp com o codigo recebido.")
+	l.v.SetDefault("TELEGRAM_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT", "Este codigo ja foi utilizado por outra conta. Se voce nao reconhece, entre em contato com o suporte.")
+	l.v.SetDefault("TELEGRAM_MSG_PAYMENT_STILL_PROCESSING_RETRY", "Seu pagamento ainda esta sendo processado. Tente novamente em alguns minutos.")
+	l.v.SetDefault("TELEGRAM_MSG_CODE_EXPIRED_CONTACT_SUPPORT", "Este codigo expirou. Entre em contato com o suporte.")
+	l.v.SetDefault("TELEGRAM_MSG_CODE_INVALID_CHECK_AGAIN", "Codigo invalido. Verifique se digitou ATIVAR seguido do codigo correto.")
+	l.v.SetDefault("TELEGRAM_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
+	l.v.SetDefault("TELEGRAM_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para vincular seu Telegram, envie ATIVAR seguido do codigo recebido por e-mail.")
 }
 
 func validateKiwifyHTTP(k KiwifyConfig) []string {

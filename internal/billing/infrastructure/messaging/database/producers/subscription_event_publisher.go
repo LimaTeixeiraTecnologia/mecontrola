@@ -53,7 +53,7 @@ func (p *SubscriptionEventPublisher) PublishActivated(
 		PaidAt:             sub.LastEventAt().UTC(),
 		OccurredAt:         sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionActivated, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionActivated, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -77,7 +77,7 @@ func (p *SubscriptionEventPublisher) PublishActivatedWithoutToken(
 		PaidAt:             sub.LastEventAt().UTC(),
 		OccurredAt:         sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionActivatedWithoutToken, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionActivatedWithoutToken, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -97,7 +97,7 @@ func (p *SubscriptionEventPublisher) PublishRenewed(
 		PeriodEnd:         sub.PeriodEnd().UTC(),
 		OccurredAt:        sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionRenewed, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionRenewed, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -115,7 +115,7 @@ func (p *SubscriptionEventPublisher) PublishPastDue(
 		GraceEnd:       sub.GraceEnd().UTC(),
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionPastDue, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionPastDue, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -132,7 +132,7 @@ func (p *SubscriptionEventPublisher) PublishCanceled(
 		PeriodEnd:      sub.PeriodEnd().UTC(),
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionCanceled, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionCanceled, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -148,7 +148,7 @@ func (p *SubscriptionEventPublisher) PublishRefunded(
 		SubscriptionID: subscriptionID,
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionRefunded, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionRefunded, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -167,7 +167,7 @@ func (p *SubscriptionEventPublisher) PublishExpired(
 		GraceEnd:       graceEnd.UTC(),
 		OccurredAt:     sub.LastEventAt().UTC(),
 	}
-	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionExpired, payload); err != nil {
+	if err := p.publish(ctx, tx, subscriptionID, sub.UserID(), EventTypeSubscriptionExpired, payload, sub.LastEventAt()); err != nil {
 		return fmt.Errorf("billing/producer: %w", err)
 	}
 	return nil
@@ -180,6 +180,7 @@ func (p *SubscriptionEventPublisher) publish(
 	aggregateUserID string,
 	eventType string,
 	payload any,
+	occurredAt time.Time,
 ) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -193,7 +194,7 @@ func (p *SubscriptionEventPublisher) publish(
 		AggregateID:     aggregateID,
 		AggregateUserID: aggregateUserID,
 		Payload:         raw,
-		OccurredAt:      time.Now().UTC(),
+		OccurredAt:      occurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("new event: %w", err)

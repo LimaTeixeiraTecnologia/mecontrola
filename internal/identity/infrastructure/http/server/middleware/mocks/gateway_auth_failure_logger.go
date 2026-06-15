@@ -63,7 +63,7 @@ type gatewayAuthFailureLogger_Handle_Call struct {
 // Handle is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.RecordGatewayAuthFailureInput
-func (_e *gatewayAuthFailureLogger_Expecter) Handle(ctx interface{}, in interface{}) *gatewayAuthFailureLogger_Handle_Call {
+func (_e *gatewayAuthFailureLogger_Expecter) Handle(ctx any, in any) *gatewayAuthFailureLogger_Handle_Call {
 	return &gatewayAuthFailureLogger_Handle_Call{Call: _e.mock.On("Handle", ctx, in)}
 }
 

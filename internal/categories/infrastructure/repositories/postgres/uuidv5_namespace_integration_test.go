@@ -9,9 +9,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/factories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
+
+var categoryNamespace = uuid.NewSHA1(uuid.Nil, []byte("mecontrola.io/categories"))
 
 type UUIDv5NamespaceSuite struct {
 	suite.Suite
@@ -45,7 +46,7 @@ func (s *UUIDv5NamespaceSuite) TestSeedIDsAreDeterministicRecomputable() {
 		slug, err := valueobjects.NewSlug(slugRaw)
 		s.Require().NoErrorf(err, "invalid slug persisted (kind=%s, slug=%s): %v", kind, slugRaw, err)
 
-		recomputed := factories.NewCategoryID(kind, slug)
+		recomputed := uuid.NewSHA1(categoryNamespace, []byte(kind+":"+slug.String()))
 		s.Equalf(persistedID.String(), recomputed.String(),
 			"UUIDv5 drift detected for (kind=%s, slug=%s): persisted=%s recomputed=%s",
 			kind, slugRaw, persistedID, recomputed)

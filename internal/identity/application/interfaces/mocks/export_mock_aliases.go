@@ -5,6 +5,7 @@ import mock "github.com/stretchr/testify/mock"
 type MockEntitlementRepository = EntitlementRepository
 type MockRepositoryFactory = RepositoryFactory
 type MockUserRepository = UserRepository
+type MockUserIdentityRepository = UserIdentityRepository
 
 func NewMockEntitlementRepository(t interface {
 	mock.TestingT
@@ -25,4 +26,11 @@ func NewMockUserRepository(t interface {
 	Cleanup(func())
 }) *MockUserRepository {
 	return NewUserRepository(t)
+}
+
+func NewMockUserIdentityRepository(t interface {
+	mock.TestingT
+	Cleanup(func())
+}) *MockUserIdentityRepository {
+	return NewUserIdentityRepository(t)
 }

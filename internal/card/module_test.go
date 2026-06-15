@@ -42,7 +42,7 @@ func TestNewCardModule_FieldsNotNil(t *testing.T) {
 	cfg := &configs.Config{}
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	m, err := card.NewCardModule(cfg, o11y, manager.Manager(mgr), passthrough)
+	m, err := card.NewCardModule(context.Background(), cfg, o11y, manager.Manager(mgr), passthrough)
 
 	assert.NoError(t, err, "NewCardModule nao deve retornar erro")
 	assert.NotNil(t, m.RepositoryFactory, "RepositoryFactory deve ser nao-nil")

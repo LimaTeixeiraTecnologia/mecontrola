@@ -79,7 +79,7 @@ type ThresholdStateRepository_GetCurrentlyCrossed_Call struct {
 //   - userID uuid.UUID
 //   - competence valueobjects.Competence
 //   - rootSlug valueobjects.RootSlug
-func (_e *ThresholdStateRepository_Expecter) GetCurrentlyCrossed(ctx interface{}, userID interface{}, competence interface{}, rootSlug interface{}) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
+func (_e *ThresholdStateRepository_Expecter) GetCurrentlyCrossed(ctx any, userID any, competence any, rootSlug any) *ThresholdStateRepository_GetCurrentlyCrossed_Call {
 	return &ThresholdStateRepository_GetCurrentlyCrossed_Call{Call: _e.mock.On("GetCurrentlyCrossed", ctx, userID, competence, rootSlug)}
 }
 
@@ -157,7 +157,7 @@ type ThresholdStateRepository_UpsertIfTransition_Call struct {
 //   - k entities.ThresholdKey
 //   - nowCrossed bool
 //   - committedAt time.Time
-func (_e *ThresholdStateRepository_Expecter) UpsertIfTransition(ctx interface{}, k interface{}, nowCrossed interface{}, committedAt interface{}) *ThresholdStateRepository_UpsertIfTransition_Call {
+func (_e *ThresholdStateRepository_Expecter) UpsertIfTransition(ctx any, k any, nowCrossed any, committedAt any) *ThresholdStateRepository_UpsertIfTransition_Call {
 	return &ThresholdStateRepository_UpsertIfTransition_Call{Call: _e.mock.On("UpsertIfTransition", ctx, k, nowCrossed, committedAt)}
 }
 

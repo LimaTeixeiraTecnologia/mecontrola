@@ -121,7 +121,8 @@ func (s *WebhookIntegSuite) buildSignedRequest(payload []byte) *http.Request {
 func (s *WebhookIntegSuite) dispatchOutbox(ctx context.Context) {
 	o11y := noop.NewProvider()
 	dispatcher := events.NewDispatcher()
-	identityModule := identity.NewIdentityModule(&configs.Config{}, o11y, s.mgr)
+	identityModule, err := identity.NewIdentityModule(&configs.Config{}, o11y, s.mgr)
+	s.Require().NoError(err)
 	for _, registration := range identityModule.EventHandlers {
 		s.Require().NoError(dispatcher.Register(registration.EventType, registration.Handler))
 	}

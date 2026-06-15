@@ -243,7 +243,7 @@ func (r *subscriptionRepository) ListPastDueGraceExpired(ctx context.Context, no
 	}
 
 	const query = `
-		SELECT id, grace_end, last_event_at
+		SELECT id, user_id, grace_end, last_event_at
 		  FROM billing_subscriptions
 		 WHERE status    = 'PAST_DUE'
 		   AND grace_end IS NOT NULL
@@ -263,10 +263,11 @@ func (r *subscriptionRepository) ListPastDueGraceExpired(ctx context.Context, no
 	for rows.Next() {
 		var (
 			id          string
+			userID      sql.NullString
 			graceEnd    sql.NullTime
 			lastEventAt time.Time
 		)
-		if scanErr := rows.Scan(&id, &graceEnd, &lastEventAt); scanErr != nil {
+		if scanErr := rows.Scan(&id, &userID, &graceEnd, &lastEventAt); scanErr != nil {
 			span.RecordError(scanErr)
 			return nil, fmt.Errorf("billing/postgres: list_past_due_grace_expired scan: %w", scanErr)
 		}
@@ -275,6 +276,7 @@ func (r *subscriptionRepository) ListPastDueGraceExpired(ctx context.Context, no
 		}
 		out = append(out, interfaces.ExpiredGraceCandidate{
 			SubscriptionID: id,
+			UserID:         userID.String,
 			GraceEnd:       graceEnd.Time,
 			LastEventAt:    lastEventAt,
 		})

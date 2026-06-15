@@ -63,7 +63,7 @@ type RepositoryFactory_AlertRepository_Call struct {
 
 // AlertRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) AlertRepository(db interface{}) *RepositoryFactory_AlertRepository_Call {
+func (_e *RepositoryFactory_Expecter) AlertRepository(db any) *RepositoryFactory_AlertRepository_Call {
 	return &RepositoryFactory_AlertRepository_Call{Call: _e.mock.On("AlertRepository", db)}
 }
 
@@ -116,7 +116,7 @@ type RepositoryFactory_BudgetRepository_Call struct {
 
 // BudgetRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) BudgetRepository(db interface{}) *RepositoryFactory_BudgetRepository_Call {
+func (_e *RepositoryFactory_Expecter) BudgetRepository(db any) *RepositoryFactory_BudgetRepository_Call {
 	return &RepositoryFactory_BudgetRepository_Call{Call: _e.mock.On("BudgetRepository", db)}
 }
 
@@ -169,7 +169,7 @@ type RepositoryFactory_ExpenseRepository_Call struct {
 
 // ExpenseRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) ExpenseRepository(db interface{}) *RepositoryFactory_ExpenseRepository_Call {
+func (_e *RepositoryFactory_Expecter) ExpenseRepository(db any) *RepositoryFactory_ExpenseRepository_Call {
 	return &RepositoryFactory_ExpenseRepository_Call{Call: _e.mock.On("ExpenseRepository", db)}
 }
 
@@ -222,7 +222,7 @@ type RepositoryFactory_PendingEventRepository_Call struct {
 
 // PendingEventRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) PendingEventRepository(db interface{}) *RepositoryFactory_PendingEventRepository_Call {
+func (_e *RepositoryFactory_Expecter) PendingEventRepository(db any) *RepositoryFactory_PendingEventRepository_Call {
 	return &RepositoryFactory_PendingEventRepository_Call{Call: _e.mock.On("PendingEventRepository", db)}
 }
 
@@ -275,7 +275,7 @@ type RepositoryFactory_ThresholdStateRepository_Call struct {
 
 // ThresholdStateRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) ThresholdStateRepository(db interface{}) *RepositoryFactory_ThresholdStateRepository_Call {
+func (_e *RepositoryFactory_Expecter) ThresholdStateRepository(db any) *RepositoryFactory_ThresholdStateRepository_Call {
 	return &RepositoryFactory_ThresholdStateRepository_Call{Call: _e.mock.On("ThresholdStateRepository", db)}
 }
 

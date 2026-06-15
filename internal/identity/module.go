@@ -3,7 +3,9 @@ package identity
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -21,8 +23,14 @@ import (
 	jobhandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	tgdedup "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dedup/postgres"
+	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
+	tghandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/handlers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
+	tgpayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
 	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/ratelimit"
@@ -36,11 +44,15 @@ type EventHandlerRegistration struct {
 type IdentityModule struct {
 	RepositoryFactory          interfaces.RepositoryFactory
 	UserRouter                 *server.UserRouter
+	TelegramWebhookRouter      *server.TelegramWebhookRouter
 	UpsertUserUseCase          *usecases.UpsertUserByWhatsApp
 	FindUserByIDUseCase        *usecases.FindUserByID
 	FindUserByWhatsApp         *usecases.FindUserByWhatsApp
 	MarkUserDeleted            *usecases.MarkUserDeleted
 	EstablishPrincipal         *usecases.EstablishPrincipal
+	ResolvePrincipalByIdentity *usecases.ResolvePrincipalByIdentity
+	LinkChannelToUser          *usecases.LinkChannelToUser
+	GatewayAuthMiddleware      func(http.Handler) http.Handler
 	EntitlementReader          interfaces.EntitlementReader
 	SubscriptionProjector      *consumers.SubscriptionEventProjector
 	SubscriptionBoundProjector *consumers.SubscriptionBoundProjector
@@ -51,27 +63,20 @@ type IdentityModule struct {
 	WhatsAppDedupRepository    dedup.MessageRepository
 	OutboxPublisher            outbox.Publisher
 	EventHandlers              []EventHandlerRegistration
+	telegramRouterBuilder      *identityModuleBuilder
 }
 
-type moduleBuilder struct {
-	cfg       *configs.Config
-	o11y      observability.Observability
-	mgr       manager.Manager
-	factory   interfaces.RepositoryFactory
-	publisher outbox.Publisher
+func (m IdentityModule) BuildTelegramWebhookRouter(agentRoute tgdispatcher.AgentRoute, onboardingRoute tgdispatcher.OnboardingRoute) (*server.TelegramWebhookRouter, error) {
+	if m.telegramRouterBuilder == nil {
+		return nil, nil
+	}
+	return m.telegramRouterBuilder.buildTelegramWebhookRouter(m, agentRoute, onboardingRoute)
 }
 
-type moduleRuntime struct {
-	upsertUser               *usecases.UpsertUserByWhatsApp
-	findUserByID             *usecases.FindUserByID
-	findUserByWhatsApp       *usecases.FindUserByWhatsApp
-	markUserDeleted          *usecases.MarkUserDeleted
-	establishPrincipal       *usecases.EstablishPrincipal
-	subscriptionProjector    *consumers.SubscriptionEventProjector
-	subscriptionBound        *consumers.SubscriptionBoundProjector
-	authEventsConsumer       *consumers.AuthEventsConsumer
-	authEventsHousekeeping   *jobhandlers.AuthEventsHousekeepingJob
-	recordGatewayAuthFailure *usecases.RecordGatewayAuthFailure
+type identityModuleBuilder struct {
+	cfg  *configs.Config
+	o11y observability.Observability
+	mgr  manager.Manager
 }
 
 type identityPublisher struct {
@@ -86,124 +91,204 @@ type lazyEntitlementReader struct {
 	factory interfaces.RepositoryFactory
 }
 
-func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) IdentityModule {
-	builder := moduleBuilder{
-		cfg:       cfg,
-		o11y:      o11y,
-		mgr:       mgr,
-		factory:   repositories.NewRepositoryFactory(o11y),
-		publisher: newIdentityPublisher(mgr, outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, o11y),
+func NewIdentityModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) (IdentityModule, error) {
+	builder := &identityModuleBuilder{
+		cfg:  cfg,
+		o11y: o11y,
+		mgr:  mgr,
 	}
-	return builder.Build()
+	return builder.build()
+}
+
+func (b *identityModuleBuilder) build() (IdentityModule, error) { //nolint:revive // wiring de módulo; cada statement é injeção de dependência sem lógica
+	factory := repositories.NewRepositoryFactory(b.o11y)
+	publisher := newIdentityPublisher(b.mgr, outbox.NewRepositoryFactory(b.o11y), b.cfg.OutboxConfig, b.o11y)
+
+	upsertUoW := uow.New[entities.User](b.mgr, uow.WithObservability(b.o11y))
+	markDeletedUoW := uow.NewVoid(b.mgr, uow.WithObservability(b.o11y))
+	establishUoW := uow.New[usecases.EstablishResult](b.mgr, uow.WithObservability(b.o11y))
+	resolveByIdentityUoW := uow.New[usecases.EstablishResult](b.mgr, uow.WithObservability(b.o11y))
+
+	upsertUser := usecases.NewUpsertUserByWhatsApp(upsertUoW, factory, b.o11y)
+	findUserByID := usecases.NewFindUserByID(b.mgr, factory, b.o11y)
+	findUserByWhatsApp := usecases.NewFindUserByWhatsApp(b.mgr, factory, b.o11y)
+	markUserDeleted := usecases.NewMarkUserDeleted(markDeletedUoW, factory, publisher, b.o11y)
+	establishPrincipal := usecases.NewEstablishPrincipal(establishUoW, factory, publisher, b.o11y)
+	resolveByIdentity := usecases.NewResolvePrincipalByIdentity(resolveByIdentityUoW, factory, b.o11y)
+	linkChannelUoW := uow.New[usecases.LinkChannelResult](b.mgr, uow.WithObservability(b.o11y))
+	linkChannelToUser := usecases.NewLinkChannelToUser(linkChannelUoW, factory, b.o11y)
+
+	projectionReader := repositories.NewSubscriptionProjectionReader(b.mgr, b.o11y)
+	projectSubscriptionEvent := usecases.NewProjectSubscriptionEvent(factory, b.mgr, projectionReader, b.o11y)
+	subscriptionProjector := consumers.NewSubscriptionEventProjector(projectSubscriptionEvent, b.o11y)
+	subscriptionBoundProjector := consumers.NewSubscriptionBoundProjector(projectSubscriptionEvent, b.o11y)
+
+	projectAuthEvent := usecases.NewProjectAuthEvent(factory, b.mgr, b.o11y)
+	anonymizeUserAuthEvents := usecases.NewAnonymizeUserAuthEvents(factory, b.mgr, b.o11y)
+	authEventsConsumer := consumers.NewAuthEventsConsumer(projectAuthEvent, anonymizeUserAuthEvents, b.o11y)
+
+	cleanupAuthEvents := usecases.NewCleanupAuthEvents(b.mgr, factory, b.cfg.IdentityConfig, b.o11y)
+	authEventsHousekeepingJob := jobhandlers.NewAuthEventsHousekeepingJob(cleanupAuthEvents, b.cfg.IdentityConfig)
+
+	recordGatewayAuthFailure := usecases.NewRecordGatewayAuthFailure(publisher, b.o11y)
+	gatewayAuthMiddleware, err := NewRequireGatewayAuth(b.cfg.IdentityConfig, recordGatewayAuthFailure, b.o11y)
+	if err != nil {
+		return IdentityModule{}, err
+	}
+
+	whatsAppLimiter := ratelimit.New(b.o11y)
+	module := IdentityModule{
+		RepositoryFactory:          factory,
+		UserRouter:                 server.NewUserRouter(handlers.NewUpsertUserByWhatsAppHandler(upsertUser, b.o11y)),
+		UpsertUserUseCase:          upsertUser,
+		FindUserByIDUseCase:        findUserByID,
+		FindUserByWhatsApp:         findUserByWhatsApp,
+		MarkUserDeleted:            markUserDeleted,
+		EstablishPrincipal:         establishPrincipal,
+		ResolvePrincipalByIdentity: resolveByIdentity,
+		LinkChannelToUser:          linkChannelToUser,
+		GatewayAuthMiddleware:      gatewayAuthMiddleware,
+		EntitlementReader:          &lazyEntitlementReader{mgr: b.mgr, factory: factory},
+		SubscriptionProjector:      subscriptionProjector,
+		SubscriptionBoundProjector: subscriptionBoundProjector,
+		AuthEventsConsumer:         authEventsConsumer,
+		AuthEventsHousekeepingJob:  authEventsHousekeepingJob,
+		RecordGatewayAuthFailure:   recordGatewayAuthFailure,
+		WhatsAppLimiter:            whatsAppLimiter,
+		WhatsAppDedupRepository:    deduppostgres.NewMessageRepository(b.o11y, b.mgr),
+		OutboxPublisher:            publisher,
+		EventHandlers: []EventHandlerRegistration{
+			{EventType: "billing.subscription.activated", Handler: subscriptionProjector},
+			{EventType: "billing.subscription.renewed", Handler: subscriptionProjector},
+			{EventType: "billing.subscription.past_due", Handler: subscriptionProjector},
+			{EventType: "billing.subscription.canceled", Handler: subscriptionProjector},
+			{EventType: "billing.subscription.refunded", Handler: subscriptionProjector},
+			{EventType: "onboarding.subscription_bound", Handler: subscriptionBoundProjector},
+			{EventType: "auth.principal_established", Handler: authEventsConsumer},
+			{EventType: "auth.failed", Handler: authEventsConsumer},
+			{EventType: "auth.unknown_user", Handler: authEventsConsumer},
+			{EventType: "user.deleted", Handler: authEventsConsumer},
+		},
+	}
+
+	module.telegramRouterBuilder = b
+	return module, nil
 }
 
 func newIdentityPublisher(mgr manager.Manager, outboxFactory outbox.OutboxRepositoryFactory, cfg configs.OutboxConfig, o11y observability.Observability) outbox.Publisher {
 	return &identityPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
 }
 
-func (b *moduleBuilder) Build() IdentityModule {
-	runtime := b.buildRuntime()
-	userRouter := b.buildUserRouter(runtime.upsertUser)
-	dedupRepository := deduppostgres.NewMessageRepository(b.o11y, b.mgr)
-
-	return IdentityModule{
-		RepositoryFactory:          b.factory,
-		UserRouter:                 userRouter,
-		UpsertUserUseCase:          runtime.upsertUser,
-		FindUserByIDUseCase:        runtime.findUserByID,
-		FindUserByWhatsApp:         runtime.findUserByWhatsApp,
-		MarkUserDeleted:            runtime.markUserDeleted,
-		EstablishPrincipal:         runtime.establishPrincipal,
-		EntitlementReader:          &lazyEntitlementReader{mgr: b.mgr, factory: b.factory},
-		SubscriptionProjector:      runtime.subscriptionProjector,
-		SubscriptionBoundProjector: runtime.subscriptionBound,
-		AuthEventsConsumer:         runtime.authEventsConsumer,
-		AuthEventsHousekeepingJob:  runtime.authEventsHousekeeping,
-		RecordGatewayAuthFailure:   runtime.recordGatewayAuthFailure,
-		WhatsAppLimiter:            ratelimit.New(b.o11y),
-		WhatsAppDedupRepository:    dedupRepository,
-		OutboxPublisher:            b.publisher,
-		EventHandlers:              b.buildEventHandlers(runtime),
+func (b *identityModuleBuilder) buildTelegramWebhookRouter(module IdentityModule, agentRouteOverride tgdispatcher.AgentRoute, onboardingRouteOverride tgdispatcher.OnboardingRoute) (*server.TelegramWebhookRouter, error) {
+	if !b.cfg.TelegramConfig.Enabled {
+		return nil, nil
 	}
-}
 
-func (b *moduleBuilder) buildRuntime() moduleRuntime {
-	upsertUoW := uow.New[entities.User](b.mgr, uow.WithObservability(b.o11y))
-	markDeletedUoW := uow.NewVoid(b.mgr, uow.WithObservability(b.o11y))
-	establishUoW := uow.New[usecases.EstablishResult](b.mgr, uow.WithObservability(b.o11y))
-
-	upsertUser := usecases.NewUpsertUserByWhatsApp(upsertUoW, b.factory, b.o11y)
-	markUserDeleted := usecases.NewMarkUserDeleted(markDeletedUoW, b.factory, b.publisher, b.o11y)
-	establishPrincipal := usecases.NewEstablishPrincipal(establishUoW, b.factory, b.publisher, b.o11y)
-	findUserByID := usecases.NewFindUserByID(b.mgr, b.factory, b.o11y)
-	findUserByWhatsApp := usecases.NewFindUserByWhatsApp(b.mgr, b.factory, b.o11y)
-	subscriptionProjector, subscriptionBound := b.buildSubscriptionConsumers()
-	authEventsConsumer := b.buildAuthEventsConsumer()
-	authEventsHousekeeping := b.buildAuthEventsHousekeeping()
-	recordGatewayAuthFailure := usecases.NewRecordGatewayAuthFailure(b.publisher, b.o11y)
-
-	return moduleRuntime{
-		upsertUser:               upsertUser,
-		findUserByID:             findUserByID,
-		findUserByWhatsApp:       findUserByWhatsApp,
-		markUserDeleted:          markUserDeleted,
-		establishPrincipal:       establishPrincipal,
-		subscriptionProjector:    subscriptionProjector,
-		subscriptionBound:        subscriptionBound,
-		authEventsConsumer:       authEventsConsumer,
-		authEventsHousekeeping:   authEventsHousekeeping,
-		recordGatewayAuthFailure: recordGatewayAuthFailure,
+	gateway, err := outbound.NewSharedGateway(b.o11y, outbound.FactoryConfig{
+		APIBaseURL: b.cfg.TelegramConfig.APIBaseURL,
+		BotToken:   b.cfg.TelegramConfig.BotToken,
+		Timeout:    b.cfg.TelegramConfig.OutboundTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("identity: compose telegram webhook router: %w", err)
 	}
-}
+	dedupRepo := tgdedup.NewUpdateRepository(b.o11y, b.mgr)
+	stubReply := b.cfg.TelegramConfig.AgentStubReceived
+	onboardingReply := b.cfg.TelegramConfig.OnboardingFallback
 
-func (b *moduleBuilder) buildUserRouter(upsertUser *usecases.UpsertUserByWhatsApp) *server.UserRouter {
-	upsertHandler := handlers.NewUpsertUserByWhatsAppHandler(upsertUser, b.o11y)
-	return server.NewUserRouter(upsertHandler)
-}
-
-func (b *moduleBuilder) buildSubscriptionConsumers() (*consumers.SubscriptionEventProjector, *consumers.SubscriptionBoundProjector) {
-	projectionReader := repositories.NewSubscriptionProjectionReader(b.mgr, b.o11y)
-	projectSubscriptionEvent := usecases.NewProjectSubscriptionEvent(b.factory, b.mgr, projectionReader, b.o11y)
-	subscriptionProjector := consumers.NewSubscriptionEventProjector(projectSubscriptionEvent, b.o11y)
-	subscriptionBound := consumers.NewSubscriptionBoundProjector(projectSubscriptionEvent, b.o11y)
-	return subscriptionProjector, subscriptionBound
-}
-
-func (b *moduleBuilder) buildAuthEventsConsumer() *consumers.AuthEventsConsumer {
-	projectAuthEvent := usecases.NewProjectAuthEvent(b.factory, b.mgr, b.o11y)
-	anonymizeUserAuthEvents := usecases.NewAnonymizeUserAuthEvents(b.factory, b.mgr, b.o11y)
-	return consumers.NewAuthEventsConsumer(projectAuthEvent, anonymizeUserAuthEvents, b.o11y)
-}
-
-func (b *moduleBuilder) buildAuthEventsHousekeeping() *jobhandlers.AuthEventsHousekeepingJob {
-	cleanupAuthEvents := usecases.NewCleanupAuthEvents(b.mgr, b.factory, b.cfg.IdentityConfig, b.o11y)
-	return jobhandlers.NewAuthEventsHousekeepingJob(cleanupAuthEvents, b.cfg.IdentityConfig)
-}
-
-func (b *moduleBuilder) buildEventHandlers(runtime moduleRuntime) []EventHandlerRegistration {
-	return []EventHandlerRegistration{
-		{EventType: "billing.subscription.activated", Handler: runtime.subscriptionProjector},
-		{EventType: "billing.subscription.renewed", Handler: runtime.subscriptionProjector},
-		{EventType: "billing.subscription.past_due", Handler: runtime.subscriptionProjector},
-		{EventType: "billing.subscription.canceled", Handler: runtime.subscriptionProjector},
-		{EventType: "billing.subscription.refunded", Handler: runtime.subscriptionProjector},
-		{EventType: "onboarding.subscription_bound", Handler: runtime.subscriptionBound},
-		{EventType: "auth.principal_established", Handler: runtime.authEventsConsumer},
-		{EventType: "auth.failed", Handler: runtime.authEventsConsumer},
-		{EventType: "auth.unknown_user", Handler: runtime.authEventsConsumer},
-		{EventType: "user.deleted", Handler: runtime.authEventsConsumer},
-	}
-}
-
-func NewRequireGatewayAuth(cfg configs.IdentityConfig, failureUseCase *usecases.RecordGatewayAuthFailure, o11y observability.Observability) func(http.Handler) http.Handler {
-	var current, next []byte
-	if decoded, err := hex.DecodeString(cfg.GatewaySharedSecretCurrent); err == nil {
-		current = decoded
-	}
-	if cfg.GatewaySharedSecretNext != "" {
-		if decoded, err := hex.DecodeString(cfg.GatewaySharedSecretNext); err == nil {
-			next = decoded
+	stubOnboardingRoute := func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
+		if onboardingReply == "" {
+			return tgdispatcher.OutcomeFallback
 		}
+		if err := gateway.SendTextMessage(ctx, msg.ChatID, onboardingReply); err != nil {
+			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.onboarding_route_failed",
+				observability.Error(err),
+			)
+		}
+		return tgdispatcher.OutcomeFallback
+	}
+	onboardingRoute := stubOnboardingRoute
+	if onboardingRouteOverride != nil {
+		onboardingRoute = onboardingRouteOverride
+	}
+
+	stubAgentRoute := func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
+		if stubReply == "" {
+			return tgdispatcher.OutcomeAgent
+		}
+		if err := gateway.SendTextMessage(ctx, msg.ChatID, stubReply); err != nil {
+			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_failed",
+				observability.Error(err),
+			)
+		}
+		return tgdispatcher.OutcomeAgent
+	}
+	agentRoute := stubAgentRoute
+	if agentRouteOverride != nil {
+		agentRoute = agentRouteOverride
+	}
+
+	dispatcher := tgdispatcher.New(
+		b.cfg.TelegramConfig.BotID,
+		dedupRepo,
+		module.ResolvePrincipalByIdentity,
+		module.WhatsAppLimiter,
+		module.OutboxPublisher,
+		onboardingRoute,
+		agentRoute,
+		b.o11y,
+	)
+
+	inboundHandler := tghandlers.NewInboundHandler(dispatcher, b.o11y)
+	rateLimiter := middleware.NewRateLimiter(
+		b.cfg.TelegramConfig.WebhookRateLimitPerMin,
+		b.cfg.TelegramConfig.WebhookRateLimitBurst,
+		b.parseCSV(b.cfg.OnboardingConfig.TrustedProxies),
+	)
+	rateLimitExceededTotal := b.o11y.Metrics().Counter(
+		"telegram_webhook_rate_limit_exceeded_total",
+		"Total de requisicoes bloqueadas pelo rate limit do webhook Telegram",
+		"1",
+	)
+
+	webhookPath := b.cfg.TelegramConfig.WebhookPath
+	if webhookPath == "" {
+		webhookPath = "/api/v1/channels/telegram/webhook"
+	}
+
+	return server.NewTelegramWebhookRouter(
+		inboundHandler,
+		b.cfg.TelegramConfig.SecretToken,
+		b.cfg.TelegramConfig.SecretTokenNext,
+		webhookPath,
+		rateLimiter.Middleware,
+		func() { rateLimitExceededTotal.Increment(context.Background()) },
+	), nil
+}
+
+func (b *identityModuleBuilder) parseCSV(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	values := make([]string, 0)
+	for item := range strings.SplitSeq(raw, ",") {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		values = append(values, trimmed)
+	}
+	return values
+}
+
+func NewRequireGatewayAuth(cfg configs.IdentityConfig, failureUseCase *usecases.RecordGatewayAuthFailure, o11y observability.Observability) (func(http.Handler) http.Handler, error) {
+	current, err := decodeGatewaySecret("current", cfg.GatewaySharedSecretCurrent)
+	if err != nil {
+		return nil, err
+	}
+	next, err := decodeGatewaySecret("next", cfg.GatewaySharedSecretNext)
+	if err != nil {
+		return nil, err
 	}
 	window := cfg.GatewayAuthWindow
 	if window <= 0 {
@@ -215,7 +300,18 @@ func NewRequireGatewayAuth(cfg configs.IdentityConfig, failureUseCase *usecases.
 		FailureLogger: failureUseCase,
 		O11y:          o11y,
 	}
-	return identitymiddleware.RequireGatewayAuth(deps)
+	return identitymiddleware.RequireGatewayAuth(deps), nil
+}
+
+func decodeGatewaySecret(label string, raw string) ([]byte, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	decoded, err := hex.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("identity: decode gateway secret %s: %w", label, err)
+	}
+	return decoded, nil
 }
 
 func (r *lazyEntitlementReader) FindByUserID(ctx context.Context, userID string) (interfaces.EntitlementRecord, error) {

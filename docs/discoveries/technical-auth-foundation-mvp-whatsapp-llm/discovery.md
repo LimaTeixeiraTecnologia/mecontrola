@@ -111,7 +111,7 @@ Componentes:
 - `internal/platform/whatsapp/` — novo pacote. Subpastas:
   - `signature/` (movido de `onboarding/.../middleware/meta_signature.go` + raw body buffer): exporta `HMACMiddleware(secretCurrent, secretNext, metrics)` e `SignatureStatusFromContext`.
   - `payload/` — parser do envelope Meta + `ExtractFirstMessage(payload) (Message, bool)`.
-  - `dedup/` — porta `MessageRepository.InsertIfAbsent(ctx, wamid)` + métrica `meta_duplicate_messages_total`. Implementação concreta segue no módulo consumidor (reutilizar a tabela `meta_processed_messages` existente).
+  - `dedup/` — porta `MessageRepository.InsertIfAbsent(ctx, wamid)` + métrica `meta_duplicate_messages_total`. Implementação concreta segue no módulo consumidor.
   - `dispatcher/` — `Dispatcher.Route(ctx, msg) RouteOutcome` aplica regex de `ATIVAR <token>` e roteia: (a) ativação → handler onboarding; (b) usuário existe e está ativo → `EstablishPrincipal` + handler agent (futuro `internal/agent`); (c) usuário não existe → handler fallback do onboarding.
   - `ratelimit/` — token bucket por `uuid.UUID` com `sync.Map[uuid.UUID]*bucket` + goroutine cleanup. API: `Limiter.Allow(userID) bool` + `Limiter.Shutdown(ctx) error`. Bucket: 60 tokens, refill 1 token/seg, burst 60. Cleanup remove buckets inativos > 5min a cada 60s. Goroutine cancelável por `ctx`.
 - `internal/identity/infrastructure/messaging/database/consumers/auth_events_consumer.go` — consumidor outbox que projeta eventos `auth.*` para a tabela `auth_events`. Idempotência por `event_id` (já garantida pelo padrão do outbox).
@@ -138,7 +138,7 @@ Variante D' do bundle de brainstorming: `auth.Principal` in-process via `context
 Domínios de dados:
 - `users` (existente em `internal/identity`) — fonte de verdade para `user_id` e `wa_id`.
 - `auth_events` (nova) — audit log projetado do outbox.
-- `meta_processed_messages` (existente em onboarding) — dedup WAMID, será compartilhada via porta em `internal/platform/whatsapp/dedup`.
+- `channel_processed_messages` — dedup canônico por canal/mensagem, compartilhado via porta em `internal/platform/whatsapp/dedup`.
 - `platform_outbox_events` (existente) — canal único de eventos.
 
 Integrações:

@@ -69,7 +69,7 @@ type SubscriptionRepository_ApplyTransition_Call struct {
 //   - status valueobjects.Status
 //   - graceEnd time.Time
 //   - lastEventAt time.Time
-func (_e *SubscriptionRepository_Expecter) ApplyTransition(ctx interface{}, subscriptionID interface{}, status interface{}, graceEnd interface{}, lastEventAt interface{}) *SubscriptionRepository_ApplyTransition_Call {
+func (_e *SubscriptionRepository_Expecter) ApplyTransition(ctx any, subscriptionID any, status any, graceEnd any, lastEventAt any) *SubscriptionRepository_ApplyTransition_Call {
 	return &SubscriptionRepository_ApplyTransition_Call{Call: _e.mock.On("ApplyTransition", ctx, subscriptionID, status, graceEnd, lastEventAt)}
 }
 
@@ -142,7 +142,7 @@ type SubscriptionRepository_BindUser_Call struct {
 //   - ctx context.Context
 //   - subscriptionID string
 //   - userID string
-func (_e *SubscriptionRepository_Expecter) BindUser(ctx interface{}, subscriptionID interface{}, userID interface{}) *SubscriptionRepository_BindUser_Call {
+func (_e *SubscriptionRepository_Expecter) BindUser(ctx any, subscriptionID any, userID any) *SubscriptionRepository_BindUser_Call {
 	return &SubscriptionRepository_BindUser_Call{Call: _e.mock.On("BindUser", ctx, subscriptionID, userID)}
 }
 
@@ -206,7 +206,7 @@ type SubscriptionRepository_ExtendPeriod_Call struct {
 //   - subscriptionID string
 //   - newPeriodEnd time.Time
 //   - lastEventAt time.Time
-func (_e *SubscriptionRepository_Expecter) ExtendPeriod(ctx interface{}, subscriptionID interface{}, newPeriodEnd interface{}, lastEventAt interface{}) *SubscriptionRepository_ExtendPeriod_Call {
+func (_e *SubscriptionRepository_Expecter) ExtendPeriod(ctx any, subscriptionID any, newPeriodEnd any, lastEventAt any) *SubscriptionRepository_ExtendPeriod_Call {
 	return &SubscriptionRepository_ExtendPeriod_Call{Call: _e.mock.On("ExtendPeriod", ctx, subscriptionID, newPeriodEnd, lastEventAt)}
 }
 
@@ -282,7 +282,7 @@ type SubscriptionRepository_FindByKiwifySubID_Call struct {
 // FindByKiwifySubID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - kiwifySubID string
-func (_e *SubscriptionRepository_Expecter) FindByKiwifySubID(ctx interface{}, kiwifySubID interface{}) *SubscriptionRepository_FindByKiwifySubID_Call {
+func (_e *SubscriptionRepository_Expecter) FindByKiwifySubID(ctx any, kiwifySubID any) *SubscriptionRepository_FindByKiwifySubID_Call {
 	return &SubscriptionRepository_FindByKiwifySubID_Call{Call: _e.mock.On("FindByKiwifySubID", ctx, kiwifySubID)}
 }
 
@@ -348,7 +348,7 @@ type SubscriptionRepository_FindByOrderID_Call struct {
 // FindByOrderID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - orderID string
-func (_e *SubscriptionRepository_Expecter) FindByOrderID(ctx interface{}, orderID interface{}) *SubscriptionRepository_FindByOrderID_Call {
+func (_e *SubscriptionRepository_Expecter) FindByOrderID(ctx any, orderID any) *SubscriptionRepository_FindByOrderID_Call {
 	return &SubscriptionRepository_FindByOrderID_Call{Call: _e.mock.On("FindByOrderID", ctx, orderID)}
 }
 
@@ -414,7 +414,7 @@ type SubscriptionRepository_FindByUserID_Call struct {
 // FindByUserID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID string
-func (_e *SubscriptionRepository_Expecter) FindByUserID(ctx interface{}, userID interface{}) *SubscriptionRepository_FindByUserID_Call {
+func (_e *SubscriptionRepository_Expecter) FindByUserID(ctx any, userID any) *SubscriptionRepository_FindByUserID_Call {
 	return &SubscriptionRepository_FindByUserID_Call{Call: _e.mock.On("FindByUserID", ctx, userID)}
 }
 
@@ -483,7 +483,7 @@ type SubscriptionRepository_ListPastDueGraceExpired_Call struct {
 //   - ctx context.Context
 //   - now time.Time
 //   - limit int
-func (_e *SubscriptionRepository_Expecter) ListPastDueGraceExpired(ctx interface{}, now interface{}, limit interface{}) *SubscriptionRepository_ListPastDueGraceExpired_Call {
+func (_e *SubscriptionRepository_Expecter) ListPastDueGraceExpired(ctx any, now any, limit any) *SubscriptionRepository_ListPastDueGraceExpired_Call {
 	return &SubscriptionRepository_ListPastDueGraceExpired_Call{Call: _e.mock.On("ListPastDueGraceExpired", ctx, now, limit)}
 }
 
@@ -545,7 +545,7 @@ type SubscriptionRepository_UpsertByOrder_Call struct {
 // UpsertByOrder is a helper method to define mock.On call
 //   - ctx context.Context
 //   - params interfaces.UpsertByOrderParams
-func (_e *SubscriptionRepository_Expecter) UpsertByOrder(ctx interface{}, params interface{}) *SubscriptionRepository_UpsertByOrder_Call {
+func (_e *SubscriptionRepository_Expecter) UpsertByOrder(ctx any, params any) *SubscriptionRepository_UpsertByOrder_Call {
 	return &SubscriptionRepository_UpsertByOrder_Call{Call: _e.mock.On("UpsertByOrder", ctx, params)}
 }
 

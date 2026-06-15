@@ -4,14 +4,17 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
 
-python3 - "$repo_root" << 'PYEOF'
+scan_root="${1:-${repo_root}/internal}"
+allowlist_path="${OUTBOX_ALLOWLIST_FILE:-${repo_root}/internal/platform/outbox/system_event_allowlist.go}"
+
+python3 - "$scan_root" "$allowlist_path" << 'PYEOF'
 import sys
 import os
 import re
 import glob
 
-repo_root = sys.argv[1]
-allowlist_file = os.path.join(repo_root, "internal/platform/outbox/system_event_allowlist.go")
+scan_root = sys.argv[1]
+allowlist_file = sys.argv[2]
 
 def load_allowlist(path):
     if not os.path.exists(path):
@@ -44,7 +47,7 @@ def line_number(content, pos):
 
 def find_go_files():
     files = []
-    for root, dirs, filenames in os.walk(os.path.join(repo_root, "internal")):
+    for root, dirs, filenames in os.walk(scan_root):
         dirs[:] = [d for d in dirs if d != "mocks"]
         for fname in filenames:
             if fname.endswith(".go") and not fname.endswith("_test.go"):
@@ -57,7 +60,7 @@ for filepath in find_go_files():
     with open(filepath, "r", errors="replace") as f:
         content = f.read()
 
-    rel_path = os.path.relpath(filepath, repo_root)
+    rel_path = os.path.relpath(filepath, scan_root)
 
     for m in STRUCT_PATTERN.finditer(content):
         try:
@@ -73,10 +76,7 @@ for filepath in find_go_files():
         if not struct_body.strip().startswith("{"):
             continue
 
-        has_aggregate_user_id = bool(re.search(r'\bAggregateUserID\s*:', struct_body))
-
-        if has_aggregate_user_id:
-            continue
+        aggregate_match = re.search(r'\bAggregateUserID\s*:\s*([^,\n}]+)', struct_body)
 
         type_match = re.search(r'\bType\s*:\s*"([^"]+)"', struct_body)
         if type_match:
@@ -89,7 +89,14 @@ for filepath in find_go_files():
             continue
 
         lnum = line_number(content, m.start())
-        violations.append(f"  {rel_path}:{lnum}: {m.group(0)}... sem AggregateUserID: (Type: '{type_value}' nao esta na allowlist)")
+
+        if not aggregate_match:
+            violations.append(f"  {rel_path}:{lnum}: {m.group(0)}... sem AggregateUserID: (Type: '{type_value}' nao esta na allowlist)")
+            continue
+
+        value_literal = aggregate_match.group(1).strip().rstrip(',').strip()
+        if value_literal in ('""', "''", '``'):
+            violations.append(f"  {rel_path}:{lnum}: {m.group(0)}... AggregateUserID vazio literal: (Type: '{type_value}' nao esta na allowlist)")
 
 if violations:
     print("FAIL lint:outbox-user-id — outbox.EventInput/Event sem AggregateUserID em codigo de producao (ADR-004 violado):", file=sys.stderr)

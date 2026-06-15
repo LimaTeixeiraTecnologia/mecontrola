@@ -40,6 +40,7 @@ const (
 var (
 	ErrPrincipalEstablishedRequiresUserID = errors.New("principal_established requires non-zero user id")
 	ErrAuthFailedRequiresReason           = errors.New("auth_failed requires non-empty reason")
+	ErrGatewayReasonRequiresGatewaySource = errors.New("gateway auth_failed reason requires gateway source")
 )
 
 type AuthEvent struct {
@@ -90,6 +91,9 @@ func NewAuthFailed(reason AuthEventReason, source AuthEventSource, userID *uuid.
 	if reason == "" {
 		return AuthEvent{}, ErrAuthFailedRequiresReason
 	}
+	if isGatewayReason(reason) && source != AuthEventSourceGateway {
+		return AuthEvent{}, ErrGatewayReasonRequiresGatewaySource
+	}
 	id, err := uuid.NewV7()
 	if err != nil {
 		return AuthEvent{}, err
@@ -128,3 +132,15 @@ func (e AuthEvent) Source() AuthEventSource  { return e.source }
 func (e AuthEvent) Reason() *AuthEventReason { return e.reason }
 func (e AuthEvent) RequestID() string        { return e.requestID }
 func (e AuthEvent) ClientIP() string         { return e.clientIP }
+
+func isGatewayReason(reason AuthEventReason) bool {
+	switch reason {
+	case AuthEventReasonGatewayMissingHeader,
+		AuthEventReasonGatewayInvalidTimestamp,
+		AuthEventReasonGatewayStaleTimestamp,
+		AuthEventReasonGatewayInvalidSignature:
+		return true
+	default:
+		return false
+	}
+}

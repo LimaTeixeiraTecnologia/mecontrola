@@ -63,7 +63,7 @@ type processRefundOrChargeback_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.ProcessRefundOrChargebackInput
-func (_e *processRefundOrChargeback_Expecter) Execute(ctx interface{}, in interface{}) *processRefundOrChargeback_Execute_Call {
+func (_e *processRefundOrChargeback_Expecter) Execute(ctx any, in any) *processRefundOrChargeback_Execute_Call {
 	return &processRefundOrChargeback_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

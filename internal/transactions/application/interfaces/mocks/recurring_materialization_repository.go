@@ -78,7 +78,7 @@ type RecurringMaterializationRepository_InsertIfAbsent_Call struct {
 //   - materializedTransactionID *uuid.UUID
 //   - materializedPurchaseID *uuid.UUID
 //   - now time.Time
-func (_e *RecurringMaterializationRepository_Expecter) InsertIfAbsent(ctx interface{}, templateID interface{}, refMonth interface{}, materializedTransactionID interface{}, materializedPurchaseID interface{}, now interface{}) *RecurringMaterializationRepository_InsertIfAbsent_Call {
+func (_e *RecurringMaterializationRepository_Expecter) InsertIfAbsent(ctx any, templateID any, refMonth any, materializedTransactionID any, materializedPurchaseID any, now any) *RecurringMaterializationRepository_InsertIfAbsent_Call {
 	return &RecurringMaterializationRepository_InsertIfAbsent_Call{Call: _e.mock.On("InsertIfAbsent", ctx, templateID, refMonth, materializedTransactionID, materializedPurchaseID, now)}
 }
 
@@ -165,7 +165,7 @@ type RecurringMaterializationRepository_IsCompleted_Call struct {
 //   - ctx context.Context
 //   - templateID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *RecurringMaterializationRepository_Expecter) IsCompleted(ctx interface{}, templateID interface{}, refMonth interface{}) *RecurringMaterializationRepository_IsCompleted_Call {
+func (_e *RecurringMaterializationRepository_Expecter) IsCompleted(ctx any, templateID any, refMonth any) *RecurringMaterializationRepository_IsCompleted_Call {
 	return &RecurringMaterializationRepository_IsCompleted_Call{Call: _e.mock.On("IsCompleted", ctx, templateID, refMonth)}
 }
 
@@ -230,7 +230,7 @@ type RecurringMaterializationRepository_MarkCompleted_Call struct {
 //   - refMonth valueobjects.RefMonth
 //   - transactionID *uuid.UUID
 //   - purchaseID *uuid.UUID
-func (_e *RecurringMaterializationRepository_Expecter) MarkCompleted(ctx interface{}, templateID interface{}, refMonth interface{}, transactionID interface{}, purchaseID interface{}) *RecurringMaterializationRepository_MarkCompleted_Call {
+func (_e *RecurringMaterializationRepository_Expecter) MarkCompleted(ctx any, templateID any, refMonth any, transactionID any, purchaseID any) *RecurringMaterializationRepository_MarkCompleted_Call {
 	return &RecurringMaterializationRepository_MarkCompleted_Call{Call: _e.mock.On("MarkCompleted", ctx, templateID, refMonth, transactionID, purchaseID)}
 }
 
@@ -320,7 +320,7 @@ type RecurringMaterializationRepository_TryAdvisoryLock_Call struct {
 //   - ctx context.Context
 //   - templateID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *RecurringMaterializationRepository_Expecter) TryAdvisoryLock(ctx interface{}, templateID interface{}, refMonth interface{}) *RecurringMaterializationRepository_TryAdvisoryLock_Call {
+func (_e *RecurringMaterializationRepository_Expecter) TryAdvisoryLock(ctx any, templateID any, refMonth any) *RecurringMaterializationRepository_TryAdvisoryLock_Call {
 	return &RecurringMaterializationRepository_TryAdvisoryLock_Call{Call: _e.mock.On("TryAdvisoryLock", ctx, templateID, refMonth)}
 }
 

@@ -63,7 +63,7 @@ type processSaleApproved_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.ProcessSaleApprovedInput
-func (_e *processSaleApproved_Expecter) Execute(ctx interface{}, in interface{}) *processSaleApproved_Execute_Call {
+func (_e *processSaleApproved_Expecter) Execute(ctx any, in any) *processSaleApproved_Execute_Call {
 	return &processSaleApproved_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

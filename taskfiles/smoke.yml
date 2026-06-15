@@ -53,11 +53,11 @@ tasks:
           "SELECT count(*) FROM mecontrola.outbox_events WHERE aggregate_user_id IS NOT NULL")
         echo "Eventos com aggregate_user_id apos smoke: $AFTER"
         if [ "$AFTER" -le "$BEFORE" ]; then
-          echo "WARN: contagem nao aumentou (AFTER=$AFTER, BEFORE=$BEFORE)."
+          echo "FAIL: contagem nao aumentou (AFTER=$AFTER, BEFORE=$BEFORE)."
           echo "  Verifique se os eventos foram disparados e se o dispatcher processou."
-        else
-          echo "PASS: aggregate_user_id populado em $(($AFTER - $BEFORE)) novo(s) evento(s)."
+          exit 1
         fi
+        echo "PASS: aggregate_user_id populado em $(($AFTER - $BEFORE)) novo(s) evento(s)."
       - |
         set -euo pipefail
         echo "==> Smoke: verificando ausencia de eventos sem user_id (exceto allowlist)..."
@@ -67,18 +67,19 @@ tasks:
            AND created_at > now() - interval '10 minutes'")
         echo "Eventos sem aggregate_user_id nos ultimos 10 minutos: $MISSING"
         if [ "$MISSING" -gt "0" ]; then
-          echo "WARN: $MISSING evento(s) sem aggregate_user_id detectado(s)."
+          echo "FAIL: $MISSING evento(s) sem aggregate_user_id detectado(s)."
           echo "  Verificar logs: msg=\"outbox.event.missing_aggregate_user_id\""
           echo "  Confirmar se sao eventos da allowlist de sistema (ADR-004)."
-        else
-          echo "PASS: nenhum evento sem aggregate_user_id nos ultimos 10 minutos."
+          exit 1
         fi
+        echo "PASS: nenhum evento sem aggregate_user_id nos ultimos 10 minutos."
         echo "==> Smoke outbox-user-id: concluido."
 
   outbox-user-id-adversarial:
     desc: |
-      Smoke adversarial: valida que metrica has_user_id="false" e alerta OutboxMissingUserID
-      respondem a eventos inseridos manualmente sem aggregate_user_id.
+      Smoke adversarial SQL-only: insere evento manual sem aggregate_user_id para validar
+      precondicoes do alerta/housekeeping. Nao valida a metrica Prometheus, que so e
+      incrementada pelo publisher da aplicacao.
       Requer DATABASE_URL e METRICS_URL (ex: http://localhost:8080/metrics).
     vars:
       DATABASE_URL: '{{.DATABASE_URL | default ""}}'
@@ -93,7 +94,7 @@ tasks:
     cmds:
       - |
         set -euo pipefail
-        echo "==> Adversarial: capturando baseline da metrica has_user_id=false..."
+        echo "==> Adversarial: capturando baseline da metrica has_user_id=false (referencia apenas)..."
         BEFORE=$(curl -sf "{{.METRICS_URL}}" \
           | grep 'outbox_events_inserted_total{has_user_id="false"}' \
           | awk '{print $2}' || echo "0")
@@ -112,18 +113,21 @@ tasks:
         echo "WARN: este evento de teste deve ser limpo pelo housekeeping."
       - |
         set -euo pipefail
-        echo "==> Adversarial: aguardando 10s e verificando metrica..."
+        echo "==> Adversarial: aguardando 10s e verificando o evento SQL inserido..."
         sleep 10
+        ROWS=$(psql "{{.DATABASE_URL}}" -tAc \
+          "SELECT count(*) FROM mecontrola.outbox_events WHERE event_type = 'smoke.adversarial.test' AND aggregate_user_id IS NULL AND created_at > now() - interval '10 minutes'")
         BEFORE=$(cat /tmp/outbox_adversarial_before.txt)
         AFTER=$(curl -sf "{{.METRICS_URL}}" \
           | grep 'outbox_events_inserted_total{has_user_id="false"}' \
           | awk '{print $2}' || echo "0")
-        echo "Baseline: $BEFORE | Apos insercao manual: $AFTER"
+        echo "Baseline metrica: $BEFORE | Apos insercao manual: $AFTER"
+        if [ "$ROWS" -lt "1" ]; then
+          echo "FAIL: evento adversarial sem aggregate_user_id nao foi encontrado na tabela."
+          exit 1
+        fi
+        echo "PASS: evento adversarial presente na tabela com aggregate_user_id NULL."
         echo ""
-        echo "NOTA: a metrica outbox_events_inserted_total e incrementada pelo codigo Go"
-        echo "  durante a insercao via outbox.Publisher. A insercao SQL direta acima nao"
-        echo "  incrementa a metrica — serve apenas para validar o alerta via SQL."
-        echo ""
-        echo "Para validar a metrica adversarialmente, use a API de staging para disparar"
-        echo "  um evento de um modulo com AggregateUserID temporariamente vazio."
-        echo "==> Adversarial: concluido."
+        echo "NOTA: a metrica outbox_events_inserted_total e incrementada pelo codigo Go durante a insercao via outbox.Publisher."
+        echo "A insercao SQL direta acima nao incrementa a metrica e nao deve ser usada como prova de cobertura dela."
+        echo "==> Adversarial SQL-only: concluido."

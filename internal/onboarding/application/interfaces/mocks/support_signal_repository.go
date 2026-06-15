@@ -63,7 +63,7 @@ type SupportSignalRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - signal entities.SupportSignal
-func (_e *SupportSignalRepository_Expecter) Insert(ctx interface{}, signal interface{}) *SupportSignalRepository_Insert_Call {
+func (_e *SupportSignalRepository_Expecter) Insert(ctx any, signal any) *SupportSignalRepository_Insert_Call {
 	return &SupportSignalRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, signal)}
 }
 

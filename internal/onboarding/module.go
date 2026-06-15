@@ -44,38 +44,13 @@ type OnboardingModule struct {
 	PublicRouter                 *onboardingserver.PublicRouter
 	WhatsAppGateway              appinterfaces.WhatsAppGateway
 	WhatsAppMessageProcessor     *services.WhatsAppMessageProcessor
+	TelegramMessageProcessor     *services.TelegramMessageProcessor
 	SubscriptionConsumer         events.Handler
 	PaidWithoutTokenConsumer     events.Handler
 	OutreachJob                  worker.Job
 	ExpirationJob                worker.Job
 	MetaProcessedMessagesCleanup worker.Job
 	EventHandlers                []EventHandlerRegistration
-}
-
-type moduleBuilder struct {
-	mgr            manager.Manager
-	cfg            configs.OnboardingConfig
-	waCfg          configs.WhatsAppConfig
-	outboxCfg      configs.OutboxConfig
-	runtimeCfg     onboardingconfig.OnboardingRuntimeConfig
-	identityModule identity.IdentityModule
-	o11y           observability.Observability
-	factory        appinterfaces.RepositoryFactory
-	publisher      outbox.Publisher
-	idGen          id.Generator
-}
-
-type moduleRuntime struct {
-	createCheckout         *usecases.CreateCheckoutSession
-	markTokenPaid          *usecases.MarkTokenPaid
-	consumeToken           *usecases.ConsumeMagicToken
-	fallbackActivation     *usecases.TryFallbackActivation
-	getTokenState          *usecases.GetTokenState
-	sendOutreach           *usecases.SendOutreach
-	expireTokens           *usecases.ExpireTokens
-	handlePaidWithoutToken *usecases.HandlePaidWithoutToken
-	cleanupTables          *usecases.CleanupOnboardingTables
-	whatsAppGateway        appinterfaces.WhatsAppGateway
 }
 
 type managerPublisher struct {
@@ -89,45 +64,97 @@ type identityGatewayAdapter struct {
 	identityModule identity.IdentityModule
 }
 
+func buildTelegramMessages(tgCfg configs.TelegramConfig) map[string]string {
+	return map[string]string{
+		"welcome_activated":               tgCfg.WelcomeActivated,
+		"already_active":                  tgCfg.AlreadyActive,
+		"requires_whatsapp_activation":    tgCfg.RequiresWhatsApp,
+		"code_already_used_other_account": tgCfg.CodeAlreadyUsed,
+		"payment_still_processing_retry":  tgCfg.PaymentProcessing,
+		"code_expired_contact_support":    tgCfg.CodeExpired,
+		"code_invalid_check_again":        tgCfg.CodeInvalid,
+		"system_unavailable_retry":        tgCfg.SystemUnavailable,
+		"please_use_ativar_command":       tgCfg.PleaseUseAtivar,
+	}
+}
+
 func NewOnboardingModule(
 	mgr manager.Manager,
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
+	tgCfg configs.TelegramConfig,
 	outboxCfg configs.OutboxConfig,
 	identityModule identity.IdentityModule,
 	o11y observability.Observability,
 ) (OnboardingModule, error) {
-	builder, err := newModuleBuilder(mgr, cfg, waCfg, outboxCfg, identityModule, o11y)
+	runtimeCfg, err := onboardingconfig.NewOnboardingRuntimeConfig(cfg, waCfg)
 	if err != nil {
 		return OnboardingModule{}, err
 	}
-	return builder.Build()
-}
-
-func newModuleBuilder(
-	mgr manager.Manager,
-	cfg configs.OnboardingConfig,
-	waCfg configs.WhatsAppConfig,
-	outboxCfg configs.OutboxConfig,
-	identityModule identity.IdentityModule,
-	o11y observability.Observability,
-) (*moduleBuilder, error) {
-	runtimeCfg, err := onboardingconfig.NewOnboardingRuntimeConfig(cfg, waCfg)
-	if err != nil {
-		return nil, err
-	}
 	factory := repositories.NewRepositoryFactory(o11y)
-	return &moduleBuilder{
-		mgr:            mgr,
-		cfg:            cfg,
-		waCfg:          waCfg,
-		outboxCfg:      outboxCfg,
-		runtimeCfg:     runtimeCfg,
-		identityModule: identityModule,
-		o11y:           o11y,
-		factory:        factory,
-		publisher:      newManagerPublisher(mgr, outbox.NewRepositoryFactory(o11y), outboxCfg, o11y),
-		idGen:          id.NewUUIDGenerator(),
+	publisher := newManagerPublisher(mgr, outbox.NewRepositoryFactory(o11y), outboxCfg, o11y)
+	idGen := id.NewUUIDGenerator()
+
+	tokenCipher, err := onboardingcrypto.NewTokenCipher(cfg.TokenEncryptionKey)
+	if err != nil {
+		return OnboardingModule{}, err
+	}
+	whatsAppGateway, err := newWhatsAppGateway(waCfg, o11y)
+	if err != nil {
+		return OnboardingModule{}, err
+	}
+
+	identityGateway := newIdentityGatewayAdapter(identityModule)
+	subscriptionBinder := postgres.NewSubscriptionBinder(o11y, mgr.DBTX(context.Background()))
+	urlBuilder := checkout.NewKiwifyURLBuilder(runtimeCfg.CheckoutURLs, runtimeCfg.KiwifyAllowedHosts)
+	checkoutUoW := uow.New[entities.MagicToken](mgr, uow.WithObservability(o11y))
+	consumeUoW := uow.New[usecases.ConsumeInternalResult](mgr, uow.WithObservability(o11y))
+	workflow := domainservices.NewMagicTokenWorkflow()
+	bindingService := binding.NewSubscriptionBindingService(identityGateway, subscriptionBinder, workflow, publisher, idGen)
+
+	createCheckout := usecases.NewCreateCheckoutSession(checkoutUoW, factory, urlBuilder, tokenCipher, idGen, runtimeCfg.TokenTTL, o11y)
+	markTokenPaid := usecases.NewMarkTokenPaid(mgr, factory, workflow, o11y)
+	consumeToken := usecases.NewConsumeMagicToken(consumeUoW, factory, bindingService, idGen, o11y)
+	fallbackActivation := usecases.NewTryFallbackActivation(consumeUoW, factory, bindingService, o11y)
+	getTokenState := usecases.NewGetTokenState(mgr, factory, waCfg.BotNumberE164, waCfg.BotNumberDisplay, o11y)
+	sendOutreach := usecases.NewSendOutreach(mgr, factory, whatsAppGateway, tokenCipher, idGen, waCfg.OutreachTemplateName, runtimeCfg.OutreachGap, o11y)
+	expireTokens := usecases.NewExpireTokens(mgr, factory, idGen, o11y)
+	handlePaidWithoutToken := usecases.NewHandlePaidWithoutToken(mgr, factory, idGen, o11y)
+	cleanupTables := usecases.NewCleanupOnboardingTables(mgr.DBTX(context.Background()), factory, runtimeCfg.MetaRetention, o11y)
+
+	registerMetrics(mgr, factory, o11y)
+	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y)
+	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y)
+	publicRouter := newPublicRouter(cfg, runtimeCfg, createCheckout, getTokenState, o11y)
+	messageProcessor := services.NewWhatsAppMessageProcessor(
+		consumeToken,
+		fallbackActivation,
+		whatsAppGateway,
+		runtimeCfg.Messages,
+		o11y,
+	)
+	activateTelegramUoW := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
+	activateTelegram := usecases.NewActivateTelegramByToken(factory, identityModule.RepositoryFactory, activateTelegramUoW, o11y)
+	telegramProcessor := services.NewTelegramMessageProcessor(
+		activateTelegram,
+		buildTelegramMessages(tgCfg),
+		o11y,
+	)
+
+	return OnboardingModule{
+		PublicRouter:                 publicRouter,
+		WhatsAppGateway:              whatsAppGateway,
+		WhatsAppMessageProcessor:     messageProcessor,
+		TelegramMessageProcessor:     telegramProcessor,
+		SubscriptionConsumer:         subscriptionConsumer,
+		PaidWithoutTokenConsumer:     paidWithoutTokenConsumer,
+		OutreachJob:                  onboardingjobs.NewOutreachJob(sendOutreach, cfg.OutreachEnabled),
+		ExpirationJob:                onboardingjobs.NewTokenExpirationJob(expireTokens, cfg.TokenExpirationSchedule),
+		MetaProcessedMessagesCleanup: onboardingjobs.NewMetaProcessedMessagesCleanupJob(cleanupTables, cfg.MetaCleanupSchedule),
+		EventHandlers: []EventHandlerRegistration{
+			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
+			{EventType: "billing.subscription.activated_without_token", Handler: paidWithoutTokenConsumer},
+		},
 	}, nil
 }
 
@@ -140,65 +167,10 @@ func newManagerPublisher(
 	return &managerPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
 }
 
-func newIdentityGatewayAdapter(identityModule identity.IdentityModule) appinterfaces.IdentityGateway {
-	return &identityGatewayAdapter{identityModule: identityModule}
-}
-
-func (b *moduleBuilder) Build() (OnboardingModule, error) {
-	runtime, err := b.buildRuntime()
-	if err != nil {
-		return OnboardingModule{}, err
-	}
-
-	b.registerMetrics()
-
-	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(runtime.markTokenPaid, b.o11y)
-	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(runtime.handlePaidWithoutToken, b.o11y)
-	publicRouter := b.buildPublicRouter(runtime)
-	messageProcessor := b.buildMessageProcessor(runtime)
-
-	return OnboardingModule{
-		PublicRouter:                 publicRouter,
-		WhatsAppGateway:              runtime.whatsAppGateway,
-		WhatsAppMessageProcessor:     messageProcessor,
-		SubscriptionConsumer:         subscriptionConsumer,
-		PaidWithoutTokenConsumer:     paidWithoutTokenConsumer,
-		OutreachJob:                  onboardingjobs.NewOutreachJob(runtime.sendOutreach, b.cfg.OutreachEnabled),
-		ExpirationJob:                onboardingjobs.NewTokenExpirationJob(runtime.expireTokens, b.cfg.TokenExpirationSchedule),
-		MetaProcessedMessagesCleanup: onboardingjobs.NewMetaProcessedMessagesCleanupJob(runtime.cleanupTables, b.cfg.MetaCleanupSchedule),
-		EventHandlers:                b.buildEventHandlers(subscriptionConsumer, paidWithoutTokenConsumer),
-	}, nil
-}
-
-func (b *moduleBuilder) buildRuntime() (moduleRuntime, error) {
-	tokenCipher, err := b.buildTokenCipher()
-	if err != nil {
-		return moduleRuntime{}, err
-	}
-
-	whatsAppGateway, err := b.buildWhatsAppGateway()
-	if err != nil {
-		return moduleRuntime{}, err
-	}
-
-	identityGateway := b.buildIdentityGateway()
-	subscriptionBinder := b.buildSubscriptionBinder()
-
-	return b.buildUseCases(tokenCipher, whatsAppGateway, identityGateway, subscriptionBinder), nil
-}
-
-func (b *moduleBuilder) buildTokenCipher() (appinterfaces.TokenCipher, error) {
-	tokenCipher, err := onboardingcrypto.NewTokenCipher(b.cfg.TokenEncryptionKey)
-	if err != nil {
-		return nil, err
-	}
-	return tokenCipher, nil
-}
-
-func (b *moduleBuilder) buildWhatsAppGateway() (appinterfaces.WhatsAppGateway, error) {
-	metaClient, err := meta.NewClient(b.o11y, meta.Config{
-		PhoneNumberID: b.waCfg.PhoneNumberID,
-		AccessToken:   b.waCfg.AccessToken,
+func newWhatsAppGateway(waCfg configs.WhatsAppConfig, o11y observability.Observability) (appinterfaces.WhatsAppGateway, error) {
+	metaClient, err := meta.NewClient(o11y, meta.Config{
+		PhoneNumberID: waCfg.PhoneNumberID,
+		AccessToken:   waCfg.AccessToken,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("onboarding: criar cliente meta: %w", err)
@@ -206,47 +178,21 @@ func (b *moduleBuilder) buildWhatsAppGateway() (appinterfaces.WhatsAppGateway, e
 	return gateway.NewWhatsAppGateway(metaClient), nil
 }
 
-func (b *moduleBuilder) buildIdentityGateway() appinterfaces.IdentityGateway {
-	return newIdentityGatewayAdapter(b.identityModule)
+func newIdentityGatewayAdapter(identityModule identity.IdentityModule) appinterfaces.IdentityGateway {
+	return &identityGatewayAdapter{identityModule: identityModule}
 }
 
-func (b *moduleBuilder) buildSubscriptionBinder() appinterfaces.SubscriptionBinder {
-	return postgres.NewSubscriptionBinder(b.o11y, b.mgr.DBTX(context.Background()))
-}
-
-func (b *moduleBuilder) buildUseCases(
-	tokenCipher appinterfaces.TokenCipher,
-	whatsAppGateway appinterfaces.WhatsAppGateway,
-	identityGateway appinterfaces.IdentityGateway,
-	subscriptionBinder appinterfaces.SubscriptionBinder,
-) moduleRuntime {
-	urlBuilder := checkout.NewKiwifyURLBuilder(b.runtimeCfg.CheckoutURLs, b.runtimeCfg.KiwifyAllowedHosts)
-	checkoutUoW := uow.New[entities.MagicToken](b.mgr, uow.WithObservability(b.o11y))
-	consumeUoW := uow.New[usecases.ConsumeInternalResult](b.mgr, uow.WithObservability(b.o11y))
-	workflow := domainservices.NewMagicTokenWorkflow()
-	bindingService := binding.NewSubscriptionBindingService(identityGateway, subscriptionBinder, workflow, b.publisher, b.idGen)
-
-	return moduleRuntime{
-		createCheckout:         usecases.NewCreateCheckoutSession(checkoutUoW, b.factory, urlBuilder, tokenCipher, b.idGen, b.runtimeCfg.TokenTTL, b.o11y),
-		markTokenPaid:          usecases.NewMarkTokenPaid(b.mgr, b.factory, workflow, b.o11y),
-		consumeToken:           usecases.NewConsumeMagicToken(consumeUoW, b.factory, bindingService, b.idGen, b.o11y),
-		fallbackActivation:     usecases.NewTryFallbackActivation(consumeUoW, b.factory, bindingService, b.o11y),
-		getTokenState:          usecases.NewGetTokenState(b.mgr, b.factory, b.waCfg.BotNumberE164, b.waCfg.BotNumberDisplay, b.o11y),
-		sendOutreach:           usecases.NewSendOutreach(b.mgr, b.factory, whatsAppGateway, tokenCipher, b.idGen, b.waCfg.OutreachTemplateName, b.runtimeCfg.OutreachGap, b.o11y),
-		expireTokens:           usecases.NewExpireTokens(b.mgr, b.factory, b.idGen, b.o11y),
-		handlePaidWithoutToken: usecases.NewHandlePaidWithoutToken(b.mgr, b.factory, b.idGen, b.o11y),
-		cleanupTables:          usecases.NewCleanupOnboardingTables(b.mgr.DBTX(context.Background()), b.factory, b.runtimeCfg.MetaRetention, b.o11y),
-		whatsAppGateway:        whatsAppGateway,
-	}
-}
-
-func (b *moduleBuilder) registerMetrics() {
-	_ = b.o11y.Metrics().Gauge(
+func registerMetrics(
+	mgr manager.Manager,
+	factory appinterfaces.RepositoryFactory,
+	o11y observability.Observability,
+) {
+	_ = o11y.Metrics().Gauge(
 		"onboarding_tokens_paid_unconsumed",
 		"Total de tokens no estado PAID ainda nao consumidos",
 		"1",
 		func(ctx context.Context) float64 {
-			repo := b.factory.MagicTokenRepository(b.mgr.DBTX(ctx))
+			repo := factory.MagicTokenRepository(mgr.DBTX(ctx))
 			count, err := repo.CountPaidUnconsumed(ctx)
 			if err != nil {
 				return -1
@@ -256,51 +202,57 @@ func (b *moduleBuilder) registerMetrics() {
 	)
 }
 
-func (b *moduleBuilder) buildPublicRouter(runtime moduleRuntime) *onboardingserver.PublicRouter {
-	trustedProxies := b.runtimeCfg.TrustedProxies
-	checkoutCreatedCounter := b.o11y.Metrics().Counter(
+func newPublicRouter(
+	cfg configs.OnboardingConfig,
+	runtimeCfg onboardingconfig.OnboardingRuntimeConfig,
+	createCheckout *usecases.CreateCheckoutSession,
+	getTokenState *usecases.GetTokenState,
+	o11y observability.Observability,
+) *onboardingserver.PublicRouter {
+	trustedProxies := runtimeCfg.TrustedProxies
+	checkoutCreatedCounter := o11y.Metrics().Counter(
 		"onboarding_checkout_sessions_created_total",
 		"Total de sessoes de checkout criadas",
 		"1",
 	)
-	checkoutRateLimitedCounter := b.o11y.Metrics().Counter(
+	checkoutRateLimitedCounter := o11y.Metrics().Counter(
 		"onboarding_checkout_rate_limited_total",
 		"Total de requisicoes de checkout bloqueadas por rate limit",
 		"1",
 	)
-	invalidAccessCounter := b.o11y.Metrics().Counter(
+	invalidAccessCounter := o11y.Metrics().Counter(
 		"ty_page_invalid_access_total",
 		"Total de acessos invalidos a pagina de obrigado",
 		"1",
 	)
 
 	checkoutLimiter := middleware.NewRateLimiter(
-		b.cfg.CheckoutRateLimitPerMin,
-		b.cfg.CheckoutRateLimitBurst,
+		cfg.CheckoutRateLimitPerMin,
+		cfg.CheckoutRateLimitBurst,
 		trustedProxies,
 	)
 	stateLimiter := middleware.NewRateLimiter(
-		b.cfg.StateRateLimitPerMin,
-		b.cfg.StateRateLimitBurst,
+		cfg.StateRateLimitPerMin,
+		cfg.StateRateLimitBurst,
 		trustedProxies,
 	)
 
 	checkoutHandler := handlers.NewCreateCheckoutHandler(
-		runtime.createCheckout,
+		createCheckout,
 		func(planID string) {
 			checkoutCreatedCounter.Add(context.Background(), 1, observability.String("plan_id", planID))
 		},
 		func() {
 			checkoutRateLimitedCounter.Add(context.Background(), 1)
 		},
-		b.o11y,
+		o11y,
 	)
 	stateHandler := handlers.NewTokenStateHandler(
-		runtime.getTokenState,
+		getTokenState,
 		func(reason string) {
 			invalidAccessCounter.Add(context.Background(), 1, observability.String("reason", reason))
 		},
-		b.o11y,
+		o11y,
 	)
 
 	return onboardingserver.NewPublicRouter(
@@ -308,28 +260,8 @@ func (b *moduleBuilder) buildPublicRouter(runtime moduleRuntime) *onboardingserv
 		stateHandler,
 		checkoutLimiter,
 		stateLimiter,
-		b.runtimeCfg.CheckoutCORSOrigins,
+		runtimeCfg.CheckoutCORSOrigins,
 	)
-}
-
-func (b *moduleBuilder) buildMessageProcessor(runtime moduleRuntime) *services.WhatsAppMessageProcessor {
-	return services.NewWhatsAppMessageProcessor(
-		runtime.consumeToken,
-		runtime.fallbackActivation,
-		runtime.whatsAppGateway,
-		b.runtimeCfg.Messages,
-		b.o11y,
-	)
-}
-
-func (b *moduleBuilder) buildEventHandlers(
-	subscriptionConsumer events.Handler,
-	paidWithoutTokenConsumer events.Handler,
-) []EventHandlerRegistration {
-	return []EventHandlerRegistration{
-		{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
-		{EventType: "billing.subscription.activated_without_token", Handler: paidWithoutTokenConsumer},
-	}
 }
 
 func (p *managerPublisher) Publish(ctx context.Context, evt outbox.Event) error {

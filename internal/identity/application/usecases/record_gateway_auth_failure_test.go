@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -50,7 +50,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_ValidReasons() {
 					ev.AggregateType == "auth_event"
 			})).Return(nil).Once()
 
-			sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+			sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 			err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 				Reason:      reason,
 				RequestID:   "req-abc-123",
@@ -64,7 +64,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_ValidReasons() {
 func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidReason() {
 	publisher := outboxmocks.NewPublisher(s.T())
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason: "unknown_reason",
 	})
@@ -81,7 +81,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_PublishesRequestIDAndClientIP
 		return nil
 	}).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason:      "gateway_invalid_signature",
 		RequestID:   "req-xyz-001",
@@ -110,7 +110,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_UniqueEventIDsPerCall() {
 		return nil
 	}).Times(2)
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	in := input.RecordGatewayAuthFailureInput{
 		Reason: "gateway_missing_header",
 	}
@@ -126,7 +126,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_OutboxPublishError() {
 	publisher := outboxmocks.NewPublisher(s.T())
 	publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox down")).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason: "gateway_stale_timestamp",
 	})
@@ -135,22 +135,32 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_OutboxPublishError() {
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidClientIP() {
-	publisher := outboxmocks.NewPublisher(s.T())
+	var capturedEvent outbox.Event
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	publisher := outboxmocks.NewPublisher(s.T())
+	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+		capturedEvent = ev
+		return nil
+	}).Once()
+
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason:      "gateway_missing_header",
 		ClientIPRaw: "not-a-valid-ip",
 	})
-	s.Require().Error(err)
-	s.Contains(err.Error(), "parse client_ip")
+	s.Require().NoError(err)
+
+	var payload map[string]any
+	s.Require().NoError(json.Unmarshal(capturedEvent.Payload, &payload))
+	_, hasClientIP := payload["client_ip"]
+	s.False(hasClientIP)
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_WithoutRequestIDAndClientIP() {
 	publisher := outboxmocks.NewPublisher(s.T())
 	publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason: "gateway_invalid_signature",
 	})
@@ -166,7 +176,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_WithUserID() {
 		return nil
 	}).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, noop.NewProvider())
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		UserIDRaw: "a0a0a0a0-0000-0000-0000-000000000001",
 		Reason:    "gateway_invalid_signature",
@@ -177,4 +187,29 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_WithUserID() {
 	s.Require().NoError(json.Unmarshal(capturedEvent.Payload, &payload))
 	s.Equal("a0a0a0a0-0000-0000-0000-000000000001", payload["user_id"])
 	s.Equal("a0a0a0a0-0000-0000-0000-000000000001", capturedEvent.AggregateID)
+}
+
+func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidUserIDStillPublishes() {
+	var capturedEvent outbox.Event
+
+	publisher := outboxmocks.NewPublisher(s.T())
+	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+		capturedEvent = ev
+		return nil
+	}).Once()
+
+	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
+		UserIDRaw:   "not-a-uuid",
+		Reason:      "gateway_invalid_signature",
+		RequestID:   "req-bad-uid-001",
+		ClientIPRaw: "10.0.0.9",
+	})
+	s.Require().NoError(err)
+
+	var payload map[string]any
+	s.Require().NoError(json.Unmarshal(capturedEvent.Payload, &payload))
+	s.Nil(payload["user_id"])
+	s.Equal("req-bad-uid-001", payload["request_id"])
+	s.Equal("10.0.0.9", payload["client_ip"])
 }

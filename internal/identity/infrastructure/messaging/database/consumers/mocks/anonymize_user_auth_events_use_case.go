@@ -63,7 +63,7 @@ type anonymizeUserAuthEventsUseCase_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.AnonymizeUserAuthEvents
-func (_e *anonymizeUserAuthEventsUseCase_Expecter) Execute(ctx interface{}, in interface{}) *anonymizeUserAuthEventsUseCase_Execute_Call {
+func (_e *anonymizeUserAuthEventsUseCase_Expecter) Execute(ctx any, in any) *anonymizeUserAuthEventsUseCase_Execute_Call {
 	return &anonymizeUserAuthEventsUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

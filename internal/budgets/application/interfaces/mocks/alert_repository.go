@@ -74,7 +74,7 @@ type AlertRepository_CountDelivered_Call struct {
 // CountDelivered is a helper method to define mock.On call
 //   - ctx context.Context
 //   - k entities.ThresholdKey
-func (_e *AlertRepository_Expecter) CountDelivered(ctx interface{}, k interface{}) *AlertRepository_CountDelivered_Call {
+func (_e *AlertRepository_Expecter) CountDelivered(ctx any, k any) *AlertRepository_CountDelivered_Call {
 	return &AlertRepository_CountDelivered_Call{Call: _e.mock.On("CountDelivered", ctx, k)}
 }
 
@@ -131,7 +131,7 @@ type AlertRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - a entities.Alert
-func (_e *AlertRepository_Expecter) Insert(ctx interface{}, a interface{}) *AlertRepository_Insert_Call {
+func (_e *AlertRepository_Expecter) Insert(ctx any, a any) *AlertRepository_Insert_Call {
 	return &AlertRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, a)}
 }
 
@@ -206,7 +206,7 @@ type AlertRepository_ListForUser_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - q input.AlertQuery
-func (_e *AlertRepository_Expecter) ListForUser(ctx interface{}, userID interface{}, q interface{}) *AlertRepository_ListForUser_Call {
+func (_e *AlertRepository_Expecter) ListForUser(ctx any, userID any, q any) *AlertRepository_ListForUser_Call {
 	return &AlertRepository_ListForUser_Call{Call: _e.mock.On("ListForUser", ctx, userID, q)}
 }
 
@@ -278,7 +278,7 @@ type AlertRepository_PurgeOld_Call struct {
 //   - ctx context.Context
 //   - olderThan string
 //   - limit int
-func (_e *AlertRepository_Expecter) PurgeOld(ctx interface{}, olderThan interface{}, limit interface{}) *AlertRepository_PurgeOld_Call {
+func (_e *AlertRepository_Expecter) PurgeOld(ctx any, olderThan any, limit any) *AlertRepository_PurgeOld_Call {
 	return &AlertRepository_PurgeOld_Call{Call: _e.mock.On("PurgeOld", ctx, olderThan, limit)}
 }
 

@@ -103,20 +103,32 @@ Saída esperada em caso de sucesso:
 
 ---
 
-## Agendamento Cron Mensal em Staging
+## Cron de validação automática
 
-O cron mensal garante validação periódica automática do backup. Configurar no servidor de staging:
+Configurar no host de staging (não na VPS de produção — restore consome recursos):
 
-```bash
-# Editar crontab do usuario operacional (ex: deploy)
-crontab -e
-```
+    sudo crontab -e
 
-Adicionar a linha (executa no primeiro dia de cada mês às 03:00 UTC):
+Linha:
 
-```cron
-0 3 1 * * PG_RESTORE_ENV_FILE=/etc/pg-restore.env bash /opt/mecontrola/deployment/scripts/pg-restore-smoke.sh >> /var/log/pg-restore-smoke.log 2>&1 || curl -s -X POST "$ALERT_WEBHOOK_URL" -d '{"text":"[ALERTA] pg-restore-smoke falhou em staging"}'
-```
+    0 4 * * 0 root PG_RESTORE_ENV_FILE=/etc/pg-restore.env bash /opt/mecontrola/pg-restore-smoke.sh >> /var/log/pg-restore-smoke.log 2>&1
+
+Frequência: domingo 04:00 UTC. Alerta de falha via ALERT_CMD do env file
+(ex: curl -s -X POST <webhook>).
+
+## Smoke queries cobertas
+
+- count(*) > 0 em users, cards, transactions
+- JOIN transactions.user_id = users.id (prova FK válida no dump)
+- max(created_at) em transactions (freshness — alerta se > 7 dias)
+- public.schema_migrations: versão mais alta aplicada
+
+## Idempotência
+
+Cada execução usa porta TCP aleatória (20000-24999) e container nomeado por PID,
+permitindo execuções paralelas e re-runs sem colisão.
+
+### Verificação e teste manual
 
 Verificar que o cron foi registrado:
 

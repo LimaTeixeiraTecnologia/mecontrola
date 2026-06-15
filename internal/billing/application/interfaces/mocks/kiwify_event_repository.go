@@ -73,7 +73,7 @@ type KiwifyEventRepository_DeleteOlderThan_Call struct {
 //   - ctx context.Context
 //   - before time.Time
 //   - limit int
-func (_e *KiwifyEventRepository_Expecter) DeleteOlderThan(ctx interface{}, before interface{}, limit interface{}) *KiwifyEventRepository_DeleteOlderThan_Call {
+func (_e *KiwifyEventRepository_Expecter) DeleteOlderThan(ctx any, before any, limit any) *KiwifyEventRepository_DeleteOlderThan_Call {
 	return &KiwifyEventRepository_DeleteOlderThan_Call{Call: _e.mock.On("DeleteOlderThan", ctx, before, limit)}
 }
 
@@ -136,7 +136,7 @@ type KiwifyEventRepository_MarkProcessed_Call struct {
 //   - ctx context.Context
 //   - envelopeID string
 //   - processedAt time.Time
-func (_e *KiwifyEventRepository_Expecter) MarkProcessed(ctx interface{}, envelopeID interface{}, processedAt interface{}) *KiwifyEventRepository_MarkProcessed_Call {
+func (_e *KiwifyEventRepository_Expecter) MarkProcessed(ctx any, envelopeID any, processedAt any) *KiwifyEventRepository_MarkProcessed_Call {
 	return &KiwifyEventRepository_MarkProcessed_Call{Call: _e.mock.On("MarkProcessed", ctx, envelopeID, processedAt)}
 }
 
@@ -201,7 +201,7 @@ type KiwifyEventRepository_Persist_Call struct {
 //   - trigger string
 //   - rawBody []byte
 //   - signatureStatus string
-func (_e *KiwifyEventRepository_Expecter) Persist(ctx interface{}, envelopeID interface{}, trigger interface{}, rawBody interface{}, signatureStatus interface{}) *KiwifyEventRepository_Persist_Call {
+func (_e *KiwifyEventRepository_Expecter) Persist(ctx any, envelopeID any, trigger any, rawBody any, signatureStatus any) *KiwifyEventRepository_Persist_Call {
 	return &KiwifyEventRepository_Persist_Call{Call: _e.mock.On("Persist", ctx, envelopeID, trigger, rawBody, signatureStatus)}
 }
 

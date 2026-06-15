@@ -19,6 +19,7 @@ type CategoriesModule struct {
 	ResolveBySlug       *usecases.ResolveBySlug
 	ValidateSubcategory *usecases.ValidateSubcategory
 	VersionReader       interfaces.VersionReader
+	ListCategoriesUC    *usecases.ListCategories
 }
 
 func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) *CategoriesModule {
@@ -54,5 +55,6 @@ func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability) 
 		ResolveBySlug:       resolveBySlug,
 		ValidateSubcategory: validateSubcategory,
 		VersionReader:       versionReader,
+		ListCategoriesUC:    listCategories,
 	}
 }

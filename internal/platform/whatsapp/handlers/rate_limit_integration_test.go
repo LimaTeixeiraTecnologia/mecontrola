@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/suite"
@@ -34,8 +35,8 @@ func TestWhatsAppRateLimitSuite(t *testing.T) {
 	suite.Run(t, new(WhatsAppRateLimitSuite))
 }
 
-func buildTestRouter(burst int, onExceeded func()) (*httptest.Server, *middleware.RateLimiter) {
-	rateLimiter := middleware.NewRateLimiter(600, burst, nil)
+func buildTestRouter(requestsPerMinute, burst int, onExceeded func()) (*httptest.Server, *middleware.RateLimiter) {
+	rateLimiter := middleware.NewRateLimiter(requestsPerMinute, burst, []string{"127.0.0.1/32", "::1/128"})
 
 	o11y := noop.NewProvider()
 	verifyHandler := handlers.NewVerifyHandler("test-token")
@@ -59,7 +60,7 @@ func (s *WhatsAppRateLimitSuite) TestRateLimit_Returns429AfterBurstExhausted() {
 	const burst = 5
 
 	exceededCount := 0
-	srv, rateLimiter := buildTestRouter(burst, func() { exceededCount++ })
+	srv, rateLimiter := buildTestRouter(600, burst, func() { exceededCount++ })
 	defer srv.Close()
 	defer rateLimiter.Stop()
 
@@ -80,7 +81,7 @@ func (s *WhatsAppRateLimitSuite) TestRateLimit_Returns429AfterBurstExhausted() {
 func (s *WhatsAppRateLimitSuite) TestRateLimit_AllowsUpToBurst() {
 	const burst = 5
 
-	srv, rateLimiter := buildTestRouter(burst, nil)
+	srv, rateLimiter := buildTestRouter(600, burst, nil)
 	defer srv.Close()
 	defer rateLimiter.Stop()
 
@@ -95,4 +96,27 @@ func (s *WhatsAppRateLimitSuite) TestRateLimit_AllowsUpToBurst() {
 	}
 
 	s.Equal(0, tooManyCount, "dentro do burst nao deve haver rejeicoes")
+}
+
+func (s *WhatsAppRateLimitSuite) TestRateLimit_ResetsAfterWindow() {
+	srv, rateLimiter := buildTestRouter(60, 1, nil)
+	defer srv.Close()
+	defer rateLimiter.Stop()
+
+	first, err := http.Post(srv.URL+"/api/v1/whatsapp/inbound", "application/json", nil) //nolint:noctx
+	s.Require().NoError(err)
+	first.Body.Close()
+	s.NotEqual(http.StatusTooManyRequests, first.StatusCode)
+
+	second, err := http.Post(srv.URL+"/api/v1/whatsapp/inbound", "application/json", nil) //nolint:noctx
+	s.Require().NoError(err)
+	second.Body.Close()
+	s.Equal(http.StatusTooManyRequests, second.StatusCode)
+
+	time.Sleep(1100 * time.Millisecond)
+
+	third, err := http.Post(srv.URL+"/api/v1/whatsapp/inbound", "application/json", nil) //nolint:noctx
+	s.Require().NoError(err)
+	third.Body.Close()
+	s.NotEqual(http.StatusTooManyRequests, third.StatusCode)
 }

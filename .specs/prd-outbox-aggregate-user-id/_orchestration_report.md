@@ -45,7 +45,7 @@
 
 ## Artefatos Gerados
 
-- `migrations/000017_outbox_events_aggregate_user_id.up.sql` — ADD COLUMN + index CONCURRENTLY
+- `migrations/000017_outbox_events_aggregate_user_id.up.sql` — ADD COLUMN + índice parcial (sem `CONCURRENTLY`, incompatível com tx do golang-migrate; coluna nasce 100% NULL, build instantâneo)
 - `migrations/000017_outbox_events_aggregate_user_id.down.sql`
 - `internal/platform/outbox/outbox.go` — AggregateUserID em Event + EventInput + NewEvent
 - `internal/platform/outbox/storage_postgres.go` — Insert/ClaimBatch com nilIfEmpty

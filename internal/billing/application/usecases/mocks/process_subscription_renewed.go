@@ -63,7 +63,7 @@ type processSubscriptionRenewed_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.ProcessSubscriptionRenewedInput
-func (_e *processSubscriptionRenewed_Expecter) Execute(ctx interface{}, in interface{}) *processSubscriptionRenewed_Execute_Call {
+func (_e *processSubscriptionRenewed_Expecter) Execute(ctx any, in any) *processSubscriptionRenewed_Execute_Call {
 	return &processSubscriptionRenewed_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

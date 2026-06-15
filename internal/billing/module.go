@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -41,139 +40,91 @@ type BillingModule struct {
 	EventHandlers              []EventHandlerRegistration
 }
 
-type moduleBuilder struct {
-	cfg        *configs.Config
-	o11y       observability.Observability
-	mgr        manager.Manager
-	factory    interfaces.RepositoryFactory
-	publisher  *producers.SubscriptionEventPublisher
-	kiwifyDBTX database.DBTX
-}
-
-type moduleRuntime struct {
-	webhookRouter        *billingserver.WebhookRouter
-	reconciliationJob    *billingjobs.ReconciliationJob
-	housekeepingJob      *billingjobs.KiwifyEventsHousekeepingJob
-	graceExpirationJob   *billingjobs.GraceExpirationJob
-	notificationPastDue  events.Handler
-	notificationRefunded events.Handler
-	notificationExpired  events.Handler
-}
-
 type noopNotificationSender struct{}
 
 func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) (BillingModule, error) {
 	factory := repositories.NewRepositoryFactory(o11y)
 	publisher := producers.NewSubscriptionEventPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator(), o11y)
-	builder := moduleBuilder{
-		cfg:        cfg,
-		o11y:       o11y,
-		mgr:        mgr,
-		factory:    factory,
-		publisher:  publisher,
-		kiwifyDBTX: mgr.DBTX(context.Background()),
-	}
-	return builder.Build()
-}
-
-func (b *moduleBuilder) Build() (BillingModule, error) {
-	runtime, err := b.buildRuntime()
+	kiwifyDBTX := mgr.DBTX(context.Background())
+	kiwifyClient, err := newKiwifyClient(cfg, o11y)
 	if err != nil {
 		return BillingModule{}, err
 	}
-
-	return BillingModule{
-		RepositoryFactory:          b.factory,
-		WebhookRouter:              runtime.webhookRouter,
-		ReconciliationJob:          runtime.reconciliationJob,
-		KiwifyEventsHousekeeper:    runtime.housekeepingJob,
-		GraceExpirationJob:         runtime.graceExpirationJob,
-		SubscriptionEventPublisher: b.publisher,
-		EventHandlers:              b.buildEventHandlers(runtime),
-	}, nil
-}
-
-func (b *moduleBuilder) buildRuntime() (moduleRuntime, error) {
-	kiwifyClient, err := b.buildKiwifyClient()
+	catalog, err := billingconfig.NewPlanCatalog(cfg.KiwifyConfig)
 	if err != nil {
-		return moduleRuntime{}, err
+		return BillingModule{}, err
 	}
-	catalog, err := billingconfig.NewPlanCatalog(b.cfg.KiwifyConfig)
-	if err != nil {
-		return moduleRuntime{}, err
-	}
-	if b.kiwifyDBTX != nil {
-		if err := catalog.Apply(context.Background(), b.factory.PlanRepository(b.kiwifyDBTX)); err != nil {
-			return moduleRuntime{}, err
+	if kiwifyDBTX != nil {
+		if err := catalog.Apply(context.Background(), factory.PlanRepository(kiwifyDBTX)); err != nil {
+			return BillingModule{}, err
 		}
 	}
 
-	subscriptionUoW := uow.New[entities.Subscription](b.mgr, uow.WithObservability(b.o11y))
-	saleApproved := usecases.NewProcessSaleApproved(subscriptionUoW, b.factory, b.publisher, b.o11y)
-	subscriptionRenewed := usecases.NewProcessSubscriptionRenewed(subscriptionUoW, b.factory, b.publisher, b.o11y)
-	subscriptionLate := usecases.NewProcessSubscriptionLate(subscriptionUoW, b.factory, b.publisher, b.o11y)
-	subscriptionCanceled := usecases.NewProcessSubscriptionCanceled(subscriptionUoW, b.factory, b.publisher, b.o11y)
-	refundOrChargeback := usecases.NewProcessRefundOrChargeback(subscriptionUoW, b.factory, b.publisher, b.o11y)
-	graceExpired := usecases.NewProcessSubscriptionGraceExpired(subscriptionUoW, b.factory, b.publisher, b.o11y)
+	subscriptionUoW := uow.New[entities.Subscription](mgr, uow.WithObservability(o11y))
+	saleApproved := usecases.NewProcessSaleApproved(subscriptionUoW, factory, publisher, o11y)
+	subscriptionRenewed := usecases.NewProcessSubscriptionRenewed(subscriptionUoW, factory, publisher, o11y)
+	subscriptionLate := usecases.NewProcessSubscriptionLate(subscriptionUoW, factory, publisher, o11y)
+	subscriptionCanceled := usecases.NewProcessSubscriptionCanceled(subscriptionUoW, factory, publisher, o11y)
+	refundOrChargeback := usecases.NewProcessRefundOrChargeback(subscriptionUoW, factory, publisher, o11y)
+	graceExpired := usecases.NewProcessSubscriptionGraceExpired(subscriptionUoW, factory, publisher, o11y)
 
-	reconcileSubscriptions := usecases.NewReconcileSubscriptions(b.kiwifyDBTX, b.factory, kiwifyClient, saleApproved, refundOrChargeback, b.o11y)
+	reconcileSubscriptions := usecases.NewReconcileSubscriptions(kiwifyDBTX, factory, kiwifyClient, saleApproved, refundOrChargeback, o11y)
 	processWebhook := usecases.NewProcessKiwifyWebhook(
 		saleApproved,
 		subscriptionRenewed,
 		subscriptionLate,
 		subscriptionCanceled,
 		refundOrChargeback,
-		b.factory,
-		b.kiwifyDBTX,
-		b.o11y,
+		factory,
+		kiwifyDBTX,
+		o11y,
 	)
-	runReconciliation := usecases.NewRunReconciliation(b.kiwifyDBTX, b.factory, reconcileSubscriptions, b.o11y)
-	cleanupKiwifyEvents := usecases.NewCleanupKiwifyEvents(b.kiwifyDBTX, b.factory, b.cfg.BillingConfig, b.o11y)
-	sendNotification := usecases.NewSendSubscriptionNotification(&noopNotificationSender{}, b.o11y)
+	runReconciliation := usecases.NewRunReconciliation(kiwifyDBTX, factory, reconcileSubscriptions, o11y)
+	cleanupKiwifyEvents := usecases.NewCleanupKiwifyEvents(kiwifyDBTX, factory, cfg.BillingConfig, o11y)
+	sendNotification := usecases.NewSendSubscriptionNotification(&noopNotificationSender{}, o11y)
 
-	webhookHandler := handlers.NewKiwifyWebhookHandler(processWebhook, b.o11y)
+	webhookHandler := handlers.NewKiwifyWebhookHandler(processWebhook, o11y)
 	webhookRouter := billingserver.NewWebhookRouter(
 		webhookHandler,
-		b.cfg.KiwifyConfig.WebhookSecret,
-		b.cfg.KiwifyConfig.WebhookSecretNext,
+		cfg.KiwifyConfig.WebhookSecret,
+		cfg.KiwifyConfig.WebhookSecretNext,
 	)
+	notificationPastDue := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionPastDue, o11y)
+	notificationRefunded := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionRefunded, o11y)
+	notificationExpired := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionExpired, o11y)
 
-	return moduleRuntime{
-		webhookRouter:        webhookRouter,
-		reconciliationJob:    billingjobs.NewReconciliationJob(runReconciliation, b.cfg.KiwifyConfig),
-		housekeepingJob:      billingjobs.NewKiwifyEventsHousekeepingJob(cleanupKiwifyEvents, b.cfg.BillingConfig),
-		graceExpirationJob:   billingjobs.NewGraceExpirationJob(graceExpired, b.cfg.BillingConfig),
-		notificationPastDue:  consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionPastDue, b.o11y),
-		notificationRefunded: consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionRefunded, b.o11y),
-		notificationExpired:  consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionExpired, b.o11y),
+	return BillingModule{
+		RepositoryFactory:          factory,
+		WebhookRouter:              webhookRouter,
+		ReconciliationJob:          billingjobs.NewReconciliationJob(runReconciliation, cfg.KiwifyConfig),
+		KiwifyEventsHousekeeper:    billingjobs.NewKiwifyEventsHousekeepingJob(cleanupKiwifyEvents, cfg.BillingConfig),
+		GraceExpirationJob:         billingjobs.NewGraceExpirationJob(graceExpired, cfg.BillingConfig),
+		SubscriptionEventPublisher: publisher,
+		EventHandlers: []EventHandlerRegistration{
+			{EventType: producers.EventTypeSubscriptionPastDue, Handler: notificationPastDue},
+			{EventType: producers.EventTypeSubscriptionRefunded, Handler: notificationRefunded},
+			{EventType: producers.EventTypeSubscriptionExpired, Handler: notificationExpired},
+		},
 	}, nil
 }
 
-func (b *moduleBuilder) buildKiwifyClient() (*kiwify.Client, error) {
-	client, err := kiwify.NewClient(b.o11y, kiwify.Config{
-		AccountID:                  b.cfg.KiwifyConfig.AccountID,
-		ClientID:                   b.cfg.KiwifyConfig.ClientID,
-		ClientSecret:               b.cfg.KiwifyConfig.ClientSecret,
-		APIBaseURL:                 b.cfg.KiwifyConfig.APIBaseURL,
-		OAuthTokenSafetyMargin:     b.cfg.KiwifyConfig.OAuthTokenSafetyMargin,
-		RateLimitMaxRequestsPerMin: b.cfg.KiwifyConfig.RateLimitMaxRequestsPerMin,
-		RateLimitBurst:             b.cfg.KiwifyConfig.RateLimitBurst,
-		HTTPTimeout:                b.cfg.KiwifyConfig.HTTPTimeout,
-		HTTPRetryMaxAttempts:       b.cfg.KiwifyConfig.HTTPRetryMaxAttempts,
-		HTTPRetryBackoff:           b.cfg.KiwifyConfig.HTTPRetryBackoff,
+func newKiwifyClient(cfg *configs.Config, o11y observability.Observability) (*kiwify.Client, error) {
+	client, err := kiwify.NewClient(o11y, kiwify.Config{
+		AccountID:                  cfg.KiwifyConfig.AccountID,
+		ClientID:                   cfg.KiwifyConfig.ClientID,
+		ClientSecret:               cfg.KiwifyConfig.ClientSecret,
+		APIBaseURL:                 cfg.KiwifyConfig.APIBaseURL,
+		OAuthTokenSafetyMargin:     cfg.KiwifyConfig.OAuthTokenSafetyMargin,
+		RateLimitMaxRequestsPerMin: cfg.KiwifyConfig.RateLimitMaxRequestsPerMin,
+		RateLimitBurst:             cfg.KiwifyConfig.RateLimitBurst,
+		HTTPTimeout:                cfg.KiwifyConfig.HTTPTimeout,
+		HTTPRetryMaxAttempts:       cfg.KiwifyConfig.HTTPRetryMaxAttempts,
+		HTTPRetryBackoff:           cfg.KiwifyConfig.HTTPRetryBackoff,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("billing: criar cliente Kiwify: %w", err)
 	}
 	return client, nil
-}
-
-func (b *moduleBuilder) buildEventHandlers(runtime moduleRuntime) []EventHandlerRegistration {
-	return []EventHandlerRegistration{
-		{EventType: producers.EventTypeSubscriptionPastDue, Handler: runtime.notificationPastDue},
-		{EventType: producers.EventTypeSubscriptionRefunded, Handler: runtime.notificationRefunded},
-		{EventType: producers.EventTypeSubscriptionExpired, Handler: runtime.notificationExpired},
-	}
 }
 
 func (s *noopNotificationSender) NotifyTransition(_ context.Context, _ interfaces.NotificationPayload) error {

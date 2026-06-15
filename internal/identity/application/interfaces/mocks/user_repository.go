@@ -67,7 +67,7 @@ type UserRepository_AppendWhatsAppHistory_Call struct {
 //   - ctx context.Context
 //   - userID string
 //   - entry interfaces.WhatsAppHistoryEntry
-func (_e *UserRepository_Expecter) AppendWhatsAppHistory(ctx interface{}, userID interface{}, entry interface{}) *UserRepository_AppendWhatsAppHistory_Call {
+func (_e *UserRepository_Expecter) AppendWhatsAppHistory(ctx any, userID any, entry any) *UserRepository_AppendWhatsAppHistory_Call {
 	return &UserRepository_AppendWhatsAppHistory_Call{Call: _e.mock.On("AppendWhatsAppHistory", ctx, userID, entry)}
 }
 
@@ -138,7 +138,7 @@ type UserRepository_FindByID_Call struct {
 // FindByID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id string
-func (_e *UserRepository_Expecter) FindByID(ctx interface{}, id interface{}) *UserRepository_FindByID_Call {
+func (_e *UserRepository_Expecter) FindByID(ctx any, id any) *UserRepository_FindByID_Call {
 	return &UserRepository_FindByID_Call{Call: _e.mock.On("FindByID", ctx, id)}
 }
 
@@ -204,7 +204,7 @@ type UserRepository_FindByWhatsAppNumber_Call struct {
 // FindByWhatsAppNumber is a helper method to define mock.On call
 //   - ctx context.Context
 //   - number valueobjects.WhatsAppNumber
-func (_e *UserRepository_Expecter) FindByWhatsAppNumber(ctx interface{}, number interface{}) *UserRepository_FindByWhatsAppNumber_Call {
+func (_e *UserRepository_Expecter) FindByWhatsAppNumber(ctx any, number any) *UserRepository_FindByWhatsAppNumber_Call {
 	return &UserRepository_FindByWhatsAppNumber_Call{Call: _e.mock.On("FindByWhatsAppNumber", ctx, number)}
 }
 
@@ -270,7 +270,7 @@ type UserRepository_FindByWhatsAppNumberIncludingDeleted_Call struct {
 // FindByWhatsAppNumberIncludingDeleted is a helper method to define mock.On call
 //   - ctx context.Context
 //   - number valueobjects.WhatsAppNumber
-func (_e *UserRepository_Expecter) FindByWhatsAppNumberIncludingDeleted(ctx interface{}, number interface{}) *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call {
+func (_e *UserRepository_Expecter) FindByWhatsAppNumberIncludingDeleted(ctx any, number any) *UserRepository_FindByWhatsAppNumberIncludingDeleted_Call {
 	return &UserRepository_FindByWhatsAppNumberIncludingDeleted_Call{Call: _e.mock.On("FindByWhatsAppNumberIncludingDeleted", ctx, number)}
 }
 
@@ -328,7 +328,7 @@ type UserRepository_MarkDeleted_Call struct {
 //   - ctx context.Context
 //   - id string
 //   - now time.Time
-func (_e *UserRepository_Expecter) MarkDeleted(ctx interface{}, id interface{}, now interface{}) *UserRepository_MarkDeleted_Call {
+func (_e *UserRepository_Expecter) MarkDeleted(ctx any, id any, now any) *UserRepository_MarkDeleted_Call {
 	return &UserRepository_MarkDeleted_Call{Call: _e.mock.On("MarkDeleted", ctx, id, now)}
 }
 
@@ -400,7 +400,7 @@ type UserRepository_Reanimate_Call struct {
 //   - ctx context.Context
 //   - u entities.User
 //   - now time.Time
-func (_e *UserRepository_Expecter) Reanimate(ctx interface{}, u interface{}, now interface{}) *UserRepository_Reanimate_Call {
+func (_e *UserRepository_Expecter) Reanimate(ctx any, u any, now any) *UserRepository_Reanimate_Call {
 	return &UserRepository_Reanimate_Call{Call: _e.mock.On("Reanimate", ctx, u, now)}
 }
 
@@ -477,7 +477,7 @@ type UserRepository_TryFindActiveByWhatsApp_Call struct {
 // TryFindActiveByWhatsApp is a helper method to define mock.On call
 //   - ctx context.Context
 //   - number valueobjects.WhatsAppNumber
-func (_e *UserRepository_Expecter) TryFindActiveByWhatsApp(ctx interface{}, number interface{}) *UserRepository_TryFindActiveByWhatsApp_Call {
+func (_e *UserRepository_Expecter) TryFindActiveByWhatsApp(ctx any, number any) *UserRepository_TryFindActiveByWhatsApp_Call {
 	return &UserRepository_TryFindActiveByWhatsApp_Call{Call: _e.mock.On("TryFindActiveByWhatsApp", ctx, number)}
 }
 
@@ -544,7 +544,7 @@ type UserRepository_UpsertByWhatsAppNumber_Call struct {
 //   - ctx context.Context
 //   - u entities.User
 //   - now time.Time
-func (_e *UserRepository_Expecter) UpsertByWhatsAppNumber(ctx interface{}, u interface{}, now interface{}) *UserRepository_UpsertByWhatsAppNumber_Call {
+func (_e *UserRepository_Expecter) UpsertByWhatsAppNumber(ctx any, u any, now any) *UserRepository_UpsertByWhatsAppNumber_Call {
 	return &UserRepository_UpsertByWhatsAppNumber_Call{Call: _e.mock.On("UpsertByWhatsAppNumber", ctx, u, now)}
 }
 

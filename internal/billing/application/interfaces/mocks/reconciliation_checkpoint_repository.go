@@ -72,7 +72,7 @@ type ReconciliationCheckpointRepository_Get_Call struct {
 // Get is a helper method to define mock.On call
 //   - ctx context.Context
 //   - name string
-func (_e *ReconciliationCheckpointRepository_Expecter) Get(ctx interface{}, name interface{}) *ReconciliationCheckpointRepository_Get_Call {
+func (_e *ReconciliationCheckpointRepository_Expecter) Get(ctx any, name any) *ReconciliationCheckpointRepository_Get_Call {
 	return &ReconciliationCheckpointRepository_Get_Call{Call: _e.mock.On("Get", ctx, name)}
 }
 
@@ -130,7 +130,7 @@ type ReconciliationCheckpointRepository_Set_Call struct {
 //   - ctx context.Context
 //   - name string
 //   - watermark time.Time
-func (_e *ReconciliationCheckpointRepository_Expecter) Set(ctx interface{}, name interface{}, watermark interface{}) *ReconciliationCheckpointRepository_Set_Call {
+func (_e *ReconciliationCheckpointRepository_Expecter) Set(ctx any, name any, watermark any) *ReconciliationCheckpointRepository_Set_Call {
 	return &ReconciliationCheckpointRepository_Set_Call{Call: _e.mock.On("Set", ctx, name, watermark)}
 }
 

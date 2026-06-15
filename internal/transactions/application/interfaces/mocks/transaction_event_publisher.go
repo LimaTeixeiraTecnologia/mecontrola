@@ -65,7 +65,7 @@ type TransactionEventPublisher_PublishCreated_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.TransactionCreated
-func (_e *TransactionEventPublisher_Expecter) PublishCreated(ctx interface{}, db interface{}, evt interface{}) *TransactionEventPublisher_PublishCreated_Call {
+func (_e *TransactionEventPublisher_Expecter) PublishCreated(ctx any, db any, evt any) *TransactionEventPublisher_PublishCreated_Call {
 	return &TransactionEventPublisher_PublishCreated_Call{Call: _e.mock.On("PublishCreated", ctx, db, evt)}
 }
 
@@ -128,7 +128,7 @@ type TransactionEventPublisher_PublishDeleted_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.TransactionDeleted
-func (_e *TransactionEventPublisher_Expecter) PublishDeleted(ctx interface{}, db interface{}, evt interface{}) *TransactionEventPublisher_PublishDeleted_Call {
+func (_e *TransactionEventPublisher_Expecter) PublishDeleted(ctx any, db any, evt any) *TransactionEventPublisher_PublishDeleted_Call {
 	return &TransactionEventPublisher_PublishDeleted_Call{Call: _e.mock.On("PublishDeleted", ctx, db, evt)}
 }
 
@@ -191,7 +191,7 @@ type TransactionEventPublisher_PublishUpdated_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.TransactionUpdated
-func (_e *TransactionEventPublisher_Expecter) PublishUpdated(ctx interface{}, db interface{}, evt interface{}) *TransactionEventPublisher_PublishUpdated_Call {
+func (_e *TransactionEventPublisher_Expecter) PublishUpdated(ctx any, db any, evt any) *TransactionEventPublisher_PublishUpdated_Call {
 	return &TransactionEventPublisher_PublishUpdated_Call{Call: _e.mock.On("PublishUpdated", ctx, db, evt)}
 }
 

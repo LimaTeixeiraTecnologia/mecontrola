@@ -56,10 +56,7 @@ func (u *RecordGatewayAuthFailure) Handle(ctx context.Context, in input.RecordGa
 		}
 	}
 
-	cip, err := valueobjects.NewClientIP(in.ClientIPRaw)
-	if err != nil {
-		return fmt.Errorf("%s parse client_ip: %w", prefixRecordGatewayAuthFailure, err)
-	}
+	cip := u.resolveClientIP(ctx, in.ClientIPRaw)
 
 	eventID, err := uuid.NewV7()
 	if err != nil {
@@ -72,9 +69,15 @@ func (u *RecordGatewayAuthFailure) Handle(ctx context.Context, in input.RecordGa
 	if in.UserIDRaw != "" {
 		uid, parseErr := uuid.Parse(in.UserIDRaw)
 		if parseErr != nil {
-			return fmt.Errorf("%s parse user_id: %w", prefixRecordGatewayAuthFailure, parseErr)
+			u.o11y.Logger().Warn(ctx, "identity.usecase.record_gateway_auth_failure.invalid_user_id",
+				observability.String("reason", string(reason)),
+				observability.String("request_id", rid.String()),
+				observability.String("client_ip", cip.String()),
+				observability.Error(parseErr),
+			)
+		} else {
+			userID = &uid
 		}
-		userID = &uid
 	}
 
 	userIDStr := ""
@@ -100,4 +103,16 @@ func (u *RecordGatewayAuthFailure) Handle(ctx context.Context, in input.RecordGa
 		return fmt.Errorf("%s publish: %w", prefixRecordGatewayAuthFailure, err)
 	}
 	return nil
+}
+
+func (u *RecordGatewayAuthFailure) resolveClientIP(ctx context.Context, raw string) valueobjects.ClientIP {
+	cip, err := valueobjects.NewClientIP(raw)
+	if err == nil {
+		return cip
+	}
+	u.o11y.Logger().Warn(ctx, "identity.usecase.record_gateway_auth_failure.invalid_client_ip",
+		observability.String("client_ip_raw", raw),
+		observability.Error(err),
+	)
+	return valueobjects.ClientIP{}
 }

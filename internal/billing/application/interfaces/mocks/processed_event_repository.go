@@ -66,7 +66,7 @@ type ProcessedEventRepository_MarkApplied_Call struct {
 //   - trigger string
 //   - recursoID string
 //   - occurredAt time.Time
-func (_e *ProcessedEventRepository_Expecter) MarkApplied(ctx interface{}, eventKey interface{}, trigger interface{}, recursoID interface{}, occurredAt interface{}) *ProcessedEventRepository_MarkApplied_Call {
+func (_e *ProcessedEventRepository_Expecter) MarkApplied(ctx any, eventKey any, trigger any, recursoID any, occurredAt any) *ProcessedEventRepository_MarkApplied_Call {
 	return &ProcessedEventRepository_MarkApplied_Call{Call: _e.mock.On("MarkApplied", ctx, eventKey, trigger, recursoID, occurredAt)}
 }
 
@@ -138,7 +138,7 @@ type ProcessedEventRepository_MarkSuperseded_Call struct {
 // MarkSuperseded is a helper method to define mock.On call
 //   - ctx context.Context
 //   - eventKey string
-func (_e *ProcessedEventRepository_Expecter) MarkSuperseded(ctx interface{}, eventKey interface{}) *ProcessedEventRepository_MarkSuperseded_Call {
+func (_e *ProcessedEventRepository_Expecter) MarkSuperseded(ctx any, eventKey any) *ProcessedEventRepository_MarkSuperseded_Call {
 	return &ProcessedEventRepository_MarkSuperseded_Call{Call: _e.mock.On("MarkSuperseded", ctx, eventKey)}
 }
 

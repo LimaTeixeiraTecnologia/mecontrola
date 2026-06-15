@@ -63,7 +63,7 @@ type RepositoryFactory_MagicTokenRepository_Call struct {
 
 // MagicTokenRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) MagicTokenRepository(db interface{}) *RepositoryFactory_MagicTokenRepository_Call {
+func (_e *RepositoryFactory_Expecter) MagicTokenRepository(db any) *RepositoryFactory_MagicTokenRepository_Call {
 	return &RepositoryFactory_MagicTokenRepository_Call{Call: _e.mock.On("MagicTokenRepository", db)}
 }
 
@@ -116,7 +116,7 @@ type RepositoryFactory_OnboardingCleanupRepository_Call struct {
 
 // OnboardingCleanupRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) OnboardingCleanupRepository(db interface{}) *RepositoryFactory_OnboardingCleanupRepository_Call {
+func (_e *RepositoryFactory_Expecter) OnboardingCleanupRepository(db any) *RepositoryFactory_OnboardingCleanupRepository_Call {
 	return &RepositoryFactory_OnboardingCleanupRepository_Call{Call: _e.mock.On("OnboardingCleanupRepository", db)}
 }
 
@@ -169,7 +169,7 @@ type RepositoryFactory_SupportSignalRepository_Call struct {
 
 // SupportSignalRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) SupportSignalRepository(db interface{}) *RepositoryFactory_SupportSignalRepository_Call {
+func (_e *RepositoryFactory_Expecter) SupportSignalRepository(db any) *RepositoryFactory_SupportSignalRepository_Call {
 	return &RepositoryFactory_SupportSignalRepository_Call{Call: _e.mock.On("SupportSignalRepository", db)}
 }
 

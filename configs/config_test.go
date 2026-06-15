@@ -750,6 +750,34 @@ func (s *ConfigSuite) TestValidate() {
 			},
 		},
 		{
+			name: "deve rejeitar production com gateway secret next com entropia insuficiente",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretNext = strings.Repeat("b2", 16)
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "IDENTITY_GATEWAY_SHARED_SECRET_NEXT deve ter ao menos 32 bytes")
+			},
+		},
+		{
+			name: "deve rejeitar production com gateway secret next hex invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.IdentityConfig.GatewaySharedSecretNext = strings.Repeat("ZZ", 32)
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "IDENTITY_GATEWAY_SHARED_SECRET_NEXT deve ser hex válido")
+			},
+		},
+		{
 			name: "deve aceitar non-production sem gateway secret",
 			args: args{
 				build: func() *configs.Config {
@@ -761,6 +789,20 @@ func (s *ConfigSuite) TestValidate() {
 			setup: func() {},
 			expect: func(_ *configs.Config, err error) {
 				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar non-production com gateway secret current invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.IdentityConfig.GatewaySharedSecretCurrent = "zz"
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT deve ser hex válido")
 			},
 		},
 		{
@@ -817,6 +859,34 @@ func (s *ConfigSuite) TestValidate() {
 			setup: func() {},
 			expect: func(_ *configs.Config, err error) {
 				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar rate limit auth por usuario zerado",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AuthRateLimit.PerUserPerMin = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AUTH_RATE_LIMIT_PER_USER_PER_MIN deve ser maior que zero")
+			},
+		},
+		{
+			name: "deve rejeitar rate limit webhook burst zerado",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WhatsAppConfig.WebhookRateLimitBurst = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "WHATSAPP_WEBHOOK_RATE_LIMIT_BURST deve ser maior que zero")
 			},
 		},
 	}
@@ -1414,10 +1484,15 @@ func (s *ConfigSuite) assertConfigError(err error, messages ...string) {
 
 func (s *ConfigSuite) newBaseConfig() *configs.Config {
 	return &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local", AppMode: "server"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		DBConfig:   configs.DBConfig{Password: "qualquer", User: "user"},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1},
+		AppConfig:     configs.AppConfig{Environment: "local", AppMode: "server"},
+		HTTPConfig:    configs.HTTPConfig{Port: 8080},
+		DBConfig:      configs.DBConfig{Password: "qualquer", User: "user"},
+		O11yConfig:    configs.O11yConfig{TraceSampleRate: 1},
+		AuthRateLimit: configs.AuthRateLimitConfig{PerUserPerMin: 120, PerUserBurst: 30},
+		WhatsAppConfig: configs.WhatsAppConfig{
+			WebhookRateLimitPerMin: 600,
+			WebhookRateLimitBurst:  120,
+		},
 	}
 }
 

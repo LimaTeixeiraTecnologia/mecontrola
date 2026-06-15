@@ -64,7 +64,7 @@ type PendingEventRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - p entities.PendingEvent
-func (_e *PendingEventRepository_Expecter) Insert(ctx interface{}, p interface{}) *PendingEventRepository_Insert_Call {
+func (_e *PendingEventRepository_Expecter) Insert(ctx any, p any) *PendingEventRepository_Insert_Call {
 	return &PendingEventRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, p)}
 }
 
@@ -132,7 +132,7 @@ type PendingEventRepository_ListReady_Call struct {
 // ListReady is a helper method to define mock.On call
 //   - ctx context.Context
 //   - limit int
-func (_e *PendingEventRepository_Expecter) ListReady(ctx interface{}, limit interface{}) *PendingEventRepository_ListReady_Call {
+func (_e *PendingEventRepository_Expecter) ListReady(ctx any, limit any) *PendingEventRepository_ListReady_Call {
 	return &PendingEventRepository_ListReady_Call{Call: _e.mock.On("ListReady", ctx, limit)}
 }
 
@@ -192,7 +192,7 @@ type PendingEventRepository_Transition_Call struct {
 //   - userID uuid.UUID
 //   - to entities.PendingState
 //   - reason string
-func (_e *PendingEventRepository_Expecter) Transition(ctx interface{}, id interface{}, userID interface{}, to interface{}, reason interface{}) *PendingEventRepository_Transition_Call {
+func (_e *PendingEventRepository_Expecter) Transition(ctx any, id any, userID any, to any, reason any) *PendingEventRepository_Transition_Call {
 	return &PendingEventRepository_Transition_Call{Call: _e.mock.On("Transition", ctx, id, userID, to, reason)}
 }
 

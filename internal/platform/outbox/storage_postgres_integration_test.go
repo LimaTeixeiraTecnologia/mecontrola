@@ -146,6 +146,30 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 			expect: func(manager.Manager, *observed) {},
 		},
 		{
+			name:  "deve claimar evento imediatamente mesmo com occurred_at futuro",
+			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
+			act: func(mgr manager.Manager, storage outbox.OutboxRepository, state *observed) {
+				ctx := context.Background()
+				event, err := outbox.NewEvent(outbox.EventInput{
+					Type:          "billing.subscription.activated",
+					AggregateType: "subscription",
+					AggregateID:   uuid.NewString(),
+					Payload:       []byte(`{"foo":"bar"}`),
+					Metadata:      map[string]string{"source": "future"},
+					OccurredAt:    time.Now().UTC().Add(3 * time.Hour),
+				})
+				s.Require().NoError(err)
+				s.NoError(storage.Insert(ctx, event, 5))
+				rows, claimErr := storage.ClaimBatch(ctx, "worker-future", 10)
+				s.Require().NoError(claimErr)
+				state.rows = rows
+			},
+			expect: func(_ manager.Manager, state *observed) {
+				s.Len(state.rows, 1)
+				s.Equal("billing.subscription.activated", state.rows[0].Type)
+			},
+		},
+		{
 			name:  "deve claimar lote e evitar reclaim antes do reset",
 			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
 			act: func(mgr manager.Manager, storage outbox.OutboxRepository, state *observed) {

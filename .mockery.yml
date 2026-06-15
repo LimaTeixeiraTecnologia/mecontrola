@@ -34,6 +34,7 @@ packages:
       RepositoryFactory: {}
       SubscriptionProjectionReader: {}
       UserRepository: {}
+      UserIdentityRepository: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain:
     interfaces:
       Subscription: {}

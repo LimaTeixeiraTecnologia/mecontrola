@@ -63,7 +63,7 @@ type OnboardingCleanupRepositoryFactory_OnboardingCleanupRepository_Call struct 
 
 // OnboardingCleanupRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *OnboardingCleanupRepositoryFactory_Expecter) OnboardingCleanupRepository(db interface{}) *OnboardingCleanupRepositoryFactory_OnboardingCleanupRepository_Call {
+func (_e *OnboardingCleanupRepositoryFactory_Expecter) OnboardingCleanupRepository(db any) *OnboardingCleanupRepositoryFactory_OnboardingCleanupRepository_Call {
 	return &OnboardingCleanupRepositoryFactory_OnboardingCleanupRepository_Call{Call: _e.mock.On("OnboardingCleanupRepository", db)}
 }
 

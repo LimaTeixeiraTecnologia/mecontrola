@@ -45,8 +45,9 @@ func (s *ProcessSubscriptionCanceledSuite) activeSub(lastEventAt time.Time) enti
 	s.Require().NoError(err)
 	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	return entities.Hydrate(
+	return entities.HydrateWithUser(
 		"sub-001",
+		"user-001",
 		funnelToken,
 		plan,
 		valueobjects.StatusActive,
@@ -108,6 +109,7 @@ func (s *ProcessSubscriptionCanceledSuite) TestExecute() {
 						mock.Anything,
 						mock.MatchedBy(func(updated entities.Subscription) bool {
 							return updated.ID() == "sub-001" &&
+								updated.UserID() == "user-001" &&
 								updated.Status() == valueobjects.StatusCanceledPending &&
 								updated.PeriodEnd().Equal(sub.PeriodEnd()) &&
 								updated.GraceEnd().IsZero() &&

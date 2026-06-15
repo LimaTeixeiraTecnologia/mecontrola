@@ -71,6 +71,7 @@ type EstablishPrincipal struct {
 	failedTotal      observability.Counter
 	unknownTotal     observability.Counter
 	resolveDuration  observability.Histogram
+	resolvePathTotal observability.Counter
 }
 
 func NewEstablishPrincipal(
@@ -100,6 +101,11 @@ func NewEstablishPrincipal(
 		"s",
 		[]float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
 	)
+	resolvePathTotal := o11y.Metrics().Counter(
+		"auth_resolve_path_total",
+		"Caminho de resolucao do principal (identity vs legacy) durante migracao multi-canal",
+		"1",
+	)
 	return &EstablishPrincipal{
 		uow:              u,
 		factory:          factory,
@@ -110,6 +116,7 @@ func NewEstablishPrincipal(
 		failedTotal:      failedTotal,
 		unknownTotal:     unknownTotal,
 		resolveDuration:  resolveDuration,
+		resolvePathTotal: resolvePathTotal,
 	}
 }
 
@@ -126,18 +133,12 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 		return auth.Principal{}, fmt.Errorf("%s parse whatsapp: %w", prefixEstablishPrincipal, err)
 	}
 
-	var rid valueobjects.RequestID
-	if in.RequestID != "" {
-		rid, err = valueobjects.NewRequestID(in.RequestID)
-		if err != nil {
-			return auth.Principal{}, fmt.Errorf("%s parse request_id: %w", prefixEstablishPrincipal, err)
-		}
+	rid, err := u.resolveRequestID(in.RequestID, span.TraceID())
+	if err != nil {
+		return auth.Principal{}, fmt.Errorf("%s parse request_id: %w", prefixEstablishPrincipal, err)
 	}
 
-	cip, err := valueobjects.NewClientIP(in.ClientIPRaw)
-	if err != nil {
-		return auth.Principal{}, fmt.Errorf("%s parse client_ip: %w", prefixEstablishPrincipal, err)
-	}
+	cip := u.resolveClientIP(ctx, in.ClientIPRaw)
 
 	res, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
 		return u.resolvePrincipal(ctx, tx, wa, rid, cip)
@@ -183,9 +184,7 @@ func (u *EstablishPrincipal) resolvePrincipal(
 	rid valueobjects.RequestID,
 	cip valueobjects.ClientIP,
 ) (EstablishResult, error) {
-	userRepo := u.factory.UserRepository(tx)
-
-	user, found, lookupErr := userRepo.TryFindActiveByWhatsApp(ctx, wa)
+	userID, found, lookupErr := u.lookupUserIDByWhatsApp(ctx, tx, wa)
 	if lookupErr != nil {
 		return EstablishResult{}, errLookup{wrapped: fmt.Errorf("lookup: %w", lookupErr)}
 	}
@@ -195,15 +194,6 @@ func (u *EstablishPrincipal) resolvePrincipal(
 		return EstablishResult{}, fmt.Errorf("generate auth event id: %w", err)
 	}
 	now := time.Now().UTC()
-
-	var userID uuid.UUID
-	if found {
-		parsed, parseErr := uuid.Parse(user.ID())
-		if parseErr != nil {
-			return EstablishResult{}, fmt.Errorf("parse user id: %w", parseErr)
-		}
-		userID = parsed
-	}
 
 	decision := u.workflow.DecidePrincipal(userID, found, eventID, now)
 
@@ -224,9 +214,68 @@ func (u *EstablishPrincipal) resolvePrincipal(
 	}, nil
 }
 
+func (u *EstablishPrincipal) lookupUserIDByWhatsApp(
+	ctx context.Context,
+	tx database.DBTX,
+	wa valueobjects.WhatsAppNumber,
+) (uuid.UUID, bool, error) {
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, wa.String())
+	if err == nil {
+		identityRepo := u.factory.UserIdentityRepository(tx)
+		identity, identityFound, identityErr := identityRepo.TryFindActive(ctx, channel, externalID)
+		if identityErr != nil {
+			return uuid.Nil, false, fmt.Errorf("identity lookup: %w", identityErr)
+		}
+		if identityFound {
+			u.resolvePathTotal.Add(ctx, 1, observability.String("path", "identity"))
+			return identity.UserID(), true, nil
+		}
+	}
+
+	userRepo := u.factory.UserRepository(tx)
+	user, found, lookupErr := userRepo.TryFindActiveByWhatsApp(ctx, wa)
+	if lookupErr != nil {
+		return uuid.Nil, false, lookupErr
+	}
+	if !found {
+		u.resolvePathTotal.Add(ctx, 1, observability.String("path", "miss"))
+		return uuid.Nil, false, nil
+	}
+
+	parsed, parseErr := uuid.Parse(user.ID())
+	if parseErr != nil {
+		return uuid.Nil, false, fmt.Errorf("parse user id: %w", parseErr)
+	}
+	u.resolvePathTotal.Add(ctx, 1, observability.String("path", "legacy"))
+	return parsed, true, nil
+}
+
 func (u *EstablishPrincipal) publishAuthOutcome(ctx context.Context, ev outbox.Event) error {
 	if err := u.publisher.Publish(ctx, ev); err != nil {
 		return errOutboxPublish{wrapped: fmt.Errorf("publish %s: %w", ev.Type, err)}
 	}
 	return nil
+}
+
+func (u *EstablishPrincipal) resolveRequestID(raw, fallback string) (valueobjects.RequestID, error) {
+	if raw != "" {
+		return valueobjects.NewRequestID(raw)
+	}
+	if fallback == "" {
+		return valueobjects.RequestID{}, nil
+	}
+	return valueobjects.NewRequestID(fallback)
+}
+
+func (u *EstablishPrincipal) resolveClientIP(ctx context.Context, raw string) valueobjects.ClientIP {
+	cip, err := valueobjects.NewClientIP(raw)
+	if err == nil {
+		return cip
+	}
+	u.o11y.Logger().Warn(ctx, "identity.usecase.establish_principal.invalid_client_ip",
+		observability.String("client_ip_raw", raw),
+		observability.Error(err),
+	)
+	return valueobjects.ClientIP{}
 }

@@ -29,7 +29,7 @@
 
 ## Riscos de Integração
 - **Mocks de `outbox.Publisher` em consumers**: após 2.0, `task mocks` precisa regenerar mocks que usam `outbox.Event`. Verificar `outbox.Publisher` em testes.
-- **Tabela `outbox_events` com volume**: migration `ADD COLUMN UUID NULL` em Postgres é metadata-only (instantânea). Index criado com `CONCURRENTLY` para zero lock.
+- **Tabela `outbox_events` com volume**: migration `ADD COLUMN UUID NULL` em Postgres é metadata-only (instantânea). Index parcial `WHERE aggregate_user_id IS NOT NULL` é criado em transação (golang-migrate wrap padrão); como a coluna nasce 100% NULL, o build é vazio e o `AccessExclusiveLock` é instantâneo. `CONCURRENTLY` não é usado por incompatibilidade com o wrap transacional do framework (ver `1.0_execution_report.md`).
 - **Producers que herdam de mesmo helper**: alguns módulos podem ter helper local (e.g. `newOutboxEvent`); verificar e atualizar em 1 lugar quando possível.
 - **`outbox_events` em testes integration de outros módulos**: testes que assertam linha completa do envelope podem falhar com campo novo. Auditar.
 

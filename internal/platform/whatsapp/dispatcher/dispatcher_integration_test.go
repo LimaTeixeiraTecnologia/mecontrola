@@ -5,6 +5,7 @@ package dispatcher_test
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -146,7 +147,7 @@ func (s *DispatcherIntegrationSuite) buildPayload(from, text, wamid string) json
 					Messages: []message{{
 						From:      fromRaw,
 						ID:        wamid,
-						Timestamp: "1700000000",
+						Timestamp: strconv.FormatInt(time.Now().UTC().Unix(), 10),
 						Type:      "text",
 						Text:      textBody{Body: text},
 					}},

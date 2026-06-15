@@ -72,7 +72,7 @@ type EntitlementReader_FindByUserID_Call struct {
 // FindByUserID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID string
-func (_e *EntitlementReader_Expecter) FindByUserID(ctx interface{}, userID interface{}) *EntitlementReader_FindByUserID_Call {
+func (_e *EntitlementReader_Expecter) FindByUserID(ctx any, userID any) *EntitlementReader_FindByUserID_Call {
 	return &EntitlementReader_FindByUserID_Call{Call: _e.mock.On("FindByUserID", ctx, userID)}
 }
 

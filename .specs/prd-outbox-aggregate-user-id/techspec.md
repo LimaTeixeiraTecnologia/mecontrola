@@ -140,9 +140,12 @@ func isSystemEvent(eventType string) bool {
 ALTER TABLE mecontrola.outbox_events
     ADD COLUMN aggregate_user_id UUID NULL;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS outbox_events_aggregate_user_id_idx
+CREATE INDEX IF NOT EXISTS outbox_events_aggregate_user_id_idx
     ON mecontrola.outbox_events (aggregate_user_id)
     WHERE aggregate_user_id IS NOT NULL;
+-- Nota: `CONCURRENTLY` não é usado porque golang-migrate envolve cada arquivo em transação.
+-- O índice parcial nasce vazio (coluna 100% NULL na criação), então o AccessExclusiveLock é
+-- instantâneo. Ver 1.0_execution_report.md.
 ```
 
 **`down`**

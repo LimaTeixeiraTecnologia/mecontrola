@@ -65,7 +65,7 @@ type BudgetRepository_Activate_Call struct {
 // Activate is a helper method to define mock.On call
 //   - ctx context.Context
 //   - b entities.Budget
-func (_e *BudgetRepository_Expecter) Activate(ctx interface{}, b interface{}) *BudgetRepository_Activate_Call {
+func (_e *BudgetRepository_Expecter) Activate(ctx any, b any) *BudgetRepository_Activate_Call {
 	return &BudgetRepository_Activate_Call{Call: _e.mock.On("Activate", ctx, b)}
 }
 
@@ -122,7 +122,7 @@ type BudgetRepository_CreateDraft_Call struct {
 // CreateDraft is a helper method to define mock.On call
 //   - ctx context.Context
 //   - b entities.Budget
-func (_e *BudgetRepository_Expecter) CreateDraft(ctx interface{}, b interface{}) *BudgetRepository_CreateDraft_Call {
+func (_e *BudgetRepository_Expecter) CreateDraft(ctx any, b any) *BudgetRepository_CreateDraft_Call {
 	return &BudgetRepository_CreateDraft_Call{Call: _e.mock.On("CreateDraft", ctx, b)}
 }
 
@@ -180,7 +180,7 @@ type BudgetRepository_DeleteDraft_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - c valueobjects.Competence
-func (_e *BudgetRepository_Expecter) DeleteDraft(ctx interface{}, userID interface{}, c interface{}) *BudgetRepository_DeleteDraft_Call {
+func (_e *BudgetRepository_Expecter) DeleteDraft(ctx any, userID any, c any) *BudgetRepository_DeleteDraft_Call {
 	return &BudgetRepository_DeleteDraft_Call{Call: _e.mock.On("DeleteDraft", ctx, userID, c)}
 }
 
@@ -252,7 +252,7 @@ type BudgetRepository_GetByUserCompetence_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - c valueobjects.Competence
-func (_e *BudgetRepository_Expecter) GetByUserCompetence(ctx interface{}, userID interface{}, c interface{}) *BudgetRepository_GetByUserCompetence_Call {
+func (_e *BudgetRepository_Expecter) GetByUserCompetence(ctx any, userID any, c any) *BudgetRepository_GetByUserCompetence_Call {
 	return &BudgetRepository_GetByUserCompetence_Call{Call: _e.mock.On("GetByUserCompetence", ctx, userID, c)}
 }
 
@@ -323,7 +323,7 @@ type BudgetRepository_IsSignaledAbandoned_Call struct {
 // IsSignaledAbandoned is a helper method to define mock.On call
 //   - ctx context.Context
 //   - budgetID uuid.UUID
-func (_e *BudgetRepository_Expecter) IsSignaledAbandoned(ctx interface{}, budgetID interface{}) *BudgetRepository_IsSignaledAbandoned_Call {
+func (_e *BudgetRepository_Expecter) IsSignaledAbandoned(ctx any, budgetID any) *BudgetRepository_IsSignaledAbandoned_Call {
 	return &BudgetRepository_IsSignaledAbandoned_Call{Call: _e.mock.On("IsSignaledAbandoned", ctx, budgetID)}
 }
 
@@ -392,7 +392,7 @@ type BudgetRepository_ListAbandonedDrafts_Call struct {
 //   - ctx context.Context
 //   - before valueobjects.Competence
 //   - limit int
-func (_e *BudgetRepository_Expecter) ListAbandonedDrafts(ctx interface{}, before interface{}, limit interface{}) *BudgetRepository_ListAbandonedDrafts_Call {
+func (_e *BudgetRepository_Expecter) ListAbandonedDrafts(ctx any, before any, limit any) *BudgetRepository_ListAbandonedDrafts_Call {
 	return &BudgetRepository_ListAbandonedDrafts_Call{Call: _e.mock.On("ListAbandonedDrafts", ctx, before, limit)}
 }
 
@@ -467,7 +467,7 @@ type BudgetRepository_ListFutureNotActivated_Call struct {
 //   - userID uuid.UUID
 //   - from valueobjects.Competence
 //   - max int
-func (_e *BudgetRepository_Expecter) ListFutureNotActivated(ctx interface{}, userID interface{}, from interface{}, max interface{}) *BudgetRepository_ListFutureNotActivated_Call {
+func (_e *BudgetRepository_Expecter) ListFutureNotActivated(ctx any, userID any, from any, max any) *BudgetRepository_ListFutureNotActivated_Call {
 	return &BudgetRepository_ListFutureNotActivated_Call{Call: _e.mock.On("ListFutureNotActivated", ctx, userID, from, max)}
 }
 
@@ -534,7 +534,7 @@ type BudgetRepository_SignalAbandoned_Call struct {
 // SignalAbandoned is a helper method to define mock.On call
 //   - ctx context.Context
 //   - budgetID uuid.UUID
-func (_e *BudgetRepository_Expecter) SignalAbandoned(ctx interface{}, budgetID interface{}) *BudgetRepository_SignalAbandoned_Call {
+func (_e *BudgetRepository_Expecter) SignalAbandoned(ctx any, budgetID any) *BudgetRepository_SignalAbandoned_Call {
 	return &BudgetRepository_SignalAbandoned_Call{Call: _e.mock.On("SignalAbandoned", ctx, budgetID)}
 }
 

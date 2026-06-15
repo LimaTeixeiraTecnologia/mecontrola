@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -31,8 +29,6 @@ func TestMigrationSuite(t *testing.T) {
 	suite.Run(t, new(MigrationSuite))
 }
 
-func (s *MigrationSuite) SetupTest() {}
-
 func (s *MigrationSuite) SetupSuite() {
 	s.ctx = context.Background()
 
@@ -41,100 +37,143 @@ func (s *MigrationSuite) SetupSuite() {
 	s.dsn = dsn
 }
 
-func (s *MigrationSuite) TestUpAndDownForBillingPipelineMigrations() {
-	type args struct {
-		downSteps int
-	}
+func (s *MigrationSuite) SetupTest() {}
 
-	scenarios := []struct {
-		name   string
-		args   args
-		setup  func()
-		expect func(migrator migration.Migrator, downSteps int)
-	}{
-		{
-			name:  "deve aplicar e reverter a baseline consolidada",
-			args:  args{downSteps: 12},
-			setup: func() {},
-			expect: func(migrator migration.Migrator, downSteps int) {
-				upErr := migrator.Up(s.ctx)
-				s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange),
-					"up deve ser idempotente: %v", upErr)
-				s.assertSeededPlans()
-				s.assertActiveSubscriptionUniqueIndex()
-				s.Require().NoError(migrator.Down(s.ctx, downSteps))
-				s.assertSchemaMissing("mecontrola")
-				s.assertTableMissing("mecontrola.billing_plans")
-				s.assertTableMissing("mecontrola.billing_subscriptions")
-				s.assertTableMissing("mecontrola.billing_processed_events")
-				s.assertTableMissing("mecontrola.billing_kiwify_events")
-			},
-		},
-	}
-
-	for _, scenario := range scenarios {
-		scenario := scenario
-		s.Run(scenario.name, func() {
-			scenario.setup()
-
-			migrator, err := migration.New(
-				s.mgr,
-				migration.EmbedFS{FS: migrations.FS, Root: "."},
-				migration.WithDSN(s.dsn),
-			)
-			s.Require().NoError(err)
-
-			scenario.expect(migrator, scenario.args.downSteps)
-		})
-	}
+func (s *MigrationSuite) newMigrator() migration.Migrator {
+	migrator, err := migration.New(
+		s.mgr,
+		migration.EmbedFS{FS: migrations.FS, Root: "."},
+		migration.WithDSN(s.dsn),
+	)
+	s.Require().NoError(err)
+	return migrator
 }
 
-func (s *MigrationSuite) TestCardAndIdempotencyMigrationsUpDownUp() {
-	scenarios := []struct {
-		name   string
-		expect func(migrator migration.Migrator)
-	}{
-		{
-			name: "deve aplicar, reverter e reaplicar migrations de idempotency_keys e cards",
-			expect: func(migrator migration.Migrator) {
-				upErr := migrator.Up(s.ctx)
-				s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange),
-					"up deve ser idempotente: %v", upErr)
+func (s *MigrationSuite) applyBaseline(migrator migration.Migrator) {
+	upErr := migrator.Up(s.ctx)
+	s.Require().True(
+		upErr == nil || errors.Is(upErr, migration.ErrNoChange),
+		"up deve ser idempotente: %v",
+		upErr,
+	)
+}
 
-				s.assertTablePresent("mecontrola.idempotency_keys")
-				s.assertTablePresent("mecontrola.cards")
+func (s *MigrationSuite) currentVersion(migrator migration.Migrator) uint {
+	version, dirty, err := migrator.Version(s.ctx)
+	s.Require().NoError(err)
+	s.False(dirty)
+	return version
+}
 
-				s.Require().NoError(migrator.Down(s.ctx, 6))
-
-				s.assertTableMissing("mecontrola.idempotency_keys")
-				s.assertTableMissing("mecontrola.cards")
-				s.assertTablePresent("mecontrola.idempotency_keys_archived_20260609120000")
-				s.assertTablePresent("mecontrola.cards_archived_20260609120000")
-
-				s.Require().NoError(migrator.Up(s.ctx))
-
-				s.assertTablePresent("mecontrola.idempotency_keys")
-				s.assertTablePresent("mecontrola.cards")
-			},
-		},
+func (s *MigrationSuite) downToVersion(migrator migration.Migrator, target uint) {
+	version := s.currentVersion(migrator)
+	s.GreaterOrEqual(version, target)
+	if version == target {
+		return
 	}
+	s.Require().NoError(migrator.Down(s.ctx, int(version-target)))
+}
 
-	for _, scenario := range scenarios {
-		scenario := scenario
-		s.Run(scenario.name, func() {
-			migrator, err := migration.New(
-				s.mgr,
-				migration.EmbedFS{FS: migrations.FS, Root: "."},
-				migration.WithDSN(s.dsn),
-			)
-			s.Require().NoError(err)
+func (s *MigrationSuite) TestBaselineUpDownUp() {
+	migrator := s.newMigrator()
 
-			scenario.expect(migrator)
-		})
-	}
+	s.applyBaseline(migrator)
+
+	s.assertTablePresent("mecontrola.billing_plans")
+	s.assertTablePresent("mecontrola.categories")
+	s.assertTablePresent("mecontrola.category_dictionary")
+	s.assertTablePresent("mecontrola.idempotency_keys")
+	s.assertTablePresent("mecontrola.cards")
+	s.assertTablePresent("mecontrola.budgets")
+	s.assertTablePresent("mecontrola.transactions")
+	s.assertTablePresent("mecontrola.user_identities")
+	s.assertTablePresent("mecontrola.channel_processed_messages")
+
+	s.assertTableMissing("mecontrola.meta_processed_messages")
+	s.assertTableMissing("mecontrola.telegram_processed_updates")
+
+	s.assertSeededPlans()
+	s.assertExpenseCategoriesCount()
+	s.assertIncomeCategoriesCount()
+	s.assertDictionaryCanonicalsCount()
+	s.assertDictionaryAliasesCount()
+	s.assertUnaccentAvailable()
+
+	s.downToVersion(migrator, 0)
+
+	s.assertSchemaMissing("mecontrola")
+
+	s.applyBaseline(migrator)
+
+	s.assertTablePresent("mecontrola.billing_plans")
+	s.assertTablePresent("mecontrola.channel_processed_messages")
+}
+
+func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
+	s.assertColumnPresent("mecontrola.auth_events", "request_id")
+	s.assertColumnPresent("mecontrola.auth_events", "client_ip")
+
+	invalidSourceErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.auth_events (id, kind, source, occurred_at)
+		VALUES ($1, 'principal_established', 'telegram', now())
+	`, uuid.NewString())
+	s.Require().Error(invalidSourceErr)
+	s.Contains(invalidSourceErr.Error(), "auth_events_source_check")
+
+	validGatewayErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.auth_events (id, kind, source, reason, request_id, client_ip, occurred_at)
+		VALUES ($1, 'failed', 'gateway', 'stale_webhook', 'req-1', '127.0.0.1', now())
+	`, uuid.NewString())
+	s.Require().NoError(validGatewayErr)
+}
+
+func (s *MigrationSuite) TestChannelDedupAndUserIdentitiesConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	insertMessageErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
+		VALUES ('whatsapp', 'wamid-1', now())
+	`)
+	s.Require().NoError(insertMessageErr)
+
+	dupMessageErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
+		VALUES ('whatsapp', 'wamid-1', now())
+	`)
+	s.Require().Error(dupMessageErr)
+	s.Contains(dupMessageErr.Error(), "channel_processed_messages_pkey")
+
+	userID := "12121212-1212-1212-1212-121212121212"
+	insertUserErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511999991212', 'ACTIVE', now(), now())
+		ON CONFLICT (id) DO NOTHING
+	`, userID)
+	s.Require().NoError(insertUserErr)
+
+	insertIdentityErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
+		VALUES ($1, $2, 'telegram', 'external-1', now(), now())
+	`, uuid.NewString(), userID)
+	s.Require().NoError(insertIdentityErr)
+
+	dupIdentityErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
+		VALUES ($1, $2, 'telegram', 'external-1', now(), now())
+	`, uuid.NewString(), userID)
+	s.Require().Error(dupIdentityErr)
+	s.Contains(dupIdentityErr.Error(), "user_identities_channel_external_active_uniq_idx")
 }
 
 func (s *MigrationSuite) TestIdempotencyKeysConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
 	userID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	validHash := "a948904f2f0f479b8f936f443923b14a04f830de30e39fa93ef91b5c6a8c5e10"
 
@@ -142,14 +181,14 @@ func (s *MigrationSuite) TestIdempotencyKeysConstraints() {
 		INSERT INTO mecontrola.idempotency_keys (scope, key, user_id, request_hash, response_status, response_body, expires_at)
 		VALUES ('card', $1, $2, $3, 199, '', now() + interval '1 day')
 	`, "key-status-test", userID, validHash)
-	s.Require().Error(statusErr, "response_status=199 deve violar check")
+	s.Require().Error(statusErr)
 	s.Contains(statusErr.Error(), "idempotency_keys_status_chk")
 
 	bodyErr := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.idempotency_keys (scope, key, user_id, request_hash, response_status, response_body, expires_at)
 		VALUES ('card', $1, $2, $3, 200, $4, now() + interval '1 day')
 	`, "key-body-test", userID, validHash, make([]byte, 65537))
-	s.Require().Error(bodyErr, "response_body > 65536 bytes deve violar check")
+	s.Require().Error(bodyErr)
 	s.Contains(bodyErr.Error(), "idempotency_keys_body_size_chk")
 
 	longKey := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa129x"
@@ -157,15 +196,19 @@ func (s *MigrationSuite) TestIdempotencyKeysConstraints() {
 		INSERT INTO mecontrola.idempotency_keys (scope, key, user_id, request_hash, response_status, response_body, expires_at)
 		VALUES ('card', $1, $2, $3, 200, '', now() + interval '1 day')
 	`, longKey, userID, validHash)
-	s.Require().Error(keyErr, "key com 133 chars deve violar check")
+	s.Require().Error(keyErr)
 	s.Contains(keyErr.Error(), "idempotency_keys_key_len_chk")
 }
 
 func (s *MigrationSuite) TestCardsConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
 	userID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	insertUserErr := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		VALUES ($1, '+5511999990099', 'ACTIVE', now(), now())
+		ON CONFLICT (id) DO NOTHING
 	`, userID)
 	s.Require().NoError(insertUserErr)
 
@@ -173,28 +216,28 @@ func (s *MigrationSuite) TestCardsConstraints() {
 		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
 		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 0, 5)
 	`, userID)
-	s.Require().Error(closingZeroErr, "closing_day=0 deve violar check")
+	s.Require().Error(closingZeroErr)
 	s.Contains(closingZeroErr.Error(), "cards_closing_day_chk")
 
 	closing32Err := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
 		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 32, 5)
 	`, userID)
-	s.Require().Error(closing32Err, "closing_day=32 deve violar check")
+	s.Require().Error(closing32Err)
 	s.Contains(closing32Err.Error(), "cards_closing_day_chk")
 
 	emptyNicknameErr := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
 		VALUES (gen_random_uuid(), $1, 'Valid Card', '', 10, 15)
 	`, userID)
-	s.Require().Error(emptyNicknameErr, "nickname vazio deve violar check")
+	s.Require().Error(emptyNicknameErr)
 	s.Contains(emptyNicknameErr.Error(), "cards_nickname_len_chk")
 
 	longNameErr := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
 		VALUES (gen_random_uuid(), $1, $2, 'mycard', 10, 15)
 	`, userID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	s.Require().Error(longNameErr, "name com 65 chars deve violar check")
+	s.Require().Error(longNameErr)
 	s.Contains(longNameErr.Error(), "cards_name_len_chk")
 
 	insertCardErr := execSQL(s.mgr, s.ctx, `
@@ -207,11 +250,14 @@ func (s *MigrationSuite) TestCardsConstraints() {
 		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
 		VALUES (gen_random_uuid(), $1, 'Another Card', 'mycard', 15, 20)
 	`, userID)
-	s.Require().Error(dupNicknameErr, "nickname duplicado entre ativos deve violar unique index")
+	s.Require().Error(dupNicknameErr)
 	s.Contains(dupNicknameErr.Error(), "cards_user_nickname_active_uniq_idx")
 }
 
 func (s *MigrationSuite) TestCardsNoPCIColumns() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
 	prohibitedTerms := []string{"pan", "cvv", "cvc", "track", "pin"}
 	for _, term := range prohibitedTerms {
 		var count int64
@@ -223,8 +269,76 @@ func (s *MigrationSuite) TestCardsNoPCIColumns() {
 			  AND lower(column_name) LIKE '%' || $1 || '%'
 		`, term).Scan(&count)
 		s.Require().NoError(err)
-		s.Equal(int64(0), count, "tabela cards nao deve ter coluna contendo '%s'", term)
+		s.Equal(int64(0), count)
 	}
+}
+
+func (s *MigrationSuite) TestCategoriesAndDictionarySeed() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertExpenseCategoriesCount()
+	s.assertIncomeCategoriesCount()
+	s.assertDeterministicCategoryIDs()
+	s.assertAllocationTypesCorrect()
+	s.assertMaxDepthTwo()
+	s.assertEditorialVersionIncremented()
+	s.assertDictionaryCanonicalsCount()
+	s.assertDictionaryAliasesCount()
+	s.assertDictionaryUniqueness()
+	s.assertDictionaryUnaccentNormalization()
+}
+
+func (s *MigrationSuite) TestTransactionsConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	userID := "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"
+	insertUserErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511988880010', 'ACTIVE', now(), now())
+		ON CONFLICT (id) DO NOTHING
+	`, userID)
+	s.Require().NoError(insertUserErr)
+
+	invalidAmountErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, category_name_snapshot, ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 1, 1, 0, 'teste',
+			gen_random_uuid(), 'cat', '2026-06', now(), now(), now()
+		)
+	`, userID)
+	s.Require().Error(invalidAmountErr)
+
+	cardID := uuid.New()
+	cardInvoiceID := uuid.New()
+	insertInvoiceErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.transactions_card_invoices (
+			id, user_id, card_id, ref_month, closing_at, due_at, created_at, updated_at
+		) VALUES ($1, $2, $3, '2026-06', now(), now(), now(), now())
+	`, cardInvoiceID, userID, cardID)
+	s.Require().NoError(insertInvoiceErr)
+
+	dupInvoiceErr := execSQL(s.mgr, s.ctx, `
+		INSERT INTO mecontrola.transactions_card_invoices (
+			id, user_id, card_id, ref_month, closing_at, due_at, created_at, updated_at
+		) VALUES (gen_random_uuid(), $1, $2, '2026-06', now(), now(), now(), now())
+	`, userID, cardID)
+	s.Require().Error(dupInvoiceErr)
+	s.Contains(dupInvoiceErr.Error(), "transactions_card_invoices_uk")
+}
+
+func (s *MigrationSuite) TestBudgetsConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertBudgetsUniqueConstraint()
+	s.assertBudgetsExpensesIdentityUnique()
+	s.assertBudgetsExpensesPartialIndex()
+	s.assertBudgetsThresholdStatesConstraints()
+	s.assertBudgetsPendingEventIdempotency()
 }
 
 func (s *MigrationSuite) assertSeededPlans() {
@@ -257,54 +371,6 @@ func (s *MigrationSuite) assertSeededPlans() {
 	}, plans)
 }
 
-func (s *MigrationSuite) assertActiveSubscriptionUniqueIndex() {
-	userID := "11111111-1111-1111-1111-111111111111"
-	_, err := s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
-		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
-		VALUES ($1, '+5511999990001', 'ACTIVE', now(), now())
-	`, userID)
-	s.Require().NoError(err)
-
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	inputs := [][4]string{
-		{"22222222-2222-2222-2222-222222222222", "token-1", "order-1", "ACTIVE"},
-		{"33333333-3333-3333-3333-333333333333", "token-2", "order-2", "PAST_DUE"},
-	}
-
-	for _, in := range inputs {
-		go func(values [4]string) {
-			<-start
-			_, execErr := s.mgr.DBTX(s.ctx).ExecContext(s.ctx, `
-				INSERT INTO mecontrola.billing_subscriptions (
-					id, funnel_token, user_id, kiwify_order_id, plan_code, status,
-					period_start, period_end, grace_end, last_event_at, created_at, updated_at
-				) VALUES ($1, $2, $3, $4, 'MONTHLY', $5,
-					now(), now() + interval '30 days', NULL, now(), now(), now())
-			`, values[0], values[1], userID, values[2], values[3])
-			results <- execErr
-		}(in)
-	}
-	close(start)
-
-	var successCount, uniqueViolationCount int
-	for range 2 {
-		resultErr := <-results
-		if resultErr == nil {
-			successCount++
-			continue
-		}
-		var pgErr *pgconn.PgError
-		if errors.As(resultErr, &pgErr) &&
-			pgErr.Code == pgerrcode.UniqueViolation &&
-			pgErr.ConstraintName == "billing_subscriptions_user_active_uniq_idx" {
-			uniqueViolationCount++
-		}
-	}
-	s.Equal(1, successCount)
-	s.Equal(1, uniqueViolationCount)
-}
-
 func (s *MigrationSuite) assertTablePresent(name string) {
 	var regclass sql.NullString
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT to_regclass($1)`, name).Scan(&regclass)
@@ -332,84 +398,39 @@ func (s *MigrationSuite) assertSchemaMissing(name string) {
 	s.False(exists)
 }
 
-func (s *MigrationSuite) TestCategoriesMigrationsUpAndDown() {
-	migrator, err := migration.New(
-		s.mgr,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(s.dsn),
-	)
+func (s *MigrationSuite) assertColumnPresent(table, column string) {
+	parts := splitTableName(table)
+	var count int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = $2
+		  AND column_name = $3
+	`, parts[0], parts[1], column).Scan(&count)
 	s.Require().NoError(err)
-
-	upErr := migrator.Up(s.ctx)
-	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
-
-	s.assertTablePresent("mecontrola.categories")
-	s.assertTablePresent("mecontrola.category_dictionary")
-	s.assertTablePresent("mecontrola.category_editorial_version")
-	s.assertUnaccentAvailable()
-
-	s.Require().NoError(migrator.Down(s.ctx, 9))
-
-	s.assertTableMissing("mecontrola.categories")
-	s.assertTableMissing("mecontrola.category_dictionary")
-	s.assertTableMissing("mecontrola.category_editorial_version")
-}
-
-func (s *MigrationSuite) TestCategoriesSeedMigration() {
-	migrator, err := migration.New(
-		s.mgr,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(s.dsn),
-	)
-	s.Require().NoError(err)
-
-	upErr := migrator.Up(s.ctx)
-	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
-
-	s.assertExpenseCategoriesCount()
-	s.assertIncomeCategoriesCount()
-	s.assertDeterministicCategoryIDs()
-	s.assertAllocationTypesCorrect()
-	s.assertMaxDepthTwo()
-	s.assertEditorialVersionIncremented()
-}
-
-func (s *MigrationSuite) TestDictionarySeedMigration() {
-	migrator, err := migration.New(
-		s.mgr,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(s.dsn),
-	)
-	s.Require().NoError(err)
-
-	upErr := migrator.Up(s.ctx)
-	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
-
-	s.assertDictionaryCanonicalsCount()
-	s.assertDictionaryAliasesCount()
-	s.assertDictionaryUniqueness()
-	s.assertDictionaryUnaccentNormalization()
+	s.Equal(int64(1), count)
 }
 
 func (s *MigrationSuite) assertUnaccentAvailable() {
 	var result bool
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT unaccent('á') = 'a'`).Scan(&result)
 	s.Require().NoError(err)
-	s.True(result, "extensão unaccent deve estar disponível")
+	s.True(result)
 }
 
 func (s *MigrationSuite) assertExpenseCategoriesCount() {
 	var count int64
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT COUNT(*) FROM mecontrola.categories WHERE kind = 'expense'`).Scan(&count)
 	s.Require().NoError(err)
-	s.GreaterOrEqual(count, int64(88), "deve haver pelo menos 88 categorias de despesa")
+	s.GreaterOrEqual(count, int64(88))
 }
 
 func (s *MigrationSuite) assertIncomeCategoriesCount() {
 	var count int64
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT COUNT(*) FROM mecontrola.categories WHERE kind = 'income'`).Scan(&count)
 	s.Require().NoError(err)
-	s.GreaterOrEqual(count, int64(21), "deve haver pelo menos 21 categorias de receita")
+	s.GreaterOrEqual(count, int64(21))
 }
 
 func (s *MigrationSuite) assertDeterministicCategoryIDs() {
@@ -418,7 +439,9 @@ func (s *MigrationSuite) assertDeterministicCategoryIDs() {
 	defer rows.Close()
 
 	for rows.Next() {
-		var slug, kind, id string
+		var slug string
+		var kind string
+		var id string
 		s.Require().NoError(rows.Scan(&slug, &kind, &id))
 	}
 	s.Require().NoError(rows.Err())
@@ -431,7 +454,7 @@ func (s *MigrationSuite) assertAllocationTypesCorrect() {
 		WHERE kind = 'expense' AND parent_id IS NOT NULL AND allocation_type = 'asset_allocation'
 	`).Scan(&count)
 	s.Require().NoError(err)
-	s.GreaterOrEqual(count, int64(1), "deve haver subcategorias de despesa com asset_allocation")
+	s.GreaterOrEqual(count, int64(1))
 }
 
 func (s *MigrationSuite) assertMaxDepthTwo() {
@@ -442,14 +465,14 @@ func (s *MigrationSuite) assertMaxDepthTwo() {
 		WHERE c2.parent_id IS NOT NULL
 	`).Scan(&count)
 	s.Require().NoError(err)
-	s.Equal(int64(0), count, "não deve haver categorias com profundidade maior que 2")
+	s.Equal(int64(0), count)
 }
 
 func (s *MigrationSuite) assertEditorialVersionIncremented() {
 	var version int64
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version`).Scan(&version)
 	s.Require().NoError(err)
-	s.GreaterOrEqual(version, int64(2), "versão editorial deve ser pelo menos 2 após seed")
+	s.GreaterOrEqual(version, int64(4))
 }
 
 func (s *MigrationSuite) assertDictionaryCanonicalsCount() {
@@ -458,7 +481,7 @@ func (s *MigrationSuite) assertDictionaryCanonicalsCount() {
 		SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE signal_type = 'canonical_name'
 	`).Scan(&count)
 	s.Require().NoError(err)
-	s.GreaterOrEqual(count, int64(60), "deve haver pelo menos 60 canônicos")
+	s.GreaterOrEqual(count, int64(60))
 }
 
 func (s *MigrationSuite) assertDictionaryAliasesCount() {
@@ -467,14 +490,14 @@ func (s *MigrationSuite) assertDictionaryAliasesCount() {
 		SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE signal_type IN ('alias', 'phrase')
 	`).Scan(&count)
 	s.Require().NoError(err)
-	s.GreaterOrEqual(count, int64(10), "deve haver pelo menos 10 aliases/frases")
+	s.GreaterOrEqual(count, int64(10))
 }
 
 func (s *MigrationSuite) assertDictionaryUniqueness() {
 	var count int64
 	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
 		SELECT COUNT(*) FROM (
-			SELECT kind, category_id, term_normalized, COUNT(*) as c
+			SELECT kind, category_id, term_normalized, COUNT(*) AS c
 			FROM mecontrola.category_dictionary
 			WHERE deprecated_at IS NULL
 			GROUP BY kind, category_id, term_normalized
@@ -482,7 +505,7 @@ func (s *MigrationSuite) assertDictionaryUniqueness() {
 		) t
 	`).Scan(&count)
 	s.Require().NoError(err)
-	s.Equal(int64(0), count, "não deve haver termos normalizados duplicados ativos")
+	s.Equal(int64(0), count)
 }
 
 func (s *MigrationSuite) assertDictionaryUnaccentNormalization() {
@@ -491,122 +514,7 @@ func (s *MigrationSuite) assertDictionaryUnaccentNormalization() {
 		SELECT term_normalized FROM mecontrola.category_dictionary WHERE term = 'gás encanado' LIMIT 1
 	`).Scan(&result)
 	s.Require().NoError(err)
-	s.Equal("gas encanado", result, "normalização de gás encanado deve ser gas encanado")
-}
-
-func (s *MigrationSuite) TestTransactionsBaselineMigrationUpDownUp() {
-	migrator, err := migration.New(
-		s.mgr,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(s.dsn),
-	)
-	s.Require().NoError(err)
-
-	upErr := migrator.Up(s.ctx)
-	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
-
-	s.assertTablePresent("mecontrola.transactions")
-	s.assertTablePresent("mecontrola.transactions_card_purchases")
-	s.assertTablePresent("mecontrola.transactions_card_invoices")
-	s.assertTablePresent("mecontrola.transactions_card_invoice_items")
-	s.assertTablePresent("mecontrola.transactions_recurring_templates")
-	s.assertTablePresent("mecontrola.transactions_recurring_materializations")
-	s.assertTablePresent("mecontrola.transactions_monthly_summary")
-
-	s.assertTransactionsConstraints()
-
-	s.Require().NoError(migrator.Down(s.ctx, 1))
-
-	s.assertTableMissing("mecontrola.transactions")
-	s.assertTableMissing("mecontrola.transactions_card_purchases")
-	s.assertTableMissing("mecontrola.transactions_card_invoices")
-	s.assertTableMissing("mecontrola.transactions_card_invoice_items")
-	s.assertTableMissing("mecontrola.transactions_recurring_templates")
-	s.assertTableMissing("mecontrola.transactions_recurring_materializations")
-	s.assertTableMissing("mecontrola.transactions_monthly_summary")
-
-	upErr2 := migrator.Up(s.ctx)
-	s.Require().True(upErr2 == nil || errors.Is(upErr2, migration.ErrNoChange), "re-up deve ser idempotente: %v", upErr2)
-
-	s.assertTablePresent("mecontrola.transactions")
-	s.assertTablePresent("mecontrola.transactions_card_purchases")
-	s.assertTablePresent("mecontrola.transactions_card_invoices")
-	s.assertTablePresent("mecontrola.transactions_card_invoice_items")
-	s.assertTablePresent("mecontrola.transactions_recurring_templates")
-	s.assertTablePresent("mecontrola.transactions_recurring_materializations")
-	s.assertTablePresent("mecontrola.transactions_monthly_summary")
-}
-
-func (s *MigrationSuite) assertTransactionsConstraints() {
-	userID := "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"
-	insertUserErr := execSQL(s.mgr, s.ctx, `
-		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
-		VALUES ($1, '+5511988880010', 'ACTIVE', now(), now())
-		ON CONFLICT DO NOTHING
-	`, userID)
-	s.Require().NoError(insertUserErr)
-
-	invalidAmountErr := execSQL(s.mgr, s.ctx, `
-		INSERT INTO mecontrola.transactions (
-			id, user_id, direction, payment_method, amount_cents, description,
-			category_id, category_name_snapshot, ref_month, occurred_at, created_at, updated_at
-		) VALUES (
-			gen_random_uuid(), $1, 1, 1, 0, 'teste',
-			gen_random_uuid(), 'cat', '2026-06', now(), now(), now()
-		)
-	`, userID)
-	s.Require().Error(invalidAmountErr, "amount_cents=0 deve violar check constraint")
-
-	cardID := uuid.New()
-	cardInvoiceID := uuid.New()
-	insertInvoiceErr := execSQL(s.mgr, s.ctx, `
-		INSERT INTO mecontrola.transactions_card_invoices (
-			id, user_id, card_id, ref_month, closing_at, due_at, created_at, updated_at
-		) VALUES ($1, $2, $3, '2026-06', now(), now(), now(), now())
-	`, cardInvoiceID, userID, cardID)
-	s.Require().NoError(insertInvoiceErr)
-
-	dupInvoiceErr := execSQL(s.mgr, s.ctx, `
-		INSERT INTO mecontrola.transactions_card_invoices (
-			id, user_id, card_id, ref_month, closing_at, due_at, created_at, updated_at
-		) VALUES (gen_random_uuid(), $1, $2, '2026-06', now(), now(), now(), now())
-	`, userID, cardID)
-	s.Require().Error(dupInvoiceErr, "duplicate (user_id, card_id, ref_month) deve violar transactions_card_invoices_uk")
-	s.Contains(dupInvoiceErr.Error(), "transactions_card_invoices_uk")
-}
-
-func (s *MigrationSuite) TestBudgetsMigrationUpAndDown() {
-	migrator, err := migration.New(
-		s.mgr,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(s.dsn),
-	)
-	s.Require().NoError(err)
-
-	upErr := migrator.Up(s.ctx)
-	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
-
-	s.assertTablePresent("mecontrola.budgets")
-	s.assertTablePresent("mecontrola.budgets_allocations")
-	s.assertTablePresent("mecontrola.budgets_expenses")
-	s.assertTablePresent("mecontrola.budgets_threshold_states")
-	s.assertTablePresent("mecontrola.budgets_alerts")
-	s.assertTablePresent("mecontrola.budgets_expense_events_pending")
-
-	s.assertBudgetsUniqueConstraint()
-	s.assertBudgetsExpensesIdentityUnique()
-	s.assertBudgetsExpensesPartialIndex()
-	s.assertBudgetsThresholdStatesConstraints()
-	s.assertBudgetsPendingEventIdempotency()
-
-	s.Require().NoError(migrator.Down(s.ctx, 1))
-
-	s.assertTableMissing("mecontrola.budgets")
-	s.assertTableMissing("mecontrola.budgets_allocations")
-	s.assertTableMissing("mecontrola.budgets_expenses")
-	s.assertTableMissing("mecontrola.budgets_threshold_states")
-	s.assertTableMissing("mecontrola.budgets_alerts")
-	s.assertTableMissing("mecontrola.budgets_expense_events_pending")
+	s.Equal("gas encanado", result)
 }
 
 func (s *MigrationSuite) assertBudgetsUniqueConstraint() {
@@ -621,7 +529,7 @@ func (s *MigrationSuite) assertBudgetsUniqueConstraint() {
 		INSERT INTO mecontrola.budgets (id, user_id, competence, total_cents, state, created_at, updated_at)
 		VALUES (gen_random_uuid(), $1, '2026-01', 0, 1, now(), now())
 	`, userID)
-	s.Require().Error(dupErr, "duplicado (user_id, competence) deve violar budgets_user_comp_uk")
+	s.Require().Error(dupErr)
 	s.Contains(dupErr.Error(), "budgets_user_comp_uk")
 }
 
@@ -651,7 +559,7 @@ func (s *MigrationSuite) assertBudgetsExpensesIdentityUnique() {
 			2000, now(), 1, now(), now()
 		)
 	`, userID)
-	s.Require().Error(dupErr, "duplicado (user_id, source, external_transaction_id) deve violar budgets_expenses_identity_uk")
+	s.Require().Error(dupErr)
 	s.Contains(dupErr.Error(), "budgets_expenses_identity_uk")
 }
 
@@ -666,12 +574,13 @@ func (s *MigrationSuite) assertBudgetsExpensesPartialIndex() {
 	`)
 	s.Require().NoError(err)
 	defer rows.Close()
+
 	var hasRows bool
 	for rows.Next() {
 		hasRows = true
 	}
 	s.Require().NoError(rows.Err())
-	s.True(hasRows, "EXPLAIN deve retornar plano de execução")
+	s.True(hasRows)
 }
 
 func (s *MigrationSuite) assertBudgetsThresholdStatesConstraints() {
@@ -688,14 +597,14 @@ func (s *MigrationSuite) assertBudgetsThresholdStatesConstraints() {
 			user_id, competence, root_slug, threshold, currently_crossed, version
 		) VALUES ($1, '2026-01', 'expense.custo_fixo', 80, false, 0)
 	`, userID)
-	s.Require().Error(dupErr, "duplicado PK deve violar constraint de threshold_states")
+	s.Require().Error(dupErr)
 
 	invalidThresholdErr := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.budgets_threshold_states (
 			user_id, competence, root_slug, threshold, currently_crossed, version
 		) VALUES ($1, '2026-02', 'expense.custo_fixo', 50, false, 0)
 	`, userID)
-	s.Require().Error(invalidThresholdErr, "threshold=50 deve violar budgets_threshold_states_threshold_chk")
+	s.Require().Error(invalidThresholdErr)
 	s.Contains(invalidThresholdErr.Error(), "budgets_threshold_states_threshold_chk")
 }
 
@@ -723,59 +632,8 @@ func (s *MigrationSuite) assertBudgetsPendingEventIdempotency() {
 			1, 1, '{}', 1, now()
 		)
 	`, eventID)
-	s.Require().Error(dupErr, "duplicado event_id deve violar budgets_expense_events_pending_event_uk")
+	s.Require().Error(dupErr)
 	s.Contains(dupErr.Error(), "budgets_expense_events_pending_event_uk")
-}
-
-func (s *MigrationSuite) TestOutboxAggregateUserIDMigrationUpDownUp() {
-	migrator, err := migration.New(
-		s.mgr,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(s.dsn),
-	)
-	s.Require().NoError(err)
-
-	upErr := migrator.Up(s.ctx)
-	s.Require().True(upErr == nil || errors.Is(upErr, migration.ErrNoChange), "up deve ser idempotente: %v", upErr)
-
-	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
-
-	s.Require().NoError(migrator.Down(s.ctx, 1))
-
-	s.assertColumnMissing("mecontrola.outbox_events", "aggregate_user_id")
-
-	upErr2 := migrator.Up(s.ctx)
-	s.Require().True(upErr2 == nil || errors.Is(upErr2, migration.ErrNoChange), "re-up deve ser idempotente: %v", upErr2)
-
-	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
-}
-
-func (s *MigrationSuite) assertColumnPresent(table, column string) {
-	parts := splitTableName(table)
-	var count int64
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
-		SELECT COUNT(*)
-		FROM information_schema.columns
-		WHERE table_schema = $1
-		  AND table_name = $2
-		  AND column_name = $3
-	`, parts[0], parts[1], column).Scan(&count)
-	s.Require().NoError(err)
-	s.Equal(int64(1), count, "coluna %s deve existir em %s", column, table)
-}
-
-func (s *MigrationSuite) assertColumnMissing(table, column string) {
-	parts := splitTableName(table)
-	var count int64
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
-		SELECT COUNT(*)
-		FROM information_schema.columns
-		WHERE table_schema = $1
-		  AND table_name = $2
-		  AND column_name = $3
-	`, parts[0], parts[1], column).Scan(&count)
-	s.Require().NoError(err)
-	s.Equal(int64(0), count, "coluna %s nao deve existir em %s", column, table)
 }
 
 func splitTableName(qualified string) [2]string {

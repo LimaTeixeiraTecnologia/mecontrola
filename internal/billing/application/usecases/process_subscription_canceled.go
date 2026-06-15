@@ -67,8 +67,9 @@ func (uc *ProcessSubscriptionCanceled) Execute(ctx context.Context, in input.Pro
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_canceled: apply transition: %w", applyErr)
 		}
 
-		updatedSub := entities.Hydrate(
+		updatedSub := entities.HydrateWithUser(
 			existing.ID(),
+			existing.UserID(),
 			existing.FunnelToken(),
 			existing.Plan(),
 			valueobjects.StatusCanceledPending,

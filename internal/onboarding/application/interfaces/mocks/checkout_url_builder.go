@@ -72,7 +72,7 @@ type CheckoutURLBuilder_Build_Call struct {
 //   - ctx context.Context
 //   - planID string
 //   - token string
-func (_e *CheckoutURLBuilder_Expecter) Build(ctx interface{}, planID interface{}, token interface{}) *CheckoutURLBuilder_Build_Call {
+func (_e *CheckoutURLBuilder_Expecter) Build(ctx any, planID any, token any) *CheckoutURLBuilder_Build_Call {
 	return &CheckoutURLBuilder_Build_Call{Call: _e.mock.On("Build", ctx, planID, token)}
 }
 

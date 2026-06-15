@@ -63,7 +63,7 @@ type markTokenPaidUseCase_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.MarkTokenPaidInput
-func (_e *markTokenPaidUseCase_Expecter) Execute(ctx interface{}, in interface{}) *markTokenPaidUseCase_Execute_Call {
+func (_e *markTokenPaidUseCase_Expecter) Execute(ctx any, in any) *markTokenPaidUseCase_Execute_Call {
 	return &markTokenPaidUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

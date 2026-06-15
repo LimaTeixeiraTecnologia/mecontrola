@@ -3,13 +3,13 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
 
 const (
@@ -44,6 +44,8 @@ func RequireGatewayAuth(deps RequireGatewayAuthDeps) func(http.Handler) http.Han
 			ctx, span := deps.O11y.Tracer().Start(r.Context(), "auth.require_gateway_auth")
 			defer span.End()
 			uid := r.Header.Get(headerUserID)
+			rid := resolveRequestID(r.Header.Get(headerRequestID), span.TraceID())
+			cip := resolveClientIP(ctx, deps.O11y, r.Header.Get(headerForwardedFor))
 			result := services.VerifyGatewayRequest(
 				services.VerifyRequest{UserIDRaw: uid, SignatureRaw: r.Header.Get(headerGatewayAuth), TimestampRaw: r.Header.Get(headerGatewayTS)},
 				deps.Secrets, time.Now().UTC(), deps.Window,
@@ -61,24 +63,24 @@ func RequireGatewayAuth(deps RequireGatewayAuthDeps) func(http.Handler) http.Han
 				span.SetAttributes(observability.String("result", "rotated"), observability.Bool("rotated", true), observability.Bool("has_user_id", uid != ""))
 				next.ServeHTTP(w, r.WithContext(ctx))
 			case services.GatewayAuthMissingHeader:
-				recordFailure(ctx, r, w, "missing_header", "gateway_missing_header", uid, elapsed, deps, total, dur, span)
+				recordFailure(ctx, w, "missing_header", "gateway_missing_header", uid, rid, cip, elapsed, deps, total, dur, span)
 			case services.GatewayAuthStaleTimestamp:
-				recordFailure(ctx, r, w, "stale_timestamp", "gateway_stale_timestamp", uid, elapsed, deps, total, dur, span)
+				if result.TimestampFailure == services.GatewayAuthTimestampFailureInvalid {
+					recordFailure(ctx, w, "invalid_timestamp", "gateway_invalid_timestamp", uid, rid, cip, elapsed, deps, total, dur, span)
+					return
+				}
+				recordFailure(ctx, w, "stale_timestamp", "gateway_stale_timestamp", uid, rid, cip, elapsed, deps, total, dur, span)
 			case services.GatewayAuthInvalidSignature:
-				recordFailure(ctx, r, w, "invalid_signature", "gateway_invalid_signature", uid, elapsed, deps, total, dur, span)
-			case services.GatewayAuthInvalidTimestamp:
-				recordFailure(ctx, r, w, "invalid_timestamp", "gateway_invalid_timestamp", uid, elapsed, deps, total, dur, span)
+				recordFailure(ctx, w, "invalid_signature", "gateway_invalid_signature", uid, rid, cip, elapsed, deps, total, dur, span)
 			}
 		})
 	}
 }
 
-func recordFailure(ctx context.Context, r *http.Request, w http.ResponseWriter, lbl, reason, uid string, elapsed float64, deps RequireGatewayAuthDeps, total observability.Counter, dur observability.Histogram, span observability.Span) {
+func recordFailure(ctx context.Context, w http.ResponseWriter, lbl, reason, uid, rid, cip string, elapsed float64, deps RequireGatewayAuthDeps, total observability.Counter, dur observability.Histogram, span observability.Span) {
 	total.Increment(ctx, observability.String("result", lbl))
 	dur.Record(ctx, elapsed, observability.String("result", lbl))
 	span.SetAttributes(observability.String("result", lbl), observability.Bool("rotated", false), observability.Bool("has_user_id", uid != ""))
-	cip := lastForwardedFor(r.Header.Get(headerForwardedFor))
-	rid := r.Header.Get(headerRequestID)
 	deps.O11y.Logger().Warn(ctx, "gateway auth failed", observability.String("result", lbl), observability.String("request_id", rid), observability.String("client_ip", cip), observability.String("user_id_prefix", userIDPrefix(uid)))
 	if err := deps.FailureLogger.Handle(ctx, input.RecordGatewayAuthFailureInput{UserIDRaw: uid, Reason: reason, RequestID: rid, ClientIPRaw: cip}); err != nil {
 		deps.O11y.Logger().Warn(ctx, "gateway auth: failure logger publish error", observability.String("result", lbl))
@@ -100,10 +102,18 @@ func userIDPrefix(raw string) string {
 	return raw[:8]
 }
 
-func lastForwardedFor(xff string) string {
-	if strings.TrimSpace(xff) == "" {
-		return ""
+func resolveRequestID(headerValue, fallback string) string {
+	if headerValue != "" {
+		return headerValue
 	}
-	parts := strings.Split(xff, ",")
-	return strings.TrimSpace(parts[len(parts)-1])
+	return fallback
+}
+
+func resolveClientIP(ctx context.Context, o11y observability.Observability, raw string) string {
+	cip, err := valueobjects.NewClientIP(raw)
+	if err == nil {
+		return cip.String()
+	}
+	o11y.Logger().Warn(ctx, "gateway auth invalid client_ip", observability.String("client_ip_raw", raw), observability.Error(err))
+	return ""
 }

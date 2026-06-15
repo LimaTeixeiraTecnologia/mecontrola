@@ -80,7 +80,7 @@ type ExpenseRepository_GetByIdentity_Call struct {
 // GetByIdentity is a helper method to define mock.On call
 //   - ctx context.Context
 //   - k entities.ExpenseIdentity
-func (_e *ExpenseRepository_Expecter) GetByIdentity(ctx interface{}, k interface{}) *ExpenseRepository_GetByIdentity_Call {
+func (_e *ExpenseRepository_Expecter) GetByIdentity(ctx any, k any) *ExpenseRepository_GetByIdentity_Call {
 	return &ExpenseRepository_GetByIdentity_Call{Call: _e.mock.On("GetByIdentity", ctx, k)}
 }
 
@@ -137,7 +137,7 @@ type ExpenseRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - e entities.Expense
-func (_e *ExpenseRepository_Expecter) Insert(ctx interface{}, e interface{}) *ExpenseRepository_Insert_Call {
+func (_e *ExpenseRepository_Expecter) Insert(ctx any, e any) *ExpenseRepository_Insert_Call {
 	return &ExpenseRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, e)}
 }
 
@@ -204,7 +204,7 @@ type ExpenseRepository_PurgeDeleted_Call struct {
 //   - ctx context.Context
 //   - olderThan string
 //   - limit int
-func (_e *ExpenseRepository_Expecter) PurgeDeleted(ctx interface{}, olderThan interface{}, limit interface{}) *ExpenseRepository_PurgeDeleted_Call {
+func (_e *ExpenseRepository_Expecter) PurgeDeleted(ctx any, olderThan any, limit any) *ExpenseRepository_PurgeDeleted_Call {
 	return &ExpenseRepository_PurgeDeleted_Call{Call: _e.mock.On("PurgeDeleted", ctx, olderThan, limit)}
 }
 
@@ -276,7 +276,7 @@ type ExpenseRepository_SoftDelete_Call struct {
 //   - ctx context.Context
 //   - e entities.Expense
 //   - expectedVersion int64
-func (_e *ExpenseRepository_Expecter) SoftDelete(ctx interface{}, e interface{}, expectedVersion interface{}) *ExpenseRepository_SoftDelete_Call {
+func (_e *ExpenseRepository_Expecter) SoftDelete(ctx any, e any, expectedVersion any) *ExpenseRepository_SoftDelete_Call {
 	return &ExpenseRepository_SoftDelete_Call{Call: _e.mock.On("SoftDelete", ctx, e, expectedVersion)}
 }
 
@@ -350,7 +350,7 @@ type ExpenseRepository_SumByRoot_Call struct {
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - c valueobjects.Competence
-func (_e *ExpenseRepository_Expecter) SumByRoot(ctx interface{}, userID interface{}, c interface{}) *ExpenseRepository_SumByRoot_Call {
+func (_e *ExpenseRepository_Expecter) SumByRoot(ctx any, userID any, c any) *ExpenseRepository_SumByRoot_Call {
 	return &ExpenseRepository_SumByRoot_Call{Call: _e.mock.On("SumByRoot", ctx, userID, c)}
 }
 
@@ -413,7 +413,7 @@ type ExpenseRepository_Update_Call struct {
 //   - ctx context.Context
 //   - e entities.Expense
 //   - expectedVersion int64
-func (_e *ExpenseRepository_Expecter) Update(ctx interface{}, e interface{}, expectedVersion interface{}) *ExpenseRepository_Update_Call {
+func (_e *ExpenseRepository_Expecter) Update(ctx any, e any, expectedVersion any) *ExpenseRepository_Update_Call {
 	return &ExpenseRepository_Update_Call{Call: _e.mock.On("Update", ctx, e, expectedVersion)}
 }
 

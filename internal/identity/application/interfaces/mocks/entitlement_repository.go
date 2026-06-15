@@ -72,7 +72,7 @@ type EntitlementRepository_FindByUserID_Call struct {
 // FindByUserID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID string
-func (_e *EntitlementRepository_Expecter) FindByUserID(ctx interface{}, userID interface{}) *EntitlementRepository_FindByUserID_Call {
+func (_e *EntitlementRepository_Expecter) FindByUserID(ctx any, userID any) *EntitlementRepository_FindByUserID_Call {
 	return &EntitlementRepository_FindByUserID_Call{Call: _e.mock.On("FindByUserID", ctx, userID)}
 }
 
@@ -129,7 +129,7 @@ type EntitlementRepository_Upsert_Call struct {
 // Upsert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record interfaces.EntitlementRecord
-func (_e *EntitlementRepository_Expecter) Upsert(ctx interface{}, record interface{}) *EntitlementRepository_Upsert_Call {
+func (_e *EntitlementRepository_Expecter) Upsert(ctx any, record any) *EntitlementRepository_Upsert_Call {
 	return &EntitlementRepository_Upsert_Call{Call: _e.mock.On("Upsert", ctx, record)}
 }
 
@@ -188,7 +188,7 @@ type EntitlementRepository_UpsertPending_Call struct {
 //   - subscriptionID string
 //   - funnelToken string
 //   - payload []byte
-func (_e *EntitlementRepository_Expecter) UpsertPending(ctx interface{}, subscriptionID interface{}, funnelToken interface{}, payload interface{}) *EntitlementRepository_UpsertPending_Call {
+func (_e *EntitlementRepository_Expecter) UpsertPending(ctx any, subscriptionID any, funnelToken any, payload any) *EntitlementRepository_UpsertPending_Call {
 	return &EntitlementRepository_UpsertPending_Call{Call: _e.mock.On("UpsertPending", ctx, subscriptionID, funnelToken, payload)}
 }
 

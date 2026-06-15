@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -33,7 +34,7 @@ type rateLimitMiddleware struct {
 	counter  observability.Counter
 }
 
-func NewRateLimitMiddleware(cfg RateLimitConfig, o11y observability.Observability) func(http.Handler) http.Handler {
+func NewRateLimitMiddleware(ctx context.Context, cfg RateLimitConfig, o11y observability.Observability) func(http.Handler) http.Handler {
 	m := &rateLimitMiddleware{
 		limiters: make(map[string]*keyLimiter),
 		rps:      rate.Limit(float64(cfg.PerMinute) / 60.0),
@@ -42,7 +43,7 @@ func NewRateLimitMiddleware(cfg RateLimitConfig, o11y observability.Observabilit
 		scope:    cfg.Scope,
 		counter:  o11y.Metrics().Counter("auth_rate_limit_exceeded_total", "Total auth rate limit rejections by scope", "1"),
 	}
-	go m.gcLoop()
+	go m.gcLoop(ctx)
 	return m.handle
 }
 
@@ -77,11 +78,16 @@ func (m *rateLimitMiddleware) limiterFor(key string) *rate.Limiter {
 	return l.limiter
 }
 
-func (m *rateLimitMiddleware) gcLoop() {
+func (m *rateLimitMiddleware) gcLoop(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		m.gc()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.gc()
+		}
 	}
 }
 

@@ -24,7 +24,7 @@ O Caddyfile em `deployment/caddy/Caddyfile` é o ponto único de borda HTTP para
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | HSTS — força HTTPS por 1 ano |
 | `X-Content-Type-Options` | `nosniff` | Previne MIME sniffing |
 | `Referrer-Policy` | `no-referrer` | Não vaza URL de origem em requests externos |
-| `Permissions-Policy` | `()` | Desabilita todas as features de browser |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Desabilita camera, microphone e geolocation |
 | `X-Frame-Options` | `DENY` | Previne clickjacking |
 | `Content-Security-Policy` | `default-src 'none'; connect-src 'self'; frame-ancestors 'none'` | Política restritiva padrão |
 | `Server` | *(removido)* | Não revela stack |
@@ -44,6 +44,30 @@ Os seguintes headers são removidos de qualquer request externo antes de proxy a
 - `X-Gateway-Timestamp`
 
 Isso garante que mesmo que um atacante injete esses headers, o app nunca os receberá pela borda pública. O enforce definitivo é feito pela middleware `RequireGatewayAuth` (B1 — PRD gateway-auth-forensics).
+
+## Decisão: Authorization passa pelo gateway
+
+`X-User-ID`, `X-Gateway-Auth` e `X-Gateway-Timestamp` são removidos para evitar
+injeção externa (RF-08). `Authorization` é PRESERVADO pois a aplicação valida
+o token (Bearer/JWT) no middleware `require_gateway_auth`. Externos que injetem
+`Authorization` inválido caem em 401 normalmente.
+
+## Validação TLS em produção
+
+O smoke local roda com `auto_https off` para isolar testes de header/strip.
+Validação TLS deve ser executada manualmente após deploy em produção:
+
+```bash
+openssl s_client -connect <APP_DOMAIN>:443 -servername <APP_DOMAIN> </dev/null \
+    | openssl x509 -noout -issuer -dates
+```
+
+Critérios de aceite:
+- Cadeia válida emitida por Let's Encrypt (ou ZeroSSL).
+- TLS 1.2 ou superior negociado.
+- HSTS efetivo via curl: `curl -sI https://<APP_DOMAIN>/ | grep -i strict-transport-security`.
+
+Registrar saída no runbook após cada deploy.
 
 ## Smoke Test Local
 

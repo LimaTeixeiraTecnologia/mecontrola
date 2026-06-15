@@ -18,7 +18,14 @@ func NewClientIP(xForwardedFor string) (ClientIP, error) {
 		return ClientIP{}, nil
 	}
 	parts := strings.Split(xForwardedFor, ",")
-	last := strings.TrimSpace(parts[len(parts)-1])
+	var last string
+	for i := len(parts) - 1; i >= 0; i-- {
+		candidate := strings.TrimSpace(parts[i])
+		if candidate != "" {
+			last = candidate
+			break
+		}
+	}
 	if last == "" {
 		return ClientIP{}, nil
 	}

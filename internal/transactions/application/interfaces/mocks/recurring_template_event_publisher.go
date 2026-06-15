@@ -65,7 +65,7 @@ type RecurringTemplateEventPublisher_PublishCreated_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.RecurringTemplateCreated
-func (_e *RecurringTemplateEventPublisher_Expecter) PublishCreated(ctx interface{}, db interface{}, evt interface{}) *RecurringTemplateEventPublisher_PublishCreated_Call {
+func (_e *RecurringTemplateEventPublisher_Expecter) PublishCreated(ctx any, db any, evt any) *RecurringTemplateEventPublisher_PublishCreated_Call {
 	return &RecurringTemplateEventPublisher_PublishCreated_Call{Call: _e.mock.On("PublishCreated", ctx, db, evt)}
 }
 
@@ -128,7 +128,7 @@ type RecurringTemplateEventPublisher_PublishDeleted_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.RecurringTemplateDeleted
-func (_e *RecurringTemplateEventPublisher_Expecter) PublishDeleted(ctx interface{}, db interface{}, evt interface{}) *RecurringTemplateEventPublisher_PublishDeleted_Call {
+func (_e *RecurringTemplateEventPublisher_Expecter) PublishDeleted(ctx any, db any, evt any) *RecurringTemplateEventPublisher_PublishDeleted_Call {
 	return &RecurringTemplateEventPublisher_PublishDeleted_Call{Call: _e.mock.On("PublishDeleted", ctx, db, evt)}
 }
 
@@ -191,7 +191,7 @@ type RecurringTemplateEventPublisher_PublishUpdated_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.RecurringTemplateUpdated
-func (_e *RecurringTemplateEventPublisher_Expecter) PublishUpdated(ctx interface{}, db interface{}, evt interface{}) *RecurringTemplateEventPublisher_PublishUpdated_Call {
+func (_e *RecurringTemplateEventPublisher_Expecter) PublishUpdated(ctx any, db any, evt any) *RecurringTemplateEventPublisher_PublishUpdated_Call {
 	return &RecurringTemplateEventPublisher_PublishUpdated_Call{Call: _e.mock.On("PublishUpdated", ctx, db, evt)}
 }
 

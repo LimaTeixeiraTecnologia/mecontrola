@@ -5,12 +5,15 @@ version: '3'
 
 tasks:
   run:
-    desc: Executa o linter estatico (golangci-lint).
+    desc: Executa o linter estatico e os gates obrigatorios de seguranca/review.
     preconditions:
       - sh: command -v golangci-lint >/dev/null 2>&1
         msg: "golangci-lint ausente. Instale: https://golangci-lint.run/welcome/install/"
     cmds:
       - golangci-lint run ./...
+      - task: auth-bypass
+      - task: outbox-user-id
+      - task: outbox-user-id:test
 
   fix:
     desc: Aplica correcoes automaticas do linter.
@@ -77,7 +80,7 @@ tasks:
   auth-bypass:
     desc: |
       Gate M-09 (RF-21): todo router que usa InjectPrincipalFromHeader(WithO11y)? DEVE ter
-      RequireGatewayAuth nas 3 linhas anteriores. Falha o CI com arquivo:linha quando a
+      RequireGatewayAuth no `sub.Use(...)` imediatamente anterior. Falha o CI com arquivo:linha quando a
       ordem for violada ou o gate estiver ausente. Exclui _test.go e mocks/.
     cmds:
       - bash deployment/scripts/lint-auth-bypass.sh
@@ -91,3 +94,11 @@ tasks:
       Ver .specs/prd-outbox-aggregate-user-id/prd.md RF-16, RF-17.
     cmds:
       - bash deployment/scripts/lint-outbox-user-id.sh
+
+  outbox-user-id:test:
+    desc: |
+      Regressao do proprio lint:outbox-user-id. Roda fixtures em tmpdir cobrindo:
+      campo ausente, literal vazio, valor populado, variavel, expressao, allowlist hit.
+      Garante zero falso positivo e zero falso negativo no gate.
+    cmds:
+      - bash deployment/scripts/lint-outbox-user-id-test.sh

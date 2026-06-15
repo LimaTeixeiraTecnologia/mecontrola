@@ -128,7 +128,7 @@ Este PRD adiciona `AggregateUserID` como campo top-level no envelope `outbox.Eve
 
 ## Riscos e Mitigações
 
-- **R-01**: Migration causa lock longo na tabela `outbox_events` se tiver muitos registros. **Mitigação**: `ALTER TABLE ... ADD COLUMN UUID NULL` em Postgres é metadata-only (instantâneo). Index criado com `CREATE INDEX CONCURRENTLY` na migration.
+- **R-01**: Migration causa lock longo na tabela `outbox_events` se tiver muitos registros. **Mitigação**: `ALTER TABLE ... ADD COLUMN UUID NULL` em Postgres é metadata-only (instantâneo). Index parcial `WHERE aggregate_user_id IS NOT NULL` é criado em transação (golang-migrate envolve cada migration em tx, incompatível com `CONCURRENTLY`); como a coluna nasce 100% NULL, o build do índice é vazio e o `AccessExclusiveLock` é instantâneo.
 - **R-02**: Caller esquecer de popular `AggregateUserID` em PR futuro. **Mitigação**: gate `lint:outbox-user-id` falha CI.
 - **R-03**: Validação opcional v1 deixa eventos passarem sem `user_id` por bug. **Mitigação**: métrica + alerta operacional `has_user_id="false"` > 1% por 10 min → operador investiga.
 - **R-04**: Consumers existentes podem quebrar se envelope JSON ganhar campo novo. **Mitigação**: Go `encoding/json` ignora campos desconhecidos por default; consumers não tipados (mapas) ganham campo extra inofensivo.

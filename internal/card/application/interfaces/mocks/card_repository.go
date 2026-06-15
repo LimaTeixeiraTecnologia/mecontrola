@@ -74,7 +74,7 @@ type CardRepository_GetByIDForUser_Call struct {
 //   - ctx context.Context
 //   - cardID string
 //   - userID string
-func (_e *CardRepository_Expecter) GetByIDForUser(ctx interface{}, cardID interface{}, userID interface{}) *CardRepository_GetByIDForUser_Call {
+func (_e *CardRepository_Expecter) GetByIDForUser(ctx any, cardID any, userID any) *CardRepository_GetByIDForUser_Call {
 	return &CardRepository_GetByIDForUser_Call{Call: _e.mock.On("GetByIDForUser", ctx, cardID, userID)}
 }
 
@@ -136,7 +136,7 @@ type CardRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - c entities.Card
-func (_e *CardRepository_Expecter) Insert(ctx interface{}, c interface{}) *CardRepository_Insert_Call {
+func (_e *CardRepository_Expecter) Insert(ctx any, c any) *CardRepository_Insert_Call {
 	return &CardRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, c)}
 }
 
@@ -212,7 +212,7 @@ type CardRepository_ListByUser_Call struct {
 //   - userID string
 //   - cursor string
 //   - limit int
-func (_e *CardRepository_Expecter) ListByUser(ctx interface{}, userID interface{}, cursor interface{}, limit interface{}) *CardRepository_ListByUser_Call {
+func (_e *CardRepository_Expecter) ListByUser(ctx any, userID any, cursor any, limit any) *CardRepository_ListByUser_Call {
 	return &CardRepository_ListByUser_Call{Call: _e.mock.On("ListByUser", ctx, userID, cursor, limit)}
 }
 
@@ -281,7 +281,7 @@ type CardRepository_SoftDeleteByIDForUser_Call struct {
 //   - cardID string
 //   - userID string
 //   - now time.Time
-func (_e *CardRepository_Expecter) SoftDeleteByIDForUser(ctx interface{}, cardID interface{}, userID interface{}, now interface{}) *CardRepository_SoftDeleteByIDForUser_Call {
+func (_e *CardRepository_Expecter) SoftDeleteByIDForUser(ctx any, cardID any, userID any, now any) *CardRepository_SoftDeleteByIDForUser_Call {
 	return &CardRepository_SoftDeleteByIDForUser_Call{Call: _e.mock.On("SoftDeleteByIDForUser", ctx, cardID, userID, now)}
 }
 
@@ -357,7 +357,7 @@ type CardRepository_UpdateByIDForUser_Call struct {
 // UpdateByIDForUser is a helper method to define mock.On call
 //   - ctx context.Context
 //   - c entities.Card
-func (_e *CardRepository_Expecter) UpdateByIDForUser(ctx interface{}, c interface{}) *CardRepository_UpdateByIDForUser_Call {
+func (_e *CardRepository_Expecter) UpdateByIDForUser(ctx any, c any) *CardRepository_UpdateByIDForUser_Call {
 	return &CardRepository_UpdateByIDForUser_Call{Call: _e.mock.On("UpdateByIDForUser", ctx, c)}
 }
 

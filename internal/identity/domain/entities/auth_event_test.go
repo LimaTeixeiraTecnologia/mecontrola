@@ -50,7 +50,7 @@ func TestNewAuthFailed(t *testing.T) {
 		t.Parallel()
 		ev, err := entities.NewAuthFailed(
 			entities.AuthEventReasonGatewayInvalidSignature,
-			entities.AuthEventSourceWhatsApp,
+			entities.AuthEventSourceGateway,
 			nil,
 			"req-abc",
 			"192.168.1.1",
@@ -67,7 +67,7 @@ func TestNewAuthFailed(t *testing.T) {
 		t.Parallel()
 		ev, err := entities.NewAuthFailed(
 			entities.AuthEventReasonGatewayMissingHeader,
-			entities.AuthEventSourceWhatsApp,
+			entities.AuthEventSourceGateway,
 			nil,
 			"",
 			"",
@@ -81,7 +81,7 @@ func TestNewAuthFailed(t *testing.T) {
 		t.Parallel()
 		ev, err := entities.NewAuthFailed(
 			entities.AuthEventReasonGatewayInvalidTimestamp,
-			entities.AuthEventSourceWhatsApp,
+			entities.AuthEventSourceGateway,
 			nil,
 			"",
 			"",
@@ -94,7 +94,7 @@ func TestNewAuthFailed(t *testing.T) {
 		t.Parallel()
 		ev, err := entities.NewAuthFailed(
 			entities.AuthEventReasonGatewayStaleTimestamp,
-			entities.AuthEventSourceWhatsApp,
+			entities.AuthEventSourceGateway,
 			nil,
 			"",
 			"",
@@ -107,6 +107,18 @@ func TestNewAuthFailed(t *testing.T) {
 		t.Parallel()
 		_, err := entities.NewAuthFailed("", entities.AuthEventSourceWhatsApp, nil, "", "")
 		require.ErrorIs(t, err, entities.ErrAuthFailedRequiresReason)
+	})
+
+	t.Run("deve rejeitar gateway reason com source whatsapp", func(t *testing.T) {
+		t.Parallel()
+		_, err := entities.NewAuthFailed(
+			entities.AuthEventReasonGatewayInvalidSignature,
+			entities.AuthEventSourceWhatsApp,
+			nil,
+			"",
+			"",
+		)
+		require.ErrorIs(t, err, entities.ErrGatewayReasonRequiresGatewaySource)
 	})
 }
 

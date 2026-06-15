@@ -5,8 +5,8 @@ package migrations
 
 import "embed"
 
-// FS is the embedded filesystem containing all *.sql migration files.
+// FS is the embedded filesystem containing the single V0 baseline.
 // Imported by internal/platform/database to run migrations via golang-migrate.
 //
-//go:embed *.sql
+//go:embed 000001_initial_baseline.up.sql 000001_initial_baseline.down.sql
 var FS embed.FS

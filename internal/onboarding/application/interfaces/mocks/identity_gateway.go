@@ -73,7 +73,7 @@ type IdentityGateway_UpsertUserByWhatsApp_Call struct {
 //   - ctx context.Context
 //   - mobileE164 string
 //   - email string
-func (_e *IdentityGateway_Expecter) UpsertUserByWhatsApp(ctx interface{}, mobileE164 interface{}, email interface{}) *IdentityGateway_UpsertUserByWhatsApp_Call {
+func (_e *IdentityGateway_Expecter) UpsertUserByWhatsApp(ctx any, mobileE164 any, email any) *IdentityGateway_UpsertUserByWhatsApp_Call {
 	return &IdentityGateway_UpsertUserByWhatsApp_Call{Call: _e.mock.On("UpsertUserByWhatsApp", ctx, mobileE164, email)}
 }
 

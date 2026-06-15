@@ -62,7 +62,7 @@ type Registry_HandlersOf_Call struct {
 
 // HandlersOf is a helper method to define mock.On call
 //   - eventType string
-func (_e *Registry_Expecter) HandlersOf(eventType interface{}) *Registry_HandlersOf_Call {
+func (_e *Registry_Expecter) HandlersOf(eventType any) *Registry_HandlersOf_Call {
 	return &Registry_HandlersOf_Call{Call: _e.mock.On("HandlersOf", eventType)}
 }
 

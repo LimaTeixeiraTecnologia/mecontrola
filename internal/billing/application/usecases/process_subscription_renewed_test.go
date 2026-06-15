@@ -48,8 +48,9 @@ func (s *ProcessSubscriptionRenewedSuite) activeSub(lastEventAt time.Time) entit
 	s.Require().NoError(err)
 	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	return entities.Hydrate(
+	return entities.HydrateWithUser(
 		"sub-001",
+		"user-001",
 		funnelToken,
 		plan,
 		valueobjects.StatusActive,
@@ -65,8 +66,9 @@ func (s *ProcessSubscriptionRenewedSuite) pastDueSub(lastEventAt time.Time) enti
 	s.Require().NoError(err)
 	funnelToken, err := valueobjects.NewFunnelToken("token-abc")
 	s.Require().NoError(err)
-	return entities.Hydrate(
+	return entities.HydrateWithUser(
 		"sub-001",
+		"user-001",
 		funnelToken,
 		plan,
 		valueobjects.StatusPastDue,
@@ -130,6 +132,7 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 						mock.Anything,
 						mock.MatchedBy(func(renewed entities.Subscription) bool {
 							return renewed.ID() == "sub-001" &&
+								renewed.UserID() == "user-001" &&
 								renewed.Status() == valueobjects.StatusActive &&
 								renewed.PeriodEnd().Equal(expectedPeriodEnd) &&
 								renewed.LastEventAt().Equal(args.input.OccurredAt)

@@ -63,7 +63,7 @@ type RepositoryFactory_AuthEventsRepository_Call struct {
 
 // AuthEventsRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) AuthEventsRepository(db interface{}) *RepositoryFactory_AuthEventsRepository_Call {
+func (_e *RepositoryFactory_Expecter) AuthEventsRepository(db any) *RepositoryFactory_AuthEventsRepository_Call {
 	return &RepositoryFactory_AuthEventsRepository_Call{Call: _e.mock.On("AuthEventsRepository", db)}
 }
 
@@ -116,7 +116,7 @@ type RepositoryFactory_EntitlementRepository_Call struct {
 
 // EntitlementRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) EntitlementRepository(db interface{}) *RepositoryFactory_EntitlementRepository_Call {
+func (_e *RepositoryFactory_Expecter) EntitlementRepository(db any) *RepositoryFactory_EntitlementRepository_Call {
 	return &RepositoryFactory_EntitlementRepository_Call{Call: _e.mock.On("EntitlementRepository", db)}
 }
 
@@ -139,6 +139,59 @@ func (_c *RepositoryFactory_EntitlementRepository_Call) Return(entitlementReposi
 }
 
 func (_c *RepositoryFactory_EntitlementRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.EntitlementRepository) *RepositoryFactory_EntitlementRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UserIdentityRepository provides a mock function for the type RepositoryFactory
+func (_mock *RepositoryFactory) UserIdentityRepository(db database.DBTX) interfaces.UserIdentityRepository {
+	ret := _mock.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UserIdentityRepository")
+	}
+
+	var r0 interfaces.UserIdentityRepository
+	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.UserIdentityRepository); ok {
+		r0 = returnFunc(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.UserIdentityRepository)
+		}
+	}
+	return r0
+}
+
+// RepositoryFactory_UserIdentityRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UserIdentityRepository'
+type RepositoryFactory_UserIdentityRepository_Call struct {
+	*mock.Call
+}
+
+// UserIdentityRepository is a helper method to define mock.On call
+//   - db database.DBTX
+func (_e *RepositoryFactory_Expecter) UserIdentityRepository(db any) *RepositoryFactory_UserIdentityRepository_Call {
+	return &RepositoryFactory_UserIdentityRepository_Call{Call: _e.mock.On("UserIdentityRepository", db)}
+}
+
+func (_c *RepositoryFactory_UserIdentityRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_UserIdentityRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 database.DBTX
+		if args[0] != nil {
+			arg0 = args[0].(database.DBTX)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_UserIdentityRepository_Call) Return(userIdentityRepository interfaces.UserIdentityRepository) *RepositoryFactory_UserIdentityRepository_Call {
+	_c.Call.Return(userIdentityRepository)
+	return _c
+}
+
+func (_c *RepositoryFactory_UserIdentityRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.UserIdentityRepository) *RepositoryFactory_UserIdentityRepository_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -169,7 +222,7 @@ type RepositoryFactory_UserRepository_Call struct {
 
 // UserRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) UserRepository(db interface{}) *RepositoryFactory_UserRepository_Call {
+func (_e *RepositoryFactory_Expecter) UserRepository(db any) *RepositoryFactory_UserRepository_Call {
 	return &RepositoryFactory_UserRepository_Call{Call: _e.mock.On("UserRepository", db)}
 }
 

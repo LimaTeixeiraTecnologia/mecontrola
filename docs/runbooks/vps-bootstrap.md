@@ -124,8 +124,30 @@ Se o `ufw enable` bloquear acesso SSH:
 Se o SSH hardening bloquear acesso:
 
 1. Acessar via console web do Hostinger.
-2. Restaurar backup: `sudo cp /etc/ssh/sshd_config.bak.<timestamp> /etc/ssh/sshd_config`
-3. Reiniciar: `sudo systemctl restart sshd`
+
+## Rollback do hardening SSH
+
+Rollback canônico (estado pré-execução do script):
+
+    sudo cp /etc/ssh/sshd_config.pre-hardening /etc/ssh/sshd_config
+    sudo sshd -t && sudo systemctl restart sshd
+
+Rollback para a execução imediatamente anterior:
+
+    ls -t /etc/ssh/sshd_config.bak.* | head -1 | xargs -I{} sudo cp {} /etc/ssh/sshd_config
+    sudo sshd -t && sudo systemctl restart sshd
+
+## Prova de idempotência
+
+Antes do go-live, executar duas vezes e validar:
+
+    sudo bash deployment/scripts/vps-ssh-hardening.sh
+    MD5_1=$(md5sum /etc/ssh/sshd_config | awk '{print $1}')
+    sudo bash deployment/scripts/vps-ssh-hardening.sh
+    MD5_2=$(md5sum /etc/ssh/sshd_config | awk '{print $1}')
+    [[ "$MD5_1" == "$MD5_2" ]] && echo "IDEMPOTENTE" || echo "FALHA"
+
+Registrar a saída neste runbook após cada execução em staging.
 
 ---
 

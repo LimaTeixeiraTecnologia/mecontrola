@@ -76,7 +76,7 @@ type Storage_ClaimBatch_Call struct {
 //   - ctx context.Context
 //   - lockedBy string
 //   - batchSize int
-func (_e *Storage_Expecter) ClaimBatch(ctx interface{}, lockedBy interface{}, batchSize interface{}) *Storage_ClaimBatch_Call {
+func (_e *Storage_Expecter) ClaimBatch(ctx any, lockedBy any, batchSize any) *Storage_ClaimBatch_Call {
 	return &Storage_ClaimBatch_Call{Call: _e.mock.On("ClaimBatch", ctx, lockedBy, batchSize)}
 }
 
@@ -148,7 +148,7 @@ type Storage_DeletePublishedBatch_Call struct {
 //   - ctx context.Context
 //   - retention time.Duration
 //   - limit int
-func (_e *Storage_Expecter) DeletePublishedBatch(ctx interface{}, retention interface{}, limit interface{}) *Storage_DeletePublishedBatch_Call {
+func (_e *Storage_Expecter) DeletePublishedBatch(ctx any, retention any, limit any) *Storage_DeletePublishedBatch_Call {
 	return &Storage_DeletePublishedBatch_Call{Call: _e.mock.On("DeletePublishedBatch", ctx, retention, limit)}
 }
 
@@ -211,7 +211,7 @@ type Storage_Insert_Call struct {
 //   - ctx context.Context
 //   - evt outbox.Event
 //   - maxAttempts int
-func (_e *Storage_Expecter) Insert(ctx interface{}, evt interface{}, maxAttempts interface{}) *Storage_Insert_Call {
+func (_e *Storage_Expecter) Insert(ctx any, evt any, maxAttempts any) *Storage_Insert_Call {
 	return &Storage_Insert_Call{Call: _e.mock.On("Insert", ctx, evt, maxAttempts)}
 }
 
@@ -274,7 +274,7 @@ type Storage_MarkFailed_Call struct {
 //   - ctx context.Context
 //   - id string
 //   - lastErr string
-func (_e *Storage_Expecter) MarkFailed(ctx interface{}, id interface{}, lastErr interface{}) *Storage_MarkFailed_Call {
+func (_e *Storage_Expecter) MarkFailed(ctx any, id any, lastErr any) *Storage_MarkFailed_Call {
 	return &Storage_MarkFailed_Call{Call: _e.mock.On("MarkFailed", ctx, id, lastErr)}
 }
 
@@ -338,7 +338,7 @@ type Storage_MarkPendingRetry_Call struct {
 //   - id string
 //   - lastErr string
 //   - nextAttemptAt time.Time
-func (_e *Storage_Expecter) MarkPendingRetry(ctx interface{}, id interface{}, lastErr interface{}, nextAttemptAt interface{}) *Storage_MarkPendingRetry_Call {
+func (_e *Storage_Expecter) MarkPendingRetry(ctx any, id any, lastErr any, nextAttemptAt any) *Storage_MarkPendingRetry_Call {
 	return &Storage_MarkPendingRetry_Call{Call: _e.mock.On("MarkPendingRetry", ctx, id, lastErr, nextAttemptAt)}
 }
 
@@ -405,7 +405,7 @@ type Storage_MarkPublished_Call struct {
 // MarkPublished is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id string
-func (_e *Storage_Expecter) MarkPublished(ctx interface{}, id interface{}) *Storage_MarkPublished_Call {
+func (_e *Storage_Expecter) MarkPublished(ctx any, id any) *Storage_MarkPublished_Call {
 	return &Storage_MarkPublished_Call{Call: _e.mock.On("MarkPublished", ctx, id)}
 }
 
@@ -471,7 +471,7 @@ type Storage_ResetStuck_Call struct {
 // ResetStuck is a helper method to define mock.On call
 //   - ctx context.Context
 //   - stuckAfter time.Duration
-func (_e *Storage_Expecter) ResetStuck(ctx interface{}, stuckAfter interface{}) *Storage_ResetStuck_Call {
+func (_e *Storage_Expecter) ResetStuck(ctx any, stuckAfter any) *Storage_ResetStuck_Call {
 	return &Storage_ResetStuck_Call{Call: _e.mock.On("ResetStuck", ctx, stuckAfter)}
 }
 

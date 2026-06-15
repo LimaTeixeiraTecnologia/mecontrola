@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -16,12 +14,11 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/channels"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/ratelimit"
 )
-
-var ativarRegex = regexp.MustCompile(`(?i)^\s*ATIVAR\s+([A-Za-z0-9_\-]{40,45})\s*$`)
 
 type RouteOutcome string
 
@@ -126,6 +123,11 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 		return d.finish(ctx, span, OutcomeInvalid, false, false), nil
 	}
 
+	if staleReason, stale := d.checkTimestamp(msg.Timestamp); stale {
+		d.rejectStale(ctx, staleReason, msg.WAMID)
+		return d.finish(ctx, span, OutcomeStaleTS, false, false), nil
+	}
+
 	inserted, dedupErr := d.dedup.InsertIfAbsent(ctx, msg.WAMID)
 	if dedupErr != nil {
 		d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.dedup_failed",
@@ -140,12 +142,7 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 		return d.finish(ctx, span, OutcomeDuplicate, false, true), nil
 	}
 
-	if staleReason, stale := d.checkTimestamp(msg.Timestamp); stale {
-		d.rejectStale(ctx, staleReason, msg.WAMID)
-		return d.finish(ctx, span, OutcomeStaleTS, false, false), nil
-	}
-
-	if matches := ativarRegex.FindStringSubmatch(strings.TrimSpace(msg.Text)); matches != nil {
+	if _, ok := channels.MatchActivationCommand(msg.Text); ok {
 		return d.finish(ctx, span, d.onboardingRoute(ctx, msg), true, false), nil
 	}
 
@@ -185,7 +182,7 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 
 func (d *Dispatcher) checkTimestamp(raw string) (string, bool) {
 	ts, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
+	if err != nil || ts <= 0 {
 		return "invalid_webhook_timestamp", true
 	}
 	delta := time.Now().UTC().Sub(time.Unix(ts, 0).UTC())

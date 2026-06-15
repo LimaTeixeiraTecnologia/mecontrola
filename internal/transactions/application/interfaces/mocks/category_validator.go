@@ -74,7 +74,7 @@ type CategoryValidator_Validate_Call struct {
 //   - ctx context.Context
 //   - categoryID uuid.UUID
 //   - subcategoryID *uuid.UUID
-func (_e *CategoryValidator_Expecter) Validate(ctx interface{}, categoryID interface{}, subcategoryID interface{}) *CategoryValidator_Validate_Call {
+func (_e *CategoryValidator_Expecter) Validate(ctx any, categoryID any, subcategoryID any) *CategoryValidator_Validate_Call {
 	return &CategoryValidator_Validate_Call{Call: _e.mock.On("Validate", ctx, categoryID, subcategoryID)}
 }
 

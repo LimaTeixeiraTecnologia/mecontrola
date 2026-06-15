@@ -72,7 +72,7 @@ type SubscriptionProjectionReader_FindCurrentBySubscriptionID_Call struct {
 // FindCurrentBySubscriptionID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - subscriptionID string
-func (_e *SubscriptionProjectionReader_Expecter) FindCurrentBySubscriptionID(ctx interface{}, subscriptionID interface{}) *SubscriptionProjectionReader_FindCurrentBySubscriptionID_Call {
+func (_e *SubscriptionProjectionReader_Expecter) FindCurrentBySubscriptionID(ctx any, subscriptionID any) *SubscriptionProjectionReader_FindCurrentBySubscriptionID_Call {
 	return &SubscriptionProjectionReader_FindCurrentBySubscriptionID_Call{Call: _e.mock.On("FindCurrentBySubscriptionID", ctx, subscriptionID)}
 }
 

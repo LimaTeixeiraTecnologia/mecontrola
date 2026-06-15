@@ -66,7 +66,7 @@ type RecurringTemplateRepository_Create_Call struct {
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
 //   - t *entities.RecurringTemplate
-func (_e *RecurringTemplateRepository_Expecter) Create(ctx interface{}, t interface{}) *RecurringTemplateRepository_Create_Call {
+func (_e *RecurringTemplateRepository_Expecter) Create(ctx any, t any) *RecurringTemplateRepository_Create_Call {
 	return &RecurringTemplateRepository_Create_Call{Call: _e.mock.On("Create", ctx, t)}
 }
 
@@ -143,7 +143,7 @@ type RecurringTemplateRepository_FindActiveByDayOfMonth_Call struct {
 //   - asOf time.Time
 //   - cursor interfaces.Cursor
 //   - batchSize int
-func (_e *RecurringTemplateRepository_Expecter) FindActiveByDayOfMonth(ctx interface{}, day interface{}, asOf interface{}, cursor interface{}, batchSize interface{}) *RecurringTemplateRepository_FindActiveByDayOfMonth_Call {
+func (_e *RecurringTemplateRepository_Expecter) FindActiveByDayOfMonth(ctx any, day any, asOf any, cursor any, batchSize any) *RecurringTemplateRepository_FindActiveByDayOfMonth_Call {
 	return &RecurringTemplateRepository_FindActiveByDayOfMonth_Call{Call: _e.mock.On("FindActiveByDayOfMonth", ctx, day, asOf, cursor, batchSize)}
 }
 
@@ -227,7 +227,7 @@ type RecurringTemplateRepository_GetByID_Call struct {
 //   - ctx context.Context
 //   - id uuid.UUID
 //   - userID uuid.UUID
-func (_e *RecurringTemplateRepository_Expecter) GetByID(ctx interface{}, id interface{}, userID interface{}) *RecurringTemplateRepository_GetByID_Call {
+func (_e *RecurringTemplateRepository_Expecter) GetByID(ctx any, id any, userID any) *RecurringTemplateRepository_GetByID_Call {
 	return &RecurringTemplateRepository_GetByID_Call{Call: _e.mock.On("GetByID", ctx, id, userID)}
 }
 
@@ -309,7 +309,7 @@ type RecurringTemplateRepository_List_Call struct {
 //   - activeOnly bool
 //   - cursor interfaces.Cursor
 //   - limit int
-func (_e *RecurringTemplateRepository_Expecter) List(ctx interface{}, userID interface{}, activeOnly interface{}, cursor interface{}, limit interface{}) *RecurringTemplateRepository_List_Call {
+func (_e *RecurringTemplateRepository_Expecter) List(ctx any, userID any, activeOnly any, cursor any, limit any) *RecurringTemplateRepository_List_Call {
 	return &RecurringTemplateRepository_List_Call{Call: _e.mock.On("List", ctx, userID, activeOnly, cursor, limit)}
 }
 
@@ -384,7 +384,7 @@ type RecurringTemplateRepository_SoftDelete_Call struct {
 //   - userID uuid.UUID
 //   - expectedVersion int64
 //   - now time.Time
-func (_e *RecurringTemplateRepository_Expecter) SoftDelete(ctx interface{}, id interface{}, userID interface{}, expectedVersion interface{}, now interface{}) *RecurringTemplateRepository_SoftDelete_Call {
+func (_e *RecurringTemplateRepository_Expecter) SoftDelete(ctx any, id any, userID any, expectedVersion any, now any) *RecurringTemplateRepository_SoftDelete_Call {
 	return &RecurringTemplateRepository_SoftDelete_Call{Call: _e.mock.On("SoftDelete", ctx, id, userID, expectedVersion, now)}
 }
 
@@ -457,7 +457,7 @@ type RecurringTemplateRepository_UpdateWithVersion_Call struct {
 //   - ctx context.Context
 //   - t *entities.RecurringTemplate
 //   - expectedVersion int64
-func (_e *RecurringTemplateRepository_Expecter) UpdateWithVersion(ctx interface{}, t interface{}, expectedVersion interface{}) *RecurringTemplateRepository_UpdateWithVersion_Call {
+func (_e *RecurringTemplateRepository_Expecter) UpdateWithVersion(ctx any, t any, expectedVersion any) *RecurringTemplateRepository_UpdateWithVersion_Call {
 	return &RecurringTemplateRepository_UpdateWithVersion_Call{Call: _e.mock.On("UpdateWithVersion", ctx, t, expectedVersion)}
 }
 

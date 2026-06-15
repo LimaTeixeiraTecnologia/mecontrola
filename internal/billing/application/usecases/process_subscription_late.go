@@ -67,8 +67,9 @@ func (uc *ProcessSubscriptionLate) Execute(ctx context.Context, in input.Process
 			return entities.Subscription{}, fmt.Errorf("billing.usecase.process_subscription_late: apply transition: %w", applyErr)
 		}
 
-		updatedSub := entities.Hydrate(
+		updatedSub := entities.HydrateWithUser(
 			existing.ID(),
+			existing.UserID(),
 			existing.FunnelToken(),
 			existing.Plan(),
 			valueobjects.StatusPastDue,

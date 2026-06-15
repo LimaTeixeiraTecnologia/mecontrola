@@ -68,6 +68,7 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 			PleaseUseAtivar:      "ativar",
 			InvalidCountry:       "country",
 		},
+		configs.TelegramConfig{},
 		configs.OutboxConfig{},
 		identity.IdentityModule{},
 		noop.NewProvider(),

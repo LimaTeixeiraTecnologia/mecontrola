@@ -7,6 +7,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
@@ -30,7 +31,7 @@ type RequireGatewayAuthIntegrationSuite struct {
 	suite.Suite
 	ctx    context.Context
 	mgr    manager.Manager
-	o11y   *noop.Provider
+	o11y   *fake.Provider
 	secret []byte
 }
 
@@ -41,7 +42,7 @@ func TestRequireGatewayAuthIntegration(t *testing.T) {
 func (s *RequireGatewayAuthIntegrationSuite) SetupSuite() {
 	mgr, _ := testcontainer.Postgres(s.T())
 	s.mgr = mgr
-	s.o11y = noop.NewProvider()
+	s.o11y = fake.NewProvider()
 	s.ctx = context.Background()
 	s.secret = []byte("test-secret-32-bytes-padding-aaaa")
 }
@@ -87,6 +88,18 @@ func (s *RequireGatewayAuthIntegrationSuite) countOutboxEvents(eventType string)
 	return count
 }
 
+func (s *RequireGatewayAuthIntegrationSuite) latestOutboxPayload(eventType string) map[string]any {
+	var raw []byte
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+		`SELECT payload FROM outbox_events WHERE event_type = $1 ORDER BY created_at DESC LIMIT 1`, eventType,
+	).Scan(&raw)
+	s.Require().NoError(err)
+
+	var payload map[string]any
+	s.Require().NoError(json.Unmarshal(raw, &payload))
+	return payload
+}
+
 func (s *RequireGatewayAuthIntegrationSuite) TestValidGateway_PassesChain() {
 	chain := s.buildChain()
 	userID := "00000000-0000-0000-0000-000000000001"
@@ -124,4 +137,38 @@ func (s *RequireGatewayAuthIntegrationSuite) TestInvalidGateway_Returns401AndPer
 
 	after := s.countOutboxEvents("auth.failed")
 	s.Equal(before+1, after, "expected one new auth.failed outbox event")
+
+	payload := s.latestOutboxPayload("auth.failed")
+	s.Equal("gateway", payload["source"])
+	s.Equal("gateway_invalid_signature", payload["reason"])
+	s.Equal("req-integ-test-001", payload["request_id"])
+	s.Equal("10.0.0.1", payload["client_ip"])
+}
+
+func (s *RequireGatewayAuthIntegrationSuite) TestInvalidGateway_WithInvalidXFF_DegradesClientIPAndFallsBackTraceID() {
+	chain := s.buildChain()
+	before := s.countOutboxEvents("auth.failed")
+
+	userID := "00000000-0000-0000-0000-000000000003"
+	ts := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cards", nil)
+	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("X-Gateway-Auth", strings.Repeat("b", 64))
+	req.Header.Set("X-Gateway-Timestamp", ts)
+	req.Header.Set("X-Forwarded-For", "not-an-ip")
+	rr := httptest.NewRecorder()
+	chain.ServeHTTP(rr, req)
+
+	s.Equal(http.StatusUnauthorized, rr.Code)
+
+	after := s.countOutboxEvents("auth.failed")
+	s.Equal(before+1, after)
+
+	payload := s.latestOutboxPayload("auth.failed")
+	s.Equal("gateway", payload["source"])
+	s.Equal("gateway_invalid_signature", payload["reason"])
+	s.Equal("fake-trace-id", payload["request_id"])
+	_, hasClientIP := payload["client_ip"]
+	s.False(hasClientIP)
 }

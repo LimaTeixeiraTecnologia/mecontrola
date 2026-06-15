@@ -19,16 +19,18 @@ func NewMessageRepository(o11y observability.Observability, mgr manager.Manager)
 	return &messageRepository{o11y: o11y, mgr: mgr}
 }
 
+const channelWhatsApp = "whatsapp"
+
 func (r *messageRepository) InsertIfAbsent(ctx context.Context, wamid string) (bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "whatsapp.dedup.repository.insert_if_absent")
 	defer span.End()
 
 	const q = `
-		INSERT INTO mecontrola.meta_processed_messages (wamid, processed_at)
-		VALUES ($1, now())
-		ON CONFLICT (wamid) DO NOTHING`
+		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
+		VALUES ($1, $2, now())
+		ON CONFLICT (channel, message_id) DO NOTHING`
 
-	result, err := r.mgr.DBTX(ctx).ExecContext(ctx, q, wamid)
+	result, err := r.mgr.DBTX(ctx).ExecContext(ctx, q, channelWhatsApp, wamid)
 	if err != nil {
 		return false, fmt.Errorf("whatsapp.dedup: insert_if_absent: %w", err)
 	}

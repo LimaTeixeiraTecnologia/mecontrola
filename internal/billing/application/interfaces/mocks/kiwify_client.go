@@ -73,7 +73,7 @@ type KiwifyClient_GetSale_Call struct {
 // GetSale is a helper method to define mock.On call
 //   - ctx context.Context
 //   - saleID string
-func (_e *KiwifyClient_Expecter) GetSale(ctx interface{}, saleID interface{}) *KiwifyClient_GetSale_Call {
+func (_e *KiwifyClient_Expecter) GetSale(ctx any, saleID any) *KiwifyClient_GetSale_Call {
 	return &KiwifyClient_GetSale_Call{Call: _e.mock.On("GetSale", ctx, saleID)}
 }
 
@@ -141,7 +141,7 @@ type KiwifyClient_ListSalesUpdatedSince_Call struct {
 //   - windowStart time.Time
 //   - windowEnd time.Time
 //   - page int
-func (_e *KiwifyClient_Expecter) ListSalesUpdatedSince(ctx interface{}, windowStart interface{}, windowEnd interface{}, page interface{}) *KiwifyClient_ListSalesUpdatedSince_Call {
+func (_e *KiwifyClient_Expecter) ListSalesUpdatedSince(ctx any, windowStart any, windowEnd any, page any) *KiwifyClient_ListSalesUpdatedSince_Call {
 	return &KiwifyClient_ListSalesUpdatedSince_Call{Call: _e.mock.On("ListSalesUpdatedSince", ctx, windowStart, windowEnd, page)}
 }
 

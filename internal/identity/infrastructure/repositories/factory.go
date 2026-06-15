@@ -21,6 +21,10 @@ func (r *repositoryFactory) UserRepository(db database.DBTX) interfaces.UserRepo
 	return postgres.NewUserRepository(r.o11y, db)
 }
 
+func (r *repositoryFactory) UserIdentityRepository(db database.DBTX) interfaces.UserIdentityRepository {
+	return postgres.NewUserIdentityRepository(r.o11y, db)
+}
+
 func (r *repositoryFactory) EntitlementRepository(db database.DBTX) interfaces.EntitlementRepository {
 	return postgres.NewEntitlementRepository(r.o11y, db)
 }

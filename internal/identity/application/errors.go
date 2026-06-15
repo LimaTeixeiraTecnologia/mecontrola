@@ -10,4 +10,7 @@ var (
 	ErrInvalidWhatsApp     = errors.New("identity: invalid whatsapp")
 	ErrInvalidEmail        = errors.New("identity: invalid email")
 	ErrUnknownUser         = errors.New("identity: unknown user")
+
+	ErrUserIdentityNotFound      = errors.New("identity: user_identity not found")
+	ErrUserIdentityAlreadyLinked = errors.New("identity: user_identity already linked for channel")
 )

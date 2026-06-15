@@ -63,7 +63,7 @@ type RepositoryFactory_CardInvoiceRepository_Call struct {
 
 // CardInvoiceRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) CardInvoiceRepository(db interface{}) *RepositoryFactory_CardInvoiceRepository_Call {
+func (_e *RepositoryFactory_Expecter) CardInvoiceRepository(db any) *RepositoryFactory_CardInvoiceRepository_Call {
 	return &RepositoryFactory_CardInvoiceRepository_Call{Call: _e.mock.On("CardInvoiceRepository", db)}
 }
 
@@ -116,7 +116,7 @@ type RepositoryFactory_CardPurchaseRepository_Call struct {
 
 // CardPurchaseRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) CardPurchaseRepository(db interface{}) *RepositoryFactory_CardPurchaseRepository_Call {
+func (_e *RepositoryFactory_Expecter) CardPurchaseRepository(db any) *RepositoryFactory_CardPurchaseRepository_Call {
 	return &RepositoryFactory_CardPurchaseRepository_Call{Call: _e.mock.On("CardPurchaseRepository", db)}
 }
 
@@ -169,7 +169,7 @@ type RepositoryFactory_MonthlySummaryRepository_Call struct {
 
 // MonthlySummaryRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) MonthlySummaryRepository(db interface{}) *RepositoryFactory_MonthlySummaryRepository_Call {
+func (_e *RepositoryFactory_Expecter) MonthlySummaryRepository(db any) *RepositoryFactory_MonthlySummaryRepository_Call {
 	return &RepositoryFactory_MonthlySummaryRepository_Call{Call: _e.mock.On("MonthlySummaryRepository", db)}
 }
 
@@ -222,7 +222,7 @@ type RepositoryFactory_RecurringMaterializationRepository_Call struct {
 
 // RecurringMaterializationRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) RecurringMaterializationRepository(db interface{}) *RepositoryFactory_RecurringMaterializationRepository_Call {
+func (_e *RepositoryFactory_Expecter) RecurringMaterializationRepository(db any) *RepositoryFactory_RecurringMaterializationRepository_Call {
 	return &RepositoryFactory_RecurringMaterializationRepository_Call{Call: _e.mock.On("RecurringMaterializationRepository", db)}
 }
 
@@ -275,7 +275,7 @@ type RepositoryFactory_RecurringTemplateRepository_Call struct {
 
 // RecurringTemplateRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) RecurringTemplateRepository(db interface{}) *RepositoryFactory_RecurringTemplateRepository_Call {
+func (_e *RepositoryFactory_Expecter) RecurringTemplateRepository(db any) *RepositoryFactory_RecurringTemplateRepository_Call {
 	return &RepositoryFactory_RecurringTemplateRepository_Call{Call: _e.mock.On("RecurringTemplateRepository", db)}
 }
 
@@ -328,7 +328,7 @@ type RepositoryFactory_TransactionRepository_Call struct {
 
 // TransactionRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) TransactionRepository(db interface{}) *RepositoryFactory_TransactionRepository_Call {
+func (_e *RepositoryFactory_Expecter) TransactionRepository(db any) *RepositoryFactory_TransactionRepository_Call {
 	return &RepositoryFactory_TransactionRepository_Call{Call: _e.mock.On("TransactionRepository", db)}
 }
 

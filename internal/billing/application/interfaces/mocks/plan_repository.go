@@ -63,7 +63,7 @@ type PlanRepository_ConfigureProductIDs_Call struct {
 // ConfigureProductIDs is a helper method to define mock.On call
 //   - ctx context.Context
 //   - productIDs map[valueobjects.PlanCode]string
-func (_e *PlanRepository_Expecter) ConfigureProductIDs(ctx interface{}, productIDs interface{}) *PlanRepository_ConfigureProductIDs_Call {
+func (_e *PlanRepository_Expecter) ConfigureProductIDs(ctx any, productIDs any) *PlanRepository_ConfigureProductIDs_Call {
 	return &PlanRepository_ConfigureProductIDs_Call{Call: _e.mock.On("ConfigureProductIDs", ctx, productIDs)}
 }
 
@@ -129,7 +129,7 @@ type PlanRepository_FindByCode_Call struct {
 // FindByCode is a helper method to define mock.On call
 //   - ctx context.Context
 //   - code valueobjects.PlanCode
-func (_e *PlanRepository_Expecter) FindByCode(ctx interface{}, code interface{}) *PlanRepository_FindByCode_Call {
+func (_e *PlanRepository_Expecter) FindByCode(ctx any, code any) *PlanRepository_FindByCode_Call {
 	return &PlanRepository_FindByCode_Call{Call: _e.mock.On("FindByCode", ctx, code)}
 }
 
@@ -195,7 +195,7 @@ type PlanRepository_FindByKiwifyProductID_Call struct {
 // FindByKiwifyProductID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - kiwifyProductID string
-func (_e *PlanRepository_Expecter) FindByKiwifyProductID(ctx interface{}, kiwifyProductID interface{}) *PlanRepository_FindByKiwifyProductID_Call {
+func (_e *PlanRepository_Expecter) FindByKiwifyProductID(ctx any, kiwifyProductID any) *PlanRepository_FindByKiwifyProductID_Call {
 	return &PlanRepository_FindByKiwifyProductID_Call{Call: _e.mock.On("FindByKiwifyProductID", ctx, kiwifyProductID)}
 }
 

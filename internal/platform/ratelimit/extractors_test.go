@@ -22,10 +22,11 @@ func TestExtractorSuite(t *testing.T) {
 
 func (s *ExtractorSuite) TestByIP() {
 	scenarios := []struct {
-		name       string
-		remoteAddr string
-		xRealIP    string
-		want       string
+		name          string
+		remoteAddr    string
+		xRealIP       string
+		xForwardedFor string
+		want          string
 	}{
 		{
 			name:       "retorna IP do RemoteAddr sem header",
@@ -33,7 +34,7 @@ func (s *ExtractorSuite) TestByIP() {
 			want:       "1.2.3.4",
 		},
 		{
-			name:       "retorna X-Real-IP quando presente",
+			name:       "retorna X-Real-IP quando presente sem XFF",
 			remoteAddr: "127.0.0.1:1234",
 			xRealIP:    "203.0.113.10",
 			want:       "203.0.113.10",
@@ -43,6 +44,25 @@ func (s *ExtractorSuite) TestByIP() {
 			remoteAddr: "10.0.0.5",
 			want:       "10.0.0.5",
 		},
+		{
+			name:          "retorna XFF unico ignorando X-Real-IP",
+			remoteAddr:    "127.0.0.1:1234",
+			xRealIP:       "203.0.113.10",
+			xForwardedFor: "198.51.100.7",
+			want:          "198.51.100.7",
+		},
+		{
+			name:          "retorna primeiro IP do XFF quando ha multiplos",
+			remoteAddr:    "127.0.0.1:1234",
+			xForwardedFor: "198.51.100.7, 10.0.0.1, 172.16.0.1",
+			want:          "198.51.100.7",
+		},
+		{
+			name:          "trim em XFF unico",
+			remoteAddr:    "127.0.0.1:1234",
+			xForwardedFor: "  198.51.100.42  ",
+			want:          "198.51.100.42",
+		},
 	}
 
 	for _, sc := range scenarios {
@@ -51,6 +71,9 @@ func (s *ExtractorSuite) TestByIP() {
 			r.RemoteAddr = sc.remoteAddr
 			if sc.xRealIP != "" {
 				r.Header.Set("X-Real-IP", sc.xRealIP)
+			}
+			if sc.xForwardedFor != "" {
+				r.Header.Set("X-Forwarded-For", sc.xForwardedFor)
 			}
 			got := ratelimit.ByIP(r)
 			s.Equal(sc.want, got)

@@ -63,7 +63,7 @@ type projectSubscriptionEventUseCase_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.ProjectSubscriptionEvent
-func (_e *projectSubscriptionEventUseCase_Expecter) Execute(ctx interface{}, in interface{}) *projectSubscriptionEventUseCase_Execute_Call {
+func (_e *projectSubscriptionEventUseCase_Expecter) Execute(ctx any, in any) *projectSubscriptionEventUseCase_Execute_Call {
 	return &projectSubscriptionEventUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

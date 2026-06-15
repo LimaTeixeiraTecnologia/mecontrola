@@ -31,9 +31,9 @@ func VerifyGatewayRequest(req VerifyRequest, secrets SecretPair, now time.Time, 
 	_, err := valueobjects.NewGatewayTimestamp(req.TimestampRaw, now, window)
 	if err != nil {
 		if errors.Is(err, valueobjects.ErrGatewayTimestampStale) {
-			return GatewayAuthResult{Kind: GatewayAuthStaleTimestamp}
+			return GatewayAuthResult{Kind: GatewayAuthStaleTimestamp, TimestampFailure: GatewayAuthTimestampFailureStale}
 		}
-		return GatewayAuthResult{Kind: GatewayAuthInvalidTimestamp}
+		return GatewayAuthResult{Kind: GatewayAuthStaleTimestamp, TimestampFailure: GatewayAuthTimestampFailureInvalid}
 	}
 
 	sig, err := valueobjects.NewGatewaySignature(req.SignatureRaw)

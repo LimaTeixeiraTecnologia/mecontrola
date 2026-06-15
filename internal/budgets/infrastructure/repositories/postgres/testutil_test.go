@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
@@ -29,24 +30,24 @@ func testO11y() observability.Observability {
 	return noop.NewProvider()
 }
 
-func newBudgetRepo(o11y observability.Observability) interfaces.BudgetRepository {
-	return budgetpostgres.NewBudgetRepository(o11y)
+func newBudgetRepo(o11y observability.Observability, db database.DBTX) interfaces.BudgetRepository {
+	return budgetpostgres.NewBudgetRepository(o11y, db)
 }
 
-func newExpenseRepo(o11y observability.Observability) interfaces.ExpenseRepository {
-	return budgetpostgres.NewExpenseRepository(o11y)
+func newExpenseRepo(o11y observability.Observability, db database.DBTX) interfaces.ExpenseRepository {
+	return budgetpostgres.NewExpenseRepository(o11y, db)
 }
 
-func newAlertRepo(o11y observability.Observability) interfaces.AlertRepository {
-	return budgetpostgres.NewAlertRepository(o11y)
+func newAlertRepo(o11y observability.Observability, db database.DBTX) interfaces.AlertRepository {
+	return budgetpostgres.NewAlertRepository(o11y, db)
 }
 
-func newThresholdStateRepo(o11y observability.Observability) interfaces.ThresholdStateRepository {
-	return budgetpostgres.NewThresholdStateRepository(o11y)
+func newThresholdStateRepo(o11y observability.Observability, db database.DBTX) interfaces.ThresholdStateRepository {
+	return budgetpostgres.NewThresholdStateRepository(o11y, db)
 }
 
-func newPendingEventRepo(o11y observability.Observability) interfaces.PendingEventRepository {
-	return budgetpostgres.NewPendingEventRepository(o11y)
+func newPendingEventRepo(o11y observability.Observability, db database.DBTX) interfaces.PendingEventRepository {
+	return budgetpostgres.NewPendingEventRepository(o11y, db)
 }
 
 func mustCompetence(t *testing.T, s string) valueobjects.Competence {

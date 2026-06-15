@@ -71,7 +71,7 @@ type SubscriptionEventPublisher_PublishActivated_Call struct {
 //   - customerMobileE164 string
 //   - customerEmail string
 //   - externalSaleID string
-func (_e *SubscriptionEventPublisher_Expecter) PublishActivated(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}, funnelToken interface{}, customerMobileE164 interface{}, customerEmail interface{}, externalSaleID interface{}) *SubscriptionEventPublisher_PublishActivated_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishActivated(ctx any, tx any, sub any, subscriptionID any, funnelToken any, customerMobileE164 any, customerEmail any, externalSaleID any) *SubscriptionEventPublisher_PublishActivated_Call {
 	return &SubscriptionEventPublisher_PublishActivated_Call{Call: _e.mock.On("PublishActivated", ctx, tx, sub, subscriptionID, funnelToken, customerMobileE164, customerEmail, externalSaleID)}
 }
 
@@ -163,7 +163,7 @@ type SubscriptionEventPublisher_PublishActivatedWithoutToken_Call struct {
 //   - customerMobileE164 string
 //   - customerEmail string
 //   - externalSaleID string
-func (_e *SubscriptionEventPublisher_Expecter) PublishActivatedWithoutToken(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}, customerMobileE164 interface{}, customerEmail interface{}, externalSaleID interface{}) *SubscriptionEventPublisher_PublishActivatedWithoutToken_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishActivatedWithoutToken(ctx any, tx any, sub any, subscriptionID any, customerMobileE164 any, customerEmail any, externalSaleID any) *SubscriptionEventPublisher_PublishActivatedWithoutToken_Call {
 	return &SubscriptionEventPublisher_PublishActivatedWithoutToken_Call{Call: _e.mock.On("PublishActivatedWithoutToken", ctx, tx, sub, subscriptionID, customerMobileE164, customerEmail, externalSaleID)}
 }
 
@@ -247,7 +247,7 @@ type SubscriptionEventPublisher_PublishCanceled_Call struct {
 //   - tx database.DBTX
 //   - sub entities.Subscription
 //   - subscriptionID string
-func (_e *SubscriptionEventPublisher_Expecter) PublishCanceled(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}) *SubscriptionEventPublisher_PublishCanceled_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishCanceled(ctx any, tx any, sub any, subscriptionID any) *SubscriptionEventPublisher_PublishCanceled_Call {
 	return &SubscriptionEventPublisher_PublishCanceled_Call{Call: _e.mock.On("PublishCanceled", ctx, tx, sub, subscriptionID)}
 }
 
@@ -317,7 +317,7 @@ type SubscriptionEventPublisher_PublishExpired_Call struct {
 //   - sub entities.Subscription
 //   - subscriptionID string
 //   - graceEnd time.Time
-func (_e *SubscriptionEventPublisher_Expecter) PublishExpired(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}, graceEnd interface{}) *SubscriptionEventPublisher_PublishExpired_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishExpired(ctx any, tx any, sub any, subscriptionID any, graceEnd any) *SubscriptionEventPublisher_PublishExpired_Call {
 	return &SubscriptionEventPublisher_PublishExpired_Call{Call: _e.mock.On("PublishExpired", ctx, tx, sub, subscriptionID, graceEnd)}
 }
 
@@ -391,7 +391,7 @@ type SubscriptionEventPublisher_PublishPastDue_Call struct {
 //   - tx database.DBTX
 //   - sub entities.Subscription
 //   - subscriptionID string
-func (_e *SubscriptionEventPublisher_Expecter) PublishPastDue(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}) *SubscriptionEventPublisher_PublishPastDue_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishPastDue(ctx any, tx any, sub any, subscriptionID any) *SubscriptionEventPublisher_PublishPastDue_Call {
 	return &SubscriptionEventPublisher_PublishPastDue_Call{Call: _e.mock.On("PublishPastDue", ctx, tx, sub, subscriptionID)}
 }
 
@@ -460,7 +460,7 @@ type SubscriptionEventPublisher_PublishRefunded_Call struct {
 //   - tx database.DBTX
 //   - sub entities.Subscription
 //   - subscriptionID string
-func (_e *SubscriptionEventPublisher_Expecter) PublishRefunded(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}) *SubscriptionEventPublisher_PublishRefunded_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishRefunded(ctx any, tx any, sub any, subscriptionID any) *SubscriptionEventPublisher_PublishRefunded_Call {
 	return &SubscriptionEventPublisher_PublishRefunded_Call{Call: _e.mock.On("PublishRefunded", ctx, tx, sub, subscriptionID)}
 }
 
@@ -530,7 +530,7 @@ type SubscriptionEventPublisher_PublishRenewed_Call struct {
 //   - sub entities.Subscription
 //   - subscriptionID string
 //   - previousPeriodEnd time.Time
-func (_e *SubscriptionEventPublisher_Expecter) PublishRenewed(ctx interface{}, tx interface{}, sub interface{}, subscriptionID interface{}, previousPeriodEnd interface{}) *SubscriptionEventPublisher_PublishRenewed_Call {
+func (_e *SubscriptionEventPublisher_Expecter) PublishRenewed(ctx any, tx any, sub any, subscriptionID any, previousPeriodEnd any) *SubscriptionEventPublisher_PublishRenewed_Call {
 	return &SubscriptionEventPublisher_PublishRenewed_Call{Call: _e.mock.On("PublishRenewed", ctx, tx, sub, subscriptionID, previousPeriodEnd)}
 }
 

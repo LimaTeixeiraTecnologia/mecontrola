@@ -76,7 +76,7 @@ type MagicTokenRepository_BulkExpire_Call struct {
 //   - ctx context.Context
 //   - now time.Time
 //   - limit int
-func (_e *MagicTokenRepository_Expecter) BulkExpire(ctx interface{}, now interface{}, limit interface{}) *MagicTokenRepository_BulkExpire_Call {
+func (_e *MagicTokenRepository_Expecter) BulkExpire(ctx any, now any, limit any) *MagicTokenRepository_BulkExpire_Call {
 	return &MagicTokenRepository_BulkExpire_Call{Call: _e.mock.On("BulkExpire", ctx, now, limit)}
 }
 
@@ -146,7 +146,7 @@ type MagicTokenRepository_CountPaidUnconsumed_Call struct {
 
 // CountPaidUnconsumed is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MagicTokenRepository_Expecter) CountPaidUnconsumed(ctx interface{}) *MagicTokenRepository_CountPaidUnconsumed_Call {
+func (_e *MagicTokenRepository_Expecter) CountPaidUnconsumed(ctx any) *MagicTokenRepository_CountPaidUnconsumed_Call {
 	return &MagicTokenRepository_CountPaidUnconsumed_Call{Call: _e.mock.On("CountPaidUnconsumed", ctx)}
 }
 
@@ -207,7 +207,7 @@ type MagicTokenRepository_FindByHash_Call struct {
 // FindByHash is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tokenHash []byte
-func (_e *MagicTokenRepository_Expecter) FindByHash(ctx interface{}, tokenHash interface{}) *MagicTokenRepository_FindByHash_Call {
+func (_e *MagicTokenRepository_Expecter) FindByHash(ctx any, tokenHash any) *MagicTokenRepository_FindByHash_Call {
 	return &MagicTokenRepository_FindByHash_Call{Call: _e.mock.On("FindByHash", ctx, tokenHash)}
 }
 
@@ -273,7 +273,7 @@ type MagicTokenRepository_FindPaidByMobileForFallback_Call struct {
 // FindPaidByMobileForFallback is a helper method to define mock.On call
 //   - ctx context.Context
 //   - mobileE164 string
-func (_e *MagicTokenRepository_Expecter) FindPaidByMobileForFallback(ctx interface{}, mobileE164 interface{}) *MagicTokenRepository_FindPaidByMobileForFallback_Call {
+func (_e *MagicTokenRepository_Expecter) FindPaidByMobileForFallback(ctx any, mobileE164 any) *MagicTokenRepository_FindPaidByMobileForFallback_Call {
 	return &MagicTokenRepository_FindPaidByMobileForFallback_Call{Call: _e.mock.On("FindPaidByMobileForFallback", ctx, mobileE164)}
 }
 
@@ -342,7 +342,7 @@ type MagicTokenRepository_FindPaidForOutreach_Call struct {
 //   - ctx context.Context
 //   - olderThan time.Time
 //   - limit int
-func (_e *MagicTokenRepository_Expecter) FindPaidForOutreach(ctx interface{}, olderThan interface{}, limit interface{}) *MagicTokenRepository_FindPaidForOutreach_Call {
+func (_e *MagicTokenRepository_Expecter) FindPaidForOutreach(ctx any, olderThan any, limit any) *MagicTokenRepository_FindPaidForOutreach_Call {
 	return &MagicTokenRepository_FindPaidForOutreach_Call{Call: _e.mock.On("FindPaidForOutreach", ctx, olderThan, limit)}
 }
 
@@ -404,7 +404,7 @@ type MagicTokenRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - token entities.MagicToken
-func (_e *MagicTokenRepository_Expecter) Insert(ctx interface{}, token interface{}) *MagicTokenRepository_Insert_Call {
+func (_e *MagicTokenRepository_Expecter) Insert(ctx any, token any) *MagicTokenRepository_Insert_Call {
 	return &MagicTokenRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, token)}
 }
 
@@ -461,7 +461,7 @@ type MagicTokenRepository_UpdateMarkConsumed_Call struct {
 // UpdateMarkConsumed is a helper method to define mock.On call
 //   - ctx context.Context
 //   - token entities.MagicToken
-func (_e *MagicTokenRepository_Expecter) UpdateMarkConsumed(ctx interface{}, token interface{}) *MagicTokenRepository_UpdateMarkConsumed_Call {
+func (_e *MagicTokenRepository_Expecter) UpdateMarkConsumed(ctx any, token any) *MagicTokenRepository_UpdateMarkConsumed_Call {
 	return &MagicTokenRepository_UpdateMarkConsumed_Call{Call: _e.mock.On("UpdateMarkConsumed", ctx, token)}
 }
 
@@ -518,7 +518,7 @@ type MagicTokenRepository_UpdateMarkOutreachReset_Call struct {
 // UpdateMarkOutreachReset is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tokenID string
-func (_e *MagicTokenRepository_Expecter) UpdateMarkOutreachReset(ctx interface{}, tokenID interface{}) *MagicTokenRepository_UpdateMarkOutreachReset_Call {
+func (_e *MagicTokenRepository_Expecter) UpdateMarkOutreachReset(ctx any, tokenID any) *MagicTokenRepository_UpdateMarkOutreachReset_Call {
 	return &MagicTokenRepository_UpdateMarkOutreachReset_Call{Call: _e.mock.On("UpdateMarkOutreachReset", ctx, tokenID)}
 }
 
@@ -576,7 +576,7 @@ type MagicTokenRepository_UpdateMarkOutreachSent_Call struct {
 //   - ctx context.Context
 //   - tokenID string
 //   - sentAt time.Time
-func (_e *MagicTokenRepository_Expecter) UpdateMarkOutreachSent(ctx interface{}, tokenID interface{}, sentAt interface{}) *MagicTokenRepository_UpdateMarkOutreachSent_Call {
+func (_e *MagicTokenRepository_Expecter) UpdateMarkOutreachSent(ctx any, tokenID any, sentAt any) *MagicTokenRepository_UpdateMarkOutreachSent_Call {
 	return &MagicTokenRepository_UpdateMarkOutreachSent_Call{Call: _e.mock.On("UpdateMarkOutreachSent", ctx, tokenID, sentAt)}
 }
 
@@ -638,7 +638,7 @@ type MagicTokenRepository_UpdateMarkPaid_Call struct {
 // UpdateMarkPaid is a helper method to define mock.On call
 //   - ctx context.Context
 //   - token entities.MagicToken
-func (_e *MagicTokenRepository_Expecter) UpdateMarkPaid(ctx interface{}, token interface{}) *MagicTokenRepository_UpdateMarkPaid_Call {
+func (_e *MagicTokenRepository_Expecter) UpdateMarkPaid(ctx any, token any) *MagicTokenRepository_UpdateMarkPaid_Call {
 	return &MagicTokenRepository_UpdateMarkPaid_Call{Call: _e.mock.On("UpdateMarkPaid", ctx, token)}
 }
 

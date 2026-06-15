@@ -71,7 +71,7 @@ type CategoriesReader_EditorialVersion_Call struct {
 
 // EditorialVersion is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *CategoriesReader_Expecter) EditorialVersion(ctx interface{}) *CategoriesReader_EditorialVersion_Call {
+func (_e *CategoriesReader_Expecter) EditorialVersion(ctx any) *CategoriesReader_EditorialVersion_Call {
 	return &CategoriesReader_EditorialVersion_Call{Call: _e.mock.On("EditorialVersion", ctx)}
 }
 
@@ -134,7 +134,7 @@ type CategoriesReader_ResolveRootsBySlug_Call struct {
 // ResolveRootsBySlug is a helper method to define mock.On call
 //   - ctx context.Context
 //   - slugs []string
-func (_e *CategoriesReader_Expecter) ResolveRootsBySlug(ctx interface{}, slugs interface{}) *CategoriesReader_ResolveRootsBySlug_Call {
+func (_e *CategoriesReader_Expecter) ResolveRootsBySlug(ctx any, slugs any) *CategoriesReader_ResolveRootsBySlug_Call {
 	return &CategoriesReader_ResolveRootsBySlug_Call{Call: _e.mock.On("ResolveRootsBySlug", ctx, slugs)}
 }
 
@@ -206,7 +206,7 @@ type CategoriesReader_ValidateExpenseSubcategory_Call struct {
 // ValidateExpenseSubcategory is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id uuid.UUID
-func (_e *CategoriesReader_Expecter) ValidateExpenseSubcategory(ctx interface{}, id interface{}) *CategoriesReader_ValidateExpenseSubcategory_Call {
+func (_e *CategoriesReader_Expecter) ValidateExpenseSubcategory(ctx any, id any) *CategoriesReader_ValidateExpenseSubcategory_Call {
 	return &CategoriesReader_ValidateExpenseSubcategory_Call{Call: _e.mock.On("ValidateExpenseSubcategory", ctx, id)}
 }
 

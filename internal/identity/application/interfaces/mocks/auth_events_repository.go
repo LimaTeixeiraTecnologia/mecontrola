@@ -65,7 +65,7 @@ type AuthEventsRepository_AnonymizeByUserID_Call struct {
 // AnonymizeByUserID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID uuid.UUID
-func (_e *AuthEventsRepository_Expecter) AnonymizeByUserID(ctx interface{}, userID interface{}) *AuthEventsRepository_AnonymizeByUserID_Call {
+func (_e *AuthEventsRepository_Expecter) AnonymizeByUserID(ctx any, userID any) *AuthEventsRepository_AnonymizeByUserID_Call {
 	return &AuthEventsRepository_AnonymizeByUserID_Call{Call: _e.mock.On("AnonymizeByUserID", ctx, userID)}
 }
 
@@ -132,7 +132,7 @@ type AuthEventsRepository_DeleteOlderThan_Call struct {
 //   - ctx context.Context
 //   - cutoff time.Time
 //   - batchSize int
-func (_e *AuthEventsRepository_Expecter) DeleteOlderThan(ctx interface{}, cutoff interface{}, batchSize interface{}) *AuthEventsRepository_DeleteOlderThan_Call {
+func (_e *AuthEventsRepository_Expecter) DeleteOlderThan(ctx any, cutoff any, batchSize any) *AuthEventsRepository_DeleteOlderThan_Call {
 	return &AuthEventsRepository_DeleteOlderThan_Call{Call: _e.mock.On("DeleteOlderThan", ctx, cutoff, batchSize)}
 }
 
@@ -194,7 +194,7 @@ type AuthEventsRepository_Insert_Call struct {
 // Insert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - event entities.AuthEvent
-func (_e *AuthEventsRepository_Expecter) Insert(ctx interface{}, event interface{}) *AuthEventsRepository_Insert_Call {
+func (_e *AuthEventsRepository_Expecter) Insert(ctx any, event any) *AuthEventsRepository_Insert_Call {
 	return &AuthEventsRepository_Insert_Call{Call: _e.mock.On("Insert", ctx, event)}
 }
 

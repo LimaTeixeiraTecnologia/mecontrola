@@ -65,7 +65,7 @@ type CardPurchaseEventPublisher_PublishCreated_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.CardPurchaseCreated
-func (_e *CardPurchaseEventPublisher_Expecter) PublishCreated(ctx interface{}, db interface{}, evt interface{}) *CardPurchaseEventPublisher_PublishCreated_Call {
+func (_e *CardPurchaseEventPublisher_Expecter) PublishCreated(ctx any, db any, evt any) *CardPurchaseEventPublisher_PublishCreated_Call {
 	return &CardPurchaseEventPublisher_PublishCreated_Call{Call: _e.mock.On("PublishCreated", ctx, db, evt)}
 }
 
@@ -128,7 +128,7 @@ type CardPurchaseEventPublisher_PublishDeleted_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.CardPurchaseDeleted
-func (_e *CardPurchaseEventPublisher_Expecter) PublishDeleted(ctx interface{}, db interface{}, evt interface{}) *CardPurchaseEventPublisher_PublishDeleted_Call {
+func (_e *CardPurchaseEventPublisher_Expecter) PublishDeleted(ctx any, db any, evt any) *CardPurchaseEventPublisher_PublishDeleted_Call {
 	return &CardPurchaseEventPublisher_PublishDeleted_Call{Call: _e.mock.On("PublishDeleted", ctx, db, evt)}
 }
 
@@ -191,7 +191,7 @@ type CardPurchaseEventPublisher_PublishUpdated_Call struct {
 //   - ctx context.Context
 //   - db database.DBTX
 //   - evt entities.CardPurchaseUpdated
-func (_e *CardPurchaseEventPublisher_Expecter) PublishUpdated(ctx interface{}, db interface{}, evt interface{}) *CardPurchaseEventPublisher_PublishUpdated_Call {
+func (_e *CardPurchaseEventPublisher_Expecter) PublishUpdated(ctx any, db any, evt any) *CardPurchaseEventPublisher_PublishUpdated_Call {
 	return &CardPurchaseEventPublisher_PublishUpdated_Call{Call: _e.mock.On("PublishUpdated", ctx, db, evt)}
 }
 

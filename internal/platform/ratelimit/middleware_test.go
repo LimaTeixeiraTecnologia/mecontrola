@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -24,7 +26,7 @@ func TestMiddlewareSuite(t *testing.T) {
 }
 
 func (s *MiddlewareSuite) newMiddleware(extractor ratelimit.KeyExtractor, scope string, perMin, burst int) func(http.Handler) http.Handler {
-	return ratelimit.NewRateLimitMiddleware(ratelimit.RateLimitConfig{
+	return ratelimit.NewRateLimitMiddleware(context.Background(), ratelimit.RateLimitConfig{
 		PerMinute: perMin,
 		Burst:     burst,
 		Extractor: extractor,
@@ -147,6 +149,41 @@ func (s *MiddlewareSuite) TestByUserIDFallbackIPUsesUserIDWhenPrincipalPresent()
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, r2)
 	s.Equal(http.StatusOK, rec2.Code)
+}
+
+func (s *MiddlewareSuite) TestGcLoopStopsOnContextCancel() {
+	baseline := runtime.NumGoroutine()
+
+	const n = 25
+	ctxs := make([]context.CancelFunc, 0, n)
+	for range n {
+		ctx, cancel := context.WithCancel(context.Background())
+		ctxs = append(ctxs, cancel)
+		_ = ratelimit.NewRateLimitMiddleware(ctx, ratelimit.RateLimitConfig{
+			PerMinute: 10,
+			Burst:     1,
+			Extractor: ratelimit.ByIP,
+			Scope:     "ip",
+		}, noop.NewProvider())
+	}
+
+	mid := runtime.NumGoroutine()
+	s.GreaterOrEqual(mid-baseline, n-2, "deve haver pelo menos n goroutines de gcLoop ativas")
+
+	for _, cancel := range ctxs {
+		cancel()
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine()-baseline <= 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	final := runtime.NumGoroutine()
+	s.LessOrEqual(final-baseline, 2, "gcLoop deve encerrar apos cancelamento do context")
 }
 
 func (s *MiddlewareSuite) TestDifferentUsersAreIndependent() {

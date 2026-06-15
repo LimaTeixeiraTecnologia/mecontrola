@@ -73,7 +73,7 @@ type createCheckoutSessionUseCase_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - in input.CreateCheckoutSessionInput
-func (_e *createCheckoutSessionUseCase_Expecter) Execute(ctx interface{}, in interface{}) *createCheckoutSessionUseCase_Execute_Call {
+func (_e *createCheckoutSessionUseCase_Expecter) Execute(ctx any, in any) *createCheckoutSessionUseCase_Execute_Call {
 	return &createCheckoutSessionUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx, in)}
 }
 

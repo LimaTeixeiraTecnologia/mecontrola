@@ -71,7 +71,7 @@ type MessageRepository_InsertIfAbsent_Call struct {
 // InsertIfAbsent is a helper method to define mock.On call
 //   - ctx context.Context
 //   - wamid string
-func (_e *MessageRepository_Expecter) InsertIfAbsent(ctx interface{}, wamid interface{}) *MessageRepository_InsertIfAbsent_Call {
+func (_e *MessageRepository_Expecter) InsertIfAbsent(ctx any, wamid any) *MessageRepository_InsertIfAbsent_Call {
 	return &MessageRepository_InsertIfAbsent_Call{Call: _e.mock.On("InsertIfAbsent", ctx, wamid)}
 }
 

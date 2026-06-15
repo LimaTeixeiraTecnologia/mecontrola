@@ -54,11 +54,11 @@ func (uc *CleanupOnboardingTables) deleteMetaProcessed(
 ) error {
 	for {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("onboarding: cleanup meta_processed_messages: context cancelled: %w", err)
+			return fmt.Errorf("onboarding: cleanup channel_processed_messages: context cancelled: %w", err)
 		}
 		deleted, err := repo.DeleteMetaProcessedOlderThan(ctx, before, cleanupBatchSize)
 		if err != nil {
-			return fmt.Errorf("onboarding: cleanup meta_processed_messages: %w", err)
+			return fmt.Errorf("onboarding: cleanup channel_processed_messages: %w", err)
 		}
 		if deleted < int64(cleanupBatchSize) {
 			break

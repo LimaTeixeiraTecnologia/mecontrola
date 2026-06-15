@@ -72,7 +72,7 @@ type getTokenStateUseCase_Execute_Call struct {
 // Execute is a helper method to define mock.On call
 //   - ctx context.Context
 //   - clearToken string
-func (_e *getTokenStateUseCase_Expecter) Execute(ctx interface{}, clearToken interface{}) *getTokenStateUseCase_Execute_Call {
+func (_e *getTokenStateUseCase_Expecter) Execute(ctx any, clearToken any) *getTokenStateUseCase_Execute_Call {
 	return &getTokenStateUseCase_Execute_Call{Call: _e.mock.On("Execute", ctx, clearToken)}
 }
 

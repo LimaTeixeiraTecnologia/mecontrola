@@ -63,7 +63,7 @@ type RepositoryFactory_CardRepository_Call struct {
 
 // CardRepository is a helper method to define mock.On call
 //   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) CardRepository(db interface{}) *RepositoryFactory_CardRepository_Call {
+func (_e *RepositoryFactory_Expecter) CardRepository(db any) *RepositoryFactory_CardRepository_Call {
 	return &RepositoryFactory_CardRepository_Call{Call: _e.mock.On("CardRepository", db)}
 }
 

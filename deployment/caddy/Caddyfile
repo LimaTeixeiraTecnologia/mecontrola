@@ -4,7 +4,7 @@
 
 {$APP_DOMAIN} {
 	# Block admin/debug/metrics endpoints from external access (RF-07)
-	@admin path /admin* /debug/pprof* /metrics*
+	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
 	respond @admin 404
 
 	reverse_proxy server:{$PORT:-8080} {
@@ -18,7 +18,7 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
-		Permissions-Policy "()"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		X-Frame-Options "DENY"
 		Content-Security-Policy "default-src 'none'; connect-src 'self'; frame-ancestors 'none'"
 		-Server
