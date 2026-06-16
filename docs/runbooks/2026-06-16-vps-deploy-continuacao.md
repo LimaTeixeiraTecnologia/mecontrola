@@ -5,7 +5,7 @@
 **Domínio:** api.mecontrola.app.br → 187.77.45.48 (DNS propagado)
 **Repo:** /opt/mecontrola (clonado, .env configurado)
 
-## Estado atual (2026-06-16 18:43 UTC-3)
+## Estado atual (2026-06-16 ~21:00 UTC-3)
 
 - [x] Docker instalado (v29.5.3)
 - [x] Hardening executado (fail2ban, UFW, SSH key-only, swap 2GB)
@@ -14,18 +14,22 @@
 - [x] DNS api.mecontrola.app.br → 187.77.45.48
 - [x] Kiwify webhook registrado (URL + token)
 - [x] Meta App criado (MeControla, modo desenvolvimento)
-- [x] Imagem Docker construída na VPS
-- [x] Migrations aplicadas
+- [x] Imagem Docker construída na VPS (tag `:local`)
+- [x] Migrations aplicadas (inclui 000002 — smoke user seed)
 - [x] postgres rodando (healthy)
 - [x] pgbouncer rodando (healthy)
-- [x] server rodando (healthy)
-- [x] worker rodando (healthy)
+- [x] server rodando (healthy) — imagem `:local`
+- [x] worker rodando (healthy) — imagem `:local`
 - [x] caddy rodando (TLS Let's Encrypt obtido, HTTPS funcionando)
 - [x] `curl https://api.mecontrola.app.br/health` → `{"status":"healthy"}`
-- [x] Caddy healthcheck corrigido no código (`--spider`, 30s interval/start_period) — aplica no próximo deploy
-- [ ] GitHub Secrets configurados (CI/CD) — ver Passo 6
-- [ ] Meta webhook registrado
-- [ ] Meta número real configurado (Etapa 2)
+- [x] Caddy healthcheck corrigido no código (`--spider`, 30s) — aplica no próximo deploy via CI/CD
+- [x] GitHub Environment `staging` criado
+- [x] GitHub Secrets configurados (10 secrets no environment `staging`): `VPS_HOST`, `VPS_USER`, `VPS_DEPLOY_PATH`, `VPS_SSH_KEY`, `STAGING_WEBHOOK_URL`, `STAGING_META_APP_SECRET`, `STAGING_SMOKE_WA`, `STAGING_DB_URL`, `GHCR_USER`, `GHCR_TOKEN`
+- [x] Meta webhook verificado (`/api/v1/whatsapp/inbound` — GET + POST) — `Configurar webhooks` ✅ na Etapa 2
+- [x] Bot respondendo mensagens (onboarding funcionando com número de teste)
+- [ ] **CI/CD pipeline passando** — 3 fixes pushados (1101eab), CI rodando
+- [ ] **Meta número real verificado** — `+55 11 93621-2870` adicionado no Gerenciador ("Não verificado"), aguardando OTP (rate limit de SMS — tentar novamente amanhã via ligação)
+- [ ] META_PHONE_NUMBER_ID e META_ACCESS_TOKEN atualizados no .env da VPS
 - [ ] pgBackRest S3 configurado
 
 ---
@@ -94,13 +98,55 @@
   - `APP_DOMAIN=api.mecontrola.app.br`
   - `CADDY_EMAIL=jailton.junior94@outlook.com`
 
-### 8. caddy healthcheck unhealthy — CORRIGIDO
+### 8. caddy healthcheck unhealthy — CORRIGIDO NO CÓDIGO
 - **Causa:** `wget -qO-` gravava body no stdout; flag correta para health check é `--spider` (HEAD request sem output).
 - **Fix aplicado** em `deployment/compose/compose.yml`:
   - `["CMD-SHELL", "wget -qO- ..."]` → `["CMD", "wget", "--spider", "-q", "http://localhost:2019/"]`
-  - `interval` alterado de 10s para 30s (admin API não precisa de polling agressivo)
-  - `start_period` alterado de 10s para 30s (caddy aguarda TLS Let's Encrypt na inicialização)
-- **Após próximo deploy:** `docker ps` deve mostrar caddy como "(healthy)".
+  - `interval` alterado de 10s para 30s
+  - `start_period` alterado de 10s para 30s
+- **Aplica na VPS:** após o próximo deploy via CI/CD.
+
+### 9. Meta webhook — GET /inbound ausente
+- **Problema:** A Meta envia GET (verificação do hub.challenge) e POST (eventos) para a mesma callback URL. O router tinha `GET /verify` e `POST /inbound` em rotas separadas → Meta recebia 405 ao verificar `/inbound`.
+- **Fix:** adicionado `sub.Get("/inbound", rt.verifyHandler.Handle)` em `whatsapp_router.go`.
+- **Callback URL correta:** `https://api.mecontrola.app.br/api/v1/whatsapp/inbound` (GET + POST na mesma rota).
+
+### 10. Migration 000002 — seed do smoke user ausente
+- **Problema:** smoke test hardcoda `user_id = '00000000-0000-0000-0000-00005a17c8e7'` mas a migration de seed nunca foi mergeada (existia só em worktrees). Sem ela, webhook cria usuário com UUID aleatório → smoke test falha.
+- **Fix:** `migrations/000002_seed_smoke_user_staging.up.sql` — insere smoke user se `app.smoke_wa` estiver configurado (skip silencioso em produção).
+- **deploy.sh:** configura `app.smoke_wa` no postgres antes do migrate quando `STAGING_SMOKE_WA` está no env.
+
+### 11. CI/CD — DB_PASSWORD missing no docker compose pull
+- **Problema:** `docker compose pull` sem `--env-file` explícito → `DB_PASSWORD is required` no runner do CI.
+- **Fix:** `deploy.sh` passa `COMPOSE_ENV="--env-file ${VPS_DEPLOY_PATH}/.env"` em todos os comandos compose.
+
+### 12. CI/CD — GHCR auth na VPS
+- **Problema:** imagem GHCR privada → VPS não conseguia fazer pull sem autenticação.
+- **Fix:** `deploy.sh` faz `docker login ghcr.io` via SSH antes do pull quando `GHCR_TOKEN` está presente. Secrets `GHCR_USER` e `GHCR_TOKEN` adicionados ao environment `staging`.
+
+### 13. Healthcheck falso positivo — curl localhost:8080 no host VPS
+
+- **Problema:** deploy.sh fazia `curl http://localhost:8080/health` via SSH no host da VPS. Porta 8080 **não é exposta ao host** — só acessível internamente na rede Docker pelo Caddy. Todo deploy retornava "000" e disparava rollback falso.
+- **Fix:** trocado para `docker inspect --format='{{.State.Health.Status}}' mecontrola-server-1`, que lê o healthcheck interno do container (wget localhost:8080/health já configurado no compose.yml).
+
+### 14. otelcol crashava por basicauth/loki sem credenciais
+
+- **Problema:** `config.prod.yml` incluía extensão `basicauth/loki` e exporter `otlphttp/loki`. Com `LOKI_API_KEY` vazio (Grafana Cloud não configurado), o processo do otelcol falhava na inicialização → sem container otelcol → migrate tentava conectar em `localhost:4317` → timeout de 4s por deploy.
+- **Fix:** removidos `basicauth/loki`, `otlphttp/loki` e pipeline de logs do `config.prod.yml`. Mantidos: metrics → prometheus, traces → debug (sampling). Extensão agora só `health_check`.
+
+### 15. TLS mismatch: server usava TLS para OTEL, otelcol sem TLS
+
+- **Problema:** `OTEL_EXPORTER_OTLP_INSECURE=false` no .env + devkit-go@v0.5.0 bloqueia `insecure=true` quando `ENVIRONMENT=production`. otelcol escuta na 4317 sem TLS. Resultado: TLS handshake falha silenciosamente em todo export → sem métricas, sem traces.
+- **Fix:** `ENVIRONMENT: staging` (este VPS é staging) + `OTEL_EXPORTER_OTLP_INSECURE: "true"` injetados via `compose.prod.yml` environment (override do .env). devkit-go só bloqueia insecure em `production`/`prod`.
+
+### 16. Rollback re-deployava a mesma imagem com falha
+
+- **Problema:** bloco de rollback usava `IMAGE_TAG=${IMAGE_TAG}` — o mesmo SHA recém-falho — em vez da imagem anterior.
+- **Fix:** `deploy.sh` captura `PREVIOUS_TAG` via `docker inspect` antes do deploy. Rollback usa `IMAGE_TAG=${PREVIOUS_TAG}` quando diferente do atual.
+
+### 17. CD dispatch manual com imagem inexistente
+- **Problema:** dispatch manual do CD com SHA antes do CI completar → imagem não existe no GHCR → pull falha.
+- **Causa raiz:** CD dispatch deve usar SHA de uma imagem já publicada pelo CI (`build-image` job). O fluxo correto é automático via `workflow_run`.
 
 ---
 
@@ -114,131 +160,93 @@ Uso:
 ```bash
 mc ps
 mc logs -f server worker
-IMAGE_TAG=latest mc up -d --no-deps server worker
+export IMAGE_TAG=local && mc up -d --no-deps --force-recreate server worker
 mc restart pgbouncer
 ```
 
+> **Atenção:** `IMAGE_TAG=local mc ...` não propaga o env var para alias bash. Sempre usar `export IMAGE_TAG=xxx` antes, ou passar o docker compose completo sem alias.
+
 ---
 
-## Passo 6 — GitHub Secrets (CI/CD automático)
+## Passo 6 — GitHub Secrets ✅ CONCLUÍDO
 
-> **Atenção:** `cd.yml` usa `environment: staging`. Os secrets de deploy e smoke **devem ser criados no Environment `staging`**, não em repository secrets genéricos. Secrets de repository não são visíveis para jobs com `environment:`.
+10 secrets configurados no environment `staging`:
 
-### 6.0 — O que foi feito no código
+| Secret | Status |
+|--------|--------|
+| `VPS_HOST` | ✅ |
+| `VPS_USER` | ✅ |
+| `VPS_DEPLOY_PATH` | ✅ |
+| `VPS_SSH_KEY` | ✅ |
+| `STAGING_WEBHOOK_URL` | ✅ |
+| `STAGING_META_APP_SECRET` | ✅ |
+| `STAGING_SMOKE_WA` | ✅ |
+| `STAGING_DB_URL` | ✅ |
+| `GHCR_USER` | ✅ |
+| `GHCR_TOKEN` | ✅ |
 
-- `deployment/compose/compose.yml`: caddy healthcheck corrigido (`-qO-` → `--spider`, porta 2019, interval 30s)
-- `deployment/compose/compose.prod.yml`: pgBackRest vars com `:-` default (sem erro quando não configurado)
-- `deployment/scripts/setup-github-secrets.sh`: script que configura os 8 secrets automaticamente
-- `deployment/scripts/setup-ghcr-login.sh`: script para autenticar VPS no GHCR (se imagem privada)
-
-### 6.1 — Criar o Environment `staging`
-
-**GitHub → Settings → Environments → New environment**
-
-- Nome: `staging`
-- Protection rules: nenhuma (ou configurar "Required reviewers" se quiser aprovação manual)
-- Clicar em **Configure environment**
-
-### 6.2 — Executar o script de setup (automatizado)
-
-O script lê a chave SSH local, busca o `DB_PASSWORD` da VPS via SSH, pede o `STAGING_SMOKE_WA` e cria todos os 8 secrets no environment `staging`:
+CI/CD pipeline: aguardando CI `fix(deploy): autentica no GHCR via SSH antes do docker compose pull` completar. CD dispara automaticamente via `workflow_run` após `build-image`.
 
 ```bash
-# Da máquina local (com ssh access à VPS e gh CLI autenticado)
-chmod +x deployment/scripts/setup-github-secrets.sh
-./deployment/scripts/setup-github-secrets.sh
-```
-
-Variáveis de ambiente opcionais (sobrescrevem os defaults):
-```bash
-VPS_SSH_KEY_PATH=~/.ssh/id_ed25519 \  # default
-STAGING_SMOKE_WA=+5511912345678 \      # evita prompt interativo
-./deployment/scripts/setup-github-secrets.sh
-```
-
-Secrets criados pelo script:
-
-| Secret | Valor |
-|--------|-------|
-| `VPS_HOST` | `187.77.45.48` |
-| `VPS_USER` | `root` |
-| `VPS_DEPLOY_PATH` | `/opt/mecontrola` |
-| `VPS_SSH_KEY` | conteúdo de `VPS_SSH_KEY_PATH` (chave privada local) |
-| `STAGING_WEBHOOK_URL` | `https://api.mecontrola.app.br/api/v1/whatsapp/inbound` |
-| `STAGING_META_APP_SECRET` | `fd8f6781034975836f51ea505b3b0a13` |
-| `STAGING_SMOKE_WA` | número WhatsApp de teste com `+55` |
-| `STAGING_DB_URL` | `postgres://mecontrola:<DB_PASSWORD>@187.77.45.48:5432/mecontrola_db` |
-
-### 6.3 — GHCR login na VPS (só se imagem for privada)
-
-Verificar visibilidade: **GitHub → Packages → mecontrola → Package settings**
-
-Se privada, executar:
-```bash
-# Requer PAT com escopo read:packages
-# Criar em: github.com/settings/tokens/new → read:packages
-GHCR_USER=JailtonJunior94 \
-GHCR_PAT=<token> \
-./deployment/scripts/setup-ghcr-login.sh
-```
-
-Se pública, nenhuma ação necessária.
-
-### 6.4 — Disparar CI/CD (primeiro deploy automático)
-
-```bash
-# Empurrar commit para disparar o pipeline completo:
-# CI: lint → unit → integration → security → governance → card-audit → build-image
-# CD: dispara automaticamente via workflow_run após build-image
-
-git commit --allow-empty -m "ci: trigger initial CI/CD pipeline"
-git push
-
-# Acompanhar:
 gh run watch --repo LimaTeixeiraTecnologia/mecontrola
 ```
 
-Ou disparar apenas o CD manualmente (se a imagem já existe no GHCR):
-```bash
-gh workflow run cd.yml \
-  --repo LimaTeixeiraTecnologia/mecontrola \
-  --field image_tag=<SHA-curto>
-```
+---
+
+## Passo 7 — Meta webhook ✅ CONCLUÍDO
+
+- **URL:** `https://api.mecontrola.app.br/api/v1/whatsapp/inbound`
+- **Verify Token:** `17ea0b0afefe53a17b85bde058363d06`
+- **Status:** `Configurar webhooks` marcado como concluído (✅) na Etapa 2 do portal Meta
+- **Fix aplicado:** `GET /inbound` adicionado ao router para satisfazer handshake da Meta
 
 ---
 
-## Passo 7 — Registrar webhook na Meta
+## Passo 8 — Meta número real (Etapa 2) — PENDENTE (aguardando OTP)
 
-**developers.facebook.com → MeControla → Casos de uso → Personalizar → Etapa 1 → Configurar webhooks**
+### Estado atual
+- Número `+55 11 93621-2870` adicionado no Gerenciador do WhatsApp Business como **"MeControla"**
+- Status: **"Não verificado"**
+- WhatsApp Business App excluído do celular (número desconectado)
+- **Bloqueio:** rate limit de SMS (`You have requested a verification code too many times`) — aguardar ~24h
 
-- URL: `https://api.mecontrola.app.br/api/v1/whatsapp/inbound`
-- Verify Token: `17ea0b0afefe53a17b85bde058363d06`
-- Campo: `messages`
+### Quando o rate limit liberar
 
----
+1. Voltar em: **developers.facebook.com → MeControla → Casos de uso → Personalizar → Etapa 2 → Registre seu número**
+2. Digitar `(11) 93621-2870` → escolher **"Ligação telefônica"** (evita o mesmo rate limit de SMS)
+3. Inserir o código recebido
 
-## Passo 8 — Meta número real (Etapa 2)
+### Após verificar o número
 
-**Personalizar → Etapa 2. Configuração da produção**
+**Pegar no portal Meta (Gerenciador do WhatsApp → Números de telefone → ⚙️):**
+- Novo `Phone Number ID`
+- Gerar Access Token permanente: **Meta Business Suite → Configurações → Usuários do sistema → Gerar token** com permissão `whatsapp_business_messaging`
 
-- Adicionar número real: `+55 11 9 3621-2870`
-- Obter novo Phone Number ID e Access Token permanente (System User)
-- Atualizar na VPS:
-
+**Atualizar na VPS:**
 ```bash
+ssh root@187.77.45.48
+
 sed -i 's|^META_PHONE_NUMBER_ID=.*|META_PHONE_NUMBER_ID=<novo-id>|' /opt/mecontrola/.env
 sed -i 's|^META_ACCESS_TOKEN=.*|META_ACCESS_TOKEN=<token-permanente>|' /opt/mecontrola/.env
-IMAGE_TAG=latest docker compose --env-file /opt/mecontrola/.env \
+
+# Reiniciar server e worker
+export IMAGE_TAG=local
+docker compose --env-file /opt/mecontrola/.env \
   -f /opt/mecontrola/deployment/compose/compose.yml \
   -f /opt/mecontrola/deployment/compose/compose.prod.yml \
   up -d --no-deps server worker
+
+# Testar
+curl -sf https://api.mecontrola.app.br/health
 ```
+
+**Testar end-to-end:** enviar mensagem do WhatsApp pessoal para `+55 11 93621-2870` → bot deve responder.
 
 ---
 
-## Passo 9 — pgBackRest S3 (backup offsite)
+## Passo 9 — pgBackRest S3 (backup offsite) — PENDENTE
 
-Configurar após VPS estável. Requer bucket S3 (AWS ou Cloudflare R2).
+Configurar após VPS estável e CI/CD funcionando. Requer bucket S3 (AWS ou Cloudflare R2).
 
 Variáveis a preencher no `.env`:
 
@@ -270,13 +278,16 @@ docker compose --env-file /opt/mecontrola/.env \
   ps
 
 # Health da API
-curl -f https://api.mecontrola.app.br/health
+curl -sf https://api.mecontrola.app.br/health | python3 -m json.tool
 
 # Logs
 docker compose --env-file /opt/mecontrola/.env \
   -f /opt/mecontrola/deployment/compose/compose.yml \
   -f /opt/mecontrola/deployment/compose/compose.prod.yml \
   logs -f server worker
+
+# Pipeline CI/CD
+gh run list --repo LimaTeixeiraTecnologia/mecontrola --limit 5
 ```
 
 ---
@@ -288,3 +299,4 @@ docker compose --env-file /opt/mecontrola/.env \
 - **KIWIFY_WEBHOOK_SECRET:** `47cyjfb3gag`
 - **META_APP_SECRET:** `fd8f6781034975836f51ea505b3b0a13`
 - **DB_PASSWORD e demais secrets:** em `/opt/mecontrola/.env` na VPS
+- **Phone Number ID e Access Token permanente:** obter após verificação do número (Passo 8)
