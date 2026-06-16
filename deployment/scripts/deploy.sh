@@ -23,6 +23,8 @@ VPS_USER="${VPS_USER:-deploy}"
 VPS_SSH_KEY="${VPS_SSH_KEY:-}"
 VPS_DEPLOY_PATH="${VPS_DEPLOY_PATH:-/opt/mecontrola}"
 STAGING_SMOKE_WA="${STAGING_SMOKE_WA:-}"
+GHCR_USER="${GHCR_USER:-}"
+GHCR_TOKEN="${GHCR_TOKEN:-}"
 
 HEALTHZ_RETRIES=12
 HEALTHZ_INTERVAL=5
@@ -45,6 +47,11 @@ log "Iniciando deploy — tag: ${IMAGE_TAG}"
 
 log "Atualizando código no servidor"
 ssh_exec "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"
+
+if [[ -n "${GHCR_TOKEN}" ]]; then
+  log "Autenticando no GHCR"
+  ssh_exec "echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${GHCR_USER:-x-access-token}' --password-stdin"
+fi
 
 log "Fazendo pull da nova imagem"
 ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} pull server worker"

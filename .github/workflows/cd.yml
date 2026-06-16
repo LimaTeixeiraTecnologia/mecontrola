@@ -83,6 +83,8 @@ jobs:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.gate.outputs.image-tag }}
           STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
 
   smoke:
@@ -146,6 +148,8 @@ jobs:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ inputs.image_tag }}
           STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
 
   smoke-manual:
