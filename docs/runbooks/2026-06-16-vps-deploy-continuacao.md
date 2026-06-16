@@ -5,7 +5,7 @@
 **Domínio:** api.mecontrola.app.br → 187.77.45.48 (DNS propagado)
 **Repo:** /opt/mecontrola (clonado, .env configurado)
 
-## Estado atual
+## Estado atual (2026-06-16 18:43 UTC-3)
 
 - [x] Docker instalado (v29.5.3)
 - [x] Hardening executado (fail2ban, UFW, SSH key-only, swap 2GB)
@@ -14,78 +14,106 @@
 - [x] DNS api.mecontrola.app.br → 187.77.45.48
 - [x] Kiwify webhook registrado (URL + token)
 - [x] Meta App criado (MeControla, modo desenvolvimento)
-- [ ] Build da imagem Docker na VPS
-- [ ] Containers rodando
+- [x] Imagem Docker construída na VPS
+- [x] Migrations aplicadas
+- [x] postgres rodando (healthy)
+- [x] pgbouncer rodando (healthy)
+- [x] server rodando (healthy)
+- [x] worker rodando (healthy)
+- [x] caddy rodando (TLS Let's Encrypt obtido, HTTPS funcionando)
+- [x] `curl https://api.mecontrola.app.br/health` → `{"status":"healthy"}`
+- [ ] Caddy healthcheck no Docker (unhealthy no `ps`, mas não crítico — HTTPS funciona)
 - [ ] GitHub Secrets configurados (CI/CD)
-- [ ] Meta webhook registrado (após VPS no ar)
+- [ ] Meta webhook registrado
 - [ ] Meta número real configurado (Etapa 2)
 - [ ] pgBackRest S3 configurado
 
 ---
 
-## Passo 1 — Build da imagem na VPS
+## Fixes aplicados durante o deploy (contexto para debug futuro)
 
-```bash
-ssh root@187.77.45.48
-cd /opt/mecontrola
-git pull
-docker build -f deployment/docker/Dockerfile -t ghcr.io/limateixeiratecnologia/mecontrola:latest .
-```
+### 1. pgbouncer — imagem removida do Docker Hub
+- **Problema:** `bitnami/pgbouncer` removeu todas as imagens do Docker Hub.
+- **Fix:** migrado para `edoburu/pgbouncer:v1.25.2-p0` (ativa, amd64+arm64).
+- **Atenção:** variáveis de ambiente são diferentes das bitnami:
+  - `POSTGRESQL_HOST` → `DB_HOST`
+  - `POSTGRESQL_USERNAME` → `DB_USER`
+  - `POSTGRESQL_PASSWORD` → `DB_PASSWORD`
+  - `POSTGRESQL_DATABASE` → `DB_NAME`
+  - `PGBOUNCER_PORT` → `LISTEN_PORT`
+  - `PGBOUNCER_POOL_MODE` → `POOL_MODE`
+  - `PGBOUNCER_MAX_CLIENT_CONN` → `MAX_CLIENT_CONN`
+  - `PGBOUNCER_AUTH_TYPE` → `AUTH_TYPE`
+
+### 2. postgresql.conf sem listen_addresses
+- **Problema:** postgres ouvia só em `localhost` (padrão), recusando conexões Docker da rede `backend`. Healthcheck (`pg_isready` via socket Unix) mostrava "Healthy" mesmo assim.
+- **Fix:** adicionado `listen_addresses = '*'` em `deployment/postgres/postgresql.conf`.
+
+### 3. AUTH_TYPE md5 vs scram-sha-256
+- **Problema:** postgres inicializado com `--auth-host=scram-sha-256` (compose.prod.yml), pgbouncer configurado com `AUTH_TYPE: md5` → `FATAL: wrong password type (SQLSTATE 08P01)`.
+- **Fix:** `AUTH_TYPE: scram-sha-256` no compose.yml.
+
+### 4. OTEL insecure em production
+- **Problema:** `devkit-go@v0.5.0` bloqueia `OTEL_EXPORTER_OTLP_INSECURE=true` quando `ENVIRONMENT=production`. Default do config era `true`.
+- **Fix:** adicionar `OTEL_EXPORTER_OTLP_INSECURE=false` no `.env` da VPS.
+- **Efeito colateral:** OTEL não exporta telemetria (otelcol sem TLS). Não bloqueia a app.
+- **Fix definitivo futuro:** configurar endpoint OTLP externo com TLS (Grafana Cloud).
+
+### 5. IDENTITY_GATEWAY_SHARED_SECRET e ONBOARDING_TOKEN_ENCRYPTION_KEY
+- **Problema:** valores placeholder ou ausentes no `.env`.
+- **Fix:** gerar e injetar no `.env` da VPS:
+  ```bash
+  GATEWAY_SECRET=$(openssl rand -hex 32)
+  ONBOARDING_KEY=$(openssl rand -base64 32 | tr -d '\n')
+  sed -i '/^IDENTITY_GATEWAY_SHARED_SECRET_CURRENT=/d' /opt/mecontrola/.env
+  sed -i '/^IDENTITY_GATEWAY_SHARED_SECRET_NEXT=/d' /opt/mecontrola/.env
+  sed -i '/^ONBOARDING_TOKEN_ENCRYPTION_KEY=/d' /opt/mecontrola/.env
+  echo "IDENTITY_GATEWAY_SHARED_SECRET_CURRENT=${GATEWAY_SECRET}" >> /opt/mecontrola/.env
+  echo "IDENTITY_GATEWAY_SHARED_SECRET_NEXT=${GATEWAY_SECRET}" >> /opt/mecontrola/.env
+  echo "ONBOARDING_TOKEN_ENCRYPTION_KEY=${ONBOARDING_KEY}" >> /opt/mecontrola/.env
+  ```
+- **Requisitos de tamanho:**
+  - `IDENTITY_GATEWAY_SHARED_SECRET_CURRENT`: hex, mínimo 64 chars (32 bytes)
+  - `ONBOARDING_TOKEN_ENCRYPTION_KEY`: exatamente 32, 43 ou 44 chars (base64 de 32 bytes = 44 chars)
+
+### 6. wget/pgrep quebrados na imagem distroless
+- **Problema:** Dockerfile copiava `/usr/bin/wget` e `/usr/bin/pgrep` do Alpine (symlinks do BusyBox linkado com musl). Imagem final é `gcr.io/distroless/static-debian12:nonroot` (glibc) → `exec /usr/bin/wget: no such file or directory`.
+- **Fix:** Dockerfile agora instala `busybox-static` e copia `/bin/busybox.static` como `wget` e `pgrep`:
+  ```dockerfile
+  FROM alpine:3.20 AS tools
+  RUN apk add --no-cache busybox-static
+  # ...
+  COPY --from=tools /bin/busybox.static /usr/bin/wget
+  COPY --from=tools /bin/busybox.static /usr/bin/pgrep
+  ```
+
+### 7. caddy sem env_file (CADDY_EMAIL e APP_DOMAIN vazios)
+- **Problema:** caddy não tinha `env_file`, então `{$CADDY_EMAIL}` e `{$APP_DOMAIN}` expandiam para string vazia → erro de parse no Caddyfile.
+- **Fix:** adicionado `env_file: ../../.env` ao serviço caddy no compose.yml.
+- **Valores no .env da VPS:**
+  - `APP_DOMAIN=api.mecontrola.app.br`
+  - `CADDY_EMAIL=jailton.junior94@outlook.com`
+
+### 8. caddy healthcheck unhealthy (não crítico)
+- **Situação:** `docker ps` mostra caddy como "unhealthy" mas HTTPS funciona normalmente.
+- **Causa provável:** port 2019 (admin API do caddy) não acessível ou wget do Alpine com problema.
+- **Impacto:** nenhum — caddy está servindo HTTPS corretamente.
+- **Fix futuro:** ajustar healthcheck do caddy em compose.yml para checar `https://localhost/health` ou desabilitar.
 
 ---
 
-## Passo 2 — Subir banco
+## Alias útil na VPS
 
 ```bash
-IMAGE_TAG=latest docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  up -d postgres pgbouncer
+alias mc='docker compose --env-file /opt/mecontrola/.env -f /opt/mecontrola/deployment/compose/compose.yml -f /opt/mecontrola/deployment/compose/compose.prod.yml'
 ```
 
-Aguardar postgres healthy:
-
+Uso:
 ```bash
-docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  ps postgres
-```
-
----
-
-## Passo 3 — Rodar migrations
-
-```bash
-IMAGE_TAG=latest docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  run --rm migrate
-```
-
----
-
-## Passo 4 — Subir aplicação
-
-```bash
-IMAGE_TAG=latest docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  up -d server worker caddy
-```
-
----
-
-## Passo 5 — Verificar saúde
-
-```bash
-docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  ps
-
-curl -f http://localhost:8080/health
-curl -f https://api.mecontrola.app.br/health
+mc ps
+mc logs -f server worker
+IMAGE_TAG=latest mc up -d --no-deps server worker
+mc restart pgbouncer
 ```
 
 ---
@@ -99,19 +127,17 @@ No repositório: **Settings → Secrets → Actions → New repository secret**
 | `VPS_HOST` | `187.77.45.48` |
 | `VPS_USER` | `root` |
 | `VPS_DEPLOY_PATH` | `/opt/mecontrola` |
-| `VPS_SSH_KEY` | conteúdo de `~/.ssh/id_ed25519` (chave privada) |
+| `VPS_SSH_KEY` | conteúdo de `~/.ssh/id_ed25519` na VPS (`cat ~/.ssh/id_ed25519`) |
 | `STAGING_WEBHOOK_URL` | `https://api.mecontrola.app.br/api/v1/whatsapp/inbound` |
 | `STAGING_META_APP_SECRET` | `fd8f6781034975836f51ea505b3b0a13` |
 | `STAGING_SMOKE_WA` | número WhatsApp de teste com +55 |
 | `STAGING_DB_URL` | `postgres://mecontrola:<DB_PASSWORD>@187.77.45.48:5432/mecontrola_db` |
 
-DB_PASSWORD está em `/opt/mecontrola/.env` na VPS.
+DB_PASSWORD está em `/opt/mecontrola/.env` na VPS (`grep DB_PASSWORD /opt/mecontrola/.env`).
 
 ---
 
 ## Passo 7 — Registrar webhook na Meta
-
-Após VPS no ar com HTTPS funcionando:
 
 **developers.facebook.com → MeControla → Casos de uso → Personalizar → Etapa 1 → Configurar webhooks**
 
@@ -132,9 +158,9 @@ Após VPS no ar com HTTPS funcionando:
 ```bash
 sed -i 's|^META_PHONE_NUMBER_ID=.*|META_PHONE_NUMBER_ID=<novo-id>|' /opt/mecontrola/.env
 sed -i 's|^META_ACCESS_TOKEN=.*|META_ACCESS_TOKEN=<token-permanente>|' /opt/mecontrola/.env
-IMAGE_TAG=latest docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
+IMAGE_TAG=latest docker compose --env-file /opt/mecontrola/.env \
+  -f /opt/mecontrola/deployment/compose/compose.yml \
+  -f /opt/mecontrola/deployment/compose/compose.prod.yml \
   up -d --no-deps server worker
 ```
 
@@ -164,23 +190,23 @@ sudo ./deployment/scripts/pgbackrest-setup.sh
 
 ---
 
-## Referências rápidas
+## Verificação rápida do estado
 
 ```bash
-# Alias útil na VPS
-alias mc='docker compose --env-file /opt/mecontrola/.env -f /opt/mecontrola/deployment/compose/compose.yml -f /opt/mecontrola/deployment/compose/compose.prod.yml'
+# Status de todos os containers
+docker compose --env-file /opt/mecontrola/.env \
+  -f /opt/mecontrola/deployment/compose/compose.yml \
+  -f /opt/mecontrola/deployment/compose/compose.prod.yml \
+  ps
+
+# Health da API
+curl -f https://api.mecontrola.app.br/health
 
 # Logs
-mc logs -f server worker
-
-# Status
-mc ps
-
-# Restart app sem derrubar banco
-IMAGE_TAG=latest mc up -d --no-deps server worker
-
-# Restart só banco
-mc restart postgres pgbouncer
+docker compose --env-file /opt/mecontrola/.env \
+  -f /opt/mecontrola/deployment/compose/compose.yml \
+  -f /opt/mecontrola/deployment/compose/compose.prod.yml \
+  logs -f server worker
 ```
 
 ---
@@ -190,4 +216,5 @@ mc restart postgres pgbouncer
 - **VPS SSH:** `ssh root@187.77.45.48` com `~/.ssh/id_ed25519`
 - **META_VERIFY_TOKEN:** `17ea0b0afefe53a17b85bde058363d06`
 - **KIWIFY_WEBHOOK_SECRET:** `47cyjfb3gag`
+- **META_APP_SECRET:** `fd8f6781034975836f51ea505b3b0a13`
 - **DB_PASSWORD e demais secrets:** em `/opt/mecontrola/.env` na VPS
