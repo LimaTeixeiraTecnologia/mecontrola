@@ -28,6 +28,7 @@ HEALTHZ_RETRIES=12
 HEALTHZ_INTERVAL=5
 
 COMPOSE_FILES="-f ${VPS_DEPLOY_PATH}/deployment/compose/compose.yml -f ${VPS_DEPLOY_PATH}/deployment/compose/compose.prod.yml"
+COMPOSE_ENV="--env-file ${VPS_DEPLOY_PATH}/.env"
 
 log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"; }
 
@@ -46,19 +47,19 @@ log "Atualizando código no servidor"
 ssh_exec "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"
 
 log "Fazendo pull da nova imagem"
-ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} pull server worker"
+ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} pull server worker"
 
 if [[ -n "$STAGING_SMOKE_WA" ]]; then
   SMOKE_WA_DIGITS="${STAGING_SMOKE_WA#+}"
   log "Configurando app.smoke_wa na VPS (smoke user seed)"
-  ssh_exec "docker compose ${COMPOSE_FILES} exec -T postgres \
+  ssh_exec "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} exec -T postgres \
     psql -U mecontrola -d mecontrola_db -c \
     \"ALTER DATABASE mecontrola_db SET app.smoke_wa = '${SMOKE_WA_DIGITS}';\"" || \
     log "AVISO: não foi possível configurar app.smoke_wa — smoke user não será semeado"
 fi
 
 log "Executando migrações"
-ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} run --rm migrate" || {
+ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} run --rm migrate" || {
   log "ERRO: migrações falharam — abortando deploy"
   exit 1
 }
@@ -66,7 +67,7 @@ ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} run --rm migrat
 log "Atualizando containers server e worker"
 # Intencional: postgres e pgbouncer excluídos — banco não reinicia em deploys rotineiros.
 # Para reiniciar o banco manualmente: docker compose ... restart postgres pgbouncer
-ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} up -d --no-deps server worker"
+ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker"
 
 log "Aguardando healthcheck em /health"
 APP_URL="http://localhost:8080"
@@ -78,7 +79,7 @@ for i in $(seq 1 $HEALTHZ_RETRIES); do
   fi
   if [[ "$i" -eq "$HEALTHZ_RETRIES" ]]; then
     log "ERRO: healthcheck falhou após $((HEALTHZ_RETRIES * HEALTHZ_INTERVAL))s — iniciando rollback"
-    ssh_exec "docker compose ${COMPOSE_FILES} up -d --no-deps server worker" || true
+    ssh_exec "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker" || true
     exit 1
   fi
   log "Aguardando... (${i}/${HEALTHZ_RETRIES})"
