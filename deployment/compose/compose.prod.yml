@@ -61,9 +61,6 @@ services:
       DB_PORT: "5432"
       OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
-    depends_on:
-      otelcol:
-        condition: service_started
 
   server:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
@@ -85,9 +82,6 @@ services:
     user: "65532:65532"
     cap_drop:
       - ALL
-    depends_on:
-      otelcol:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -116,9 +110,6 @@ services:
     user: "65532:65532"
     cap_drop:
       - ALL
-    depends_on:
-      otelcol:
-        condition: service_healthy
     deploy:
       resources:
         limits:
