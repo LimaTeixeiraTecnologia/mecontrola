@@ -22,6 +22,7 @@ VPS_HOST="${VPS_HOST:?VPS_HOST is required}"
 VPS_USER="${VPS_USER:-deploy}"
 VPS_SSH_KEY="${VPS_SSH_KEY:-}"
 VPS_DEPLOY_PATH="${VPS_DEPLOY_PATH:-/opt/mecontrola}"
+STAGING_SMOKE_WA="${STAGING_SMOKE_WA:-}"
 
 HEALTHZ_RETRIES=12
 HEALTHZ_INTERVAL=5
@@ -46,6 +47,15 @@ ssh_exec "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"
 
 log "Fazendo pull da nova imagem"
 ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} pull server worker"
+
+if [[ -n "$STAGING_SMOKE_WA" ]]; then
+  SMOKE_WA_DIGITS="${STAGING_SMOKE_WA#+}"
+  log "Configurando app.smoke_wa na VPS (smoke user seed)"
+  ssh_exec "docker compose ${COMPOSE_FILES} exec -T postgres \
+    psql -U mecontrola -d mecontrola_db -c \
+    \"ALTER DATABASE mecontrola_db SET app.smoke_wa = '${SMOKE_WA_DIGITS}';\"" || \
+    log "AVISO: não foi possível configurar app.smoke_wa — smoke user não será semeado"
+fi
 
 log "Executando migrações"
 ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} run --rm migrate" || {

@@ -82,6 +82,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.gate.outputs.image-tag }}
+          STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
 
   smoke:
@@ -144,6 +145,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ inputs.image_tag }}
+          STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
 
   smoke-manual:

@@ -22,8 +22,8 @@
 - [x] worker rodando (healthy)
 - [x] caddy rodando (TLS Let's Encrypt obtido, HTTPS funcionando)
 - [x] `curl https://api.mecontrola.app.br/health` → `{"status":"healthy"}`
-- [ ] Caddy healthcheck no Docker (unhealthy no `ps`, mas não crítico — HTTPS funciona)
-- [ ] GitHub Secrets configurados (CI/CD)
+- [x] Caddy healthcheck corrigido no código (`--spider`, 30s interval/start_period) — aplica no próximo deploy
+- [ ] GitHub Secrets configurados (CI/CD) — ver Passo 6
 - [ ] Meta webhook registrado
 - [ ] Meta número real configurado (Etapa 2)
 - [ ] pgBackRest S3 configurado
@@ -94,11 +94,13 @@
   - `APP_DOMAIN=api.mecontrola.app.br`
   - `CADDY_EMAIL=jailton.junior94@outlook.com`
 
-### 8. caddy healthcheck unhealthy (não crítico)
-- **Situação:** `docker ps` mostra caddy como "unhealthy" mas HTTPS funciona normalmente.
-- **Causa provável:** port 2019 (admin API do caddy) não acessível ou wget do Alpine com problema.
-- **Impacto:** nenhum — caddy está servindo HTTPS corretamente.
-- **Fix futuro:** ajustar healthcheck do caddy em compose.yml para checar `https://localhost/health` ou desabilitar.
+### 8. caddy healthcheck unhealthy — CORRIGIDO
+- **Causa:** `wget -qO-` gravava body no stdout; flag correta para health check é `--spider` (HEAD request sem output).
+- **Fix aplicado** em `deployment/compose/compose.yml`:
+  - `["CMD-SHELL", "wget -qO- ..."]` → `["CMD", "wget", "--spider", "-q", "http://localhost:2019/"]`
+  - `interval` alterado de 10s para 30s (admin API não precisa de polling agressivo)
+  - `start_period` alterado de 10s para 30s (caddy aguarda TLS Let's Encrypt na inicialização)
+- **Após próximo deploy:** `docker ps` deve mostrar caddy como "(healthy)".
 
 ---
 
@@ -120,20 +122,88 @@ mc restart pgbouncer
 
 ## Passo 6 — GitHub Secrets (CI/CD automático)
 
-No repositório: **Settings → Secrets → Actions → New repository secret**
+> **Atenção:** `cd.yml` usa `environment: staging`. Os secrets de deploy e smoke **devem ser criados no Environment `staging`**, não em repository secrets genéricos. Secrets de repository não são visíveis para jobs com `environment:`.
+
+### 6.0 — O que foi feito no código
+
+- `deployment/compose/compose.yml`: caddy healthcheck corrigido (`-qO-` → `--spider`, porta 2019, interval 30s)
+- `deployment/compose/compose.prod.yml`: pgBackRest vars com `:-` default (sem erro quando não configurado)
+- `deployment/scripts/setup-github-secrets.sh`: script que configura os 8 secrets automaticamente
+- `deployment/scripts/setup-ghcr-login.sh`: script para autenticar VPS no GHCR (se imagem privada)
+
+### 6.1 — Criar o Environment `staging`
+
+**GitHub → Settings → Environments → New environment**
+
+- Nome: `staging`
+- Protection rules: nenhuma (ou configurar "Required reviewers" se quiser aprovação manual)
+- Clicar em **Configure environment**
+
+### 6.2 — Executar o script de setup (automatizado)
+
+O script lê a chave SSH local, busca o `DB_PASSWORD` da VPS via SSH, pede o `STAGING_SMOKE_WA` e cria todos os 8 secrets no environment `staging`:
+
+```bash
+# Da máquina local (com ssh access à VPS e gh CLI autenticado)
+chmod +x deployment/scripts/setup-github-secrets.sh
+./deployment/scripts/setup-github-secrets.sh
+```
+
+Variáveis de ambiente opcionais (sobrescrevem os defaults):
+```bash
+VPS_SSH_KEY_PATH=~/.ssh/id_ed25519 \  # default
+STAGING_SMOKE_WA=+5511912345678 \      # evita prompt interativo
+./deployment/scripts/setup-github-secrets.sh
+```
+
+Secrets criados pelo script:
 
 | Secret | Valor |
 |--------|-------|
 | `VPS_HOST` | `187.77.45.48` |
 | `VPS_USER` | `root` |
 | `VPS_DEPLOY_PATH` | `/opt/mecontrola` |
-| `VPS_SSH_KEY` | conteúdo de `~/.ssh/id_ed25519` na VPS (`cat ~/.ssh/id_ed25519`) |
+| `VPS_SSH_KEY` | conteúdo de `VPS_SSH_KEY_PATH` (chave privada local) |
 | `STAGING_WEBHOOK_URL` | `https://api.mecontrola.app.br/api/v1/whatsapp/inbound` |
 | `STAGING_META_APP_SECRET` | `fd8f6781034975836f51ea505b3b0a13` |
-| `STAGING_SMOKE_WA` | número WhatsApp de teste com +55 |
+| `STAGING_SMOKE_WA` | número WhatsApp de teste com `+55` |
 | `STAGING_DB_URL` | `postgres://mecontrola:<DB_PASSWORD>@187.77.45.48:5432/mecontrola_db` |
 
-DB_PASSWORD está em `/opt/mecontrola/.env` na VPS (`grep DB_PASSWORD /opt/mecontrola/.env`).
+### 6.3 — GHCR login na VPS (só se imagem for privada)
+
+Verificar visibilidade: **GitHub → Packages → mecontrola → Package settings**
+
+Se privada, executar:
+```bash
+# Requer PAT com escopo read:packages
+# Criar em: github.com/settings/tokens/new → read:packages
+GHCR_USER=JailtonJunior94 \
+GHCR_PAT=<token> \
+./deployment/scripts/setup-ghcr-login.sh
+```
+
+Se pública, nenhuma ação necessária.
+
+### 6.4 — Disparar CI/CD (primeiro deploy automático)
+
+```bash
+# Empurrar commit para disparar o pipeline completo:
+# CI: lint → unit → integration → security → governance → card-audit → build-image
+# CD: dispara automaticamente via workflow_run após build-image
+
+git commit --allow-empty -m "ci: trigger initial CI/CD pipeline"
+git push
+
+# Acompanhar:
+gh run watch --repo LimaTeixeiraTecnologia/mecontrola
+```
+
+Ou disparar apenas o CD manualmente (se a imagem já existe no GHCR):
+```bash
+gh workflow run cd.yml \
+  --repo LimaTeixeiraTecnologia/mecontrola \
+  --field image_tag=<SHA-curto>
+```
 
 ---
 
