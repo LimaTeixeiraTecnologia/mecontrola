@@ -25,6 +25,7 @@ RUN go build \
 
 # ---- tools ----
 FROM alpine:3.20 AS tools
+RUN apk add --no-cache busybox-static
 
 # ---- runtime ----
 FROM gcr.io/distroless/static-debian12:nonroot
@@ -35,8 +36,8 @@ USER nonroot
 WORKDIR /app
 
 COPY --from=builder /out/mecontrola /app/mecontrola
-COPY --from=tools /usr/bin/wget /usr/bin/wget
-COPY --from=tools /usr/bin/pgrep /usr/bin/pgrep
+COPY --from=tools /bin/busybox.static /usr/bin/wget
+COPY --from=tools /bin/busybox.static /usr/bin/pgrep
 
 ENTRYPOINT ["/app/mecontrola"]
 CMD ["server"]
