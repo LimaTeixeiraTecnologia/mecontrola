@@ -49,6 +49,7 @@ func NewWhatsAppWebhookRouter(
 func (rt *WhatsAppWebhookRouter) Register(r chi.Router) {
 	r.Route("/api/v1/whatsapp", func(sub chi.Router) {
 		sub.Get("/verify", rt.verifyHandler.Handle)
+		sub.Get("/inbound", rt.verifyHandler.Handle)
 		sub.With(
 			rt.rateLimitWithMetric,
 			signature.Compose(rt.secretCurrent, rt.secretNext, nil),
