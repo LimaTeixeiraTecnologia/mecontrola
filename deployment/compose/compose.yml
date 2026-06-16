@@ -24,7 +24,7 @@ services:
       start_period: 30s
 
   pgbouncer:
-    image: bitnami/pgbouncer:1
+    image: bitnami/pgbouncer:1.23.1
     environment:
       POSTGRESQL_HOST: postgres
       POSTGRESQL_PORT: "5432"
