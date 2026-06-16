@@ -45,7 +45,7 @@ func (s *UpdateCardSuite) existingCard(userID uuid.UUID) entities.Card {
 	name, _ := valueobjects.NewCardName("OldName")
 	nick, _ := valueobjects.NewNickname("OldNick")
 	cycle, _ := valueobjects.NewBillingCycle(10, 17)
-	return entities.HydrateCard(uuid.New(), userID, name, nick, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+	return entities.HydrateCard(uuid.New(), userID, name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
 }
 
 func (s *UpdateCardSuite) makeInput(cardID, userID uuid.UUID) input.UpdateCard {

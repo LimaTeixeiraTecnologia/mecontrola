@@ -42,6 +42,7 @@ type ContractOpenAPISuite struct {
 	listUC      *mockListCards
 	getUC       *mockGetCard
 	updateUC    *mockUpdateCard
+	updateLimUC *mockUpdateCardLimit
 	deleteUC    *mockSoftDeleteCard
 	invoiceUC   *mockInvoiceFor
 }
@@ -70,6 +71,7 @@ func (s *ContractOpenAPISuite) SetupTest() {
 	s.listUC = &mockListCards{}
 	s.getUC = &mockGetCard{}
 	s.updateUC = &mockUpdateCard{}
+	s.updateLimUC = &mockUpdateCardLimit{}
 	s.deleteUC = &mockSoftDeleteCard{}
 	s.invoiceUC = &mockInvoiceFor{}
 
@@ -77,11 +79,12 @@ func (s *ContractOpenAPISuite) SetupTest() {
 	listH := handlers.NewListCardsHandler(s.listUC, o11y)
 	getH := handlers.NewGetCardHandler(s.getUC, o11y)
 	updateH := handlers.NewUpdateCardHandler(s.updateUC, o11y)
+	updateLimH := handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y)
 	deleteH := handlers.NewDeleteCardHandler(s.deleteUC, o11y)
 	invoiceH := handlers.NewInvoiceForHandler(s.invoiceUC, o11y)
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
+	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, updateLimH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
 	r := chi.NewRouter()
 	cardRouter.Register(r)
 	s.httpRouter = r

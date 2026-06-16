@@ -37,10 +37,15 @@ func (r *cardRepository) Insert(ctx context.Context, c entities.Card) error {
 	defer span.End()
 
 	const query = `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING created_at, updated_at
 	`
+
+	version := c.Version
+	if version <= 0 {
+		version = 1
+	}
 
 	var createdAt, updatedAt time.Time
 	err := r.db.QueryRowContext(ctx, query,
@@ -50,6 +55,8 @@ func (r *cardRepository) Insert(ctx context.Context, c entities.Card) error {
 		c.Nickname.String(),
 		c.Cycle.ClosingDay,
 		c.Cycle.DueDay,
+		c.LimitCents,
+		version,
 		c.CreatedAt.UTC(),
 		c.UpdatedAt.UTC(),
 	).Scan(&createdAt, &updatedAt)
@@ -72,7 +79,7 @@ func (r *cardRepository) GetByIDForUser(ctx context.Context, cardID, userID stri
 	defer span.End()
 
 	const query = `
-		SELECT id, user_id, name, nickname, closing_day, due_day, created_at, updated_at
+		SELECT id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at
 		  FROM mecontrola.cards
 		 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`
@@ -81,11 +88,13 @@ func (r *cardRepository) GetByIDForUser(ctx context.Context, cardID, userID stri
 		id, name, nickname   string
 		uid                  string
 		closingDay, dueDay   int
+		limitCents           int64
+		version              int64
 		createdAt, updatedAt time.Time
 	)
 
 	err := r.db.QueryRowContext(ctx, query, cardID, userID).
-		Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &createdAt, &updatedAt)
+		Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &limitCents, &version, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return entities.Card{}, fmt.Errorf("%s %w", prefixCardRepository, carddomain.ErrCardNotFound)
 	}
@@ -99,7 +108,7 @@ func (r *cardRepository) GetByIDForUser(ctx context.Context, cardID, userID stri
 		return entities.Card{}, fmt.Errorf("%s get_by_id: %w", prefixCardRepository, err)
 	}
 
-	return r.hydrate(ctx, span, "get_by_id", id, uid, name, nickname, closingDay, dueDay, createdAt, updatedAt, nil)
+	return r.hydrate(ctx, span, "get_by_id", id, uid, name, nickname, closingDay, dueDay, limitCents, version, createdAt, updatedAt, nil)
 }
 
 func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, limit int) ([]entities.Card, string, error) {
@@ -115,7 +124,7 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 
 	if cursor == "" {
 		const query = `
-			SELECT id, user_id, name, nickname, closing_day, due_day, created_at, updated_at
+			SELECT id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at
 			  FROM mecontrola.cards
 			 WHERE user_id = $1 AND deleted_at IS NULL
 			 ORDER BY created_at DESC, id DESC
@@ -128,7 +137,7 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 			return nil, "", fmt.Errorf("%s %w", prefixCardRepository, carddomain.ErrInvalidCursor)
 		}
 		const query = `
-			SELECT id, user_id, name, nickname, closing_day, due_day, created_at, updated_at
+			SELECT id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at
 			  FROM mecontrola.cards
 			 WHERE user_id = $1
 			   AND deleted_at IS NULL
@@ -155,13 +164,15 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 		var (
 			id, uid, name, nickname string
 			closingDay, dueDay      int
+			limitCents              int64
+			version                 int64
 			createdAt, updatedAt    time.Time
 		)
-		if scanErr := rows.Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &createdAt, &updatedAt); scanErr != nil {
+		if scanErr := rows.Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &limitCents, &version, &createdAt, &updatedAt); scanErr != nil {
 			span.RecordError(scanErr)
 			return nil, "", fmt.Errorf("%s list_by_user scan: %w", prefixCardRepository, scanErr)
 		}
-		card, hydrateErr := r.hydrate(ctx, span, "list_by_user", id, uid, name, nickname, closingDay, dueDay, createdAt, updatedAt, nil)
+		card, hydrateErr := r.hydrate(ctx, span, "list_by_user", id, uid, name, nickname, closingDay, dueDay, limitCents, version, createdAt, updatedAt, nil)
 		if hydrateErr != nil {
 			return nil, "", hydrateErr
 		}
@@ -195,14 +206,18 @@ func (r *cardRepository) UpdateByIDForUser(ctx context.Context, c entities.Card)
 		       nickname    = $2,
 		       closing_day = $3,
 		       due_day     = $4,
-		       updated_at  = $5
-		 WHERE id = $6 AND user_id = $7 AND deleted_at IS NULL
-		RETURNING id, user_id, name, nickname, closing_day, due_day, created_at, updated_at
+		       limit_cents = $5,
+		       version     = version + 1,
+		       updated_at  = $6
+		 WHERE id = $7 AND user_id = $8 AND deleted_at IS NULL
+		RETURNING id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at
 	`
 
 	var (
 		id, uid, name, nickname string
 		closingDay, dueDay      int
+		limitCents              int64
+		version                 int64
 		createdAt, updatedAt    time.Time
 	)
 
@@ -211,10 +226,11 @@ func (r *cardRepository) UpdateByIDForUser(ctx context.Context, c entities.Card)
 		c.Nickname.String(),
 		c.Cycle.ClosingDay,
 		c.Cycle.DueDay,
+		c.LimitCents,
 		c.UpdatedAt.UTC(),
 		c.ID,
 		c.UserID,
-	).Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &createdAt, &updatedAt)
+	).Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &limitCents, &version, &createdAt, &updatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return entities.Card{}, fmt.Errorf("%s %w", prefixCardRepository, carddomain.ErrCardNotFound)
@@ -235,7 +251,52 @@ func (r *cardRepository) UpdateByIDForUser(ctx context.Context, c entities.Card)
 		return entities.Card{}, fmt.Errorf("%s update: %w", prefixCardRepository, err)
 	}
 
-	return r.hydrate(ctx, span, "update", id, uid, name, nickname, closingDay, dueDay, createdAt, updatedAt, nil)
+	return r.hydrate(ctx, span, "update", id, uid, name, nickname, closingDay, dueDay, limitCents, version, createdAt, updatedAt, nil)
+}
+
+func (r *cardRepository) UpdateLimitByIDForUser(ctx context.Context, c entities.Card, expectedVersion int64) (entities.Card, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "card.repository.pg.update_limit")
+	defer span.End()
+
+	const query = `
+		UPDATE mecontrola.cards
+		   SET limit_cents = $1,
+		       version     = version + 1,
+		       updated_at  = $2
+		 WHERE id = $3 AND user_id = $4 AND version = $5 AND deleted_at IS NULL
+		RETURNING id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at
+	`
+
+	var (
+		id, uid, name, nickname string
+		closingDay, dueDay      int
+		limitCents              int64
+		version                 int64
+		createdAt, updatedAt    time.Time
+	)
+
+	err := r.db.QueryRowContext(ctx, query,
+		c.LimitCents,
+		c.UpdatedAt.UTC(),
+		c.ID,
+		c.UserID,
+		expectedVersion,
+	).Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &limitCents, &version, &createdAt, &updatedAt)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return entities.Card{}, fmt.Errorf("%s %w", prefixCardRepository, carddomain.ErrCardLimitConflict)
+	}
+	if err != nil {
+		span.RecordError(err)
+		r.o11y.Logger().Error(ctx, "card.repository.pg.update_limit.failed",
+			observability.String("layer", "repository"),
+			observability.String("operation", "update_limit"),
+			observability.Error(err),
+		)
+		return entities.Card{}, fmt.Errorf("%s update_limit: %w", prefixCardRepository, err)
+	}
+
+	return r.hydrate(ctx, span, "update_limit", id, uid, name, nickname, closingDay, dueDay, limitCents, version, createdAt, updatedAt, nil)
 }
 
 func (r *cardRepository) SoftDeleteByIDForUser(ctx context.Context, cardID, userID string, now time.Time) error {
@@ -276,6 +337,7 @@ func (r *cardRepository) hydrate(
 	op string,
 	id, userID, name, nickname string,
 	closingDay, dueDay int,
+	limitCents, version int64,
 	createdAt, updatedAt time.Time,
 	deletedAt *time.Time,
 ) (entities.Card, error) {
@@ -319,5 +381,5 @@ func (r *cardRepository) hydrate(
 		return entities.Card{}, fmt.Errorf("%s hydrate cycle: %w", prefixCardRepository, err)
 	}
 
-	return entities.HydrateCard(parsedID, parsedUserID, cardName, nick, cycle, createdAt, updatedAt, deletedAt), nil
+	return entities.HydrateCardWithVersion(parsedID, parsedUserID, cardName, nick, cycle, limitCents, version, createdAt, updatedAt, deletedAt), nil
 }

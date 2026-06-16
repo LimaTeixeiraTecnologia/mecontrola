@@ -24,14 +24,20 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	budgetsidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
+	notificationadapters "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
+
+	"github.com/google/uuid"
 )
 
 func New() *cobra.Command {
@@ -152,10 +158,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
 	}
-	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule, passthroughGateway)
-	if err != nil {
-		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
-	}
 	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.dbManager, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
@@ -171,11 +173,22 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		r.cfg.WhatsAppConfig,
 		r.cfg.TelegramConfig,
 		r.cfg.OutboxConfig,
+		r.cfg.EmailConfig,
 		identityModule,
 		r.o11y,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo onboarding: %w", err)
+	}
+
+	channelGateway, err := buildChannelGateway(r.cfg, r.o11y, onboardingModule.WhatsAppGateway)
+	if err != nil {
+		return nil, fmt.Errorf("worker: construir channel gateway: %w", err)
+	}
+	channelResolver := buildBudgetsChannelResolver(identityModule)
+	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule, passthroughGateway, channelGateway, channelResolver)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 
 	for _, reg := range identityModule.EventHandlers {
@@ -223,6 +236,9 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		budgetsModule.PendingEventsReaper,
 		budgetsModule.RetentionPurge,
 	)
+	if budgetsModule.ThresholdAlertsJob != nil {
+		jobs = append(jobs, budgetsModule.ThresholdAlertsJob)
+	}
 	if transactionsModule.RecurringMaterializerJob != nil {
 		jobs = append(jobs, transactionsModule.RecurringMaterializerJob)
 	}
@@ -256,4 +272,39 @@ func (r *workerRuntime) shutdown(workerManager *worker.Manager) error {
 	}
 
 	return errors.Join(shutdownErrs...)
+}
+
+func buildChannelGateway(cfg *configs.Config, o11y observability.Observability, whatsappBridge notificationadapters.WhatsAppGatewayBridge) (notification.ChannelGateway, error) {
+	senders := map[string]notification.ChannelSenders{}
+	if whatsappBridge != nil {
+		senders[notification.ChannelWhatsApp] = notificationadapters.NewWhatsAppSender(whatsappBridge).AsChannelSenders()
+	}
+	if cfg.TelegramConfig.Enabled {
+		gateway, err := tgoutbound.NewSharedGateway(o11y, tgoutbound.FactoryConfig{
+			APIBaseURL: cfg.TelegramConfig.APIBaseURL,
+			BotToken:   cfg.TelegramConfig.BotToken,
+			Timeout:    cfg.TelegramConfig.OutboundTimeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("worker: build telegram sender: %w", err)
+		}
+		senders[notification.ChannelTelegram] = notificationadapters.NewTelegramSender(gateway).AsChannelSenders()
+	}
+	return notification.NewMultiChannelGateway(senders), nil
+}
+
+func buildBudgetsChannelResolver(identityModule identity.IdentityModule) *budgetsidentity.UserChannelResolverAdapter {
+	if identityModule.ResolvePreferredChannel == nil {
+		return nil
+	}
+	return budgetsidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
+		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
+		if err != nil {
+			return "", "", false, err
+		}
+		if !ok {
+			return "", "", false, nil
+		}
+		return result.Channel, result.ExternalID, true, nil
+	})
 }

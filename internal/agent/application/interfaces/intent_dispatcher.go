@@ -33,8 +33,10 @@ type CategorySeed struct {
 }
 
 type CardSeed struct {
-	ID       string
-	Nickname string
-	Brand    string
-	LastFour string
+	ID         string
+	Name       string
+	Nickname   string
+	ClosingDay int
+	DueDay     int
+	LimitCents int64
 }

@@ -36,7 +36,7 @@ func (s *stubListCardsCreate) Execute(_ context.Context, _ cardinput.ListCards) 
 
 func TestCardsAdapter_Create_HappyPath(t *testing.T) {
 	create := &stubCreateCard{resp: cardoutput.Card{Nickname: "Nubank", ClosingDay: 5, DueDay: 12}}
-	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, create)
+	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, nil, create, nil, nil, nil)
 
 	userID := uuid.New()
 	payload := json.RawMessage(`{"nickname":"Nubank","name":"Nubank Roxinho","closing_day":5,"due_day":12}`)
@@ -56,7 +56,7 @@ func TestCardsAdapter_Create_HappyPath(t *testing.T) {
 
 func TestCardsAdapter_Create_FallsBackNameFromNickname(t *testing.T) {
 	create := &stubCreateCard{resp: cardoutput.Card{Nickname: "Inter", ClosingDay: 1, DueDay: 10}}
-	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, create)
+	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, nil, create, nil, nil, nil)
 
 	payload := json.RawMessage(`{"nickname":"Inter","closing_day":1,"due_day":10}`)
 	_, err := sut.Create(context.Background(), uuid.New(), payload)
@@ -65,7 +65,7 @@ func TestCardsAdapter_Create_FallsBackNameFromNickname(t *testing.T) {
 }
 
 func TestCardsAdapter_Create_MissingNicknameRejects(t *testing.T) {
-	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, &stubCreateCard{})
+	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, nil, &stubCreateCard{}, nil, nil, nil)
 
 	payload := json.RawMessage(`{"closing_day":5,"due_day":12}`)
 	_, err := sut.Create(context.Background(), uuid.New(), payload)
@@ -74,7 +74,7 @@ func TestCardsAdapter_Create_MissingNicknameRejects(t *testing.T) {
 }
 
 func TestCardsAdapter_Create_InvalidDaysRejects(t *testing.T) {
-	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, &stubCreateCard{})
+	sut := dispatcher.NewCardsAdapterFull(&stubListCardsCreate{}, nil, &stubCreateCard{}, nil, nil, nil)
 
 	cases := []struct {
 		name    string

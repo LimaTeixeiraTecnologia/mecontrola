@@ -58,7 +58,7 @@ func (s *StoragePostgresSuite) TestInsert() {
 				dbtx.EXPECT().ExecContext(mock.Anything, mock.AnythingOfType("string"),
 					event.ID, event.Type, event.AggregateType, event.AggregateID, nil,
 					event.Payload, meta,
-					int(outbox.StatusPending), 15, mock.AnythingOfType("time.Time"), event.OccurredAt,
+					int(outbox.StatusPending), 15, event.OccurredAt,
 				).Return(dbmocks.NewMockResult(s.T()), nil).Once()
 				return dbtx, outbox.NewPostgresStorage(dbtx), event
 			},

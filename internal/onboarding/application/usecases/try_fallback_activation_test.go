@@ -37,7 +37,7 @@ func buildPaidTokenWithOutreach(fromE164 string) entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(7*24*time.Hour), time.Now().UTC().Add(-3*time.Hour),
 		time.Now().UTC().Add(-2*time.Hour), time.Time{}, time.Now().UTC().Add(-30*time.Minute),
 		"cipher-token", "sub-fallback", fromE164, "test@example.com", "sale-002",
-		"", "", 0,
+		"", "", 0, "",
 	)
 }
 
@@ -48,7 +48,7 @@ func buildPaidTokenWithoutOutreach(fromE164 string) entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(7*24*time.Hour), time.Now().UTC().Add(-3*time.Hour),
 		time.Now().UTC().Add(-2*time.Hour), time.Time{}, time.Time{},
 		"cipher-token", "sub-no-outreach", fromE164, "test@example.com", "sale-003",
-		"", "", 0,
+		"", "", 0, "",
 	)
 }
 
@@ -59,7 +59,7 @@ func buildExpiredPaidTokenWithOutreach(fromE164 string) entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(-time.Hour), time.Now().UTC().Add(-8*24*time.Hour),
 		time.Now().UTC().Add(-5*24*time.Hour), time.Time{}, time.Now().UTC().Add(-4*24*time.Hour),
 		"cipher-token", "sub-expired", fromE164, "test@example.com", "sale-004",
-		"", "", 0,
+		"", "", 0, "",
 	)
 }
 

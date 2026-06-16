@@ -11,17 +11,20 @@ type WebhookRouter struct {
 	webhookHandler *handlers.KiwifyWebhookHandler
 	secretCurrent  string
 	secretNext     string
+	limiter        *middleware.RateLimiter
 }
 
 func NewWebhookRouter(
 	webhookHandler *handlers.KiwifyWebhookHandler,
 	secretCurrent string,
 	secretNext string,
+	limiter *middleware.RateLimiter,
 ) *WebhookRouter {
 	return &WebhookRouter{
 		webhookHandler: webhookHandler,
 		secretCurrent:  secretCurrent,
 		secretNext:     secretNext,
+		limiter:        limiter,
 	}
 }
 
@@ -30,9 +33,13 @@ func (rt *WebhookRouter) Register(r chi.Router) {
 		return
 	}
 	r.Route("/api/v1/billing/webhooks", func(sub chi.Router) {
-		sub.With(
+		chain := sub.With(
 			middleware.RawBody,
 			middleware.HMACSignature(rt.secretCurrent, rt.secretNext),
-		).Post("/kiwify", rt.webhookHandler.Handle)
+		)
+		if rt.limiter != nil {
+			chain = chain.With(rt.limiter.Middleware)
+		}
+		chain.Post("/kiwify", rt.webhookHandler.Handle)
 	})
 }

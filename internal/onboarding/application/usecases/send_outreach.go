@@ -18,10 +18,17 @@ import (
 
 const outreachBatchSize = 100
 
+const telegramOutreachText = "Sua assinatura foi confirmada. Use o codigo de ativacao enviado para acessar o MeControla: %s"
+
+const (
+	outreachChannelWhatsApp = "whatsapp"
+	outreachChannelTelegram = "telegram"
+)
+
 type SendOutreach struct {
 	mgr          manager.Manager
 	factory      appinterfaces.RepositoryFactory
-	gateway      appinterfaces.WhatsAppGateway
+	gateway      appinterfaces.OutreachChannelGateway
 	cipher       appinterfaces.TokenCipher
 	idGen        id.Generator
 	templateName string
@@ -33,7 +40,7 @@ type SendOutreach struct {
 func NewSendOutreach(
 	mgr manager.Manager,
 	factory appinterfaces.RepositoryFactory,
-	gateway appinterfaces.WhatsAppGateway,
+	gateway appinterfaces.OutreachChannelGateway,
 	cipher appinterfaces.TokenCipher,
 	idGen id.Generator,
 	templateName string,
@@ -87,8 +94,13 @@ func (uc *SendOutreach) sendForToken(
 	repo appinterfaces.MagicTokenRepository,
 	token entities.MagicToken,
 ) error {
-	now := time.Now().UTC()
+	channel := uc.resolveChannel(token)
+	if channel == "" {
+		slog.WarnContext(ctx, "onboarding.outreach.skipped_no_channel", "token_id", token.ID())
+		return nil
+	}
 
+	now := time.Now().UTC()
 	if err := repo.UpdateMarkOutreachSent(ctx, token.ID(), now); err != nil {
 		return fmt.Errorf("onboarding: send outreach: mark sent: %w", err)
 	}
@@ -98,39 +110,115 @@ func (uc *SendOutreach) sendForToken(
 		return fmt.Errorf("onboarding: send outreach: decrypt token: %w", err)
 	}
 
-	_, err = uc.gateway.SendActivationTemplate(ctx, token.CustomerMobileE164(), uc.templateName, clearToken)
+	switch channel {
+	case outreachChannelTelegram:
+		return uc.sendTelegram(ctx, repo, token, clearToken)
+	default:
+		return uc.sendWhatsApp(ctx, repo, token, clearToken)
+	}
+}
+
+func (uc *SendOutreach) resolveChannel(token entities.MagicToken) string {
+	if token.CustomerMobileE164() != "" {
+		return outreachChannelWhatsApp
+	}
+	if token.TelegramExternalID() != "" {
+		return outreachChannelTelegram
+	}
+	return ""
+}
+
+func (uc *SendOutreach) sendWhatsApp(
+	ctx context.Context,
+	repo appinterfaces.MagicTokenRepository,
+	token entities.MagicToken,
+	clearToken string,
+) error {
+	_, err := uc.gateway.SendActivationTemplate(ctx, outreachChannelWhatsApp, token.CustomerMobileE164(), uc.templateName, clearToken)
 	if err != nil {
 		if errors.Is(err, application.ErrWhatsAppClientError) {
-			uc.outreachSent.Add(ctx, 1, observability.String("result", "failed_4xx"))
+			uc.outreachSent.Add(ctx, 1,
+				observability.String("result", "failed_4xx"),
+				observability.String("channel", outreachChannelWhatsApp),
+			)
 			slog.WarnContext(ctx, "onboarding.outreach.failed_4xx",
 				"token_id", token.ID(),
+				"channel", outreachChannelWhatsApp,
 				"error", err.Error(),
 				"retry_planned", false,
 			)
 			return fmt.Errorf("onboarding: send outreach: send template (4xx, sem reset): %w", err)
 		}
 
-		resetErr := repo.UpdateMarkOutreachReset(ctx, token.ID())
-		if resetErr != nil {
+		if resetErr := repo.UpdateMarkOutreachReset(ctx, token.ID()); resetErr != nil {
 			slog.WarnContext(ctx, "onboarding.outreach.reset_failed",
 				"token_id", token.ID(),
+				"channel", outreachChannelWhatsApp,
 				"error", resetErr.Error(),
 			)
 		}
-		uc.outreachSent.Add(ctx, 1, observability.String("result", "failed_5xx"))
+		uc.outreachSent.Add(ctx, 1,
+			observability.String("result", "failed_5xx"),
+			observability.String("channel", outreachChannelWhatsApp),
+		)
 		slog.WarnContext(ctx, "onboarding.outreach.failed_5xx",
 			"token_id", token.ID(),
+			"channel", outreachChannelWhatsApp,
 			"error", err.Error(),
 			"retry_planned", true,
 		)
 		return fmt.Errorf("onboarding: send outreach: send template (5xx, reset): %w", err)
 	}
 
-	uc.outreachSent.Add(ctx, 1, observability.String("result", "sent"))
+	uc.outreachSent.Add(ctx, 1,
+		observability.String("result", "sent"),
+		observability.String("channel", outreachChannelWhatsApp),
+	)
 	slog.InfoContext(ctx, "onboarding.outreach.sent",
 		"token_id", token.ID(),
+		"channel", outreachChannelWhatsApp,
 		"to_mobile_masked", maskMobile(token.CustomerMobileE164()),
 	)
+	return nil
+}
 
+func (uc *SendOutreach) sendTelegram(
+	ctx context.Context,
+	repo appinterfaces.MagicTokenRepository,
+	token entities.MagicToken,
+	clearToken string,
+) error {
+	text := fmt.Sprintf(telegramOutreachText, clearToken)
+	err := uc.gateway.SendText(ctx, outreachChannelTelegram, token.TelegramExternalID(), text)
+	if err != nil {
+		if resetErr := repo.UpdateMarkOutreachReset(ctx, token.ID()); resetErr != nil {
+			slog.WarnContext(ctx, "onboarding.outreach.reset_failed",
+				"token_id", token.ID(),
+				"channel", outreachChannelTelegram,
+				"error", resetErr.Error(),
+			)
+		}
+		uc.outreachSent.Add(ctx, 1,
+			observability.String("result", "failed"),
+			observability.String("channel", outreachChannelTelegram),
+		)
+		slog.WarnContext(ctx, "onboarding.outreach.failed",
+			"token_id", token.ID(),
+			"channel", outreachChannelTelegram,
+			"error", err.Error(),
+			"retry_planned", true,
+		)
+		return fmt.Errorf("onboarding: send outreach: send telegram text: %w", err)
+	}
+
+	uc.outreachSent.Add(ctx, 1,
+		observability.String("result", "sent"),
+		observability.String("channel", outreachChannelTelegram),
+	)
+	slog.InfoContext(ctx, "onboarding.outreach.sent",
+		"token_id", token.ID(),
+		"channel", outreachChannelTelegram,
+		"telegram_external_id", token.TelegramExternalID(),
+	)
 	return nil
 }

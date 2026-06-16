@@ -17,10 +17,13 @@ import (
 
 type CategoriesModule struct {
 	CategoryRouter      *server.CategoryRouter
+	GetCategoryUC       *usecases.GetCategory
+	ListDictionaryUC    *usecases.ListDictionary
 	ResolveBySlug       *usecases.ResolveBySlug
 	ValidateSubcategory *usecases.ValidateSubcategory
 	VersionReader       interfaces.VersionReader
 	ListCategoriesUC    *usecases.ListCategories
+	SearchDictionaryUC  *usecases.SearchDictionary
 }
 
 func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability, gatewayAuth func(http.Handler) http.Handler) *CategoriesModule {
@@ -54,9 +57,12 @@ func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability, 
 
 	return &CategoriesModule{
 		CategoryRouter:      categoryRouter,
+		GetCategoryUC:       getCategory,
+		ListDictionaryUC:    listDictionary,
 		ResolveBySlug:       resolveBySlug,
 		ValidateSubcategory: validateSubcategory,
 		VersionReader:       versionReader,
 		ListCategoriesUC:    listCategories,
+		SearchDictionaryUC:  searchDictionary,
 	}
 }

@@ -28,6 +28,7 @@ func TestRedactCardLogFields_NoPII(t *testing.T) {
 		name,
 		nickname,
 		cycle,
+		0,
 		time.Now().UTC(),
 		time.Now().UTC(),
 		nil,
@@ -57,7 +58,7 @@ func TestRedactCardLogFields_Values(t *testing.T) {
 	nickname, _ := valueobjects.NewNickname("It")
 	cycle, _ := valueobjects.NewBillingCycle(10, 20)
 
-	card := entities.HydrateCard(cardID, userID, name, nickname, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+	card := entities.HydrateCard(cardID, userID, name, nickname, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
 
 	fields := cardobs.Redactor{}.RedactCardLogFields(card)
 

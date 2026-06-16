@@ -88,6 +88,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTablePresent("mecontrola.transactions")
 	s.assertTablePresent("mecontrola.user_identities")
 	s.assertTablePresent("mecontrola.channel_processed_messages")
+	s.assertTablePresent("mecontrola.budget_alerts_sent")
+	s.assertTablePresent("mecontrola.onboarding_sessions")
 
 	s.assertTableMissing("mecontrola.meta_processed_messages")
 	s.assertTableMissing("mecontrola.telegram_processed_updates")
@@ -116,6 +118,9 @@ func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
 	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
 	s.assertColumnPresent("mecontrola.auth_events", "request_id")
 	s.assertColumnPresent("mecontrola.auth_events", "client_ip")
+	s.assertColumnPresent("mecontrola.cards", "limit_cents")
+	s.assertColumnPresent("mecontrola.cards", "version")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "telegram_external_id")
 
 	invalidSourceErr := execSQL(s.mgr, s.ctx, `
 		INSERT INTO mecontrola.auth_events (id, kind, source, occurred_at)
@@ -287,6 +292,59 @@ func (s *MigrationSuite) TestCategoriesAndDictionarySeed() {
 	s.assertDictionaryAliasesCount()
 	s.assertDictionaryUniqueness()
 	s.assertDictionaryUnaccentNormalization()
+}
+
+func (s *MigrationSuite) TestCategoryDictionarySeedV2_aliases() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	probes := []string{"ifood", "mercado", "uber", "gasolina", "curso", "viagem"}
+
+	var presentCount int64
+	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.category_dictionary
+		WHERE deprecated_at IS NULL
+		  AND term_normalized = ANY($1)
+	`, probes).Scan(&presentCount)
+	s.Require().NoError(err)
+	s.GreaterOrEqual(presentCount, int64(6))
+
+	for _, term := range probes {
+		var categoryID sql.NullString
+		queryErr := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+			SELECT category_id::text FROM mecontrola.category_dictionary
+			WHERE deprecated_at IS NULL AND term_normalized = $1
+			ORDER BY confidence DESC
+			LIMIT 1
+		`, term).Scan(&categoryID)
+		s.Require().NoErrorf(queryErr, "term=%s", term)
+		s.Truef(categoryID.Valid, "term=%s sem category_id", term)
+		s.NotEmptyf(categoryID.String, "term=%s mapeamento vazio", term)
+	}
+
+	var seedV2Count int64
+	seedErr := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.category_dictionary
+		WHERE id::text LIKE 'a1b00001-0000-5007-0000-%'
+	`).Scan(&seedV2Count)
+	s.Require().NoError(seedErr)
+	s.GreaterOrEqualf(seedV2Count, int64(60), "seed v2 inseriu %d entradas", seedV2Count)
+	s.LessOrEqualf(seedV2Count, int64(200), "seed v2 inseriu %d entradas", seedV2Count)
+
+	var dupCount int64
+	dupErr := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM (
+			SELECT matched_term FROM (
+				SELECT term_normalized AS matched_term, COUNT(*) AS c
+				FROM mecontrola.category_dictionary
+				WHERE deprecated_at IS NULL
+				GROUP BY kind, category_id, term_normalized
+				HAVING COUNT(*) > 1
+			) inner_t
+		) outer_t
+	`).Scan(&dupCount)
+	s.Require().NoError(dupErr)
+	s.Equal(int64(0), dupCount)
 }
 
 func (s *MigrationSuite) TestTransactionsConstraints() {

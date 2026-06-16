@@ -44,7 +44,7 @@ func (s *InvoiceForSuite) activeCard() entities.Card {
 	name, _ := valueobjects.NewCardName("Visa Gold")
 	nick, _ := valueobjects.NewNickname("Visa")
 	cycle, _ := valueobjects.NewBillingCycle(15, 22)
-	return entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+	return entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
 }
 
 func (s *InvoiceForSuite) TestExecute_HappyPath() {
@@ -81,7 +81,7 @@ func (s *InvoiceForSuite) TestExecute_SoftDeletedCardReturnsNotFound() {
 	nick, _ := valueobjects.NewNickname("Del")
 	cycle, _ := valueobjects.NewBillingCycle(5, 12)
 	deletedAt := time.Now().UTC()
-	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, time.Now().UTC(), time.Now().UTC(), &deletedAt)
+	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), &deletedAt)
 
 	in := input.InvoiceFor{CardID: card.ID, UserID: card.UserID, Purchase: time.Now()}
 

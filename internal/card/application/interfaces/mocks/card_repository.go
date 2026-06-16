@@ -388,3 +388,75 @@ func (_c *CardRepository_UpdateByIDForUser_Call) RunAndReturn(run func(ctx conte
 	_c.Call.Return(run)
 	return _c
 }
+
+// UpdateLimitByIDForUser provides a mock function for the type CardRepository
+func (_mock *CardRepository) UpdateLimitByIDForUser(ctx context.Context, c entities.Card, expectedVersion int64) (entities.Card, error) {
+	ret := _mock.Called(ctx, c, expectedVersion)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateLimitByIDForUser")
+	}
+
+	var r0 entities.Card
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Card, int64) (entities.Card, error)); ok {
+		return returnFunc(ctx, c, expectedVersion)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.Card, int64) entities.Card); ok {
+		r0 = returnFunc(ctx, c, expectedVersion)
+	} else {
+		r0 = ret.Get(0).(entities.Card)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, entities.Card, int64) error); ok {
+		r1 = returnFunc(ctx, c, expectedVersion)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardRepository_UpdateLimitByIDForUser_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateLimitByIDForUser'
+type CardRepository_UpdateLimitByIDForUser_Call struct {
+	*mock.Call
+}
+
+// UpdateLimitByIDForUser is a helper method to define mock.On call
+//   - ctx context.Context
+//   - c entities.Card
+//   - expectedVersion int64
+func (_e *CardRepository_Expecter) UpdateLimitByIDForUser(ctx any, c any, expectedVersion any) *CardRepository_UpdateLimitByIDForUser_Call {
+	return &CardRepository_UpdateLimitByIDForUser_Call{Call: _e.mock.On("UpdateLimitByIDForUser", ctx, c, expectedVersion)}
+}
+
+func (_c *CardRepository_UpdateLimitByIDForUser_Call) Run(run func(ctx context.Context, c entities.Card, expectedVersion int64)) *CardRepository_UpdateLimitByIDForUser_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 entities.Card
+		if args[1] != nil {
+			arg1 = args[1].(entities.Card)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CardRepository_UpdateLimitByIDForUser_Call) Return(card entities.Card, err error) *CardRepository_UpdateLimitByIDForUser_Call {
+	_c.Call.Return(card, err)
+	return _c
+}
+
+func (_c *CardRepository_UpdateLimitByIDForUser_Call) RunAndReturn(run func(ctx context.Context, c entities.Card, expectedVersion int64) (entities.Card, error)) *CardRepository_UpdateLimitByIDForUser_Call {
+	_c.Call.Return(run)
+	return _c
+}

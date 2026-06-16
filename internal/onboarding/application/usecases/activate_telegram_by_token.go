@@ -18,6 +18,8 @@ import (
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
@@ -66,18 +68,40 @@ type ActivateTelegramByTokenInput struct {
 	TelegramUserID int64
 }
 
+type DirectActivationDecider interface {
+	Decide(token entities.MagicToken, flagEnabled bool) services.DirectActivationDecision
+}
+
+type DirectActivationBinder interface {
+	BindAndConsume(
+		ctx context.Context,
+		tokenRepo interfaces.MagicTokenRepository,
+		magicToken entities.MagicToken,
+		fromE164 string,
+		path valueobjects.ActivationPath,
+		now time.Time,
+	) (entities.MagicToken, error)
+}
+
 type ActivateTelegramByToken struct {
 	factory         interfaces.RepositoryFactory
 	identityFactory identityinterfaces.RepositoryFactory
 	uow             uow.UnitOfWork[ActivateTelegramResult]
+	directDecider   DirectActivationDecider
+	directBinder    DirectActivationBinder
+	directEnabled   bool
 	o11y            observability.Observability
 	outcomesTotal   observability.Counter
+	activationTotal observability.Counter
 }
 
 func NewActivateTelegramByToken(
 	factory interfaces.RepositoryFactory,
 	identityFactory identityinterfaces.RepositoryFactory,
 	u uow.UnitOfWork[ActivateTelegramResult],
+	directDecider DirectActivationDecider,
+	directBinder DirectActivationBinder,
+	directEnabled bool,
 	o11y observability.Observability,
 ) *ActivateTelegramByToken {
 	outcomes := o11y.Metrics().Counter(
@@ -85,12 +109,21 @@ func NewActivateTelegramByToken(
 		"Total de outcomes da ativacao do Telegram por tipo",
 		"1",
 	)
+	activation := o11y.Metrics().Counter(
+		"onboarding_telegram_activation_total",
+		"Total de ativacoes de Telegram por path de decisao",
+		"1",
+	)
 	return &ActivateTelegramByToken{
 		factory:         factory,
 		identityFactory: identityFactory,
 		uow:             u,
+		directDecider:   directDecider,
+		directBinder:    directBinder,
+		directEnabled:   directEnabled,
 		o11y:            o11y,
 		outcomesTotal:   outcomes,
+		activationTotal: activation,
 	}
 }
 
@@ -145,11 +178,54 @@ func (uc *ActivateTelegramByToken) executeInTx(
 	case valueobjects.TokenStatusExpired:
 		return ActivateTelegramResult{Outcome: ActivateTelegramOutcomeExpired}, nil
 	case valueobjects.TokenStatusPaid:
-		return ActivateTelegramResult{Outcome: ActivateTelegramOutcomeRequiresWhatsAppActivation}, nil
+		return uc.handlePaidInTx(ctx, tokenRepo, identityRepo, magicToken, telegramUserID, now)
 	case valueobjects.TokenStatusConsumed:
 		return uc.linkInTx(ctx, identityRepo, magicToken.ConsumedByUserID(), telegramUserID, now)
 	default:
 		return ActivateTelegramResult{}, fmt.Errorf("unexpected status: %s", magicToken.Status())
+	}
+}
+
+func (uc *ActivateTelegramByToken) handlePaidInTx(
+	ctx context.Context,
+	tokenRepo interfaces.MagicTokenRepository,
+	identityRepo identityinterfaces.UserIdentityRepository,
+	magicToken entities.MagicToken,
+	telegramUserID int64,
+	now time.Time,
+) (ActivateTelegramResult, error) {
+	decision := uc.directDecider.Decide(magicToken, uc.directEnabled)
+	switch decision.Outcome {
+	case services.OutcomeRequiresWhatsAppActivation:
+		uc.recordPath(ctx, "whatsapp_required")
+		return ActivateTelegramResult{Outcome: ActivateTelegramOutcomeRequiresWhatsAppActivation}, nil
+	case services.OutcomeDirectBlocked:
+		uc.recordPath(ctx, "direct_blocked_missing_data")
+		return ActivateTelegramResult{Outcome: ActivateTelegramOutcomeRequiresWhatsAppActivation}, nil
+	case services.OutcomeDirectAllowed:
+		telegramExternalID := strconv.FormatInt(telegramUserID, 10)
+		if err := tokenRepo.UpdateTelegramExternalID(ctx, magicToken.ID(), telegramExternalID); err != nil {
+			return ActivateTelegramResult{}, fmt.Errorf("persist telegram external id: %w", err)
+		}
+		linkedToken, err := magicToken.LinkTelegramExternalID(telegramExternalID)
+		if err != nil {
+			return ActivateTelegramResult{}, fmt.Errorf("link telegram external id: %w", err)
+		}
+		consumed, err := uc.directBinder.BindAndConsume(
+			ctx,
+			tokenRepo,
+			linkedToken,
+			decision.CustomerMobileE164,
+			valueobjects.ActivationPathDirect,
+			now,
+		)
+		if err != nil {
+			return ActivateTelegramResult{}, fmt.Errorf("direct bind: %w", err)
+		}
+		uc.recordPath(ctx, "direct_linked")
+		return uc.linkInTx(ctx, identityRepo, consumed.ConsumedByUserID(), telegramUserID, now)
+	default:
+		return ActivateTelegramResult{}, fmt.Errorf("unexpected direct decision: %s", decision.Outcome)
 	}
 }
 
@@ -216,4 +292,8 @@ func (uc *ActivateTelegramByToken) linkInTx(
 func (uc *ActivateTelegramByToken) observe(ctx context.Context, res ActivateTelegramResult) ActivateTelegramResult {
 	uc.outcomesTotal.Add(ctx, 1, observability.String("outcome", res.Outcome.String()))
 	return res
+}
+
+func (uc *ActivateTelegramByToken) recordPath(ctx context.Context, path string) {
+	uc.activationTotal.Add(ctx, 1, observability.String("path", path))
 }

@@ -40,7 +40,7 @@ func (s *GetCardSuite) activeCard() entities.Card {
 	name, _ := valueobjects.NewCardName("Test Card")
 	nick, _ := valueobjects.NewNickname("TestNick")
 	cycle, _ := valueobjects.NewBillingCycle(15, 22)
-	return entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+	return entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
 }
 
 func (s *GetCardSuite) TestExecute_HappyPath() {
@@ -75,7 +75,7 @@ func (s *GetCardSuite) TestExecute_SoftDeletedReturnsNotFound() {
 	nick, _ := valueobjects.NewNickname("Del")
 	cycle, _ := valueobjects.NewBillingCycle(5, 12)
 	deletedAt := time.Now().UTC()
-	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, time.Now().UTC(), time.Now().UTC(), &deletedAt)
+	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), &deletedAt)
 	in := input.GetCard{ID: card.ID, UserID: card.UserID}
 
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()

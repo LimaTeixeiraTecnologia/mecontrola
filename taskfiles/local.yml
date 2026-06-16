@@ -45,3 +45,8 @@ tasks:
     desc: Lista status dos containers locais.
     cmds:
       - "{{.COMPOSE_CMD}} ps"
+
+  db:restart:
+    desc: Reinicia apenas postgres e pgbouncer sem derrubar server/worker.
+    cmds:
+      - "{{.COMPOSE_CMD}} restart postgres pgbouncer"

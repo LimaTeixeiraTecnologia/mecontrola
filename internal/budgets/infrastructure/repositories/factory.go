@@ -35,3 +35,11 @@ func (f *repositoryFactory) PendingEventRepository(db database.DBTX) interfaces.
 func (f *repositoryFactory) ThresholdStateRepository(db database.DBTX) interfaces.ThresholdStateRepository {
 	return postgres.NewThresholdStateRepository(f.o11y, db)
 }
+
+func (f *repositoryFactory) ThresholdAlertSentRepository(db database.DBTX) interfaces.ThresholdAlertSentRepository {
+	return postgres.NewThresholdAlertSentRepository(f.o11y, db)
+}
+
+func (f *repositoryFactory) CardThresholdReader(db database.DBTX) interfaces.CardThresholdReader {
+	return postgres.NewCardThresholdReader(f.o11y, db)
+}

@@ -7,7 +7,7 @@ CREATE SCHEMA IF NOT EXISTS mecontrola;
 -- Platform: Transactional Outbox
 -- ============================================================
 
-CREATE TABLE mecontrola.outbox_events (
+CREATE TABLE IF NOT EXISTS mecontrola.outbox_events (
     id              UUID        NOT NULL,
     event_type      TEXT        NOT NULL,
     aggregate_type  TEXT        NOT NULL,
@@ -44,22 +44,22 @@ ALTER TABLE mecontrola.outbox_events SET (
     autovacuum_vacuum_cost_delay    = 2
 );
 
-CREATE INDEX outbox_events_dispatcher_pending_idx
+CREATE INDEX IF NOT EXISTS outbox_events_dispatcher_pending_idx
     ON mecontrola.outbox_events (next_attempt_at)
     WHERE status = 1;
 
-CREATE INDEX outbox_events_reaper_processing_idx
+CREATE INDEX IF NOT EXISTS outbox_events_reaper_processing_idx
     ON mecontrola.outbox_events (locked_at)
     WHERE status = 2;
 
-CREATE INDEX outbox_events_housekeeping_published_idx
+CREATE INDEX IF NOT EXISTS outbox_events_housekeeping_published_idx
     ON mecontrola.outbox_events (published_at)
     WHERE status = 3;
 
-CREATE INDEX outbox_events_aggregate_idx
+CREATE INDEX IF NOT EXISTS outbox_events_aggregate_idx
     ON mecontrola.outbox_events (aggregate_type, aggregate_id);
 
-CREATE INDEX outbox_events_aggregate_user_id_idx
+CREATE INDEX IF NOT EXISTS outbox_events_aggregate_user_id_idx
     ON mecontrola.outbox_events (aggregate_user_id)
     WHERE aggregate_user_id IS NOT NULL;
 
@@ -67,7 +67,7 @@ CREATE INDEX outbox_events_aggregate_user_id_idx
 -- Identity
 -- ============================================================
 
-CREATE TABLE mecontrola.users (
+CREATE TABLE IF NOT EXISTS mecontrola.users (
     id              UUID        NOT NULL,
     whatsapp_number TEXT        NOT NULL,
     email           TEXT        NULL,
@@ -83,19 +83,19 @@ CREATE TABLE mecontrola.users (
         CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX users_whatsapp_number_active_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS users_whatsapp_number_active_uniq_idx
     ON mecontrola.users (whatsapp_number)
     WHERE deleted_at IS NULL;
 
-CREATE INDEX users_whatsapp_number_deleted_idx
+CREATE INDEX IF NOT EXISTS users_whatsapp_number_deleted_idx
     ON mecontrola.users (whatsapp_number)
     WHERE deleted_at IS NOT NULL;
 
-CREATE UNIQUE INDEX users_email_active_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_active_uniq_idx
     ON mecontrola.users (email)
     WHERE email IS NOT NULL AND deleted_at IS NULL;
 
-CREATE TABLE mecontrola.user_whatsapp_history (
+CREATE TABLE IF NOT EXISTS mecontrola.user_whatsapp_history (
     id          UUID        NOT NULL,
     user_id     UUID        NOT NULL,
     number      TEXT        NOT NULL,
@@ -111,13 +111,13 @@ CREATE TABLE mecontrola.user_whatsapp_history (
         CHECK ((active = TRUE) = (unlinked_at IS NULL))
 );
 
-CREATE INDEX user_whatsapp_history_user_active_idx
+CREATE INDEX IF NOT EXISTS user_whatsapp_history_user_active_idx
     ON mecontrola.user_whatsapp_history (user_id, active);
 
-CREATE INDEX user_whatsapp_history_number_idx
+CREATE INDEX IF NOT EXISTS user_whatsapp_history_number_idx
     ON mecontrola.user_whatsapp_history (number);
 
-CREATE TABLE mecontrola.identity_entitlements (
+CREATE TABLE IF NOT EXISTS mecontrola.identity_entitlements (
     user_id         UUID        NOT NULL,
     subscription_id UUID        NOT NULL,
     status          TEXT        NOT NULL,
@@ -132,10 +132,10 @@ CREATE TABLE mecontrola.identity_entitlements (
         FOREIGN KEY (user_id) REFERENCES mecontrola.users (id)
 ) WITH (fillfactor = 80);
 
-CREATE INDEX identity_entitlements_subscription_id_idx
+CREATE INDEX IF NOT EXISTS identity_entitlements_subscription_id_idx
     ON mecontrola.identity_entitlements (subscription_id);
 
-CREATE TABLE mecontrola.identity_entitlements_pending (
+CREATE TABLE IF NOT EXISTS mecontrola.identity_entitlements_pending (
     subscription_id UUID        NOT NULL,
     funnel_token    TEXT        NOT NULL,
     payload         JSONB       NOT NULL,
@@ -144,10 +144,10 @@ CREATE TABLE mecontrola.identity_entitlements_pending (
     CONSTRAINT identity_entitlements_pending_pkey PRIMARY KEY (subscription_id)
 );
 
-CREATE INDEX identity_entitlements_pending_funnel_token_idx
+CREATE INDEX IF NOT EXISTS identity_entitlements_pending_funnel_token_idx
     ON mecontrola.identity_entitlements_pending (funnel_token);
 
-CREATE TABLE mecontrola.auth_events (
+CREATE TABLE IF NOT EXISTS mecontrola.auth_events (
     id          UUID        NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     user_id     UUID        NULL,
@@ -182,15 +182,15 @@ CREATE TABLE mecontrola.auth_events (
         )
 );
 
-CREATE INDEX auth_events_user_id_occurred_at_idx
+CREATE INDEX IF NOT EXISTS auth_events_user_id_occurred_at_idx
     ON mecontrola.auth_events (user_id, occurred_at DESC)
     WHERE user_id IS NOT NULL;
 
-CREATE INDEX auth_events_failed_occurred_at_idx
+CREATE INDEX IF NOT EXISTS auth_events_failed_occurred_at_idx
     ON mecontrola.auth_events (occurred_at DESC, reason)
     WHERE kind = 'failed';
 
-CREATE INDEX auth_events_request_id_idx
+CREATE INDEX IF NOT EXISTS auth_events_request_id_idx
     ON mecontrola.auth_events (request_id)
     WHERE request_id IS NOT NULL;
 
@@ -198,7 +198,7 @@ CREATE INDEX auth_events_request_id_idx
 -- Billing
 -- ============================================================
 
-CREATE TABLE mecontrola.billing_plans (
+CREATE TABLE IF NOT EXISTS mecontrola.billing_plans (
     kiwify_product_id TEXT    NOT NULL,
     code              TEXT    NOT NULL,
     duration_days     INTEGER NOT NULL,
@@ -217,7 +217,7 @@ INSERT INTO mecontrola.billing_plans (kiwify_product_id, code, duration_days) VA
     ('__PLACEHOLDER_ANNUAL__',    'ANNUAL',    365)
 ON CONFLICT (kiwify_product_id) DO NOTHING;
 
-CREATE TABLE mecontrola.billing_subscriptions (
+CREATE TABLE IF NOT EXISTS mecontrola.billing_subscriptions (
     id                     UUID        NOT NULL,
     funnel_token           TEXT        NOT NULL,
     user_id                UUID        NULL,
@@ -239,25 +239,27 @@ CREATE TABLE mecontrola.billing_subscriptions (
     CONSTRAINT billing_subscriptions_status_check
         CHECK (status IN ('TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELED_PENDING', 'EXPIRED', 'REFUNDED')),
     CONSTRAINT billing_subscriptions_plan_code_fkey
-        FOREIGN KEY (plan_code) REFERENCES mecontrola.billing_plans (code)
+        FOREIGN KEY (plan_code) REFERENCES mecontrola.billing_plans (code),
+    CONSTRAINT billing_subscriptions_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES mecontrola.users(id) ON DELETE RESTRICT
 ) WITH (fillfactor = 80);
 
-CREATE UNIQUE INDEX billing_subscriptions_user_active_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS billing_subscriptions_user_active_uniq_idx
     ON mecontrola.billing_subscriptions (user_id)
     WHERE user_id IS NOT NULL
       AND status IN ('ACTIVE', 'PAST_DUE', 'CANCELED_PENDING');
 
-CREATE UNIQUE INDEX billing_subscriptions_kiwify_order_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS billing_subscriptions_kiwify_order_uniq_idx
     ON mecontrola.billing_subscriptions (kiwify_order_id);
 
-CREATE INDEX billing_subscriptions_funnel_token_idx
+CREATE INDEX IF NOT EXISTS billing_subscriptions_funnel_token_idx
     ON mecontrola.billing_subscriptions (funnel_token);
 
-CREATE INDEX billing_subscriptions_external_sale_id_idx
+CREATE INDEX IF NOT EXISTS billing_subscriptions_external_sale_id_idx
     ON mecontrola.billing_subscriptions (external_sale_id)
     WHERE external_sale_id IS NOT NULL;
 
-CREATE TABLE mecontrola.billing_processed_events (
+CREATE TABLE IF NOT EXISTS mecontrola.billing_processed_events (
     event_key   TEXT        NOT NULL,
     trigger     TEXT        NOT NULL,
     recurso_id  TEXT        NOT NULL,
@@ -269,10 +271,10 @@ CREATE TABLE mecontrola.billing_processed_events (
     CONSTRAINT billing_processed_events_status_check CHECK (status IN ('applied', 'superseded'))
 );
 
-CREATE INDEX billing_processed_events_recurso_idx
+CREATE INDEX IF NOT EXISTS billing_processed_events_recurso_idx
     ON mecontrola.billing_processed_events (recurso_id);
 
-CREATE TABLE mecontrola.billing_kiwify_events (
+CREATE TABLE IF NOT EXISTS mecontrola.billing_kiwify_events (
     envelope_id      TEXT        NOT NULL,
     trigger          TEXT        NOT NULL,
     raw_body         JSONB       NOT NULL,
@@ -285,13 +287,13 @@ CREATE TABLE mecontrola.billing_kiwify_events (
         CHECK (signature_status IN ('valid', 'invalid', 'rotated'))
 ) WITH (fillfactor = 85);
 
-CREATE INDEX billing_kiwify_events_received_at_idx
+CREATE INDEX IF NOT EXISTS billing_kiwify_events_received_at_idx
     ON mecontrola.billing_kiwify_events (received_at);
 
-CREATE INDEX billing_kiwify_events_trigger_idx
+CREATE INDEX IF NOT EXISTS billing_kiwify_events_trigger_idx
     ON mecontrola.billing_kiwify_events (trigger);
 
-CREATE TABLE mecontrola.billing_reconciliation_checkpoints (
+CREATE TABLE IF NOT EXISTS mecontrola.billing_reconciliation_checkpoints (
     name       TEXT        NOT NULL,
     watermark  TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -303,11 +305,11 @@ CREATE TABLE mecontrola.billing_reconciliation_checkpoints (
 -- Onboarding
 -- ============================================================
 
-CREATE TABLE mecontrola.onboarding_tokens (
+CREATE TABLE IF NOT EXISTS mecontrola.onboarding_tokens (
     id                          UUID        NOT NULL,
     token_hash                  BYTEA       NOT NULL,
     status                      TEXT        NOT NULL,
-    plan_id                     UUID        NOT NULL,
+    plan_id                     TEXT        NOT NULL,
     expires_at                  TIMESTAMPTZ NOT NULL,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     paid_at                     TIMESTAMPTZ NULL,
@@ -323,6 +325,8 @@ CREATE TABLE mecontrola.onboarding_tokens (
     activation_path             TEXT        NULL,
     metadata                    JSONB       NOT NULL DEFAULT '{}'::jsonb,
 
+    telegram_external_id        TEXT        NULL,
+
     CONSTRAINT onboarding_tokens_pkey              PRIMARY KEY (id),
     CONSTRAINT onboarding_tokens_token_hash_uniq   UNIQUE (token_hash),
     CONSTRAINT onboarding_tokens_status_check
@@ -331,19 +335,19 @@ CREATE TABLE mecontrola.onboarding_tokens (
         CHECK (activation_path IN ('direct', 'fallback_e164', 'outreach', 'admin'))
 );
 
-CREATE INDEX onboarding_tokens_status_expires_idx
+CREATE INDEX IF NOT EXISTS onboarding_tokens_status_expires_idx
     ON mecontrola.onboarding_tokens (status, expires_at)
     WHERE status IN ('PENDING', 'PAID');
 
-CREATE INDEX onboarding_tokens_outreach_pick_idx
+CREATE INDEX IF NOT EXISTS onboarding_tokens_outreach_pick_idx
     ON mecontrola.onboarding_tokens (status, paid_at)
     WHERE status = 'PAID' AND outreach_sent_at IS NULL;
 
-CREATE INDEX onboarding_tokens_by_mobile_paid_idx
+CREATE INDEX IF NOT EXISTS onboarding_tokens_by_mobile_paid_idx
     ON mecontrola.onboarding_tokens (customer_mobile_e164)
     WHERE status = 'PAID' AND outreach_sent_at IS NOT NULL;
 
-CREATE TABLE mecontrola.consumer_lookup_attempts (
+CREATE TABLE IF NOT EXISTS mecontrola.consumer_lookup_attempts (
     event_id        TEXT        NOT NULL,
     attempts        INT         NOT NULL DEFAULT 1,
     last_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -352,10 +356,10 @@ CREATE TABLE mecontrola.consumer_lookup_attempts (
     CONSTRAINT consumer_lookup_attempts_attempts_check CHECK (attempts > 0)
 );
 
-CREATE INDEX consumer_lookup_attempts_last_attempt_idx
+CREATE INDEX IF NOT EXISTS consumer_lookup_attempts_last_attempt_idx
     ON mecontrola.consumer_lookup_attempts (last_attempt_at);
 
-CREATE TABLE mecontrola.support_signals (
+CREATE TABLE IF NOT EXISTS mecontrola.support_signals (
     id          UUID        NOT NULL,
     kind        TEXT        NOT NULL,
     payload     JSONB       NOT NULL,
@@ -369,7 +373,7 @@ CREATE TABLE mecontrola.support_signals (
         CHECK (kind IN ('orphan_expired_subscription', 'paid_without_token', 'token_reuse_attempt'))
 );
 
-CREATE INDEX support_signals_kind_open_idx
+CREATE INDEX IF NOT EXISTS support_signals_kind_open_idx
     ON mecontrola.support_signals (kind, occurred_at)
     WHERE resolved_at IS NULL;
 
@@ -377,7 +381,7 @@ CREATE INDEX support_signals_kind_open_idx
 -- Platform: Channel deduplication
 -- ============================================================
 
-CREATE TABLE mecontrola.channel_processed_messages (
+CREATE TABLE IF NOT EXISTS mecontrola.channel_processed_messages (
     channel       TEXT        NOT NULL,
     message_id    TEXT        NOT NULL,
     processed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -389,7 +393,7 @@ CREATE TABLE mecontrola.channel_processed_messages (
         CHECK (length(message_id) > 0)
 );
 
-CREATE INDEX channel_processed_messages_processed_at_idx
+CREATE INDEX IF NOT EXISTS channel_processed_messages_processed_at_idx
     ON mecontrola.channel_processed_messages (processed_at);
 
 
@@ -413,7 +417,7 @@ AS $$
     SELECT unaccent($1);
 $$;
 
-CREATE TABLE mecontrola.category_editorial_version (
+CREATE TABLE IF NOT EXISTS mecontrola.category_editorial_version (
     version     BIGINT      NOT NULL PRIMARY KEY DEFAULT 1,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -421,7 +425,7 @@ CREATE TABLE mecontrola.category_editorial_version (
 INSERT INTO mecontrola.category_editorial_version (version) VALUES (1)
 ON CONFLICT DO NOTHING;
 
-CREATE TABLE mecontrola.categories (
+CREATE TABLE IF NOT EXISTS mecontrola.categories (
     id                UUID        NOT NULL PRIMARY KEY,
     slug              TEXT        NOT NULL,
     name              TEXT        NOT NULL,
@@ -457,23 +461,24 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS categories_parent_same_kind_trg ON mecontrola.categories;
 CREATE TRIGGER categories_parent_same_kind_trg
     BEFORE INSERT OR UPDATE OF parent_id, kind ON mecontrola.categories
     FOR EACH ROW
     EXECUTE FUNCTION mecontrola.categories_parent_same_kind();
 
-CREATE UNIQUE INDEX categories_kind_slug_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS categories_kind_slug_uniq_idx
     ON mecontrola.categories (kind, slug);
 
-CREATE INDEX categories_kind_parent_idx
+CREATE INDEX IF NOT EXISTS categories_kind_parent_idx
     ON mecontrola.categories (kind, parent_id)
     WHERE deprecated_at IS NULL;
 
-CREATE INDEX categories_parent_sort_idx
+CREATE INDEX IF NOT EXISTS categories_parent_sort_idx
     ON mecontrola.categories (parent_id, name COLLATE "pt-BR-x-icu")
     WHERE deprecated_at IS NULL;
 
-CREATE TABLE mecontrola.category_dictionary (
+CREATE TABLE IF NOT EXISTS mecontrola.category_dictionary (
     id                UUID        NOT NULL PRIMARY KEY,
     category_id       UUID        NOT NULL REFERENCES mecontrola.categories(id),
     kind              TEXT        NOT NULL,
@@ -490,15 +495,15 @@ CREATE TABLE mecontrola.category_dictionary (
     CONSTRAINT dictionary_confidence_check CHECK (confidence IN ('high', 'medium', 'low'))
 );
 
-CREATE UNIQUE INDEX dictionary_active_term_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS dictionary_active_term_uniq_idx
     ON mecontrola.category_dictionary (kind, category_id, term_normalized)
     WHERE deprecated_at IS NULL;
 
-CREATE INDEX dictionary_term_normalized_idx
+CREATE INDEX IF NOT EXISTS dictionary_term_normalized_idx
     ON mecontrola.category_dictionary (term_normalized)
     WHERE deprecated_at IS NULL;
 
-CREATE INDEX dictionary_kind_term_normalized_idx
+CREATE INDEX IF NOT EXISTS dictionary_kind_term_normalized_idx
     ON mecontrola.category_dictionary (kind, term_normalized)
     WHERE deprecated_at IS NULL;
 
@@ -844,6 +849,8 @@ CREATE TABLE IF NOT EXISTS mecontrola.cards (
     nickname    TEXT        NOT NULL,
     closing_day SMALLINT    NOT NULL,
     due_day     SMALLINT    NOT NULL,
+    limit_cents BIGINT      NOT NULL DEFAULT 0,
+    version     BIGINT      NOT NULL DEFAULT 1,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at  TIMESTAMPTZ NULL,
@@ -853,7 +860,8 @@ CREATE TABLE IF NOT EXISTS mecontrola.cards (
     CONSTRAINT cards_closing_day_chk  CHECK (closing_day BETWEEN 1 AND 31),
     CONSTRAINT cards_due_day_chk      CHECK (due_day     BETWEEN 1 AND 31),
     CONSTRAINT cards_name_len_chk     CHECK (char_length(name)     BETWEEN 1 AND 64),
-    CONSTRAINT cards_nickname_len_chk CHECK (char_length(nickname) BETWEEN 1 AND 32)
+    CONSTRAINT cards_nickname_len_chk CHECK (char_length(nickname) BETWEEN 1 AND 32),
+    CONSTRAINT cards_limit_cents_chk  CHECK (limit_cents >= 0 AND limit_cents <= 100000000)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS cards_user_nickname_active_uniq_idx
@@ -1269,11 +1277,11 @@ SET LOCAL statement_timeout = '120s';
 DROP INDEX IF EXISTS mecontrola.dictionary_term_normalized_idx;
 DROP INDEX IF EXISTS mecontrola.dictionary_kind_term_normalized_idx;
 
-CREATE INDEX dictionary_term_normalized_idx
+CREATE INDEX IF NOT EXISTS dictionary_term_normalized_idx
     ON mecontrola.category_dictionary (term_normalized COLLATE "pt-BR-x-icu")
     WHERE deprecated_at IS NULL;
 
-CREATE INDEX dictionary_kind_term_normalized_idx
+CREATE INDEX IF NOT EXISTS dictionary_kind_term_normalized_idx
     ON mecontrola.category_dictionary (kind, term_normalized COLLATE "pt-BR-x-icu")
     WHERE deprecated_at IS NULL;
 
@@ -1295,6 +1303,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS categories_parent_kind_change_blocks_children_trg ON mecontrola.categories;
 CREATE TRIGGER categories_parent_kind_change_blocks_children_trg
     BEFORE UPDATE OF kind ON mecontrola.categories
     FOR EACH ROW
@@ -1308,7 +1317,7 @@ SET LOCAL statement_timeout = '120s';
 CREATE TABLE IF NOT EXISTS mecontrola.budgets (
     id           UUID        NOT NULL,
     user_id      UUID        NOT NULL,
-    competence   CHAR(7)     NOT NULL,
+    competence   TEXT     NOT NULL CONSTRAINT budgets_competence_chk CHECK (competence ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     total_cents  BIGINT      NOT NULL DEFAULT 0,
     state        SMALLINT    NOT NULL,
     activated_at TIMESTAMPTZ NULL,
@@ -1316,7 +1325,8 @@ CREATE TABLE IF NOT EXISTS mecontrola.budgets (
     created_at   TIMESTAMPTZ NOT NULL,
     updated_at   TIMESTAMPTZ NOT NULL,
     CONSTRAINT budgets_pkey            PRIMARY KEY (id),
-    CONSTRAINT budgets_user_comp_uk    UNIQUE (user_id, competence)
+    CONSTRAINT budgets_user_comp_uk    UNIQUE (user_id, competence),
+    CONSTRAINT budgets_state_chk        CHECK (state IN (1, 2))
 );
 
 CREATE INDEX IF NOT EXISTS budgets_competence_idx
@@ -1347,7 +1357,7 @@ CREATE TABLE IF NOT EXISTS mecontrola.budgets_expenses (
     external_transaction_id TEXT        NOT NULL,
     subcategory_id          UUID        NOT NULL,
     root_slug               TEXT        NOT NULL,
-    competence              CHAR(7)     NOT NULL,
+    competence              TEXT     NOT NULL CONSTRAINT budgets_expenses_competence_chk CHECK (competence ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     amount_cents            BIGINT      NOT NULL,
     occurred_at             TIMESTAMPTZ NOT NULL,
     version                 BIGINT      NOT NULL,
@@ -1381,7 +1391,7 @@ CREATE INDEX IF NOT EXISTS budgets_expenses_deleted_at_idx
 
 CREATE TABLE IF NOT EXISTS mecontrola.budgets_threshold_states (
     user_id                     UUID        NOT NULL,
-    competence                  CHAR(7)     NOT NULL,
+    competence                  TEXT     NOT NULL CONSTRAINT budgets_threshold_competence_chk CHECK (competence ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     root_slug                   TEXT        NOT NULL,
     threshold                   SMALLINT    NOT NULL,
     currently_crossed           BOOLEAN     NOT NULL DEFAULT FALSE,
@@ -1396,7 +1406,7 @@ CREATE TABLE IF NOT EXISTS mecontrola.budgets_threshold_states (
 CREATE TABLE IF NOT EXISTS mecontrola.budgets_alerts (
     id                        UUID        NOT NULL,
     user_id                   UUID        NOT NULL,
-    competence                CHAR(7)     NOT NULL,
+    competence                TEXT     NOT NULL CONSTRAINT budgets_alerts_competence_chk CHECK (competence ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     root_slug                 TEXT        NOT NULL,
     threshold                 SMALLINT    NOT NULL,
     state                     SMALLINT    NOT NULL,
@@ -1405,7 +1415,8 @@ CREATE TABLE IF NOT EXISTS mecontrola.budgets_alerts (
     planned_cents             BIGINT      NOT NULL,
     created_at                TIMESTAMPTZ NOT NULL,
     CONSTRAINT budgets_alerts_pkey          PRIMARY KEY (id),
-    CONSTRAINT budgets_alerts_threshold_chk CHECK (threshold IN (80, 100))
+    CONSTRAINT budgets_alerts_threshold_chk CHECK (threshold IN (80, 100)),
+    CONSTRAINT budgets_alerts_state_chk        CHECK (state BETWEEN 1 AND 5)
 );
 
 CREATE INDEX IF NOT EXISTS budgets_alerts_user_comp_idx
@@ -1428,8 +1439,10 @@ CREATE TABLE IF NOT EXISTS mecontrola.budgets_expense_events_pending (
     received_at             TIMESTAMPTZ NOT NULL,
     transitioned_at         TIMESTAMPTZ NULL,
     reason                  TEXT        NULL,
-    CONSTRAINT budgets_expense_events_pending_pkey     PRIMARY KEY (id),
-    CONSTRAINT budgets_expense_events_pending_event_uk UNIQUE (event_id)
+    CONSTRAINT budgets_expense_events_pending_pkey         PRIMARY KEY (id),
+    CONSTRAINT budgets_expense_events_pending_event_uk  UNIQUE (event_id),
+    CONSTRAINT budgets_expense_events_pending_state_chk    CHECK (state BETWEEN 1 AND 4),
+    CONSTRAINT budgets_expense_events_pending_mutation_chk CHECK (mutation_kind BETWEEN 1 AND 3)
 );
 
 CREATE INDEX IF NOT EXISTS budgets_pending_state_received_idx
@@ -1458,13 +1471,13 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions (
     user_id                     UUID        NOT NULL,
     direction                   SMALLINT    NOT NULL,
     payment_method              SMALLINT    NOT NULL,
-    amount_cents                BIGINT      NOT NULL CHECK (amount_cents > 0),
+    amount_cents                BIGINT      NOT NULL CONSTRAINT transactions_amount_cents_chk CHECK (amount_cents > 0),
     description                 TEXT        NOT NULL,
     category_id                 UUID        NOT NULL,
     subcategory_id              UUID        NULL,
     category_name_snapshot      TEXT        NOT NULL,
     subcategory_name_snapshot   TEXT        NULL,
-    ref_month                   CHAR(7)     NOT NULL,
+    ref_month                   TEXT     NOT NULL CONSTRAINT transactions_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     occurred_at                 TIMESTAMPTZ NOT NULL,
     version                     BIGINT      NOT NULL DEFAULT 1,
     deleted_at                  TIMESTAMPTZ NULL,
@@ -1485,22 +1498,24 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions_card_purchases (
     id                          UUID        NOT NULL,
     user_id                     UUID        NOT NULL,
     card_id                     UUID        NOT NULL,
-    direction                   SMALLINT    NOT NULL CHECK (direction = 2),
-    total_amount_cents          BIGINT      NOT NULL CHECK (total_amount_cents > 0),
-    installments_total          SMALLINT    NOT NULL CHECK (installments_total BETWEEN 1 AND 24),
+    direction                   SMALLINT    NOT NULL CONSTRAINT transactions_cp_direction_chk CHECK (direction = 2),
+    total_amount_cents          BIGINT      NOT NULL CONSTRAINT transactions_cp_amount_cents_chk CHECK (total_amount_cents > 0),
+    installments_total          SMALLINT    NOT NULL CONSTRAINT transactions_cp_installments_chk CHECK (installments_total BETWEEN 1 AND 24),
     description                 TEXT        NOT NULL,
     category_id                 UUID        NOT NULL,
     subcategory_id              UUID        NULL,
     category_name_snapshot      TEXT        NOT NULL,
     subcategory_name_snapshot   TEXT        NULL,
     purchased_at                TIMESTAMPTZ NOT NULL,
-    card_closing_day            SMALLINT    NOT NULL CHECK (card_closing_day BETWEEN 1 AND 31),
-    card_due_day                SMALLINT    NOT NULL CHECK (card_due_day BETWEEN 1 AND 31),
+    card_closing_day            SMALLINT    NOT NULL CONSTRAINT transactions_cp_closing_day_chk CHECK (card_closing_day BETWEEN 1 AND 31),
+    card_due_day                SMALLINT    NOT NULL CONSTRAINT transactions_cp_due_day_chk CHECK (card_due_day BETWEEN 1 AND 31),
     version                     BIGINT      NOT NULL DEFAULT 1,
     deleted_at                  TIMESTAMPTZ NULL,
     created_at                  TIMESTAMPTZ NOT NULL,
     updated_at                  TIMESTAMPTZ NOT NULL,
-    CONSTRAINT transactions_card_purchases_pkey PRIMARY KEY (id)
+    CONSTRAINT transactions_card_purchases_pkey    PRIMARY KEY (id),
+    CONSTRAINT transactions_card_purchases_card_fk
+        FOREIGN KEY (card_id) REFERENCES mecontrola.cards(id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS transactions_card_purchases_user_card_idx
@@ -1511,7 +1526,7 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions_card_invoices (
     id                  UUID        NOT NULL,
     user_id             UUID        NOT NULL,
     card_id             UUID        NOT NULL,
-    ref_month           CHAR(7)     NOT NULL,
+    ref_month           TEXT     NOT NULL CONSTRAINT transactions_ci_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     closing_at          TIMESTAMPTZ NOT NULL,
     due_at              TIMESTAMPTZ NOT NULL,
     items_total_cents   BIGINT      NOT NULL DEFAULT 0,
@@ -1527,9 +1542,9 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions_card_invoice_items (
     invoice_id          UUID        NOT NULL REFERENCES mecontrola.transactions_card_invoices(id),
     purchase_id         UUID        NOT NULL REFERENCES mecontrola.transactions_card_purchases(id),
     user_id             UUID        NOT NULL,
-    ref_month           CHAR(7)     NOT NULL,
+    ref_month           TEXT     NOT NULL CONSTRAINT transactions_cii_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     installment_index   SMALLINT    NOT NULL,
-    amount_cents        BIGINT      NOT NULL CHECK (amount_cents > 0),
+    amount_cents        BIGINT      NOT NULL CONSTRAINT transactions_cii_amount_cents_chk CHECK (amount_cents > 0),
     deleted_at          TIMESTAMPTZ NULL,
     created_at          TIMESTAMPTZ NOT NULL,
     updated_at          TIMESTAMPTZ NOT NULL,
@@ -1547,24 +1562,26 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions_recurring_templates (
     direction                   SMALLINT    NOT NULL,
     payment_method              SMALLINT    NOT NULL,
     card_id                     UUID        NULL,
-    amount_cents                BIGINT      NOT NULL CHECK (amount_cents > 0),
+    amount_cents                BIGINT      NOT NULL CONSTRAINT transactions_rt_amount_cents_chk CHECK (amount_cents > 0),
     description                 TEXT        NOT NULL,
     category_id                 UUID        NOT NULL,
     subcategory_id              UUID        NULL,
     category_name_snapshot      TEXT        NOT NULL,
     subcategory_name_snapshot   TEXT        NULL,
     frequency                   SMALLINT    NOT NULL,
-    day_of_month                SMALLINT    NOT NULL CHECK (day_of_month BETWEEN 1 AND 28),
-    installments_total          SMALLINT    NOT NULL DEFAULT 1 CHECK (installments_total BETWEEN 1 AND 24),
+    day_of_month                SMALLINT    NOT NULL CONSTRAINT transactions_rt_day_of_month_chk CHECK (day_of_month BETWEEN 1 AND 28),
+    installments_total          SMALLINT    NOT NULL DEFAULT 1 CONSTRAINT transactions_rt_installments_chk CHECK (installments_total BETWEEN 1 AND 24),
     started_at                  TIMESTAMPTZ NOT NULL,
     ended_at                    TIMESTAMPTZ NULL,
     version                     BIGINT      NOT NULL DEFAULT 1,
     deleted_at                  TIMESTAMPTZ NULL,
     created_at                  TIMESTAMPTZ NOT NULL,
     updated_at                  TIMESTAMPTZ NOT NULL,
-    CONSTRAINT transactions_recurring_templates_pkey PRIMARY KEY (id),
+    CONSTRAINT transactions_recurring_templates_pkey        PRIMARY KEY (id),
     CONSTRAINT transactions_recurring_templates_credit_chk
-        CHECK ((payment_method <> 7) OR (card_id IS NOT NULL))
+        CHECK ((payment_method <> 7) OR (card_id IS NOT NULL)),
+    CONSTRAINT transactions_recurring_templates_card_fk
+        FOREIGN KEY (card_id) REFERENCES mecontrola.cards(id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS transactions_recurring_templates_user_day_idx
@@ -1573,7 +1590,7 @@ CREATE INDEX IF NOT EXISTS transactions_recurring_templates_user_day_idx
 
 CREATE TABLE IF NOT EXISTS mecontrola.transactions_recurring_materializations (
     template_id                 UUID        NOT NULL REFERENCES mecontrola.transactions_recurring_templates(id),
-    ref_month                   CHAR(7)     NOT NULL,
+    ref_month                   TEXT     NOT NULL CONSTRAINT transactions_rm_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     materialized_transaction_id UUID        NULL,
     materialized_purchase_id    UUID        NULL,
     materialized_at             TIMESTAMPTZ NOT NULL,
@@ -1582,7 +1599,7 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions_recurring_materializations (
 
 CREATE TABLE IF NOT EXISTS mecontrola.transactions_monthly_summary (
     user_id        UUID        NOT NULL,
-    ref_month      CHAR(7)     NOT NULL,
+    ref_month      TEXT     NOT NULL CONSTRAINT transactions_ms_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
     income_cents   BIGINT      NOT NULL DEFAULT 0,
     outcome_cents  BIGINT      NOT NULL DEFAULT 0,
     total_cents    BIGINT      NOT NULL DEFAULT 0,
@@ -1596,7 +1613,7 @@ CREATE TABLE IF NOT EXISTS mecontrola.transactions_monthly_summary (
 SET LOCAL lock_timeout      = '5s';
 SET LOCAL statement_timeout = '120s';
 
-CREATE TABLE mecontrola.user_identities (
+CREATE TABLE IF NOT EXISTS mecontrola.user_identities (
     id          UUID        NOT NULL,
     user_id     UUID        NOT NULL,
     channel     TEXT        NOT NULL,
@@ -1616,17 +1633,318 @@ CREATE TABLE mecontrola.user_identities (
         CHECK (unlinked_at IS NULL OR unlinked_at >= created_at)
 );
 
-CREATE UNIQUE INDEX user_identities_channel_external_active_uniq_idx
+CREATE UNIQUE INDEX IF NOT EXISTS user_identities_channel_external_active_uniq_idx
     ON mecontrola.user_identities (channel, external_id)
     WHERE unlinked_at IS NULL;
 
-CREATE INDEX user_identities_user_channel_idx
+CREATE INDEX IF NOT EXISTS user_identities_user_channel_idx
     ON mecontrola.user_identities (user_id, channel)
     WHERE unlinked_at IS NULL;
 
-CREATE INDEX user_identities_channel_external_unlinked_idx
+CREATE INDEX IF NOT EXISTS user_identities_channel_external_unlinked_idx
     ON mecontrola.user_identities (channel, external_id)
     WHERE unlinked_at IS NOT NULL;
 
+-- ============================================================
+-- Cards: limit index (consolidated from 000005)
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS cards_user_limit_positive_idx
+    ON mecontrola.cards (user_id)
+    WHERE limit_cents > 0 AND deleted_at IS NULL;
+
+-- ============================================================
+-- Onboarding: telegram_external_id index (consolidated from 000007)
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS onboarding_tokens_telegram_external_id_idx
+    ON mecontrola.onboarding_tokens (telegram_external_id)
+    WHERE telegram_external_id IS NOT NULL;
+
+-- ============================================================
+-- Onboarding: Sessions (consolidated from 000004)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS mecontrola.onboarding_sessions (
+    user_id    UUID        NOT NULL,
+    channel    TEXT        NOT NULL,
+    state      TEXT        NOT NULL,
+    payload    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT onboarding_sessions_pkey                  PRIMARY KEY (user_id),
+    CONSTRAINT onboarding_sessions_user_id_fk
+        FOREIGN KEY (user_id) REFERENCES mecontrola.users (id) ON DELETE CASCADE,
+    CONSTRAINT onboarding_sessions_channel_chk
+        CHECK (channel IN ('whatsapp', 'telegram')),
+    CONSTRAINT onboarding_sessions_state_nonempty_chk
+        CHECK (length(state) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS onboarding_sessions_channel_state_idx
+    ON mecontrola.onboarding_sessions (channel, state);
+
+-- ============================================================
+-- Budget Alerts Sent — final state (consolidated from 000003 + 000006)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS mecontrola.budget_alerts_sent (
+    user_id        UUID        NOT NULL,
+    budget_id      UUID        NOT NULL,
+    kind           TEXT        NOT NULL,
+    ref_day        DATE        NOT NULL,
+    sent_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    notified_at    TIMESTAMPTZ NULL,
+    notify_channel TEXT        NULL,
+
+    CONSTRAINT budget_alerts_sent_pkey     PRIMARY KEY (user_id, budget_id, kind, ref_day),
+    CONSTRAINT budget_alerts_sent_kind_chk CHECK (kind IN (
+        'category_threshold',
+        'goal_achieved',
+        'card_limit_near'
+    ))
+);
+
+CREATE INDEX IF NOT EXISTS budget_alerts_sent_user_ref_day_idx
+    ON mecontrola.budget_alerts_sent (user_id, ref_day DESC);
+
+CREATE INDEX IF NOT EXISTS budget_alerts_sent_pending_notify_idx
+    ON mecontrola.budget_alerts_sent (sent_at)
+    WHERE notified_at IS NULL;
+
+
+-- ============================================================
+-- Category Dictionary: Bulk seed v2 (consolidated from 000008)
+-- ============================================================
+
+SET LOCAL lock_timeout    = '5s';
+SET LOCAL statement_timeout = '120s';
+
+-- Bulk seed v2 — aliases PT-BR de alto uso para Telegram/WhatsApp parsing.
+-- Mapeia somente para subcategorias EXISTENTES; falha cedo se subcategoria sumir.
+-- Marca inserts com nota 'seed_v2' via signal_type/created_at; down remove por id determinístico.
+
+DO $$
+DECLARE
+    v_missing TEXT[];
+BEGIN
+    v_missing := ARRAY[]::TEXT[];
+
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c') THEN
+        v_missing := array_append(v_missing, 'prazeres/delivery');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'd539672d-961f-5553-b807-0e0156a63163') THEN
+        v_missing := array_append(v_missing, 'prazeres/restaurantes');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'a371851d-56cb-551d-addb-022575b8d6e9') THEN
+        v_missing := array_append(v_missing, 'prazeres/bares-e-lanches');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '97fa4b86-d43c-5ad5-a99b-c88c8427fb30') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/supermercado');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '0c004f2d-ad42-5855-a408-f695906cd48c') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/feira-e-hortifruti');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'cb13d50d-43cb-553c-99cd-8851889d7f6e') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/combustivel');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'c13dcc6e-c37b-521d-a889-8bb02765490f') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/transporte-por-aplicativo-recorrente');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '36916fab-eacc-50a3-8a53-93671c335952') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/energia');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'fa93273d-e2d9-54ed-a6aa-53b5b1830867') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/agua');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '4e6f8b6b-8ffb-5d38-8ac9-68464679a544') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/gas');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'd0b1fa13-d19f-51b9-afc7-82bf83accf79') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/condominio');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '9391ac38-ec2c-55d0-afc8-8c0940678814') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/internet');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '7319ba14-0dc7-56ff-ac5c-96024e15ec02') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/telefonia');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '2e90fdd3-1008-5423-8215-5db1880fa60b') THEN
+        v_missing := array_append(v_missing, 'custo-fixo/tv-por-assinatura');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'b3a4824f-e481-59fe-8f9e-0c33a59b5b5f') THEN
+        v_missing := array_append(v_missing, 'conhecimento/cursos-e-treinamentos');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '01b51d39-347e-560c-ac07-d0a700f0c24f') THEN
+        v_missing := array_append(v_missing, 'conhecimento/plataformas-de-ensino');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'bac52783-54ca-5401-92da-5afa29fc05d4') THEN
+        v_missing := array_append(v_missing, 'conhecimento/livros-e-ebooks');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '9103a0e6-366b-5c77-a31d-e3ed58991d14') THEN
+        v_missing := array_append(v_missing, 'liberdade-financeira/tesouro-direto');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'ee26c4d9-ca74-5537-80b9-4d90815b9c06') THEN
+        v_missing := array_append(v_missing, 'liberdade-financeira/cdb-e-rdb');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = 'd35da3b9-65c5-55b8-9915-13354e202644') THEN
+        v_missing := array_append(v_missing, 'liberdade-financeira/lci-e-lca');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '1e5b4db2-b186-5524-b955-32553307d81c') THEN
+        v_missing := array_append(v_missing, 'liberdade-financeira/fundos-imobiliarios');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '866793cb-4059-54b0-9ee7-8f539ddebede') THEN
+        v_missing := array_append(v_missing, 'liberdade-financeira/aportes-em-corretora');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '45c7e533-fb00-50d9-aeb3-71bdb99098bd') THEN
+        v_missing := array_append(v_missing, 'liberdade-financeira/reserva-de-emergencia');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '0134668f-785b-5ac1-bcf5-e6c4f566de64') THEN
+        v_missing := array_append(v_missing, 'prazeres/viagens-de-lazer');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '7a69762f-6016-593a-9e62-f56f508ec9e1') THEN
+        v_missing := array_append(v_missing, 'prazeres/hospedagem-de-lazer');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mecontrola.categories WHERE id = '8a4228f0-bc77-5d24-949d-5a7afa8063dc') THEN
+        v_missing := array_append(v_missing, 'metas/viagem-planejada');
+    END IF;
+
+    IF array_length(v_missing, 1) IS NOT NULL THEN
+        RAISE EXCEPTION 'seed_v2: subcategorias ausentes: %', v_missing;
+    END IF;
+END $$;
+
+INSERT INTO mecontrola.category_dictionary (id, category_id, kind, term, signal_type, confidence, is_ambiguous)
+SELECT
+    src.id::uuid,
+    src.category_id::uuid,
+    'expense',
+    src.term,
+    src.signal_type,
+    src.confidence,
+    src.is_ambiguous
+FROM (VALUES
+    ('a1b00001-0000-5007-0000-000000000001', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'ifood',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000002', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'ifoods',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000003', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'rappi',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000004', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'ubereats',        'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000005', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'uber eats',       'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000006', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'james delivery',  'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000007', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', '99food',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000008', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'dieta delivery',  'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000009', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'delivery',        'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-00000000000a', 'ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c', 'aiqfome',         'merchant', 'high',   false),
+
+    ('a1b00001-0000-5007-0000-000000000020', 'd539672d-961f-5553-b807-0e0156a63163', 'lanchonete',      'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-000000000021', 'd539672d-961f-5553-b807-0e0156a63163', 'sushi',           'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-000000000022', 'd539672d-961f-5553-b807-0e0156a63163', 'churrascaria',    'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-000000000023', 'd539672d-961f-5553-b807-0e0156a63163', 'rodizio',         'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-000000000024', 'a371851d-56cb-551d-addb-022575b8d6e9', 'mc donalds',      'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000025', 'a371851d-56cb-551d-addb-022575b8d6e9', 'mcdonalds',       'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000026', 'a371851d-56cb-551d-addb-022575b8d6e9', 'burger king',     'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000027', 'a371851d-56cb-551d-addb-022575b8d6e9', 'bk',              'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-000000000028', 'a371851d-56cb-551d-addb-022575b8d6e9', 'kfc',             'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000029', 'a371851d-56cb-551d-addb-022575b8d6e9', 'subway',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-00000000002a', 'a371851d-56cb-551d-addb-022575b8d6e9', 'habibs',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-00000000002b', 'a371851d-56cb-551d-addb-022575b8d6e9', 'bobs',            'merchant', 'high',   false),
+
+    ('a1b00001-0000-5007-0000-000000000040', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'mercado',           'alias',    'high',   true),
+    ('a1b00001-0000-5007-0000-000000000041', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'compra do mercado', 'phrase',   'high',   false),
+    ('a1b00001-0000-5007-0000-000000000042', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'atacadao',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000043', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'carrefour',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000044', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'extra',             'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-000000000045', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'pao de acucar',     'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000046', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'assai',             'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000047', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'sams club',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000048', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'big',               'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-000000000049', '97fa4b86-d43c-5ad5-a99b-c88c8427fb30', 'dia',               'merchant', 'medium', true),
+
+    ('a1b00001-0000-5007-0000-000000000060', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'posto',           'alias',    'high',   true),
+    ('a1b00001-0000-5007-0000-000000000061', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'alcool',          'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-000000000062', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'shell',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000063', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'ipiranga',        'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000064', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'petrobras',       'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000065', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'br mania',        'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000066', 'cb13d50d-43cb-553c-99cd-8851889d7f6e', 'abastecer',       'alias',    'high',   false),
+
+    ('a1b00001-0000-5007-0000-000000000080', 'c13dcc6e-c37b-521d-a889-8bb02765490f', 'indrive',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000081', 'c13dcc6e-c37b-521d-a889-8bb02765490f', 'taxi',            'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-000000000082', 'c13dcc6e-c37b-521d-a889-8bb02765490f', '99 pop',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000083', 'c13dcc6e-c37b-521d-a889-8bb02765490f', 'cabify',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000084', 'c13dcc6e-c37b-521d-a889-8bb02765490f', 'uber x',          'merchant', 'high',   false),
+
+    ('a1b00001-0000-5007-0000-0000000000a0', '36916fab-eacc-50a3-8a53-93671c335952', 'luz',             'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a1', '36916fab-eacc-50a3-8a53-93671c335952', 'enel',            'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a2', '36916fab-eacc-50a3-8a53-93671c335952', 'cpfl',            'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a3', '36916fab-eacc-50a3-8a53-93671c335952', 'light',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a4', 'fa93273d-e2d9-54ed-a6aa-53b5b1830867', 'agua',            'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a5', 'fa93273d-e2d9-54ed-a6aa-53b5b1830867', 'sabesp',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a6', '9391ac38-ec2c-55d0-afc8-8c0940678814', 'vivo fibra',      'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a7', '9391ac38-ec2c-55d0-afc8-8c0940678814', 'claro net',       'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000a8', '7319ba14-0dc7-56ff-ac5c-96024e15ec02', 'vivo',            'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000a9', '7319ba14-0dc7-56ff-ac5c-96024e15ec02', 'claro',           'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000aa', '7319ba14-0dc7-56ff-ac5c-96024e15ec02', 'tim',             'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000ab', '7319ba14-0dc7-56ff-ac5c-96024e15ec02', 'oi',              'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000ac', '7319ba14-0dc7-56ff-ac5c-96024e15ec02', 'celular',         'alias',    'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000ad', '2e90fdd3-1008-5423-8215-5db1880fa60b', 'sky',             'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000ae', '2e90fdd3-1008-5423-8215-5db1880fa60b', 'directv',         'merchant', 'high',   false),
+
+    ('a1b00001-0000-5007-0000-0000000000c0', 'b3a4824f-e481-59fe-8f9e-0c33a59b5b5f', 'curso',           'alias',    'high',   true),
+    ('a1b00001-0000-5007-0000-0000000000c1', 'b3a4824f-e481-59fe-8f9e-0c33a59b5b5f', 'cursos',          'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c2', 'b3a4824f-e481-59fe-8f9e-0c33a59b5b5f', 'dominio',         'alias',    'low',    true),
+    ('a1b00001-0000-5007-0000-0000000000c3', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'alura',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c4', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'udemy',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c5', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'hotmart',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c6', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'coursera',        'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c7', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'edx',             'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c8', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'rocketseat',      'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000c9', '01b51d39-347e-560c-ac07-d0a700f0c24f', 'kultivi',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000ca', 'bac52783-54ca-5401-92da-5afa29fc05d4', 'audible',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000cb', 'bac52783-54ca-5401-92da-5afa29fc05d4', 'amazon kindle',   'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000cc', 'bac52783-54ca-5401-92da-5afa29fc05d4', 'kindle unlimited','merchant', 'high',   false),
+
+    ('a1b00001-0000-5007-0000-0000000000e0', '866793cb-4059-54b0-9ee7-8f539ddebede', 'investimento',    'alias',    'high',   true),
+    ('a1b00001-0000-5007-0000-0000000000e1', '866793cb-4059-54b0-9ee7-8f539ddebede', 'aporte',          'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e2', '866793cb-4059-54b0-9ee7-8f539ddebede', 'b3',              'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e3', '866793cb-4059-54b0-9ee7-8f539ddebede', 'xp',              'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e4', '866793cb-4059-54b0-9ee7-8f539ddebede', 'rico',            'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e5', '866793cb-4059-54b0-9ee7-8f539ddebede', 'modal',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e6', '866793cb-4059-54b0-9ee7-8f539ddebede', 'nuinvest',        'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e7', '866793cb-4059-54b0-9ee7-8f539ddebede', 'inter invest',    'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000e8', '866793cb-4059-54b0-9ee7-8f539ddebede', 'clear',           'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000e9', '9103a0e6-366b-5c77-a31d-e3ed58991d14', 'tesouro',         'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000ea', 'ee26c4d9-ca74-5537-80b9-4d90815b9c06', 'cdb',             'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000eb', 'd35da3b9-65c5-55b8-9915-13354e202644', 'lci',             'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000ec', 'd35da3b9-65c5-55b8-9915-13354e202644', 'lca',             'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000ed', '1e5b4db2-b186-5524-b955-32553307d81c', 'fundos imobiliarios', 'phrase', 'high', false),
+    ('a1b00001-0000-5007-0000-0000000000ee', '45c7e533-fb00-50d9-aeb3-71bdb99098bd', 'reserva',         'alias',    'medium', true),
+    ('a1b00001-0000-5007-0000-0000000000ef', '45c7e533-fb00-50d9-aeb3-71bdb99098bd', 'emergencia',      'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000f0', '45c7e533-fb00-50d9-aeb3-71bdb99098bd', 'poupanca',        'alias',    'high',   false),
+    ('a1b00001-0000-5007-0000-0000000000f1', '45c7e533-fb00-50d9-aeb3-71bdb99098bd', 'poupanca digital','phrase',   'high',   false),
+
+    ('a1b00001-0000-5007-0000-000000000100', '8a4228f0-bc77-5d24-949d-5a7afa8063dc', 'viagem',          'alias',    'high',   true),
+    ('a1b00001-0000-5007-0000-000000000101', '7a69762f-6016-593a-9e62-f56f508ec9e1', 'hotel',           'alias',    'high',   true),
+    ('a1b00001-0000-5007-0000-000000000102', '7a69762f-6016-593a-9e62-f56f508ec9e1', 'airbnb',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000103', '7a69762f-6016-593a-9e62-f56f508ec9e1', 'booking',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000104', '7a69762f-6016-593a-9e62-f56f508ec9e1', 'decolar',         'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000105', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'latam',           'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000106', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'gol',             'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-000000000107', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'azul',            'merchant', 'medium', true),
+    ('a1b00001-0000-5007-0000-000000000108', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'smiles',          'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-000000000109', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'miles',           'alias',    'medium', true),
+    ('a1b00001-0000-5007-0000-00000000010a', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'tudo azul',       'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-00000000010b', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'latam pass',      'merchant', 'high',   false),
+    ('a1b00001-0000-5007-0000-00000000010c', '0134668f-785b-5ac1-bcf5-e6c4f566de64', 'passagem aerea',  'phrase',   'high',   false)
+) AS src(id, category_id, term, signal_type, confidence, is_ambiguous)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM mecontrola.category_dictionary d
+    WHERE d.kind = 'expense'
+      AND d.category_id = src.category_id::uuid
+      AND d.term_normalized = lower(mecontrola.immutable_unaccent(src.term))
+      AND d.deprecated_at IS NULL
+);
+
+UPDATE mecontrola.category_editorial_version SET version = version + 1, updated_at = now();
 
 ANALYZE;

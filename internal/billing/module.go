@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
@@ -16,6 +17,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/client/kiwify"
 	billingserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server/handlers"
+	billingmiddleware "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server/middleware"
 	billingjobs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/producers"
@@ -84,10 +86,16 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 	sendNotification := usecases.NewSendSubscriptionNotification(&noopNotificationSender{}, o11y)
 
 	webhookHandler := handlers.NewKiwifyWebhookHandler(processWebhook, o11y)
+	webhookLimiter := billingmiddleware.NewRateLimiter(
+		cfg.KiwifyConfig.WebhookRateLimitPerMin,
+		cfg.KiwifyConfig.WebhookRateLimitBurst,
+		strings.Split(strings.TrimSpace(cfg.KiwifyConfig.WebhookTrustedProxies), ","),
+	)
 	webhookRouter := billingserver.NewWebhookRouter(
 		webhookHandler,
 		cfg.KiwifyConfig.WebhookSecret,
 		cfg.KiwifyConfig.WebhookSecretNext,
+		webhookLimiter,
 	)
 	notificationPastDue := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionPastDue, o11y)
 	notificationRefunded := consumers.NewNotificationHandler(sendNotification, producers.EventTypeSubscriptionRefunded, o11y)

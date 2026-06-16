@@ -2,14 +2,20 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+
+	"github.com/google/uuid"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
+	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 )
@@ -22,6 +28,10 @@ type TryFallbackActivationUseCase interface {
 	Execute(ctx context.Context, fromE164 string) (usecases.FallbackResult, error)
 }
 
+type ProcessOnboardingMessageUseCase interface {
+	Execute(ctx context.Context, in usecases.ProcessOnboardingMessageInput) (usecases.ProcessOnboardingMessageResult, error)
+}
+
 type WhatsAppGateway interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
@@ -29,6 +39,7 @@ type WhatsAppGateway interface {
 type WhatsAppMessageProcessor struct {
 	consumeUseCase     ConsumeMagicTokenUseCase
 	fallbackUseCase    TryFallbackActivationUseCase
+	processUseCase     ProcessOnboardingMessageUseCase
 	waGateway          WhatsAppGateway
 	messages           map[string]string
 	o11y               observability.Observability
@@ -39,6 +50,7 @@ type WhatsAppMessageProcessor struct {
 func NewWhatsAppMessageProcessor(
 	consumeUseCase ConsumeMagicTokenUseCase,
 	fallbackUseCase TryFallbackActivationUseCase,
+	processUseCase ProcessOnboardingMessageUseCase,
 	waGateway WhatsAppGateway,
 	messages map[string]string,
 	o11y observability.Observability,
@@ -46,6 +58,7 @@ func NewWhatsAppMessageProcessor(
 	return &WhatsAppMessageProcessor{
 		consumeUseCase:  consumeUseCase,
 		fallbackUseCase: fallbackUseCase,
+		processUseCase:  processUseCase,
 		waGateway:       waGateway,
 		messages:        messages,
 		o11y:            o11y,
@@ -138,6 +151,36 @@ func (p *WhatsAppMessageProcessor) msg(key string) string {
 		return v
 	}
 	return key
+}
+
+func (p *WhatsAppMessageProcessor) ProcessConversation(ctx context.Context, userID uuid.UUID, fromE164, text, messageID string) error {
+	if p.processUseCase == nil {
+		return application.ErrOnboardingAlreadyActive
+	}
+	result, err := p.processUseCase.Execute(ctx, usecases.ProcessOnboardingMessageInput{
+		UserID:    userID,
+		Channel:   entities.OnboardingChannelWhatsApp,
+		MessageID: messageID,
+		Text:      text,
+	})
+	if err != nil {
+		if errors.Is(err, appinterfaces.ErrOnboardingSessionNotFound) {
+			return appinterfaces.ErrOnboardingSessionNotFound
+		}
+		slog.WarnContext(ctx, "onboarding.processor.conversation_failed",
+			"user_id", userID.String(),
+			"from", payload.MaskMobile(fromE164),
+			"error", err.Error(),
+		)
+		return fmt.Errorf("onboarding.processor: process conversation: %w", err)
+	}
+	if result.Outcome == usecases.ProcessOnboardingOutcomeNoOp {
+		return application.ErrOnboardingAlreadyActive
+	}
+	if result.Reply != "" && fromE164 != "" {
+		p.sendMessage(ctx, fromE164, result.Reply)
+	}
+	return nil
 }
 
 func consumeOutcomeToMessageKey(outcome usecases.ConsumeOutcome) string {

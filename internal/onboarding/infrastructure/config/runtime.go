@@ -55,7 +55,8 @@ func NewOnboardingRuntimeConfig(cfg configs.OnboardingConfig, waCfg configs.What
 
 func parseCheckoutURLs(raw string) (map[string]string, error) {
 	result := make(map[string]string)
-	for line := range strings.SplitSeq(raw, "\n") {
+	normalized := strings.ReplaceAll(raw, ";", "\n")
+	for line := range strings.SplitSeq(normalized, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue

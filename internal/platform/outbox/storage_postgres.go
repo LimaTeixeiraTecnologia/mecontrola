@@ -23,12 +23,11 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 	if err != nil {
 		return err
 	}
-	nextAttemptAt := time.Now().UTC()
 	const q = `
 		INSERT INTO outbox_events
 			(id, event_type, aggregate_type, aggregate_id, aggregate_user_id, payload, metadata,
 			 status, attempts, max_attempts, next_attempt_at, occurred_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$11,now(),now())
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,now(),$10,now(),now())
 		ON CONFLICT (id) DO NOTHING`
 
 	_, err = s.db.ExecContext(ctx, q,
@@ -41,7 +40,6 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 		meta,
 		int(StatusPending),
 		maxAttempts,
-		nextAttemptAt,
 		evt.OccurredAt,
 	)
 	if err != nil {

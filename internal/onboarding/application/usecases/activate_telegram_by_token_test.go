@@ -19,12 +19,38 @@ import (
 	identityinterfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	identityentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
+	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
+
+type stubBinder struct {
+	called   bool
+	returned entities.MagicToken
+	err      error
+}
+
+func (b *stubBinder) BindAndConsume(
+	_ context.Context,
+	_ appinterfaces.MagicTokenRepository,
+	magicToken entities.MagicToken,
+	_ string,
+	_ valueobjects.ActivationPath,
+	_ time.Time,
+) (entities.MagicToken, error) {
+	b.called = true
+	if b.err != nil {
+		return entities.MagicToken{}, b.err
+	}
+	if b.returned.ID() == "" {
+		return magicToken, nil
+	}
+	return b.returned, nil
+}
 
 var validTokenClear = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte("a"), 32))
 
@@ -70,18 +96,40 @@ func (s *ActivateTelegramByTokenSuite) buildToken(status valueobjects.TokenStatu
 		consumedByUserID,
 		"+5511987654321",
 		valueobjects.ActivationPathDirect,
+		"",
 	)
 }
 
 func (s *ActivateTelegramByTokenSuite) buildSut() (*usecases.ActivateTelegramByToken, *interfacesmocks.RepositoryFactory, *interfacesmocks.MagicTokenRepository, *identityinterfacesmocks.MockRepositoryFactory, *identityinterfacesmocks.MockUserIdentityRepository) {
+	sut, factory, tokenRepo, identityFactory, identityRepo, _ := s.buildSutWith(false)
+	return sut, factory, tokenRepo, identityFactory, identityRepo
+}
+
+func (s *ActivateTelegramByTokenSuite) buildSutWith(directEnabled bool) (
+	*usecases.ActivateTelegramByToken,
+	*interfacesmocks.RepositoryFactory,
+	*interfacesmocks.MagicTokenRepository,
+	*identityinterfacesmocks.MockRepositoryFactory,
+	*identityinterfacesmocks.MockUserIdentityRepository,
+	*stubBinder,
+) {
 	factory := interfacesmocks.NewRepositoryFactory(s.T())
 	tokenRepo := interfacesmocks.NewMagicTokenRepository(s.T())
 	identityFactory := identityinterfacesmocks.NewMockRepositoryFactory(s.T())
 	identityRepo := identityinterfacesmocks.NewMockUserIdentityRepository(s.T())
+	binder := &stubBinder{}
 
 	u := passthroughUoW[usecases.ActivateTelegramResult]{}
-	sut := usecases.NewActivateTelegramByToken(factory, identityFactory, u, noop.NewProvider())
-	return sut, factory, tokenRepo, identityFactory, identityRepo
+	sut := usecases.NewActivateTelegramByToken(
+		factory,
+		identityFactory,
+		u,
+		domainservices.NewDirectTelegramActivationWorkflow(),
+		binder,
+		directEnabled,
+		noop.NewProvider(),
+	)
+	return sut, factory, tokenRepo, identityFactory, identityRepo, binder
 }
 
 func (s *ActivateTelegramByTokenSuite) TestExecute_InvalidTelegramID() {
@@ -244,6 +292,76 @@ func (s *ActivateTelegramByTokenSuite) TestExecute_TokenConsumed_InvalidUserIDIn
 	res, err := sut.Execute(s.ctx, usecases.ActivateTelegramByTokenInput{Token: validTokenClear, TelegramUserID: 12345})
 	s.Require().NoError(err)
 	s.Equal(usecases.ActivateTelegramOutcomeRequiresWhatsAppActivation, res.Outcome)
+}
+
+func (s *ActivateTelegramByTokenSuite) TestExecute_TokenPaid_DirectFlagDisabled_PreservesWhatsAppRule() {
+	sut, factory, tokenRepo, identityFactory, identityRepo, binder := s.buildSutWith(false)
+	mt := s.buildToken(valueobjects.TokenStatusPaid, "", time.Time{})
+
+	factory.EXPECT().MagicTokenRepository(mock.Anything).Return(tokenRepo).Once()
+	identityFactory.EXPECT().UserIdentityRepository(mock.Anything).Return(identityRepo).Once()
+	tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(mt, nil).Once()
+
+	res, err := sut.Execute(s.ctx, usecases.ActivateTelegramByTokenInput{Token: validTokenClear, TelegramUserID: 12345})
+	s.Require().NoError(err)
+	s.Equal(usecases.ActivateTelegramOutcomeRequiresWhatsAppActivation, res.Outcome)
+	s.False(binder.called, "binder nao deve ser chamado quando flag desabilitada")
+}
+
+func (s *ActivateTelegramByTokenSuite) TestExecute_TokenPaid_DirectFlagEnabled_LinksTelegram() {
+	sut, factory, tokenRepo, identityFactory, identityRepo, binder := s.buildSutWith(true)
+	userID := uuid.New()
+	mt := s.buildToken(valueobjects.TokenStatusPaid, "", time.Time{})
+	consumed, errConsume := mt.MarkConsumed(userID.String(), "+5511987654321", valueobjects.ActivationPathDirect, time.Now().UTC())
+	s.Require().NoError(errConsume)
+	binder.returned = consumed
+
+	factory.EXPECT().MagicTokenRepository(mock.Anything).Return(tokenRepo).Once()
+	identityFactory.EXPECT().UserIdentityRepository(mock.Anything).Return(identityRepo).Once()
+	tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(mt, nil).Once()
+	tokenRepo.EXPECT().UpdateTelegramExternalID(mock.Anything, mt.ID(), "12345").Return(nil).Once()
+	identityRepo.EXPECT().TryFindActive(mock.Anything, mock.Anything, mock.Anything).Return(identityentities.UserIdentity{}, false, nil).Once()
+	identityRepo.EXPECT().Insert(mock.Anything, mock.Anything).Return(nil).Once()
+
+	res, err := sut.Execute(s.ctx, usecases.ActivateTelegramByTokenInput{Token: validTokenClear, TelegramUserID: 12345})
+	s.Require().NoError(err)
+	s.Equal(usecases.ActivateTelegramOutcomeLinked, res.Outcome)
+	s.Equal(userID, res.UserID)
+	s.True(binder.called, "binder deve ser chamado quando flag habilitada e dados completos")
+}
+
+func (s *ActivateTelegramByTokenSuite) TestExecute_TokenPaid_DirectFlagEnabled_MissingDataBlocksDirect() {
+	sut, factory, tokenRepo, identityFactory, identityRepo, binder := s.buildSutWith(true)
+	tok, err := valueobjects.TokenFromClear(validTokenClear)
+	s.Require().NoError(err)
+	now := time.Now().UTC()
+	mt := entities.HydrateMagicToken(
+		uuid.New().String(),
+		tok.Hash(),
+		valueobjects.TokenStatusPaid,
+		"plan-x",
+		now.Add(24*time.Hour),
+		now,
+		time.Time{}, time.Time{}, time.Time{},
+		"",
+		"sub-1",
+		"",
+		"",
+		"sale-1",
+		"",
+		"",
+		valueobjects.ActivationPathDirect,
+		"",
+	)
+
+	factory.EXPECT().MagicTokenRepository(mock.Anything).Return(tokenRepo).Once()
+	identityFactory.EXPECT().UserIdentityRepository(mock.Anything).Return(identityRepo).Once()
+	tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(mt, nil).Once()
+
+	res, errExec := sut.Execute(s.ctx, usecases.ActivateTelegramByTokenInput{Token: validTokenClear, TelegramUserID: 12345})
+	s.Require().NoError(errExec)
+	s.Equal(usecases.ActivateTelegramOutcomeRequiresWhatsAppActivation, res.Outcome)
+	s.False(binder.called, "binder nao deve ser chamado quando dados estao ausentes")
 }
 
 func (s *ActivateTelegramByTokenSuite) TestExecute_FindByHashError_Propagates() {

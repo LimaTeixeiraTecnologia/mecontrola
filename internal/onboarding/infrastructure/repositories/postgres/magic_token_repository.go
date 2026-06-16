@@ -61,7 +61,8 @@ func (r *magicTokenRepository) FindByHash(ctx context.Context, tokenHash []byte)
 		       paid_at, consumed_at, outreach_sent_at,
 		       activation_token_ciphertext, subscription_id,
 		       customer_mobile_e164, customer_email, external_sale_id,
-		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
+		       consumed_by_user_id, consumed_by_mobile_e164, activation_path,
+		       telegram_external_id
 		  FROM mecontrola.onboarding_tokens
 		 WHERE token_hash = $1
 	`
@@ -79,7 +80,8 @@ func (r *magicTokenRepository) FindPaidByMobileForFallback(ctx context.Context, 
 		       paid_at, consumed_at, outreach_sent_at,
 		       activation_token_ciphertext, subscription_id,
 		       customer_mobile_e164, customer_email, external_sale_id,
-		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
+		       consumed_by_user_id, consumed_by_mobile_e164, activation_path,
+		       telegram_external_id
 		  FROM mecontrola.onboarding_tokens
 		 WHERE status = 'PAID'
 		   AND customer_mobile_e164 = $1
@@ -101,12 +103,13 @@ func (r *magicTokenRepository) FindPaidForOutreach(ctx context.Context, olderTha
 		       paid_at, consumed_at, outreach_sent_at,
 		       activation_token_ciphertext, subscription_id,
 		       customer_mobile_e164, customer_email, external_sale_id,
-		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
+		       consumed_by_user_id, consumed_by_mobile_e164, activation_path,
+		       telegram_external_id
 		  FROM mecontrola.onboarding_tokens
 		 WHERE status = 'PAID'
 		   AND outreach_sent_at IS NULL
 		   AND paid_at < $1
-		   AND customer_mobile_e164 IS NOT NULL
+		   AND (customer_mobile_e164 IS NOT NULL OR telegram_external_id IS NOT NULL)
 		 ORDER BY paid_at ASC
 		 LIMIT $2
 		   FOR UPDATE SKIP LOCKED
@@ -231,6 +234,23 @@ func (r *magicTokenRepository) UpdateMarkOutreachReset(ctx context.Context, toke
 	return nil
 }
 
+func (r *magicTokenRepository) UpdateTelegramExternalID(ctx context.Context, tokenID, externalID string) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.update_telegram_external_id")
+	defer span.End()
+
+	const query = `
+		UPDATE mecontrola.onboarding_tokens
+		   SET telegram_external_id = $1
+		 WHERE id = $2
+	`
+
+	_, err := r.db.ExecContext(ctx, query, sqlnull.Str(externalID), tokenID)
+	if err != nil {
+		return fmt.Errorf("onboarding: magic_token_repository.update_telegram_external_id: %w", err)
+	}
+	return nil
+}
+
 func (r *magicTokenRepository) BulkExpire(ctx context.Context, now time.Time, limit int) ([]entities.MagicToken, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.bulk_expire")
 	defer span.End()
@@ -250,7 +270,8 @@ func (r *magicTokenRepository) BulkExpire(ctx context.Context, now time.Time, li
 		          paid_at, consumed_at, outreach_sent_at,
 		          activation_token_ciphertext, subscription_id,
 		          customer_mobile_e164, customer_email, external_sale_id,
-		          consumed_by_user_id, consumed_by_mobile_e164, activation_path
+		          consumed_by_user_id, consumed_by_mobile_e164, activation_path,
+		          telegram_external_id
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, now, limit)
@@ -313,6 +334,7 @@ func scanMagicToken(s rowScanner) (entities.MagicToken, error) {
 		consumedByUserID          sql.NullString
 		consumedByMobileE164      sql.NullString
 		activationPathRaw         sql.NullString
+		telegramExternalID        sql.NullString
 	)
 
 	if err := s.Scan(
@@ -321,6 +343,7 @@ func scanMagicToken(s rowScanner) (entities.MagicToken, error) {
 		&activationTokenCiphertext, &subscriptionID,
 		&customerMobileE164, &customerEmail, &externalSaleID,
 		&consumedByUserID, &consumedByMobileE164, &activationPathRaw,
+		&telegramExternalID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return entities.MagicToken{}, domain.ErrTokenNotFound
@@ -356,6 +379,7 @@ func scanMagicToken(s rowScanner) (entities.MagicToken, error) {
 		nullStr(consumedByUserID),
 		nullStr(consumedByMobileE164),
 		activationPath,
+		nullStr(telegramExternalID),
 	), nil
 }
 

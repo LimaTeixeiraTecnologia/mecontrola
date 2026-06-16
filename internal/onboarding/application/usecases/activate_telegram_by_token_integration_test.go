@@ -5,6 +5,7 @@ package usecases_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"strconv"
 	"testing"
@@ -17,11 +18,27 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	identityrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
+	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
+
+type errorBinder struct{}
+
+func (errorBinder) BindAndConsume(
+	_ context.Context,
+	_ appinterfaces.MagicTokenRepository,
+	_ entities.MagicToken,
+	_ string,
+	_ valueobjects.ActivationPath,
+	_ time.Time,
+) (entities.MagicToken, error) {
+	return entities.MagicToken{}, nil
+}
 
 type ActivateTelegramByTokenIntegrationSuite struct {
 	suite.Suite
@@ -40,7 +57,15 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Inse
 	identityFactory := identityrepos.NewRepositoryFactory(o11y)
 	u := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
 
-	sut := usecases.NewActivateTelegramByToken(factory, identityFactory, u, o11y)
+	sut := usecases.NewActivateTelegramByToken(
+		factory,
+		identityFactory,
+		u,
+		domainservices.NewDirectTelegramActivationWorkflow(),
+		errorBinder{},
+		false,
+		o11y,
+	)
 
 	userID := uuid.New()
 	telegramUserID := int64(987654321)
@@ -74,7 +99,15 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Idem
 	identityFactory := identityrepos.NewRepositoryFactory(o11y)
 	u := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
 
-	sut := usecases.NewActivateTelegramByToken(factory, identityFactory, u, o11y)
+	sut := usecases.NewActivateTelegramByToken(
+		factory,
+		identityFactory,
+		u,
+		domainservices.NewDirectTelegramActivationWorkflow(),
+		errorBinder{},
+		false,
+		o11y,
+	)
 
 	userID := uuid.New()
 	telegramUserID := int64(111222333)
@@ -93,6 +126,69 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Idem
 	s.Require().NoError(err)
 	s.Equal(usecases.ActivateTelegramOutcomeAlreadyLinked, second.Outcome,
 		"segunda chamada com mesmo user deve ser idempotente")
+}
+
+func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_DirectPath_PersistsTelegramExternalID() {
+	ctx := context.Background()
+	mgr, _ := testcontainer.Postgres(s.T())
+
+	o11y := noop.NewProvider()
+	factory := repositories.NewRepositoryFactory(o11y)
+	identityFactory := identityrepos.NewRepositoryFactory(o11y)
+	u := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
+
+	sut := usecases.NewActivateTelegramByToken(
+		factory,
+		identityFactory,
+		u,
+		domainservices.NewDirectTelegramActivationWorkflow(),
+		errorBinder{},
+		true,
+		o11y,
+	)
+
+	telegramUserID := int64(555444333)
+	clearToken := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte("w"), 32))
+	tok, err := valueobjects.TokenFromClear(clearToken)
+	s.Require().NoError(err)
+
+	s.seedPaidTokenWithMobile(ctx, mgr.DBTX(ctx), tok.Hash())
+
+	_, _ = sut.Execute(ctx, usecases.ActivateTelegramByTokenInput{
+		Token:          clearToken,
+		TelegramUserID: telegramUserID,
+	})
+
+	s.assertTelegramExternalIDPersisted(ctx, mgr.DBTX(ctx), tok.Hash(), strconv.FormatInt(telegramUserID, 10))
+}
+
+func (s *ActivateTelegramByTokenIntegrationSuite) seedPaidTokenWithMobile(ctx context.Context, db database.DBTX, hash []byte) {
+	s.T().Helper()
+	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+	planID := uuid.New()
+	subID := uuid.New()
+	const q = `
+		INSERT INTO mecontrola.onboarding_tokens (
+			id, token_hash, status, plan_id, expires_at, created_at, paid_at,
+			activation_token_ciphertext,
+			subscription_id, customer_mobile_e164, customer_email, external_sale_id
+		) VALUES (
+			gen_random_uuid(), $1, 'PAID', $2, $3, now(), now(),
+			'',
+			$4, '+5511987654322', 'direct@example.com', 'sale-direct'
+		)`
+	_, err := db.ExecContext(ctx, q, hash, planID, expiresAt, subID)
+	s.Require().NoError(err)
+}
+
+func (s *ActivateTelegramByTokenIntegrationSuite) assertTelegramExternalIDPersisted(ctx context.Context, db database.DBTX, hash []byte, expected string) {
+	s.T().Helper()
+	const q = `SELECT telegram_external_id FROM mecontrola.onboarding_tokens WHERE token_hash = $1`
+	var got sql.NullString
+	err := db.QueryRowContext(ctx, q, hash).Scan(&got)
+	s.Require().NoError(err)
+	s.Require().True(got.Valid, "telegram_external_id deve estar persistido")
+	s.Equal(expected, got.String)
 }
 
 func (s *ActivateTelegramByTokenIntegrationSuite) seedUser(ctx context.Context, db database.DBTX, userID uuid.UUID) {

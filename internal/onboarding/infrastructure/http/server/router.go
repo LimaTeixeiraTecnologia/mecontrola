@@ -44,6 +44,7 @@ func (rt *PublicRouter) Register(r chi.Router) {
 
 		sub.With(
 			rt.stateLimiter.Middleware,
+			rt.corsMiddleware,
 		).Get("/tokens/{token}/state", rt.stateHandler.Handle)
 	})
 }
@@ -53,8 +54,9 @@ func (rt *PublicRouter) corsMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		if origin != "" && rt.isAllowedOrigin(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Vary", "Origin")
 		}
 
 		if r.Method == http.MethodOptions {

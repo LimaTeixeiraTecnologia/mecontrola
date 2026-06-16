@@ -83,6 +83,30 @@ func (s *OnboardingRuntimeConfigSuite) TestNewOnboardingRuntimeConfig() {
 			expectErr: "chave duplicada",
 		},
 		{
+			name: "separador ; aceito (env-friendly)",
+			cfg: configs.OnboardingConfig{
+				KiwifyCheckoutURLs: "monthly=https://a;quarterly=https://b;annual=https://c",
+			},
+			assertOK: func(rc config.OnboardingRuntimeConfig) {
+				s.Require().Len(rc.CheckoutURLs, 3)
+				s.Equal("https://a", rc.CheckoutURLs["monthly"])
+				s.Equal("https://b", rc.CheckoutURLs["quarterly"])
+				s.Equal("https://c", rc.CheckoutURLs["annual"])
+			},
+		},
+		{
+			name: "separadores ; e \\n misturados",
+			cfg: configs.OnboardingConfig{
+				KiwifyCheckoutURLs: "monthly=https://a;quarterly=https://b\nannual=https://c",
+			},
+			assertOK: func(rc config.OnboardingRuntimeConfig) {
+				s.Require().Len(rc.CheckoutURLs, 3)
+				s.Equal("https://a", rc.CheckoutURLs["monthly"])
+				s.Equal("https://b", rc.CheckoutURLs["quarterly"])
+				s.Equal("https://c", rc.CheckoutURLs["annual"])
+			},
+		},
+		{
 			name: "string vazia é tolerada (modulo pode rodar sem checkout)",
 			cfg: configs.OnboardingConfig{
 				KiwifyCheckoutURLs: "",

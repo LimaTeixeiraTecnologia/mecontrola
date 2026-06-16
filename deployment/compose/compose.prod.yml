@@ -9,11 +9,21 @@ name: mecontrola
 # via "profiles: []", portanto NÃO é necessário --profile observability em produção.
 # IMAGE_TAG deve ser um digest ou tag semântica imutável; nunca usar 'latest' em prod.
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "10"
+    compress: "true"
+
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
+    logging: *default-logging
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - ../postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     environment:
@@ -33,6 +43,7 @@ services:
 
   pgbouncer:
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -43,6 +54,7 @@ services:
 
   migrate:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
+    logging: *default-logging
     environment:
       ENVIRONMENT: production
       DB_HOST: postgres
@@ -51,6 +63,7 @@ services:
   server:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ENVIRONMENT: production
       LOG_FORMAT: json
@@ -77,6 +90,7 @@ services:
   worker:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ENVIRONMENT: production
       LOG_FORMAT: json
@@ -102,6 +116,7 @@ services:
 
   caddy:
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -111,10 +126,12 @@ services:
   promtail:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
 
   otelcol:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -126,6 +143,7 @@ services:
   prometheus:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "127.0.0.1:9090:9090"
     deploy:
@@ -139,6 +157,7 @@ services:
   alertmanager:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "127.0.0.1:9093:9093"
     deploy:
@@ -152,6 +171,7 @@ services:
   node-exporter:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -161,6 +181,7 @@ services:
   postgres-exporter:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -170,6 +191,7 @@ services:
   blackbox-exporter:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -179,6 +201,7 @@ services:
   grafana:
     profiles: []
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "127.0.0.1:3000:3000"
     environment:

@@ -21,6 +21,7 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp e Te
 - [Debug no VS Code](#debug-no-vs-code)
 - [Comandos Task](#comandos-task)
 - [Sequências comuns](#sequências-comuns)
+- [Reprodução E2E local — Telegram + Kiwify simulado](#reprodução-e2e-local--telegram--kiwify-simulado)
 - [CI/CD](#cicd)
 - [Contribuição](#contribuição)
 - [Governance](#governance)
@@ -567,6 +568,239 @@ task ngrok:urls      # copia URLs → configurar no Meta/Kiwify Dashboard
 # Ctrl+C para encerrar o túnel
 task local:down      # para os containers
 ```
+
+---
+
+## Reprodução E2E local — Telegram + Kiwify simulado
+
+Passo a passo para validar o MVP ponta a ponta no canal Telegram contra stack local (Postgres + Mailpit + LGTM + server + worker + ngrok). Útil antes de qualquer release ou após mudanças amplas. Tempo total: ~15 minutos. Critério único de sucesso: receber **uma mensagem proativa de alerta de cartão no Telegram** sem ter pedido nada.
+
+### 0. Pré-requisitos do host
+
+```bash
+brew install --quiet libpq && brew link --force libpq   # psql no PATH
+brew install --quiet jq                                 # já vem como dep do task
+ngrok config add-authtoken <SEU_AUTHTOKEN>              # uma vez na vida
+```
+
+Confira:
+
+```bash
+command -v psql jq ngrok docker task openssl
+```
+
+Tudo respondendo um path = OK.
+
+### 1. Criar bot Telegram (uma vez)
+
+No app Telegram:
+
+1. Abra `@BotFather` → `/newbot`
+2. Nome: qualquer (ex: `MeControla Dev`)
+3. Username: terminando em `bot` (ex: `mecontrola_dev_bot`)
+4. Anote o `TELEGRAM_BOT_TOKEN` (formato `1234567890:AAH...`)
+
+Pegue `bot_id`:
+
+```bash
+TOKEN="<TELEGRAM_BOT_TOKEN>"
+curl -s "https://api.telegram.org/bot${TOKEN}/getMe" | jq '.result | {id, username}'
+```
+
+Gere `secret_token`:
+
+```bash
+openssl rand -hex 32
+```
+
+### 2. Preencher `.env`
+
+Edite `/Users/<user>/Git/mecontrola/.env` garantindo os blocos abaixo (substituir `<...>` pelos valores reais):
+
+```env
+# Telegram — produção bot real
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=<da BotFather>
+TELEGRAM_BOT_ID=<getMe.id>
+TELEGRAM_BOT_USERNAME=<sem @>
+TELEGRAM_SECRET_TOKEN=<openssl rand -hex 32>
+BUDGETS_THRESHOLD_ALERTS_MODE=job
+
+# Email — Mailpit local
+EMAIL_PROVIDER=smtp
+EMAIL_FROM_ADDRESS=noreply@mecontrola.local
+EMAIL_FROM_NAME=MeControla
+EMAIL_ACTIVATE_URL=http://localhost:4321/activate
+SMTP_HOST=localhost           # server roda no host, não no Docker
+SMTP_PORT=1025
+
+# Opção B — habilita Telegram-only enquanto Meta WhatsApp não está liberado
+ONBOARDING_TELEGRAM_DIRECT_ENABLED=true
+
+# OpenRouter (Gemini) live
+AGENT_MODE=openrouter
+OPENROUTER_API_KEY=<sua chave>
+```
+
+Valores com espaço (ex: `META_BOT_NUMBER_DISPLAY=+55 11 9 ...`) devem estar entre aspas para o `source .env` funcionar.
+
+Validação rápida:
+
+```bash
+bash -c 'set -a; source .env; set +a; \
+  for var in TELEGRAM_ENABLED TELEGRAM_BOT_TOKEN TELEGRAM_SECRET_TOKEN \
+             EMAIL_PROVIDER SMTP_HOST OPENROUTER_API_KEY \
+             KIWIFY_WEBHOOK_SECRET KIWIFY_PRODUCT_ID_MONTHLY \
+             ONBOARDING_TOKEN_ENCRYPTION_KEY BUDGETS_THRESHOLD_ALERTS_MODE; do \
+    v="${!var:-VAZIO}"; \
+    [[ -z "$v" || "$v" == "VAZIO" || "$v" == *CHANGE_ME* ]] \
+      && echo "  X $var" || echo "  OK $var"; \
+  done'
+```
+
+Esperado: todas com `OK`.
+
+### 3. Limpar resíduos (opcional, mas recomendado para "do zero")
+
+```bash
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+
+# Webhook Telegram
+TOKEN=$(grep TELEGRAM_BOT_TOKEN .env | cut -d= -f2)
+[[ -n "$TOKEN" ]] && curl -s -X POST "https://api.telegram.org/bot${TOKEN}/deleteWebhook?drop_pending_updates=true" >/dev/null
+
+# Processos host (server, worker, ngrok)
+pkill -9 -f "cmd server" 2>/dev/null
+pkill -9 -f "cmd worker" 2>/dev/null
+pkill -9 -f "ngrok http" 2>/dev/null
+
+# Containers + volumes
+docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.local.yml down -v
+
+# Tmp
+rm -f /tmp/telegram-* /tmp/drive-* 2>/dev/null
+```
+
+### 4. Subir stack completo (automatizado, ~2 min)
+
+```bash
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+task mvp:telegram:prepare
+```
+
+O que esse comando faz:
+
+1. Valida `.env` (falha cedo se faltar var)
+2. `go build ./...` + `go vet ./...`
+3. `docker compose up -d postgres mailpit otel-lgtm`
+4. `go run ./cmd migrate` (aplica todas as migrations — atualmente 000001..000009)
+5. Inicia `server` e `worker` em background (logs em `/tmp/telegram-{server,worker}.log`)
+6. Sobe `ngrok http 8080` detached
+7. Lê URL pública via `localhost:4040/api/tunnels`
+8. `setWebhook` no Telegram com URL ngrok + `secret_token`
+9. Confirma via `getWebhookInfo`
+
+Saída esperada ao final:
+
+```
+==================================================================
+ STACK PRONTO PARA E2E TELEGRAM
+==================================================================
+ ngrok URL:        https://xxxx-xxx-xxx-xxx-xxx.ngrok-free.app
+ Telegram bot:     @mecontrola_dev_bot
+ Server logs:      tail -f /tmp/telegram-server.log
+ Worker logs:      tail -f /tmp/telegram-worker.log
+ Mailpit UI:       http://localhost:8025
+ Postgres:         postgres://mecontrola:mecontrola@localhost:5432/mecontrola_db
+```
+
+Sanity dos endpoints:
+
+```bash
+curl -s -o /dev/null -w "healthz=%{http_code}\n" http://localhost:8080/healthz
+curl -s -o /dev/null -w "mailpit=%{http_code}\n" http://localhost:8025/api/v1/info
+```
+
+Ambos `200`.
+
+### 5. Dirigir fluxo E2E com 5 prompts no Telegram (~5 min)
+
+```bash
+task mvp:telegram:drive
+```
+
+O script pausa 5 vezes pedindo ação humana. Cada pausa imprime `>>> <instrução>` e aguarda ENTER. **Não pressione ENTER antes de completar a ação no Telegram** — o script polla o DB e valida que a ação foi efetiva antes de seguir.
+
+| # | O que o script faz | Sua ação no `@<bot>` |
+|---|--------------------|----------------------|
+| 1 | Limpa Mailpit + dispara webhook Kiwify simulado | aguarde |
+| 2 | Aguarda email no Mailpit e extrai token | aguarde |
+| 3 | Imprime `https://t.me/<bot>?start=ATIVAR_<token>` | clique no link **OU** digite `ATIVAR <token>` no bot |
+| 4 | Bot responde "Bem-vindo..." | aguarde |
+| 5 | Polla `user_identities` até aparecer linha Telegram | aguarde |
+| 6 | Pede onboarding | envie `3500` |
+| 7 | Pede cartão | envie `nao` |
+| 8 | Pede confirmação split | envie `esta otimo` |
+| 9 | Pede expense | envie `gastei 50 reais no iFood` (deve persistir com seed v2) |
+| 10 | Cria card + invoice 90% via SQL automaticamente | aguarde |
+| 11 | Dispara worker efêmero `@every 2s` | aguarde |
+| 12 | Polla `budget_alerts_sent.notified_at IS NOT NULL` | aguarde |
+
+### 6. Critério único de sucesso
+
+Você recebe **no Telegram, sem ter enviado nada**, uma mensagem proativa:
+
+> "Atencao: voce ja utilizou 90.0% do limite do cartao. Restam apenas R$ 500,00."
+
+Se aparecer → produto reproduzível ponta a ponta no local.
+
+### 7. Validação adicional no DB
+
+```bash
+docker exec mecontrola-postgres-1 psql -U mecontrola -d mecontrola_db -c "
+SELECT u.id, u.email, ui.channel, ui.external_id,
+       os.state AS onboarding_state, os.payload->>'IncomeCents' AS income,
+       (SELECT COUNT(*) FROM mecontrola.budgets_expenses WHERE user_id=u.id) AS expenses,
+       (SELECT notified_at IS NOT NULL FROM mecontrola.budget_alerts_sent WHERE user_id=u.id LIMIT 1) AS alert_delivered
+FROM mecontrola.users u
+JOIN mecontrola.user_identities ui ON ui.user_id=u.id AND ui.channel='telegram'
+LEFT JOIN mecontrola.onboarding_sessions os ON os.user_id=u.id
+ORDER BY u.created_at DESC LIMIT 1;
+"
+```
+
+Esperado: 1 linha com `onboarding_state=active`, `income=350000`, `expenses>=1`, `alert_delivered=t`.
+
+### 8. Cleanup
+
+```bash
+# Webhook
+curl -s -X POST "https://api.telegram.org/bot$(grep TELEGRAM_BOT_TOKEN .env | cut -d= -f2)/deleteWebhook?drop_pending_updates=true"
+
+# Processos
+for f in /tmp/telegram-server.pid /tmp/telegram-worker.pid /tmp/telegram-ngrok.pid; do
+  [[ -f "$f" ]] && kill -9 $(cat "$f") 2>/dev/null
+done
+
+# Stack
+docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.local.yml down
+```
+
+### 9. Troubleshooting
+
+| Sintoma | Causa provável | Onde olhar / como resolver |
+|---------|----------------|----------------------------|
+| `prepare` falha em `binario ausente: psql` | libpq não no PATH | `export PATH="/opt/homebrew/opt/libpq/bin:$PATH"` ou `brew link --force libpq` |
+| `prepare` falha em `address already in use :8080` | server zumbi de sessão anterior | `lsof -ti:8080 \| xargs -r kill -9` |
+| Build/test falha após editar interface | Mocks desatualizados | `mockery` |
+| Email não chega no Mailpit | `SMTP_HOST=mailpit` no host (não-Docker) | mudar para `SMTP_HOST=localhost` + reiniciar worker |
+| Webhook Kiwify retorna 401 | HMAC errado | use `?signature=<sha1>` query param, não header `X-Kiwify-Webhook-Token` |
+| Webhook Kiwify retorna 422 `unknown_trigger` | Payload sem `webhook_event_type` | inclua `"webhook_event_type":"order_approved"` no JSON |
+| Token paid mas `find token: not found` | Pulou o checkout | rodar `POST /api/v1/onboarding/checkout` antes do webhook |
+| Telegram responde "Ative pelo WhatsApp" | `ONBOARDING_TELEGRAM_DIRECT_ENABLED=false` | habilitar no `.env` (com `customer_mobile_e164` e `customer_email` populados pelo Kiwify) |
+| Expense não persiste (`iFood`/`mercado`) | Alias não no dicionário PT-BR | depois da migration `000008_category_dictionary_seed_v2` os 103 aliases novos cobrem; tente também `padaria`, `aluguel`, `mercado` |
+| Alerta dispara mas `notified_at` continua nulo | Consumer `ThresholdAlertNotifier` quebrou | `tail /tmp/telegram-worker.log \| grep threshold_alert` ou conferir métrica `budgets_threshold_alert_delivered_total{outcome=...}` |
+| Alerta chega no canal errado | `UserChannelResolver` preferiu WhatsApp porque user tem identidade ativa | conferir `SELECT notify_channel FROM mecontrola.budget_alerts_sent`; comportamento esperado = WhatsApp tem precedência quando ambos canais existem |
 
 ---
 

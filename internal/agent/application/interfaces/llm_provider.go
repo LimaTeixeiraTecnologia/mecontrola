@@ -6,9 +6,16 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 )
 
+type JSONSchemaSpec struct {
+	Name   string
+	Strict bool
+	Schema map[string]any
+}
+
 type LLMRequest struct {
 	SystemPrompt string
 	UserMessage  string
+	JSONSchema   *JSONSchemaSpec
 }
 
 type LLMResponse struct {

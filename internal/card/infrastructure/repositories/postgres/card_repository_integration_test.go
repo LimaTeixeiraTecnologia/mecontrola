@@ -319,6 +319,142 @@ func (s *CardRepositorySuite) TestKeysetPaginationStable() {
 	}
 }
 
+func (s *CardRepositorySuite) TestPersistAndReadLimitCents() {
+	scenarios := []struct {
+		name   string
+		expect func(context.Context, interfaces.CardRepository)
+	}{
+		{
+			name: "insert e leitura com limite positivo",
+			expect: func(ctx context.Context, repo interfaces.CardRepository) {
+				userID := s.insertTestUser(ctx)
+				uid, err := uuid.Parse(userID)
+				s.Require().NoError(err)
+
+				name, err := valueobjects.NewCardName("Nubank Roxo")
+				s.Require().NoError(err)
+				nick, err := valueobjects.NewNickname(fmt.Sprintf("nu-lim-%d", time.Now().UnixNano()))
+				s.Require().NoError(err)
+				cycle, err := valueobjects.NewBillingCycle(10, 25)
+				s.Require().NoError(err)
+
+				card := entities.NewCard(entities.NewCardInput{
+					UserID:     uid,
+					Name:       name,
+					Nickname:   nick,
+					Cycle:      cycle,
+					LimitCents: 500000,
+				})
+
+				s.Require().NoError(repo.Insert(ctx, card))
+
+				got, err := repo.GetByIDForUser(ctx, card.ID.String(), userID)
+				s.Require().NoError(err)
+				s.Assert().Equal(int64(500000), got.LimitCents)
+			},
+		},
+		{
+			name: "insert e leitura com limite zero (default)",
+			expect: func(ctx context.Context, repo interfaces.CardRepository) {
+				userID := s.insertTestUser(ctx)
+				card := s.makeCard(userID)
+				s.Require().NoError(repo.Insert(ctx, card))
+
+				got, err := repo.GetByIDForUser(ctx, card.ID.String(), userID)
+				s.Require().NoError(err)
+				s.Assert().Equal(int64(0), got.LimitCents)
+			},
+		},
+		{
+			name: "update persiste novo limite",
+			expect: func(ctx context.Context, repo interfaces.CardRepository) {
+				userID := s.insertTestUser(ctx)
+				card := s.makeCard(userID)
+				s.Require().NoError(repo.Insert(ctx, card))
+
+				inserted, err := repo.GetByIDForUser(ctx, card.ID.String(), userID)
+				s.Require().NoError(err)
+
+				limit, err := valueobjects.NewCardLimit(1234500)
+				s.Require().NoError(err)
+				updated := inserted.UpdateLimit(limit, time.Now().UTC())
+
+				persisted, err := repo.UpdateByIDForUser(ctx, updated)
+				s.Require().NoError(err)
+				s.Assert().Equal(int64(1234500), persisted.LimitCents)
+			},
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			sc.expect(context.Background(), s.newRepo())
+		})
+	}
+}
+
+func (s *CardRepositorySuite) TestUpdateLimitOptimisticConcurrency() {
+	scenarios := []struct {
+		name   string
+		expect func(context.Context, interfaces.CardRepository)
+	}{
+		{
+			name: "primeiro update vence; segundo com versao estale retorna ErrCardLimitConflict",
+			expect: func(ctx context.Context, repo interfaces.CardRepository) {
+				userID := s.insertTestUser(ctx)
+				card := s.makeCard(userID)
+				s.Require().NoError(repo.Insert(ctx, card))
+
+				snapshot, err := repo.GetByIDForUser(ctx, card.ID.String(), userID)
+				s.Require().NoError(err)
+				staleVersion := snapshot.Version
+
+				firstLimit, err := valueobjects.NewCardLimit(200000)
+				s.Require().NoError(err)
+				firstUpdated := snapshot.UpdateLimit(firstLimit, time.Now().UTC())
+				persisted, err := repo.UpdateLimitByIDForUser(ctx, firstUpdated, staleVersion)
+				s.Require().NoError(err)
+				s.Assert().Equal(int64(200000), persisted.LimitCents)
+				s.Assert().Equal(staleVersion+1, persisted.Version)
+
+				secondLimit, err := valueobjects.NewCardLimit(300000)
+				s.Require().NoError(err)
+				stale := snapshot.UpdateLimit(secondLimit, time.Now().UTC())
+				_, err = repo.UpdateLimitByIDForUser(ctx, stale, staleVersion)
+				s.Require().Error(err)
+				s.Assert().True(errors.Is(err, carddomain.ErrCardLimitConflict))
+			},
+		},
+		{
+			name: "update_limit com versao correta apos bump permite seguinte update",
+			expect: func(ctx context.Context, repo interfaces.CardRepository) {
+				userID := s.insertTestUser(ctx)
+				card := s.makeCard(userID)
+				s.Require().NoError(repo.Insert(ctx, card))
+
+				snapshot, err := repo.GetByIDForUser(ctx, card.ID.String(), userID)
+				s.Require().NoError(err)
+
+				limitA, _ := valueobjects.NewCardLimit(100000)
+				afterA, err := repo.UpdateLimitByIDForUser(ctx, snapshot.UpdateLimit(limitA, time.Now().UTC()), snapshot.Version)
+				s.Require().NoError(err)
+
+				limitB, _ := valueobjects.NewCardLimit(400000)
+				afterB, err := repo.UpdateLimitByIDForUser(ctx, afterA.UpdateLimit(limitB, time.Now().UTC()), afterA.Version)
+				s.Require().NoError(err)
+				s.Assert().Equal(int64(400000), afterB.LimitCents)
+				s.Assert().Equal(afterA.Version+1, afterB.Version)
+			},
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			sc.expect(context.Background(), s.newRepo())
+		})
+	}
+}
+
 func (s *CardRepositorySuite) TestUpdatePreservesCreatedAt() {
 	scenarios := []struct {
 		name   string
@@ -348,6 +484,7 @@ func (s *CardRepositorySuite) TestUpdatePreservesCreatedAt() {
 					newName,
 					newNick,
 					newCycle,
+					inserted.LimitCents,
 					inserted.CreatedAt,
 					time.Now().UTC(),
 					nil,
@@ -378,7 +515,7 @@ func (s *CardRepositorySuite) TestUpdatePreservesCreatedAt() {
 				cycle, err := valueobjects.NewBillingCycle(1, 10)
 				s.Require().NoError(err)
 
-				ghost := entities.HydrateCard(uuid.New(), uid, name, nick, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+				ghost := entities.HydrateCard(uuid.New(), uid, name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
 				_, err = repo.UpdateByIDForUser(ctx, ghost)
 				s.Require().Error(err)
 				s.Assert().True(errors.Is(err, carddomain.ErrCardNotFound))

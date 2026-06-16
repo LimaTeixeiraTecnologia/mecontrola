@@ -56,12 +56,14 @@ func (UpdateCardDecider) Decide(current entities.Card, cmd UpdateCardCommand, no
 		cycle = c
 	}
 
-	return entities.HydrateCard(
+	return entities.HydrateCardWithVersion(
 		current.ID,
 		current.UserID,
 		name,
 		nickname,
 		cycle,
+		current.LimitCents,
+		current.Version,
 		current.CreatedAt,
 		now.UTC(),
 		current.DeletedAt,

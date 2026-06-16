@@ -16,6 +16,7 @@ const (
 	IntentOutcomeStructuredError
 	IntentOutcomeProviderExhausted
 	IntentOutcomeUnsupportedAction
+	IntentOutcomeSafetyBlocked
 )
 
 func (k IntentOutcomeKind) String() string {
@@ -28,6 +29,8 @@ func (k IntentOutcomeKind) String() string {
 		return "provider_exhausted"
 	case IntentOutcomeUnsupportedAction:
 		return "unsupported_action"
+	case IntentOutcomeSafetyBlocked:
+		return "safety_blocked"
 	default:
 		return "invalid"
 	}
@@ -50,8 +53,8 @@ type IntentWorkflow struct {
 func NewIntentWorkflow() IntentWorkflow {
 	supported := map[string]map[string]struct{}{
 		"categories":   {"list": {}, "get": {}},
-		"cards":        {"list": {}, "get": {}, "create": {}},
-		"budgets":      {"list": {}, "get": {}, "create": {}},
+		"cards":        {"list": {}, "get": {}, "create": {}, "update": {}, "delete": {}},
+		"budgets":      {"list": {}, "get": {}, "create": {}, "update": {}, "delete": {}},
 		"transactions": {"list": {}, "get": {}, "create": {}, "delete": {}},
 	}
 	return IntentWorkflow{supportedActions: supported}
@@ -107,5 +110,42 @@ func (w IntentWorkflow) DecideExhausted(
 		ResponseHint: "Estou com instabilidade momentanea. Tente novamente em instantes.",
 		EventID:      eventID,
 		OccurredAt:   now,
+	}
+}
+
+func (w IntentWorkflow) DecideSafetyBlocked(
+	intent entities.IntentResult,
+	provider valueobjects.ModelSlug,
+	eventID uuid.UUID,
+	now time.Time,
+	reason string,
+) IntentOutcome {
+	return IntentOutcome{
+		Kind:         IntentOutcomeSafetyBlocked,
+		Intent:       intent,
+		Provider:     provider,
+		Reason:       reason,
+		ResponseHint: w.safetyBlockedHint(reason),
+		EventID:      eventID,
+		OccurredAt:   now,
+	}
+}
+
+func (w IntentWorkflow) safetyBlockedHint(reason string) string {
+	switch reason {
+	case "missing_lookup_field":
+		return "Preciso do identificador exato desse item antes de consultar com seguranca."
+	case "missing_confirmation":
+		return "Nao apliquei a exclusao. Confirme explicitamente a remocao e envie o identificador correto."
+	case "missing_required_field":
+		return "Nao apliquei nenhuma alteracao. Envie os dados obrigatorios dessa operacao com mais precisao."
+	case "missing_mutation_verb":
+		return "Nao apliquei nenhuma alteracao porque sua mensagem nao pediu essa mudanca de forma explicita."
+	case "missing_target":
+		return "Nao apliquei nenhuma alteracao. Diga exatamente qual cartao, orcamento ou lancamento deseja mudar."
+	case "invalid_operation":
+		return "Essa operacao nao existe no agente financeiro atual. Posso agir apenas dentro do fluxo ja suportado."
+	default:
+		return "Nao apliquei nenhuma alteracao por seguranca. Reformule com a operacao exata e os dados necessarios."
 	}
 }

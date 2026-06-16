@@ -48,6 +48,13 @@ func (m *mockUpdateCard) Execute(ctx context.Context, in input.UpdateCard) (outp
 	return args.Get(0).(output.Card), args.Error(1)
 }
 
+type mockUpdateCardLimit struct{ mock.Mock }
+
+func (m *mockUpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit) (output.Card, error) {
+	args := m.Called(ctx, in)
+	return args.Get(0).(output.Card), args.Error(1)
+}
+
 type mockSoftDeleteCard struct{ mock.Mock }
 
 func (m *mockSoftDeleteCard) Execute(ctx context.Context, in input.SoftDeleteCard) error {
@@ -70,6 +77,7 @@ type CardRouterSuite struct {
 	listUC      *mockListCards
 	getUC       *mockGetCard
 	updateUC    *mockUpdateCard
+	updateLimUC *mockUpdateCardLimit
 	deleteUC    *mockSoftDeleteCard
 	invoiceUC   *mockInvoiceFor
 }
@@ -85,6 +93,7 @@ func (s *CardRouterSuite) SetupTest() {
 	s.listUC = &mockListCards{}
 	s.getUC = &mockGetCard{}
 	s.updateUC = &mockUpdateCard{}
+	s.updateLimUC = &mockUpdateCardLimit{}
 	s.deleteUC = &mockSoftDeleteCard{}
 	s.invoiceUC = &mockInvoiceFor{}
 
@@ -92,11 +101,12 @@ func (s *CardRouterSuite) SetupTest() {
 	listH := handlers.NewListCardsHandler(s.listUC, o11y)
 	getH := handlers.NewGetCardHandler(s.getUC, o11y)
 	updateH := handlers.NewUpdateCardHandler(s.updateUC, o11y)
+	updateLimH := handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y)
 	deleteH := handlers.NewDeleteCardHandler(s.deleteUC, o11y)
 	invoiceH := handlers.NewInvoiceForHandler(s.invoiceUC, o11y)
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
+	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, updateLimH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
 
 	r := chi.NewRouter()
 	cardRouter.Register(r)

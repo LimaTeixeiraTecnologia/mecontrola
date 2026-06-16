@@ -20,6 +20,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/checkout"
 	onboardingconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/config"
 	onboardingcrypto "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/crypto"
+	onboardingemail "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/email"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/gateway"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/client/meta"
 	onboardingserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server"
@@ -31,7 +32,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
@@ -50,6 +54,8 @@ type OnboardingModule struct {
 	OutreachJob                  worker.Job
 	ExpirationJob                worker.Job
 	MetaProcessedMessagesCleanup worker.Job
+	SendActivationEmail          *usecases.SendActivationEmail
+	StartBudgetConfiguration     *usecases.StartBudgetConfiguration
 	EventHandlers                []EventHandlerRegistration
 }
 
@@ -84,6 +90,7 @@ func NewOnboardingModule(
 	waCfg configs.WhatsAppConfig,
 	tgCfg configs.TelegramConfig,
 	outboxCfg configs.OutboxConfig,
+	emailCfg configs.EmailConfig,
 	identityModule identity.IdentityModule,
 	o11y observability.Observability,
 ) (OnboardingModule, error) {
@@ -116,8 +123,40 @@ func NewOnboardingModule(
 	markTokenPaid := usecases.NewMarkTokenPaid(mgr, factory, workflow, o11y)
 	consumeToken := usecases.NewConsumeMagicToken(consumeUoW, factory, bindingService, idGen, o11y)
 	fallbackActivation := usecases.NewTryFallbackActivation(consumeUoW, factory, bindingService, o11y)
-	getTokenState := usecases.NewGetTokenState(mgr, factory, waCfg.BotNumberE164, waCfg.BotNumberDisplay, o11y)
-	sendOutreach := usecases.NewSendOutreach(mgr, factory, whatsAppGateway, tokenCipher, idGen, waCfg.OutreachTemplateName, runtimeCfg.OutreachGap, o11y)
+	getTokenState := usecases.NewGetTokenState(mgr, factory, waCfg.BotNumberE164, waCfg.BotNumberDisplay, tgCfg.BotUsername, o11y)
+	whatsAppSender := adapters.NewWhatsAppSender(whatsAppGateway)
+	channelSenders := map[string]notification.ChannelSenders{
+		notification.ChannelWhatsApp: whatsAppSender.AsChannelSenders(),
+	}
+	if tgCfg.Enabled {
+		telegramGateway, err := tgoutbound.NewSharedGateway(o11y, tgoutbound.FactoryConfig{
+			APIBaseURL: tgCfg.APIBaseURL,
+			BotToken:   tgCfg.BotToken,
+			Timeout:    tgCfg.OutboundTimeout,
+		})
+		if err != nil {
+			return OnboardingModule{}, fmt.Errorf("onboarding: criar telegram outbound gateway: %w", err)
+		}
+		channelSenders[notification.ChannelTelegram] = adapters.NewTelegramSender(telegramGateway).AsChannelSenders()
+	}
+	outreachChannelGateway := notification.NewMultiChannelGateway(channelSenders)
+	sendOutreach := usecases.NewSendOutreach(mgr, factory, outreachChannelGateway, tokenCipher, idGen, waCfg.OutreachTemplateName, runtimeCfg.OutreachGap, o11y)
+
+	emailSender, err := onboardingemail.NewSenderFactory(emailCfg, o11y).Build()
+	if err != nil {
+		return OnboardingModule{}, fmt.Errorf("onboarding: build email sender: %w", err)
+	}
+	activationTemplate := onboardingemail.NewActivationTemplate()
+	sendActivationEmail := usecases.NewSendActivationEmail(
+		emailSender,
+		activationTemplate,
+		emailCfg.ActivateURL,
+		emailCfg.FromAddress,
+		emailCfg.FromName,
+		emailCfg.ReplyTo,
+		runtimeCfg.TokenTTL,
+		o11y,
+	)
 	expireTokens := usecases.NewExpireTokens(mgr, factory, idGen, o11y)
 	handlePaidWithoutToken := usecases.NewHandlePaidWithoutToken(mgr, factory, idGen, o11y)
 	cleanupTables := usecases.NewCleanupOnboardingTables(mgr.DBTX(context.Background()), factory, runtimeCfg.MetaRetention, o11y)
@@ -125,18 +164,42 @@ func NewOnboardingModule(
 	registerMetrics(mgr, factory, o11y)
 	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y)
 	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y)
+	activationEmailConsumer := consumers.NewActivationEmailConsumer(sendActivationEmail, o11y)
 	publicRouter := newPublicRouter(cfg, runtimeCfg, createCheckout, getTokenState, o11y)
+	processUoW := uow.New[usecases.ProcessOnboardingMessageResult](mgr, uow.WithObservability(o11y))
+	startBudgetUoW := uow.New[usecases.StartBudgetConfigurationResult](mgr, uow.WithObservability(o11y))
+	startBudgetConfiguration := usecases.NewStartBudgetConfiguration(startBudgetUoW, factory, o11y)
+	onboardingWorkflow := domainservices.NewOnboardingWorkflow()
+	processOnboardingMessage := usecases.NewProcessOnboardingMessage(
+		processUoW,
+		factory,
+		onboardingWorkflow,
+		publisher,
+		idGen,
+		o11y,
+	)
 	messageProcessor := services.NewWhatsAppMessageProcessor(
 		consumeToken,
 		fallbackActivation,
+		processOnboardingMessage,
 		whatsAppGateway,
 		runtimeCfg.Messages,
 		o11y,
 	)
 	activateTelegramUoW := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
-	activateTelegram := usecases.NewActivateTelegramByToken(factory, identityModule.RepositoryFactory, activateTelegramUoW, o11y)
+	directTelegramWorkflow := domainservices.NewDirectTelegramActivationWorkflow()
+	activateTelegram := usecases.NewActivateTelegramByToken(
+		factory,
+		identityModule.RepositoryFactory,
+		activateTelegramUoW,
+		directTelegramWorkflow,
+		bindingService,
+		cfg.TelegramDirectEnabled,
+		o11y,
+	)
 	telegramProcessor := services.NewTelegramMessageProcessor(
 		activateTelegram,
+		processOnboardingMessage,
 		buildTelegramMessages(tgCfg),
 		o11y,
 	)
@@ -151,8 +214,11 @@ func NewOnboardingModule(
 		OutreachJob:                  onboardingjobs.NewOutreachJob(sendOutreach, cfg.OutreachEnabled),
 		ExpirationJob:                onboardingjobs.NewTokenExpirationJob(expireTokens, cfg.TokenExpirationSchedule),
 		MetaProcessedMessagesCleanup: onboardingjobs.NewMetaProcessedMessagesCleanupJob(cleanupTables, cfg.MetaCleanupSchedule),
+		SendActivationEmail:          sendActivationEmail,
+		StartBudgetConfiguration:     startBudgetConfiguration,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
+			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
 			{EventType: "billing.subscription.activated_without_token", Handler: paidWithoutTokenConsumer},
 		},
 	}, nil

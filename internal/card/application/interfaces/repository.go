@@ -14,6 +14,7 @@ type CardRepository interface {
 	GetByIDForUser(ctx context.Context, cardID, userID string) (entities.Card, error)
 	ListByUser(ctx context.Context, userID, cursor string, limit int) ([]entities.Card, string, error)
 	UpdateByIDForUser(ctx context.Context, c entities.Card) (entities.Card, error)
+	UpdateLimitByIDForUser(ctx context.Context, c entities.Card, expectedVersion int64) (entities.Card, error)
 	SoftDeleteByIDForUser(ctx context.Context, cardID, userID string, now time.Time) error
 }
 

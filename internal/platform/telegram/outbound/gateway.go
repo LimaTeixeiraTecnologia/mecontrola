@@ -60,7 +60,7 @@ func (g *Gateway) SendTextMessage(ctx context.Context, chatID int64, text string
 	ctx, span := g.o11y.Tracer().Start(ctx, "telegram.outbound.send_message")
 	defer span.End()
 
-	safe := truncateRunes(htmlEscaper.Replace(text), maxTelegramMessageRunes)
+	safe := htmlEscaper.Replace(truncateRunes(text, maxTelegramMessageRunes))
 	if safe == "" {
 		g.sendError.Add(ctx, 1, observability.String("reason", "empty_text"))
 		return fmt.Errorf("telegram.outbound: text is empty: %w", ErrSendUnavailable)

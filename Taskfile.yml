@@ -90,6 +90,46 @@ tasks:
     cmds:
       - go run ./scripts/smoke/auth_webhook --url "{{.WEBHOOK_URL}}" --secret "{{.META_APP_SECRET}}" --user-wa "{{.SMOKE_WA}}" --db "{{.DB_URL}}"
 
+  mvp:smoke:
+    desc: |
+      Smoke E2E local: Kiwify webhook -> SendActivationEmail -> Mailpit -> /tokens/<token>/state.
+      Pre-req: 'task local:up' rodando (postgres+mailpit+server+worker). Variaveis lidas do .env:
+      KIWIFY_WEBHOOK_SECRET, KIWIFY_PRODUCT_ID_MONTHLY. Opcionais: KIWIFY_URL, STATE_URL_BASE,
+      MAILPIT_API, WAIT_MAX_SECONDS.
+    cmds:
+      - bash scripts/smoke/mvp_e2e.sh
+
+  mvp:telegram:prepare:
+    desc: |
+      Sobe stack completo para E2E Telegram: build/vet, docker compose (postgres+mailpit+otel),
+      migrate, server+worker em background, ngrok detached, setWebhook Telegram. Le .env.
+      Pre-req humano: bot criado em @BotFather + .env preenchido com TELEGRAM_BOT_*.
+    cmds:
+      - bash scripts/smoke/telegram_prepare.sh
+
+  mvp:telegram:drive:
+    desc: |
+      Dirige fluxo E2E Telegram: dispara Kiwify webhook, polla email no Mailpit, extrai token,
+      pega deep link, prompts humanos minimos (clicar link + 4 msgs no Telegram), cria card+invoice
+      via SQL, dispara ThresholdAlertsJob, valida budget_alerts_sent.notified_at. Pre-req:
+      'task mvp:telegram:prepare' rodando.
+    cmds:
+      - bash scripts/smoke/telegram_drive.sh
+
+  alerts:run-once:
+    desc: |
+      Dispara ThresholdAlertsJob 1x via worker efemero (cron acelerado @every 2s) e mata apos
+      timeout. Util para validar Fase 12 do playbook Telegram sem esperar @hourly. Forca
+      BUDGETS_THRESHOLD_ALERTS_MODE=job + BUDGETS_THRESHOLD_ALERTS_CRON='@every 2s'.
+    cmds:
+      - |
+        set -euo pipefail
+        echo "==> alerts:run-once : iniciando worker efemero por 8s..."
+        BUDGETS_THRESHOLD_ALERTS_MODE=job \
+        BUDGETS_THRESHOLD_ALERTS_CRON='@every 2s' \
+          timeout 8 go run ./cmd/worker || true
+        echo "==> alerts:run-once : worker encerrado. Conferir budget_alerts_sent."
+
   onboarding:smoke:
     desc: |
       Smoke test do fluxo ATIVAR end-to-end com HMAC real (staging).

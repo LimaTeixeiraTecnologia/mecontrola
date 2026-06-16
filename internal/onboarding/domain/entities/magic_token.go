@@ -26,6 +26,7 @@ type MagicToken struct {
 	consumedByUserID          string
 	consumedByMobileE164      string
 	activationPath            valueobjects.ActivationPath
+	telegramExternalID        string
 }
 
 func NewMagicToken(id string, tokenHash []byte, planID string, expiresAt time.Time) (MagicToken, error) {
@@ -69,6 +70,7 @@ func HydrateMagicToken(
 	consumedByUserID string,
 	consumedByMobileE164 string,
 	activationPath valueobjects.ActivationPath,
+	telegramExternalID string,
 ) MagicToken {
 	return MagicToken{
 		id:                        id,
@@ -88,6 +90,7 @@ func HydrateMagicToken(
 		consumedByUserID:          consumedByUserID,
 		consumedByMobileE164:      consumedByMobileE164,
 		activationPath:            activationPath,
+		telegramExternalID:        telegramExternalID,
 	}
 }
 
@@ -108,6 +111,7 @@ func (m MagicToken) ExternalSaleID() string                      { return m.exte
 func (m MagicToken) ConsumedByUserID() string                    { return m.consumedByUserID }
 func (m MagicToken) ConsumedByMobileE164() string                { return m.consumedByMobileE164 }
 func (m MagicToken) ActivationPath() valueobjects.ActivationPath { return m.activationPath }
+func (m MagicToken) TelegramExternalID() string                  { return m.telegramExternalID }
 
 func (m MagicToken) IsExpiredAt(now time.Time) bool {
 	return now.After(m.expiresAt)
@@ -158,6 +162,14 @@ func (m MagicToken) MarkExpired() (MagicToken, error) {
 		return m, nil
 	}
 	m.status = valueobjects.TokenStatusExpired
+	return m, nil
+}
+
+func (m MagicToken) LinkTelegramExternalID(externalID string) (MagicToken, error) {
+	if externalID == "" {
+		return m, fmt.Errorf("onboarding: telegram external id is required")
+	}
+	m.telegramExternalID = externalID
 	return m, nil
 }
 

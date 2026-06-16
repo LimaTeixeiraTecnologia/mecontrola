@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -15,6 +16,7 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	budgetsconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/config"
 	budgetsserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/http/server"
@@ -27,6 +29,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
@@ -40,19 +43,31 @@ type BudgetsModule struct {
 	AbandonedDraftReaper     *budgetsjobs.AbandonedDraftReaper
 	PendingEventsReaper      *budgetsjobs.PendingEventsReaper
 	RetentionPurge           *budgetsjobs.RetentionPurge
+	ThresholdAlertsJob       *budgetsjobs.ThresholdAlertsJob
 	ExpenseCommittedConsumer *consumers.ExpenseCommittedConsumer
 	ExternalExpenseConsumer  *consumers.ExternalExpenseConsumer
+	ThresholdAlertNotifier   *consumers.ThresholdAlertNotifier
 	EventHandlers            []BudgetsEventHandlerRegistration
+	CreateBudgetUC           *usecases.CreateBudget
+	ActivateBudgetUC         *usecases.ActivateBudget
+	CreateRecurrenceUC       *usecases.CreateRecurrence
+	DeleteDraftBudgetUC      *usecases.DeleteDraftBudget
+	DeleteExpenseUC          *usecases.DeleteExpense
 	ListAlertsUC             *usecases.ListAlerts
+	GetMonthlySummaryUC      *usecases.GetMonthlySummary
+	UpsertExpenseUC          *usecases.UpsertExpense
 }
 
 type moduleBuilder struct {
-	cfg              *configs.Config
-	o11y             observability.Observability
-	mgr              manager.Manager
-	categoriesModule *categories.CategoriesModule
-	publisher        *producers.ExpenseCommittedPublisher
-	gatewayAuth      func(http.Handler) http.Handler
+	cfg                     *configs.Config
+	o11y                    observability.Observability
+	mgr                     manager.Manager
+	categoriesModule        *categories.CategoriesModule
+	publisher               *producers.ExpenseCommittedPublisher
+	thresholdAlertPublisher *producers.ThresholdAlertPublisher
+	gatewayAuth             func(http.Handler) http.Handler
+	channelGateway          notification.ChannelGateway
+	channelResolver         appinterfaces.UserChannelResolver
 }
 
 type moduleRepositories struct {
@@ -60,19 +75,20 @@ type moduleRepositories struct {
 }
 
 type moduleUseCases struct {
-	signalAbandonedDrafts  *usecases.SignalAbandonedDrafts
-	runPendingEventsReaper *usecases.RunPendingEventsReaper
-	purgeRetention         *usecases.PurgeRetention
-	createBudget           *usecases.CreateBudget
-	activateBudget         *usecases.ActivateBudget
-	deleteDraftBudget      *usecases.DeleteDraftBudget
-	createRecurrence       *usecases.CreateRecurrence
-	upsertExpense          *usecases.UpsertExpense
-	deleteExpense          *usecases.DeleteExpense
-	getMonthlySummary      *usecases.GetMonthlySummary
-	listAlerts             *usecases.ListAlerts
-	evaluateAlert          *usecases.EvaluateAlert
-	ingestExternalExpense  *usecases.IngestExternalExpense
+	signalAbandonedDrafts   *usecases.SignalAbandonedDrafts
+	runPendingEventsReaper  *usecases.RunPendingEventsReaper
+	purgeRetention          *usecases.PurgeRetention
+	createBudget            *usecases.CreateBudget
+	activateBudget          *usecases.ActivateBudget
+	deleteDraftBudget       *usecases.DeleteDraftBudget
+	createRecurrence        *usecases.CreateRecurrence
+	upsertExpense           *usecases.UpsertExpense
+	deleteExpense           *usecases.DeleteExpense
+	getMonthlySummary       *usecases.GetMonthlySummary
+	listAlerts              *usecases.ListAlerts
+	evaluateAlert           *usecases.EvaluateAlert
+	ingestExternalExpense   *usecases.IngestExternalExpense
+	evaluateThresholdAlerts *usecases.EvaluateThresholdAlerts
 }
 
 func NewBudgetsModule(
@@ -81,14 +97,21 @@ func NewBudgetsModule(
 	mgr manager.Manager,
 	categoriesModule *categories.CategoriesModule,
 	gatewayAuth func(http.Handler) http.Handler,
+	channelGateway notification.ChannelGateway,
+	channelResolver appinterfaces.UserChannelResolver,
 ) (*BudgetsModule, error) {
+	outboxFactory := outbox.NewRepositoryFactory(o11y)
+	idGen := id.NewUUIDGenerator()
 	builder := moduleBuilder{
-		cfg:              cfg,
-		o11y:             o11y,
-		mgr:              mgr,
-		categoriesModule: categoriesModule,
-		publisher:        producers.NewExpenseCommittedPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator(), o11y),
-		gatewayAuth:      gatewayAuth,
+		cfg:                     cfg,
+		o11y:                    o11y,
+		mgr:                     mgr,
+		categoriesModule:        categoriesModule,
+		publisher:               producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		thresholdAlertPublisher: producers.NewThresholdAlertPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		gatewayAuth:             gatewayAuth,
+		channelGateway:          channelGateway,
+		channelResolver:         channelResolver,
 	}
 	return builder.Build()
 }
@@ -107,18 +130,55 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
 	externalExpenseConsumer := consumers.NewExternalExpenseConsumer(useCases.ingestExternalExpense, b.o11y)
 
+	mode := strings.ToLower(strings.TrimSpace(b.cfg.BudgetsConfig.ThresholdAlertsMode))
+	if mode == "" {
+		mode = configs.ThresholdAlertsModeLegacy
+	}
+	legacyEnabled := mode == configs.ThresholdAlertsModeLegacy || mode == configs.ThresholdAlertsModeBoth
+	jobEnabled := mode == configs.ThresholdAlertsModeJob || mode == configs.ThresholdAlertsModeBoth
+
+	eventHandlers := []BudgetsEventHandlerRegistration{
+		{EventType: "external.expense.v1", Handler: externalExpenseConsumer},
+	}
+	if legacyEnabled {
+		eventHandlers = append([]BudgetsEventHandlerRegistration{
+			{EventType: "budgets.expense.committed.v1", Handler: expenseCommittedConsumer},
+		}, eventHandlers...)
+	}
+
+	var thresholdAlertNotifier *consumers.ThresholdAlertNotifier
+	if b.channelGateway != nil && b.channelResolver != nil {
+		notifyAlertUC := usecases.NewNotifyThresholdAlert(b.mgr, repositories.factory, b.channelResolver, b.channelGateway, b.o11y)
+		thresholdAlertNotifier = consumers.NewThresholdAlertNotifier(notifyAlertUC, b.o11y)
+		eventHandlers = append(eventHandlers, BudgetsEventHandlerRegistration{
+			EventType: "budgets.threshold_alert_triggered.v1",
+			Handler:   thresholdAlertNotifier,
+		})
+	}
+
+	var thresholdAlertsJob *budgetsjobs.ThresholdAlertsJob
+	if jobEnabled {
+		thresholdAlertsJob = budgetsjobs.NewThresholdAlertsJob(useCases.evaluateThresholdAlerts, b.cfg.BudgetsConfig)
+	}
+
 	return &BudgetsModule{
 		BudgetsRouter:            b.buildRouter(useCases),
 		AbandonedDraftReaper:     budgetsjobs.NewAbandonedDraftReaper(useCases.signalAbandonedDrafts, b.cfg.BudgetsConfig),
 		PendingEventsReaper:      budgetsjobs.NewPendingEventsReaper(useCases.runPendingEventsReaper, b.cfg.BudgetsConfig),
 		RetentionPurge:           budgetsjobs.NewRetentionPurge(useCases.purgeRetention, b.cfg.BudgetsConfig),
+		ThresholdAlertsJob:       thresholdAlertsJob,
 		ExpenseCommittedConsumer: expenseCommittedConsumer,
 		ExternalExpenseConsumer:  externalExpenseConsumer,
-		EventHandlers: []BudgetsEventHandlerRegistration{
-			{EventType: "budgets.expense.committed.v1", Handler: expenseCommittedConsumer},
-			{EventType: "external.expense.v1", Handler: externalExpenseConsumer},
-		},
-		ListAlertsUC: useCases.listAlerts,
+		ThresholdAlertNotifier:   thresholdAlertNotifier,
+		EventHandlers:            eventHandlers,
+		CreateBudgetUC:           useCases.createBudget,
+		ActivateBudgetUC:         useCases.activateBudget,
+		CreateRecurrenceUC:       useCases.createRecurrence,
+		DeleteDraftBudgetUC:      useCases.deleteDraftBudget,
+		DeleteExpenseUC:          useCases.deleteExpense,
+		ListAlertsUC:             useCases.listAlerts,
+		GetMonthlySummaryUC:      useCases.getMonthlySummary,
+		UpsertExpenseUC:          useCases.upsertExpense,
 	}, nil
 }
 
@@ -154,6 +214,13 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 	listAlertsUoW := uow.New[dtooutput.ListAlertsOutput](b.mgr, uow.WithObservability(b.o11y))
 	monthlySummaryUoW := uow.New[dtooutput.MonthlySummaryOutput](b.mgr, uow.WithObservability(b.o11y))
 
+	thresholdConfig, err := b.buildThresholdConfig()
+	if err != nil {
+		return moduleUseCases{}, err
+	}
+
+	thresholdAlertsUoW := uow.NewVoid(b.mgr, uow.WithObservability(b.o11y))
+
 	autoDraft := usecases.NewCreateOrAutoDraftForExpense(repositories.factory)
 	upsertExpense := usecases.NewUpsertExpense(
 		repositories.factory,
@@ -181,7 +248,44 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		listAlerts:             usecases.NewListAlerts(repositories.factory, listAlertsUoW, b.o11y),
 		evaluateAlert:          usecases.NewEvaluateAlert(repositories.factory, voidUoW, b.o11y),
 		ingestExternalExpense:  usecases.NewIngestExternalExpense(repositories.factory, upsertExpense, deleteExpense, voidUoW, b.o11y),
+		evaluateThresholdAlerts: usecases.NewEvaluateThresholdAlerts(
+			repositories.factory,
+			b.thresholdAlertPublisher,
+			thresholdAlertsUoW,
+			thresholdConfig,
+			location,
+			b.cfg.BudgetsConfig.ThresholdAlertsScanLimit,
+			b.o11y,
+		),
 	}, nil
+}
+
+func (b *moduleBuilder) buildThresholdConfig() (services.ThresholdConfig, error) {
+	category := b.cfg.BudgetsConfig.ThresholdCategoryRatio
+	if category <= 0 {
+		category = 0.80
+	}
+	goal := b.cfg.BudgetsConfig.ThresholdGoalRatio
+	if goal <= 0 {
+		goal = 0.50
+	}
+	card := b.cfg.BudgetsConfig.ThresholdCardRatio
+	if card <= 0 {
+		card = 0.85
+	}
+	catRatio, err := valueobjects.NewThresholdRatio(category)
+	if err != nil {
+		return services.ThresholdConfig{}, fmt.Errorf("budgets: threshold category: %w", err)
+	}
+	goalRatio, err := valueobjects.NewThresholdRatio(goal)
+	if err != nil {
+		return services.ThresholdConfig{}, fmt.Errorf("budgets: threshold goal: %w", err)
+	}
+	cardRatio, err := valueobjects.NewThresholdRatio(card)
+	if err != nil {
+		return services.ThresholdConfig{}, fmt.Errorf("budgets: threshold card: %w", err)
+	}
+	return services.ThresholdConfig{Category: catRatio, Goal: goalRatio, Card: cardRatio}, nil
 }
 
 func (b *moduleBuilder) buildRouter(useCases moduleUseCases) *budgetsserver.BudgetsRouter {

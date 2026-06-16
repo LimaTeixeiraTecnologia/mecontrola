@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -20,6 +21,7 @@ type GetTokenState struct {
 	factory          appinterfaces.RepositoryFactory
 	botNumber        string
 	botNumberDisplay string
+	telegramBot      string
 	o11y             observability.Observability
 }
 
@@ -28,6 +30,7 @@ func NewGetTokenState(
 	factory appinterfaces.RepositoryFactory,
 	botNumber string,
 	botNumberDisplay string,
+	telegramBot string,
 	o11y observability.Observability,
 ) *GetTokenState {
 	return &GetTokenState{
@@ -35,6 +38,7 @@ func NewGetTokenState(
 		factory:          factory,
 		botNumber:        botNumber,
 		botNumberDisplay: botNumberDisplay,
+		telegramBot:      telegramBot,
 		o11y:             o11y,
 	}
 }
@@ -81,10 +85,15 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 
 	if magicToken.Status() == valueobjects.TokenStatusPaid && !magicToken.IsExpiredAt(now) {
 		waMe := fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), clearToken)
+		var tgLink string
+		if uc.telegramBot != "" {
+			tgLink = fmt.Sprintf("https://t.me/%s?start=ATIVAR_%s", strings.TrimPrefix(uc.telegramBot, "@"), clearToken)
+		}
 		return GetTokenStateResult{
 			Output: output.GetTokenStateOutput{
 				ReadyToActivate:  true,
 				WaMeURL:          waMe,
+				TelegramDeepLink: tgLink,
 				BotNumberDisplay: uc.botNumberDisplay,
 			},
 		}, nil

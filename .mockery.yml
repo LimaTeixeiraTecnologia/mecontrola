@@ -55,8 +55,11 @@ packages:
       CheckoutURLBuilder: {}
       IdentityGateway: {}
       MagicTokenRepository: {}
+      OutreachChannelGateway: {}
       OnboardingCleanupRepository: {}
       OnboardingCleanupRepositoryFactory: {}
+      OnboardingSessionRepository: {}
+      OnboardingSessionRepositoryFactory: {}
       RepositoryFactory: {}
       SubscriptionBinder: {}
       SupportSignalRepository: {}
@@ -89,6 +92,9 @@ packages:
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup:
     interfaces:
       MessageRepository: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/messaging/database/consumers:
+    interfaces:
+      notifyThresholdAlertUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces:
     interfaces:
       CategoriesReader: {}
@@ -99,6 +105,10 @@ packages:
       PendingEventRepository: {}
       RepositoryFactory: {}
       ExpenseCommittedPublisher: {}
+      ThresholdAlertSentRepository: {}
+      ThresholdAlertPublisher: {}
+      CardThresholdReader: {}
+      UserChannelResolver: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces:
     interfaces:
       RepositoryFactory: {}

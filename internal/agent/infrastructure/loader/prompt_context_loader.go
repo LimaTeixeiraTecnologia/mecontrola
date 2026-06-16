@@ -115,8 +115,12 @@ func collectCardSeeds(items []cardoutput.Card) []interfaces.CardSeed {
 			nickname = item.Name
 		}
 		out = append(out, interfaces.CardSeed{
-			ID:       item.ID,
-			Nickname: nickname,
+			ID:         item.ID,
+			Name:       item.Name,
+			Nickname:   nickname,
+			ClosingDay: item.ClosingDay,
+			DueDay:     item.DueDay,
+			LimitCents: item.LimitCents,
 		})
 	}
 	return out

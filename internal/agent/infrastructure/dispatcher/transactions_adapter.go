@@ -25,16 +25,16 @@ type ListTransactionsUseCase interface {
 	Execute(ctx context.Context, refMonthStr, cursor string, limit int) (transactionsusecases.TransactionPage, error)
 }
 
+type GetTransactionUseCase interface {
+	Execute(ctx context.Context, txID string) (transactionsoutput.Transaction, error)
+}
+
 type CreateTransactionUseCase interface {
 	Execute(ctx context.Context, raw transactionsinput.RawCreateTransaction) (transactionsoutput.Transaction, error)
 }
 
 type DeleteTransactionUseCase interface {
 	Execute(ctx context.Context, txID string, version int64) error
-}
-
-type GetTransactionUseCase interface {
-	Execute(ctx context.Context, txID string) (transactionsoutput.Transaction, error)
 }
 
 type TransactionsAdapter struct {
@@ -62,6 +62,7 @@ func NewTransactionsAdapterFull(
 
 type listFilters struct {
 	Month string `json:"month"`
+	ID    string `json:"id"`
 }
 
 func (a *TransactionsAdapter) List(ctx context.Context, userID uuid.UUID, rawFilters json.RawMessage) (string, error) {
@@ -98,6 +99,27 @@ func (a *TransactionsAdapter) List(ctx context.Context, userID uuid.UUID, rawFil
 	return fmt.Sprintf("Em %s voce tem %d lancamentos: entradas R$ %s e saidas R$ %s.",
 		month, len(page.Transactions),
 		formatCents(totalIn), formatCents(totalOut),
+	), nil
+}
+
+func (a *TransactionsAdapter) Get(ctx context.Context, userID uuid.UUID, rawFilters json.RawMessage) (string, error) {
+	if a.getUseCase == nil {
+		return "", fmt.Errorf("transactions.get: %w", ErrIntentUnsupported)
+	}
+	var filters listFilters
+	if err := json.Unmarshal(rawFilters, &filters); err != nil || strings.TrimSpace(filters.ID) == "" {
+		return "", fmt.Errorf("transactions.get: id ausente")
+	}
+	if _, ok := auth.FromContext(ctx); !ok {
+		ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
+	}
+	out, err := a.getUseCase.Execute(ctx, strings.TrimSpace(filters.ID))
+	if err != nil {
+		return "", fmt.Errorf("transactions.get: %w", err)
+	}
+	return fmt.Sprintf("Lancamento de R$ %s em %s: %s.",
+		formatCents(out.AmountCents), out.OccurredAt.Format("02/01"),
+		strings.ToLower(strings.TrimSpace(out.Description)),
 	), nil
 }
 

@@ -37,6 +37,13 @@ func (m *mockUpdateCard) Execute(ctx context.Context, in input.UpdateCard) (outp
 	return args.Get(0).(output.Card), args.Error(1)
 }
 
+type mockUpdateCardLimit struct{ mock.Mock }
+
+func (m *mockUpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit) (output.Card, error) {
+	args := m.Called(ctx, in)
+	return args.Get(0).(output.Card), args.Error(1)
+}
+
 type mockSoftDeleteCard struct{ mock.Mock }
 
 func (m *mockSoftDeleteCard) Execute(ctx context.Context, in input.SoftDeleteCard) error {

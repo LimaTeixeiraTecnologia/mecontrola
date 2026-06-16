@@ -32,7 +32,7 @@ func (s *CardMapperSuite) makeCard(deleted *time.Time) entities.Card {
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	createdAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	updatedAt := time.Date(2026, 1, 3, 3, 4, 5, 0, time.UTC)
-	return entities.HydrateCard(id, userID, name, nick, cycle, createdAt, updatedAt, deleted)
+	return entities.HydrateCard(id, userID, name, nick, cycle, 0, createdAt, updatedAt, deleted)
 }
 
 func (s *CardMapperSuite) TestToCardOutput_PreservesAllFields() {

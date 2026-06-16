@@ -10,10 +10,11 @@ import (
 )
 
 type CreateCardCommand struct {
-	UserID   uuid.UUID
-	Name     valueobjects.CardName
-	Nickname valueobjects.Nickname
-	Cycle    valueobjects.BillingCycle
+	UserID     uuid.UUID
+	Name       valueobjects.CardName
+	Nickname   valueobjects.Nickname
+	Cycle      valueobjects.BillingCycle
+	LimitCents int64
 }
 
 type CreateCardDecider struct{}
@@ -30,6 +31,7 @@ func (CreateCardDecider) Decide(cmd CreateCardCommand, cardID uuid.UUID, now tim
 		cmd.Name,
 		cmd.Nickname,
 		cmd.Cycle,
+		cmd.LimitCents,
 		at,
 		at,
 		nil,

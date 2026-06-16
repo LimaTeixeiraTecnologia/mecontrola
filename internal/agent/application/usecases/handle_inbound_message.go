@@ -27,6 +27,7 @@ type HandleInboundMessage struct {
 	eventPub      interfaces.IntentEventPublisher
 	promptBuilder services.PromptBuilder
 	validator     services.IntentValidator
+	safetyGuard   services.IntentSafetyGuard
 	workflow      domainservices.IntentWorkflow
 	o11y          observability.Observability
 	outcomeTotal  observability.Counter
@@ -39,6 +40,7 @@ func NewHandleInboundMessage(
 	eventPub interfaces.IntentEventPublisher,
 	promptBuilder services.PromptBuilder,
 	validator services.IntentValidator,
+	safetyGuard services.IntentSafetyGuard,
 	workflow domainservices.IntentWorkflow,
 	o11y observability.Observability,
 ) *HandleInboundMessage {
@@ -54,6 +56,7 @@ func NewHandleInboundMessage(
 		eventPub:      eventPub,
 		promptBuilder: promptBuilder,
 		validator:     validator,
+		safetyGuard:   safetyGuard,
 		workflow:      workflow,
 		o11y:          o11y,
 		outcomeTotal:  outcomeTotal,
@@ -95,6 +98,17 @@ func (uc *HandleInboundMessage) Execute(ctx context.Context, raw commands.RawInt
 	if err != nil {
 		span.RecordError(err)
 		return HandleInboundResult{}, fmt.Errorf("agent.llm.usecase.handle_inbound_message: validate: %w", err)
+	}
+	if err := uc.safetyGuard.Validate(cmd.Text, intent); err != nil {
+		span.RecordError(err)
+		var safetyErr *services.IntentSafetyError
+		if errors.As(err, &safetyErr) {
+			outcome := uc.workflow.DecideSafetyBlocked(intent, llmResp.Provider, eventID, now, safetyErr.Reason())
+			uc.outcomeTotal.Add(ctx, 1, observability.String("outcome", outcome.Kind.String()))
+			uc.publishEvent(ctx, cmd, outcome, llmResp, startedAt, false)
+			return HandleInboundResult{ReplyText: outcome.ResponseHint, Outcome: outcome}, nil
+		}
+		return HandleInboundResult{}, fmt.Errorf("agent.llm.usecase.handle_inbound_message: safety: %w", err)
 	}
 
 	outcome := uc.workflow.DecideRoute(intent, llmResp.Provider, eventID, now)
@@ -231,7 +245,14 @@ func toServiceCategorySeeds(in []interfaces.CategorySeed) []services.CategorySee
 func toServiceCardSeeds(in []interfaces.CardSeed) []services.CardSeed {
 	out := make([]services.CardSeed, 0, len(in))
 	for _, c := range in {
-		out = append(out, services.CardSeed{ID: c.ID, Nickname: c.Nickname, Brand: c.Brand, LastFour: c.LastFour})
+		out = append(out, services.CardSeed{
+			ID:         c.ID,
+			Name:       c.Name,
+			Nickname:   c.Nickname,
+			ClosingDay: c.ClosingDay,
+			DueDay:     c.DueDay,
+			LimitCents: c.LimitCents,
+		})
 	}
 	return out
 }

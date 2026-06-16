@@ -8,4 +8,5 @@ type CreateCard struct {
 	Nickname   string
 	ClosingDay int
 	DueDay     int
+	LimitCents int64
 }

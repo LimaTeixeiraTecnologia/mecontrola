@@ -28,6 +28,43 @@ type Config struct {
 	BudgetsConfig      BudgetsConfig       `mapstructure:",squash"`
 	TransactionsConfig TransactionsConfig  `mapstructure:",squash"`
 	AuthRateLimit      AuthRateLimitConfig `mapstructure:",squash"`
+	EmailConfig        EmailConfig         `mapstructure:",squash"`
+}
+
+type EmailConfig struct {
+	Provider      string        `mapstructure:"EMAIL_PROVIDER"`
+	FromAddress   string        `mapstructure:"EMAIL_FROM_ADDRESS"`
+	FromName      string        `mapstructure:"EMAIL_FROM_NAME"`
+	ReplyTo       string        `mapstructure:"EMAIL_REPLY_TO"`
+	ActivateURL   string        `mapstructure:"EMAIL_ACTIVATE_URL"`
+	SMTPHost      string        `mapstructure:"SMTP_HOST"`
+	SMTPPort      int           `mapstructure:"SMTP_PORT"`
+	SMTPUsername  string        `mapstructure:"SMTP_USERNAME"`
+	SMTPPassword  string        `mapstructure:"SMTP_PASSWORD"`
+	SMTPStartTLS  bool          `mapstructure:"SMTP_STARTTLS"`
+	SMTPTimeout   time.Duration `mapstructure:"SMTP_TIMEOUT"`
+	ResendAPIKey  string        `mapstructure:"RESEND_API_KEY"`
+	ResendBaseURL string        `mapstructure:"RESEND_BASE_URL"`
+	HTTPTimeout   time.Duration `mapstructure:"EMAIL_HTTP_TIMEOUT"`
+}
+
+func (e EmailConfig) Safe() map[string]any {
+	return map[string]any{
+		"provider":           e.Provider,
+		"from_address":       e.FromAddress,
+		"from_name":          e.FromName,
+		"reply_to":           e.ReplyTo,
+		"activate_url":       e.ActivateURL,
+		"smtp_host":          e.SMTPHost,
+		"smtp_port":          e.SMTPPort,
+		"smtp_username_set":  e.SMTPUsername != "",
+		"smtp_password_set":  e.SMTPPassword != "",
+		"smtp_starttls":      e.SMTPStartTLS,
+		"smtp_timeout":       e.SMTPTimeout.String(),
+		"resend_api_key_set": e.ResendAPIKey != "",
+		"resend_base_url":    e.ResendBaseURL,
+		"http_timeout":       e.HTTPTimeout.String(),
+	}
 }
 
 type AuthRateLimitConfig struct {
@@ -55,13 +92,25 @@ type IdentityConfig struct {
 }
 
 type BudgetsConfig struct {
-	PendingReaperInterval   string        `mapstructure:"BUDGETS_PENDING_REAPER_INTERVAL"`
-	PendingTTLHours         int           `mapstructure:"BUDGETS_PENDING_TTL_HOURS"`
-	PendingTTL              time.Duration `mapstructure:"-"`
-	AbandonedDraftCron      string        `mapstructure:"BUDGETS_ABANDONED_DRAFT_CRON"`
-	RetentionPurgeCron      string        `mapstructure:"BUDGETS_RETENTION_PURGE_CRON"`
-	RetentionPurgeBatchSize int           `mapstructure:"BUDGETS_RETENTION_PURGE_BATCH_SIZE"`
+	PendingReaperInterval    string        `mapstructure:"BUDGETS_PENDING_REAPER_INTERVAL"`
+	PendingTTLHours          int           `mapstructure:"BUDGETS_PENDING_TTL_HOURS"`
+	PendingTTL               time.Duration `mapstructure:"-"`
+	AbandonedDraftCron       string        `mapstructure:"BUDGETS_ABANDONED_DRAFT_CRON"`
+	RetentionPurgeCron       string        `mapstructure:"BUDGETS_RETENTION_PURGE_CRON"`
+	RetentionPurgeBatchSize  int           `mapstructure:"BUDGETS_RETENTION_PURGE_BATCH_SIZE"`
+	ThresholdAlertsCron      string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_CRON"`
+	ThresholdAlertsScanLimit int           `mapstructure:"BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT"`
+	ThresholdAlertsMode      string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_MODE"`
+	ThresholdCategoryRatio   float64       `mapstructure:"BUDGETS_THRESHOLD_CATEGORY_RATIO"`
+	ThresholdGoalRatio       float64       `mapstructure:"BUDGETS_THRESHOLD_GOAL_RATIO"`
+	ThresholdCardRatio       float64       `mapstructure:"BUDGETS_THRESHOLD_CARD_RATIO"`
 }
+
+const (
+	ThresholdAlertsModeLegacy = "legacy"
+	ThresholdAlertsModeJob    = "job"
+	ThresholdAlertsModeBoth   = "both"
+)
 
 type OnboardingConfig struct {
 	TokenTTLDays            int    `mapstructure:"ONBOARDING_TOKEN_TTL_DAYS"`
@@ -80,6 +129,7 @@ type OnboardingConfig struct {
 	TokenExpirationSchedule string `mapstructure:"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE"`
 	MaxTokenLookupAttempts  int    `mapstructure:"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS"`
 	TokenEncryptionKey      string `mapstructure:"ONBOARDING_TOKEN_ENCRYPTION_KEY"`
+	TelegramDirectEnabled   bool   `mapstructure:"ONBOARDING_TELEGRAM_DIRECT_ENABLED"`
 }
 
 type WhatsAppConfig struct {
@@ -161,6 +211,9 @@ type KiwifyConfig struct {
 	OAuthTokenSafetyMargin     time.Duration `mapstructure:"KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN"`
 	RateLimitMaxRequestsPerMin int           `mapstructure:"KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN"`
 	RateLimitBurst             int           `mapstructure:"KIWIFY_RATE_LIMIT_BURST"`
+	WebhookRateLimitPerMin     int           `mapstructure:"KIWIFY_WEBHOOK_RATE_LIMIT_PER_MIN"`
+	WebhookRateLimitBurst      int           `mapstructure:"KIWIFY_WEBHOOK_RATE_LIMIT_BURST"`
+	WebhookTrustedProxies      string        `mapstructure:"KIWIFY_WEBHOOK_TRUSTED_PROXIES"`
 	ReconciliationInterval     string        `mapstructure:"KIWIFY_RECONCILIATION_INTERVAL"`
 	ReconciliationBatchSize    int           `mapstructure:"KIWIFY_RECONCILIATION_BATCH_SIZE"`
 	HTTPTimeout                time.Duration `mapstructure:"KIWIFY_HTTP_TIMEOUT"`
@@ -328,6 +381,7 @@ func (l *configLoader) load() (*Config, error) {
 	l.setAgentDefaults()
 	l.setTransactionsDefaults()
 	l.setIdentityDefaults()
+	l.setEmailDefaults()
 	l.setAuthRateLimitDefaults()
 
 	if err := l.v.ReadInConfig(); err != nil {
@@ -415,6 +469,7 @@ func (l *configLoader) envKeys() []string {
 		"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE",
 		"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS",
 		"ONBOARDING_TOKEN_ENCRYPTION_KEY",
+		"ONBOARDING_TELEGRAM_DIRECT_ENABLED",
 		"META_PHONE_NUMBER_ID",
 		"META_ACCESS_TOKEN",
 		"META_APP_SECRET",
@@ -440,6 +495,11 @@ func (l *configLoader) envKeys() []string {
 		"BUDGETS_ABANDONED_DRAFT_CRON",
 		"BUDGETS_RETENTION_PURGE_CRON",
 		"BUDGETS_RETENTION_PURGE_BATCH_SIZE",
+		"BUDGETS_THRESHOLD_ALERTS_CRON",
+		"BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT",
+		"BUDGETS_THRESHOLD_CATEGORY_RATIO",
+		"BUDGETS_THRESHOLD_GOAL_RATIO",
+		"BUDGETS_THRESHOLD_CARD_RATIO",
 		"TRANSACTIONS_ENABLED",
 		"TRANSACTIONS_IDEMPOTENCY_TTL",
 		"TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW",
@@ -461,6 +521,9 @@ func (l *configLoader) setKiwifyDefaults() {
 	l.v.SetDefault("KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN", 5*time.Minute)
 	l.v.SetDefault("KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN", 100)
 	l.v.SetDefault("KIWIFY_RATE_LIMIT_BURST", 10)
+	l.v.SetDefault("KIWIFY_WEBHOOK_RATE_LIMIT_PER_MIN", 60)
+	l.v.SetDefault("KIWIFY_WEBHOOK_RATE_LIMIT_BURST", 30)
+	l.v.SetDefault("KIWIFY_WEBHOOK_TRUSTED_PROXIES", "")
 	l.v.SetDefault("KIWIFY_RECONCILIATION_INTERVAL", "@hourly")
 	l.v.SetDefault("KIWIFY_RECONCILIATION_BATCH_SIZE", 200)
 	l.v.SetDefault("KIWIFY_HTTP_TIMEOUT", 10*time.Second)
@@ -474,6 +537,12 @@ func (l *configLoader) setBudgetsDefaults() {
 	l.v.SetDefault("BUDGETS_ABANDONED_DRAFT_CRON", "0 3 * * *")
 	l.v.SetDefault("BUDGETS_RETENTION_PURGE_CRON", "0 4 1 * *")
 	l.v.SetDefault("BUDGETS_RETENTION_PURGE_BATCH_SIZE", 500)
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_CRON", "@hourly")
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT", 500)
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_MODE", ThresholdAlertsModeLegacy)
+	l.v.SetDefault("BUDGETS_THRESHOLD_CATEGORY_RATIO", 0.80)
+	l.v.SetDefault("BUDGETS_THRESHOLD_GOAL_RATIO", 0.50)
+	l.v.SetDefault("BUDGETS_THRESHOLD_CARD_RATIO", 0.85)
 }
 
 func (l *configLoader) setTransactionsDefaults() {
@@ -484,6 +553,23 @@ func (l *configLoader) setTransactionsDefaults() {
 	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON", "@daily")
 	l.v.SetDefault("TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS", 48)
 	l.v.SetDefault("TRANSACTIONS_BRAZIL_TIMEZONE", "America/Sao_Paulo")
+}
+
+func (l *configLoader) setEmailDefaults() {
+	l.v.SetDefault("EMAIL_PROVIDER", "smtp")
+	l.v.SetDefault("EMAIL_FROM_ADDRESS", "noreply@mecontrola.local")
+	l.v.SetDefault("EMAIL_FROM_NAME", "MeControla")
+	l.v.SetDefault("EMAIL_REPLY_TO", "")
+	l.v.SetDefault("EMAIL_ACTIVATE_URL", "http://localhost:4321/activate")
+	l.v.SetDefault("SMTP_HOST", "mailpit")
+	l.v.SetDefault("SMTP_PORT", 1025)
+	l.v.SetDefault("SMTP_USERNAME", "")
+	l.v.SetDefault("SMTP_PASSWORD", "")
+	l.v.SetDefault("SMTP_STARTTLS", false)
+	l.v.SetDefault("SMTP_TIMEOUT", 10*time.Second)
+	l.v.SetDefault("RESEND_API_KEY", "")
+	l.v.SetDefault("RESEND_BASE_URL", "https://api.resend.com")
+	l.v.SetDefault("EMAIL_HTTP_TIMEOUT", 10*time.Second)
 }
 
 func (l *configLoader) setCoreDefaults() {
@@ -993,6 +1079,7 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_META_CLEANUP_SCHEDULE", "30 3 * * *")
 	l.v.SetDefault("ONBOARDING_TOKEN_EXPIRATION_SCHEDULE", "0 3 * * *")
 	l.v.SetDefault("ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS", 5)
+	l.v.SetDefault("ONBOARDING_TELEGRAM_DIRECT_ENABLED", false)
 }
 
 func (l *configLoader) setWhatsAppDefaults() {

@@ -27,6 +27,11 @@ type CardModule struct {
 	CardLookup        *usecases.GetCardForUser
 	ListCardsUC       *usecases.ListCards
 	CreateCardUC      *usecases.CreateCard
+	GetCardUC         *usecases.GetCard
+	UpdateCardUC      *usecases.UpdateCard
+	UpdateCardLimitUC *usecases.UpdateCardLimit
+	SoftDeleteCardUC  *usecases.SoftDeleteCard
+	InvoiceForUC      *usecases.InvoiceFor
 }
 
 func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.Observability, mgr manager.Manager, gatewayAuth func(http.Handler) http.Handler) (CardModule, error) {
@@ -40,12 +45,14 @@ func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.
 
 	createUoW := uow.New[entities.Card](mgr)
 	updateUoW := uow.New[entities.Card](mgr)
+	updateLimitUoW := uow.New[entities.Card](mgr)
 	deleteUoW := uow.New[struct{}](mgr)
 
 	createCard := usecases.NewCreateCard(createUoW, factory, idemStorage, o11y)
 	getCard := usecases.NewGetCard(factory, mgr, o11y)
 	listCards := usecases.NewListCards(factory, mgr, o11y)
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
+	updateCardLimit := usecases.NewUpdateCardLimit(updateLimitUoW, factory, idemStorage, o11y)
 	softDelete := usecases.NewSoftDeleteCard(deleteUoW, factory, idemStorage, o11y)
 	invoiceFor := usecases.NewInvoiceFor(factory, mgr, loc, o11y)
 	getCardForUser := usecases.NewGetCardForUser(factory, mgr, o11y)
@@ -54,6 +61,7 @@ func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.
 	listHandler := handlers.NewListCardsHandler(listCards, o11y)
 	getHandler := handlers.NewGetCardHandler(getCard, o11y)
 	updateHandler := handlers.NewUpdateCardHandler(updateCard, o11y)
+	updateLimitHandler := handlers.NewUpdateCardLimitHandler(updateCardLimit, o11y)
 	deleteHandler := handlers.NewDeleteCardHandler(softDelete, o11y)
 	invoiceForHandler := handlers.NewInvoiceForHandler(invoiceFor, o11y)
 
@@ -64,7 +72,7 @@ func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.
 		Scope:     "user",
 	}, o11y)
 
-	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, deleteHandler, invoiceForHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
+	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, updateLimitHandler, deleteHandler, invoiceForHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
 
 	return CardModule{
 		RepositoryFactory: factory,
@@ -72,5 +80,10 @@ func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.
 		CardLookup:        getCardForUser,
 		ListCardsUC:       listCards,
 		CreateCardUC:      createCard,
+		GetCardUC:         getCard,
+		UpdateCardUC:      updateCard,
+		UpdateCardLimitUC: updateCardLimit,
+		SoftDeleteCardUC:  softDelete,
+		InvoiceForUC:      invoiceFor,
 	}, nil
 }

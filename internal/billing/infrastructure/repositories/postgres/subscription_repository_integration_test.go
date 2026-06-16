@@ -168,6 +168,16 @@ func (s *RF17ConcurrentSubSuite) SetupSuite() {
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
+func (s *RF17ConcurrentSubSuite) prepareUser(userID string) {
+	ctx := context.Background()
+	_, err := s.mgr.DBTX(ctx).ExecContext(ctx,
+		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		 VALUES ($1, $2, 'ACTIVE', now(), now()) ON CONFLICT DO NOTHING`,
+		userID, "+5511"+userID[:10],
+	)
+	s.Require().NoError(err)
+}
+
 func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFails() {
 	scenarios := []struct {
 		name string
@@ -181,6 +191,7 @@ func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFai
 			dbtx := s.mgr.DBTX(ctx)
 			repo := s.factory.SubscriptionRepository(dbtx)
 			userID := "550e8400-e29b-41d4-a716-446655440001"
+			s.prepareUser(userID)
 
 			plan, err := valueobjects.NewPlan("MONTHLY", 30)
 			s.Require().NoError(err)

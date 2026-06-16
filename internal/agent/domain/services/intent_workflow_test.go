@@ -14,6 +14,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 )
 
+func mustWorkflowAction(t *testing.T, raw string) valueobjects.IntentAction {
+	t.Helper()
+	action, err := valueobjects.NewIntentAction(raw)
+	require.NoError(t, err)
+	return action
+}
+
 func mustIntent(t *testing.T, module valueobjects.IntentModule, action valueobjects.IntentAction, hint string) entities.IntentResult {
 	t.Helper()
 	r, err := entities.NewIntentResult(module, action, json.RawMessage(`{}`), json.RawMessage(`{}`), hint)
@@ -33,6 +40,12 @@ func TestIntentWorkflow_DecideRoute(t *testing.T) {
 		assert.Equal(t, services.IntentOutcomeRouted, outcome.Kind)
 		assert.Equal(t, eventID, outcome.EventID)
 		assert.True(t, outcome.Provider.Equal(provider))
+	})
+
+	t.Run("routed for newly supported update action", func(t *testing.T) {
+		intent := mustIntent(t, valueobjects.IntentModuleCards(), mustWorkflowAction(t, "update"), "ok")
+		outcome := sut.DecideRoute(intent, provider, eventID, now)
+		assert.Equal(t, services.IntentOutcomeRouted, outcome.Kind)
 	})
 
 	t.Run("structured error pass-through", func(t *testing.T) {
@@ -61,12 +74,26 @@ func TestIntentWorkflow_DecideExhausted(t *testing.T) {
 	assert.NotEmpty(t, outcome.ResponseHint)
 }
 
+func TestIntentWorkflow_DecideSafetyBlocked(t *testing.T) {
+	sut := services.NewIntentWorkflow()
+	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+	eventID := uuid.New()
+	provider := valueobjects.ModelSlugGeminiFlashLite()
+	intent := mustIntent(t, valueobjects.IntentModuleCards(), mustWorkflowAction(t, "delete"), "ok")
+
+	outcome := sut.DecideSafetyBlocked(intent, provider, eventID, now, "missing_confirmation")
+	assert.Equal(t, services.IntentOutcomeSafetyBlocked, outcome.Kind)
+	assert.Equal(t, "missing_confirmation", outcome.Reason)
+	assert.NotEmpty(t, outcome.ResponseHint)
+}
+
 func TestIntentOutcomeKind_String(t *testing.T) {
 	cases := map[services.IntentOutcomeKind]string{
 		services.IntentOutcomeRouted:            "routed",
 		services.IntentOutcomeStructuredError:   "structured_error",
 		services.IntentOutcomeProviderExhausted: "provider_exhausted",
 		services.IntentOutcomeUnsupportedAction: "unsupported_action",
+		services.IntentOutcomeSafetyBlocked:     "safety_blocked",
 		services.IntentOutcomeKind(0):           "invalid",
 		services.IntentOutcomeKind(99):          "invalid",
 	}

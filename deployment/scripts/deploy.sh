@@ -54,6 +54,8 @@ ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} run --rm migrat
 }
 
 log "Atualizando containers server e worker"
+# Intencional: postgres e pgbouncer excluídos — banco não reinicia em deploys rotineiros.
+# Para reiniciar o banco manualmente: docker compose ... restart postgres pgbouncer
 ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_FILES} up -d --no-deps server worker"
 
 log "Aguardando healthcheck em /health"

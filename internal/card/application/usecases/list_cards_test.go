@@ -41,7 +41,7 @@ func (s *ListCardsSuite) makeCard(userID uuid.UUID) entities.Card {
 	name, _ := valueobjects.NewCardName("Card")
 	nick, _ := valueobjects.NewNickname("Alias")
 	cycle, _ := valueobjects.NewBillingCycle(10, 17)
-	return entities.HydrateCard(uuid.New(), userID, name, nick, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+	return entities.HydrateCard(uuid.New(), userID, name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
 }
 
 func (s *ListCardsSuite) TestExecute_HappyPath() {

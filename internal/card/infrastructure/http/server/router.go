@@ -14,16 +14,17 @@ import (
 )
 
 type CardRouter struct {
-	createHandler     *handlers.CreateCardHandler
-	listHandler       *handlers.ListCardsHandler
-	getHandler        *handlers.GetCardHandler
-	updateHandler     *handlers.UpdateCardHandler
-	deleteHandler     *handlers.DeleteCardHandler
-	invoiceForHandler *handlers.InvoiceForHandler
-	idemStorage       idempotency.Storage
-	o11y              observability.Observability
-	gatewayAuth       func(http.Handler) http.Handler
-	userRateLimit     func(http.Handler) http.Handler
+	createHandler      *handlers.CreateCardHandler
+	listHandler        *handlers.ListCardsHandler
+	getHandler         *handlers.GetCardHandler
+	updateHandler      *handlers.UpdateCardHandler
+	updateLimitHandler *handlers.UpdateCardLimitHandler
+	deleteHandler      *handlers.DeleteCardHandler
+	invoiceForHandler  *handlers.InvoiceForHandler
+	idemStorage        idempotency.Storage
+	o11y               observability.Observability
+	gatewayAuth        func(http.Handler) http.Handler
+	userRateLimit      func(http.Handler) http.Handler
 }
 
 func NewCardRouter(
@@ -31,6 +32,7 @@ func NewCardRouter(
 	list *handlers.ListCardsHandler,
 	get *handlers.GetCardHandler,
 	update *handlers.UpdateCardHandler,
+	updateLimit *handlers.UpdateCardLimitHandler,
 	delete *handlers.DeleteCardHandler,
 	invoiceFor *handlers.InvoiceForHandler,
 	idemStorage idempotency.Storage,
@@ -39,16 +41,17 @@ func NewCardRouter(
 	userRateLimit func(http.Handler) http.Handler,
 ) *CardRouter {
 	return &CardRouter{
-		createHandler:     create,
-		listHandler:       list,
-		getHandler:        get,
-		updateHandler:     update,
-		deleteHandler:     delete,
-		invoiceForHandler: invoiceFor,
-		idemStorage:       idemStorage,
-		o11y:              o11y,
-		gatewayAuth:       gatewayAuth,
-		userRateLimit:     userRateLimit,
+		createHandler:      create,
+		listHandler:        list,
+		getHandler:         get,
+		updateHandler:      update,
+		updateLimitHandler: updateLimit,
+		deleteHandler:      delete,
+		invoiceForHandler:  invoiceFor,
+		idemStorage:        idemStorage,
+		o11y:               o11y,
+		gatewayAuth:        gatewayAuth,
+		userRateLimit:      userRateLimit,
 	}
 }
 
@@ -67,6 +70,7 @@ func (rt *CardRouter) Register(r chi.Router) {
 		sub.Route("/{id}", func(idSub chi.Router) {
 			idSub.Get("/", rt.getHandler.Handle)
 			idSub.With(idemMiddleware).Put("/", rt.updateHandler.Handle)
+			idSub.With(idemMiddleware).Patch("/limit", rt.updateLimitHandler.Handle)
 			idSub.With(idemMiddleware).Delete("/", rt.deleteHandler.Handle)
 			idSub.Get("/invoices", rt.invoiceForHandler.Handle)
 		})

@@ -59,6 +59,7 @@ type IdentityModule struct {
 	AuthEventsConsumer         *consumers.AuthEventsConsumer
 	AuthEventsHousekeepingJob  *jobhandlers.AuthEventsHousekeepingJob
 	RecordGatewayAuthFailure   *usecases.RecordGatewayAuthFailure
+	ResolvePreferredChannel    *usecases.ResolvePreferredChannel
 	WhatsAppLimiter            *ratelimit.Limiter
 	WhatsAppDedupRepository    dedup.MessageRepository
 	OutboxPublisher            outbox.Publisher
@@ -130,6 +131,7 @@ func (b *identityModuleBuilder) build() (IdentityModule, error) { //nolint:reviv
 	cleanupAuthEvents := usecases.NewCleanupAuthEvents(b.mgr, factory, b.cfg.IdentityConfig, b.o11y)
 	authEventsHousekeepingJob := jobhandlers.NewAuthEventsHousekeepingJob(cleanupAuthEvents, b.cfg.IdentityConfig)
 
+	resolvePreferredChannel := usecases.NewResolvePreferredChannel(b.mgr, factory, b.o11y)
 	recordGatewayAuthFailure := usecases.NewRecordGatewayAuthFailure(publisher, b.o11y)
 	gatewayAuthMiddleware, err := NewRequireGatewayAuth(b.cfg.IdentityConfig, recordGatewayAuthFailure, b.o11y)
 	if err != nil {
@@ -154,6 +156,7 @@ func (b *identityModuleBuilder) build() (IdentityModule, error) { //nolint:reviv
 		AuthEventsConsumer:         authEventsConsumer,
 		AuthEventsHousekeepingJob:  authEventsHousekeepingJob,
 		RecordGatewayAuthFailure:   recordGatewayAuthFailure,
+		ResolvePreferredChannel:    resolvePreferredChannel,
 		WhatsAppLimiter:            whatsAppLimiter,
 		WhatsAppDedupRepository:    deduppostgres.NewMessageRepository(b.o11y, b.mgr),
 		OutboxPublisher:            publisher,

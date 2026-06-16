@@ -143,6 +143,59 @@ func (_c *RepositoryFactory_BudgetRepository_Call) RunAndReturn(run func(db data
 	return _c
 }
 
+// CardThresholdReader provides a mock function for the type RepositoryFactory
+func (_mock *RepositoryFactory) CardThresholdReader(db database.DBTX) interfaces.CardThresholdReader {
+	ret := _mock.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CardThresholdReader")
+	}
+
+	var r0 interfaces.CardThresholdReader
+	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.CardThresholdReader); ok {
+		r0 = returnFunc(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.CardThresholdReader)
+		}
+	}
+	return r0
+}
+
+// RepositoryFactory_CardThresholdReader_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CardThresholdReader'
+type RepositoryFactory_CardThresholdReader_Call struct {
+	*mock.Call
+}
+
+// CardThresholdReader is a helper method to define mock.On call
+//   - db database.DBTX
+func (_e *RepositoryFactory_Expecter) CardThresholdReader(db any) *RepositoryFactory_CardThresholdReader_Call {
+	return &RepositoryFactory_CardThresholdReader_Call{Call: _e.mock.On("CardThresholdReader", db)}
+}
+
+func (_c *RepositoryFactory_CardThresholdReader_Call) Run(run func(db database.DBTX)) *RepositoryFactory_CardThresholdReader_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 database.DBTX
+		if args[0] != nil {
+			arg0 = args[0].(database.DBTX)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_CardThresholdReader_Call) Return(cardThresholdReader interfaces.CardThresholdReader) *RepositoryFactory_CardThresholdReader_Call {
+	_c.Call.Return(cardThresholdReader)
+	return _c
+}
+
+func (_c *RepositoryFactory_CardThresholdReader_Call) RunAndReturn(run func(db database.DBTX) interfaces.CardThresholdReader) *RepositoryFactory_CardThresholdReader_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ExpenseRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) ExpenseRepository(db database.DBTX) interfaces.ExpenseRepository {
 	ret := _mock.Called(db)
@@ -245,6 +298,59 @@ func (_c *RepositoryFactory_PendingEventRepository_Call) Return(pendingEventRepo
 }
 
 func (_c *RepositoryFactory_PendingEventRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.PendingEventRepository) *RepositoryFactory_PendingEventRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ThresholdAlertSentRepository provides a mock function for the type RepositoryFactory
+func (_mock *RepositoryFactory) ThresholdAlertSentRepository(db database.DBTX) interfaces.ThresholdAlertSentRepository {
+	ret := _mock.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ThresholdAlertSentRepository")
+	}
+
+	var r0 interfaces.ThresholdAlertSentRepository
+	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.ThresholdAlertSentRepository); ok {
+		r0 = returnFunc(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.ThresholdAlertSentRepository)
+		}
+	}
+	return r0
+}
+
+// RepositoryFactory_ThresholdAlertSentRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ThresholdAlertSentRepository'
+type RepositoryFactory_ThresholdAlertSentRepository_Call struct {
+	*mock.Call
+}
+
+// ThresholdAlertSentRepository is a helper method to define mock.On call
+//   - db database.DBTX
+func (_e *RepositoryFactory_Expecter) ThresholdAlertSentRepository(db any) *RepositoryFactory_ThresholdAlertSentRepository_Call {
+	return &RepositoryFactory_ThresholdAlertSentRepository_Call{Call: _e.mock.On("ThresholdAlertSentRepository", db)}
+}
+
+func (_c *RepositoryFactory_ThresholdAlertSentRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_ThresholdAlertSentRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 database.DBTX
+		if args[0] != nil {
+			arg0 = args[0].(database.DBTX)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_ThresholdAlertSentRepository_Call) Return(thresholdAlertSentRepository interfaces.ThresholdAlertSentRepository) *RepositoryFactory_ThresholdAlertSentRepository_Call {
+	_c.Call.Return(thresholdAlertSentRepository)
+	return _c
+}
+
+func (_c *RepositoryFactory_ThresholdAlertSentRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.ThresholdAlertSentRepository) *RepositoryFactory_ThresholdAlertSentRepository_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -2,7 +2,8 @@ package handlers
 
 import (
 	"context"
-	"math/rand/v2"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -14,6 +15,23 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 )
 
+const (
+	tokenStateJitterMinMs = 5
+	tokenStateJitterMaxMs = 25
+)
+
+func cryptoJitter(minMs, maxMs int) time.Duration {
+	if maxMs <= minMs {
+		return time.Duration(minMs) * time.Millisecond
+	}
+	span := int64(maxMs - minMs)
+	n, err := rand.Int(rand.Reader, big.NewInt(span))
+	if err != nil {
+		return 0
+	}
+	return time.Duration(int64(minMs)+n.Int64()) * time.Millisecond
+}
+
 type getTokenStateUseCase interface {
 	Execute(ctx context.Context, clearToken string) (usecases.GetTokenStateResult, error)
 }
@@ -21,6 +39,7 @@ type getTokenStateUseCase interface {
 type tokenStateResponse struct {
 	ReadyToActivate  bool   `json:"ready_to_activate"`
 	WaMeURL          string `json:"wa_me_url,omitempty"`
+	TelegramDeepLink string `json:"telegram_deep_link,omitempty"`
 	BotNumberDisplay string `json:"bot_number_display,omitempty"`
 }
 
@@ -62,8 +81,7 @@ func (h *TokenStateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	if !result.Output.ReadyToActivate {
 		h.invalidAccess(string(result.Reason))
-		jitter := time.Duration(rand.IntN(3)) * time.Millisecond
-		time.Sleep(jitter)
+		time.Sleep(cryptoJitter(tokenStateJitterMinMs, tokenStateJitterMaxMs))
 		responses.JSON(w, http.StatusOK, tokenStateResponse{ReadyToActivate: false})
 		return
 	}
@@ -71,6 +89,7 @@ func (h *TokenStateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	responses.JSON(w, http.StatusOK, tokenStateResponse{
 		ReadyToActivate:  true,
 		WaMeURL:          result.Output.WaMeURL,
+		TelegramDeepLink: result.Output.TelegramDeepLink,
 		BotNumberDisplay: result.Output.BotNumberDisplay,
 	})
 }

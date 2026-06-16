@@ -3,6 +3,7 @@ package onboarding_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
@@ -70,6 +71,15 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 		},
 		configs.TelegramConfig{},
 		configs.OutboxConfig{},
+		configs.EmailConfig{
+			Provider:    "smtp",
+			FromAddress: "noreply@example.com",
+			FromName:    "MeControla",
+			ActivateURL: "http://localhost:4321/activate",
+			SMTPHost:    "localhost",
+			SMTPPort:    1025,
+			SMTPTimeout: 5 * time.Second,
+		},
 		identity.IdentityModule{},
 		noop.NewProvider(),
 	)
@@ -83,7 +93,8 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 	assert.NotNil(t, module.OutreachJob)
 	assert.NotNil(t, module.ExpirationJob)
 	assert.NotNil(t, module.MetaProcessedMessagesCleanup)
-	assert.Len(t, module.EventHandlers, 2)
+	assert.Len(t, module.EventHandlers, 3)
 	assert.Equal(t, "billing.subscription.activated", module.EventHandlers[0].EventType)
-	assert.Equal(t, "billing.subscription.activated_without_token", module.EventHandlers[1].EventType)
+	assert.Equal(t, "billing.subscription.activated", module.EventHandlers[1].EventType)
+	assert.Equal(t, "billing.subscription.activated_without_token", module.EventHandlers[2].EventType)
 }

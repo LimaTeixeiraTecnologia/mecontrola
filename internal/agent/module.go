@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
@@ -45,11 +46,14 @@ type AgentModule struct {
 	Mode               string
 	WhatsAppAgentRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	TelegramAgentRoute tgdispatcher.AgentRoute
+	ParseInbound       *usecases.ParseInbound
+	IntentRouter       *appservices.IntentRouter
 }
 
 type llmRuntime struct {
-	Handler *usecases.HandleInboundMessage
-	Mode    string
+	Handler      *usecases.HandleInboundMessage
+	Mode         string
+	ParseInbound *usecases.ParseInbound
 }
 
 type llmReply struct {
@@ -75,6 +79,8 @@ type agentModuleBuilder struct {
 	transactionsModule transactions.TransactionsModule
 	budgetsModule      *budgets.BudgetsModule
 	whatsAppGateway    whatsAppGateway
+	budgetConfigurator appservices.BudgetConfigurator
+	onboarding         appservices.OnboardingContinuation
 }
 
 func NewAgentModule(
@@ -86,6 +92,8 @@ func NewAgentModule(
 	transactionsModule transactions.TransactionsModule,
 	budgetsModule *budgets.BudgetsModule,
 	whatsAppGateway whatsAppGateway,
+	budgetConfigurator appservices.BudgetConfigurator,
+	onboarding appservices.OnboardingContinuation,
 ) (AgentModule, error) {
 	builder := &agentModuleBuilder{
 		cfg:                cfg,
@@ -96,6 +104,8 @@ func NewAgentModule(
 		transactionsModule: transactionsModule,
 		budgetsModule:      budgetsModule,
 		whatsAppGateway:    whatsAppGateway,
+		budgetConfigurator: budgetConfigurator,
+		onboarding:         onboarding,
 	}
 	return builder.build()
 }
@@ -113,10 +123,17 @@ func (b *agentModuleBuilder) build() (AgentModule, error) {
 		return AgentModule{}, err
 	}
 
+	intentRouter, err := b.buildIntentRouter(llmModule)
+	if err != nil {
+		return AgentModule{}, err
+	}
+
 	return AgentModule{
 		Mode:               llmModule.Mode,
-		WhatsAppAgentRoute: b.buildWhatsAppAgentRoute(llmModule),
-		TelegramAgentRoute: b.buildTelegramAgentRoute(llmModule),
+		WhatsAppAgentRoute: b.buildWhatsAppAgentRoute(llmModule, intentRouter),
+		TelegramAgentRoute: b.buildTelegramAgentRoute(llmModule, intentRouter),
+		ParseInbound:       llmModule.ParseInbound,
+		IntentRouter:       intentRouter,
 	}, nil
 }
 
@@ -134,15 +151,46 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 		return nil, fmt.Errorf("agent.module: card create use case is nil")
 	}
 
-	categoriesAdapter := dispatcher.NewCategoriesAdapter(b.categoriesModule.ListCategoriesUC)
-	cardsAdapter := dispatcher.NewCardsAdapterFull(b.cardModule.ListCardsUC, b.cardModule.CreateCardUC)
+	categoriesAdapter := dispatcher.NewCategoriesAdapterFull(
+		b.categoriesModule.ListCategoriesUC,
+		b.categoriesModule.GetCategoryUC,
+		b.categoriesModule.ListDictionaryUC,
+		b.categoriesModule.SearchDictionaryUC,
+	)
+	cardsAdapter := dispatcher.NewCardsAdapterFull(
+		b.cardModule.ListCardsUC,
+		b.cardModule.GetCardUC,
+		b.cardModule.CreateCardUC,
+		b.cardModule.UpdateCardUC,
+		b.cardModule.UpdateCardLimitUC,
+		b.cardModule.SoftDeleteCardUC,
+	)
 	ports := interfaces.ModulePorts{
-		Categories:  categoriesAdapter,
-		Cards:       cardsAdapter,
-		CardsCreate: cardsAdapter,
+		Categories:               categoriesAdapter,
+		CategoriesGet:            categoriesAdapter,
+		CategoriesListDictionary: categoriesAdapter,
+		CategoriesSearch:         categoriesAdapter,
+		Cards:                    cardsAdapter,
+		CardsGet:                 cardsAdapter,
+		CardsCreate:              cardsAdapter,
+		CardsUpdate:              cardsAdapter,
+		CardsDelete:              cardsAdapter,
 	}
 	if b.budgetsModule != nil && b.budgetsModule.ListAlertsUC != nil {
-		ports.Budgets = dispatcher.NewBudgetsAdapter(b.budgetsModule.ListAlertsUC)
+		ports.Budgets = dispatcher.NewBudgetsAdapterFull(
+			b.budgetsModule.ListAlertsUC,
+			b.budgetsModule.GetMonthlySummaryUC,
+			b.budgetsModule.CreateBudgetUC,
+			b.budgetsModule.ActivateBudgetUC,
+			b.budgetsModule.CreateRecurrenceUC,
+			b.budgetsModule.UpsertExpenseUC,
+			b.budgetsModule.DeleteDraftBudgetUC,
+			b.budgetsModule.DeleteExpenseUC,
+		)
+		ports.BudgetsGet = ports.Budgets.(interfaces.BudgetsGetPort)
+		ports.BudgetsCreate = ports.Budgets.(interfaces.BudgetsCreatePort)
+		ports.BudgetsUpdate = ports.Budgets.(interfaces.BudgetsUpdatePort)
+		ports.BudgetsDelete = ports.Budgets.(interfaces.BudgetsDeletePort)
 	}
 	if b.transactionsModule.ListTransactionsUC != nil {
 		txAdapter := dispatcher.NewTransactionsAdapterFull(
@@ -152,6 +200,7 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 			b.transactionsModule.GetTransactionUC,
 		)
 		ports.Transactions = txAdapter
+		ports.TransactionsGet = txAdapter
 		ports.TransactionsCreate = txAdapter
 		ports.TransactionsDelete = txAdapter
 	}
@@ -173,14 +222,92 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 	return llmModule, nil
 }
 
-func (b *agentModuleBuilder) buildWhatsAppAgentRoute(llmModule *llmRuntime) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
+func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservices.IntentRouter, error) {
+	useLLM := llmModule != nil && llmModule.Mode == ModeOpenRouter && llmModule.Handler != nil && llmModule.ParseInbound != nil
+	if !useLLM {
+		return nil, nil
+	}
+
+	deps := appservices.IntentRouterDeps{
+		Parser:          &intentParserAdapter{uc: llmModule.ParseInbound},
+		Fallback:        &fallbackAdapter{runtime: llmModule},
+		WhatsAppGateway: b.whatsAppGateway,
+	}
+	b.fillIntentRouterDeps(&deps)
+	b.attachExpenseLogger(&deps)
+	deps.TelegramGateway = b.buildTelegramGateway()
+
+	router, err := appservices.NewIntentRouter(b.o11y, deps)
+	if err != nil {
+		return nil, fmt.Errorf("agent.module: intent router: %w", err)
+	}
+	return router, nil
+}
+
+func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouterDeps) {
+	if b.budgetsModule != nil && b.budgetsModule.GetMonthlySummaryUC != nil {
+		deps.MonthlySummary = b.budgetsModule.GetMonthlySummaryUC
+	}
+	if b.cardModule.ListCardsUC != nil {
+		deps.CardLister = b.cardModule.ListCardsUC
+	}
+	if b.cardModule.InvoiceForUC != nil {
+		deps.CardInvoice = b.cardModule.InvoiceForUC
+	}
+	if b.budgetConfigurator != nil {
+		deps.BudgetConfig = b.budgetConfigurator
+	}
+	if b.onboarding != nil {
+		deps.Onboarding = b.onboarding
+	}
+}
+
+func (b *agentModuleBuilder) attachExpenseLogger(deps *appservices.IntentRouterDeps) {
+	if b.budgetsModule == nil || b.budgetsModule.UpsertExpenseUC == nil {
+		return
+	}
+	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
+		return
+	}
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		loc = time.UTC
+	}
+	logExpense := usecases.NewLogExpenseFromAgent(
+		b.categoriesModule.SearchDictionaryUC,
+		newExpenseUpserterAdapter(b.budgetsModule.UpsertExpenseUC),
+		loc,
+		b.o11y,
+	)
+	deps.ExpenseLogger = &expenseLoggerAdapter{uc: logExpense}
+}
+
+func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound {
+	if !b.cfg.TelegramConfig.Enabled {
+		return nil
+	}
+	tgGateway, err := outbound.NewSharedGateway(b.o11y, outbound.FactoryConfig{
+		APIBaseURL: b.cfg.TelegramConfig.APIBaseURL,
+		BotToken:   b.cfg.TelegramConfig.BotToken,
+		Timeout:    b.cfg.TelegramConfig.OutboundTimeout,
+	})
+	if err != nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.telegram_agent_gateway_failed",
+			observability.Error(err),
+		)
+		return nil
+	}
+	return tgGateway
+}
+
+func (b *agentModuleBuilder) buildWhatsAppAgentRoute(llmModule *llmRuntime, router *appservices.IntentRouter) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 	templates := map[string]string{
 		"agent_stub_received": b.cfg.WhatsAppConfig.AgentStubReceived,
 	}
 	stubAgent := NewStubAgent(b.whatsAppGateway, templates, b.o11y)
-	useLLM := llmModule != nil && llmModule.Mode == ModeOpenRouter && llmModule.Handler != nil
+	useRouter := router != nil
 
-	if !useLLM {
+	if !useRouter {
 		return func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 			if err := stubAgent.HandleMessage(ctx, msg); err != nil {
 				b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_failed",
@@ -197,39 +324,17 @@ func (b *agentModuleBuilder) buildWhatsAppAgentRoute(llmModule *llmRuntime) func
 			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_missing_principal")
 			return wadispatcher.OutcomeAgent
 		}
-		reply, err := llmModule.HandleText(ctx, principal.UserID, string(auth.SourceWhatsApp), msg.Text)
-		if err != nil {
-			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.llm_agent_failed",
-				observability.Error(err),
-			)
-			return wadispatcher.OutcomeAgent
-		}
-		if reply.Text == "" {
-			return wadispatcher.OutcomeAgent
-		}
-		if sendErr := b.whatsAppGateway.SendTextMessage(ctx, msg.From, reply.Text); sendErr != nil {
-			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.llm_agent_reply_failed",
-				observability.Error(sendErr),
-			)
-		}
+		_ = router.RouteWhatsApp(ctx, appservices.Principal{UserID: principal.UserID}, appservices.InboundMessage{
+			Text:       msg.Text,
+			WhatsAppTo: msg.From,
+			MessageID:  msg.WAMID,
+		})
 		return wadispatcher.OutcomeAgent
 	}
 }
 
-func (b *agentModuleBuilder) buildTelegramAgentRoute(llmModule *llmRuntime) tgdispatcher.AgentRoute {
-	if llmModule == nil || llmModule.Mode != ModeOpenRouter || llmModule.Handler == nil {
-		return nil
-	}
-
-	gateway, err := outbound.NewSharedGateway(b.o11y, outbound.FactoryConfig{
-		APIBaseURL: b.cfg.TelegramConfig.APIBaseURL,
-		BotToken:   b.cfg.TelegramConfig.BotToken,
-		Timeout:    b.cfg.TelegramConfig.OutboundTimeout,
-	})
-	if err != nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.telegram_agent_gateway_failed",
-			observability.Error(err),
-		)
+func (b *agentModuleBuilder) buildTelegramAgentRoute(llmModule *llmRuntime, router *appservices.IntentRouter) tgdispatcher.AgentRoute {
+	if router == nil {
 		return nil
 	}
 
@@ -239,23 +344,37 @@ func (b *agentModuleBuilder) buildTelegramAgentRoute(llmModule *llmRuntime) tgdi
 			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_missing_principal")
 			return tgdispatcher.OutcomeAgent
 		}
-		reply, err := llmModule.HandleText(ctx, principal.UserID, string(auth.SourceTelegram), msg.Text)
-		if err != nil {
-			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.llm_agent_failed",
-				observability.Error(err),
-			)
-			return tgdispatcher.OutcomeAgent
-		}
-		if reply.Text == "" {
-			return tgdispatcher.OutcomeAgent
-		}
-		if sendErr := gateway.SendTextMessage(ctx, msg.ChatID, reply.Text); sendErr != nil {
-			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.llm_agent_reply_failed",
-				observability.Error(sendErr),
-			)
-		}
+		_ = router.RouteTelegram(ctx, appservices.Principal{UserID: principal.UserID}, appservices.InboundMessage{
+			Text:       msg.Text,
+			TelegramTo: msg.ChatID,
+			MessageID:  fmt.Sprintf("%d", msg.MessageID),
+		})
 		return tgdispatcher.OutcomeAgent
 	}
+}
+
+type intentParserAdapter struct {
+	uc *usecases.ParseInbound
+}
+
+func (a *intentParserAdapter) Parse(ctx context.Context, userID uuid.UUID, text string) (appservices.ParsedIntent, error) {
+	out, err := a.uc.Execute(ctx, usecases.ParseInboundInput{UserID: userID, Text: text})
+	if err != nil {
+		return appservices.ParsedIntent{}, err
+	}
+	return appservices.ParsedIntent{Intent: out.Intent, Raw: out.Raw}, nil
+}
+
+type fallbackAdapter struct {
+	runtime *llmRuntime
+}
+
+func (a *fallbackAdapter) Reply(ctx context.Context, userID uuid.UUID, channel, text string) (string, error) {
+	reply, err := a.runtime.HandleText(ctx, userID, channel, text)
+	if err != nil {
+		return "", err
+	}
+	return reply.Text, nil
 }
 
 type emptyContextLoader struct{}
@@ -341,11 +460,17 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability, de
 		deps.EventPublisher,
 		appservices.NewPromptBuilder(),
 		appservices.NewIntentValidator(),
+		appservices.NewIntentSafetyGuard(),
 		domainservices.NewIntentWorkflow(),
 		o11y,
 	)
 
-	return &llmRuntime{Handler: handler, Mode: ModeOpenRouter}, nil
+	parseInbound, err := usecases.NewParseInbound(chain, o11y)
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
+	}
+
+	return &llmRuntime{Handler: handler, Mode: ModeOpenRouter, ParseInbound: parseInbound}, nil
 }
 
 func (m *llmRuntime) HandleText(ctx context.Context, userID uuid.UUID, channel, text string) (llmReply, error) {

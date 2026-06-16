@@ -122,7 +122,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			token := scenario.setup()
-			uc := usecases.NewGetTokenState(s.mgr, s.factory, "+5511999999999", "+55 11 9XXXX-XXXX", noop.NewProvider())
+			uc := usecases.NewGetTokenState(s.mgr, s.factory, "+5511999999999", "+55 11 9XXXX-XXXX", "mecontrola_bot", noop.NewProvider())
 			result, err := uc.Execute(context.Background(), token)
 			scenario.expect(result, err)
 		})

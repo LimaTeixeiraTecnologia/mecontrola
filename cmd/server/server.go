@@ -25,11 +25,17 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	budgetsidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
+	notificationadapters "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
+	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
+
+	"github.com/google/uuid"
 )
 
 func New() *cobra.Command {
@@ -174,6 +180,7 @@ func Run() error {
 		cfg.WhatsAppConfig,
 		cfg.TelegramConfig,
 		cfg.OutboxConfig,
+		cfg.EmailConfig,
 		identityModule,
 		o11y,
 	)
@@ -192,7 +199,12 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "card module wired", observability.Bool("router_registered", cardModule.CardRouter != nil))
 
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, dbManager, categoriesModule, identityModule.GatewayAuthMiddleware)
+	channelGateway, err := buildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
+	if err != nil {
+		return fmt.Errorf("run: build channel gateway: %w", err)
+	}
+	channelResolver := buildBudgetsChannelResolver(identityModule)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, dbManager, categoriesModule, identityModule.GatewayAuthMiddleware, channelGateway, channelResolver)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo budgets: %w", err)
 	}
@@ -219,6 +231,8 @@ func Run() error {
 		transactionsModule,
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
+		newBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
+		newOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
 	)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agent: %w", err)
@@ -270,5 +284,46 @@ func (rt *readinessRouter) Register(r chi.Router) {
 		default:
 			w.WriteHeader(http.StatusOK)
 		}
+	})
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	r.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func buildChannelGateway(cfg *configs.Config, o11y observability.Observability, whatsappBridge notificationadapters.WhatsAppGatewayBridge) (notification.ChannelGateway, error) {
+	senders := map[string]notification.ChannelSenders{}
+	if whatsappBridge != nil {
+		senders[notification.ChannelWhatsApp] = notificationadapters.NewWhatsAppSender(whatsappBridge).AsChannelSenders()
+	}
+	if cfg.TelegramConfig.Enabled {
+		gateway, err := tgoutbound.NewSharedGateway(o11y, tgoutbound.FactoryConfig{
+			APIBaseURL: cfg.TelegramConfig.APIBaseURL,
+			BotToken:   cfg.TelegramConfig.BotToken,
+			Timeout:    cfg.TelegramConfig.OutboundTimeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("server: build telegram sender: %w", err)
+		}
+		senders[notification.ChannelTelegram] = notificationadapters.NewTelegramSender(gateway).AsChannelSenders()
+	}
+	return notification.NewMultiChannelGateway(senders), nil
+}
+
+func buildBudgetsChannelResolver(identityModule identity.IdentityModule) *budgetsidentity.UserChannelResolverAdapter {
+	if identityModule.ResolvePreferredChannel == nil {
+		return nil
+	}
+	return budgetsidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
+		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
+		if err != nil {
+			return "", "", false, err
+		}
+		if !ok {
+			return "", "", false, nil
+		}
+		return result.Channel, result.ExternalID, true, nil
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -21,6 +22,7 @@ import (
 
 type CardPurchaseRepositoryIntegrationSuite struct {
 	suite.Suite
+	db          database.DBTX
 	repo        interfaces.CardPurchaseRepository
 	invoiceRepo interfaces.CardInvoiceRepository
 }
@@ -31,10 +33,26 @@ func TestCardPurchaseRepositoryIntegrationSuite(t *testing.T) {
 
 func (s *CardPurchaseRepositoryIntegrationSuite) SetupSuite() {
 	mgr, _ := testcontainer.Postgres(s.T())
-	db := mgr.DBTX(context.Background())
+	s.db = mgr.DBTX(context.Background())
 	o11y := noop.NewProvider()
-	s.repo = txpostgres.NewCardPurchaseRepository(o11y, db)
-	s.invoiceRepo = txpostgres.NewCardInvoiceRepository(o11y, db)
+	s.repo = txpostgres.NewCardPurchaseRepository(o11y, s.db)
+	s.invoiceRepo = txpostgres.NewCardInvoiceRepository(o11y, s.db)
+}
+
+func (s *CardPurchaseRepositoryIntegrationSuite) prepareCard(userID, cardID uuid.UUID) {
+	ctx := context.Background()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		 VALUES ($1, $2, 'ACTIVE', now(), now()) ON CONFLICT DO NOTHING`,
+		userID, "+5511"+userID.String()[:10],
+	)
+	s.Require().NoError(err)
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, created_at, updated_at)
+		 VALUES ($1, $2, 'Test Card', 'test', 10, 20, now(), now()) ON CONFLICT DO NOTHING`,
+		cardID, userID,
+	)
+	s.Require().NoError(err)
 }
 
 func (s *CardPurchaseRepositoryIntegrationSuite) newPurchase(userID, cardID uuid.UUID, totalCents int64, installments int) entities.CardPurchase {
@@ -57,6 +75,7 @@ func (s *CardPurchaseRepositoryIntegrationSuite) newPurchase(userID, cardID uuid
 func (s *CardPurchaseRepositoryIntegrationSuite) TestCreate_GetByID_RoundTrip() {
 	userID := uuid.New()
 	cardID := uuid.New()
+	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 5000, 5)
 
 	s.Require().NoError(s.repo.Create(context.Background(), &p))
@@ -70,7 +89,9 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestCreate_GetByID_RoundTrip() 
 
 func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_VersionConflict() {
 	userID := uuid.New()
-	p := s.newPurchase(userID, uuid.New(), 1000, 1)
+	cardID := uuid.New()
+	s.prepareCard(userID, cardID)
+	p := s.newPurchase(userID, cardID, 1000, 1)
 	s.Require().NoError(s.repo.Create(context.Background(), &p))
 
 	err := s.repo.SoftDelete(context.Background(), p.ID(), userID, 999, time.Now())
@@ -79,7 +100,9 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_VersionConflict(
 
 func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_Success() {
 	userID := uuid.New()
-	p := s.newPurchase(userID, uuid.New(), 1000, 1)
+	cardID := uuid.New()
+	s.prepareCard(userID, cardID)
+	p := s.newPurchase(userID, cardID, 1000, 1)
 	s.Require().NoError(s.repo.Create(context.Background(), &p))
 
 	err := s.repo.SoftDelete(context.Background(), p.ID(), userID, 1, time.Now())
@@ -92,6 +115,7 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_Success() {
 func (s *CardPurchaseRepositoryIntegrationSuite) TestReplaceItems_AtomicUpsert() {
 	userID := uuid.New()
 	cardID := uuid.New()
+	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 2000, 2)
 	s.Require().NoError(s.repo.Create(context.Background(), &p))
 

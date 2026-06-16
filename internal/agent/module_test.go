@@ -30,6 +30,8 @@ func TestNewAgentModule_StubModeBuildsRoutes(t *testing.T) {
 		transactions.TransactionsModule{},
 		nil,
 		&stubWhatsAppGateway{},
+		nil,
+		nil,
 	)
 
 	assert.NoError(t, err)
@@ -46,6 +48,8 @@ func TestNewAgentModule_RequiresWhatsAppGateway(t *testing.T) {
 		nil,
 		card.CardModule{},
 		transactions.TransactionsModule{},
+		nil,
+		nil,
 		nil,
 		nil,
 	)

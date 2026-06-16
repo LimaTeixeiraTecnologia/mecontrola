@@ -11,4 +11,7 @@ var (
 	ErrInvalidNickname     = errors.New("card: nickname must be between 1 and 32 characters")
 	ErrInvalidPurchaseDate = errors.New("card: purchase date is zero or invalid")
 	ErrInvalidCursor       = errors.New("card: invalid pagination cursor")
+	ErrCardLimitNegative   = errors.New("card: limit_cents must be greater than or equal to zero")
+	ErrCardLimitTooLarge   = errors.New("card: limit_cents exceeds maximum allowed (R$ 1.000.000,00)")
+	ErrCardLimitConflict   = errors.New("card: limit update version conflict")
 )

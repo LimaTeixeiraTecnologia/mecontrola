@@ -60,7 +60,7 @@ func (r *CandidateResolver) Resolve(entries []entities.DictionaryEntry, categori
 			MatchedTerm:    winner.Term,
 			SignalType:     winner.SignalType,
 			Confidence:     winner.Confidence,
-			IsAmbiguous:    false,
+			IsAmbiguous:    winner.IsAmbiguous,
 			MatchReason:    r.buildMatchReason(winner),
 		}
 		candidates = append(candidates, candidate)

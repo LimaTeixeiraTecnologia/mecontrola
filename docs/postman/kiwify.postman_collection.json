@@ -1,0 +1,333 @@
+{
+  "info": {
+    "name": "Kiwify API — MeControla",
+    "description": "Endpoints da integração Kiwify utilizados pelo mecontrola: OAuth2, vendas, reconciliação e webhook inbound.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "mecontrola-kiwify-v1"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://public-api.kiwify.com", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "account_id", "value": "{{KIWIFY_ACCOUNT_ID}}", "type": "string" },
+    { "key": "product_id", "value": "{{KIWIFY_PRODUCT_ID}}", "type": "string" },
+    { "key": "api_url", "value": "https://api.mecontrola.app.br", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "OAuth2 — Client Credentials Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('access_token presente', () => pm.expect(body.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('access_token', body.access_token);",
+                  "console.log('Token salvo. Expira em:', body.expires_in, 's');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "client_id", "value": "{{KIWIFY_CLIENT_ID}}", "type": "text" },
+                { "key": "client_secret", "value": "{{KIWIFY_CLIENT_SECRET}}", "type": "text" },
+                { "key": "grant_type", "value": "client_credentials", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "oauth", "token"]
+            },
+            "description": "Obtém Bearer token via OAuth2 Client Credentials. O token é salvo automaticamente em {{access_token}} pelo script de teste."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 3600\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Vendas",
+      "item": [
+        {
+          "name": "Listar Vendas (paginado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('data é array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('hasMore presente', () => pm.expect(body).to.have.property('hasMore'));",
+                  "console.log('Total:', body.totalItems, '| Página:', body.currentPage, '| hasMore:', body.hasMore);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "x-kiwify-account-id", "value": "{{account_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/sales?updated_at_start_date={{start_date}}&updated_at_end_date={{end_date}}&page_number={{page_number}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "sales"],
+              "query": [
+                { "key": "updated_at_start_date", "value": "{{start_date}}", "description": "RFC3339 UTC. Ex: 2026-06-01T00:00:00Z" },
+                { "key": "updated_at_end_date", "value": "{{end_date}}", "description": "RFC3339 UTC. Ex: 2026-06-16T23:59:59Z" },
+                { "key": "page_number", "value": "{{page_number}}", "description": "1-based. Incrementar enquanto hasMore=true." }
+              ]
+            },
+            "description": "Lista vendas filtradas por intervalo de updated_at. Usado pela reconciliação horária (KIWIFY_RECONCILIATION_INTERVAL=@hourly, batch=200)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": \"sale-uuid\",\n      \"reference\": \"KW-12345\",\n      \"status\": \"paid\",\n      \"sale_type\": \"subscription\",\n      \"payment_method\": \"credit_card\",\n      \"net_amount\": 29.90,\n      \"parent_order_id\": \"parent-uuid\",\n      \"subscription_id\": \"sub-uuid\",\n      \"product_id\": \"f3c79c30-645c-11f1-be5a-3b732c8c8b37\",\n      \"created_at\": \"2026-06-01T10:00:00Z\",\n      \"updated_at\": \"2026-06-01T10:01:00Z\",\n      \"refunded_at\": null,\n      \"customer\": {\n        \"name\": \"João Silva\",\n        \"email\": \"joao@exemplo.com\",\n        \"mobile\": \"+5511999999999\"\n      },\n      \"tracking\": {\n        \"sck\": \"funnel-token-aqui\",\n        \"src\": \"\",\n        \"s1\": \"\"\n      }\n    }\n  ],\n  \"totalItems\": 1,\n  \"currentPage\": 1,\n  \"hasMore\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Buscar Venda por ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('id presente', () => pm.expect(body.id).to.be.a('string'));",
+                  "pm.test('product_id presente', () => pm.expect(body.product_id).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "x-kiwify-account-id", "value": "{{account_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/sales/{{sale_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "sales", "{{sale_id}}"]
+            },
+            "description": "Busca detalhes de uma venda específica. Útil para debug de reconciliação."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"sale-uuid\",\n  \"reference\": \"KW-12345\",\n  \"status\": \"paid\",\n  \"sale_type\": \"subscription\",\n  \"payment_method\": \"credit_card\",\n  \"net_amount\": 29.90,\n  \"product_id\": \"f3c79c30-645c-11f1-be5a-3b732c8c8b37\",\n  \"subscription_id\": \"sub-uuid\",\n  \"created_at\": \"2026-06-01T10:00:00Z\",\n  \"updated_at\": \"2026-06-01T10:01:00Z\",\n  \"customer\": {\n    \"name\": \"João Silva\",\n    \"email\": \"joao@exemplo.com\",\n    \"mobile\": \"+5511999999999\"\n  },\n  \"tracking\": {\n    \"sck\": \"funnel-token-aqui\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Listar Produtos (descubra IDs dos planos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "console.log('Produtos:', JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "account-id", "value": "{{account_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/products",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "products"]
+            },
+            "description": "Lista todos os produtos. O JSON retornado deve conter os IDs de cada plano de assinatura (KIWIFY_PRODUCT_ID_MONTHLY/QUARTERLY/ANNUAL)."
+          },
+          "response": []
+        },
+        {
+          "name": "Buscar Produto por ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "console.log('Produto:', JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "account-id", "value": "{{account_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "products", "{{product_id}}"]
+            },
+            "description": "Busca detalhes do produto incluindo planos de assinatura. Inspecione o JSON para encontrar os IDs de cada plano."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhook Inbound",
+      "item": [
+        {
+          "name": "Simular — order_approved (Mensal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Kiwify-Webhook-Token", "value": "{{KIWIFY_WEBHOOK_SECRET}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"test-order-001\",\n  \"order_ref\": \"KW-TEST-001\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"order_approved\",\n  \"subscription_id\": \"test-sub-001\",\n  \"Product\": {\n    \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\",\n    \"product_name\": \"MeControla\"\n  },\n  \"Customer\": {\n    \"email\": \"teste@exemplo.com\",\n    \"mobile\": \"+5511999999999\",\n    \"CPF\": \"000.000.000-00\"\n  },\n  \"Subscription\": {\n    \"start_date\": \"2026-06-16T00:00:00Z\",\n    \"next_payment\": \"2026-07-16T00:00:00Z\",\n    \"status\": \"active\"\n  },\n  \"TrackingParameters\": {\n    \"sck\": \"funnel-token-teste\",\n    \"src\": \"\",\n    \"s1\": \"\"\n  },\n  \"approved_date\": \"2026-06-16T14:00:00Z\",\n  \"created_at\": \"2026-06-16T14:00:00Z\",\n  \"updated_at\": \"2026-06-16T14:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{api_url}}/api/v1/billing/webhooks/kiwify",
+              "host": ["{{api_url}}"],
+              "path": ["api", "v1", "billing", "webhooks", "kiwify"]
+            },
+            "description": "Simula compra aprovada plano mensal. Retorno esperado: 202 Accepted. O token no header deve corresponder a KIWIFY_WEBHOOK_SECRET."
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "status": "Accepted",
+              "code": 202,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{}"
+            },
+            {
+              "name": "401 Token inválido",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\"error\": \"invalid signature\"}"
+            },
+            {
+              "name": "422 Trigger desconhecido",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\"error\": \"unknown trigger\"}"
+            }
+          ]
+        },
+        {
+          "name": "Simular — subscription_canceled",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Kiwify-Webhook-Token", "value": "{{KIWIFY_WEBHOOK_SECRET}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"test-order-002\",\n  \"order_ref\": \"KW-TEST-002\",\n  \"order_status\": \"canceled\",\n  \"webhook_event_type\": \"subscription_canceled\",\n  \"subscription_id\": \"test-sub-001\",\n  \"Product\": {\n    \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\",\n    \"product_name\": \"MeControla\"\n  },\n  \"Customer\": {\n    \"email\": \"teste@exemplo.com\",\n    \"mobile\": \"+5511999999999\",\n    \"CPF\": \"000.000.000-00\"\n  },\n  \"Subscription\": {\n    \"start_date\": \"2026-06-16T00:00:00Z\",\n    \"next_payment\": null,\n    \"status\": \"canceled\"\n  },\n  \"TrackingParameters\": {\n    \"sck\": \"\"\n  },\n  \"updated_at\": \"2026-06-16T15:00:00Z\",\n  \"created_at\": \"2026-06-16T14:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{api_url}}/api/v1/billing/webhooks/kiwify",
+              "host": ["{{api_url}}"],
+              "path": ["api", "v1", "billing", "webhooks", "kiwify"]
+            },
+            "description": "Simula cancelamento de assinatura. Retorno esperado: 202 Accepted."
+          },
+          "response": []
+        },
+        {
+          "name": "Simular — subscription_renewed",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Kiwify-Webhook-Token", "value": "{{KIWIFY_WEBHOOK_SECRET}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"test-order-003\",\n  \"order_ref\": \"KW-TEST-003\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_renewed\",\n  \"subscription_id\": \"test-sub-001\",\n  \"Product\": {\n    \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\",\n    \"product_name\": \"MeControla\"\n  },\n  \"Customer\": {\n    \"email\": \"teste@exemplo.com\",\n    \"mobile\": \"+5511999999999\",\n    \"CPF\": \"000.000.000-00\"\n  },\n  \"Subscription\": {\n    \"start_date\": \"2026-06-16T00:00:00Z\",\n    \"next_payment\": \"2026-07-16T00:00:00Z\",\n    \"status\": \"active\"\n  },\n  \"TrackingParameters\": {\n    \"sck\": \"\"\n  },\n  \"approved_date\": \"2026-07-16T10:00:00Z\",\n  \"updated_at\": \"2026-07-16T10:00:00Z\",\n  \"created_at\": \"2026-06-16T14:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{api_url}}/api/v1/billing/webhooks/kiwify",
+              "host": ["{{api_url}}"],
+              "path": ["api", "v1", "billing", "webhooks", "kiwify"]
+            },
+            "description": "Simula renovação de assinatura. Retorno esperado: 202 Accepted."
+          },
+          "response": []
+        },
+        {
+          "name": "Simular — order_refunded",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Kiwify-Webhook-Token", "value": "{{KIWIFY_WEBHOOK_SECRET}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"test-order-004\",\n  \"order_ref\": \"KW-TEST-004\",\n  \"order_status\": \"refunded\",\n  \"webhook_event_type\": \"order_refunded\",\n  \"subscription_id\": \"test-sub-001\",\n  \"Product\": {\n    \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\",\n    \"product_name\": \"MeControla\"\n  },\n  \"Customer\": {\n    \"email\": \"teste@exemplo.com\",\n    \"mobile\": \"+5511999999999\",\n    \"CPF\": \"000.000.000-00\"\n  },\n  \"Subscription\": {\n    \"status\": \"canceled\"\n  },\n  \"TrackingParameters\": {\n    \"sck\": \"\"\n  },\n  \"refunded_at\": \"2026-06-17T09:00:00Z\",\n  \"updated_at\": \"2026-06-17T09:00:00Z\",\n  \"created_at\": \"2026-06-16T14:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{api_url}}/api/v1/billing/webhooks/kiwify",
+              "host": ["{{api_url}}"],
+              "path": ["api", "v1", "billing", "webhooks", "kiwify"]
+            },
+            "description": "Simula reembolso (tratado igual a chargeback no domínio). Retorno esperado: 202 Accepted."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

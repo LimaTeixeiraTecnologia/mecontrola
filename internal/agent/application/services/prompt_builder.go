@@ -17,10 +17,12 @@ type CategorySeed struct {
 }
 
 type CardSeed struct {
-	ID       string
-	Nickname string
-	Brand    string
-	LastFour string
+	ID         string
+	Name       string
+	Nickname   string
+	ClosingDay int
+	DueDay     int
+	LimitCents int64
 }
 
 type PromptContext struct {
@@ -89,8 +91,8 @@ func formatCards(seeds []CardSeed) string {
 	}
 	parts := make([]string, 0, len(seeds))
 	for _, s := range seeds {
-		parts = append(parts, fmt.Sprintf(`{"id":"%s","nickname":"%s","brand":"%s","last_four":"%s"}`,
-			s.ID, escapeJSON(s.Nickname), escapeJSON(s.Brand), s.LastFour))
+		parts = append(parts, fmt.Sprintf(`{"id":"%s","name":"%s","nickname":"%s","closing_day":%d,"due_day":%d,"limit_cents":%d}`,
+			s.ID, escapeJSON(s.Name), escapeJSON(s.Nickname), s.ClosingDay, s.DueDay, s.LimitCents))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -142,13 +144,37 @@ Erro estruturado:
 {"error":"<tipo>","message":"<mensagem curta pt-BR>"}
 
 ## MODULOS E PAYLOADS
-categories: list (filters: {}), get (filters: {id})
-cards: list, get, create (payload: {nickname, brand: visa|master|elo|amex, last_four, card_limit?})
-budgets: list (filters: {month?: YYYY-MM}), create (payload: {category_id, period: YYYY-MM-01, amount})
-transactions: list (filters: {month?, category_id?, type?: income|expense}), create (payload: {amount, type, description, occurred_at: ISO8601, category_id, card_id?}), delete (payload: {id} requer "sim" do usuario)
+categories:
+- list de categorias: {"module":"categories","action":"list","filters":{"kind?":"income|expense","parent_id?":"uuid","include_deprecated?":false}}
+- get de categoria: {"module":"categories","action":"get","filters":{"id":"uuid","include_deprecated?":false}}
+- listar dicionario: {"module":"categories","action":"list","filters":{"category_id?":"uuid","kind?":"income|expense","signal_type?":"canonical_name|alias|phrase|merchant|segment","page_size?":50}}
+- buscar no dicionario: {"module":"categories","action":"list","filters":{"query":"texto","kind?":"income|expense"}}
+
+cards:
+- list: sem payload
+- get: {"module":"cards","action":"get","filters":{"id":"uuid"}}
+- create: {"module":"cards","action":"create","payload":{"name":"string","nickname":"string","closing_day":1-31,"due_day":1-31,"limit_cents":inteiro}}
+- update: {"module":"cards","action":"update","payload":{"id":"uuid","name?":"string","nickname?":"string","closing_day?":1-31,"due_day?":1-31,"limit_cents?":inteiro,"version?":inteiro}}
+- delete: {"module":"cards","action":"delete","payload":{"id":"uuid"}}
+
+budgets:
+- list alertas: {"module":"budgets","action":"list","filters":{"operation?":"alerts","month?":"YYYY-MM","root_slug?":"expense.custo_fixo|expense.conhecimento|expense.prazeres|expense.metas|expense.liberdade_financeira","threshold?":80|100}}
+- resumo mensal: {"module":"budgets","action":"get","filters":{"operation":"summary","month?":"YYYY-MM"}}
+- criar orcamento: {"module":"budgets","action":"create","payload":{"operation":"budget","competence":"YYYY-MM","total_cents":inteiro,"allocations":[{"root_slug":"expense.custo_fixo|expense.conhecimento|expense.prazeres|expense.metas|expense.liberdade_financeira","basis_points":inteiro}]}}
+- criar recorrencia: {"module":"budgets","action":"create","payload":{"operation":"recurrence","source_competence":"YYYY-MM","months":inteiro}}
+- registrar despesa em budgets: {"module":"budgets","action":"create","payload":{"operation":"expense","competence?":"YYYY-MM","source?":"agent","external_transaction_id?":"uuid","subcategory_id":"uuid","amount_cents":inteiro,"occurred_at":"RFC3339"}}
+- ativar orcamento: {"module":"budgets","action":"update","payload":{"operation":"activate_budget","competence":"YYYY-MM"}}
+- apagar rascunho: {"module":"budgets","action":"delete","payload":{"operation":"draft_budget","competence":"YYYY-MM"}}
+- apagar despesa em budgets: {"module":"budgets","action":"delete","payload":{"operation":"expense","source":"agent","external_transaction_id":"string","version":inteiro}}
+
+transactions:
+- list: {"module":"transactions","action":"list","filters":{"month?":"YYYY-MM"}}
+- get: {"module":"transactions","action":"get","filters":{"id":"uuid"}}
+- create: {"module":"transactions","action":"create","payload":{"amount_cents":inteiro,"direction":"income|expense","payment_method":"cash|credit|debit|pix|transfer|other","description":"string","category_id":"uuid","subcategory_id?":"uuid","occurred_at":"RFC3339"}}
+- delete: {"module":"transactions","action":"delete","payload":{"id":"uuid"}}
 
 ## RESOLUCAO DE NOMES -> IDs
-Use SOMENTE IDs das listas de categories e cards acima. Busca aproximada por nome. Se nao encontrado:
+Use SOMENTE IDs das listas de categories e cards acima quando precisar de category_id, subcategory_id ou card_id. Busca aproximada por nome. Se nao encontrado:
 {"error":"not_found","message":"Nao encontrei '<nome>'. Suas categorias: <lista>"}
 NUNCA invente um UUID.
 
@@ -156,10 +182,6 @@ NUNCA invente um UUID.
 Monetario: number sem simbolo. "R$ 1.500,50" -> 1500.50.
 "hoje" -> current_date. "ontem" -> current_date - 1 dia.
 type: gastei|paguei|comprei -> "expense". recebi|entrou|salario -> "income".
-
-## DELETE EXIGE CONFIRMACAO
-Sem "sim"|"confirma"|"pode apagar":
-{"error":"confirmation_required","message":"Tem certeza? Responda 'sim' para confirmar."}
 
 ## FORA DO ESCOPO
 Qualquer coisa alem de categorias, cartoes, orcamento e transacoes:

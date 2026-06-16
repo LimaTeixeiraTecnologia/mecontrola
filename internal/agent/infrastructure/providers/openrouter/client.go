@@ -143,14 +143,7 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 		},
 		MaxTokens:   resolveMaxTokens(p.cfg.MaxTokens),
 		Temperature: p.cfg.Temperature,
-		ResponseFmt: responseFmt{
-			Type: "json_schema",
-			JSONSchema: &responseFmtJSONSchema{
-				Name:   "mecontrola_intent",
-				Strict: true,
-				Schema: intentJSONSchema,
-			},
-		},
+		ResponseFmt: resolveResponseFormat(req.JSONSchema),
 	}
 
 	encoded, err := json.Marshal(body)
@@ -217,6 +210,27 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 		PromptTokens:     parsed.Usage.PromptTokens,
 		CompletionTokens: parsed.Usage.CompletionTokens,
 	}, nil
+}
+
+func resolveResponseFormat(spec *interfaces.JSONSchemaSpec) responseFmt {
+	if spec != nil && spec.Name != "" && spec.Schema != nil {
+		return responseFmt{
+			Type: "json_schema",
+			JSONSchema: &responseFmtJSONSchema{
+				Name:   spec.Name,
+				Strict: spec.Strict,
+				Schema: spec.Schema,
+			},
+		}
+	}
+	return responseFmt{
+		Type: "json_schema",
+		JSONSchema: &responseFmtJSONSchema{
+			Name:   "mecontrola_intent",
+			Strict: true,
+			Schema: intentJSONSchema,
+		},
+	}
 }
 
 func resolveMaxTokens(configured int) int {

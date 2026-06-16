@@ -39,7 +39,7 @@ func newProcessor(t *testing.T, uc services.ActivateTelegramByTokenUseCase) *ser
 		"code_invalid_check_again":        "Codigo invalido.",
 		"system_unavailable_retry":        "Sistema indisponivel.",
 	}
-	return services.NewTelegramMessageProcessor(uc, messages, noop.NewProvider())
+	return services.NewTelegramMessageProcessor(uc, nil, messages, noop.NewProvider())
 }
 
 func TestTelegramMessageProcessor_HandleActivation_Linked(t *testing.T) {

@@ -10,6 +10,23 @@ services:
       # 0.0.0.0 necessário no macOS com Docker Desktop (VM não propaga 127.0.0.1)
       - "5432:5432"
 
+  mailpit:
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/api/v1/info"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backend
+
   otel-lgtm:
     image: grafana/otel-lgtm:0.7.5
     environment:

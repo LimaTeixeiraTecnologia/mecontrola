@@ -25,6 +25,7 @@ func (Mapper) ToCardOutput(c entities.Card) output.Card {
 		Nickname:   c.Nickname.String(),
 		ClosingDay: c.Cycle.ClosingDay,
 		DueDay:     c.Cycle.DueDay,
+		LimitCents: c.LimitCents,
 		CreatedAt:  c.CreatedAt,
 		UpdatedAt:  c.UpdatedAt,
 		DeletedAt:  c.DeletedAt,

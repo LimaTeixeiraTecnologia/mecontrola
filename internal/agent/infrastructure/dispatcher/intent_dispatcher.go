@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
@@ -96,30 +97,65 @@ func (d *IntentDispatcher) route(
 	case "transactions":
 		return d.routeTransactions(ctx, userID, action, filters, payload)
 	case "budgets":
-		return d.routeBudgets(ctx, userID, action, filters)
+		return d.routeBudgets(ctx, userID, action, filters, payload)
 	default:
 		return "", ErrIntentUnsupported
 	}
 }
 
-func (d *IntentDispatcher) routeBudgets(ctx context.Context, userID uuid.UUID, action valueobjects.IntentAction, filters []byte) (string, error) {
-	if action.String() != "list" {
+func (d *IntentDispatcher) routeBudgets(ctx context.Context, userID uuid.UUID, action valueobjects.IntentAction, filters []byte, payload []byte) (string, error) {
+	switch action.String() {
+	case "list":
+		if d.ports.Budgets == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.Budgets.List(ctx, userID, filters)
+	case "get":
+		if d.ports.BudgetsGet == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.BudgetsGet.Get(ctx, userID, filters)
+	case "create":
+		if d.ports.BudgetsCreate == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.BudgetsCreate.Create(ctx, userID, payload)
+	case "update":
+		if d.ports.BudgetsUpdate == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.BudgetsUpdate.Update(ctx, userID, payload)
+	case "delete":
+		if d.ports.BudgetsDelete == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.BudgetsDelete.Delete(ctx, userID, payload)
+	default:
 		return "", ErrIntentUnsupported
 	}
-	if d.ports.Budgets == nil {
-		return "", ErrIntentUnsupported
-	}
-	return d.ports.Budgets.List(ctx, userID, filters)
 }
 
 func (d *IntentDispatcher) routeCategories(ctx context.Context, action valueobjects.IntentAction, filters []byte) (string, error) {
-	if action.String() != "list" {
+	switch action.String() {
+	case "list":
+		if d.ports.CategoriesSearch != nil && looksLikeCategorySearch(filters) {
+			return d.ports.CategoriesSearch.Search(ctx, filters)
+		}
+		if d.ports.CategoriesListDictionary != nil && looksLikeDictionaryList(filters) {
+			return d.ports.CategoriesListDictionary.ListDictionary(ctx, filters)
+		}
+		if d.ports.Categories == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.Categories.List(ctx, filters)
+	case "get":
+		if d.ports.CategoriesGet == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.CategoriesGet.Get(ctx, filters)
+	default:
 		return "", ErrIntentUnsupported
 	}
-	if d.ports.Categories == nil {
-		return "", ErrIntentUnsupported
-	}
-	return d.ports.Categories.List(ctx, filters)
 }
 
 func (d *IntentDispatcher) routeCards(ctx context.Context, userID uuid.UUID, action valueobjects.IntentAction, filters []byte, payload []byte) (string, error) {
@@ -129,11 +165,26 @@ func (d *IntentDispatcher) routeCards(ctx context.Context, userID uuid.UUID, act
 			return "", ErrIntentUnsupported
 		}
 		return d.ports.Cards.List(ctx, userID, filters)
+	case "get":
+		if d.ports.CardsGet == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.CardsGet.Get(ctx, userID, filters)
 	case "create":
 		if d.ports.CardsCreate == nil {
 			return "", ErrIntentUnsupported
 		}
 		return d.ports.CardsCreate.Create(ctx, userID, payload)
+	case "update":
+		if d.ports.CardsUpdate == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.CardsUpdate.Update(ctx, userID, payload)
+	case "delete":
+		if d.ports.CardsDelete == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.CardsDelete.Delete(ctx, userID, payload)
 	default:
 		return "", ErrIntentUnsupported
 	}
@@ -146,6 +197,11 @@ func (d *IntentDispatcher) routeTransactions(ctx context.Context, userID uuid.UU
 			return "", ErrIntentUnsupported
 		}
 		return d.ports.Transactions.List(ctx, userID, filters)
+	case "get":
+		if d.ports.TransactionsGet == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.TransactionsGet.Get(ctx, userID, filters)
 	case "create":
 		if d.ports.TransactionsCreate == nil {
 			return "", ErrIntentUnsupported
@@ -159,6 +215,18 @@ func (d *IntentDispatcher) routeTransactions(ctx context.Context, userID uuid.UU
 	default:
 		return "", ErrIntentUnsupported
 	}
+}
+
+func looksLikeCategorySearch(filters []byte) bool {
+	return containsJSONHint(filters, `"query"`)
+}
+
+func looksLikeDictionaryList(filters []byte) bool {
+	return containsJSONHint(filters, `"signal_type"`) || containsJSONHint(filters, `"category_id"`) || containsJSONHint(filters, `"page_size"`)
+}
+
+func containsJSONHint(raw []byte, needle string) bool {
+	return len(raw) > 0 && strings.Contains(string(raw), needle)
 }
 
 func classifyError(err error) string {

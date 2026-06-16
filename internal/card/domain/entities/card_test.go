@@ -84,6 +84,7 @@ func TestHydrateCard(t *testing.T) {
 		mustCardName("Itau Visa"),
 		mustNickname("itau"),
 		mustCycle(25, 10),
+		0,
 		now,
 		now,
 		&deletedAt,
@@ -109,6 +110,7 @@ func TestHydrateCard_NotDeleted(t *testing.T) {
 		mustCardName("Card"),
 		mustNickname("card"),
 		mustCycle(10, 20),
+		0,
 		time.Now().UTC(),
 		time.Now().UTC(),
 		nil,
@@ -116,6 +118,51 @@ func TestHydrateCard_NotDeleted(t *testing.T) {
 
 	if card.IsDeleted() {
 		t.Error("IsDeleted() must be false when DeletedAt is nil")
+	}
+}
+
+func TestNewCard_WithLimitCents(t *testing.T) {
+	in := entities.NewCardInput{
+		UserID:     uuid.New(),
+		Name:       mustCardName("Nubank"),
+		Nickname:   mustNickname("nu"),
+		Cycle:      mustCycle(15, 22),
+		LimitCents: 500000,
+	}
+	card := entities.NewCard(in)
+	if card.LimitCents != 500000 {
+		t.Errorf("LimitCents: got %d, want 500000", card.LimitCents)
+	}
+}
+
+func TestCard_UpdateLimit(t *testing.T) {
+	in := entities.NewCardInput{
+		UserID:   uuid.New(),
+		Name:     mustCardName("Nubank"),
+		Nickname: mustNickname("nu"),
+		Cycle:    mustCycle(15, 22),
+	}
+	card := entities.NewCard(in)
+	if card.LimitCents != 0 {
+		t.Fatalf("initial LimitCents must be 0, got %d", card.LimitCents)
+	}
+
+	newLimit, err := valueobjects.NewCardLimit(750000)
+	if err != nil {
+		t.Fatalf("NewCardLimit: %v", err)
+	}
+
+	then := time.Now().UTC().Add(time.Hour)
+	updated := card.UpdateLimit(newLimit, then)
+
+	if updated.LimitCents != 750000 {
+		t.Errorf("updated LimitCents: got %d, want 750000", updated.LimitCents)
+	}
+	if !updated.UpdatedAt.Equal(then) {
+		t.Errorf("UpdatedAt: got %v, want %v", updated.UpdatedAt, then)
+	}
+	if card.LimitCents != 0 {
+		t.Error("UpdateLimit must not mutate original Card value")
 	}
 }
 

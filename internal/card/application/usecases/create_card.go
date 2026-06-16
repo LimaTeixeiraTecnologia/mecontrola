@@ -74,15 +74,22 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		return output.Card{}, err
 	}
 
+	limit, err := valueobjects.NewCardLimit(in.LimitCents)
+	if err != nil {
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		return output.Card{}, err
+	}
+
 	ic, hasIdem := idempotency.FromContext(ctx)
 
 	cardID := entities.NewCardID()
 	now := time.Now().UTC()
 	cmd := services.CreateCardCommand{
-		UserID:   in.UserID,
-		Name:     name,
-		Nickname: nickname,
-		Cycle:    cycle,
+		UserID:     in.UserID,
+		Name:       name,
+		Nickname:   nickname,
+		Cycle:      cycle,
+		LimitCents: limit.Cents(),
 	}
 
 	card, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Card, error) {

@@ -54,7 +54,7 @@ func (s *OutreachJobSuite) TestOutreachJob_Scenarios() {
 			dbManager := usecasesmocks.NewFakeManager()
 			repoFactory := appinterfacesmocks.NewRepositoryFactory(s.T())
 			tokenRepo := appinterfacesmocks.NewMagicTokenRepository(s.T())
-			waGW := appinterfacesmocks.NewWhatsAppGateway(s.T())
+			waGW := appinterfacesmocks.NewOutreachChannelGateway(s.T())
 			cipher := appinterfacesmocks.NewTokenCipher(s.T())
 
 			repoFactory.EXPECT().MagicTokenRepository(mock.Anything).Return(tokenRepo).Maybe()

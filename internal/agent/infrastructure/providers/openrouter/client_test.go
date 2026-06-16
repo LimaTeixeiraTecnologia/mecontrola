@@ -179,6 +179,57 @@ func TestProvider_Interpret_RespectsContextCancel(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestProvider_Interpret_UsesCustomJSONSchemaWhenProvided(t *testing.T) {
+	var captured []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"kind\":\"log_expense\"}"}}],"usage":{}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	_, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "s",
+		UserMessage:  "u",
+		JSONSchema: &interfaces.JSONSchemaSpec{
+			Name:   "mecontrola_parse_intent",
+			Strict: true,
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"kind": map[string]any{"type": "string"}},
+				"required":             []string{"kind"},
+				"additionalProperties": false,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	s := string(captured)
+	assert.Contains(t, s, `"mecontrola_parse_intent"`)
+	assert.NotContains(t, s, `"mecontrola_intent"`)
+	assert.Contains(t, s, `"strict":true`)
+}
+
+func TestProvider_Interpret_FallsBackToLegacySchemaWhenAbsent(t *testing.T) {
+	var captured []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}],"usage":{}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	_, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "s",
+		UserMessage:  "u",
+	})
+	require.NoError(t, err)
+
+	s := string(captured)
+	assert.Contains(t, s, `"mecontrola_intent"`)
+	assert.NotContains(t, s, `"mecontrola_parse_intent"`)
+}
+
 func TestProvider_RequestBody_ContainsSystemAndUser(t *testing.T) {
 	var capturedBody json.RawMessage
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

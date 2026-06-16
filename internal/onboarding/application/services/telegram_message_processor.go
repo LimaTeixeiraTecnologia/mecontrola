@@ -2,20 +2,31 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
+	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )
 
 type ActivateTelegramByTokenUseCase interface {
 	Execute(ctx context.Context, in usecases.ActivateTelegramByTokenInput) (usecases.ActivateTelegramResult, error)
 }
 
+type TelegramProcessOnboardingUseCase interface {
+	Execute(ctx context.Context, in usecases.ProcessOnboardingMessageInput) (usecases.ProcessOnboardingMessageResult, error)
+}
+
 type TelegramMessageProcessor struct {
 	activateUseCase ActivateTelegramByTokenUseCase
+	processUseCase  TelegramProcessOnboardingUseCase
 	messages        map[string]string
 	o11y            observability.Observability
 	inbound         observability.Counter
@@ -23,11 +34,13 @@ type TelegramMessageProcessor struct {
 
 func NewTelegramMessageProcessor(
 	activateUseCase ActivateTelegramByTokenUseCase,
+	processUseCase TelegramProcessOnboardingUseCase,
 	messages map[string]string,
 	o11y observability.Observability,
 ) *TelegramMessageProcessor {
 	return &TelegramMessageProcessor{
 		activateUseCase: activateUseCase,
+		processUseCase:  processUseCase,
 		messages:        messages,
 		o11y:            o11y,
 		inbound: o11y.Metrics().Counter(
@@ -36,6 +49,32 @@ func NewTelegramMessageProcessor(
 			"1",
 		),
 	}
+}
+
+func (p *TelegramMessageProcessor) ProcessConversation(ctx context.Context, userID uuid.UUID, text, messageID string) (string, error) {
+	if p.processUseCase == nil {
+		return "", application.ErrOnboardingAlreadyActive
+	}
+	result, err := p.processUseCase.Execute(ctx, usecases.ProcessOnboardingMessageInput{
+		UserID:    userID,
+		Channel:   entities.OnboardingChannelTelegram,
+		MessageID: messageID,
+		Text:      text,
+	})
+	if err != nil {
+		if errors.Is(err, appinterfaces.ErrOnboardingSessionNotFound) {
+			return "", appinterfaces.ErrOnboardingSessionNotFound
+		}
+		slog.WarnContext(ctx, "telegram.processor.conversation_failed",
+			"user_id", userID.String(),
+			"error", err.Error(),
+		)
+		return "", fmt.Errorf("onboarding.telegram.processor: process conversation: %w", err)
+	}
+	if result.Outcome == usecases.ProcessOnboardingOutcomeNoOp {
+		return "", application.ErrOnboardingAlreadyActive
+	}
+	return result.Reply, nil
 }
 
 func (p *TelegramMessageProcessor) HandleActivation(ctx context.Context, telegramUserID int64, token string) (string, error) {
