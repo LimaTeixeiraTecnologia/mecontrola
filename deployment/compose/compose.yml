@@ -30,7 +30,7 @@ services:
       DB_USER: ${DB_USER:-mecontrola}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       DB_NAME: ${DB_NAME:-mecontrola_db}
-      AUTH_TYPE: md5
+      AUTH_TYPE: scram-sha-256
       LISTEN_PORT: "6432"
       POOL_MODE: transaction
       MAX_CLIENT_CONN: "200"
