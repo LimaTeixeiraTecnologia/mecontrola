@@ -56,21 +56,27 @@ services:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     logging: *default-logging
     environment:
-      ENVIRONMENT: production
+      ENVIRONMENT: staging
       DB_HOST: postgres
       DB_PORT: "5432"
+      OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+    depends_on:
+      otelcol:
+        condition: service_started
 
   server:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     restart: unless-stopped
     logging: *default-logging
     environment:
-      ENVIRONMENT: production
+      ENVIRONMENT: staging
       LOG_FORMAT: json
       DB_HOST: pgbouncer
       DB_PORT: "6432"
       DB_SSL_MODE: disable
       OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -79,6 +85,9 @@ services:
     user: "65532:65532"
     cap_drop:
       - ALL
+    depends_on:
+      otelcol:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -92,12 +101,13 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      ENVIRONMENT: production
+      ENVIRONMENT: staging
       LOG_FORMAT: json
       DB_HOST: pgbouncer
       DB_PORT: "6432"
       DB_SSL_MODE: disable
       OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -106,6 +116,9 @@ services:
     user: "65532:65532"
     cap_drop:
       - ALL
+    depends_on:
+      otelcol:
+        condition: service_healthy
     deploy:
       resources:
         limits:

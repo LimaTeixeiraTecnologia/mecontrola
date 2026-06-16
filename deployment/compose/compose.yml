@@ -80,7 +80,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   worker:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:-latest}
@@ -139,10 +139,6 @@ services:
     image: otel/opentelemetry-collector-contrib:0.121.0
     command: ["--config=/etc/otelcol/config.yml"]
     profiles: ["observability"]
-    environment:
-      LOKI_URL: ${LOKI_URL:-http://localhost:3100/loki/api/v1/push}
-      LOKI_USER_ID: ${LOKI_USER_ID:-0}
-      LOKI_API_KEY: ${LOKI_API_KEY:-}
     volumes:
       - ../telemetry/otelcol/config.prod.yml:/etc/otelcol/config.yml:ro
     networks:
