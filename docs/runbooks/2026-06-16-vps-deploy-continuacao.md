@@ -27,7 +27,7 @@
 - [x] GitHub Secrets configurados (10 secrets no environment `staging`): `VPS_HOST`, `VPS_USER`, `VPS_DEPLOY_PATH`, `VPS_SSH_KEY`, `STAGING_WEBHOOK_URL`, `STAGING_META_APP_SECRET`, `STAGING_SMOKE_WA`, `STAGING_DB_URL`, `GHCR_USER`, `GHCR_TOKEN`
 - [x] Meta webhook verificado (`/api/v1/whatsapp/inbound` — GET + POST) — `Configurar webhooks` ✅ na Etapa 2
 - [x] Bot respondendo mensagens (onboarding funcionando com número de teste)
-- [ ] **CI/CD pipeline passando** — 3 fixes pushados (1101eab), CI rodando
+- [x] **CI/CD pipeline passando** — deploy para VPS ✅ funciona (run 27649397384); smoke test falha até Passo 8 ser concluído (Meta number + tokens reais)
 - [ ] **Meta número real verificado** — `+55 11 93621-2870` adicionado no Gerenciador ("Não verificado"), aguardando OTP (rate limit de SMS — tentar novamente amanhã via ligação)
 - [ ] META_PHONE_NUMBER_ID e META_ACCESS_TOKEN atualizados no .env da VPS
 - [ ] pgBackRest S3 configurado
