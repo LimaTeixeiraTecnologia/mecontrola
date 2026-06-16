@@ -23,9 +23,11 @@ func TestParseMonetary(t *testing.T) {
 		{"comma_decimal", "3500,00", 350000, true},
 		{"comma_decimal_with_prefix", "R$ 3.500,00", 350000, true},
 		{"dot_thousand", "3.500", 350000, true},
+		{"multiple_dot_thousands", "1.234.567", 123456700, true},
 		{"english_decimal", "3500.50", 350050, true},
 		{"english_thousands_decimal", "3,500.00", 350000, true},
 		{"empty", "", 0, false},
+		{"prefix_only", "R$ ", 0, false},
 		{"letters", "abc", 0, false},
 		{"mixed", "1a2", 0, false},
 	}

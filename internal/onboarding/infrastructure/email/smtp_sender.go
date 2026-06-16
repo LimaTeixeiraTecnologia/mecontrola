@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/smtp"
 	"strings"
@@ -48,41 +49,69 @@ func NewSMTPSender(cfg SMTPConfig, o11y observability.Observability) (*SMTPSende
 	return &SMTPSender{cfg: cfg, o11y: o11y, sent: sent}, nil
 }
 
-func (s *SMTPSender) Send(ctx context.Context, msg interfaces.EmailMessage) error {
+func (s *SMTPSender) Send(ctx context.Context, msg interfaces.EmailMessage) (err error) {
 	ctx, span := s.o11y.Tracer().Start(ctx, "onboarding.email.smtp.send")
 	defer span.End()
 
+	if err := s.validateMessage(msg); err != nil {
+		return err
+	}
+
+	client, err := s.newClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, s.closeClient(client, err == nil))
+	}()
+
+	if err := s.configureClient(ctx, client); err != nil {
+		return err
+	}
+	if err := s.sendMessage(ctx, client, msg); err != nil {
+		return err
+	}
+
+	s.sent.Add(ctx, 1, observability.String("result", "ok"))
+	return nil
+}
+
+func (s *SMTPSender) validateMessage(msg interfaces.EmailMessage) error {
 	if strings.TrimSpace(msg.To) == "" {
 		return errors.New("email: smtp: destinatario vazio")
 	}
 	if strings.TrimSpace(msg.FromAddress) == "" {
 		return errors.New("email: smtp: remetente vazio")
 	}
+	return nil
+}
 
+func (s *SMTPSender) newClient(ctx context.Context) (*smtp.Client, error) {
 	addr := net.JoinHostPort(s.cfg.Host, fmt.Sprintf("%d", s.cfg.Port))
 	dialer := &net.Dialer{Timeout: s.cfg.Timeout}
-
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		s.sent.Add(ctx, 1, observability.String("result", "dial_failed"))
-		return fmt.Errorf("email: smtp: dial %s: %w", addr, err)
+		return nil, fmt.Errorf("email: smtp: dial %s: %w", addr, err)
 	}
-	defer conn.Close()
-
 	client, err := smtp.NewClient(conn, s.cfg.Host)
 	if err != nil {
 		s.sent.Add(ctx, 1, observability.String("result", "client_failed"))
-		return fmt.Errorf("email: smtp: novo cliente: %w", err)
+		return nil, errors.Join(
+			fmt.Errorf("email: smtp: novo cliente: %w", err),
+			s.closeConn(conn),
+		)
 	}
-	defer client.Quit()
+	return client, nil
+}
 
+func (s *SMTPSender) configureClient(ctx context.Context, client *smtp.Client) error {
 	if s.cfg.StartTLS {
 		if err := client.StartTLS(&tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}); err != nil {
 			s.sent.Add(ctx, 1, observability.String("result", "starttls_failed"))
 			return fmt.Errorf("email: smtp: starttls: %w", err)
 		}
 	}
-
 	if s.cfg.Username != "" {
 		auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
 		if err := client.Auth(auth); err != nil {
@@ -90,7 +119,10 @@ func (s *SMTPSender) Send(ctx context.Context, msg interfaces.EmailMessage) erro
 			return fmt.Errorf("email: smtp: auth: %w", err)
 		}
 	}
+	return nil
+}
 
+func (s *SMTPSender) sendMessage(ctx context.Context, client *smtp.Client, msg interfaces.EmailMessage) error {
 	if err := client.Mail(msg.FromAddress); err != nil {
 		s.sent.Add(ctx, 1, observability.String("result", "mail_from_failed"))
 		return fmt.Errorf("email: smtp: mail from: %w", err)
@@ -99,25 +131,63 @@ func (s *SMTPSender) Send(ctx context.Context, msg interfaces.EmailMessage) erro
 		s.sent.Add(ctx, 1, observability.String("result", "rcpt_failed"))
 		return fmt.Errorf("email: smtp: rcpt: %w", err)
 	}
-
 	writer, err := client.Data()
 	if err != nil {
 		s.sent.Add(ctx, 1, observability.String("result", "data_failed"))
 		return fmt.Errorf("email: smtp: data: %w", err)
 	}
-
-	payload := buildMimeMessage(msg)
-	if _, err := writer.Write([]byte(payload)); err != nil {
-		writer.Close()
+	if err := s.writePayload(ctx, writer, buildMimeMessage(msg)); err != nil {
 		s.sent.Add(ctx, 1, observability.String("result", "write_failed"))
-		return fmt.Errorf("email: smtp: write payload: %w", err)
+		return err
 	}
-	if err := writer.Close(); err != nil {
+	return nil
+}
+
+func (s *SMTPSender) writePayload(ctx context.Context, writer io.WriteCloser, payload string) error {
+	if _, err := writer.Write([]byte(payload)); err != nil {
+		return errors.Join(
+			fmt.Errorf("email: smtp: write payload: %w", err),
+			s.closeWriter(writer),
+		)
+	}
+	if err := s.closeWriter(writer); err != nil {
 		s.sent.Add(ctx, 1, observability.String("result", "close_failed"))
+		return err
+	}
+	return nil
+}
+
+func (s *SMTPSender) closeClient(client *smtp.Client, graceful bool) error {
+	if graceful {
+		if err := client.Quit(); err != nil {
+			return errors.Join(
+				fmt.Errorf("email: smtp: quit client: %w", err),
+				s.closeSMTPClient(client),
+			)
+		}
+		return nil
+	}
+	return s.closeSMTPClient(client)
+}
+
+func (s *SMTPSender) closeSMTPClient(client *smtp.Client) error {
+	if err := client.Close(); err != nil {
+		return fmt.Errorf("email: smtp: close client: %w", err)
+	}
+	return nil
+}
+
+func (s *SMTPSender) closeConn(conn net.Conn) error {
+	if err := conn.Close(); err != nil {
+		return fmt.Errorf("email: smtp: close conn: %w", err)
+	}
+	return nil
+}
+
+func (s *SMTPSender) closeWriter(writer io.WriteCloser) error {
+	if err := writer.Close(); err != nil {
 		return fmt.Errorf("email: smtp: close data: %w", err)
 	}
-
-	s.sent.Add(ctx, 1, observability.String("result", "ok"))
 	return nil
 }
 

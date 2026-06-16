@@ -376,7 +376,7 @@ func transitionToSplit(payload entities.OnboardingSessionPayload) (entities.Onbo
 func toSplitsCalculatedEntries(entries []entities.OnboardingCardSplitEntry) []entities.SplitsCalculatedEntry {
 	out := make([]entities.SplitsCalculatedEntry, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, entities.SplitsCalculatedEntry{Kind: e.Kind, Percent: e.Percent})
+		out = append(out, entities.SplitsCalculatedEntry(e))
 	}
 	return out
 }
@@ -392,64 +392,75 @@ func SuggestDefaultSplit() (valueobjects.CategorySplit, error) {
 }
 
 func parseMonetary(text string) (int64, bool) {
+	s, ok := normalizeMonetaryInput(text)
+	if !ok {
+		return 0, false
+	}
+	s = normalizeMonetarySeparators(s)
+	if !isValidMonetaryNumber(s) {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f < 0 {
+		return 0, false
+	}
+	return int64(f*100 + 0.5), true
+}
+
+func normalizeMonetaryInput(text string) (string, bool) {
 	s := strings.ToLower(strings.TrimSpace(text))
 	if s == "" {
-		return 0, false
+		return "", false
 	}
 	s = strings.TrimPrefix(s, "r$")
 	s = strings.TrimPrefix(s, "rs")
 	s = strings.ReplaceAll(s, " ", "")
 	if s == "" {
-		return 0, false
+		return "", false
 	}
+	return s, true
+}
+
+func normalizeMonetarySeparators(s string) string {
 	hasComma := strings.Contains(s, ",")
 	hasDot := strings.Contains(s, ".")
 	switch {
 	case hasComma && hasDot:
-		lastComma := strings.LastIndex(s, ",")
-		lastDot := strings.LastIndex(s, ".")
-		if lastComma > lastDot {
-			s = strings.ReplaceAll(s, ".", "")
-			s = strings.Replace(s, ",", ".", 1)
-		} else {
-			s = strings.ReplaceAll(s, ",", "")
-		}
+		return normalizeMixedMonetarySeparators(s)
 	case hasComma:
-		s = strings.Replace(s, ",", ".", 1)
-	case hasDot:
-		if countRune(s, '.') > 1 {
-			s = strings.ReplaceAll(s, ".", "")
-		} else {
-			parts := strings.Split(s, ".")
-			if len(parts[1]) == 3 {
-				s = strings.ReplaceAll(s, ".", "")
-			}
-		}
+		return strings.Replace(s, ",", ".", 1)
+	case hasDot && hasThousandsDots(s):
+		return strings.ReplaceAll(s, ".", "")
+	default:
+		return s
 	}
-	for _, r := range s {
-		if (r < '0' || r > '9') && r != '.' {
-			return 0, false
-		}
-	}
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0, false
-	}
-	if f < 0 {
-		return 0, false
-	}
-	cents := int64(f*100 + 0.5)
-	return cents, true
 }
 
-func countRune(s string, r rune) int {
-	n := 0
-	for _, c := range s {
-		if c == r {
-			n++
+func normalizeMixedMonetarySeparators(s string) string {
+	lastComma := strings.LastIndex(s, ",")
+	lastDot := strings.LastIndex(s, ".")
+	if lastComma > lastDot {
+		s = strings.ReplaceAll(s, ".", "")
+		return strings.Replace(s, ",", ".", 1)
+	}
+	return strings.ReplaceAll(s, ",", "")
+}
+
+func hasThousandsDots(s string) bool {
+	if strings.Count(s, ".") > 1 {
+		return true
+	}
+	parts := strings.Split(s, ".")
+	return len(parts) == 2 && len(parts[1]) == 3
+}
+
+func isValidMonetaryNumber(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && r != '.' {
+			return false
 		}
 	}
-	return n
+	return true
 }
 
 func parseDay(text string) (int, bool) {

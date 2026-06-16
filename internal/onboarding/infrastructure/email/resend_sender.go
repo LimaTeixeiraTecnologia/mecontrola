@@ -61,7 +61,7 @@ type resendRequest struct {
 	ReplyTo string   `json:"reply_to,omitempty"`
 }
 
-func (s *ResendSender) Send(ctx context.Context, msg interfaces.EmailMessage) error {
+func (s *ResendSender) Send(ctx context.Context, msg interfaces.EmailMessage) (err error) {
 	ctx, span := s.o11y.Tracer().Start(ctx, "onboarding.email.resend.send")
 	defer span.End()
 
@@ -100,7 +100,9 @@ func (s *ResendSender) Send(ctx context.Context, msg interfaces.EmailMessage) er
 		s.sent.Add(ctx, 1, observability.String("result", "transport_failed"))
 		return fmt.Errorf("email: resend: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err = errors.Join(err, s.closeResponseBody(resp))
+	}()
 
 	if resp.StatusCode >= 400 {
 		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
@@ -109,5 +111,12 @@ func (s *ResendSender) Send(ctx context.Context, msg interfaces.EmailMessage) er
 	}
 
 	s.sent.Add(ctx, 1, observability.String("result", "ok"))
+	return nil
+}
+
+func (s *ResendSender) closeResponseBody(resp *http.Response) error {
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("email: resend: close body: %w", err)
+	}
 	return nil
 }

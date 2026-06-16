@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/database"
@@ -21,7 +22,7 @@ func NewCardThresholdReader(o11y observability.Observability, db database.DBTX) 
 	return &cardThresholdReader{db: db, o11y: o11y}
 }
 
-func (r *cardThresholdReader) ListActiveCardsForThresholdScan(ctx context.Context, refMonth valueobjects.Competence, limit int) ([]interfaces.ActiveCardForScan, error) {
+func (r *cardThresholdReader) ListActiveCardsForThresholdScan(ctx context.Context, refMonth valueobjects.Competence, limit int) (out []interfaces.ActiveCardForScan, err error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.card_threshold_reader.list_active")
 	defer span.End()
 
@@ -49,9 +50,11 @@ func (r *cardThresholdReader) ListActiveCardsForThresholdScan(ctx context.Contex
 	if err != nil {
 		return nil, fmt.Errorf("budgets.repository.card_threshold_reader: query: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 
-	out := make([]interfaces.ActiveCardForScan, 0)
+	out = make([]interfaces.ActiveCardForScan, 0)
 	for rows.Next() {
 		var (
 			userID, cardID         uuid.UUID
