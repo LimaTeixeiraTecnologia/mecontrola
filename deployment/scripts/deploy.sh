@@ -76,20 +76,19 @@ log "Atualizando containers server e worker"
 # Para reiniciar o banco manualmente: docker compose ... restart postgres pgbouncer
 ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker"
 
-log "Aguardando healthcheck em /health"
-APP_URL="http://localhost:8080"
+log "Aguardando healthcheck do container server"
 for i in $(seq 1 $HEALTHZ_RETRIES); do
-  STATUS=$(ssh_exec "curl -sf -o /dev/null -w '%{http_code}' ${APP_URL}/health || true")
-  if [[ "$STATUS" == "200" ]]; then
+  HEALTH=$(ssh_exec "docker inspect --format='{{.State.Health.Status}}' mecontrola-server-1 2>/dev/null || echo 'unknown'")
+  if [[ "$HEALTH" == "healthy" ]]; then
     log "Healthcheck OK após $((i * HEALTHZ_INTERVAL))s"
     break
   fi
   if [[ "$i" -eq "$HEALTHZ_RETRIES" ]]; then
-    log "ERRO: healthcheck falhou após $((HEALTHZ_RETRIES * HEALTHZ_INTERVAL))s — iniciando rollback"
-    ssh_exec "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker" || true
+    log "ERRO: healthcheck falhou após $((HEALTHZ_RETRIES * HEALTHZ_INTERVAL))s (status: ${HEALTH}) — iniciando rollback"
+    ssh_exec "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker" || true
     exit 1
   fi
-  log "Aguardando... (${i}/${HEALTHZ_RETRIES})"
+  log "Aguardando... (${i}/${HEALTHZ_RETRIES}) status: ${HEALTH}"
   sleep "$HEALTHZ_INTERVAL"
 done
 
