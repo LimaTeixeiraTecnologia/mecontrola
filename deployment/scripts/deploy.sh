@@ -41,11 +41,33 @@ run_cmd() {
   fi
 }
 
+# Atualiza o repositório de forma resiliente a problemas de ownership do .git.
+# O runner self-hosted pode executar como usuário diferente do dono do repo
+# (ex.: repo clonado como root). safe.directory resolve "dubious ownership",
+# mas NÃO concede escrita em .git/FETCH_HEAD — por isso a autocorreção de posse.
+update_code() {
+  run_cmd "git config --global --add safe.directory ${VPS_DEPLOY_PATH} 2>/dev/null || true"
+  if run_cmd "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"; then
+    return 0
+  fi
+
+  log "git pull falhou — tentando autocorreção de ownership do repositório"
+  run_cmd "sudo -n chown -R \$(id -un):\$(id -gn) ${VPS_DEPLOY_PATH} 2>/dev/null || chown -R \$(id -un):\$(id -gn) ${VPS_DEPLOY_PATH} 2>/dev/null || true"
+  run_cmd "git config --global --add safe.directory ${VPS_DEPLOY_PATH} 2>/dev/null || true"
+  if run_cmd "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"; then
+    log "Autocorreção de ownership bem-sucedida"
+    return 0
+  fi
+
+  log "ERRO: não foi possível atualizar ${VPS_DEPLOY_PATH} (ownership do .git ou histórico divergente)."
+  log "Correção manual na VPS (como root): chown -R <usuario_do_runner> ${VPS_DEPLOY_PATH}"
+  return 1
+}
+
 log "Iniciando deploy — tag: ${IMAGE_TAG}"
 
 log "Atualizando código no servidor"
-run_cmd "git config --global --add safe.directory ${VPS_DEPLOY_PATH} 2>/dev/null || true"
-run_cmd "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"
+update_code
 
 if [[ -n "${GHCR_TOKEN}" ]]; then
   log "Autenticando no GHCR"
