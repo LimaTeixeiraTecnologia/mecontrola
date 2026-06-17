@@ -44,6 +44,7 @@ run_cmd() {
 log "Iniciando deploy — tag: ${IMAGE_TAG}"
 
 log "Atualizando código no servidor"
+run_cmd "git config --global --add safe.directory ${VPS_DEPLOY_PATH} 2>/dev/null || true"
 run_cmd "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"
 
 if [[ -n "${GHCR_TOKEN}" ]]; then
