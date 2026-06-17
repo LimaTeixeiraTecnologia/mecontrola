@@ -67,6 +67,7 @@
 
 ## Checklist
 
+- [ ] Passo 0 — novo código deployado na VPS (git pull + build + restart)
 - [ ] Passo 1 — health OK
 - [ ] Passo 2 — checkout retornou `checkout_url` com `?sck=` e token salvo no Postman
 - [ ] Passo 3 — webhook retornou `{"received": true}`
@@ -74,6 +75,56 @@
 - [ ] Passo 5 — email recebido em `jailton.junior94@outlook.com`
 - [ ] Passo 6 — bot respondeu "Sua conta foi ativada com sucesso! Bem-vindo ao MeControla."
 - [ ] Passo 7 — DBeaver mostra token `CONSUMED` + `subscription_status=ACTIVE` + `whatsapp_number=+5511986896322`
+
+---
+
+## Passo 0 — Deploy do novo código na VPS
+
+**O que faz:** atualiza o código no servidor com os 4 bugs corrigidos (sessão 2026-06-17), reconstrói as imagens Docker e reinicia server + worker. Este passo é obrigatório antes de re-executar qualquer passo da fase 2.
+
+```bash
+ssh root@187.77.45.48 << 'DEPLOY'
+set -e
+cd /opt/mecontrola
+
+echo "==> Atualizando código..."
+git pull origin main
+
+echo "==> Rebuild das imagens (server + worker)..."
+IMAGE_TAG=local docker compose \
+  --env-file /opt/mecontrola/.env \
+  -f /opt/mecontrola/deployment/compose/compose.yml \
+  -f /opt/mecontrola/deployment/compose/compose.prod.yml \
+  build server worker
+
+echo "==> Reiniciando containers..."
+IMAGE_TAG=local docker compose \
+  --env-file /opt/mecontrola/.env \
+  -f /opt/mecontrola/deployment/compose/compose.yml \
+  -f /opt/mecontrola/deployment/compose/compose.prod.yml \
+  up -d --no-deps --force-recreate server worker
+
+echo "==> Aguardando startup..."
+sleep 5
+curl -sf https://api.mecontrola.app.br/health | python3 -m json.tool
+DEPLOY
+```
+
+**Resultado esperado:**
+```json
+{
+    "status": "healthy",
+    "service": "mecontrola-api",
+    "environment": "production",
+    "checks": { "database": { "status": "healthy" } }
+}
+```
+
+**Bugs corrigidos neste deploy:**
+- `ErrNestedTransaction` no `UpsertUserByWhatsApp` — uso de `database.FromContext(ctx)` ao invés de `uow.Do` aninhado
+- Nil pointer em `ProcessSubscriptionGraceExpired` — `kiwifyDBTX` injetado no construtor
+- False-positive warning do outbox para `billing.subscription.activated`
+- Landing page `/ativar` ausente — redirect criado com preservação de `?token=`
 
 ---
 
@@ -370,3 +421,49 @@ ssh root@187.77.45.48 \
 | Bot não responde | VPS: logs do server | `grep -E 'whatsapp\|HandleActivation'` |
 | DBeaver: `token_status=PAID` | VPS: logs do server | Checar se a mensagem WhatsApp chegou ao handler |
 | DBeaver: `subscription_status=null` | VPS: logs do worker | Worker não processou — ver Passo 4 |
+
+---
+
+## Histórico de correções (2026-06-17)
+
+### Bug 1 — `ErrNestedTransaction` no fluxo de ativação WhatsApp
+
+**Sintoma:** bot não respondia após `ATIVAR <token>`; logs do server mostravam `database: nested transaction not supported`.
+
+**Causa:** `ConsumeMagicToken.Execute` → `uow.Do` (insere tx no ctx) → `handlePaidToken` → `BindAndConsume` → `identityGateway.UpsertUserByWhatsApp` → `UpsertUserByWhatsApp.Execute` → `uow.Do` aninhado → `database.FromContext` detecta tx ativa → `ErrNestedTransaction`.
+
+**Correção:** `UpsertUserByWhatsApp.Execute` verifica `database.FromContext(ctx)` antes de chamar `uow.Do`. Se tx já estiver no contexto, usa-a diretamente via `persistUpsert(ctx, tx, ...)`.
+
+**Arquivo:** `internal/identity/application/usecases/upsert_user_by_whatsapp.go`
+
+### Bug 2 — Nil pointer em `ProcessSubscriptionGraceExpired`
+
+**Sintoma:** worker panic/nil pointer ao executar o job de expiração de graça.
+
+**Causa:** `SubscriptionRepository(nil)` — o campo `db` não era injetado no construtor, resultando em `nil` passado para o driver PostgreSQL.
+
+**Correção:** campo `db database.DBTX` adicionado ao struct; `kiwifyDBTX` (já disponível em `module.go`) passado como segundo parâmetro do construtor — mesmo padrão de `ReconcileSubscriptions`.
+
+**Arquivo:** `internal/billing/application/usecases/process_subscription_grace_expired.go`, `internal/billing/module.go`
+
+### Bug 3 — False-positive warning do outbox para `billing.subscription.activated`
+
+**Sintoma:** logs do server mostravam `WARN outbox.event.missing_aggregate_user_id` para o evento `billing.subscription.activated`, que é publicado antes do usuário ser criado (fluxo de onboarding).
+
+**Correção:** `noUserEventAllowlist` adicionado em `internal/platform/outbox/system_event_allowlist.go`; `billing.subscription.activated` listado como evento que legitimamente não tem `aggregate_user_id`.
+
+**Arquivo:** `internal/platform/outbox/system_event_allowlist.go`, `internal/platform/outbox/outbox.go`
+
+### Bug 4 — Landing page `/ativar` ausente
+
+**Sintoma:** link do email de ativação (`https://www.mecontrola.app.br/ativar?token=...`) retornava 404; `EMAIL_ACTIVATE_URL` apontava para `/ativar` mas apenas `/activate` existia.
+
+**Correção:** `src/pages/ativar.astro` criado com redirect client-side preservando `?token=` via `window.location.search`.
+
+**Repositório:** `LimaTeixeiraTecnologia/mecontrola-landingpage`
+
+### Postman Collection — Pre-request Script corrigido
+
+**Problema:** `pm.collectionVariables.set('webhook_body', body)` não resolvia o `{{webhook_body}}` no body antes do envio; `pm.collectionVariables.set('webhook_sig', sig)` não resolvia `{{webhook_sig}}` na URL.
+
+**Correção:** substituído por `pm.request.body.raw = body` (injeta body diretamente) e `pm.environment.set('webhook_sig', sig)` (resolve a variável na URL via environment).

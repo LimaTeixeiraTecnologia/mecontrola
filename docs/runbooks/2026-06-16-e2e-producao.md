@@ -347,6 +347,17 @@ export IMAGE_TAG=local && mc up -d --no-deps --force-recreate server worker
 ### Secrets Kiwify (2026-06-17)
 `KIWIFY_WEBHOOK_SECRET`, `KIWIFY_CLIENT_ID` e `KIWIFY_ACCOUNT_ID` estavam como `CHANGE_ME` na VPS. Atualizados com os valores reais do `.env` local e server+worker reiniciados.
 
+### 4 bugs no fluxo de ativação WhatsApp (2026-06-17)
+
+Descobertos durante a sessão de E2E produção pós-configuração dos secrets. Todos corrigidos antes do re-teste:
+
+- **Bug 1 — `ErrNestedTransaction`:** `UpsertUserByWhatsApp.Execute` chamava `uow.Do` dentro de um `txCtx` que já continha uma transação ativa. Corrigido com `database.FromContext(ctx)` — se tx no ctx, usa diretamente sem novo `uow.Do`. (`internal/identity/application/usecases/upsert_user_by_whatsapp.go`)
+- **Bug 2 — Nil pointer em `ProcessSubscriptionGraceExpired`:** `SubscriptionRepository(nil)` por falta de `db` no construtor. Corrigido injetando `kiwifyDBTX` — mesmo padrão de `ReconcileSubscriptions`. (`internal/billing/module.go`, `process_subscription_grace_expired.go`)
+- **Bug 3 — False-positive warning outbox:** `billing.subscription.activated` é publicado antes do usuário existir; o outbox emitia `WARN missing_aggregate_user_id`. Corrigido com `noUserEventAllowlist`. (`internal/platform/outbox/`)
+- **Bug 4 — Landing page `/ativar` ausente:** `EMAIL_ACTIVATE_URL` apontava para `/ativar` mas apenas `/activate` existia. Criado `src/pages/ativar.astro` com redirect preservando `?token=`. (`LimaTeixeiraTecnologia/mecontrola-landingpage`)
+
+**Commits mecontrola:** `000d623` (checkout bugs + frente B + deploy) — inclui os 4 fixes acima.
+
 ### 3 bugs no checkout no browser (2026-06-16)
 Causa: **3 bugs encadeados**, todos corrigidos:
 - **Bug 1 — CORS:** `CORS_ALLOWED_ORIGINS` não incluía `www.mecontrola.app.br` → `OPTIONS 403`. Corrigido no `.env` da VPS.
