@@ -372,6 +372,16 @@ o problema original do Trivy quebraria CI novamente.
   users em hard mês um único spike pode disparar milhares de mensagens (custo Meta + Telegram +
   UX ruim). Implementar throttle persistente em `alert_deliveries`. **S, 1 dia.**
 
+- **P1-API7** — Scaffolding dormente em `internal/identity` (verificado 2026-06-17). Os use cases
+  `LinkChannelToUser` e `MarkUserDeleted` estão wired no `internal/identity/module.go` (campo
+  exportado + `New*` + atribuição) e têm cobertura de teste verde (unit em ambos; integração em
+  `mark_user_deleted_integration_test.go`), mas **nenhum entry-point** (handler/consumer/job) chama
+  `.Execute()` — confirmado por grep em `infrastructure/` e `cmd/`. Consequência **sem falso
+  positivo**: a lógica está provada, porém as features (exclusão de conta LGPD via evento
+  `user.deleted`; vínculo multi-canal) são **inalcançáveis em produção** — não contar como capacidade
+  viva do MVP. Decisão: **manter** (não é código morto; é scaffolding testado). Wirar entry-points
+  quando a feature entrar no escopo e então provar E2E. **S, 1 dia por feature quando agendada.**
+
 ### Infraestrutura
 
 - **P1-INFRA1** — Log rotation no `deployment/compose/compose.prod.yml`. Hoje sem
