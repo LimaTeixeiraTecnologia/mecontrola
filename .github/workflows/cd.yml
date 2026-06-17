@@ -22,11 +22,13 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/limateixeiratecnologia/mecontrola
+  ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: node24
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   gate:
     name: Gate (CI passed)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     permissions:
       actions: read
@@ -99,16 +101,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Extract task version
-        id: task-ver
+      - name: Install task
         run: |
           VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          echo "version=$VER" >> "$GITHUB_OUTPUT"
-
-      - uses: arduino/setup-task@v2
-        with:
-          version: ${{ steps.task-ver.outputs.version }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin "v${VER}"
 
       - name: Auth smoke test
         env:
@@ -157,16 +153,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Extract task version
-        id: task-ver
+      - name: Install task
         run: |
           VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          echo "version=$VER" >> "$GITHUB_OUTPUT"
-
-      - uses: arduino/setup-task@v2
-        with:
-          version: ${{ steps.task-ver.outputs.version }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin "v${VER}"
 
       - name: Auth smoke test
         env:
