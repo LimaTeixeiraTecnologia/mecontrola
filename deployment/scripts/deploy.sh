@@ -58,8 +58,8 @@ log "Imagem anterior: ${PREVIOUS_TAG:-<nenhuma>}"
 log "Fazendo pull da nova imagem"
 run_cmd "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} pull server worker"
 
-log "Garantindo otel-lgtm ativo"
-run_cmd "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d otel-lgtm"
+log "Garantindo otel-lgtm ativo (remove containers de observabilidade legados)"
+run_cmd "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --remove-orphans otel-lgtm"
 for i in $(seq 1 $OTEL_RETRIES); do
   OTEL_HEALTH=$(run_cmd "docker inspect --format='{{.State.Health.Status}}' mecontrola-otel-lgtm-1 2>/dev/null || echo 'unknown'")
   if [[ "$OTEL_HEALTH" == "healthy" ]]; then
