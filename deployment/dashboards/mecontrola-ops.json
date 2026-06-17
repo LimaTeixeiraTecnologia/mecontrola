@@ -14,7 +14,7 @@
         "label": "Prometheus",
         "type": "datasource",
         "query": "prometheus",
-        "current": {},
+        "current": { "selected": false, "text": "Prometheus", "value": "prometheus" },
         "hide": 0
       },
       {
@@ -22,7 +22,7 @@
         "label": "Loki",
         "type": "datasource",
         "query": "loki",
-        "current": {},
+        "current": { "selected": false, "text": "Loki", "value": "loki" },
         "hide": 0
       },
       {

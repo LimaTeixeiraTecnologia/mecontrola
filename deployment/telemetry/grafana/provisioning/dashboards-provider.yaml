@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: mecontrola
+    orgId: 1
+    folder: MeControla
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/dashboards
+      foldersFromFilesStructure: false

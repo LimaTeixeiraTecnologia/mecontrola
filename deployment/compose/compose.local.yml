@@ -32,6 +32,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${OTEL_LGTM_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${OTEL_LGTM_ADMIN_PASSWORD:-admin@dev}
+      ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
+      ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:4317:4317"
@@ -41,6 +43,9 @@ services:
       - ../telemetry/grafana/loki-config.yaml:/otel-lgtm/loki-config.yaml:ro
       - ../telemetry/grafana/tempo-config.yaml:/otel-lgtm/tempo-config.yaml:ro
       - ../telemetry/grafana/run-prometheus.sh:/otel-lgtm/run-prometheus.sh:ro
+      - ../dashboards:/etc/dashboards:ro
+      - ../telemetry/grafana/provisioning/dashboards-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/mecontrola.yaml:ro
+      - ../telemetry/grafana/provisioning/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
       - otel-lgtm-grafana:/otel-lgtm/grafana/data
       - otel-lgtm-prometheus:/data/prometheus
       - otel-lgtm-loki:/loki

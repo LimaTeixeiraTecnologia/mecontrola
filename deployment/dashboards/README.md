@@ -54,8 +54,45 @@ em segundos**, **client/DB em milissegundos**.
 
 **Logs (Loki):** stream `{service_name=~"mecontrola-.+", detected_level=~"error|warn"}`.
 
-## Provisionamento automático (opcional)
+## Provisionamento automático (ativo)
 
-Para versionar os dashboards no Grafana sem importar à mão, monte este diretório no
-container e provisione via `dashboards.yaml` apontando para o path. No otel-lgtm o Grafana
-provisiona de `/otel-lgtm/grafana/...`; alternativamente use o endpoint de import da API.
+Dashboards **e alertas** sobem sozinhos a cada deploy — não precisa importar à mão.
+O `otel-lgtm` monta (ver `compose.*.yml`):
+
+- `../dashboards` → `/etc/dashboards` + provider `dashboards-provider.yaml` → dashboards aparecem na pasta **MeControla**.
+- `../telemetry/grafana/provisioning/alerting/rules.yaml` → 6 regras de alerta (pasta **MeControla Alerts**).
+
+## Alertas proativos
+
+Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
+
+| Grupo | Regra | Dispara quando |
+|-------|-------|----------------|
+| tecnico | API sem métricas (down) | sem `http_server_request_active` há >5min |
+| tecnico | API erro 5xx alto | 5xx > 5% por 5min |
+| tecnico | API latência p99 alta | p99 > 1s por 10min |
+| tecnico | Postgres pool com espera | >1 wait/s por 5min |
+| negocio | Tokens pagos não consumidos | `onboarding_tokens_paid_unconsumed_ratio` > 25% por 15min |
+| plataforma | Collector falhando export | `otelcol_exporter_send_failed_metric_points` > 0 por 5min |
+
+> Alertas de **queda de volume** (ex.: "webhooks pararam") foram omitidos de propósito —
+> num produto novo de baixo tráfego eles geram falso-positivo. Reavaliar quando houver baseline.
+> **Disco** precisa de node-exporter (removido no MVP) — adicionar exporter antes de alertar disco.
+
+### Notificação no Telegram (contém segredo → via API, não em arquivo)
+
+O contact point + notification policy do Telegram são criados por
+`deployment/telemetry/grafana/setup-alerting-telegram.sh` (idempotente). O Grafana 11 coage
+`chatid` numérico a number quando interpolado de env em arquivo, então o segredo entra pela API
+(onde controlamos o tipo string). No deploy isso roda automático se `ALERT_TELEGRAM_*` estiverem no `.env`.
+
+Manual (na VPS, com otel-lgtm no ar):
+
+```bash
+cd /opt/mecontrola && set -a && . ./.env && set +a
+GRAFANA_ADMIN_PASSWORD="$OTEL_LGTM_ADMIN_PASSWORD" \
+  bash deployment/telemetry/grafana/setup-alerting-telegram.sh
+```
+
+Variáveis no `.env`: `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`. O script envia uma
+mensagem de teste ao final. Sem as variáveis, os alertas apenas avaliam no painel (Alerting).

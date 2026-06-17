@@ -75,6 +75,9 @@ for i in $(seq 1 $OTEL_RETRIES); do
   sleep "$OTEL_INTERVAL"
 done
 
+log "Configurando alertas Telegram (idempotente; pula se ALERT_TELEGRAM_* vazios)"
+run_cmd "cd ${VPS_DEPLOY_PATH} && set -a && . ./.env && set +a && if [ -n \"\${ALERT_TELEGRAM_BOT_TOKEN:-}\" ] && [ -n \"\${ALERT_TELEGRAM_CHAT_ID:-}\" ]; then GRAFANA_ADMIN_PASSWORD=\"\${OTEL_LGTM_ADMIN_PASSWORD}\" bash deployment/telemetry/grafana/setup-alerting-telegram.sh; else echo 'ALERT_TELEGRAM_* nao definidos — alertas so no painel'; fi" || log "AVISO: setup de alertas Telegram falhou — seguindo deploy"
+
 if [[ -n "$STAGING_SMOKE_WA" ]]; then
   SMOKE_WA_DIGITS="${STAGING_SMOKE_WA#+}"
   log "Configurando app.smoke_wa na VPS (smoke user seed)"

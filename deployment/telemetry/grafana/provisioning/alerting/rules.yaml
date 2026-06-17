@@ -1,0 +1,203 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: tecnico
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-api-down
+        title: API sem métricas (provável down)
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "mecontrola-api parou de exportar métricas há >5min (provável crash/queda)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(http_server_request_active{job="mecontrola-api"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-api-5xx
+        title: API erro 5xx alto
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Taxa de respostas 5xx da API acima de 5% por 5min"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(http_server_request_count_total{job="mecontrola-api", http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_count_total{job="mecontrola-api"}[5m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [5] }
+
+      - uid: mc-api-latency-p99
+        title: API latência p99 alta
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "p99 de latência da API acima de 1s por 10min"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="mecontrola-api"}[5m])))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [1] }
+
+      - uid: mc-db-pool-wait
+        title: Postgres pool com espera por conexão
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Pool do Postgres com >1 espera/s por 5min (saturação de conexões)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(database_pool_wait_count_total{job=~"mecontrola-.+"}[5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [1] }
+
+  - orgId: 1
+    name: negocio
+    folder: MeControla Alerts
+    interval: 5m
+    rules:
+      - uid: mc-onboarding-unconsumed
+        title: Onboarding com muitos tokens pagos não consumidos
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Ratio de tokens pagos sem ativação acima de 25% por 15min (clientes pagaram e não ativaram)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(onboarding_tokens_paid_unconsumed_ratio)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0.25] }
+
+  - orgId: 1
+    name: plataforma
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-collector-export-fail
+        title: Collector falhando ao exportar métricas
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "otelcol com falhas de export de métricas para o Prometheus por 5min"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(otelcol_exporter_send_failed_metric_points[5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
