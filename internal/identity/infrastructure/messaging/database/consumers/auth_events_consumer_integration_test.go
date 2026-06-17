@@ -36,8 +36,13 @@ func (s *AuthEventsConsumerIntegrationSuite) SetupTest() {
 }
 
 func (s *AuthEventsConsumerIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	s.mgr = setupConsumerTestDB(s.T())
+}
+
+func setupConsumerTestDB(t *testing.T) manager.Manager {
+	t.Helper()
+	mgr, _ := testcontainer.Postgres(t)
+	return mgr
 }
 
 func (s *AuthEventsConsumerIntegrationSuite) newSUT() *consumers.AuthEventsConsumer {

@@ -95,3 +95,9 @@ func (s *AuthEventsHousekeepingIntegrationSuite) TestRunIdempotent() {
 		s.Require().NoError(job.Run(s.ctx))
 	})
 }
+
+func setupJobIntegrationDB(t *testing.T) manager.Manager {
+	t.Helper()
+	mgr, _ := testcontainer.Postgres(t)
+	return mgr
+}

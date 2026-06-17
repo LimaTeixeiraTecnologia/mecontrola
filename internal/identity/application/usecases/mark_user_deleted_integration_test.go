@@ -43,6 +43,12 @@ func (s *MarkUserDeletedIntegrationSuite) SetupSuite() {
 	s.o11y = noop.NewProvider()
 }
 
+func setupMarkDeletedTestDB(t *testing.T) manager.Manager {
+	t.Helper()
+	mgr, _ := testcontainer.Postgres(t)
+	return mgr
+}
+
 func (s *MarkUserDeletedIntegrationSuite) outboxCfg() configs.OutboxConfig {
 	return configs.OutboxConfig{RetryMaxAttempts: 3}
 }

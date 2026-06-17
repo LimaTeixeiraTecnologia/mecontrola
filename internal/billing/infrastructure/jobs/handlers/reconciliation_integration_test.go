@@ -27,6 +27,12 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
+func setupIntegrationDB(t *testing.T) manager.Manager {
+	t.Helper()
+	mgr, _ := testcontainer.Postgres(t)
+	return mgr
+}
+
 func makeMonthlyPlan(t *testing.T) valueobjects.Plan {
 	t.Helper()
 	plan, err := valueobjects.NewPlan("MONTHLY", 30)

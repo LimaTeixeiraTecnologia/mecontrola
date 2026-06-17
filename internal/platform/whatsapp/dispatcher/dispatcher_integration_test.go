@@ -62,6 +62,12 @@ func (s *DispatcherIntegrationSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
+func setupDispatcherTestDB(t *testing.T) manager.Manager {
+	t.Helper()
+	mgr, _ := testcontainer.Postgres(t)
+	return mgr
+}
+
 func (s *DispatcherIntegrationSuite) outboxCfg() configs.OutboxConfig {
 	return configs.OutboxConfig{RetryMaxAttempts: 3}
 }

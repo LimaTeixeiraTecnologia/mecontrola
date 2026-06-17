@@ -26,6 +26,30 @@ func (c Category) IsActive() bool {
 	return c.DeprecatedAt == nil
 }
 
+func (c Category) GetID() uuid.UUID {
+	return c.ID
+}
+
+func (c Category) GetSlug() string {
+	return c.Slug
+}
+
+func (c Category) GetName() string {
+	return c.Name
+}
+
+func (c Category) GetKind() valueobjects.Kind {
+	return c.Kind
+}
+
+func (c Category) GetParentID() *uuid.UUID {
+	return c.ParentID
+}
+
+func (c Category) GetAllocationType() valueobjects.AllocationType {
+	return c.AllocationType
+}
+
 func (c Category) GetDeprecatedAt() *string {
 	if c.DeprecatedAt == nil {
 		return nil

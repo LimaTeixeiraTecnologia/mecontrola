@@ -129,3 +129,8 @@ packages:
       TransactionEventPublisher: {}
       CardPurchaseEventPublisher: {}
       RecurringTemplateEventPublisher: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces:
+    interfaces:
+      CategoryRepository: {}
+      DictionaryRepository: {}
+      VersionReader: {}

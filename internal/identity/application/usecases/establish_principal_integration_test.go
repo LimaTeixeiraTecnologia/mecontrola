@@ -45,6 +45,12 @@ func (s *EstablishPrincipalIntegrationSuite) SetupSuite() {
 	s.o11y = noop.NewProvider()
 }
 
+func setupEstablishTestDB(t *testing.T) manager.Manager {
+	t.Helper()
+	mgr, _ := testcontainer.Postgres(t)
+	return mgr
+}
+
 func (s *EstablishPrincipalIntegrationSuite) outboxCfg() configs.OutboxConfig {
 	return configs.OutboxConfig{RetryMaxAttempts: 3}
 }
