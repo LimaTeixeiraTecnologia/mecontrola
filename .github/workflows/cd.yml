@@ -104,7 +104,9 @@ jobs:
       - name: Install task
         run: |
           VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin "v${VER}"
+          mkdir -p "$HOME/.local/bin"
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Auth smoke test
         env:
@@ -156,7 +158,9 @@ jobs:
       - name: Install task
         run: |
           VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin "v${VER}"
+          mkdir -p "$HOME/.local/bin"
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Auth smoke test
         env:
