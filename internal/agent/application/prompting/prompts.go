@@ -15,12 +15,21 @@ var parseIntentSystemRaw string
 //go:embed parse_intent.user.tmpl
 var parseIntentUserRaw string
 
+//go:embed persona.system.tmpl
+var personaSystemRaw string
+
 var ErrUserTextEmpty = errors.New("agent.application.prompting: user text is empty")
 
 var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(parseIntentUserRaw))
 
+var personaSystemTpl = template.Must(template.New("persona.system").Parse(personaSystemRaw))
+
 type ParseIntentUserData struct {
 	UserText string
+}
+
+type PersonaSystemData struct {
+	JourneyHint string
 }
 
 func RenderSystem() (string, error) {
@@ -28,6 +37,17 @@ func RenderSystem() (string, error) {
 		return "", fmt.Errorf("agent.application.prompting: system template is empty")
 	}
 	return parseIntentSystemRaw, nil
+}
+
+func RenderPersonaSystem(data PersonaSystemData) (string, error) {
+	if strings.TrimSpace(personaSystemRaw) == "" {
+		return "", fmt.Errorf("agent.application.prompting: persona template is empty")
+	}
+	var buf bytes.Buffer
+	if err := personaSystemTpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("agent.application.prompting: execute persona template: %w", err)
+	}
+	return buf.String(), nil
 }
 
 func RenderUser(text string) (string, error) {

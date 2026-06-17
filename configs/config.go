@@ -172,6 +172,7 @@ type AgentConfig struct {
 	PrimaryModel      string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
 	FallbackModels    string        `mapstructure:"AGENT_LLM_FALLBACK_MODELS"`
 	MaxTokens         int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	ProseMaxTokens    int           `mapstructure:"AGENT_LLM_PROSE_MAX_TOKENS"`
 	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
 	RequestTimeout    time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
 	PromptPadTokens   int           `mapstructure:"AGENT_LLM_PROMPT_PAD_TOKENS"`
@@ -1127,6 +1128,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
 	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "openai/gpt-5-nano,mistralai/mistral-small-3.2-24b-instruct,anthropic/claude-haiku-4.5")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
+	l.v.SetDefault("AGENT_LLM_PROSE_MAX_TOKENS", 200)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
 	l.v.SetDefault("AGENT_LLM_REQUEST_TIMEOUT", 8*time.Second)
 	l.v.SetDefault("AGENT_LLM_PROMPT_PAD_TOKENS", 1100)

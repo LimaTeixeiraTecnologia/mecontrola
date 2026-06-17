@@ -40,9 +40,9 @@ var (
 
 const (
 	defaultListCardsLimit = 200
-	fallbackMissingText   = "Não recebi nenhum texto para interpretar."
-	fallbackParseError    = "Não entendi direito. Pode reformular?"
-	fallbackUsecaseError  = "Tive uma instabilidade para consultar isso agora. Tente novamente em instantes."
+	fallbackMissingText   = "Não recebi nenhuma mensagem. Me conta o que você precisa nas suas finanças 😊"
+	fallbackParseError    = "Não entendi direito. Pode reformular? Posso te ajudar com cartões, orçamento e lançamentos."
+	fallbackUsecaseError  = "Tive uma instabilidade para consultar isso agora. Tente de novo em instantes 🙏"
 )
 
 type ParsedIntent struct {
@@ -545,44 +545,45 @@ func formatThousands(value int64) string {
 
 func formatPersistedExpense(amountCents int64, merchant, categoryPath string) string {
 	var sb strings.Builder
-	sb.WriteString("Anotei: ")
+	sb.WriteString("💸 *Transação realizada!*\n*")
 	sb.WriteString(formatBRL(amountCents))
+	sb.WriteString("*")
 	if strings.TrimSpace(merchant) != "" {
-		sb.WriteString(" em ")
+		sb.WriteString(" em *")
 		sb.WriteString(merchant)
+		sb.WriteString("*")
 	}
 	if strings.TrimSpace(categoryPath) != "" {
-		sb.WriteString(" (")
+		sb.WriteString("\n📂 ")
 		sb.WriteString(categoryPath)
-		sb.WriteString(")")
 	}
-	sb.WriteString(". Já está no seu orçamento do mês.")
+	sb.WriteString("\n🔔 *Atualizando seu orçamento automaticamente...*")
 	return sb.String()
 }
 
 func formatLoggedExpense(amountCents int64, merchant, categoryHint string) string {
 	var sb strings.Builder
-	sb.WriteString("Anotei: ")
+	sb.WriteString("💸 *Transação realizada!*\n*")
 	sb.WriteString(formatBRL(amountCents))
+	sb.WriteString("*")
 	if strings.TrimSpace(merchant) != "" {
-		sb.WriteString(" em ")
+		sb.WriteString(" em *")
 		sb.WriteString(merchant)
+		sb.WriteString("*")
 	}
 	if strings.TrimSpace(categoryHint) != "" {
-		sb.WriteString(" (")
+		sb.WriteString("\n📂 ")
 		sb.WriteString(categoryHint)
-		sb.WriteString(")")
 	}
-	sb.WriteString(".")
-	sb.WriteString(" Por enquanto eu ainda não associo automaticamente a uma categoria; em breve essa funcionalidade chega.")
+	sb.WriteString("\nEm breve eu associo a categoria automaticamente pra você.")
 	return sb.String()
 }
 
 func formatMonthlySummary(summary budgetsoutput.MonthlySummaryOutput) string {
 	var sb strings.Builder
-	sb.WriteString("Resumo de ")
+	sb.WriteString("📊 *Resumo de ")
 	sb.WriteString(summary.Competence)
-	sb.WriteString(":\n")
+	sb.WriteString("*\n")
 	sb.WriteString("• Gasto total: ")
 	sb.WriteString(formatBRL(summary.TotalSpentCents))
 	if summary.TotalPlannedCents != nil {
@@ -595,7 +596,7 @@ func formatMonthlySummary(summary budgetsoutput.MonthlySummaryOutput) string {
 			continue
 		}
 		sb.WriteString("• ")
-		sb.WriteString(allocation.RootSlug)
+		sb.WriteString(rootSlugLabel(allocation.RootSlug))
 		sb.WriteString(": ")
 		sb.WriteString(formatBRL(allocation.SpentCents))
 		if allocation.PlannedCents != nil {
@@ -612,9 +613,9 @@ func formatCategoryAllocation(summary budgetsoutput.MonthlySummaryOutput, catego
 	for _, allocation := range summary.Allocations {
 		if strings.ToLower(allocation.RootSlug) == target {
 			var sb strings.Builder
-			sb.WriteString("Em ")
-			sb.WriteString(allocation.RootSlug)
-			sb.WriteString(" (")
+			sb.WriteString("📊 *")
+			sb.WriteString(rootSlugLabel(allocation.RootSlug))
+			sb.WriteString("* (")
 			sb.WriteString(summary.Competence)
 			sb.WriteString("): ")
 			sb.WriteString(formatBRL(allocation.SpentCents))
@@ -622,12 +623,32 @@ func formatCategoryAllocation(summary budgetsoutput.MonthlySummaryOutput, catego
 				sb.WriteString(" de ")
 				sb.WriteString(formatBRL(*allocation.PlannedCents))
 				sb.WriteString(" planejados")
+				if allocation.PercentageSpent != nil {
+					_, _ = fmt.Fprintf(&sb, " (%.0f%% da meta)", *allocation.PercentageSpent)
+				}
 			}
 			sb.WriteString(".")
 			return sb.String()
 		}
 	}
 	return fmt.Sprintf("Não encontrei dados para a categoria %q em %s.", categoryName, summary.Competence)
+}
+
+func rootSlugLabel(slug string) string {
+	switch slug {
+	case "expense.custo_fixo":
+		return "Custo Fixo"
+	case "expense.conhecimento":
+		return "Conhecimento"
+	case "expense.prazeres":
+		return "Prazeres"
+	case "expense.metas":
+		return "Metas"
+	case "expense.liberdade_financeira":
+		return "Liberdade Financeira"
+	default:
+		return slug
+	}
 }
 
 func formatGoalUnavailable(goalName string) string {
@@ -643,10 +664,11 @@ func formatGoalProgress(summary budgetsoutput.MonthlySummaryOutput, goalName str
 	for _, allocation := range summary.Allocations {
 		if allocation.RootSlug == rootSlugMetas {
 			var sb strings.Builder
+			sb.WriteString("🎯 ")
 			if strings.TrimSpace(goalName) != "" {
-				sb.WriteString("Meta ")
+				sb.WriteString("*")
 				sb.WriteString(goalName)
-				sb.WriteString(": ")
+				sb.WriteString("*: ")
 			}
 			sb.WriteString("você já guardou ")
 			sb.WriteString(formatBRL(allocation.SpentCents))
@@ -672,9 +694,9 @@ func formatGoalProgress(summary budgetsoutput.MonthlySummaryOutput, goalName str
 
 func formatCardNotFound(cardName string) string {
 	if strings.TrimSpace(cardName) == "" {
-		return "Não encontrei esse cartão no seu cadastro."
+		return "💳 Não encontrei esse cartão no seu cadastro. Que tal cadastrá-lo primeiro pra eu cuidar da fatura pra você?"
 	}
-	return fmt.Sprintf("Não encontrei um cartão com o nome %q no seu cadastro.", cardName)
+	return fmt.Sprintf("💳 Não encontrei um cartão chamado %q no seu cadastro. Quer cadastrá-lo primeiro pra eu acompanhar a fatura?", cardName)
 }
 
 func formatCardInvoice(card cardoutput.Card, invoice cardoutput.Invoice) string {
@@ -682,19 +704,24 @@ func formatCardInvoice(card cardoutput.Card, invoice cardoutput.Invoice) string 
 	if name == "" {
 		name = strings.TrimSpace(card.Nickname)
 	}
-	base := fmt.Sprintf("Fatura do cartão %s: fechamento em %s, vencimento em %s.",
+	base := fmt.Sprintf("💳 *Fatura do cartão %s*\nFechamento em %s, vencimento em %s.",
 		name, invoice.ClosingDate, invoice.DueDate)
 	if card.LimitCents > 0 {
-		return base + " Limite: " + formatBRL(card.LimitCents) + "."
+		return base + "\nLimite: " + formatBRL(card.LimitCents) + "."
 	}
 	return base
 }
 
 func formatHowAmIDoing(summary budgetsoutput.MonthlySummaryOutput) string {
+	alert := summary.PercentageTotal != nil && *summary.PercentageTotal >= 80
 	var sb strings.Builder
-	sb.WriteString("Como você está em ")
+	if alert {
+		sb.WriteString("⚠️ *Atenção Proativa* (")
+	} else {
+		sb.WriteString("📊 *Como você está* (")
+	}
 	sb.WriteString(summary.Competence)
-	sb.WriteString(": gastou ")
+	sb.WriteString(")\nVocê gastou ")
 	sb.WriteString(formatBRL(summary.TotalSpentCents))
 	if summary.TotalPlannedCents != nil && *summary.TotalPlannedCents > 0 {
 		sb.WriteString(" de ")
@@ -703,7 +730,11 @@ func formatHowAmIDoing(summary budgetsoutput.MonthlySummaryOutput) string {
 		if summary.PercentageTotal != nil {
 			_, _ = fmt.Fprintf(&sb, " (%.0f%%)", *summary.PercentageTotal)
 			if *summary.PercentageTotal >= 90 {
-				sb.WriteString(". Atenção, você está próximo do limite do mês.")
+				sb.WriteString(". Você está bem próximo do limite do mês. Vamos manter o foco nos seus sonhos? 🎯")
+				return sb.String()
+			}
+			if *summary.PercentageTotal >= 80 {
+				sb.WriteString(". Dá pra segurar o ritmo até o fim do mês. Vamos juntos? 🎯")
 				return sb.String()
 			}
 			if *summary.PercentageTotal <= 50 {

@@ -16,6 +16,8 @@ type LLMRequest struct {
 	SystemPrompt string
 	UserMessage  string
 	JSONSchema   *JSONSchemaSpec
+	FreeText     bool
+	MaxTokens    int
 }
 
 type LLMResponse struct {

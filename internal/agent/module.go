@@ -51,9 +51,10 @@ type AgentModule struct {
 }
 
 type llmRuntime struct {
-	Handler      *usecases.HandleInboundMessage
-	Mode         string
-	ParseInbound *usecases.ParseInbound
+	Handler        *usecases.HandleInboundMessage
+	Mode           string
+	ParseInbound   *usecases.ParseInbound
+	Conversational *usecases.ComposeConversationalReply
 }
 
 type llmReply struct {
@@ -370,11 +371,14 @@ type fallbackAdapter struct {
 }
 
 func (a *fallbackAdapter) Reply(ctx context.Context, userID uuid.UUID, channel, text string) (string, error) {
-	reply, err := a.runtime.HandleText(ctx, userID, channel, text)
+	if a.runtime == nil || a.runtime.Conversational == nil {
+		return "", nil
+	}
+	out, err := a.runtime.Conversational.Execute(ctx, usecases.ComposeConversationalInput{UserID: userID, Channel: channel, Text: text})
 	if err != nil {
 		return "", err
 	}
-	return reply.Text, nil
+	return out.Reply, nil
 }
 
 type emptyContextLoader struct{}
@@ -470,7 +474,12 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability, de
 		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
 	}
 
-	return &llmRuntime{Handler: handler, Mode: ModeOpenRouter, ParseInbound: parseInbound}, nil
+	conversational, err := usecases.NewComposeConversationalReply(chain, cfg.ProseMaxTokens, o11y)
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm: conversational reply: %w", err)
+	}
+
+	return &llmRuntime{Handler: handler, Mode: ModeOpenRouter, ParseInbound: parseInbound, Conversational: conversational}, nil
 }
 
 func (m *llmRuntime) HandleText(ctx context.Context, userID uuid.UUID, channel, text string) (llmReply, error) {

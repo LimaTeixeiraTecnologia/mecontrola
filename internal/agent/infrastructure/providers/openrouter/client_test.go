@@ -74,6 +74,54 @@ func TestProvider_Interpret_HappyPath(t *testing.T) {
 	assert.Equal(t, 80, resp.CompletionTokens)
 }
 
+func TestProvider_Interpret_FreeText_OmitsResponseFormatAndHonorsMaxTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.NotContains(t, string(body), "response_format")
+		assert.NotContains(t, string(body), "json_schema")
+		assert.Contains(t, string(body), `"max_tokens":150`)
+
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"Vamos organizar suas finanças! 💪"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":500,"completion_tokens":12}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	resp, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "persona",
+		UserMessage:  "oi",
+		FreeText:     true,
+		MaxTokens:    150,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Vamos organizar suas finanças! 💪", string(resp.RawJSON))
+}
+
+func TestProvider_Interpret_TruncatedResponse_StillReturnsContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"resposta cortada"},"finish_reason":"length"}],
+			"usage":{"prompt_tokens":500,"completion_tokens":150}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	resp, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "persona",
+		UserMessage:  "oi",
+		FreeText:     true,
+		MaxTokens:    10,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "resposta cortada", string(resp.RawJSON))
+}
+
 func TestProvider_Interpret_401Unauthorized_ReturnsUpstream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

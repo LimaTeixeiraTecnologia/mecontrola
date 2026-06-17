@@ -172,7 +172,8 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense() {
 	s.Equal(intent.KindLogExpense, result.Kind)
 	s.Equal(services.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
-	s.Contains(s.wa.sent[0].Text, "Anotei")
+	s.Contains(s.wa.sent[0].Text, "💸 *Transação realizada!*")
+	s.Contains(s.wa.sent[0].Text, "R$ 58,00")
 	s.Contains(s.wa.sent[0].Text, "iFood")
 	s.Contains(s.wa.sent[0].Text, "Prazeres")
 }
@@ -390,6 +391,92 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_HowAmIDoing_Above90() {
 
 	s.Equal(services.OutcomeRouted, result.Outcome)
 	s.Contains(s.wa.sent[0].Text, "Atenção")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_HowAmIDoing_AlertToneAt80() {
+	parsed := intent.NewHowAmIDoing()
+	s.parser.intent = parsed
+	planned := int64(100000)
+	pct := 82.0
+	s.summary.out = budgetsoutput.MonthlySummaryOutput{
+		Competence:        "2026-06",
+		TotalSpentCents:   82000,
+		TotalPlannedCents: &planned,
+		PercentageTotal:   &pct,
+	}
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "como estou", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Contains(s.wa.sent[0].Text, "⚠️ *Atenção Proativa*")
+	s.Contains(s.wa.sent[0].Text, "82%")
+	s.Contains(s.wa.sent[0].Text, "🎯")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_HowAmIDoing_NormalToneBelow80() {
+	parsed := intent.NewHowAmIDoing()
+	s.parser.intent = parsed
+	planned := int64(100000)
+	pct := 40.0
+	s.summary.out = budgetsoutput.MonthlySummaryOutput{
+		Competence:        "2026-06",
+		TotalSpentCents:   40000,
+		TotalPlannedCents: &planned,
+		PercentageTotal:   &pct,
+	}
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "como estou", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Contains(s.wa.sent[0].Text, "📊 *Como você está*")
+	s.NotContains(s.wa.sent[0].Text, "Atenção")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_MonthlySummary_RootSlugLabelHumanized() {
+	parsed, err := intent.NewMonthlySummary("2026-06")
+	require.NoError(s.T(), err)
+	s.parser.intent = parsed
+	planned := int64(120000)
+	s.summary.out = budgetsoutput.MonthlySummaryOutput{
+		Competence:        "2026-06",
+		TotalSpentCents:   45000,
+		TotalPlannedCents: &planned,
+		Allocations: []budgetsoutput.AllocationSummary{
+			{RootSlug: "expense.custo_fixo", SpentCents: 30000, PlannedCents: &planned},
+			{RootSlug: "expense.liberdade_financeira", SpentCents: 15000, PlannedCents: &planned},
+		},
+	}
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "resumo", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Contains(s.wa.sent[0].Text, "📊 *Resumo de 2026-06*")
+	s.Contains(s.wa.sent[0].Text, "Custo Fixo")
+	s.Contains(s.wa.sent[0].Text, "Liberdade Financeira")
+	s.NotContains(s.wa.sent[0].Text, "expense.custo_fixo")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_QueryGoal_GoalEmojiAndNoFabricatedPercent() {
+	parsed, err := intent.NewQueryGoal("Viagem")
+	require.NoError(s.T(), err)
+	s.parser.intent = parsed
+	s.summary.out = budgetsoutput.MonthlySummaryOutput{
+		Competence: "2026-06",
+		Allocations: []budgetsoutput.AllocationSummary{
+			{RootSlug: "expense.metas", SpentCents: 50000},
+		},
+	}
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "como está minha meta de viagem", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Contains(s.wa.sent[0].Text, "🎯")
+	s.Contains(s.wa.sent[0].Text, "R$ 500,00")
+	s.NotContains(s.wa.sent[0].Text, "%")
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_Unknown_DelegatesFallback() {

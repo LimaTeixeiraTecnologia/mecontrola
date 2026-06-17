@@ -20,6 +20,7 @@ import (
 const (
 	endpointChatCompletions = "/api/v1/chat/completions"
 	defaultMaxTokens        = 256
+	finishReasonLength      = "length"
 )
 
 var ErrEmptyChoices = errors.New("agent.llm.openrouter: response has no choices")
@@ -77,7 +78,7 @@ type chatRequest struct {
 	Messages    []chatMessage `json:"messages"`
 	MaxTokens   int           `json:"max_tokens"`
 	Temperature float64       `json:"temperature"`
-	ResponseFmt responseFmt   `json:"response_format"`
+	ResponseFmt *responseFmt  `json:"response_format,omitempty"`
 }
 
 type responseFmt struct {
@@ -112,7 +113,8 @@ var intentJSONSchema = map[string]any{
 }
 
 type chatChoice struct {
-	Message chatMessage `json:"message"`
+	Message      chatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
 }
 
 type chatUsage struct {
@@ -141,9 +143,9 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 			{Role: "system", Content: req.SystemPrompt},
 			{Role: "user", Content: req.UserMessage},
 		},
-		MaxTokens:   resolveMaxTokens(p.cfg.MaxTokens),
+		MaxTokens:   resolveMaxTokens(req.MaxTokens, p.cfg.MaxTokens),
 		Temperature: p.cfg.Temperature,
-		ResponseFmt: resolveResponseFormat(req.JSONSchema),
+		ResponseFmt: resolveResponseFormat(req),
 	}
 
 	encoded, err := json.Marshal(body)
@@ -202,7 +204,15 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 		return interfaces.LLMResponse{}, ErrEmptyChoices
 	}
 
-	p.callTotal.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("status", "ok"))
+	status := "ok"
+	if parsed.Choices[0].FinishReason == finishReasonLength {
+		status = "truncated"
+		p.o11y.Logger().Warn(ctx, "agent.llm.openrouter.response_truncated",
+			observability.String("model", p.cfg.Slug.String()),
+			observability.Int("max_tokens", resolveMaxTokens(req.MaxTokens, p.cfg.MaxTokens)),
+		)
+	}
+	p.callTotal.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("status", status))
 
 	return interfaces.LLMResponse{
 		Provider:         p.cfg.Slug,
@@ -212,9 +222,13 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 	}, nil
 }
 
-func resolveResponseFormat(spec *interfaces.JSONSchemaSpec) responseFmt {
+func resolveResponseFormat(req interfaces.LLMRequest) *responseFmt {
+	if req.FreeText {
+		return nil
+	}
+	spec := req.JSONSchema
 	if spec != nil && spec.Name != "" && spec.Schema != nil {
-		return responseFmt{
+		return &responseFmt{
 			Type: "json_schema",
 			JSONSchema: &responseFmtJSONSchema{
 				Name:   spec.Name,
@@ -223,7 +237,7 @@ func resolveResponseFormat(spec *interfaces.JSONSchemaSpec) responseFmt {
 			},
 		}
 	}
-	return responseFmt{
+	return &responseFmt{
 		Type: "json_schema",
 		JSONSchema: &responseFmtJSONSchema{
 			Name:   "mecontrola_intent",
@@ -233,7 +247,10 @@ func resolveResponseFormat(spec *interfaces.JSONSchemaSpec) responseFmt {
 	}
 }
 
-func resolveMaxTokens(configured int) int {
+func resolveMaxTokens(requested, configured int) int {
+	if requested > 0 {
+		return requested
+	}
 	if configured <= 0 {
 		return defaultMaxTokens
 	}
