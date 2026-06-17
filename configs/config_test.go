@@ -965,6 +965,11 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
 				s.T().Setenv("IDENTITY_GATEWAY_SHARED_SECRET_CURRENT", strings.Repeat("a1", 32))
 				s.T().Setenv("CORS_ALLOWED_ORIGINS", "https://app.mecontrola.com.br,https://checkout.mecontrola.com.br")
+				s.T().Setenv("META_ACCESS_TOKEN", "EAAreal-access-token-for-testing")
+				s.T().Setenv("META_PHONE_NUMBER_ID", "1234567890123")
+				s.T().Setenv("META_APP_SECRET", "real-app-secret-for-testing")
+				s.T().Setenv("META_VERIFY_TOKEN", "real-verify-token-for-testing")
+				s.T().Setenv("ONBOARDING_TOKEN_ENCRYPTION_KEY", "testencryptionkey1234567890abcde")
 			},
 			expect: func(cfg *configs.Config, err error) {
 				s.Require().NoError(err)
@@ -1504,6 +1509,11 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.O11yConfig.TraceSampleRate = 0.2
 	cfg.IdentityConfig.GatewaySharedSecretCurrent = strings.Repeat("a1", 32)
 	cfg.HTTPConfig.CORSAllowedOrigins = "https://app.mecontrola.com.br,https://checkout.mecontrola.com.br"
+	cfg.WhatsAppConfig.AccessToken = "EAAreal-access-token-for-testing"
+	cfg.WhatsAppConfig.PhoneNumberID = "1234567890123"
+	cfg.WhatsAppConfig.AppSecret = "real-app-secret-for-testing"
+	cfg.WhatsAppConfig.VerifyToken = "real-verify-token-for-testing"
+	cfg.OnboardingConfig.TokenEncryptionKey = "testencryptionkey1234567890abcde"
 	return cfg
 }
 

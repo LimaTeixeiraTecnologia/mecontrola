@@ -521,6 +521,7 @@ func (l *configLoader) envKeys() []string {
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON",
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS",
 		"TRANSACTIONS_BRAZIL_TIMEZONE",
+		"OPENROUTER_API_KEY",
 		"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT",
 		"IDENTITY_GATEWAY_SHARED_SECRET_NEXT",
 		"IDENTITY_GATEWAY_AUTH_WINDOW",
@@ -826,6 +827,7 @@ func (c *Config) validateProduction() []string {
 	errs = append(errs, c.validateProductionKiwify()...)
 	errs = append(errs, c.validateProductionIdentity()...)
 	errs = append(errs, c.validateProductionCORS()...)
+	errs = append(errs, c.validateProductionWhatsApp()...)
 	errs = append(errs, c.validateProductionTelegram()...)
 	errs = append(errs, c.validateProductionAgent()...)
 	return errs
@@ -854,6 +856,35 @@ func (c *Config) validateProductionTelegram() []string {
 	return errs
 }
 
+func (c *Config) validateProductionWhatsApp() []string {
+	var errs []string
+	required := []struct {
+		name  string
+		value string
+	}{
+		{"META_ACCESS_TOKEN", c.WhatsAppConfig.AccessToken},
+		{"META_PHONE_NUMBER_ID", c.WhatsAppConfig.PhoneNumberID},
+		{"META_APP_SECRET", c.WhatsAppConfig.AppSecret},
+		{"META_VERIFY_TOKEN", c.WhatsAppConfig.VerifyToken},
+	}
+	for _, f := range required {
+		if strings.TrimSpace(f.value) == "" {
+			errs = append(errs, fmt.Sprintf("%s obrigatorio em production", f.name))
+			continue
+		}
+		for _, placeholder := range InsecurePlaceholders {
+			if f.value == placeholder {
+				errs = append(errs, fmt.Sprintf(
+					"%s contém placeholder inseguro %q: substitua por valor real em production",
+					f.name, placeholder,
+				))
+				break
+			}
+		}
+	}
+	return errs
+}
+
 func (c *Config) validateProductionAgent() []string {
 	mode := strings.ToLower(strings.TrimSpace(c.AgentConfig.Mode))
 	if mode == "" || mode == "stub" {
@@ -865,6 +896,15 @@ func (c *Config) validateProductionAgent() []string {
 	var errs []string
 	if strings.TrimSpace(c.AgentConfig.OpenRouterAPIKey) == "" {
 		errs = append(errs, "OPENROUTER_API_KEY obrigatorio quando AGENT_MODE=openrouter em production")
+	}
+	for _, placeholder := range InsecurePlaceholders {
+		if c.AgentConfig.OpenRouterAPIKey == placeholder {
+			errs = append(errs, fmt.Sprintf(
+				"OPENROUTER_API_KEY contém placeholder inseguro %q: substitua por valor real em production",
+				placeholder,
+			))
+			break
+		}
 	}
 	if strings.TrimSpace(c.AgentConfig.PrimaryModel) == "" {
 		errs = append(errs, "AGENT_LLM_PRIMARY_MODEL obrigatorio em production")
