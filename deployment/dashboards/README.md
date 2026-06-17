@@ -86,13 +86,14 @@ O contact point + notification policy do Telegram são criados por
 `chatid` numérico a number quando interpolado de env em arquivo, então o segredo entra pela API
 (onde controlamos o tipo string). No deploy isso roda automático se `ALERT_TELEGRAM_*` estiverem no `.env`.
 
-Manual (na VPS, com otel-lgtm no ar):
+Manual (na VPS, com otel-lgtm no ar) — o script lê o `.env` sozinho:
 
 ```bash
-cd /opt/mecontrola && set -a && . ./.env && set +a
-GRAFANA_ADMIN_PASSWORD="$OTEL_LGTM_ADMIN_PASSWORD" \
-  bash deployment/telemetry/grafana/setup-alerting-telegram.sh
+cd /opt/mecontrola
+bash deployment/telemetry/grafana/setup-alerting-telegram.sh
 ```
 
-Variáveis no `.env`: `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`. O script envia uma
-mensagem de teste ao final. Sem as variáveis, os alertas apenas avaliam no painel (Alerting).
+Variáveis no `.env`: `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID` (e `OTEL_LGTM_ADMIN_PASSWORD`
+para a senha do Grafana). O script envia uma mensagem de teste real via API do Telegram ao final.
+Sem as variáveis, ele pula com exit 0 e os alertas apenas avaliam no painel (Alerting).
+Pré-requisito: dar `/start` no bot uma vez para ele poder te enviar mensagem.
