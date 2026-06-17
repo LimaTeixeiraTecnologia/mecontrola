@@ -58,20 +58,18 @@ func (s *MigrationSuite) applyBaseline(migrator migration.Migrator) {
 	)
 }
 
-func (s *MigrationSuite) currentVersion(migrator migration.Migrator) uint {
-	version, dirty, err := migrator.Version(s.ctx)
-	s.Require().NoError(err)
-	s.False(dirty)
-	return version
-}
-
 func (s *MigrationSuite) downToVersion(migrator migration.Migrator, target uint) {
-	version := s.currentVersion(migrator)
-	s.GreaterOrEqual(version, target)
-	if version == target {
-		return
+	for {
+		version, dirty, err := migrator.Version(s.ctx)
+		if err != nil {
+			return
+		}
+		s.False(dirty)
+		if version <= target {
+			return
+		}
+		s.Require().NoError(migrator.Down(s.ctx, 1))
 	}
-	s.Require().NoError(migrator.Down(s.ctx, int(version-target)))
 }
 
 func (s *MigrationSuite) TestBaselineUpDownUp() {
