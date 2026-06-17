@@ -57,7 +57,7 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, staging]
     needs: gate
     if: needs.gate.result == 'success'
     environment: staging
@@ -71,15 +71,9 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
       - name: Deploy to VPS
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
+          LOCAL_DEPLOY: "true"
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.gate.outputs.image-tag }}
           STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
@@ -89,7 +83,7 @@ jobs:
 
   smoke:
     name: Auth Smoke (staging)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, staging]
     needs: deploy
     if: needs.deploy.result == 'success'
     environment: staging
@@ -121,12 +115,12 @@ jobs:
           WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
           META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
           SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          DB_URL: ${{ secrets.STAGING_DB_URL }}
+          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
         run: task auth:smoke
 
   deploy-manual:
     name: Deploy to VPS (manual)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, staging]
     if: github.event_name == 'workflow_dispatch'
     environment: staging
     concurrency:
@@ -137,15 +131,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
       - name: Deploy to VPS
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
+          LOCAL_DEPLOY: "true"
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ inputs.image_tag }}
           STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
@@ -155,7 +143,7 @@ jobs:
 
   smoke-manual:
     name: Auth Smoke (staging, manual)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, staging]
     needs: deploy-manual
     if: needs.deploy-manual.result == 'success'
     environment: staging
@@ -185,5 +173,5 @@ jobs:
           WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
           META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
           SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          DB_URL: ${{ secrets.STAGING_DB_URL }}
+          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
         run: task auth:smoke
