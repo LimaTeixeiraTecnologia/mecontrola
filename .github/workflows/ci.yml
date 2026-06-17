@@ -100,7 +100,7 @@ jobs:
       - run: task test:unit
 
       - name: Upload unit coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-coverage
           path: coverage/unit.out
@@ -146,7 +146,7 @@ jobs:
       - run: task test:integration
 
       - name: Upload integration coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-coverage
           path: coverage/integration.out
@@ -186,7 +186,7 @@ jobs:
       - run: task test:e2e
 
       - name: Upload E2E coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-coverage
           path: coverage/e2e.out
@@ -350,7 +350,7 @@ jobs:
           echo "image-digest=${{ steps.build.outputs.digest }}" >> image-meta.txt
 
       - name: Upload image meta for CD
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-meta
           path: image-meta.txt
