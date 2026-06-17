@@ -16,25 +16,48 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 	httpserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/http/server/handlers"
+	cardjobs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/jobs/handlers"
+	cardconsumers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/messaging/database/consumers"
+	cardproducers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/messaging/database/producers"
 	cardrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/ratelimit"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
-type CardModule struct {
-	RepositoryFactory interfaces.RepositoryFactory
-	CardRouter        *httpserver.CardRouter
-	CardLookup        *usecases.GetCardForUser
-	ListCardsUC       *usecases.ListCards
-	CreateCardUC      *usecases.CreateCard
-	GetCardUC         *usecases.GetCard
-	UpdateCardUC      *usecases.UpdateCard
-	UpdateCardLimitUC *usecases.UpdateCardLimit
-	SoftDeleteCardUC  *usecases.SoftDeleteCard
-	InvoiceForUC      *usecases.InvoiceFor
+type EventHandlerRegistration struct {
+	EventType string
+	Handler   events.Handler
 }
 
-func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.Observability, mgr manager.Manager, gatewayAuth func(http.Handler) http.Handler) (CardModule, error) {
+type CardModule struct {
+	RepositoryFactory   interfaces.RepositoryFactory
+	CardRouter          *httpserver.CardRouter
+	CardLookup          *usecases.GetCardForUser
+	ListCardsUC         *usecases.ListCards
+	CreateCardUC        *usecases.CreateCard
+	GetCardUC           *usecases.GetCard
+	UpdateCardUC        *usecases.UpdateCard
+	UpdateCardLimitUC   *usecases.UpdateCardLimit
+	SoftDeleteCardUC    *usecases.SoftDeleteCard
+	InvoiceForUC        *usecases.InvoiceFor
+	InvoiceDueAlertsJob worker.Job
+	EventHandlers       []EventHandlerRegistration
+}
+
+func NewCardModule(
+	ctx context.Context,
+	cfg *configs.Config,
+	o11y observability.Observability,
+	mgr manager.Manager,
+	gatewayAuth func(http.Handler) http.Handler,
+	channelGateway notification.ChannelGateway,
+	channelResolver interfaces.UserChannelResolver,
+) (CardModule, error) {
 	loc, err := services.NewSaoPauloLocation()
 	if err != nil {
 		return CardModule{}, fmt.Errorf("card.module: %w", err)
@@ -74,16 +97,49 @@ func NewCardModule(ctx context.Context, cfg *configs.Config, o11y observability.
 
 	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, updateLimitHandler, deleteHandler, invoiceForHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
 
+	onboardingCardConsumer := cardconsumers.NewOnboardingCardConsumer(createCard, o11y)
+
+	eventHandlers := []EventHandlerRegistration{
+		{EventType: "onboarding.card_registered", Handler: onboardingCardConsumer},
+	}
+
+	var invoiceDueAlertsJob worker.Job
+	if channelGateway != nil && channelResolver != nil {
+		outboxFactory := outbox.NewRepositoryFactory(o11y)
+		invoiceDuePublisher := cardproducers.NewInvoiceDuePublisher(outboxFactory, cfg.OutboxConfig, id.NewUUIDGenerator(), o11y)
+		evaluateUoW := uow.NewVoid(mgr, uow.WithObservability(o11y))
+		evaluateInvoiceDue := usecases.NewEvaluateInvoiceDueAlerts(
+			factory,
+			invoiceDuePublisher,
+			evaluateUoW,
+			loc,
+			cfg.CardConfig.InvoiceDueWindowDays,
+			cfg.CardConfig.InvoiceDueScanLimit,
+			o11y,
+		)
+		notifyInvoiceDue := usecases.NewNotifyInvoiceDue(mgr, factory, channelResolver, channelGateway, loc, o11y)
+		invoiceDueNotifier := cardconsumers.NewInvoiceDueNotifier(notifyInvoiceDue, o11y)
+		eventHandlers = append(eventHandlers, EventHandlerRegistration{
+			EventType: "card.invoice_due.v1",
+			Handler:   invoiceDueNotifier,
+		})
+		if cfg.CardConfig.InvoiceDueAlertsEnabled {
+			invoiceDueAlertsJob = cardjobs.NewInvoiceDueAlertsJob(evaluateInvoiceDue, cfg.CardConfig)
+		}
+	}
+
 	return CardModule{
-		RepositoryFactory: factory,
-		CardRouter:        router,
-		CardLookup:        getCardForUser,
-		ListCardsUC:       listCards,
-		CreateCardUC:      createCard,
-		GetCardUC:         getCard,
-		UpdateCardUC:      updateCard,
-		UpdateCardLimitUC: updateCardLimit,
-		SoftDeleteCardUC:  softDelete,
-		InvoiceForUC:      invoiceFor,
+		RepositoryFactory:   factory,
+		CardRouter:          router,
+		CardLookup:          getCardForUser,
+		ListCardsUC:         listCards,
+		CreateCardUC:        createCard,
+		GetCardUC:           getCard,
+		UpdateCardUC:        updateCard,
+		UpdateCardLimitUC:   updateCardLimit,
+		SoftDeleteCardUC:    softDelete,
+		InvoiceForUC:        invoiceFor,
+		InvoiceDueAlertsJob: invoiceDueAlertsJob,
+		EventHandlers:       eventHandlers,
 	}, nil
 }

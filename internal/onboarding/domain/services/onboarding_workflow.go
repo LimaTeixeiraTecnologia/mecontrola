@@ -339,6 +339,7 @@ func decideSplitConfirm(
 		EventID:     eventIDs[0],
 		UserID:      session.UserID(),
 		Channel:     channel,
+		IncomeCents: payload.IncomeCents,
 		Allocations: toSplitsCalculatedEntries(payload.Split),
 		OccurredAt:  now,
 	}

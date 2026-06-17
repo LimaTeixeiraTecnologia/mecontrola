@@ -19,3 +19,7 @@ func NewRepositoryFactory(o11y observability.Observability) interfaces.Repositor
 func (f *repositoryFactory) CardRepository(db database.DBTX) interfaces.CardRepository {
 	return postgres.NewCardRepository(f.o11y, db)
 }
+
+func (f *repositoryFactory) InvoiceDueAlertSentRepository(db database.DBTX) interfaces.InvoiceDueAlertSentRepository {
+	return postgres.NewInvoiceDueAlertSentRepository(f.o11y, db)
+}

@@ -82,6 +82,12 @@ packages:
     interfaces:
       CardRepository: {}
       RepositoryFactory: {}
+      InvoiceDueAlertSentRepository: {}
+      InvoiceDuePublisher: {}
+      UserChannelResolver: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/messaging/database/consumers:
+    interfaces:
+      notifyInvoiceDueUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency:
     interfaces:
       Storage: {}

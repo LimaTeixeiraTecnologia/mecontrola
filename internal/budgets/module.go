@@ -47,6 +47,7 @@ type BudgetsModule struct {
 	ExpenseCommittedConsumer *consumers.ExpenseCommittedConsumer
 	ExternalExpenseConsumer  *consumers.ExternalExpenseConsumer
 	ThresholdAlertNotifier   *consumers.ThresholdAlertNotifier
+	OnboardingBudgetConsumer *consumers.OnboardingBudgetConsumer
 	EventHandlers            []BudgetsEventHandlerRegistration
 	CreateBudgetUC           *usecases.CreateBudget
 	ActivateBudgetUC         *usecases.ActivateBudget
@@ -129,6 +130,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 
 	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
 	externalExpenseConsumer := consumers.NewExternalExpenseConsumer(useCases.ingestExternalExpense, b.o11y)
+	onboardingBudgetConsumer := consumers.NewOnboardingBudgetConsumer(useCases.createBudget, useCases.activateBudget, b.o11y)
 
 	mode := strings.ToLower(strings.TrimSpace(b.cfg.BudgetsConfig.ThresholdAlertsMode))
 	if mode == "" {
@@ -139,6 +141,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 
 	eventHandlers := []BudgetsEventHandlerRegistration{
 		{EventType: "external.expense.v1", Handler: externalExpenseConsumer},
+		{EventType: "onboarding.splits_calculated", Handler: onboardingBudgetConsumer},
 	}
 	if legacyEnabled {
 		eventHandlers = append([]BudgetsEventHandlerRegistration{
@@ -170,6 +173,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		ExpenseCommittedConsumer: expenseCommittedConsumer,
 		ExternalExpenseConsumer:  externalExpenseConsumer,
 		ThresholdAlertNotifier:   thresholdAlertNotifier,
+		OnboardingBudgetConsumer: onboardingBudgetConsumer,
 		EventHandlers:            eventHandlers,
 		CreateBudgetUC:           useCases.createBudget,
 		ActivateBudgetUC:         useCases.activateBudget,

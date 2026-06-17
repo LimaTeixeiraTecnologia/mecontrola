@@ -89,3 +89,56 @@ func (_c *RepositoryFactory_CardRepository_Call) RunAndReturn(run func(db databa
 	_c.Call.Return(run)
 	return _c
 }
+
+// InvoiceDueAlertSentRepository provides a mock function for the type RepositoryFactory
+func (_mock *RepositoryFactory) InvoiceDueAlertSentRepository(db database.DBTX) interfaces.InvoiceDueAlertSentRepository {
+	ret := _mock.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InvoiceDueAlertSentRepository")
+	}
+
+	var r0 interfaces.InvoiceDueAlertSentRepository
+	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.InvoiceDueAlertSentRepository); ok {
+		r0 = returnFunc(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.InvoiceDueAlertSentRepository)
+		}
+	}
+	return r0
+}
+
+// RepositoryFactory_InvoiceDueAlertSentRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'InvoiceDueAlertSentRepository'
+type RepositoryFactory_InvoiceDueAlertSentRepository_Call struct {
+	*mock.Call
+}
+
+// InvoiceDueAlertSentRepository is a helper method to define mock.On call
+//   - db database.DBTX
+func (_e *RepositoryFactory_Expecter) InvoiceDueAlertSentRepository(db any) *RepositoryFactory_InvoiceDueAlertSentRepository_Call {
+	return &RepositoryFactory_InvoiceDueAlertSentRepository_Call{Call: _e.mock.On("InvoiceDueAlertSentRepository", db)}
+}
+
+func (_c *RepositoryFactory_InvoiceDueAlertSentRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_InvoiceDueAlertSentRepository_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 database.DBTX
+		if args[0] != nil {
+			arg0 = args[0].(database.DBTX)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_InvoiceDueAlertSentRepository_Call) Return(invoiceDueAlertSentRepository interfaces.InvoiceDueAlertSentRepository) *RepositoryFactory_InvoiceDueAlertSentRepository_Call {
+	_c.Call.Return(invoiceDueAlertSentRepository)
+	return _c
+}
+
+func (_c *RepositoryFactory_InvoiceDueAlertSentRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.InvoiceDueAlertSentRepository) *RepositoryFactory_InvoiceDueAlertSentRepository_Call {
+	_c.Call.Return(run)
+	return _c
+}

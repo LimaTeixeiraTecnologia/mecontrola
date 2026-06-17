@@ -26,6 +26,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	budgetsidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
+	cardinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
+	cardidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
@@ -158,15 +160,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
 	}
-	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.dbManager, passthroughGateway)
-	if err != nil {
-		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
-	}
-	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.dbManager, cardModule, categoriesModule, passthroughGateway)
-	if err != nil {
-		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
-	}
-
 	onboardingModule, err := onboarding.NewOnboardingModule(
 		r.dbManager,
 		r.cfg.OnboardingConfig,
@@ -186,6 +179,17 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: construir channel gateway: %w", err)
 	}
 	channelResolver := buildBudgetsChannelResolver(identityModule)
+	cardChannelResolver := buildCardChannelResolver(identityModule)
+
+	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.dbManager, passthroughGateway, channelGateway, cardChannelResolver)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
+	}
+	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.dbManager, cardModule, categoriesModule, passthroughGateway)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
+	}
+
 	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule, passthroughGateway, channelGateway, channelResolver)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
@@ -216,6 +220,11 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 			return nil, fmt.Errorf("worker: registrar handler transactions %s: %w", reg.EventType, err)
 		}
 	}
+	for _, reg := range cardModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler card %s: %w", reg.EventType, err)
+		}
+	}
 
 	jobs := make([]worker.Job, 0, 10)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
@@ -238,6 +247,9 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	)
 	if budgetsModule.ThresholdAlertsJob != nil {
 		jobs = append(jobs, budgetsModule.ThresholdAlertsJob)
+	}
+	if cardModule.InvoiceDueAlertsJob != nil {
+		jobs = append(jobs, cardModule.InvoiceDueAlertsJob)
 	}
 	if transactionsModule.RecurringMaterializerJob != nil {
 		jobs = append(jobs, transactionsModule.RecurringMaterializerJob)
@@ -298,6 +310,22 @@ func buildBudgetsChannelResolver(identityModule identity.IdentityModule) *budget
 		return nil
 	}
 	return budgetsidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
+		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
+		if err != nil {
+			return "", "", false, err
+		}
+		if !ok {
+			return "", "", false, nil
+		}
+		return result.Channel, result.ExternalID, true, nil
+	})
+}
+
+func buildCardChannelResolver(identityModule identity.IdentityModule) cardinterfaces.UserChannelResolver {
+	if identityModule.ResolvePreferredChannel == nil {
+		return nil
+	}
+	return cardidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
 		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
 		if err != nil {
 			return "", "", false, err

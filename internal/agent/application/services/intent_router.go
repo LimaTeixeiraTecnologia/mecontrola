@@ -275,7 +275,7 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 	case intent.KindQueryCategory:
 		return r.routeQueryCategory(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindQueryGoal:
-		return r.routeQueryGoal(ctx, channel, parsed.Intent)
+		return r.routeQueryGoal(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindQueryCard:
 		return r.routeQueryCard(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindHowAmIDoing:
@@ -353,9 +353,24 @@ func (r *IntentRouter) routeQueryCategory(ctx context.Context, userID uuid.UUID,
 	return RouteResult{Reply: formatCategoryAllocation(summary, in.CategoryName()), Outcome: OutcomeRouted, Kind: intent.KindQueryCategory}
 }
 
-func (r *IntentRouter) routeQueryGoal(ctx context.Context, channel string, in intent.Intent) RouteResult {
-	r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeMissingResolver)
-	return RouteResult{Reply: formatGoalUnavailable(in.GoalName()), Outcome: OutcomeMissingResolver, Kind: intent.KindQueryGoal}
+func (r *IntentRouter) routeQueryGoal(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.monthlySummary == nil {
+		r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: formatGoalUnavailable(in.GoalName()), Outcome: OutcomeMissingResolver, Kind: intent.KindQueryGoal}
+	}
+	now := time.Now().UTC().In(r.loc)
+	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	summary, err := r.monthlySummary.Execute(ctx, userID.String(), competence)
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.query_goal_failed",
+			observability.String("competence", competence),
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryGoal}
+	}
+	r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatGoalProgress(summary, in.GoalName()), Outcome: OutcomeRouted, Kind: intent.KindQueryGoal}
 }
 
 func (r *IntentRouter) routeQueryCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
@@ -620,6 +635,39 @@ func formatGoalUnavailable(goalName string) string {
 		return "Consultar metas ainda não está disponível, mas anotei seu pedido."
 	}
 	return fmt.Sprintf("Consultar a meta %q ainda não está disponível, mas anotei seu pedido.", goalName)
+}
+
+const rootSlugMetas = "expense.metas"
+
+func formatGoalProgress(summary budgetsoutput.MonthlySummaryOutput, goalName string) string {
+	for _, allocation := range summary.Allocations {
+		if allocation.RootSlug == rootSlugMetas {
+			var sb strings.Builder
+			if strings.TrimSpace(goalName) != "" {
+				sb.WriteString("Meta ")
+				sb.WriteString(goalName)
+				sb.WriteString(": ")
+			}
+			sb.WriteString("você já guardou ")
+			sb.WriteString(formatBRL(allocation.SpentCents))
+			if allocation.PlannedCents != nil && *allocation.PlannedCents > 0 {
+				sb.WriteString(" de ")
+				sb.WriteString(formatBRL(*allocation.PlannedCents))
+				sb.WriteString(" previstos em Metas")
+				if allocation.PercentageSpent != nil {
+					_, _ = fmt.Fprintf(&sb, " (%.0f%%)", *allocation.PercentageSpent)
+				}
+			} else {
+				sb.WriteString(" em Metas")
+			}
+			sb.WriteString(".")
+			return sb.String()
+		}
+	}
+	if strings.TrimSpace(goalName) != "" {
+		return fmt.Sprintf("Não encontrei dados de metas para %q em %s.", goalName, summary.Competence)
+	}
+	return fmt.Sprintf("Não encontrei dados de metas em %s.", summary.Competence)
 }
 
 func formatCardNotFound(cardName string) string {

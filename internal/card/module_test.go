@@ -12,6 +12,8 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
+	cardidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/identity"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 )
 
 type stubDBTX struct{}
@@ -42,10 +44,34 @@ func TestNewCardModule_FieldsNotNil(t *testing.T) {
 	cfg := &configs.Config{}
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	m, err := card.NewCardModule(context.Background(), cfg, o11y, manager.Manager(mgr), passthrough)
+	m, err := card.NewCardModule(context.Background(), cfg, o11y, manager.Manager(mgr), passthrough, nil, nil)
 
 	assert.NoError(t, err, "NewCardModule nao deve retornar erro")
 	assert.NotNil(t, m.RepositoryFactory, "RepositoryFactory deve ser nao-nil")
 	assert.NotNil(t, m.CardRouter, "CardRouter deve ser nao-nil")
 	assert.NotNil(t, m.CardLookup, "CardLookup deve ser nao-nil")
+	assert.Nil(t, m.InvoiceDueAlertsJob, "InvoiceDueAlertsJob deve ser nil sem gateway/resolver")
+}
+
+func TestNewCardModule_WiresInvoiceDueJobWhenChannelAvailable(t *testing.T) {
+	o11y := noop.NewProvider()
+	mgr := &stubManager{}
+	cfg := &configs.Config{}
+	cfg.CardConfig.InvoiceDueAlertsEnabled = true
+
+	passthrough := func(next http.Handler) http.Handler { return next }
+	gateway := notification.NewMultiChannelGateway(map[string]notification.ChannelSenders{})
+	resolver := cardidentity.NewUserChannelResolverAdapter(nil)
+
+	m, err := card.NewCardModule(context.Background(), cfg, o11y, manager.Manager(mgr), passthrough, gateway, resolver)
+
+	assert.NoError(t, err, "NewCardModule nao deve retornar erro")
+	assert.NotNil(t, m.InvoiceDueAlertsJob, "InvoiceDueAlertsJob deve ser nao-nil com gateway/resolver")
+	hasInvoiceDueHandler := false
+	for _, reg := range m.EventHandlers {
+		if reg.EventType == "card.invoice_due.v1" {
+			hasInvoiceDueHandler = true
+		}
+	}
+	assert.True(t, hasInvoiceDueHandler, "consumer card.invoice_due.v1 deve estar registrado")
 }

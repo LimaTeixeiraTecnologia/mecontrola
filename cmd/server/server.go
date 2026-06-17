@@ -190,7 +190,7 @@ func Run() error {
 	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
 
-	cardModule, err := card.NewCardModule(ctx, cfg, o11y, dbManager, identityModule.GatewayAuthMiddleware)
+	cardModule, err := card.NewCardModule(ctx, cfg, o11y, dbManager, identityModule.GatewayAuthMiddleware, nil, nil)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}

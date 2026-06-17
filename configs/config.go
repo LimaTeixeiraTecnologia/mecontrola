@@ -26,6 +26,7 @@ type Config struct {
 	AgentConfig        AgentConfig         `mapstructure:",squash"`
 	IdentityConfig     IdentityConfig      `mapstructure:",squash"`
 	BudgetsConfig      BudgetsConfig       `mapstructure:",squash"`
+	CardConfig         CardConfig          `mapstructure:",squash"`
 	TransactionsConfig TransactionsConfig  `mapstructure:",squash"`
 	AuthRateLimit      AuthRateLimitConfig `mapstructure:",squash"`
 	EmailConfig        EmailConfig         `mapstructure:",squash"`
@@ -80,6 +81,13 @@ type TransactionsConfig struct {
 	MonthlySummaryReconcilerCron          string        `mapstructure:"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON"`
 	MonthlySummaryReconcilerLookbackHours int           `mapstructure:"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS"`
 	BrazilTimezone                        string        `mapstructure:"TRANSACTIONS_BRAZIL_TIMEZONE"`
+}
+
+type CardConfig struct {
+	InvoiceDueAlertsEnabled bool   `mapstructure:"CARD_INVOICE_DUE_ALERTS_ENABLED"`
+	InvoiceDueAlertsCron    string `mapstructure:"CARD_INVOICE_DUE_ALERTS_CRON"`
+	InvoiceDueWindowDays    int    `mapstructure:"CARD_INVOICE_DUE_WINDOW_DAYS"`
+	InvoiceDueScanLimit     int    `mapstructure:"CARD_INVOICE_DUE_SCAN_LIMIT"`
 }
 
 type IdentityConfig struct {
@@ -375,6 +383,7 @@ func (l *configLoader) load() (*Config, error) {
 	l.setKiwifyDefaults()
 	l.setBillingDefaults()
 	l.setBudgetsDefaults()
+	l.setCardDefaults()
 	l.setOnboardingDefaults()
 	l.setWhatsAppDefaults()
 	l.setTelegramDefaults()
@@ -500,6 +509,10 @@ func (l *configLoader) envKeys() []string {
 		"BUDGETS_THRESHOLD_CATEGORY_RATIO",
 		"BUDGETS_THRESHOLD_GOAL_RATIO",
 		"BUDGETS_THRESHOLD_CARD_RATIO",
+		"CARD_INVOICE_DUE_ALERTS_ENABLED",
+		"CARD_INVOICE_DUE_ALERTS_CRON",
+		"CARD_INVOICE_DUE_WINDOW_DAYS",
+		"CARD_INVOICE_DUE_SCAN_LIMIT",
 		"TRANSACTIONS_ENABLED",
 		"TRANSACTIONS_IDEMPOTENCY_TTL",
 		"TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW",
@@ -543,6 +556,13 @@ func (l *configLoader) setBudgetsDefaults() {
 	l.v.SetDefault("BUDGETS_THRESHOLD_CATEGORY_RATIO", 0.80)
 	l.v.SetDefault("BUDGETS_THRESHOLD_GOAL_RATIO", 0.50)
 	l.v.SetDefault("BUDGETS_THRESHOLD_CARD_RATIO", 0.85)
+}
+
+func (l *configLoader) setCardDefaults() {
+	l.v.SetDefault("CARD_INVOICE_DUE_ALERTS_ENABLED", false)
+	l.v.SetDefault("CARD_INVOICE_DUE_ALERTS_CRON", "@daily")
+	l.v.SetDefault("CARD_INVOICE_DUE_WINDOW_DAYS", 3)
+	l.v.SetDefault("CARD_INVOICE_DUE_SCAN_LIMIT", 500)
 }
 
 func (l *configLoader) setTransactionsDefaults() {

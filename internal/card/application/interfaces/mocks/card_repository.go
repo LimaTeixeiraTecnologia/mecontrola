@@ -39,6 +39,80 @@ func (_m *CardRepository) EXPECT() *CardRepository_Expecter {
 	return &CardRepository_Expecter{mock: &_m.Mock}
 }
 
+// FindCardsWithInvoiceDueWithin provides a mock function for the type CardRepository
+func (_mock *CardRepository) FindCardsWithInvoiceDueWithin(ctx context.Context, windowDays int, limit int) ([]entities.Card, error) {
+	ret := _mock.Called(ctx, windowDays, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindCardsWithInvoiceDueWithin")
+	}
+
+	var r0 []entities.Card
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]entities.Card, error)); ok {
+		return returnFunc(ctx, windowDays, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []entities.Card); ok {
+		r0 = returnFunc(ctx, windowDays, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Card)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
+		r1 = returnFunc(ctx, windowDays, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardRepository_FindCardsWithInvoiceDueWithin_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindCardsWithInvoiceDueWithin'
+type CardRepository_FindCardsWithInvoiceDueWithin_Call struct {
+	*mock.Call
+}
+
+// FindCardsWithInvoiceDueWithin is a helper method to define mock.On call
+//   - ctx context.Context
+//   - windowDays int
+//   - limit int
+func (_e *CardRepository_Expecter) FindCardsWithInvoiceDueWithin(ctx any, windowDays any, limit any) *CardRepository_FindCardsWithInvoiceDueWithin_Call {
+	return &CardRepository_FindCardsWithInvoiceDueWithin_Call{Call: _e.mock.On("FindCardsWithInvoiceDueWithin", ctx, windowDays, limit)}
+}
+
+func (_c *CardRepository_FindCardsWithInvoiceDueWithin_Call) Run(run func(ctx context.Context, windowDays int, limit int)) *CardRepository_FindCardsWithInvoiceDueWithin_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CardRepository_FindCardsWithInvoiceDueWithin_Call) Return(cards []entities.Card, err error) *CardRepository_FindCardsWithInvoiceDueWithin_Call {
+	_c.Call.Return(cards, err)
+	return _c
+}
+
+func (_c *CardRepository_FindCardsWithInvoiceDueWithin_Call) RunAndReturn(run func(ctx context.Context, windowDays int, limit int) ([]entities.Card, error)) *CardRepository_FindCardsWithInvoiceDueWithin_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetByIDForUser provides a mock function for the type CardRepository
 func (_mock *CardRepository) GetByIDForUser(ctx context.Context, cardID string, userID string) (entities.Card, error) {
 	ret := _mock.Called(ctx, cardID, userID)

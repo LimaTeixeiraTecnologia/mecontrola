@@ -131,6 +131,7 @@ func NewOnboardingModule(
 	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(useCases.markTokenPaid, o11y)
 	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(useCases.handlePaidWithoutToken, o11y)
 	activationEmailConsumer := consumers.NewActivationEmailConsumer(useCases.sendActivationEmail, o11y)
+	subscriptionBoundSessionConsumer := consumers.NewSubscriptionBoundSessionConsumer(useCases.startBudgetConfiguration, o11y)
 
 	return OnboardingModule{
 		PublicRouter:                 newPublicRouter(cfg, deps.runtimeCfg, useCases.createCheckout, useCases.getTokenState, o11y),
@@ -148,6 +149,7 @@ func NewOnboardingModule(
 			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
 			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
 			{EventType: "billing.subscription.activated_without_token", Handler: paidWithoutTokenConsumer},
+			{EventType: "onboarding.subscription_bound", Handler: subscriptionBoundSessionConsumer},
 		},
 	}, nil
 }

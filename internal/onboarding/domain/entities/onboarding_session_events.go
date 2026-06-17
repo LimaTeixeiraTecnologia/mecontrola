@@ -37,6 +37,7 @@ type SplitsCalculated struct {
 	EventID     uuid.UUID
 	UserID      uuid.UUID
 	Channel     string
+	IncomeCents int64
 	Allocations []SplitsCalculatedEntry
 	OccurredAt  time.Time
 }

@@ -230,17 +230,63 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_QueryCategory() {
 	s.Contains(s.wa.sent[0].Text, "essentials")
 }
 
-func (s *IntentRouterSuite) TestRouteWhatsApp_QueryGoal_MissingResolver() {
+func (s *IntentRouterSuite) TestRouteWhatsApp_QueryGoal_MissingResolver_NoSummary() {
 	parsed, err := intent.NewQueryGoal("Viagem")
 	require.NoError(s.T(), err)
 	s.parser.intent = parsed
 
-	router := s.newRouter()
+	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
+		Parser:          s.parser,
+		Fallback:        s.fallback,
+		WhatsAppGateway: s.wa,
+		TelegramGateway: s.tg,
+		Location:        time.UTC,
+	})
+	require.NoError(s.T(), err)
+
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "como está minha meta de viagem", WhatsAppTo: "+5511999"})
 
 	s.Equal(services.OutcomeMissingResolver, result.Outcome)
 	s.Equal(intent.KindQueryGoal, result.Kind)
 	s.Contains(s.wa.sent[0].Text, "Viagem")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_QueryGoal_Routed() {
+	parsed, err := intent.NewQueryGoal("Viagem")
+	require.NoError(s.T(), err)
+	s.parser.intent = parsed
+
+	planned := int64(500000)
+	pct := 60.0
+	s.summary.out = budgetsoutput.MonthlySummaryOutput{
+		Competence:      "2026-06",
+		TotalSpentCents: 300000,
+		Allocations: []budgetsoutput.AllocationSummary{
+			{RootSlug: "expense.metas", SpentCents: 300000, PlannedCents: &planned, PercentageSpent: &pct},
+		},
+	}
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "como está minha meta de viagem", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(intent.KindQueryGoal, result.Kind)
+	s.Contains(s.wa.sent[0].Text, "guardou")
+	s.Contains(s.wa.sent[0].Text, "R$ 3.000,00")
+	s.Contains(s.wa.sent[0].Text, "R$ 5.000,00")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_QueryGoal_UsecaseError() {
+	parsed, err := intent.NewQueryGoal("Poupança")
+	require.NoError(s.T(), err)
+	s.parser.intent = parsed
+	s.summary.err = errors.New("db error")
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "meta poupança", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(intent.KindQueryGoal, result.Kind)
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_QueryCard_Found() {

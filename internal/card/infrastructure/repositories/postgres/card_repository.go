@@ -111,6 +111,74 @@ func (r *cardRepository) GetByIDForUser(ctx context.Context, cardID, userID stri
 	return r.hydrate(ctx, span, "get_by_id", id, uid, name, nickname, closingDay, dueDay, limitCents, version, createdAt, updatedAt, nil)
 }
 
+func (r *cardRepository) FindCardsWithInvoiceDueWithin(ctx context.Context, windowDays, limit int) ([]entities.Card, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "card.repository.pg.find_cards_with_invoice_due_within")
+	defer span.End()
+
+	if windowDays < 0 {
+		windowDays = 0
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+
+	days := dueDayWindow(time.Now().UTC(), windowDays)
+
+	const query = `
+		SELECT id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at
+		  FROM mecontrola.cards
+		 WHERE deleted_at IS NULL
+		   AND due_day = ANY($1)
+		 ORDER BY user_id, id
+		 LIMIT $2
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, days, limit)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("%s find_cards_with_invoice_due_within: %w", prefixCardRepository, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	cards := make([]entities.Card, 0, limit)
+	for rows.Next() {
+		var (
+			id, uid, name, nickname string
+			closingDay, dueDay      int
+			limitCents              int64
+			version                 int64
+			createdAt, updatedAt    time.Time
+		)
+		if scanErr := rows.Scan(&id, &uid, &name, &nickname, &closingDay, &dueDay, &limitCents, &version, &createdAt, &updatedAt); scanErr != nil {
+			span.RecordError(scanErr)
+			return nil, fmt.Errorf("%s find_cards_with_invoice_due_within scan: %w", prefixCardRepository, scanErr)
+		}
+		card, hydrateErr := r.hydrate(ctx, span, "find_cards_with_invoice_due_within", id, uid, name, nickname, closingDay, dueDay, limitCents, version, createdAt, updatedAt, nil)
+		if hydrateErr != nil {
+			return nil, hydrateErr
+		}
+		cards = append(cards, card)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("%s find_cards_with_invoice_due_within rows: %w", prefixCardRepository, rowsErr)
+	}
+	return cards, nil
+}
+
+func dueDayWindow(now time.Time, windowDays int) []int32 {
+	seen := make(map[int32]struct{}, windowDays+1)
+	out := make([]int32, 0, windowDays+1)
+	for i := 0; i <= windowDays+1; i++ {
+		day := int32(now.AddDate(0, 0, i).Day())
+		if _, ok := seen[day]; ok {
+			continue
+		}
+		seen[day] = struct{}{}
+		out = append(out, day)
+	}
+	return out
+}
+
 func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, limit int) ([]entities.Card, string, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "card.repository.pg.list_by_user")
 	defer span.End()
