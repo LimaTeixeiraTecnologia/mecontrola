@@ -173,6 +173,11 @@ func (uc *ConsumeMagicToken) handleConsumedToken(ctx context.Context, token valu
 func (uc *ConsumeMagicToken) handlePaidToken(ctx context.Context, token valueobjects.Token, in input.ConsumeMagicTokenInput, magicToken entities.MagicToken, tokenRepo appinterfaces.MagicTokenRepository, now time.Time) (ConsumeInternalResult, error) {
 	consumed, err := uc.binding.BindAndConsume(ctx, tokenRepo, magicToken, in.FromE164, in.ActivationPath, now)
 	if err != nil {
+		slog.ErrorContext(ctx, "onboarding.token.bind_consume_failed",
+			"token_hash_prefix", token.HashPrefix(),
+			"activation_path", in.ActivationPath.String(),
+			"error", err.Error(),
+		)
 		return ConsumeInternalResult{}, fmt.Errorf("onboarding: consume magic token: %w", err)
 	}
 

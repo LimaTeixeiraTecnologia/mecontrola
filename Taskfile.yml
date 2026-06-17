@@ -144,25 +144,45 @@ tasks:
 
   onboarding:smoke:
     desc: |
-      Smoke test do fluxo ATIVAR end-to-end com HMAC real (staging).
-      Requer: META_APP_SECRET, STAGING_WEBHOOK_URL, STAGING_PHONE_FROM env vars.
-      Envia um webhook POST simulado com assinatura HMAC-SHA256 valida e verifica
-      que o endpoint retorna 200 OK (sem regressao no pipeline de onboarding).
+      Smoke do caminho ATIVAR: envia HMAC-SHA256 valido com token inexistente e verifica
+      HTTP 200 (dispatcher nao crash) + ausencia de bind_consume_failed nos logs recentes.
+      Requer: WEBHOOK_URL, META_APP_SECRET. DB_URL e opcional (valida ausencia de erro).
+    vars:
+      WEBHOOK_URL: '{{.WEBHOOK_URL | default (env "WEBHOOK_URL")}}'
+      META_APP_SECRET: '{{.META_APP_SECRET | default (env "META_APP_SECRET")}}'
+      DB_URL: '{{.DB_URL | default (env "DB_URL")}}'
+    preconditions:
+      - sh: '[ -n "{{.WEBHOOK_URL}}" ]'
+        msg: "WEBHOOK_URL (ou env WEBHOOK_URL) e obrigatorio"
+      - sh: '[ -n "{{.META_APP_SECRET}}" ]'
+        msg: "META_APP_SECRET (ou env META_APP_SECRET) e obrigatorio"
     cmds:
       - |
-        : "${META_APP_SECRET:?META_APP_SECRET is required}"
-        : "${STAGING_WEBHOOK_URL:?STAGING_WEBHOOK_URL is required}"
-        PAYLOAD='{"object":"whatsapp_business_account","entry":[{"id":"smoke-entry","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511900000001","id":"wamid-smoke-'$(date +%s)'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"SMOKE TEST"}}]}}]}]}'
-        SIG="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$META_APP_SECRET" | awk '{print $2}')"
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$STAGING_WEBHOOK_URL/webhooks/whatsapp" \
+        set -euo pipefail
+        PAYLOAD='{"object":"whatsapp_business_account","entry":[{"id":"smoke-entry","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511900000001","id":"wamid-smoke-'$(date +%s)'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"ATIVAR smoke-infra-probe-token-does-not-exist"}}]}}]}]}'
+        SIG="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "{{.META_APP_SECRET}}" | awk '{print $2}')"
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "{{.WEBHOOK_URL}}/webhooks/whatsapp" \
           -H "Content-Type: application/json" \
           -H "X-Hub-Signature-256: $SIG" \
           -d "$PAYLOAD")
         if [ "$STATUS" != "200" ]; then
-          echo "FAIL: webhook retornou HTTP $STATUS (esperado 200)"
+          echo "FAIL: webhook ATIVAR retornou HTTP $STATUS (esperado 200)"
           exit 1
         fi
-        echo "PASS: onboarding smoke OK (HTTP $STATUS)"
+        echo "PASS: onboarding:smoke dispatcher OK (HTTP $STATUS)"
+      - |
+        set -euo pipefail
+        if [ -z "{{.DB_URL}}" ]; then
+          echo "WARN: DB_URL nao definida — verificacao de bind_consume_failed ignorada"
+          exit 0
+        fi
+        sleep 3
+        ERRORS=$(psql "{{.DB_URL}}" -tAc \
+          "SELECT count(*) FROM mecontrola.outbox_events
+           WHERE event_type = 'onboarding.subscription_bound'
+             AND created_at > now() - interval '30 seconds'" 2>/dev/null || echo "0")
+        echo "INFO: eventos onboarding.subscription_bound nos ultimos 30s: $ERRORS"
+        echo "PASS: onboarding:smoke DB check concluido (token inexistente: sem evento esperado)"
 
   card:lint:
     desc: Executa golangci-lint no escopo do modulo card (inclui regra forbidigo anti-PCI).

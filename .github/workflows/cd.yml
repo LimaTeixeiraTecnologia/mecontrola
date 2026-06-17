@@ -116,6 +116,13 @@ jobs:
           DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
         run: task auth:smoke
 
+      - name: Onboarding ATIVAR smoke test
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
+          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
+          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
+        run: task onboarding:smoke
+
   deploy-manual:
     name: Deploy to VPS (manual)
     runs-on: [self-hosted, staging]
@@ -169,3 +176,10 @@ jobs:
           SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
           DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
         run: task auth:smoke
+
+      - name: Onboarding ATIVAR smoke test
+        env:
+          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
+          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
+          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
+        run: task onboarding:smoke
