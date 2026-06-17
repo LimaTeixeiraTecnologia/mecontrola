@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
 type ResolveBySlug struct {
@@ -25,7 +24,6 @@ func (uc *ResolveBySlug) Execute(ctx context.Context, slugs []string) (map[strin
 	defer span.End()
 
 	categories, err := uc.repo.List(ctx, interfaces.CategoryQuery{
-		Kind:              valueobjects.KindExpense,
 		IncludeDeprecated: false,
 	})
 	if err != nil {

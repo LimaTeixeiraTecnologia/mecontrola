@@ -39,10 +39,12 @@ var (
 )
 
 const (
-	defaultListCardsLimit = 200
-	fallbackMissingText   = "Não recebi nenhuma mensagem. Me conta o que você precisa nas suas finanças 😊"
-	fallbackParseError    = "Não entendi direito. Pode reformular? Posso te ajudar com cartões, orçamento e lançamentos."
-	fallbackUsecaseError  = "Tive uma instabilidade para consultar isso agora. Tente de novo em instantes 🙏"
+	defaultListCardsLimit   = 200
+	fallbackMissingText     = "Não recebi nenhuma mensagem. Me conta o que você precisa nas suas finanças 😊"
+	fallbackParseError      = "Não entendi direito. Pode reformular? Posso te ajudar com cartões, orçamento e lançamentos."
+	fallbackUsecaseError    = "Tive uma instabilidade para consultar isso agora. Tente de novo em instantes 🙏"
+	registerUnavailableText = "Ainda não consigo registrar lançamentos por aqui. Já já isso fica disponível pra você 🙏"
+	noTransactionsText      = "Não encontrei nenhum lançamento recente seu para mexer. Quer registrar um agora? 😊"
 )
 
 type ParsedIntent struct {
@@ -112,6 +114,100 @@ type ExpenseLogger interface {
 	Execute(ctx context.Context, in ExpenseLoggerInput) (ExpenseLoggerResult, error)
 }
 
+type CardPurchaseLogger interface {
+	Execute(ctx context.Context, in CardPurchaseLoggerInput) (CardPurchaseLoggerResult, error)
+}
+
+type CardPurchaseLoggerInput struct {
+	UserID string
+	Intent intent.Intent
+}
+
+type CardPurchaseLoggerResult struct {
+	Persisted    bool
+	CardFound    bool
+	CardName     string
+	AmountCents  int64
+	Installments int
+	CategoryPath string
+}
+
+type TransactionView struct {
+	ID          string
+	Direction   string
+	AmountCents int64
+	Description string
+	OccurredAt  time.Time
+	CreatedAt   time.Time
+	Version     int64
+}
+
+type TransactionLister interface {
+	Execute(ctx context.Context, in TransactionListInput) (TransactionListResult, error)
+}
+
+type TransactionListInput struct {
+	UserID   string
+	RefMonth string
+}
+
+type TransactionListResult struct {
+	RefMonth     string
+	Transactions []TransactionView
+}
+
+type LastTransactionDeleter interface {
+	Execute(ctx context.Context, userID, txID string, version int64) error
+}
+
+type LastTransactionEditor interface {
+	Execute(ctx context.Context, in EditTransactionInput) (EditTransactionResult, error)
+}
+
+type EditTransactionInput struct {
+	UserID    string
+	Current   TransactionView
+	NewAmount int64
+}
+
+type EditTransactionResult struct {
+	Persisted   bool
+	OldAmount   int64
+	NewAmount   int64
+	Description string
+}
+
+type RecurringCreator interface {
+	Execute(ctx context.Context, in RecurringCreatorInput) (RecurringCreatorResult, error)
+}
+
+type RecurringCreatorInput struct {
+	UserID string
+	Intent intent.Intent
+}
+
+type RecurringCreatorResult struct {
+	Persisted    bool
+	Direction    string
+	AmountCents  int64
+	Frequency    string
+	DayOfMonth   int
+	CategoryPath string
+	Description  string
+}
+
+type RecurringView struct {
+	Direction   string
+	AmountCents int64
+	Description string
+	Frequency   string
+	DayOfMonth  int
+}
+
+type RecurringLister interface {
+	Execute(ctx context.Context, userID string) ([]RecurringView, error)
+}
+
 type ExpenseLoggerInput struct {
 	UserID string
 	Intent intent.Intent
@@ -128,33 +224,45 @@ type ExpenseLoggerResult struct {
 }
 
 type IntentRouter struct {
-	parser          IntentParser
-	monthlySummary  MonthlySummaryReader
-	cardLister      CardLister
-	cardInvoice     CardInvoiceReader
-	expenseLogger   ExpenseLogger
-	budgetConfig    BudgetConfigurator
-	onboarding      OnboardingContinuation
-	fallback        Fallback
-	whatsAppGateway WhatsAppOutbound
-	telegramGateway TelegramOutbound
-	o11y            observability.Observability
-	routedTotal     observability.Counter
-	loc             *time.Location
+	parser            IntentParser
+	monthlySummary    MonthlySummaryReader
+	cardLister        CardLister
+	cardInvoice       CardInvoiceReader
+	expenseLogger     ExpenseLogger
+	cardPurchaseLog   CardPurchaseLogger
+	transactionLister TransactionLister
+	lastDeleter       LastTransactionDeleter
+	lastEditor        LastTransactionEditor
+	recurringCreator  RecurringCreator
+	recurringLister   RecurringLister
+	budgetConfig      BudgetConfigurator
+	onboarding        OnboardingContinuation
+	fallback          Fallback
+	whatsAppGateway   WhatsAppOutbound
+	telegramGateway   TelegramOutbound
+	o11y              observability.Observability
+	routedTotal       observability.Counter
+	loc               *time.Location
 }
 
 type IntentRouterDeps struct {
-	Parser          IntentParser
-	MonthlySummary  MonthlySummaryReader
-	CardLister      CardLister
-	CardInvoice     CardInvoiceReader
-	ExpenseLogger   ExpenseLogger
-	BudgetConfig    BudgetConfigurator
-	Onboarding      OnboardingContinuation
-	Fallback        Fallback
-	WhatsAppGateway WhatsAppOutbound
-	TelegramGateway TelegramOutbound
-	Location        *time.Location
+	Parser            IntentParser
+	MonthlySummary    MonthlySummaryReader
+	CardLister        CardLister
+	CardInvoice       CardInvoiceReader
+	ExpenseLogger     ExpenseLogger
+	CardPurchaseLog   CardPurchaseLogger
+	TransactionLister TransactionLister
+	LastDeleter       LastTransactionDeleter
+	LastEditor        LastTransactionEditor
+	RecurringCreator  RecurringCreator
+	RecurringLister   RecurringLister
+	BudgetConfig      BudgetConfigurator
+	Onboarding        OnboardingContinuation
+	Fallback          Fallback
+	WhatsAppGateway   WhatsAppOutbound
+	TelegramGateway   TelegramOutbound
+	Location          *time.Location
 }
 
 func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*IntentRouter, error) {
@@ -180,19 +288,25 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		"1",
 	)
 	return &IntentRouter{
-		parser:          deps.Parser,
-		monthlySummary:  deps.MonthlySummary,
-		cardLister:      deps.CardLister,
-		cardInvoice:     deps.CardInvoice,
-		expenseLogger:   deps.ExpenseLogger,
-		budgetConfig:    deps.BudgetConfig,
-		onboarding:      deps.Onboarding,
-		fallback:        deps.Fallback,
-		whatsAppGateway: deps.WhatsAppGateway,
-		telegramGateway: deps.TelegramGateway,
-		o11y:            o11y,
-		routedTotal:     routedTotal,
-		loc:             loc,
+		parser:            deps.Parser,
+		monthlySummary:    deps.MonthlySummary,
+		cardLister:        deps.CardLister,
+		cardInvoice:       deps.CardInvoice,
+		expenseLogger:     deps.ExpenseLogger,
+		cardPurchaseLog:   deps.CardPurchaseLog,
+		transactionLister: deps.TransactionLister,
+		lastDeleter:       deps.LastDeleter,
+		lastEditor:        deps.LastEditor,
+		recurringCreator:  deps.RecurringCreator,
+		recurringLister:   deps.RecurringLister,
+		budgetConfig:      deps.BudgetConfig,
+		onboarding:        deps.Onboarding,
+		fallback:          deps.Fallback,
+		whatsAppGateway:   deps.WhatsAppGateway,
+		telegramGateway:   deps.TelegramGateway,
+		o11y:              o11y,
+		routedTotal:       routedTotal,
+		loc:               loc,
 	}, nil
 }
 
@@ -231,7 +345,7 @@ func (r *IntentRouter) RouteTelegram(ctx context.Context, principal Principal, m
 	return result
 }
 
-func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
+func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.intent_router.route")
 	defer span.End()
 
@@ -270,6 +384,8 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 	switch kind {
 	case intent.KindLogExpense:
 		return r.routeLogExpense(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindLogIncome:
+		return r.routeLogIncome(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindMonthlySummary:
 		return r.routeMonthlySummary(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindQueryCategory:
@@ -282,6 +398,18 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return r.routeHowAmIDoing(ctx, principal.UserID, channel)
 	case intent.KindConfigureBudget:
 		return r.routeConfigureBudget(ctx, principal.UserID, channel)
+	case intent.KindLogCardPurchase:
+		return r.routeLogCardPurchase(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindListTransactions:
+		return r.routeListTransactions(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindDeleteLastTransaction:
+		return r.routeDeleteLastTransaction(ctx, principal.UserID, channel)
+	case intent.KindEditLastTransaction:
+		return r.routeEditLastTransaction(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindCreateRecurring:
+		return r.routeCreateRecurring(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindListRecurring:
+		return r.routeListRecurring(ctx, principal.UserID, channel)
 	case intent.KindUnknown:
 		reply := r.delegateFallback(ctx, principal.UserID, channel, trimmed)
 		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeFallback)
@@ -296,18 +424,36 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 func (r *IntentRouter) routeLogExpense(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
 	if r.expenseLogger == nil {
 		r.record(ctx, intent.KindLogExpense.String(), channel, OutcomeMissingResolver)
-		reply := formatLoggedExpense(in.AmountCents(), in.Merchant(), in.CategoryHint())
-		return RouteResult{Reply: reply, Outcome: OutcomeMissingResolver, Kind: intent.KindLogExpense}
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogExpense}
 	}
 	result, err := r.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
 	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.log_expense_failed",
+			observability.Error(err),
+		)
 		r.record(ctx, intent.KindLogExpense.String(), channel, OutcomeUsecaseError)
-		reply := formatLoggedExpense(in.AmountCents(), in.Merchant(), in.CategoryHint())
-		return RouteResult{Reply: reply, Outcome: OutcomeUsecaseError, Kind: intent.KindLogExpense}
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogExpense}
 	}
 	r.record(ctx, intent.KindLogExpense.String(), channel, OutcomeRouted)
 	reply := formatPersistedExpense(result.AmountCents, in.Merchant(), result.CategoryPath)
 	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindLogExpense}
+}
+
+func (r *IntentRouter) routeLogIncome(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.expenseLogger == nil {
+		r.record(ctx, intent.KindLogIncome.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogIncome}
+	}
+	result, err := r.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.log_income_failed",
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindLogIncome.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogIncome}
+	}
+	r.record(ctx, intent.KindLogIncome.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedIncome(result.AmountCents, in.Merchant(), result.CategoryPath), Outcome: OutcomeRouted, Kind: intent.KindLogIncome}
 }
 
 func (r *IntentRouter) routeMonthlySummary(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
@@ -459,6 +605,170 @@ func (r *IntentRouter) routeHowAmIDoing(ctx context.Context, userID uuid.UUID, c
 	return RouteResult{Reply: formatHowAmIDoing(summary), Outcome: OutcomeRouted, Kind: intent.KindHowAmIDoing}
 }
 
+func (r *IntentRouter) routeLogCardPurchase(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.cardPurchaseLog == nil {
+		r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
+	}
+	result, err := r.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.log_card_purchase_failed",
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogCardPurchase}
+	}
+	if !result.CardFound {
+		r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: formatCardPurchaseCardMissing(in.CardHint()), Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
+	}
+	r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedCardPurchase(result), Outcome: OutcomeRouted, Kind: intent.KindLogCardPurchase}
+}
+
+func (r *IntentRouter) routeListTransactions(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.transactionLister == nil {
+		r.record(ctx, intent.KindListTransactions.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindListTransactions}
+	}
+	refMonth := in.RefMonth()
+	if refMonth == "" {
+		refMonth = r.currentCompetence()
+	}
+	list, err := r.transactionLister.Execute(ctx, TransactionListInput{UserID: userID.String(), RefMonth: refMonth})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.list_transactions_failed",
+			observability.String("ref_month", refMonth),
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindListTransactions.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListTransactions}
+	}
+	r.record(ctx, intent.KindListTransactions.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatTransactionList(list), Outcome: OutcomeRouted, Kind: intent.KindListTransactions}
+}
+
+func (r *IntentRouter) routeDeleteLastTransaction(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if r.transactionLister == nil || r.lastDeleter == nil {
+		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindDeleteLastTransaction}
+	}
+	last, found, err := r.mostRecentTransaction(ctx, userID)
+	if err != nil {
+		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteLastTransaction}
+	}
+	if !found {
+		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: noTransactionsText, Outcome: OutcomeRouted, Kind: intent.KindDeleteLastTransaction}
+	}
+	if err := r.lastDeleter.Execute(ctx, userID.String(), last.ID, last.Version); err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.delete_last_transaction_failed",
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteLastTransaction}
+	}
+	r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatDeletedTransaction(last), Outcome: OutcomeRouted, Kind: intent.KindDeleteLastTransaction}
+}
+
+func (r *IntentRouter) routeEditLastTransaction(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.transactionLister == nil || r.lastEditor == nil {
+		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindEditLastTransaction}
+	}
+	last, found, err := r.mostRecentTransaction(ctx, userID)
+	if err != nil {
+		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditLastTransaction}
+	}
+	if !found {
+		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: noTransactionsText, Outcome: OutcomeRouted, Kind: intent.KindEditLastTransaction}
+	}
+	result, err := r.lastEditor.Execute(ctx, EditTransactionInput{UserID: userID.String(), Current: last, NewAmount: in.AmountCents()})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.edit_last_transaction_failed",
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditLastTransaction}
+	}
+	r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatEditedTransaction(result), Outcome: OutcomeRouted, Kind: intent.KindEditLastTransaction}
+}
+
+func (r *IntentRouter) routeCreateRecurring(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.recurringCreator == nil {
+		r.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindCreateRecurring}
+	}
+	result, err := r.recurringCreator.Execute(ctx, RecurringCreatorInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.create_recurring_failed",
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindCreateRecurring}
+	}
+	r.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedRecurring(result), Outcome: OutcomeRouted, Kind: intent.KindCreateRecurring}
+}
+
+func (r *IntentRouter) routeListRecurring(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if r.recurringLister == nil {
+		r.record(ctx, intent.KindListRecurring.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindListRecurring}
+	}
+	items, err := r.recurringLister.Execute(ctx, userID.String())
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.list_recurring_failed",
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindListRecurring.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListRecurring}
+	}
+	r.record(ctx, intent.KindListRecurring.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatRecurringList(items), Outcome: OutcomeRouted, Kind: intent.KindListRecurring}
+}
+
+func (r *IntentRouter) currentCompetence() string {
+	now := time.Now().UTC().In(r.loc)
+	return fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+}
+
+func (r *IntentRouter) mostRecentTransaction(ctx context.Context, userID uuid.UUID) (TransactionView, bool, error) {
+	list, err := r.transactionLister.Execute(ctx, TransactionListInput{UserID: userID.String(), RefMonth: r.currentCompetence()})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.most_recent_transaction_failed",
+			observability.Error(err),
+		)
+		return TransactionView{}, false, err
+	}
+	return pickMostRecent(list.Transactions)
+}
+
+func pickMostRecent(items []TransactionView) (TransactionView, bool, error) {
+	if len(items) == 0 {
+		return TransactionView{}, false, nil
+	}
+	latest := items[0]
+	for _, item := range items[1:] {
+		if moreRecent(item, latest) {
+			latest = item
+		}
+	}
+	return latest, true, nil
+}
+
+func moreRecent(candidate, current TransactionView) bool {
+	if candidate.CreatedAt.Equal(current.CreatedAt) {
+		return candidate.ID > current.ID
+	}
+	return candidate.CreatedAt.After(current.CreatedAt)
+}
+
 func (r *IntentRouter) delegateFallback(ctx context.Context, userID uuid.UUID, channel, text string) string {
 	reply, err := r.fallback.Reply(ctx, userID, channel, text)
 	if err != nil {
@@ -561,21 +871,33 @@ func formatPersistedExpense(amountCents int64, merchant, categoryPath string) st
 	return sb.String()
 }
 
-func formatLoggedExpense(amountCents int64, merchant, categoryHint string) string {
+func formatPersistedIncome(amountCents int64, source, categoryPath string) string {
 	var sb strings.Builder
-	sb.WriteString("💸 *Transação realizada!*\n*")
+	sb.WriteString("💰 *Recebimento registrado!*\n*")
 	sb.WriteString(formatBRL(amountCents))
 	sb.WriteString("*")
-	if strings.TrimSpace(merchant) != "" {
-		sb.WriteString(" em *")
-		sb.WriteString(merchant)
+	if strings.TrimSpace(source) != "" {
+		sb.WriteString(" de *")
+		sb.WriteString(source)
 		sb.WriteString("*")
 	}
-	if strings.TrimSpace(categoryHint) != "" {
+	if strings.TrimSpace(categoryPath) != "" {
 		sb.WriteString("\n📂 ")
-		sb.WriteString(categoryHint)
+		sb.WriteString(categoryPath)
 	}
-	sb.WriteString("\nEm breve eu associo a categoria automaticamente pra você.")
+	sb.WriteString("\n✅ Anotei na sua conta.")
+	return sb.String()
+}
+
+func registerFailedText(amountCents int64, merchant string) string {
+	var sb strings.Builder
+	sb.WriteString("😕 Não consegui registrar ")
+	sb.WriteString(formatBRL(amountCents))
+	if strings.TrimSpace(merchant) != "" {
+		sb.WriteString(" em ")
+		sb.WriteString(merchant)
+	}
+	sb.WriteString(" agora. Pode tentar de novo em instantes? Se quiser, me diga a categoria pra eu organizar certinho.")
 	return sb.String()
 }
 
@@ -747,4 +1069,138 @@ func formatHowAmIDoing(summary budgetsoutput.MonthlySummaryOutput) string {
 	}
 	sb.WriteString(". Defina um planejamento para eu te ajudar a acompanhar melhor.")
 	return sb.String()
+}
+
+func formatCardPurchaseCardMissing(cardHint string) string {
+	if strings.TrimSpace(cardHint) == "" {
+		return "💳 Pra registrar a compra parcelada eu preciso saber em qual cartão foi. Me diz o nome do cartão? (ex: nubank, itaú)"
+	}
+	return fmt.Sprintf("💳 Não encontrei um cartão chamado %q no seu cadastro. Quer cadastrá-lo primeiro pra eu registrar a compra parcelada?", cardHint)
+}
+
+func formatPersistedCardPurchase(result CardPurchaseLoggerResult) string {
+	var sb strings.Builder
+	sb.WriteString("💳 *Compra parcelada registrada!*\n*")
+	sb.WriteString(formatBRL(result.AmountCents))
+	sb.WriteString("*")
+	_, _ = fmt.Fprintf(&sb, " em *%dx*", result.Installments)
+	if strings.TrimSpace(result.CardName) != "" {
+		sb.WriteString(" no *")
+		sb.WriteString(result.CardName)
+		sb.WriteString("*")
+	}
+	if strings.TrimSpace(result.CategoryPath) != "" {
+		sb.WriteString("\n📂 ")
+		sb.WriteString(result.CategoryPath)
+	}
+	sb.WriteString("\n✅ Anotei nas suas faturas.")
+	return sb.String()
+}
+
+func formatTransactionList(list TransactionListResult) string {
+	if len(list.Transactions) == 0 {
+		return fmt.Sprintf("📭 Você não tem lançamentos em %s ainda.", list.RefMonth)
+	}
+	totalIn := int64(0)
+	totalOut := int64(0)
+	for _, t := range list.Transactions {
+		switch t.Direction {
+		case "income":
+			totalIn += t.AmountCents
+		case "outcome":
+			totalOut += t.AmountCents
+		}
+	}
+	var sb strings.Builder
+	_, _ = fmt.Fprintf(&sb, "📋 *Lançamentos de %s* (%d)\n", list.RefMonth, len(list.Transactions))
+	sb.WriteString("• Entradas: ")
+	sb.WriteString(formatBRL(totalIn))
+	sb.WriteString("\n• Saídas: ")
+	sb.WriteString(formatBRL(totalOut))
+	return sb.String()
+}
+
+func formatDeletedTransaction(view TransactionView) string {
+	var sb strings.Builder
+	sb.WriteString("🗑️ *Lançamento excluído!*\n")
+	sb.WriteString(formatBRL(view.AmountCents))
+	if strings.TrimSpace(view.Description) != "" {
+		sb.WriteString(" — ")
+		sb.WriteString(view.Description)
+	}
+	sb.WriteString(" (")
+	sb.WriteString(view.OccurredAt.Format("02/01/2006"))
+	sb.WriteString(")")
+	return sb.String()
+}
+
+func formatEditedTransaction(result EditTransactionResult) string {
+	var sb strings.Builder
+	sb.WriteString("✏️ *Lançamento atualizado!*\n")
+	sb.WriteString("De ")
+	sb.WriteString(formatBRL(result.OldAmount))
+	sb.WriteString(" para *")
+	sb.WriteString(formatBRL(result.NewAmount))
+	sb.WriteString("*")
+	if strings.TrimSpace(result.Description) != "" {
+		sb.WriteString(" — ")
+		sb.WriteString(result.Description)
+	}
+	return sb.String()
+}
+
+func formatPersistedRecurring(result RecurringCreatorResult) string {
+	var sb strings.Builder
+	sb.WriteString("🔁 *Recorrência criada!*\n*")
+	sb.WriteString(formatBRL(result.AmountCents))
+	sb.WriteString("*")
+	if result.Direction == "income" {
+		sb.WriteString(" de entrada")
+	} else {
+		sb.WriteString(" de saída")
+	}
+	sb.WriteString(" ")
+	sb.WriteString(frequencyLabel(result.Frequency))
+	_, _ = fmt.Fprintf(&sb, " (dia %d)", result.DayOfMonth)
+	if strings.TrimSpace(result.Description) != "" {
+		sb.WriteString("\n📝 ")
+		sb.WriteString(result.Description)
+	}
+	if strings.TrimSpace(result.CategoryPath) != "" {
+		sb.WriteString("\n📂 ")
+		sb.WriteString(result.CategoryPath)
+	}
+	return sb.String()
+}
+
+func formatRecurringList(items []RecurringView) string {
+	if len(items) == 0 {
+		return "🔁 Você ainda não tem lançamentos recorrentes cadastrados."
+	}
+	var sb strings.Builder
+	_, _ = fmt.Fprintf(&sb, "🔁 *Recorrências* (%d)\n", len(items))
+	for _, item := range items {
+		sb.WriteString("• ")
+		sb.WriteString(formatBRL(item.AmountCents))
+		sb.WriteString(" ")
+		sb.WriteString(frequencyLabel(item.Frequency))
+		_, _ = fmt.Fprintf(&sb, " (dia %d)", item.DayOfMonth)
+		if strings.TrimSpace(item.Description) != "" {
+			sb.WriteString(" — ")
+			sb.WriteString(item.Description)
+		}
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func frequencyLabel(frequency string) string {
+	switch frequency {
+	case "monthly":
+		return "mensal"
+	case "yearly":
+		return "anual"
+	default:
+		return frequency
+	}
 }

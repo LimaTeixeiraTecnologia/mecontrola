@@ -1,6 +1,7 @@
 package valueobjects
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -56,4 +57,25 @@ func (r RefMonth) Next() RefMonth {
 	t, _ := time.Parse("2006-01", r.value)
 	next := t.AddDate(0, 1, 0)
 	return RefMonth{value: fmt.Sprintf("%04d-%02d", next.Year(), int(next.Month()))}
+}
+
+func (r RefMonth) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.value)
+}
+
+func (r *RefMonth) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("transactions: ref_month json: %w", err)
+	}
+	if raw == "" {
+		r.value = ""
+		return nil
+	}
+	parsed, err := NewRefMonth(raw)
+	if err != nil {
+		return err
+	}
+	r.value = parsed.value
+	return nil
 }

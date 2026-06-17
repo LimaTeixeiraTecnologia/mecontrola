@@ -154,6 +154,10 @@ type rawIntentDTO struct {
 	CardName      string `json:"card_name"`
 	RefMonth      string `json:"ref_month"`
 	RawText       string `json:"raw_text"`
+	Installments  int    `json:"installments"`
+	Direction     string `json:"direction"`
+	Frequency     string `json:"frequency"`
+	DayOfMonth    int    `json:"day_of_month"`
 }
 
 func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, *parseInboundError) {
@@ -183,7 +187,7 @@ func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, *parseInbou
 	return built, nil
 }
 
-func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Intent, error) {
+func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Intent, error) { //nolint:revive // dispatch exaustivo por intent kind
 	switch kind {
 	case intent.KindLogExpense:
 		return intent.NewLogExpense(intent.LogExpenseFields{
@@ -192,6 +196,13 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 			CategoryHint:  dto.CategoryHint,
 			PaymentMethod: dto.PaymentMethod,
 			CardHint:      dto.CardHint,
+		})
+	case intent.KindLogIncome:
+		return intent.NewLogIncome(intent.LogIncomeFields{
+			AmountCents:   dto.AmountCents,
+			Source:        dto.Merchant,
+			CategoryHint:  dto.CategoryHint,
+			PaymentMethod: dto.PaymentMethod,
 		})
 	case intent.KindQueryCategory:
 		return intent.NewQueryCategory(dto.CategoryName)
@@ -205,6 +216,35 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		return intent.NewHowAmIDoing(), nil
 	case intent.KindConfigureBudget:
 		return intent.NewConfigureBudget(), nil
+	case intent.KindLogCardPurchase:
+		return intent.NewLogCardPurchase(intent.LogCardPurchaseFields{
+			AmountCents:  dto.AmountCents,
+			Merchant:     dto.Merchant,
+			CategoryHint: dto.CategoryHint,
+			CardHint:     dto.CardHint,
+			Installments: dto.Installments,
+		})
+	case intent.KindListTransactions:
+		return intent.NewListTransactions(dto.RefMonth)
+	case intent.KindDeleteLastTransaction:
+		return intent.NewDeleteLastTransaction(), nil
+	case intent.KindEditLastTransaction:
+		return intent.NewEditLastTransaction(dto.AmountCents)
+	case intent.KindCreateRecurring:
+		dayOfMonth := dto.DayOfMonth
+		if dayOfMonth <= 0 {
+			dayOfMonth = 1
+		}
+		return intent.NewCreateRecurring(intent.CreateRecurringFields{
+			AmountCents:  dto.AmountCents,
+			Merchant:     dto.Merchant,
+			CategoryHint: dto.CategoryHint,
+			Direction:    inferRecurringDirection(dto.Direction, dto.Merchant, fallbackText),
+			Frequency:    dto.Frequency,
+			DayOfMonth:   dayOfMonth,
+		})
+	case intent.KindListRecurring:
+		return intent.NewListRecurring(), nil
 	case intent.KindUnknown:
 		raw := dto.RawText
 		if strings.TrimSpace(raw) == "" {
@@ -214,6 +254,29 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 	default:
 		return intent.Intent{}, fmt.Errorf("agent.usecase.parse_inbound: unsupported kind %v", kind)
 	}
+}
+
+var recurringIncomeCues = []string{
+	"salário", "salario", "recebo", "recebimento", "pró-labore", "pro-labore",
+	"prolabore", "rendimento", "provento", "pensão", "pensao", "aposentadoria",
+	"aluguel recebido", "freela", "freelance",
+}
+
+func inferRecurringDirection(direction, merchant, fallbackText string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(direction))
+	if trimmed == "income" || trimmed == "outcome" {
+		return trimmed
+	}
+	if trimmed == "expense" {
+		return "outcome"
+	}
+	haystack := strings.ToLower(merchant + " " + fallbackText)
+	for _, cue := range recurringIncomeCues {
+		if strings.Contains(haystack, cue) {
+			return "income"
+		}
+	}
+	return "outcome"
 }
 
 func stripFences(raw []byte) []byte {

@@ -117,11 +117,6 @@ func (s *DeleteExpenseSuite) TestSoftDelete_VersionConflict() {
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
-	s.expenses.EXPECT().
-		SoftDelete(s.ctx, mock.Anything, int64(99)).
-		Return(int64(0), interfaces.ErrExpenseConflict).
-		Once()
-
 	err := s.useCase.Execute(s.ctx, in)
 
 	s.ErrorIs(err, interfaces.ErrExpenseConflict)

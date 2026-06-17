@@ -25,6 +25,11 @@ func (w TransactionWorkflow) DecideCreate(
 ) TransactionDecision {
 	refMonth := valueobjects.RefMonthFromTime(cmd.OccurredAt, time.UTC)
 
+	subcategoryID := uuid.Nil
+	if sub, ok := cmd.SubcategoryID.Get(); ok {
+		subcategoryID = sub.UUID()
+	}
+
 	tx := entities.NewTransaction(
 		txID,
 		cmd.UserID,
@@ -50,6 +55,8 @@ func (w TransactionWorkflow) DecideCreate(
 		PaymentMethod: cmd.PaymentMethod,
 		AmountCents:   cmd.Amount.Cents(),
 		RefMonth:      refMonth,
+		CategoryID:    cmd.CategoryID.UUID(),
+		SubcategoryID: subcategoryID,
 	}
 
 	return TransactionDecision{Transaction: tx, Event: evt}

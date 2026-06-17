@@ -39,19 +39,32 @@ func TestCategoriesCacheSuite(t *testing.T) {
 }
 
 func (s *CategoriesCacheSuite) buildRoots() map[string]uuid.UUID {
-	roots := make(map[string]uuid.UUID, len(config.OfficialRootSlugs))
+	roots := make(map[string]uuid.UUID, len(config.OfficialRootSlugs)+len(config.OfficialIncomeRootSlugs))
 	for _, slug := range config.OfficialRootSlugs {
+		roots[slug] = uuid.New()
+	}
+	for _, slug := range config.OfficialIncomeRootSlugs {
 		roots[slug] = uuid.New()
 	}
 	return roots
 }
 
+func resolveSubset(master map[string]uuid.UUID) func(context.Context, []string) (map[string]uuid.UUID, error) {
+	return func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
+		out := make(map[string]uuid.UUID, len(slugs))
+		for _, slug := range slugs {
+			if id, ok := master[slug]; ok {
+				out[slug] = id
+			}
+		}
+		return out, nil
+	}
+}
+
 func (s *CategoriesCacheSuite) TestBoot_Success() {
 	roots := s.buildRoots()
 	reader := &mockCategoriesReader{
-		resolveRootsFunc: func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
-			return roots, nil
-		},
+		resolveRootsFunc: resolveSubset(roots),
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			return 1, nil
 		},
@@ -95,9 +108,7 @@ func (s *CategoriesCacheSuite) TestBoot_InsufficientRoots() {
 func (s *CategoriesCacheSuite) TestBoot_EditorialVersionError() {
 	roots := s.buildRoots()
 	reader := &mockCategoriesReader{
-		resolveRootsFunc: func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
-			return roots, nil
-		},
+		resolveRootsFunc: resolveSubset(roots),
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			return 0, errors.New("version unavailable")
 		},
@@ -111,9 +122,7 @@ func (s *CategoriesCacheSuite) TestBoot_EditorialVersionError() {
 func (s *CategoriesCacheSuite) TestValidate_NilSubcategoryID_RootFound() {
 	roots := s.buildRoots()
 	reader := &mockCategoriesReader{
-		resolveRootsFunc: func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
-			return roots, nil
-		},
+		resolveRootsFunc: resolveSubset(roots),
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			return 1, nil
 		},
@@ -136,9 +145,7 @@ func (s *CategoriesCacheSuite) TestValidate_NilSubcategoryID_RootFound() {
 func (s *CategoriesCacheSuite) TestValidate_NilSubcategoryID_RootNotFound() {
 	roots := s.buildRoots()
 	reader := &mockCategoriesReader{
-		resolveRootsFunc: func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
-			return roots, nil
-		},
+		resolveRootsFunc: resolveSubset(roots),
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			return 1, nil
 		},
@@ -161,9 +168,7 @@ func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_CacheMiss_ThenCacheHit
 	subcategoryCallCount := 0
 
 	reader := &mockCategoriesReader{
-		resolveRootsFunc: func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
-			return roots, nil
-		},
+		resolveRootsFunc: resolveSubset(roots),
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			versionCallCount++
 			return 1, nil
@@ -200,9 +205,7 @@ func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_VersionChange_Invalida
 	subcategoryCallCount := 0
 
 	reader := &mockCategoriesReader{
-		resolveRootsFunc: func(_ context.Context, slugs []string) (map[string]uuid.UUID, error) {
-			return roots, nil
-		},
+		resolveRootsFunc: resolveSubset(roots),
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			return version, nil
 		},

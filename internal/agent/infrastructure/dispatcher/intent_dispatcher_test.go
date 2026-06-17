@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -139,7 +138,8 @@ func TestIntentDispatcher_UnsupportedModule_ReturnsFriendlyMessage(t *testing.T)
 	res, err := sut.Dispatch(context.Background(), uuid.New(), outcome)
 	require.NoError(t, err)
 	assert.False(t, res.WasApplied)
-	assert.True(t, strings.Contains(res.ReplyText, "budgets.create"))
+	assert.Contains(t, res.ReplyText, "nao registrei nada")
+	assert.NotContains(t, res.ReplyText, "anotei")
 }
 
 func TestIntentDispatcher_UnsupportedAction_ReturnsFriendlyMessage(t *testing.T) {
@@ -152,7 +152,8 @@ func TestIntentDispatcher_UnsupportedAction_ReturnsFriendlyMessage(t *testing.T)
 	require.NoError(t, err)
 	assert.False(t, categories.called)
 	assert.False(t, res.WasApplied)
-	assert.Contains(t, res.ReplyText, "categories.get")
+	assert.Contains(t, res.ReplyText, "nao registrei nada")
+	assert.NotContains(t, res.ReplyText, "anotei")
 }
 
 func TestIntentDispatcher_NilPort_ReturnsUnsupported(t *testing.T) {

@@ -87,6 +87,7 @@ const (
 	ConsumeOutcomeNotYetPaid
 	ConsumeOutcomeExpired
 	ConsumeOutcomeNotFound
+	ConsumeOutcomeUnsupportedCountry
 )
 
 type ConsumeResult struct {
@@ -215,6 +216,8 @@ func (uc *ConsumeMagicToken) mapResult(ctx context.Context, token valueobjects.T
 			"from_mobile_masked", maskMobile(in.FromE164),
 		)
 		return ConsumeResult{Outcome: ConsumeOutcomeReuseOtherAccount}, nil
+	case errors.Is(err, domain.ErrUnsupportedCountry):
+		return ConsumeResult{Outcome: ConsumeOutcomeUnsupportedCountry}, nil
 	}
 	return ConsumeResult{}, err
 }
@@ -233,6 +236,8 @@ func consumeResultLabel(err error) string {
 		return "already_active"
 	case errors.Is(err, domain.ErrTokenAlreadyConsumedOther):
 		return "reuse_other"
+	case errors.Is(err, domain.ErrUnsupportedCountry):
+		return "unsupported_country"
 	default:
 		return "error"
 	}

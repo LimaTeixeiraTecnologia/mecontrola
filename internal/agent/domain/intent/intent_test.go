@@ -181,8 +181,8 @@ func TestNewQueryCategory(t *testing.T) {
 func TestNewQueryGoal(t *testing.T) {
 	t.Parallel()
 
-	if _, err := intent.NewQueryGoal("   "); !errors.Is(err, intent.ErrGoalNameEmpty) {
-		t.Fatalf("empty: err = %v", err)
+	if empty, err := intent.NewQueryGoal("   "); err != nil || empty.Kind() != intent.KindQueryGoal || empty.GoalName() != "" {
+		t.Fatalf("empty deve ser válido sem nome: got=%+v err=%v", empty, err)
 	}
 	got, err := intent.NewQueryGoal("Viagem Europa")
 	if err != nil {
@@ -196,8 +196,8 @@ func TestNewQueryGoal(t *testing.T) {
 func TestNewQueryCard(t *testing.T) {
 	t.Parallel()
 
-	if _, err := intent.NewQueryCard(""); !errors.Is(err, intent.ErrCardNameEmpty) {
-		t.Fatalf("empty: err = %v", err)
+	if empty, err := intent.NewQueryCard(""); err != nil || empty.Kind() != intent.KindQueryCard || empty.CardName() != "" {
+		t.Fatalf("empty deve ser válido sem nome: got=%+v err=%v", empty, err)
 	}
 	got, err := intent.NewQueryCard("Nubank")
 	if err != nil {

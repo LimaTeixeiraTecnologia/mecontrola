@@ -51,6 +51,15 @@ tasks:
       - go test -coverprofile={{.COVERAGE_DIR}}/identity.out ./internal/identity/...
       - go tool cover -func={{.COVERAGE_DIR}}/identity.out | grep -E 'NewWhatsAppNumber|NewEmail|IsEntitled'
 
+  e2e:
+    desc: Executa testes E2E BDD com Godog (requer Docker).
+    preconditions:
+      - sh: docker info >/dev/null 2>&1
+        msg: "Docker nao esta disponivel; necessario para testes E2E."
+    cmds:
+      - mkdir -p {{.COVERAGE_DIR}}
+      - go test -race -covermode=atomic -coverprofile={{.COVERAGE_DIR}}/e2e.out -tags=e2e -timeout=5m -v ./internal/e2e/...
+
   watch:
     desc: Reexecuta os testes unitarios ao alterar arquivos.
     watch: true

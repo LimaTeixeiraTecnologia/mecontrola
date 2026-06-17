@@ -62,7 +62,7 @@ func TestComposeConversationalReply_SendsFreeTextContract(t *testing.T) {
 	require.Nil(t, fake.lastRequest.JSONSchema)
 	require.Contains(t, fake.lastRequest.SystemPrompt, "Conexão")
 	require.Contains(t, fake.lastRequest.SystemPrompt, "Atualização Automática")
-	require.Contains(t, fake.lastRequest.SystemPrompt, "orçamento e lançamentos")
+	require.Contains(t, fake.lastRequest.SystemPrompt, "Lançamentos (transações)")
 	require.Contains(t, fake.lastRequest.SystemPrompt, "Kiwify")
 }
 

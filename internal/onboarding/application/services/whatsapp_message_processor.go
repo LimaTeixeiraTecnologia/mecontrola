@@ -197,6 +197,8 @@ func consumeOutcomeToMessageKey(outcome usecases.ConsumeOutcome) string {
 		return "code_expired_contact_support"
 	case usecases.ConsumeOutcomeNotFound:
 		return "code_invalid_check_again"
+	case usecases.ConsumeOutcomeUnsupportedCountry:
+		return "invalid_country"
 	default:
 		return "system_unavailable_retry"
 	}

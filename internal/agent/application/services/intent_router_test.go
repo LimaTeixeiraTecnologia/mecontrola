@@ -67,6 +67,17 @@ func (f *fakeFallback) Reply(_ context.Context, _ uuid.UUID, _, _ string) (strin
 	return f.reply, f.err
 }
 
+type fakeExpenseLogger struct {
+	result services.ExpenseLoggerResult
+	err    error
+	calls  int
+}
+
+func (f *fakeExpenseLogger) Execute(_ context.Context, _ services.ExpenseLoggerInput) (services.ExpenseLoggerResult, error) {
+	f.calls++
+	return f.result, f.err
+}
+
 type fakeWhatsAppGateway struct {
 	sent  []sentMessage
 	err   error
@@ -108,6 +119,7 @@ type IntentRouterSuite struct {
 	summary  *fakeMonthlySummary
 	cards    *fakeCardLister
 	invoice  *fakeCardInvoice
+	expenses *fakeExpenseLogger
 }
 
 func (s *IntentRouterSuite) SetupTest() {
@@ -118,10 +130,11 @@ func (s *IntentRouterSuite) SetupTest() {
 	s.summary = &fakeMonthlySummary{}
 	s.cards = &fakeCardLister{}
 	s.invoice = &fakeCardInvoice{}
+	s.expenses = nil
 }
 
 func (s *IntentRouterSuite) newRouter() *services.IntentRouter {
-	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
+	deps := services.IntentRouterDeps{
 		Parser:          s.parser,
 		MonthlySummary:  s.summary,
 		CardLister:      s.cards,
@@ -130,7 +143,11 @@ func (s *IntentRouterSuite) newRouter() *services.IntentRouter {
 		WhatsAppGateway: s.wa,
 		TelegramGateway: s.tg,
 		Location:        time.UTC,
-	})
+	}
+	if s.expenses != nil {
+		deps.ExpenseLogger = s.expenses
+	}
+	router, err := services.NewIntentRouter(noop.NewProvider(), deps)
 	require.NoError(s.T(), err)
 	return router
 }
@@ -157,14 +174,18 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_EmptyText() {
 	s.Len(s.wa.sent, 1)
 }
 
-func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense() {
+func (s *IntentRouterSuite) buildLogExpense() intent.Intent {
 	expense, err := intent.NewLogExpense(intent.LogExpenseFields{
 		AmountCents:  5800,
 		Merchant:     "iFood",
 		CategoryHint: "Prazeres",
 	})
 	require.NoError(s.T(), err)
-	s.parser.intent = expense
+	return expense
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_MissingResolverIsHonest() {
+	s.parser.intent = s.buildLogExpense()
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
@@ -172,10 +193,74 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense() {
 	s.Equal(intent.KindLogExpense, result.Kind)
 	s.Equal(services.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
+	s.NotContains(s.wa.sent[0].Text, "Transação realizada")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_PersistedConfirms() {
+	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
+		Persisted:    true,
+		AmountCents:  5800,
+		CategoryPath: "Prazeres > Delivery",
+	}}
+	s.parser.intent = s.buildLogExpense()
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
+
+	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(1, s.expenses.calls)
+	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "💸 *Transação realizada!*")
 	s.Contains(s.wa.sent[0].Text, "R$ 58,00")
 	s.Contains(s.wa.sent[0].Text, "iFood")
-	s.Contains(s.wa.sent[0].Text, "Prazeres")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_FailureIsHonest() {
+	s.expenses = &fakeExpenseLogger{err: errors.New("boom")}
+	s.parser.intent = s.buildLogExpense()
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.NotContains(s.wa.sent[0].Text, "Transação realizada")
+	s.Contains(s.wa.sent[0].Text, "Não consegui registrar")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_PersistedConfirms() {
+	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
+		Persisted:    true,
+		AmountCents:  1640000,
+		CategoryPath: "Salário",
+	}}
+	income, err := intent.NewLogIncome(intent.LogIncomeFields{AmountCents: 1640000, Source: "salário"})
+	require.NoError(s.T(), err)
+	s.parser.intent = income
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "recebi salario 16400", WhatsAppTo: "+5511999"})
+
+	s.Equal(intent.KindLogIncome, result.Kind)
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(1, s.expenses.calls)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "💰 *Recebimento registrado!*")
+	s.Contains(s.wa.sent[0].Text, "R$ 16.400,00")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_MissingResolverIsHonest() {
+	income, err := intent.NewLogIncome(intent.LogIncomeFields{AmountCents: 1640000, Source: "salário"})
+	require.NoError(s.T(), err)
+	s.parser.intent = income
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "recebi salario 16400", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.NotContains(s.wa.sent[0].Text, "registrado")
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_MonthlySummary() {

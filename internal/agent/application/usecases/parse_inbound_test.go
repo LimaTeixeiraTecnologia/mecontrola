@@ -58,7 +58,7 @@ func TestParseInbound_Execute_EmptyText(t *testing.T) {
 	}
 }
 
-func TestParseInbound_Execute_AllKinds(t *testing.T) {
+func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela exaustiva por intent kind
 	t.Parallel()
 
 	cases := []struct {
@@ -132,6 +132,66 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) {
 			llmJSON: "```json\n{\"kind\":\"how_am_i_doing\"}\n```",
 			want:    intent.KindHowAmIDoing,
 		},
+		{
+			name:    "log_card_purchase",
+			llmJSON: `{"kind":"log_card_purchase","amount_cents":120000,"merchant":"supermercado","card_hint":"nubank","installments":6}`,
+			want:    intent.KindLogCardPurchase,
+			check: func(t *testing.T, got intent.Intent) {
+				if got.AmountCents() != 120000 || got.Installments() != 6 || got.CardHint() != "nubank" {
+					t.Fatalf("got = %+v", got)
+				}
+			},
+		},
+		{
+			name:    "list_transactions",
+			llmJSON: `{"kind":"list_transactions","ref_month":"2026-06"}`,
+			want:    intent.KindListTransactions,
+			check: func(t *testing.T, got intent.Intent) {
+				if got.RefMonth() != "2026-06" {
+					t.Fatalf("ref_month = %q", got.RefMonth())
+				}
+			},
+		},
+		{
+			name:    "delete_last_transaction",
+			llmJSON: `{"kind":"delete_last_transaction"}`,
+			want:    intent.KindDeleteLastTransaction,
+		},
+		{
+			name:    "edit_last_transaction",
+			llmJSON: `{"kind":"edit_last_transaction","amount_cents":8000}`,
+			want:    intent.KindEditLastTransaction,
+			check: func(t *testing.T, got intent.Intent) {
+				if got.AmountCents() != 8000 {
+					t.Fatalf("amount_cents = %d", got.AmountCents())
+				}
+			},
+		},
+		{
+			name:    "create_recurring_explicit_direction",
+			llmJSON: `{"kind":"create_recurring","amount_cents":500000,"merchant":"salário","direction":"income","frequency":"monthly","day_of_month":5}`,
+			want:    intent.KindCreateRecurring,
+			check: func(t *testing.T, got intent.Intent) {
+				if got.Direction() != "income" || got.Frequency() != "monthly" || got.DayOfMonth() != 5 {
+					t.Fatalf("got = %+v", got)
+				}
+			},
+		},
+		{
+			name:    "create_recurring_infers_outcome_default",
+			llmJSON: `{"kind":"create_recurring","amount_cents":120000,"merchant":"aluguel","day_of_month":0}`,
+			want:    intent.KindCreateRecurring,
+			check: func(t *testing.T, got intent.Intent) {
+				if got.Direction() != "outcome" || got.Frequency() != "monthly" || got.DayOfMonth() != 1 {
+					t.Fatalf("got = %+v", got)
+				}
+			},
+		},
+		{
+			name:    "list_recurring",
+			llmJSON: `{"kind":"list_recurring"}`,
+			want:    intent.KindListRecurring,
+		},
 	}
 
 	for _, tc := range cases {
@@ -152,6 +212,25 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) {
 				tc.check(t, out.Intent)
 			}
 		})
+	}
+}
+
+func TestParseInbound_Execute_CreateRecurring_InfersIncomeFromText(t *testing.T) {
+	t.Parallel()
+
+	uc := newSUT(t, `{"kind":"create_recurring","amount_cents":500000,"merchant":"salário"}`, nil)
+	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+		UserID: uuid.New(),
+		Text:   "todo mês recebo 5000 de salário",
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if out.Intent.Kind() != intent.KindCreateRecurring {
+		t.Fatalf("kind = %v", out.Intent.Kind())
+	}
+	if out.Intent.Direction() != "income" {
+		t.Fatalf("direction = %q, want income (inferido do texto)", out.Intent.Direction())
 	}
 }
 

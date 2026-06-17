@@ -26,6 +26,19 @@ func TestRenderPersonaSystem_ContainsCanonicalRules(t *testing.T) {
 	require.Contains(t, out, "Kiwify")
 }
 
+func TestRenderPersonaSystem_DescribesAllModuleAreas(t *testing.T) {
+	t.Parallel()
+	out, err := prompting.RenderPersonaSystem(prompting.PersonaSystemData{})
+	require.NoError(t, err)
+
+	require.Contains(t, out, "Categorias")
+	require.Contains(t, out, "Cartões de crédito")
+	require.Contains(t, out, "Orçamento mensal")
+	require.Contains(t, out, "Lançamentos")
+	require.Contains(t, out, "Conta e assinatura")
+	require.Contains(t, out, "fatura fechada")
+}
+
 func TestRenderPersonaSystem_InterpolatesJourneyHint(t *testing.T) {
 	t.Parallel()
 	out, err := prompting.RenderPersonaSystem(prompting.PersonaSystemData{JourneyHint: "Usuário ainda não cadastrou cartões."})

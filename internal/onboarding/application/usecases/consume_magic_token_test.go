@@ -247,10 +247,26 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 			},
 		},
 		{
-			name: "deve retornar erro quando pais nao suportado",
+			name: "deve mapear pais nao suportado para outcome especifico sem erro",
 			setup: func() input.ConsumeMagicTokenInput {
 				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(entities.MagicToken{}, domain.ErrUnsupportedCountry).Once()
 				return s.validInput("+12125551234")
+			},
+			expect: func(result usecases.ConsumeResult, err error) {
+				s.NoError(err)
+				s.Equal(usecases.ConsumeOutcomeUnsupportedCountry, result.Outcome)
+			},
+		},
+		{
+			name: "deve propagar erro quando publish do outbox falha mantendo atomicidade",
+			setup: func() input.ConsumeMagicTokenInput {
+				fromE164 := "+5511999999999"
+				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
+				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
+				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
+				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox unavailable")).Once()
+				return s.validInput(fromE164)
 			},
 			expect: func(result usecases.ConsumeResult, err error) {
 				s.Error(err)

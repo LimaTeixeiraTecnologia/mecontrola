@@ -172,6 +172,7 @@ func (uc *ProcessOnboardingMessage) executeInTx(ctx context.Context, tx database
 func (uc *ProcessOnboardingMessage) allocateEventIDs(state valueobjects.OnboardingState) []uuid.UUID {
 	switch state {
 	case valueobjects.OnboardingStateAwaitingIncome,
+		valueobjects.OnboardingStateAwaitingCardName,
 		valueobjects.OnboardingStateAwaitingCardDueDay:
 		return []uuid.UUID{uc.parseID(uc.idGen.NewID())}
 	case valueobjects.OnboardingStateAwaitingSplitConfirm:

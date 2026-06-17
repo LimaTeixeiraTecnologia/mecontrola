@@ -17,12 +17,21 @@ const (
 	KindMonthlySummary
 	KindHowAmIDoing
 	KindConfigureBudget
+	KindLogIncome
+	KindLogCardPurchase
+	KindListTransactions
+	KindDeleteLastTransaction
+	KindEditLastTransaction
+	KindCreateRecurring
+	KindListRecurring
 )
 
-func (k Kind) String() string {
+func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
 	switch k {
 	case KindLogExpense:
 		return "log_expense"
+	case KindLogIncome:
+		return "log_income"
 	case KindQueryCategory:
 		return "query_category"
 	case KindQueryGoal:
@@ -35,6 +44,18 @@ func (k Kind) String() string {
 		return "how_am_i_doing"
 	case KindConfigureBudget:
 		return "configure_budget"
+	case KindLogCardPurchase:
+		return "log_card_purchase"
+	case KindListTransactions:
+		return "list_transactions"
+	case KindDeleteLastTransaction:
+		return "delete_last_transaction"
+	case KindEditLastTransaction:
+		return "edit_last_transaction"
+	case KindCreateRecurring:
+		return "create_recurring"
+	case KindListRecurring:
+		return "list_recurring"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -42,10 +63,12 @@ func (k Kind) String() string {
 	}
 }
 
-func ParseKind(raw string) (Kind, error) {
+func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo por intent kind
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "log_expense":
 		return KindLogExpense, nil
+	case "log_income":
+		return KindLogIncome, nil
 	case "query_category":
 		return KindQueryCategory, nil
 	case "query_goal":
@@ -58,6 +81,18 @@ func ParseKind(raw string) (Kind, error) {
 		return KindHowAmIDoing, nil
 	case "configure_budget":
 		return KindConfigureBudget, nil
+	case "log_card_purchase":
+		return KindLogCardPurchase, nil
+	case "list_transactions":
+		return KindListTransactions, nil
+	case "delete_last_transaction":
+		return KindDeleteLastTransaction, nil
+	case "edit_last_transaction":
+		return KindEditLastTransaction, nil
+	case "create_recurring":
+		return KindCreateRecurring, nil
+	case "list_recurring":
+		return KindListRecurring, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -80,6 +115,11 @@ var (
 	ErrCategoryHintTooLong  = errors.New("agent.intent: category_hint exceeds maximum length")
 	ErrPaymentMethodInvalid = errors.New("agent.intent: payment_method not allowed")
 	ErrCardHintTooLong      = errors.New("agent.intent: card_hint exceeds maximum length")
+	ErrInstallmentsTooFew   = errors.New("agent.intent: installments must be at least 2")
+	ErrInstallmentsTooMany  = errors.New("agent.intent: installments exceed maximum allowed")
+	ErrDirectionInvalid     = errors.New("agent.intent: direction must be income or outcome")
+	ErrFrequencyInvalid     = errors.New("agent.intent: frequency must be monthly or yearly")
+	ErrDayOfMonthInvalid    = errors.New("agent.intent: day_of_month must be between 1 and 31")
 )
 
 const (
@@ -90,6 +130,15 @@ const (
 	maxGoalNameLength     = 120
 	maxCardNameLength     = 120
 	maxRawTextLength      = 4096
+	minInstallments       = 2
+	maxInstallments       = 24
+	minDayOfMonth         = 1
+	maxDayOfMonth         = 31
+)
+
+const (
+	frequencyMonthly = "monthly"
+	frequencyYearly  = "yearly"
 )
 
 const (
@@ -100,6 +149,11 @@ const (
 	paymentMethodTransfer   = "transfer"
 	paymentMethodBoleto     = "boleto"
 	paymentMethodUnknownTag = "unknown"
+)
+
+const (
+	directionIncomeTag  = "income"
+	directionOutcomeTag = "outcome"
 )
 
 type Intent struct {
@@ -114,6 +168,10 @@ type Intent struct {
 	cardName      string
 	refMonth      string
 	rawText       string
+	installments  int
+	direction     string
+	frequency     string
+	dayOfMonth    int
 }
 
 func (i Intent) Kind() Kind            { return i.kind }
@@ -127,6 +185,10 @@ func (i Intent) GoalName() string      { return i.goalName }
 func (i Intent) CardName() string      { return i.cardName }
 func (i Intent) RefMonth() string      { return i.refMonth }
 func (i Intent) RawText() string       { return i.rawText }
+func (i Intent) Installments() int     { return i.installments }
+func (i Intent) Direction() string     { return i.direction }
+func (i Intent) Frequency() string     { return i.frequency }
+func (i Intent) DayOfMonth() int       { return i.dayOfMonth }
 func (i Intent) IsZero() bool          { return i.kind == 0 }
 
 type LogExpenseFields struct {
@@ -167,6 +229,38 @@ func NewLogExpense(f LogExpenseFields) (Intent, error) {
 	}, nil
 }
 
+type LogIncomeFields struct {
+	AmountCents   int64
+	Source        string
+	CategoryHint  string
+	PaymentMethod string
+}
+
+func NewLogIncome(f LogIncomeFields) (Intent, error) {
+	if f.AmountCents <= 0 {
+		return Intent{}, ErrAmountNonPositive
+	}
+	source := strings.TrimSpace(f.Source)
+	if len([]rune(source)) > maxMerchantLength {
+		return Intent{}, ErrMerchantTooLong
+	}
+	categoryHint := strings.TrimSpace(f.CategoryHint)
+	if len([]rune(categoryHint)) > maxCategoryHintLength {
+		return Intent{}, ErrCategoryHintTooLong
+	}
+	paymentMethod, err := normalizePaymentMethod(f.PaymentMethod)
+	if err != nil {
+		return Intent{}, err
+	}
+	return Intent{
+		kind:          KindLogIncome,
+		amountCents:   f.AmountCents,
+		merchant:      source,
+		categoryHint:  categoryHint,
+		paymentMethod: paymentMethod,
+	}, nil
+}
+
 func NewQueryCategory(categoryName string) (Intent, error) {
 	trimmed := strings.TrimSpace(categoryName)
 	if trimmed == "" {
@@ -180,9 +274,6 @@ func NewQueryCategory(categoryName string) (Intent, error) {
 
 func NewQueryGoal(goalName string) (Intent, error) {
 	trimmed := strings.TrimSpace(goalName)
-	if trimmed == "" {
-		return Intent{}, ErrGoalNameEmpty
-	}
 	if len([]rune(trimmed)) > maxGoalNameLength {
 		return Intent{}, ErrGoalNameTooLong
 	}
@@ -191,9 +282,6 @@ func NewQueryGoal(goalName string) (Intent, error) {
 
 func NewQueryCard(cardName string) (Intent, error) {
 	trimmed := strings.TrimSpace(cardName)
-	if trimmed == "" {
-		return Intent{}, ErrCardNameEmpty
-	}
 	if len([]rune(trimmed)) > maxCardNameLength {
 		return Intent{}, ErrCardNameTooLong
 	}
@@ -217,6 +305,115 @@ func NewHowAmIDoing() Intent {
 
 func NewConfigureBudget() Intent {
 	return Intent{kind: KindConfigureBudget}
+}
+
+type LogCardPurchaseFields struct {
+	AmountCents  int64
+	Merchant     string
+	CategoryHint string
+	CardHint     string
+	Installments int
+}
+
+func NewLogCardPurchase(f LogCardPurchaseFields) (Intent, error) {
+	if f.AmountCents <= 0 {
+		return Intent{}, ErrAmountNonPositive
+	}
+	if f.Installments < minInstallments {
+		return Intent{}, ErrInstallmentsTooFew
+	}
+	if f.Installments > maxInstallments {
+		return Intent{}, ErrInstallmentsTooMany
+	}
+	merchant := strings.TrimSpace(f.Merchant)
+	if len([]rune(merchant)) > maxMerchantLength {
+		return Intent{}, ErrMerchantTooLong
+	}
+	categoryHint := strings.TrimSpace(f.CategoryHint)
+	if len([]rune(categoryHint)) > maxCategoryHintLength {
+		return Intent{}, ErrCategoryHintTooLong
+	}
+	cardHint := strings.TrimSpace(f.CardHint)
+	if len([]rune(cardHint)) > maxCardHintLength {
+		return Intent{}, ErrCardHintTooLong
+	}
+	return Intent{
+		kind:         KindLogCardPurchase,
+		amountCents:  f.AmountCents,
+		merchant:     merchant,
+		categoryHint: categoryHint,
+		cardHint:     cardHint,
+		installments: f.Installments,
+	}, nil
+}
+
+func NewListTransactions(refMonth string) (Intent, error) {
+	trimmed := strings.TrimSpace(refMonth)
+	if trimmed == "" {
+		return Intent{kind: KindListTransactions}, nil
+	}
+	if !isYearMonth(trimmed) {
+		return Intent{}, ErrRefMonthInvalid
+	}
+	return Intent{kind: KindListTransactions, refMonth: trimmed}, nil
+}
+
+func NewDeleteLastTransaction() Intent {
+	return Intent{kind: KindDeleteLastTransaction}
+}
+
+func NewEditLastTransaction(amountCents int64) (Intent, error) {
+	if amountCents <= 0 {
+		return Intent{}, ErrAmountNonPositive
+	}
+	return Intent{kind: KindEditLastTransaction, amountCents: amountCents}, nil
+}
+
+type CreateRecurringFields struct {
+	AmountCents  int64
+	Merchant     string
+	CategoryHint string
+	Direction    string
+	Frequency    string
+	DayOfMonth   int
+}
+
+func NewCreateRecurring(f CreateRecurringFields) (Intent, error) {
+	if f.AmountCents <= 0 {
+		return Intent{}, ErrAmountNonPositive
+	}
+	direction, err := normalizeDirection(f.Direction)
+	if err != nil {
+		return Intent{}, err
+	}
+	frequency, err := normalizeFrequency(f.Frequency)
+	if err != nil {
+		return Intent{}, err
+	}
+	if f.DayOfMonth < minDayOfMonth || f.DayOfMonth > maxDayOfMonth {
+		return Intent{}, ErrDayOfMonthInvalid
+	}
+	merchant := strings.TrimSpace(f.Merchant)
+	if len([]rune(merchant)) > maxMerchantLength {
+		return Intent{}, ErrMerchantTooLong
+	}
+	categoryHint := strings.TrimSpace(f.CategoryHint)
+	if len([]rune(categoryHint)) > maxCategoryHintLength {
+		return Intent{}, ErrCategoryHintTooLong
+	}
+	return Intent{
+		kind:         KindCreateRecurring,
+		amountCents:  f.AmountCents,
+		merchant:     merchant,
+		categoryHint: categoryHint,
+		direction:    direction,
+		frequency:    frequency,
+		dayOfMonth:   f.DayOfMonth,
+	}, nil
+}
+
+func NewListRecurring() Intent {
+	return Intent{kind: KindListRecurring}
 }
 
 func NewUnknown(rawText string) (Intent, error) {
@@ -246,6 +443,30 @@ func normalizePaymentMethod(raw string) (string, error) {
 		return trimmed, nil
 	default:
 		return "", fmt.Errorf("agent.intent: %q: %w", raw, ErrPaymentMethodInvalid)
+	}
+}
+
+func normalizeDirection(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case directionIncomeTag:
+		return directionIncomeTag, nil
+	case directionOutcomeTag, "expense":
+		return directionOutcomeTag, nil
+	default:
+		return "", fmt.Errorf("agent.intent: %q: %w", raw, ErrDirectionInvalid)
+	}
+}
+
+func normalizeFrequency(raw string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "" {
+		return frequencyMonthly, nil
+	}
+	switch trimmed {
+	case frequencyMonthly, frequencyYearly:
+		return trimmed, nil
+	default:
+		return "", fmt.Errorf("agent.intent: %q: %w", raw, ErrFrequencyInvalid)
 	}
 }
 

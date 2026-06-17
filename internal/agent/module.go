@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
@@ -177,34 +176,38 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 		CardsUpdate:              cardsAdapter,
 		CardsDelete:              cardsAdapter,
 	}
-	if b.budgetsModule != nil && b.budgetsModule.ListAlertsUC != nil {
-		ports.Budgets = dispatcher.NewBudgetsAdapterFull(
-			b.budgetsModule.ListAlertsUC,
-			b.budgetsModule.GetMonthlySummaryUC,
-			b.budgetsModule.CreateBudgetUC,
-			b.budgetsModule.ActivateBudgetUC,
-			b.budgetsModule.CreateRecurrenceUC,
-			b.budgetsModule.UpsertExpenseUC,
-			b.budgetsModule.DeleteDraftBudgetUC,
-			b.budgetsModule.DeleteExpenseUC,
-		)
-		ports.BudgetsGet = ports.Budgets.(interfaces.BudgetsGetPort)
-		ports.BudgetsCreate = ports.Budgets.(interfaces.BudgetsCreatePort)
-		ports.BudgetsUpdate = ports.Budgets.(interfaces.BudgetsUpdatePort)
-		ports.BudgetsDelete = ports.Budgets.(interfaces.BudgetsDeletePort)
+	if b.budgetsModule == nil || b.budgetsModule.ListAlertsUC == nil {
+		return nil, fmt.Errorf("agent.module: budgets module is incomplete for AGENT_MODE=openrouter")
 	}
-	if b.transactionsModule.ListTransactionsUC != nil {
-		txAdapter := dispatcher.NewTransactionsAdapterFull(
-			b.transactionsModule.ListTransactionsUC,
-			b.transactionsModule.CreateTransactionUC,
-			b.transactionsModule.DeleteTransactionUC,
-			b.transactionsModule.GetTransactionUC,
-		)
-		ports.Transactions = txAdapter
-		ports.TransactionsGet = txAdapter
-		ports.TransactionsCreate = txAdapter
-		ports.TransactionsDelete = txAdapter
+	budgetsAdapter := dispatcher.NewBudgetsAdapterFull(
+		b.budgetsModule.ListAlertsUC,
+		b.budgetsModule.GetMonthlySummaryUC,
+		b.budgetsModule.CreateBudgetUC,
+		b.budgetsModule.ActivateBudgetUC,
+		b.budgetsModule.CreateRecurrenceUC,
+		b.budgetsModule.UpsertExpenseUC,
+		b.budgetsModule.DeleteDraftBudgetUC,
+		b.budgetsModule.DeleteExpenseUC,
+	)
+	ports.Budgets = budgetsAdapter
+	ports.BudgetsGet = budgetsAdapter
+	ports.BudgetsCreate = budgetsAdapter
+	ports.BudgetsUpdate = budgetsAdapter
+	ports.BudgetsDelete = budgetsAdapter
+
+	if b.transactionsModule.ListTransactionsUC == nil || b.transactionsModule.CreateTransactionUC == nil {
+		return nil, fmt.Errorf("agent.module: transactions desabilitado; defina TRANSACTIONS_ENABLED=true para AGENT_MODE=openrouter")
 	}
+	txAdapter := dispatcher.NewTransactionsAdapterFull(
+		b.transactionsModule.ListTransactionsUC,
+		b.transactionsModule.CreateTransactionUC,
+		b.transactionsModule.DeleteTransactionUC,
+		b.transactionsModule.GetTransactionUC,
+	)
+	ports.Transactions = txAdapter
+	ports.TransactionsGet = txAdapter
+	ports.TransactionsCreate = txAdapter
+	ports.TransactionsDelete = txAdapter
 
 	deps := llmRuntimeDeps{
 		Ports: ports,
@@ -236,6 +239,9 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	}
 	b.fillIntentRouterDeps(&deps)
 	b.attachExpenseLogger(&deps)
+	b.attachCardPurchaseLogger(&deps)
+	b.attachTransactionQueries(&deps)
+	b.attachRecurring(&deps)
 	deps.TelegramGateway = b.buildTelegramGateway()
 
 	router, err := appservices.NewIntentRouter(b.o11y, deps)
@@ -264,23 +270,67 @@ func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouter
 }
 
 func (b *agentModuleBuilder) attachExpenseLogger(deps *appservices.IntentRouterDeps) {
-	if b.budgetsModule == nil || b.budgetsModule.UpsertExpenseUC == nil {
+	if b.transactionsModule.CreateTransactionUC == nil {
 		return
 	}
 	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
 		return
 	}
-	loc, err := time.LoadLocation("America/Sao_Paulo")
-	if err != nil {
-		loc = time.UTC
-	}
-	logExpense := usecases.NewLogExpenseFromAgent(
+	logTransaction := usecases.NewLogTransactionFromAgent(
 		b.categoriesModule.SearchDictionaryUC,
-		newExpenseUpserterAdapter(b.budgetsModule.UpsertExpenseUC),
-		loc,
+		newTransactionCreatorAdapter(b.transactionsModule.CreateTransactionUC),
 		b.o11y,
 	)
-	deps.ExpenseLogger = &expenseLoggerAdapter{uc: logExpense}
+	deps.ExpenseLogger = &transactionLoggerAdapter{uc: logTransaction}
+}
+
+func (b *agentModuleBuilder) attachCardPurchaseLogger(deps *appservices.IntentRouterDeps) {
+	if b.transactionsModule.CreateCardPurchaseUC == nil {
+		return
+	}
+	if b.cardModule.ListCardsUC == nil {
+		return
+	}
+	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
+		return
+	}
+	logCardPurchase := usecases.NewLogCardPurchaseFromAgent(
+		b.categoriesModule.SearchDictionaryUC,
+		newCardPurchaseCreatorAdapter(b.cardModule.ListCardsUC, b.transactionsModule.CreateCardPurchaseUC),
+		b.o11y,
+	)
+	deps.CardPurchaseLog = &cardPurchaseLoggerAdapter{uc: logCardPurchase}
+}
+
+func (b *agentModuleBuilder) attachTransactionQueries(deps *appservices.IntentRouterDeps) {
+	if b.transactionsModule.ListTransactionsUC == nil {
+		return
+	}
+	deps.TransactionLister = newTransactionListerAdapter(b.transactionsModule.ListTransactionsUC)
+	if b.transactionsModule.DeleteTransactionUC != nil {
+		deps.LastDeleter = newLastTransactionDeleterAdapter(b.transactionsModule.DeleteTransactionUC)
+	}
+	if b.transactionsModule.GetTransactionUC != nil && b.transactionsModule.UpdateTransactionUC != nil {
+		deps.LastEditor = newLastTransactionEditorAdapter(
+			b.transactionsModule.GetTransactionUC,
+			b.transactionsModule.UpdateTransactionUC,
+		)
+	}
+}
+
+func (b *agentModuleBuilder) attachRecurring(deps *appservices.IntentRouterDeps) {
+	if b.transactionsModule.CreateRecurringTemplateUC != nil &&
+		b.categoriesModule != nil && b.categoriesModule.SearchDictionaryUC != nil {
+		createRecurring := usecases.NewCreateRecurringFromAgent(
+			b.categoriesModule.SearchDictionaryUC,
+			newRecurringTemplateCreatorAdapter(b.transactionsModule.CreateRecurringTemplateUC),
+			b.o11y,
+		)
+		deps.RecurringCreator = &recurringCreatorAdapter{uc: createRecurring}
+	}
+	if b.transactionsModule.ListRecurringTemplatesUC != nil {
+		deps.RecurringLister = newRecurringListerAdapter(b.transactionsModule.ListRecurringTemplatesUC)
+	}
 }
 
 func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound {

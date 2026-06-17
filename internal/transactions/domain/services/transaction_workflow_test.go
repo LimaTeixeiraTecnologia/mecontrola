@@ -39,6 +39,43 @@ func buildCreateTransactionCmd(t *testing.T) commands.CreateTransaction {
 	}
 }
 
+func TestTransactionWorkflow_DecideCreate_PopulatesCategory(t *testing.T) {
+	sut := services.TransactionWorkflow{}
+	now := time.Date(2024, 3, 15, 12, 0, 0, 0, time.UTC)
+	txID := uuid.New()
+	eventID := uuid.New()
+
+	catID := valueobjects.CategoryIDFromUUID(uuid.New())
+	subID := valueobjects.SubcategoryIDFromUUID(uuid.New())
+	cmd := buildCreateTransactionCmd(t)
+	cmd.CategoryID = catID
+	cmd.SubcategoryID = option.Some(subID)
+
+	decision := sut.DecideCreate(cmd, txID, eventID, now)
+
+	evt, ok := decision.Event.(entities.TransactionCreated)
+	require.True(t, ok)
+	assert.Equal(t, catID.UUID(), evt.CategoryID)
+	assert.Equal(t, subID.UUID(), evt.SubcategoryID)
+}
+
+func TestTransactionWorkflow_DecideCreate_NoSubcategory_UsesNil(t *testing.T) {
+	sut := services.TransactionWorkflow{}
+	now := time.Date(2024, 3, 15, 12, 0, 0, 0, time.UTC)
+	txID := uuid.New()
+	eventID := uuid.New()
+
+	cmd := buildCreateTransactionCmd(t)
+	cmd.SubcategoryID = option.None[valueobjects.SubcategoryID]()
+
+	decision := sut.DecideCreate(cmd, txID, eventID, now)
+
+	evt, ok := decision.Event.(entities.TransactionCreated)
+	require.True(t, ok)
+	assert.Equal(t, uuid.Nil, evt.SubcategoryID)
+	assert.Equal(t, cmd.CategoryID.UUID(), evt.CategoryID)
+}
+
 func TestTransactionWorkflow_DecideCreate(t *testing.T) {
 	sut := services.TransactionWorkflow{}
 	now := time.Date(2024, 3, 15, 12, 0, 0, 0, time.UTC)

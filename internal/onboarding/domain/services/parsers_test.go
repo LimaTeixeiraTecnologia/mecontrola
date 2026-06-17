@@ -79,18 +79,65 @@ func TestParseDay(t *testing.T) {
 func TestParseYesNo(t *testing.T) {
 	t.Parallel()
 
-	yes := []string{"sim", "Sim", "SIM", "s", "claro", "quero", "ok", "yes", "y"}
+	yes := []string{
+		"sim", "Sim", "SIM", "s", "claro", "quero", "ok", "yes", "y",
+		"pode", "manda", "isso", "confirmo", "bora", "claro que sim",
+		"sim cadastrar", "sim, cadastrar", "tá bom", "ta bom", "pode sim",
+		"sim!", "pode ser", "beleza",
+	}
 	for _, in := range yes {
 		v, ok := parseYesNo(in)
 		require.True(t, ok, "input=%q", in)
 		require.True(t, v, "input=%q", in)
 	}
-	no := []string{"nao", "não", "n", "no"}
+	no := []string{"nao", "não", "n", "no", "agora nao", "negativo", "nope"}
 	for _, in := range no {
 		v, ok := parseYesNo(in)
 		require.True(t, ok, "input=%q", in)
 		require.False(t, v, "input=%q", in)
 	}
-	_, ok := parseYesNo("maybe")
-	require.False(t, ok)
+	unknown := []string{"maybe", "talvez", "sei la", ""}
+	for _, in := range unknown {
+		_, ok := parseYesNo(in)
+		require.False(t, ok, "input=%q", in)
+	}
+}
+
+func TestParseCardShortcut(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		input       string
+		wantOk      bool
+		wantName    string
+		wantLimit   int64
+		wantClosing int
+		wantDue     int
+	}{
+		{"keywords_curtas", "Nubank 10000 fecha 1 vence 1", true, "Nubank", 1000000, 1, 1},
+		{"keywords_longas", "Nubank limite 10000 fechamento 1 vencimento 1", true, "Nubank", 1000000, 1, 1},
+		{"posicional", "Inter 5000 27 5", true, "Inter", 500000, 27, 5},
+		{"nome_composto", "Cartao Inter 5000 27 5", true, "Cartao Inter", 500000, 27, 5},
+		{"com_rs", "Nubank R$ 5000 27 5", true, "Nubank", 500000, 27, 5},
+		{"so_nome", "Nubank", false, "", 0, 0, 0},
+		{"sem_campos_suficientes", "Nubank 5000 27", false, "", 0, 0, 0},
+		{"dia_invalido", "Nubank 5000 99 5", false, "", 0, 0, 0},
+		{"vazio", "", false, "", 0, 0, 0},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			card, ok := parseCardShortcut(tc.input)
+			require.Equal(t, tc.wantOk, ok, "input=%q", tc.input)
+			if tc.wantOk {
+				require.Equal(t, tc.wantName, card.Name)
+				require.Equal(t, tc.wantLimit, card.LimitCents)
+				require.Equal(t, tc.wantClosing, card.ClosingDay)
+				require.Equal(t, tc.wantDue, card.DueDay)
+			}
+		})
+	}
 }

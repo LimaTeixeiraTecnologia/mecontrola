@@ -67,8 +67,7 @@ func (d *IntentDispatcher) Dispatch(ctx context.Context, userID uuid.UUID, outco
 		d.dispatchErrors.Add(ctx, 1, moduleLabel, actionLabel, observability.String("reason", classifyError(err)))
 		span.RecordError(err)
 		if errors.Is(err, ErrIntentUnsupported) {
-			fallback := fmt.Sprintf("Ainda nao consigo executar %s.%s, mas anotei seu pedido.",
-				module.String(), action.String())
+			fallback := "Ainda nao consigo fazer isso por aqui e nao registrei nada. Posso te ajudar com seus cartoes, orcamento, lancamentos ou categorias?"
 			d.dispatchTotal.Add(ctx, 1, moduleLabel, actionLabel, observability.String("outcome", "unsupported"))
 			return interfaces.DispatchResult{ReplyText: fallback, WasApplied: false}, nil
 		}

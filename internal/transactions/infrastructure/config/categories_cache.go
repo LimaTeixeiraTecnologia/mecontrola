@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -19,6 +20,17 @@ var OfficialRootSlugs = []string{
 	"expense.prazeres",
 	"expense.metas",
 	"expense.liberdade_financeira",
+}
+
+var OfficialIncomeRootSlugs = []string{
+	"income.salario",
+	"income.renda_variavel",
+	"income.investimentos",
+	"income.aluguel_recebido",
+	"income.restituicoes_e_cashback",
+	"income.presentes_recebidos",
+	"income.vendas",
+	"income.outras_receitas",
 }
 
 type subcategoryEntry struct {
@@ -59,14 +71,27 @@ func (c *CategoriesCache) Boot(ctx context.Context) error {
 		return fmt.Errorf("transactions/categories_cache: esperado %d raízes, obtidas %d", len(OfficialRootSlugs), len(roots))
 	}
 
+	incomeRoots, err := c.reader.ResolveRootsBySlug(ctx, OfficialIncomeRootSlugs)
+	if err != nil {
+		return fmt.Errorf("transactions/categories_cache: resolver raízes de receita no boot: %w", err)
+	}
+
+	if len(incomeRoots) != len(OfficialIncomeRootSlugs) {
+		return fmt.Errorf("transactions/categories_cache: esperado %d raízes de receita, obtidas %d", len(OfficialIncomeRootSlugs), len(incomeRoots))
+	}
+
 	version, err := c.reader.EditorialVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("transactions/categories_cache: ler versão editorial no boot: %w", err)
 	}
 
+	merged := make(map[string]uuid.UUID, len(roots)+len(incomeRoots))
+	maps.Copy(merged, roots)
+	maps.Copy(merged, incomeRoots)
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.roots = roots
+	c.roots = merged
 	c.lastVersion = version
 
 	return nil

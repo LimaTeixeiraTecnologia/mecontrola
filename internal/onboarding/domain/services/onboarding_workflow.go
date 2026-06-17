@@ -70,7 +70,7 @@ func (w OnboardingWorkflow) DecideNext(
 		return decideCardDecision(payload, text)
 
 	case valueobjects.OnboardingStateAwaitingCardName:
-		return decideCardName(payload, text)
+		return decideCardName(session, payload, channel, text, eventIDs, now)
 
 	case valueobjects.OnboardingStateAwaitingCardLimit:
 		return decideCardLimit(payload, text)
@@ -167,71 +167,7 @@ func decideCardDecision(payload entities.OnboardingSessionPayload, text string) 
 	}, nil
 }
 
-func decideCardName(payload entities.OnboardingSessionPayload, text string) (DecisionOutcome, error) {
-	if text == "" {
-		return DecisionOutcome{
-			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Envie o nome do cartao (ex: Nubank).",
-		}, nil
-	}
-	pending := payload.PendingCard
-	pending.Name = text
-	payload.PendingCard = pending
-	payload.HasPending = true
-	return DecisionOutcome{
-		Kind:         DecisionKindAdvanceState,
-		NewState:     valueobjects.OnboardingStateAwaitingCardLimit,
-		NewPayload:   payload,
-		OutboundText: "Qual o limite total do cartao?",
-	}, nil
-}
-
-func decideCardLimit(payload entities.OnboardingSessionPayload, text string) (DecisionOutcome, error) {
-	cents, ok := parseMonetary(text)
-	if !ok || cents <= 0 {
-		return DecisionOutcome{
-			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Nao entendi o limite. Envie por exemplo: R$ 5000.",
-		}, nil
-	}
-	pending := payload.PendingCard
-	pending.LimitCents = cents
-	payload.PendingCard = pending
-	return DecisionOutcome{
-		Kind:         DecisionKindAdvanceState,
-		NewState:     valueobjects.OnboardingStateAwaitingCardClosingDay,
-		NewPayload:   payload,
-		OutboundText: "Qual o dia de fechamento da fatura (1 a 31)?",
-	}, nil
-}
-
-func decideCardClosingDay(payload entities.OnboardingSessionPayload, text string) (DecisionOutcome, error) {
-	day, ok := parseDay(text)
-	if !ok {
-		return DecisionOutcome{
-			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Envie um dia entre 1 e 31.",
-		}, nil
-	}
-	closing, err := valueobjects.NewCardClosingDay(day)
-	if err != nil {
-		return DecisionOutcome{
-			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Envie um dia entre 1 e 31.",
-		}, nil
-	}
-	pending := payload.PendingCard
-	pending.ClosingDay = closing.Value()
-	payload.PendingCard = pending
-	return DecisionOutcome{
-		Kind:         DecisionKindAdvanceState,
-		NewState:     valueobjects.OnboardingStateAwaitingCardDueDay,
-		NewPayload:   payload,
-		OutboundText: "E o dia de vencimento (1 a 31)?",
-	}, nil
-}
-
-func decideCardDueDay(
+func decideCardName(
 	session entities.OnboardingSession,
 	payload entities.OnboardingSessionPayload,
 	channel string,
@@ -239,26 +175,38 @@ func decideCardDueDay(
 	eventIDs []uuid.UUID,
 	now time.Time,
 ) (DecisionOutcome, error) {
-	day, ok := parseDay(text)
-	if !ok {
+	if strings.TrimSpace(text) == "" {
 		return DecisionOutcome{
 			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Envie um dia entre 1 e 31.",
+			OutboundText: "Envie o nome do cartao (ex: Nubank).",
 		}, nil
 	}
-	due, err := valueobjects.NewCardDueDay(day)
-	if err != nil {
-		return DecisionOutcome{
-			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Envie um dia entre 1 e 31.",
-		}, nil
-	}
-	if len(eventIDs) < 1 {
-		return DecisionOutcome{}, fmt.Errorf("onboarding: decide card due day: missing event id")
+	if card, ok := parseCardShortcut(text); ok {
+		return finalizeCard(session, payload, channel, card, eventIDs, now)
 	}
 	pending := payload.PendingCard
-	pending.DueDay = due.Value()
-	card := pending
+	pending.Name = strings.TrimSpace(text)
+	payload.PendingCard = pending
+	payload.HasPending = true
+	return DecisionOutcome{
+		Kind:         DecisionKindAdvanceState,
+		NewState:     valueobjects.OnboardingStateAwaitingCardLimit,
+		NewPayload:   payload,
+		OutboundText: "Qual o limite total do cartao? (ex: R$ 5000). Dica: voce pode mandar tudo de uma vez, ex: Nubank 5000 fecha 27 vence 5.",
+	}, nil
+}
+
+func finalizeCard(
+	session entities.OnboardingSession,
+	payload entities.OnboardingSessionPayload,
+	channel string,
+	card entities.OnboardingCardDraft,
+	eventIDs []uuid.UUID,
+	now time.Time,
+) (DecisionOutcome, error) {
+	if len(eventIDs) < 1 {
+		return DecisionOutcome{}, fmt.Errorf("onboarding: finalize card: missing event id")
+	}
 	payload.Cards = append(payload.Cards, card)
 	payload.PendingCard = entities.OnboardingCardDraft{}
 	payload.HasPending = false
@@ -276,9 +224,95 @@ func decideCardDueDay(
 		Kind:         DecisionKindAdvanceState,
 		NewState:     valueobjects.OnboardingStateAwaitingMoreCards,
 		NewPayload:   payload,
-		OutboundText: "Cartao salvo. Quer cadastrar outro? sim ou nao.",
+		OutboundText: cardSavedSummary(card),
 		DomainEvents: []entities.OnboardingDomainEvent{evt},
 	}, nil
+}
+
+func cardSavedSummary(card entities.OnboardingCardDraft) string {
+	return fmt.Sprintf(
+		"Cartao salvo: %s, limite R$ %s, fecha dia %d e vence dia %d. Quer cadastrar outro? sim ou nao.",
+		card.Name,
+		formatCents(card.LimitCents),
+		card.ClosingDay,
+		card.DueDay,
+	)
+}
+
+func formatCents(cents int64) string {
+	return strconv.FormatInt(cents/100, 10)
+}
+
+func decideCardLimit(payload entities.OnboardingSessionPayload, text string) (DecisionOutcome, error) {
+	cents, ok := parseMonetary(text)
+	if !ok || cents <= 0 {
+		return DecisionOutcome{
+			Kind:         DecisionKindReplyOnly,
+			OutboundText: "Nao entendi o limite. Envie so o valor, por exemplo: R$ 5000.",
+		}, nil
+	}
+	pending := payload.PendingCard
+	pending.LimitCents = cents
+	payload.PendingCard = pending
+	return DecisionOutcome{
+		Kind:         DecisionKindAdvanceState,
+		NewState:     valueobjects.OnboardingStateAwaitingCardClosingDay,
+		NewPayload:   payload,
+		OutboundText: "Qual o dia de fechamento da fatura? Envie um numero entre 1 e 31 (ex: 27).",
+	}, nil
+}
+
+func decideCardClosingDay(payload entities.OnboardingSessionPayload, text string) (DecisionOutcome, error) {
+	day, ok := parseDay(text)
+	if !ok {
+		return DecisionOutcome{
+			Kind:         DecisionKindReplyOnly,
+			OutboundText: "Envie o dia de fechamento entre 1 e 31 (ex: 27).",
+		}, nil
+	}
+	closing, err := valueobjects.NewCardClosingDay(day)
+	if err != nil {
+		return DecisionOutcome{
+			Kind:         DecisionKindReplyOnly,
+			OutboundText: "Envie o dia de fechamento entre 1 e 31 (ex: 27).",
+		}, nil
+	}
+	pending := payload.PendingCard
+	pending.ClosingDay = closing.Value()
+	payload.PendingCard = pending
+	return DecisionOutcome{
+		Kind:         DecisionKindAdvanceState,
+		NewState:     valueobjects.OnboardingStateAwaitingCardDueDay,
+		NewPayload:   payload,
+		OutboundText: "E o dia de vencimento? Envie um numero entre 1 e 31 (ex: 5).",
+	}, nil
+}
+
+func decideCardDueDay(
+	session entities.OnboardingSession,
+	payload entities.OnboardingSessionPayload,
+	channel string,
+	text string,
+	eventIDs []uuid.UUID,
+	now time.Time,
+) (DecisionOutcome, error) {
+	day, ok := parseDay(text)
+	if !ok {
+		return DecisionOutcome{
+			Kind:         DecisionKindReplyOnly,
+			OutboundText: "Envie o dia de vencimento entre 1 e 31 (ex: 5).",
+		}, nil
+	}
+	due, err := valueobjects.NewCardDueDay(day)
+	if err != nil {
+		return DecisionOutcome{
+			Kind:         DecisionKindReplyOnly,
+			OutboundText: "Envie o dia de vencimento entre 1 e 31 (ex: 5).",
+		}, nil
+	}
+	pending := payload.PendingCard
+	pending.DueDay = due.Value()
+	return finalizeCard(session, payload, channel, pending, eventIDs, now)
 }
 
 func decideMoreCards(payload entities.OnboardingSessionPayload, text string) (DecisionOutcome, error) {
@@ -319,19 +353,28 @@ func decideSplitConfirm(
 	eventIDs []uuid.UUID,
 	now time.Time,
 ) (DecisionOutcome, error) {
-	if isAdjustIntent(text) {
-		return DecisionOutcome{
-			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Ajuste manual ainda nao esta disponivel por aqui. Confirme com sim para usar a sugestao.",
-		}, nil
-	}
 	yes, ok := parseYesNo(text)
-	if !ok || !yes {
+	switch {
+	case ok && yes:
+		return completeSplitConfirm(session, payload, channel, eventIDs, now, "Pronto! Onboarding concluido. Bora comecar.")
+	case isAdjustIntent(text) || (ok && !yes):
+		return completeSplitConfirm(session, payload, channel, eventIDs, now, "Sem problema! Vou aplicar a sugestao padrao das 5 categorias para voce ja comecar. Da pra ajustar depois aqui no app.")
+	default:
 		return DecisionOutcome{
 			Kind:         DecisionKindReplyOnly,
-			OutboundText: "Confirme com sim para usar a sugestao das categorias.",
+			OutboundText: "Nao entendi. Responda sim para usar a sugestao das 5 categorias e concluir, ou nao para aplicar a sugestao padrao mesmo assim.",
 		}, nil
 	}
+}
+
+func completeSplitConfirm(
+	session entities.OnboardingSession,
+	payload entities.OnboardingSessionPayload,
+	channel string,
+	eventIDs []uuid.UUID,
+	now time.Time,
+	outbound string,
+) (DecisionOutcome, error) {
 	if len(eventIDs) < 2 {
 		return DecisionOutcome{}, fmt.Errorf("onboarding: decide split confirm: missing event ids")
 	}
@@ -353,9 +396,163 @@ func decideSplitConfirm(
 		Kind:         DecisionKindComplete,
 		NewState:     valueobjects.OnboardingStateActive,
 		NewPayload:   payload,
-		OutboundText: "Pronto! Onboarding concluido. Bora comecar.",
+		OutboundText: outbound,
 		DomainEvents: []entities.OnboardingDomainEvent{splitEvt, completeEvt},
 	}, nil
+}
+
+func parseCardShortcut(text string) (entities.OnboardingCardDraft, bool) {
+	tokens := strings.Fields(strings.TrimSpace(text))
+	if len(tokens) < 4 {
+		return entities.OnboardingCardDraft{}, false
+	}
+	name, rest := splitCardName(tokens)
+	if name == "" || len(rest) == 0 {
+		return entities.OnboardingCardDraft{}, false
+	}
+	limit, closing, due, ok := extractCardFields(rest)
+	if !ok {
+		return entities.OnboardingCardDraft{}, false
+	}
+	if _, err := valueobjects.NewCardClosingDay(closing); err != nil {
+		return entities.OnboardingCardDraft{}, false
+	}
+	if _, err := valueobjects.NewCardDueDay(due); err != nil {
+		return entities.OnboardingCardDraft{}, false
+	}
+	return entities.OnboardingCardDraft{
+		Name:       name,
+		LimitCents: limit,
+		ClosingDay: closing,
+		DueDay:     due,
+	}, true
+}
+
+func splitCardName(tokens []string) (string, []string) {
+	nameParts := make([]string, 0, len(tokens))
+	for i, tok := range tokens {
+		if isCardFieldToken(tok) {
+			return strings.Join(nameParts, " "), tokens[i:]
+		}
+		nameParts = append(nameParts, tok)
+	}
+	return "", nil
+}
+
+func isCardFieldToken(tok string) bool {
+	if _, ok := parseMonetary(tok); ok {
+		return true
+	}
+	return isCardFieldKeyword(tok)
+}
+
+func isCardFieldKeyword(tok string) bool {
+	switch strings.ToLower(tok) {
+	case "limite", "lim", "fecha", "fechamento", "fechar", "vence", "vencimento", "vencer", "r$", "rs":
+		return true
+	}
+	return false
+}
+
+func extractCardFields(tokens []string) (int64, int, int, bool) {
+	var limit int64
+	var closing, due int
+	haveLimit, haveClosing, haveDue := false, false, false
+	positional := make([]string, 0, len(tokens))
+	field := ""
+	for _, tok := range tokens {
+		low := strings.ToLower(tok)
+		switch {
+		case isLimitKeyword(low):
+			field = "limit"
+		case isClosingKeyword(low):
+			field = "closing"
+		case isDueKeyword(low):
+			field = "due"
+		case low == "r$" || low == "rs":
+			field = "limit"
+		default:
+			if !applyCardFieldValue(field, tok, &limit, &closing, &due, &haveLimit, &haveClosing, &haveDue) {
+				positional = append(positional, tok)
+			}
+			field = ""
+		}
+	}
+	return resolveCardFields(positional, limit, closing, due, haveLimit, haveClosing, haveDue)
+}
+
+func applyCardFieldValue(
+	field, tok string,
+	limit *int64,
+	closing, due *int,
+	haveLimit, haveClosing, haveDue *bool,
+) bool {
+	switch field {
+	case "limit":
+		if cents, ok := parseMonetary(tok); ok && cents > 0 {
+			*limit, *haveLimit = cents, true
+			return true
+		}
+	case "closing":
+		if d, ok := parseDay(tok); ok {
+			*closing, *haveClosing = d, true
+			return true
+		}
+	case "due":
+		if d, ok := parseDay(tok); ok {
+			*due, *haveDue = d, true
+			return true
+		}
+	}
+	return false
+}
+
+func resolveCardFields(
+	positional []string,
+	limit int64,
+	closing, due int,
+	haveLimit, haveClosing, haveDue bool,
+) (int64, int, int, bool) {
+	for _, tok := range positional {
+		switch {
+		case !haveLimit:
+			cents, ok := parseMonetary(tok)
+			if !ok || cents <= 0 {
+				return 0, 0, 0, false
+			}
+			limit, haveLimit = cents, true
+		case !haveClosing:
+			d, ok := parseDay(tok)
+			if !ok {
+				return 0, 0, 0, false
+			}
+			closing, haveClosing = d, true
+		case !haveDue:
+			d, ok := parseDay(tok)
+			if !ok {
+				return 0, 0, 0, false
+			}
+			due, haveDue = d, true
+		default:
+			return 0, 0, 0, false
+		}
+	}
+	if !haveLimit || !haveClosing || !haveDue {
+		return 0, 0, 0, false
+	}
+	return limit, closing, due, true
+}
+
+func isLimitKeyword(s string) bool {
+	return s == "limite" || s == "lim"
+}
+
+func isClosingKeyword(s string) bool {
+	return s == "fecha" || s == "fechamento" || s == "fechar"
+}
+
+func isDueKeyword(s string) bool {
+	return s == "vence" || s == "vencimento" || s == "vencer"
 }
 
 func transitionToSplit(payload entities.OnboardingSessionPayload) (entities.OnboardingSessionPayload, string, error) {
@@ -487,15 +684,49 @@ func parseDay(text string) (int, bool) {
 }
 
 func parseYesNo(text string) (bool, bool) {
-	s := strings.ToLower(strings.TrimSpace(text))
-	switch s {
-	case "sim", "s", "claro", "quero", "ok", "okay", "sim!", "vamos", "yes", "y":
-		return true, true
-	case "nao", "não", "n", "no", "agora nao", "agora não":
-		return false, true
-	default:
+	s := normalizeYesNo(text)
+	if s == "" {
 		return false, false
 	}
+	if isNegation(s) {
+		return false, true
+	}
+	if isAffirmation(s) {
+		return true, true
+	}
+	return false, false
+}
+
+func normalizeYesNo(text string) string {
+	s := strings.ToLower(strings.TrimSpace(text))
+	s = strings.TrimRight(s, "!.? ")
+	return strings.TrimSpace(s)
+}
+
+func isNegation(s string) bool {
+	switch s {
+	case "nao", "não", "n", "no", "agora nao", "agora não", "negativo", "nope":
+		return true
+	}
+	return false
+}
+
+func isAffirmation(s string) bool {
+	switch s {
+	case "sim", "s", "claro", "quero", "ok", "okay", "vamos", "yes", "y",
+		"pode", "manda", "isso", "confirmo", "confirmar", "confirma",
+		"bora", "claro que sim", "sim cadastrar", "sim, cadastrar",
+		"ta bom", "tá bom", "ta", "tá", "beleza", "blz", "pode sim", "pode ser":
+		return true
+	}
+	switch {
+	case strings.HasPrefix(s, "sim "),
+		strings.HasPrefix(s, "sim,"),
+		strings.HasPrefix(s, "pode "),
+		strings.HasPrefix(s, "claro "):
+		return true
+	}
+	return false
 }
 
 func isAdjustIntent(text string) bool {

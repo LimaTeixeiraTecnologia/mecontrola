@@ -17,6 +17,8 @@ type TransactionCreated struct {
 	PaymentMethod valueobjects.PaymentMethod `json:"payment_method"`
 	AmountCents   int64                      `json:"amount_cents"`
 	RefMonth      valueobjects.RefMonth      `json:"ref_month"`
+	CategoryID    uuid.UUID                  `json:"category_id"`
+	SubcategoryID uuid.UUID                  `json:"subcategory_id"`
 }
 
 type TransactionUpdated struct {

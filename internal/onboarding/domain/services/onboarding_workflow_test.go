@@ -152,13 +152,119 @@ func TestDecideNext_SplitConfirm_Yes_CompletesOnboarding(t *testing.T) {
 	require.Len(t, got.DomainEvents, 2)
 }
 
-func TestDecideNext_SplitConfirm_AdjustIntent_RepliesOnly(t *testing.T) {
+func splitPayload() entities.OnboardingSessionPayload {
+	return entities.OnboardingSessionPayload{Split: []entities.OnboardingCardSplitEntry{
+		{Kind: "fixed_cost", Percent: 40},
+		{Kind: "knowledge", Percent: 10},
+		{Kind: "pleasures", Percent: 15},
+		{Kind: "goals", Percent: 20},
+		{Kind: "financial_freedom", Percent: 15},
+	}}
+}
+
+func TestDecideNext_SplitConfirm_AdjustIntent_AppliesDefaultAndCompletes(t *testing.T) {
 	t.Parallel()
 	w := services.NewOnboardingWorkflow()
-	s := newSession(t, valueobjects.OnboardingStateAwaitingSplitConfirm, entities.OnboardingSessionPayload{})
-	got, err := w.DecideNext(s, services.InboundMessage{Text: "quero ajustar"}, nil, time.Now().UTC())
+	s := newSession(t, valueobjects.OnboardingStateAwaitingSplitConfirm, splitPayload())
+	got, err := w.DecideNext(s, services.InboundMessage{Text: "quero ajustar"}, ids(2), time.Now().UTC())
 	require.NoError(t, err)
-	require.Equal(t, services.DecisionKindReplyOnly, got.Kind)
+	require.Equal(t, services.DecisionKindComplete, got.Kind)
+	require.Equal(t, valueobjects.OnboardingStateActive, got.NewState)
+	require.Len(t, got.DomainEvents, 2)
+	require.NotEmpty(t, got.OutboundText)
+}
+
+func TestDecideNext_SplitConfirm_ExitsState(t *testing.T) {
+	t.Parallel()
+	w := services.NewOnboardingWorkflow()
+
+	cases := []struct {
+		name     string
+		text     string
+		wantKind services.DecisionKind
+	}{
+		{"sim", "sim", services.DecisionKindComplete},
+		{"sim_cadastrar", "Sim, cadastrar", services.DecisionKindComplete},
+		{"ta_bom", "tá bom", services.DecisionKindComplete},
+		{"pode", "pode", services.DecisionKindComplete},
+		{"nao_applies_default", "Não", services.DecisionKindComplete},
+		{"unrecognized_reprompts_once", "talvez depois", services.DecisionKindReplyOnly},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := newSession(t, valueobjects.OnboardingStateAwaitingSplitConfirm, splitPayload())
+			got, err := w.DecideNext(s, services.InboundMessage{Text: tc.text}, ids(2), time.Now().UTC())
+			require.NoError(t, err)
+			require.Equal(t, tc.wantKind, got.Kind, "text=%q", tc.text)
+			require.NotEmpty(t, got.OutboundText)
+			if tc.wantKind == services.DecisionKindComplete {
+				require.Equal(t, valueobjects.OnboardingStateActive, got.NewState)
+				require.Len(t, got.DomainEvents, 2)
+			}
+		})
+	}
+}
+
+func TestDecideNext_CardName_MultiFieldShortcut(t *testing.T) {
+	t.Parallel()
+	w := services.NewOnboardingWorkflow()
+	now := time.Now().UTC()
+
+	cases := []struct {
+		name    string
+		text    string
+		limit   int64
+		closing int
+		due     int
+	}{
+		{"keywords_curtas", "Nubank 10000 fecha 1 vence 1", 1000000, 1, 1},
+		{"keywords_longas", "Nubank limite 10000 fechamento 1 vencimento 1", 1000000, 1, 1},
+		{"posicional", "Inter 5000 27 5", 500000, 27, 5},
+		{"nome_composto", "Cartao Inter 5000 27 5", 500000, 27, 5},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := newSession(t, valueobjects.OnboardingStateAwaitingCardName, entities.OnboardingSessionPayload{IncomeCents: 350000, HasPending: true})
+			got, err := w.DecideNext(s, services.InboundMessage{Text: tc.text}, ids(1), now)
+			require.NoError(t, err)
+			require.Equal(t, valueobjects.OnboardingStateAwaitingMoreCards, got.NewState)
+			require.Len(t, got.NewPayload.Cards, 1)
+			card := got.NewPayload.Cards[0]
+			require.Equal(t, tc.limit, card.LimitCents)
+			require.Equal(t, tc.closing, card.ClosingDay)
+			require.Equal(t, tc.due, card.DueDay)
+			require.Len(t, got.DomainEvents, 1)
+			_, ok := got.DomainEvents[0].(entities.CardRegistered)
+			require.True(t, ok)
+		})
+	}
+}
+
+func TestDecideNext_CardName_NotAShortcut_FallsBackToFieldByField(t *testing.T) {
+	t.Parallel()
+	w := services.NewOnboardingWorkflow()
+	s := newSession(t, valueobjects.OnboardingStateAwaitingCardName, entities.OnboardingSessionPayload{IncomeCents: 350000, HasPending: true})
+	got, err := w.DecideNext(s, services.InboundMessage{Text: "Nubank"}, ids(1), time.Now().UTC())
+	require.NoError(t, err)
+	require.Equal(t, valueobjects.OnboardingStateAwaitingCardLimit, got.NewState)
+	require.Equal(t, "Nubank", got.NewPayload.PendingCard.Name)
+	require.Empty(t, got.DomainEvents)
+}
+
+func TestDecideNext_CardName_InvalidShortcutDay_FallsBack(t *testing.T) {
+	t.Parallel()
+	w := services.NewOnboardingWorkflow()
+	s := newSession(t, valueobjects.OnboardingStateAwaitingCardName, entities.OnboardingSessionPayload{IncomeCents: 350000, HasPending: true})
+	got, err := w.DecideNext(s, services.InboundMessage{Text: "Nubank 5000 fecha 99 vence 5"}, ids(1), time.Now().UTC())
+	require.NoError(t, err)
+	require.Equal(t, valueobjects.OnboardingStateAwaitingCardLimit, got.NewState)
+	require.Equal(t, "Nubank 5000 fecha 99 vence 5", got.NewPayload.PendingCard.Name)
 }
 
 func TestDecideNext_Active_NoOp(t *testing.T) {

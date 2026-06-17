@@ -45,8 +45,12 @@ type TransactionsModule struct {
 	EventHandlers                   []EventHandlerRegistration
 	ListTransactionsUC              *usecases.ListTransactions
 	CreateTransactionUC             *usecases.CreateTransaction
+	UpdateTransactionUC             *usecases.UpdateTransaction
 	DeleteTransactionUC             *usecases.DeleteTransaction
 	GetTransactionUC                *usecases.GetTransaction
+	CreateCardPurchaseUC            *usecases.CreateCardPurchase
+	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
+	ListRecurringTemplatesUC        *usecases.ListRecurringTemplates
 }
 
 type transactionsModuleBuilder struct {
@@ -295,8 +299,12 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		MonthlySummaryReconcilerJob:     reconcilerJob,
 		ListTransactionsUC:              listTx,
 		CreateTransactionUC:             createTx,
+		UpdateTransactionUC:             updateTx,
 		DeleteTransactionUC:             deleteTx,
 		GetTransactionUC:                getTx,
+		CreateCardPurchaseUC:            createCP,
+		CreateRecurringTemplateUC:       createRT,
+		ListRecurringTemplatesUC:        listRT,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "transactions.transaction.created.v1", Handler: recomputeConsumer},
 			{EventType: "transactions.transaction.updated.v1", Handler: recomputeConsumer},
