@@ -68,7 +68,7 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 	subscriptionLate := usecases.NewProcessSubscriptionLate(subscriptionUoW, factory, publisher, o11y)
 	subscriptionCanceled := usecases.NewProcessSubscriptionCanceled(subscriptionUoW, factory, publisher, o11y)
 	refundOrChargeback := usecases.NewProcessRefundOrChargeback(subscriptionUoW, factory, publisher, o11y)
-	graceExpired := usecases.NewProcessSubscriptionGraceExpired(subscriptionUoW, factory, publisher, o11y)
+	graceExpired := usecases.NewProcessSubscriptionGraceExpired(subscriptionUoW, kiwifyDBTX, factory, publisher, o11y)
 
 	reconcileSubscriptions := usecases.NewReconcileSubscriptions(kiwifyDBTX, factory, kiwifyClient, saleApproved, refundOrChargeback, o11y)
 	processWebhook := usecases.NewProcessKiwifyWebhook(

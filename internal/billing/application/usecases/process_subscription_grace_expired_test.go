@@ -63,7 +63,7 @@ func (s *ProcessSubscriptionGraceExpiredSuite) TestPastDueComGracaVencidaTransit
 		Return(nil).
 		Once()
 
-	sut := usecases.NewProcessSubscriptionGraceExpired(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
+	sut := usecases.NewProcessSubscriptionGraceExpired(s.uowMock, nil, s.factoryMock, s.publisherMock, noop.NewProvider())
 	err := sut.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -77,7 +77,7 @@ func (s *ProcessSubscriptionGraceExpiredSuite) TestQuandoNaoExisteCandidatoNaoEm
 		Return(nil, nil).
 		Once()
 
-	sut := usecases.NewProcessSubscriptionGraceExpired(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
+	sut := usecases.NewProcessSubscriptionGraceExpired(s.uowMock, nil, s.factoryMock, s.publisherMock, noop.NewProvider())
 	err := sut.Execute(s.ctx)
 	s.Require().NoError(err)
 }

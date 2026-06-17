@@ -19,6 +19,7 @@ const graceExpiredBatchDefault = 100
 
 type ProcessSubscriptionGraceExpired struct {
 	uow        uow.UnitOfWork[entities.Subscription]
+	db         database.DBTX
 	factory    interfaces.RepositoryFactory
 	publisher  interfaces.SubscriptionEventPublisher
 	o11y       observability.Observability
@@ -28,6 +29,7 @@ type ProcessSubscriptionGraceExpired struct {
 
 func NewProcessSubscriptionGraceExpired(
 	u uow.UnitOfWork[entities.Subscription],
+	db database.DBTX,
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.SubscriptionEventPublisher,
 	o11y observability.Observability,
@@ -39,6 +41,7 @@ func NewProcessSubscriptionGraceExpired(
 	)
 	return &ProcessSubscriptionGraceExpired{
 		uow:        u,
+		db:         db,
 		factory:    factory,
 		publisher:  publisher,
 		o11y:       o11y,
@@ -51,7 +54,7 @@ func (uc *ProcessSubscriptionGraceExpired) Execute(ctx context.Context) error {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_subscription_grace_expired")
 	defer span.End()
 
-	subRepo := uc.factory.SubscriptionRepository(nil)
+	subRepo := uc.factory.SubscriptionRepository(uc.db)
 	now := time.Now().UTC()
 	candidates, listErr := subRepo.ListPastDueGraceExpired(ctx, now, uc.batchLimit)
 	if listErr != nil {

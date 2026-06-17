@@ -45,7 +45,7 @@ func run() error {
 		return errors.New("--user-wa ou SMOKE_WA e obrigatorio")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	wamid := fmt.Sprintf("wamid.smoke.%d", time.Now().UnixNano())
@@ -62,7 +62,9 @@ func run() error {
 
 	fmt.Println("smoke: webhook POST OK (HTTP 200)")
 
-	if *dbURL != "" {
+	if *dbURL == "" {
+		fmt.Fprintln(os.Stderr, "smoke: WARNING: DB_URL nao configurado — auth_events assertion ignorada")
+	} else {
 		if err := assertAuthEvent(ctx, *dbURL); err != nil {
 			return fmt.Errorf("sql assertion: %w", err)
 		}
@@ -140,23 +142,33 @@ func computeHMAC(secret string, body []byte) string {
 }
 
 func postWebhook(ctx context.Context, url, sig string, body []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("new request: %w", err)
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("new request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Hub-Signature-256", sig)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("attempt %d: http do: %w", attempt, err)
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("esperado HTTP 200, obteve %d", resp.StatusCode)
+		}
+		return nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Hub-Signature-256", sig)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("http do: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("esperado HTTP 200, obteve %d", resp.StatusCode)
-	}
-	return nil
+	return lastErr
 }
 
 func assertAuthEvent(ctx context.Context, dbURL string) error {

@@ -1,0 +1,253 @@
+{
+  "info": {
+    "_postman_id": "b3c1d2e4-f5a6-4789-bcde-012345678901",
+    "name": "MeControla — E2E Fase 2: Webhook → Ativação",
+    "description": "Valida o fluxo completo: checkout session → webhook order_approved → worker processa → email → WhatsApp → banco.\n\nExecutar em ordem:\n  1. Passo 1 — Health Check\n  2. Passo 2 — Checkout Session  (salva {{checkout_token}} automaticamente)\n  3. Passo 3 — Webhook order_approved  (usa {{checkout_token}}, calcula HMAC-SHA1 automaticamente)\n\nPré-condição: VPS healthy, secrets Kiwify configurados, SMTP ativo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://api.mecontrola.app.br",
+      "type": "string",
+      "description": "URL base da API de produção"
+    },
+    {
+      "key": "kiwify_webhook_secret",
+      "value": "47cyjfb3gag",
+      "type": "string",
+      "description": "KIWIFY_WEBHOOK_SECRET configurado na VPS — usado para assinar o webhook com HMAC-SHA1"
+    },
+    {
+      "key": "product_id_monthly",
+      "value": "2d7d8e25-ecfd-45f0-98ba-54a496060959",
+      "type": "string",
+      "description": "ID do produto MONTHLY na conta Kiwify"
+    },
+    {
+      "key": "customer_phone",
+      "value": "+5511986896322",
+      "type": "string",
+      "description": "Número pessoal do cliente de teste (E164) — será o whatsapp_number do usuário criado"
+    },
+    {
+      "key": "customer_email",
+      "value": "jailton.junior94@outlook.com",
+      "type": "string",
+      "description": "Email do cliente de teste — receberá o email de ativação"
+    },
+    {
+      "key": "checkout_token",
+      "value": "",
+      "type": "string",
+      "description": "Preenchido automaticamente pelo Tests do Passo 2"
+    },
+    {
+      "key": "checkout_url",
+      "value": "",
+      "type": "string",
+      "description": "Preenchido automaticamente pelo Tests do Passo 2"
+    },
+    {
+      "key": "webhook_body",
+      "value": "",
+      "type": "string",
+      "description": "Preenchido automaticamente pelo Pre-request Script do Passo 3"
+    },
+    {
+      "key": "webhook_sig",
+      "value": "",
+      "type": "string",
+      "description": "Assinatura HMAC-SHA1 — calculada automaticamente pelo Pre-request Script do Passo 3"
+    }
+  ],
+  "item": [
+    {
+      "name": "Passo 1 — Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Verifica se a API está saudável antes de iniciar os testes.\nEsperado: {\"status\":\"healthy\"}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "",
+              "pm.test('API healthy', () => {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json.status).to.eql('healthy');",
+              "    pm.expect(json.checks.database.status).to.eql('healthy');",
+              "});",
+              "",
+              "console.log('Health:', JSON.stringify(pm.response.json(), null, 2));"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Passo 2 — Checkout Session",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Origin",       "value": "https://www.mecontrola.app.br" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"plan_id\": \"MONTHLY\"}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/onboarding/checkout",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "onboarding", "checkout"]
+        },
+        "description": "Cria um magic token (PENDING) no banco e retorna a URL do Kiwify com ?sck=<token>.\nO token é extraído e salvo em {{checkout_token}} automaticamente para uso no Passo 3.\n\nEsperado: 201 + {\"checkout_url\": \"https://pay.kiwify.com.br/ocPt7sv?sck=<token>\", \"token_id\": \"<uuid>\"}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.to.have.status(201));",
+              "",
+              "const response = pm.response.json();",
+              "",
+              "pm.test('checkout_url presente com sck', () => {",
+              "    pm.expect(response.checkout_url).to.be.a('string').and.include('sck=');",
+              "});",
+              "",
+              "const checkoutUrl = response.checkout_url;",
+              "const token = checkoutUrl.split('sck=')[1].split('&')[0];",
+              "",
+              "pm.test('token extraído — tamanho válido', () => {",
+              "    pm.expect(token).to.be.a('string').and.have.length.above(10);",
+              "});",
+              "",
+              "pm.collectionVariables.set('checkout_token', token);",
+              "pm.collectionVariables.set('checkout_url',   checkoutUrl);",
+              "",
+              "console.log('Checkout URL :', checkoutUrl);",
+              "console.log('Token salvo  :', token);",
+              "console.log('token_id     :', response.token_id);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Passo 3 — Webhook order_approved",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{webhook_body}}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify?signature={{webhook_sig}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "billing", "webhooks", "kiwify"],
+          "query": [{ "key": "signature", "value": "{{webhook_sig}}" }]
+        },
+        "description": "Simula um webhook order_approved do Kiwify.\n\nO Pre-request Script:\n  1. Lê {{checkout_token}} gerado no Passo 2\n  2. Monta o payload JSON com todos os campos esperados pelo handler\n  3. Calcula a assinatura HMAC-SHA1 com {{kiwify_webhook_secret}}\n  4. Salva body e sig como variáveis de coleção\n\nEsperado: 200 + {\"received\": true}"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const token = pm.collectionVariables.get('checkout_token');",
+              "",
+              "if (!token) {",
+              "    throw new Error('checkout_token vazio — execute o Passo 2 primeiro');",
+              "}",
+              "",
+              "const secret = pm.collectionVariables.get('kiwify_webhook_secret');",
+              "const phone  = pm.collectionVariables.get('customer_phone');",
+              "const email  = pm.collectionVariables.get('customer_email');",
+              "const prodId = pm.collectionVariables.get('product_id_monthly');",
+              "const now    = new Date().toISOString().replace(/\\.\\d{3}Z$/, 'Z');",
+              "const ts     = Date.now();",
+              "",
+              "const payload = {",
+              "    order_id:           'test-e2e-' + ts,",
+              "    order_ref:          'test-ref-001',",
+              "    order_status:       'paid',",
+              "    webhook_event_type: 'order_approved',",
+              "    subscription_id:    'sub-test-' + ts,",
+              "    Product: {",
+              "        product_id:   prodId,",
+              "        product_name: 'Me Controla Mensal'",
+              "    },",
+              "    Customer: {",
+              "        email:  email,",
+              "        mobile: phone,",
+              "        CPF:    ''",
+              "    },",
+              "    Subscription: {",
+              "        start_date:   now,",
+              "        next_payment: '2026-07-17T00:00:00Z',",
+              "        status:       'active'",
+              "    },",
+              "    TrackingParameters: {",
+              "        sck: token,",
+              "        s1:  '',",
+              "        src: ''",
+              "    },",
+              "    approved_date: now,",
+              "    updated_at:    now,",
+              "    created_at:    now",
+              "};",
+              "",
+              "const body = JSON.stringify(payload);",
+              "const sig  = CryptoJS.HmacSHA1(body, secret).toString();",
+              "",
+              "pm.collectionVariables.set('webhook_body', body);",
+              "pm.collectionVariables.set('webhook_sig',  sig);",
+              "",
+              "console.log('Token usado  :', token);",
+              "console.log('Assinatura   :', sig);",
+              "console.log('Payload sck  :', payload.TrackingParameters.sck);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "",
+              "pm.test('webhook aceito', () => {",
+              "    pm.expect(pm.response.json().received).to.be.true;",
+              "});",
+              "",
+              "if (pm.response.json().received === true) {",
+              "    console.log('OK — worker vai processar em ~30s. Acompanhe os logs na VPS.');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "response": []
+    }
+  ]
+}

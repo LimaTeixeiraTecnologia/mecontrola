@@ -44,9 +44,14 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 		return output.UpsertUserByWhatsApp{}, err
 	}
 
-	result, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
-		return u.persistUpsert(ctx, tx, whatsapp, email, in.DisplayName)
-	})
+	var result entities.User
+	if tx, ok := database.FromContext(ctx); ok {
+		result, err = u.persistUpsert(ctx, tx, whatsapp, email, in.DisplayName)
+	} else {
+		result, err = u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
+			return u.persistUpsert(ctx, tx, whatsapp, email, in.DisplayName)
+		})
+	}
 
 	if err != nil {
 		if errors.Is(err, application.ErrInvalidWhatsApp) || errors.Is(err, application.ErrInvalidEmail) {

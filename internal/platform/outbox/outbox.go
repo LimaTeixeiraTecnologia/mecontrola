@@ -68,7 +68,7 @@ func NewEvent(input EventInput) (Event, error) {
 		if _, err := uuid.Parse(input.AggregateUserID); err != nil {
 			return Event{}, ErrInvalidAggregateUserID
 		}
-	} else if !isSystemEvent(input.Type) {
+	} else if !isSystemEvent(input.Type) && !isNoUserEvent(input.Type) {
 		slog.Warn("outbox.event.missing_aggregate_user_id", "event_type", input.Type)
 	}
 	if !json.Valid(input.Payload) {

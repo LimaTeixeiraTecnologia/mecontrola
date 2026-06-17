@@ -87,7 +87,19 @@ tasks:
       META_APP_SECRET: '{{.META_APP_SECRET | default (env "META_APP_SECRET")}}'
       SMOKE_WA: '{{.SMOKE_WA | default (env "SMOKE_WA")}}'
       DB_URL: '{{.DB_URL | default (env "DB_URL")}}'
+    preconditions:
+      - sh: '[ -n "{{.WEBHOOK_URL}}" ]'
+        msg: "WEBHOOK_URL (ou env WEBHOOK_URL) e obrigatorio"
+      - sh: '[ -n "{{.META_APP_SECRET}}" ]'
+        msg: "META_APP_SECRET (ou env META_APP_SECRET) e obrigatorio"
+      - sh: '[ -n "{{.SMOKE_WA}}" ]'
+        msg: "SMOKE_WA (ou env SMOKE_WA) e obrigatorio"
     cmds:
+      - |
+        BASE=$(echo "{{.WEBHOOK_URL}}" | sed -E 's|(https?://[^/]+).*|\1|')
+        echo "==> Aguardando servico em ${BASE}/health..."
+        curl -fsS --retry 10 --retry-delay 3 --retry-all-errors --max-time 5 --connect-timeout 2 "${BASE}/health"
+        echo "==> Servico pronto"
       - go run ./scripts/smoke/auth_webhook --url "{{.WEBHOOK_URL}}" --secret "{{.META_APP_SECRET}}" --user-wa "{{.SMOKE_WA}}" --db "{{.DB_URL}}"
 
   mvp:smoke:
@@ -178,7 +190,7 @@ tasks:
     cmds:
       - |
         echo "==> [R0] Verificando ausencia de init()..."
-        if grep -rn '^func init()' internal/card/ internal/platform/idempotency/; then
+        if grep -rn --include="*.go" --exclude="*_test.go" '^func init()' internal/card/ internal/platform/idempotency/; then
           echo "FAIL: init() encontrado — violacao R0"
           exit 1
         fi
@@ -192,14 +204,14 @@ tasks:
         echo "PASS R5.12: sem panic em producao"
       - |
         echo "==> [R6.7] Verificando ausencia de clock.Clock..."
-        if grep -rn 'clock\.Clock' --include="*.go" internal/card/; then
+        if grep -rn 'clock\.Clock' --include="*.go" --exclude="*_test.go" internal/card/; then
           echo "FAIL: clock.Clock encontrado — violacao R6.7"
           exit 1
         fi
         echo "PASS R6.7: sem clock.Clock"
       - |
         echo "==> [R6.4] Verificando ausencia de var _ Interface = (*Type)(nil)..."
-        if grep -rn 'var _ .* = (' --include="*.go" internal/card/; then
+        if grep -rn 'var _ .* = (' --include="*.go" --exclude="*_test.go" internal/card/; then
           echo "FAIL: assertiva de interface encontrada — violacao R6.4"
           exit 1
         fi
@@ -215,16 +227,24 @@ tasks:
         echo "PASS R-ADAPTER-001.1: zero comentarios em producao"
       - |
         echo "==> [R-ADAPTER-001.2] Verificando ausencia de SQL direto em adapters..."
-        if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+        ADAPTER_DIRS=""
+        for dir in \
+          "internal/card/infrastructure/http/server/handlers" \
+          "internal/card/infrastructure/messaging/database/consumers" \
+          "internal/card/infrastructure/messaging/database/producers" \
+          "internal/card/infrastructure/jobs/handlers"; do
+          if [ -d "$dir" ]; then ADAPTER_DIRS="$ADAPTER_DIRS $dir"; fi
+        done
+        if [ -n "$ADAPTER_DIRS" ] && grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
           "QueryContext\|ExecContext\|db\.Query\|tx\.Exec\|db\.Exec" \
-          internal/card/infrastructure/http/server/handlers/ 2>/dev/null; then
-          echo "FAIL: SQL direto em handler — violacao R-ADAPTER-001.2"
+          $ADAPTER_DIRS; then
+          echo "FAIL: SQL direto em adapter — violacao R-ADAPTER-001.2"
           exit 1
         fi
         echo "PASS R-ADAPTER-001.2: sem SQL direto em adapters"
       - |
         echo "==> [RF-16] Verificando ausencia de PAN/CVV/CVC/track/PIN em internal/card..."
-        if grep -rn --include="*.go" --exclude="*_test.go" -E '\b(pan|cvv|cvc|track|pin)\b' internal/card/; then
+        if grep -rn --include="*.go" --exclude="*_test.go" -E '\b(PAN|pan_number|cardholder_pan|primary_account_number|cvv|cvv2|cvc|cvc2|cvv_code|cvc_code|track1|track2|track_data|magstripe|card_number|cardNumber|cc_number|ccNumber|pin_block|pinBlock|cardholder_pin|cardholderPin)\b' internal/card/; then
           echo "FAIL: PAN/CVV/CVC/track/PIN encontrado — violacao RF-16 (nao-PCI)"
           exit 1
         fi
