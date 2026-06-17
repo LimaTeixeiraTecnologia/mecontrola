@@ -3,7 +3,8 @@ name: mecontrola
 # Arquivo base.
 # Local:  docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.local.yml up
 # Prod:   docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml up -d
-# Obs:    adicionar --profile observability para subir stack de monitoramento
+# Obs:    o stack de observabilidade (metrics, traces, logs) e o container unico
+#         grafana/otel-lgtm, definido nos arquivos de override (local e prod).
 
 services:
   postgres:
@@ -124,154 +125,10 @@ services:
       retries: 3
       start_period: 30s
 
-  promtail:
-    image: grafana/promtail:3.5.0
-    command: ["-config.file=/etc/promtail/config.yml"]
-    profiles: ["observability"]
-    volumes:
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../promtail/config.yml:/etc/promtail/config.yml:ro
-    networks:
-      - frontend
-
-  otelcol:
-    image: otel/opentelemetry-collector-contrib:0.121.0
-    command: ["--config=/etc/otelcol/config.yml"]
-    profiles: ["observability"]
-    volumes:
-      - ../telemetry/otelcol/config.prod.yml:/etc/otelcol/config.yml:ro
-    networks:
-      - backend
-      - frontend
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:13133/ || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  prometheus:
-    image: prom/prometheus:v3.3.1
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
-      - --web.enable-otlp-receiver
-      - --web.enable-lifecycle
-      - --web.console.libraries=/usr/share/prometheus/console_libraries
-      - --web.console.templates=/usr/share/prometheus/consoles
-    profiles: ["observability"]
-    volumes:
-      - ../telemetry/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../monitoring/prometheus-rules.yaml:/etc/prometheus/rules.yaml:ro
-      - ../telemetry/prometheus/ssl_targets.json:/etc/prometheus/targets/ssl_targets.json:ro
-      - prometheus-data:/prometheus
-    networks:
-      - backend
-      - frontend
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  alertmanager:
-    image: prom/alertmanager:v0.28.1
-    command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      - --storage.path=/alertmanager
-      - --web.external-url=http://localhost:9093
-    profiles: ["observability"]
-    volumes:
-      - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager-data:/alertmanager
-    networks:
-      - frontend
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/ready || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  node-exporter:
-    image: quay.io/prometheus/node-exporter:v1.9.1
-    command:
-      - --path.procfs=/host/proc
-      - --path.sysfs=/host/sys
-      - --path.rootfs=/host
-      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-      - --collector.textfile.directory=/var/lib/node_exporter/textfile_collector
-    profiles: ["observability"]
-    pid: host
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/host:ro,rslave
-      - node-exporter-textfile:/var/lib/node_exporter/textfile_collector
-    networks:
-      - frontend
-
-  postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${DB_USER:-mecontrola}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-mecontrola_db}?sslmode=disable"
-      PG_EXPORTER_DISABLE_SETTINGS_METRICS: "false"
-      PG_EXPORTER_DISABLE_DEFAULT_METRICS: "false"
-    profiles: ["observability"]
-    networks:
-      - backend
-      - frontend
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  blackbox-exporter:
-    image: quay.io/prometheus/blackbox-exporter:v0.25.0
-    command: ["--config.file=/etc/blackbox_exporter/config.yml"]
-    profiles: ["observability"]
-    volumes:
-      - ../telemetry/blackbox/config.yml:/etc/blackbox_exporter/config.yml:ro
-    networks:
-      - frontend
-
-  grafana:
-    image: grafana/grafana:12.0.1
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin@dev}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: http://localhost:3000
-      GF_LOKI_URL: ${LOKI_URL:-}
-      LOKI_URL: ${LOKI_URL:-}
-      LOKI_USER_ID: ${LOKI_USER_ID:-}
-      LOKI_API_KEY: ${LOKI_API_KEY:-}
-    profiles: ["observability"]
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ../telemetry/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../grafana:/var/lib/grafana/dashboards:ro
-    networks:
-      - frontend
-    depends_on:
-      - prometheus
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
 volumes:
   postgres-data:
   caddy-data:
   caddy-config:
-  prometheus-data:
-  alertmanager-data:
-  grafana-data:
-  node-exporter-textfile:
 
 networks:
   backend:

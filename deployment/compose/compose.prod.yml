@@ -59,7 +59,9 @@ services:
       ENVIRONMENT: production
       DB_HOST: postgres
       DB_PORT: "5432"
-      OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
 
   server:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
@@ -71,7 +73,10 @@ services:
       DB_HOST: pgbouncer
       DB_PORT: "6432"
       DB_SSL_MODE: disable
-      OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACE_SAMPLE_RATE: "0.1"
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -80,6 +85,9 @@ services:
     user: "65532:65532"
     cap_drop:
       - ALL
+    depends_on:
+      otel-lgtm:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -98,7 +106,10 @@ services:
       DB_HOST: pgbouncer
       DB_PORT: "6432"
       DB_SSL_MODE: disable
-      OTEL_EXPORTER_OTLP_ENDPOINT: otelcol:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACE_SAMPLE_RATE: "0.1"
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -107,6 +118,9 @@ services:
     user: "65532:65532"
     cap_drop:
       - ALL
+    depends_on:
+      otel-lgtm:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -124,93 +138,43 @@ services:
           cpus: "0.5"
           memory: 256M
 
-  promtail:
-    profiles: []
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.7.5
     restart: unless-stopped
     logging: *default-logging
-
-  otelcol:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 256M
-        reservations:
-          memory: 64M
-
-  prometheus:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      - "127.0.0.1:9090:9090"
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          memory: 128M
-
-  alertmanager:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      - "127.0.0.1:9093:9093"
-    deploy:
-      resources:
-        limits:
-          cpus: "0.1"
-          memory: 64M
-        reservations:
-          memory: 16M
-
-  node-exporter:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          cpus: "0.1"
-          memory: 64M
-
-  postgres-exporter:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          cpus: "0.1"
-          memory: 64M
-
-  blackbox-exporter:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          cpus: "0.1"
-          memory: 32M
-
-  grafana:
-    profiles: []
-    restart: unless-stopped
-    logging: *default-logging
+    environment:
+      GF_SECURITY_ADMIN_USER: ${OTEL_LGTM_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${OTEL_LGTM_ADMIN_PASSWORD:?OTEL_LGTM_ADMIN_PASSWORD is required in production}
     ports:
       - "127.0.0.1:3000:3000"
-    environment:
-      GF_SERVER_ROOT_URL: https://${APP_DOMAIN}/grafana
+    volumes:
+      - ../telemetry/grafana/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - ../telemetry/grafana/loki-config.yaml:/otel-lgtm/loki-config.yaml:ro
+      - ../telemetry/grafana/tempo-config.yaml:/otel-lgtm/tempo-config.yaml:ro
+      - ../telemetry/grafana/run-prometheus.sh:/otel-lgtm/run-prometheus.sh:ro
+      - otel-lgtm-grafana:/otel-lgtm/grafana/data
+      - otel-lgtm-prometheus:/data/prometheus
+      - otel-lgtm-loki:/loki
+      - otel-lgtm-tempo:/tmp/tempo
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:13133/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 512M
+          cpus: "1.0"
+          memory: 1G
         reservations:
-          memory: 128M
+          memory: 256M
+
+volumes:
+  otel-lgtm-grafana:
+  otel-lgtm-prometheus:
+  otel-lgtm-loki:
+  otel-lgtm-tempo:

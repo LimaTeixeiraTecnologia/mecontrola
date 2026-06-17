@@ -38,7 +38,13 @@ services:
       - "127.0.0.1:4318:4318"
     volumes:
       - ../telemetry/grafana/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
-      - otel-lgtm-data:/otel-lgtm/grafana/data
+      - ../telemetry/grafana/loki-config.yaml:/otel-lgtm/loki-config.yaml:ro
+      - ../telemetry/grafana/tempo-config.yaml:/otel-lgtm/tempo-config.yaml:ro
+      - ../telemetry/grafana/run-prometheus.sh:/otel-lgtm/run-prometheus.sh:ro
+      - otel-lgtm-grafana:/otel-lgtm/grafana/data
+      - otel-lgtm-prometheus:/data/prometheus
+      - otel-lgtm-loki:/loki
+      - otel-lgtm-tempo:/tmp/tempo
     networks:
       - backend
 
@@ -91,7 +97,10 @@ services:
     # Caddy desabilitado por padrão no local; ative com --profile proxy
 
 volumes:
-  otel-lgtm-data:
+  otel-lgtm-grafana:
+  otel-lgtm-prometheus:
+  otel-lgtm-loki:
+  otel-lgtm-tempo:
 
 networks:
   # Remove isolamento da rede interna para expor postgres ao host em dev local
