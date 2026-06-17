@@ -1,0 +1,190 @@
+{
+  "uid": "mecontrola-ops",
+  "title": "MeControla — Saúde Operacional",
+  "tags": ["mecontrola", "otel", "ops"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "loki",
+        "label": "Loki",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "job",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(database_pool_connections_open, job)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    { "id": 100, "type": "row", "title": "Banco de dados", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Pool de conexões (open / idle)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "open — {{job}}", "expr": "sum by (job) (database_pool_connections_open{job=~\"$job\"})" },
+        { "refId": "B", "legendFormat": "idle — {{job}}", "expr": "sum by (job) (database_pool_connections_idle{job=~\"$job\"})" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Query latency p95 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "p95 — {{job}}", "expr": "histogram_quantile(0.95, sum by (le, job) (rate(database_query_duration_ms_milliseconds_bucket{job=~\"$job\"}[$__rate_interval])))" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Transações commit/s",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}}", "expr": "sum by (job) (rate(database_tx_committed_total{job=~\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Tx latency p95 (ms)",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "p95 — {{job}}", "expr": "histogram_quantile(0.95, sum by (le, job) (rate(database_tx_duration_ms_milliseconds_bucket{job=~\"$job\"}[$__rate_interval])))" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Pool wait/s (espera por conexão)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}}", "expr": "sum by (job) (rate(database_pool_wait_count_total{job=~\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    { "id": 200, "type": "row", "title": "Outbox & Onboarding", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 } },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Outbox — eventos inseridos/s",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "inserted/s", "expr": "sum(rate(outbox_events_inserted_total[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Onboarding — paid vs consumed (rate)",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "paid/s", "expr": "sum(rate(onboarding_tokens_paid_total[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "consumed/s", "expr": "sum(rate(onboarding_tokens_consumed_total[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Tokens pagos NÃO consumidos (ratio)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 0.25 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "max(onboarding_tokens_paid_unconsumed_ratio)" }
+      ]
+    },
+    { "id": 300, "type": "row", "title": "Throughput de negócio & Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 } },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Entradas externas/s (webhooks, meta, whatsapp)",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 25 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "kiwify webhooks", "expr": "sum(rate(billing_webhooks_received_total[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "meta inbound", "expr": "sum(rate(meta_inbound_messages_total[$__rate_interval]))" },
+        { "refId": "C", "legendFormat": "whatsapp dispatch", "expr": "sum(rate(whatsapp_dispatcher_route_total[$__rate_interval]))" },
+        { "refId": "D", "legendFormat": "checkout sessions", "expr": "sum(rate(onboarding_checkout_sessions_created_total[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Worker — e-mails enviados/s",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 25 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "email sent", "expr": "sum(rate(onboarding_email_sent_total[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "activation dispatched", "expr": "sum(rate(onboarding_activation_email_dispatched_total[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Logs recentes (error / warn)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending", "enableLogDetails": true },
+      "targets": [
+        { "refId": "A", "expr": "{service_name=~\"mecontrola-.+\", detected_level=~\"error|warn\"}" }
+      ]
+    }
+  ]
+}
