@@ -172,7 +172,7 @@ func buildOnboardingDependencies(
 	publisher := newManagerPublisher(mgr, outbox.NewRepositoryFactory(o11y), outboxCfg, o11y)
 	idGen := id.NewUUIDGenerator()
 	identityGateway := newIdentityGatewayAdapter(identityModule)
-	subscriptionBinder := postgres.NewSubscriptionBinder(o11y, mgr.DBTX(context.Background()))
+	subscriptionBinder := postgres.NewSubscriptionBinder(o11y, mgr)
 	workflow := domainservices.NewMagicTokenWorkflow()
 	return onboardingDependencies{
 		runtimeCfg:      runtimeCfg,

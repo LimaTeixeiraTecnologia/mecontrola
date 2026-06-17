@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
@@ -12,11 +12,11 @@ import (
 
 type subscriptionBinder struct {
 	o11y observability.Observability
-	db   database.DBTX
+	mgr  manager.Manager
 }
 
-func NewSubscriptionBinder(o11y observability.Observability, db database.DBTX) appinterfaces.SubscriptionBinder {
-	return &subscriptionBinder{o11y: o11y, db: db}
+func NewSubscriptionBinder(o11y observability.Observability, mgr manager.Manager) appinterfaces.SubscriptionBinder {
+	return &subscriptionBinder{o11y: o11y, mgr: mgr}
 }
 
 func (b *subscriptionBinder) BindUser(ctx context.Context, subscriptionID string, userID string) error {
@@ -30,7 +30,7 @@ func (b *subscriptionBinder) BindUser(ctx context.Context, subscriptionID string
 		 WHERE id = $2
 	`
 
-	result, err := b.db.ExecContext(ctx, query, userID, subscriptionID)
+	result, err := b.mgr.DBTX(ctx).ExecContext(ctx, query, userID, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("onboarding: subscription_binder.bind_user: %w", err)
 	}
