@@ -48,6 +48,7 @@ Bot responde: "Sua conta foi ativada com sucesso! Bem-vindo ao MeControla."
 - [x] KIWIFY_CLIENT_ID=ee760e58-fce3-4b67-b007-d71c8adb0292 atualizado na VPS
 - [x] KIWIFY_ACCOUNT_ID=JhojQYNsUNcvgTV atualizado na VPS
 - [x] server e worker reiniciados após secrets — health OK (2026-06-17 10:33)
+- [x] Deploy 4 bug fixes — CD auto-deployou commit b23defdc em 2026-06-17T12:39Z (healthcheck OK)
 - [ ] Passo 8B — webhook simulado enviado → `{"received": true}`
 - [ ] Passo 9 — worker processou: process_sale_approved + mark_token_paid + activation_email_dispatched
 - [ ] Passo 10 — email de ativação recebido em jailton.junior94@outlook.com
@@ -339,6 +340,7 @@ export IMAGE_TAG=local && mc up -d --no-deps --force-recreate server worker
 | Token expirado (TTL 7 dias) | `code_expired_contact_support` | Usar token recém-gerado |
 | OTEL TLS errors nos logs | Ruído (não bloqueia) | Ignorar — coletor local sem TLS configurado |
 | App Meta em desenvolvimento | Não bloqueia | Campo `messages` assinado, número real inscrito |
+| CD marcado como `failure` | Confusão — deploy foi OK | `Auth Smoke` falha porque `STAGING_DB_URL` tenta porta 5432 bloqueada pelo firewall. Confirmar via job `Deploy to VPS` (✅ sucesso) e `curl /health`. Correção futura: SSH tunnel ou remover `DB_URL` do secret. |
 
 ---
 

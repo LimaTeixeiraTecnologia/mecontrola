@@ -67,7 +67,7 @@
 
 ## Checklist
 
-- [ ] Passo 0 — novo código deployado na VPS (git pull + build + restart)
+- [x] Passo 0 — novo código deployado na VPS (CD auto-deploy commit b23defdc — 4 bug fixes)
 - [ ] Passo 1 — health OK
 - [ ] Passo 2 — checkout retornou `checkout_url` com `?sck=` e token salvo no Postman
 - [ ] Passo 3 — webhook retornou `{"received": true}`
@@ -80,7 +80,19 @@
 
 ## Passo 0 — Deploy do novo código na VPS
 
-**O que faz:** atualiza o código no servidor com os 4 bugs corrigidos (sessão 2026-06-17), reconstrói as imagens Docker e reinicia server + worker. Este passo é obrigatório antes de re-executar qualquer passo da fase 2.
+> **Status: CONCLUÍDO automaticamente via CD** — commit `b23defdc` (4 bug fixes) deployado em 2026-06-17T12:39:20Z. Healthcheck OK após 10s.
+>
+> O pipeline CD (`Deploy to VPS`) executa automaticamente após cada CI verde no `main`. Só execute o comando manual abaixo se o CD falhar no job `Deploy to VPS`.
+
+**Bugs presentes neste deploy:**
+- `ErrNestedTransaction` no `UpsertUserByWhatsApp` — corrigido com `database.FromContext(ctx)`
+- Nil pointer em `ProcessSubscriptionGraceExpired` — `kiwifyDBTX` injetado no construtor
+- False-positive warning do outbox para `billing.subscription.activated` — `noUserEventAllowlist`
+- Landing page `/ativar` ausente — redirect criado preservando `?token=`
+
+**Nota sobre o CD "failure":** o job `Auth Smoke (staging)` falha porque `STAGING_DB_URL` tenta conectar em `187.77.45.48:5432` que está bloqueado pelo firewall (correto). O deploy em si (`Deploy to VPS`) **teve sucesso**. Falha pré-existente — não indica problema no código.
+
+### Fallback — Deploy manual (só se CD falhar)
 
 ```bash
 ssh root@187.77.45.48 << 'DEPLOY'
@@ -104,7 +116,7 @@ IMAGE_TAG=local docker compose \
   -f /opt/mecontrola/deployment/compose/compose.prod.yml \
   up -d --no-deps --force-recreate server worker
 
-echo "==> Aguardando startup..."
+echo "==> Verificando saúde..."
 sleep 5
 curl -sf https://api.mecontrola.app.br/health | python3 -m json.tool
 DEPLOY
@@ -119,12 +131,6 @@ DEPLOY
     "checks": { "database": { "status": "healthy" } }
 }
 ```
-
-**Bugs corrigidos neste deploy:**
-- `ErrNestedTransaction` no `UpsertUserByWhatsApp` — uso de `database.FromContext(ctx)` ao invés de `uow.Do` aninhado
-- Nil pointer em `ProcessSubscriptionGraceExpired` — `kiwifyDBTX` injetado no construtor
-- False-positive warning do outbox para `billing.subscription.activated`
-- Landing page `/ativar` ausente — redirect criado com preservação de `?token=`
 
 ---
 
