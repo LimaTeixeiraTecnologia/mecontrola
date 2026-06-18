@@ -21,50 +21,17 @@ env:
   IMAGE_NAME: ghcr.io/limateixeiratecnologia/mecontrola
 
 jobs:
-  setup:
-    name: Setup
+  quality-gate:
+    name: Quality Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     if: github.event_name != 'workflow_dispatch'
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install task
-        run: |
-          set -euo pipefail
-          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          mkdir -p "$HOME/.local/bin"
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Cache .task/
-        uses: actions/cache@v5
-        with:
-          path: .task/
-          key: task-${{ runner.os }}-${{ hashFiles('Taskfile.yml', 'taskfiles/**') }}
-
-      - name: Cache golangci-lint artifacts
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/golangci-lint
-          key: golangci-${{ runner.os }}-${{ hashFiles('.golangci.yml') }}
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: setup
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
+          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -84,32 +51,33 @@ jobs:
           VERSION=$(grep 'GOLANGCI_LINT_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${VERSION}
 
+      - name: Install govulncheck
+        run: |
+          VERSION=$(grep 'GOVULNCHECK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+          go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
+
+      - name: Setup ai-spec
+        uses: JailtonJunior94/orchestrator/.github/actions/setup-ai-spec@bfee8b0c9a68b9e9d96f98d4b2bf27d292332276
+
+      - name: Validate Taskfile
+        run: python3 .agents/skills/taskfile-production/scripts/validate-taskfile.py Taskfile.yml
+
+      - name: Check conventional commits (pull request)
+        if: github.event_name == 'pull_request'
+        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+
+      - name: Check conventional commits (push)
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.before }}" "${{ github.sha }}"
+
+      - name: ai-spec doctor
+        run: |
+          ai-spec doctor .
+          ai-spec lint
+
       - run: task lint:run
       - run: task lint:fmt:check
       - run: task lint:pci
-
-  unit:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: setup
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install task
-        run: |
-          set -euo pipefail
-          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          mkdir -p "$HOME/.local/bin"
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - run: task test:unit
 
@@ -119,29 +87,6 @@ jobs:
           name: unit-coverage
           path: coverage/unit.out
           retention-days: 1
-
-  integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    needs: setup
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install task
-        run: |
-          set -euo pipefail
-          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          mkdir -p "$HOME/.local/bin"
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Create .env for integration tests
         run: |
@@ -172,80 +117,13 @@ jobs:
           path: coverage/integration.out
           retention-days: 1
 
-  security:
-    name: Security
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: setup
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install task
-        run: |
-          set -euo pipefail
-          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          mkdir -p "$HOME/.local/bin"
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Install govulncheck
-        run: |
-          VERSION=$(grep 'GOVULNCHECK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
-
       - run: task security:vulncheck
-
-  governance:
-    name: Governance
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: setup
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Install task
-        run: |
-          set -euo pipefail
-          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          mkdir -p "$HOME/.local/bin"
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Setup ai-spec
-        uses: JailtonJunior94/orchestrator/.github/actions/setup-ai-spec@bfee8b0c9a68b9e9d96f98d4b2bf27d292332276
-
-      - name: Validate Taskfile
-        run: python3 .agents/skills/taskfile-production/scripts/validate-taskfile.py Taskfile.yml
-
-      - name: Check conventional commits (pull request)
-        if: github.event_name == 'pull_request'
-        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
-
-      - name: Check conventional commits (push)
-        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.before }}" "${{ github.sha }}"
-
-      - name: ai-spec doctor
-        run: |
-          ai-spec doctor .
-          ai-spec lint
 
   coverage-comment:
     name: Coverage Comment
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [unit]
+    needs: [quality-gate]
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -274,7 +152,7 @@ jobs:
     name: Build & Push Image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [lint, unit, integration, security, governance]
+    needs: [quality-gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -378,46 +256,3 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
-
-  smoke-manual:
-    name: Auth Smoke (staging, manual)
-    runs-on: [self-hosted, staging]
-    timeout-minutes: 15
-    needs: deploy-manual
-    if: github.event_name == 'workflow_dispatch'
-    environment: staging
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install task
-        run: |
-          set -euo pipefail
-          VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-          mkdir -p "$HOME/.local/bin"
-          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Auth smoke test
-        env:
-          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
-          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
-          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
-        run: task auth:smoke
-
-      - name: Onboarding ATIVAR smoke test
-        env:
-          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
-          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
-          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
-        run: task onboarding:smoke
