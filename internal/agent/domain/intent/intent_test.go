@@ -19,6 +19,7 @@ func TestKindString(t *testing.T) {
 		intent.KindMonthlySummary:  "monthly_summary",
 		intent.KindHowAmIDoing:     "how_am_i_doing",
 		intent.KindConfigureBudget: "configure_budget",
+		intent.KindListCards:       "list_cards",
 		intent.KindUnknown:         "unknown",
 	}
 
@@ -47,6 +48,7 @@ func TestParseKind(t *testing.T) {
 		{in: "how_am_i_doing", want: intent.KindHowAmIDoing},
 		{in: "configure_budget", want: intent.KindConfigureBudget},
 		{in: " CONFIGURE_BUDGET ", want: intent.KindConfigureBudget},
+		{in: "list_cards", want: intent.KindListCards},
 		{in: "unknown", want: intent.KindUnknown},
 		{in: "", want: intent.KindUnknown},
 		{in: "bogus", wantErr: intent.ErrKindUnknown},
@@ -259,6 +261,14 @@ func TestNewConfigureBudget(t *testing.T) {
 	}
 	if got.IsZero() {
 		t.Fatalf("intent should not be zero")
+	}
+}
+
+func TestNewListCards(t *testing.T) {
+	t.Parallel()
+	got := intent.NewListCards()
+	if got.Kind() != intent.KindListCards {
+		t.Fatalf("NewListCards().Kind() = %v, want KindListCards", got.Kind())
 	}
 }
 

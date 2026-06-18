@@ -24,6 +24,7 @@ const (
 	KindEditLastTransaction
 	KindCreateRecurring
 	KindListRecurring
+	KindListCards
 )
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
@@ -56,6 +57,8 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "create_recurring"
 	case KindListRecurring:
 		return "list_recurring"
+	case KindListCards:
+		return "list_cards"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -93,6 +96,8 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindCreateRecurring, nil
 	case "list_recurring":
 		return KindListRecurring, nil
+	case "list_cards":
+		return KindListCards, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -414,6 +419,10 @@ func NewCreateRecurring(f CreateRecurringFields) (Intent, error) {
 
 func NewListRecurring() Intent {
 	return Intent{kind: KindListRecurring}
+}
+
+func NewListCards() Intent {
+	return Intent{kind: KindListCards}
 }
 
 func NewUnknown(rawText string) (Intent, error) {

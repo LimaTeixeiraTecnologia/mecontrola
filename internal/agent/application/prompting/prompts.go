@@ -18,17 +18,26 @@ var parseIntentUserRaw string
 //go:embed persona.system.tmpl
 var personaSystemRaw string
 
+//go:embed budgets.system.tmpl
+var budgetsSystemRaw string
+
 var ErrUserTextEmpty = errors.New("agent.application.prompting: user text is empty")
 
 var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(parseIntentUserRaw))
 
 var personaSystemTpl = template.Must(template.New("persona.system").Parse(personaSystemRaw))
 
+var budgetsSystemTpl = template.Must(template.New("budgets.system").Parse(budgetsSystemRaw))
+
 type ParseIntentUserData struct {
 	UserText string
 }
 
 type PersonaSystemData struct {
+	JourneyHint string
+}
+
+type BudgetsPersonaData struct {
 	JourneyHint string
 }
 
@@ -46,6 +55,17 @@ func RenderPersonaSystem(data PersonaSystemData) (string, error) {
 	var buf bytes.Buffer
 	if err := personaSystemTpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("agent.application.prompting: execute persona template: %w", err)
+	}
+	return buf.String(), nil
+}
+
+func RenderBudgetsPersona(data BudgetsPersonaData) (string, error) {
+	if strings.TrimSpace(budgetsSystemRaw) == "" {
+		return "", fmt.Errorf("agent.application.prompting: budgets template is empty")
+	}
+	var buf bytes.Buffer
+	if err := budgetsSystemTpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("agent.application.prompting: execute budgets template: %w", err)
 	}
 	return buf.String(), nil
 }
@@ -83,6 +103,7 @@ func ParseIntentJSONSchema() map[string]any {
 					"edit_last_transaction",
 					"create_recurring",
 					"list_recurring",
+					"list_cards",
 					"unknown",
 				},
 			},
