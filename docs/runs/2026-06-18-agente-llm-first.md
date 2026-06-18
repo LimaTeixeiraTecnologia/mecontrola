@@ -447,6 +447,23 @@ dinâmico vai na mensagem de turno (Regra de arquitetura de prompt). Seções, e
   - **Risco/nota para 3b**: com índice único simples, salvar sessão multi-turno deve usar UPSERT
     (`INSERT ... ON CONFLICT (user_id, channel) DO UPDATE`) para conviver com linha expirada — adicionar
     método `Upsert`/`Save` ao repo na 3b.
-- **Pendente**: Fase 3b (slot-filling multi-turno + `configure_budget` estruturado → `CreateBudget`+`ActivateBudget`,
-  substituindo a delegação ao onboarding com split fixo), Fase 4 (prompt cache-aware / ativar tool-calling no
-  ParseInbound), limpeza do código morto, e2e (orçamento 2 turnos, cadastrar/contar cartão, record_transaction).
+- **2026-06-18 — Fase 3b (orçamento multi-turno) CONCLUÍDA (commit `b9fe09a`, na main):**
+  - `domain/budgetdraft` (estado pendente DMMF: smart constructor + merge puro, validação slug/bp);
+    usecase `ConfigureBudgetConversation` (structured output extrai total/alocações, decide completo×pergunta);
+    `binding/budget_config` committer → `budgets.CreateBudget`+`ActivateBudget` (competence = mês atual),
+    tradução de erro sentinela PT-BR; repo `Upsert` (ON CONFLICT); router intercepta sessão pendente
+    após onboarding e antes do parse; `routeConfigureBudget` inicia sessão estruturada com fallback ao fluxo antigo.
+  - Validação: build, vet, `go test ./internal/agent/... ./internal/budgets/...` (incl. pré-existentes) OK,
+    golangci-lint v2 0 issues, zero comentários OK. **Teste de integração com Postgres real (testcontainers)
+    PASSOU** — confirma migration `000010` aplica e o repo de sessão funciona de verdade. Via subagent + verificação minha.
+  - Risco menor (MVP): sem comando explícito de "cancelar" no meio do slot-filling; a sessão expira por TTL.
+
+## Estado do MVP (2026-06-18)
+
+**Funciona ponta-a-ponta, persistindo via usecases reais dos módulos:** lançar transação (entrada/saída,
+categoria resolvida no DB), resumo mensal, listar cartões, **cadastrar cartão**, **contar cartões**, e
+**configurar orçamento mensal multi-turno** com percentuais nas 5 categorias canônicas (CreateBudget+ActivateBudget).
+
+**Hardening restante (não bloqueia o MVP):** Fase 4 (ativar tool-calling no `ParseInbound` — hoje JSON-schema,
+funcional — e prompt cache-aware), limpeza do pipeline morto (`HandleInboundMessage`/`IntentDispatcher`),
+e2e BDD dos novos fluxos, escape "cancelar" no slot-filling.
