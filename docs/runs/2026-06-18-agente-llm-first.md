@@ -408,6 +408,20 @@ dinâmico vai na mensagem de turno (Regra de arquitetura de prompt). Seções, e
     `SELECT count(*) … deleted_at IS NULL`), DTOs `input.CountCards`/`output.CardCount`, usecase `CountCards`,
     mocks regenerados, +3 testes suite. Validação: build geral OK, testes card OK, zero comentários OK.
   - Pendente: Fases 2 (orquestrador de tools), 3 (agent_sessions), 4 (system prompt cache-aware), limpeza, e2e.
-  - Nota: nada commitado (aguardando pedido explícito).
+- **2026-06-18 — commits na main (decisão do usuário: trabalhar na main, separando em commits):**
+  - `5492af0` — Fase 1 (tool-calling no client) + `card.CountCards`. Publicado em `origin/main`.
+  - `46287ee` — **Fase 2a**: catálogo de tools (`record_transaction`, `monthly_summary`, `list_cards`,
+    `configure_budget`) + `ToolCallToIntent` (mapeamento puro reusando `build()`/construtores de domínio).
+    +6 testes suite. Build/lint(v2)/zero-comentários OK. Publicado em `origin/main`.
+  - Ambiente: instalado `golangci-lint v2.12.2` (config do repo é v2; binário local era v1) para o
+    pre-commit hook passar — alinhado à CI.
+  - **Fase 2b (próxima) — decisão de sequenciamento:** ligar `ParseInbound` às tools (`Interpret` com
+    `AgentToolCatalog()` → `ToolCallToIntent`) está entrelaçado com o system prompt (Fase 4): o prompt
+    atual `parse_intent.system.tmpl` instrui saída JSON, incompatível com tool-calling. Plano: (1) ajustar
+    o system prompt para persona + tools (cache-aware, contexto dinâmico no turno); (2) `ParseInbound`
+    chama com tools e, sem tool_call, usar o texto do LLM como resposta direta (evita 2ª chamada de
+    fallback — economia); (3) novas tools `create_card`/`count_cards` exigem novos `intent.Kind` +
+    handlers no router (`CardCreator`→`card.CreateCard`, `CardCounter`→`card.CountCards`). Depois Fase 3
+    (`agent_sessions` multi-turno) e limpeza do código morto.
 
 _(próximas entradas: por fase — arquivos alterados, validações executadas, riscos residuais, suposições)_
