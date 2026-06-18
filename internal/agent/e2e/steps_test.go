@@ -29,6 +29,7 @@ func registerSteps(sc *godog.ScenarioContext, e *agentE2ECtx) {
 	sc.Step(`^o orçamento do usuário registrou (\d+) parcelas da compra$`, e.thenBudgetsRecordedInstallments)
 	registerWriteSteps(sc, e)
 	registerReadSteps(sc, e)
+	registerCardsSteps(sc, e)
 	registerTelegramSteps(sc, e)
 }
 
@@ -64,6 +65,12 @@ func (e *agentE2ECtx) whenUserSendsMessageViaWebhook(text string) error {
 	}
 	e.beforeCardPurchases = beforeCard
 
+	beforeCards, err := e.countCards(e.userID)
+	if err != nil {
+		return err
+	}
+	e.beforeCards = beforeCards
+
 	wamid := "wamid.e2e." + uuid.New().String()
 	return e.postWebhook(text, wamid)
 }
@@ -74,6 +81,12 @@ func (e *agentE2ECtx) whenUserResendsSameMessage() error {
 		return err
 	}
 	e.beforeUser = before
+
+	beforeCards, err := e.countCards(e.userID)
+	if err != nil {
+		return err
+	}
+	e.beforeCards = beforeCards
 
 	if e.lastWAMID == "" {
 		return fmt.Errorf("nenhuma mensagem anterior para reenviar")

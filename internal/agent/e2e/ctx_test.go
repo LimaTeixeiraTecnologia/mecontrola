@@ -47,6 +47,7 @@ type agentE2ECtx struct {
 	lastRefMonth        string
 	beforeUser          int
 	beforeOther         int
+	beforeCards         int
 	beforeCardPurchases int
 	budgetsConsumerHits int
 	budgetsDeletedHits  int
@@ -211,6 +212,22 @@ func (e *agentE2ECtx) countCardPurchases(userID uuid.UUID) (int, error) {
 	).Scan(&total)
 	if err != nil {
 		return 0, fmt.Errorf("contar compras parceladas: %w", err)
+	}
+	return total, nil
+}
+
+func (e *agentE2ECtx) countCards(userID uuid.UUID) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var total int
+	err := e.db.QueryRowContext(
+		ctx,
+		"SELECT count(*) FROM mecontrola.cards WHERE user_id = $1 AND deleted_at IS NULL",
+		userID,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("contar cartoes: %w", err)
 	}
 	return total, nil
 }

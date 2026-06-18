@@ -251,6 +251,38 @@ func buildServer(
 		t.Fatalf("intent card purchase not found: %v", err)
 	}
 
+	createCardIntent, err := intent.NewCreateCard(intent.CreateCardFields{
+		Nickname:   "inter",
+		Name:       "Inter Black",
+		ClosingDay: 5,
+		DueDay:     12,
+		LimitCents: 800000,
+	})
+	if err != nil {
+		t.Fatalf("intent create card: %v", err)
+	}
+	createCardC6Intent, err := intent.NewCreateCard(intent.CreateCardFields{
+		Nickname:   "c6",
+		Name:       "C6 Carbon",
+		ClosingDay: 8,
+		DueDay:     15,
+		LimitCents: 600000,
+	})
+	if err != nil {
+		t.Fatalf("intent create card c6: %v", err)
+	}
+	createCardWillIntent, err := intent.NewCreateCard(intent.CreateCardFields{
+		Nickname:   "will",
+		Name:       "Will Bank",
+		ClosingDay: 3,
+		DueDay:     10,
+		LimitCents: 400000,
+	})
+	if err != nil {
+		t.Fatalf("intent create card will: %v", err)
+	}
+	countCardsIntent := intent.NewCountCards()
+
 	stubP := NewStubParser(map[string]intent.Intent{
 		"gastei 50 no mercado":           expenseIntent,
 		"recebi salário de 3000":         incomeIntent,
@@ -268,6 +300,10 @@ func buildServer(
 		"quais minhas recorrências?":     listRecurringIntent,
 		"meus cartões":                   listCardsIntent,
 		"comprei 300 no cartão fantasma": cardNotFoundIntent,
+		"cadastra meu cartão inter":      createCardIntent,
+		"cadastra meu cartão c6":         createCardC6Intent,
+		"cadastra meu cartão will":       createCardWillIntent,
+		"quantos cartões eu tenho?":      countCardsIntent,
 	}, nil)
 
 	publisher := outbox.NewPostgresPublisher(
@@ -289,6 +325,8 @@ func buildServer(
 		MonthlySummary:    budgetsModule.GetMonthlySummaryUC,
 		CardLister:        cardModule.ListCardsUC,
 		CardInvoice:       cardModule.InvoiceForUC,
+		CardCreator:       agentbinding.NewCardCreatorAdapter(cardModule.CreateCardUC),
+		CardCounter:       agentbinding.NewCardCounterAdapter(cardModule.CountCardsUC),
 		RecurringLister:   agentbinding.NewRecurringListerAdapter(txModule.ListRecurringTemplatesUC),
 		EventPublisher:    agentevents.NewIntentEventPublisher(publisher, o11y),
 		Location:          time.UTC,
