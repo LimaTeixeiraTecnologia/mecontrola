@@ -25,8 +25,9 @@ type ParseInboundInput struct {
 }
 
 type ParseInboundOutput struct {
-	Intent intent.Intent
-	Raw    []byte
+	Intent      intent.Intent
+	Raw         []byte
+	DirectReply string
 }
 
 type ParseInbound struct {
@@ -34,7 +35,7 @@ type ParseInbound struct {
 	o11y              observability.Observability
 	parsedTotal       observability.Counter
 	decodeFailedTotal observability.Counter
-	schema            *interfaces.JSONSchemaSpec
+	tools             []interfaces.ToolSpec
 }
 
 func NewParseInbound(interpreter IntentInterpreter, o11y observability.Observability) (*ParseInbound, error) {
@@ -54,17 +55,12 @@ func NewParseInbound(interpreter IntentInterpreter, o11y observability.Observabi
 		"Total de falhas de decode do JSON de intent retornado pelo provider LLM por motivo",
 		"1",
 	)
-	schema := &interfaces.JSONSchemaSpec{
-		Name:   "mecontrola_parse_intent",
-		Strict: true,
-		Schema: prompting.ParseIntentJSONSchema(),
-	}
 	return &ParseInbound{
 		interpreter:       interpreter,
 		o11y:              o11y,
 		parsedTotal:       parsedTotal,
 		decodeFailedTotal: decodeFailedTotal,
-		schema:            schema,
+		tools:             AgentToolCatalog(),
 	}, nil
 }
 
@@ -72,9 +68,11 @@ var ErrParseInboundEmptyText = errors.New("agent.usecase.parse_inbound: text is 
 
 const (
 	outcomeOK              = "ok"
+	outcomeDirectReply     = "direct_reply"
 	outcomeFallbackInvalid = "fallback_invalid_json"
 	outcomeFallbackMissing = "fallback_missing_kind"
 	outcomeFallbackDomain  = "fallback_domain_invariant"
+	outcomeFallbackTool    = "fallback_tool_unsupported"
 	outcomeProviderError   = "provider_error"
 )
 
@@ -87,19 +85,16 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		return ParseInboundOutput{}, ErrParseInboundEmptyText
 	}
 
-	system, err := prompting.RenderSystem()
+	system, err := prompting.RenderToolSystem()
 	if err != nil {
-		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render system: %w", err)
-	}
-	user, err := prompting.RenderUser(trimmed)
-	if err != nil {
-		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render user: %w", err)
+		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render tool system: %w", err)
 	}
 
 	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
 		SystemPrompt: system,
-		UserMessage:  user,
-		JSONSchema:   uc.schema,
+		UserMessage:  trimmed,
+		Tools:        uc.tools,
+		ToolChoice:   "auto",
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -111,20 +106,52 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		return ParseInboundOutput{Intent: fallback}, nil
 	}
 
-	parsed, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
-	if parseErr != nil {
-		span.RecordError(parseErr)
-		uc.recordOutcome(ctx, intent.KindUnknown, parseErr.Outcome)
-		uc.decodeFailedTotal.Add(ctx, 1, observability.String("reason", parseErr.Outcome))
+	if len(resp.ToolCalls) > 0 {
+		return uc.fromToolCall(ctx, resp, trimmed)
+	}
+
+	return uc.fromContent(ctx, resp, trimmed)
+}
+
+func (uc *ParseInbound) fromToolCall(ctx context.Context, resp interfaces.LLMResponse, trimmed string) (ParseInboundOutput, error) {
+	built, callErr := ToolCallToIntent(resp.ToolCalls[0], trimmed)
+	if callErr != nil {
+		uc.recordOutcome(ctx, intent.KindUnknown, outcomeFallbackTool)
+		uc.decodeFailedTotal.Add(ctx, 1, observability.String("reason", outcomeFallbackTool))
 		fallback, fbErr := intent.NewUnknown(trimmed)
 		if fbErr != nil {
-			return ParseInboundOutput{}, errors.Join(parseErr, fbErr)
+			return ParseInboundOutput{}, errors.Join(fmt.Errorf("agent.usecase.parse_inbound: tool call: %w", callErr), fbErr)
 		}
 		return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON}, nil
 	}
+	uc.recordOutcome(ctx, built.Kind(), outcomeOK)
+	return ParseInboundOutput{Intent: built, Raw: resp.RawJSON}, nil
+}
 
-	uc.recordOutcome(ctx, parsed.Kind(), outcomeOK)
-	return ParseInboundOutput{Intent: parsed, Raw: resp.RawJSON}, nil
+func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed string) (ParseInboundOutput, error) {
+	parsed, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
+	if parseErr == nil {
+		uc.recordOutcome(ctx, parsed.Kind(), outcomeOK)
+		return ParseInboundOutput{Intent: parsed, Raw: resp.RawJSON}, nil
+	}
+
+	directReply := strings.TrimSpace(string(resp.RawJSON))
+	if directReply != "" {
+		uc.recordOutcome(ctx, intent.KindUnknown, outcomeDirectReply)
+		fallback, fbErr := intent.NewUnknown(trimmed)
+		if fbErr != nil {
+			return ParseInboundOutput{}, fbErr
+		}
+		return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON, DirectReply: directReply}, nil
+	}
+
+	uc.recordOutcome(ctx, intent.KindUnknown, parseErr.Outcome)
+	uc.decodeFailedTotal.Add(ctx, 1, observability.String("reason", parseErr.Outcome))
+	fallback, fbErr := intent.NewUnknown(trimmed)
+	if fbErr != nil {
+		return ParseInboundOutput{}, errors.Join(parseErr, fbErr)
+	}
+	return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON}, nil
 }
 
 func (uc *ParseInbound) recordOutcome(ctx context.Context, kind intent.Kind, outcome string) {

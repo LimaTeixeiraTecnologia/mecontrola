@@ -21,12 +21,13 @@ import (
 )
 
 type fakeParser struct {
-	intent intent.Intent
-	err    error
+	intent      intent.Intent
+	directReply string
+	err         error
 }
 
 func (f *fakeParser) Parse(_ context.Context, _ uuid.UUID, _ string) (services.ParsedIntent, error) {
-	return services.ParsedIntent{Intent: f.intent}, f.err
+	return services.ParsedIntent{Intent: f.intent, DirectReply: f.directReply}, f.err
 }
 
 type fakeMonthlySummary struct {
@@ -576,6 +577,23 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_Unknown_DelegatesFallback() {
 	s.Equal(services.OutcomeFallback, result.Outcome)
 	s.Equal(1, s.fallback.calls)
 	s.Equal("te entendi parcialmente", s.wa.sent[0].Text)
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_Unknown_WithDirectReply_SkipsFallback() {
+	parsed, err := intent.NewUnknown("oi tudo bem?")
+	require.NoError(s.T(), err)
+	s.parser.intent = parsed
+	s.parser.directReply = "Oi! Tô por aqui. Como posso ajudar nas suas finanças? 😊"
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "oi tudo bem?", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(intent.KindUnknown, result.Kind)
+	s.Equal("Oi! Tô por aqui. Como posso ajudar nas suas finanças? 😊", result.Reply)
+	s.Equal(0, s.fallback.calls)
+	s.Require().Len(s.wa.sent, 1)
+	s.Equal("Oi! Tô por aqui. Como posso ajudar nas suas finanças? 😊", s.wa.sent[0].Text)
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_ParserError_DelegatesFallback() {

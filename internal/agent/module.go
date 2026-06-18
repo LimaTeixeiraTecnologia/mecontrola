@@ -476,7 +476,7 @@ func (a *intentParserAdapter) Parse(ctx context.Context, userID uuid.UUID, text 
 	if err != nil {
 		return appservices.ParsedIntent{}, err
 	}
-	return appservices.ParsedIntent{Intent: out.Intent, Raw: out.Raw}, nil
+	return appservices.ParsedIntent{Intent: out.Intent, Raw: out.Raw, DirectReply: out.DirectReply}, nil
 }
 
 type fallbackAdapter struct {

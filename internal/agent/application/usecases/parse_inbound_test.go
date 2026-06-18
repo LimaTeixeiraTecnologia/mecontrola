@@ -309,7 +309,7 @@ func TestParseInbound_Execute_ProviderError_Fallback(t *testing.T) {
 	}
 }
 
-func TestParseInbound_Execute_ForwardsJSONSchemaToInterpreter(t *testing.T) {
+func TestParseInbound_Execute_ForwardsToolsToInterpreter(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind":"how_am_i_doing"}`)}}
@@ -324,24 +324,97 @@ func TestParseInbound_Execute_ForwardsJSONSchemaToInterpreter(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if fake.lastRequest.JSONSchema == nil {
-		t.Fatalf("expected JSONSchema to be set on the LLMRequest")
+	if fake.lastRequest.JSONSchema != nil {
+		t.Fatalf("expected JSONSchema to be nil in tool-calling mode")
 	}
-	if fake.lastRequest.JSONSchema.Name != "mecontrola_parse_intent" {
-		t.Fatalf("schema name = %q", fake.lastRequest.JSONSchema.Name)
+	if len(fake.lastRequest.Tools) != len(usecases.AgentToolCatalog()) {
+		t.Fatalf("tools len = %d, want %d", len(fake.lastRequest.Tools), len(usecases.AgentToolCatalog()))
 	}
-	if !fake.lastRequest.JSONSchema.Strict {
-		t.Fatalf("schema strict = false, want true")
+	if fake.lastRequest.ToolChoice != "auto" {
+		t.Fatalf("tool choice = %q, want auto", fake.lastRequest.ToolChoice)
 	}
-	props, ok := fake.lastRequest.JSONSchema.Schema["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("schema properties missing")
+	var hasRecord bool
+	for _, tool := range fake.lastRequest.Tools {
+		if tool.Name == "record_transaction" {
+			hasRecord = true
+		}
 	}
-	if _, ok := props["amount_cents"]; !ok {
-		t.Fatalf("schema must include amount_cents (new parse_inbound schema)")
+	if !hasRecord {
+		t.Fatalf("tools must include record_transaction")
 	}
-	if _, ok := props["module"]; ok {
-		t.Fatalf("schema must NOT include legacy 'module' field")
+}
+
+func TestParseInbound_Execute_ToolCall_MapsToIntent(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeInterpreter{resp: interfaces.LLMResponse{
+		ToolCalls: []interfaces.ToolCall{
+			{
+				ID:           "call_1",
+				FunctionName: "record_transaction",
+				ArgumentsJSON: map[string]any{
+					"direction":    "outcome",
+					"amount_cents": float64(5800),
+					"merchant":     "iFood",
+				},
+			},
+		},
+	}}
+	uc, err := usecases.NewParseInbound(fake, noop.NewProvider())
+	if err != nil {
+		t.Fatalf("NewParseInbound: %v", err)
+	}
+	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: "gastei 58 no iFood"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if out.Intent.Kind() != intent.KindLogExpense {
+		t.Fatalf("kind = %v, want log_expense", out.Intent.Kind())
+	}
+	if out.Intent.AmountCents() != 5800 || out.Intent.Merchant() != "iFood" {
+		t.Fatalf("intent = %+v", out.Intent)
+	}
+	if out.DirectReply != "" {
+		t.Fatalf("direct reply must be empty for tool call, got %q", out.DirectReply)
+	}
+}
+
+func TestParseInbound_Execute_NoToolCall_PropagatesDirectReply(t *testing.T) {
+	t.Parallel()
+
+	const reply = "Claro! Qual o valor que você gastou?"
+	uc := newSUT(t, reply, nil)
+	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: "quero registrar um gasto"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if out.Intent.Kind() != intent.KindUnknown {
+		t.Fatalf("kind = %v, want unknown", out.Intent.Kind())
+	}
+	if out.DirectReply != reply {
+		t.Fatalf("direct reply = %q, want %q", out.DirectReply, reply)
+	}
+}
+
+func TestParseInbound_Execute_UnsupportedToolCall_Fallback(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeInterpreter{resp: interfaces.LLMResponse{
+		ToolCalls: []interfaces.ToolCall{{ID: "call_x", FunctionName: "nonexistent_tool"}},
+	}}
+	uc, err := usecases.NewParseInbound(fake, noop.NewProvider())
+	if err != nil {
+		t.Fatalf("NewParseInbound: %v", err)
+	}
+	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: "faça algo estranho"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if out.Intent.Kind() != intent.KindUnknown {
+		t.Fatalf("kind = %v, want unknown", out.Intent.Kind())
+	}
+	if out.DirectReply != "" {
+		t.Fatalf("direct reply must be empty on tool fallback, got %q", out.DirectReply)
 	}
 }
 

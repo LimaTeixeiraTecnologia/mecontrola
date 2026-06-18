@@ -209,6 +209,44 @@ func (s *BudgetConfigRouterSuite) TestCommitErrorReturnsMessageAndKeepsSession()
 	s.Equal(1, s.session.saved)
 }
 
+func (s *BudgetConfigRouterSuite) TestPendingSessionCancelClearsAndConfirms() {
+	s.session.found = true
+	s.session.draft, _ = budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 500000})
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
+		Text: "cancelar", WhatsAppTo: "+5511999",
+	})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(intent.KindConfigureBudget, result.Kind)
+	s.Contains(result.Reply, "cancelei a configuração do orçamento")
+	s.Equal(1, s.session.cleared)
+	s.Equal(0, s.convo.calls)
+	s.Equal(0, s.session.saved)
+	s.Equal(0, s.committer.calls)
+}
+
+func (s *BudgetConfigRouterSuite) TestPendingSessionNonCancelTextStillProcesses() {
+	s.session.found = true
+	s.session.draft, _ = budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 500000})
+	partial, _ := budgetdraft.New("2026-06").Merge(budgetdraft.Change{
+		TotalCents:  500000,
+		Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
+	})
+	s.convo.result = services.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
+		Text: "custos fixos 35%", WhatsAppTo: "+5511999",
+	})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal("Faltam categorias", result.Reply)
+	s.Equal(1, s.convo.calls)
+	s.Equal(0, s.session.cleared)
+}
+
 func (s *BudgetConfigRouterSuite) TestNoPendingSessionFallsThroughToParser() {
 	s.session.found = false
 	s.parser.intent = intent.NewHowAmIDoing()

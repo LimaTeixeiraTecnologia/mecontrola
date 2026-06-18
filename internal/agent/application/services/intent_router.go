@@ -48,11 +48,30 @@ const (
 	fallbackUsecaseError    = "Tive uma instabilidade para consultar isso agora. Tente de novo em instantes 🙏"
 	registerUnavailableText = "Ainda não consigo registrar lançamentos por aqui. Já já isso fica disponível pra você 🙏"
 	noTransactionsText      = "Não encontrei nenhum lançamento recente seu para mexer. Quer registrar um agora? 😊"
+	budgetCancelledText     = "Ok, cancelei a configuração do orçamento. Quando quiser, é só chamar de novo. 😊"
 )
 
+var budgetCancelCues = []string{
+	"cancelar", "cancela", "deixa pra lá", "deixa pra la", "esquece", "parar",
+}
+
+func matchesBudgetCancel(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return false
+	}
+	for _, cue := range budgetCancelCues {
+		if normalized == cue || strings.Contains(normalized, cue) {
+			return true
+		}
+	}
+	return false
+}
+
 type ParsedIntent struct {
-	Intent intent.Intent
-	Raw    []byte
+	Intent      intent.Intent
+	Raw         []byte
+	DirectReply string
 }
 
 type IntentParser interface {
@@ -478,6 +497,11 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		observability.String("channel", channel),
 	)
 
+	if kind == intent.KindUnknown && strings.TrimSpace(parsed.DirectReply) != "" {
+		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: parsed.DirectReply, Outcome: OutcomeRouted, Kind: intent.KindUnknown}
+	}
+
 	switch kind {
 	case intent.KindLogExpense:
 		return r.routeLogExpense(ctx, principal.UserID, channel, parsed.Intent)
@@ -713,6 +737,16 @@ func (r *IntentRouter) continuePendingBudgetSession(ctx context.Context, userID 
 	}
 	if !found {
 		return false, RouteResult{}
+	}
+	if matchesBudgetCancel(text) {
+		if clearErr := r.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
+			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
+				observability.String("channel", channel),
+				observability.Error(clearErr),
+			)
+		}
+		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+		return true, RouteResult{Reply: budgetCancelledText, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
 	}
 	return true, r.advanceBudgetSession(ctx, userID, channel, text, draft)
 }
