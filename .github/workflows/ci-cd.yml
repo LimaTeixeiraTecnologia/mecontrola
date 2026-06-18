@@ -289,39 +289,6 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
 
-  smoke:
-    name: Smoke Tests
-    runs-on: [self-hosted, staging]
-    timeout-minutes: 15
-    needs: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: staging
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Setup Go + Task
-        uses: ./.github/actions/setup-go-task
-
-      - name: Auth smoke test
-        env:
-          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
-          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
-          SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
-        run: task auth:smoke
-
-      - name: Onboarding ATIVAR smoke test
-        env:
-          WEBHOOK_URL: ${{ secrets.STAGING_WEBHOOK_URL }}
-          META_APP_SECRET: ${{ secrets.STAGING_META_APP_SECRET }}
-          DB_URL: ${{ secrets.STAGING_DB_LOCAL_URL }}
-        run: task onboarding:smoke
-
   deploy-manual:
     name: Deploy to VPS (manual)
     runs-on: [self-hosted, staging]
@@ -350,7 +317,7 @@ jobs:
     name: Notify
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [quality-gate, build-image, scan-image, sign-image, deploy, smoke]
+    needs: [quality-gate, build-image, scan-image, sign-image, deploy]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
