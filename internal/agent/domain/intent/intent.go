@@ -25,6 +25,8 @@ const (
 	KindCreateRecurring
 	KindListRecurring
 	KindListCards
+	KindCreateCard
+	KindCountCards
 )
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
@@ -59,6 +61,10 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "list_recurring"
 	case KindListCards:
 		return "list_cards"
+	case KindCreateCard:
+		return "create_card"
+	case KindCountCards:
+		return "count_cards"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -98,6 +104,10 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindListRecurring, nil
 	case "list_cards":
 		return KindListCards, nil
+	case "create_card":
+		return KindCreateCard, nil
+	case "count_cards":
+		return KindCountCards, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -125,6 +135,8 @@ var (
 	ErrDirectionInvalid     = errors.New("agent.intent: direction must be income or outcome")
 	ErrFrequencyInvalid     = errors.New("agent.intent: frequency must be monthly or yearly")
 	ErrDayOfMonthInvalid    = errors.New("agent.intent: day_of_month must be between 1 and 31")
+	ErrCardNicknameEmpty    = errors.New("agent.intent: card nickname is empty")
+	ErrCardNicknameTooLong  = errors.New("agent.intent: card nickname exceeds maximum length")
 )
 
 const (
@@ -171,12 +183,16 @@ type Intent struct {
 	categoryName  string
 	goalName      string
 	cardName      string
+	cardNickname  string
 	refMonth      string
 	rawText       string
 	installments  int
 	direction     string
 	frequency     string
 	dayOfMonth    int
+	closingDay    int
+	dueDay        int
+	limitCents    int64
 }
 
 func (i Intent) Kind() Kind            { return i.kind }
@@ -188,6 +204,10 @@ func (i Intent) CardHint() string      { return i.cardHint }
 func (i Intent) CategoryName() string  { return i.categoryName }
 func (i Intent) GoalName() string      { return i.goalName }
 func (i Intent) CardName() string      { return i.cardName }
+func (i Intent) CardNickname() string  { return i.cardNickname }
+func (i Intent) ClosingDay() int       { return i.closingDay }
+func (i Intent) DueDay() int           { return i.dueDay }
+func (i Intent) LimitCents() int64     { return i.limitCents }
 func (i Intent) RefMonth() string      { return i.refMonth }
 func (i Intent) RawText() string       { return i.rawText }
 func (i Intent) Installments() int     { return i.installments }
@@ -423,6 +443,40 @@ func NewListRecurring() Intent {
 
 func NewListCards() Intent {
 	return Intent{kind: KindListCards}
+}
+
+type CreateCardFields struct {
+	Nickname   string
+	Name       string
+	ClosingDay int
+	DueDay     int
+	LimitCents int64
+}
+
+func NewCreateCard(f CreateCardFields) (Intent, error) {
+	nickname := strings.TrimSpace(f.Nickname)
+	if nickname == "" {
+		return Intent{}, ErrCardNicknameEmpty
+	}
+	if len([]rune(nickname)) > maxCardNameLength {
+		return Intent{}, ErrCardNicknameTooLong
+	}
+	name := strings.TrimSpace(f.Name)
+	if len([]rune(name)) > maxCardNameLength {
+		return Intent{}, ErrCardNameTooLong
+	}
+	return Intent{
+		kind:         KindCreateCard,
+		cardNickname: nickname,
+		cardName:     name,
+		closingDay:   f.ClosingDay,
+		dueDay:       f.DueDay,
+		limitCents:   f.LimitCents,
+	}, nil
+}
+
+func NewCountCards() Intent {
+	return Intent{kind: KindCountCards}
 }
 
 func NewUnknown(rawText string) (Intent, error) {

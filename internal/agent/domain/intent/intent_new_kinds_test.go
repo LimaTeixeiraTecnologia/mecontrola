@@ -1,6 +1,7 @@
 package intent_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,8 @@ func TestNewKinds_StringAndParseRoundTrip(t *testing.T) {
 		intent.KindEditLastTransaction,
 		intent.KindCreateRecurring,
 		intent.KindListRecurring,
+		intent.KindCreateCard,
+		intent.KindCountCards,
 	}
 	for _, k := range kinds {
 		parsed, err := intent.ParseKind(k.String())
@@ -145,4 +148,53 @@ func TestNewListRecurring(t *testing.T) {
 	t.Parallel()
 	got := intent.NewListRecurring()
 	require.Equal(t, intent.KindListRecurring, got.Kind())
+}
+
+func TestNewCreateCard(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valido com name e nickname", func(t *testing.T) {
+		t.Parallel()
+		got, err := intent.NewCreateCard(intent.CreateCardFields{
+			Nickname:   "  Roxinho  ",
+			Name:       "Itau Roxinho",
+			ClosingDay: 10,
+			DueDay:     17,
+			LimitCents: 500000,
+		})
+		require.NoError(t, err)
+		require.Equal(t, intent.KindCreateCard, got.Kind())
+		require.Equal(t, "Roxinho", got.CardNickname())
+		require.Equal(t, "Itau Roxinho", got.CardName())
+		require.Equal(t, 10, got.ClosingDay())
+		require.Equal(t, 17, got.DueDay())
+		require.Equal(t, int64(500000), got.LimitCents())
+	})
+
+	t.Run("nickname vazio falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewCreateCard(intent.CreateCardFields{Nickname: "   "})
+		require.ErrorIs(t, err, intent.ErrCardNicknameEmpty)
+	})
+
+	t.Run("nao valida regra de dias", func(t *testing.T) {
+		t.Parallel()
+		got, err := intent.NewCreateCard(intent.CreateCardFields{Nickname: "nubank", ClosingDay: 99, DueDay: 0})
+		require.NoError(t, err)
+		require.Equal(t, 99, got.ClosingDay())
+		require.Equal(t, 0, got.DueDay())
+	})
+
+	t.Run("name muito longo falha", func(t *testing.T) {
+		t.Parallel()
+		long := strings.Repeat("a", 121)
+		_, err := intent.NewCreateCard(intent.CreateCardFields{Nickname: "nubank", Name: long})
+		require.ErrorIs(t, err, intent.ErrCardNameTooLong)
+	})
+}
+
+func TestNewCountCards(t *testing.T) {
+	t.Parallel()
+	got := intent.NewCountCards()
+	require.Equal(t, intent.KindCountCards, got.Kind())
 }

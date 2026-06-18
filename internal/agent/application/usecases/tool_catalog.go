@@ -13,6 +13,8 @@ const (
 	toolMonthlySummary    = "monthly_summary"
 	toolListCards         = "list_cards"
 	toolConfigureBudget   = "configure_budget"
+	toolCreateCard        = "create_card"
+	toolCountCards        = "count_cards"
 )
 
 var ErrToolUnsupported = fmt.Errorf("agent.usecase.tool_catalog: tool nao suportada")
@@ -83,6 +85,46 @@ func AgentToolCatalog() []interfaces.ToolSpec {
 				"additionalProperties": false,
 			},
 		},
+		{
+			Name:        toolCreateCard,
+			Description: "Cadastra um novo cartao de credito do usuario com apelido, dia de fechamento, dia de vencimento e limite.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"nickname": map[string]any{
+						"type":        "string",
+						"description": "Apelido do cartao (ex: nubank, itau roxinho).",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Nome completo do cartao; se vazio, usa o apelido.",
+					},
+					"closing_day": map[string]any{
+						"type":        "integer",
+						"description": "Dia do mes em que a fatura fecha (1 a 31).",
+					},
+					"due_day": map[string]any{
+						"type":        "integer",
+						"description": "Dia do mes em que a fatura vence (1 a 31).",
+					},
+					"limit_cents": map[string]any{
+						"type":        "integer",
+						"description": "Limite do cartao em centavos (ex: R$ 5.000,00 = 500000).",
+					},
+				},
+				"required":             []string{"nickname"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        toolCountCards,
+			Description: "Conta quantos cartoes ativos o usuario tem cadastrados.",
+			Parameters: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"additionalProperties": false,
+			},
+		},
 	}
 }
 
@@ -96,6 +138,16 @@ func ToolCallToIntent(call interfaces.ToolCall, fallbackText string) (intent.Int
 		return intent.NewListCards(), nil
 	case toolConfigureBudget:
 		return intent.NewConfigureBudget(), nil
+	case toolCreateCard:
+		return intent.NewCreateCard(intent.CreateCardFields{
+			Nickname:   stringArg(call.ArgumentsJSON, "nickname"),
+			Name:       stringArg(call.ArgumentsJSON, "name"),
+			ClosingDay: int(intArg(call.ArgumentsJSON, "closing_day")),
+			DueDay:     int(intArg(call.ArgumentsJSON, "due_day")),
+			LimitCents: intArg(call.ArgumentsJSON, "limit_cents"),
+		})
+	case toolCountCards:
+		return intent.NewCountCards(), nil
 	default:
 		return intent.Intent{}, fmt.Errorf("%w: %s", ErrToolUnsupported, call.FunctionName)
 	}

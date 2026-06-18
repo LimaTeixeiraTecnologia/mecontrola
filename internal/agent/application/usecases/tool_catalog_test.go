@@ -33,6 +33,43 @@ func (s *ToolCatalogSuite) TestCatalogExposesMVPTools() {
 	s.True(names["monthly_summary"])
 	s.True(names["list_cards"])
 	s.True(names["configure_budget"])
+	s.True(names["create_card"])
+	s.True(names["count_cards"])
+}
+
+func (s *ToolCatalogSuite) TestCreateCardMapsToKind() {
+	call := interfaces.ToolCall{
+		FunctionName: "create_card",
+		ArgumentsJSON: map[string]any{
+			"nickname":    "nubank",
+			"name":        "Nubank Roxinho",
+			"closing_day": float64(10),
+			"due_day":     float64(17),
+			"limit_cents": float64(500000),
+		},
+	}
+
+	got, err := usecases.ToolCallToIntent(call, "cadastra meu nubank")
+	s.Require().NoError(err)
+	s.Equal(intent.KindCreateCard, got.Kind())
+	s.Equal("nubank", got.CardNickname())
+	s.Equal("Nubank Roxinho", got.CardName())
+	s.Equal(10, got.ClosingDay())
+	s.Equal(17, got.DueDay())
+	s.Equal(int64(500000), got.LimitCents())
+}
+
+func (s *ToolCatalogSuite) TestCreateCardWithoutNicknameFails() {
+	call := interfaces.ToolCall{FunctionName: "create_card", ArgumentsJSON: map[string]any{}}
+	_, err := usecases.ToolCallToIntent(call, "cadastra um cartao")
+	s.Require().Error(err)
+	s.ErrorIs(err, intent.ErrCardNicknameEmpty)
+}
+
+func (s *ToolCatalogSuite) TestCountCardsMapsToKind() {
+	got, err := usecases.ToolCallToIntent(interfaces.ToolCall{FunctionName: "count_cards"}, "quantos cartoes eu tenho")
+	s.Require().NoError(err)
+	s.Equal(intent.KindCountCards, got.Kind())
 }
 
 func (s *ToolCatalogSuite) TestRecordTransactionOutcomeMapsToLogExpense() {

@@ -264,6 +264,12 @@ func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouter
 	if b.cardModule.InvoiceForUC != nil {
 		deps.CardInvoice = b.cardModule.InvoiceForUC
 	}
+	if b.cardModule.CreateCardUC != nil {
+		deps.CardCreator = agentbinding.NewCardCreatorAdapter(b.cardModule.CreateCardUC)
+	}
+	if b.cardModule.CountCardsUC != nil {
+		deps.CardCounter = agentbinding.NewCardCounterAdapter(b.cardModule.CountCardsUC)
+	}
 	if b.budgetConfigurator != nil {
 		deps.BudgetConfig = b.budgetConfigurator
 	}

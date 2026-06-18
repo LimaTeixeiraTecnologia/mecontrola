@@ -15,6 +15,7 @@ import (
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
+	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 )
 
 const (
@@ -67,6 +68,22 @@ type CardLister interface {
 
 type CardInvoiceReader interface {
 	Execute(ctx context.Context, in cardinput.InvoiceFor) (cardoutput.Invoice, error)
+}
+
+type CardCreator interface {
+	Execute(ctx context.Context, userID uuid.UUID, in intent.Intent) (CardCreatorResult, error)
+}
+
+type CardCreatorResult struct {
+	Nickname   string
+	Name       string
+	ClosingDay int
+	DueDay     int
+	LimitCents int64
+}
+
+type CardCounter interface {
+	Execute(ctx context.Context, userID uuid.UUID) (int64, error)
 }
 
 type Fallback interface {
@@ -229,6 +246,8 @@ type IntentRouter struct {
 	monthlySummary    MonthlySummaryReader
 	cardLister        CardLister
 	cardInvoice       CardInvoiceReader
+	cardCreator       CardCreator
+	cardCounter       CardCounter
 	expenseLogger     ExpenseLogger
 	cardPurchaseLog   CardPurchaseLogger
 	transactionLister TransactionLister
@@ -252,6 +271,8 @@ type IntentRouterDeps struct {
 	MonthlySummary    MonthlySummaryReader
 	CardLister        CardLister
 	CardInvoice       CardInvoiceReader
+	CardCreator       CardCreator
+	CardCounter       CardCounter
 	ExpenseLogger     ExpenseLogger
 	CardPurchaseLog   CardPurchaseLogger
 	TransactionLister TransactionLister
@@ -295,6 +316,8 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		monthlySummary:    deps.MonthlySummary,
 		cardLister:        deps.CardLister,
 		cardInvoice:       deps.CardInvoice,
+		cardCreator:       deps.CardCreator,
+		cardCounter:       deps.CardCounter,
 		expenseLogger:     deps.ExpenseLogger,
 		cardPurchaseLog:   deps.CardPurchaseLog,
 		transactionLister: deps.TransactionLister,
@@ -450,6 +473,10 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return r.routeListRecurring(ctx, principal.UserID, channel)
 	case intent.KindListCards:
 		return r.routeListCards(ctx, principal.UserID, channel)
+	case intent.KindCreateCard:
+		return r.routeCreateCard(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindCountCards:
+		return r.routeCountCards(ctx, principal.UserID, channel)
 	case intent.KindUnknown:
 		reply := r.delegateFallback(ctx, principal.UserID, channel, trimmed)
 		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeFallback)
@@ -788,6 +815,36 @@ func (r *IntentRouter) routeListCards(ctx context.Context, userID uuid.UUID, cha
 	return RouteResult{Reply: formatCardList(cards), Outcome: OutcomeRouted, Kind: intent.KindListCards}
 }
 
+func (r *IntentRouter) routeCreateCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if r.cardCreator == nil {
+		r.record(ctx, intent.KindCreateCard.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindCreateCard}
+	}
+	result, err := r.cardCreator.Execute(ctx, userID, in)
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.create_card_failed", observability.Error(err))
+		r.record(ctx, intent.KindCreateCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: createCardErrorText(err), Outcome: OutcomeUsecaseError, Kind: intent.KindCreateCard}
+	}
+	r.record(ctx, intent.KindCreateCard.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCreatedCard(result), Outcome: OutcomeRouted, Kind: intent.KindCreateCard}
+}
+
+func (r *IntentRouter) routeCountCards(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if r.cardCounter == nil {
+		r.record(ctx, intent.KindCountCards.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindCountCards}
+	}
+	total, err := r.cardCounter.Execute(ctx, userID)
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.count_cards_failed", observability.Error(err))
+		r.record(ctx, intent.KindCountCards.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindCountCards}
+	}
+	r.record(ctx, intent.KindCountCards.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCardCount(total), Outcome: OutcomeRouted, Kind: intent.KindCountCards}
+}
+
 func (r *IntentRouter) currentCompetence() string {
 	now := time.Now().UTC().In(r.loc)
 	return fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
@@ -1094,6 +1151,58 @@ func formatCardList(list cardoutput.CardList) string {
 		sb.WriteString("\n")
 	}
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+func formatCreatedCard(result CardCreatorResult) string {
+	label := strings.TrimSpace(result.Nickname)
+	if label == "" {
+		label = strings.TrimSpace(result.Name)
+	}
+	if label == "" {
+		label = "novo cartão"
+	}
+	var sb strings.Builder
+	sb.WriteString("💳 *Cartão cadastrado!*\n*")
+	sb.WriteString(label)
+	sb.WriteString("*")
+	if result.LimitCents > 0 {
+		sb.WriteString(" — limite ")
+		sb.WriteString(formatBRL(result.LimitCents))
+	}
+	_, _ = fmt.Fprintf(&sb, "\n📅 Fecha dia %d, vence dia %d.", result.ClosingDay, result.DueDay)
+	return sb.String()
+}
+
+func formatCardCount(total int64) string {
+	switch total {
+	case 0:
+		return "💳 Você ainda não tem cartões cadastrados. Quer cadastrar um agora?"
+	case 1:
+		return "💳 Você tem *1 cartão* cadastrado."
+	default:
+		return fmt.Sprintf("💳 Você tem *%d cartões* cadastrados.", total)
+	}
+}
+
+func createCardErrorText(err error) string {
+	switch {
+	case errors.Is(err, carddomain.ErrNicknameConflict):
+		return "💳 Você já tem um cartão com esse apelido. Que tal escolher outro nome?"
+	case errors.Is(err, carddomain.ErrInvalidClosingDay):
+		return "💳 O dia de fechamento precisa estar entre 1 e 31. Me confirma o dia certo?"
+	case errors.Is(err, carddomain.ErrInvalidDueDay):
+		return "💳 O dia de vencimento precisa estar entre 1 e 31. Me confirma o dia certo?"
+	case errors.Is(err, carddomain.ErrInvalidNickname):
+		return "💳 O apelido do cartão precisa ter entre 1 e 32 caracteres. Pode me passar um nome mais curto?"
+	case errors.Is(err, carddomain.ErrInvalidCardName):
+		return "💳 O nome do cartão precisa ter entre 1 e 64 caracteres. Pode reformular?"
+	case errors.Is(err, carddomain.ErrCardLimitTooLarge):
+		return "💳 Esse limite passou do máximo que consigo registrar (R$ 1.000.000,00). Confere o valor?"
+	case errors.Is(err, carddomain.ErrCardLimitNegative):
+		return "💳 O limite não pode ser negativo. Me passa um valor válido?"
+	default:
+		return "😕 Não consegui cadastrar o cartão agora. Pode tentar de novo em instantes?"
+	}
 }
 
 func formatCardNotFound(cardName string) string {

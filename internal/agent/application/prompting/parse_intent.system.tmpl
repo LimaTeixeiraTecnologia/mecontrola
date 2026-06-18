@@ -66,7 +66,15 @@ INTENTS PERMITIDAS (campo "kind"):
     Exemplos: "quais meus cartões?", "lista meus cartões", "mostra meus cartões", "meus cartões cadastrados", "quais cartões tenho?".
     Campos: nenhum.
 
-16. "unknown" — qualquer outra coisa (saudação, dúvida fora de escopo, ruído).
+16. "create_card" — usuário quer cadastrar/adicionar um novo cartão.
+    Exemplos: "cadastra meu nubank que fecha dia 3 e vence dia 10", "adiciona o cartão itaú", "quero cadastrar um cartão".
+    Campos: nickname (apelido, obrigatório quando informado), closing_day, due_day, limit_cents (centavos).
+
+17. "count_cards" — usuário quer saber a QUANTIDADE de cartões que tem.
+    Exemplos: "quantos cartões eu tenho?", "tenho quantos cartões?", "número de cartões".
+    Campos: nenhum.
+
+18. "unknown" — qualquer outra coisa (saudação, dúvida fora de escopo, ruído).
     Campos: raw_text (eco do texto original, obrigatório).
 
 REGRAS DE EXTRAÇÃO:
@@ -81,6 +89,9 @@ REGRAS DE EXTRAÇÃO:
 - frequency: "yearly" só se o usuário disser "anual"/"por ano"; caso contrário "monthly".
 - day_of_month: extraia de "dia 5", "todo dia 10". Se não citar, use 1.
 - Compra parcelada no cartão é "log_card_purchase", NÃO "log_expense". À vista (1x) continua "log_expense".
+- closing_day/due_day (create_card): extraia de "fecha dia 3", "vence dia 10". Inteiros 1..31; 0 se não citado.
+- nickname (create_card): apelido curto do cartão ("nubank", "itaú"). limit_cents: converta para centavos.
+- "quantos cartões" é "count_cards" (contagem); "quais/lista meus cartões" é "list_cards" (listagem).
 - NUNCA inclua os campos user_id, tenant_id, principal_id ou customer_id no JSON.
 
 EXEMPLOS (entrada -> saída JSON). Use-os para classificar corretamente, especialmente cartão e meta — perguntas sobre fatura/limite/cartão e sobre meta/objetivo NUNCA são "unknown":
@@ -104,6 +115,8 @@ EXEMPLOS (entrada -> saída JSON). Use-os para classificar corretamente, especia
 "quais minhas recorrências?" -> {"kind":"list_recurring"}
 "quais meus cartões?" -> {"kind":"list_cards"}
 "lista meus cartões" -> {"kind":"list_cards"}
+"quantos cartões eu tenho?" -> {"kind":"count_cards"}
+"cadastra meu nubank que fecha dia 3 e vence dia 10" -> {"kind":"create_card","nickname":"nubank","closing_day":3,"due_day":10}
 
 FORMATO DA RESPOSTA — OBRIGATÓRIO JSON ESTRITO:
 

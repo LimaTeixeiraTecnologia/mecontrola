@@ -40,6 +40,7 @@ type CardModule struct {
 	CardRouter          *httpserver.CardRouter
 	CardLookup          *usecases.GetCardForUser
 	ListCardsUC         *usecases.ListCards
+	CountCardsUC        *usecases.CountCards
 	CreateCardUC        *usecases.CreateCard
 	GetCardUC           *usecases.GetCard
 	UpdateCardUC        *usecases.UpdateCard
@@ -76,6 +77,7 @@ func NewCardModule(
 	createCard := usecases.NewCreateCard(createUoW, factory, idemStorage, o11y)
 	getCard := usecases.NewGetCard(cardRepo, o11y)
 	listCards := usecases.NewListCards(cardRepo, o11y)
+	countCards := usecases.NewCountCards(cardRepo, o11y)
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
 	updateCardLimit := usecases.NewUpdateCardLimit(updateLimitUoW, factory, idemStorage, o11y)
 	softDelete := usecases.NewSoftDeleteCard(deleteUoW, factory, idemStorage, o11y)
@@ -121,6 +123,7 @@ func NewCardModule(
 		CardRouter:          router,
 		CardLookup:          getCardForUser,
 		ListCardsUC:         listCards,
+		CountCardsUC:        countCards,
 		CreateCardUC:        createCard,
 		GetCardUC:           getCard,
 		UpdateCardUC:        updateCard,

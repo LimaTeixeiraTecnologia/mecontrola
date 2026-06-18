@@ -152,12 +152,16 @@ type rawIntentDTO struct {
 	CategoryName  string `json:"category_name"`
 	GoalName      string `json:"goal_name"`
 	CardName      string `json:"card_name"`
+	CardNickname  string `json:"nickname"`
 	RefMonth      string `json:"ref_month"`
 	RawText       string `json:"raw_text"`
 	Installments  int    `json:"installments"`
 	Direction     string `json:"direction"`
 	Frequency     string `json:"frequency"`
 	DayOfMonth    int    `json:"day_of_month"`
+	ClosingDay    int    `json:"closing_day"`
+	DueDay        int    `json:"due_day"`
+	LimitCents    int64  `json:"limit_cents"`
 }
 
 func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, *parseInboundError) {
@@ -247,6 +251,16 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		return intent.NewListRecurring(), nil
 	case intent.KindListCards:
 		return intent.NewListCards(), nil
+	case intent.KindCreateCard:
+		return intent.NewCreateCard(intent.CreateCardFields{
+			Nickname:   dto.CardNickname,
+			Name:       dto.CardName,
+			ClosingDay: dto.ClosingDay,
+			DueDay:     dto.DueDay,
+			LimitCents: dto.LimitCents,
+		})
+	case intent.KindCountCards:
+		return intent.NewCountCards(), nil
 	case intent.KindUnknown:
 		raw := dto.RawText
 		if strings.TrimSpace(raw) == "" {
