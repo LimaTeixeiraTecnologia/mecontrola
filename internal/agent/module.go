@@ -8,6 +8,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
@@ -21,11 +22,13 @@ import (
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/loader"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
+	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
@@ -42,10 +45,21 @@ type whatsAppGateway interface {
 }
 
 type AgentModule struct {
-	WhatsAppAgentRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
-	TelegramAgentRoute tgdispatcher.AgentRoute
-	ParseInbound       *usecases.ParseInbound
-	IntentRouter       *appservices.IntentRouter
+	WhatsAppAgentRoute    func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
+	TelegramAgentRoute    tgdispatcher.AgentRoute
+	ParseInbound          *usecases.ParseInbound
+	IntentRouter          *appservices.IntentRouter
+	SessionUnitOfWork     uow.UnitOfWork
+	SessionRepository     interfaces.AgentSessionRepository
+	SessionRepositoryFact interfaces.AgentSessionRepositoryFactory
+}
+
+type AgentModuleOption func(*agentModuleBuilder)
+
+func WithSessionStore(db *sqlx.DB) AgentModuleOption {
+	return func(b *agentModuleBuilder) {
+		b.sessionDB = db
+	}
 }
 
 type llmRuntime struct {
@@ -79,6 +93,7 @@ type agentModuleBuilder struct {
 	whatsAppGateway    whatsAppGateway
 	budgetConfigurator appservices.BudgetConfigurator
 	onboarding         appservices.OnboardingContinuation
+	sessionDB          *sqlx.DB
 }
 
 func NewAgentModule(
@@ -92,6 +107,7 @@ func NewAgentModule(
 	whatsAppGateway whatsAppGateway,
 	budgetConfigurator appservices.BudgetConfigurator,
 	onboarding appservices.OnboardingContinuation,
+	opts ...AgentModuleOption,
 ) (AgentModule, error) {
 	builder := &agentModuleBuilder{
 		cfg:                cfg,
@@ -104,6 +120,9 @@ func NewAgentModule(
 		whatsAppGateway:    whatsAppGateway,
 		budgetConfigurator: budgetConfigurator,
 		onboarding:         onboarding,
+	}
+	for _, opt := range opts {
+		opt(builder)
 	}
 	return builder.build()
 }
@@ -126,12 +145,24 @@ func (b *agentModuleBuilder) build() (AgentModule, error) {
 		return AgentModule{}, err
 	}
 
-	return AgentModule{
+	module := AgentModule{
 		WhatsAppAgentRoute: b.buildWhatsAppAgentRoute(intentRouter),
 		TelegramAgentRoute: b.buildTelegramAgentRoute(intentRouter),
 		ParseInbound:       llmModule.ParseInbound,
 		IntentRouter:       intentRouter,
-	}, nil
+	}
+	b.attachSessionStore(&module)
+	return module, nil
+}
+
+func (b *agentModuleBuilder) attachSessionStore(module *AgentModule) {
+	if b.sessionDB == nil {
+		return
+	}
+	factory := agentrepo.NewRepositoryFactory(b.o11y)
+	module.SessionRepositoryFact = factory
+	module.SessionRepository = factory.AgentSessionRepository(b.sessionDB)
+	module.SessionUnitOfWork = uow.NewUnitOfWork(b.sessionDB)
 }
 
 func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {

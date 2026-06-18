@@ -228,6 +228,7 @@ func Run() error {
 		onboardingModule.WhatsAppGateway,
 		newBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
 		newOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
+		agent.WithSessionStore(db),
 	)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agent: %w", err)
