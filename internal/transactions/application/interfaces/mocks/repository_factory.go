@@ -5,10 +5,9 @@
 package mocks
 
 import (
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewRepositoryFactory creates a new instance of RepositoryFactory. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

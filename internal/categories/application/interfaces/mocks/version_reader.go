@@ -70,7 +70,7 @@ type VersionReader_Current_Call struct {
 
 // Current is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *VersionReader_Expecter) Current(ctx interface{}) *VersionReader_Current_Call {
+func (_e *VersionReader_Expecter) Current(ctx any) *VersionReader_Current_Call {
 	return &VersionReader_Current_Call{Call: _e.mock.On("Current", ctx)}
 }
 

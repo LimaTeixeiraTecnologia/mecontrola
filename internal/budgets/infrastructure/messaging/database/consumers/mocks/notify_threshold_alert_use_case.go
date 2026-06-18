@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // newNotifyThresholdAlertUseCase creates a new instance of notifyThresholdAlertUseCase. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

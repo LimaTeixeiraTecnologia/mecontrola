@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewStorage creates a new instance of Storage. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

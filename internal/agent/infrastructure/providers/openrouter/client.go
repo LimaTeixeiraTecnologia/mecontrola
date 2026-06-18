@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -43,6 +44,7 @@ type Provider struct {
 	o11y      observability.Observability
 	callTotal observability.Counter
 	callError observability.Counter
+	toolCalls observability.Counter
 	latency   observability.Histogram
 }
 
@@ -57,28 +59,59 @@ func NewProvider(client *httpclient.Client, cfg ProviderConfig, o11y observabili
 		"Total de erros de providers LLM por modelo e reason",
 		"1",
 	)
+	toolCalls := o11y.Metrics().Counter(
+		"agent_llm_provider_tool_calls_total",
+		"Total de tool calls emitidos por modelo e function",
+		"1",
+	)
 	latency := o11y.Metrics().HistogramWithBuckets(
 		"agent_llm_provider_latency_seconds",
 		"Latencia de respostas dos providers LLM",
 		"s",
 		[]float64{0.1, 0.25, 0.5, 1, 2, 5, 10},
 	)
-	return &Provider{cfg: cfg, client: client, o11y: o11y, callTotal: callTotal, callError: callError, latency: latency}
+	return &Provider{cfg: cfg, client: client, o11y: o11y, callTotal: callTotal, callError: callError, toolCalls: toolCalls, latency: latency}
 }
 
 func (p *Provider) Slug() valueobjects.ModelSlug { return p.cfg.Slug }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	ToolCalls []toolCall `json:"tool_calls,omitempty"`
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens"`
-	Temperature float64       `json:"temperature"`
-	ResponseFmt *responseFmt  `json:"response_format,omitempty"`
+	Model             string           `json:"model"`
+	Messages          []chatMessage    `json:"messages"`
+	MaxTokens         int              `json:"max_tokens"`
+	Temperature       float64          `json:"temperature"`
+	ResponseFmt       *responseFmt     `json:"response_format,omitempty"`
+	Tools             []toolDefinition `json:"tools,omitempty"`
+	ToolChoice        any              `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool            `json:"parallel_tool_calls,omitempty"`
+}
+
+type toolFunctionDef struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+type toolDefinition struct {
+	Type     string          `json:"type"`
+	Function toolFunctionDef `json:"function"`
+}
+
+type toolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type toolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function toolCallFunction `json:"function"`
 }
 
 type responseFmt struct {
@@ -137,71 +170,16 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 	ctx, span := p.o11y.Tracer().Start(ctx, "agent.llm.openrouter.interpret")
 	defer span.End()
 
-	body := chatRequest{
-		Model: p.cfg.Slug.String(),
-		Messages: []chatMessage{
-			{Role: "system", Content: req.SystemPrompt},
-			{Role: "user", Content: req.UserMessage},
-		},
-		MaxTokens:   resolveMaxTokens(req.MaxTokens, p.cfg.MaxTokens),
-		Temperature: p.cfg.Temperature,
-		ResponseFmt: resolveResponseFormat(req),
-	}
-
-	encoded, err := json.Marshal(body)
+	rawBody, err := p.send(ctx, p.buildRequestBody(req))
 	if err != nil {
-		return interfaces.LLMResponse{}, fmt.Errorf("agent.llm.openrouter: marshal request: %w", err)
-	}
-
-	start := time.Now()
-	resp, err := p.client.Post(ctx, endpointChatCompletions, bytes.NewReader(encoded),
-		httpclient.WithHeader("Content-Type", "application/json"),
-		httpclient.WithHeader("Authorization", "Bearer "+p.cfg.APIKey),
-		httpclient.WithHeader("HTTP-Referer", p.cfg.HTTPReferer),
-		httpclient.WithHeader("X-Title", p.cfg.XTitle),
-	)
-	elapsed := time.Since(start).Seconds()
-	p.latency.Record(ctx, elapsed, observability.String("model", p.cfg.Slug.String()))
-
-	if err != nil {
-		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "transport"))
 		span.RecordError(err)
-		return interfaces.LLMResponse{}, fmt.Errorf("agent.llm.openrouter: post: %w", err)
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			p.o11y.Logger().Warn(ctx, "agent.llm.openrouter.close_body_failed",
-				observability.Error(closeErr),
-			)
-		}
-	}()
-
-	rawBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if readErr != nil {
-		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "read_body"))
-		return interfaces.LLMResponse{}, fmt.Errorf("agent.llm.openrouter: read body: %w", readErr)
+		return interfaces.LLMResponse{}, err
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		p.callError.Add(ctx, 1,
-			observability.String("model", p.cfg.Slug.String()),
-			observability.String("reason", classifyStatus(resp.StatusCode)),
-		)
-		return interfaces.LLMResponse{}, fmt.Errorf("%w: status=%d body=%s", ErrProviderUpstream, resp.StatusCode, truncatePreview(rawBody))
-	}
-
-	var parsed chatResponse
-	if err := json.Unmarshal(rawBody, &parsed); err != nil {
-		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "decode"))
-		return interfaces.LLMResponse{}, fmt.Errorf("agent.llm.openrouter: decode response: %w", err)
-	}
-	if parsed.Error != nil {
-		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "upstream_error"))
-		return interfaces.LLMResponse{}, fmt.Errorf("%w: %s", ErrProviderUpstream, parsed.Error.Message)
-	}
-	if len(parsed.Choices) == 0 {
-		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "empty_choices"))
-		return interfaces.LLMResponse{}, ErrEmptyChoices
+	parsed, err := p.decode(ctx, rawBody)
+	if err != nil {
+		span.RecordError(err)
+		return interfaces.LLMResponse{}, err
 	}
 
 	status := "ok"
@@ -214,12 +192,146 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 	}
 	p.callTotal.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("status", status))
 
-	return interfaces.LLMResponse{
+	message := parsed.Choices[0].Message
+	result := interfaces.LLMResponse{
 		Provider:         p.cfg.Slug,
-		RawJSON:          []byte(parsed.Choices[0].Message.Content),
+		RawJSON:          []byte(message.Content),
 		PromptTokens:     parsed.Usage.PromptTokens,
 		CompletionTokens: parsed.Usage.CompletionTokens,
-	}, nil
+	}
+	if len(message.ToolCalls) > 0 {
+		calls, parseErr := parseToolCalls(message.ToolCalls)
+		if parseErr != nil {
+			p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "tool_args"))
+			span.RecordError(parseErr)
+			return interfaces.LLMResponse{}, parseErr
+		}
+		result.ToolCalls = calls
+		for _, call := range calls {
+			p.toolCalls.Add(ctx, 1,
+				observability.String("model", p.cfg.Slug.String()),
+				observability.String("function", call.FunctionName),
+			)
+		}
+	}
+	return result, nil
+}
+
+func (p *Provider) buildRequestBody(req interfaces.LLMRequest) chatRequest {
+	body := chatRequest{
+		Model: p.cfg.Slug.String(),
+		Messages: []chatMessage{
+			{Role: "system", Content: req.SystemPrompt},
+			{Role: "user", Content: req.UserMessage},
+		},
+		MaxTokens:   resolveMaxTokens(req.MaxTokens, p.cfg.MaxTokens),
+		Temperature: p.cfg.Temperature,
+	}
+	if len(req.Tools) > 0 {
+		noParallel := false
+		body.Tools = buildToolDefinitions(req.Tools)
+		body.ToolChoice = resolveToolChoice(req.ToolChoice)
+		body.ParallelToolCalls = &noParallel
+		return body
+	}
+	body.ResponseFmt = resolveResponseFormat(req)
+	return body
+}
+
+func (p *Provider) send(ctx context.Context, body chatRequest) ([]byte, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm.openrouter: marshal request: %w", err)
+	}
+
+	start := time.Now()
+	resp, err := p.client.Post(ctx, endpointChatCompletions, bytes.NewReader(encoded),
+		httpclient.WithHeader("Content-Type", "application/json"),
+		httpclient.WithHeader("Authorization", "Bearer "+p.cfg.APIKey),
+		httpclient.WithHeader("HTTP-Referer", p.cfg.HTTPReferer),
+		httpclient.WithHeader("X-Title", p.cfg.XTitle),
+	)
+	p.latency.Record(ctx, time.Since(start).Seconds(), observability.String("model", p.cfg.Slug.String()))
+	if err != nil {
+		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "transport"))
+		return nil, fmt.Errorf("agent.llm.openrouter: post: %w", err)
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			p.o11y.Logger().Warn(ctx, "agent.llm.openrouter.close_body_failed", observability.Error(closeErr))
+		}
+	}()
+
+	rawBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if readErr != nil {
+		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "read_body"))
+		return nil, fmt.Errorf("agent.llm.openrouter: read body: %w", readErr)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		p.callError.Add(ctx, 1,
+			observability.String("model", p.cfg.Slug.String()),
+			observability.String("reason", classifyStatus(resp.StatusCode)),
+		)
+		return nil, fmt.Errorf("%w: status=%d body=%s", ErrProviderUpstream, resp.StatusCode, truncatePreview(rawBody))
+	}
+	return rawBody, nil
+}
+
+func (p *Provider) decode(ctx context.Context, rawBody []byte) (chatResponse, error) {
+	var parsed chatResponse
+	if err := json.Unmarshal(rawBody, &parsed); err != nil {
+		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "decode"))
+		return chatResponse{}, fmt.Errorf("agent.llm.openrouter: decode response: %w", err)
+	}
+	if parsed.Error != nil {
+		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "upstream_error"))
+		return chatResponse{}, fmt.Errorf("%w: %s", ErrProviderUpstream, parsed.Error.Message)
+	}
+	if len(parsed.Choices) == 0 {
+		p.callError.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("reason", "empty_choices"))
+		return chatResponse{}, ErrEmptyChoices
+	}
+	return parsed, nil
+}
+
+func buildToolDefinitions(specs []interfaces.ToolSpec) []toolDefinition {
+	defs := make([]toolDefinition, 0, len(specs))
+	for _, spec := range specs {
+		defs = append(defs, toolDefinition{
+			Type: "function",
+			Function: toolFunctionDef{
+				Name:        spec.Name,
+				Description: spec.Description,
+				Parameters:  spec.Parameters,
+			},
+		})
+	}
+	return defs
+}
+
+func resolveToolChoice(requested string) any {
+	if strings.TrimSpace(requested) != "" {
+		return requested
+	}
+	return "auto"
+}
+
+func parseToolCalls(raw []toolCall) ([]interfaces.ToolCall, error) {
+	calls := make([]interfaces.ToolCall, 0, len(raw))
+	for _, tc := range raw {
+		args := map[string]any{}
+		if trimmed := strings.TrimSpace(tc.Function.Arguments); trimmed != "" {
+			if err := json.Unmarshal([]byte(trimmed), &args); err != nil {
+				return nil, fmt.Errorf("agent.llm.openrouter: decode tool arguments (%s): %w", tc.Function.Name, err)
+			}
+		}
+		calls = append(calls, interfaces.ToolCall{
+			ID:            tc.ID,
+			FunctionName:  tc.Function.Name,
+			ArgumentsJSON: args,
+		})
+	}
+	return calls, nil
 }
 
 func resolveResponseFormat(req interfaces.LLMRequest) *responseFmt {

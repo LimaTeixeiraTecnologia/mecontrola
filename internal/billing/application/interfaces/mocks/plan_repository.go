@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewPlanRepository creates a new instance of PlanRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

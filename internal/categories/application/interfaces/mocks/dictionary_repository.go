@@ -7,10 +7,9 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewDictionaryRepository creates a new instance of DictionaryRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -82,7 +81,7 @@ type DictionaryRepository_List_Call struct {
 // List is a helper method to define mock.On call
 //   - ctx context.Context
 //   - q interfaces.DictionaryQuery
-func (_e *DictionaryRepository_Expecter) List(ctx interface{}, q interface{}) *DictionaryRepository_List_Call {
+func (_e *DictionaryRepository_Expecter) List(ctx any, q any) *DictionaryRepository_List_Call {
 	return &DictionaryRepository_List_Call{Call: _e.mock.On("List", ctx, q)}
 }
 
@@ -150,7 +149,7 @@ type DictionaryRepository_Search_Call struct {
 // Search is a helper method to define mock.On call
 //   - ctx context.Context
 //   - q interfaces.DictionarySearchQuery
-func (_e *DictionaryRepository_Expecter) Search(ctx interface{}, q interface{}) *DictionaryRepository_Search_Call {
+func (_e *DictionaryRepository_Expecter) Search(ctx any, q any) *DictionaryRepository_Search_Call {
 	return &DictionaryRepository_Search_Call{Call: _e.mock.On("Search", ctx, q)}
 }
 

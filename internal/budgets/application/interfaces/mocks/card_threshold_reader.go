@@ -7,10 +7,9 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewCardThresholdReader creates a new instance of CardThresholdReader. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

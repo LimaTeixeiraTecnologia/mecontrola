@@ -7,11 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/google/uuid"
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
+	"github.com/google/uuid"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewCategoryRepository creates a new instance of CategoryRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -75,7 +74,7 @@ type CategoryRepository_GetByID_Call struct {
 // GetByID is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id uuid.UUID
-func (_e *CategoryRepository_Expecter) GetByID(ctx interface{}, id interface{}) *CategoryRepository_GetByID_Call {
+func (_e *CategoryRepository_Expecter) GetByID(ctx any, id any) *CategoryRepository_GetByID_Call {
 	return &CategoryRepository_GetByID_Call{Call: _e.mock.On("GetByID", ctx, id)}
 }
 
@@ -103,74 +102,6 @@ func (_c *CategoryRepository_GetByID_Call) Return(category entities.Category, er
 }
 
 func (_c *CategoryRepository_GetByID_Call) RunAndReturn(run func(ctx context.Context, id uuid.UUID) (entities.Category, error)) *CategoryRepository_GetByID_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ListByIDs provides a mock function for the type CategoryRepository
-func (_mock *CategoryRepository) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]entities.Category, error) {
-	ret := _mock.Called(ctx, ids)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ListByIDs")
-	}
-
-	var r0 []entities.Category
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []uuid.UUID) ([]entities.Category, error)); ok {
-		return returnFunc(ctx, ids)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []uuid.UUID) []entities.Category); ok {
-		r0 = returnFunc(ctx, ids)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]entities.Category)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []uuid.UUID) error); ok {
-		r1 = returnFunc(ctx, ids)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// CategoryRepository_ListByIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListByIDs'
-type CategoryRepository_ListByIDs_Call struct {
-	*mock.Call
-}
-
-// ListByIDs is a helper method to define mock.On call
-//   - ctx context.Context
-//   - ids []uuid.UUID
-func (_e *CategoryRepository_Expecter) ListByIDs(ctx interface{}, ids interface{}) *CategoryRepository_ListByIDs_Call {
-	return &CategoryRepository_ListByIDs_Call{Call: _e.mock.On("ListByIDs", ctx, ids)}
-}
-
-func (_c *CategoryRepository_ListByIDs_Call) Run(run func(ctx context.Context, ids []uuid.UUID)) *CategoryRepository_ListByIDs_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 []uuid.UUID
-		if args[1] != nil {
-			arg1 = args[1].([]uuid.UUID)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *CategoryRepository_ListByIDs_Call) Return(categorys []entities.Category, err error) *CategoryRepository_ListByIDs_Call {
-	_c.Call.Return(categorys, err)
-	return _c
-}
-
-func (_c *CategoryRepository_ListByIDs_Call) RunAndReturn(run func(ctx context.Context, ids []uuid.UUID) ([]entities.Category, error)) *CategoryRepository_ListByIDs_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -211,7 +142,7 @@ type CategoryRepository_List_Call struct {
 // List is a helper method to define mock.On call
 //   - ctx context.Context
 //   - q interfaces.CategoryQuery
-func (_e *CategoryRepository_Expecter) List(ctx interface{}, q interface{}) *CategoryRepository_List_Call {
+func (_e *CategoryRepository_Expecter) List(ctx any, q any) *CategoryRepository_List_Call {
 	return &CategoryRepository_List_Call{Call: _e.mock.On("List", ctx, q)}
 }
 
@@ -239,6 +170,74 @@ func (_c *CategoryRepository_List_Call) Return(categorys []entities.Category, er
 }
 
 func (_c *CategoryRepository_List_Call) RunAndReturn(run func(ctx context.Context, q interfaces.CategoryQuery) ([]entities.Category, error)) *CategoryRepository_List_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListByIDs provides a mock function for the type CategoryRepository
+func (_mock *CategoryRepository) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]entities.Category, error) {
+	ret := _mock.Called(ctx, ids)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListByIDs")
+	}
+
+	var r0 []entities.Category
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []uuid.UUID) ([]entities.Category, error)); ok {
+		return returnFunc(ctx, ids)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []uuid.UUID) []entities.Category); ok {
+		r0 = returnFunc(ctx, ids)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Category)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, ids)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CategoryRepository_ListByIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListByIDs'
+type CategoryRepository_ListByIDs_Call struct {
+	*mock.Call
+}
+
+// ListByIDs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - ids []uuid.UUID
+func (_e *CategoryRepository_Expecter) ListByIDs(ctx any, ids any) *CategoryRepository_ListByIDs_Call {
+	return &CategoryRepository_ListByIDs_Call{Call: _e.mock.On("ListByIDs", ctx, ids)}
+}
+
+func (_c *CategoryRepository_ListByIDs_Call) Run(run func(ctx context.Context, ids []uuid.UUID)) *CategoryRepository_ListByIDs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].([]uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *CategoryRepository_ListByIDs_Call) Return(categorys []entities.Category, err error) *CategoryRepository_ListByIDs_Call {
+	_c.Call.Return(categorys, err)
+	return _c
+}
+
+func (_c *CategoryRepository_ListByIDs_Call) RunAndReturn(run func(ctx context.Context, ids []uuid.UUID) ([]entities.Category, error)) *CategoryRepository_ListByIDs_Call {
 	_c.Call.Return(run)
 	return _c
 }

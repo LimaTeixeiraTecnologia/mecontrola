@@ -7,10 +7,9 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewExpenseCommittedPublisher creates a new instance of ExpenseCommittedPublisher. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

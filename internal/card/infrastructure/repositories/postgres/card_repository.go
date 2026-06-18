@@ -264,6 +264,23 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 	return cards, nextCursor, nil
 }
 
+func (r *cardRepository) CountActiveByUser(ctx context.Context, userID string) (int64, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "card.repository.pg.count_active_by_user")
+	defer span.End()
+
+	const query = `
+		SELECT count(*)
+		  FROM mecontrola.cards
+		 WHERE user_id = $1 AND deleted_at IS NULL
+	`
+	var total int64
+	if err := r.db.QueryRowContext(ctx, query, userID).Scan(&total); err != nil {
+		span.RecordError(err)
+		return 0, fmt.Errorf("%s count_active_by_user: %w", prefixCardRepository, err)
+	}
+	return total, nil
+}
+
 func (r *cardRepository) UpdateByIDForUser(ctx context.Context, c entities.Card) (entities.Card, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "card.repository.pg.update")
 	defer span.End()

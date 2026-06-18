@@ -12,12 +12,26 @@ type JSONSchemaSpec struct {
 	Schema map[string]any
 }
 
+type ToolSpec struct {
+	Name        string
+	Description string
+	Parameters  map[string]any
+}
+
+type ToolCall struct {
+	ID            string
+	FunctionName  string
+	ArgumentsJSON map[string]any
+}
+
 type LLMRequest struct {
 	SystemPrompt string
 	UserMessage  string
 	JSONSchema   *JSONSchemaSpec
 	FreeText     bool
 	MaxTokens    int
+	Tools        []ToolSpec
+	ToolChoice   string
 }
 
 type LLMResponse struct {
@@ -25,6 +39,7 @@ type LLMResponse struct {
 	RawJSON          []byte
 	PromptTokens     int
 	CompletionTokens int
+	ToolCalls        []ToolCall
 }
 
 type LLMProvider interface {

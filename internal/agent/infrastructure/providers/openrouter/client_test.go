@@ -278,6 +278,115 @@ func TestProvider_Interpret_FallsBackToLegacySchemaWhenAbsent(t *testing.T) {
 	assert.NotContains(t, s, `"mecontrola_parse_intent"`)
 }
 
+func toolSpecsFixture() []interfaces.ToolSpec {
+	return []interfaces.ToolSpec{
+		{
+			Name:        "create_card",
+			Description: "cadastra um cartao",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"nickname": map[string]any{"type": "string"}},
+			},
+		},
+	}
+}
+
+func TestProvider_Interpret_WithTools_ReturnsToolCall(t *testing.T) {
+	var captured []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[
+				{"id":"call_1","type":"function","function":{"name":"create_card","arguments":"{\"nickname\":\"nubank\",\"closing_day\":3}"}}
+			]},"finish_reason":"tool_calls"}],
+			"usage":{"prompt_tokens":900,"completion_tokens":20}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	resp, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "system",
+		UserMessage:  "cadastra o nubank fecha dia 3",
+		Tools:        toolSpecsFixture(),
+	})
+	require.NoError(t, err)
+
+	body := string(captured)
+	assert.Contains(t, body, `"tools"`)
+	assert.Contains(t, body, `"create_card"`)
+	assert.Contains(t, body, `"parallel_tool_calls":false`)
+	assert.Contains(t, body, `"tool_choice":"auto"`)
+	assert.NotContains(t, body, "response_format")
+
+	require.Len(t, resp.ToolCalls, 1)
+	assert.Equal(t, "create_card", resp.ToolCalls[0].FunctionName)
+	assert.Equal(t, "call_1", resp.ToolCalls[0].ID)
+	assert.Equal(t, "nubank", resp.ToolCalls[0].ArgumentsJSON["nickname"])
+	assert.InEpsilon(t, float64(3), resp.ToolCalls[0].ArgumentsJSON["closing_day"], 0.0001)
+}
+
+func TestProvider_Interpret_WithTools_NoToolCall_ReturnsPlainText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"Qual o apelido do cartao?"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":850,"completion_tokens":8}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	resp, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "system",
+		UserMessage:  "quero cadastrar um cartao",
+		Tools:        toolSpecsFixture(),
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, resp.ToolCalls)
+	assert.Equal(t, "Qual o apelido do cartao?", string(resp.RawJSON))
+}
+
+func TestProvider_Interpret_WithTools_InvalidArguments_Rejects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","tool_calls":[
+				{"id":"call_1","type":"function","function":{"name":"create_card","arguments":"{not json"}}
+			]},"finish_reason":"tool_calls"}],
+			"usage":{"prompt_tokens":900,"completion_tokens":20}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	_, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "system",
+		UserMessage:  "cadastra cartao",
+		Tools:        toolSpecsFixture(),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create_card")
+}
+
+func TestProvider_Interpret_WithTools_HonorsToolChoiceOverride(t *testing.T) {
+	var captured []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	sut := buildProvider(t, server)
+	_, err := sut.Interpret(context.Background(), interfaces.LLMRequest{
+		SystemPrompt: "system",
+		UserMessage:  "u",
+		Tools:        toolSpecsFixture(),
+		ToolChoice:   "required",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(captured), `"tool_choice":"required"`)
+}
+
 func TestProvider_RequestBody_ContainsSystemAndUser(t *testing.T) {
 	var capturedBody json.RawMessage
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

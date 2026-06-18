@@ -8,12 +8,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
+	"github.com/google/uuid"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewMonthlySummaryRepository creates a new instance of MonthlySummaryRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

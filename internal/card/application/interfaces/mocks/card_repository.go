@@ -8,9 +8,8 @@ import (
 	"context"
 	"time"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewCardRepository creates a new instance of CardRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -38,6 +37,72 @@ type CardRepository_Expecter struct {
 
 func (_m *CardRepository) EXPECT() *CardRepository_Expecter {
 	return &CardRepository_Expecter{mock: &_m.Mock}
+}
+
+// CountActiveByUser provides a mock function for the type CardRepository
+func (_mock *CardRepository) CountActiveByUser(ctx context.Context, userID string) (int64, error) {
+	ret := _mock.Called(ctx, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountActiveByUser")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (int64, error)); ok {
+		return returnFunc(ctx, userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) int64); ok {
+		r0 = returnFunc(ctx, userID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardRepository_CountActiveByUser_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountActiveByUser'
+type CardRepository_CountActiveByUser_Call struct {
+	*mock.Call
+}
+
+// CountActiveByUser is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID string
+func (_e *CardRepository_Expecter) CountActiveByUser(ctx any, userID any) *CardRepository_CountActiveByUser_Call {
+	return &CardRepository_CountActiveByUser_Call{Call: _e.mock.On("CountActiveByUser", ctx, userID)}
+}
+
+func (_c *CardRepository_CountActiveByUser_Call) Run(run func(ctx context.Context, userID string)) *CardRepository_CountActiveByUser_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *CardRepository_CountActiveByUser_Call) Return(n int64, err error) *CardRepository_CountActiveByUser_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *CardRepository_CountActiveByUser_Call) RunAndReturn(run func(ctx context.Context, userID string) (int64, error)) *CardRepository_CountActiveByUser_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // FindCardsWithInvoiceDueWithin provides a mock function for the type CardRepository

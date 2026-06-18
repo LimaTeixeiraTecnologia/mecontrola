@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewIdentityGateway creates a new instance of IdentityGateway. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

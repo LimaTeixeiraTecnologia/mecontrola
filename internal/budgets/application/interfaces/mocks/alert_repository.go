@@ -7,11 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/google/uuid"
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
+	"github.com/google/uuid"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewAlertRepository creates a new instance of AlertRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

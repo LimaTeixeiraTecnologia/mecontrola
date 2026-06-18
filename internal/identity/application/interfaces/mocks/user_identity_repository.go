@@ -8,11 +8,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
+	"github.com/google/uuid"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewUserIdentityRepository creates a new instance of UserIdentityRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

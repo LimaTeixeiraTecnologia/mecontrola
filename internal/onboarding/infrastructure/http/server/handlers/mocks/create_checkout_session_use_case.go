@@ -7,10 +7,9 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/output"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // newCreateCheckoutSessionUseCase creates a new instance of createCheckoutSessionUseCase. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

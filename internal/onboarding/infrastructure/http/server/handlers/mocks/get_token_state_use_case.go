@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // newGetTokenStateUseCase creates a new instance of getTokenStateUseCase. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

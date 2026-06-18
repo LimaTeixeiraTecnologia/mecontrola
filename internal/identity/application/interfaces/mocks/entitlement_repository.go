@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewEntitlementRepository creates a new instance of EntitlementRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

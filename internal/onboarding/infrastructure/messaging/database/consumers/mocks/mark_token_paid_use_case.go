@@ -7,9 +7,8 @@ package mocks
 import (
 	"context"
 
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // newMarkTokenPaidUseCase creates a new instance of markTokenPaidUseCase. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

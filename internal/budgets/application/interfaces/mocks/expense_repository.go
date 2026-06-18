@@ -7,11 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/google/uuid"
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
+	"github.com/google/uuid"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewExpenseRepository creates a new instance of ExpenseRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
