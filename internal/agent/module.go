@@ -14,13 +14,9 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/commands"
-	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/dispatcher"
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/loader"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -63,24 +59,9 @@ func WithSessionStore(db *sqlx.DB) AgentModuleOption {
 }
 
 type llmRuntime struct {
-	Handler        *usecases.HandleInboundMessage
 	ParseInbound   *usecases.ParseInbound
 	Conversational *usecases.ComposeConversationalReply
 	Interpreter    usecases.IntentInterpreter
-}
-
-type llmReply struct {
-	Text    string
-	Outcome string
-	Module  string
-	Action  string
-}
-
-type llmRuntimeDeps struct {
-	Ports          interfaces.ModulePorts
-	Loader         interfaces.PromptContextLoader
-	Dispatcher     interfaces.IntentDispatcher
-	EventPublisher interfaces.IntentEventPublisher
 }
 
 type agentModuleBuilder struct {
@@ -184,81 +165,14 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 		return nil, fmt.Errorf("agent.module: card create use case is nil")
 	}
 
-	categoriesAdapter := dispatcher.NewCategoriesAdapterFull(
-		b.categoriesModule.ListCategoriesUC,
-		b.categoriesModule.GetCategoryUC,
-		b.categoriesModule.ListDictionaryUC,
-		b.categoriesModule.SearchDictionaryUC,
-	)
-	cardsAdapter := dispatcher.NewCardsAdapterFull(
-		b.cardModule.ListCardsUC,
-		b.cardModule.GetCardUC,
-		b.cardModule.CreateCardUC,
-		b.cardModule.UpdateCardUC,
-		b.cardModule.UpdateCardLimitUC,
-		b.cardModule.SoftDeleteCardUC,
-	)
-	ports := interfaces.ModulePorts{
-		Categories:               categoriesAdapter,
-		CategoriesGet:            categoriesAdapter,
-		CategoriesListDictionary: categoriesAdapter,
-		CategoriesSearch:         categoriesAdapter,
-		Cards:                    cardsAdapter,
-		CardsGet:                 cardsAdapter,
-		CardsCreate:              cardsAdapter,
-		CardsUpdate:              cardsAdapter,
-		CardsDelete:              cardsAdapter,
-	}
 	if b.budgetsModule == nil || b.budgetsModule.ListAlertsUC == nil {
 		return nil, fmt.Errorf("agent.module: budgets module is incomplete")
 	}
-	budgetsAdapter := dispatcher.NewBudgetsAdapterFull(
-		b.budgetsModule.ListAlertsUC,
-		b.budgetsModule.GetMonthlySummaryUC,
-		b.budgetsModule.CreateBudgetUC,
-		b.budgetsModule.ActivateBudgetUC,
-		b.budgetsModule.CreateRecurrenceUC,
-		b.budgetsModule.UpsertExpenseUC,
-		b.budgetsModule.DeleteDraftBudgetUC,
-		b.budgetsModule.DeleteExpenseUC,
-	)
-	ports.Budgets = budgetsAdapter
-	ports.BudgetsGet = budgetsAdapter
-	ports.BudgetsCreate = budgetsAdapter
-	ports.BudgetsUpdate = budgetsAdapter
-	ports.BudgetsDelete = budgetsAdapter
-
 	if b.transactionsModule.ListTransactionsUC == nil || b.transactionsModule.CreateTransactionUC == nil {
 		return nil, fmt.Errorf("agent.module: transactions desabilitado; defina TRANSACTIONS_ENABLED=true")
 	}
-	txAdapter := dispatcher.NewTransactionsAdapterFull(
-		b.transactionsModule.ListTransactionsUC,
-		b.transactionsModule.CreateTransactionUC,
-		b.transactionsModule.DeleteTransactionUC,
-		b.transactionsModule.GetTransactionUC,
-		b.transactionsModule.CreateCardPurchaseUC,
-		b.transactionsModule.CreateRecurringTemplateUC,
-		b.transactionsModule.ListRecurringTemplatesUC,
-	)
-	ports.Transactions = txAdapter
-	ports.TransactionsGet = txAdapter
-	ports.TransactionsCreate = txAdapter
-	ports.TransactionsDelete = txAdapter
-	ports.CardPurchasesCreate = txAdapter
-	ports.RecurringCreate = txAdapter
-	ports.RecurringList = txAdapter
 
-	deps := llmRuntimeDeps{
-		Ports: ports,
-		Loader: loader.NewPromptContextLoader(
-			b.categoriesModule.ListCategoriesUC,
-			b.cardModule.ListCardsUC,
-			b.o11y,
-		),
-		EventPublisher: agentevents.NewIntentEventPublisher(b.identityModule.OutboxPublisher, b.o11y),
-	}
-
-	llmModule, err := newLLMRuntime(b.cfg.AgentConfig, b.o11y, deps)
+	llmModule, err := newLLMRuntime(b.cfg.AgentConfig, b.o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: %w", err)
 	}
@@ -266,7 +180,7 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 }
 
 func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservices.IntentRouter, error) {
-	useLLM := llmModule != nil && llmModule.Handler != nil && llmModule.ParseInbound != nil
+	useLLM := llmModule != nil && llmModule.ParseInbound != nil
 	if !useLLM {
 		return nil, nil
 	}
@@ -494,15 +408,7 @@ func (a *fallbackAdapter) Reply(ctx context.Context, userID uuid.UUID, channel, 
 	return out.Reply, nil
 }
 
-type emptyContextLoader struct{}
-
-func (emptyContextLoader) Load(_ context.Context, _ uuid.UUID, _ string) (interfaces.PromptSeed, error) {
-	return interfaces.PromptSeed{Permissions: []string{"read", "write"}}, nil
-}
-
-func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability, deps llmRuntimeDeps) (*llmRuntime, error) {
-	dispatcherImpl := deps.Dispatcher
-	loaderImpl := deps.Loader
+func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*llmRuntime, error) {
 	if strings.TrimSpace(cfg.OpenRouterAPIKey) == "" {
 		return nil, ErrAPIKeyRequired
 	}
@@ -557,25 +463,6 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability, de
 		return nil, fmt.Errorf("agent.llm: fallback chain: %w", err)
 	}
 
-	if loaderImpl == nil {
-		loaderImpl = emptyContextLoader{}
-	}
-	if dispatcherImpl == nil {
-		dispatcherImpl = dispatcher.NewIntentDispatcher(deps.Ports, o11y)
-	}
-
-	handler := usecases.NewHandleInboundMessage(
-		loaderImpl,
-		chain,
-		dispatcherImpl,
-		deps.EventPublisher,
-		appservices.NewPromptBuilder(),
-		appservices.NewIntentValidator(),
-		appservices.NewIntentSafetyGuard(),
-		domainservices.NewIntentWorkflow(),
-		o11y,
-	)
-
 	parseInbound, err := usecases.NewParseInbound(chain, o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
@@ -586,23 +473,7 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability, de
 		return nil, fmt.Errorf("agent.llm: conversational reply: %w", err)
 	}
 
-	return &llmRuntime{Handler: handler, ParseInbound: parseInbound, Conversational: conversational, Interpreter: chain}, nil
-}
-
-func (m *llmRuntime) HandleText(ctx context.Context, userID uuid.UUID, channel, text string) (llmReply, error) {
-	if m == nil || m.Handler == nil {
-		return llmReply{Text: "", Outcome: "stub"}, nil
-	}
-	result, err := m.Handler.Execute(ctx, commands.RawInterpretMessage{UserID: userID, Channel: channel, Text: text})
-	if err != nil {
-		return llmReply{}, err
-	}
-	reply := llmReply{Text: result.ReplyText, Outcome: result.Outcome.Kind.String()}
-	if !result.Outcome.Intent.IsError() && result.Outcome.Kind == domainservices.IntentOutcomeRouted {
-		reply.Module = result.Outcome.Intent.Module().String()
-		reply.Action = result.Outcome.Intent.Action().String()
-	}
-	return reply, nil
+	return &llmRuntime{ParseInbound: parseInbound, Conversational: conversational, Interpreter: chain}, nil
 }
 
 func parseFallbackList(raw string) []string {
