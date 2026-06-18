@@ -93,8 +93,37 @@ func TestCardPurchaseWorkflow_DecideCreate(t *testing.T) {
 				totalSum += item.Amount().Cents()
 			}
 			assert.Equal(t, tc.totalCents, totalSum, "soma dos itens deve ser igual ao total")
+
+			require.Len(t, evt.Installments, tc.wantItemCount)
+			var installmentSum int64
+			for i, inst := range evt.Installments {
+				assert.Equal(t, decision.Items[i].RefMonth().String(), inst.RefMonth.String())
+				assert.Equal(t, decision.Items[i].Amount().Cents(), inst.AmountCents)
+				assert.Equal(t, decision.Items[i].InstallmentIndex(), inst.Index)
+				installmentSum += inst.AmountCents
+			}
+			assert.Equal(t, tc.totalCents, installmentSum, "soma das parcelas do evento deve ser igual ao total")
+			assert.Equal(t, uuid.Nil, evt.SubcategoryID)
 		})
 	}
+}
+
+func TestCardPurchaseWorkflow_DecideCreate_PopulatesSubcategory(t *testing.T) {
+	sut := services.NewCardPurchaseWorkflow()
+	now := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
+	snapshot := mustSnapshot(15, 25)
+	purchasedAt := time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC)
+
+	cmd := buildCreateCardPurchaseCmd(t, 1000, 1, purchasedAt)
+	subUUID := uuid.New()
+	subID := valueobjects.SubcategoryIDFromUUID(subUUID)
+	cmd.SubcategoryID = option.Some(subID)
+
+	decision := sut.DecideCreate(cmd, snapshot, uuid.New(), uuid.New(), now)
+
+	evt, ok := decision.Event.(entities.CardPurchaseCreated)
+	require.True(t, ok)
+	assert.Equal(t, subUUID, evt.SubcategoryID)
 }
 
 func TestCardPurchaseWorkflow_DecideUpdate_12to3(t *testing.T) {

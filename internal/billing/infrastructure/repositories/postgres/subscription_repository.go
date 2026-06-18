@@ -333,10 +333,14 @@ func (r *subscriptionRepository) scanRow(
 		return entities.Subscription{}, fmt.Errorf("billing/postgres: %s plan: %w", op, planErr)
 	}
 
-	ft, ftErr := valueobjects.NewFunnelToken(funnelToken)
-	if ftErr != nil {
-		span.RecordError(ftErr)
-		return entities.Subscription{}, fmt.Errorf("billing/postgres: %s funnel_token: %w", op, ftErr)
+	var ft valueobjects.FunnelToken
+	if funnelToken != "" {
+		var ftErr error
+		ft, ftErr = valueobjects.NewFunnelToken(funnelToken)
+		if ftErr != nil {
+			span.RecordError(ftErr)
+			return entities.Subscription{}, fmt.Errorf("billing/postgres: %s funnel_token: %w", op, ftErr)
+		}
 	}
 
 	parsedStatus, statusErr := valueobjects.ParseStatus(status)

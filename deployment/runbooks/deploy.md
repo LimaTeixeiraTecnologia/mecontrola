@@ -12,12 +12,11 @@ Este runbook documenta o fluxo manual equivalente para execução em emergência
 ```
 push main
   → CI (ci.yml): lint + unit + integration + security + build-image + scan-and-attest
-  → CD (cd.yml): gate → deploy VPS SSH → smoke
+  → CD (cd.yml): gate → deploy VPS SSH
 ```
 
 O job `gate` valida que o CI passou e extrai `image-tag` + `image-digest` do artefato `image-meta`.
 O job `deploy` executa `deployment/scripts/deploy.sh` na VPS via SSH.
-O job `smoke` executa `task auth:smoke` contra a URL de staging.
 
 ## Fluxo Manual (emergências)
 
@@ -77,12 +76,6 @@ VPS_HOST=<host> VPS_USER=<user> VPS_DEPLOY_PATH=<path> \
 
 O script executa na VPS: `docker compose pull` → `migrate` → `up -d server worker` →
 healthcheck `/health` com retry 12× (interval 5s) → rollback automático se falhar.
-
-### 7. Smoke test pós-deploy
-
-```sh
-WEBHOOK_URL=<staging_url> META_APP_SECRET=<secret> task auth:smoke
-```
 
 ## Verificar Assinatura
 

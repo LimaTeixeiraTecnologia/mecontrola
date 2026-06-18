@@ -1,7 +1,6 @@
 package configs_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -104,42 +103,9 @@ func TestValidateProductionTelegram_OutboundTimeoutOutOfRange(t *testing.T) {
 	assert.Contains(t, err.Error(), "TELEGRAM_OUTBOUND_TIMEOUT")
 }
 
-func TestValidateProductionAgent_StubModeSkips(t *testing.T) {
-	cfg := buildBaseConfig()
-	cfg.AgentConfig = configs.AgentConfig{Mode: "stub"}
-
-	err := cfg.Validate()
-	if err != nil {
-		assert.NotContains(t, err.Error(), "OPENROUTER_")
-		assert.NotContains(t, err.Error(), "AGENT_LLM_")
-	}
-}
-
-func TestValidateProductionAgent_EmptyModeSkips(t *testing.T) {
-	cfg := buildBaseConfig()
-	cfg.AgentConfig = configs.AgentConfig{Mode: ""}
-
-	err := cfg.Validate()
-	if err != nil {
-		assert.NotContains(t, err.Error(), "OPENROUTER_")
-	}
-}
-
-func TestValidateProductionAgent_InvalidMode(t *testing.T) {
-	cfg := buildBaseConfig()
-	cfg.AgentConfig = configs.AgentConfig{Mode: "anthropic-direct"}
-
-	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("expected mode validation error")
-	}
-	assert.Contains(t, err.Error(), "AGENT_MODE")
-	assert.Contains(t, strings.ToLower(err.Error()), "stub|openrouter")
-}
-
 func TestValidateProductionAgent_OpenRouterMissingFields(t *testing.T) {
 	cfg := buildBaseConfig()
-	cfg.AgentConfig = configs.AgentConfig{Mode: "openrouter"}
+	cfg.AgentConfig = configs.AgentConfig{}
 
 	err := cfg.Validate()
 	if err == nil {
@@ -155,7 +121,6 @@ func TestValidateProductionAgent_OpenRouterMissingFields(t *testing.T) {
 func TestValidateProductionAgent_AcceptableConfigPasses(t *testing.T) {
 	cfg := buildBaseConfig()
 	cfg.AgentConfig = configs.AgentConfig{
-		Mode:             "openrouter",
 		OpenRouterAPIKey: "sk-real-key",
 		PrimaryModel:     "google/gemini-2.5-flash-lite",
 		MaxTokens:        256,
@@ -172,7 +137,6 @@ func TestValidateProductionAgent_AcceptableConfigPasses(t *testing.T) {
 func TestValidateProductionAgent_MaxTokensOutOfRange(t *testing.T) {
 	cfg := buildBaseConfig()
 	cfg.AgentConfig = configs.AgentConfig{
-		Mode:             "openrouter",
 		OpenRouterAPIKey: "sk-real-key",
 		PrimaryModel:     "google/gemini-2.5-flash-lite",
 		MaxTokens:        99999,

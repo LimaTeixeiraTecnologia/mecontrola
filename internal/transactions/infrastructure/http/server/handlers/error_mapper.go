@@ -22,6 +22,7 @@ func mapError(w http.ResponseWriter, span observability.Span, err error, _ ...er
 		errors.Is(err, usecases.ErrTransactionNotFound),
 		errors.Is(err, usecases.ErrCardInvoiceNotFound),
 		errors.Is(err, usecases.ErrCardPurchaseNotFound),
+		errors.Is(err, repopkg.ErrCardPurchaseNotFound),
 		errors.Is(err, repopkg.ErrRecurringTemplateNotFound),
 		errors.Is(err, interfaces.ErrCardNotFound):
 		span.SetAttributes(observability.String("outcome", "not_found"))

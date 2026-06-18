@@ -46,14 +46,6 @@ DB_PASSWORD=$(ssh \
 [[ -z "$DB_PASSWORD" ]] && err "DB_PASSWORD não encontrado em ${VPS_DEPLOY_PATH}/.env na VPS"
 log "DB_PASSWORD obtido com sucesso."
 
-if [[ -z "${STAGING_SMOKE_WA:-}" ]]; then
-  printf "[setup-secrets] STAGING_SMOKE_WA (número WhatsApp de teste — dígitos, ex: 5511912345678): "
-  read -r STAGING_SMOKE_WA
-fi
-[[ -z "$STAGING_SMOKE_WA" ]] && err "STAGING_SMOKE_WA é obrigatório"
-
-STAGING_SMOKE_WA="${STAGING_SMOKE_WA#+}"
-
 STAGING_DB_URL="postgres://mecontrola:${DB_PASSWORD}@${VPS_HOST}:5432/mecontrola_db"
 
 log "Configurando secrets no environment '$ENV'..."
@@ -74,7 +66,6 @@ set_secret "VPS_DEPLOY_PATH"        "$VPS_DEPLOY_PATH"
 set_secret "VPS_SSH_KEY"            "$VPS_SSH_KEY_CONTENT"
 set_secret "STAGING_WEBHOOK_URL"    "$STAGING_WEBHOOK_URL"
 set_secret "STAGING_META_APP_SECRET" "$STAGING_META_APP_SECRET"
-set_secret "STAGING_SMOKE_WA"       "$STAGING_SMOKE_WA"
 set_secret "STAGING_DB_URL"         "$STAGING_DB_URL"
 
 log ""

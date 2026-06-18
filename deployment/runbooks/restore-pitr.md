@@ -51,7 +51,7 @@ SELECT COUNT(*) FROM health_probe;
 flyctl ssh console -a ${FLY_APP} -C '/mecontrola migrate'
 ```
 
-### 5. Smoke test do banco
+### 5. Validacao do banco
 
 ```sh
 flyctl postgres connect --app ${FLY_PG_APP} -c \
@@ -67,7 +67,7 @@ flyctl scale count app=1 worker=1 --app ${FLY_APP}
 flyctl status -a ${FLY_APP}
 ```
 
-### 7. Smoke test pós-restore
+### 7. Validacao pós-restore
 
 ```sh
 curl -s https://mecontrola.fly.dev/ready | jq .

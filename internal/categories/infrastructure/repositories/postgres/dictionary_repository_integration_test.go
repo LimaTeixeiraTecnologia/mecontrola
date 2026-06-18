@@ -189,6 +189,49 @@ func (s *DictionaryRepositoryIntegrationSuite) TestSearchIgnoresDeprecated() {
 	}
 }
 
+func (s *DictionaryRepositoryIntegrationSuite) TestSearchOrdersBySignalTypePrecedence() {
+	ctx := context.Background()
+
+	var catID1, catID2 uuid.UUID
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id FROM mecontrola.categories WHERE kind = 'expense' AND parent_id IS NOT NULL ORDER BY id LIMIT 2",
+	)
+	s.Require().NoError(err)
+	defer rows.Close()
+	s.Require().True(rows.Next())
+	s.Require().NoError(rows.Scan(&catID1))
+	s.Require().True(rows.Next(), "seed precisa ter 2+ subcategorias expense")
+	s.Require().NoError(rows.Scan(&catID2))
+
+	id1, id2 := uuid.New(), uuid.New()
+	term := "precedence-ordering-" + id1.String()[:8]
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO mecontrola.category_dictionary (id, category_id, kind, term, signal_type, confidence)
+		 VALUES ($1, $2, 'expense', $5, 'segment', 'high'),
+		        ($3, $4, 'expense', $5, 'canonical_name', 'high')`,
+		id1, catID1, id2, catID2, term,
+	)
+	s.Require().NoError(err)
+
+	entries, err := s.repo.Search(ctx, interfaces.DictionarySearchQuery{
+		Kind:  valueobjects.KindExpense,
+		Term:  term,
+		Limit: 10,
+	})
+	s.Require().NoError(err)
+	s.Require().Len(entries, 2)
+
+	for i := 1; i < len(entries); i++ {
+		prev := entries[i-1].SignalType.Precedence()
+		curr := entries[i].SignalType.Precedence()
+		s.Assert().GreaterOrEqualf(prev, curr,
+			"entries[%d].SignalType=%s (prec=%d) deve vir antes de entries[%d].SignalType=%s (prec=%d)",
+			i-1, entries[i-1].SignalType, prev, i, entries[i].SignalType, curr,
+		)
+	}
+}
+
 func ptrKind(k valueobjects.Kind) *valueobjects.Kind {
 	return &k
 }

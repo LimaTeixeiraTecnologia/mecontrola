@@ -185,7 +185,7 @@ func (s *CandidateResolverSuite) TestResolveHasMoreWhenMoreThan3() {
 	}
 
 	entries := make([]entities.DictionaryEntry, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		subIDs[i] = uuid.New()
 		categories[subIDs[i]] = s.newCategory(subIDs[i], "Sub "+string(rune('A'+i)), valueobjects.KindExpense, &rootID)
 		entries[i] = s.newEntry(subIDs[i], valueobjects.KindExpense, "termo", valueobjects.SignalTypeAlias, valueobjects.ConfidenceHigh, false)
@@ -249,6 +249,49 @@ func (s *CandidateResolverSuite) TestResolveOrderingBySignalType() {
 	s.Len(candidates, 2)
 	s.Equal(valueobjects.SignalTypeAlias, candidates[0].SignalType)
 	s.Equal(valueobjects.SignalTypePhrase, candidates[1].SignalType)
+}
+
+func (s *CandidateResolverSuite) TestResolveTop3WithDistinctRootCategories() {
+	resolver := services.NewCandidateResolver()
+
+	rootIDs := make([]uuid.UUID, 4)
+	categories := make(map[uuid.UUID]entities.Category)
+	entries := make([]entities.DictionaryEntry, 4)
+
+	for i := range 4 {
+		rootIDs[i] = uuid.New()
+		categories[rootIDs[i]] = s.newCategory(rootIDs[i], "Root"+string(rune('A'+i)), valueobjects.KindExpense, nil)
+		entries[i] = s.newEntry(rootIDs[i], valueobjects.KindExpense, "canonical", valueobjects.SignalTypeCanonicalName, valueobjects.ConfidenceHigh, false)
+	}
+
+	candidates, hasMore := resolver.Resolve(entries, categories)
+
+	s.Len(candidates, 3)
+	s.True(hasMore)
+}
+
+func (s *CandidateResolverSuite) TestResolveSameSignalTypeOrderedByPath() {
+	resolver := services.NewCandidateResolver()
+
+	zootecniaID := uuid.New()
+	agriculturaID := uuid.New()
+
+	categories := map[uuid.UUID]entities.Category{
+		zootecniaID:   s.newCategory(zootecniaID, "Zootecnia", valueobjects.KindExpense, nil),
+		agriculturaID: s.newCategory(agriculturaID, "Agricultura", valueobjects.KindExpense, nil),
+	}
+
+	entries := []entities.DictionaryEntry{
+		s.newEntry(zootecniaID, valueobjects.KindExpense, "fazenda", valueobjects.SignalTypePhrase, valueobjects.ConfidenceHigh, false),
+		s.newEntry(agriculturaID, valueobjects.KindExpense, "fazenda", valueobjects.SignalTypePhrase, valueobjects.ConfidenceHigh, false),
+	}
+
+	candidates, hasMore := resolver.Resolve(entries, categories)
+
+	s.Len(candidates, 2)
+	s.False(hasMore)
+	s.Equal("Agricultura", candidates[0].Path)
+	s.Equal("Zootecnia", candidates[1].Path)
 }
 
 func (s *CandidateResolverSuite) TestResolveMatchReasons() {

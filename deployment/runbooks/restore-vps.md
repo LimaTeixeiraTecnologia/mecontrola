@@ -15,7 +15,7 @@
 | Stop dos containers | < 1 min |
 | Restore full + diff (último backup ~1 GB) | 5–15 min |
 | Start + health check | 2 min |
-| Smoke test | 2 min |
+| Validacao | 2 min |
 | **RTO total** | **< 20 min** |
 
 Medir e atualizar após primeiro restore real em staging.
@@ -112,7 +112,7 @@ docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.p
   run --rm migrate
 ```
 
-### 7. Smoke test
+### 7. Validacao
 
 ```bash
 docker exec mecontrola-postgres-1 psql -U mecontrola mecontrola_db \

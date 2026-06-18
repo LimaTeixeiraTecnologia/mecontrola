@@ -112,6 +112,27 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_Success() {
 	s.Error(getErr)
 }
 
+func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_DeletedAtPopulated() {
+	userID := uuid.New()
+	cardID := uuid.New()
+	s.prepareCard(userID, cardID)
+	p := s.newPurchase(userID, cardID, 3000, 1)
+	s.Require().NoError(s.repo.Create(context.Background(), &p))
+
+	now := time.Now().UTC()
+	err := s.repo.SoftDelete(context.Background(), p.ID(), userID, 1, now)
+	s.Require().NoError(err)
+
+	var deletedAt *time.Time
+	row := s.db.QueryRowContext(context.Background(),
+		`SELECT deleted_at FROM mecontrola.transactions_card_purchases WHERE id=$1`,
+		p.ID(),
+	)
+	s.Require().NoError(row.Scan(&deletedAt))
+	s.Require().NotNil(deletedAt, "deleted_at deve estar preenchido após soft-delete")
+	s.WithinDuration(now, *deletedAt, time.Second)
+}
+
 func (s *CardPurchaseRepositoryIntegrationSuite) TestReplaceItems_AtomicUpsert() {
 	userID := uuid.New()
 	cardID := uuid.New()

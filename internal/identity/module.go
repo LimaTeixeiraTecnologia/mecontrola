@@ -202,7 +202,6 @@ func (b *identityModuleBuilder) buildTelegramWebhookRouter(module IdentityModule
 		return nil, fmt.Errorf("identity: compose telegram webhook router: %w", err)
 	}
 	dedupRepo := tgdedup.NewUpdateRepository(b.o11y, b.db)
-	stubReply := b.cfg.TelegramConfig.AgentStubReceived
 	onboardingReply := b.cfg.TelegramConfig.OnboardingFallback
 
 	stubOnboardingRoute := func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
@@ -221,20 +220,11 @@ func (b *identityModuleBuilder) buildTelegramWebhookRouter(module IdentityModule
 		onboardingRoute = onboardingRouteOverride
 	}
 
-	stubAgentRoute := func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
-		if stubReply == "" {
+	agentRoute := agentRouteOverride
+	if agentRoute == nil {
+		agentRoute = func(_ context.Context, _ tgpayload.Message) tgdispatcher.RouteOutcome {
 			return tgdispatcher.OutcomeAgent
 		}
-		if err := gateway.SendTextMessage(ctx, msg.ChatID, stubReply); err != nil {
-			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_failed",
-				observability.Error(err),
-			)
-		}
-		return tgdispatcher.OutcomeAgent
-	}
-	agentRoute := stubAgentRoute
-	if agentRouteOverride != nil {
-		agentRoute = agentRouteOverride
 	}
 
 	dispatcher := tgdispatcher.New(

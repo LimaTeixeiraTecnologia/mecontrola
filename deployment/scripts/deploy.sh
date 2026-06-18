@@ -4,7 +4,6 @@ set -euo pipefail
 IMAGE_TAG="${1:-${IMAGE_TAG:?IMAGE_TAG must be provided as argument or env var}}"
 LOCAL_DEPLOY="${LOCAL_DEPLOY:-false}"
 VPS_DEPLOY_PATH="${VPS_DEPLOY_PATH:-/opt/mecontrola}"
-STAGING_SMOKE_WA="${STAGING_SMOKE_WA:-}"
 GHCR_USER="${GHCR_USER:-}"
 GHCR_TOKEN="${GHCR_TOKEN:-}"
 
@@ -99,15 +98,6 @@ done
 
 log "Configurando alertas Telegram (idempotente; le .env e pula se ALERT_TELEGRAM_* vazios)"
 run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/telemetry/grafana/setup-alerting-telegram.sh" || log "AVISO: setup de alertas Telegram falhou — seguindo deploy"
-
-if [[ -n "$STAGING_SMOKE_WA" ]]; then
-  SMOKE_WA_DIGITS="${STAGING_SMOKE_WA#+}"
-  log "Configurando app.smoke_wa na VPS (smoke user seed)"
-  run_cmd "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} exec -T postgres \
-    psql -U mecontrola -d mecontrola_db -c \
-    \"ALTER DATABASE mecontrola_db SET app.smoke_wa = '${SMOKE_WA_DIGITS}';\"" || \
-    log "AVISO: não foi possível configurar app.smoke_wa — smoke user não será semeado"
-fi
 
 log "Executando migrações"
 run_cmd "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} run --rm --no-deps migrate" || {

@@ -102,6 +102,37 @@ func (s *MonthlySummaryRecomputeConsumerSuite) TestDistinctKeys_DoNotCoalesce() 
 	s.Equal(int64(3), atomic.LoadInt64(&fake.calls))
 }
 
+func (s *MonthlySummaryRecomputeConsumerSuite) TestIdempotency_SameEventIDTwice_CallsUseCaseOnce() {
+	fake := &fakeRecompute{}
+	window := 200 * time.Millisecond
+	c := consumers.NewMonthlySummaryRecomputeConsumer(fake, window, noop.NewProvider())
+
+	userID := uuid.New()
+	ctx := context.Background()
+
+	eventID := uuid.New().String()
+	payload := map[string]any{
+		"user_id":   userID.String(),
+		"ref_month": "2026-06",
+	}
+	b, _ := json.Marshal(payload)
+	env := outbox.Envelope{
+		ID:        eventID,
+		EventType: "transactions.transaction.created.v1",
+		Payload:   b,
+	}
+
+	for range 2 {
+		event := mocks.NewEvent(s.T())
+		event.EXPECT().GetPayload().Return(env)
+		s.Require().NoError(c.Handle(ctx, event))
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	time.Sleep(window + 100*time.Millisecond)
+	s.Equal(int64(1), atomic.LoadInt64(&fake.calls), "mesmo event_id processado duas vezes deve resultar em apenas uma chamada ao use case")
+}
+
 func (s *MonthlySummaryRecomputeConsumerSuite) TestStop_DrainsPendingTimers() {
 	fake := &fakeRecompute{}
 	window := 2 * time.Second

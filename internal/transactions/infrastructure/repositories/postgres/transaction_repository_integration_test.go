@@ -211,6 +211,38 @@ func (s *TransactionRepositorySuite) TestSumByMonth() {
 	s.Equal(int64(3000), outcome)
 }
 
+func (s *TransactionRepositorySuite) TestSoftDelete_NotInList() {
+	db, _ := testcontainer.Postgres(s.T())
+	o11y := noop.NewProvider()
+	ctx := context.Background()
+	repo := txpostgres.NewTransactionRepository(o11y, db)
+
+	userID := uuid.New()
+	rm, _ := valueobjects.NewRefMonth("2026-06")
+
+	active := s.newTransaction(userID)
+	s.Require().NoError(repo.Create(ctx, active))
+
+	deleted := s.newTransaction(userID)
+	s.Require().NoError(repo.Create(ctx, deleted))
+	s.Require().NoError(repo.SoftDelete(ctx, deleted.ID(), userID, 1, time.Now().UTC()))
+
+	list, _, err := repo.ListByMonth(ctx, userID, rm, interfaces.Cursor{}, 50)
+	s.Require().NoError(err)
+
+	for _, tx := range list {
+		s.NotEqual(deleted.ID(), tx.ID(), "lançamento deletado não deve aparecer na listagem")
+	}
+	found := false
+	for _, tx := range list {
+		if tx.ID() == active.ID() {
+			found = true
+			break
+		}
+	}
+	s.True(found, "lançamento ativo deve aparecer na listagem")
+}
+
 func mustMoney(t *testing.T, cents int64) valueobjects.Money {
 	t.Helper()
 	m, err := valueobjects.NewMoney(cents)

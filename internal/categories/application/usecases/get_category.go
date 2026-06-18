@@ -41,6 +41,9 @@ func (uc *GetCategory) Execute(ctx context.Context, in *input.GetCategoryInput) 
 	category, err := uc.repo.GetByID(ctx, in.ID)
 	if err != nil {
 		span.RecordError(err)
+		if errors.Is(err, interfaces.ErrNotFound) {
+			return nil, ErrCategoryNotFound
+		}
 		return nil, fmt.Errorf("buscar categoria: %w", err)
 	}
 

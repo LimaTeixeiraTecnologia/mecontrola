@@ -44,13 +44,13 @@ command -v curl >/dev/null || fail "curl ausente"
 command -v jq >/dev/null || fail "jq ausente"
 command -v openssl >/dev/null || fail "openssl ausente"
 
-SMOKE_TOKEN="chaos-$(date +%s)-${RANDOM}"
-EMAIL="chaos+${SMOKE_TOKEN}@mecontrola.local"
+CHAOS_TOKEN="chaos-$(date +%s)-${RANDOM}"
+EMAIL="chaos+${CHAOS_TOKEN}@mecontrola.local"
 NOW="$(date -u +'%Y-%m-%d %H:%M:%S')"
-ORDER_ID="order-chaos-${SMOKE_TOKEN}"
+ORDER_ID="order-chaos-${CHAOS_TOKEN}"
 
 PAYLOAD=$(jq -nc \
-  --arg token "$SMOKE_TOKEN" \
+  --arg token "$CHAOS_TOKEN" \
   --arg email "$EMAIL" \
   --arg product "$KIWIFY_PRODUCT_ID_MONTHLY" \
   --arg now "$NOW" \
@@ -73,7 +73,7 @@ PAYLOAD=$(jq -nc \
 log "==> 1/8 limpando Mailpit"
 curl -fsS -X DELETE "${MAILPIT_API}/messages" >/dev/null || fail "mailpit nao acessivel"
 
-log "==> 2/8 disparando webhook Kiwify (token=${SMOKE_TOKEN})"
+log "==> 2/8 disparando webhook Kiwify (token=${CHAOS_TOKEN})"
 SIG=$(printf '%s' "$PAYLOAD" | openssl dgst -sha1 -mac HMAC -macopt "key:${KIWIFY_WEBHOOK_SECRET}" | awk '{print $2}')
 HTTP_STATUS=$(curl -sS -o /tmp/chaos_kiwify.json -w "%{http_code}" \
   -X POST "${BACKEND}/api/v1/billing/webhooks/kiwify?signature=${SIG}" \

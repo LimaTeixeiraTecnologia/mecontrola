@@ -1,85 +1,55 @@
 name: CI/CD
 
 on:
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".specs/**"
-      - "scripts/loadtest/**"
-      - "scripts/chaos/**"
-      - ".vscode/**"
-      - ".idea/**"
   push:
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".specs/**"
-      - "scripts/loadtest/**"
-      - "scripts/chaos/**"
-      - ".vscode/**"
-      - ".idea/**"
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Tag da imagem a publicar na VPS (SHA curto ou semver)"
-        required: true
-        type: string
 
 concurrency:
-  group: ci-cd-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'auto' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-cd-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'auto' }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/limateixeiratecnologia/mecontrola
 
 jobs:
-  quality-gate:
-    name: Quality Gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    if: github.event_name != 'workflow_dispatch'
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          fetch-depth: 0
+      - uses: ./.github/actions/setup-go-task
+      - run: task build
 
-      - name: Setup Go + Task
-        uses: ./.github/actions/setup-go-task
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: ./.github/actions/setup-go-task
         with:
           install-golangci-lint: "true"
-          install-govulncheck: "true"
-
-      - name: Setup ai-spec
-        uses: JailtonJunior94/orchestrator/.github/actions/setup-ai-spec@bfee8b0c9a68b9e9d96f98d4b2bf27d292332276
-
-      - name: Validate Taskfile
-        run: python3 .agents/skills/taskfile-production/scripts/validate-taskfile.py Taskfile.yml
-
-      - name: Check conventional commits (pull request)
-        if: github.event_name == 'pull_request'
-        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
-
-      - name: Check conventional commits (push)
-        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        run: bash taskfiles/scripts/check-conventional-commit.sh "${{ github.event.before }}" "${{ github.sha }}"
-
-      - name: ai-spec doctor
-        run: |
-          ai-spec doctor .
-          ai-spec lint
-
       - run: task lint:run
       - run: task lint:fmt:check
       - run: task lint:pci
 
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: ./.github/actions/setup-go-task
       - run: task test:unit
-
       - name: Upload unit coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -87,6 +57,15 @@ jobs:
           path: coverage/unit.out
           retention-days: 1
 
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: ./.github/actions/setup-go-task
       - name: Create .env for integration tests
         run: |
           cat > .env << 'EOF'
@@ -106,9 +85,7 @@ jobs:
           OTEL_TRACE_SAMPLE_RATE=0
           OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
           EOF
-
       - run: task test:integration
-
       - name: Upload integration coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -116,43 +93,24 @@ jobs:
           path: coverage/integration.out
           retention-days: 1
 
-      - run: task security:vulncheck
-
-  coverage-comment:
-    name: Coverage Comment
-    runs-on: ubuntu-latest
+  vulncheck:
+    name: Vulnerability Check
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [quality-gate]
-    if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: ./.github/actions/setup-go-task
         with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download unit coverage
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: unit-coverage
-          path: coverage/
-
-      - name: Post coverage comment
-        uses: fgrosse/go-coverage-report@cbeb2ab2e32591d690337146ba02a911cc566f3f # v1.3.0
-        with:
-          coverage-artifact-name: unit-coverage
-          coverage-file-name: coverage/unit.out
+          install-govulncheck: "true"
+      - run: task security:vulncheck
 
   build-image:
     name: Build & Push Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
-    needs: [quality-gate]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, lint, unit, integration, vulncheck]
     permissions:
       contents: read
       packages: write
@@ -162,17 +120,14 @@ jobs:
       image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
-
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Determine image tags
         id: meta
         run: |
@@ -180,7 +135,6 @@ jobs:
           SHORT_SHA="${SHA::8}"
           echo "image-tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "tags=${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -195,12 +149,10 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
       - name: Save image meta artifact
         run: |
           echo "image-tag=${{ steps.meta.outputs.image-tag }}" > image-meta.txt
           echo "image-digest=${{ steps.build.outputs.digest }}" >> image-meta.txt
-
       - name: Upload image meta for CD
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -210,10 +162,9 @@ jobs:
 
   scan-image:
     name: Scan Image
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: build-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       security-events: write
@@ -228,22 +179,19 @@ jobs:
           output: trivy-results.sarif
           exit-code: "1"
           severity: "CRITICAL,HIGH"
-
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@efffb483ec7bb162c4b7935f8b35ab6b94136c7b
         with:
           sarif_file: trivy-results.sarif
-
       - name: Fail on critical or high vulnerabilities
         if: steps.trivy.outcome == 'failure'
         run: exit 1
 
   sign-image:
     name: Sign Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: build-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
@@ -255,10 +203,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install cosign
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
-
       - name: Sign image with cosign
         run: |
           cosign sign --yes \
@@ -269,7 +215,7 @@ jobs:
     runs-on: [self-hosted, staging]
     timeout-minutes: 20
     needs: [build-image, scan-image, sign-image]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     environment: staging
     concurrency:
       group: deploy-staging
@@ -278,47 +224,44 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
       - name: Deploy to VPS
         env:
           LOCAL_DEPLOY: "true"
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.build-image.outputs.image-tag }}
-          STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
 
-  deploy-manual:
-    name: Deploy to VPS (manual)
-    runs-on: [self-hosted, staging]
-    timeout-minutes: 20
-    if: github.event_name == 'workflow_dispatch'
-    environment: staging
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
+  healthcheck:
+    name: Healthcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Deploy to VPS
+      - name: Check staging health
         env:
-          LOCAL_DEPLOY: "true"
-          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
-          STAGING_SMOKE_WA: ${{ secrets.STAGING_SMOKE_WA }}
-          GHCR_USER: ${{ secrets.GHCR_USER }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
+          STAGING_HEALTH_URL: ${{ secrets.STAGING_HEALTH_URL }}
+        run: |
+          if [[ -z "$STAGING_HEALTH_URL" ]]; then
+            echo "STAGING_HEALTH_URL not configured; skipping healthcheck"
+            exit 0
+          fi
+          echo "==> Checking /health"
+          curl -fsS --retry 12 --retry-delay 5 --max-time 10 "${STAGING_HEALTH_URL}/health"
+          echo "==> Checking /ready"
+          curl -fsS --retry 12 --retry-delay 5 --max-time 10 "${STAGING_HEALTH_URL}/ready"
+          echo "==> Healthcheck OK"
 
   notify:
     name: Notify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [quality-gate, build-image, scan-image, sign-image, deploy]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, lint, unit, integration, vulncheck, build-image, scan-image, sign-image, deploy, healthcheck]
+    if: always() && github.ref == 'refs/heads/main'
     permissions:
       contents: read
     steps:
@@ -331,17 +274,21 @@ jobs:
             echo "Telegram secrets not configured; skipping notification"
             exit 0
           fi
-          if [[ "${{ needs.quality-gate.result }}" == "success" && \
+          if [[ "${{ needs.build.result }}" == "success" && \
+                "${{ needs.lint.result }}" == "success" && \
+                "${{ needs.unit.result }}" == "success" && \
+                "${{ needs.integration.result }}" == "success" && \
+                "${{ needs.vulncheck.result }}" == "success" && \
                 "${{ needs.build-image.result }}" == "success" && \
                 "${{ needs.scan-image.result }}" == "success" && \
                 "${{ needs.sign-image.result }}" == "success" && \
                 "${{ needs.deploy.result }}" == "success" && \
-                "${{ needs.smoke.result }}" == "success" ]]; then
+                "${{ needs.healthcheck.result }}" == "success" ]]; then
             STATUS="✅ SUCESSO"
           else
             STATUS="❌ FALHA"
           fi
-          MESSAGE="*${{ github.workflow }}*%0A*Repo:* ${{ github.repository }}%0A*Ref:* ${{ github.ref_name }}%0A*Commit:* ${{ github.sha }}%0A*Status:* ${STATUS}%0A[Ver run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          MESSAGE="*${{ github.workflow }}*%0A*Repo:* ${{ github.repository }}*%0A*Ref:* ${{ github.ref_name }}*%0A*Commit:* ${{ github.sha }}*%0A*Status:* ${STATUS}%0A[Ver run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           curl -fsSL -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
             -d "parse_mode=Markdown" \

@@ -111,6 +111,12 @@ func (uc *ConsumeMagicToken) Execute(ctx context.Context, in input.ConsumeMagicT
 		result = res
 		return txErr
 	})
+	if err != nil && errors.Is(err, domain.ErrTokenAlreadyConsumedOther) && result.signal != nil && uc.uow.DBTX() != nil {
+		signalRepo := uc.factory.SupportSignalRepository(uc.uow.DBTX())
+		if insertErr := signalRepo.Insert(ctx, *result.signal); insertErr != nil {
+			return ConsumeResult{}, fmt.Errorf("onboarding: consume magic token: persist reuse signal: %w", insertErr)
+		}
+	}
 
 	elapsed := time.Since(start).Seconds()
 	uc.consumeLatency.Record(ctx, elapsed, observability.String("result", consumeResultLabel(err)))

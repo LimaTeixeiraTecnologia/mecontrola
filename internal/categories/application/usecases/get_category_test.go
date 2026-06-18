@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
@@ -119,13 +120,13 @@ func (s *GetCategorySuite) TestExecute_NotFound() {
 
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
-	s.repo.EXPECT().GetByID(s.ctx, id).Return(entities.Category{}, errors.New("not found")).Once()
+	s.repo.EXPECT().GetByID(s.ctx, id).Return(entities.Category{}, interfaces.ErrNotFound).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
 		ID: id,
 	})
 
-	s.Error(err)
+	s.ErrorIs(err, usecases.ErrCategoryNotFound)
 	s.Nil(result)
 }
 
@@ -182,6 +183,32 @@ func (s *GetCategorySuite) TestExecute_DeprecatedWithFlag() {
 	s.NoError(err)
 	s.NotNil(result)
 	s.NotNil(result.DeprecatedAt)
+}
+
+func (s *GetCategorySuite) TestExecute_RootWithoutChildren() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+
+	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	rootCategory := entities.Category{
+		ID:             rootID,
+		Slug:           "metas",
+		Name:           "Metas",
+		Kind:           valueobjects.KindExpense,
+		AllocationType: valueobjects.AllocationTypeConsumption,
+	}
+
+	s.repo.EXPECT().GetByID(s.ctx, rootID).Return(rootCategory, nil).Once()
+	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
+		ID: rootID,
+	})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal("Metas", result.Path)
+	s.Len(result.Subcategories, 0)
 }
 
 func (s *GetCategorySuite) TestExecute_VersionError() {

@@ -138,6 +138,66 @@ func (s *ListCategoriesSuite) TestExecute_RepoError() {
 	s.Contains(err.Error(), "listar categorias")
 }
 
+func (s *ListCategoriesSuite) TestExecute_EmptyResult() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal(int64(42), result.Version)
+	s.Len(result.Categories, 0)
+}
+
+func (s *ListCategoriesSuite) TestExecute_PTBROrdering() {
+	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+
+	id1 := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	id2 := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	id3 := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+
+	categories := []entities.Category{
+		{
+			ID:             id1,
+			Slug:           "agua",
+			Name:           "Água",
+			Kind:           valueobjects.KindExpense,
+			AllocationType: valueobjects.AllocationTypeConsumption,
+		},
+		{
+			ID:             id2,
+			Slug:           "agencia",
+			Name:           "Agencia",
+			Kind:           valueobjects.KindExpense,
+			AllocationType: valueobjects.AllocationTypeConsumption,
+		},
+		{
+			ID:             id3,
+			Slug:           "acucar",
+			Name:           "Açúcar",
+			Kind:           valueobjects.KindExpense,
+			AllocationType: valueobjects.AllocationTypeConsumption,
+		},
+	}
+
+	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(categories, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Len(result.Categories, 3)
+
+	col := services.NewPTBRCollator()
+	for i := 1; i < len(result.Categories); i++ {
+		prev := result.Categories[i-1].Name
+		curr := result.Categories[i].Name
+		s.True(col.Less(prev, curr) || prev == curr,
+			"esperado %q antes de %q na ordem PT-BR", prev, curr)
+	}
+}
+
 func (s *ListCategoriesSuite) TestExecute_WithDeprecatedCategories() {
 	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
 

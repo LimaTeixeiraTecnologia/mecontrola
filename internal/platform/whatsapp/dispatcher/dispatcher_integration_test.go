@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
@@ -169,10 +168,6 @@ func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mo
 
 	dedupRepo := postgres.NewMessageRepository(s.o11y, s.db)
 
-	stubAgent := agent.NewStubAgent(waGW, map[string]string{
-		"agent_stub_received": "MeControla recebeu sua mensagem — estamos preparando sua experiencia.",
-	}, s.o11y)
-
 	onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 		return dispatcher.OutcomeOnboarding
 	}
@@ -180,7 +175,7 @@ func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mo
 		if _, ok := auth.FromContext(ctx); !ok {
 			return dispatcher.OutcomeFallback
 		}
-		if err := stubAgent.HandleMessage(ctx, msg); err != nil {
+		if err := waGW.SendTextMessage(ctx, msg.From, "MeControla recebeu sua mensagem — estamos preparando sua experiencia."); err != nil {
 			s.o11y.Logger().Warn(ctx, "test.agent_route_failed")
 		}
 		return dispatcher.OutcomeAgent

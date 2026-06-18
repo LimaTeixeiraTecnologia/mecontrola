@@ -232,7 +232,7 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agent: %w", err)
 	}
-	o11y.Logger().Info(ctx, "agent module wired", observability.String("mode", agentModule.Mode))
+	o11y.Logger().Info(ctx, "agent module wired", observability.String("mode", "openrouter"))
 
 	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule, agentModule)
 	srv.RegisterRouters(waWebhookRouter)

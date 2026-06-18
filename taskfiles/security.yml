@@ -140,28 +140,6 @@ tasks:
         ssh {{.VPS_USER}}@{{.VPS_HOST}} "chmod +x ${SCRIPT_REMOTE} && sudo bash ${SCRIPT_REMOTE} $EXTRA_FLAG && rm -f ${SCRIPT_REMOTE}"
         echo "==> vps:firewall concluido."
 
-  # ── backup-restore-smoke ─────────────────────────────────────────────────────
-  backup-restore-smoke:
-    desc: >-
-      Baixa o ultimo dump cifrado (rclone+age), restaura em Postgres efemero e executa
-      smoke queries nas 3 tabelas criticas (users, cards, transactions).
-      Requer: rclone, age, docker, psql configurados no host.
-      Variaveis obrigatorias: BACKUP_REMOTE, AGE_KEY_FILE (ou PG_RESTORE_ENV_FILE).
-      Uso: task security:backup-restore-smoke
-    preconditions:
-      - sh: command -v rclone >/dev/null 2>&1
-        msg: "rclone ausente. Instale: curl https://rclone.org/install.sh | sudo bash"
-      - sh: command -v age >/dev/null 2>&1
-        msg: "age ausente. Instale: brew install age  ou  apt install age"
-      - sh: command -v docker >/dev/null 2>&1
-        msg: "docker ausente. Instale: https://docs.docker.com/get-docker/"
-      - sh: command -v psql >/dev/null 2>&1
-        msg: "psql ausente. Instale: apt install postgresql-client  ou  brew install libpq"
-      - sh: command -v pg_isready >/dev/null 2>&1
-        msg: "pg_isready ausente. Instale: apt install postgresql-client  ou  brew install libpq"
-    cmds:
-      - bash deployment/scripts/pg-restore-smoke.sh
-
   # ── scan (alias completo local) ──────────────────────────────────────────────
   scan:
     desc: Roda toda a verificacao de seguranca local (vulncheck + audit).

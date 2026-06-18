@@ -10,6 +10,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -240,6 +241,7 @@ type IntentRouter struct {
 	fallback          Fallback
 	whatsAppGateway   WhatsAppOutbound
 	telegramGateway   TelegramOutbound
+	eventPublisher    interfaces.IntentEventPublisher
 	o11y              observability.Observability
 	routedTotal       observability.Counter
 	loc               *time.Location
@@ -262,6 +264,7 @@ type IntentRouterDeps struct {
 	Fallback          Fallback
 	WhatsAppGateway   WhatsAppOutbound
 	TelegramGateway   TelegramOutbound
+	EventPublisher    interfaces.IntentEventPublisher
 	Location          *time.Location
 }
 
@@ -304,6 +307,7 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		fallback:          deps.Fallback,
 		whatsAppGateway:   deps.WhatsAppGateway,
 		telegramGateway:   deps.TelegramGateway,
+		eventPublisher:    deps.EventPublisher,
 		o11y:              o11y,
 		routedTotal:       routedTotal,
 		loc:               loc,
@@ -311,7 +315,9 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 }
 
 func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
+	startedAt := time.Now().UTC()
 	result := r.route(ctx, principal, ChannelWhatsApp, msg.WhatsAppTo, msg.Text, msg.MessageID)
+	defer r.publishEvent(ctx, principal, ChannelWhatsApp, result, startedAt)
 	if result.Reply == "" {
 		return result
 	}
@@ -326,7 +332,9 @@ func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, m
 }
 
 func (r *IntentRouter) RouteTelegram(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
+	startedAt := time.Now().UTC()
 	result := r.route(ctx, principal, ChannelTelegram, "", msg.Text, msg.MessageID)
+	defer r.publishEvent(ctx, principal, ChannelTelegram, result, startedAt)
 	if result.Reply == "" {
 		return result
 	}
@@ -343,6 +351,36 @@ func (r *IntentRouter) RouteTelegram(ctx context.Context, principal Principal, m
 		r.record(ctx, result.Kind.String(), ChannelTelegram, OutcomeReplyFailed)
 	}
 	return result
+}
+
+func (r *IntentRouter) publishEvent(ctx context.Context, principal Principal, channel string, result RouteResult, startedAt time.Time) {
+	if r.eventPublisher == nil {
+		return
+	}
+	ev := interfaces.IntentEvent{
+		EventID:    uuid.New(),
+		UserID:     principal.UserID,
+		Channel:    channel,
+		Outcome:    result.Outcome,
+		LatencyMS:  time.Since(startedAt).Milliseconds(),
+		OccurredAt: time.Now().UTC(),
+	}
+	if result.Outcome == OutcomeRouted && result.Kind != intent.KindUnknown {
+		ev.Module = result.Kind.String()
+	}
+	var pubErr error
+	if result.Outcome == OutcomeRouted {
+		pubErr = r.eventPublisher.PublishExecuted(ctx, ev)
+	} else {
+		pubErr = r.eventPublisher.PublishRejected(ctx, ev)
+	}
+	if pubErr != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.publish_failed",
+			observability.String("event_id", ev.EventID.String()),
+			observability.String("channel", channel),
+			observability.Error(pubErr),
+		)
+	}
 }
 
 func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind

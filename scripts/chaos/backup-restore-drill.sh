@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Backup/restore drill local — independente de rclone/age.
 #
-# Diferente de `task security:backup-restore-smoke` (que pega o ultimo dump
-# cifrado do remoto), este script:
+# Este script nao baixa dumps cifrados do remoto; para restore a partir de backup
+# cifrado use as ferramentas de backup/restore da infraestrutura. Este script:
 #   1. Captura counts em users, cards, transactions, budget_alerts_sent.
 #   2. pg_dump direto da DB atual em arquivo plano.
 #   3. Cria DB efemera, restaura nela.

@@ -41,11 +41,19 @@ func (rt *PublicRouter) Register(r chi.Router) {
 			rt.corsMiddleware,
 			chiMiddleware.AllowContentType("application/json"),
 		).Post("/checkout", rt.checkoutHandler.Handle)
+		sub.With(
+			rt.checkoutLimiter.Middleware,
+			rt.corsMiddleware,
+		).Options("/checkout", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}).ServeHTTP)
 
 		sub.With(
 			rt.stateLimiter.Middleware,
 			rt.corsMiddleware,
 		).Get("/tokens/{token}/state", rt.stateHandler.Handle)
+		sub.With(
+			rt.stateLimiter.Middleware,
+			rt.corsMiddleware,
+		).Options("/tokens/{token}/state", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}).ServeHTTP)
 	})
 }
 

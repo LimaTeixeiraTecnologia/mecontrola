@@ -290,7 +290,6 @@ TELEGRAM_OUTBOUND_TIMEOUT=10s
 ### Agent / LLM (OpenRouter)
 
 ```env
-AGENT_MODE=stub            # stub | live
 OPENROUTER_API_KEY=CHANGE_ME_openrouter_api_key
 AGENT_LLM_HTTP_REFERER=https://mecontrola.app
 AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
@@ -496,7 +495,6 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task security:sign-image IMAGE_REF=<ref> IMAGE_SHA=<sha>` | Assina imagem via cosign keyless + gera SBOM e provenance attestations | cosign, OIDC GitHub Actions |
 | `task security:verify-image IMAGE_SHA=<sha>` | Verifica assinatura cosign keyless | cosign |
 | `task security:vps:firewall VPS_HOST=<ip>` | Aplica regras ufw no VPS via SSH (22/80/443) — `--force-enable` ativa o ufw | SSH + sudo no VPS |
-| `task security:backup-restore-smoke` | Restaura último dump cifrado e executa smoke queries | rclone, age, docker, psql |
 
 ### ngrok — webhooks locais
 
@@ -509,15 +507,6 @@ Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
 | `task ngrok:caddy` | Sobe ambiente com perfil proxy + túnel → `:80` |
 | `task ngrok:urls` | Imprime URLs públicas dos webhooks ativos (Meta verify/inbound, Kiwify) |
 | `task ngrok:stop:tips` | Exibe como encerrar o túnel e desligar os containers |
-
-### Smoke tests — staging
-
-| Task | Objetivo | Variáveis necessárias |
-|---|---|---|
-| `task auth:smoke` | Smoke HMAC-SHA256 do webhook WhatsApp em staging | `WEBHOOK_URL`, `META_APP_SECRET`, `SMOKE_WA`, `DB_URL` (opcional) |
-| `task onboarding:smoke` | Smoke do fluxo ATIVAR end-to-end | `META_APP_SECRET`, `STAGING_WEBHOOK_URL`, `STAGING_PHONE_FROM` |
-| `task smoke:outbox-user-id` | Valida que eventos reais populam `aggregate_user_id` em `outbox_events` (staging) | `DATABASE_URL` |
-| `task smoke:outbox-user-id-adversarial` | Insere evento sem `aggregate_user_id` para validar alertas e housekeeping | `DATABASE_URL`, `METRICS_URL` (default: `http://localhost:8080/metrics`) |
 
 ### Benchmarks
 
@@ -637,8 +626,7 @@ SMTP_PORT=1025
 # Opção B — habilita Telegram-only enquanto Meta WhatsApp não está liberado
 ONBOARDING_TELEGRAM_DIRECT_ENABLED=true
 
-# OpenRouter (Gemini) live
-AGENT_MODE=openrouter
+# OpenRouter (Gemini)
 OPENROUTER_API_KEY=<sua chave>
 ```
 
@@ -830,10 +818,10 @@ Ativado automaticamente após CI verde na main, ou manualmente via `workflow_dis
 
 ```
 Automático (workflow_run):
-  gate (download image-meta do CI) → deploy VPS → smoke (auth:smoke staging)
+  gate (download image-meta do CI) → deploy VPS
 
 Manual (workflow_dispatch com image_tag):
-  deploy VPS → smoke (auth:smoke staging)
+  deploy VPS
 ```
 
 ### Dependabot (`.github/workflows/auto-merge.yml`)

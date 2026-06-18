@@ -153,6 +153,16 @@ func (r *recurringTemplateRepository) SoftDelete(ctx context.Context, id, userID
 		return fmt.Errorf("transactions/repository: rows affected soft-delete template recorrente: %w", err)
 	}
 	if rows == 0 {
+		var exists bool
+		if scanErr := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS(SELECT 1 FROM mecontrola.transactions_recurring_templates WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL)
+		`, id, userID).Scan(&exists); scanErr != nil {
+			span.RecordError(scanErr)
+			return fmt.Errorf("transactions/repository: check existência template recorrente: %w", scanErr)
+		}
+		if !exists {
+			return ErrRecurringTemplateNotFound
+		}
 		return ErrRecurringTemplateVersionConflict
 	}
 	return nil

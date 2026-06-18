@@ -31,7 +31,12 @@ func (b *subscriptionBinder) BindUser(ctx context.Context, subscriptionID string
 		 WHERE id = $2
 	`
 
-	result, err := b.db.ExecContext(ctx, query, userID, subscriptionID)
+	dbtx := b.db
+	if tx, ok := database.FromContext(ctx); ok {
+		dbtx = tx
+	}
+
+	result, err := dbtx.ExecContext(ctx, query, userID, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("onboarding: subscription_binder.bind_user: %w", err)
 	}

@@ -158,13 +158,11 @@ type WhatsAppConfig struct {
 	SystemUnavailable      string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
 	PleaseUseAtivar        string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
 	InvalidCountry         string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
-	AgentStubReceived      string `mapstructure:"WA_MSG_AGENT_STUB_RECEIVED"`
 	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
 }
 
 type AgentConfig struct {
-	Mode              string        `mapstructure:"AGENT_MODE"`
 	OpenRouterBaseURL string        `mapstructure:"OPENROUTER_BASE_URL"`
 	OpenRouterAPIKey  string        `mapstructure:"OPENROUTER_API_KEY"`
 	HTTPReferer       string        `mapstructure:"AGENT_LLM_HTTP_REFERER"`
@@ -193,7 +191,6 @@ type TelegramConfig struct {
 	WebhookRateLimitPerMin int           `mapstructure:"TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst  int           `mapstructure:"TELEGRAM_WEBHOOK_RATE_LIMIT_BURST"`
 	OutboundTimeout        time.Duration `mapstructure:"TELEGRAM_OUTBOUND_TIMEOUT"`
-	AgentStubReceived      string        `mapstructure:"TELEGRAM_MSG_AGENT_STUB_RECEIVED"`
 	OnboardingFallback     string        `mapstructure:"TELEGRAM_MSG_ONBOARDING_FALLBACK"`
 	WelcomeActivated       string        `mapstructure:"TELEGRAM_MSG_WELCOME_ACTIVATED"`
 	AlreadyActive          string        `mapstructure:"TELEGRAM_MSG_ALREADY_ACTIVE"`
@@ -497,7 +494,6 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_SYSTEM_UNAVAILABLE_RETRY",
 		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
 		"WA_MSG_INVALID_COUNTRY",
-		"WA_MSG_AGENT_STUB_RECEIVED",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
 		"BUDGETS_PENDING_REAPER_INTERVAL",
@@ -886,16 +882,9 @@ func (c *Config) validateProductionWhatsApp() []string {
 }
 
 func (c *Config) validateProductionAgent() []string {
-	mode := strings.ToLower(strings.TrimSpace(c.AgentConfig.Mode))
-	if mode == "" || mode == "stub" {
-		return nil
-	}
-	if mode != "openrouter" {
-		return []string{fmt.Sprintf("AGENT_MODE invalido %q em production: stub|openrouter", c.AgentConfig.Mode)}
-	}
 	var errs []string
 	if strings.TrimSpace(c.AgentConfig.OpenRouterAPIKey) == "" {
-		errs = append(errs, "OPENROUTER_API_KEY obrigatorio quando AGENT_MODE=openrouter em production")
+		errs = append(errs, "OPENROUTER_API_KEY obrigatorio em production")
 	}
 	for _, placeholder := range InsecurePlaceholders {
 		if c.AgentConfig.OpenRouterAPIKey == placeholder {
@@ -1155,13 +1144,11 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
 	l.v.SetDefault("WA_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para ativar sua conta, envie: ATIVAR seguido do seu codigo de ativacao.")
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
-	l.v.SetDefault("WA_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
 }
 
 func (l *configLoader) setAgentDefaults() {
-	l.v.SetDefault("AGENT_MODE", "stub")
 	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
 	l.v.SetDefault("AGENT_LLM_HTTP_REFERER", "https://mecontrola.app")
 	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
@@ -1184,7 +1171,6 @@ func (l *configLoader) setTelegramDefaults() {
 	l.v.SetDefault("TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("TELEGRAM_WEBHOOK_RATE_LIMIT_BURST", 100)
 	l.v.SetDefault("TELEGRAM_OUTBOUND_TIMEOUT", 10*time.Second)
-	l.v.SetDefault("TELEGRAM_MSG_AGENT_STUB_RECEIVED", "MeControla recebeu sua mensagem — estamos preparando sua experiencia.")
 	l.v.SetDefault("TELEGRAM_MSG_ONBOARDING_FALLBACK", "Para ativar sua conta, abra o link enviado por e-mail e siga as instrucoes.")
 	l.v.SetDefault("TELEGRAM_MSG_WELCOME_ACTIVATED", "Sua conta foi vinculada ao Telegram com sucesso! Pode comecar a mandar suas mensagens financeiras por aqui.")
 	l.v.SetDefault("TELEGRAM_MSG_ALREADY_ACTIVE", "Seu Telegram ja esta vinculado a sua conta MeControla.")

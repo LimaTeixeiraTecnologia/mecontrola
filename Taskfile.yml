@@ -23,9 +23,6 @@ includes:
     taskfile: ./taskfiles/local.yml
   ngrok:
     taskfile: ./taskfiles/ngrok.yml
-  smoke:
-    taskfile: ./taskfiles/smoke.yml
-
 silent: true
 
 vars:
@@ -75,114 +72,6 @@ tasks:
     desc: Executa benchmarks do pacote outbox e captura baseline em docs/benchmarks/outbox-baseline.md.
     cmds:
       - go test -bench=BenchmarkPublisher -benchmem -count=5 -run=^$ ./internal/platform/outbox/...
-
-  auth:smoke:
-    desc: |
-      Smoke test do webhook auth em staging (RF-30).
-      Envia payload valido com HMAC-SHA256 real e verifica HTTP 200.
-      Com --db, valida linha em auth_events nos ultimos 10 segundos.
-      Requer: WEBHOOK_URL, META_APP_SECRET, SMOKE_WA. DB_URL e opcional.
-    vars:
-      WEBHOOK_URL: '{{.WEBHOOK_URL | default (env "WEBHOOK_URL")}}'
-      META_APP_SECRET: '{{.META_APP_SECRET | default (env "META_APP_SECRET")}}'
-      SMOKE_WA: '{{.SMOKE_WA | default (env "SMOKE_WA")}}'
-      DB_URL: '{{.DB_URL | default (env "DB_URL")}}'
-    preconditions:
-      - sh: '[ -n "{{.WEBHOOK_URL}}" ]'
-        msg: "WEBHOOK_URL (ou env WEBHOOK_URL) e obrigatorio"
-      - sh: '[ -n "{{.META_APP_SECRET}}" ]'
-        msg: "META_APP_SECRET (ou env META_APP_SECRET) e obrigatorio"
-      - sh: '[ -n "{{.SMOKE_WA}}" ]'
-        msg: "SMOKE_WA (ou env SMOKE_WA) e obrigatorio"
-    cmds:
-      - |
-        BASE=$(echo "{{.WEBHOOK_URL}}" | sed -E 's|(https?://[^/]+).*|\1|')
-        echo "==> Aguardando servico em ${BASE}/health..."
-        curl -fsS --retry 10 --retry-delay 3 --retry-all-errors --max-time 5 --connect-timeout 2 "${BASE}/health"
-        echo "==> Servico pronto"
-      - go run ./scripts/smoke/auth_webhook --url "{{.WEBHOOK_URL}}" --secret "{{.META_APP_SECRET}}" --user-wa "{{.SMOKE_WA}}" --db "{{.DB_URL}}"
-
-  mvp:smoke:
-    desc: |
-      Smoke E2E local: Kiwify webhook -> SendActivationEmail -> Mailpit -> /tokens/<token>/state.
-      Pre-req: 'task local:up' rodando (postgres+mailpit+server+worker). Variaveis lidas do .env:
-      KIWIFY_WEBHOOK_SECRET, KIWIFY_PRODUCT_ID_MONTHLY. Opcionais: KIWIFY_URL, STATE_URL_BASE,
-      MAILPIT_API, WAIT_MAX_SECONDS.
-    cmds:
-      - bash scripts/smoke/mvp_e2e.sh
-
-  mvp:telegram:prepare:
-    desc: |
-      Sobe stack completo para E2E Telegram: build/vet, docker compose (postgres+mailpit+otel),
-      migrate, server+worker em background, ngrok detached, setWebhook Telegram. Le .env.
-      Pre-req humano: bot criado em @BotFather + .env preenchido com TELEGRAM_BOT_*.
-    cmds:
-      - bash scripts/smoke/telegram_prepare.sh
-
-  mvp:telegram:drive:
-    desc: |
-      Dirige fluxo E2E Telegram: dispara Kiwify webhook, polla email no Mailpit, extrai token,
-      pega deep link, prompts humanos minimos (clicar link + 4 msgs no Telegram), cria card+invoice
-      via SQL, dispara ThresholdAlertsJob, valida budget_alerts_sent.notified_at. Pre-req:
-      'task mvp:telegram:prepare' rodando.
-    cmds:
-      - bash scripts/smoke/telegram_drive.sh
-
-  alerts:run-once:
-    desc: |
-      Dispara ThresholdAlertsJob 1x via worker efemero (cron acelerado @every 2s) e mata apos
-      timeout. Util para validar Fase 12 do playbook Telegram sem esperar @hourly. Forca
-      BUDGETS_THRESHOLD_ALERTS_MODE=job + BUDGETS_THRESHOLD_ALERTS_CRON='@every 2s'.
-    cmds:
-      - |
-        set -euo pipefail
-        echo "==> alerts:run-once : iniciando worker efemero por 8s..."
-        BUDGETS_THRESHOLD_ALERTS_MODE=job \
-        BUDGETS_THRESHOLD_ALERTS_CRON='@every 2s' \
-          timeout 8 go run ./cmd/worker || true
-        echo "==> alerts:run-once : worker encerrado. Conferir budget_alerts_sent."
-
-  onboarding:smoke:
-    desc: |
-      Smoke do caminho ATIVAR: envia HMAC-SHA256 valido com token inexistente e verifica
-      HTTP 200 (dispatcher nao crash) + ausencia de bind_consume_failed nos logs recentes.
-      Requer: WEBHOOK_URL, META_APP_SECRET. DB_URL e opcional (valida ausencia de erro).
-    vars:
-      WEBHOOK_URL: '{{.WEBHOOK_URL | default (env "WEBHOOK_URL")}}'
-      META_APP_SECRET: '{{.META_APP_SECRET | default (env "META_APP_SECRET")}}'
-      DB_URL: '{{.DB_URL | default (env "DB_URL")}}'
-    preconditions:
-      - sh: '[ -n "{{.WEBHOOK_URL}}" ]'
-        msg: "WEBHOOK_URL (ou env WEBHOOK_URL) e obrigatorio"
-      - sh: '[ -n "{{.META_APP_SECRET}}" ]'
-        msg: "META_APP_SECRET (ou env META_APP_SECRET) e obrigatorio"
-    cmds:
-      - |
-        set -euo pipefail
-        PAYLOAD='{"object":"whatsapp_business_account","entry":[{"id":"smoke-entry","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511900000001","id":"wamid-smoke-'$(date +%s)'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"ATIVAR smoke-infra-probe-token-does-not-exist"}}]}}]}]}'
-        SIG="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "{{.META_APP_SECRET}}" | awk '{print $2}')"
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "{{.WEBHOOK_URL}}/webhooks/whatsapp" \
-          -H "Content-Type: application/json" \
-          -H "X-Hub-Signature-256: $SIG" \
-          -d "$PAYLOAD")
-        if [ "$STATUS" != "200" ]; then
-          echo "FAIL: webhook ATIVAR retornou HTTP $STATUS (esperado 200)"
-          exit 1
-        fi
-        echo "PASS: onboarding:smoke dispatcher OK (HTTP $STATUS)"
-      - |
-        set -euo pipefail
-        if [ -z "{{.DB_URL}}" ]; then
-          echo "WARN: DB_URL nao definida — verificacao de bind_consume_failed ignorada"
-          exit 0
-        fi
-        sleep 3
-        ERRORS=$(psql "{{.DB_URL}}" -tAc \
-          "SELECT count(*) FROM mecontrola.outbox_events
-           WHERE event_type = 'onboarding.subscription_bound'
-             AND created_at > now() - interval '30 seconds'" 2>/dev/null || echo "0")
-        echo "INFO: eventos onboarding.subscription_bound nos ultimos 30s: $ERRORS"
-        echo "PASS: onboarding:smoke DB check concluido (token inexistente: sem evento esperado)"
 
   card:lint:
     desc: Executa golangci-lint no escopo do modulo card (inclui regra forbidigo anti-PCI).

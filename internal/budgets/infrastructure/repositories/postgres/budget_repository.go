@@ -3,11 +3,14 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
@@ -74,6 +77,10 @@ func (r *budgetRepository) CreateDraft(ctx context.Context, b entities.Budget) e
 	)
 	if err != nil {
 		span.RecordError(err)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return interfaces.ErrBudgetConflict
+		}
 		return fmt.Errorf("budgets/postgres: create_draft: %w", err)
 	}
 

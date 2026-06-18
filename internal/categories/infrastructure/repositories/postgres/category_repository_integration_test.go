@@ -203,3 +203,82 @@ func (s *CategoryRepositoryIntegrationSuite) TestGetByID() {
 		})
 	}
 }
+
+func (s *CategoryRepositoryIntegrationSuite) TestListByIDs() {
+	ctx := context.Background()
+
+	all, err := s.repo.List(ctx, interfaces.CategoryQuery{
+		Kind:              valueobjects.KindExpense,
+		IncludeDeprecated: false,
+	})
+	s.Require().NoError(err)
+	s.Require().GreaterOrEqual(len(all), 3)
+
+	ids := make([]uuid.UUID, 3)
+	for i := range 3 {
+		ids[i] = all[i].ID
+	}
+
+	result, err := s.repo.ListByIDs(ctx, ids)
+	s.Require().NoError(err)
+	s.Assert().Len(result, 3)
+
+	idSet := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		idSet[id] = struct{}{}
+	}
+	for _, c := range result {
+		_, ok := idSet[c.ID]
+		s.Assert().True(ok, "ID %s nao estava no conjunto solicitado", c.ID)
+	}
+
+	var sqlCount int
+	row := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM mecontrola.categories WHERE id IN ($1, $2, $3)",
+		ids[0], ids[1], ids[2],
+	)
+	s.Require().NoError(row.Scan(&sqlCount))
+	s.Assert().Equal(len(result), sqlCount)
+}
+
+func (s *CategoryRepositoryIntegrationSuite) TestListIncludeDeprecated() {
+	ctx := context.Background()
+
+	deprecatedID := uuid.New()
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO mecontrola.categories (id, slug, name, kind, allocation_type, deprecated_at) VALUES ($1, $2, $3, $4, $5, NOW())",
+		deprecatedID, "deprecated-test-"+deprecatedID.String(), "Deprecated Test", "expense", "consumption",
+	)
+	s.Require().NoError(err)
+
+	withoutDeprecated, err := s.repo.List(ctx, interfaces.CategoryQuery{
+		Kind:              valueobjects.KindExpense,
+		IncludeDeprecated: false,
+	})
+	s.Require().NoError(err)
+	for _, c := range withoutDeprecated {
+		s.Assert().NotEqual(deprecatedID, c.ID, "categoria deprecated nao deve aparecer quando IncludeDeprecated=false")
+	}
+
+	withDeprecated, err := s.repo.List(ctx, interfaces.CategoryQuery{
+		Kind:              valueobjects.KindExpense,
+		IncludeDeprecated: true,
+	})
+	s.Require().NoError(err)
+
+	found := false
+	for _, c := range withDeprecated {
+		if c.ID == deprecatedID {
+			found = true
+			break
+		}
+	}
+	s.Assert().True(found, "categoria deprecated deve aparecer quando IncludeDeprecated=true")
+
+	var sqlCount int
+	row := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM mecontrola.categories WHERE deprecated_at IS NOT NULL AND kind = 'expense'",
+	)
+	s.Require().NoError(row.Scan(&sqlCount))
+	s.Assert().GreaterOrEqual(sqlCount, 1)
+}

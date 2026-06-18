@@ -58,7 +58,7 @@ flyctl logs -a ${FLY_APP} -p app   --since 1h
 flyctl logs -a ${FLY_APP} -p worker --since 1h
 ```
 
-## Smoke Test Pós-Rollback
+## Validacao Pós-Rollback
 
 ```sh
 flyctl status -a ${FLY_APP} | grep started

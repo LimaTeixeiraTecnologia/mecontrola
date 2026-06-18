@@ -66,15 +66,32 @@ func (w CardPurchaseWorkflow) DecideCreate(
 		)
 	}
 
+	subcategoryID := uuid.Nil
+	if sub, ok := cmd.SubcategoryID.Get(); ok {
+		subcategoryID = sub.UUID()
+	}
+
+	installments := make([]entities.CardPurchaseInstallment, len(items))
+	for i, it := range items {
+		installments[i] = entities.CardPurchaseInstallment{
+			ItemID:      it.ID(),
+			RefMonth:    it.RefMonth(),
+			AmountCents: it.Amount().Cents(),
+			Index:       it.InstallmentIndex(),
+		}
+	}
+
 	evt := entities.CardPurchaseCreated{
 		EventID:           eventID,
 		AggregateID:       purchaseID,
 		UserID:            cmd.UserID.UUID(),
 		OccurredAt:        now,
 		CardID:            cmd.CardID.UUID(),
+		SubcategoryID:     subcategoryID,
 		TotalAmountCents:  cmd.TotalAmount.Cents(),
 		InstallmentsTotal: cmd.Installments.Value(),
 		RefMonthsAffected: refMonths,
+		Installments:      installments,
 	}
 
 	return CardPurchaseDecision{Purchase: purchase, Items: items, Event: evt}

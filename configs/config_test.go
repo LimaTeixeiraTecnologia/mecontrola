@@ -970,6 +970,7 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.T().Setenv("META_APP_SECRET", "real-app-secret-for-testing")
 				s.T().Setenv("META_VERIFY_TOKEN", "real-verify-token-for-testing")
 				s.T().Setenv("ONBOARDING_TOKEN_ENCRYPTION_KEY", "testencryptionkey1234567890abcde")
+				s.T().Setenv("OPENROUTER_API_KEY", "sk-real-key-for-testing")
 			},
 			expect: func(cfg *configs.Config, err error) {
 				s.Require().NoError(err)
@@ -1514,6 +1515,10 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.WhatsAppConfig.AppSecret = "real-app-secret-for-testing"
 	cfg.WhatsAppConfig.VerifyToken = "real-verify-token-for-testing"
 	cfg.OnboardingConfig.TokenEncryptionKey = "testencryptionkey1234567890abcde"
+	cfg.AgentConfig.OpenRouterAPIKey = "sk-real-key-for-testing"
+	cfg.AgentConfig.PrimaryModel = "google/gemini-2.5-flash-lite"
+	cfg.AgentConfig.MaxTokens = 256
+	cfg.AgentConfig.RequestTimeout = 8 * time.Second
 	return cfg
 }
 
