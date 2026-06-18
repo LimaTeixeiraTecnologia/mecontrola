@@ -1,4 +1,3 @@
-# Workflows e actions compostas exigem revisão do time responsável pela plataforma.
-# Substitua @LimaTeixeiraTecnologia/platform pelo time correto do seu repositório.
-.github/workflows/ @LimaTeixeiraTecnologia/platform
-.github/actions/ @LimaTeixeiraTecnologia/platform
+# Workflows e actions compostas exigem revisão do dono do repositório.
+.github/workflows/ @JailtonJunior94
+.github/actions/ @JailtonJunior94
