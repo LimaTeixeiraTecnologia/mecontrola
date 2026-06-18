@@ -1,0 +1,59 @@
+name: Setup Go + Task
+description: Instala Go, Task e ferramentas opcionais (golangci-lint, govulncheck)
+
+inputs:
+  go-version-file:
+    description: Caminho para o arquivo de versão do Go
+    required: false
+    default: go.mod
+  install-golangci-lint:
+    description: Instalar golangci-lint
+    required: false
+    default: "false"
+  install-govulncheck:
+    description: Instalar govulncheck
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache: true
+
+    - name: Cache .task/
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: .task/
+        key: task-${{ runner.os }}-${{ hashFiles('Taskfile.yml', 'taskfiles/**') }}
+
+    - name: Cache golangci-lint artifacts
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: ~/.cache/golangci-lint
+        key: golangci-${{ runner.os }}-${{ hashFiles('.golangci.yml') }}
+
+    - name: Install task
+      shell: bash
+      run: |
+        set -euo pipefail
+        VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+        mkdir -p "$HOME/.local/bin"
+        sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Install golangci-lint
+      if: inputs.install-golangci-lint == 'true'
+      shell: bash
+      run: |
+        VERSION=$(grep 'GOLANGCI_LINT_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+        go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${VERSION}
+
+    - name: Install govulncheck
+      if: inputs.install-govulncheck == 'true'
+      shell: bash
+      run: |
+        VERSION=$(grep 'GOVULNCHECK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+        go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
