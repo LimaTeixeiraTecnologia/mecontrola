@@ -437,4 +437,16 @@ dinâmico vai na mensagem de turno (Regra de arquitetura de prompt). Seções, e
     kinds já funcionam; e resposta direta de texto quando não há tool_call.
   - Próximo: Fase 3 (`agent_sessions` + multi-turno) → orçamento com percentuais customizados; limpeza; e2e.
 
-_(próximas entradas: por fase — arquivos alterados, validações executadas, riscos residuais, suposições)_
+- **2026-06-18 — Fase 3a (persistência `agent_sessions`) CONCLUÍDA (commit `65cae5a`, na main):**
+  - Migration `000010` (tabela `mecontrola.agent_sessions`, JSONB `pending_action`/`recent_turns`,
+    `expires_at`, FK `users`); interface `AgentSessionRepository` + repo pgx + factory; wiring
+    não-quebrante via functional option `WithSessionStore` (cmd/server injeta).
+  - **Decisão verificada**: índice único parcial `WHERE expires_at > now()` é inválido no Postgres
+    (now() não é IMMUTABLE) → usado índice único simples `(user_id, channel)` + filtro de expiração no read.
+  - Validação: build, vet, test short, golangci-lint v2 0 issues, zero comentários OK. Via subagent + verificação minha.
+  - **Risco/nota para 3b**: com índice único simples, salvar sessão multi-turno deve usar UPSERT
+    (`INSERT ... ON CONFLICT (user_id, channel) DO UPDATE`) para conviver com linha expirada — adicionar
+    método `Upsert`/`Save` ao repo na 3b.
+- **Pendente**: Fase 3b (slot-filling multi-turno + `configure_budget` estruturado → `CreateBudget`+`ActivateBudget`,
+  substituindo a delegação ao onboarding com split fixo), Fase 4 (prompt cache-aware / ativar tool-calling no
+  ParseInbound), limpeza do código morto, e2e (orçamento 2 turnos, cadastrar/contar cartão, record_transaction).
