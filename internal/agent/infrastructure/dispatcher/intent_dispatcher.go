@@ -212,6 +212,28 @@ func (d *IntentDispatcher) routeTransactions(ctx context.Context, userID uuid.UU
 		}
 		return d.ports.TransactionsDelete.Delete(ctx, userID, payload)
 	default:
+		return d.routeTransactionsExtended(ctx, userID, action, filters, payload)
+	}
+}
+
+func (d *IntentDispatcher) routeTransactionsExtended(ctx context.Context, userID uuid.UUID, action valueobjects.IntentAction, filters []byte, payload []byte) (string, error) {
+	switch action.String() {
+	case "create_card_purchase":
+		if d.ports.CardPurchasesCreate == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.CardPurchasesCreate.Create(ctx, userID, payload)
+	case "create_recurring":
+		if d.ports.RecurringCreate == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.RecurringCreate.Create(ctx, userID, payload)
+	case "list_recurring":
+		if d.ports.RecurringList == nil {
+			return "", ErrIntentUnsupported
+		}
+		return d.ports.RecurringList.List(ctx, userID, filters)
+	default:
 		return "", ErrIntentUnsupported
 	}
 }

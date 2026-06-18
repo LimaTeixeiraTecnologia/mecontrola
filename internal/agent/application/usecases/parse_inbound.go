@@ -245,6 +245,8 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		})
 	case intent.KindListRecurring:
 		return intent.NewListRecurring(), nil
+	case intent.KindListCards:
+		return intent.NewListCards(), nil
 	case intent.KindUnknown:
 		raw := dto.RawText
 		if strings.TrimSpace(raw) == "" {

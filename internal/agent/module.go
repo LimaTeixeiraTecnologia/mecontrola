@@ -203,11 +203,17 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 		b.transactionsModule.CreateTransactionUC,
 		b.transactionsModule.DeleteTransactionUC,
 		b.transactionsModule.GetTransactionUC,
+		b.transactionsModule.CreateCardPurchaseUC,
+		b.transactionsModule.CreateRecurringTemplateUC,
+		b.transactionsModule.ListRecurringTemplatesUC,
 	)
 	ports.Transactions = txAdapter
 	ports.TransactionsGet = txAdapter
 	ports.TransactionsCreate = txAdapter
 	ports.TransactionsDelete = txAdapter
+	ports.CardPurchasesCreate = txAdapter
+	ports.RecurringCreate = txAdapter
+	ports.RecurringList = txAdapter
 
 	deps := llmRuntimeDeps{
 		Ports: ports,

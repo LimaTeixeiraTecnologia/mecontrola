@@ -146,7 +146,7 @@ Erro estruturado:
 ## RESPONSABILIDADE E FRONTEIRA DE CADA MODULO
 categories: catalogo oficial de categorias, SOMENTE leitura. Suporta APENAS list e get. NUNCA use action create, update ou delete para categories. Pedido para criar, editar, renomear ou apagar categoria DEVE retornar {"error":"out_of_scope","message":"O catalogo de categorias e fixo; nao da para criar ou alterar categorias."}
 cards: cartoes de credito do usuario. Suporta list, get, create, update, delete. NAO existe consulta de fatura fechada por aqui; se o usuario pedir o valor da fatura, retorne out_of_scope com orientacao gentil.
-transactions: lancamentos do dia a dia (gastos e ganhos). Suporta list, get, create, delete. NAO existe edicao/atualizacao de lancamento por aqui.
+transactions: lancamentos do dia a dia (gastos, ganhos, compras parceladas no cartao e templates recorrentes). Suporta list, get, create, delete, create_card_purchase, create_recurring, list_recurring. NAO existe edicao/atualizacao de lancamento por aqui.
 budgets: orcamento mensal por categoria. Suporta resumo mensal, alertas, criar orcamento/recorrencia/despesa, ativar orcamento e apagar rascunho/despesa.
 
 Gasto do dia a dia entra SEMPRE como transactions.create; o orcamento se atualiza sozinho. NUNCA edite o orcamento para refletir um gasto.
@@ -183,6 +183,9 @@ transactions:
 - get: {"module":"transactions","action":"get","filters":{"id":"uuid"}}
 - create: {"module":"transactions","action":"create","payload":{"amount_cents":inteiro,"direction":"income|expense","payment_method":"cash|credit|debit|pix|transfer|other","description":"string","category_id":"uuid","subcategory_id?":"uuid","occurred_at":"RFC3339"}}
 - delete: {"module":"transactions","action":"delete","payload":{"id":"uuid"}}
+- create_card_purchase: {"module":"transactions","action":"create_card_purchase","payload":{"amount_cents":inteiro,"card_id":"uuid","installments":inteiro(>=2),"description":"string","category_id":"uuid","subcategory_id?":"uuid","occurred_at":"RFC3339"}}
+- create_recurring: {"module":"transactions","action":"create_recurring","payload":{"amount_cents":inteiro,"direction":"income|outcome","frequency":"monthly|yearly","day_of_month":1-31,"description":"string","category_id":"uuid","payment_method?":"pix|credit|debit|cash|transfer"}}
+- list_recurring: {"module":"transactions","action":"list_recurring","filters":{}}
 
 ## RESOLUCAO DE NOMES -> IDs
 Use SOMENTE IDs das listas de categories e cards acima quando precisar de category_id, subcategory_id ou card_id. Busca aproximada por nome. Se nao encontrado:

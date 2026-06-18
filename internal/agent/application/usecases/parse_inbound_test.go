@@ -192,6 +192,11 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela
 			llmJSON: `{"kind":"list_recurring"}`,
 			want:    intent.KindListRecurring,
 		},
+		{
+			name:    "list_cards",
+			llmJSON: `{"kind":"list_cards"}`,
+			want:    intent.KindListCards,
+		},
 	}
 
 	for _, tc := range cases {

@@ -410,6 +410,8 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return r.routeCreateRecurring(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindListRecurring:
 		return r.routeListRecurring(ctx, principal.UserID, channel)
+	case intent.KindListCards:
+		return r.routeListCards(ctx, principal.UserID, channel)
 	case intent.KindUnknown:
 		reply := r.delegateFallback(ctx, principal.UserID, channel, trimmed)
 		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeFallback)
@@ -733,6 +735,21 @@ func (r *IntentRouter) routeListRecurring(ctx context.Context, userID uuid.UUID,
 	return RouteResult{Reply: formatRecurringList(items), Outcome: OutcomeRouted, Kind: intent.KindListRecurring}
 }
 
+func (r *IntentRouter) routeListCards(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if r.cardLister == nil {
+		r.record(ctx, intent.KindListCards.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindListCards}
+	}
+	cards, err := r.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.list_cards_failed", observability.Error(err))
+		r.record(ctx, intent.KindListCards.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListCards}
+	}
+	r.record(ctx, intent.KindListCards.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCardList(cards), Outcome: OutcomeRouted, Kind: intent.KindListCards}
+}
+
 func (r *IntentRouter) currentCompetence() string {
 	now := time.Now().UTC().In(r.loc)
 	return fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
@@ -1012,6 +1029,33 @@ func formatGoalProgress(summary budgetsoutput.MonthlySummaryOutput, goalName str
 		return fmt.Sprintf("Não encontrei dados de metas para %q em %s.", goalName, summary.Competence)
 	}
 	return fmt.Sprintf("Não encontrei dados de metas em %s.", summary.Competence)
+}
+
+func formatCardList(list cardoutput.CardList) string {
+	if len(list.Items) == 0 {
+		return "💳 Você ainda não tem cartões cadastrados. Quer cadastrar um agora?"
+	}
+	var sb strings.Builder
+	_, _ = fmt.Fprintf(&sb, "💳 *Seus cartões* (%d)\n", len(list.Items))
+	for _, card := range list.Items {
+		name := strings.TrimSpace(card.Nickname)
+		if name == "" {
+			name = strings.TrimSpace(card.Name)
+		}
+		if name == "" {
+			name = "Cartão sem nome"
+		}
+		sb.WriteString("• *")
+		sb.WriteString(name)
+		sb.WriteString("*")
+		if card.LimitCents > 0 {
+			sb.WriteString(" — limite ")
+			sb.WriteString(formatBRL(card.LimitCents))
+		}
+		_, _ = fmt.Fprintf(&sb, " (fecha dia %d, vence dia %d)", card.ClosingDay, card.DueDay)
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 func formatCardNotFound(cardName string) string {

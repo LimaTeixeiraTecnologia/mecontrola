@@ -633,6 +633,56 @@ func (s *IntentRouterSuite) TestRouteTelegram_NoGateway() {
 	assert.Empty(s.T(), s.tg.sent)
 }
 
+func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_Empty() {
+	s.parser.intent = intent.NewListCards()
+	s.cards.out = cardoutput.CardList{}
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "quais meus cartões?", WhatsAppTo: "+5511999"})
+	s.Equal(intent.KindListCards, result.Kind)
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "ainda não tem cartões")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_WithCards() {
+	s.parser.intent = intent.NewListCards()
+	s.cards.out = cardoutput.CardList{Items: []cardoutput.Card{
+		{Name: "Nubank", Nickname: "Nu", ClosingDay: 3, DueDay: 10, LimitCents: 500000},
+	}}
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "lista meus cartões", WhatsAppTo: "+5511999"})
+	s.Equal(intent.KindListCards, result.Kind)
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "Nu")
+	s.Contains(s.wa.sent[0].Text, "R$ 5.000,00")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_ListerError() {
+	s.parser.intent = intent.NewListCards()
+	s.cards.err = errors.New("db error")
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "meus cartões", WhatsAppTo: "+5511999"})
+	s.Equal(intent.KindListCards, result.Kind)
+	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_MissingResolver() {
+	s.parser.intent = intent.NewListCards()
+	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
+		Parser: s.parser, Fallback: s.fallback, WhatsAppGateway: s.wa,
+	})
+	require.NoError(s.T(), err)
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "meus cartões", WhatsAppTo: "+5511999"})
+	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.NotContains(s.wa.sent[0].Text, "entendi direito", "MissingResolver não deve sugerir reformular")
+}
+
 func TestIntentRouterSuite(t *testing.T) {
 	suite.Run(t, new(IntentRouterSuite))
 }

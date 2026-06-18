@@ -64,6 +64,8 @@ func TestComposeConversationalReply_SendsFreeTextContract(t *testing.T) {
 	require.Contains(t, fake.lastRequest.SystemPrompt, "Atualização Automática")
 	require.Contains(t, fake.lastRequest.SystemPrompt, "Lançamentos (transações)")
 	require.Contains(t, fake.lastRequest.SystemPrompt, "Kiwify")
+	require.Contains(t, fake.lastRequest.SystemPrompt, "rascunho")
+	require.Contains(t, fake.lastRequest.SystemPrompt, "80%")
 }
 
 func TestComposeConversationalReply_ProviderErrorReturnsDeterministicRedirect(t *testing.T) {

@@ -59,6 +59,18 @@ type TransactionsDeletePort interface {
 	Delete(ctx context.Context, userID uuid.UUID, rawPayload json.RawMessage) (string, error)
 }
 
+type CardPurchasesCreatePort interface {
+	Create(ctx context.Context, userID uuid.UUID, rawPayload json.RawMessage) (string, error)
+}
+
+type RecurringCreatePort interface {
+	Create(ctx context.Context, userID uuid.UUID, rawPayload json.RawMessage) (string, error)
+}
+
+type RecurringListPort interface {
+	List(ctx context.Context, userID uuid.UUID, rawFilters json.RawMessage) (string, error)
+}
+
 type BudgetsListPort interface {
 	List(ctx context.Context, userID uuid.UUID, rawFilters json.RawMessage) (string, error)
 }
@@ -93,6 +105,9 @@ type ModulePorts struct {
 	TransactionsGet          TransactionsGetPort
 	TransactionsCreate       TransactionsCreatePort
 	TransactionsDelete       TransactionsDeletePort
+	CardPurchasesCreate      CardPurchasesCreatePort
+	RecurringCreate          RecurringCreatePort
+	RecurringList            RecurringListPort
 	Budgets                  BudgetsListPort
 	BudgetsGet               BudgetsGetPort
 	BudgetsCreate            BudgetsCreatePort

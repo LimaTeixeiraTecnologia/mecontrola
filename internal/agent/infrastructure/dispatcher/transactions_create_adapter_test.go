@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -69,7 +70,7 @@ func TestTransactionsAdapter_Create_HappyPath(t *testing.T) {
 		Direction:   "expense",
 		Description: "almoco",
 	}}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	userID := uuid.New()
 	categoryID := uuid.New()
@@ -95,7 +96,7 @@ func TestTransactionsAdapter_Create_HappyPath(t *testing.T) {
 
 func TestTransactionsAdapter_Create_InvalidAmountRejects(t *testing.T) {
 	create := &stubCreateTransaction{}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	cases := []struct {
 		name    string
@@ -118,7 +119,7 @@ func TestTransactionsAdapter_Create_InvalidAmountRejects(t *testing.T) {
 
 func TestTransactionsAdapter_Create_InvalidDirectionRejects(t *testing.T) {
 	create := &stubCreateTransaction{}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	payload := json.RawMessage(`{"amount":10,"type":"blocked","category_id":"` + uuid.New().String() + `"}`)
 	_, err := sut.Create(context.Background(), uuid.New(), payload)
@@ -127,7 +128,7 @@ func TestTransactionsAdapter_Create_InvalidDirectionRejects(t *testing.T) {
 }
 
 func TestTransactionsAdapter_Create_InvalidCategoryIDRejects(t *testing.T) {
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	payload := json.RawMessage(`{"amount":10,"type":"expense","category_id":"not-a-uuid"}`)
 	_, err := sut.Create(context.Background(), uuid.New(), payload)
@@ -139,7 +140,7 @@ func TestTransactionsAdapter_Create_DefaultsPaymentMethod(t *testing.T) {
 	create := &stubCreateTransaction{resp: transactionsoutput.Transaction{
 		AmountCents: 100, Direction: "expense", Description: "x",
 	}}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	payload := json.RawMessage(`{"amount":1,"type":"expense","description":"x","category_id":"` + uuid.New().String() + `"}`)
 	_, err := sut.Create(context.Background(), uuid.New(), payload)
@@ -151,7 +152,7 @@ func TestTransactionsAdapter_Delete_HappyPath(t *testing.T) {
 	txID := uuid.New().String()
 	get := &stubGetTransaction{resp: transactionsoutput.Transaction{Version: 7, AmountCents: 1234}}
 	del := &stubDeleteTransaction{}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, del, get)
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, del, get, nil, nil, nil)
 
 	payload := json.RawMessage(`{"id":"` + txID + `"}`)
 	reply, err := sut.Delete(context.Background(), uuid.New(), payload)
@@ -164,7 +165,7 @@ func TestTransactionsAdapter_Delete_HappyPath(t *testing.T) {
 }
 
 func TestTransactionsAdapter_Delete_MissingIDRejects(t *testing.T) {
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	_, err := sut.Delete(context.Background(), uuid.New(), json.RawMessage(`{}`))
 	require.Error(t, err)
@@ -172,7 +173,7 @@ func TestTransactionsAdapter_Delete_MissingIDRejects(t *testing.T) {
 }
 
 func TestTransactionsAdapter_Delete_InvalidUUIDRejects(t *testing.T) {
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	_, err := sut.Delete(context.Background(), uuid.New(), json.RawMessage(`{"id":"not-a-uuid"}`))
 	require.Error(t, err)
@@ -181,8 +182,59 @@ func TestTransactionsAdapter_Delete_InvalidUUIDRejects(t *testing.T) {
 func TestTransactionsAdapter_Delete_GetErrorPropagates(t *testing.T) {
 	txID := uuid.New().String()
 	get := &stubGetTransaction{err: errors.New("not found")}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, get)
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, &stubCreateTransaction{}, &stubDeleteTransaction{}, get, nil, nil, nil)
 
 	_, err := sut.Delete(context.Background(), uuid.New(), json.RawMessage(`{"id":"`+txID+`"}`))
 	require.Error(t, err)
+}
+
+func TestTransactionsAdapter_CreateRecurring_InvalidDayOfMonthRejects(t *testing.T) {
+	categoryID := uuid.New().String()
+
+	cases := []struct {
+		name       string
+		dayOfMonth int
+	}{
+		{"day_32", 32},
+		{"day_negative", -1},
+		{"day_100", 100},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sut := dispatcher.NewTransactionsAdapterFull(nil, nil, nil, nil, nil, &stubCreateRecurringTemplate{}, nil)
+			payload := json.RawMessage(`{
+				"amount_cents":10000,
+				"direction":"outcome",
+				"frequency":"monthly",
+				"day_of_month":` + fmt.Sprintf("%d", tc.dayOfMonth) + `,
+				"category_id":"` + categoryID + `"
+			}`)
+			_, err := sut.CreateRecurring(context.Background(), uuid.New(), payload)
+			require.Error(t, err, "day_of_month=%d deveria ser rejeitado", tc.dayOfMonth)
+			assert.True(t, errors.Is(err, dispatcher.ErrTransactionsCreateInvalidPayload))
+		})
+	}
+}
+
+func TestTransactionsAdapter_ListRecurring_TruncationMessageWhenNextCursorPresent(t *testing.T) {
+	sut := dispatcher.NewTransactionsAdapterFull(nil, nil, nil, nil, nil, nil, &stubListRecurringTemplates{
+		resp: transactionsusecases.RecurringTemplatePage{
+			Templates:  []transactionsoutput.RecurringTemplate{{AmountCents: 5000, Direction: "outcome", Frequency: "monthly", Description: "aluguel"}},
+			NextCursor: "cursor123",
+		},
+	})
+	reply, err := sut.ListRecurring(context.Background(), uuid.New(), nil)
+	require.NoError(t, err)
+	assert.Contains(t, reply, "e mais")
+}
+
+func TestTransactionsAdapter_ListRecurring_NoTruncationWhenNoCursor(t *testing.T) {
+	sut := dispatcher.NewTransactionsAdapterFull(nil, nil, nil, nil, nil, nil, &stubListRecurringTemplates{
+		resp: transactionsusecases.RecurringTemplatePage{
+			Templates: []transactionsoutput.RecurringTemplate{{AmountCents: 5000, Direction: "outcome", Frequency: "monthly", Description: "aluguel"}},
+		},
+	})
+	reply, err := sut.ListRecurring(context.Background(), uuid.New(), nil)
+	require.NoError(t, err)
+	assert.NotContains(t, reply, "e mais")
 }

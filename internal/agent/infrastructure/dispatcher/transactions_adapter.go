@@ -37,12 +37,27 @@ type DeleteTransactionUseCase interface {
 	Execute(ctx context.Context, txID string, version int64) error
 }
 
+type CreateCardPurchaseUseCase interface {
+	Execute(ctx context.Context, raw transactionsinput.RawCreateCardPurchase) (transactionsoutput.CardPurchase, error)
+}
+
+type CreateRecurringTemplateUseCase interface {
+	Execute(ctx context.Context, raw transactionsinput.RawCreateRecurringTemplate) (transactionsoutput.RecurringTemplate, error)
+}
+
+type ListRecurringTemplatesUseCase interface {
+	Execute(ctx context.Context, activeOnly bool, cursor string, limit int) (transactionsusecases.RecurringTemplatePage, error)
+}
+
 type TransactionsAdapter struct {
-	listUseCase   ListTransactionsUseCase
-	createUseCase CreateTransactionUseCase
-	deleteUseCase DeleteTransactionUseCase
-	getUseCase    GetTransactionUseCase
-	defaultLimit  int
+	listUseCase          ListTransactionsUseCase
+	createUseCase        CreateTransactionUseCase
+	deleteUseCase        DeleteTransactionUseCase
+	getUseCase           GetTransactionUseCase
+	createCardPurchaseUC CreateCardPurchaseUseCase
+	createRecurringUC    CreateRecurringTemplateUseCase
+	listRecurringUC      ListRecurringTemplatesUseCase
+	defaultLimit         int
 }
 
 func NewTransactionsAdapterFull(
@@ -50,13 +65,19 @@ func NewTransactionsAdapterFull(
 	createUseCase CreateTransactionUseCase,
 	deleteUseCase DeleteTransactionUseCase,
 	getUseCase GetTransactionUseCase,
+	createCardPurchaseUC CreateCardPurchaseUseCase,
+	createRecurringUC CreateRecurringTemplateUseCase,
+	listRecurringUC ListRecurringTemplatesUseCase,
 ) *TransactionsAdapter {
 	return &TransactionsAdapter{
-		listUseCase:   listUseCase,
-		createUseCase: createUseCase,
-		deleteUseCase: deleteUseCase,
-		getUseCase:    getUseCase,
-		defaultLimit:  10,
+		listUseCase:          listUseCase,
+		createUseCase:        createUseCase,
+		deleteUseCase:        deleteUseCase,
+		getUseCase:           getUseCase,
+		createCardPurchaseUC: createCardPurchaseUC,
+		createRecurringUC:    createRecurringUC,
+		listRecurringUC:      listRecurringUC,
+		defaultLimit:         10,
 	}
 }
 
@@ -333,4 +354,210 @@ func formatCents(cents int64) string {
 	reais := cents / 100
 	centavos := cents % 100
 	return fmt.Sprintf("%d,%02d", reais, centavos)
+}
+
+type cardPurchasePayload struct {
+	AmountCents   int64  `json:"amount_cents"`
+	CardID        string `json:"card_id"`
+	Installments  int    `json:"installments"`
+	Description   string `json:"description"`
+	CategoryID    string `json:"category_id"`
+	SubcategoryID string `json:"subcategory_id,omitempty"`
+	OccurredAt    string `json:"occurred_at"`
+}
+
+func (a *TransactionsAdapter) CreateCardPurchase(ctx context.Context, userID uuid.UUID, rawPayload json.RawMessage) (string, error) {
+	if a.createCardPurchaseUC == nil {
+		return "", ErrIntentUnsupported
+	}
+	if len(rawPayload) == 0 {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	var p cardPurchasePayload
+	if err := json.Unmarshal(rawPayload, &p); err != nil {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	if p.AmountCents <= 0 {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: amount_cents invalido: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	cardID, err := uuid.Parse(strings.TrimSpace(p.CardID))
+	if err != nil {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: card_id invalido: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	if p.Installments < 2 {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: installments deve ser >= 2: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	categoryID, err := uuid.Parse(strings.TrimSpace(p.CategoryID))
+	if err != nil {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: category_id invalido: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	subcategoryID, err := parseOptionalSubcategoryID(p.SubcategoryID)
+	if err != nil {
+		return "", fmt.Errorf("agent.llm.dispatcher.transactions.create_card_purchase: subcategory_id invalido: %w", ErrTransactionsCreateInvalidPayload)
+	}
+	purchasedAt := resolveOccurredAt(p.OccurredAt)
+
+	if _, ok := auth.FromContext(ctx); !ok {
+		ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
+	}
+
+	out, err := a.createCardPurchaseUC.Execute(ctx, transactionsinput.RawCreateCardPurchase{
+		CardID:            cardID,
+		TotalAmountCents:  p.AmountCents,
+		InstallmentsTotal: p.Installments,
+		Description:       strings.TrimSpace(p.Description),
+		CategoryID:        categoryID,
+		SubcategoryID:     subcategoryID,
+		PurchasedAt:       purchasedAt,
+	})
+	if err != nil {
+		return "", fmt.Errorf("transactions.create_card_purchase: %w", err)
+	}
+	return fmt.Sprintf("Compra de R$ %s parcelada em %dx anotada nas suas faturas.",
+		formatCents(out.TotalAmountCents), out.InstallmentsTotal,
+	), nil
+}
+
+type recurringPayload struct {
+	AmountCents   int64  `json:"amount_cents"`
+	Direction     string `json:"direction"`
+	Frequency     string `json:"frequency"`
+	DayOfMonth    int    `json:"day_of_month"`
+	Description   string `json:"description"`
+	CategoryID    string `json:"category_id"`
+	PaymentMethod string `json:"payment_method"`
+}
+
+type validatedRecurring struct {
+	amountCents   int64
+	direction     string
+	frequency     string
+	dayOfMonth    int
+	paymentMethod string
+	categoryID    uuid.UUID
+	description   string
+}
+
+func parseRecurringPayload(raw json.RawMessage) (validatedRecurring, error) {
+	const prefix = "agent.llm.dispatcher.transactions.create_recurring"
+	if len(raw) == 0 {
+		return validatedRecurring{}, fmt.Errorf("%s: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	var p recurringPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return validatedRecurring{}, fmt.Errorf("%s: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	if p.AmountCents <= 0 {
+		return validatedRecurring{}, fmt.Errorf("%s: amount_cents invalido: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	direction := strings.ToLower(strings.TrimSpace(p.Direction))
+	if direction != "income" && direction != "outcome" {
+		return validatedRecurring{}, fmt.Errorf("%s: direction invalido: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	frequency := strings.ToLower(strings.TrimSpace(p.Frequency))
+	if frequency == "" {
+		frequency = "monthly"
+	}
+	if frequency != "monthly" && frequency != "yearly" {
+		return validatedRecurring{}, fmt.Errorf("%s: frequency invalido: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	categoryID, err := uuid.Parse(strings.TrimSpace(p.CategoryID))
+	if err != nil {
+		return validatedRecurring{}, fmt.Errorf("%s: category_id invalido: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	dayOfMonth := p.DayOfMonth
+	if dayOfMonth == 0 {
+		dayOfMonth = 1
+	}
+	if dayOfMonth < 1 || dayOfMonth > 31 {
+		return validatedRecurring{}, fmt.Errorf("%s: day_of_month invalido: %w", prefix, ErrTransactionsCreateInvalidPayload)
+	}
+	paymentMethod := strings.TrimSpace(p.PaymentMethod)
+	if paymentMethod == "" {
+		paymentMethod = "other"
+	}
+	return validatedRecurring{
+		amountCents:   p.AmountCents,
+		direction:     direction,
+		frequency:     frequency,
+		dayOfMonth:    dayOfMonth,
+		paymentMethod: paymentMethod,
+		categoryID:    categoryID,
+		description:   strings.TrimSpace(p.Description),
+	}, nil
+}
+
+func (a *TransactionsAdapter) CreateRecurring(ctx context.Context, userID uuid.UUID, rawPayload json.RawMessage) (string, error) {
+	if a.createRecurringUC == nil {
+		return "", ErrIntentUnsupported
+	}
+	v, err := parseRecurringPayload(rawPayload)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := auth.FromContext(ctx); !ok {
+		ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
+	}
+	out, err := a.createRecurringUC.Execute(ctx, transactionsinput.RawCreateRecurringTemplate{
+		Direction:     v.direction,
+		PaymentMethod: v.paymentMethod,
+		AmountCents:   v.amountCents,
+		Description:   v.description,
+		CategoryID:    v.categoryID,
+		Frequency:     v.frequency,
+		DayOfMonth:    v.dayOfMonth,
+		StartedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return "", fmt.Errorf("transactions.create_recurring: %w", err)
+	}
+	verb := "saida"
+	if out.Direction == "income" {
+		verb = "entrada"
+	}
+	return fmt.Sprintf("Recorrencia criada: %s de R$ %s (%s) com frequencia %s.",
+		verb, formatCents(out.AmountCents), strings.ToLower(strings.TrimSpace(out.Description)), recurringFrequencyLabel(out.Frequency),
+	), nil
+}
+
+func recurringFrequencyLabel(f string) string {
+	switch f {
+	case "monthly":
+		return "mensal"
+	case "yearly":
+		return "anual"
+	default:
+		return f
+	}
+}
+
+func (a *TransactionsAdapter) ListRecurring(ctx context.Context, userID uuid.UUID, _ json.RawMessage) (string, error) {
+	if a.listRecurringUC == nil {
+		return "", ErrIntentUnsupported
+	}
+	if _, ok := auth.FromContext(ctx); !ok {
+		ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
+	}
+	page, err := a.listRecurringUC.Execute(ctx, true, "", 20)
+	if err != nil {
+		return "", fmt.Errorf("transactions.list_recurring: %w", err)
+	}
+	if len(page.Templates) == 0 {
+		return "Nenhuma recorrencia cadastrada.", nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Voce tem %d recorrencia(s):\n", len(page.Templates))
+	for _, t := range page.Templates {
+		verb := "saida"
+		if t.Direction == "income" {
+			verb = "entrada"
+		}
+		fmt.Fprintf(&sb, "- %s de R$ %s (%s) - %s\n",
+			verb, formatCents(t.AmountCents), recurringFrequencyLabel(t.Frequency), strings.ToLower(strings.TrimSpace(t.Description)),
+		)
+	}
+	if page.NextCursor != "" {
+		sb.WriteString("\n...e mais. Pergunte sobre uma recorrencia especifica para ver detalhes.")
+	}
+	return strings.TrimRight(sb.String(), "\n"), nil
 }

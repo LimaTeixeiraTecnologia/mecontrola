@@ -53,10 +53,15 @@ func NewComposeConversationalReply(interpreter conversationalInterpreter, maxTok
 	if maxTokens <= 0 {
 		maxTokens = defaultProseMaxTokens
 	}
-	systemPrompt, err := prompting.RenderPersonaSystem(prompting.PersonaSystemData{})
+	personaPrompt, err := prompting.RenderPersonaSystem(prompting.PersonaSystemData{})
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm.usecase.compose_conversational_reply: render persona: %w", err)
 	}
+	budgetsPrompt, err := prompting.RenderBudgetsPersona(prompting.BudgetsPersonaData{})
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm.usecase.compose_conversational_reply: render budgets persona: %w", err)
+	}
+	systemPrompt := personaPrompt + "\n\n---\n\n" + budgetsPrompt
 	repliedTotal := o11y.Metrics().Counter(
 		"agent_conversational_reply_total",
 		"Total de respostas conversacionais do agent por outcome",

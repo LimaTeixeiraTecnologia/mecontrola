@@ -16,7 +16,7 @@ import (
 
 func TestTransactionsAdapter_Create_PreservesTelegramSourceFromCtx(t *testing.T) {
 	create := &stubCreateTransaction{resp: transactionsoutput.Transaction{Direction: "expense"}}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	userID := uuid.New()
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
@@ -34,7 +34,7 @@ func TestTransactionsAdapter_Create_PreservesTelegramSourceFromCtx(t *testing.T)
 
 func TestTransactionsAdapter_Create_FallsBackToWhatsAppWhenCtxEmpty(t *testing.T) {
 	create := &stubCreateTransaction{resp: transactionsoutput.Transaction{Direction: "expense"}}
-	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{})
+	sut := dispatcher.NewTransactionsAdapterFull(&stubListTransactionsForCreate{}, create, &stubDeleteTransaction{}, &stubGetTransaction{}, nil, nil, nil)
 
 	payload := json.RawMessage(`{"amount":10,"type":"expense","category_id":"` + uuid.New().String() + `"}`)
 	_, err := sut.Create(context.Background(), uuid.New(), payload)

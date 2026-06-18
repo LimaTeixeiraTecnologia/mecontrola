@@ -177,3 +177,27 @@ func TestIntentDispatcher_AdapterError_PropagatesAndReturnsFriendlyText(t *testi
 	assert.True(t, categories.called)
 	assert.NotEmpty(t, res.ReplyText)
 }
+
+func TestIntentDispatcher_Transactions_CreateCardPurchase_NilPort_ReturnsUnsupported(t *testing.T) {
+	sut := dispatcher.NewIntentDispatcher(interfaces.ModulePorts{}, noop.NewProvider())
+	outcome := newOutcome(t, valueobjects.IntentModuleTransactions(), valueobjects.IntentActionCreateCardPurchase())
+	res, err := sut.Dispatch(context.Background(), uuid.New(), outcome)
+	require.NoError(t, err)
+	assert.False(t, res.WasApplied)
+}
+
+func TestIntentDispatcher_Transactions_CreateRecurring_NilPort_ReturnsUnsupported(t *testing.T) {
+	sut := dispatcher.NewIntentDispatcher(interfaces.ModulePorts{}, noop.NewProvider())
+	outcome := newOutcome(t, valueobjects.IntentModuleTransactions(), valueobjects.IntentActionCreateRecurring())
+	res, err := sut.Dispatch(context.Background(), uuid.New(), outcome)
+	require.NoError(t, err)
+	assert.False(t, res.WasApplied)
+}
+
+func TestIntentDispatcher_Transactions_ListRecurring_NilPort_ReturnsUnsupported(t *testing.T) {
+	sut := dispatcher.NewIntentDispatcher(interfaces.ModulePorts{}, noop.NewProvider())
+	outcome := newOutcome(t, valueobjects.IntentModuleTransactions(), valueobjects.IntentActionListRecurring())
+	res, err := sut.Dispatch(context.Background(), uuid.New(), outcome)
+	require.NoError(t, err)
+	assert.False(t, res.WasApplied)
+}

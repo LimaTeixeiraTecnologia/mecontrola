@@ -15,11 +15,14 @@ type IntentAction struct {
 }
 
 const (
-	actionList   = "list"
-	actionGet    = "get"
-	actionCreate = "create"
-	actionUpdate = "update"
-	actionDelete = "delete"
+	actionList               = "list"
+	actionGet                = "get"
+	actionCreate             = "create"
+	actionUpdate             = "update"
+	actionDelete             = "delete"
+	actionCreateCardPurchase = "create_card_purchase"
+	actionCreateRecurring    = "create_recurring"
+	actionListRecurring      = "list_recurring"
 )
 
 func NewIntentAction(raw string) (IntentAction, error) {
@@ -28,7 +31,8 @@ func NewIntentAction(raw string) (IntentAction, error) {
 		return IntentAction{}, ErrIntentActionEmpty
 	}
 	switch trimmed {
-	case actionList, actionGet, actionCreate, actionUpdate, actionDelete:
+	case actionList, actionGet, actionCreate, actionUpdate, actionDelete,
+		actionCreateCardPurchase, actionCreateRecurring, actionListRecurring:
 		return IntentAction{value: trimmed}, nil
 	default:
 		return IntentAction{}, fmt.Errorf("agent.llm: %q: %w", raw, ErrIntentActionUnknown)
@@ -38,6 +42,11 @@ func NewIntentAction(raw string) (IntentAction, error) {
 func IntentActionList() IntentAction   { return IntentAction{value: actionList} }
 func IntentActionGet() IntentAction    { return IntentAction{value: actionGet} }
 func IntentActionCreate() IntentAction { return IntentAction{value: actionCreate} }
+func IntentActionCreateCardPurchase() IntentAction {
+	return IntentAction{value: actionCreateCardPurchase}
+}
+func IntentActionCreateRecurring() IntentAction { return IntentAction{value: actionCreateRecurring} }
+func IntentActionListRecurring() IntentAction   { return IntentAction{value: actionListRecurring} }
 
 func (a IntentAction) String() string { return a.value }
 func (a IntentAction) IsZero() bool   { return a.value == "" }
