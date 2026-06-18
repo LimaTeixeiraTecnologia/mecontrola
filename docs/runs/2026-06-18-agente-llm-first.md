@@ -424,4 +424,17 @@ dinâmico vai na mensagem de turno (Regra de arquitetura de prompt). Seções, e
     handlers no router (`CardCreator`→`card.CreateCard`, `CardCounter`→`card.CountCards`). Depois Fase 3
     (`agent_sessions` multi-turno) e limpeza do código morto.
 
+- **2026-06-18 — Fase 2b (parcial) — `create_card` + `count_cards` CONCLUÍDOS (commit `ff29c40`, na main):**
+  - Domínio `intent`: `KindCreateCard`/`KindCountCards` + campos (`cardNickname`, `closingDay`, `dueDay`,
+    `limitCents`) + construtores; tool catalog + `ToolCallToIntent`; router deps `CardCreator`/`CardCounter`
+    + handlers + tradução de erro sentinela do `card/domain`; adapters finos em `binding/cards.go`
+    (→ `card.CreateCard`/`card.CountCards`); `CardModule.CountCardsUC` exposto; wiring no agente.
+  - **Alcançabilidade**: adicionei os 2 kinds ao enum/propriedades do `ParseIntentJSONSchema` e ao
+    `parse_intent.system.tmpl` (corrigindo gap: estavam wired mas inacessíveis no parse vivo).
+  - Validação: build, `go test ./internal/agent/... ./internal/card/...` OK, golangci-lint v2 0 issues,
+    zero comentários OK. Feito via subagent task-executor + verificação independente minha.
+  - Pendente Fase 2b: ativar tool-calling no `ParseInbound` (hoje ainda JSON-schema) — opcional, pois os
+    kinds já funcionam; e resposta direta de texto quando não há tool_call.
+  - Próximo: Fase 3 (`agent_sessions` + multi-turno) → orçamento com percentuais customizados; limpeza; e2e.
+
 _(próximas entradas: por fase — arquivos alterados, validações executadas, riscos residuais, suposições)_
