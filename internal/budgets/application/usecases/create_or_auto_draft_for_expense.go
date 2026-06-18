@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"

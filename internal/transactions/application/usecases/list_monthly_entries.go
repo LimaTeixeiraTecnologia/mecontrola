@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -16,13 +17,13 @@ import (
 
 type ListMonthlyEntries struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[output.MonthlyEntriesPage]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewListMonthlyEntries(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[output.MonthlyEntriesPage],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *ListMonthlyEntries {
 	return &ListMonthlyEntries{
@@ -53,7 +54,7 @@ func (uc *ListMonthlyEntries) Execute(ctx context.Context, refMonthStr, cursor s
 		limit = maxListLimit
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (output.MonthlyEntriesPage, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (output.MonthlyEntriesPage, error) {
 		repo := uc.factory.MonthlySummaryRepository(db)
 		entries, nextCursor, listErr := repo.ListEntries(ctx, principal.UserID, refMonth, interfaces.Cursor{Value: cursor}, limit)
 		if listErr != nil {

@@ -56,15 +56,15 @@ func (s *EntitlementRepositoryIntegrationSuite) TestUpsertPending() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			ctx := context.Background()
-			manager, _ := setupTestDB(s.T())
-			repo := identitypostgres.NewEntitlementRepository(noop.NewProvider(), manager.DBTX(ctx))
+			db, _ := setupTestDB(s.T())
+			repo := identitypostgres.NewEntitlementRepository(noop.NewProvider(), db)
 
 			s.Require().NoError(repo.UpsertPending(ctx, scenario.args.subscriptionID, scenario.args.firstToken, scenario.args.firstPayload))
 			s.Require().NoError(repo.UpsertPending(ctx, scenario.args.subscriptionID, scenario.args.secondToken, scenario.args.secondPayload))
 
 			var funnelToken string
 			var payload string
-			err := manager.DBTX(ctx).QueryRowContext(ctx, `
+			err := db.QueryRowContext(ctx, `
 				SELECT funnel_token, payload::text
 				  FROM identity_entitlements_pending
 				 WHERE subscription_id = $1

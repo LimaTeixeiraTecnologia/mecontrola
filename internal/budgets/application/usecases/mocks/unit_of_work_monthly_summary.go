@@ -1,38 +1,19 @@
-// Code generated manually — mirrors billing pattern for UoW test double.
 package mocks
 
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
-	mock "github.com/stretchr/testify/mock"
-
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
-type UnitOfWorkMonthlySummary struct {
-	mock.Mock
-}
+type UnitOfWorkMonthlySummary struct{}
 
-type UnitOfWorkMonthlySummary_Expecter struct {
-	mock *mock.Mock
-}
+func (_m *UnitOfWorkMonthlySummary) DBTX() database.DBTX { return nil }
 
-func (_m *UnitOfWorkMonthlySummary) EXPECT() *UnitOfWorkMonthlySummary_Expecter {
-	return &UnitOfWorkMonthlySummary_Expecter{mock: &_m.Mock}
-}
-
-func (_m *UnitOfWorkMonthlySummary) Do(ctx context.Context, fn func(context.Context, database.DBTX) (output.MonthlySummaryOutput, error), opts ...uow.Option) (output.MonthlySummaryOutput, error) {
+func (_m *UnitOfWorkMonthlySummary) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 
-func NewUnitOfWorkMonthlySummary(t interface {
-	mock.TestingT
-	Cleanup(func())
-}) *UnitOfWorkMonthlySummary {
-	m := &UnitOfWorkMonthlySummary{}
-	m.Test(t)
-	t.Cleanup(func() { m.AssertExpectations(t) })
-	return m
+func NewUnitOfWorkMonthlySummary(t interface{ Cleanup(func()) }) *UnitOfWorkMonthlySummary {
+	return &UnitOfWorkMonthlySummary{}
 }

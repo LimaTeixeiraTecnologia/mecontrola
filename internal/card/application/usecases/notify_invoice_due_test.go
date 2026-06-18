@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -14,7 +13,6 @@ import (
 	cardinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
-	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 )
 
@@ -40,7 +38,6 @@ func (g *recordingGateway) SendActivationTemplate(_ context.Context, _, _, _, _ 
 type NotifyInvoiceDueSuite struct {
 	suite.Suite
 	ctx      context.Context
-	factory  *mockInterfaces.RepositoryFactory
 	sentRepo *mockInterfaces.InvoiceDueAlertSentRepository
 	resolver *mockInterfaces.UserChannelResolver
 	gateway  *recordingGateway
@@ -53,16 +50,12 @@ func TestNotifyInvoiceDueSuite(t *testing.T) {
 
 func (s *NotifyInvoiceDueSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.sentRepo = mockInterfaces.NewInvoiceDueAlertSentRepository(s.T())
 	s.resolver = mockInterfaces.NewUserChannelResolver(s.T())
 	s.gateway = &recordingGateway{}
-	s.factory.EXPECT().InvoiceDueAlertSentRepository(mock.Anything).Return(s.sentRepo).Maybe()
 
-	mgr := uowMocks.NewFakeManager()
 	s.useCase = usecases.NewNotifyInvoiceDue(
-		manager.Manager(mgr),
-		s.factory,
+		s.sentRepo,
 		s.resolver,
 		s.gateway,
 		time.UTC,

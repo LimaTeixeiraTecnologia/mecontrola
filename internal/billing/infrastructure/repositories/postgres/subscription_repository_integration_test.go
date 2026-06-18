@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
 	billingpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories/postgres"
@@ -23,7 +23,7 @@ import (
 
 type SubscriptionRepositorySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -34,12 +34,12 @@ func TestSubscriptionRepositorySuite(t *testing.T) {
 func (s *SubscriptionRepositorySuite) SetupTest() {}
 
 func (s *SubscriptionRepositorySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *SubscriptionRepositorySuite) newRepo() interfaces.SubscriptionRepository {
-	return s.factory.SubscriptionRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.SubscriptionRepository(s.db)
 }
 
 func (s *SubscriptionRepositorySuite) newPlan(code valueobjects.PlanCode, days int) valueobjects.Plan {
@@ -168,7 +168,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 		{
 			name: "deve rejeitar reidratacao de assinatura ativa sem period start valido",
 			expect: func(ctx context.Context, repo interfaces.SubscriptionRepository) {
-				_, err := s.mgr.DBTX(ctx).ExecContext(ctx, `
+				_, err := s.db.ExecContext(ctx, `
 					INSERT INTO billing_subscriptions
 					       (id, funnel_token, kiwify_order_id, kiwify_subscription_id, plan_code, status, period_start, period_end, grace_end, last_event_at, created_at, updated_at)
 					VALUES (gen_random_uuid(), $1, $2, $3, 'MONTHLY', 'ACTIVE', $4, $5, NULL, $6, now(), now())
@@ -201,7 +201,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 
 type RF17ConcurrentSubSuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -212,7 +212,7 @@ func TestRF17ConcurrentSubSuite(t *testing.T) {
 func (s *RF17ConcurrentSubSuite) SetupTest() {}
 
 func (s *RF17ConcurrentSubSuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
@@ -224,7 +224,7 @@ func (s *RF17ConcurrentSubSuite) kiwifySubscriptionID(raw string) string {
 
 func (s *RF17ConcurrentSubSuite) prepareUser(userID string) {
 	ctx := context.Background()
-	_, err := s.mgr.DBTX(ctx).ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		 VALUES ($1, $2, 'ACTIVE', now(), now()) ON CONFLICT DO NOTHING`,
 		userID, "+5511"+userID[:10],
@@ -242,7 +242,7 @@ func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFai
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			ctx := context.Background()
-			dbtx := s.mgr.DBTX(ctx)
+			dbtx := s.db
 			repo := s.factory.SubscriptionRepository(dbtx)
 			userID := "550e8400-e29b-41d4-a716-446655440001"
 			s.prepareUser(userID)

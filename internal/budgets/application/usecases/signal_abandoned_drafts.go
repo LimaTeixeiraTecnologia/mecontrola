@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
@@ -18,7 +19,7 @@ const _abandonedDraftBatchSize = 200
 
 type SignalAbandonedDrafts struct {
 	factory  interfaces.RepositoryFactory
-	uow      uow.UnitOfWork[struct{}]
+	uow      uow.UnitOfWork
 	loc      *time.Location
 	o11y     observability.Observability
 	signaled observability.Counter
@@ -26,7 +27,7 @@ type SignalAbandonedDrafts struct {
 
 func NewSignalAbandonedDrafts(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	loc *time.Location,
 	o11y observability.Observability,
 ) *SignalAbandonedDrafts {
@@ -74,7 +75,7 @@ func (uc *SignalAbandonedDrafts) Execute(ctx context.Context) error {
 
 func (uc *SignalAbandonedDrafts) listAbandoned(ctx context.Context, before valueobjects.Competence) ([]entities.Budget, error) {
 	var result []entities.Budget
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		budgets := uc.factory.BudgetRepository(tx)
 		drafts, listErr := budgets.ListAbandonedDrafts(ctx, before, _abandonedDraftBatchSize)
 		if listErr != nil {
@@ -90,7 +91,7 @@ func (uc *SignalAbandonedDrafts) listAbandoned(ctx context.Context, before value
 }
 
 func (uc *SignalAbandonedDrafts) processOne(ctx context.Context, draft entities.Budget) error {
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		budgets := uc.factory.BudgetRepository(tx)
 		already, checkErr := budgets.IsSignaledAbandoned(ctx, draft.ID())
 		if checkErr != nil {

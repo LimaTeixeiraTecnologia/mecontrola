@@ -25,9 +25,9 @@ func TestPostgresStorageIntegration(t *testing.T) {
 
 func (s *PostgresStorageIntegrationSuite) TestRace10GoroutinesSameKey() {
 	ctx := context.Background()
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 
-	storage := idempotency.NewPostgresStorage(mgr)
+	storage := idempotency.NewPostgresStorage(db)
 
 	userID := uuid.NewString()
 	key := "race-key-" + uuid.NewString()
@@ -84,10 +84,9 @@ func (s *PostgresStorageIntegrationSuite) TestRace10GoroutinesSameKey() {
 
 func (s *PostgresStorageIntegrationSuite) TestExpiredKeyTreatedAsMiss() {
 	ctx := context.Background()
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 
-	db := mgr.DBTX(ctx)
-	storage := idempotency.NewPostgresStorage(mgr)
+	storage := idempotency.NewPostgresStorage(db)
 
 	userID := uuid.NewString()
 	key := "expired-key-" + uuid.NewString()
@@ -109,9 +108,9 @@ func (s *PostgresStorageIntegrationSuite) TestExpiredKeyTreatedAsMiss() {
 
 func (s *PostgresStorageIntegrationSuite) TestHashMismatchReturnsError() {
 	ctx := context.Background()
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 
-	storage := idempotency.NewPostgresStorage(mgr)
+	storage := idempotency.NewPostgresStorage(db)
 
 	userID := uuid.NewString()
 	key := "mismatch-key-" + uuid.NewString()

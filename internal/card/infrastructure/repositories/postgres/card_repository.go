@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
@@ -19,6 +18,7 @@ import (
 	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 const prefixCardRepository = "card.repository.pg:"
@@ -186,7 +186,7 @@ func (r *cardRepository) ListByUser(ctx context.Context, userID, cursor string, 
 	fetch := limit + 1
 
 	var (
-		rows database.Rows
+		rows *sql.Rows
 		err  error
 	)
 

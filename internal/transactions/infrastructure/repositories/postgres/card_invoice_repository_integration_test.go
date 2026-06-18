@@ -28,8 +28,7 @@ func TestCardInvoiceRepositoryIntegrationSuite(t *testing.T) {
 }
 
 func (s *CardInvoiceRepositoryIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	db := mgr.DBTX(context.Background())
+	db, _ := testcontainer.Postgres(s.T())
 	s.repo = txpostgres.NewCardInvoiceRepository(noop.NewProvider(), db)
 }
 

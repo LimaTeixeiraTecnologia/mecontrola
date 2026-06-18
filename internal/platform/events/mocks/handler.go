@@ -7,8 +7,9 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 )
 
 // NewHandler creates a new instance of Handler. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

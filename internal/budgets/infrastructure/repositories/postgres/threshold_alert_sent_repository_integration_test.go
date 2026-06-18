@@ -29,7 +29,7 @@ func TestThresholdAlertSentRepositorySuite(t *testing.T) {
 func (s *ThresholdAlertSentRepositorySuite) TestInsertSentDedupAndListSentForDay() {
 	mgr, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	db := mgr
 
 	userID := uuid.New()
 	number := "+5511" + uuid.New().String()[:9]

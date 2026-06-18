@@ -5,22 +5,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
 type HousekeepingJob struct {
-	uow     uow.UnitOfWork[struct{}]
+	uow     uow.UnitOfWork
 	factory OutboxRepositoryFactory
 	cfg     configs.OutboxConfig
 	logger  observability.Logger
 }
 
 func NewHousekeepingJob(
-	unitOfWork uow.UnitOfWork[struct{}],
+	unitOfWork uow.UnitOfWork,
 	factory OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
 	logger observability.Logger,
@@ -42,14 +42,14 @@ func (h *HousekeepingJob) Run(ctx context.Context) error {
 	var total int64
 	for {
 		var n int64
-		_, err := h.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+		err := h.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 			storage := h.factory.OutboxRepository(tx)
 			deleted, delErr := storage.DeletePublishedBatch(ctx, retention, 1000)
 			if delErr != nil {
-				return struct{}{}, fmt.Errorf("outbox: housekeeping: %w", delErr)
+				return fmt.Errorf("outbox: housekeeping: %w", delErr)
 			}
 			n = deleted
-			return struct{}{}, nil
+			return nil
 		})
 		if err != nil {
 			return err

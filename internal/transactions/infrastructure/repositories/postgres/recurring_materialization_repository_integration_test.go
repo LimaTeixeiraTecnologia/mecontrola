@@ -52,10 +52,9 @@ func (s *RecurringMaterializationRepositorySuite) buildRecurringTemplate(userID 
 }
 
 func (s *RecurringMaterializationRepositorySuite) TestInsertIfAbsent_IdempotentOnSameKey() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	templateRepo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 	materializationRepo := txpostgres.NewRecurringMaterializationRepository(o11y, db)
@@ -77,10 +76,9 @@ func (s *RecurringMaterializationRepositorySuite) TestInsertIfAbsent_IdempotentO
 }
 
 func (s *RecurringMaterializationRepositorySuite) TestInsertIfAbsent_DifferentRefMonth() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	templateRepo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 	materializationRepo := txpostgres.NewRecurringMaterializationRepository(o11y, db)
@@ -103,10 +101,9 @@ func (s *RecurringMaterializationRepositorySuite) TestInsertIfAbsent_DifferentRe
 }
 
 func (s *RecurringMaterializationRepositorySuite) TestTryAdvisoryLock_ReturnsTrue() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	materializationRepo := txpostgres.NewRecurringMaterializationRepository(o11y, db)
 
 	templateID := uuid.New()
@@ -118,11 +115,11 @@ func (s *RecurringMaterializationRepositorySuite) TestTryAdvisoryLock_ReturnsTru
 }
 
 func (s *RecurringMaterializationRepositorySuite) TestConcurrentInsert_OnlyOneSucceeds() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
 
-	templateRepo := txpostgres.NewRecurringTemplateRepository(o11y, mgr.DBTX(ctx))
+	templateRepo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()
 	template := s.buildRecurringTemplate(userID)
@@ -138,7 +135,6 @@ func (s *RecurringMaterializationRepositorySuite) TestConcurrentInsert_OnlyOneSu
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			db := mgr.DBTX(ctx)
 			repo := txpostgres.NewRecurringMaterializationRepository(o11y, db)
 			inserted, err := repo.InsertIfAbsent(ctx, template.ID(), refMonth, nil, nil, time.Now().UTC())
 			if err == nil && inserted {

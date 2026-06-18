@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	cardrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/repositories"
 
@@ -26,7 +26,7 @@ import (
 
 type CardRepositorySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -35,21 +35,20 @@ func TestCardRepositorySuite(t *testing.T) {
 }
 
 func (s *CardRepositorySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = cardrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *CardRepositorySuite) SetupTest() {}
 
 func (s *CardRepositorySuite) newRepo() interfaces.CardRepository {
-	return s.factory.CardRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.CardRepository(s.db)
 }
 
 func (s *CardRepositorySuite) insertTestUser(ctx context.Context) string {
 	userID := uuid.New().String()
 	number := fmt.Sprintf("+5511%09d", time.Now().UnixNano()%1000000000)
-	db := s.mgr.DBTX(ctx)
-	_, err := db.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		 VALUES ($1, $2, 'ACTIVE', now(), now())`,
 		userID, number,
@@ -191,7 +190,7 @@ func (s *CardRepositorySuite) TestConcurrentInsertSameNickname() {
 				for i := range goroutines {
 					go func(idx int) {
 						defer wg.Done()
-						r := s.factory.CardRepository(s.mgr.DBTX(context.Background()))
+						r := s.factory.CardRepository(s.db)
 						card := entities.NewCard(entities.NewCardInput{
 							UserID:   uid,
 							Name:     name,

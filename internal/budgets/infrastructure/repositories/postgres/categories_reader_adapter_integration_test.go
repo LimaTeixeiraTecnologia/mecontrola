@@ -10,7 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
+	"github.com/jmoiron/sqlx"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
 	budgetsinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -23,7 +24,7 @@ import (
 
 type CategoriesReaderAdapterIntegrationSuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	adapter budgetsinterfaces.CategoriesReader
 }
 
@@ -32,9 +33,9 @@ func TestCategoriesReaderAdapterIntegrationSuite(t *testing.T) {
 }
 
 func (s *CategoriesReaderAdapterIntegrationSuite) SetupSuite() {
-	s.mgr, _ = testcontainer.Postgres(s.T())
+	s.db, _ = testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
-	db := s.mgr.DBTX(context.Background())
+	db := s.db
 	categoryRepo := catrepository.NewCategoryRepository(o11y, db)
 	versionReader := catrepository.NewVersionReader(o11y, db)
 	resolveUC := catusecases.NewResolveBySlug(categoryRepo, o11y)

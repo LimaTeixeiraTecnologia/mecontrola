@@ -3,27 +3,17 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
-	mock "github.com/stretchr/testify/mock"
-
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
-type UnitOfWorkListCardPurchases struct {
-	mock.Mock
-}
+type UnitOfWorkListCardPurchases struct{}
 
-func (_m *UnitOfWorkListCardPurchases) Do(ctx context.Context, fn func(context.Context, database.DBTX) (usecases.ListCardPurchasesOutput, error), opts ...uow.Option) (usecases.ListCardPurchasesOutput, error) {
+func (_m *UnitOfWorkListCardPurchases) DBTX() database.DBTX { return nil }
+
+func (_m *UnitOfWorkListCardPurchases) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 
-func NewUnitOfWorkListCardPurchases(t interface {
-	mock.TestingT
-	Cleanup(func())
-}) *UnitOfWorkListCardPurchases {
-	m := &UnitOfWorkListCardPurchases{}
-	m.Test(t)
-	t.Cleanup(func() { m.AssertExpectations(t) })
-	return m
+func NewUnitOfWorkListCardPurchases(t interface{ Cleanup(func()) }) *UnitOfWorkListCardPurchases {
+	return &UnitOfWorkListCardPurchases{}
 }

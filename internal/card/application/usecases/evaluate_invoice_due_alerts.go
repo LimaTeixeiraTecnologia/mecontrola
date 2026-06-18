@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
 type EvaluateInvoiceDueAlerts struct {
 	factory    interfaces.RepositoryFactory
 	publisher  interfaces.InvoiceDuePublisher
-	uow        uow.UnitOfWork[struct{}]
+	uow        uow.UnitOfWork
 	decider    services.InvoiceDueAlertsDecider
 	location   *time.Location
 	windowDays int
@@ -29,7 +29,7 @@ type EvaluateInvoiceDueAlerts struct {
 func NewEvaluateInvoiceDueAlerts(
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.InvoiceDuePublisher,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	location *time.Location,
 	windowDays int,
 	scanLimit int,
@@ -69,8 +69,8 @@ func (uc *EvaluateInvoiceDueAlerts) Execute(ctx context.Context) error {
 		loc = time.UTC
 	}
 
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
-		return struct{}{}, uc.executeInTx(ctx, tx, now, loc)
+	err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
+		return uc.executeInTx(ctx, tx, now, loc)
 	})
 	if err != nil {
 		span.RecordError(err)

@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -20,13 +21,13 @@ type RecurringTemplatePage struct {
 
 type ListRecurringTemplates struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[RecurringTemplatePage]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewListRecurringTemplates(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[RecurringTemplatePage],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *ListRecurringTemplates {
 	return &ListRecurringTemplates{
@@ -52,7 +53,7 @@ func (uc *ListRecurringTemplates) Execute(ctx context.Context, activeOnly bool, 
 		limit = maxListLimit
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (RecurringTemplatePage, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (RecurringTemplatePage, error) {
 		repo := uc.factory.RecurringTemplateRepository(db)
 		templates, nextCursor, listErr := repo.List(ctx, principal.UserID, activeOnly, interfaces.Cursor{Value: cursor}, limit)
 		if listErr != nil {

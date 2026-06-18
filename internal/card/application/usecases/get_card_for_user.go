@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
@@ -14,17 +13,15 @@ import (
 )
 
 type GetCardForUser struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	o11y    observability.Observability
+	repo interfaces.CardRepository
+	o11y observability.Observability
 }
 
 func NewGetCardForUser(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.CardRepository,
 	o11y observability.Observability,
 ) *GetCardForUser {
-	return &GetCardForUser{factory: factory, mgr: mgr, o11y: o11y}
+	return &GetCardForUser{repo: repo, o11y: o11y}
 }
 
 func (u *GetCardForUser) Execute(ctx context.Context, cardID, userID uuid.UUID) (valueobjects.BillingCycle, error) {
@@ -36,8 +33,7 @@ func (u *GetCardForUser) Execute(ctx context.Context, cardID, userID uuid.UUID) 
 	)
 	defer span.End()
 
-	repo := u.factory.CardRepository(u.mgr.DBTX(ctx))
-	card, err := repo.GetByIDForUser(ctx, cardID.String(), userID.String())
+	card, err := u.repo.GetByIDForUser(ctx, cardID.String(), userID.String())
 	if err != nil {
 		outcome := classifyCardOutcome(err)
 		span.RecordError(err)

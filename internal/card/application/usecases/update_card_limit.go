@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -18,11 +16,13 @@ import (
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 )
 
 type UpdateCardLimit struct {
-	uow     uow.UnitOfWork[entities.Card]
+	uow     uow.UnitOfWork
 	factory interfaces.RepositoryFactory
 	idem    idempotency.Storage
 	o11y    observability.Observability
@@ -30,7 +30,7 @@ type UpdateCardLimit struct {
 }
 
 func NewUpdateCardLimit(
-	u uow.UnitOfWork[entities.Card],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	idem idempotency.Storage,
 	o11y observability.Observability,
@@ -67,32 +67,33 @@ func (u *UpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit)
 
 	ic, hasIdem := idempotency.FromContext(ctx)
 
-	card, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Card, error) {
+	var card entities.Card
+	err = u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		repo := u.factory.CardRepository(tx)
 
 		existing, getErr := repo.GetByIDForUser(ctx, in.CardID.String(), in.UserID.String())
 		if getErr != nil {
-			return entities.Card{}, getErr
+			return getErr
 		}
 		if existing.IsDeleted() {
-			return entities.Card{}, fmt.Errorf("card/update_limit: %w", domain.ErrCardNotFound)
+			return fmt.Errorf("card/update_limit: %w", domain.ErrCardNotFound)
 		}
 
 		if in.ExpectedVersion != nil && *in.ExpectedVersion != existing.Version {
-			return entities.Card{}, fmt.Errorf("card/update_limit: %w", domain.ErrCardLimitConflict)
+			return fmt.Errorf("card/update_limit: %w", domain.ErrCardLimitConflict)
 		}
 
 		updated := existing.UpdateLimit(limit, time.Now().UTC())
 
 		persisted, updateErr := repo.UpdateLimitByIDForUser(ctx, updated, existing.Version)
 		if updateErr != nil {
-			return entities.Card{}, updateErr
+			return updateErr
 		}
 
 		if hasIdem {
 			body, marshalErr := json.Marshal(mappers.M.ToCardOutput(persisted))
 			if marshalErr != nil {
-				return entities.Card{}, fmt.Errorf("update_card_limit: marshal output: %w", marshalErr)
+				return fmt.Errorf("update_card_limit: marshal output: %w", marshalErr)
 			}
 			rec := idempotency.Record{
 				Scope:          ic.Scope,
@@ -104,11 +105,12 @@ func (u *UpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit)
 				ExpiresAt:      ic.ExpiresAt,
 			}
 			if putErr := u.idem.Put(ctx, rec); putErr != nil {
-				return entities.Card{}, fmt.Errorf("update_card_limit: idempotency put: %w", putErr)
+				return fmt.Errorf("update_card_limit: idempotency put: %w", putErr)
 			}
 		}
 
-		return persisted, nil
+		card = persisted
+		return nil
 	})
 
 	if err != nil {

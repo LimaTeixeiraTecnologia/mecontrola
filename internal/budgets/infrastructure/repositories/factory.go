@@ -1,8 +1,9 @@
 package repositories
 
 import (
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/repositories/postgres"

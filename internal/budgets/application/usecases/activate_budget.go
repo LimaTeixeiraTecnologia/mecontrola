@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
@@ -22,14 +23,14 @@ import (
 type ActivateBudget struct {
 	factory   interfaces.RepositoryFactory
 	publisher interfaces.BudgetActivatedPublisher
-	uow       uow.UnitOfWork[entities.Budget]
+	uow       uow.UnitOfWork
 	o11y      observability.Observability
 }
 
 func NewActivateBudget(
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.BudgetActivatedPublisher,
-	u uow.UnitOfWork[entities.Budget],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *ActivateBudget {
 	return &ActivateBudget{factory: factory, publisher: publisher, uow: u, o11y: o11y}
@@ -44,7 +45,7 @@ func (uc *ActivateBudget) Execute(ctx context.Context, in input.ActivateBudgetIn
 		return output.BudgetOutput{}, err
 	}
 
-	budget, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Budget, error) {
+	budget, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Budget, error) {
 		return uc.persist(ctx, tx, cmd)
 	})
 	if execErr != nil {

@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
-	ifmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 )
@@ -33,7 +32,6 @@ type ProcessKiwifyWebhookTelemetrySuite struct {
 	subLate      *ucmocks.ProcessSubscriptionLate
 	subCanceled  *ucmocks.ProcessSubscriptionCanceled
 	refund       *ucmocks.ProcessRefundOrChargeback
-	factory      *ifmocks.RepositoryFactory
 	eventRepo    *ucmocks.KiwifyEventRepository
 	uc           *usecases.ProcessKiwifyWebhook
 }
@@ -49,9 +47,7 @@ func (s *ProcessKiwifyWebhookTelemetrySuite) SetupTest() {
 	s.subLate = ucmocks.NewProcessSubscriptionLate(s.T())
 	s.subCanceled = ucmocks.NewProcessSubscriptionCanceled(s.T())
 	s.refund = ucmocks.NewProcessRefundOrChargeback(s.T())
-	s.factory = ifmocks.NewRepositoryFactory(s.T())
 	s.eventRepo = ucmocks.NewKiwifyEventRepository(s.T())
-	s.factory.EXPECT().KiwifyEventRepository(mock.Anything).Return(s.eventRepo).Maybe()
 	s.eventRepo.EXPECT().Persist(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	s.uc = usecases.NewProcessKiwifyWebhook(
@@ -60,8 +56,7 @@ func (s *ProcessKiwifyWebhookTelemetrySuite) SetupTest() {
 		s.subLate,
 		s.subCanceled,
 		s.refund,
-		s.factory,
-		nil,
+		s.eventRepo,
 		s.o11y,
 	)
 }

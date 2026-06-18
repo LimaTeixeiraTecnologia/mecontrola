@@ -11,7 +11,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
@@ -20,8 +19,6 @@ import (
 type GetTokenStateSuite struct {
 	suite.Suite
 	tokenRepo *mocks.MagicTokenRepository
-	factory   *mocks.RepositoryFactory
-	mgr       *usecasesmocks.FakeManager
 }
 
 func TestGetTokenStateSuite(t *testing.T) {
@@ -30,9 +27,6 @@ func TestGetTokenStateSuite(t *testing.T) {
 
 func (s *GetTokenStateSuite) SetupTest() {
 	s.tokenRepo = mocks.NewMagicTokenRepository(s.T())
-	s.factory = mocks.NewRepositoryFactory(s.T())
-	s.mgr = usecasesmocks.NewFakeManager()
-	s.factory.EXPECT().MagicTokenRepository(mock.Anything).Return(s.tokenRepo).Maybe()
 }
 
 func (s *GetTokenStateSuite) TestExecute() {
@@ -122,7 +116,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			token := scenario.setup()
-			uc := usecases.NewGetTokenState(s.mgr, s.factory, "+5511999999999", "+55 11 9XXXX-XXXX", "mecontrola_bot", noop.NewProvider())
+			uc := usecases.NewGetTokenState(s.tokenRepo, "+5511999999999", "+55 11 9XXXX-XXXX", "mecontrola_bot", noop.NewProvider())
 			result, err := uc.Execute(context.Background(), token)
 			scenario.expect(result, err)
 		})

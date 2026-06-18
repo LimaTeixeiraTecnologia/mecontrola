@@ -15,14 +15,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
 type e2eCtx struct {
 	server                   *httptest.Server
-	mgr                      manager.Manager
+	mgr                      *sqlx.DB
 	userID                   uuid.UUID
 	lastResp                 *http.Response
 	lastBody                 map[string]any

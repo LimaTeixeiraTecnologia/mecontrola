@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
@@ -22,7 +23,7 @@ type DeleteCardPurchase struct {
 	factory   interfaces.RepositoryFactory
 	workflow  *services.CardPurchaseWorkflow
 	publisher interfaces.CardPurchaseEventPublisher
-	uow       uow.UnitOfWork[entities.CardPurchase]
+	uow       uow.UnitOfWork
 	idGen     id.Generator
 	o11y      observability.Observability
 }
@@ -31,7 +32,7 @@ func NewDeleteCardPurchase(
 	factory interfaces.RepositoryFactory,
 	workflow *services.CardPurchaseWorkflow,
 	publisher interfaces.CardPurchaseEventPublisher,
-	u uow.UnitOfWork[entities.CardPurchase],
+	u uow.UnitOfWork,
 	idGen id.Generator,
 	o11y observability.Observability,
 ) *DeleteCardPurchase {
@@ -56,7 +57,7 @@ func (uc *DeleteCardPurchase) Execute(ctx context.Context, purchaseID uuid.UUID,
 
 	eventID, _ := uuid.Parse(uc.idGen.NewID())
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (entities.CardPurchase, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.CardPurchase, error) {
 		purchasesRepo := uc.factory.CardPurchaseRepository(db)
 		invoicesRepo := uc.factory.CardInvoiceRepository(db)
 

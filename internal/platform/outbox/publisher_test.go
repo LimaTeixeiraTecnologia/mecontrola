@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	dbmocks "github.com/JailtonJunior94/devkit-go/pkg/database/mocks"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	dbmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/mocks"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"

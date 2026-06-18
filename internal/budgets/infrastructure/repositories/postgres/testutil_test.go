@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
+	"github.com/jmoiron/sqlx"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
@@ -20,10 +22,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
-func setupTestDB(t *testing.T) manager.Manager {
+func setupTestDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	mgr, _ := testcontainer.Postgres(t)
-	return mgr
+	db, _ := testcontainer.Postgres(t)
+	return db
 }
 
 func testO11y() observability.Observability {

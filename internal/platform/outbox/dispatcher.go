@@ -8,15 +8,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
 type DispatcherJob struct {
-	uow        uow.UnitOfWork[[]Row]
+	uow        uow.UnitOfWork
 	factory    OutboxRepositoryFactory
 	registry   Registry
 	cfg        configs.OutboxConfig
@@ -27,7 +27,7 @@ type DispatcherJob struct {
 }
 
 func NewDispatcherJob(
-	unitOfWork uow.UnitOfWork[[]Row],
+	unitOfWork uow.UnitOfWork,
 	factory OutboxRepositoryFactory,
 	registry Registry,
 	cfg configs.OutboxConfig,
@@ -50,11 +50,12 @@ func (d *DispatcherJob) Schedule() string       { return "@every " + d.cfg.Dispa
 func (d *DispatcherJob) Timeout() time.Duration { return 5 * time.Minute }
 
 func (d *DispatcherJob) Run(ctx context.Context) error {
-	rows, err := d.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) ([]Row, error) {
+	var rows []Row
+	err := d.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		storage := d.factory.OutboxRepository(tx)
 		claimed, claimErr := storage.ClaimBatch(ctx, d.instanceID, d.cfg.DispatcherBatchSize)
 		if claimErr != nil {
-			return nil, fmt.Errorf("outbox: dispatcher claim batch: %w", claimErr)
+			return fmt.Errorf("outbox: dispatcher claim batch: %w", claimErr)
 		}
 		var rowErrs []error
 		for _, row := range claimed {
@@ -62,7 +63,8 @@ func (d *DispatcherJob) Run(ctx context.Context) error {
 				rowErrs = append(rowErrs, dispErr)
 			}
 		}
-		return claimed, errors.Join(rowErrs...)
+		rows = claimed
+		return errors.Join(rowErrs...)
 	})
 	if err != nil {
 		return err

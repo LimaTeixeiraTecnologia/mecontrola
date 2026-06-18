@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
@@ -42,8 +41,7 @@ type NotifyThresholdAlertResult struct {
 }
 
 type NotifyThresholdAlert struct {
-	mgr             manager.Manager
-	factory         appinterfaces.RepositoryFactory
+	sentRepo        appinterfaces.ThresholdAlertSentRepository
 	channelResolver appinterfaces.UserChannelResolver
 	channelGateway  notification.ChannelGateway
 	o11y            observability.Observability
@@ -51,8 +49,7 @@ type NotifyThresholdAlert struct {
 }
 
 func NewNotifyThresholdAlert(
-	mgr manager.Manager,
-	factory appinterfaces.RepositoryFactory,
+	sentRepo appinterfaces.ThresholdAlertSentRepository,
 	channelResolver appinterfaces.UserChannelResolver,
 	channelGateway notification.ChannelGateway,
 	o11y observability.Observability,
@@ -63,8 +60,7 @@ func NewNotifyThresholdAlert(
 		"1",
 	)
 	return &NotifyThresholdAlert{
-		mgr:             mgr,
-		factory:         factory,
+		sentRepo:        sentRepo,
 		channelResolver: channelResolver,
 		channelGateway:  channelGateway,
 		o11y:            o11y,
@@ -77,9 +73,8 @@ func (uc *NotifyThresholdAlert) Execute(ctx context.Context, in NotifyThresholdA
 	defer span.End()
 
 	kindLabel := in.Kind.String()
-	repo := uc.factory.ThresholdAlertSentRepository(uc.mgr.DBTX(ctx))
 
-	notified, err := repo.IsNotified(ctx, in.UserID, in.BudgetID, in.Kind, in.RefDay)
+	notified, err := uc.sentRepo.IsNotified(ctx, in.UserID, in.BudgetID, in.Kind, in.RefDay)
 	if err != nil {
 		if errors.Is(err, appinterfaces.ErrAlertRecordMissing) {
 			uc.recordOutcome(ctx, kindLabel, "unknown", NotifyOutcomeRecordMissing)
@@ -109,7 +104,7 @@ func (uc *NotifyThresholdAlert) Execute(ctx context.Context, in NotifyThresholdA
 		return NotifyThresholdAlertResult{Outcome: NotifyOutcomeChannelFailed, Channel: pref.Channel}, fmt.Errorf("budgets: notify threshold alert: render: %w", err)
 	}
 
-	updated, err := repo.MarkNotified(ctx, in.UserID, in.BudgetID, in.Kind, in.RefDay, pref.Channel, time.Now().UTC())
+	updated, err := uc.sentRepo.MarkNotified(ctx, in.UserID, in.BudgetID, in.Kind, in.RefDay, pref.Channel, time.Now().UTC())
 	if err != nil {
 		uc.recordOutcome(ctx, kindLabel, pref.Channel, NotifyOutcomeChannelFailed)
 		return NotifyThresholdAlertResult{Outcome: NotifyOutcomeChannelFailed, Channel: pref.Channel}, fmt.Errorf("budgets: notify threshold alert: mark notified: %w", err)

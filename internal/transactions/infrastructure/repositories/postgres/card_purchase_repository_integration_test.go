@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
@@ -32,8 +33,7 @@ func TestCardPurchaseRepositoryIntegrationSuite(t *testing.T) {
 }
 
 func (s *CardPurchaseRepositoryIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.db = mgr.DBTX(context.Background())
+	s.db, _ = testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	s.repo = txpostgres.NewCardPurchaseRepository(o11y, s.db)
 	s.invoiceRepo = txpostgres.NewCardInvoiceRepository(o11y, s.db)

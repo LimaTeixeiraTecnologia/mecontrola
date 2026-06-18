@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/output"
@@ -17,8 +16,7 @@ import (
 )
 
 type GetTokenState struct {
-	mgr              manager.Manager
-	factory          appinterfaces.RepositoryFactory
+	repo             appinterfaces.MagicTokenRepository
 	botNumber        string
 	botNumberDisplay string
 	telegramBot      string
@@ -26,16 +24,14 @@ type GetTokenState struct {
 }
 
 func NewGetTokenState(
-	mgr manager.Manager,
-	factory appinterfaces.RepositoryFactory,
+	repo appinterfaces.MagicTokenRepository,
 	botNumber string,
 	botNumberDisplay string,
 	telegramBot string,
 	o11y observability.Observability,
 ) *GetTokenState {
 	return &GetTokenState{
-		mgr:              mgr,
-		factory:          factory,
+		repo:             repo,
 		botNumber:        botNumber,
 		botNumberDisplay: botNumberDisplay,
 		telegramBot:      telegramBot,
@@ -69,8 +65,7 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 		}, nil
 	}
 
-	repo := uc.factory.MagicTokenRepository(uc.mgr.DBTX(ctx))
-	magicToken, err := repo.FindByHash(ctx, token.Hash())
+	magicToken, err := uc.repo.FindByHash(ctx, token.Hash())
 	if err != nil {
 		if errors.Is(err, domain.ErrTokenNotFound) {
 			return GetTokenStateResult{

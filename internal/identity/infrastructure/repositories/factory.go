@@ -1,12 +1,12 @@
 package repositories
 
 import (
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 type repositoryFactory struct {
@@ -34,8 +34,8 @@ func (r *repositoryFactory) AuthEventsRepository(db database.DBTX) interfaces.Au
 }
 
 func NewSubscriptionProjectionReader(
-	mgr manager.Manager,
+	db *sqlx.DB,
 	o11y observability.Observability,
 ) interfaces.SubscriptionProjectionReader {
-	return postgres.NewSubscriptionProjectionReader(mgr, o11y)
+	return postgres.NewSubscriptionProjectionReader(db, o11y)
 }

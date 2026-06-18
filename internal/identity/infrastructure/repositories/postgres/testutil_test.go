@@ -5,7 +5,7 @@ package postgres_test
 import (
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
@@ -25,13 +25,13 @@ func (s *TestutilSuite) TestSetupTestDB() {
 	scenarios := []struct {
 		name   string
 		setup  func()
-		expect func(manager.Manager, string)
+		expect func(*sqlx.DB, string)
 	}{
 		{
 			name:  "deve provisionar banco de teste com dsn",
 			setup: func() {},
-			expect: func(mgr manager.Manager, dsn string) {
-				s.NotNil(mgr)
+			expect: func(db *sqlx.DB, dsn string) {
+				s.NotNil(db)
 				s.NotEmpty(dsn)
 			},
 		},
@@ -42,13 +42,13 @@ func (s *TestutilSuite) TestSetupTestDB() {
 			s.SetupTest()
 			scenario.setup()
 
-			mgr, dsn := setupTestDB(s.T())
-			scenario.expect(mgr, dsn)
+			db, dsn := setupTestDB(s.T())
+			scenario.expect(db, dsn)
 		})
 	}
 }
 
-func setupTestDB(t *testing.T) (manager.Manager, string) {
+func setupTestDB(t *testing.T) (*sqlx.DB, string) {
 	t.Helper()
 	return testcontainer.Postgres(t)
 }

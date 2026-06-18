@@ -3,8 +3,9 @@ package outbox_test
 import (
 	"testing"
 
-	dbmocks "github.com/JailtonJunior94/devkit-go/pkg/database/mocks"
 	"github.com/stretchr/testify/suite"
+
+	dbmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/mocks"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )

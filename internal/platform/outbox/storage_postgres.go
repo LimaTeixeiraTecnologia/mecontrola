@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 type postgresStorage struct {

@@ -1,8 +1,9 @@
 package mocks
 
 import (
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	outbox "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )

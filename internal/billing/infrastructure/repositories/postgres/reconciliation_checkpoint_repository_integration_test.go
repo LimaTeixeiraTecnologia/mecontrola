@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
 
@@ -21,7 +21,7 @@ import (
 
 type ReconciliationCheckpointRepositorySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -32,12 +32,12 @@ func TestReconciliationCheckpointRepositorySuite(t *testing.T) {
 func (s *ReconciliationCheckpointRepositorySuite) SetupTest() {}
 
 func (s *ReconciliationCheckpointRepositorySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *ReconciliationCheckpointRepositorySuite) newRepo() interfaces.ReconciliationCheckpointRepository {
-	return s.factory.ReconciliationCheckpointRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.ReconciliationCheckpointRepository(s.db)
 }
 
 func (s *ReconciliationCheckpointRepositorySuite) TestGet() {

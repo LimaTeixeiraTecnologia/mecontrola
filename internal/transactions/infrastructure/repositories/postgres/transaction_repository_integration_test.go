@@ -49,10 +49,9 @@ func (s *TransactionRepositorySuite) newTransaction(userID uuid.UUID) *entities.
 }
 
 func (s *TransactionRepositorySuite) TestCreateAndGetByID() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	userID := uuid.New()
@@ -68,10 +67,9 @@ func (s *TransactionRepositorySuite) TestCreateAndGetByID() {
 }
 
 func (s *TransactionRepositorySuite) TestGetByID_NotFound_OtherUser() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	_, err := repo.GetByID(ctx, uuid.New(), uuid.New())
@@ -80,10 +78,9 @@ func (s *TransactionRepositorySuite) TestGetByID_NotFound_OtherUser() {
 }
 
 func (s *TransactionRepositorySuite) TestUpdateWithVersion_Success() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	userID := uuid.New()
@@ -110,10 +107,9 @@ func (s *TransactionRepositorySuite) TestUpdateWithVersion_Success() {
 }
 
 func (s *TransactionRepositorySuite) TestUpdateWithVersion_VersionConflict() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	userID := uuid.New()
@@ -130,10 +126,9 @@ func (s *TransactionRepositorySuite) TestUpdateWithVersion_VersionConflict() {
 }
 
 func (s *TransactionRepositorySuite) TestSoftDelete() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	userID := uuid.New()
@@ -148,10 +143,9 @@ func (s *TransactionRepositorySuite) TestSoftDelete() {
 }
 
 func (s *TransactionRepositorySuite) TestListByMonth_CursorRoundtrip() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	userID := uuid.New()
@@ -183,10 +177,9 @@ func (s *TransactionRepositorySuite) TestListByMonth_CursorRoundtrip() {
 }
 
 func (s *TransactionRepositorySuite) TestSumByMonth() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewTransactionRepository(o11y, db)
 
 	userID := uuid.New()

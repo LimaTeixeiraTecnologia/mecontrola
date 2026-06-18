@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -16,17 +15,15 @@ import (
 )
 
 type ListCards struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	o11y    observability.Observability
+	repo interfaces.CardRepository
+	o11y observability.Observability
 }
 
 func NewListCards(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.CardRepository,
 	o11y observability.Observability,
 ) *ListCards {
-	return &ListCards{factory: factory, mgr: mgr, o11y: o11y}
+	return &ListCards{repo: repo, o11y: o11y}
 }
 
 func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.CardList, error) {
@@ -44,8 +41,7 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 		}
 	}
 
-	repo := u.factory.CardRepository(u.mgr.DBTX(ctx))
-	cards, nextCursor, err := repo.ListByUser(ctx, in.UserID.String(), in.Cursor, in.Limit)
+	cards, nextCursor, err := u.repo.ListByUser(ctx, in.UserID.String(), in.Cursor, in.Limit)
 	if err != nil {
 		span.RecordError(err)
 		span.SetAttributes(observability.String("outcome", "internal_error"))

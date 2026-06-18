@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/stretchr/testify/suite"
 
@@ -30,7 +31,7 @@ import (
 
 type OutboxProducerIntegSuite struct {
 	suite.Suite
-	mgr             manager.Manager
+	db              *sqlx.DB
 	factory         interfaces.RepositoryFactory
 	outboxFactory   outbox.OutboxRepositoryFactory
 	publisher       *producers.SubscriptionEventPublisher
@@ -47,8 +48,8 @@ func (s *OutboxProducerIntegSuite) SetupTest() {}
 func (s *OutboxProducerIntegSuite) SetupSuite() {
 	ctx := context.Background()
 
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 
 	o11y := noop.NewProvider()
 	s.factory = billingrepos.NewRepositoryFactory(o11y)
@@ -59,14 +60,14 @@ func (s *OutboxProducerIntegSuite) SetupSuite() {
 
 	s.publisher = producers.NewSubscriptionEventPublisher(s.outboxFactory, outboxCfg, idGen, noop.NewProvider())
 
-	saleUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
+	saleUoW := uow.NewUnitOfWork(s.db)
 	s.processSaleUC = usecases.NewProcessSaleApproved(saleUoW, s.factory, s.publisher, o11y)
 
 	s.seedKiwifyProductID(ctx)
 }
 
 func (s *OutboxProducerIntegSuite) seedKiwifyProductID(ctx context.Context) {
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT kiwify_product_id FROM billing_plans WHERE code='MONTHLY' LIMIT 1`)
+	row := s.db.QueryRowContext(ctx, `SELECT kiwify_product_id FROM billing_plans WHERE code='MONTHLY' LIMIT 1`)
 	var pid string
 	s.Require().NoError(row.Scan(&pid))
 	s.kiwifyProductID = pid
@@ -85,7 +86,7 @@ func (s *OutboxProducerIntegSuite) TestRF10_OutboxRowCreatedTransactionallyOnPro
 			saleID := fmt.Sprintf("sale-integ-%d", time.Now().UnixNano())
 			orderID := fmt.Sprintf("order-integ-%d", time.Now().UnixNano())
 			var beforeCount int
-			beforeRow := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
+			beforeRow := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
 			s.Require().NoError(beforeRow.Scan(&beforeCount))
 			in := input.ProcessSaleApprovedInput{
 				EnvelopeID:      fmt.Sprintf("env-%d", time.Now().UnixNano()),
@@ -101,7 +102,7 @@ func (s *OutboxProducerIntegSuite) TestRF10_OutboxRowCreatedTransactionallyOnPro
 			s.Require().NoError(err)
 
 			var count int
-			row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
+			row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
 			s.Require().NoError(row.Scan(&count))
 			s.Equal(beforeCount+1, count, "expected exactly 1 new outbox row with event_type billing.subscription.activated")
 		})
@@ -132,7 +133,7 @@ func (s *OutboxProducerIntegSuite) TestPublishActivated_PreservesSemanticOccurre
 
 	err = s.publisher.PublishActivated(
 		ctx,
-		s.mgr.DBTX(ctx),
+		s.db,
 		sub,
 		sub.ID(),
 		token.String(),
@@ -144,7 +145,7 @@ func (s *OutboxProducerIntegSuite) TestPublishActivated_PreservesSemanticOccurre
 
 	var occurredAt time.Time
 	var aggregateUserID string
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	row := s.db.QueryRowContext(ctx, `
 		SELECT occurred_at, aggregate_user_id
 		FROM outbox_events
 		WHERE aggregate_id = $1

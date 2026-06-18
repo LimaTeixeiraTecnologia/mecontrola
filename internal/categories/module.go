@@ -1,11 +1,10 @@
 package categories
 
 import (
-	"context"
 	"net/http"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
@@ -26,9 +25,7 @@ type CategoriesModule struct {
 	SearchDictionaryUC  *usecases.SearchDictionary
 }
 
-func NewCategoriesModule(mgr manager.Manager, o11y observability.Observability, gatewayAuth func(http.Handler) http.Handler) *CategoriesModule {
-	db := mgr.DBTX(context.Background())
-
+func NewCategoriesModule(db *sqlx.DB, o11y observability.Observability, gatewayAuth func(http.Handler) http.Handler) *CategoriesModule {
 	categoryRepo := postgres.NewCategoryRepository(o11y, db)
 	dictionaryRepo := postgres.NewDictionaryRepository(o11y, db)
 	versionReader := postgres.NewVersionReader(o11y, db)

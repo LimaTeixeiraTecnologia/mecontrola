@@ -27,8 +27,7 @@ func TestMonthlySummaryRepositorySuite(t *testing.T) {
 }
 
 func (s *MonthlySummaryRepositorySuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	db := mgr.DBTX(context.Background())
+	db, _ := testcontainer.Postgres(s.T())
 	s.repo = txpostgres.NewMonthlySummaryRepository(noop.NewProvider(), db)
 }
 

@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
@@ -81,7 +82,7 @@ func (r *planRepository) ConfigureProductIDs(ctx context.Context, productIDs map
 	return nil
 }
 
-func (r *planRepository) scanPlan(ctx context.Context, span observability.Span, op string, row database.Row) (valueobjects.Plan, error) {
+func (r *planRepository) scanPlan(ctx context.Context, span observability.Span, op string, row *sql.Row) (valueobjects.Plan, error) {
 	var code string
 	var durationDays int
 

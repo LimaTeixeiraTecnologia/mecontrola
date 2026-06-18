@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
@@ -44,19 +43,17 @@ func (PendingEntitlement) isEntitlementPlan()   {}
 func (CommittedEntitlement) isEntitlementPlan() {}
 
 type ProjectSubscriptionEvent struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	reader  interfaces.SubscriptionProjectionReader
-	o11y    observability.Observability
+	repo   interfaces.EntitlementRepository
+	reader interfaces.SubscriptionProjectionReader
+	o11y   observability.Observability
 }
 
 func NewProjectSubscriptionEvent(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.EntitlementRepository,
 	reader interfaces.SubscriptionProjectionReader,
 	o11y observability.Observability,
 ) *ProjectSubscriptionEvent {
-	return &ProjectSubscriptionEvent{factory: factory, mgr: mgr, reader: reader, o11y: o11y}
+	return &ProjectSubscriptionEvent{repo: repo, reader: reader, o11y: o11y}
 }
 
 func (u *ProjectSubscriptionEvent) Execute(ctx context.Context, in input.ProjectSubscriptionEvent) error {
@@ -129,11 +126,9 @@ func (u *ProjectSubscriptionEvent) projectCurrent(ctx context.Context, subscript
 		return fmt.Errorf("%s plan: %w", prefixProjectSubscriptionEvent, err)
 	}
 
-	repo := u.factory.EntitlementRepository(u.mgr.DBTX(ctx))
-
 	switch p := plan.(type) {
 	case PendingEntitlement:
-		if err := repo.UpsertPending(ctx, p.SubscriptionID, p.FunnelToken, p.PayloadRaw); err != nil {
+		if err := u.repo.UpsertPending(ctx, p.SubscriptionID, p.FunnelToken, p.PayloadRaw); err != nil {
 			return fmt.Errorf("%s pending upsert: %w", prefixProjectSubscriptionEvent, err)
 		}
 		u.o11y.Logger().Info(ctx, "identity.entitlement.pending",
@@ -141,7 +136,7 @@ func (u *ProjectSubscriptionEvent) projectCurrent(ctx context.Context, subscript
 		)
 		return nil
 	case CommittedEntitlement:
-		if err := repo.Upsert(ctx, p.Record); err != nil {
+		if err := u.repo.Upsert(ctx, p.Record); err != nil {
 			return fmt.Errorf("%s upsert: %w", prefixProjectSubscriptionEvent, err)
 		}
 		u.o11y.Logger().Info(ctx, "identity.entitlement.projected",

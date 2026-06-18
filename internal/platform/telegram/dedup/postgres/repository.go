@@ -5,19 +5,26 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dedup"
 )
 
 type updateRepository struct {
 	o11y observability.Observability
-	mgr  manager.Manager
+	db   database.DBTX
 }
 
-func NewUpdateRepository(o11y observability.Observability, mgr manager.Manager) dedup.UpdateRepository {
-	return &updateRepository{o11y: o11y, mgr: mgr}
+func NewUpdateRepository(o11y observability.Observability, db database.DBTX) dedup.UpdateRepository {
+	return &updateRepository{o11y: o11y, db: db}
+}
+
+func (r *updateRepository) conn(ctx context.Context) database.DBTX {
+	if tx, ok := database.FromContext(ctx); ok {
+		return tx
+	}
+	return r.db
 }
 
 const channelTelegram = "telegram"
@@ -33,7 +40,7 @@ func (r *updateRepository) InsertIfAbsent(ctx context.Context, botID, updateID i
 		VALUES ($1, $2, now())
 		ON CONFLICT (channel, message_id) DO NOTHING`
 
-	result, err := r.mgr.DBTX(ctx).ExecContext(ctx, q, channelTelegram, messageID)
+	result, err := r.conn(ctx).ExecContext(ctx, q, channelTelegram, messageID)
 	if err != nil {
 		return false, fmt.Errorf("telegram.dedup: insert_if_absent: %w", err)
 	}

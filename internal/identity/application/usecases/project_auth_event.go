@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
@@ -14,17 +13,15 @@ import (
 const prefixProjectAuthEvent = "identity.usecase.project_auth_event:"
 
 type ProjectAuthEvent struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	o11y    observability.Observability
+	repo interfaces.AuthEventsRepository
+	o11y observability.Observability
 }
 
 func NewProjectAuthEvent(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.AuthEventsRepository,
 	o11y observability.Observability,
 ) *ProjectAuthEvent {
-	return &ProjectAuthEvent{factory: factory, mgr: mgr, o11y: o11y}
+	return &ProjectAuthEvent{repo: repo, o11y: o11y}
 }
 
 func (u *ProjectAuthEvent) Execute(ctx context.Context, in input.ProjectAuthEvent) error {
@@ -41,8 +38,7 @@ func (u *ProjectAuthEvent) Execute(ctx context.Context, in input.ProjectAuthEven
 		return fmt.Errorf("%s %w", prefixProjectAuthEvent, err)
 	}
 
-	repo := u.factory.AuthEventsRepository(u.mgr.DBTX(ctx))
-	if err := repo.Insert(ctx, authEv); err != nil {
+	if err := u.repo.Insert(ctx, authEv); err != nil {
 		return fmt.Errorf("%s insert: %w", prefixProjectAuthEvent, err)
 	}
 	return nil

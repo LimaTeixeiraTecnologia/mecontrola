@@ -15,7 +15,6 @@ import (
 	apperrors "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
@@ -49,10 +48,8 @@ func buildPaidTokenNoChannel() entities.MagicToken {
 type SendOutreachSuite struct {
 	suite.Suite
 	tokenRepo *mocks.MagicTokenRepository
-	factory   *mocks.RepositoryFactory
 	gateway   *mocks.OutreachChannelGateway
 	cipher    *mocks.TokenCipher
-	mgr       *usecasesmocks.FakeManager
 }
 
 func TestSendOutreach(t *testing.T) {
@@ -61,11 +58,8 @@ func TestSendOutreach(t *testing.T) {
 
 func (s *SendOutreachSuite) SetupTest() {
 	s.tokenRepo = mocks.NewMagicTokenRepository(s.T())
-	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.gateway = mocks.NewOutreachChannelGateway(s.T())
 	s.cipher = mocks.NewTokenCipher(s.T())
-	s.mgr = usecasesmocks.NewFakeManager()
-	s.factory.EXPECT().MagicTokenRepository(mock.Anything).Return(s.tokenRepo).Maybe()
 }
 
 func (s *SendOutreachSuite) TestExecute() {
@@ -196,8 +190,7 @@ func (s *SendOutreachSuite) TestExecute() {
 			s.SetupTest()
 			scenario.setup()
 			uc := usecases.NewSendOutreach(
-				s.mgr,
-				s.factory,
+				s.tokenRepo,
 				s.gateway,
 				s.cipher,
 				id.NewUUIDGenerator(),

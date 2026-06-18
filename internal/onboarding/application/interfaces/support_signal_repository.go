@@ -3,7 +3,7 @@ package interfaces
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )

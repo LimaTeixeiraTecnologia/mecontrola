@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -182,7 +183,7 @@ func (r *alertRepository) appendListForUserFilters(query string, args []any, ind
 	return query, args, index
 }
 
-func (r *alertRepository) scanAlerts(rows database.Rows) ([]entities.Alert, error) {
+func (r *alertRepository) scanAlerts(rows *sql.Rows) ([]entities.Alert, error) {
 	var result []entities.Alert
 	for rows.Next() {
 		a, err := r.scanAlertRow(rows)

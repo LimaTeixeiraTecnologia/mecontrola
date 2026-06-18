@@ -15,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 )
 
 type AnonymizeUserAuthEventsSuite struct {
@@ -47,8 +46,7 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 		in input.AnonymizeUserAuthEvents
 	}
 	type dependencies struct {
-		factory *ifacemocks.RepositoryFactory
-		repo    *ifacemocks.AuthEventsRepository
+		repo *ifacemocks.AuthEventsRepository
 	}
 
 	scenarios := []struct {
@@ -65,7 +63,6 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().AnonymizeByUserID(mock.Anything, mock.AnythingOfType("uuid.UUID")).
 					Return(nil).Once()
 			},
@@ -81,7 +78,6 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().AnonymizeByUserID(mock.Anything, mock.AnythingOfType("uuid.UUID")).
 					Return(fmt.Errorf("db error")).Once()
 			},
@@ -126,11 +122,10 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			repo := ifacemocks.NewAuthEventsRepository(s.T())
-			factory := ifacemocks.NewRepositoryFactory(s.T())
-			scenario.setup(dependencies{factory: factory, repo: repo})
+			scenario.setup(dependencies{repo: repo})
 
 			a := scenario.args()
-			sut := usecases.NewAnonymizeUserAuthEvents(factory, usecasemocks.NewFakeManager(), noop.NewProvider())
+			sut := usecases.NewAnonymizeUserAuthEvents(repo, noop.NewProvider())
 			err := sut.Execute(s.ctx, a.in)
 			scenario.expect(err)
 		})

@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
@@ -16,10 +14,12 @@ import (
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
 type TryFallbackActivation struct {
-	uow            uow.UnitOfWork[ConsumeInternalResult]
+	uow            uow.UnitOfWork
 	factory        appinterfaces.RepositoryFactory
 	binding        *binding.SubscriptionBindingService
 	o11y           observability.Observability
@@ -27,7 +27,7 @@ type TryFallbackActivation struct {
 }
 
 func NewTryFallbackActivation(
-	u uow.UnitOfWork[ConsumeInternalResult],
+	u uow.UnitOfWork,
 	factory appinterfaces.RepositoryFactory,
 	binding *binding.SubscriptionBindingService,
 	o11y observability.Observability,
@@ -62,8 +62,9 @@ func (uc *TryFallbackActivation) Execute(ctx context.Context, fromE164 string) (
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.try_fallback_activation")
 	defer span.End()
 
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (ConsumeInternalResult, error) {
-		return uc.executeInTx(ctx, tx, fromE164)
+	err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
+		_, txErr := uc.executeInTx(ctx, tx, fromE164)
+		return txErr
 	})
 
 	if err != nil {

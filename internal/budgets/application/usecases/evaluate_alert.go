@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/commands"
@@ -33,13 +34,13 @@ type EvaluateAlertInput struct {
 
 type EvaluateAlert struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[struct{}]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewEvaluateAlert(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *EvaluateAlert {
 	return &EvaluateAlert{
@@ -58,7 +59,7 @@ func (uc *EvaluateAlert) Execute(ctx context.Context, in EvaluateAlertInput) err
 		return err
 	}
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		return struct{}{}, uc.executeInTx(ctx, tx, in)
 	})
 

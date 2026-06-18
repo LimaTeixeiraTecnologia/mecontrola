@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	billingconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/config"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/client/kiwify"
 	billingserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server"
@@ -22,6 +20,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/producers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -44,10 +43,9 @@ type BillingModule struct {
 
 type noopNotificationSender struct{}
 
-func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr manager.Manager) (BillingModule, error) {
+func NewBillingModule(cfg *configs.Config, o11y observability.Observability, db *sqlx.DB) (BillingModule, error) {
 	factory := repositories.NewRepositoryFactory(o11y)
 	publisher := producers.NewSubscriptionEventPublisher(outbox.NewRepositoryFactory(o11y), cfg.OutboxConfig, id.NewUUIDGenerator(), o11y)
-	kiwifyDBTX := mgr.DBTX(context.Background())
 	kiwifyClient, err := newKiwifyClient(cfg, o11y)
 	if err != nil {
 		return BillingModule{}, err
@@ -56,33 +54,34 @@ func NewBillingModule(cfg *configs.Config, o11y observability.Observability, mgr
 	if err != nil {
 		return BillingModule{}, err
 	}
-	if kiwifyDBTX != nil {
-		if err := catalog.Apply(context.Background(), factory.PlanRepository(kiwifyDBTX)); err != nil {
+	if db != nil {
+		if err := catalog.Apply(context.Background(), factory.PlanRepository(db)); err != nil {
 			return BillingModule{}, err
 		}
 	}
 
-	subscriptionUoW := uow.New[entities.Subscription](mgr, uow.WithObservability(o11y))
-	saleApproved := usecases.NewProcessSaleApproved(subscriptionUoW, factory, publisher, o11y)
-	subscriptionRenewed := usecases.NewProcessSubscriptionRenewed(subscriptionUoW, factory, publisher, o11y)
-	subscriptionLate := usecases.NewProcessSubscriptionLate(subscriptionUoW, factory, publisher, o11y)
-	subscriptionCanceled := usecases.NewProcessSubscriptionCanceled(subscriptionUoW, factory, publisher, o11y)
-	refundOrChargeback := usecases.NewProcessRefundOrChargeback(subscriptionUoW, factory, publisher, o11y)
-	graceExpired := usecases.NewProcessSubscriptionGraceExpired(subscriptionUoW, kiwifyDBTX, factory, publisher, o11y)
+	unit := uow.NewUnitOfWork(db)
+	checkpointRepo := factory.ReconciliationCheckpointRepository(db)
+	kiwifyEventRepo := factory.KiwifyEventRepository(db)
+	saleApproved := usecases.NewProcessSaleApproved(unit, factory, publisher, o11y)
+	subscriptionRenewed := usecases.NewProcessSubscriptionRenewed(unit, factory, publisher, o11y)
+	subscriptionLate := usecases.NewProcessSubscriptionLate(unit, factory, publisher, o11y)
+	subscriptionCanceled := usecases.NewProcessSubscriptionCanceled(unit, factory, publisher, o11y)
+	refundOrChargeback := usecases.NewProcessRefundOrChargeback(unit, factory, publisher, o11y)
+	graceExpired := usecases.NewProcessSubscriptionGraceExpired(unit, db, factory, publisher, o11y)
 
-	reconcileSubscriptions := usecases.NewReconcileSubscriptions(kiwifyDBTX, factory, kiwifyClient, saleApproved, refundOrChargeback, o11y)
+	reconcileSubscriptions := usecases.NewReconcileSubscriptions(checkpointRepo, kiwifyClient, saleApproved, refundOrChargeback, o11y)
 	processWebhook := usecases.NewProcessKiwifyWebhook(
 		saleApproved,
 		subscriptionRenewed,
 		subscriptionLate,
 		subscriptionCanceled,
 		refundOrChargeback,
-		factory,
-		kiwifyDBTX,
+		kiwifyEventRepo,
 		o11y,
 	)
-	runReconciliation := usecases.NewRunReconciliation(kiwifyDBTX, factory, reconcileSubscriptions, o11y)
-	cleanupKiwifyEvents := usecases.NewCleanupKiwifyEvents(kiwifyDBTX, factory, cfg.BillingConfig, o11y)
+	runReconciliation := usecases.NewRunReconciliation(checkpointRepo, reconcileSubscriptions, o11y)
+	cleanupKiwifyEvents := usecases.NewCleanupKiwifyEvents(kiwifyEventRepo, cfg.BillingConfig, o11y)
 	sendNotification := usecases.NewSendSubscriptionNotification(&noopNotificationSender{}, o11y)
 
 	webhookHandler := handlers.NewKiwifyWebhookHandler(processWebhook, o11y)

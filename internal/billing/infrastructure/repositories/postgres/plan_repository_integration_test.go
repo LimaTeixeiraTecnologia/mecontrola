@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
 	billingpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories/postgres"
@@ -21,7 +21,7 @@ import (
 
 type PlanRepositorySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -32,12 +32,12 @@ func TestPlanRepositorySuite(t *testing.T) {
 func (s *PlanRepositorySuite) SetupTest() {}
 
 func (s *PlanRepositorySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *PlanRepositorySuite) newRepo() interfaces.PlanRepository {
-	return s.factory.PlanRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.PlanRepository(s.db)
 }
 
 func (s *PlanRepositorySuite) TestFindByCode() {

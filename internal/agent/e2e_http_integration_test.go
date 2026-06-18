@@ -16,13 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
@@ -52,7 +53,7 @@ import (
 type E2EHTTPSuite struct {
 	suite.Suite
 	ctx      context.Context
-	mgr      manager.Manager
+	mgr      *sqlx.DB
 	o11y     *noop.Provider
 	cfg      *configs.Config
 	gateway  *testsupport.CapturingGateway
@@ -161,9 +162,9 @@ func (s *E2EHTTPSuite) buildRouter() http.Handler {
 	}
 
 	factory := identityrepos.NewRepositoryFactory(s.o11y)
-	establishUoW := uow.New[identityuc.EstablishResult](s.mgr, uow.WithObservability(s.o11y))
+	establishUoW := uow.NewUnitOfWork(s.mgr)
 	publisher := outbox.NewPostgresPublisher(
-		outbox.NewPostgresStorage(s.mgr.DBTX(s.ctx)),
+		outbox.NewPostgresStorage(s.mgr),
 		configs.OutboxConfig{RetryMaxAttempts: 3},
 	)
 	establishUC := identityuc.NewEstablishPrincipal(establishUoW, factory, publisher, s.o11y)
@@ -245,7 +246,7 @@ func (s *E2EHTTPSuite) TestI5_Idempotency_SameWAMIDDeduplicates() {
 func (s *E2EHTTPSuite) countTransactions(userID uuid.UUID) int {
 	var total int
 	s.Require().NoError(
-		s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+		s.mgr.QueryRowContext(s.ctx,
 			"SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1 AND deleted_at IS NULL",
 			userID,
 		).Scan(&total),

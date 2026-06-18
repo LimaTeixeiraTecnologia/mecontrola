@@ -1,11 +1,11 @@
 package repositories
 
 import (
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/repositories/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 type repositoryFactory struct {

@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -52,7 +53,7 @@ type IngestExternalExpense struct {
 	factory        interfaces.RepositoryFactory
 	upsert         *UpsertExpense
 	delete         *DeleteExpense
-	uow            uow.UnitOfWork[struct{}]
+	uow            uow.UnitOfWork
 	o11y           observability.Observability
 	sourceRejected observability.Counter
 	invalidFields  observability.Counter
@@ -62,7 +63,7 @@ func NewIngestExternalExpense(
 	factory interfaces.RepositoryFactory,
 	upsert *UpsertExpense,
 	del *DeleteExpense,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *IngestExternalExpense {
 	sourceRejected := o11y.Metrics().Counter(
@@ -227,7 +228,7 @@ func (uc *IngestExternalExpense) queuePending(ctx context.Context, cmd commands.
 		time.Now().UTC(),
 	)
 
-	_, insertErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, insertErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		pending := uc.factory.PendingEventRepository(tx)
 		if err := pending.Insert(ctx, pendingEvt); err != nil {
 			if errors.Is(err, interfaces.ErrPendingEventDuplicate) {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application"
@@ -19,19 +18,17 @@ const reconciliationWindowOverlap = 15 * time.Minute
 const reconciliationDefaultLookback = time.Hour
 
 type RunReconciliation struct {
-	db        database.DBTX
-	factory   interfaces.RepositoryFactory
-	reconcile *ReconcileSubscriptions
-	o11y      observability.Observability
+	checkpointRepo interfaces.ReconciliationCheckpointRepository
+	reconcile      *ReconcileSubscriptions
+	o11y           observability.Observability
 }
 
 func NewRunReconciliation(
-	db database.DBTX,
-	factory interfaces.RepositoryFactory,
+	checkpointRepo interfaces.ReconciliationCheckpointRepository,
 	reconcile *ReconcileSubscriptions,
 	o11y observability.Observability,
 ) *RunReconciliation {
-	return &RunReconciliation{db: db, factory: factory, reconcile: reconcile, o11y: o11y}
+	return &RunReconciliation{checkpointRepo: checkpointRepo, reconcile: reconcile, o11y: o11y}
 }
 
 func (u *RunReconciliation) Execute(ctx context.Context) error {
@@ -39,8 +36,7 @@ func (u *RunReconciliation) Execute(ctx context.Context) error {
 	defer span.End()
 
 	startedAt := time.Now().UTC()
-	checkpointRepo := u.factory.ReconciliationCheckpointRepository(u.db)
-	checkpoint, err := checkpointRepo.Get(ctx, reconciliationCheckpointName)
+	checkpoint, err := u.checkpointRepo.Get(ctx, reconciliationCheckpointName)
 	if errors.Is(err, application.ErrCheckpointNotFound) {
 		checkpoint = time.Now().UTC().Add(-reconciliationDefaultLookback)
 		u.o11y.Logger().Info(ctx, "billing.reconciliation.run.checkpoint_missing_using_default",

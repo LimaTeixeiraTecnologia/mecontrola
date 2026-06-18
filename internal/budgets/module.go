@@ -7,15 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	dtooutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	budgetsconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/config"
@@ -64,7 +63,7 @@ type BudgetsModule struct {
 type moduleBuilder struct {
 	cfg                      *configs.Config
 	o11y                     observability.Observability
-	mgr                      manager.Manager
+	db                       *sqlx.DB
 	categoriesModule         *categories.CategoriesModule
 	publisher                *producers.ExpenseCommittedPublisher
 	budgetActivatedPublisher *producers.BudgetActivatedPublisher
@@ -98,7 +97,7 @@ type moduleUseCases struct {
 func NewBudgetsModule(
 	cfg *configs.Config,
 	o11y observability.Observability,
-	mgr manager.Manager,
+	db *sqlx.DB,
 	categoriesModule *categories.CategoriesModule,
 	gatewayAuth func(http.Handler) http.Handler,
 	channelGateway notification.ChannelGateway,
@@ -109,7 +108,7 @@ func NewBudgetsModule(
 	builder := moduleBuilder{
 		cfg:                      cfg,
 		o11y:                     o11y,
-		mgr:                      mgr,
+		db:                       db,
 		categoriesModule:         categoriesModule,
 		publisher:                producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
 		budgetActivatedPublisher: producers.NewBudgetActivatedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
@@ -159,7 +158,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 
 	var thresholdAlertNotifier *consumers.ThresholdAlertNotifier
 	if b.channelGateway != nil && b.channelResolver != nil {
-		notifyAlertUC := usecases.NewNotifyThresholdAlert(b.mgr, repositories.factory, b.channelResolver, b.channelGateway, b.o11y)
+		notifyAlertUC := usecases.NewNotifyThresholdAlert(repositories.factory.ThresholdAlertSentRepository(b.db), b.channelResolver, b.channelGateway, b.o11y)
 		thresholdAlertNotifier = consumers.NewThresholdAlertNotifier(notifyAlertUC, b.o11y)
 		eventHandlers = append(eventHandlers, BudgetsEventHandlerRegistration{
 			EventType: "budgets.threshold_alert_triggered.v1",
@@ -222,18 +221,18 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		return moduleUseCases{}, err
 	}
 
-	budgetUoW := uow.New[entities.Budget](b.mgr, uow.WithObservability(b.o11y))
-	expenseUoW := uow.New[entities.Expense](b.mgr, uow.WithObservability(b.o11y))
-	voidUoW := uow.NewVoid(b.mgr, uow.WithObservability(b.o11y))
-	listAlertsUoW := uow.New[dtooutput.ListAlertsOutput](b.mgr, uow.WithObservability(b.o11y))
-	monthlySummaryUoW := uow.New[dtooutput.MonthlySummaryOutput](b.mgr, uow.WithObservability(b.o11y))
+	budgetUoW := uow.NewUnitOfWork(b.db)
+	expenseUoW := uow.NewUnitOfWork(b.db)
+	voidUoW := uow.NewUnitOfWork(b.db)
+	listAlertsUoW := uow.NewUnitOfWork(b.db)
+	monthlySummaryUoW := uow.NewUnitOfWork(b.db)
 
 	thresholdConfig, err := b.buildThresholdConfig()
 	if err != nil {
 		return moduleUseCases{}, err
 	}
 
-	thresholdAlertsUoW := uow.NewVoid(b.mgr, uow.WithObservability(b.o11y))
+	thresholdAlertsUoW := uow.NewUnitOfWork(b.db)
 
 	autoDraft := usecases.NewCreateOrAutoDraftForExpense(repositories.factory)
 	upsertExpense := usecases.NewUpsertExpense(

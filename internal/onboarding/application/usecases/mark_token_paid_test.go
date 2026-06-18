@@ -12,7 +12,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
@@ -22,8 +21,6 @@ import (
 type MarkTokenPaidSuite struct {
 	suite.Suite
 	tokenRepo *mocks.MagicTokenRepository
-	factory   *mocks.RepositoryFactory
-	mgr       *usecasesmocks.FakeManager
 }
 
 func TestMarkTokenPaidSuite(t *testing.T) {
@@ -32,9 +29,6 @@ func TestMarkTokenPaidSuite(t *testing.T) {
 
 func (s *MarkTokenPaidSuite) SetupTest() {
 	s.tokenRepo = mocks.NewMagicTokenRepository(s.T())
-	s.factory = mocks.NewRepositoryFactory(s.T())
-	s.mgr = usecasesmocks.NewFakeManager()
-	s.factory.EXPECT().MagicTokenRepository(mock.Anything).Return(s.tokenRepo).Maybe()
 }
 
 func (s *MarkTokenPaidSuite) TestExecute() {
@@ -91,7 +85,7 @@ func (s *MarkTokenPaidSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			in := scenario.setup()
-			uc := usecases.NewMarkTokenPaid(s.mgr, s.factory, services.NewMagicTokenWorkflow(), noop.NewProvider())
+			uc := usecases.NewMarkTokenPaid(s.tokenRepo, services.NewMagicTokenWorkflow(), noop.NewProvider())
 			err := uc.Execute(context.Background(), in)
 			scenario.expect(in, err)
 		})

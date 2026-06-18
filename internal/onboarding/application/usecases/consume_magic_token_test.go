@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
@@ -29,7 +29,9 @@ import (
 
 type unitOfWorkConsume struct{}
 
-func (u *unitOfWorkConsume) Do(ctx context.Context, fn func(context.Context, database.DBTX) (usecases.ConsumeInternalResult, error), _ ...uow.Option) (usecases.ConsumeInternalResult, error) {
+func (u *unitOfWorkConsume) DBTX() database.DBTX { return nil }
+
+func (u *unitOfWorkConsume) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 

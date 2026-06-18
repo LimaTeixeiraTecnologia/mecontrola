@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
@@ -17,18 +16,16 @@ const reconcileMaxPages = 1000
 var ErrReconcileMaxPagesExceeded = errors.New("billing: reconciliation page guard tripped")
 
 type ReconcileSubscriptions struct {
-	db           database.DBTX
-	factory      interfaces.RepositoryFactory
-	kiwifyClient interfaces.KiwifyClient
-	saleApproved *ProcessSaleApproved
-	refund       *ProcessRefundOrChargeback
-	o11y         observability.Observability
-	corrections  observability.Counter
+	checkpointRepo interfaces.ReconciliationCheckpointRepository
+	kiwifyClient   interfaces.KiwifyClient
+	saleApproved   *ProcessSaleApproved
+	refund         *ProcessRefundOrChargeback
+	o11y           observability.Observability
+	corrections    observability.Counter
 }
 
 func NewReconcileSubscriptions(
-	db database.DBTX,
-	factory interfaces.RepositoryFactory,
+	checkpointRepo interfaces.ReconciliationCheckpointRepository,
 	kiwifyClient interfaces.KiwifyClient,
 	saleApproved *ProcessSaleApproved,
 	refund *ProcessRefundOrChargeback,
@@ -40,13 +37,12 @@ func NewReconcileSubscriptions(
 		"1",
 	)
 	return &ReconcileSubscriptions{
-		db:           db,
-		factory:      factory,
-		kiwifyClient: kiwifyClient,
-		saleApproved: saleApproved,
-		refund:       refund,
-		o11y:         o11y,
-		corrections:  corrections,
+		checkpointRepo: checkpointRepo,
+		kiwifyClient:   kiwifyClient,
+		saleApproved:   saleApproved,
+		refund:         refund,
+		o11y:           o11y,
+		corrections:    corrections,
 	}
 }
 
@@ -93,8 +89,7 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 		return fmt.Errorf("billing.usecase.reconcile_subscriptions: reconcile sales: %w", err)
 	}
 
-	checkpointRepo := uc.factory.ReconciliationCheckpointRepository(uc.db)
-	if setErr := checkpointRepo.Set(ctx, "kiwify_sales", in.WindowEnd); setErr != nil {
+	if setErr := uc.checkpointRepo.Set(ctx, "kiwify_sales", in.WindowEnd); setErr != nil {
 		return fmt.Errorf("billing.usecase.reconcile_subscriptions: set checkpoint: %w", setErr)
 	}
 

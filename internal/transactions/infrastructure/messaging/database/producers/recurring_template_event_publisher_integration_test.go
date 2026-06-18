@@ -26,9 +26,8 @@ func TestRecurringTemplateEventPublisherSuite(t *testing.T) {
 }
 
 func (s *RecurringTemplateEventPublisherSuite) TestPublishCreated_Persists() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
@@ -56,9 +55,8 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishCreated_Persists() {
 }
 
 func (s *RecurringTemplateEventPublisherSuite) TestPublishUpdated_Persists() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
@@ -86,9 +84,8 @@ func (s *RecurringTemplateEventPublisherSuite) TestPublishUpdated_Persists() {
 }
 
 func (s *RecurringTemplateEventPublisherSuite) TestPublishDeleted_Persists() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())

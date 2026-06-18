@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	identityapp "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	identityinterfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
@@ -54,9 +54,11 @@ func (b *stubBinder) BindAndConsume(
 
 var validTokenClear = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte("a"), 32))
 
-type passthroughUoW[T any] struct{}
+type passthroughUoW struct{}
 
-func (passthroughUoW[T]) Do(ctx context.Context, fn func(context.Context, database.DBTX) (T, error), _ ...uow.Option) (T, error) {
+func (passthroughUoW) DBTX() database.DBTX { return nil }
+
+func (passthroughUoW) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 
@@ -119,7 +121,7 @@ func (s *ActivateTelegramByTokenSuite) buildSutWith(directEnabled bool) (
 	identityRepo := identityinterfacesmocks.NewMockUserIdentityRepository(s.T())
 	binder := &stubBinder{}
 
-	u := passthroughUoW[usecases.ActivateTelegramResult]{}
+	u := passthroughUoW{}
 	sut := usecases.NewActivateTelegramByToken(
 		factory,
 		identityFactory,

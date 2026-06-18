@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
+	"github.com/jmoiron/sqlx"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
@@ -15,7 +18,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/checkout"
 	onboardingconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/config"
@@ -60,7 +62,7 @@ type OnboardingModule struct {
 }
 
 type managerPublisher struct {
-	mgr           manager.Manager
+	db            database.DBTX
 	outboxFactory outbox.OutboxRepositoryFactory
 	cfg           configs.OutboxConfig
 	o11y          observability.Observability
@@ -110,7 +112,7 @@ func buildTelegramMessages(tgCfg configs.TelegramConfig) map[string]string {
 }
 
 func NewOnboardingModule(
-	mgr manager.Manager,
+	db *sqlx.DB,
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
 	tgCfg configs.TelegramConfig,
@@ -119,15 +121,15 @@ func NewOnboardingModule(
 	identityModule identity.IdentityModule,
 	o11y observability.Observability,
 ) (OnboardingModule, error) {
-	deps, err := buildOnboardingDependencies(mgr, cfg, waCfg, outboxCfg, identityModule, o11y)
+	deps, err := buildOnboardingDependencies(db, cfg, waCfg, outboxCfg, identityModule, o11y)
 	if err != nil {
 		return OnboardingModule{}, err
 	}
-	useCases, err := buildOnboardingUseCases(mgr, cfg, waCfg, tgCfg, emailCfg, identityModule, deps, o11y)
+	useCases, err := buildOnboardingUseCases(db, cfg, waCfg, tgCfg, emailCfg, identityModule, deps, o11y)
 	if err != nil {
 		return OnboardingModule{}, err
 	}
-	registerMetrics(mgr, deps.factory, o11y)
+	registerMetrics(db, deps.factory, o11y)
 	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(useCases.markTokenPaid, o11y)
 	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(useCases.handlePaidWithoutToken, o11y)
 	activationEmailConsumer := consumers.NewActivationEmailConsumer(useCases.sendActivationEmail, o11y)
@@ -155,7 +157,7 @@ func NewOnboardingModule(
 }
 
 func buildOnboardingDependencies(
-	mgr manager.Manager,
+	db *sqlx.DB,
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
 	outboxCfg configs.OutboxConfig,
@@ -171,10 +173,10 @@ func buildOnboardingDependencies(
 		return onboardingDependencies{}, err
 	}
 	factory := repositories.NewRepositoryFactory(o11y)
-	publisher := newManagerPublisher(mgr, outbox.NewRepositoryFactory(o11y), outboxCfg, o11y)
+	publisher := newManagerPublisher(db, outbox.NewRepositoryFactory(o11y), outboxCfg, o11y)
 	idGen := id.NewUUIDGenerator()
 	identityGateway := newIdentityGatewayAdapter(identityModule)
-	subscriptionBinder := postgres.NewSubscriptionBinder(o11y, mgr)
+	subscriptionBinder := postgres.NewSubscriptionBinder(o11y, db)
 	workflow := domainservices.NewMagicTokenWorkflow()
 	return onboardingDependencies{
 		runtimeCfg:      runtimeCfg,
@@ -187,7 +189,7 @@ func buildOnboardingDependencies(
 }
 
 func buildOnboardingUseCases(
-	mgr manager.Manager,
+	db *sqlx.DB,
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
 	tgCfg configs.TelegramConfig,
@@ -208,21 +210,24 @@ func buildOnboardingUseCases(
 	if err != nil {
 		return onboardingUseCasesBundle{}, fmt.Errorf("onboarding: build email sender: %w", err)
 	}
-	checkoutUoW := uow.New[entities.MagicToken](mgr, uow.WithObservability(o11y))
-	consumeUoW := uow.New[usecases.ConsumeInternalResult](mgr, uow.WithObservability(o11y))
-	processUoW := uow.New[usecases.ProcessOnboardingMessageResult](mgr, uow.WithObservability(o11y))
-	startBudgetUoW := uow.New[usecases.StartBudgetConfigurationResult](mgr, uow.WithObservability(o11y))
-	activateTelegramUoW := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
+	checkoutUoW := uow.NewUnitOfWork(db)
+	consumeUoW := uow.NewUnitOfWork(db)
+	processUoW := uow.NewUnitOfWork(db)
+	startBudgetUoW := uow.NewUnitOfWork(db)
+	activateTelegramUoW := uow.NewUnitOfWork(db)
 	urlBuilder := checkout.NewKiwifyURLBuilder(deps.runtimeCfg.CheckoutURLs, deps.runtimeCfg.KiwifyAllowedHosts)
 	activationTemplate := onboardingemail.NewActivationTemplate()
 	magicTokenWorkflow := domainservices.NewMagicTokenWorkflow()
+	magicTokenRepo := deps.factory.MagicTokenRepository(db)
+	supportSignalRepo := deps.factory.SupportSignalRepository(db)
+	cleanupRepo := deps.factory.OnboardingCleanupRepository(db)
 	return onboardingUseCasesBundle{
 		createCheckout:     usecases.NewCreateCheckoutSession(checkoutUoW, deps.factory, urlBuilder, tokenCipher, deps.idGen, deps.runtimeCfg.TokenTTL, o11y),
-		markTokenPaid:      usecases.NewMarkTokenPaid(mgr, deps.factory, magicTokenWorkflow, o11y),
+		markTokenPaid:      usecases.NewMarkTokenPaid(magicTokenRepo, magicTokenWorkflow, o11y),
 		consumeToken:       usecases.NewConsumeMagicToken(consumeUoW, deps.factory, deps.bindingService, deps.idGen, o11y),
 		fallbackActivation: usecases.NewTryFallbackActivation(consumeUoW, deps.factory, deps.bindingService, o11y),
-		getTokenState:      usecases.NewGetTokenState(mgr, deps.factory, waCfg.BotNumberE164, waCfg.BotNumberDisplay, tgCfg.BotUsername, o11y),
-		sendOutreach:       usecases.NewSendOutreach(mgr, deps.factory, channelGateway, tokenCipher, deps.idGen, waCfg.OutreachTemplateName, deps.runtimeCfg.OutreachGap, o11y),
+		getTokenState:      usecases.NewGetTokenState(magicTokenRepo, waCfg.BotNumberE164, waCfg.BotNumberDisplay, tgCfg.BotUsername, o11y),
+		sendOutreach:       usecases.NewSendOutreach(magicTokenRepo, channelGateway, tokenCipher, deps.idGen, waCfg.OutreachTemplateName, deps.runtimeCfg.OutreachGap, o11y),
 		sendActivationEmail: usecases.NewSendActivationEmail(
 			emailSender,
 			activationTemplate,
@@ -233,9 +238,9 @@ func buildOnboardingUseCases(
 			deps.runtimeCfg.TokenTTL,
 			o11y,
 		),
-		expireTokens:             usecases.NewExpireTokens(mgr, deps.factory, deps.idGen, o11y),
-		handlePaidWithoutToken:   usecases.NewHandlePaidWithoutToken(mgr, deps.factory, deps.idGen, o11y),
-		cleanupTables:            usecases.NewCleanupOnboardingTables(mgr.DBTX(context.Background()), deps.factory, deps.runtimeCfg.MetaRetention, o11y),
+		expireTokens:             usecases.NewExpireTokens(db, deps.factory, deps.idGen, o11y),
+		handlePaidWithoutToken:   usecases.NewHandlePaidWithoutToken(supportSignalRepo, deps.idGen, o11y),
+		cleanupTables:            usecases.NewCleanupOnboardingTables(cleanupRepo, deps.runtimeCfg.MetaRetention, o11y),
 		startBudgetConfiguration: usecases.NewStartBudgetConfiguration(startBudgetUoW, deps.factory, o11y),
 		processOnboardingMessage: usecases.NewProcessOnboardingMessage(
 			processUoW,
@@ -309,12 +314,12 @@ func newTelegramMessageProcessor(
 }
 
 func newManagerPublisher(
-	mgr manager.Manager,
+	db *sqlx.DB,
 	outboxFactory outbox.OutboxRepositoryFactory,
 	cfg configs.OutboxConfig,
 	o11y observability.Observability,
 ) outbox.Publisher {
-	return &managerPublisher{mgr: mgr, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
+	return &managerPublisher{db: db, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
 }
 
 func newWhatsAppGateway(waCfg configs.WhatsAppConfig, o11y observability.Observability) (appinterfaces.WhatsAppGateway, error) {
@@ -333,7 +338,7 @@ func newIdentityGatewayAdapter(identityModule identity.IdentityModule) appinterf
 }
 
 func registerMetrics(
-	mgr manager.Manager,
+	db *sqlx.DB,
 	factory appinterfaces.RepositoryFactory,
 	o11y observability.Observability,
 ) {
@@ -342,7 +347,7 @@ func registerMetrics(
 		"Total de tokens no estado PAID ainda nao consumidos",
 		"1",
 		func(ctx context.Context) float64 {
-			repo := factory.MagicTokenRepository(mgr.DBTX(ctx))
+			repo := factory.MagicTokenRepository(db)
 			count, err := repo.CountPaidUnconsumed(ctx)
 			if err != nil {
 				return -1
@@ -415,7 +420,11 @@ func newPublicRouter(
 }
 
 func (p *managerPublisher) Publish(ctx context.Context, evt outbox.Event) error {
-	storage := p.outboxFactory.OutboxRepository(p.mgr.DBTX(ctx))
+	db := p.db
+	if tx, ok := database.FromContext(ctx); ok {
+		db = tx
+	}
+	storage := p.outboxFactory.OutboxRepository(db)
 	publisher := outbox.NewObservablePostgresPublisher(storage, p.cfg, p.o11y)
 	return publisher.Publish(ctx, evt)
 }

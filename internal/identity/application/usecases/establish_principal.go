@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -62,7 +63,7 @@ func eventOutboxFromDecision(decision services.PrincipalDecision, requestID, cli
 }
 
 type EstablishPrincipal struct {
-	uow              uow.UnitOfWork[EstablishResult]
+	uow              uow.UnitOfWork
 	factory          interfaces.RepositoryFactory
 	publisher        outbox.Publisher
 	workflow         services.PrincipalWorkflow
@@ -75,7 +76,7 @@ type EstablishPrincipal struct {
 }
 
 func NewEstablishPrincipal(
-	u uow.UnitOfWork[EstablishResult],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	publisher outbox.Publisher,
 	o11y observability.Observability,
@@ -140,7 +141,7 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 
 	cip := u.resolveClientIP(ctx, in.ClientIPRaw)
 
-	res, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
+	res, err := uow.Do(ctx, u.uow, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
 		return u.resolvePrincipal(ctx, tx, wa, rid, cip)
 	})
 

@@ -13,7 +13,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
-	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -21,9 +20,7 @@ import (
 
 type GetCardSuite struct {
 	suite.Suite
-	mgr         *ucmocks.FakeManager
-	factoryMock *ifacemocks.RepositoryFactory
-	repoMock    *ifacemocks.CardRepository
+	repoMock *ifacemocks.CardRepository
 }
 
 func TestGetCard(t *testing.T) {
@@ -31,8 +28,6 @@ func TestGetCard(t *testing.T) {
 }
 
 func (s *GetCardSuite) SetupTest() {
-	s.mgr = ucmocks.NewFakeManager()
-	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 }
 
@@ -47,10 +42,9 @@ func (s *GetCardSuite) TestExecute_HappyPath() {
 	card := s.activeCard()
 	in := input.GetCard{ID: card.ID, UserID: card.UserID}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewGetCard(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewGetCard(s.repoMock, noop.NewProvider())
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -60,10 +54,9 @@ func (s *GetCardSuite) TestExecute_HappyPath() {
 func (s *GetCardSuite) TestExecute_NotFound() {
 	in := input.GetCard{ID: uuid.New(), UserID: uuid.New()}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, in.ID.String(), in.UserID.String()).Return(entities.Card{}, domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewGetCard(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewGetCard(s.repoMock, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -78,10 +71,9 @@ func (s *GetCardSuite) TestExecute_SoftDeletedReturnsNotFound() {
 	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), &deletedAt)
 	in := input.GetCard{ID: card.ID, UserID: card.UserID}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewGetCard(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewGetCard(s.repoMock, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)

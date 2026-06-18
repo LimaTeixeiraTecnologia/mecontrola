@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
@@ -20,7 +20,7 @@ import (
 
 type CategoryRepositoryIntegrationSuite struct {
 	suite.Suite
-	mgr  manager.Manager
+	db   *sqlx.DB
 	repo interfaces.CategoryRepository
 }
 
@@ -29,8 +29,8 @@ func TestCategoryRepositoryIntegrationSuite(t *testing.T) {
 }
 
 func (s *CategoryRepositoryIntegrationSuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
-	s.repo = postgres.NewCategoryRepository(noop.NewProvider(), s.mgr.DBTX(context.Background()))
+	s.db = setupTestDB(s.T())
+	s.repo = postgres.NewCategoryRepository(noop.NewProvider(), s.db)
 }
 
 func (s *CategoryRepositoryIntegrationSuite) SetupTest() {}

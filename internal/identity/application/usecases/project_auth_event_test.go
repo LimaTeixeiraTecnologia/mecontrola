@@ -15,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
@@ -55,8 +54,7 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 		in input.ProjectAuthEvent
 	}
 	type dependencies struct {
-		factory *ifacemocks.RepositoryFactory
-		repo    *ifacemocks.AuthEventsRepository
+		repo *ifacemocks.AuthEventsRepository
 	}
 
 	scenarios := []struct {
@@ -75,7 +73,6 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
 					return ev.Kind() == entities.AuthEventKindPrincipalEstablished &&
 						ev.UserID() != nil &&
@@ -95,7 +92,6 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
 					return ev.Kind() == entities.AuthEventKindUnknownUser &&
 						ev.UserID() == nil
@@ -115,7 +111,6 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
 					return ev.Kind() == entities.AuthEventKindFailed &&
 						ev.Reason() != nil &&
@@ -146,7 +141,6 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
 					return ev.Kind() == entities.AuthEventKindFailed &&
 						ev.Source() == entities.AuthEventSourceGateway &&
@@ -169,7 +163,6 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 				}}
 			},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().AuthEventsRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().Insert(mock.Anything, mock.Anything).
 					Return(fmt.Errorf("db error")).Once()
 			},
@@ -265,11 +258,10 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			repo := ifacemocks.NewAuthEventsRepository(s.T())
-			factory := ifacemocks.NewRepositoryFactory(s.T())
-			scenario.setup(dependencies{factory: factory, repo: repo})
+			scenario.setup(dependencies{repo: repo})
 
 			a := scenario.args()
-			sut := usecases.NewProjectAuthEvent(factory, usecasemocks.NewFakeManager(), noop.NewProvider())
+			sut := usecases.NewProjectAuthEvent(repo, noop.NewProvider())
 			err := sut.Execute(s.ctx, a.in)
 			scenario.expect(err)
 		})

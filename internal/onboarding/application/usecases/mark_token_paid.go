@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
@@ -15,16 +14,14 @@ import (
 )
 
 type MarkTokenPaid struct {
-	mgr        manager.Manager
-	factory    appinterfaces.RepositoryFactory
+	repo       appinterfaces.MagicTokenRepository
 	workflow   services.MagicTokenWorkflow
 	o11y       observability.Observability
 	tokensPaid observability.Counter
 }
 
 func NewMarkTokenPaid(
-	mgr manager.Manager,
-	factory appinterfaces.RepositoryFactory,
+	repo appinterfaces.MagicTokenRepository,
 	workflow services.MagicTokenWorkflow,
 	o11y observability.Observability,
 ) *MarkTokenPaid {
@@ -33,7 +30,7 @@ func NewMarkTokenPaid(
 		"Total de tokens marcados como pagos",
 		"1",
 	)
-	return &MarkTokenPaid{mgr: mgr, factory: factory, workflow: workflow, o11y: o11y, tokensPaid: tokensPaid}
+	return &MarkTokenPaid{repo: repo, workflow: workflow, o11y: o11y, tokensPaid: tokensPaid}
 }
 
 func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInput) error {
@@ -49,9 +46,7 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 		return fmt.Errorf("onboarding: mark token paid: parse funnel token: %w", err)
 	}
 
-	repo := uc.factory.MagicTokenRepository(uc.mgr.DBTX(ctx))
-
-	token, err := repo.FindByHash(ctx, clearToken.Hash())
+	token, err := uc.repo.FindByHash(ctx, clearToken.Hash())
 	if err != nil {
 		return fmt.Errorf("onboarding: mark token paid: find token: %w", err)
 	}
@@ -75,7 +70,7 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 		return nil
 	}
 
-	if err := repo.UpdateMarkPaid(ctx, decision.Token); err != nil {
+	if err := uc.repo.UpdateMarkPaid(ctx, decision.Token); err != nil {
 		return fmt.Errorf("onboarding: mark token paid: update: %w", err)
 	}
 

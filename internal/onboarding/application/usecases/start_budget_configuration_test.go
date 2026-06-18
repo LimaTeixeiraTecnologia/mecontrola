@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
@@ -23,7 +23,9 @@ import (
 
 type unitOfWorkStartBudget struct{}
 
-func (u *unitOfWorkStartBudget) Do(ctx context.Context, fn func(context.Context, database.DBTX) (usecases.StartBudgetConfigurationResult, error), _ ...uow.Option) (usecases.StartBudgetConfigurationResult, error) {
+func (u *unitOfWorkStartBudget) DBTX() database.DBTX { return nil }
+
+func (u *unitOfWorkStartBudget) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 

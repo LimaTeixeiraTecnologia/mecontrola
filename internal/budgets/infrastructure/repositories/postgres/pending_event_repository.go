@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
@@ -114,7 +115,7 @@ func (r *pendingEventRepository) Transition(ctx context.Context, id, userID uuid
 	return nil
 }
 
-func (r *pendingEventRepository) scanPendingEvents(rows database.Rows) ([]entities.PendingEvent, error) {
+func (r *pendingEventRepository) scanPendingEvents(rows *sql.Rows) ([]entities.PendingEvent, error) {
 	var result []entities.PendingEvent
 	for rows.Next() {
 		p, err := r.scanPendingEventRow(rows)

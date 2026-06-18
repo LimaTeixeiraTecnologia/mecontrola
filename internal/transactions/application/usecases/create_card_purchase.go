@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
@@ -26,7 +27,7 @@ type CreateCardPurchase struct {
 	categoryValidator interfaces.CategoryValidator
 	workflow          *services.CardPurchaseWorkflow
 	publisher         interfaces.CardPurchaseEventPublisher
-	uow               uow.UnitOfWork[entities.CardPurchase]
+	uow               uow.UnitOfWork
 	idGen             id.Generator
 	o11y              observability.Observability
 }
@@ -37,7 +38,7 @@ func NewCreateCardPurchase(
 	categoryValidator interfaces.CategoryValidator,
 	workflow *services.CardPurchaseWorkflow,
 	publisher interfaces.CardPurchaseEventPublisher,
-	u uow.UnitOfWork[entities.CardPurchase],
+	u uow.UnitOfWork,
 	idGen id.Generator,
 	o11y observability.Observability,
 ) *CreateCardPurchase {
@@ -123,7 +124,7 @@ func (uc *CreateCardPurchase) Execute(ctx context.Context, raw input.RawCreateCa
 	resolver := services.BillingCycleResolver{}
 	_, closings, dues := resolver.Resolve(cmd.PurchasedAt, snapshot, cmd.Installments)
 
-	_, err = uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (entities.CardPurchase, error) {
+	_, err = uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.CardPurchase, error) {
 		return uc.executeInTx(ctx, db, &purchase, decision, cmd, closings, dues)
 	})
 	if err != nil {

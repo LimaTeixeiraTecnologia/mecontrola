@@ -34,9 +34,8 @@ func (s *OnboardingSessionRepositorySuite) insertUser(ctx context.Context, db in
 }
 
 func (s *OnboardingSessionRepositorySuite) TestUpsertFindAndMarkActive() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	userID := uuid.New()
 	number := "+5511" + uuid.New().String()[:9]

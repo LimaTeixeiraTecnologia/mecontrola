@@ -8,9 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
@@ -45,14 +46,14 @@ type StartBudgetConfigurationResult struct {
 }
 
 type StartBudgetConfiguration struct {
-	uow        uow.UnitOfWork[StartBudgetConfigurationResult]
+	uow        uow.UnitOfWork
 	factory    appinterfaces.RepositoryFactory
 	o11y       observability.Observability
 	startTotal observability.Counter
 }
 
 func NewStartBudgetConfiguration(
-	u uow.UnitOfWork[StartBudgetConfigurationResult],
+	u uow.UnitOfWork,
 	factory appinterfaces.RepositoryFactory,
 	o11y observability.Observability,
 ) *StartBudgetConfiguration {
@@ -81,7 +82,7 @@ func (uc *StartBudgetConfiguration) Execute(ctx context.Context, in StartBudgetC
 		channel = entities.OnboardingChannelWhatsApp
 	}
 
-	return uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (StartBudgetConfigurationResult, error) {
+	return uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (StartBudgetConfigurationResult, error) {
 		return uc.executeInTx(ctx, tx, in.UserID, channel)
 	})
 }

@@ -7,9 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 )
 
 // NewPendingEventRepository creates a new instance of PendingEventRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

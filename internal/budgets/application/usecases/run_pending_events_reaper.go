@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
@@ -18,7 +19,7 @@ const _pendingReaperBatchSize = 200
 type RunPendingEventsReaper struct {
 	factory   interfaces.RepositoryFactory
 	apply     *ApplyPendingEvent
-	uow       uow.UnitOfWork[struct{}]
+	uow       uow.UnitOfWork
 	o11y      observability.Observability
 	processed observability.Counter
 	expired   observability.Counter
@@ -28,7 +29,7 @@ type RunPendingEventsReaper struct {
 func NewRunPendingEventsReaper(
 	factory interfaces.RepositoryFactory,
 	apply *ApplyPendingEvent,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *RunPendingEventsReaper {
 	processed := o11y.Metrics().Counter(
@@ -61,7 +62,7 @@ func (uc *RunPendingEventsReaper) Execute(ctx context.Context) error {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.run_pending_events_reaper")
 	defer span.End()
 
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		pending := uc.factory.PendingEventRepository(tx)
 		events, listErr := pending.ListReady(ctx, _pendingReaperBatchSize)
 		if listErr != nil {

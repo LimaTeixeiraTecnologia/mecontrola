@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
@@ -32,16 +32,20 @@ type unitOfWorkRows struct {
 	err error
 }
 
-func (f *unitOfWorkRows) Do(ctx context.Context, fn func(context.Context, database.DBTX) ([]outbox.Row, error), _ ...uow.Option) ([]outbox.Row, error) {
+func (f *unitOfWorkRows) DBTX() database.DBTX { return nil }
+
+func (f *unitOfWorkRows) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	if f.err != nil {
-		return nil, f.err
+		return f.err
 	}
 	return fn(ctx, nil)
 }
 
 type unitOfWorkVoid struct{}
 
-func (f *unitOfWorkVoid) Do(ctx context.Context, fn func(context.Context, database.DBTX) (struct{}, error), _ ...uow.Option) (struct{}, error) {
+func (f *unitOfWorkVoid) DBTX() database.DBTX { return nil }
+
+func (f *unitOfWorkVoid) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 

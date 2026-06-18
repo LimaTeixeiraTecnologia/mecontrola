@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
@@ -30,7 +29,7 @@ func TestExpenseRepositorySuite(t *testing.T) {
 func (s *ExpenseRepositorySuite) TestInsertAndGetByIdentity() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -49,7 +48,7 @@ func (s *ExpenseRepositorySuite) TestInsertAndGetByIdentity() {
 func (s *ExpenseRepositorySuite) TestGetByIdentityNotFound() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	src, _ := valueobjects.NewProducerSource("api")
@@ -68,7 +67,7 @@ func (s *ExpenseRepositorySuite) TestGetByIdentityNotFound() {
 func (s *ExpenseRepositorySuite) TestInsertDuplicateConflict() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -85,7 +84,7 @@ func (s *ExpenseRepositorySuite) TestInsertDuplicateConflict() {
 func (s *ExpenseRepositorySuite) TestUpdate() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -111,7 +110,7 @@ func (s *ExpenseRepositorySuite) TestUpdate() {
 func (s *ExpenseRepositorySuite) TestUpdateVersionConflict() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -133,7 +132,7 @@ func (s *ExpenseRepositorySuite) TestUpdateVersionConflict() {
 func (s *ExpenseRepositorySuite) TestSoftDelete() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -160,7 +159,7 @@ func (s *ExpenseRepositorySuite) TestSoftDelete() {
 func (s *ExpenseRepositorySuite) TestSoftDeleteVersionConflict() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -180,7 +179,7 @@ func (s *ExpenseRepositorySuite) TestSoftDeleteVersionConflict() {
 func (s *ExpenseRepositorySuite) TestTombstoneBlocksReuse() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	extID := newUUIDv4()
@@ -203,7 +202,7 @@ func (s *ExpenseRepositorySuite) TestTombstoneBlocksReuse() {
 func (s *ExpenseRepositorySuite) TestSumByRoot() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newExpenseRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newExpenseRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-02")
@@ -256,7 +255,7 @@ func (s *ExpenseRepositorySuite) TestSumByRoot() {
 func (s *ExpenseRepositorySuite) TestSumByRootExplainUsesIndex() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
+	db := mgr
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-03")
@@ -282,9 +281,9 @@ func (s *ExpenseRepositorySuite) TestSumByRootExplainUsesIndex() {
 
 	explainQuery := `EXPLAIN (FORMAT TEXT) SELECT root_slug, SUM(amount_cents) FROM mecontrola.budgets_expenses WHERE user_id = $1 AND competence = $2 AND deleted_at IS NULL GROUP BY root_slug`
 
-	tx, err := mgr.BeginTx(ctx, database.TxOptions{})
+	tx, err := mgr.BeginTx(ctx, nil)
 	s.Require().NoError(err)
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`)
 	s.Require().NoError(err)

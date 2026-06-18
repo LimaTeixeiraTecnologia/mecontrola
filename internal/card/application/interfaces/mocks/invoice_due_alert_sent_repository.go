@@ -8,9 +8,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 )
 
 // NewInvoiceDueAlertSentRepository creates a new instance of InvoiceDueAlertSentRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

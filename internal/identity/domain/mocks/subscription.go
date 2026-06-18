@@ -7,8 +7,9 @@ package mocks
 import (
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 )
 
 // NewSubscription creates a new instance of Subscription. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

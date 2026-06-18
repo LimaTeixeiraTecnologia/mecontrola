@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
 
@@ -20,7 +20,7 @@ import (
 
 type ProcessedEventRepositorySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -31,12 +31,12 @@ func TestProcessedEventRepositorySuite(t *testing.T) {
 func (s *ProcessedEventRepositorySuite) SetupTest() {}
 
 func (s *ProcessedEventRepositorySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *ProcessedEventRepositorySuite) newRepo() interfaces.ProcessedEventRepository {
-	return s.factory.ProcessedEventRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.ProcessedEventRepository(s.db)
 }
 
 func (s *ProcessedEventRepositorySuite) TestMarkApplied() {
@@ -102,7 +102,7 @@ func (s *ProcessedEventRepositorySuite) TestMarkSuperseded() {
 
 type RF11ReplaySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -113,7 +113,7 @@ func TestRF11ReplaySuite(t *testing.T) {
 func (s *RF11ReplaySuite) SetupTest() {}
 
 func (s *RF11ReplaySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
@@ -127,7 +127,7 @@ func (s *RF11ReplaySuite) TestRF11_ThreeReplaysYieldOneInsertAndTwoSentinels() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			ctx := context.Background()
-			repo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
+			repo := s.factory.ProcessedEventRepository(s.db)
 			eventKey := "order_approved:order-rf11-replay-001"
 			occurredAt := time.Now().UTC()
 

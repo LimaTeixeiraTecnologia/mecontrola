@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
@@ -60,9 +60,9 @@ func (s *TransactionToBudgetChainSuite) buildConfig() *configs.Config {
 	return cfg
 }
 
-func (s *TransactionToBudgetChainSuite) ensureUserExists(ctx context.Context, mgr manager.Manager, userID uuid.UUID) {
+func (s *TransactionToBudgetChainSuite) ensureUserExists(ctx context.Context, mgr *sqlx.DB, userID uuid.UUID) {
 	number := "+5511" + uuid.New().String()[:9]
-	_, err := mgr.DBTX(ctx).ExecContext(ctx,
+	_, err := mgr.ExecContext(ctx,
 		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		 VALUES ($1, $2, 'ACTIVE', now(), now())
 		 ON CONFLICT (id) DO NOTHING`,
@@ -128,8 +128,8 @@ func (s *TransactionToBudgetChainSuite) TestExpenseTransactionUpdatesBudgetReadM
 	s.assertMonthlySummary(ctx, budgetsModule, userID)
 }
 
-func (s *TransactionToBudgetChainSuite) assertTransactionPersisted(ctx context.Context, mgr manager.Manager, txID string, userID uuid.UUID) {
-	db := mgr.DBTX(ctx)
+func (s *TransactionToBudgetChainSuite) assertTransactionPersisted(ctx context.Context, mgr *sqlx.DB, txID string, userID uuid.UUID) {
+	db := mgr
 	var (
 		gotUser   string
 		gotAmount int64
@@ -145,8 +145,8 @@ func (s *TransactionToBudgetChainSuite) assertTransactionPersisted(ctx context.C
 	s.Equal(2, direction)
 }
 
-func (s *TransactionToBudgetChainSuite) claimTransactionCreatedEnvelope(ctx context.Context, mgr manager.Manager, aggregateID string) outbox.Envelope {
-	storage := outbox.NewPostgresStorage(mgr.DBTX(ctx))
+func (s *TransactionToBudgetChainSuite) claimTransactionCreatedEnvelope(ctx context.Context, mgr *sqlx.DB, aggregateID string) outbox.Envelope {
+	storage := outbox.NewPostgresStorage(mgr)
 	rows, err := storage.ClaimBatch(ctx, consumerLockedBy, 100)
 	s.Require().NoError(err, "claim outbox")
 
@@ -179,8 +179,8 @@ func (s *TransactionToBudgetChainSuite) assertEnvelopePayload(env outbox.Envelop
 	s.Equal(userID.String(), p.UserID)
 }
 
-func (s *TransactionToBudgetChainSuite) assertExpensePersisted(ctx context.Context, mgr manager.Manager, userID uuid.UUID, externalTxID string) {
-	db := mgr.DBTX(ctx)
+func (s *TransactionToBudgetChainSuite) assertExpensePersisted(ctx context.Context, mgr *sqlx.DB, userID uuid.UUID, externalTxID string) {
+	db := mgr
 	var (
 		gotAmount     int64
 		gotCompetence string
@@ -283,7 +283,7 @@ func (s *TransactionToBudgetChainSuite) TestBudgetActivationPublishesOutboxEvent
 	s.Equal("active", activated.State)
 
 	var count int
-	row := mgr.DBTX(ctx).QueryRowContext(ctx,
+	row := mgr.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2 AND aggregate_user_id = $3`,
 		"budgets.budget_activated.v1", activated.ID, userID.String(),
 	)
@@ -404,7 +404,7 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	s.Require().NoError(budgetsModule.ThresholdAlertsJob.Run(ctx))
 
 	var count int
-	row := mgr.DBTX(ctx).QueryRowContext(ctx,
+	row := mgr.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2 AND aggregate_user_id = $3`,
 		"budgets.threshold_alert_triggered.v1", created.ID, userID.String(),
 	)
@@ -412,9 +412,9 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	s.Equal(1, count)
 }
 
-func (s *TransactionToBudgetChainSuite) claimTransactionDeletedEnvelope(ctx context.Context, mgr manager.Manager, aggregateID string) outbox.Envelope {
+func (s *TransactionToBudgetChainSuite) claimTransactionDeletedEnvelope(ctx context.Context, mgr *sqlx.DB, aggregateID string) outbox.Envelope {
 	const deletedType = "transactions.transaction.deleted.v1"
-	storage := outbox.NewPostgresStorage(mgr.DBTX(ctx))
+	storage := outbox.NewPostgresStorage(mgr)
 	rows, err := storage.ClaimBatch(ctx, consumerLockedBy+"-deleted", 100)
 	s.Require().NoError(err)
 	for _, row := range rows {
@@ -426,8 +426,8 @@ func (s *TransactionToBudgetChainSuite) claimTransactionDeletedEnvelope(ctx cont
 	return outbox.Envelope{}
 }
 
-func (s *TransactionToBudgetChainSuite) assertExpenseSoftDeleted(ctx context.Context, mgr manager.Manager, userID uuid.UUID, externalTxID string) {
-	db := mgr.DBTX(ctx)
+func (s *TransactionToBudgetChainSuite) assertExpenseSoftDeleted(ctx context.Context, mgr *sqlx.DB, userID uuid.UUID, externalTxID string) {
+	db := mgr
 	var deletedAt *time.Time
 	row := db.QueryRowContext(ctx,
 		`SELECT deleted_at FROM mecontrola.budgets_expenses WHERE user_id = $1 AND external_transaction_id = $2`,

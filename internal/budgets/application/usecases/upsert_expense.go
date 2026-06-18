@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
@@ -26,7 +27,7 @@ type UpsertExpense struct {
 	categories interfaces.CategoriesReader
 	publisher  interfaces.ExpenseCommittedPublisher
 	autoDraft  *CreateOrAutoDraftForExpense
-	uow        uow.UnitOfWork[entities.Expense]
+	uow        uow.UnitOfWork
 	o11y       observability.Observability
 	loc        *time.Location
 }
@@ -36,7 +37,7 @@ func NewUpsertExpense(
 	categories interfaces.CategoriesReader,
 	publisher interfaces.ExpenseCommittedPublisher,
 	autoDraft *CreateOrAutoDraftForExpense,
-	u uow.UnitOfWork[entities.Expense],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 	loc *time.Location,
 ) *UpsertExpense {
@@ -68,7 +69,7 @@ func (uc *UpsertExpense) Execute(ctx context.Context, in input.UpsertExpenseInpu
 		return output.ExpenseOutput{}, err
 	}
 
-	expense, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Expense, error) {
+	expense, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Expense, error) {
 		return uc.executeInTx(ctx, tx, cmd, rootSlug)
 	})
 	if err != nil {

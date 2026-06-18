@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -18,7 +19,7 @@ import (
 const graceExpiredBatchDefault = 100
 
 type ProcessSubscriptionGraceExpired struct {
-	uow        uow.UnitOfWork[entities.Subscription]
+	uow        uow.UnitOfWork
 	db         database.DBTX
 	factory    interfaces.RepositoryFactory
 	publisher  interfaces.SubscriptionEventPublisher
@@ -28,7 +29,7 @@ type ProcessSubscriptionGraceExpired struct {
 }
 
 func NewProcessSubscriptionGraceExpired(
-	u uow.UnitOfWork[entities.Subscription],
+	u uow.UnitOfWork,
 	db database.DBTX,
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.SubscriptionEventPublisher,
@@ -86,7 +87,7 @@ func (uc *ProcessSubscriptionGraceExpired) Execute(ctx context.Context) error {
 
 func (uc *ProcessSubscriptionGraceExpired) expireOne(ctx context.Context, cand interfaces.ExpiredGraceCandidate) error {
 	occurredAt := time.Now().UTC()
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		subRepo := uc.factory.SubscriptionRepository(tx)
 
 		if applyErr := subRepo.ApplyTransition(ctx, cand.SubscriptionID, valueobjects.StatusExpired, time.Time{}, occurredAt); applyErr != nil {

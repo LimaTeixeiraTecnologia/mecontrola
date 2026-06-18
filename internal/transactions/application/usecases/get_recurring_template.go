@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -16,13 +17,13 @@ import (
 
 type GetRecurringTemplate struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[output.RecurringTemplate]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewGetRecurringTemplate(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[output.RecurringTemplate],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *GetRecurringTemplate {
 	return &GetRecurringTemplate{
@@ -46,7 +47,7 @@ func (uc *GetRecurringTemplate) Execute(ctx context.Context, templateID string) 
 		return output.RecurringTemplate{}, fmt.Errorf("transactions/get_recurring_template: template_id inválido: %w", err)
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (output.RecurringTemplate, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (output.RecurringTemplate, error) {
 		repo := uc.factory.RecurringTemplateRepository(db)
 		t, getErr := repo.GetByID(ctx, parsedID, principal.UserID)
 		if getErr != nil {

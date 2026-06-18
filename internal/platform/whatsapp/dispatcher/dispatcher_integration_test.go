@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/stretchr/testify/mock"
 
@@ -44,7 +45,7 @@ func (m *mockIntegrationGateway) SendTextMessage(ctx context.Context, toE164, te
 type DispatcherIntegrationSuite struct {
 	suite.Suite
 	ctx  context.Context
-	mgr  manager.Manager
+	db   *sqlx.DB
 	o11y *noop.Provider
 }
 
@@ -53,8 +54,8 @@ func TestDispatcherIntegrationSuite(t *testing.T) {
 }
 
 func (s *DispatcherIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	s.o11y = noop.NewProvider()
 }
 
@@ -62,25 +63,19 @@ func (s *DispatcherIntegrationSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
-func setupDispatcherTestDB(t *testing.T) manager.Manager {
-	t.Helper()
-	mgr, _ := testcontainer.Postgres(t)
-	return mgr
-}
-
 func (s *DispatcherIntegrationSuite) outboxCfg() configs.OutboxConfig {
 	return configs.OutboxConfig{RetryMaxAttempts: 3}
 }
 
 func (s *DispatcherIntegrationSuite) newPublisher() outbox.Publisher {
-	storage := outbox.NewPostgresStorage(s.mgr.DBTX(s.ctx))
+	storage := outbox.NewPostgresStorage(s.db)
 	return outbox.NewPostgresPublisher(storage, s.outboxCfg())
 }
 
 func (s *DispatcherIntegrationSuite) seedActiveUser(wa string) entities.User {
 	s.T().Helper()
 	factory := repositories.NewRepositoryFactory(s.o11y)
-	repo := factory.UserRepository(s.mgr.DBTX(s.ctx))
+	repo := factory.UserRepository(s.db)
 	waNum, err := valueobjects.NewWhatsAppNumber(wa)
 	s.Require().NoError(err)
 	candidate := entities.New(waNum)
@@ -91,7 +86,7 @@ func (s *DispatcherIntegrationSuite) seedActiveUser(wa string) entities.User {
 
 func (s *DispatcherIntegrationSuite) countOutboxByType(eventType string) int {
 	var total int
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(
+	err := s.db.QueryRowContext(
 		s.ctx,
 		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`,
 		eventType,
@@ -169,10 +164,10 @@ func (s *DispatcherIntegrationSuite) buildPayload(from, text, wamid string) json
 
 func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mockIntegrationGateway) *dispatcher.Dispatcher {
 	factory := repositories.NewRepositoryFactory(s.o11y)
-	establishUoW := uow.New[usecases.EstablishResult](s.mgr, uow.WithObservability(s.o11y))
+	establishUoW := uow.NewUnitOfWork(s.db)
 	establishUC := usecases.NewEstablishPrincipal(establishUoW, factory, s.newPublisher(), s.o11y)
 
-	dedupRepo := postgres.NewMessageRepository(s.o11y, s.mgr)
+	dedupRepo := postgres.NewMessageRepository(s.o11y, s.db)
 
 	stubAgent := agent.NewStubAgent(waGW, map[string]string{
 		"agent_stub_received": "MeControla recebeu sua mensagem — estamos preparando sua experiencia.",
@@ -267,7 +262,7 @@ func (s *DispatcherIntegrationSuite) TestRoute_RateLimitExceeded_PublishesAuthFa
 	beforeCount := s.countOutboxByType("auth.failed")
 
 	factory := repositories.NewRepositoryFactory(s.o11y)
-	repo := factory.UserRepository(s.mgr.DBTX(s.ctx))
+	repo := factory.UserRepository(s.db)
 	waNum, err := valueobjects.NewWhatsAppNumber(waFrom)
 	s.Require().NoError(err)
 	user, found, err := repo.TryFindActiveByWhatsApp(s.ctx, waNum)

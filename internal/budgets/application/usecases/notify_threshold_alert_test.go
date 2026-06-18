@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -18,16 +17,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 )
-
-type fakeNotifyManager struct{}
-
-func (fakeNotifyManager) Driver() database.Driver              { return "" }
-func (fakeNotifyManager) DBTX(_ context.Context) database.DBTX { return nil }
-func (fakeNotifyManager) BeginTx(_ context.Context, _ database.TxOptions) (database.Tx, error) {
-	return nil, errors.New("not implemented")
-}
-func (fakeNotifyManager) Ping(_ context.Context) error     { return nil }
-func (fakeNotifyManager) Shutdown(_ context.Context) error { return nil }
 
 type stubChannelGateway struct {
 	sentChannel  string
@@ -50,7 +39,6 @@ func (s *stubChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, 
 type NotifyThresholdAlertSuite struct {
 	suite.Suite
 	repo     *mocks.ThresholdAlertSentRepository
-	factory  *mocks.RepositoryFactory
 	resolver *mocks.UserChannelResolver
 }
 
@@ -60,9 +48,7 @@ func TestNotifyThresholdAlert(t *testing.T) {
 
 func (s *NotifyThresholdAlertSuite) SetupTest() {
 	s.repo = mocks.NewThresholdAlertSentRepository(s.T())
-	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.resolver = mocks.NewUserChannelResolver(s.T())
-	s.factory.EXPECT().ThresholdAlertSentRepository(mock.Anything).Return(s.repo).Maybe()
 }
 
 func (s *NotifyThresholdAlertSuite) TestExecute() {
@@ -134,7 +120,7 @@ func (s *NotifyThresholdAlertSuite) TestExecute() {
 			s.SetupTest()
 			gw := &stubChannelGateway{}
 			scenario.setup(gw)
-			uc := usecases.NewNotifyThresholdAlert(fakeNotifyManager{}, s.factory, s.resolver, gw, noop.NewProvider())
+			uc := usecases.NewNotifyThresholdAlert(s.repo, s.resolver, gw, noop.NewProvider())
 			result, err := uc.Execute(context.Background(), usecases.NotifyThresholdAlertInput{
 				UserID:               userID,
 				BudgetID:             budgetID,

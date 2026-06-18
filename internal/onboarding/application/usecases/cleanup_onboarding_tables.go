@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
@@ -14,21 +13,18 @@ import (
 const cleanupBatchSize = 1000
 
 type CleanupOnboardingTables struct {
-	db              database.DBTX
-	factory         appinterfaces.RepositoryFactory
+	repo            appinterfaces.OnboardingCleanupRepository
 	retentionPeriod time.Duration
 	o11y            observability.Observability
 }
 
 func NewCleanupOnboardingTables(
-	db database.DBTX,
-	factory appinterfaces.RepositoryFactory,
+	repo appinterfaces.OnboardingCleanupRepository,
 	retentionPeriod time.Duration,
 	o11y observability.Observability,
 ) *CleanupOnboardingTables {
 	return &CleanupOnboardingTables{
-		db:              db,
-		factory:         factory,
+		repo:            repo,
 		retentionPeriod: retentionPeriod,
 		o11y:            o11y,
 	}
@@ -39,24 +35,22 @@ func (uc *CleanupOnboardingTables) Execute(ctx context.Context) error {
 	defer span.End()
 
 	before := time.Now().UTC().Add(-uc.retentionPeriod)
-	repo := uc.factory.OnboardingCleanupRepository(uc.db)
 
-	if err := uc.deleteMetaProcessed(ctx, repo, before); err != nil {
+	if err := uc.deleteMetaProcessed(ctx, before); err != nil {
 		return err
 	}
-	return uc.deleteConsumerLookupAttempts(ctx, repo, before)
+	return uc.deleteConsumerLookupAttempts(ctx, before)
 }
 
 func (uc *CleanupOnboardingTables) deleteMetaProcessed(
 	ctx context.Context,
-	repo appinterfaces.OnboardingCleanupRepository,
 	before time.Time,
 ) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("onboarding: cleanup channel_processed_messages: context cancelled: %w", err)
 		}
-		deleted, err := repo.DeleteMetaProcessedOlderThan(ctx, before, cleanupBatchSize)
+		deleted, err := uc.repo.DeleteMetaProcessedOlderThan(ctx, before, cleanupBatchSize)
 		if err != nil {
 			return fmt.Errorf("onboarding: cleanup channel_processed_messages: %w", err)
 		}
@@ -69,14 +63,13 @@ func (uc *CleanupOnboardingTables) deleteMetaProcessed(
 
 func (uc *CleanupOnboardingTables) deleteConsumerLookupAttempts(
 	ctx context.Context,
-	repo appinterfaces.OnboardingCleanupRepository,
 	before time.Time,
 ) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("onboarding: cleanup consumer_lookup_attempts: context cancelled: %w", err)
 		}
-		deleted, err := repo.DeleteConsumerLookupAttemptsOlderThan(ctx, before, cleanupBatchSize)
+		deleted, err := uc.repo.DeleteConsumerLookupAttemptsOlderThan(ctx, before, cleanupBatchSize)
 		if err != nil {
 			return fmt.Errorf("onboarding: cleanup consumer_lookup_attempts: %w", err)
 		}

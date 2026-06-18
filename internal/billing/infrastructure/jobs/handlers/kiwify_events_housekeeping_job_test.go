@@ -18,8 +18,7 @@ import (
 
 type HousekeepingJobSuite struct {
 	suite.Suite
-	factoryMock *ucmocks.RepositoryFactory
-	eventRepo   *ucmocks.KiwifyEventRepository
+	eventRepo *ucmocks.KiwifyEventRepository
 }
 
 func TestHousekeepingJob(t *testing.T) {
@@ -27,12 +26,11 @@ func TestHousekeepingJob(t *testing.T) {
 }
 
 func (s *HousekeepingJobSuite) SetupTest() {
-	s.factoryMock = ucmocks.NewRepositoryFactory(s.T())
 	s.eventRepo = ucmocks.NewKiwifyEventRepository(s.T())
 }
 
 func (s *HousekeepingJobSuite) newJob(cfg configs.BillingConfig) *handlers.KiwifyEventsHousekeepingJob {
-	cleanup := usecases.NewCleanupKiwifyEvents(nil, s.factoryMock, cfg, noop.NewProvider())
+	cleanup := usecases.NewCleanupKiwifyEvents(s.eventRepo, cfg, noop.NewProvider())
 	return handlers.NewKiwifyEventsHousekeepingJob(cleanup, cfg)
 }
 
@@ -77,7 +75,6 @@ func (s *HousekeepingJobSuite) TestRun() {
 			name: "deve excluir linhas antigas em lotes",
 			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 100},
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
 				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(100), nil).Once()
 				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(50), nil).Once()
 				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(0), nil).Once()
@@ -87,7 +84,6 @@ func (s *HousekeepingJobSuite) TestRun() {
 			name: "deve concluir quando nao houver linhas para excluir",
 			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
 				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(0), nil).Once()
 			},
 		},
@@ -96,7 +92,6 @@ func (s *HousekeepingJobSuite) TestRun() {
 			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
 			setup: func(ctx context.Context) {
 				before90d := time.Now().UTC().Add(-90 * 24 * time.Hour)
-				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
 				s.eventRepo.EXPECT().
 					DeleteOlderThan(ctx, mock.MatchedBy(func(before time.Time) bool {
 						diff := before90d.Sub(before)
@@ -113,7 +108,6 @@ func (s *HousekeepingJobSuite) TestRun() {
 			name: "deve propagar erro do repositorio",
 			cfg:  configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingBatch: 100},
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
 				s.eventRepo.EXPECT().DeleteOlderThan(ctx, mock.Anything, 100).Return(int64(0), errors.New("db error")).Once()
 			},
 			expectErr: "db error",
@@ -135,7 +129,6 @@ func (s *HousekeepingJobSuite) TestRun() {
 			if scenario.expectErr == "context cancelled" {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(context.Background())
-				s.factoryMock.EXPECT().KiwifyEventRepository(nil).Return(s.eventRepo).Once()
 				s.eventRepo.EXPECT().
 					DeleteOlderThan(mock.Anything, mock.Anything, 100).
 					RunAndReturn(func(innerCtx context.Context, before time.Time, limit int) (int64, error) {

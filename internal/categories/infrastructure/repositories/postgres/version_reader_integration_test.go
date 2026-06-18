@@ -7,9 +7,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
@@ -18,7 +18,7 @@ import (
 
 type VersionReaderIntegrationSuite struct {
 	suite.Suite
-	mgr    manager.Manager
+	db     *sqlx.DB
 	reader interfaces.VersionReader
 }
 
@@ -27,8 +27,8 @@ func TestVersionReaderIntegrationSuite(t *testing.T) {
 }
 
 func (s *VersionReaderIntegrationSuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
-	s.reader = postgres.NewVersionReader(noop.NewProvider(), s.mgr.DBTX(context.Background()))
+	s.db = setupTestDB(s.T())
+	s.reader = postgres.NewVersionReader(noop.NewProvider(), s.db)
 }
 
 func (s *VersionReaderIntegrationSuite) SetupTest() {}

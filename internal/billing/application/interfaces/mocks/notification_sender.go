@@ -7,8 +7,9 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 )
 
 // NewNotificationSender creates a new instance of NotificationSender. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

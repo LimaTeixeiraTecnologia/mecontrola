@@ -8,9 +8,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
 // NewAuthEventsRepository creates a new instance of AuthEventsRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

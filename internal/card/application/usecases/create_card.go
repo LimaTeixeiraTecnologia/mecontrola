@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -18,11 +16,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 )
 
 type CreateCard struct {
-	uow     uow.UnitOfWork[entities.Card]
+	uow     uow.UnitOfWork
 	factory interfaces.RepositoryFactory
 	idem    idempotency.Storage
 	decider services.CreateCardDecider
@@ -30,7 +30,7 @@ type CreateCard struct {
 }
 
 func NewCreateCard(
-	u uow.UnitOfWork[entities.Card],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	idem idempotency.Storage,
 	o11y observability.Observability,
@@ -92,16 +92,17 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		LimitCents: limit.Cents(),
 	}
 
-	card, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Card, error) {
+	var card entities.Card
+	err = u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		repo := u.factory.CardRepository(tx)
 		c := u.decider.Decide(cmd, cardID, now)
 		if insertErr := repo.Insert(ctx, c); insertErr != nil {
-			return entities.Card{}, insertErr
+			return insertErr
 		}
 		if hasIdem {
 			body, marshalErr := json.Marshal(mappers.M.ToCardOutput(c))
 			if marshalErr != nil {
-				return entities.Card{}, fmt.Errorf("create_card: marshal output: %w", marshalErr)
+				return fmt.Errorf("create_card: marshal output: %w", marshalErr)
 			}
 			rec := idempotency.Record{
 				Scope:          ic.Scope,
@@ -113,10 +114,11 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 				ExpiresAt:      ic.ExpiresAt,
 			}
 			if putErr := u.idem.Put(ctx, rec); putErr != nil {
-				return entities.Card{}, fmt.Errorf("create_card: idempotency put: %w", putErr)
+				return fmt.Errorf("create_card: idempotency put: %w", putErr)
 			}
 		}
-		return c, nil
+		card = c
+		return nil
 	})
 
 	if err != nil {

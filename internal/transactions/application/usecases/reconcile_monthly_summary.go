@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
@@ -13,21 +12,24 @@ import (
 )
 
 type ReconcileMonthlySummary struct {
-	db            database.DBTX
-	factory       interfaces.RepositoryFactory
+	txRepo        interfaces.TransactionRepository
+	invoiceRepo   interfaces.CardInvoiceRepository
+	summaryRepo   interfaces.MonthlySummaryRepository
 	lookbackHours int
 	o11y          observability.Observability
 }
 
 func NewReconcileMonthlySummary(
-	db database.DBTX,
-	factory interfaces.RepositoryFactory,
+	txRepo interfaces.TransactionRepository,
+	invoiceRepo interfaces.CardInvoiceRepository,
+	summaryRepo interfaces.MonthlySummaryRepository,
 	lookbackHours int,
 	o11y observability.Observability,
 ) *ReconcileMonthlySummary {
 	return &ReconcileMonthlySummary{
-		db:            db,
-		factory:       factory,
+		txRepo:        txRepo,
+		invoiceRepo:   invoiceRepo,
+		summaryRepo:   summaryRepo,
 		lookbackHours: lookbackHours,
 		o11y:          o11y,
 	}
@@ -41,9 +43,7 @@ func (uc *ReconcileMonthlySummary) Execute(ctx context.Context) error {
 	cursor := interfaces.Cursor{}
 
 	for {
-		summaryRepo := uc.factory.MonthlySummaryRepository(uc.db)
-
-		keys, nextCursor, err := summaryRepo.ListActiveSince(ctx, since, cursor, materializeBatchSize)
+		keys, nextCursor, err := uc.summaryRepo.ListActiveSince(ctx, since, cursor, materializeBatchSize)
 		if err != nil {
 			span.RecordError(err)
 			return fmt.Errorf("transactions/reconcile_monthly_summary: listar ativos: %w", err)
@@ -73,23 +73,19 @@ func (uc *ReconcileMonthlySummary) reconcileKey(ctx context.Context, key interfa
 
 	userID := key.UserID
 
-	txRepo := uc.factory.TransactionRepository(uc.db)
-	invoiceRepo := uc.factory.CardInvoiceRepository(uc.db)
-	summaryRepo := uc.factory.MonthlySummaryRepository(uc.db)
-
-	income, outcome, err := txRepo.SumByMonth(ctx, userID, refMonth)
+	income, outcome, err := uc.txRepo.SumByMonth(ctx, userID, refMonth)
 	if err != nil {
 		return fmt.Errorf("transactions/reconcile: soma transações: %w", err)
 	}
 
-	cardOutcome, err := invoiceRepo.SumByMonth(ctx, userID, refMonth)
+	cardOutcome, err := uc.invoiceRepo.SumByMonth(ctx, userID, refMonth)
 	if err != nil {
 		return fmt.Errorf("transactions/reconcile: soma card invoice: %w", err)
 	}
 
 	totalOutcome := outcome + cardOutcome
 
-	current, getErr := summaryRepo.Get(ctx, userID, refMonth)
+	current, getErr := uc.summaryRepo.Get(ctx, userID, refMonth)
 	if getErr != nil {
 		return fmt.Errorf("transactions/reconcile: buscar summary: %w", getErr)
 	}
@@ -101,7 +97,7 @@ func (uc *ReconcileMonthlySummary) reconcileKey(ctx context.Context, key interfa
 	}
 
 	now := time.Now().UTC()
-	if upsertErr := summaryRepo.Upsert(ctx, userID, refMonth, income, totalOutcome, now); upsertErr != nil {
+	if upsertErr := uc.summaryRepo.Upsert(ctx, userID, refMonth, income, totalOutcome, now); upsertErr != nil {
 		return fmt.Errorf("transactions/reconcile: upsert summary: %w", upsertErr)
 	}
 

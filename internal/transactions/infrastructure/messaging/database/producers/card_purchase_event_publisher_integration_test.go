@@ -28,9 +28,8 @@ func TestCardPurchaseEventPublisherIntegrationSuite(t *testing.T) {
 }
 
 func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishCreated_SingleEventWithRefMonths() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewCardPurchaseEventPublisher(outboxFactory, configs.OutboxConfig{RetryMaxAttempts: 3}, noop.NewProvider())
@@ -66,9 +65,8 @@ func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishCreated_SingleEv
 }
 
 func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishUpdated_WithInvoiceDeltas() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewCardPurchaseEventPublisher(outboxFactory, configs.OutboxConfig{RetryMaxAttempts: 3}, noop.NewProvider())
@@ -103,9 +101,8 @@ func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishUpdated_WithInvo
 }
 
 func (s *CardPurchaseEventPublisherIntegrationSuite) TestPublishDeleted_WithNegativeDeltas() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewCardPurchaseEventPublisher(outboxFactory, configs.OutboxConfig{RetryMaxAttempts: 3}, noop.NewProvider())

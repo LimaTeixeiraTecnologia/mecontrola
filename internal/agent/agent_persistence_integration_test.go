@@ -124,7 +124,7 @@ func TestAgentRouter_RealLLM_PersistsTransactions_Integration(t *testing.T) {
 	require.Contains(t, gateway.sent[0], "Transação realizada", "gasto deve confirmar persistência")
 	require.Contains(t, gateway.sent[1], "Recebimento registrado", "salário deve confirmar persistência")
 
-	db := mgr.DBTX(ctx)
+	db := mgr
 	var total int
 	require.NoError(t, db.QueryRowContext(ctx,
 		"SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1", userID,
@@ -164,7 +164,7 @@ func TestAgentRouter_RealLLM_NewCapabilities_Integration(t *testing.T) {
 	principal := appservices.Principal{UserID: userID}
 	authCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
 
-	seedDB := mgr.DBTX(ctx)
+	seedDB := mgr
 	_, err = seedDB.ExecContext(ctx,
 		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		 VALUES ($1, $2, 'ACTIVE', now(), now())`,
@@ -215,7 +215,7 @@ func TestAgentRouter_RealLLM_NewCapabilities_Integration(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	db := mgr.DBTX(ctx)
+	db := mgr
 
 	cardPurchase := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "parcelei 1200 no nubank em 6x de supermercado", WhatsAppTo: "+5511900000099", MessageID: "wamid.cp.1",

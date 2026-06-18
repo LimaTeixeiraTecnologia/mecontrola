@@ -5,36 +5,27 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
-	tc "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
-	dbpostgres "github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
-
-const pgImage = "postgres:16-alpine"
 
 type CanonicalScenariosIntegrationSuite struct {
 	suite.Suite
-	mgr        manager.Manager
+	db         *sqlx.DB
 	server     *httptest.Server
 	router     chi.Router
 	testUserID uuid.UUID
@@ -46,11 +37,12 @@ func TestCanonicalScenariosIntegrationSuite(t *testing.T) {
 
 func (s *CanonicalScenariosIntegrationSuite) SetupSuite() {
 	s.testUserID = uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	s.mgr = s.setupTestDB()
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	o11y := noop.NewProvider()
 
 	passthroughGateway := func(next http.Handler) http.Handler { return next }
-	categoriesModule := categories.NewCategoriesModule(s.mgr, o11y, passthroughGateway)
+	categoriesModule := categories.NewCategoriesModule(s.db, o11y, passthroughGateway)
 
 	s.router = chi.NewRouter()
 	s.router.Use(s.authMiddleware)
@@ -62,9 +54,6 @@ func (s *CanonicalScenariosIntegrationSuite) SetupSuite() {
 func (s *CanonicalScenariosIntegrationSuite) TearDownSuite() {
 	if s.server != nil {
 		s.server.Close()
-	}
-	if s.mgr != nil {
-		_ = s.mgr.Shutdown(context.Background())
 	}
 }
 
@@ -79,60 +68,6 @@ func (s *CanonicalScenariosIntegrationSuite) authMiddleware(next http.Handler) h
 		ctx := auth.WithPrincipal(r.Context(), principal)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func (s *CanonicalScenariosIntegrationSuite) setupTestDB() manager.Manager {
-	ctx := context.Background()
-
-	req := tc.ContainerRequest{
-		Image:        pgImage,
-		ExposedPorts: []string{"5432/tcp"},
-		Env: map[string]string{
-			"POSTGRES_USER":     "test",
-			"POSTGRES_PASSWORD": "test",
-			"POSTGRES_DB":       "testdb",
-		},
-		WaitingFor: wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).
-			WithStartupTimeout(60 * time.Second),
-	}
-
-	container, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	s.Require().NoError(err)
-
-	s.T().Cleanup(func() {
-		_ = container.Terminate(context.Background())
-	})
-
-	host, err := container.Host(ctx)
-	s.Require().NoError(err)
-
-	mapped, err := container.MappedPort(ctx, "5432")
-	s.Require().NoError(err)
-
-	portNum, err := strconv.Atoi(mapped.Port())
-	s.Require().NoError(err)
-
-	cfg := dbpostgres.PostgresConfig{
-		DSN: fmt.Sprintf("postgres://test:test@%s:%d/testdb?sslmode=disable&search_path=mecontrola,public", host, portNum),
-	}
-
-	mgr, err := manager.New(cfg)
-	s.Require().NoError(err)
-
-	dsn := fmt.Sprintf("pgx5://test:test@%s:%d/testdb?sslmode=disable", host, portNum)
-
-	migrator, err := migration.New(mgr, migration.EmbedFS{FS: migrations.FS, Root: "."}, migration.WithDSN(dsn))
-	s.Require().NoError(err)
-
-	if err = migrator.Up(ctx); err != nil && !errors.Is(err, migration.ErrNoChange) {
-		s.Require().NoError(err, "failed to run migrations")
-	}
-
-	return mgr
 }
 
 func (s *CanonicalScenariosIntegrationSuite) TestCCB1_HighInequivoco() {
@@ -220,7 +155,7 @@ func (s *CanonicalScenariosIntegrationSuite) TestCCB4_KindMismatch() {
 
 func (s *CanonicalScenariosIntegrationSuite) TestCCB5_EmpateAltaConfianca() {
 	ctx := context.Background()
-	_, err := s.mgr.DBTX(ctx).ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO mecontrola.category_dictionary (id, category_id, kind, term, signal_type, confidence, is_ambiguous)
 		VALUES
 			(gen_random_uuid(), (SELECT id FROM mecontrola.categories WHERE kind = 'expense' AND parent_id IS NOT NULL LIMIT 1), 'expense', 'termounicoccb5', 'canonical_name', 'high', false),

@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
@@ -23,7 +23,7 @@ import (
 type UserRepositoryIntegrationSuite struct {
 	suite.Suite
 	ctx     context.Context
-	mgr     manager.Manager
+	db      *sqlx.DB
 	o11y    *noop.Provider
 	factory interfaces.RepositoryFactory
 }
@@ -37,14 +37,14 @@ func (s *UserRepositoryIntegrationSuite) SetupTest() {
 }
 
 func (s *UserRepositoryIntegrationSuite) SetupSuite() {
-	mgr, _ := setupTestDB(s.T())
-	s.mgr = mgr
+	db, _ := setupTestDB(s.T())
+	s.db = db
 	s.o11y = noop.NewProvider()
 	s.factory = repositories.NewRepositoryFactory(s.o11y)
 }
 
 func (s *UserRepositoryIntegrationSuite) newRepo() interfaces.UserRepository {
-	return s.factory.UserRepository(s.mgr.DBTX(s.ctx))
+	return s.factory.UserRepository(s.db)
 }
 
 func (s *UserRepositoryIntegrationSuite) newNumber(number string) valueobjects.WhatsAppNumber {
@@ -166,7 +166,7 @@ func (s *UserRepositoryIntegrationSuite) TestUpsertByWhatsAppNumber() {
 				}
 
 				deletedAt := time.Now().UTC().Add(-31 * 24 * time.Hour)
-				_, err = s.mgr.DBTX(s.ctx).ExecContext(
+				_, err = s.db.ExecContext(
 					s.ctx,
 					`UPDATE users SET status = 'DELETED', deleted_at = $1, updated_at = $1 WHERE id = $2`,
 					deletedAt,
@@ -186,7 +186,7 @@ func (s *UserRepositoryIntegrationSuite) TestUpsertByWhatsAppNumber() {
 
 				var oldStatus string
 				var oldDeletedAt sql.NullTime
-				err := s.mgr.DBTX(s.ctx).QueryRowContext(
+				err := s.db.QueryRowContext(
 					s.ctx,
 					`SELECT status, deleted_at FROM users WHERE id = $1`,
 					out.first.ID(),
@@ -400,7 +400,7 @@ func (s *UserRepositoryIntegrationSuite) TestConstraintsAndHistory() {
 				}
 
 				var count int
-				err = s.mgr.DBTX(s.ctx).QueryRowContext(
+				err = s.db.QueryRowContext(
 					s.ctx,
 					`SELECT COUNT(*) FROM user_whatsapp_history WHERE id = $1`,
 					entry.ID,
@@ -415,7 +415,7 @@ func (s *UserRepositoryIntegrationSuite) TestConstraintsAndHistory() {
 		{
 			name: "deve rejeitar usuario deletado sem deleted at",
 			setup: func(repo interfaces.UserRepository, args args) result {
-				_, err := s.mgr.DBTX(s.ctx).ExecContext(
+				_, err := s.db.ExecContext(
 					s.ctx,
 					`INSERT INTO users (id, whatsapp_number, status, created_at, updated_at, deleted_at)
 					 VALUES (gen_random_uuid(), '+5511988880099', 'DELETED', now(), now(), NULL)`,

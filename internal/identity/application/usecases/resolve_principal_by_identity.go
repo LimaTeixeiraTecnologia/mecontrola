@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -22,7 +23,7 @@ import (
 const prefixResolvePrincipalByIdentity = "identity.usecase.resolve_principal_by_identity:"
 
 type ResolvePrincipalByIdentity struct {
-	uow             uow.UnitOfWork[EstablishResult]
+	uow             uow.UnitOfWork
 	factory         interfaces.RepositoryFactory
 	workflow        services.IdentityResolutionWorkflow
 	o11y            observability.Observability
@@ -34,7 +35,7 @@ type ResolvePrincipalByIdentity struct {
 }
 
 func NewResolvePrincipalByIdentity(
-	u uow.UnitOfWork[EstablishResult],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	o11y observability.Observability,
 ) *ResolvePrincipalByIdentity {
@@ -100,7 +101,7 @@ func (u *ResolvePrincipalByIdentity) Execute(ctx context.Context, in input.Resol
 		observability.String("external_id_masked", externalID.Masked()),
 	)
 
-	res, execErr := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
+	res, execErr := uow.Do(ctx, u.uow, func(ctx context.Context, tx database.DBTX) (EstablishResult, error) {
 		return u.resolve(ctx, tx, channel, externalID)
 	})
 

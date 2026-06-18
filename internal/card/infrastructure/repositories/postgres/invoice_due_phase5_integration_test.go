@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	cardrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/repositories"
 
@@ -24,7 +24,7 @@ import (
 
 type InvoiceDuePhase5Suite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -33,25 +33,24 @@ func TestInvoiceDuePhase5Suite(t *testing.T) {
 }
 
 func (s *InvoiceDuePhase5Suite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = cardrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *InvoiceDuePhase5Suite) SetupTest() {}
 
 func (s *InvoiceDuePhase5Suite) cardRepo() interfaces.CardRepository {
-	return s.factory.CardRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.CardRepository(s.db)
 }
 
 func (s *InvoiceDuePhase5Suite) ledgerRepo() interfaces.InvoiceDueAlertSentRepository {
-	return s.factory.InvoiceDueAlertSentRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.InvoiceDueAlertSentRepository(s.db)
 }
 
 func (s *InvoiceDuePhase5Suite) insertUser(ctx context.Context) string {
 	userID := uuid.New().String()
 	number := fmt.Sprintf("+5511%09d", time.Now().UnixNano()%1000000000)
-	db := s.mgr.DBTX(ctx)
-	_, err := db.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		 VALUES ($1, $2, 'ACTIVE', now(), now())`,
 		userID, number,

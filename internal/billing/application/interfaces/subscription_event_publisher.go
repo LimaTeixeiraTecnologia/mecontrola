@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 )

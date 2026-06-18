@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
@@ -17,13 +18,13 @@ import (
 
 type ListAlerts struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[output.ListAlertsOutput]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewListAlerts(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[output.ListAlertsOutput],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *ListAlerts {
 	return &ListAlerts{
@@ -55,7 +56,7 @@ func (uc *ListAlerts) Execute(ctx context.Context, in input.ListAlertsInput) (ou
 		Limit:      cmd.Limit,
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (output.ListAlertsOutput, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (output.ListAlertsOutput, error) {
 		alerts := uc.factory.AlertRepository(tx)
 		items, nextCursor, listErr := alerts.ListForUser(ctx, cmd.UserID, query)
 		if listErr != nil {

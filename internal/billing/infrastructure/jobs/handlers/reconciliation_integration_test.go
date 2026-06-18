@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -27,10 +28,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
-func setupIntegrationDB(t *testing.T) manager.Manager {
+func setupIntegrationDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	mgr, _ := testcontainer.Postgres(t)
-	return mgr
+	db, _ := testcontainer.Postgres(t)
+	return db
 }
 
 func makeMonthlyPlan(t *testing.T) valueobjects.Plan {
@@ -53,7 +54,7 @@ func makeFunnelToken(t *testing.T, raw string) valueobjects.FunnelToken {
 
 type ReconciliationIntegrationSuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -64,33 +65,34 @@ func TestReconciliationIntegration(t *testing.T) {
 func (s *ReconciliationIntegrationSuite) SetupTest() {}
 
 func (s *ReconciliationIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *ReconciliationIntegrationSuite) buildJob(kiwifyMock interfaces.KiwifyClient) *handlers.ReconciliationJob {
 	o11y := noop.NewProvider()
-	db := s.mgr.DBTX(context.Background())
+	db := s.db
 
 	publisherMock := ucmocks.NewSubscriptionEventPublisher(s.T())
 	publisherMock.EXPECT().PublishActivated(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	publisherMock.EXPECT().PublishRefunded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	saleApproved := usecases.NewProcessSaleApproved(
-		uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y)),
+		uow.NewUnitOfWork(s.db),
 		s.factory,
 		publisherMock,
 		o11y,
 	)
 	refundUC := usecases.NewProcessRefundOrChargeback(
-		uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y)),
+		uow.NewUnitOfWork(s.db),
 		s.factory,
 		publisherMock,
 		o11y,
 	)
-	reconcile := usecases.NewReconcileSubscriptions(db, s.factory, kiwifyMock, saleApproved, refundUC, o11y)
-	runReconciliation := usecases.NewRunReconciliation(db, s.factory, reconcile, o11y)
+	checkpointRepo := s.factory.ReconciliationCheckpointRepository(db)
+	reconcile := usecases.NewReconcileSubscriptions(checkpointRepo, kiwifyMock, saleApproved, refundUC, o11y)
+	runReconciliation := usecases.NewRunReconciliation(checkpointRepo, reconcile, o11y)
 
 	cfg := configs.KiwifyConfig{ReconciliationInterval: "@hourly"}
 	return handlers.NewReconciliationJob(runReconciliation, cfg)
@@ -98,7 +100,7 @@ func (s *ReconciliationIntegrationSuite) buildJob(kiwifyMock interfaces.KiwifyCl
 
 func (s *ReconciliationIntegrationSuite) insertActiveSubscription(orderID, funnelToken string) {
 	ctx := context.Background()
-	db := s.mgr.DBTX(ctx)
+	db := s.db
 	plan := makeMonthlyPlan(s.T())
 	ft := makeFunnelToken(s.T(), funnelToken)
 	now := time.Now().UTC()
@@ -116,7 +118,7 @@ func (s *ReconciliationIntegrationSuite) insertActiveSubscription(orderID, funne
 
 func (s *ReconciliationIntegrationSuite) setCheckpoint(name string, watermark time.Time) {
 	ctx := context.Background()
-	db := s.mgr.DBTX(ctx)
+	db := s.db
 	repo := s.factory.ReconciliationCheckpointRepository(db)
 	s.Require().NoError(repo.Set(ctx, name, watermark))
 }
@@ -141,7 +143,7 @@ func (s *ReconciliationIntegrationSuite) TestReconcile() {
 				kiwifyMock.EXPECT().ListSalesUpdatedSince(mock.Anything, mock.Anything, mock.Anything, 1).Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).Once()
 				job := s.buildJob(kiwifyMock)
 				s.Require().NoError(job.Run(ctx))
-				subRepo := s.factory.SubscriptionRepository(s.mgr.DBTX(ctx))
+				subRepo := s.factory.SubscriptionRepository(s.db)
 				sub, findErr := subRepo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(findErr)
 				s.Equal(valueobjects.StatusRefunded, sub.Status())
@@ -157,14 +159,14 @@ func (s *ReconciliationIntegrationSuite) TestReconcile() {
 				s.insertActiveSubscription(orderID, funnelToken)
 				s.setCheckpoint("kiwify_sales", now.Add(-time.Hour))
 				refundTime := now.Add(-30 * time.Minute)
-				processedRepo := s.factory.ProcessedEventRepository(s.mgr.DBTX(ctx))
+				processedRepo := s.factory.ProcessedEventRepository(s.db)
 				s.Require().NoError(processedRepo.MarkApplied(ctx, "order_refunded:"+saleID, "order_refunded", saleID, refundTime))
 				sale := interfaces.KiwifySale{ID: saleID, OrderID: orderID, Status: "refunded", OccurredAt: refundTime, UpdatedAt: refundTime}
 				kiwifyMock := ucmocks.NewKiwifyClient(s.T())
 				kiwifyMock.EXPECT().ListSalesUpdatedSince(mock.Anything, mock.Anything, mock.Anything, 1).Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).Once()
 				job := s.buildJob(kiwifyMock)
 				s.Require().NoError(job.Run(ctx))
-				subRepo := s.factory.SubscriptionRepository(s.mgr.DBTX(ctx))
+				subRepo := s.factory.SubscriptionRepository(s.db)
 				sub, findErr := subRepo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(findErr)
 				s.Equal(valueobjects.StatusActive, sub.Status())
@@ -181,7 +183,7 @@ func (s *ReconciliationIntegrationSuite) TestReconcile() {
 
 type HousekeepingIntegrationSuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -192,14 +194,14 @@ func TestHousekeepingIntegration(t *testing.T) {
 func (s *HousekeepingIntegrationSuite) SetupTest() {}
 
 func (s *HousekeepingIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *HousekeepingIntegrationSuite) persistEvent(envelopeID string, receivedAt time.Time) {
 	ctx := context.Background()
-	db := s.mgr.DBTX(ctx)
+	db := s.db
 	rawBody, _ := json.Marshal(map[string]any{"trigger": "order_approved"})
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO billing_kiwify_events (envelope_id, trigger, raw_body, received_at, signature_status)
@@ -211,7 +213,7 @@ func (s *HousekeepingIntegrationSuite) persistEvent(envelopeID string, receivedA
 
 func (s *HousekeepingIntegrationSuite) countEvents(envelopeID string) int {
 	ctx := context.Background()
-	db := s.mgr.DBTX(ctx)
+	db := s.db
 	var count int
 	err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`,
@@ -229,14 +231,14 @@ func (s *HousekeepingIntegrationSuite) TestHousekeeping() {
 		{
 			name: "deve remover linhas antigas",
 			expect: func(ctx context.Context) {
-				db := s.mgr.DBTX(ctx)
+				db := s.db
 				now := time.Now().UTC()
 				oldID := fmt.Sprintf("hk-old-%d", now.UnixNano())
 				recentID := fmt.Sprintf("hk-recent-%d", now.UnixNano())
 				s.persistEvent(oldID, now.Add(-91*24*time.Hour))
 				s.persistEvent(recentID, now.Add(-time.Hour))
 				cfg := configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 500}
-				job := handlers.NewKiwifyEventsHousekeepingJob(usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, noop.NewProvider()), cfg)
+				job := handlers.NewKiwifyEventsHousekeepingJob(usecases.NewCleanupKiwifyEvents(s.factory.KiwifyEventRepository(db), cfg, noop.NewProvider()), cfg)
 				s.Require().NoError(job.Run(ctx))
 				s.Equal(0, s.countEvents(oldID))
 				s.Equal(1, s.countEvents(recentID))
@@ -245,12 +247,12 @@ func (s *HousekeepingIntegrationSuite) TestHousekeeping() {
 		{
 			name: "deve preservar linhas dentro da janela de retencao",
 			expect: func(ctx context.Context) {
-				db := s.mgr.DBTX(ctx)
+				db := s.db
 				now := time.Now().UTC()
 				boundaryID := fmt.Sprintf("hk-boundary-%d", now.UnixNano())
 				s.persistEvent(boundaryID, now.Add(-89*24*time.Hour))
 				cfg := configs.BillingConfig{KiwifyEventsRetentionDays: 90, KiwifyEventsHousekeepingSchedule: "@daily", KiwifyEventsHousekeepingBatch: 500}
-				job := handlers.NewKiwifyEventsHousekeepingJob(usecases.NewCleanupKiwifyEvents(db, s.factory, cfg, noop.NewProvider()), cfg)
+				job := handlers.NewKiwifyEventsHousekeepingJob(usecases.NewCleanupKiwifyEvents(s.factory.KiwifyEventRepository(db), cfg, noop.NewProvider()), cfg)
 				s.Require().NoError(job.Run(ctx))
 				s.Equal(1, s.countEvents(boundaryID))
 			},

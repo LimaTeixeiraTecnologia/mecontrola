@@ -10,8 +10,9 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
@@ -298,7 +299,7 @@ func (r *subscriptionRepository) scanRow(
 	ctx context.Context,
 	span observability.Span,
 	op string,
-	row database.Row,
+	row *sql.Row,
 ) (entities.Subscription, error) {
 	var (
 		id, funnelToken, orderID, planCode, status string

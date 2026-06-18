@@ -7,9 +7,10 @@ package mocks
 import (
 	"context"
 
+	mock "github.com/stretchr/testify/mock"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
-	mock "github.com/stretchr/testify/mock"
 )
 
 // NewDictionaryRepository creates a new instance of DictionaryRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

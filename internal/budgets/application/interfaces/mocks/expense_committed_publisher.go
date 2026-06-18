@@ -7,9 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/events"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 // NewExpenseCommittedPublisher creates a new instance of ExpenseCommittedPublisher. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

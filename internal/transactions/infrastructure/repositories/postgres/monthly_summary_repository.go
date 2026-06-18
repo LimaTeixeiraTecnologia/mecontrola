@@ -2,14 +2,16 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
@@ -159,7 +161,7 @@ func buildActiveSinceQuery(since time.Time, cursor interfaces.Cursor, batchSize 
 	return q, []any{since, cursorUserID, cursorRefMonth, batchSize + 1}
 }
 
-func scanSummaryKeys(rows database.Rows) ([]interfaces.MonthlySummaryKey, error) {
+func scanSummaryKeys(rows *sql.Rows) ([]interfaces.MonthlySummaryKey, error) {
 	var keys []interfaces.MonthlySummaryKey
 	for rows.Next() {
 		var uid uuid.UUID
@@ -252,7 +254,7 @@ func buildEntriesQuery(userID uuid.UUID, refMonth valueobjects.RefMonth, cursor 
 	return q, []any{userID, refMonth.String(), cursorCreatedAt, cursorID, limit + 1}
 }
 
-func scanMonthlyEntries(rows database.Rows) ([]interfaces.MonthlyEntry, error) {
+func scanMonthlyEntries(rows *sql.Rows) ([]interfaces.MonthlyEntry, error) {
 	var entries []interfaces.MonthlyEntry
 	for rows.Next() {
 		var (

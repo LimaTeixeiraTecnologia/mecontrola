@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
@@ -26,8 +25,7 @@ const (
 )
 
 type SendOutreach struct {
-	mgr          manager.Manager
-	factory      appinterfaces.RepositoryFactory
+	repo         appinterfaces.MagicTokenRepository
 	gateway      appinterfaces.OutreachChannelGateway
 	cipher       appinterfaces.TokenCipher
 	idGen        id.Generator
@@ -38,8 +36,7 @@ type SendOutreach struct {
 }
 
 func NewSendOutreach(
-	mgr manager.Manager,
-	factory appinterfaces.RepositoryFactory,
+	repo appinterfaces.MagicTokenRepository,
 	gateway appinterfaces.OutreachChannelGateway,
 	cipher appinterfaces.TokenCipher,
 	idGen id.Generator,
@@ -53,8 +50,7 @@ func NewSendOutreach(
 		"1",
 	)
 	return &SendOutreach{
-		mgr:          mgr,
-		factory:      factory,
+		repo:         repo,
 		gateway:      gateway,
 		cipher:       cipher,
 		idGen:        idGen,
@@ -70,15 +66,14 @@ func (uc *SendOutreach) Execute(ctx context.Context) error {
 	defer span.End()
 
 	olderThan := time.Now().UTC().Add(-uc.outreachGap)
-	repo := uc.factory.MagicTokenRepository(uc.mgr.DBTX(ctx))
 
-	candidates, err := repo.FindPaidForOutreach(ctx, olderThan, outreachBatchSize)
+	candidates, err := uc.repo.FindPaidForOutreach(ctx, olderThan, outreachBatchSize)
 	if err != nil {
 		return fmt.Errorf("onboarding: send outreach: find candidates: %w", err)
 	}
 
 	for _, token := range candidates {
-		if err := uc.sendForToken(ctx, repo, token); err != nil {
+		if err := uc.sendForToken(ctx, token); err != nil {
 			slog.WarnContext(ctx, "onboarding.outreach.failed",
 				"token_id", token.ID(),
 				"error", err.Error(),
@@ -91,7 +86,6 @@ func (uc *SendOutreach) Execute(ctx context.Context) error {
 
 func (uc *SendOutreach) sendForToken(
 	ctx context.Context,
-	repo appinterfaces.MagicTokenRepository,
 	token entities.MagicToken,
 ) error {
 	channel := uc.resolveChannel(token)
@@ -101,7 +95,7 @@ func (uc *SendOutreach) sendForToken(
 	}
 
 	now := time.Now().UTC()
-	if err := repo.UpdateMarkOutreachSent(ctx, token.ID(), now); err != nil {
+	if err := uc.repo.UpdateMarkOutreachSent(ctx, token.ID(), now); err != nil {
 		return fmt.Errorf("onboarding: send outreach: mark sent: %w", err)
 	}
 
@@ -112,9 +106,9 @@ func (uc *SendOutreach) sendForToken(
 
 	switch channel {
 	case outreachChannelTelegram:
-		return uc.sendTelegram(ctx, repo, token, clearToken)
+		return uc.sendTelegram(ctx, token, clearToken)
 	default:
-		return uc.sendWhatsApp(ctx, repo, token, clearToken)
+		return uc.sendWhatsApp(ctx, token, clearToken)
 	}
 }
 
@@ -130,7 +124,6 @@ func (uc *SendOutreach) resolveChannel(token entities.MagicToken) string {
 
 func (uc *SendOutreach) sendWhatsApp(
 	ctx context.Context,
-	repo appinterfaces.MagicTokenRepository,
 	token entities.MagicToken,
 	clearToken string,
 ) error {
@@ -150,7 +143,7 @@ func (uc *SendOutreach) sendWhatsApp(
 			return fmt.Errorf("onboarding: send outreach: send template (4xx, sem reset): %w", err)
 		}
 
-		if resetErr := repo.UpdateMarkOutreachReset(ctx, token.ID()); resetErr != nil {
+		if resetErr := uc.repo.UpdateMarkOutreachReset(ctx, token.ID()); resetErr != nil {
 			slog.WarnContext(ctx, "onboarding.outreach.reset_failed",
 				"token_id", token.ID(),
 				"channel", outreachChannelWhatsApp,
@@ -184,14 +177,13 @@ func (uc *SendOutreach) sendWhatsApp(
 
 func (uc *SendOutreach) sendTelegram(
 	ctx context.Context,
-	repo appinterfaces.MagicTokenRepository,
 	token entities.MagicToken,
 	clearToken string,
 ) error {
 	text := fmt.Sprintf(telegramOutreachText, clearToken)
 	err := uc.gateway.SendText(ctx, outreachChannelTelegram, token.TelegramExternalID(), text)
 	if err != nil {
-		if resetErr := repo.UpdateMarkOutreachReset(ctx, token.ID()); resetErr != nil {
+		if resetErr := uc.repo.UpdateMarkOutreachReset(ctx, token.ID()); resetErr != nil {
 			slog.WarnContext(ctx, "onboarding.outreach.reset_failed",
 				"token_id", token.ID(),
 				"channel", outreachChannelTelegram,

@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
 	catusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
@@ -20,7 +20,7 @@ import (
 
 type CategoriesReaderAdapterIntegrationSuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	adapter config.CategoriesReader
 }
 
@@ -29,11 +29,10 @@ func TestCategoriesReaderAdapterIntegrationSuite(t *testing.T) {
 }
 
 func (s *CategoriesReaderAdapterIntegrationSuite) SetupSuite() {
-	s.mgr, _ = testcontainer.Postgres(s.T())
+	s.db, _ = testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
-	db := s.mgr.DBTX(context.Background())
-	categoryRepo := catrepo.NewCategoryRepository(o11y, db)
-	versionReader := catrepo.NewVersionReader(o11y, db)
+	categoryRepo := catrepo.NewCategoryRepository(o11y, s.db)
+	versionReader := catrepo.NewVersionReader(o11y, s.db)
 	resolveUC := catusecases.NewResolveBySlug(categoryRepo, o11y)
 	validateUC := catusecases.NewValidateSubcategory(categoryRepo, o11y)
 	s.adapter = txpostgres.NewCategoriesReaderAdapter(resolveUC, validateUC, versionReader, o11y)

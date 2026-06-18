@@ -42,7 +42,7 @@ func (s *AlertRepositorySuite) newAlert(userID uuid.UUID) entities.Alert {
 func (s *AlertRepositorySuite) TestInsertAlert() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newAlertRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newAlertRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	alert := s.newAlert(userID)
@@ -53,7 +53,7 @@ func (s *AlertRepositorySuite) TestInsertAlert() {
 func (s *AlertRepositorySuite) TestCountDelivered() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newAlertRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newAlertRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-01")
@@ -83,7 +83,7 @@ func (s *AlertRepositorySuite) TestCountDelivered() {
 func (s *AlertRepositorySuite) TestListForUser() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newAlertRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newAlertRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 
@@ -102,7 +102,7 @@ func (s *AlertRepositorySuite) TestListForUser() {
 func (s *AlertRepositorySuite) TestListForUserCursorPagination() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newAlertRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newAlertRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 
@@ -133,7 +133,7 @@ func (s *AlertRepositorySuite) TestListForUserCursorPagination() {
 func (s *AlertRepositorySuite) TestCountDeliveredExcludesNonVisible() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newAlertRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newAlertRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-01")

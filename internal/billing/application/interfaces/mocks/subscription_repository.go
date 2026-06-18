@@ -8,10 +8,11 @@ import (
 	"context"
 	"time"
 
+	mock "github.com/stretchr/testify/mock"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
-	mock "github.com/stretchr/testify/mock"
 )
 
 // NewSubscriptionRepository creates a new instance of SubscriptionRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

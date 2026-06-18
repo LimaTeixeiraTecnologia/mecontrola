@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
@@ -20,14 +21,14 @@ import (
 var ErrRenewedWithoutBaseSubscription = errors.New("billing: renewal received for unknown kiwify_subscription_id")
 
 type ProcessSubscriptionRenewed struct {
-	uow       uow.UnitOfWork[entities.Subscription]
+	uow       uow.UnitOfWork
 	factory   interfaces.RepositoryFactory
 	publisher interfaces.SubscriptionEventPublisher
 	o11y      observability.Observability
 }
 
 func NewProcessSubscriptionRenewed(
-	u uow.UnitOfWork[entities.Subscription],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.SubscriptionEventPublisher,
 	o11y observability.Observability,
@@ -46,7 +47,7 @@ func (uc *ProcessSubscriptionRenewed) Execute(ctx context.Context, in input.Proc
 
 	eventKey := fmt.Sprintf("subscription_renewed:%s:%s", kiwifySubID.String(), in.OccurredAt.UTC().Format("2006-01-02T15:04:05Z07:00"))
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		return uc.applyRenewal(ctx, tx, in, kiwifySubID, eventKey)
 	})
 

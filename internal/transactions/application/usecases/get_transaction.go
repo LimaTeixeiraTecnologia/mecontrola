@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -16,13 +17,13 @@ import (
 
 type GetTransaction struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[output.Transaction]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewGetTransaction(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[output.Transaction],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *GetTransaction {
 	return &GetTransaction{
@@ -46,7 +47,7 @@ func (uc *GetTransaction) Execute(ctx context.Context, txID string) (output.Tran
 		return output.Transaction{}, fmt.Errorf("transactions/get_transaction: transaction_id inválido: %w", err)
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (output.Transaction, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (output.Transaction, error) {
 		repo := uc.factory.TransactionRepository(db)
 		tx, getErr := repo.GetByID(ctx, parsedID, principal.UserID)
 		if getErr != nil {

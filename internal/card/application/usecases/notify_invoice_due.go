@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
@@ -40,8 +39,7 @@ type NotifyInvoiceDueResult struct {
 }
 
 type NotifyInvoiceDue struct {
-	mgr             manager.Manager
-	factory         interfaces.RepositoryFactory
+	repo            interfaces.InvoiceDueAlertSentRepository
 	channelResolver interfaces.UserChannelResolver
 	channelGateway  notification.ChannelGateway
 	location        *time.Location
@@ -50,8 +48,7 @@ type NotifyInvoiceDue struct {
 }
 
 func NewNotifyInvoiceDue(
-	mgr manager.Manager,
-	factory interfaces.RepositoryFactory,
+	repo interfaces.InvoiceDueAlertSentRepository,
 	channelResolver interfaces.UserChannelResolver,
 	channelGateway notification.ChannelGateway,
 	location *time.Location,
@@ -63,8 +60,7 @@ func NewNotifyInvoiceDue(
 		"1",
 	)
 	return &NotifyInvoiceDue{
-		mgr:             mgr,
-		factory:         factory,
+		repo:            repo,
 		channelResolver: channelResolver,
 		channelGateway:  channelGateway,
 		location:        location,
@@ -77,9 +73,7 @@ func (uc *NotifyInvoiceDue) Execute(ctx context.Context, in NotifyInvoiceDueInpu
 	ctx, span := uc.o11y.Tracer().Start(ctx, "card.usecase.notify_invoice_due")
 	defer span.End()
 
-	repo := uc.factory.InvoiceDueAlertSentRepository(uc.mgr.DBTX(ctx))
-
-	notified, err := repo.IsNotified(ctx, in.UserID, in.CardID, in.DueDate)
+	notified, err := uc.repo.IsNotified(ctx, in.UserID, in.CardID, in.DueDate)
 	if err != nil {
 		if errors.Is(err, interfaces.ErrInvoiceDueAlertRecordMissing) {
 			uc.recordOutcome(ctx, "unknown", NotifyInvoiceDueOutcomeRecordMissing)
@@ -105,7 +99,7 @@ func (uc *NotifyInvoiceDue) Execute(ctx context.Context, in NotifyInvoiceDueInpu
 
 	text := uc.renderText(in)
 
-	updated, err := repo.MarkNotified(ctx, in.UserID, in.CardID, in.DueDate, pref.Channel, time.Now().UTC())
+	updated, err := uc.repo.MarkNotified(ctx, in.UserID, in.CardID, in.DueDate, pref.Channel, time.Now().UTC())
 	if err != nil {
 		uc.recordOutcome(ctx, pref.Channel, NotifyInvoiceDueOutcomeChannelFailed)
 		return NotifyInvoiceDueResult{Outcome: NotifyInvoiceDueOutcomeChannelFailed, Channel: pref.Channel}, fmt.Errorf("card: notify invoice due: mark notified: %w", err)

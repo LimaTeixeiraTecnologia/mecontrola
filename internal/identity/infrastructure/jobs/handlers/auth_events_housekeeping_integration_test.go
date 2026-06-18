@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
@@ -24,7 +24,7 @@ import (
 type AuthEventsHousekeepingIntegrationSuite struct {
 	suite.Suite
 	ctx context.Context
-	mgr manager.Manager
+	db  *sqlx.DB
 }
 
 func TestAuthEventsHousekeepingIntegrationSuite(t *testing.T) {
@@ -36,14 +36,14 @@ func (s *AuthEventsHousekeepingIntegrationSuite) SetupTest() {
 }
 
 func (s *AuthEventsHousekeepingIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 }
 
 func (s *AuthEventsHousekeepingIntegrationSuite) newJob(cfg configs.IdentityConfig) *jobhandlers.AuthEventsHousekeepingJob {
 	o11y := noop.NewProvider()
 	factory := identityrepos.NewRepositoryFactory(o11y)
-	cleanup := usecases.NewCleanupAuthEvents(s.mgr, factory, cfg, o11y)
+	cleanup := usecases.NewCleanupAuthEvents(factory.AuthEventsRepository(s.db), cfg, o11y)
 	return jobhandlers.NewAuthEventsHousekeepingJob(cleanup, cfg)
 }
 
@@ -51,7 +51,7 @@ func (s *AuthEventsHousekeepingIntegrationSuite) TestRunDeletes25kIn3Batches() {
 	s.Run("deve apagar 25k linhas em 3 lotes verificaveis", func() {
 		o11y := noop.NewProvider()
 		factory := identityrepos.NewRepositoryFactory(o11y)
-		repo := factory.AuthEventsRepository(s.mgr.DBTX(s.ctx))
+		repo := factory.AuthEventsRepository(s.db)
 
 		oldTime := time.Now().UTC().Add(-200 * 24 * time.Hour) // 200 dias atrás (além dos 180)
 
@@ -73,7 +73,7 @@ func (s *AuthEventsHousekeepingIntegrationSuite) TestRunDeletes25kIn3Batches() {
 		s.Require().NoError(err)
 
 		var count int
-		err = s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+		err = s.db.QueryRowContext(s.ctx,
 			"SELECT COUNT(*) FROM auth_events WHERE occurred_at < $1",
 			time.Now().UTC().Add(-180*24*time.Hour),
 		).Scan(&count)
@@ -96,8 +96,8 @@ func (s *AuthEventsHousekeepingIntegrationSuite) TestRunIdempotent() {
 	})
 }
 
-func setupJobIntegrationDB(t *testing.T) manager.Manager {
+func setupJobIntegrationDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	mgr, _ := testcontainer.Postgres(t)
-	return mgr
+	db, _ := testcontainer.Postgres(t)
+	return db
 }

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
@@ -31,7 +32,7 @@ type cardPurchaseCreator interface {
 type MaterializeRecurringForDay struct {
 	db                 database.DBTX
 	factory            interfaces.RepositoryFactory
-	uow                uow.UnitOfWork[struct{}]
+	uow                uow.UnitOfWork
 	workflow           services.RecurringWorkflow
 	createTransaction  transactionCreator
 	createCardPurchase cardPurchaseCreator
@@ -42,7 +43,7 @@ type MaterializeRecurringForDay struct {
 func NewMaterializeRecurringForDay(
 	db database.DBTX,
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	workflow services.RecurringWorkflow,
 	createTransaction transactionCreator,
 	createCardPurchase cardPurchaseCreator,
@@ -113,7 +114,7 @@ func (uc *MaterializeRecurringForDay) materializeOne(
 
 	shouldProceed := false
 
-	_, lockCheckErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (struct{}, error) {
+	_, lockCheckErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (struct{}, error) {
 		materializationRepo := uc.factory.RecurringMaterializationRepository(db)
 
 		acquired, _, lockErr := materializationRepo.TryAdvisoryLock(ctx, decision.TemplateID, decision.RefMonth)

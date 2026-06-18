@@ -68,10 +68,9 @@ func (s *RecurringMaterializerJobIntegrationSuite) TestJobRunsCorrectly() {
 }
 
 func (s *RecurringMaterializerJobIntegrationSuite) TestTwoExecutions_OnlyOneMaterializationRow() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	s.Require().NoError(err)

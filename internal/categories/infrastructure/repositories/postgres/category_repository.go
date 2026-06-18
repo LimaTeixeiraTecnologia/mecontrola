@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 var ErrCategoryNotFound = fmt.Errorf("categories: category not found: %w", interfaces.ErrNotFound)
@@ -138,7 +138,7 @@ func (r *categoryRepository) buildListQuery(q interfaces.CategoryQuery) listQuer
 	return listQuery{sql: sql, args: args}
 }
 
-func (r *categoryRepository) scanCategories(rows database.Rows) ([]entities.Category, error) {
+func (r *categoryRepository) scanCategories(rows *sql.Rows) ([]entities.Category, error) {
 	var categories []entities.Category
 
 	for rows.Next() {
@@ -156,7 +156,7 @@ func (r *categoryRepository) scanCategories(rows database.Rows) ([]entities.Cate
 	return categories, nil
 }
 
-func (r *categoryRepository) scanCategoryFromRows(rows database.Rows) (entities.Category, error) {
+func (r *categoryRepository) scanCategoryFromRows(rows *sql.Rows) (entities.Category, error) {
 	var c entities.Category
 	var kindStr, allocationTypeStr string
 	var parentID uuid.NullUUID
@@ -197,7 +197,7 @@ func (r *categoryRepository) scanCategoryFromRows(rows database.Rows) (entities.
 	return c, nil
 }
 
-func (r *categoryRepository) scanCategory(row database.Row) (entities.Category, error) {
+func (r *categoryRepository) scanCategory(row *sql.Row) (entities.Category, error) {
 	var c entities.Category
 	var kindStr, allocationTypeStr string
 	var parentID uuid.NullUUID

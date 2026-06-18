@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -25,7 +25,7 @@ func TestStoragePostgresIntegrationSuite(t *testing.T) {
 
 func (s *StoragePostgresIntegrationSuite) SetupTest() {}
 
-func (s *StoragePostgresIntegrationSuite) setupOutboxDB() manager.Manager {
+func (s *StoragePostgresIntegrationSuite) setupOutboxDB() *sqlx.DB {
 	mgr, _ := testcontainer.Postgres(s.T())
 	return mgr
 }
@@ -61,18 +61,18 @@ func (s *StoragePostgresIntegrationSuite) newEventWithUserID(userID string) outb
 	return event
 }
 
-func (s *StoragePostgresIntegrationSuite) countStatus(mgr manager.Manager, id string) int {
+func (s *StoragePostgresIntegrationSuite) countStatus(mgr *sqlx.DB, id string) int {
 	ctx := context.Background()
 	var status int
-	err := mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT status FROM outbox_events WHERE id = $1`, id).Scan(&status)
+	err := mgr.QueryRowContext(ctx, `SELECT status FROM outbox_events WHERE id = $1`, id).Scan(&status)
 	s.Require().NoError(err)
 	return status
 }
 
-func (s *StoragePostgresIntegrationSuite) countRows(mgr manager.Manager, id string) int {
+func (s *StoragePostgresIntegrationSuite) countRows(mgr *sqlx.DB, id string) int {
 	ctx := context.Background()
 	var total int
-	err := mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE id = $1`, id).Scan(&total)
+	err := mgr.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE id = $1`, id).Scan(&total)
 	s.Require().NoError(err)
 	return total
 }
@@ -84,14 +84,14 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 
 	scenarios := []struct {
 		name   string
-		setup  func(manager.Manager, outbox.OutboxRepository, *observed)
-		act    func(manager.Manager, outbox.OutboxRepository, *observed)
-		expect func(manager.Manager, *observed)
+		setup  func(*sqlx.DB, outbox.OutboxRepository, *observed)
+		act    func(*sqlx.DB, outbox.OutboxRepository, *observed)
+		expect func(*sqlx.DB, *observed)
 	}{
 		{
 			name:  "deve manter insert idempotente por id",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, _ *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, _ *observed) {
 				ctx := context.Background()
 				event := s.newEvent("")
 				s.NoError(storage.Insert(ctx, event, 10))
@@ -100,36 +100,36 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.Equal(1, s.countRows(mgr, event.ID))
 				s.Equal(int(outbox.StatusPending), s.countStatus(mgr, event.ID))
 			},
-			expect: func(manager.Manager, *observed) {},
+			expect: func(*sqlx.DB, *observed) {},
 		},
 		{
 			name:  "deve transicionar para published",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, _ *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, _ *observed) {
 				ctx := context.Background()
 				event := s.newEvent("")
 				s.NoError(storage.Insert(ctx, event, 5))
 				s.NoError(storage.MarkPublished(ctx, event.ID))
 				s.Equal(int(outbox.StatusPublished), s.countStatus(mgr, event.ID))
 			},
-			expect: func(manager.Manager, *observed) {},
+			expect: func(*sqlx.DB, *observed) {},
 		},
 		{
 			name:  "deve transicionar para failed",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, _ *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, _ *observed) {
 				ctx := context.Background()
 				event := s.newEvent("")
 				s.NoError(storage.Insert(ctx, event, 3))
 				s.NoError(storage.MarkFailed(ctx, event.ID, "exhausted"))
 				s.Equal(int(outbox.StatusFailed), s.countStatus(mgr, event.ID))
 			},
-			expect: func(manager.Manager, *observed) {},
+			expect: func(*sqlx.DB, *observed) {},
 		},
 		{
 			name:  "deve incrementar attempts ao marcar retry pendente",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, _ *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, _ *observed) {
 				ctx := context.Background()
 				event := s.newEvent("")
 				s.NoError(storage.Insert(ctx, event, 5))
@@ -137,18 +137,18 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.NoError(storage.MarkPendingRetry(ctx, event.ID, "transient", next))
 				var attempts int
 				var lastError string
-				err := mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT attempts, last_error FROM outbox_events WHERE id = $1`, event.ID).Scan(&attempts, &lastError)
+				err := mgr.QueryRowContext(ctx, `SELECT attempts, last_error FROM outbox_events WHERE id = $1`, event.ID).Scan(&attempts, &lastError)
 				s.Require().NoError(err)
 				s.Equal(1, attempts)
 				s.Equal("transient", lastError)
 				s.Equal(int(outbox.StatusPending), s.countStatus(mgr, event.ID))
 			},
-			expect: func(manager.Manager, *observed) {},
+			expect: func(*sqlx.DB, *observed) {},
 		},
 		{
 			name:  "deve claimar evento imediatamente mesmo com occurred_at futuro",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, state *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, state *observed) {
 				ctx := context.Background()
 				event, err := outbox.NewEvent(outbox.EventInput{
 					Type:          "billing.subscription.activated",
@@ -164,15 +164,15 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.Require().NoError(claimErr)
 				state.rows = rows
 			},
-			expect: func(_ manager.Manager, state *observed) {
+			expect: func(_ *sqlx.DB, state *observed) {
 				s.Len(state.rows, 1)
 				s.Equal("billing.subscription.activated", state.rows[0].Type)
 			},
 		},
 		{
 			name:  "deve claimar lote e evitar reclaim antes do reset",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, state *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, state *observed) {
 				ctx := context.Background()
 				for range 3 {
 					s.NoError(storage.Insert(ctx, s.newEvent(""), 5))
@@ -188,19 +188,19 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.Require().NoError(err)
 				s.Empty(again)
 			},
-			expect: func(_ manager.Manager, state *observed) {
+			expect: func(_ *sqlx.DB, state *observed) {
 				s.Len(state.rows, 3)
 			},
 		},
 		{
 			name:  "deve respeitar retention ao deletar publicados",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, _ *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, _ *observed) {
 				ctx := context.Background()
 				oldEvent := s.newEvent("")
 				s.NoError(storage.Insert(ctx, oldEvent, 5))
 				s.NoError(storage.MarkPublished(ctx, oldEvent.ID))
-				_, err := mgr.DBTX(ctx).ExecContext(ctx, `UPDATE outbox_events SET published_at = now() - interval '2 hours' WHERE id = $1`, oldEvent.ID)
+				_, err := mgr.ExecContext(ctx, `UPDATE outbox_events SET published_at = now() - interval '2 hours' WHERE id = $1`, oldEvent.ID)
 				s.Require().NoError(err)
 
 				recentEvent := s.newEvent("")
@@ -213,12 +213,12 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.Equal(0, s.countRows(mgr, oldEvent.ID))
 				s.Equal(1, s.countRows(mgr, recentEvent.ID))
 			},
-			expect: func(manager.Manager, *observed) {},
+			expect: func(*sqlx.DB, *observed) {},
 		},
 		{
 			name:  "deve round-trip aggregate_user_id em Insert e ClaimBatch",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, state *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, state *observed) {
 				ctx := context.Background()
 				userID := uuid.NewString()
 				eventWithUser := s.newEventWithUserID(userID)
@@ -231,7 +231,7 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 				s.Require().NoError(err)
 				state.rows = rows
 			},
-			expect: func(_ manager.Manager, state *observed) {
+			expect: func(_ *sqlx.DB, state *observed) {
 				s.Len(state.rows, 2)
 				withUser := 0
 				withoutUser := 0
@@ -248,22 +248,22 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 		},
 		{
 			name:  "deve resetar eventos stuck para pending",
-			setup: func(manager.Manager, outbox.OutboxRepository, *observed) {},
-			act: func(mgr manager.Manager, storage outbox.OutboxRepository, _ *observed) {
+			setup: func(*sqlx.DB, outbox.OutboxRepository, *observed) {},
+			act: func(mgr *sqlx.DB, storage outbox.OutboxRepository, _ *observed) {
 				ctx := context.Background()
 				event := s.newEvent("")
 				s.NoError(storage.Insert(ctx, event, 5))
 				rows, err := storage.ClaimBatch(ctx, "worker-A", 10)
 				s.Require().NoError(err)
 				s.Len(rows, 1)
-				_, err = mgr.DBTX(ctx).ExecContext(ctx, `UPDATE outbox_events SET locked_at = now() - interval '10 minutes' WHERE id = $1`, event.ID)
+				_, err = mgr.ExecContext(ctx, `UPDATE outbox_events SET locked_at = now() - interval '10 minutes' WHERE id = $1`, event.ID)
 				s.Require().NoError(err)
 				resetCount, err := storage.ResetStuck(ctx, 5*time.Minute)
 				s.Require().NoError(err)
 				s.Equal(int64(1), resetCount)
 				s.Equal(int(outbox.StatusPending), s.countStatus(mgr, event.ID))
 			},
-			expect: func(manager.Manager, *observed) {},
+			expect: func(*sqlx.DB, *observed) {},
 		},
 	}
 
@@ -271,8 +271,7 @@ func (s *StoragePostgresIntegrationSuite) TestStoragePostgres() {
 		s.Run(scenario.name, func() {
 			state := &observed{}
 			mgr := s.setupOutboxDB()
-			ctx := context.Background()
-			sut := outbox.NewPostgresStorage(mgr.DBTX(ctx))
+			sut := outbox.NewPostgresStorage(mgr)
 			scenario.setup(mgr, sut, state)
 			scenario.act(mgr, sut, state)
 			scenario.expect(mgr, state)

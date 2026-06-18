@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -18,11 +16,13 @@ import (
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 )
 
 type UpdateCard struct {
-	uow     uow.UnitOfWork[entities.Card]
+	uow     uow.UnitOfWork
 	factory interfaces.RepositoryFactory
 	idem    idempotency.Storage
 	decider services.UpdateCardDecider
@@ -30,7 +30,7 @@ type UpdateCard struct {
 }
 
 func NewUpdateCard(
-	u uow.UnitOfWork[entities.Card],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	idem idempotency.Storage,
 	o11y observability.Observability,
@@ -55,15 +55,16 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 
 	ic, hasIdem := idempotency.FromContext(ctx)
 
-	card, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Card, error) {
+	var card entities.Card
+	err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		repo := u.factory.CardRepository(tx)
 
 		existing, getErr := repo.GetByIDForUser(ctx, in.ID.String(), in.UserID.String())
 		if getErr != nil {
-			return entities.Card{}, getErr
+			return getErr
 		}
 		if existing.IsDeleted() {
-			return entities.Card{}, fmt.Errorf("card/update: %w", domain.ErrCardNotFound)
+			return fmt.Errorf("card/update: %w", domain.ErrCardNotFound)
 		}
 
 		decided, decErr := u.decider.Decide(existing, services.UpdateCardCommand{
@@ -74,18 +75,18 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 		}, time.Now().UTC())
 		if decErr != nil {
 			span.SetAttributes(observability.String("outcome", "invalid"))
-			return entities.Card{}, decErr
+			return decErr
 		}
 
 		persisted, updateErr := repo.UpdateByIDForUser(ctx, decided)
 		if updateErr != nil {
-			return entities.Card{}, updateErr
+			return updateErr
 		}
 
 		if hasIdem {
 			body, marshalErr := json.Marshal(mappers.M.ToCardOutput(persisted))
 			if marshalErr != nil {
-				return entities.Card{}, fmt.Errorf("update_card: marshal output: %w", marshalErr)
+				return fmt.Errorf("update_card: marshal output: %w", marshalErr)
 			}
 			rec := idempotency.Record{
 				Scope:          ic.Scope,
@@ -97,11 +98,12 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 				ExpiresAt:      ic.ExpiresAt,
 			}
 			if putErr := u.idem.Put(ctx, rec); putErr != nil {
-				return entities.Card{}, fmt.Errorf("update_card: idempotency put: %w", putErr)
+				return fmt.Errorf("update_card: idempotency put: %w", putErr)
 			}
 		}
 
-		return persisted, nil
+		card = persisted
+		return nil
 	})
 
 	if err != nil {

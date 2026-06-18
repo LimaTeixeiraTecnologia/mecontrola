@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
@@ -38,10 +39,9 @@ func (s *MonthlySummaryReconcilerJobIntegrationSuite) TestJobScheduleAndName() {
 }
 
 func (s *MonthlySummaryReconcilerJobIntegrationSuite) TestDriftDetectedAndCorrected() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	summaryRepo := txpostgres.NewMonthlySummaryRepository(o11y, db)
 
@@ -56,7 +56,13 @@ func (s *MonthlySummaryReconcilerJobIntegrationSuite) TestDriftDetectedAndCorrec
 	s.Equal(int64(100000), existing.IncomeCents(), "drift artificial injetado")
 
 	factory := &integrationRepositoryFactory{o11y: o11y}
-	reconcileUc := usecases.NewReconcileMonthlySummary(db, factory, 48, o11y)
+	reconcileUc := usecases.NewReconcileMonthlySummary(
+		factory.TransactionRepository(db),
+		factory.CardInvoiceRepository(db),
+		factory.MonthlySummaryRepository(db),
+		48,
+		o11y,
+	)
 
 	cfg := configs.TransactionsConfig{MonthlySummaryReconcilerCron: "@daily"}
 	job := handlers.NewMonthlySummaryReconcilerJob(reconcileUc, cfg)

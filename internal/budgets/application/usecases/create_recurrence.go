@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
@@ -22,7 +23,7 @@ import (
 
 type CreateRecurrence struct {
 	factory   interfaces.RepositoryFactory
-	uow       uow.UnitOfWork[struct{}]
+	uow       uow.UnitOfWork
 	o11y      observability.Observability
 	validator *services.RecurrenceSourceValidator
 	cloner    *services.BudgetClonerForRecurrence
@@ -30,7 +31,7 @@ type CreateRecurrence struct {
 
 func NewCreateRecurrence(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *CreateRecurrence {
 	validator := services.NewRecurrenceSourceValidator()
@@ -74,7 +75,7 @@ func (uc *CreateRecurrence) loadAndValidateSource(ctx context.Context, cmd comma
 	var sourceBudget entities.Budget
 	var validationErr error
 
-	_, txErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, txErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		budgets := uc.factory.BudgetRepository(tx)
 		b, findErr := budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.SourceCompetence)
 		if findErr != nil {
@@ -109,7 +110,7 @@ func (uc *CreateRecurrence) processMonth(
 	var status output.RecurrenceStatus
 	var reason string
 
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		budgets := uc.factory.BudgetRepository(tx)
 		existing, findErr := budgets.GetByUserCompetence(ctx, userID, comp)
 		if findErr != nil && !errors.Is(findErr, interfaces.ErrBudgetNotFound) {

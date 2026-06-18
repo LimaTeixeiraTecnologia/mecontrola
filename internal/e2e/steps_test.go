@@ -81,7 +81,7 @@ func (e *e2eCtx) aTransacaoDeveEstarSalvaComValor(centavosEsperados int) error {
 	defer cancel()
 
 	var valor int64
-	row := e.mgr.DBTX(ctx).QueryRowContext(ctx,
+	row := e.mgr.QueryRowContext(ctx,
 		"SELECT amount_cents FROM mecontrola.transactions WHERE id = $1",
 		e.txID,
 	)

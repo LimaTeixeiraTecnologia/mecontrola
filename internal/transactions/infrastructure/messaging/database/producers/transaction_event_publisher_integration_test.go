@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -33,9 +32,8 @@ func outboxCfg() configs.OutboxConfig {
 }
 
 func (s *TransactionEventPublisherSuite) TestPublishCreated_SameTX_Persists() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
@@ -65,13 +63,13 @@ func (s *TransactionEventPublisherSuite) TestPublishCreated_SameTX_Persists() {
 }
 
 func (s *TransactionEventPublisherSuite) TestPublishCreated_RollbackDiscardsEvent() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
 
-	tx, err := mgr.BeginTx(ctx, database.TxOptions{})
+	tx, err := db.BeginTx(ctx, nil)
 	s.Require().NoError(err)
 
 	rm, _ := valueobjects.NewRefMonth("2026-06")
@@ -85,10 +83,9 @@ func (s *TransactionEventPublisherSuite) TestPublishCreated_RollbackDiscardsEven
 	}
 
 	s.Require().NoError(publisher.PublishCreated(ctx, tx, evt))
-	s.Require().NoError(tx.Rollback(ctx))
+	s.Require().NoError(tx.Rollback())
 
-	cleanDB := mgr.DBTX(ctx)
-	storage := outbox.NewPostgresStorage(cleanDB)
+	storage := outbox.NewPostgresStorage(db)
 	rows, claimErr := storage.ClaimBatch(ctx, "test-verifier", 100)
 	s.Require().NoError(claimErr)
 
@@ -98,9 +95,8 @@ func (s *TransactionEventPublisherSuite) TestPublishCreated_RollbackDiscardsEven
 }
 
 func (s *TransactionEventPublisherSuite) TestPublishUpdated_Success() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())
@@ -131,9 +127,8 @@ func (s *TransactionEventPublisherSuite) TestPublishUpdated_Success() {
 }
 
 func (s *TransactionEventPublisherSuite) TestPublishDeleted_Success() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	outboxFactory := outbox.NewRepositoryFactory(noop.NewProvider())
 	publisher := producers.NewTransactionEventPublisher(outboxFactory, outboxCfg(), noop.NewProvider())

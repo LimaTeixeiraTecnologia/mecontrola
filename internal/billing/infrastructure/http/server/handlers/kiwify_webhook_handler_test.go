@@ -34,7 +34,6 @@ type KiwifyWebhookHandlerSuite struct {
 	subLate      *ucmocks.ProcessSubscriptionLate
 	subCanceled  *ucmocks.ProcessSubscriptionCanceled
 	refund       *ucmocks.ProcessRefundOrChargeback
-	factory      *ucmocks.RepositoryFactory
 	eventRepo    *ucmocks.KiwifyEventRepository
 }
 
@@ -48,7 +47,6 @@ func (s *KiwifyWebhookHandlerSuite) SetupTest() {
 	s.subLate = ucmocks.NewProcessSubscriptionLate(s.T())
 	s.subCanceled = ucmocks.NewProcessSubscriptionCanceled(s.T())
 	s.refund = ucmocks.NewProcessRefundOrChargeback(s.T())
-	s.factory = ucmocks.NewRepositoryFactory(s.T())
 	s.eventRepo = ucmocks.NewKiwifyEventRepository(s.T())
 }
 
@@ -60,8 +58,7 @@ func (s *KiwifyWebhookHandlerSuite) newHandler(secretNext string) http.Handler {
 		s.subLate,
 		s.subCanceled,
 		s.refund,
-		s.factory,
-		nil,
+		s.eventRepo,
 		o11y,
 	)
 	h := handlers.NewKiwifyWebhookHandler(uc, o11y)
@@ -124,7 +121,6 @@ func abandonedCartPayload() []byte {
 
 func (s *KiwifyWebhookHandlerSuite) expectAudit(expectedStatus string) *string {
 	captured := ""
-	s.factory.EXPECT().KiwifyEventRepository(mock.Anything).Return(s.eventRepo).Maybe()
 	s.eventRepo.EXPECT().
 		Persist(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, envelopeID string, trigger string, rawBody []byte, signatureStatus string) error {

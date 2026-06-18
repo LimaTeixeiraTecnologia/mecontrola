@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
@@ -21,7 +21,7 @@ import (
 type AuthEventsRepositoryIntegrationSuite struct {
 	suite.Suite
 	ctx     context.Context
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -34,13 +34,13 @@ func (s *AuthEventsRepositoryIntegrationSuite) SetupTest() {
 }
 
 func (s *AuthEventsRepositoryIntegrationSuite) SetupSuite() {
-	mgr, _ := setupTestDB(s.T())
-	s.mgr = mgr
+	db, _ := setupTestDB(s.T())
+	s.db = db
 	s.factory = repositories.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *AuthEventsRepositoryIntegrationSuite) newRepo() interfaces.AuthEventsRepository {
-	return s.factory.AuthEventsRepository(s.mgr.DBTX(s.ctx))
+	return s.factory.AuthEventsRepository(s.db)
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -133,7 +133,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestInsertGatewayForensicsPersist
 	s.Require().NoError(repo.Insert(s.ctx, ev))
 
 	var source, requestID, clientIP string
-	err = s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	err = s.db.QueryRowContext(s.ctx,
 		`SELECT source, request_id, host(client_ip) FROM auth_events WHERE id = $1`, ev.ID(),
 	).Scan(&source, &requestID, &clientIP)
 	s.Require().NoError(err)
@@ -221,14 +221,14 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestAnonymizeByUserID() {
 		s.Require().NoError(repo.AnonymizeByUserID(s.ctx, uid))
 
 		var countWithUID int
-		err = s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+		err = s.db.QueryRowContext(s.ctx,
 			"SELECT COUNT(*) FROM auth_events WHERE user_id = $1", uid,
 		).Scan(&countWithUID)
 		s.Require().NoError(err)
 		s.Equal(0, countWithUID, "deve haver 0 linhas com o user_id original após anonimização")
 
 		var countOther int
-		err = s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+		err = s.db.QueryRowContext(s.ctx,
 			"SELECT COUNT(*) FROM auth_events WHERE user_id = $1", otherUID,
 		).Scan(&countOther)
 		s.Require().NoError(err)

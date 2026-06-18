@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
@@ -17,9 +18,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	dtooutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
 	transconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/infrastructure/config"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/infrastructure/http/client"
@@ -56,7 +55,7 @@ type TransactionsModule struct {
 type transactionsModuleBuilder struct {
 	cfg              *configs.Config
 	o11y             observability.Observability
-	mgr              manager.Manager
+	db               *sqlx.DB
 	cardModule       card.CardModule
 	categoriesModule *categories.CategoriesModule
 	gatewayAuth      func(http.Handler) http.Handler
@@ -65,7 +64,7 @@ type transactionsModuleBuilder struct {
 func NewTransactionsModule(
 	cfg *configs.Config,
 	o11y observability.Observability,
-	mgr manager.Manager,
+	db *sqlx.DB,
 	cardModule card.CardModule,
 	categoriesModule *categories.CategoriesModule,
 	gatewayAuth func(http.Handler) http.Handler,
@@ -77,7 +76,7 @@ func NewTransactionsModule(
 	builder := &transactionsModuleBuilder{
 		cfg:              cfg,
 		o11y:             o11y,
-		mgr:              mgr,
+		db:               db,
 		cardModule:       cardModule,
 		categoriesModule: categoriesModule,
 		gatewayAuth:      gatewayAuth,
@@ -94,7 +93,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	factory := repositories.NewRepositoryFactory(b.o11y)
 	outboxFactory := outbox.NewRepositoryFactory(b.o11y)
 	idGen := id.NewUUIDGenerator()
-	idemStorage := idempotency.NewPostgresStorage(b.mgr)
+	idemStorage := idempotency.NewPostgresStorage(b.db)
 
 	categoriesCache, err := b.buildCategoriesCache()
 	if err != nil {
@@ -111,11 +110,11 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	cpWorkflow := services.NewCardPurchaseWorkflow()
 	recurringWorkflow := services.RecurringWorkflow{}
 
-	db := b.mgr.DBTX(context.Background())
+	db := b.db
 
 	createTx := usecases.NewCreateTransaction(
 		factory,
-		uow.New[entities.Transaction](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		categoriesCache,
 		txWorkflow,
 		txPublisher,
@@ -123,7 +122,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	)
 	updateTx := usecases.NewUpdateTransaction(
 		factory,
-		uow.New[entities.Transaction](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		categoriesCache,
 		txWorkflow,
 		txPublisher,
@@ -131,18 +130,18 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	)
 	deleteTx := usecases.NewDeleteTransaction(
 		factory,
-		uow.NewVoid(b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		txPublisher,
 		b.o11y,
 	)
 	getTx := usecases.NewGetTransaction(
 		factory,
-		uow.New[dtooutput.Transaction](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 	listTx := usecases.NewListTransactions(
 		factory,
-		uow.New[usecases.TransactionPage](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 
@@ -152,7 +151,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		categoriesCache,
 		&cpWorkflow,
 		cpPublisher,
-		uow.New[entities.CardPurchase](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		idGen,
 		b.o11y,
 	)
@@ -161,7 +160,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		categoriesCache,
 		&cpWorkflow,
 		cpPublisher,
-		uow.New[entities.CardPurchase](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		idGen,
 		b.o11y,
 	)
@@ -169,82 +168,88 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		factory,
 		&cpWorkflow,
 		cpPublisher,
-		uow.New[entities.CardPurchase](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		idGen,
 		b.o11y,
 	)
 	getCP := usecases.NewGetCardPurchase(
 		factory,
-		uow.New[dtooutput.CardPurchase](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 	listCP := usecases.NewListCardPurchases(
 		factory,
-		uow.New[usecases.ListCardPurchasesOutput](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 	getCI := usecases.NewGetCardInvoice(
 		factory,
-		uow.New[dtooutput.CardInvoice](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 
 	createRT := usecases.NewCreateRecurringTemplate(
 		factory,
-		uow.New[entities.RecurringTemplate](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		categoriesCache,
 		rtPublisher,
 		b.o11y,
 	)
 	updateRT := usecases.NewUpdateRecurringTemplate(
 		factory,
-		uow.New[entities.RecurringTemplate](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		categoriesCache,
 		rtPublisher,
 		b.o11y,
 	)
 	deleteRT := usecases.NewDeleteRecurringTemplate(
 		factory,
-		uow.NewVoid(b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		rtPublisher,
 		b.o11y,
 	)
 	getRT := usecases.NewGetRecurringTemplate(
 		factory,
-		uow.New[dtooutput.RecurringTemplate](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 	listRT := usecases.NewListRecurringTemplates(
 		factory,
-		uow.New[usecases.RecurringTemplatePage](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 
 	recomputeMS := usecases.NewRecomputeMonthlySummary(
 		factory,
-		uow.New[struct{}](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 	lookbackHours := b.cfg.TransactionsConfig.MonthlySummaryReconcilerLookbackHours
 	if lookbackHours == 0 {
 		lookbackHours = 48
 	}
-	reconcileMS := usecases.NewReconcileMonthlySummary(db, factory, lookbackHours, b.o11y)
+	reconcileMS := usecases.NewReconcileMonthlySummary(
+		factory.TransactionRepository(db),
+		factory.CardInvoiceRepository(db),
+		factory.MonthlySummaryRepository(db),
+		lookbackHours,
+		b.o11y,
+	)
 	getMS := usecases.NewGetMonthlySummary(
 		factory,
-		uow.New[dtooutput.MonthlySummary](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 	listME := usecases.NewListMonthlyEntries(
 		factory,
-		uow.New[dtooutput.MonthlyEntriesPage](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
 
 	materializeUC := usecases.NewMaterializeRecurringForDay(
 		db,
 		factory,
-		uow.New[struct{}](b.mgr, uow.WithObservability(b.o11y)),
+		uow.NewUnitOfWork(b.db),
 		recurringWorkflow,
 		createTx,
 		createCP,

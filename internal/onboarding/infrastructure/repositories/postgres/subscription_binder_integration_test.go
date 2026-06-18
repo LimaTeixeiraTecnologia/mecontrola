@@ -7,22 +7,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
 type SubscriptionBinderIntegrationSuite struct {
 	suite.Suite
 	ctx  context.Context
-	mgr  manager.Manager
+	db   *sqlx.DB
 	o11y *noop.Provider
 }
 
@@ -31,8 +31,8 @@ func TestSubscriptionBinderIntegrationSuite(t *testing.T) {
 }
 
 func (s *SubscriptionBinderIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	s.o11y = noop.NewProvider()
 }
 
@@ -40,12 +40,12 @@ func (s *SubscriptionBinderIntegrationSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
-func (s *SubscriptionBinderIntegrationSuite) newBinder() appinterfaces.SubscriptionBinder {
-	return postgres.NewSubscriptionBinder(s.o11y, s.mgr)
+func (s *SubscriptionBinderIntegrationSuite) newBinder(db database.DBTX) appinterfaces.SubscriptionBinder {
+	return postgres.NewSubscriptionBinder(s.o11y, db)
 }
 
 func (s *SubscriptionBinderIntegrationSuite) seedPlan(code string) {
-	_, err := s.mgr.DBTX(s.ctx).ExecContext(s.ctx,
+	_, err := s.db.ExecContext(s.ctx,
 		`INSERT INTO mecontrola.billing_plans (kiwify_product_id, code, duration_days, currency)
 		 VALUES ($1, $2, 30, 'BRL') ON CONFLICT (code) DO NOTHING`,
 		uuid.NewString(), code,
@@ -56,7 +56,7 @@ func (s *SubscriptionBinderIntegrationSuite) seedPlan(code string) {
 func (s *SubscriptionBinderIntegrationSuite) seedSubscription(planCode string) string {
 	subID := uuid.NewString()
 	now := time.Now().UTC()
-	_, err := s.mgr.DBTX(s.ctx).ExecContext(s.ctx,
+	_, err := s.db.ExecContext(s.ctx,
 		`INSERT INTO mecontrola.billing_subscriptions
 		   (id, funnel_token, user_id, kiwify_order_id, plan_code, status,
 		    period_start, period_end, last_event_at)
@@ -67,9 +67,9 @@ func (s *SubscriptionBinderIntegrationSuite) seedSubscription(planCode string) s
 	return subID
 }
 
-func (s *SubscriptionBinderIntegrationSuite) insertUserTx(ctx context.Context, whatsapp string) string {
+func (s *SubscriptionBinderIntegrationSuite) insertUserTx(ctx context.Context, db database.DBTX, whatsapp string) string {
 	userID := uuid.NewString()
-	_, err := s.mgr.DBTX(ctx).ExecContext(ctx,
+	_, err := db.ExecContext(ctx,
 		`INSERT INTO mecontrola.users (id, whatsapp_number, status) VALUES ($1, $2, 'ACTIVE')`,
 		userID, whatsapp,
 	)
@@ -78,7 +78,7 @@ func (s *SubscriptionBinderIntegrationSuite) insertUserTx(ctx context.Context, w
 }
 
 func (s *SubscriptionBinderIntegrationSuite) subscriptionUserID(subID string) (string, bool) {
-	row := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	row := s.db.QueryRowContext(s.ctx,
 		`SELECT user_id FROM mecontrola.billing_subscriptions WHERE id = $1`, subID)
 	var userID *string
 	s.Require().NoError(row.Scan(&userID))
@@ -93,9 +93,9 @@ func (s *SubscriptionBinderIntegrationSuite) TestBindUser_SeesUserCreatedInSameT
 	subID := s.seedSubscription("MONTHLY")
 
 	var boundUserID string
-	_, err := uow.New[struct{}](s.mgr).Do(s.ctx, func(txCtx context.Context, _ database.DBTX) (struct{}, error) {
-		boundUserID = s.insertUserTx(txCtx, "+5511980001111")
-		return struct{}{}, s.newBinder().BindUser(txCtx, subID, boundUserID)
+	err := uow.NewUnitOfWork(s.db).Do(s.ctx, func(txCtx context.Context, tx database.DBTX) error {
+		boundUserID = s.insertUserTx(txCtx, tx, "+5511980001111")
+		return s.newBinder(tx).BindUser(txCtx, subID, boundUserID)
 	})
 	s.Require().NoError(err)
 
@@ -109,12 +109,12 @@ func (s *SubscriptionBinderIntegrationSuite) TestBindUser_RollsBackWithTxOnLater
 	subID := s.seedSubscription("MONTHLY")
 
 	sentinel := context.Canceled
-	_, err := uow.New[struct{}](s.mgr).Do(s.ctx, func(txCtx context.Context, _ database.DBTX) (struct{}, error) {
-		userID := s.insertUserTx(txCtx, "+5511980002222")
-		if bindErr := s.newBinder().BindUser(txCtx, subID, userID); bindErr != nil {
-			return struct{}{}, bindErr
+	err := uow.NewUnitOfWork(s.db).Do(s.ctx, func(txCtx context.Context, tx database.DBTX) error {
+		userID := s.insertUserTx(txCtx, tx, "+5511980002222")
+		if bindErr := s.newBinder(tx).BindUser(txCtx, subID, userID); bindErr != nil {
+			return bindErr
 		}
-		return struct{}{}, sentinel
+		return sentinel
 	})
 	s.Require().ErrorIs(err, sentinel)
 
@@ -123,6 +123,6 @@ func (s *SubscriptionBinderIntegrationSuite) TestBindUser_RollsBackWithTxOnLater
 }
 
 func (s *SubscriptionBinderIntegrationSuite) TestBindUser_SubscriptionNotFound() {
-	err := s.newBinder().BindUser(s.ctx, uuid.NewString(), uuid.NewString())
+	err := s.newBinder(s.db).BindUser(s.ctx, uuid.NewString(), uuid.NewString())
 	s.ErrorContains(err, "subscription not found")
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -17,19 +16,17 @@ import (
 )
 
 type InvoiceFor struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	loc     *time.Location
-	o11y    observability.Observability
+	repo interfaces.CardRepository
+	loc  *time.Location
+	o11y observability.Observability
 }
 
 func NewInvoiceFor(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.CardRepository,
 	loc *time.Location,
 	o11y observability.Observability,
 ) *InvoiceFor {
-	return &InvoiceFor{factory: factory, mgr: mgr, loc: loc, o11y: o11y}
+	return &InvoiceFor{repo: repo, loc: loc, o11y: o11y}
 }
 
 func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.Invoice, error) {
@@ -46,8 +43,7 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 		return output.Invoice{}, fmt.Errorf("card/invoice_for: %w", domain.ErrInvalidPurchaseDate)
 	}
 
-	repo := u.factory.CardRepository(u.mgr.DBTX(ctx))
-	card, err := repo.GetByIDForUser(ctx, in.CardID.String(), in.UserID.String())
+	card, err := u.repo.GetByIDForUser(ctx, in.CardID.String(), in.UserID.String())
 	if err != nil {
 		outcome := classifyCardOutcome(err)
 		span.RecordError(err)

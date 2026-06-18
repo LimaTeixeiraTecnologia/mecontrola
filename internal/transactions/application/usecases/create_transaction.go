@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
@@ -21,7 +22,7 @@ import (
 
 type CreateTransaction struct {
 	factory           interfaces.RepositoryFactory
-	uow               uow.UnitOfWork[entities.Transaction]
+	uow               uow.UnitOfWork
 	categoryValidator interfaces.CategoryValidator
 	workflow          services.TransactionWorkflow
 	publisher         interfaces.TransactionEventPublisher
@@ -30,7 +31,7 @@ type CreateTransaction struct {
 
 func NewCreateTransaction(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[entities.Transaction],
+	u uow.UnitOfWork,
 	categoryValidator interfaces.CategoryValidator,
 	workflow services.TransactionWorkflow,
 	publisher interfaces.TransactionEventPublisher,
@@ -75,7 +76,7 @@ func (uc *CreateTransaction) Execute(ctx context.Context, raw input.RawCreateTra
 	decision := uc.workflow.DecideCreate(cmd, txID, eventID, now)
 	decision.Transaction.SetCategorySnapshots(catSnap.Name, snapSubName(catSubID, catSnap))
 
-	tx, err := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (entities.Transaction, error) {
+	tx, err := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.Transaction, error) {
 		repo := uc.factory.TransactionRepository(db)
 		if createErr := repo.Create(ctx, &decision.Transaction); createErr != nil {
 			return entities.Transaction{}, fmt.Errorf("transactions/create_transaction: persistir: %w", createErr)

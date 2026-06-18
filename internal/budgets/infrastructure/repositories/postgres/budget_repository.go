@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
@@ -258,7 +259,7 @@ func (r *budgetRepository) upsertAllocation(ctx context.Context, a entities.Allo
 	return nil
 }
 
-func (r *budgetRepository) scanBudgetList(rows database.Rows) ([]entities.Budget, error) {
+func (r *budgetRepository) scanBudgetList(rows *sql.Rows) ([]entities.Budget, error) {
 	byID := make(map[uuid.UUID]*entities.Budget)
 	order := make([]uuid.UUID, 0)
 

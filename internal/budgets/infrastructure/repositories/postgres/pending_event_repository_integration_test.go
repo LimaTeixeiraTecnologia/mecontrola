@@ -40,7 +40,7 @@ func (s *PendingEventRepositorySuite) newPendingEvent() entities.PendingEvent {
 func (s *PendingEventRepositorySuite) TestInsertAndListReady() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	p := s.newPendingEvent()
 	s.Require().NoError(repo.Insert(ctx, p))
@@ -62,7 +62,7 @@ func (s *PendingEventRepositorySuite) TestInsertAndListReady() {
 func (s *PendingEventRepositorySuite) TestInsertDuplicateEventID() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	eventID := uuid.New()
 	p1 := entities.NewPendingEvent(
@@ -89,7 +89,7 @@ func (s *PendingEventRepositorySuite) TestInsertDuplicateEventID() {
 func (s *PendingEventRepositorySuite) TestTransitionToApplied() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	p := s.newPendingEvent()
 	s.Require().NoError(repo.Insert(ctx, p))
@@ -107,7 +107,7 @@ func (s *PendingEventRepositorySuite) TestTransitionToApplied() {
 func (s *PendingEventRepositorySuite) TestTransitionToFailed() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	p := s.newPendingEvent()
 	s.Require().NoError(repo.Insert(ctx, p))
@@ -125,7 +125,7 @@ func (s *PendingEventRepositorySuite) TestTransitionToFailed() {
 func (s *PendingEventRepositorySuite) TestTransitionNotFound() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	err := repo.Transition(ctx, uuid.New(), uuid.New(), entities.PendingStateApplied, "")
 	s.Require().Error(err)
@@ -135,7 +135,7 @@ func (s *PendingEventRepositorySuite) TestTransitionNotFound() {
 func (s *PendingEventRepositorySuite) TestListReadyOrderByReceivedAt() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	now := time.Now().UTC()
@@ -174,7 +174,7 @@ func (s *PendingEventRepositorySuite) TestListReadyOrderByReceivedAt() {
 func (s *PendingEventRepositorySuite) TestListReadyLimitRespected() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newPendingEventRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newPendingEventRepo(testO11y(), mgr)
 
 	for i := 0; i < 5; i++ {
 		p := s.newPendingEvent()

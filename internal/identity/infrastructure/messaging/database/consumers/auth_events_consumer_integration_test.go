@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
@@ -24,7 +24,7 @@ import (
 type AuthEventsConsumerIntegrationSuite struct {
 	suite.Suite
 	ctx context.Context
-	mgr manager.Manager
+	db  *sqlx.DB
 }
 
 func TestAuthEventsConsumerIntegration(t *testing.T) {
@@ -36,26 +36,27 @@ func (s *AuthEventsConsumerIntegrationSuite) SetupTest() {
 }
 
 func (s *AuthEventsConsumerIntegrationSuite) SetupSuite() {
-	s.mgr = setupConsumerTestDB(s.T())
+	s.db = setupConsumerTestDB(s.T())
 }
 
-func setupConsumerTestDB(t *testing.T) manager.Manager {
+func setupConsumerTestDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	mgr, _ := testcontainer.Postgres(t)
-	return mgr
+	db, _ := testcontainer.Postgres(t)
+	return db
 }
 
 func (s *AuthEventsConsumerIntegrationSuite) newSUT() *consumers.AuthEventsConsumer {
 	o11y := noop.NewProvider()
 	factory := repositories.NewRepositoryFactory(o11y)
-	projectAuthEventUC := usecases.NewProjectAuthEvent(factory, s.mgr, o11y)
-	anonymizeUserAuthEventsUC := usecases.NewAnonymizeUserAuthEvents(factory, s.mgr, o11y)
+	authEventsRepo := factory.AuthEventsRepository(s.db)
+	projectAuthEventUC := usecases.NewProjectAuthEvent(authEventsRepo, o11y)
+	anonymizeUserAuthEventsUC := usecases.NewAnonymizeUserAuthEvents(authEventsRepo, o11y)
 	return consumers.NewAuthEventsConsumer(projectAuthEventUC, anonymizeUserAuthEventsUC, o11y)
 }
 
 func (s *AuthEventsConsumerIntegrationSuite) countAuthEvents(eventID uuid.UUID) int {
 	var n int
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	err := s.db.QueryRowContext(s.ctx,
 		`SELECT COUNT(*) FROM auth_events WHERE id = $1`, eventID,
 	).Scan(&n)
 	s.Require().NoError(err)
@@ -64,7 +65,7 @@ func (s *AuthEventsConsumerIntegrationSuite) countAuthEvents(eventID uuid.UUID) 
 
 func (s *AuthEventsConsumerIntegrationSuite) countAuthEventsByUserID(userID uuid.UUID) int {
 	var n int
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	err := s.db.QueryRowContext(s.ctx,
 		`SELECT COUNT(*) FROM auth_events WHERE user_id = $1`, userID,
 	).Scan(&n)
 	s.Require().NoError(err)
@@ -73,7 +74,7 @@ func (s *AuthEventsConsumerIntegrationSuite) countAuthEventsByUserID(userID uuid
 
 func (s *AuthEventsConsumerIntegrationSuite) countAnonymizedByUserID(userID uuid.UUID) int {
 	var n int
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	err := s.db.QueryRowContext(s.ctx,
 		`SELECT COUNT(*) FROM auth_events WHERE user_id IS NULL AND id IN (
 			SELECT id FROM auth_events WHERE occurred_at IS NOT NULL
 		)`,

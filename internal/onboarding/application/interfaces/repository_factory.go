@@ -1,6 +1,6 @@
 package interfaces
 
-import "github.com/JailtonJunior94/devkit-go/pkg/database"
+import "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 type RepositoryFactory interface {
 	MagicTokenRepository(db database.DBTX) MagicTokenRepository

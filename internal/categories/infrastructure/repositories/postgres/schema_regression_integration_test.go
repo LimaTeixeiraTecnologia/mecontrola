@@ -19,9 +19,8 @@ func TestSchemaRegressionSuite(t *testing.T) {
 }
 
 func (s *SchemaRegressionSuite) TestParentSameKindTrigger_RejectsCrossKindParent() {
-	mgr := setupTestDB(s.T())
+	db := setupTestDB(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	var parentID uuid.UUID
 	err := db.QueryRowContext(ctx, `
@@ -42,9 +41,8 @@ func (s *SchemaRegressionSuite) TestParentSameKindTrigger_RejectsCrossKindParent
 }
 
 func (s *SchemaRegressionSuite) TestParentSortIndex_UsesPTBRCollation() {
-	mgr := setupTestDB(s.T())
+	db := setupTestDB(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	var indexDef string
 	err := db.QueryRowContext(ctx, `
@@ -56,9 +54,8 @@ func (s *SchemaRegressionSuite) TestParentSortIndex_UsesPTBRCollation() {
 }
 
 func (s *SchemaRegressionSuite) TestDictionaryIndexes_UsePTBRCollation() {
-	mgr := setupTestDB(s.T())
+	db := setupTestDB(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	for _, idx := range []string{"dictionary_term_normalized_idx", "dictionary_kind_term_normalized_idx"} {
 		var indexDef string
@@ -72,9 +69,8 @@ func (s *SchemaRegressionSuite) TestDictionaryIndexes_UsePTBRCollation() {
 }
 
 func (s *SchemaRegressionSuite) TestParentKindChange_BlocksWhenChildrenExist() {
-	mgr := setupTestDB(s.T())
+	db := setupTestDB(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	var rootID uuid.UUID
 	err := db.QueryRowContext(ctx, `

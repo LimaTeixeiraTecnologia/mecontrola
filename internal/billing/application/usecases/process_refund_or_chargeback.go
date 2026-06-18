@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
@@ -17,14 +18,14 @@ import (
 )
 
 type ProcessRefundOrChargeback struct {
-	uow       uow.UnitOfWork[entities.Subscription]
+	uow       uow.UnitOfWork
 	factory   interfaces.RepositoryFactory
 	publisher interfaces.SubscriptionEventPublisher
 	o11y      observability.Observability
 }
 
 func NewProcessRefundOrChargeback(
-	u uow.UnitOfWork[entities.Subscription],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.SubscriptionEventPublisher,
 	o11y observability.Observability,
@@ -42,7 +43,7 @@ func (uc *ProcessRefundOrChargeback) Execute(ctx context.Context, in input.Proce
 	}
 	eventKey := fmt.Sprintf("%s:%s", trigger, in.SaleID)
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		processedRepo := uc.factory.ProcessedEventRepository(tx)
 		subRepo := uc.factory.SubscriptionRepository(tx)
 

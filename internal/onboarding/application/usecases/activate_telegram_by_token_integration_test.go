@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	identityrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
@@ -50,12 +51,12 @@ func TestActivateTelegramByTokenIntegration(t *testing.T) {
 
 func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_InsertsUserIdentityAtomically() {
 	ctx := context.Background()
-	mgr, dsn := testcontainer.Postgres(s.T())
+	db, dsn := testcontainer.Postgres(s.T())
 
 	o11y := noop.NewProvider()
 	factory := repositories.NewRepositoryFactory(o11y)
 	identityFactory := identityrepos.NewRepositoryFactory(o11y)
-	u := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
+	u := uow.NewUnitOfWork(db)
 
 	sut := usecases.NewActivateTelegramByToken(
 		factory,
@@ -74,8 +75,8 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Inse
 	tok, err := valueobjects.TokenFromClear(clearToken)
 	s.Require().NoError(err)
 
-	s.seedUser(ctx, mgr.DBTX(ctx), userID)
-	s.seedConsumedToken(ctx, mgr.DBTX(ctx), tok.Hash(), userID)
+	s.seedUser(ctx, db, userID)
+	s.seedConsumedToken(ctx, db, tok.Hash(), userID)
 
 	res, execErr := sut.Execute(ctx, usecases.ActivateTelegramByTokenInput{
 		Token:          clearToken,
@@ -85,19 +86,19 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Inse
 	s.Equal(usecases.ActivateTelegramOutcomeLinked, res.Outcome)
 	s.Equal(userID, res.UserID)
 
-	s.assertUserIdentityRow(ctx, mgr.DBTX(ctx), userID, telegramUserID)
+	s.assertUserIdentityRow(ctx, db, userID, telegramUserID)
 
 	_ = dsn
 }
 
 func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_IdempotentSameUser() {
 	ctx := context.Background()
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 
 	o11y := noop.NewProvider()
 	factory := repositories.NewRepositoryFactory(o11y)
 	identityFactory := identityrepos.NewRepositoryFactory(o11y)
-	u := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
+	u := uow.NewUnitOfWork(db)
 
 	sut := usecases.NewActivateTelegramByToken(
 		factory,
@@ -115,8 +116,8 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Idem
 	tok, err := valueobjects.TokenFromClear(clearToken)
 	s.Require().NoError(err)
 
-	s.seedUser(ctx, mgr.DBTX(ctx), userID)
-	s.seedConsumedToken(ctx, mgr.DBTX(ctx), tok.Hash(), userID)
+	s.seedUser(ctx, db, userID)
+	s.seedConsumedToken(ctx, db, tok.Hash(), userID)
 
 	first, err := sut.Execute(ctx, usecases.ActivateTelegramByTokenInput{Token: clearToken, TelegramUserID: telegramUserID})
 	s.Require().NoError(err)
@@ -130,12 +131,12 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_TokenConsumed_Idem
 
 func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_DirectPath_PersistsTelegramExternalID() {
 	ctx := context.Background()
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 
 	o11y := noop.NewProvider()
 	factory := repositories.NewRepositoryFactory(o11y)
 	identityFactory := identityrepos.NewRepositoryFactory(o11y)
-	u := uow.New[usecases.ActivateTelegramResult](mgr, uow.WithObservability(o11y))
+	u := uow.NewUnitOfWork(db)
 
 	sut := usecases.NewActivateTelegramByToken(
 		factory,
@@ -152,14 +153,14 @@ func (s *ActivateTelegramByTokenIntegrationSuite) TestExecute_DirectPath_Persist
 	tok, err := valueobjects.TokenFromClear(clearToken)
 	s.Require().NoError(err)
 
-	s.seedPaidTokenWithMobile(ctx, mgr.DBTX(ctx), tok.Hash())
+	s.seedPaidTokenWithMobile(ctx, db, tok.Hash())
 
 	_, _ = sut.Execute(ctx, usecases.ActivateTelegramByTokenInput{
 		Token:          clearToken,
 		TelegramUserID: telegramUserID,
 	})
 
-	s.assertTelegramExternalIDPersisted(ctx, mgr.DBTX(ctx), tok.Hash(), strconv.FormatInt(telegramUserID, 10))
+	s.assertTelegramExternalIDPersisted(ctx, db, tok.Hash(), strconv.FormatInt(telegramUserID, 10))
 }
 
 func (s *ActivateTelegramByTokenIntegrationSuite) seedPaidTokenWithMobile(ctx context.Context, db database.DBTX, hash []byte) {

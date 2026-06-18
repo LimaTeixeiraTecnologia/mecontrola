@@ -33,7 +33,7 @@ func (s *ThresholdStateRepositorySuite) newKey() entities.ThresholdKey {
 func (s *ThresholdStateRepositorySuite) TestInsertNewRow_Transitioned() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newThresholdStateRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newThresholdStateRepo(testO11y(), mgr)
 
 	key := s.newKey()
 	committedAt := time.Now().UTC()
@@ -46,7 +46,7 @@ func (s *ThresholdStateRepositorySuite) TestInsertNewRow_Transitioned() {
 func (s *ThresholdStateRepositorySuite) TestFalseToTrue_Transitioned() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newThresholdStateRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newThresholdStateRepo(testO11y(), mgr)
 
 	key := s.newKey()
 	t1 := time.Now().UTC()
@@ -64,7 +64,7 @@ func (s *ThresholdStateRepositorySuite) TestFalseToTrue_Transitioned() {
 func (s *ThresholdStateRepositorySuite) TestTrueToFalse_Transitioned() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newThresholdStateRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newThresholdStateRepo(testO11y(), mgr)
 
 	key := s.newKey()
 	t1 := time.Now().UTC()
@@ -81,7 +81,7 @@ func (s *ThresholdStateRepositorySuite) TestTrueToFalse_Transitioned() {
 func (s *ThresholdStateRepositorySuite) TestSameState_NotTransitioned() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newThresholdStateRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newThresholdStateRepo(testO11y(), mgr)
 
 	key := s.newKey()
 	t1 := time.Now().UTC()
@@ -98,7 +98,7 @@ func (s *ThresholdStateRepositorySuite) TestSameState_NotTransitioned() {
 func (s *ThresholdStateRepositorySuite) TestOutOfOrder_Ignored() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newThresholdStateRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newThresholdStateRepo(testO11y(), mgr)
 
 	key := s.newKey()
 	t2 := time.Now().UTC()
@@ -115,7 +115,7 @@ func (s *ThresholdStateRepositorySuite) TestOutOfOrder_Ignored() {
 func (s *ThresholdStateRepositorySuite) TestIdempotent_SameTimestamp() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newThresholdStateRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newThresholdStateRepo(testO11y(), mgr)
 
 	key := s.newKey()
 	committedAt := time.Now().UTC()

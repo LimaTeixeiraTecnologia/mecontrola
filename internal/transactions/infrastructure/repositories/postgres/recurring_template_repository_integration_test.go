@@ -53,10 +53,9 @@ func (s *RecurringTemplateRepositorySuite) newTemplate(userID uuid.UUID, day int
 }
 
 func (s *RecurringTemplateRepositorySuite) TestCreateAndGetByID() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()
@@ -72,10 +71,9 @@ func (s *RecurringTemplateRepositorySuite) TestCreateAndGetByID() {
 }
 
 func (s *RecurringTemplateRepositorySuite) TestGetByID_NotFound() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	_, err := repo.GetByID(ctx, uuid.New(), uuid.New())
@@ -83,10 +81,9 @@ func (s *RecurringTemplateRepositorySuite) TestGetByID_NotFound() {
 }
 
 func (s *RecurringTemplateRepositorySuite) TestUpdateWithVersion_Success() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()
@@ -113,10 +110,9 @@ func (s *RecurringTemplateRepositorySuite) TestUpdateWithVersion_Success() {
 }
 
 func (s *RecurringTemplateRepositorySuite) TestUpdateWithVersion_Conflict() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()
@@ -138,10 +134,9 @@ func (s *RecurringTemplateRepositorySuite) TestUpdateWithVersion_Conflict() {
 }
 
 func (s *RecurringTemplateRepositorySuite) TestSoftDelete_Success() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()
@@ -155,10 +150,9 @@ func (s *RecurringTemplateRepositorySuite) TestSoftDelete_Success() {
 }
 
 func (s *RecurringTemplateRepositorySuite) TestFindActiveByDayOfMonth_Batches() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()
@@ -180,10 +174,9 @@ func (s *RecurringTemplateRepositorySuite) TestFindActiveByDayOfMonth_Batches() 
 }
 
 func (s *RecurringTemplateRepositorySuite) TestList_ActiveOnly() {
-	mgr, _ := testcontainer.Postgres(s.T())
+	db, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 	repo := txpostgres.NewRecurringTemplateRepository(o11y, db)
 
 	userID := uuid.New()

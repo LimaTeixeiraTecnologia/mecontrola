@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -22,7 +23,7 @@ import (
 type DeleteExpense struct {
 	factory   interfaces.RepositoryFactory
 	publisher interfaces.ExpenseCommittedPublisher
-	uow       uow.UnitOfWork[struct{}]
+	uow       uow.UnitOfWork
 	o11y      observability.Observability
 	loc       *time.Location
 }
@@ -30,7 +31,7 @@ type DeleteExpense struct {
 func NewDeleteExpense(
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.ExpenseCommittedPublisher,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 	loc *time.Location,
 ) *DeleteExpense {
@@ -52,7 +53,7 @@ func (uc *DeleteExpense) Execute(ctx context.Context, in input.DeleteExpenseInpu
 		return err
 	}
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		return struct{}{}, uc.executeInTx(ctx, tx, cmd)
 	})
 	if execErr != nil {
@@ -102,7 +103,7 @@ func (uc *DeleteExpense) ExecuteByExternalID(ctx context.Context, userIDStr, sou
 		return fmt.Errorf("budgets.usecase.delete_expense.by_external_id: extID inválido: %w", extErr)
 	}
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		return struct{}{}, uc.deleteByIdentityInTx(ctx, tx, userID, prodSource, extID)
 	})
 	if execErr != nil {

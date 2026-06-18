@@ -14,7 +14,6 @@ import (
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/pagination"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
-	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -22,9 +21,7 @@ import (
 
 type ListCardsSuite struct {
 	suite.Suite
-	mgr         *ucmocks.FakeManager
-	factoryMock *ifacemocks.RepositoryFactory
-	repoMock    *ifacemocks.CardRepository
+	repoMock *ifacemocks.CardRepository
 }
 
 func TestListCards(t *testing.T) {
@@ -32,8 +29,6 @@ func TestListCards(t *testing.T) {
 }
 
 func (s *ListCardsSuite) SetupTest() {
-	s.mgr = ucmocks.NewFakeManager()
-	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 }
 
@@ -49,10 +44,9 @@ func (s *ListCardsSuite) TestExecute_HappyPath() {
 	cards := []entities.Card{s.makeCard(userID), s.makeCard(userID)}
 	in := input.ListCards{UserID: userID, Cursor: "", Limit: 10}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().ListByUser(mock.Anything, userID.String(), "", 10).Return(cards, "", nil).Once()
 
-	sut := usecases.NewListCards(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -71,10 +65,9 @@ func (s *ListCardsSuite) TestExecute_WithCursor() {
 
 	in := input.ListCards{UserID: userID, Cursor: cursor, Limit: 5}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().ListByUser(mock.Anything, userID.String(), cursor, 5).Return(cards, nextCursor, nil).Once()
 
-	sut := usecases.NewListCards(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -90,7 +83,7 @@ func (s *ListCardsSuite) TestExecute_InvalidCursor_Base64() {
 		Limit:  10,
 	}
 
-	sut := usecases.NewListCards(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -105,7 +98,7 @@ func (s *ListCardsSuite) TestExecute_InvalidCursor_EmptyJSON() {
 		Limit:  10,
 	}
 
-	sut := usecases.NewListCards(s.factoryMock, s.mgr, noop.NewProvider())
+	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)

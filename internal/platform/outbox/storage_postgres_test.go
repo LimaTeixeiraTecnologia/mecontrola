@@ -2,15 +2,20 @@ package outbox_test
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"io"
+	"sync"
 	"testing"
 	"time"
 
-	dbmocks "github.com/JailtonJunior94/devkit-go/pkg/database/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	dbmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/mocks"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
@@ -24,6 +29,46 @@ func TestStoragePostgres(t *testing.T) {
 }
 
 func (s *StoragePostgresSuite) SetupTest() {}
+
+var emptyRowsDriverOnce sync.Once
+
+type emptyRowsDriver struct{}
+
+func (emptyRowsDriver) Open(string) (driver.Conn, error) { return emptyRowsConn{}, nil }
+
+type emptyRowsConn struct{}
+
+func (emptyRowsConn) Prepare(query string) (driver.Stmt, error) { return emptyRowsStmt{}, nil }
+func (emptyRowsConn) Close() error                              { return nil }
+func (emptyRowsConn) Begin() (driver.Tx, error)                 { return nil, errors.New("not supported") }
+
+type emptyRowsStmt struct{}
+
+func (emptyRowsStmt) Close() error  { return nil }
+func (emptyRowsStmt) NumInput() int { return -1 }
+func (emptyRowsStmt) Exec(args []driver.Value) (driver.Result, error) {
+	return nil, errors.New("not supported")
+}
+func (emptyRowsStmt) Query(args []driver.Value) (driver.Rows, error) { return emptyDriverRows{}, nil }
+
+type emptyDriverRows struct{}
+
+func (emptyDriverRows) Columns() []string              { return []string{"value"} }
+func (emptyDriverRows) Close() error                   { return nil }
+func (emptyDriverRows) Next(dest []driver.Value) error { return io.EOF }
+
+func (s *StoragePostgresSuite) emptyRows() *sql.Rows {
+	emptyRowsDriverOnce.Do(func() {
+		sql.Register("outbox_empty_rows", emptyRowsDriver{})
+	})
+	db, err := sql.Open("outbox_empty_rows", "")
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = db.Close() })
+	rows, err := db.QueryContext(context.Background(), "SELECT value")
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = rows.Close() })
+	return rows
+}
 
 func (s *StoragePostgresSuite) newEvent() outbox.Event {
 	event, err := outbox.NewEvent(outbox.EventInput{
@@ -109,10 +154,7 @@ func (s *StoragePostgresSuite) TestStorageMutations() {
 			args: args{ctx: context.Background()},
 			setup: func(input args) outbox.OutboxRepository {
 				dbtx := dbmocks.NewMockDBTX(s.T())
-				rows := dbmocks.NewMockRows(s.T())
-				rows.EXPECT().Next().Return(false).Once()
-				rows.EXPECT().Err().Return(nil).Once()
-				rows.EXPECT().Close().Return(nil).Once()
+				rows := s.emptyRows()
 				dbtx.EXPECT().QueryContext(input.ctx, mock.AnythingOfType("string"), int(outbox.StatusPending), 50).Return(rows, nil).Once()
 				return outbox.NewPostgresStorage(dbtx)
 			},

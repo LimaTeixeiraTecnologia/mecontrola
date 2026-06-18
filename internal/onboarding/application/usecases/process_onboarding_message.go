@@ -10,14 +10,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
@@ -46,7 +46,7 @@ type ProcessOnboardingMessageResult struct {
 }
 
 type ProcessOnboardingMessage struct {
-	uow         uow.UnitOfWork[ProcessOnboardingMessageResult]
+	uow         uow.UnitOfWork
 	factory     appinterfaces.RepositoryFactory
 	workflow    services.OnboardingWorkflow
 	publisher   outbox.Publisher
@@ -56,7 +56,7 @@ type ProcessOnboardingMessage struct {
 }
 
 func NewProcessOnboardingMessage(
-	u uow.UnitOfWork[ProcessOnboardingMessageResult],
+	u uow.UnitOfWork,
 	factory appinterfaces.RepositoryFactory,
 	workflow services.OnboardingWorkflow,
 	publisher outbox.Publisher,
@@ -87,9 +87,13 @@ func (uc *ProcessOnboardingMessage) Execute(ctx context.Context, in ProcessOnboa
 		return ProcessOnboardingMessageResult{}, fmt.Errorf("onboarding: process message: user id required")
 	}
 
-	return uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (ProcessOnboardingMessageResult, error) {
-		return uc.executeInTx(ctx, tx, in)
+	var res ProcessOnboardingMessageResult
+	err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
+		out, txErr := uc.executeInTx(ctx, tx, in)
+		res = out
+		return txErr
 	})
+	return res, err
 }
 
 func (uc *ProcessOnboardingMessage) executeInTx(ctx context.Context, tx database.DBTX, in ProcessOnboardingMessageInput) (ProcessOnboardingMessageResult, error) {

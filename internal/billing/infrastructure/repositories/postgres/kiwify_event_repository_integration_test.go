@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 
 	billingrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/repositories"
 
@@ -20,7 +20,7 @@ import (
 
 type KiwifyEventRepositorySuite struct {
 	suite.Suite
-	mgr     manager.Manager
+	db      *sqlx.DB
 	factory interfaces.RepositoryFactory
 }
 
@@ -31,12 +31,12 @@ func TestKiwifyEventRepositorySuite(t *testing.T) {
 func (s *KiwifyEventRepositorySuite) SetupTest() {}
 
 func (s *KiwifyEventRepositorySuite) SetupSuite() {
-	s.mgr = setupTestDB(s.T())
+	s.db = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
 }
 
 func (s *KiwifyEventRepositorySuite) newRepo() interfaces.KiwifyEventRepository {
-	return s.factory.KiwifyEventRepository(s.mgr.DBTX(context.Background()))
+	return s.factory.KiwifyEventRepository(s.db)
 }
 
 func (s *KiwifyEventRepositorySuite) TestPersist() {
@@ -97,7 +97,7 @@ func (s *KiwifyEventRepositorySuite) TestMarkProcessed() {
 				return envelopeID, time.Now().UTC().Truncate(time.Millisecond)
 			},
 			expect: func(ctx context.Context, envelopeID string, processedAt time.Time) {
-				dbtx := s.mgr.DBTX(ctx)
+				dbtx := s.db
 				var scanned time.Time
 				err := dbtx.QueryRowContext(ctx, `SELECT processed_at FROM billing_kiwify_events WHERE envelope_id = $1`, envelopeID).Scan(&scanned)
 				s.Require().NoError(err)

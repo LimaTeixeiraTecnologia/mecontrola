@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
@@ -20,17 +19,15 @@ type anonymizeUserPayload struct {
 }
 
 type AnonymizeUserAuthEvents struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	o11y    observability.Observability
+	repo interfaces.AuthEventsRepository
+	o11y observability.Observability
 }
 
 func NewAnonymizeUserAuthEvents(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.AuthEventsRepository,
 	o11y observability.Observability,
 ) *AnonymizeUserAuthEvents {
-	return &AnonymizeUserAuthEvents{factory: factory, mgr: mgr, o11y: o11y}
+	return &AnonymizeUserAuthEvents{repo: repo, o11y: o11y}
 }
 
 func (u *AnonymizeUserAuthEvents) Execute(ctx context.Context, in input.AnonymizeUserAuthEvents) error {
@@ -54,8 +51,7 @@ func (u *AnonymizeUserAuthEvents) Execute(ctx context.Context, in input.Anonymiz
 		return fmt.Errorf("identity.usecase.anonymize_user_auth_events: parse user_id: %w", err)
 	}
 
-	repo := u.factory.AuthEventsRepository(u.mgr.DBTX(ctx))
-	if err := repo.AnonymizeByUserID(ctx, userID); err != nil {
+	if err := u.repo.AnonymizeByUserID(ctx, userID); err != nil {
 		return fmt.Errorf("identity.usecase.anonymize_user_auth_events: anonymize_by_user_id: %w", err)
 	}
 	return nil

@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 )
@@ -15,7 +16,7 @@ const _retentionInterval = "24 months"
 
 type PurgeRetention struct {
 	factory   interfaces.RepositoryFactory
-	uow       uow.UnitOfWork[struct{}]
+	uow       uow.UnitOfWork
 	batchSize int
 	o11y      observability.Observability
 	purged    observability.Counter
@@ -24,7 +25,7 @@ type PurgeRetention struct {
 
 func NewPurgeRetention(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	batchSize int,
 	o11y observability.Observability,
 ) *PurgeRetention {
@@ -84,7 +85,7 @@ func (uc *PurgeRetention) Execute(ctx context.Context) error {
 
 func (uc *PurgeRetention) hasPendingNonTerminal(ctx context.Context) (bool, error) {
 	var found bool
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		pending := uc.factory.PendingEventRepository(tx)
 		ready, listErr := pending.ListReady(ctx, 1)
 		if listErr != nil {
@@ -100,7 +101,7 @@ func (uc *PurgeRetention) hasPendingNonTerminal(ctx context.Context) (bool, erro
 }
 
 func (uc *PurgeRetention) purgeExpenses(ctx context.Context) error {
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		expenses := uc.factory.ExpenseRepository(tx)
 		n, purgeErr := expenses.PurgeDeleted(ctx, _retentionInterval, uc.batchSize)
 		if purgeErr != nil {
@@ -118,7 +119,7 @@ func (uc *PurgeRetention) purgeExpenses(ctx context.Context) error {
 }
 
 func (uc *PurgeRetention) purgeAlerts(ctx context.Context) error {
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		alerts := uc.factory.AlertRepository(tx)
 		n, purgeErr := alerts.PurgeOld(ctx, _retentionInterval, uc.batchSize)
 		if purgeErr != nil {

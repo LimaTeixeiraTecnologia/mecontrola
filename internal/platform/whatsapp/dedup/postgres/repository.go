@@ -4,19 +4,26 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
 )
 
 type messageRepository struct {
 	o11y observability.Observability
-	mgr  manager.Manager
+	db   database.DBTX
 }
 
-func NewMessageRepository(o11y observability.Observability, mgr manager.Manager) dedup.MessageRepository {
-	return &messageRepository{o11y: o11y, mgr: mgr}
+func NewMessageRepository(o11y observability.Observability, db database.DBTX) dedup.MessageRepository {
+	return &messageRepository{o11y: o11y, db: db}
+}
+
+func (r *messageRepository) conn(ctx context.Context) database.DBTX {
+	if tx, ok := database.FromContext(ctx); ok {
+		return tx
+	}
+	return r.db
 }
 
 const channelWhatsApp = "whatsapp"
@@ -30,7 +37,7 @@ func (r *messageRepository) InsertIfAbsent(ctx context.Context, wamid string) (b
 		VALUES ($1, $2, now())
 		ON CONFLICT (channel, message_id) DO NOTHING`
 
-	result, err := r.mgr.DBTX(ctx).ExecContext(ctx, q, channelWhatsApp, wamid)
+	result, err := r.conn(ctx).ExecContext(ctx, q, channelWhatsApp, wamid)
 	if err != nil {
 		return false, fmt.Errorf("whatsapp.dedup: insert_if_absent: %w", err)
 	}

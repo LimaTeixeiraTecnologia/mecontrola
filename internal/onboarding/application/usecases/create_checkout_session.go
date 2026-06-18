@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
@@ -14,11 +12,13 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
 
 type CreateCheckoutSession struct {
-	uow     uow.UnitOfWork[entities.MagicToken]
+	uow     uow.UnitOfWork
 	factory appinterfaces.RepositoryFactory
 	builder appinterfaces.CheckoutURLBuilder
 	cipher  appinterfaces.TokenCipher
@@ -28,7 +28,7 @@ type CreateCheckoutSession struct {
 }
 
 func NewCreateCheckoutSession(
-	u uow.UnitOfWork[entities.MagicToken],
+	u uow.UnitOfWork,
 	factory appinterfaces.RepositoryFactory,
 	builder appinterfaces.CheckoutURLBuilder,
 	cipher appinterfaces.TokenCipher,
@@ -81,12 +81,12 @@ func (uc *CreateCheckoutSession) Execute(ctx context.Context, in input.CreateChe
 		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: set encrypted token: %w", err)
 	}
 
-	_, err = uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.MagicToken, error) {
+	err = uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		repo := uc.factory.MagicTokenRepository(tx)
 		if insertErr := repo.Insert(ctx, magicToken); insertErr != nil {
-			return entities.MagicToken{}, fmt.Errorf("onboarding: create checkout session: insert: %w", insertErr)
+			return fmt.Errorf("onboarding: create checkout session: insert: %w", insertErr)
 		}
-		return magicToken, nil
+		return nil
 	})
 	if err != nil {
 		return output.CreateCheckoutSessionOutput{}, err

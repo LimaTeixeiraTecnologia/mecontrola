@@ -7,9 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )
 
 // NewOnboardingSessionRepository creates a new instance of OnboardingSessionRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

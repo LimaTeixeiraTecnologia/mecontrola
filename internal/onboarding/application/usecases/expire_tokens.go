@@ -7,8 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
@@ -19,7 +20,7 @@ import (
 const expireBatchSize = 1000
 
 type ExpireTokens struct {
-	mgr           manager.Manager
+	db            database.DBTX
 	factory       appinterfaces.RepositoryFactory
 	idGen         id.Generator
 	o11y          observability.Observability
@@ -27,7 +28,7 @@ type ExpireTokens struct {
 }
 
 func NewExpireTokens(
-	mgr manager.Manager,
+	db database.DBTX,
 	factory appinterfaces.RepositoryFactory,
 	idGen id.Generator,
 	o11y observability.Observability,
@@ -37,7 +38,7 @@ func NewExpireTokens(
 		"Total de tokens PAID expirados sem consumo (subscription orfas)",
 		"1",
 	)
-	return &ExpireTokens{mgr: mgr, factory: factory, idGen: idGen, o11y: o11y, orphanExpired: orphanExpired}
+	return &ExpireTokens{db: db, factory: factory, idGen: idGen, o11y: o11y, orphanExpired: orphanExpired}
 }
 
 func (uc *ExpireTokens) Execute(ctx context.Context) error {
@@ -45,7 +46,7 @@ func (uc *ExpireTokens) Execute(ctx context.Context) error {
 	defer span.End()
 
 	now := time.Now().UTC()
-	db := uc.mgr.DBTX(ctx)
+	db := uc.db
 	tokenRepo := uc.factory.MagicTokenRepository(db)
 	signalRepo := uc.factory.SupportSignalRepository(db)
 

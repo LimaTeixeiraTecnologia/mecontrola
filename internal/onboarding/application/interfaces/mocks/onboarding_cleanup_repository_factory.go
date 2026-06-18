@@ -5,9 +5,10 @@
 package mocks
 
 import (
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 // NewOnboardingCleanupRepositoryFactory creates a new instance of OnboardingCleanupRepositoryFactory. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

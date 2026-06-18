@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
@@ -18,6 +16,8 @@ import (
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
 
@@ -27,7 +27,7 @@ type ConsumeInternalResult struct {
 }
 
 type ConsumeMagicToken struct {
-	uow            uow.UnitOfWork[ConsumeInternalResult]
+	uow            uow.UnitOfWork
 	factory        appinterfaces.RepositoryFactory
 	binding        *binding.SubscriptionBindingService
 	idGen          id.Generator
@@ -39,7 +39,7 @@ type ConsumeMagicToken struct {
 }
 
 func NewConsumeMagicToken(
-	u uow.UnitOfWork[ConsumeInternalResult],
+	u uow.UnitOfWork,
 	factory appinterfaces.RepositoryFactory,
 	binding *binding.SubscriptionBindingService,
 	idGen id.Generator,
@@ -105,8 +105,11 @@ func (uc *ConsumeMagicToken) Execute(ctx context.Context, in input.ConsumeMagicT
 		return ConsumeResult{Outcome: ConsumeOutcomeNotFound}, nil
 	}
 
-	result, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (ConsumeInternalResult, error) {
-		return uc.executeInTx(ctx, tx, token, in)
+	var result ConsumeInternalResult
+	err = uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
+		res, txErr := uc.executeInTx(ctx, tx, token, in)
+		result = res
+		return txErr
 	})
 
 	elapsed := time.Since(start).Seconds()

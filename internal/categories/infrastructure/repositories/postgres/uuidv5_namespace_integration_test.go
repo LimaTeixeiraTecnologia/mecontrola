@@ -23,9 +23,8 @@ func TestUUIDv5NamespaceSuite(t *testing.T) {
 }
 
 func (s *UUIDv5NamespaceSuite) TestSeedIDsAreDeterministicRecomputable() {
-	mgr := setupTestDB(s.T())
+	db := setupTestDB(s.T())
 	ctx := context.Background()
-	db := mgr.DBTX(ctx)
 
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, kind, slug FROM mecontrola.categories

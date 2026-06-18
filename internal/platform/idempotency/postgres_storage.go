@@ -6,18 +6,26 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 const pgUniqueViolation = "23505"
 
 type postgresStorage struct {
-	mgr manager.Manager
+	db database.DBTX
 }
 
-func NewPostgresStorage(mgr manager.Manager) Storage {
-	return &postgresStorage{mgr: mgr}
+func NewPostgresStorage(db database.DBTX) Storage {
+	return &postgresStorage{db: db}
+}
+
+func (s *postgresStorage) conn(ctx context.Context) database.DBTX {
+	if tx, ok := database.FromContext(ctx); ok {
+		return tx
+	}
+	return s.db
 }
 
 func (s *postgresStorage) Get(ctx context.Context, scope, key, userID string) (Record, error) {
@@ -29,7 +37,7 @@ func (s *postgresStorage) Get(ctx context.Context, scope, key, userID string) (R
 		   AND user_id  = $3
 		   AND expires_at > now()`
 
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, q, scope, key, userID)
+	row := s.conn(ctx).QueryRowContext(ctx, q, scope, key, userID)
 
 	var rec Record
 	err := row.Scan(
@@ -59,7 +67,7 @@ func (s *postgresStorage) Put(ctx context.Context, rec Record) error {
 		ON CONFLICT (scope, key, user_id) DO NOTHING
 		RETURNING scope`
 
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx,
+	row := s.conn(ctx).QueryRowContext(ctx,
 		q,
 		rec.Scope,
 		rec.Key,

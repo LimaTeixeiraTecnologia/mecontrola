@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
@@ -26,14 +27,14 @@ type LinkChannelResult struct {
 }
 
 type LinkChannelToUser struct {
-	uow         uow.UnitOfWork[LinkChannelResult]
+	uow         uow.UnitOfWork
 	factory     interfaces.RepositoryFactory
 	o11y        observability.Observability
 	linkedTotal observability.Counter
 }
 
 func NewLinkChannelToUser(
-	u uow.UnitOfWork[LinkChannelResult],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	o11y observability.Observability,
 ) *LinkChannelToUser {
@@ -98,7 +99,7 @@ func (uc *LinkChannelToUser) linkWithinTransaction(
 	externalID valueobjects.ExternalID,
 	identity entities.UserIdentity,
 ) (LinkChannelResult, error) {
-	return uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (LinkChannelResult, error) {
+	return uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (LinkChannelResult, error) {
 		repo := uc.factory.UserIdentityRepository(tx)
 
 		existing, found, err := repo.TryFindActive(ctx, channel, externalID)

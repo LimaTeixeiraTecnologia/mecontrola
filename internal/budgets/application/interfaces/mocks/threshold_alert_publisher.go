@@ -8,9 +8,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 // NewThresholdAlertPublisher creates a new instance of ThresholdAlertPublisher. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

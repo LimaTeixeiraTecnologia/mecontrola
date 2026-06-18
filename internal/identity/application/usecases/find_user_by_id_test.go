@@ -14,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 )
@@ -44,9 +43,7 @@ func (s *FindUserByIDSuite) TestExecute() {
 	}
 
 	type dependencies struct {
-		manager *usecasemocks.FakeManager
-		factory *interfacesmocks.MockRepositoryFactory
-		repo    *interfacesmocks.MockUserRepository
+		repo *interfacesmocks.MockUserRepository
 	}
 
 	scenarios := []struct {
@@ -71,7 +68,6 @@ func (s *FindUserByIDSuite) TestExecute() {
 					time.Time{},
 				)
 				s.Require().NoError(err)
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().FindByID(mock.Anything, "existing-user-id").Return(user, nil).Once()
 			},
 			expect: func(outputErr error, outputID string) {
@@ -83,7 +79,6 @@ func (s *FindUserByIDSuite) TestExecute() {
 			name: "deve propagar erro de usuario nao encontrado",
 			args: args{input: input.FindUserByID{ID: "non-existent"}},
 			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().FindByID(mock.Anything, "non-existent").Return(entities.User{}, application.ErrUserNotFound).Once()
 			},
 			expect: func(outputErr error, outputID string) {
@@ -97,7 +92,6 @@ func (s *FindUserByIDSuite) TestExecute() {
 			args: args{input: input.FindUserByID{ID: "some-id"}},
 			setup: func(deps dependencies) {
 				ioErr := errors.New("db unavailable")
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
 				deps.repo.EXPECT().FindByID(mock.Anything, "some-id").Return(entities.User{}, ioErr).Once()
 			},
 			expect: func(outputErr error, outputID string) {
@@ -111,13 +105,11 @@ func (s *FindUserByIDSuite) TestExecute() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			deps := dependencies{
-				manager: usecasemocks.NewFakeManager(),
-				factory: interfacesmocks.NewMockRepositoryFactory(s.T()),
-				repo:    interfacesmocks.NewMockUserRepository(s.T()),
+				repo: interfacesmocks.NewMockUserRepository(s.T()),
 			}
 			scenario.setup(deps)
 
-			sut := usecases.NewFindUserByID(deps.manager, deps.factory, noop.NewProvider())
+			sut := usecases.NewFindUserByID(deps.repo, noop.NewProvider())
 			output, err := sut.Execute(s.ctx, scenario.args.input)
 
 			scenario.expect(err, output.ID)

@@ -6,22 +6,22 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 type subscriptionProjectionReader struct {
-	mgr  manager.Manager
+	db   database.DBTX
 	o11y observability.Observability
 }
 
 func NewSubscriptionProjectionReader(
-	mgr manager.Manager,
+	db database.DBTX,
 	o11y observability.Observability,
 ) interfaces.SubscriptionProjectionReader {
-	return &subscriptionProjectionReader{mgr: mgr, o11y: o11y}
+	return &subscriptionProjectionReader{db: db, o11y: o11y}
 }
 
 func (r *subscriptionProjectionReader) FindCurrentBySubscriptionID(
@@ -43,7 +43,7 @@ func (r *subscriptionProjectionReader) FindCurrentBySubscriptionID(
 		graceEnd sql.NullTime
 	)
 
-	err := r.mgr.DBTX(ctx).QueryRowContext(ctx, query, subscriptionID).Scan(
+	err := r.db.QueryRowContext(ctx, query, subscriptionID).Scan(
 		&record.FunnelToken,
 		&userID,
 		&record.Status,

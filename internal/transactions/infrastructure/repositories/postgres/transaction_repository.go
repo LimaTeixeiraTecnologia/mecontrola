@@ -2,17 +2,19 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
@@ -277,7 +279,7 @@ func (r *transactionRepository) SumByMonth(ctx context.Context, userID uuid.UUID
 	return income, outcome, nil
 }
 
-func (r *transactionRepository) scanRows(rows database.Rows) ([]*entities.Transaction, error) {
+func (r *transactionRepository) scanRows(rows *sql.Rows) ([]*entities.Transaction, error) {
 	var result []*entities.Transaction
 	for rows.Next() {
 		tx, err := r.scan(rows)
@@ -292,7 +294,7 @@ func (r *transactionRepository) scanRows(rows database.Rows) ([]*entities.Transa
 	return result, nil
 }
 
-func (r *transactionRepository) scan(rows database.Rows) (*entities.Transaction, error) {
+func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, error) {
 	var (
 		id                      uuid.UUID
 		userID                  uuid.UUID

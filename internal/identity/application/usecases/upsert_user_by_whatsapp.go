@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
@@ -17,18 +15,20 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
 const prefixUpsertUser = "identity.usecase.upsert_user_by_whatsapp:"
 
 type UpsertUserByWhatsApp struct {
-	uow     uow.UnitOfWork[entities.User]
+	uow     uow.UnitOfWork
 	factory interfaces.RepositoryFactory
 	o11y    observability.Observability
 }
 
 func NewUpsertUserByWhatsApp(
-	u uow.UnitOfWork[entities.User],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	o11y observability.Observability,
 ) *UpsertUserByWhatsApp {
@@ -48,7 +48,7 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 	if tx, ok := database.FromContext(ctx); ok {
 		result, err = u.persistUpsert(ctx, tx, whatsapp, email, in.DisplayName)
 	} else {
-		result, err = u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
+		result, err = uow.Do(ctx, u.uow, func(ctx context.Context, tx database.DBTX) (entities.User, error) {
 			return u.persistUpsert(ctx, tx, whatsapp, email, in.DisplayName)
 		})
 	}

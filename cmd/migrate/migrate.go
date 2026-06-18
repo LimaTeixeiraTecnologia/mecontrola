@@ -13,13 +13,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/migration"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
+	"github.com/golang-migrate/migrate/v4"
+	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/migrations"
 )
 
@@ -62,19 +63,13 @@ func Run(writer io.Writer) (retErr error) {
 		retErr = errors.Join(retErr, rt.shutdown(shutdownCtx))
 	}()
 
-	migrator, err := migration.New(
-		rt.dbManager,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(rt.cfg.DBConfig.MigrationDSN()),
-		migration.WithMigrationTimeout(5*time.Minute),
-		migration.WithObservability(rt.o11y),
-	)
+	migrator, err := rt.newMigrator()
 	if err != nil {
 		return fmt.Errorf("migrate: erro ao criar migrator: %w", err)
 	}
 
-	if err := migrator.Up(ctx); err != nil {
-		if errors.Is(err, migration.ErrNoChange) {
+	if err := migrator.Up(); err != nil {
+		if errors.Is(err, migrate.ErrNoChange) {
 			rt.o11y.Logger().Info(ctx, "no pending migrations",
 				observability.String("service", rt.cfg.HTTPConfig.ServiceNameAPI),
 				observability.String("op", "migrate"),
@@ -111,19 +106,13 @@ func RunDown(writer io.Writer, steps int) (retErr error) {
 		retErr = errors.Join(retErr, rt.shutdown(shutdownCtx))
 	}()
 
-	migrator, err := migration.New(
-		rt.dbManager,
-		migration.EmbedFS{FS: migrations.FS, Root: "."},
-		migration.WithDSN(rt.cfg.DBConfig.MigrationDSN()),
-		migration.WithMigrationTimeout(5*time.Minute),
-		migration.WithObservability(rt.o11y),
-	)
+	migrator, err := rt.newMigrator()
 	if err != nil {
 		return fmt.Errorf("migrate-down: erro ao criar migrator: %w", err)
 	}
 
-	if err := migrator.Down(ctx, steps); err != nil {
-		if errors.Is(err, migration.ErrNoChange) {
+	if err := migrateDown(migrator, steps); err != nil {
+		if errors.Is(err, migrate.ErrNoChange) {
 			rt.o11y.Logger().Info(ctx, "no migrations to revert",
 				observability.String("service", rt.cfg.HTTPConfig.ServiceNameAPI),
 				observability.String("op", "migrate-down"),
@@ -145,7 +134,29 @@ func RunDown(writer io.Writer, steps int) (retErr error) {
 type runtime struct {
 	cfg       *configs.Config
 	o11y      observability.Observability
-	dbManager manager.Manager
+	dbManager *postgres.Database
+}
+
+func (r *runtime) newMigrator() (*migrate.Migrate, error) {
+	driver, err := migratepgx.WithInstance(r.dbManager.DB(), &migratepgx.Config{
+		MigrationsTable: migratepgx.DefaultMigrationsTable,
+		SchemaName:      "public",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("migrate: criar driver: %w", err)
+	}
+	src, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return nil, fmt.Errorf("migrate: criar source: %w", err)
+	}
+	return migrate.NewWithInstance("iofs", src, "pgx5", driver)
+}
+
+func migrateDown(migrator *migrate.Migrate, steps int) error {
+	if steps < 0 {
+		return migrator.Down()
+	}
+	return migrator.Steps(-steps)
 }
 
 func (r *runtime) shutdown(ctx context.Context) error {
@@ -178,18 +189,12 @@ func bootstrap(ctx context.Context) (*runtime, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
-	postgresConfig := postgres.PostgresConfig{
-		DSN:          cfg.DBConfig.DSN(),
-		MaxOpenConns: cfg.DBConfig.MaxConns,
-		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
-		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
-		ConnMaxIdle:  cfg.DBConfig.ConnMaxIdleTime,
-	}
-	dbManager, err := manager.New(
-		postgresConfig,
-		manager.WithObservability(o11y),
-		manager.WithShutdownTimeout(10*time.Second),
-		manager.WithStartupMigrationDir(".migrations-disabled"),
+	dbManager, err := postgres.New(
+		cfg.DBConfig.DSN(),
+		postgres.WithMaxOpenConns(cfg.DBConfig.MaxConns),
+		postgres.WithMaxIdleConns(cfg.DBConfig.MaxIdleConns),
+		postgres.WithConnMaxLifetime(cfg.DBConfig.ConnMaxLifetime),
+		postgres.WithConnMaxIdleTime(cfg.DBConfig.ConnMaxIdleTime),
 	)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

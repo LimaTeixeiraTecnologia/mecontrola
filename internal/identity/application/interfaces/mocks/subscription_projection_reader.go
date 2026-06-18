@@ -7,8 +7,9 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 )
 
 // NewSubscriptionProjectionReader creates a new instance of SubscriptionProjectionReader. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

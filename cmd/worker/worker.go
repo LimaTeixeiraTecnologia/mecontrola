@@ -13,11 +13,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"net/http"
 
@@ -78,19 +79,12 @@ func Run() error {
 		return fmt.Errorf("worker: failed to create observability provider: %w", err)
 	}
 
-	postgresConfig := postgres.PostgresConfig{
-		DSN:          cfg.DBConfig.DSN(),
-		MaxOpenConns: cfg.DBConfig.MaxConns,
-		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
-		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
-		ConnMaxIdle:  cfg.DBConfig.ConnMaxIdleTime,
-	}
-	dbManager, err := manager.New(
-		postgresConfig,
-		manager.WithObservability(o11y),
-		manager.WithShutdownTimeout(10*time.Second),
-		manager.WithPoolStatsInterval(30*time.Second),
-		manager.WithStartupMigrationDir(".migrations-disabled"),
+	dbManager, err := postgres.New(
+		cfg.DBConfig.DSN(),
+		postgres.WithMaxOpenConns(cfg.DBConfig.MaxConns),
+		postgres.WithMaxIdleConns(cfg.DBConfig.MaxIdleConns),
+		postgres.WithConnMaxLifetime(cfg.DBConfig.ConnMaxLifetime),
+		postgres.WithConnMaxIdleTime(cfg.DBConfig.ConnMaxIdleTime),
 	)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -101,7 +95,7 @@ func Run() error {
 		)
 	}
 
-	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager}
+	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager, db: sqlx.NewDb(dbManager.DB(), "pgx")}
 	workerManager, err := runtime.newManager(ctx)
 	if err != nil {
 		return err
@@ -141,27 +135,28 @@ func Run() error {
 type workerRuntime struct {
 	cfg       *configs.Config
 	o11y      observability.Observability
-	dbManager manager.Manager
+	dbManager *postgres.Database
+	db        *sqlx.DB
 }
 
 func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error) { //nolint:revive // composition root agrega bootstrap de módulos; refatorar fragmentaria a ordem de lifecycle crítica
 	outboxFactory := outbox.NewRepositoryFactory(r.o11y)
-	dispatcherUoW := uow.New[[]outbox.Row](r.dbManager, uow.WithObservability(r.o11y))
-	reaperUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
-	housekeepUoW := uow.NewVoid(r.dbManager, uow.WithObservability(r.o11y))
+	dispatcherUoW := uow.NewUnitOfWork(r.db)
+	reaperUoW := uow.NewUnitOfWork(r.db)
+	housekeepUoW := uow.NewUnitOfWork(r.db)
 	eventsDispatcher := events.NewDispatcher()
-	identityModule, err := identity.NewIdentityModule(r.cfg, r.o11y, r.dbManager)
+	identityModule, err := identity.NewIdentityModule(r.cfg, r.o11y, r.db)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo identity: %w", err)
 	}
 	passthroughGateway := func(next http.Handler) http.Handler { return next }
-	categoriesModule := categories.NewCategoriesModule(r.dbManager, r.o11y, passthroughGateway)
-	billingModule, err := billing.NewBillingModule(r.cfg, r.o11y, r.dbManager)
+	categoriesModule := categories.NewCategoriesModule(r.db, r.o11y, passthroughGateway)
+	billingModule, err := billing.NewBillingModule(r.cfg, r.o11y, r.db)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo billing: %w", err)
 	}
 	onboardingModule, err := onboarding.NewOnboardingModule(
-		r.dbManager,
+		r.db,
 		r.cfg.OnboardingConfig,
 		r.cfg.WhatsAppConfig,
 		r.cfg.TelegramConfig,
@@ -181,16 +176,16 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	channelResolver := buildBudgetsChannelResolver(identityModule)
 	cardChannelResolver := buildCardChannelResolver(identityModule)
 
-	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.dbManager, passthroughGateway, channelGateway, cardChannelResolver)
+	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.db, passthroughGateway, channelGateway, cardChannelResolver)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}
-	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.dbManager, cardModule, categoriesModule, passthroughGateway)
+	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.db, cardModule, categoriesModule, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
 	}
 
-	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.dbManager, categoriesModule, passthroughGateway, channelGateway, channelResolver)
+	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.db, categoriesModule, passthroughGateway, channelGateway, channelResolver)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}

@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -17,11 +18,11 @@ import (
 
 type GetCardInvoice struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[output.CardInvoice]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
-func NewGetCardInvoice(factory interfaces.RepositoryFactory, u uow.UnitOfWork[output.CardInvoice], o11y observability.Observability) *GetCardInvoice {
+func NewGetCardInvoice(factory interfaces.RepositoryFactory, u uow.UnitOfWork, o11y observability.Observability) *GetCardInvoice {
 	return &GetCardInvoice{factory: factory, uow: u, o11y: o11y}
 }
 
@@ -39,7 +40,7 @@ func (uc *GetCardInvoice) Execute(ctx context.Context, cardID uuid.UUID, refMont
 		return output.CardInvoice{}, fmt.Errorf("transactions/get_card_invoice: ref_month inválido: %w", err)
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (output.CardInvoice, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (output.CardInvoice, error) {
 		invoicesRepo := uc.factory.CardInvoiceRepository(db)
 		inv, items, getErr := invoicesRepo.GetByMonth(ctx, principal.UserID, cardID, refMonth)
 		if getErr != nil {

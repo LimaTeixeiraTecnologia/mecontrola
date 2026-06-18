@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
@@ -27,7 +28,7 @@ import (
 type EstablishPrincipalIntegrationSuite struct {
 	suite.Suite
 	ctx  context.Context
-	mgr  manager.Manager
+	db   *sqlx.DB
 	o11y *noop.Provider
 }
 
@@ -40,15 +41,15 @@ func (s *EstablishPrincipalIntegrationSuite) SetupTest() {
 }
 
 func (s *EstablishPrincipalIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	s.o11y = noop.NewProvider()
 }
 
-func setupEstablishTestDB(t *testing.T) manager.Manager {
+func setupEstablishTestDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	mgr, _ := testcontainer.Postgres(t)
-	return mgr
+	db, _ := testcontainer.Postgres(t)
+	return db
 }
 
 func (s *EstablishPrincipalIntegrationSuite) outboxCfg() configs.OutboxConfig {
@@ -56,14 +57,14 @@ func (s *EstablishPrincipalIntegrationSuite) outboxCfg() configs.OutboxConfig {
 }
 
 func (s *EstablishPrincipalIntegrationSuite) newPublisher() outbox.Publisher {
-	storage := outbox.NewPostgresStorage(s.mgr.DBTX(s.ctx))
+	storage := outbox.NewPostgresStorage(s.db)
 	return outbox.NewPostgresPublisher(storage, s.outboxCfg())
 }
 
 func (s *EstablishPrincipalIntegrationSuite) seedActiveUser(wa string) entities.User {
 	s.T().Helper()
 	factory := repositories.NewRepositoryFactory(s.o11y)
-	repo := factory.UserRepository(s.mgr.DBTX(s.ctx))
+	repo := factory.UserRepository(s.db)
 	waNum, err := valueobjects.NewWhatsAppNumber(wa)
 	s.Require().NoError(err)
 	candidate := entities.New(waNum)
@@ -74,7 +75,7 @@ func (s *EstablishPrincipalIntegrationSuite) seedActiveUser(wa string) entities.
 
 func (s *EstablishPrincipalIntegrationSuite) countOutboxByType(eventType string) int {
 	var total int
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(
+	err := s.db.QueryRowContext(
 		s.ctx,
 		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`,
 		eventType,
@@ -85,7 +86,7 @@ func (s *EstablishPrincipalIntegrationSuite) countOutboxByType(eventType string)
 
 func (s *EstablishPrincipalIntegrationSuite) newSUT() *usecases.EstablishPrincipal {
 	factory := repositories.NewRepositoryFactory(s.o11y)
-	u := uow.New[usecases.EstablishResult](s.mgr, uow.WithObservability(s.o11y))
+	u := uow.NewUnitOfWork(s.db)
 	return usecases.NewEstablishPrincipal(u, factory, s.newPublisher(), s.o11y)
 }
 

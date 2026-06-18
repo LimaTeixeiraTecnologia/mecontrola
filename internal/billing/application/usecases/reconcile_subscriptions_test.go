@@ -50,7 +50,7 @@ func (s *ReconcileSubscriptionsSuite) SetupTest() {
 func (s *ReconcileSubscriptionsSuite) newSUT() *usecases.ReconcileSubscriptions {
 	saleApproved := usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 	refund := usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-	return usecases.NewReconcileSubscriptions(nil, s.factoryMock, s.kiwifyClientMock, saleApproved, refund, noop.NewProvider())
+	return usecases.NewReconcileSubscriptions(s.checkpointMock, s.kiwifyClientMock, saleApproved, refund, noop.NewProvider())
 }
 
 func (s *ReconcileSubscriptionsSuite) monthlyPlan() valueobjects.Plan {
@@ -118,7 +118,6 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
 				s.factoryMock.EXPECT().PlanRepository(mock.Anything).Return(s.planRepoMock).Once()
 				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
 				s.eventRepoMock.EXPECT().
 					MarkApplied(s.ctx, "order_approved:sale-001", "order_approved", "sale-001", saleTime).
 					Return(nil).
@@ -251,7 +250,6 @@ func (s *ReconcileSubscriptionsSuite) TestExecute() {
 					Once()
 				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
 				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(mock.Anything).Return(s.checkpointMock).Once()
 				s.eventRepoMock.EXPECT().
 					MarkApplied(s.ctx, "order_refunded:sale-002", "order_refunded", "sale-002", saleTime).
 					Return(nil).

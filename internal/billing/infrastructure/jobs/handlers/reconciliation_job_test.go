@@ -60,8 +60,8 @@ func (s *ReconciliationJobSuite) SetupTest() {
 func (s *ReconciliationJobSuite) newJob() *handlers.ReconciliationJob {
 	saleApproved := usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
 	refund := usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-	reconcile := usecases.NewReconcileSubscriptions(nil, s.factoryMock, s.kiwifyMock, saleApproved, refund, noop.NewProvider())
-	runReconciliation := usecases.NewRunReconciliation(nil, s.factoryMock, reconcile, noop.NewProvider())
+	reconcile := usecases.NewReconcileSubscriptions(s.checkpointMock, s.kiwifyMock, saleApproved, refund, noop.NewProvider())
+	runReconciliation := usecases.NewRunReconciliation(s.checkpointMock, reconcile, noop.NewProvider())
 	return handlers.NewReconciliationJob(runReconciliation, configs.KiwifyConfig{ReconciliationInterval: "@hourly"})
 }
 
@@ -100,7 +100,6 @@ func (s *ReconciliationJobSuite) TestRun() {
 				checkpoint := now.Add(-2 * time.Hour)
 				expectedWindowStart := checkpoint.Add(-15 * time.Minute)
 
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(nil).Return(s.checkpointMock).Twice()
 				s.checkpointMock.EXPECT().Get(ctx, "kiwify_sales").Return(checkpoint, nil).Once()
 				s.kiwifyMock.EXPECT().
 					ListSalesUpdatedSince(ctx, mock.MatchedBy(func(ws time.Time) bool {
@@ -117,7 +116,6 @@ func (s *ReconciliationJobSuite) TestRun() {
 		{
 			name: "deve usar lookback padrao quando o checkpoint nao existir",
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(nil).Return(s.checkpointMock).Twice()
 				s.checkpointMock.EXPECT().Get(ctx, "kiwify_sales").Return(time.Time{}, application.ErrCheckpointNotFound).Once()
 				s.kiwifyMock.EXPECT().ListSalesUpdatedSince(ctx, mock.Anything, mock.Anything, 1).
 					Return(interfaces.KiwifySalePage{Sales: nil, HasMore: false}, nil).
@@ -132,7 +130,6 @@ func (s *ReconciliationJobSuite) TestRun() {
 			name: "nao deve avancar o checkpoint quando listar vendas falhar",
 			setup: func(ctx context.Context) {
 				checkpoint := time.Now().UTC().Add(-time.Hour)
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(nil).Return(s.checkpointMock).Once()
 				s.checkpointMock.EXPECT().Get(ctx, "kiwify_sales").Return(checkpoint, nil).Once()
 				s.kiwifyMock.EXPECT().ListSalesUpdatedSince(ctx, mock.Anything, mock.Anything, 1).
 					Return(interfaces.KiwifySalePage{}, errors.New("kiwify timeout")).
@@ -147,7 +144,6 @@ func (s *ReconciliationJobSuite) TestRun() {
 			name: "deve paginar ate nao haver mais paginas",
 			setup: func(ctx context.Context) {
 				checkpoint := time.Now().UTC().Add(-time.Hour)
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(nil).Return(s.checkpointMock).Twice()
 				s.checkpointMock.EXPECT().Get(ctx, "kiwify_sales").Return(checkpoint, nil).Once()
 				s.kiwifyMock.EXPECT().ListSalesUpdatedSince(ctx, mock.Anything, mock.Anything, 1).
 					Return(interfaces.KiwifySalePage{Sales: nil, HasMore: true}, nil).
@@ -176,7 +172,6 @@ func (s *ReconciliationJobSuite) TestRun() {
 				}
 				sub := makeActiveSub(s, "sub-r01", "token-r01")
 
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(nil).Return(s.checkpointMock).Twice()
 				s.checkpointMock.EXPECT().Get(ctx, "kiwify_sales").Return(checkpoint, nil).Once()
 				s.kiwifyMock.EXPECT().ListSalesUpdatedSince(ctx, mock.Anything, mock.Anything, 1).
 					Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).
@@ -206,7 +201,6 @@ func (s *ReconciliationJobSuite) TestRun() {
 					UpdatedAt:  saleTime,
 				}
 
-				s.factoryMock.EXPECT().ReconciliationCheckpointRepository(nil).Return(s.checkpointMock).Twice()
 				s.checkpointMock.EXPECT().Get(ctx, "kiwify_sales").Return(checkpoint, nil).Once()
 				s.kiwifyMock.EXPECT().ListSalesUpdatedSince(ctx, mock.Anything, mock.Anything, 1).
 					Return(interfaces.KiwifySalePage{Sales: []interfaces.KiwifySale{sale}, HasMore: false}, nil).

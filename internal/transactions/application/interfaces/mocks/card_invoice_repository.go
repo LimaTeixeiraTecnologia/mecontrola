@@ -8,10 +8,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 // NewCardInvoiceRepository creates a new instance of CardInvoiceRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

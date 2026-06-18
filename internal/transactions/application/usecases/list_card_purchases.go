@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -29,11 +30,11 @@ type ListCardPurchasesOutput struct {
 
 type ListCardPurchases struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[ListCardPurchasesOutput]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
-func NewListCardPurchases(factory interfaces.RepositoryFactory, u uow.UnitOfWork[ListCardPurchasesOutput], o11y observability.Observability) *ListCardPurchases {
+func NewListCardPurchases(factory interfaces.RepositoryFactory, u uow.UnitOfWork, o11y observability.Observability) *ListCardPurchases {
 	return &ListCardPurchases{factory: factory, uow: u, o11y: o11y}
 }
 
@@ -51,7 +52,7 @@ func (uc *ListCardPurchases) Execute(ctx context.Context, in ListCardPurchasesIn
 		limit = 20
 	}
 
-	result, err := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (ListCardPurchasesOutput, error) {
+	result, err := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (ListCardPurchasesOutput, error) {
 		repo := uc.factory.CardPurchaseRepository(db)
 		purchases, cursor, listErr := repo.ListByCardAndMonth(ctx, principal.UserID, in.CardID, in.RefMonth, in.Cursor, limit)
 		if listErr != nil {

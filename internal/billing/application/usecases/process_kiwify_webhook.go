@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
@@ -41,8 +40,7 @@ type processRefundOrChargeback interface {
 type triggerHandler func(ctx context.Context, p kiwifypayload.Payload) error
 
 type ProcessKiwifyWebhook struct {
-	factory          interfaces.RepositoryFactory
-	db               database.DBTX
+	eventRepo        interfaces.KiwifyEventRepository
 	o11y             observability.Observability
 	received         observability.Counter
 	trackingCarrier  observability.Counter
@@ -56,8 +54,7 @@ func NewProcessKiwifyWebhook(
 	subLate processSubscriptionLate,
 	subCanceled processSubscriptionCanceled,
 	refundOrCharge processRefundOrChargeback,
-	factory interfaces.RepositoryFactory,
-	db database.DBTX,
+	eventRepo interfaces.KiwifyEventRepository,
 	o11y observability.Observability,
 ) *ProcessKiwifyWebhook {
 	received := o11y.Metrics().Counter(
@@ -77,8 +74,7 @@ func NewProcessKiwifyWebhook(
 	)
 
 	uc := &ProcessKiwifyWebhook{
-		factory:          factory,
-		db:               db,
+		eventRepo:        eventRepo,
 		o11y:             o11y,
 		received:         received,
 		trackingCarrier:  trackingCarrier,
@@ -170,8 +166,7 @@ func (u *ProcessKiwifyWebhook) auditEnvelope(
 	raw []byte,
 	signatureStatus string,
 ) {
-	repo := u.factory.KiwifyEventRepository(u.db)
-	if err := repo.Persist(ctx, envelopeID, eventType, raw, signatureStatus); err != nil {
+	if err := u.eventRepo.Persist(ctx, envelopeID, eventType, raw, signatureStatus); err != nil {
 		u.o11y.Logger().Error(ctx, "billing.webhook.kiwify_events.persist_failed",
 			observability.String("envelope_id", envelopeID),
 			observability.Error(err),

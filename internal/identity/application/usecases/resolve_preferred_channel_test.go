@@ -13,15 +13,12 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
 type ResolvePreferredChannelSuite struct {
 	suite.Suite
-	repo    *mocks.UserIdentityRepository
-	factory *mocks.RepositoryFactory
-	mgr     *usecasesmocks.FakeManager
+	repo *mocks.UserIdentityRepository
 }
 
 func TestResolvePreferredChannel(t *testing.T) {
@@ -30,9 +27,6 @@ func TestResolvePreferredChannel(t *testing.T) {
 
 func (s *ResolvePreferredChannelSuite) SetupTest() {
 	s.repo = mocks.NewUserIdentityRepository(s.T())
-	s.factory = mocks.NewRepositoryFactory(s.T())
-	s.mgr = usecasesmocks.NewFakeManager()
-	s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.repo).Maybe()
 }
 
 func hydrate(s *ResolvePreferredChannelSuite, userID uuid.UUID, channel, externalID string, verifiedAt time.Time, unlinked time.Time) entities.UserIdentity {
@@ -111,7 +105,7 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			scenario.setup()
-			uc := usecases.NewResolvePreferredChannel(s.mgr, s.factory, noop.NewProvider())
+			uc := usecases.NewResolvePreferredChannel(s.repo, noop.NewProvider())
 			result, ok, err := uc.Execute(context.Background(), userID)
 			if scenario.expectErr {
 				s.Require().Error(err)

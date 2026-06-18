@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 var ErrInvoiceDueAlertRecordMissing = errors.New("card: registro de alerta de vencimento nao encontrado")

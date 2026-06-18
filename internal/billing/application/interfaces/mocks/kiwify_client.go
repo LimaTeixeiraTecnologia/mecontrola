@@ -8,8 +8,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 )
 
 // NewKiwifyClient creates a new instance of KiwifyClient. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

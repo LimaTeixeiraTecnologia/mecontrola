@@ -16,16 +16,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/infrastructure/messaging/database/producers"
@@ -41,7 +41,7 @@ const integWebhookSecret = "integ-test-secret"
 
 type WebhookIntegSuite struct {
 	suite.Suite
-	mgr             manager.Manager
+	db              *sqlx.DB
 	factory         interfaces.RepositoryFactory
 	webhookHandler  http.Handler
 	kiwifyProductID string
@@ -56,8 +56,8 @@ func (s *WebhookIntegSuite) SetupTest() {}
 func (s *WebhookIntegSuite) SetupSuite() {
 	ctx := context.Background()
 
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 
 	o11y := noop.NewProvider()
 	s.factory = billingrepos.NewRepositoryFactory(o11y)
@@ -66,11 +66,11 @@ func (s *WebhookIntegSuite) SetupSuite() {
 	idGen := id.NewUUIDGenerator()
 
 	publisher := producers.NewSubscriptionEventPublisher(outboxFactory, outboxCfg, idGen, noop.NewProvider())
-	saleUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
-	renewedUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
-	lateUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
-	canceledUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
-	refundUoW := uow.New[entities.Subscription](s.mgr, uow.WithObservability(o11y))
+	saleUoW := uow.NewUnitOfWork(s.db)
+	renewedUoW := uow.NewUnitOfWork(s.db)
+	lateUoW := uow.NewUnitOfWork(s.db)
+	canceledUoW := uow.NewUnitOfWork(s.db)
+	refundUoW := uow.NewUnitOfWork(s.db)
 
 	processSale := usecases.NewProcessSaleApproved(saleUoW, s.factory, publisher, o11y)
 	processRenewed := usecases.NewProcessSubscriptionRenewed(renewedUoW, s.factory, publisher, o11y)
@@ -83,8 +83,7 @@ func (s *WebhookIntegSuite) SetupSuite() {
 		processLate,
 		processCanceled,
 		processRefund,
-		s.factory,
-		s.mgr.DBTX(context.Background()),
+		s.factory.KiwifyEventRepository(s.db),
 		o11y,
 	)
 
@@ -100,7 +99,7 @@ func (s *WebhookIntegSuite) SetupSuite() {
 }
 
 func (s *WebhookIntegSuite) seedKiwifyProductID(ctx context.Context) {
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT kiwify_product_id FROM billing_plans WHERE code='MONTHLY' LIMIT 1`)
+	row := s.db.QueryRowContext(ctx, `SELECT kiwify_product_id FROM billing_plans WHERE code='MONTHLY' LIMIT 1`)
 	var pid string
 	s.Require().NoError(row.Scan(&pid))
 	s.kiwifyProductID = pid
@@ -121,7 +120,7 @@ func (s *WebhookIntegSuite) buildSignedRequest(payload []byte) *http.Request {
 func (s *WebhookIntegSuite) dispatchOutbox(ctx context.Context) {
 	o11y := noop.NewProvider()
 	dispatcher := events.NewDispatcher()
-	identityModule, err := identity.NewIdentityModule(&configs.Config{}, o11y, s.mgr)
+	identityModule, err := identity.NewIdentityModule(&configs.Config{}, o11y, s.db)
 	s.Require().NoError(err)
 	for _, registration := range identityModule.EventHandlers {
 		s.Require().NoError(dispatcher.Register(registration.EventType, registration.Handler))
@@ -134,7 +133,7 @@ func (s *WebhookIntegSuite) dispatchOutbox(ctx context.Context) {
 		RetryMaxBackoff:          time.Minute,
 	}
 	job := outboxrepo.NewDispatcherJob(
-		uow.New[[]outboxrepo.Row](s.mgr, uow.WithObservability(o11y)),
+		uow.NewUnitOfWork(s.db),
 		outboxrepo.NewRepositoryFactory(o11y),
 		dispatcher,
 		cfg,
@@ -221,17 +220,17 @@ func (s *WebhookIntegSuite) TestWebhookNoOp_TriggersForaDoMVP_Auditados202SemDis
 			s.Equal(http.StatusAccepted, rr.Code)
 
 			var kiwifyCount int
-			row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1 AND signature_status = 'valid'`, orderID)
+			row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1 AND signature_status = 'valid'`, orderID)
 			s.Require().NoError(row.Scan(&kiwifyCount))
 			s.Equal(1, kiwifyCount, "esperado 1 registro de auditoria para trigger no-op em billing_kiwify_events")
 
 			var subCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+			row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&subCount))
 			s.Equal(0, subCount, "trigger no-op nao deve criar subscription")
 
 			var procCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, orderID)
+			row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&procCount))
 			s.Equal(0, procCount, "trigger no-op nao deve gerar processed_event")
 		})
@@ -281,29 +280,29 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProce
 			s.Equal(http.StatusAccepted, rr.Code)
 
 			var subCount int
-			row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+			row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&subCount))
 			s.Equal(1, subCount)
 
 			var procCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, orderID)
+			row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_processed_events WHERE recurso_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&procCount))
 			s.Equal(1, procCount)
 
 			var outboxCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
+			row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, producers.EventTypeSubscriptionActivated)
 			s.Require().NoError(row.Scan(&outboxCount))
 			s.GreaterOrEqual(outboxCount, 1)
 
 			var kiwifyCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, orderID)
+			row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM billing_kiwify_events WHERE envelope_id = $1`, orderID)
 			s.Require().NoError(row.Scan(&kiwifyCount))
 			s.Equal(1, kiwifyCount)
 
 			s.dispatchOutbox(ctx)
 
 			var pendingCount int
-			row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_entitlements_pending WHERE subscription_id = (
+			row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_entitlements_pending WHERE subscription_id = (
 				SELECT id FROM billing_subscriptions WHERE kiwify_order_id = $1
 			)`, orderID)
 			s.Require().NoError(row.Scan(&pendingCount))
@@ -339,7 +338,7 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_SubscriptionCanceled_202_StatusC
 	s.Equal(http.StatusAccepted, rr.Code)
 
 	var expectedPeriodEnd time.Time
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	row := s.db.QueryRowContext(ctx, `SELECT period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
 	s.Require().NoError(row.Scan(&expectedPeriodEnd))
 
 	canceledPayload, err := json.Marshal(map[string]any{
@@ -363,13 +362,13 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_SubscriptionCanceled_202_StatusC
 
 	var status string
 	var periodEnd time.Time
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT status, period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	row = s.db.QueryRowContext(ctx, `SELECT status, period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
 	s.Require().NoError(row.Scan(&status, &periodEnd))
 	s.Equal("CANCELED_PENDING", status)
 	s.True(periodEnd.Equal(expectedPeriodEnd))
 
 	var outboxCount int
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = (SELECT id::text FROM billing_subscriptions WHERE kiwify_order_id = $1) AND event_type = $2`, orderID, producers.EventTypeSubscriptionCanceled)
+	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = (SELECT id::text FROM billing_subscriptions WHERE kiwify_order_id = $1) AND event_type = $2`, orderID, producers.EventTypeSubscriptionCanceled)
 	s.Require().NoError(row.Scan(&outboxCount))
 	s.GreaterOrEqual(outboxCount, 1)
 }
@@ -401,7 +400,7 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_SubscriptionRenewed_202_PeriodEx
 	s.Equal(http.StatusAccepted, rr.Code)
 
 	var previousPeriodEnd time.Time
-	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	row := s.db.QueryRowContext(ctx, `SELECT period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
 	s.Require().NoError(row.Scan(&previousPeriodEnd))
 
 	renewedPayload, err := json.Marshal(map[string]any{
@@ -425,13 +424,13 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_SubscriptionRenewed_202_PeriodEx
 
 	var status string
 	var currentPeriodEnd time.Time
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT status, period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	row = s.db.QueryRowContext(ctx, `SELECT status, period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
 	s.Require().NoError(row.Scan(&status, &currentPeriodEnd))
 	s.Equal("ACTIVE", status)
 	s.True(currentPeriodEnd.After(previousPeriodEnd))
 
 	var outboxCount int
-	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = (SELECT id::text FROM billing_subscriptions WHERE kiwify_order_id = $1) AND event_type = $2`, orderID, producers.EventTypeSubscriptionRenewed)
+	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = (SELECT id::text FROM billing_subscriptions WHERE kiwify_order_id = $1) AND event_type = $2`, orderID, producers.EventTypeSubscriptionRenewed)
 	s.Require().NoError(row.Scan(&outboxCount))
 	s.GreaterOrEqual(outboxCount, 1)
 }

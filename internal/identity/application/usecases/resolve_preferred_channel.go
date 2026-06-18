@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
@@ -18,21 +17,19 @@ type ResolvedChannel struct {
 }
 
 type ResolvePreferredChannel struct {
-	mgr     manager.Manager
-	factory interfaces.RepositoryFactory
-	o11y    observability.Observability
+	repo interfaces.UserIdentityRepository
+	o11y observability.Observability
 }
 
-func NewResolvePreferredChannel(mgr manager.Manager, factory interfaces.RepositoryFactory, o11y observability.Observability) *ResolvePreferredChannel {
-	return &ResolvePreferredChannel{mgr: mgr, factory: factory, o11y: o11y}
+func NewResolvePreferredChannel(repo interfaces.UserIdentityRepository, o11y observability.Observability) *ResolvePreferredChannel {
+	return &ResolvePreferredChannel{repo: repo, o11y: o11y}
 }
 
 func (uc *ResolvePreferredChannel) Execute(ctx context.Context, userID uuid.UUID) (ResolvedChannel, bool, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "identity.usecase.resolve_preferred_channel")
 	defer span.End()
 
-	repo := uc.factory.UserIdentityRepository(uc.mgr.DBTX(ctx))
-	identities, err := repo.ListByUser(ctx, userID)
+	identities, err := uc.repo.ListByUser(ctx, userID)
 	if err != nil {
 		span.RecordError(err)
 		return ResolvedChannel{}, false, fmt.Errorf("identity: resolve preferred channel: %w", err)

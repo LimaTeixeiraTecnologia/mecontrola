@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 
@@ -13,14 +12,14 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 	identityrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
-func SeedActiveUserWA(t *testing.T, mgr manager.Manager, waNumber string) uuid.UUID {
+func SeedActiveUserWA(t *testing.T, db database.DBTX, waNumber string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
 	o11y := noop.NewProvider()
 	factory := identityrepos.NewRepositoryFactory(o11y)
-	db := mgr.DBTX(ctx)
 
 	wa, err := valueobjects.NewWhatsAppNumber(waNumber)
 	if err != nil {

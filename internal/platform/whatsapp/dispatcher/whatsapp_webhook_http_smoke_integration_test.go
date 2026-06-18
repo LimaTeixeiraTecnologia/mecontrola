@@ -21,7 +21,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/ratelimit"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/signature"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
 func hmacHex(secret string, raw []byte) string {
@@ -49,9 +49,9 @@ func (s *DispatcherIntegrationSuite) TestWebhookHTTP_SignedPayload_EstablishesPr
 	var capturedText string
 
 	factory := repositories.NewRepositoryFactory(s.o11y)
-	establishUoW := uow.New[usecases.EstablishResult](s.mgr, uow.WithObservability(s.o11y))
+	establishUoW := uow.NewUnitOfWork(s.db)
 	establishUC := usecases.NewEstablishPrincipal(establishUoW, factory, s.newPublisher(), s.o11y)
-	dedupRepo := dedup.NewMessageRepository(s.o11y, s.mgr)
+	dedupRepo := dedup.NewMessageRepository(s.o11y, s.db)
 
 	onboardingRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 		return dispatcher.OutcomeOnboarding

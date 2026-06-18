@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
@@ -18,7 +19,7 @@ import (
 type EvaluateThresholdAlerts struct {
 	factory    interfaces.RepositoryFactory
 	publisher  interfaces.ThresholdAlertPublisher
-	uow        uow.UnitOfWork[struct{}]
+	uow        uow.UnitOfWork
 	thresholds services.ThresholdConfig
 	location   *time.Location
 	scanLimit  int
@@ -29,7 +30,7 @@ type EvaluateThresholdAlerts struct {
 func NewEvaluateThresholdAlerts(
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.ThresholdAlertPublisher,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	thresholds services.ThresholdConfig,
 	location *time.Location,
 	scanLimit int,
@@ -72,7 +73,7 @@ func (uc *EvaluateThresholdAlerts) Execute(ctx context.Context) error {
 		observability.String("ref_day", refDay.Format("2006-01-02")),
 	)
 
-	_, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		return struct{}{}, uc.executeInTx(ctx, tx, competence, refDay, now)
 	})
 	if err != nil {

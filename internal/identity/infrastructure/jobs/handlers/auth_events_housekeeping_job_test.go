@@ -13,14 +13,12 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
-	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/jobs/handlers"
 )
 
 type AuthEventsHousekeepingJobSuite struct {
 	suite.Suite
-	factoryMock *imocks.RepositoryFactory
-	repoMock    *imocks.AuthEventsRepository
+	repoMock *imocks.AuthEventsRepository
 }
 
 func TestAuthEventsHousekeepingJobSuite(t *testing.T) {
@@ -28,12 +26,11 @@ func TestAuthEventsHousekeepingJobSuite(t *testing.T) {
 }
 
 func (s *AuthEventsHousekeepingJobSuite) SetupTest() {
-	s.factoryMock = imocks.NewRepositoryFactory(s.T())
 	s.repoMock = imocks.NewAuthEventsRepository(s.T())
 }
 
 func (s *AuthEventsHousekeepingJobSuite) newJob(cfg configs.IdentityConfig) *handlers.AuthEventsHousekeepingJob {
-	cleanup := usecases.NewCleanupAuthEvents(usecasemocks.NewFakeManager(), s.factoryMock, cfg, noop.NewProvider())
+	cleanup := usecases.NewCleanupAuthEvents(s.repoMock, cfg, noop.NewProvider())
 	return handlers.NewAuthEventsHousekeepingJob(cleanup, cfg)
 }
 
@@ -84,7 +81,6 @@ func (s *AuthEventsHousekeepingJobSuite) TestRun() {
 			name: "deve excluir linhas antigas em lotes",
 			cfg:  configs.IdentityConfig{AuthEventsRetentionDays: 180, AuthEventsHousekeepingSchedule: "@monthly", AuthEventsHousekeepingBatch: 10000},
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().AuthEventsRepository(nil).Return(s.repoMock).Once()
 				s.repoMock.EXPECT().DeleteOlderThan(ctx, mock.Anything, 10000).Return(int64(10000), nil).Once()
 				s.repoMock.EXPECT().DeleteOlderThan(ctx, mock.Anything, 10000).Return(int64(5000), nil).Once()
 				s.repoMock.EXPECT().DeleteOlderThan(ctx, mock.Anything, 10000).Return(int64(0), nil).Once()
@@ -94,7 +90,6 @@ func (s *AuthEventsHousekeepingJobSuite) TestRun() {
 			name: "deve concluir quando nao houver linhas para excluir",
 			cfg:  configs.IdentityConfig{AuthEventsRetentionDays: 180, AuthEventsHousekeepingBatch: 10000},
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().AuthEventsRepository(nil).Return(s.repoMock).Once()
 				s.repoMock.EXPECT().DeleteOlderThan(ctx, mock.Anything, 10000).Return(int64(0), nil).Once()
 			},
 		},
@@ -102,7 +97,6 @@ func (s *AuthEventsHousekeepingJobSuite) TestRun() {
 			name: "deve propagar erro do repositorio",
 			cfg:  configs.IdentityConfig{AuthEventsRetentionDays: 180, AuthEventsHousekeepingBatch: 10000},
 			setup: func(ctx context.Context) {
-				s.factoryMock.EXPECT().AuthEventsRepository(nil).Return(s.repoMock).Once()
 				s.repoMock.EXPECT().DeleteOlderThan(ctx, mock.Anything, 10000).Return(int64(0), errors.New("db error")).Once()
 			},
 			expectErr: "db error",
@@ -124,7 +118,6 @@ func (s *AuthEventsHousekeepingJobSuite) TestRun() {
 			if scenario.expectErr == "context cancelled" {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(context.Background())
-				s.factoryMock.EXPECT().AuthEventsRepository(nil).Return(s.repoMock).Once()
 				s.repoMock.EXPECT().
 					DeleteOlderThan(mock.Anything, mock.Anything, 10000).
 					RunAndReturn(func(innerCtx context.Context, _ time.Time, _ int) (int64, error) {

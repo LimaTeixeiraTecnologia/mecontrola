@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
@@ -16,17 +15,15 @@ import (
 const prefixFindUserByWhatsApp = "identity.usecase.find_user_by_whatsapp:"
 
 type FindUserByWhatsApp struct {
-	mgr     manager.Manager
-	factory interfaces.RepositoryFactory
-	o11y    observability.Observability
+	repo interfaces.UserRepository
+	o11y observability.Observability
 }
 
 func NewFindUserByWhatsApp(
-	mgr manager.Manager,
-	factory interfaces.RepositoryFactory,
+	repo interfaces.UserRepository,
 	o11y observability.Observability,
 ) *FindUserByWhatsApp {
-	return &FindUserByWhatsApp{mgr: mgr, factory: factory, o11y: o11y}
+	return &FindUserByWhatsApp{repo: repo, o11y: o11y}
 }
 
 func (u *FindUserByWhatsApp) Execute(ctx context.Context, in input.FindUserByWhatsApp) (output.FindUser, error) {
@@ -38,8 +35,7 @@ func (u *FindUserByWhatsApp) Execute(ctx context.Context, in input.FindUserByWha
 		return output.FindUser{}, fmt.Errorf("%s parse whatsapp: %w", prefixFindUserByWhatsApp, err)
 	}
 
-	userRepo := u.factory.UserRepository(u.mgr.DBTX(ctx))
-	result, err := userRepo.FindByWhatsAppNumber(ctx, whatsapp)
+	result, err := u.repo.FindByWhatsAppNumber(ctx, whatsapp)
 	if err != nil {
 		span.RecordError(err)
 		u.o11y.Logger().Error(ctx, "identity.usecase.find_user_by_whatsapp_failed",

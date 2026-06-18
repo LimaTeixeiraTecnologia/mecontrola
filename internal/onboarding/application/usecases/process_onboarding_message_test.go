@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
@@ -27,7 +27,9 @@ import (
 
 type unitOfWorkProcess struct{}
 
-func (u *unitOfWorkProcess) Do(ctx context.Context, fn func(context.Context, database.DBTX) (usecases.ProcessOnboardingMessageResult, error), _ ...uow.Option) (usecases.ProcessOnboardingMessageResult, error) {
+func (u *unitOfWorkProcess) DBTX() database.DBTX { return nil }
+
+func (u *unitOfWorkProcess) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 

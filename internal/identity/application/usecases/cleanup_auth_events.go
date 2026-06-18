@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
@@ -18,8 +17,7 @@ const (
 )
 
 type CleanupAuthEvents struct {
-	mgr          manager.Manager
-	factory      interfaces.RepositoryFactory
+	repo         interfaces.AuthEventsRepository
 	cfg          configs.IdentityConfig
 	o11y         observability.Observability
 	deletedTotal observability.Counter
@@ -27,8 +25,7 @@ type CleanupAuthEvents struct {
 }
 
 func NewCleanupAuthEvents(
-	mgr manager.Manager,
-	factory interfaces.RepositoryFactory,
+	repo interfaces.AuthEventsRepository,
 	cfg configs.IdentityConfig,
 	o11y observability.Observability,
 ) *CleanupAuthEvents {
@@ -43,8 +40,7 @@ func NewCleanupAuthEvents(
 		"s",
 	)
 	return &CleanupAuthEvents{
-		mgr:          mgr,
-		factory:      factory,
+		repo:         repo,
 		cfg:          cfg,
 		o11y:         o11y,
 		deletedTotal: deletedTotal,
@@ -69,7 +65,6 @@ func (u *CleanupAuthEvents) Execute(ctx context.Context) error {
 	}
 
 	cutoff := time.Now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
-	repo := u.factory.AuthEventsRepository(u.mgr.DBTX(ctx))
 
 	var total int64
 	for {
@@ -79,7 +74,7 @@ func (u *CleanupAuthEvents) Execute(ctx context.Context) error {
 		default:
 		}
 
-		n, err := repo.DeleteOlderThan(ctx, cutoff, batchSize)
+		n, err := u.repo.DeleteOlderThan(ctx, cutoff, batchSize)
 		if err != nil {
 			span.RecordError(err)
 			u.o11y.Logger().Error(ctx, "identity.auth_events_housekeeping.delete_failed",

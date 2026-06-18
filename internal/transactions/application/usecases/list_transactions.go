@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -24,13 +25,13 @@ type TransactionPage struct {
 
 type ListTransactions struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[TransactionPage]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewListTransactions(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[TransactionPage],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *ListTransactions {
 	return &ListTransactions{
@@ -61,7 +62,7 @@ func (uc *ListTransactions) Execute(ctx context.Context, refMonthStr, cursor str
 		limit = maxListLimit
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (TransactionPage, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (TransactionPage, error) {
 		repo := uc.factory.TransactionRepository(db)
 		txs, nextCursor, listErr := repo.ListByMonth(ctx, principal.UserID, refMonth, interfaces.Cursor{Value: cursor}, limit)
 		if listErr != nil {

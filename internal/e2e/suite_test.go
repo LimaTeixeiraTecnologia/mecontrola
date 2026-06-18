@@ -14,8 +14,8 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
@@ -139,7 +139,7 @@ func loadConfig(t *testing.T) *configs.Config {
 	return cfg
 }
 
-func buildServer(t *testing.T, cfg *configs.Config, mgr manager.Manager, o11y observability.Observability) *e2eRuntime {
+func buildServer(t *testing.T, cfg *configs.Config, mgr *sqlx.DB, o11y observability.Observability) *e2eRuntime {
 	t.Helper()
 
 	ctx := context.Background()
@@ -205,13 +205,13 @@ func e2eAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func seedE2EUser(t *testing.T, mgr manager.Manager) {
+func seedE2EUser(t *testing.T, mgr *sqlx.DB) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := mgr.DBTX(ctx).ExecContext(ctx, `
+	_, err := mgr.ExecContext(ctx, `
 		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		VALUES ($1, $2, 'ACTIVE', now(), now())
 		ON CONFLICT (id) DO NOTHING

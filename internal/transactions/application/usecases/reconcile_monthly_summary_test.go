@@ -21,7 +21,6 @@ import (
 type ReconcileMonthlySummarySuite struct {
 	suite.Suite
 	ctx         context.Context
-	factory     *mockInterfaces.RepositoryFactory
 	txRepo      *mockInterfaces.TransactionRepository
 	invoiceRepo *mockInterfaces.CardInvoiceRepository
 	summaryRepo *mockInterfaces.MonthlySummaryRepository
@@ -33,14 +32,9 @@ func TestReconcileMonthlySummarySuite(t *testing.T) {
 
 func (s *ReconcileMonthlySummarySuite) SetupTest() {
 	s.ctx = context.Background()
-	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.txRepo = mockInterfaces.NewTransactionRepository(s.T())
 	s.invoiceRepo = mockInterfaces.NewCardInvoiceRepository(s.T())
 	s.summaryRepo = mockInterfaces.NewMonthlySummaryRepository(s.T())
-
-	s.factory.EXPECT().TransactionRepository(mock.Anything).Return(s.txRepo).Maybe()
-	s.factory.EXPECT().CardInvoiceRepository(mock.Anything).Return(s.invoiceRepo).Maybe()
-	s.factory.EXPECT().MonthlySummaryRepository(mock.Anything).Return(s.summaryRepo).Maybe()
 }
 
 func (s *ReconcileMonthlySummarySuite) TestExecute_NoActiveSummaries() {
@@ -48,7 +42,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_NoActiveSummaries() {
 		ListActiveSince(mock.Anything, mock.Anything, interfaces.Cursor{}, 200).
 		Return(nil, interfaces.Cursor{}, nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -75,7 +69,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_NoDrift_NoUpdate() {
 		Get(mock.Anything, userID, rm).
 		Return(&summary, nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -106,7 +100,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_WithDrift_Corrects() {
 		Upsert(mock.Anything, userID, rm, int64(60000), int64(30000), mock.Anything).
 		Return(nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -136,7 +130,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_SummaryAbsent_Upserts() {
 		Upsert(mock.Anything, userID, rm, int64(30000), int64(15000), mock.Anything).
 		Return(nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -149,7 +143,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_InvalidRefMonth_Skips() {
 		ListActiveSince(mock.Anything, mock.Anything, interfaces.Cursor{}, 200).
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().Error(err)
 }
@@ -167,7 +161,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_TxRepoError_ReturnsError() {
 		SumByMonth(mock.Anything, userID, rm).
 		Return(int64(0), int64(0), errors.New("db error")).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().Error(err)
 }
@@ -189,7 +183,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_CardInvoiceRepoError_ReturnsE
 		SumByMonth(mock.Anything, userID, rm).
 		Return(int64(0), errors.New("invoice db error")).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(nil, s.factory, 48, noop.NewProvider())
+	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().Error(err)
 }

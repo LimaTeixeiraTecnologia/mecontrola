@@ -7,9 +7,10 @@ package mocks
 import (
 	"context"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 )
 
 // NewRecurringTemplateEventPublisher creates a new instance of RecurringTemplateEventPublisher. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

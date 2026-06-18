@@ -7,8 +7,9 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 )
 
 // newProcessSubscriptionCanceled creates a new instance of processSubscriptionCanceled. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

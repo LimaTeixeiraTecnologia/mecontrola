@@ -13,7 +13,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
-	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -21,10 +20,8 @@ import (
 
 type InvoiceForSuite struct {
 	suite.Suite
-	mgr         *ucmocks.FakeManager
-	factoryMock *ifacemocks.RepositoryFactory
-	repoMock    *ifacemocks.CardRepository
-	loc         *time.Location
+	repoMock *ifacemocks.CardRepository
+	loc      *time.Location
 }
 
 func TestInvoiceFor(t *testing.T) {
@@ -32,8 +29,6 @@ func TestInvoiceFor(t *testing.T) {
 }
 
 func (s *InvoiceForSuite) SetupTest() {
-	s.mgr = ucmocks.NewFakeManager()
-	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	s.Require().NoError(err)
@@ -52,10 +47,9 @@ func (s *InvoiceForSuite) TestExecute_HappyPath() {
 	purchase := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 	in := input.InvoiceFor{CardID: card.ID, UserID: card.UserID, Purchase: purchase}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewInvoiceFor(s.factoryMock, s.mgr, s.loc, noop.NewProvider())
+	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -66,10 +60,9 @@ func (s *InvoiceForSuite) TestExecute_HappyPath() {
 func (s *InvoiceForSuite) TestExecute_CardNotFound() {
 	in := input.InvoiceFor{CardID: uuid.New(), UserID: uuid.New(), Purchase: time.Now()}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, in.CardID.String(), in.UserID.String()).Return(entities.Card{}, domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewInvoiceFor(s.factoryMock, s.mgr, s.loc, noop.NewProvider())
+	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -85,10 +78,9 @@ func (s *InvoiceForSuite) TestExecute_SoftDeletedCardReturnsNotFound() {
 
 	in := input.InvoiceFor{CardID: card.ID, UserID: card.UserID, Purchase: time.Now()}
 
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewInvoiceFor(s.factoryMock, s.mgr, s.loc, noop.NewProvider())
+	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -98,7 +90,7 @@ func (s *InvoiceForSuite) TestExecute_SoftDeletedCardReturnsNotFound() {
 func (s *InvoiceForSuite) TestExecute_ZeroPurchaseDate() {
 	in := input.InvoiceFor{CardID: uuid.New(), UserID: uuid.New(), Purchase: time.Time{}}
 
-	sut := usecases.NewInvoiceFor(s.factoryMock, s.mgr, s.loc, noop.NewProvider())
+	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)

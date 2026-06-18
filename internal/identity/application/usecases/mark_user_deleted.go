@@ -6,27 +6,27 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 const prefixMarkUserDeleted = "identity.usecase.mark_user_deleted:"
 
 type MarkUserDeleted struct {
-	uow       uow.UnitOfWork[struct{}]
+	uow       uow.UnitOfWork
 	factory   interfaces.RepositoryFactory
 	publisher outbox.Publisher
 	o11y      observability.Observability
 }
 
 func NewMarkUserDeleted(
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	publisher outbox.Publisher,
 	o11y observability.Observability,
@@ -38,21 +38,21 @@ func (u *MarkUserDeleted) Execute(ctx context.Context, in input.MarkUserDeleted)
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.mark_user_deleted")
 	defer span.End()
 
-	_, err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		now := time.Now().UTC()
 		userRepo := u.factory.UserRepository(tx)
 		if markErr := userRepo.MarkDeleted(ctx, in.ID, now); markErr != nil {
-			return struct{}{}, fmt.Errorf("%s mark deleted: %w", prefixMarkUserDeleted, markErr)
+			return fmt.Errorf("%s mark deleted: %w", prefixMarkUserDeleted, markErr)
 		}
 
 		ev, buildErr := buildUserDeletedEvent(in.ID, now)
 		if buildErr != nil {
-			return struct{}{}, fmt.Errorf("%s build user.deleted event: %w", prefixMarkUserDeleted, buildErr)
+			return fmt.Errorf("%s build user.deleted event: %w", prefixMarkUserDeleted, buildErr)
 		}
 		if pubErr := u.publisher.Publish(ctx, ev); pubErr != nil {
-			return struct{}{}, fmt.Errorf("%s publish user.deleted: %w", prefixMarkUserDeleted, pubErr)
+			return fmt.Errorf("%s publish user.deleted: %w", prefixMarkUserDeleted, pubErr)
 		}
-		return struct{}{}, nil
+		return nil
 	})
 
 	if err != nil {

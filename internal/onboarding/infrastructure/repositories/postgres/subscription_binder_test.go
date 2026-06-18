@@ -5,18 +5,16 @@ import (
 	"errors"
 	"testing"
 
-	managermocks "github.com/JailtonJunior94/devkit-go/pkg/database/manager/mocks"
-	dbmocks "github.com/JailtonJunior94/devkit-go/pkg/database/mocks"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
+	dbmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/mocks"
 )
 
 type SubscriptionBinderSuite struct {
 	suite.Suite
-	mgr    *managermocks.MockManager
 	tx     *dbmocks.MockDBTX
 	result *dbmocks.MockResult
 	subID  string
@@ -28,7 +26,6 @@ func TestSubscriptionBinderSuite(t *testing.T) {
 }
 
 func (s *SubscriptionBinderSuite) SetupTest() {
-	s.mgr = managermocks.NewMockManager(s.T())
 	s.tx = dbmocks.NewMockDBTX(s.T())
 	s.result = dbmocks.NewMockResult(s.T())
 	s.subID = "sub-unit-001"
@@ -38,18 +35,10 @@ func (s *SubscriptionBinderSuite) SetupTest() {
 func (s *SubscriptionBinderSuite) newBinder() interface {
 	BindUser(ctx context.Context, subscriptionID, userID string) error
 } {
-	return postgres.NewSubscriptionBinder(noop.NewProvider(), s.mgr)
-}
-
-func (s *SubscriptionBinderSuite) expectResolveTxOnce() {
-	s.mgr.EXPECT().
-		DBTX(mock.Anything).
-		Return(s.tx).
-		Once()
+	return postgres.NewSubscriptionBinder(noop.NewProvider(), s.tx)
 }
 
 func (s *SubscriptionBinderSuite) TestBindUser_ResolvesTxFromContextPerCall() {
-	s.expectResolveTxOnce()
 	s.tx.EXPECT().
 		ExecContext(mock.Anything, mock.Anything, s.userID, s.subID).
 		Return(s.result, nil).
@@ -64,7 +53,6 @@ func (s *SubscriptionBinderSuite) TestBindUser_ResolvesTxFromContextPerCall() {
 }
 
 func (s *SubscriptionBinderSuite) TestBindUser_PropagatesExecError() {
-	s.expectResolveTxOnce()
 	s.tx.EXPECT().
 		ExecContext(mock.Anything, mock.Anything, s.userID, s.subID).
 		Return(nil, errors.New("foreign key violation")).
@@ -76,7 +64,6 @@ func (s *SubscriptionBinderSuite) TestBindUser_PropagatesExecError() {
 }
 
 func (s *SubscriptionBinderSuite) TestBindUser_SubscriptionNotFound() {
-	s.expectResolveTxOnce()
 	s.tx.EXPECT().
 		ExecContext(mock.Anything, mock.Anything, s.userID, s.subID).
 		Return(s.result, nil).

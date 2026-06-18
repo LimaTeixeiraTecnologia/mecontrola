@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -16,13 +17,13 @@ import (
 
 type DeleteDraftBudget struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[struct{}]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewDeleteDraftBudget(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[struct{}],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *DeleteDraftBudget {
 	return &DeleteDraftBudget{factory: factory, uow: u, o11y: o11y}
@@ -37,7 +38,7 @@ func (uc *DeleteDraftBudget) Execute(ctx context.Context, in input.DeleteDraftIn
 		return err
 	}
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		return uc.persist(ctx, tx, cmd)
 	})
 	if execErr != nil {

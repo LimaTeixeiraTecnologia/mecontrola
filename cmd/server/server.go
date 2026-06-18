@@ -15,11 +15,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/spf13/cobra"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/postgres"
 	httpserver "github.com/JailtonJunior94/devkit-go/pkg/http_server/chi_server"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
@@ -30,6 +29,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	notificationadapters "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
 	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
@@ -75,19 +75,12 @@ func Run() error {
 		return fmt.Errorf("run: failed to create observability provider: %w", err)
 	}
 
-	postgresConfig := postgres.PostgresConfig{
-		DSN:          cfg.DBConfig.DSN(),
-		MaxOpenConns: cfg.DBConfig.MaxConns,
-		MaxIdleConns: cfg.DBConfig.MaxIdleConns,
-		ConnMaxLife:  cfg.DBConfig.ConnMaxLifetime,
-		ConnMaxIdle:  cfg.DBConfig.ConnMaxIdleTime,
-	}
-	dbManager, err := manager.New(
-		postgresConfig,
-		manager.WithObservability(o11y),
-		manager.WithShutdownTimeout(10*time.Second),
-		manager.WithPoolStatsInterval(30*time.Second),
-		manager.WithStartupMigrationDir(".migrations-disabled"),
+	dbManager, err := postgres.New(
+		cfg.DBConfig.DSN(),
+		postgres.WithMaxOpenConns(cfg.DBConfig.MaxConns),
+		postgres.WithMaxIdleConns(cfg.DBConfig.MaxIdleConns),
+		postgres.WithConnMaxLifetime(cfg.DBConfig.ConnMaxLifetime),
+		postgres.WithConnMaxIdleTime(cfg.DBConfig.ConnMaxIdleTime),
 	)
 	if err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -105,6 +98,8 @@ func Run() error {
 			slog.Error("database manager shutdown failed", "error", err)
 		}
 	}()
+
+	db := sqlx.NewDb(dbManager.DB(), "pgx")
 
 	serverOpts := []httpserver.Option{
 		httpserver.WithServiceName(cfg.HTTPConfig.ServiceNameAPI),
@@ -136,7 +131,7 @@ func Run() error {
 		observability.String("safe_dsn", cfg.DBConfig.SafeDSN()),
 	)
 
-	identityModule, err := identity.NewIdentityModule(cfg, o11y, dbManager)
+	identityModule, err := identity.NewIdentityModule(cfg, o11y, db)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo identity: %w", err)
 	}
@@ -159,13 +154,13 @@ func Run() error {
 
 	o11y.Logger().Info(ctx, "identity module wired", observability.Bool("router_registered", identityModule.UserRouter != nil))
 
-	categoriesModule := categories.NewCategoriesModule(dbManager, o11y, identityModule.GatewayAuthMiddleware)
+	categoriesModule := categories.NewCategoriesModule(db, o11y, identityModule.GatewayAuthMiddleware)
 	if categoriesModule.CategoryRouter != nil {
 		srv.RegisterRouters(categoriesModule.CategoryRouter)
 	}
 	o11y.Logger().Info(ctx, "categories module wired", observability.Bool("router_registered", categoriesModule.CategoryRouter != nil))
 
-	billingModule, err := billing.NewBillingModule(cfg, o11y, dbManager)
+	billingModule, err := billing.NewBillingModule(cfg, o11y, db)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo billing: %w", err)
 	}
@@ -175,7 +170,7 @@ func Run() error {
 	o11y.Logger().Info(ctx, "billing module wired", observability.Bool("router_registered", billingModule.WebhookRouter != nil))
 
 	onboardingModule, err := onboarding.NewOnboardingModule(
-		dbManager,
+		db,
 		cfg.OnboardingConfig,
 		cfg.WhatsAppConfig,
 		cfg.TelegramConfig,
@@ -190,7 +185,7 @@ func Run() error {
 	srv.RegisterRouters(onboardingModule.PublicRouter)
 	o11y.Logger().Info(ctx, "onboarding module wired")
 
-	cardModule, err := card.NewCardModule(ctx, cfg, o11y, dbManager, identityModule.GatewayAuthMiddleware, nil, nil)
+	cardModule, err := card.NewCardModule(ctx, cfg, o11y, db, identityModule.GatewayAuthMiddleware, nil, nil)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
@@ -204,7 +199,7 @@ func Run() error {
 		return fmt.Errorf("run: build channel gateway: %w", err)
 	}
 	channelResolver := buildBudgetsChannelResolver(identityModule)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, dbManager, categoriesModule, identityModule.GatewayAuthMiddleware, channelGateway, channelResolver)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, db, categoriesModule, identityModule.GatewayAuthMiddleware, channelGateway, channelResolver)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo budgets: %w", err)
 	}
@@ -213,7 +208,7 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "budgets module wired", observability.Bool("router_registered", budgetsModule.BudgetsRouter != nil))
 
-	transactionsModule, err := transactions.NewTransactionsModule(cfg, o11y, dbManager, cardModule, categoriesModule, identityModule.GatewayAuthMiddleware)
+	transactionsModule, err := transactions.NewTransactionsModule(cfg, o11y, db, cardModule, categoriesModule, identityModule.GatewayAuthMiddleware)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo transactions: %w", err)
 	}

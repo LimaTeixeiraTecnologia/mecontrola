@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
@@ -17,14 +18,14 @@ import (
 )
 
 type ProcessSubscriptionLate struct {
-	uow       uow.UnitOfWork[entities.Subscription]
+	uow       uow.UnitOfWork
 	factory   interfaces.RepositoryFactory
 	publisher interfaces.SubscriptionEventPublisher
 	o11y      observability.Observability
 }
 
 func NewProcessSubscriptionLate(
-	u uow.UnitOfWork[entities.Subscription],
+	u uow.UnitOfWork,
 	factory interfaces.RepositoryFactory,
 	publisher interfaces.SubscriptionEventPublisher,
 	o11y observability.Observability,
@@ -38,7 +39,7 @@ func (uc *ProcessSubscriptionLate) Execute(ctx context.Context, in input.Process
 
 	eventKey := fmt.Sprintf("subscription_late:%s:%s", in.KiwifySubID, in.OccurredAt.UTC().Format("2006-01-02T15:04:05Z07:00"))
 
-	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
+	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
 		processedRepo := uc.factory.ProcessedEventRepository(tx)
 		subRepo := uc.factory.SubscriptionRepository(tx)
 

@@ -7,8 +7,9 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 )
 
 // newGatewayAuthFailureLogger creates a new instance of gatewayAuthFailureLogger. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

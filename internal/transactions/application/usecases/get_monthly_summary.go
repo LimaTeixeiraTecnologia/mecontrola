@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -17,13 +18,13 @@ import (
 
 type GetMonthlySummary struct {
 	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[output.MonthlySummary]
+	uow     uow.UnitOfWork
 	o11y    observability.Observability
 }
 
 func NewGetMonthlySummary(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[output.MonthlySummary],
+	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *GetMonthlySummary {
 	return &GetMonthlySummary{
@@ -47,7 +48,7 @@ func (uc *GetMonthlySummary) Execute(ctx context.Context, refMonthStr string) (o
 		return output.MonthlySummary{}, fmt.Errorf("transactions/get_monthly_summary: ref_month inválido: %w", err)
 	}
 
-	result, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (output.MonthlySummary, error) {
+	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (output.MonthlySummary, error) {
 		repo := uc.factory.MonthlySummaryRepository(db)
 		summary, getErr := repo.Get(ctx, principal.UserID, refMonth)
 		if getErr != nil {

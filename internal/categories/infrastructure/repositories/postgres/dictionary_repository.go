@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 const (
@@ -158,7 +158,7 @@ func (r *dictionaryRepository) buildListQuery(q interfaces.DictionaryQuery, page
 	return sql, args
 }
 
-func (r *dictionaryRepository) scanEntries(rows database.Rows) ([]entities.DictionaryEntry, error) {
+func (r *dictionaryRepository) scanEntries(rows *sql.Rows) ([]entities.DictionaryEntry, error) {
 	var entries []entities.DictionaryEntry
 
 	for rows.Next() {
@@ -176,7 +176,7 @@ func (r *dictionaryRepository) scanEntries(rows database.Rows) ([]entities.Dicti
 	return entries, nil
 }
 
-func (r *dictionaryRepository) scanEntryFromRows(rows database.Rows) (entities.DictionaryEntry, error) {
+func (r *dictionaryRepository) scanEntryFromRows(rows *sql.Rows) (entities.DictionaryEntry, error) {
 	var e entities.DictionaryEntry
 	var kindStr, signalTypeStr, confidenceStr string
 	var deprecatedAt sql.NullTime

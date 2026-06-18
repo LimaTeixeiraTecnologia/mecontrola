@@ -8,9 +8,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 // NewSubscriptionEventPublisher creates a new instance of SubscriptionEventPublisher. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

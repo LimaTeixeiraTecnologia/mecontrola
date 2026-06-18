@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
@@ -15,25 +14,22 @@ import (
 const prefixFindUserByID = "identity.usecase.find_user_by_id:"
 
 type FindUserByID struct {
-	mgr     manager.Manager
-	factory interfaces.RepositoryFactory
-	o11y    observability.Observability
+	repo interfaces.UserRepository
+	o11y observability.Observability
 }
 
 func NewFindUserByID(
-	mgr manager.Manager,
-	factory interfaces.RepositoryFactory,
+	repo interfaces.UserRepository,
 	o11y observability.Observability,
 ) *FindUserByID {
-	return &FindUserByID{mgr: mgr, factory: factory, o11y: o11y}
+	return &FindUserByID{repo: repo, o11y: o11y}
 }
 
 func (u *FindUserByID) Execute(ctx context.Context, in input.FindUserByID) (output.FindUser, error) {
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.find_user_by_id")
 	defer span.End()
 
-	userRepo := u.factory.UserRepository(u.mgr.DBTX(ctx))
-	result, err := userRepo.FindByID(ctx, in.ID)
+	result, err := u.repo.FindByID(ctx, in.ID)
 	if err != nil {
 		span.RecordError(err)
 		u.o11y.Logger().Error(ctx, "identity.usecase.find_user_by_id_failed",

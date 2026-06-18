@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	identityapp "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	identityinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
@@ -86,7 +87,7 @@ type DirectActivationBinder interface {
 type ActivateTelegramByToken struct {
 	factory         interfaces.RepositoryFactory
 	identityFactory identityinterfaces.RepositoryFactory
-	uow             uow.UnitOfWork[ActivateTelegramResult]
+	uow             uow.UnitOfWork
 	directDecider   DirectActivationDecider
 	directBinder    DirectActivationBinder
 	directEnabled   bool
@@ -98,7 +99,7 @@ type ActivateTelegramByToken struct {
 func NewActivateTelegramByToken(
 	factory interfaces.RepositoryFactory,
 	identityFactory identityinterfaces.RepositoryFactory,
-	u uow.UnitOfWork[ActivateTelegramResult],
+	u uow.UnitOfWork,
 	directDecider DirectActivationDecider,
 	directBinder DirectActivationBinder,
 	directEnabled bool,
@@ -140,7 +141,7 @@ func (uc *ActivateTelegramByToken) Execute(ctx context.Context, in ActivateTeleg
 		return uc.observe(ctx, ActivateTelegramResult{Outcome: ActivateTelegramOutcomeNotFound}), nil
 	}
 
-	res, err := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (ActivateTelegramResult, error) {
+	res, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (ActivateTelegramResult, error) {
 		return uc.executeInTx(ctx, tx, token, in.TelegramUserID)
 	})
 	if err != nil {

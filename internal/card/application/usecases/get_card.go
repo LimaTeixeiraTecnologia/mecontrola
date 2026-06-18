@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -15,17 +14,15 @@ import (
 )
 
 type GetCard struct {
-	factory interfaces.RepositoryFactory
-	mgr     manager.Manager
-	o11y    observability.Observability
+	repo interfaces.CardRepository
+	o11y observability.Observability
 }
 
 func NewGetCard(
-	factory interfaces.RepositoryFactory,
-	mgr manager.Manager,
+	repo interfaces.CardRepository,
 	o11y observability.Observability,
 ) *GetCard {
-	return &GetCard{factory: factory, mgr: mgr, o11y: o11y}
+	return &GetCard{repo: repo, o11y: o11y}
 }
 
 func (u *GetCard) Execute(ctx context.Context, in input.GetCard) (output.Card, error) {
@@ -37,8 +34,7 @@ func (u *GetCard) Execute(ctx context.Context, in input.GetCard) (output.Card, e
 	)
 	defer span.End()
 
-	repo := u.factory.CardRepository(u.mgr.DBTX(ctx))
-	card, err := repo.GetByIDForUser(ctx, in.ID.String(), in.UserID.String())
+	card, err := u.repo.GetByIDForUser(ctx, in.ID.String(), in.UserID.String())
 	if err != nil {
 		outcome := classifyCardOutcome(err)
 		span.RecordError(err)

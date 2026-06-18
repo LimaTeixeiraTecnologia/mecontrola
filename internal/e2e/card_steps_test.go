@@ -51,7 +51,7 @@ func (e *e2eCtx) oCartaoDeveEstarSalvoNoBanco(reais, centavos int) error {
 		name       string
 		limitCents int64
 	)
-	err := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	err := e.mgr.QueryRowContext(ctx, `
 		SELECT id, user_id, name, limit_cents
 		  FROM mecontrola.cards
 		 WHERE id = $1
@@ -151,7 +151,7 @@ func (e *e2eCtx) deveExistirEventoDoTipoNoOutboxParaOCartao(expected int, eventT
 	defer cancel()
 
 	var total int
-	err := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	err := e.mgr.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		  FROM mecontrola.outbox_events
 		 WHERE event_type = $1
@@ -176,7 +176,7 @@ func (e *e2eCtx) oPayloadDoEventoDeveReferenciarOCartao(days int) error {
 	defer cancel()
 
 	var payload []byte
-	err := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	err := e.mgr.QueryRowContext(ctx, `
 		SELECT payload
 		  FROM mecontrola.outbox_events
 		 WHERE event_type = 'card.invoice_due.v1'
@@ -224,7 +224,7 @@ func (e *e2eCtx) deveExistirApenasRegistroDeAlertaParaOCartao(expected int) erro
 	defer cancel()
 
 	var total int
-	err := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	err := e.mgr.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		  FROM mecontrola.card_invoice_alerts_sent
 		 WHERE user_id = $1

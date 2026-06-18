@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
@@ -30,7 +30,7 @@ import (
 type RequireGatewayAuthIntegrationSuite struct {
 	suite.Suite
 	ctx    context.Context
-	mgr    manager.Manager
+	db     *sqlx.DB
 	o11y   *fake.Provider
 	secret []byte
 }
@@ -40,15 +40,15 @@ func TestRequireGatewayAuthIntegration(t *testing.T) {
 }
 
 func (s *RequireGatewayAuthIntegrationSuite) SetupSuite() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	s.mgr = mgr
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
 	s.o11y = fake.NewProvider()
 	s.ctx = context.Background()
 	s.secret = []byte("test-secret-32-bytes-padding-aaaa")
 }
 
 func (s *RequireGatewayAuthIntegrationSuite) newPublisher() outbox.Publisher {
-	storage := outbox.NewPostgresStorage(s.mgr.DBTX(s.ctx))
+	storage := outbox.NewPostgresStorage(s.db)
 	return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3})
 }
 
@@ -81,7 +81,7 @@ func (s *RequireGatewayAuthIntegrationSuite) computeHMAC(userID, ts string) stri
 
 func (s *RequireGatewayAuthIntegrationSuite) countOutboxEvents(eventType string) int {
 	var count int
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	err := s.db.QueryRowContext(s.ctx,
 		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1`, eventType,
 	).Scan(&count)
 	s.Require().NoError(err)
@@ -90,7 +90,7 @@ func (s *RequireGatewayAuthIntegrationSuite) countOutboxEvents(eventType string)
 
 func (s *RequireGatewayAuthIntegrationSuite) latestOutboxPayload(eventType string) map[string]any {
 	var raw []byte
-	err := s.mgr.DBTX(s.ctx).QueryRowContext(s.ctx,
+	err := s.db.QueryRowContext(s.ctx,
 		`SELECT payload FROM outbox_events WHERE event_type = $1 ORDER BY created_at DESC LIMIT 1`, eventType,
 	).Scan(&raw)
 	s.Require().NoError(err)

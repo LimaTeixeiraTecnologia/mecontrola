@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/jmoiron/sqlx"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 	httpserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/http/server/handlers"
@@ -53,7 +54,7 @@ func NewCardModule(
 	ctx context.Context,
 	cfg *configs.Config,
 	o11y observability.Observability,
-	mgr manager.Manager,
+	db *sqlx.DB,
 	gatewayAuth func(http.Handler) http.Handler,
 	channelGateway notification.ChannelGateway,
 	channelResolver interfaces.UserChannelResolver,
@@ -64,21 +65,22 @@ func NewCardModule(
 	}
 
 	factory := cardrepo.NewRepositoryFactory(o11y)
-	idemStorage := idempotency.NewPostgresStorage(mgr)
+	cardRepo := factory.CardRepository(db)
+	idemStorage := idempotency.NewPostgresStorage(db)
 
-	createUoW := uow.New[entities.Card](mgr)
-	updateUoW := uow.New[entities.Card](mgr)
-	updateLimitUoW := uow.New[entities.Card](mgr)
-	deleteUoW := uow.New[struct{}](mgr)
+	createUoW := uow.NewUnitOfWork(db)
+	updateUoW := uow.NewUnitOfWork(db)
+	updateLimitUoW := uow.NewUnitOfWork(db)
+	deleteUoW := uow.NewUnitOfWork(db)
 
 	createCard := usecases.NewCreateCard(createUoW, factory, idemStorage, o11y)
-	getCard := usecases.NewGetCard(factory, mgr, o11y)
-	listCards := usecases.NewListCards(factory, mgr, o11y)
+	getCard := usecases.NewGetCard(cardRepo, o11y)
+	listCards := usecases.NewListCards(cardRepo, o11y)
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
 	updateCardLimit := usecases.NewUpdateCardLimit(updateLimitUoW, factory, idemStorage, o11y)
 	softDelete := usecases.NewSoftDeleteCard(deleteUoW, factory, idemStorage, o11y)
-	invoiceFor := usecases.NewInvoiceFor(factory, mgr, loc, o11y)
-	getCardForUser := usecases.NewGetCardForUser(factory, mgr, o11y)
+	invoiceFor := usecases.NewInvoiceFor(cardRepo, loc, o11y)
+	getCardForUser := usecases.NewGetCardForUser(cardRepo, o11y)
 
 	createHandler := handlers.NewCreateCardHandler(createCard, o11y)
 	listHandler := handlers.NewListCardsHandler(listCards, o11y)
@@ -103,30 +105,16 @@ func NewCardModule(
 		{EventType: "onboarding.card_registered", Handler: onboardingCardConsumer},
 	}
 
-	var invoiceDueAlertsJob worker.Job
-	if channelGateway != nil && channelResolver != nil {
-		outboxFactory := outbox.NewRepositoryFactory(o11y)
-		invoiceDuePublisher := cardproducers.NewInvoiceDuePublisher(outboxFactory, cfg.OutboxConfig, id.NewUUIDGenerator(), o11y)
-		evaluateUoW := uow.NewVoid(mgr, uow.WithObservability(o11y))
-		evaluateInvoiceDue := usecases.NewEvaluateInvoiceDueAlerts(
-			factory,
-			invoiceDuePublisher,
-			evaluateUoW,
-			loc,
-			cfg.CardConfig.InvoiceDueWindowDays,
-			cfg.CardConfig.InvoiceDueScanLimit,
-			o11y,
-		)
-		notifyInvoiceDue := usecases.NewNotifyInvoiceDue(mgr, factory, channelResolver, channelGateway, loc, o11y)
-		invoiceDueNotifier := cardconsumers.NewInvoiceDueNotifier(notifyInvoiceDue, o11y)
-		eventHandlers = append(eventHandlers, EventHandlerRegistration{
-			EventType: "card.invoice_due.v1",
-			Handler:   invoiceDueNotifier,
-		})
-		if cfg.CardConfig.InvoiceDueAlertsEnabled {
-			invoiceDueAlertsJob = cardjobs.NewInvoiceDueAlertsJob(evaluateInvoiceDue, cfg.CardConfig)
-		}
-	}
+	invoiceDueAlertsJob, invoiceDueEventHandlers := newInvoiceDueArtifacts(
+		cfg,
+		o11y,
+		db,
+		factory,
+		loc,
+		channelGateway,
+		channelResolver,
+	)
+	eventHandlers = append(eventHandlers, invoiceDueEventHandlers...)
 
 	return CardModule{
 		RepositoryFactory:   factory,
@@ -142,4 +130,46 @@ func NewCardModule(
 		InvoiceDueAlertsJob: invoiceDueAlertsJob,
 		EventHandlers:       eventHandlers,
 	}, nil
+}
+
+func newInvoiceDueArtifacts(
+	cfg *configs.Config,
+	o11y observability.Observability,
+	db *sqlx.DB,
+	factory interfaces.RepositoryFactory,
+	loc *time.Location,
+	channelGateway notification.ChannelGateway,
+	channelResolver interfaces.UserChannelResolver,
+) (worker.Job, []EventHandlerRegistration) {
+	if channelGateway == nil || channelResolver == nil {
+		return nil, nil
+	}
+
+	outboxFactory := outbox.NewRepositoryFactory(o11y)
+	invoiceDuePublisher := cardproducers.NewInvoiceDuePublisher(outboxFactory, cfg.OutboxConfig, id.NewUUIDGenerator(), o11y)
+	evaluateUoW := uow.NewUnitOfWork(db)
+	evaluateInvoiceDue := usecases.NewEvaluateInvoiceDueAlerts(
+		factory,
+		invoiceDuePublisher,
+		evaluateUoW,
+		loc,
+		cfg.CardConfig.InvoiceDueWindowDays,
+		cfg.CardConfig.InvoiceDueScanLimit,
+		o11y,
+	)
+	alertSentRepo := factory.InvoiceDueAlertSentRepository(db)
+	notifyInvoiceDue := usecases.NewNotifyInvoiceDue(alertSentRepo, channelResolver, channelGateway, loc, o11y)
+	invoiceDueNotifier := cardconsumers.NewInvoiceDueNotifier(notifyInvoiceDue, o11y)
+	eventHandlers := []EventHandlerRegistration{
+		{
+			EventType: "card.invoice_due.v1",
+			Handler:   invoiceDueNotifier,
+		},
+	}
+
+	if !cfg.CardConfig.InvoiceDueAlertsEnabled {
+		return nil, eventHandlers
+	}
+
+	return cardjobs.NewInvoiceDueAlertsJob(evaluateInvoiceDue, cfg.CardConfig), eventHandlers
 }

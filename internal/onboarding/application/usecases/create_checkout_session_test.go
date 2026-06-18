@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/output"
@@ -21,7 +21,9 @@ import (
 
 type unitOfWorkCheckout struct{}
 
-func (u *unitOfWorkCheckout) Do(ctx context.Context, fn func(context.Context, database.DBTX) (entities.MagicToken, error), _ ...uow.Option) (entities.MagicToken, error) {
+func (u *unitOfWorkCheckout) DBTX() database.DBTX { return nil }
+
+func (u *unitOfWorkCheckout) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 	return fn(ctx, nil)
 }
 

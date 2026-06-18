@@ -11,7 +11,6 @@ import (
 
 	appinterfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	usecasesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
@@ -51,19 +50,15 @@ func (s *OutreachJobSuite) TestOutreachJob_Scenarios() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			dbManager := usecasesmocks.NewFakeManager()
-			repoFactory := appinterfacesmocks.NewRepositoryFactory(s.T())
 			tokenRepo := appinterfacesmocks.NewMagicTokenRepository(s.T())
 			waGW := appinterfacesmocks.NewOutreachChannelGateway(s.T())
 			cipher := appinterfacesmocks.NewTokenCipher(s.T())
 
-			repoFactory.EXPECT().MagicTokenRepository(mock.Anything).Return(tokenRepo).Maybe()
 			tokenRepo.EXPECT().FindPaidForOutreach(mock.Anything, mock.Anything, mock.Anything).
 				Return(nil, nil).Maybe()
 
 			uc := usecases.NewSendOutreach(
-				dbManager,
-				repoFactory,
+				tokenRepo,
 				waGW,
 				cipher,
 				id.NewUUIDGenerator(),

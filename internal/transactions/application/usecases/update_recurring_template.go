@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
-	"github.com/JailtonJunior94/devkit-go/pkg/database/uow"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
@@ -20,7 +21,7 @@ import (
 
 type UpdateRecurringTemplate struct {
 	factory           interfaces.RepositoryFactory
-	uow               uow.UnitOfWork[entities.RecurringTemplate]
+	uow               uow.UnitOfWork
 	categoryValidator interfaces.CategoryValidator
 	publisher         interfaces.RecurringTemplateEventPublisher
 	o11y              observability.Observability
@@ -28,7 +29,7 @@ type UpdateRecurringTemplate struct {
 
 func NewUpdateRecurringTemplate(
 	factory interfaces.RepositoryFactory,
-	u uow.UnitOfWork[entities.RecurringTemplate],
+	u uow.UnitOfWork,
 	categoryValidator interfaces.CategoryValidator,
 	publisher interfaces.RecurringTemplateEventPublisher,
 	o11y observability.Observability,
@@ -99,7 +100,7 @@ func (uc *UpdateRecurringTemplate) Execute(ctx context.Context, templateID strin
 	eventID := uuid.New()
 	now := time.Now().UTC()
 
-	t, execErr := uc.uow.Do(ctx, func(ctx context.Context, db database.DBTX) (entities.RecurringTemplate, error) {
+	t, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.RecurringTemplate, error) {
 		repo := uc.factory.RecurringTemplateRepository(db)
 
 		current, getErr := repo.GetByID(ctx, cmd.TemplateID, cmd.UserID.UUID())

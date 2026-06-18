@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database/manager"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
@@ -17,16 +16,14 @@ import (
 )
 
 type HandlePaidWithoutToken struct {
-	mgr              manager.Manager
-	factory          appinterfaces.RepositoryFactory
+	repo             appinterfaces.SupportSignalRepository
 	idGen            id.Generator
 	o11y             observability.Observability
 	paidWithoutToken observability.Counter
 }
 
 func NewHandlePaidWithoutToken(
-	mgr manager.Manager,
-	factory appinterfaces.RepositoryFactory,
+	repo appinterfaces.SupportSignalRepository,
 	idGen id.Generator,
 	o11y observability.Observability,
 ) *HandlePaidWithoutToken {
@@ -35,7 +32,7 @@ func NewHandlePaidWithoutToken(
 		"Total de pagamentos recebidos sem token de funil",
 		"1",
 	)
-	return &HandlePaidWithoutToken{mgr: mgr, factory: factory, idGen: idGen, o11y: o11y, paidWithoutToken: paidWithoutToken}
+	return &HandlePaidWithoutToken{repo: repo, idGen: idGen, o11y: o11y, paidWithoutToken: paidWithoutToken}
 }
 
 func (uc *HandlePaidWithoutToken) Execute(ctx context.Context, in input.HandlePaidWithoutTokenInput) error {
@@ -57,8 +54,7 @@ func (uc *HandlePaidWithoutToken) Execute(ctx context.Context, in input.HandlePa
 		return fmt.Errorf("onboarding: handle paid without token: new signal: %w", err)
 	}
 
-	repo := uc.factory.SupportSignalRepository(uc.mgr.DBTX(ctx))
-	if err := repo.Insert(ctx, sig); err != nil {
+	if err := uc.repo.Insert(ctx, sig); err != nil {
 		return fmt.Errorf("onboarding: handle paid without token: insert signal: %w", err)
 	}
 

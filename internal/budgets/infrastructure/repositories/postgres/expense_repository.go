@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -184,7 +185,7 @@ func (r *expenseRepository) SumByRoot(ctx context.Context, userID uuid.UUID, c v
 	return result, nil
 }
 
-func (r *expenseRepository) scanExpenseRow(row database.Row) (entities.Expense, entities.ExpenseTombstone, error) {
+func (r *expenseRepository) scanExpenseRow(row *sql.Row) (entities.Expense, entities.ExpenseTombstone, error) {
 	var (
 		id                    uuid.UUID
 		userID                uuid.UUID

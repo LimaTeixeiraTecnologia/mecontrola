@@ -86,7 +86,7 @@ func (e *e2eCtx) aAssinaturaBillingDeveEstarSalvaComo(status string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	row := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	row := e.mgr.QueryRowContext(ctx, `
 		SELECT status, period_end
 		  FROM billing_subscriptions
 		 WHERE kiwify_order_id = $1
@@ -110,7 +110,7 @@ func (e *e2eCtx) oEventoDeDominioDeveEstarNaOutbox(eventType string) error {
 	defer cancel()
 
 	var count int
-	row := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	row := e.mgr.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		  FROM outbox_events
 		 WHERE aggregate_id = (
@@ -132,7 +132,7 @@ func (e *e2eCtx) oEventoProcessadoDeveTerSidoRegistrado(eventType string) error 
 	defer cancel()
 
 	var count int
-	row := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	row := e.mgr.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		  FROM billing_processed_events
 		 WHERE trigger = $1
@@ -183,7 +183,7 @@ func (e *e2eCtx) lookupBillingPeriodEnd() (time.Time, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	row := e.mgr.DBTX(ctx).QueryRowContext(ctx, `
+	row := e.mgr.QueryRowContext(ctx, `
 		SELECT period_end
 		  FROM billing_subscriptions
 		 WHERE kiwify_order_id = $1

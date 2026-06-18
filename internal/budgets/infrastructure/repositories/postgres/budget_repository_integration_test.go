@@ -26,7 +26,7 @@ func TestBudgetRepositorySuite(t *testing.T) {
 func (s *BudgetRepositorySuite) TestCreateAndGetDraft() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newBudgetRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newBudgetRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-01")
@@ -44,7 +44,7 @@ func (s *BudgetRepositorySuite) TestCreateAndGetDraft() {
 func (s *BudgetRepositorySuite) TestGetByUserCompetenceNotFound() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newBudgetRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newBudgetRepo(testO11y(), mgr)
 
 	_, err := repo.GetByUserCompetence(ctx, uuid.New(), mustCompetence(s.T(), "2025-06"))
 	s.Require().Error(err)
@@ -54,7 +54,7 @@ func (s *BudgetRepositorySuite) TestGetByUserCompetenceNotFound() {
 func (s *BudgetRepositorySuite) TestActivateBudget() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newBudgetRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newBudgetRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-02")
@@ -79,7 +79,7 @@ func (s *BudgetRepositorySuite) TestActivateBudget() {
 func (s *BudgetRepositorySuite) TestDeleteDraft() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newBudgetRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newBudgetRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	competence := mustCompetence(s.T(), "2025-03")
@@ -95,7 +95,7 @@ func (s *BudgetRepositorySuite) TestDeleteDraft() {
 func (s *BudgetRepositorySuite) TestDeleteDraftNotFound() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newBudgetRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newBudgetRepo(testO11y(), mgr)
 
 	err := repo.DeleteDraft(ctx, uuid.New(), mustCompetence(s.T(), "2025-04"))
 	s.Require().Error(err)
@@ -105,7 +105,7 @@ func (s *BudgetRepositorySuite) TestDeleteDraftNotFound() {
 func (s *BudgetRepositorySuite) TestListFutureNotActivated() {
 	mgr := setupTestDB(s.T())
 	ctx := context.Background()
-	repo := newBudgetRepo(testO11y(), mgr.DBTX(ctx))
+	repo := newBudgetRepo(testO11y(), mgr)
 
 	userID := uuid.New()
 	for _, comp := range []string{"2025-05", "2025-06", "2025-07"} {
