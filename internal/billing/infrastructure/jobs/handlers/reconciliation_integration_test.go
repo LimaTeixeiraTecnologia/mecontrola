@@ -106,7 +106,12 @@ func (s *ReconciliationIntegrationSuite) insertActiveSubscription(orderID, funne
 	sub := entities.NewSubscription(plan, ft)
 	s.Require().NoError(sub.Activate(now))
 	subRepo := s.factory.SubscriptionRepository(db)
-	s.Require().NoError(subRepo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: now}))
+	s.Require().NoError(subRepo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{
+		OrderID:      orderID,
+		KiwifySubID:  fmt.Sprintf("kiwify-%s", orderID),
+		Subscription: sub,
+		PeriodStart:  now,
+	}))
 }
 
 func (s *ReconciliationIntegrationSuite) setCheckpoint(name string, watermark time.Time) {

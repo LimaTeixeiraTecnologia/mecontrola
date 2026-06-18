@@ -4,6 +4,8 @@ import "errors"
 
 var ErrFunnelTokenMissing = errors.New("billing: funnel token missing in payload")
 
+var ErrKiwifySubscriptionIDInvalid = errors.New("billing: invalid kiwify subscription id")
+
 var ErrPlanNotFound = errors.New("billing: plan not found for product_id")
 
 var ErrEventAlreadyProcessed = errors.New("billing: event already processed")

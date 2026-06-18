@@ -58,6 +58,7 @@ var webhookErrorTable = []webhookErrorMapping{
 	{target: usecases.ErrEventAlreadyProcessed, body: respondAccepted},
 	{target: usecases.ErrEventSuperseded, body: respondAccepted},
 	{target: usecases.ErrFunnelTokenMissing, body: respondUnprocessable("funnel token missing", "funnel_token_missing")},
+	{target: usecases.ErrKiwifySubscriptionIDInvalid, body: respondUnprocessable("invalid kiwify subscription id", "invalid_kiwify_subscription_id")},
 	{target: usecases.ErrUnknownTrigger, body: respondUnprocessable("unknown trigger", "unknown_trigger")},
 }
 

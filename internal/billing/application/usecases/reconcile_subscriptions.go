@@ -136,6 +136,7 @@ func (uc *ReconcileSubscriptions) reconcileSale(ctx context.Context, sale interf
 		SaleID:             sale.ID,
 		KiwifyProductID:    sale.KiwifyProductID,
 		OrderID:            sale.OrderID,
+		KiwifySubID:        sale.SubscriptionID,
 		FunnelToken:        sale.FunnelToken,
 		CustomerEmail:      sale.CustomerEmail,
 		CustomerMobileE164: sale.CustomerMobileE164,

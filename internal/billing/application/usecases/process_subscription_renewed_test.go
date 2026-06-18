@@ -96,6 +96,23 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 		expect func(error)
 	}{
 		{
+			name: "deve retornar erro quando kiwify subscription id for invalido",
+			args: args{
+				input: func() input.ProcessSubscriptionRenewedInput {
+					now := time.Now().UTC()
+					return input.ProcessSubscriptionRenewedInput{
+						OrderID:     "order-001",
+						KiwifySubID: "   ",
+						OccurredAt:  now,
+					}
+				}(),
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.ErrorIs(err, usecases.ErrKiwifySubscriptionIDInvalid)
+			},
+		},
+		{
 			name: "deve estender periodo de assinatura ativa",
 			args: args{
 				input: func() input.ProcessSubscriptionRenewedInput {
@@ -244,7 +261,9 @@ func (s *ProcessSubscriptionRenewedSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			sut := usecases.NewProcessSubscriptionRenewed(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-			scenario.setup(scenario.args)
+			if scenario.setup != nil {
+				scenario.setup(scenario.args)
+			}
 
 			err := sut.Execute(s.ctx, scenario.args.input)
 

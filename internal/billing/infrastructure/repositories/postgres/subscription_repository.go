@@ -23,6 +23,8 @@ var ErrConcurrentActiveSub = errors.New("billing: user already has an active sub
 
 var ErrSubscriptionNotFound = errors.New("billing: subscription not found")
 
+var ErrActiveSubscriptionPeriodStartRequired = errors.New("billing: active subscription requires period_start")
+
 const subscriptionSelectColumns = `id, funnel_token, kiwify_order_id,
 		       plan_code, status, period_start, period_end, grace_end, last_event_at,
 		       user_id`
@@ -50,8 +52,9 @@ func (r *subscriptionRepository) FindByKiwifySubID(ctx context.Context, kiwifySu
 	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.find_by_kiwify_sub_id")
 	defer span.End()
 
-	if kiwifySubID == "" {
-		return entities.Subscription{}, fmt.Errorf("billing/postgres: find_by_kiwify_sub_id: %w", ErrSubscriptionNotFound)
+	validID, err := valueobjects.NewKiwifySubscriptionID(kiwifySubID)
+	if err != nil {
+		return entities.Subscription{}, fmt.Errorf("billing/postgres: find_by_kiwify_sub_id: %w", err)
 	}
 
 	query := `SELECT ` + subscriptionSelectColumns + `
@@ -60,7 +63,7 @@ func (r *subscriptionRepository) FindByKiwifySubID(ctx context.Context, kiwifySu
 		 ORDER BY last_event_at DESC
 		 LIMIT 1`
 
-	row := r.db.QueryRowContext(ctx, query, kiwifySubID)
+	row := r.db.QueryRowContext(ctx, query, validID.String())
 	return r.scanRow(ctx, span, "find_by_kiwify_sub_id", row)
 }
 
@@ -81,6 +84,10 @@ func (r *subscriptionRepository) FindByUserID(ctx context.Context, userID string
 func (r *subscriptionRepository) UpsertByOrder(ctx context.Context, params interfaces.UpsertByOrderParams) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "billing.repository.subscription.upsert_by_order")
 	defer span.End()
+
+	if err := validateUpsertByOrderParams(params); err != nil {
+		return fmt.Errorf("billing/postgres: upsert_by_order: %w", err)
+	}
 
 	const query = `
 		INSERT INTO billing_subscriptions
@@ -347,7 +354,22 @@ func (r *subscriptionRepository) scanRow(
 		userIDVal = userID.String
 	}
 
+	if parsedStatus == valueobjects.StatusActive && periodStart.IsZero() {
+		return entities.Subscription{}, fmt.Errorf("billing/postgres: %s period_start: %w", op, ErrActiveSubscriptionPeriodStartRequired)
+	}
+
 	return entities.HydrateWithUser(id, userIDVal, ft, plan, parsedStatus, periodStart, periodEnd, graceEndVal, lastEventAt), nil
+}
+
+func validateUpsertByOrderParams(params interfaces.UpsertByOrderParams) error {
+	if _, err := valueobjects.NewKiwifySubscriptionID(params.KiwifySubID); err != nil {
+		return err
+	}
+	if params.Subscription.Status() == valueobjects.StatusActive && params.PeriodStart.IsZero() {
+		return ErrActiveSubscriptionPeriodStartRequired
+	}
+
+	return nil
 }
 
 func resolvePlanFromCode(code string) (valueobjects.Plan, error) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/database"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -22,11 +23,26 @@ import (
 
 type ActivateBudgetSuite struct {
 	suite.Suite
-	ctx     context.Context
-	factory *mockInterfaces.RepositoryFactory
-	repo    *mockInterfaces.BudgetRepository
-	uow     *uowMocks.UnitOfWorkBudget
-	useCase *usecases.ActivateBudget
+	ctx       context.Context
+	factory   *mockInterfaces.RepositoryFactory
+	repo      *mockInterfaces.BudgetRepository
+	publisher *fakeBudgetActivatedPublisher
+	uow       *uowMocks.UnitOfWorkBudget
+	useCase   *usecases.ActivateBudget
+}
+
+type fakeBudgetActivatedPublisher struct {
+	calls      int
+	lastBudget entities.Budget
+	lastAt     time.Time
+	err        error
+}
+
+func (f *fakeBudgetActivatedPublisher) Publish(_ context.Context, _ database.DBTX, budget entities.Budget, occurredAt time.Time) error {
+	f.calls++
+	f.lastBudget = budget
+	f.lastAt = occurredAt
+	return f.err
 }
 
 func TestActivateBudgetSuite(t *testing.T) {
@@ -37,9 +53,10 @@ func (s *ActivateBudgetSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
+	s.publisher = &fakeBudgetActivatedPublisher{}
 	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkBudget(s.T())
-	s.useCase = usecases.NewActivateBudget(s.factory, s.uow, noop.NewProvider())
+	s.useCase = usecases.NewActivateBudget(s.factory, s.publisher, s.uow, noop.NewProvider())
 }
 
 func buildDraftBudgetWithAllocations(userID uuid.UUID, comp valueobjects.Competence, total int64) entities.Budget {
@@ -143,6 +160,9 @@ func (s *ActivateBudgetSuite) TestExecute_ActivationSuccess_WithDistribution() {
 	s.NotNil(result.ActivatedAt)
 	s.Equal(int64(10000), result.TotalCents)
 	s.Len(result.Allocations, 2)
+	s.Equal(1, s.publisher.calls)
+	s.Equal(draft.ID(), s.publisher.lastBudget.ID())
+	s.False(s.publisher.lastAt.IsZero())
 }
 
 func (s *ActivateBudgetSuite) TestExecute_CentDistributionCorrect() {
@@ -172,6 +192,7 @@ func (s *ActivateBudgetSuite) TestExecute_CentDistributionCorrect() {
 		totalPlanned += a.PlannedCents
 	}
 	s.Equal(int64(1001), totalPlanned)
+	s.Equal(1, s.publisher.calls)
 }
 
 func (s *ActivateBudgetSuite) TestExecute_ActivateRepositoryError() {
@@ -196,6 +217,7 @@ func (s *ActivateBudgetSuite) TestExecute_ActivateRepositoryError() {
 	})
 
 	s.Error(err)
+	s.Equal(0, s.publisher.calls)
 }
 
 func (s *ActivateBudgetSuite) TestExecute_ActivateConflict() {
@@ -220,6 +242,7 @@ func (s *ActivateBudgetSuite) TestExecute_ActivateConflict() {
 	})
 
 	s.ErrorIs(err, interfaces.ErrBudgetConflict)
+	s.Equal(0, s.publisher.calls)
 }
 
 func (s *ActivateBudgetSuite) TestExecute_AllocationSumNot10000() {
@@ -244,4 +267,31 @@ func (s *ActivateBudgetSuite) TestExecute_AllocationSumNot10000() {
 	})
 
 	s.ErrorIs(err, entities.ErrBudgetAllocationSumMustBe10000)
+	s.Equal(0, s.publisher.calls)
+}
+
+func (s *ActivateBudgetSuite) TestExecute_PublishError() {
+	userID := uuid.New()
+	comp, _ := valueobjects.NewCompetence("2026-06")
+
+	draft := buildDraftBudgetWithAllocations(userID, comp, 10000)
+	s.publisher.err = errors.New("outbox down")
+
+	s.repo.EXPECT().
+		GetByUserCompetence(s.ctx, userID, comp).
+		Return(draft, nil).
+		Once()
+
+	s.repo.EXPECT().
+		Activate(s.ctx, mock.Anything).
+		Return(nil).
+		Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.ActivateBudgetInput{
+		UserID:     userID.String(),
+		Competence: "2026-06",
+	})
+
+	s.Error(err)
+	s.Equal(1, s.publisher.calls)
 }

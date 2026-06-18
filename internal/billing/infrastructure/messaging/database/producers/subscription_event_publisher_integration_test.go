@@ -92,6 +92,7 @@ func (s *OutboxProducerIntegSuite) TestRF10_OutboxRowCreatedTransactionallyOnPro
 				SaleID:          saleID,
 				KiwifyProductID: s.kiwifyProductID,
 				OrderID:         orderID,
+				KiwifySubID:     fmt.Sprintf("kiwify-sub-%d", time.Now().UnixNano()),
 				FunnelToken:     "token-integ-001",
 				OccurredAt:      time.Now().UTC().Truncate(time.Millisecond),
 			}

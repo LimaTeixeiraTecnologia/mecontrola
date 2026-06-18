@@ -62,15 +62,16 @@ type BudgetsModule struct {
 }
 
 type moduleBuilder struct {
-	cfg                     *configs.Config
-	o11y                    observability.Observability
-	mgr                     manager.Manager
-	categoriesModule        *categories.CategoriesModule
-	publisher               *producers.ExpenseCommittedPublisher
-	thresholdAlertPublisher *producers.ThresholdAlertPublisher
-	gatewayAuth             func(http.Handler) http.Handler
-	channelGateway          notification.ChannelGateway
-	channelResolver         appinterfaces.UserChannelResolver
+	cfg                      *configs.Config
+	o11y                     observability.Observability
+	mgr                      manager.Manager
+	categoriesModule         *categories.CategoriesModule
+	publisher                *producers.ExpenseCommittedPublisher
+	budgetActivatedPublisher *producers.BudgetActivatedPublisher
+	thresholdAlertPublisher  *producers.ThresholdAlertPublisher
+	gatewayAuth              func(http.Handler) http.Handler
+	channelGateway           notification.ChannelGateway
+	channelResolver          appinterfaces.UserChannelResolver
 }
 
 type moduleRepositories struct {
@@ -106,15 +107,16 @@ func NewBudgetsModule(
 	outboxFactory := outbox.NewRepositoryFactory(o11y)
 	idGen := id.NewUUIDGenerator()
 	builder := moduleBuilder{
-		cfg:                     cfg,
-		o11y:                    o11y,
-		mgr:                     mgr,
-		categoriesModule:        categoriesModule,
-		publisher:               producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
-		thresholdAlertPublisher: producers.NewThresholdAlertPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
-		gatewayAuth:             gatewayAuth,
-		channelGateway:          channelGateway,
-		channelResolver:         channelResolver,
+		cfg:                      cfg,
+		o11y:                     o11y,
+		mgr:                      mgr,
+		categoriesModule:         categoriesModule,
+		publisher:                producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		budgetActivatedPublisher: producers.NewBudgetActivatedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		thresholdAlertPublisher:  producers.NewThresholdAlertPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		gatewayAuth:              gatewayAuth,
+		channelGateway:           channelGateway,
+		channelResolver:          channelResolver,
 	}
 	return builder.Build()
 }
@@ -251,7 +253,7 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		runPendingEventsReaper: usecases.NewRunPendingEventsReaper(repositories.factory, applyPending, voidUoW, b.o11y),
 		purgeRetention:         usecases.NewPurgeRetention(repositories.factory, voidUoW, b.retentionBatchSize(), b.o11y),
 		createBudget:           usecases.NewCreateBudget(repositories.factory, budgetUoW, b.o11y),
-		activateBudget:         usecases.NewActivateBudget(repositories.factory, budgetUoW, b.o11y),
+		activateBudget:         usecases.NewActivateBudget(repositories.factory, b.budgetActivatedPublisher, budgetUoW, b.o11y),
 		deleteDraftBudget:      usecases.NewDeleteDraftBudget(repositories.factory, voidUoW, b.o11y),
 		createRecurrence:       usecases.NewCreateRecurrence(repositories.factory, voidUoW, b.o11y),
 		upsertExpense:          upsertExpense,

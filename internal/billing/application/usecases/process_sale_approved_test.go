@@ -55,6 +55,7 @@ func (s *ProcessSaleApprovedSuite) validInput() input.ProcessSaleApprovedInput {
 		SaleID:             "sale-001",
 		KiwifyProductID:    "prod-monthly",
 		OrderID:            "order-001",
+		KiwifySubID:        "kiwify-sub-001",
 		FunnelToken:        "token-abc",
 		CustomerMobileE164: "+5511999999999",
 		CustomerEmail:      "test@example.com",
@@ -118,6 +119,23 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 		setup  func(args)
 		expect func(result)
 	}{
+		{
+			name: "deve retornar erro quando kiwify subscription id for invalido",
+			args: args{
+				input: func() input.ProcessSaleApprovedInput {
+					in := s.validInput()
+					in.KiwifySubID = "   "
+					return in
+				}(),
+				executions: 1,
+			},
+			expect: func(result result) {
+				s.Error(result.err)
+				s.ErrorIs(result.err, usecases.ErrKiwifySubscriptionIDInvalid)
+				s.Zero(result.transitions)
+				s.Zero(result.duplicates)
+			},
+		},
 		{
 			name: "deve criar nova assinatura com token",
 			args: args{input: s.validInput(), executions: 1},
@@ -298,7 +316,9 @@ func (s *ProcessSaleApprovedSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			s.SetupTest()
 			sut := usecases.NewProcessSaleApproved(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-			scenario.setup(scenario.args)
+			if scenario.setup != nil {
+				scenario.setup(scenario.args)
+			}
 
 			result := result{}
 			executions := scenario.args.executions

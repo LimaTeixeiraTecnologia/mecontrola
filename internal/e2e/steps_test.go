@@ -25,6 +25,15 @@ func registerSteps(sc *godog.ScenarioContext, e *e2eCtx) {
 	sc.Step(`^a resposta HTTP deve ter status (\d+)$`, e.aRespostaHTTPDeveTerStatus)
 	sc.Step(`^a transação deve estar salva no banco com valor (\d+)$`, e.aTransacaoDeveEstarSalvaComValor)
 	sc.Step(`^o corpo da resposta deve conter o campo "([^"]*)"$`, e.oCorpoDeveConterOCampo)
+	sc.Step(`^existe um produto billing configurado$`, e.existeUmProdutoBillingConfigurado)
+	sc.Step(`^que existe uma assinatura billing ativa$`, e.queExisteUmaAssinaturaBillingAtiva)
+	sc.Step(`^o webhook billing "([^"]*)" é enviado$`, e.oWebhookBillingEEnviado)
+	sc.Step(`^a assinatura billing deve estar salva como "([^"]*)"$`, e.aAssinaturaBillingDeveEstarSalvaComo)
+	sc.Step(`^o evento de domínio "([^"]*)" deve estar na outbox$`, e.oEventoDeDominioDeveEstarNaOutbox)
+	sc.Step(`^o evento processado "([^"]*)" deve ter sido registrado$`, e.oEventoProcessadoDeveTerSidoRegistrado)
+	sc.Step(`^o period_end da assinatura billing deve ser preservado$`, e.oPeriodEndDaAssinaturaBillingDeveSerPreservado)
+	sc.Step(`^o period_end da assinatura billing deve ser estendido$`, e.oPeriodEndDaAssinaturaBillingDeveSerEstendido)
+	registerCardSteps(sc, e)
 }
 
 func (e *e2eCtx) queACategoriaEstaDisponivel(nome string) error {
@@ -59,7 +68,7 @@ func (e *e2eCtx) aRespostaHTTPDeveTerStatus(statusEsperado int) error {
 		return fmt.Errorf("nenhuma resposta HTTP registrada")
 	}
 	if e.lastResp.StatusCode != statusEsperado {
-		return fmt.Errorf("status esperado %d, recebido %d, corpo: %v", statusEsperado, e.lastResp.StatusCode, e.lastBody)
+		return fmt.Errorf("status esperado %d, recebido %d, corpo: %s", statusEsperado, e.lastResp.StatusCode, e.lastBodyText)
 	}
 	return nil
 }

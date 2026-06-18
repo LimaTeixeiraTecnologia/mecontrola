@@ -35,8 +35,13 @@ func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSale
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_sale_approved")
 	defer span.End()
 
+	kiwifySubID, err := valueobjects.NewKiwifySubscriptionID(in.KiwifySubID)
+	if err != nil {
+		return ErrKiwifySubscriptionIDInvalid
+	}
+
 	if in.FunnelToken == "" {
-		return uc.executeWithoutToken(ctx, in)
+		return uc.executeWithoutToken(ctx, in, kiwifySubID)
 	}
 
 	funnelToken, err := valueobjects.NewFunnelToken(in.FunnelToken)
@@ -71,7 +76,7 @@ func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSale
 		periodStart := in.OccurredAt
 		if upsertErr := subRepo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{
 			OrderID:            in.OrderID,
-			KiwifySubID:        in.KiwifySubID,
+			KiwifySubID:        kiwifySubID.String(),
 			ExternalSaleID:     in.SaleID,
 			CustomerMobileE164: in.CustomerMobileE164,
 			CustomerEmail:      in.CustomerEmail,
@@ -111,7 +116,11 @@ func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSale
 	return nil
 }
 
-func (uc *ProcessSaleApproved) executeWithoutToken(ctx context.Context, in input.ProcessSaleApprovedInput) error {
+func (uc *ProcessSaleApproved) executeWithoutToken(
+	ctx context.Context,
+	in input.ProcessSaleApprovedInput,
+	kiwifySubID valueobjects.KiwifySubscriptionID,
+) error {
 	eventKey := fmt.Sprintf("order_approved:%s", in.SaleID)
 
 	_, execErr := uc.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {
@@ -139,7 +148,7 @@ func (uc *ProcessSaleApproved) executeWithoutToken(ctx context.Context, in input
 		periodStart := in.OccurredAt
 		if upsertErr := subRepo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{
 			OrderID:            in.OrderID,
-			KiwifySubID:        in.KiwifySubID,
+			KiwifySubID:        kiwifySubID.String(),
 			ExternalSaleID:     in.SaleID,
 			CustomerMobileE164: in.CustomerMobileE164,
 			CustomerEmail:      in.CustomerEmail,

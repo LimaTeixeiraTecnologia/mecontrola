@@ -20,17 +20,19 @@ import (
 )
 
 type ActivateBudget struct {
-	factory interfaces.RepositoryFactory
-	uow     uow.UnitOfWork[entities.Budget]
-	o11y    observability.Observability
+	factory   interfaces.RepositoryFactory
+	publisher interfaces.BudgetActivatedPublisher
+	uow       uow.UnitOfWork[entities.Budget]
+	o11y      observability.Observability
 }
 
 func NewActivateBudget(
 	factory interfaces.RepositoryFactory,
+	publisher interfaces.BudgetActivatedPublisher,
 	u uow.UnitOfWork[entities.Budget],
 	o11y observability.Observability,
 ) *ActivateBudget {
-	return &ActivateBudget{factory: factory, uow: u, o11y: o11y}
+	return &ActivateBudget{factory: factory, publisher: publisher, uow: u, o11y: o11y}
 }
 
 func (uc *ActivateBudget) Execute(ctx context.Context, in input.ActivateBudgetInput) (output.BudgetOutput, error) {
@@ -96,6 +98,14 @@ func (uc *ActivateBudget) persist(ctx context.Context, tx database.DBTX, cmd com
 			return entities.Budget{}, interfaces.ErrBudgetConflict
 		}
 		return entities.Budget{}, fmt.Errorf("budgets.usecase.activate_budget: salvar ativação: %w", saveErr)
+	}
+
+	occurredAt := budget.UpdatedAt()
+	if budget.ActivatedAt() != nil {
+		occurredAt = budget.ActivatedAt().UTC()
+	}
+	if publishErr := uc.publisher.Publish(ctx, tx, budget, occurredAt); publishErr != nil {
+		return entities.Budget{}, fmt.Errorf("budgets.usecase.activate_budget: publicar budget_activated: %w", publishErr)
 	}
 
 	return budget, nil

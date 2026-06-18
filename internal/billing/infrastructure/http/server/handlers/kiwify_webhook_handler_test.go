@@ -150,6 +150,15 @@ func (s *KiwifyWebhookHandlerSuite) TestKiwifyWebhookHandler() {
 		expectBody   bool
 	}{
 		{
+			name:         "deve responder 422 quando kiwify subscription id estiver ausente em order_approved",
+			payload:      kiwifyPayload("order_approved", map[string]any{"subscription_id": "  "}),
+			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },
+			setup: func() {
+				s.saleApproved.EXPECT().Execute(mock.Anything, mock.Anything).Return(usecases.ErrKiwifySubscriptionIDInvalid).Once()
+			},
+			expectStatus: http.StatusUnprocessableEntity,
+		},
+		{
 			name:         "deve responder 202 para order_approved",
 			payload:      kiwifyPayload("order_approved", nil),
 			buildRequest: func(payload []byte) *http.Request { return buildRequest(s.T(), payload) },

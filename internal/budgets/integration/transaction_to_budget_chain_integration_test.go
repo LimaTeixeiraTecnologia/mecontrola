@@ -16,6 +16,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	budgetinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -57,6 +58,17 @@ func (s *TransactionToBudgetChainSuite) buildConfig() *configs.Config {
 	s.Require().NoError(err, "carregar config")
 	cfg.TransactionsConfig.Enabled = true
 	return cfg
+}
+
+func (s *TransactionToBudgetChainSuite) ensureUserExists(ctx context.Context, mgr manager.Manager, userID uuid.UUID) {
+	number := "+5511" + uuid.New().String()[:9]
+	_, err := mgr.DBTX(ctx).ExecContext(ctx,
+		`INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		 VALUES ($1, $2, 'ACTIVE', now(), now())
+		 ON CONFLICT (id) DO NOTHING`,
+		userID, number,
+	)
+	s.Require().NoError(err)
 }
 
 func (s *TransactionToBudgetChainSuite) TestExpenseTransactionUpdatesBudgetReadModel() {
@@ -237,6 +249,167 @@ func (s *TransactionToBudgetChainSuite) TestI6_DeleteChain_ExpenseSoftDeleted() 
 	deleteEvent := &envelopeEvent{eventType: "transactions.transaction.deleted.v1", envelope: deleteEnvelope}
 	s.Require().NoError(budgetsModule.TransactionDeletedConsumer.Handle(ctx, platformevents.Event(deleteEvent)))
 	s.assertExpenseSoftDeleted(ctx, mgr, userID, txID)
+}
+
+func (s *TransactionToBudgetChainSuite) TestBudgetActivationPublishesOutboxEvent() {
+	mgr, _ := testcontainer.Postgres(s.T())
+	o11y := noop.NewProvider()
+	cfg := s.buildConfig()
+	authMW := func(h http.Handler) http.Handler { return h }
+	ctx := context.Background()
+
+	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
+	s.Require().NoError(err)
+
+	userID := uuid.New()
+	s.ensureUserExists(ctx, mgr, userID)
+
+	_, err = budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+		TotalCents: 100000,
+		Allocations: []budgetinput.AllocationInput{
+			{RootSlug: "expense.prazeres", BasisPoints: 10000},
+		},
+	})
+	s.Require().NoError(err)
+
+	activated, err := budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+	})
+	s.Require().NoError(err)
+	s.Equal("active", activated.State)
+
+	var count int
+	row := mgr.DBTX(ctx).QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2 AND aggregate_user_id = $3`,
+		"budgets.budget_activated.v1", activated.ID, userID.String(),
+	)
+	s.Require().NoError(row.Scan(&count))
+	s.Equal(1, count)
+}
+
+func (s *TransactionToBudgetChainSuite) TestExternalExpenseConsumerUpdatesBudgetSummary() {
+	mgr, _ := testcontainer.Postgres(s.T())
+	o11y := noop.NewProvider()
+	cfg := s.buildConfig()
+	authMW := func(h http.Handler) http.Handler { return h }
+	ctx := context.Background()
+
+	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
+	s.Require().NoError(err)
+
+	userID := uuid.New()
+	s.ensureUserExists(ctx, mgr, userID)
+
+	_, err = budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+		TotalCents: 100000,
+		Allocations: []budgetinput.AllocationInput{
+			{RootSlug: "expense.prazeres", BasisPoints: 10000},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+	})
+	s.Require().NoError(err)
+
+	payload := map[string]any{
+		"event_id":                uuid.New().String(),
+		"source":                  "kiwify",
+		"external_transaction_id": uuid.New().String(),
+		"occurred_at":             time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC),
+		"user_id":                 userID.String(),
+		"operation":               "create",
+		"version":                 1,
+		"subcategory_id":          deliverySubcategoryID,
+		"competence":              expectedCompetence,
+		"amount_cents":            expectedAmountCents,
+	}
+	raw, err := json.Marshal(payload)
+	s.Require().NoError(err)
+
+	event := &envelopeEvent{
+		eventType: "external.expense.v1",
+		envelope:  outbox.Envelope{ID: uuid.New().String(), Payload: raw},
+	}
+	s.Require().NoError(budgetsModule.ExternalExpenseConsumer.Handle(ctx, platformevents.Event(event)))
+
+	summary, err := budgetsModule.GetMonthlySummaryUC.Execute(ctx, userID.String(), expectedCompetence)
+	s.Require().NoError(err)
+	s.Equal(int64(100000), *summary.TotalCents)
+	s.Equal(expectedAmountCents, summary.TotalSpentCents)
+	s.Equal("active", summary.State)
+}
+
+func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEvent() {
+	mgr, _ := testcontainer.Postgres(s.T())
+	o11y := noop.NewProvider()
+	cfg := s.buildConfig()
+	cfg.BudgetsConfig.ThresholdAlertsMode = configs.ThresholdAlertsModeBoth
+	authMW := func(h http.Handler) http.Handler { return h }
+	ctx := context.Background()
+
+	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
+	s.Require().NoError(err)
+	s.Require().NotNil(budgetsModule.ThresholdAlertsJob)
+
+	userID := uuid.New()
+	s.ensureUserExists(ctx, mgr, userID)
+
+	created, err := budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+		TotalCents: 100000,
+		Allocations: []budgetinput.AllocationInput{
+			{RootSlug: "expense.prazeres", BasisPoints: 10000},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+	})
+	s.Require().NoError(err)
+
+	payload := map[string]any{
+		"event_id":                uuid.New().String(),
+		"source":                  "kiwify",
+		"external_transaction_id": uuid.New().String(),
+		"occurred_at":             time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC),
+		"user_id":                 userID.String(),
+		"operation":               "create",
+		"version":                 1,
+		"subcategory_id":          deliverySubcategoryID,
+		"competence":              expectedCompetence,
+		"amount_cents":            int64(85000),
+	}
+	raw, err := json.Marshal(payload)
+	s.Require().NoError(err)
+
+	event := &envelopeEvent{
+		eventType: "external.expense.v1",
+		envelope:  outbox.Envelope{ID: uuid.New().String(), Payload: raw},
+	}
+	s.Require().NoError(budgetsModule.ExternalExpenseConsumer.Handle(ctx, platformevents.Event(event)))
+	s.Require().NoError(budgetsModule.ThresholdAlertsJob.Run(ctx))
+
+	var count int
+	row := mgr.DBTX(ctx).QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2 AND aggregate_user_id = $3`,
+		"budgets.threshold_alert_triggered.v1", created.ID, userID.String(),
+	)
+	s.Require().NoError(row.Scan(&count))
+	s.Equal(1, count)
 }
 
 func (s *TransactionToBudgetChainSuite) claimTransactionDeletedEnvelope(ctx context.Context, mgr manager.Manager, aggregateID string) outbox.Envelope {

@@ -54,6 +54,12 @@ func (s *SubscriptionRepositorySuite) newFunnelToken(raw string) valueobjects.Fu
 	return ft
 }
 
+func (s *SubscriptionRepositorySuite) kiwifySubscriptionID(raw string) string {
+	id, err := valueobjects.NewKiwifySubscriptionID(raw)
+	s.Require().NoError(err)
+	return id.String()
+}
+
 func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 	scenarios := []struct {
 		name   string
@@ -68,7 +74,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-upsert-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, KiwifySubID: s.kiwifySubscriptionID("kiwify-upsert-001"), Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				s.Assert().Equal(valueobjects.StatusActive, found.Status())
@@ -92,7 +98,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-extend-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, KiwifySubID: s.kiwifySubscriptionID("kiwify-extend-001"), Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				newEnd := time.Now().UTC().Add(60 * 24 * time.Hour).Truncate(time.Millisecond)
@@ -113,7 +119,7 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-pastdue-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, KiwifySubID: s.kiwifySubscriptionID("kiwify-pastdue-001"), Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				lateAt := time.Now().UTC().Truncate(time.Millisecond)
@@ -134,10 +140,52 @@ func (s *SubscriptionRepositorySuite) TestRepositoryOperations() {
 				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
 				s.Require().NoError(sub.Activate(occurredAt))
 				orderID := "order-lasteventat-001"
-				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, Subscription: sub, PeriodStart: occurredAt}))
+				s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID, KiwifySubID: s.kiwifySubscriptionID("kiwify-lastevent-001"), Subscription: sub, PeriodStart: occurredAt}))
 				found, err := repo.FindByOrderID(ctx, orderID)
 				s.Require().NoError(err)
 				s.Assert().WithinDuration(occurredAt, found.LastEventAt(), time.Second)
+			},
+		},
+		{
+			name: "deve rejeitar upsert de assinatura ativa sem period start",
+			expect: func(ctx context.Context, repo interfaces.SubscriptionRepository) {
+				plan := s.newPlan(valueobjects.PlanCodeMonthly, 30)
+				ft := s.newFunnelToken("token-no-period-start-001")
+				sub := entities.NewSubscription(plan, ft)
+				occurredAt := time.Now().UTC().Truncate(time.Millisecond)
+				s.Require().NoError(sub.Activate(occurredAt))
+
+				err := repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{
+					OrderID:      "order-no-period-start-001",
+					KiwifySubID:  s.kiwifySubscriptionID("kiwify-no-period-start-001"),
+					Subscription: sub,
+				})
+
+				s.Require().Error(err)
+				s.ErrorIs(err, billingpostgres.ErrActiveSubscriptionPeriodStartRequired)
+			},
+		},
+		{
+			name: "deve rejeitar reidratacao de assinatura ativa sem period start valido",
+			expect: func(ctx context.Context, repo interfaces.SubscriptionRepository) {
+				_, err := s.mgr.DBTX(ctx).ExecContext(ctx, `
+					INSERT INTO billing_subscriptions
+					       (id, funnel_token, kiwify_order_id, kiwify_subscription_id, plan_code, status, period_start, period_end, grace_end, last_event_at, created_at, updated_at)
+					VALUES (gen_random_uuid(), $1, $2, $3, 'MONTHLY', 'ACTIVE', $4, $5, NULL, $6, now(), now())
+				`,
+					"token-invalid-rehydrate-001",
+					"order-invalid-rehydrate-001",
+					s.kiwifySubscriptionID("kiwify-invalid-rehydrate-001"),
+					time.Time{},
+					time.Now().UTC().Add(30*24*time.Hour),
+					time.Now().UTC(),
+				)
+				s.Require().NoError(err)
+
+				_, err = repo.FindByOrderID(ctx, "order-invalid-rehydrate-001")
+
+				s.Require().Error(err)
+				s.ErrorIs(err, billingpostgres.ErrActiveSubscriptionPeriodStartRequired)
 			},
 		},
 	}
@@ -166,6 +214,12 @@ func (s *RF17ConcurrentSubSuite) SetupTest() {}
 func (s *RF17ConcurrentSubSuite) SetupSuite() {
 	s.mgr = setupTestDB(s.T())
 	s.factory = billingrepos.NewRepositoryFactory(noop.NewProvider())
+}
+
+func (s *RF17ConcurrentSubSuite) kiwifySubscriptionID(raw string) string {
+	id, err := valueobjects.NewKiwifySubscriptionID(raw)
+	s.Require().NoError(err)
+	return id.String()
 }
 
 func (s *RF17ConcurrentSubSuite) prepareUser(userID string) {
@@ -204,7 +258,7 @@ func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFai
 			occurredAt := time.Now().UTC()
 			s.Require().NoError(sub1.Activate(occurredAt))
 			orderID1 := "order-rf17-001"
-			s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID1, Subscription: sub1, PeriodStart: occurredAt}))
+			s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID1, KiwifySubID: s.kiwifySubscriptionID("kiwify-rf17-001"), Subscription: sub1, PeriodStart: occurredAt}))
 			found1, err := repo.FindByOrderID(ctx, orderID1)
 			s.Require().NoError(err)
 			s.Require().NoError(repo.BindUser(ctx, found1.ID(), userID))
@@ -212,7 +266,7 @@ func (s *RF17ConcurrentSubSuite) TestRF17_SecondActiveSubscriptionForSameUserFai
 			sub2 := entities.NewSubscription(plan, ft2)
 			s.Require().NoError(sub2.Activate(occurredAt.Add(time.Second)))
 			orderID2 := "order-rf17-002"
-			s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID2, Subscription: sub2, PeriodStart: occurredAt.Add(time.Second)}))
+			s.Require().NoError(repo.UpsertByOrder(ctx, interfaces.UpsertByOrderParams{OrderID: orderID2, KiwifySubID: s.kiwifySubscriptionID("kiwify-rf17-002"), Subscription: sub2, PeriodStart: occurredAt.Add(time.Second)}))
 			found2, err := repo.FindByOrderID(ctx, orderID2)
 			s.Require().NoError(err)
 

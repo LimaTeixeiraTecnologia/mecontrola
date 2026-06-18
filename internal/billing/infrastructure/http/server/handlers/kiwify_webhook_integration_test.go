@@ -311,3 +311,127 @@ func (s *WebhookIntegSuite) TestWebhookToOutbox_OrderApproved_202_OneSubOneProce
 		})
 	}
 }
+
+func (s *WebhookIntegSuite) TestWebhookToOutbox_SubscriptionCanceled_202_StatusChangedAndOutbox() {
+	ctx := context.Background()
+	orderID := fmt.Sprintf("order-canceled-webhook-%d", time.Now().UnixNano())
+	subscriptionID := fmt.Sprintf("sub-canceled-%d", time.Now().UnixNano())
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+
+	approvedPayload, err := json.Marshal(map[string]any{
+		"order_id":           orderID,
+		"order_ref":          "ref-canceled",
+		"order_status":       "paid",
+		"webhook_event_type": "order_approved",
+		"subscription_id":    subscriptionID,
+		"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Integration Plan"},
+		"Customer":           map[string]any{"email": "cancel@example.com", "mobile": "+5511900000001", "CPF": "00000000000"},
+		"Subscription":       map[string]any{"status": "active", "start_date": "2026-06-08T14:53:19.679Z", "next_payment": "2026-07-08T14:53:23.137Z"},
+		"TrackingParameters": map[string]any{"sck": "token-canceled", "s1": nil, "src": nil},
+		"approved_date":      now,
+		"updated_at":         now,
+		"created_at":         now,
+	})
+	s.Require().NoError(err)
+
+	rr := httptest.NewRecorder()
+	s.webhookHandler.ServeHTTP(rr, s.buildSignedRequest(approvedPayload))
+	s.Equal(http.StatusAccepted, rr.Code)
+
+	var expectedPeriodEnd time.Time
+	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	s.Require().NoError(row.Scan(&expectedPeriodEnd))
+
+	canceledPayload, err := json.Marshal(map[string]any{
+		"order_id":           orderID,
+		"order_ref":          "ref-canceled",
+		"order_status":       "canceled",
+		"webhook_event_type": "subscription_canceled",
+		"subscription_id":    subscriptionID,
+		"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Integration Plan"},
+		"Customer":           map[string]any{"email": "cancel@example.com", "mobile": "+5511900000001", "CPF": "00000000000"},
+		"Subscription":       map[string]any{"status": "canceled", "start_date": "2026-06-08T14:53:19.679Z", "next_payment": "2026-07-08T14:53:23.137Z"},
+		"TrackingParameters": map[string]any{"sck": "token-canceled", "s1": nil, "src": nil},
+		"updated_at":         time.Now().UTC().Add(time.Minute).Format("2006-01-02 15:04:05"),
+		"created_at":         now,
+	})
+	s.Require().NoError(err)
+
+	rr = httptest.NewRecorder()
+	s.webhookHandler.ServeHTTP(rr, s.buildSignedRequest(canceledPayload))
+	s.Equal(http.StatusAccepted, rr.Code)
+
+	var status string
+	var periodEnd time.Time
+	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT status, period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	s.Require().NoError(row.Scan(&status, &periodEnd))
+	s.Equal("CANCELED_PENDING", status)
+	s.True(periodEnd.Equal(expectedPeriodEnd))
+
+	var outboxCount int
+	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = (SELECT id::text FROM billing_subscriptions WHERE kiwify_order_id = $1) AND event_type = $2`, orderID, producers.EventTypeSubscriptionCanceled)
+	s.Require().NoError(row.Scan(&outboxCount))
+	s.GreaterOrEqual(outboxCount, 1)
+}
+
+func (s *WebhookIntegSuite) TestWebhookToOutbox_SubscriptionRenewed_202_PeriodExtendedAndOutbox() {
+	ctx := context.Background()
+	orderID := fmt.Sprintf("order-renewed-webhook-%d", time.Now().UnixNano())
+	subscriptionID := fmt.Sprintf("sub-renewed-%d", time.Now().UnixNano())
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+
+	approvedPayload, err := json.Marshal(map[string]any{
+		"order_id":           orderID,
+		"order_ref":          "ref-renewed",
+		"order_status":       "paid",
+		"webhook_event_type": "order_approved",
+		"subscription_id":    subscriptionID,
+		"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Integration Plan"},
+		"Customer":           map[string]any{"email": "renew@example.com", "mobile": "+5511900000002", "CPF": "00000000000"},
+		"Subscription":       map[string]any{"status": "active", "start_date": "2026-06-08T14:53:19.679Z", "next_payment": "2026-07-08T14:53:23.137Z"},
+		"TrackingParameters": map[string]any{"sck": "token-renewed", "s1": nil, "src": nil},
+		"approved_date":      now,
+		"updated_at":         now,
+		"created_at":         now,
+	})
+	s.Require().NoError(err)
+
+	rr := httptest.NewRecorder()
+	s.webhookHandler.ServeHTTP(rr, s.buildSignedRequest(approvedPayload))
+	s.Equal(http.StatusAccepted, rr.Code)
+
+	var previousPeriodEnd time.Time
+	row := s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	s.Require().NoError(row.Scan(&previousPeriodEnd))
+
+	renewedPayload, err := json.Marshal(map[string]any{
+		"order_id":           orderID,
+		"order_ref":          "ref-renewed",
+		"order_status":       "paid",
+		"webhook_event_type": "subscription_renewed",
+		"subscription_id":    subscriptionID,
+		"Product":            map[string]any{"product_id": s.kiwifyProductID, "product_name": "Integration Plan"},
+		"Customer":           map[string]any{"email": "renew@example.com", "mobile": "+5511900000002", "CPF": "00000000000"},
+		"Subscription":       map[string]any{"status": "active", "start_date": "2026-06-08T14:53:19.679Z", "next_payment": "2026-08-08T14:53:23.137Z"},
+		"TrackingParameters": map[string]any{"sck": "token-renewed", "s1": nil, "src": nil},
+		"updated_at":         time.Now().UTC().Add(time.Minute).Format("2006-01-02 15:04:05"),
+		"created_at":         now,
+	})
+	s.Require().NoError(err)
+
+	rr = httptest.NewRecorder()
+	s.webhookHandler.ServeHTTP(rr, s.buildSignedRequest(renewedPayload))
+	s.Equal(http.StatusAccepted, rr.Code)
+
+	var status string
+	var currentPeriodEnd time.Time
+	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT status, period_end FROM billing_subscriptions WHERE kiwify_order_id = $1`, orderID)
+	s.Require().NoError(row.Scan(&status, &currentPeriodEnd))
+	s.Equal("ACTIVE", status)
+	s.True(currentPeriodEnd.After(previousPeriodEnd))
+
+	var outboxCount int
+	row = s.mgr.DBTX(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = (SELECT id::text FROM billing_subscriptions WHERE kiwify_order_id = $1) AND event_type = $2`, orderID, producers.EventTypeSubscriptionRenewed)
+	s.Require().NoError(row.Scan(&outboxCount))
+	s.GreaterOrEqual(outboxCount, 1)
+}
