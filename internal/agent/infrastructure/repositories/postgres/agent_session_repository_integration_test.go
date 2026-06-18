@@ -164,6 +164,38 @@ func (s *AgentSessionRepositorySuite) TestGetSkipsExpired() {
 	s.Assert().True(errors.Is(err, interfaces.ErrAgentSessionNotFound))
 }
 
+func (s *AgentSessionRepositorySuite) TestUpsertInsertsWhenAbsent() {
+	ctx := context.Background()
+	repo := s.newRepo()
+	userID := s.insertTestUser(ctx)
+
+	record := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	record.PendingAction = []byte(`{"kind":"budget_config","total_cents":500000,"allocations":{},"competence":"2026-06"}`)
+	s.Require().NoError(repo.Upsert(ctx, record))
+
+	got, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	s.Require().NoError(err)
+	s.Assert().JSONEq(string(record.PendingAction), string(got.PendingAction))
+}
+
+func (s *AgentSessionRepositorySuite) TestUpsertUpdatesOnConflict() {
+	ctx := context.Background()
+	repo := s.newRepo()
+	userID := s.insertTestUser(ctx)
+
+	first := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	s.Require().NoError(repo.Create(ctx, first))
+
+	second := s.makeRecord(userID, "telegram", time.Now().UTC().Add(2*time.Hour))
+	second.PendingAction = []byte(`{"kind":"budget_config","total_cents":800000,"allocations":{"expense.metas":2000},"competence":"2026-06"}`)
+	s.Require().NoError(repo.Upsert(ctx, second))
+
+	got, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	s.Require().NoError(err)
+	s.Assert().Equal(first.ID, got.ID)
+	s.Assert().JSONEq(string(second.PendingAction), string(got.PendingAction))
+}
+
 func (s *AgentSessionRepositorySuite) TestDeleteExpired() {
 	ctx := context.Background()
 	repo := s.newRepo()

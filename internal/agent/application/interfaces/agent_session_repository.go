@@ -30,6 +30,7 @@ type AgentSessionRepository interface {
 	Create(ctx context.Context, record AgentSessionRecord) error
 	GetByUserAndChannel(ctx context.Context, userID uuid.UUID, channel string) (AgentSessionRecord, error)
 	Update(ctx context.Context, record AgentSessionRecord) error
+	Upsert(ctx context.Context, record AgentSessionRecord) error
 	DeleteExpired(ctx context.Context, before time.Time) (int64, error)
 }
 

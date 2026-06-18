@@ -66,6 +66,7 @@ type llmRuntime struct {
 	Handler        *usecases.HandleInboundMessage
 	ParseInbound   *usecases.ParseInbound
 	Conversational *usecases.ComposeConversationalReply
+	Interpreter    usecases.IntentInterpreter
 }
 
 type llmReply struct {
@@ -94,6 +95,9 @@ type agentModuleBuilder struct {
 	budgetConfigurator appservices.BudgetConfigurator
 	onboarding         appservices.OnboardingContinuation
 	sessionDB          *sqlx.DB
+	sessionRepo        interfaces.AgentSessionRepository
+	sessionRepoFact    interfaces.AgentSessionRepositoryFactory
+	sessionUoW         uow.UnitOfWork
 }
 
 func NewAgentModule(
@@ -135,6 +139,8 @@ func (b *agentModuleBuilder) build() (AgentModule, error) {
 		return AgentModule{}, fmt.Errorf("agent.module: whatsapp gateway is nil")
 	}
 
+	b.prepareSessionStore()
+
 	llmModule, err := b.buildLLMModule()
 	if err != nil {
 		return AgentModule{}, err
@@ -146,23 +152,25 @@ func (b *agentModuleBuilder) build() (AgentModule, error) {
 	}
 
 	module := AgentModule{
-		WhatsAppAgentRoute: b.buildWhatsAppAgentRoute(intentRouter),
-		TelegramAgentRoute: b.buildTelegramAgentRoute(intentRouter),
-		ParseInbound:       llmModule.ParseInbound,
-		IntentRouter:       intentRouter,
+		WhatsAppAgentRoute:    b.buildWhatsAppAgentRoute(intentRouter),
+		TelegramAgentRoute:    b.buildTelegramAgentRoute(intentRouter),
+		ParseInbound:          llmModule.ParseInbound,
+		IntentRouter:          intentRouter,
+		SessionRepository:     b.sessionRepo,
+		SessionRepositoryFact: b.sessionRepoFact,
+		SessionUnitOfWork:     b.sessionUoW,
 	}
-	b.attachSessionStore(&module)
 	return module, nil
 }
 
-func (b *agentModuleBuilder) attachSessionStore(module *AgentModule) {
+func (b *agentModuleBuilder) prepareSessionStore() {
 	if b.sessionDB == nil {
 		return
 	}
 	factory := agentrepo.NewRepositoryFactory(b.o11y)
-	module.SessionRepositoryFact = factory
-	module.SessionRepository = factory.AgentSessionRepository(b.sessionDB)
-	module.SessionUnitOfWork = uow.NewUnitOfWork(b.sessionDB)
+	b.sessionRepoFact = factory
+	b.sessionRepo = factory.AgentSessionRepository(b.sessionDB)
+	b.sessionUoW = uow.NewUnitOfWork(b.sessionDB)
 }
 
 func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
@@ -276,6 +284,7 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	b.attachCardPurchaseLogger(&deps)
 	b.attachTransactionQueries(&deps)
 	b.attachRecurring(&deps)
+	b.attachBudgetConfigSession(&deps, llmModule)
 	deps.TelegramGateway = b.buildTelegramGateway()
 
 	router, err := appservices.NewIntentRouter(b.o11y, deps)
@@ -371,6 +380,31 @@ func (b *agentModuleBuilder) attachRecurring(deps *appservices.IntentRouterDeps)
 	if b.transactionsModule.ListRecurringTemplatesUC != nil {
 		deps.RecurringLister = agentbinding.NewRecurringListerAdapter(b.transactionsModule.ListRecurringTemplatesUC)
 	}
+}
+
+func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
+	if b.sessionRepo == nil || b.sessionUoW == nil {
+		return
+	}
+	if llmModule == nil || llmModule.Interpreter == nil {
+		return
+	}
+	if b.budgetsModule == nil || b.budgetsModule.CreateBudgetUC == nil || b.budgetsModule.ActivateBudgetUC == nil {
+		return
+	}
+	conversationUC, err := usecases.NewConfigureBudgetConversation(llmModule.Interpreter, b.o11y)
+	if err != nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.budget_config_session_failed",
+			observability.Error(err),
+		)
+		return
+	}
+	deps.BudgetConvo = agentbinding.NewBudgetConversationAdapter(conversationUC)
+	deps.BudgetCommitter = agentbinding.NewBudgetConfigCommitterAdapter(
+		b.budgetsModule.CreateBudgetUC,
+		b.budgetsModule.ActivateBudgetUC,
+	)
+	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(b.sessionRepo, b.sessionUoW)
 }
 
 func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound {
@@ -552,7 +586,7 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability, de
 		return nil, fmt.Errorf("agent.llm: conversational reply: %w", err)
 	}
 
-	return &llmRuntime{Handler: handler, ParseInbound: parseInbound, Conversational: conversational}, nil
+	return &llmRuntime{Handler: handler, ParseInbound: parseInbound, Conversational: conversational, Interpreter: chain}, nil
 }
 
 func (m *llmRuntime) HandleText(ctx context.Context, userID uuid.UUID, channel, text string) (llmReply, error) {

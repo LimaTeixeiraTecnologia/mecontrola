@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -117,6 +118,26 @@ type RouteResult struct {
 
 type BudgetConfigurator interface {
 	Start(ctx context.Context, userID uuid.UUID, channel string) (string, error)
+}
+
+type BudgetConversationResult struct {
+	Draft    budgetdraft.Draft
+	Complete bool
+	Reply    string
+}
+
+type BudgetConversation interface {
+	Configure(ctx context.Context, text string, draft budgetdraft.Draft) (BudgetConversationResult, error)
+}
+
+type BudgetConfigCommitter interface {
+	Commit(ctx context.Context, userID uuid.UUID, draft budgetdraft.Draft) (string, error)
+}
+
+type BudgetSessionGateway interface {
+	Load(ctx context.Context, userID uuid.UUID, channel string) (budgetdraft.Draft, bool, error)
+	Save(ctx context.Context, userID uuid.UUID, channel string, draft budgetdraft.Draft) error
+	Clear(ctx context.Context, userID uuid.UUID, channel string) error
 }
 
 type OnboardingConversation struct {
@@ -256,6 +277,9 @@ type IntentRouter struct {
 	recurringCreator  RecurringCreator
 	recurringLister   RecurringLister
 	budgetConfig      BudgetConfigurator
+	budgetConvo       BudgetConversation
+	budgetCommitter   BudgetConfigCommitter
+	budgetSession     BudgetSessionGateway
 	onboarding        OnboardingContinuation
 	fallback          Fallback
 	whatsAppGateway   WhatsAppOutbound
@@ -281,6 +305,9 @@ type IntentRouterDeps struct {
 	RecurringCreator  RecurringCreator
 	RecurringLister   RecurringLister
 	BudgetConfig      BudgetConfigurator
+	BudgetConvo       BudgetConversation
+	BudgetCommitter   BudgetConfigCommitter
+	BudgetSession     BudgetSessionGateway
 	Onboarding        OnboardingContinuation
 	Fallback          Fallback
 	WhatsAppGateway   WhatsAppOutbound
@@ -326,6 +353,9 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		recurringCreator:  deps.RecurringCreator,
 		recurringLister:   deps.RecurringLister,
 		budgetConfig:      deps.BudgetConfig,
+		budgetConvo:       deps.BudgetConvo,
+		budgetCommitter:   deps.BudgetCommitter,
+		budgetSession:     deps.BudgetSession,
 		onboarding:        deps.Onboarding,
 		fallback:          deps.Fallback,
 		whatsAppGateway:   deps.WhatsAppGateway,
@@ -424,6 +454,12 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		}
 	}
 
+	if r.budgetSessionEnabled() {
+		if handled, result := r.continuePendingBudgetSession(ctx, principal.UserID, channel, trimmed); handled {
+			return result
+		}
+	}
+
 	parsed, err := r.parser.Parse(ctx, principal.UserID, trimmed)
 	if err != nil {
 		span.RecordError(err)
@@ -458,7 +494,7 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 	case intent.KindHowAmIDoing:
 		return r.routeHowAmIDoing(ctx, principal.UserID, channel)
 	case intent.KindConfigureBudget:
-		return r.routeConfigureBudget(ctx, principal.UserID, channel)
+		return r.routeConfigureBudget(ctx, principal.UserID, channel, trimmed)
 	case intent.KindLogCardPurchase:
 		return r.routeLogCardPurchase(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindListTransactions:
@@ -632,7 +668,10 @@ func (r *IntentRouter) routeQueryCard(ctx context.Context, userID uuid.UUID, cha
 	return RouteResult{Reply: formatCardInvoice(resolved, invoice), Outcome: OutcomeRouted, Kind: intent.KindQueryCard}
 }
 
-func (r *IntentRouter) routeConfigureBudget(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+func (r *IntentRouter) routeConfigureBudget(ctx context.Context, userID uuid.UUID, channel, text string) RouteResult {
+	if r.budgetSessionEnabled() {
+		return r.startBudgetSession(ctx, userID, channel, text)
+	}
 	if r.budgetConfig == nil {
 		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeMissingResolver)
 		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindConfigureBudget}
@@ -648,6 +687,81 @@ func (r *IntentRouter) routeConfigureBudget(ctx context.Context, userID uuid.UUI
 	}
 	if strings.TrimSpace(reply) == "" {
 		reply = "Beleza! Qual a sua renda mensal? Pode me dizer o valor."
+	}
+	r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+}
+
+func (r *IntentRouter) budgetSessionEnabled() bool {
+	return r.budgetSession != nil && r.budgetConvo != nil && r.budgetCommitter != nil
+}
+
+func (r *IntentRouter) startBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string) RouteResult {
+	now := time.Now().UTC().In(r.loc)
+	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	return r.advanceBudgetSession(ctx, userID, channel, text, budgetdraft.New(competence))
+}
+
+func (r *IntentRouter) continuePendingBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	draft, found, err := r.budgetSession.Load(ctx, userID, channel)
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_load_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	if !found {
+		return false, RouteResult{}
+	}
+	return true, r.advanceBudgetSession(ctx, userID, channel, text, draft)
+}
+
+func (r *IntentRouter) advanceBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string, draft budgetdraft.Draft) RouteResult {
+	result, err := r.budgetConvo.Configure(ctx, text, draft)
+	if err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_configure_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+	}
+
+	if !result.Complete {
+		if saveErr := r.budgetSession.Save(ctx, userID, channel, result.Draft); saveErr != nil {
+			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_save_failed",
+				observability.String("channel", channel),
+				observability.Error(saveErr),
+			)
+			r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+			return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+		}
+		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: result.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+	}
+
+	reply, commitErr := r.budgetCommitter.Commit(ctx, userID, result.Draft)
+	if commitErr != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_commit_failed",
+			observability.String("channel", channel),
+			observability.Error(commitErr),
+		)
+		if saveErr := r.budgetSession.Save(ctx, userID, channel, result.Draft); saveErr != nil {
+			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_save_failed",
+				observability.String("channel", channel),
+				observability.Error(saveErr),
+			)
+		}
+		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: reply, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+	}
+
+	if clearErr := r.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
+			observability.String("channel", channel),
+			observability.Error(clearErr),
+		)
 	}
 	r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
 	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}

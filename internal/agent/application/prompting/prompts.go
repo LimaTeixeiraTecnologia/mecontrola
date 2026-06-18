@@ -82,6 +82,57 @@ func RenderUser(text string) (string, error) {
 	return buf.String(), nil
 }
 
+const budgetConfigSystemPrompt = `Você é um assistente financeiro que ajuda o usuário a configurar o orçamento mensal.
+Extraia da mensagem do usuário a renda mensal total e as alocações por categoria.
+Mapeie os nomes falados em PT-BR para os slugs canônicos:
+- "custos fixos", "custo fixo", "contas fixas" -> expense.custo_fixo
+- "conhecimento", "educação", "estudos" -> expense.conhecimento
+- "prazeres", "lazer", "diversão" -> expense.prazeres
+- "metas", "objetivos" -> expense.metas
+- "liberdade financeira", "investimentos", "reserva" -> expense.liberdade_financeira
+Converta valores monetários para centavos inteiros (R$ 1.000,00 -> 100000).
+Converta percentuais para basis points (35% -> 3500).
+Inclua somente os campos mencionados na mensagem. Não invente categorias nem valores.`
+
+func RenderBudgetConfigSystem() (string, error) {
+	if strings.TrimSpace(budgetConfigSystemPrompt) == "" {
+		return "", fmt.Errorf("agent.application.prompting: budget config system prompt is empty")
+	}
+	return budgetConfigSystemPrompt, nil
+}
+
+func BudgetConfigJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"total_cents": map[string]any{"type": "integer", "minimum": 0},
+			"allocations": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"root_slug": map[string]any{
+							"type": "string",
+							"enum": []string{
+								"expense.custo_fixo",
+								"expense.conhecimento",
+								"expense.prazeres",
+								"expense.metas",
+								"expense.liberdade_financeira",
+							},
+						},
+						"basis_points": map[string]any{"type": "integer", "minimum": 0, "maximum": 10000},
+					},
+					"required":             []string{"root_slug", "basis_points"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"allocations"},
+		"additionalProperties": false,
+	}
+}
+
 func ParseIntentJSONSchema() map[string]any {
 	return map[string]any{
 		"type": "object",

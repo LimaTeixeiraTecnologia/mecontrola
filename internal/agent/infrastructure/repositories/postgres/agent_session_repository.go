@@ -134,6 +134,38 @@ func (r *agentSessionRepository) Update(ctx context.Context, record interfaces.A
 	return nil
 }
 
+func (r *agentSessionRepository) Upsert(ctx context.Context, record interfaces.AgentSessionRecord) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "agent.repository.pg.upsert")
+	defer span.End()
+
+	const query = `
+		INSERT INTO mecontrola.agent_sessions
+		       (id, user_id, channel, pending_action, recent_turns, created_at, updated_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (user_id, channel) DO UPDATE
+		   SET pending_action = EXCLUDED.pending_action,
+		       recent_turns   = EXCLUDED.recent_turns,
+		       updated_at     = EXCLUDED.updated_at,
+		       expires_at     = EXCLUDED.expires_at
+	`
+
+	_, err := r.db.ExecContext(ctx, query,
+		record.ID,
+		record.UserID,
+		record.Channel,
+		jsonOrDefault(record.PendingAction, "{}"),
+		jsonOrDefault(record.RecentTurns, "[]"),
+		record.CreatedAt.UTC(),
+		record.UpdatedAt.UTC(),
+		record.ExpiresAt.UTC(),
+	)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("%s upsert: %w", prefixAgentSessionRepository, err)
+	}
+	return nil
+}
+
 func (r *agentSessionRepository) DeleteExpired(ctx context.Context, before time.Time) (int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.repository.pg.delete_expired")
 	defer span.End()
