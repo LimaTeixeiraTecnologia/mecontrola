@@ -467,3 +467,23 @@ categoria resolvida no DB), resumo mensal, listar cartões, **cadastrar cartão*
 **Hardening restante (não bloqueia o MVP):** Fase 4 (ativar tool-calling no `ParseInbound` — hoje JSON-schema,
 funcional — e prompt cache-aware), limpeza do pipeline morto (`HandleInboundMessage`/`IntentDispatcher`),
 e2e BDD dos novos fluxos, escape "cancelar" no slot-filling.
+
+- **2026-06-18 — Fase 4 + limpeza + e2e CONCLUÍDAS (commits `339fd29`, `a5332af`, `07a1632`, na main):**
+  - **Fase 4 (`339fd29`)**: tool-calling ativado no `ParseInbound` (`AgentToolCatalog` + `tool_choice:auto`
+    + `RenderToolSystem` estático/cacheável); sem tool_call → `DirectReply` enviado direto pelo router
+    (evita 2ª chamada de fallback); escape "cancelar" no slot-filling de orçamento; degradação segura.
+  - **Limpeza (`a5332af`)**: removido pipeline morto `HandleInboundMessage` + `IntentDispatcher` +
+    `ModulePorts` + os 4 dispatcher adapters + wiring; caminho vivo intacto.
+  - **E2E (`07a1632`)**: feature `f05` (godog/testcontainers) para create_card e count_cards ponta-a-ponta
+    (webhook→router→usecase→DB, idempotência por WAMID). Orçamento multi-turno coberto por unit (harness
+    e2e não injeta a sessão).
+  - Validação final: `go build ./...` OK, **`go test ./... -short` (repo inteiro) OK**, e2e 26/26 cenários,
+    golangci-lint v2 0 issues, zero comentários. Via subagents + verificação independente minha em cada etapa.
+
+## TODAS as fases planejadas concluídas
+
+MVP robusto, production-proof e sem falso positivo entregue na main. Resíduos menores (não bloqueiam):
+funções exportadas órfãs após a limpeza (`prompt_builder`/`intent_validator`/`intent_safety_guard`/
+`intent_workflow` — compilam limpo, podem ser removidas num passe futuro); API de prompting JSON-schema
+(`RenderSystem`/`ParseIntentJSONSchema`) permanece como fallback; `matchesBudgetCancel` usa `Contains`
+(cue PT-BR amplo); e2e de orçamento multi-turno coberto por unit.
