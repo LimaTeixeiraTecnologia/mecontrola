@@ -322,7 +322,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 
 	postOnboarding(t, e, "distribui assim")
 	require.Equal(t, 5, onbSplitsLen(t, db, userID))
-	requireLastReplyContains(t, gateway, "✅ Distribuição salva!")
+	requireLastReplyContains(t, gateway, "✅ *Distribuição salva!*")
 	requireLastReplyContains(t, gateway, "Seu plano:")
 	requireOnboardingPhase(t, db, userID, "summary")
 

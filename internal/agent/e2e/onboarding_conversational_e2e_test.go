@@ -205,7 +205,9 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 	requireOnboardingPhase(t, db, userID, "splits")
 
 	splits := conversationalTurn(t, turn, userID, "distribui assim")
-	require.Contains(t, splits.Reply, "✅ Distribuição salva! 💰40% (R$2.000) · 🎓10% (R$500) · 🎉15% (R$750) · 🎯20% (R$1.000) · 🏦15% (R$750).")
+	require.Contains(t, splits.Reply, "✅ *Distribuição salva!*")
+	require.Contains(t, splits.Reply, "💰 Custo Fixo: R$ 2.000,00 (40%)")
+	require.Contains(t, splits.Reply, "🏦 Liberdade Financeira: R$ 750,00 (15%)")
 	require.Contains(t, splits.Reply, "Seu plano:")
 	require.Contains(t, splits.Reply, "Tá tudo certo?")
 	requireOnboardingPhase(t, db, userID, "summary")

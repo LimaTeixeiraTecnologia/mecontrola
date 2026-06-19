@@ -62,7 +62,11 @@ func NewOnboardingCardDraft(nickname string, dueDay int) (OnboardingCardDraft, e
 	if err != nil {
 		return OnboardingCardDraft{}, err
 	}
-	return OnboardingCardDraft{Name: name, DueDay: due.Value()}, nil
+	closing := due.Value() - 7
+	if closing < 1 {
+		closing += 30
+	}
+	return OnboardingCardDraft{Name: name, DueDay: due.Value(), ClosingDay: closing}, nil
 }
 
 type OnboardingSessionPayload struct {

@@ -55,8 +55,8 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				storage.EXPECT().Insert(ctx, event, 15).Return(nil).Once()
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				storage.EXPECT().Insert(ctx, event, 3).Return(nil).Once()
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.NoError(err) },
 		},
@@ -71,7 +71,7 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.ErrorIs(err, outbox.ErrEventIDMissing) },
 		},
@@ -86,7 +86,7 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.ErrorIs(err, outbox.ErrEventTypeMissing) },
 		},
@@ -101,7 +101,7 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.ErrorIs(err, outbox.ErrInvalidPayload) },
 		},
@@ -116,7 +116,7 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.ErrorIs(err, outbox.ErrInvalidPayload) },
 		},
@@ -131,7 +131,7 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.ErrorIs(err, outbox.ErrOccurredAtZero) },
 		},
@@ -142,8 +142,8 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				storage.EXPECT().Insert(ctx, event, 15).Return(nil).Twice()
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				storage.EXPECT().Insert(ctx, event, 3).Return(nil).Twice()
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.NoError(err) },
 		},
@@ -154,8 +154,8 @@ func (s *PublisherSuite) TestPublish() {
 				storage := outboxmocks.NewStorage(s.T())
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				ctx := database.WithTx(context.Background(), dbtx)
-				storage.EXPECT().Insert(ctx, event, 15).Return(errors.New("db failure")).Once()
-				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 15}), ctx, storage
+				storage.EXPECT().Insert(ctx, event, 3).Return(errors.New("db failure")).Once()
+				return outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3}), ctx, storage
 			},
 			expect: func(err error) { s.Error(err) },
 		},

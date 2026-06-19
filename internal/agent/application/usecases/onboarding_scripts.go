@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 )
 
 const (
@@ -51,6 +52,7 @@ var onboardingDefaultSplit = []struct {
 }
 
 func defaultSplitAmounts(budgetCents int64) []int64 {
+	budget := money.FromCents(budgetCents)
 	amounts := make([]int64, len(onboardingDefaultSplit))
 	var assigned int64
 	for i, e := range onboardingDefaultSplit {
@@ -58,7 +60,7 @@ func defaultSplitAmounts(budgetCents int64) []int64 {
 			amounts[i] = budgetCents - assigned
 			continue
 		}
-		amounts[i] = budgetCents * int64(e.bp) / 10000
+		amounts[i] = budget.ApplyBasisPoints(e.bp).Cents()
 		assigned += amounts[i]
 	}
 	return amounts
@@ -258,14 +260,30 @@ func onboardingSummary(snapshot OnboardingSnapshot) string {
 		fmt.Fprintf(&b, "💳 Cartões: %s\n", strings.Join(cards, ", "))
 	}
 	if len(snapshot.Splits) > 0 {
-		parts := make([]string, 0, len(snapshot.Splits))
+		b.WriteString("📊 Distribuição:\n")
 		for _, s := range snapshot.Splits {
-			parts = append(parts, onboardingSlugEmoji(s.Slug)+strconv.Itoa(s.Percent)+"%")
+			fmt.Fprintf(&b, "  %s %s: %d%%\n", onboardingSlugEmoji(s.Slug), onboardingSlugName(s.Slug), s.Percent)
 		}
-		fmt.Fprintf(&b, "📊 Distribuição: %s\n", strings.Join(parts, " · "))
 	}
 	b.WriteString("\nTá tudo certo? 😊")
 	return b.String()
+}
+
+func onboardingSlugName(slug string) string {
+	switch slug {
+	case "expense.custo_fixo":
+		return "Custo Fixo"
+	case "expense.conhecimento":
+		return "Conhecimento"
+	case "expense.prazeres":
+		return "Prazeres"
+	case "expense.metas":
+		return "Metas"
+	case "expense.liberdade_financeira":
+		return "Liberdade Financeira"
+	default:
+		return slug
+	}
 }
 
 func onboardingSlugEmoji(slug string) string {
@@ -286,25 +304,5 @@ func onboardingSlugEmoji(slug string) string {
 }
 
 func formatBRLCents(cents int64) string {
-	if cents < 0 {
-		cents = -cents
-	}
-	reais := cents / 100
-	s := strconv.FormatInt(reais, 10)
-	if len(s) > 3 {
-		rem := len(s) % 3
-		var out []byte
-		if rem > 0 {
-			out = append(out, s[:rem]...)
-			out = append(out, '.')
-		}
-		for i := rem; i < len(s); i += 3 {
-			out = append(out, s[i:i+3]...)
-			if i+3 < len(s) {
-				out = append(out, '.')
-			}
-		}
-		s = string(out)
-	}
-	return fmt.Sprintf("%s,%02d", s, cents%100)
+	return money.FromCents(cents).Amount()
 }

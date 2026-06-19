@@ -29,7 +29,7 @@ func (s *JobSuite) SetupTest() {
 		DispatcherTickInterval:    500 * time.Millisecond,
 		DispatcherBatchSize:       50,
 		DispatcherHandlerTimeout:  10 * time.Second,
-		RetryMaxAttempts:          15,
+		RetryMaxAttempts:          3,
 		RetryBaseBackoff:          2 * time.Second,
 		RetryMaxBackoff:           5 * time.Minute,
 		ReaperInterval:            "@every 1m",

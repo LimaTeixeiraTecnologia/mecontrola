@@ -43,7 +43,7 @@ func TestNewOnboardingCardDraft_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "nubank", got.Name)
 	require.Equal(t, 17, got.DueDay)
-	require.Equal(t, 0, got.ClosingDay)
+	require.Equal(t, 10, got.ClosingDay)
 	require.Equal(t, int64(0), got.LimitCents)
 }
 

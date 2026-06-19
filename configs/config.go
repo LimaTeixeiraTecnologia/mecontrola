@@ -638,7 +638,7 @@ func (l *configLoader) setOutboxDefaults() {
 	l.v.SetDefault("OUTBOX_DISPATCHER_TICK_INTERVAL", 500*time.Millisecond)
 	l.v.SetDefault("OUTBOX_DISPATCHER_BATCH_SIZE", 50)
 	l.v.SetDefault("OUTBOX_DISPATCHER_HANDLER_TIMEOUT", 10*time.Second)
-	l.v.SetDefault("OUTBOX_RETRY_MAX_ATTEMPTS", 15)
+	l.v.SetDefault("OUTBOX_RETRY_MAX_ATTEMPTS", 3)
 	l.v.SetDefault("OUTBOX_RETRY_BASE_BACKOFF", 2*time.Second)
 	l.v.SetDefault("OUTBOX_RETRY_MAX_BACKOFF", 5*time.Minute)
 	l.v.SetDefault("OUTBOX_HOUSEKEEPING_RETENTION_DAYS", 90)
@@ -755,9 +755,9 @@ func (c *Config) validateOutbox() []string {
 		return nil
 	}
 
-	if o.RetryMaxAttempts < 1 || o.RetryMaxAttempts > 50 {
+	if o.RetryMaxAttempts < 1 || o.RetryMaxAttempts > 3 {
 		errs = append(errs, fmt.Sprintf(
-			"OUTBOX_RETRY_MAX_ATTEMPTS inválido %d: deve estar no intervalo [1..50]",
+			"OUTBOX_RETRY_MAX_ATTEMPTS inválido %d: deve estar no intervalo [1..3]",
 			o.RetryMaxAttempts,
 		))
 	}

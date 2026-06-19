@@ -313,12 +313,12 @@ func (s *ConfigSuite) TestValidate() {
 			},
 		},
 		{
-			name: "deve rejeitar retry max attempts acima de 50",
+			name: "deve rejeitar retry max attempts acima de 3",
 			args: args{
 				build: func() *configs.Config {
 					cfg := s.newBaseConfig()
 					cfg.OutboxConfig = s.newValidOutboxConfig()
-					cfg.OutboxConfig.RetryMaxAttempts = 51
+					cfg.OutboxConfig.RetryMaxAttempts = 4
 					return cfg
 				},
 			},
@@ -343,12 +343,12 @@ func (s *ConfigSuite) TestValidate() {
 			},
 		},
 		{
-			name: "deve aceitar retry max attempts igual a 50",
+			name: "deve aceitar retry max attempts igual a 3",
 			args: args{
 				build: func() *configs.Config {
 					cfg := s.newBaseConfig()
 					cfg.OutboxConfig = s.newValidOutboxConfig()
-					cfg.OutboxConfig.RetryMaxAttempts = 50
+					cfg.OutboxConfig.RetryMaxAttempts = 3
 					return cfg
 				},
 			},
@@ -1027,7 +1027,7 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.Equal(500*time.Millisecond, cfg.OutboxConfig.DispatcherTickInterval)
 				s.Equal(50, cfg.OutboxConfig.DispatcherBatchSize)
 				s.Equal(10*time.Second, cfg.OutboxConfig.DispatcherHandlerTimeout)
-				s.Equal(15, cfg.OutboxConfig.RetryMaxAttempts)
+				s.Equal(3, cfg.OutboxConfig.RetryMaxAttempts)
 				s.Equal(2*time.Second, cfg.OutboxConfig.RetryBaseBackoff)
 				s.Equal(5*time.Minute, cfg.OutboxConfig.RetryMaxBackoff)
 				s.Equal(90, cfg.OutboxConfig.HousekeepingRetentionDays)
@@ -1046,7 +1046,7 @@ func (s *ConfigSuite) TestLoadConfig() {
 			setup: func(path string) {
 				s.T().Setenv("OUTBOX_DISPATCHER_ENABLED", "false")
 				s.T().Setenv("OUTBOX_DISPATCHER_BATCH_SIZE", "100")
-				s.T().Setenv("OUTBOX_RETRY_MAX_ATTEMPTS", "10")
+				s.T().Setenv("OUTBOX_RETRY_MAX_ATTEMPTS", "3")
 				s.T().Setenv("OUTBOX_HOUSEKEEPING_RETENTION_DAYS", "30")
 				s.T().Setenv("OUTBOX_HOUSEKEEPING_SCHEDULE", "@weekly")
 				s.T().Setenv("OUTBOX_REAPER_INTERVAL", "@every 5m")
@@ -1057,7 +1057,7 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.Require().NotNil(cfg)
 				s.Equal(false, cfg.OutboxConfig.DispatcherEnabled)
 				s.Equal(100, cfg.OutboxConfig.DispatcherBatchSize)
-				s.Equal(10, cfg.OutboxConfig.RetryMaxAttempts)
+				s.Equal(3, cfg.OutboxConfig.RetryMaxAttempts)
 				s.Equal(30, cfg.OutboxConfig.HousekeepingRetentionDays)
 				s.Equal("@weekly", cfg.OutboxConfig.HousekeepingSchedule)
 				s.Equal("@every 5m", cfg.OutboxConfig.ReaperInterval)
@@ -1541,7 +1541,7 @@ func (s *ConfigSuite) newBillingEnabledConfig() *configs.Config {
 
 func (s *ConfigSuite) newValidOutboxConfig() configs.OutboxConfig {
 	return configs.OutboxConfig{
-		RetryMaxAttempts:          15,
+		RetryMaxAttempts:          3,
 		DispatcherBatchSize:       50,
 		HousekeepingRetentionDays: 90,
 		HousekeepingSchedule:      "@daily",

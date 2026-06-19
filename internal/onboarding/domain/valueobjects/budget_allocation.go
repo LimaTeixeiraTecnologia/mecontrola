@@ -61,11 +61,24 @@ func NewBudgetAllocationFromAmounts(items []CategoryAmount, totalCents int64) (B
 			allocations[i] = CategoryBasisPoints{Kind: it.Kind, BasisPoints: budgetAllocationTotalBasisPoints - assigned}
 			continue
 		}
-		bp := int((it.AmountCents*budgetAllocationTotalBasisPoints + totalCents/2) / totalCents)
+		bp := int(roundBasisPointsHalfEven(it.AmountCents*budgetAllocationTotalBasisPoints, totalCents))
 		allocations[i] = CategoryBasisPoints{Kind: it.Kind, BasisPoints: bp}
 		assigned += bp
 	}
 	return BudgetAllocation{allocations: allocations}, nil
+}
+
+func roundBasisPointsHalfEven(numerator, denominator int64) int64 {
+	if denominator <= 0 {
+		return 0
+	}
+	quotient := numerator / denominator
+	remainder := numerator % denominator
+	twice := remainder * 2
+	if twice > denominator || (twice == denominator && quotient%2 == 1) {
+		return quotient + 1
+	}
+	return quotient
 }
 
 func (b BudgetAllocation) Allocations() []CategoryBasisPoints {

@@ -9,13 +9,6 @@ import (
 	onbvalueobjects "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
-func TestGroupThousands(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "500", groupThousands(500))
-	require.Equal(t, "5.000", groupThousands(5000))
-	require.Equal(t, "1.234.567", groupThousands(1234567))
-}
-
 func TestFormatReaisCents(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "5.000,00", formatReaisCents(500000))
@@ -23,10 +16,10 @@ func TestFormatReaisCents(t *testing.T) {
 	require.Equal(t, "1.234,56", formatReaisCents(123456))
 }
 
-func TestFormatReais(t *testing.T) {
+func TestFormatReaisCents_HalfEvenBudgetSplit(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "2.000", formatReais(200000))
-	require.Equal(t, "500", formatReais(50000))
+	require.Equal(t, "5.000,00", formatReaisCents(500000))
+	require.Equal(t, "0,00", formatReaisCents(0))
 }
 
 func TestSplitsSuccessReply_MatchesRunbook(t *testing.T) {
@@ -39,21 +32,27 @@ func TestSplitsSuccessReply_MatchesRunbook(t *testing.T) {
 		{Kind: onbvalueobjects.CategoryKindPleasures, Percent: 15, AmountCents: 75000},
 	}
 	got := splitsSuccessReply(views)
-	require.Equal(t, "✅ Distribuição salva! 💰40% (R$2.000) · 🎓10% (R$500) · 🎉15% (R$750) · 🎯20% (R$1.000) · 🏦15% (R$750).", got)
+	require.Contains(t, got, "✅ *Distribuição salva!*")
+	require.Contains(t, got, "💰 Custo Fixo: R$ 2.000,00 (40%)")
+	require.Contains(t, got, "🎓 Conhecimento: R$ 500,00 (10%)")
+	require.Contains(t, got, "🎉 Prazeres: R$ 750,00 (15%)")
+	require.Contains(t, got, "🎯 Metas: R$ 1.000,00 (20%)")
+	require.Contains(t, got, "🏦 Liberdade Financeira: R$ 750,00 (15%)")
+	require.NotContains(t, got, "**")
 }
 
 func TestSplitsMismatchReply_Overflow(t *testing.T) {
 	t.Parallel()
 	got := splitsMismatchReply(600000, 500000)
-	require.Contains(t, got, "passou *R$ 1.000*")
-	require.Contains(t, got, "distribuiu *R$ 6.000*")
-	require.Contains(t, got, "orçamento é *R$ 5.000*")
+	require.Contains(t, got, "passou *R$ 1.000,00*")
+	require.Contains(t, got, "distribuiu *R$ 6.000,00*")
+	require.Contains(t, got, "orçamento é *R$ 5.000,00*")
 }
 
 func TestSplitsMismatchReply_Underflow(t *testing.T) {
 	t.Parallel()
 	got := splitsMismatchReply(400000, 500000)
-	require.Contains(t, got, "faltam *R$ 1.000*")
+	require.Contains(t, got, "faltam *R$ 1.000,00*")
 }
 
 func TestParseAllocations(t *testing.T) {

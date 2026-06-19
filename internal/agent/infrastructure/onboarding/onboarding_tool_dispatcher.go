@@ -16,6 +16,7 @@ import (
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	onbentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	onbvalueobjects "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 )
 
 const recordTransactionTool = "record_transaction"
@@ -217,21 +218,39 @@ func splitsMismatchReply(sumCents, totalCents int64) string {
 	diff := sumCents - totalCents
 	if diff > 0 {
 		return fmt.Sprintf("⚠️ Quase! Você distribuiu *R$ %s*, mas seu orçamento é *R$ %s* — passou *R$ %s*. Quer ajustar pra fechar certinho?",
-			formatReais(sumCents), formatReais(totalCents), formatReais(diff))
+			formatReaisCents(sumCents), formatReaisCents(totalCents), formatReaisCents(diff))
 	}
 	return fmt.Sprintf("⚠️ Quase! Você distribuiu *R$ %s*, mas seu orçamento é *R$ %s* — faltam *R$ %s*. Quer ajustar pra fechar certinho?",
-		formatReais(sumCents), formatReais(totalCents), formatReais(-diff))
+		formatReaisCents(sumCents), formatReaisCents(totalCents), formatReaisCents(-diff))
 }
 
 func splitsSuccessReply(views []onbusecases.OnboardingSplitView) string {
 	sorted := make([]onbusecases.OnboardingSplitView, len(views))
 	copy(sorted, views)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Kind < sorted[j].Kind })
-	parts := make([]string, 0, len(sorted))
+	lines := make([]string, 0, len(sorted)+1)
+	lines = append(lines, "✅ *Distribuição salva!*")
 	for _, v := range sorted {
-		parts = append(parts, fmt.Sprintf("%s%d%% (R$%s)", categoryEmoji(v.Kind), v.Percent, formatReais(v.AmountCents)))
+		lines = append(lines, fmt.Sprintf("%s %s: R$ %s (%d%%)", categoryEmoji(v.Kind), categoryName(v.Kind), formatReaisCents(v.AmountCents), v.Percent))
 	}
-	return "✅ Distribuição salva! " + strings.Join(parts, " · ") + "."
+	return strings.Join(lines, "\n")
+}
+
+func categoryName(kind onbvalueobjects.CategoryKind) string {
+	switch kind {
+	case onbvalueobjects.CategoryKindFixedCost:
+		return "Custo Fixo"
+	case onbvalueobjects.CategoryKindKnowledge:
+		return "Conhecimento"
+	case onbvalueobjects.CategoryKindPleasures:
+		return "Prazeres"
+	case onbvalueobjects.CategoryKindGoals:
+		return "Metas"
+	case onbvalueobjects.CategoryKindFinancialFreedom:
+		return "Liberdade Financeira"
+	default:
+		return ""
+	}
 }
 
 var slugToCategoryKind = map[string]onbvalueobjects.CategoryKind{
@@ -304,35 +323,5 @@ func numberToInt64(value any) int64 {
 }
 
 func formatReaisCents(cents int64) string {
-	if cents < 0 {
-		cents = -cents
-	}
-	return fmt.Sprintf("%s,%02d", groupThousands(cents/100), cents%100)
-}
-
-func formatReais(cents int64) string {
-	if cents < 0 {
-		cents = -cents
-	}
-	return groupThousands(cents / 100)
-}
-
-func groupThousands(n int64) string {
-	s := strconv.FormatInt(n, 10)
-	if len(s) <= 3 {
-		return s
-	}
-	rem := len(s) % 3
-	var out []byte
-	if rem > 0 {
-		out = append(out, s[:rem]...)
-		out = append(out, '.')
-	}
-	for i := rem; i < len(s); i += 3 {
-		out = append(out, s[i:i+3]...)
-		if i+3 < len(s) {
-			out = append(out, '.')
-		}
-	}
-	return string(out)
+	return money.FromCents(cents).Amount()
 }

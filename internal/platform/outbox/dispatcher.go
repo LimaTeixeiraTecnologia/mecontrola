@@ -49,45 +49,54 @@ func (d *DispatcherJob) Name() string           { return "outbox-dispatcher" }
 func (d *DispatcherJob) Schedule() string       { return "@every " + d.cfg.DispatcherTickInterval.String() }
 func (d *DispatcherJob) Timeout() time.Duration { return 5 * time.Minute }
 
+var errNoOutboxHandlers = errors.New("no handlers registered")
+
 func (d *DispatcherJob) Run(ctx context.Context) error {
 	var rows []Row
 	err := d.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
-		storage := d.factory.OutboxRepository(tx)
-		claimed, claimErr := storage.ClaimBatch(ctx, d.instanceID, d.cfg.DispatcherBatchSize)
+		claimed, claimErr := d.factory.OutboxRepository(tx).ClaimBatch(ctx, d.instanceID, d.cfg.DispatcherBatchSize)
 		if claimErr != nil {
 			return fmt.Errorf("outbox: dispatcher claim batch: %w", claimErr)
 		}
-		var rowErrs []error
-		for _, row := range claimed {
-			if dispErr := d.dispatch(ctx, row, storage); dispErr != nil {
-				rowErrs = append(rowErrs, dispErr)
-			}
-		}
 		rows = claimed
-		return errors.Join(rowErrs...)
+		return nil
 	})
 	if err != nil {
 		return err
+	}
+
+	var rowErrs []error
+	for _, row := range rows {
+		if procErr := d.processClaimed(ctx, row); procErr != nil {
+			rowErrs = append(rowErrs, procErr)
+		}
 	}
 	if len(rows) > 0 {
 		d.logger.Info(ctx, "outbox: dispatcher processed batch",
 			observability.Int("count", len(rows)),
 		)
 	}
-	return nil
+	return errors.Join(rowErrs...)
 }
 
-func (d *DispatcherJob) dispatch(ctx context.Context, row Row, storage OutboxRepository) error {
+func (d *DispatcherJob) processClaimed(ctx context.Context, row Row) error {
+	handlerErr := d.runHandlers(ctx, row)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return d.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
+		return d.mark(ctx, d.factory.OutboxRepository(tx), row, handlerErr)
+	})
+}
+
+func (d *DispatcherJob) runHandlers(ctx context.Context, row Row) error {
 	handlers := d.registry.HandlersOf(row.Type)
 	if len(handlers) == 0 {
-		if err := storage.MarkFailed(ctx, row.ID, "no handlers registered"); err != nil {
-			return fmt.Errorf("outbox: mark failed (no handlers): %w", err)
-		}
 		d.logger.Error(ctx, "outbox: no handlers registered",
 			observability.String("event_id", row.ID),
 			observability.String("event_type", row.Type),
 		)
-		return nil
+		return errNoOutboxHandlers
 	}
 
 	envelope := Pack(row)
@@ -107,9 +116,17 @@ func (d *DispatcherJob) dispatch(ctx context.Context, row Row, storage OutboxRep
 			handlerErrs = append(handlerErrs, hErr)
 		}
 	}
+	return errors.Join(handlerErrs...)
+}
 
-	joined := errors.Join(handlerErrs...)
-	if joined == nil {
+func (d *DispatcherJob) mark(ctx context.Context, storage OutboxRepository, row Row, handlerErr error) error {
+	if errors.Is(handlerErr, errNoOutboxHandlers) {
+		if err := storage.MarkFailed(ctx, row.ID, "no handlers registered"); err != nil {
+			return fmt.Errorf("outbox: mark failed (no handlers): %w", err)
+		}
+		return nil
+	}
+	if handlerErr == nil {
 		if err := storage.MarkPublished(ctx, row.ID); err != nil {
 			return fmt.Errorf("outbox: mark published: %w", err)
 		}
@@ -118,14 +135,14 @@ func (d *DispatcherJob) dispatch(ctx context.Context, row Row, storage OutboxRep
 
 	nextAttempts := row.Attempts + 1
 	if nextAttempts >= row.MaxAttempts {
-		if err := storage.MarkFailed(ctx, row.ID, joined.Error()); err != nil {
+		if err := storage.MarkFailed(ctx, row.ID, handlerErr.Error()); err != nil {
 			return fmt.Errorf("outbox: mark failed: %w", err)
 		}
 		return nil
 	}
 
 	backoff := d.CalcBackoff(row.Attempts)
-	if err := storage.MarkPendingRetry(ctx, row.ID, joined.Error(), time.Now().UTC().Add(backoff)); err != nil {
+	if err := storage.MarkPendingRetry(ctx, row.ID, handlerErr.Error(), time.Now().UTC().Add(backoff)); err != nil {
 		return fmt.Errorf("outbox: mark pending retry: %w", err)
 	}
 	return nil
