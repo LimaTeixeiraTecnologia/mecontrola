@@ -196,7 +196,7 @@
 | `OUTBOX_REAPER_INTERVAL` | Outbox | ✅ Preenchida | @ev*** 1m |
 | `OUTBOX_REAPER_STUCK_AFTER` | Outbox | ✅ Preenchida | 5m |
 | `OUTBOX_RETRY_BASE_BACKOFF` | Outbox | ✅ Preenchida | 2s |
-| `OUTBOX_RETRY_MAX_ATTEMPTS` | Outbox | ✅ Preenchida | 15 |
+| `OUTBOX_RETRY_MAX_ATTEMPTS` | Outbox | ✅ Preenchida | 3 |
 | `OUTBOX_RETRY_MAX_BACKOFF` | Outbox | ✅ Preenchida | 5m |
 | `PGBACKREST_S3_BUCKET` | Backup | ⚠️ Placeholder | CHANGE_ME_meu-bucket-backups |
 | `PGBACKREST_S3_ENDPOINT` | Backup | ⚠️ Placeholder | CHANGE_ME_s3.us-east-1.amazonaws.com |

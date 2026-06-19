@@ -27,7 +27,7 @@ System_Boundary(identity, "Identity Module") {
   ContainerQueue(outbox, "Outbox", "PostgreSQL table", "Garantia de entrega de eventos.\n--\nPublica:\n  auth.principal_established\n  auth.failed\n  auth.unknown_user\n  user.deleted")
 }
 
-Rel(user_wa, http_api, "POST /api/v1/identity/users\n{ whatsapp, email, displayName }", "HTTPS/JSON")
+Rel(user_wa, http_api, "POST /api/v1/identity/users\n{ whatsapp, email, display_name }", "HTTPS/JSON")
 Rel(user_tg, http_api, "POST /api/v1/channels/telegram/webhook\n{ update_id, message }", "HTTPS/JSON")
 Rel(gateway, http_api, "Requisições com HMAC\n(X-Gateway-Auth, X-Gateway-Timestamp)", "HTTPS")
 
