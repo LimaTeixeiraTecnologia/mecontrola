@@ -53,7 +53,7 @@ func TestContractOpenAPI(t *testing.T) {
 
 func (s *ContractOpenAPISuite) SetupTest() {
 	_, file, _, _ := runtime.Caller(0)
-	yamlPath := filepath.Join(filepath.Dir(file), "openapi.yaml")
+	yamlPath := filepath.Join(filepath.Dir(file), "..", "..", "..", "openapi.yaml")
 
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromFile(yamlPath)
@@ -172,13 +172,19 @@ func (s *ContractOpenAPISuite) decodeMap(rr *httptest.ResponseRecorder) map[stri
 
 func (s *ContractOpenAPISuite) mutHeaders(idemKey string) map[string]string {
 	return map[string]string{
-		"X-User-ID":       contractUserID,
-		"Idempotency-Key": idemKey,
+		"X-User-ID":           contractUserID,
+		"X-Gateway-Auth":      "stub-signature",
+		"X-Gateway-Timestamp": "2026-06-19T00:00:00Z",
+		"Idempotency-Key":     idemKey,
 	}
 }
 
 func (s *ContractOpenAPISuite) authHeaders() map[string]string {
-	return map[string]string{"X-User-ID": contractUserID}
+	return map[string]string{
+		"X-User-ID":           contractUserID,
+		"X-Gateway-Auth":      "stub-signature",
+		"X-Gateway-Timestamp": "2026-06-19T00:00:00Z",
+	}
 }
 
 func (s *ContractOpenAPISuite) TestContract_PostCards_RealValidation() {

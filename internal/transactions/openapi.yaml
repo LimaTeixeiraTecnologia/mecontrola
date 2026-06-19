@@ -1,0 +1,724 @@
+openapi: 3.2.0
+info:
+  title: MeControla Transactions API
+  version: 1.0.0
+  description: |
+    API de lançamentos, compras no cartão, templates recorrentes e resumos mensais.
+    Todos os endpoints exigem gateway auth e principal de usuário. Operações mutáveis exigem `Idempotency-Key`.
+servers:
+  - url: /
+tags:
+  - name: Transactions
+  - name: Card Purchases
+  - name: Recurring Templates
+  - name: Monthly Views
+paths:
+  /api/v1/transactions:
+    post:
+      operationId: createTransaction
+      tags: [Transactions]
+      summary: Criar lançamento
+      parameters: &auth_mutation
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawCreateTransaction'
+      responses:
+        '201':
+          description: Lançamento criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+    get:
+      operationId: listTransactions
+      tags: [Transactions]
+      summary: Listar lançamentos por competência
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: ref_month
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Página de lançamentos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceID'
+    get:
+      operationId: getTransaction
+      tags: [Transactions]
+      summary: Obter lançamento
+      parameters: &auth_with_id
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+      responses:
+        '200':
+          description: Lançamento encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: updateTransaction
+      tags: [Transactions]
+      summary: Atualizar lançamento
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawUpdateTransaction'
+      responses:
+        '200':
+          description: Lançamento atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+    delete:
+      operationId: deleteTransaction
+      tags: [Transactions]
+      summary: Remover lançamento
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+      responses:
+        '204':
+          description: Lançamento removido
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/card-purchases:
+    post:
+      operationId: createCardPurchase
+      tags: [Card Purchases]
+      summary: Criar compra no cartão
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawCreateCardPurchase'
+      responses:
+        '201':
+          description: Compra criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPurchase'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+    get:
+      operationId: listCardPurchases
+      tags: [Card Purchases]
+      summary: Listar compras no cartão
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: card_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: ref_month
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Página de compras
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPurchasePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/card-purchases/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceID'
+    get:
+      operationId: getCardPurchase
+      tags: [Card Purchases]
+      summary: Obter compra no cartão
+      parameters: *auth_with_id
+      responses:
+        '200':
+          description: Compra encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPurchase'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: updateCardPurchase
+      tags: [Card Purchases]
+      summary: Atualizar compra no cartão
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawUpdateCardPurchase'
+      responses:
+        '200':
+          description: Compra atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPurchase'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteCardPurchase
+      tags: [Card Purchases]
+      summary: Remover compra no cartão
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+      responses:
+        '204':
+          description: Compra removida
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/cards/{card_id}/invoices/{ref_month}:
+    get:
+      operationId: getCardInvoiceByMonth
+      tags: [Monthly Views]
+      summary: Obter fatura consolidada do cartão por competência
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: card_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: ref_month
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+      responses:
+        '200':
+          description: Fatura consolidada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardInvoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/recurring-templates:
+    post:
+      operationId: createRecurringTemplate
+      tags: [Recurring Templates]
+      summary: Criar template recorrente
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawCreateRecurringTemplate'
+      responses:
+        '201':
+          description: Template criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listRecurringTemplates
+      tags: [Recurring Templates]
+      summary: Listar templates recorrentes
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: active
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Página de templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringTemplatePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/recurring-templates/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceID'
+    get:
+      operationId: getRecurringTemplate
+      tags: [Recurring Templates]
+      summary: Obter template recorrente
+      parameters: *auth_with_id
+      responses:
+        '200':
+          description: Template encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: updateRecurringTemplate
+      tags: [Recurring Templates]
+      summary: Atualizar template recorrente
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawUpdateRecurringTemplate'
+      responses:
+        '200':
+          description: Template atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteRecurringTemplate
+      tags: [Recurring Templates]
+      summary: Remover template recorrente
+      parameters: *auth_mutation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+      responses:
+        '204':
+          description: Template removido
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/months/{ref_month}:
+    get:
+      operationId: getMonthlySummary
+      tags: [Monthly Views]
+      summary: Obter resumo do mês
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: ref_month
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+      responses:
+        '200':
+          description: Resumo mensal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlySummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/months/{ref_month}/entries:
+    get:
+      operationId: listMonthlyEntries
+      tags: [Monthly Views]
+      summary: Listar entradas do mês
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: ref_month
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Página de entradas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlyEntriesPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    XUserID:
+      name: X-User-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    XGatewayAuth:
+      name: X-Gateway-Auth
+      in: header
+      required: true
+      schema:
+        type: string
+    XGatewayTimestamp:
+      name: X-Gateway-Timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    ResourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Não autenticado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Conflito de versão
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BadGateway:
+      description: Dependência externa falhou
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    RawCreateTransaction:
+      type: object
+      required: [direction, payment_method, amount_cents, description, category_id, occurred_at]
+      properties:
+        direction:
+          type: string
+        payment_method:
+          type: string
+        amount_cents:
+          type: integer
+        description:
+          type: string
+        category_id:
+          type: string
+          format: uuid
+        subcategory_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+    RawUpdateTransaction:
+      allOf:
+        - $ref: '#/components/schemas/RawCreateTransaction'
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+    DeleteRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+    RawCreateCardPurchase:
+      type: object
+      additionalProperties: true
+    RawUpdateCardPurchase:
+      type: object
+      additionalProperties: true
+    RawCreateRecurringTemplate:
+      type: object
+      additionalProperties: true
+    RawUpdateRecurringTemplate:
+      type: object
+      additionalProperties: true
+    Transaction:
+      type: object
+      additionalProperties: true
+    CardPurchase:
+      type: object
+      additionalProperties: true
+    CardInvoice:
+      type: object
+      additionalProperties: true
+    RecurringTemplate:
+      type: object
+      additionalProperties: true
+    MonthlySummary:
+      type: object
+      additionalProperties: true
+    MonthlyEntriesPage:
+      type: object
+      additionalProperties: true
+    TransactionPage:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        next_cursor:
+          type: string
+      additionalProperties: false
+    CardPurchasePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardPurchase'
+        next_cursor:
+          type: string
+      additionalProperties: false
+    RecurringTemplatePage:
+      type: object
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecurringTemplate'
+        next_cursor:
+          type: string
+      additionalProperties: false
+    ErrorEnvelope:
+      type: object
+      additionalProperties: true

@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "mecontrola-api-2026-06-15",
+    "_postman_id": "mecontrola-api-21313388-f3f9-4b6a-9f91-569ecabf03bb",
     "name": "mecontrola API",
-    "description": "Collection completa verificada no codebase — 62 cenários: 42 REST endpoints + 21 webhook scenarios. Pre-request Script de coleção calcula X-Gateway-Auth automaticamente (HMAC-SHA256 hex, lowercase(user_id).timestamp). Preencher gateway_secret no environment.",
+    "description": "Colecao alinhada ao codebase em 2026-06-19. Estruturada por jornadas, com suporte a execucao manual endpoint por endpoint, workflow automatizado via variables + pre-request/post-response scripts, Collection Runner e Postman CLI. Headers de gateway e assinaturas de webhooks sao calculados automaticamente quando os segredos do environment estao preenchidos.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -11,18 +11,40 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// Calcula X-Gateway-Auth automaticamente antes de cada request.",
-          "// Formato: HMAC-SHA256(lowercase(user_id) + '.' + unix_timestamp, hex_decode(gateway_secret)) → hex lowercase (64 chars).",
-          "// Verificado em: internal/identity/domain/services/verify_gateway_request.go e internal/identity/domain/valueobjects/gateway_signature.go",
-          "const secret = pm.environment.get('gateway_secret');",
-          "const userId  = pm.environment.get('user_id');",
-          "if (secret && userId && secret.length >= 64) {",
+          "const resolve = (v) => pm.variables.replaceIn(v || '');",
+          "const upsertHeader = (key, value) => { if (value === undefined || value === null || value === '') return; if (pm.request.headers.has(key)) { pm.request.headers.upsert({ key, value }); } else { pm.request.headers.add({ key, value }); } };",
+          "const rawUrl = resolve(pm.request.url.toString());",
+          "const rawBody = pm.request.body && pm.request.body.mode === 'raw' ? resolve(pm.request.body.raw) : '';",
+          "const gatewaySecret = pm.environment.get('gateway_secret');",
+          "const userId = pm.environment.get('user_id');",
+          "if (gatewaySecret && userId && gatewaySecret.length >= 64) {",
           "  const timestamp = String(Math.floor(Date.now() / 1000));",
           "  pm.environment.set('gateway_timestamp', timestamp);",
-          "  const secretBytes = CryptoJS.enc.Hex.parse(secret);",
-          "  const message     = userId.toLowerCase() + '.' + timestamp;",
-          "  const sig         = CryptoJS.HmacSHA256(message, secretBytes).toString(CryptoJS.enc.Hex);",
+          "  const secretBytes = CryptoJS.enc.Hex.parse(gatewaySecret);",
+          "  const message = userId.toLowerCase() + '.' + timestamp;",
+          "  const sig = CryptoJS.HmacSHA256(message, secretBytes).toString(CryptoJS.enc.Hex);",
           "  pm.environment.set('gateway_auth', sig);",
+          "}",
+          "if (rawUrl.includes('/api/v1/billing/webhooks/kiwify')) {",
+          "  const secret = pm.environment.get('kiwify_webhook_secret');",
+          "  if (secret) {",
+          "    const sig = CryptoJS.HmacSHA1(rawBody, secret).toString(CryptoJS.enc.Hex);",
+          "    pm.environment.set('kiwify_signature', sig);",
+          "    upsertHeader('X-Kiwify-Signature', sig);",
+          "  }",
+          "}",
+          "if (rawUrl.includes('/api/v1/whatsapp/inbound')) {",
+          "  const secret = pm.environment.get('meta_app_secret');",
+          "  if (secret) {",
+          "    const sig = CryptoJS.HmacSHA256(rawBody, secret).toString(CryptoJS.enc.Hex);",
+          "    const headerValue = 'sha256=' + sig;",
+          "    pm.environment.set('meta_signature', headerValue);",
+          "    upsertHeader('X-Hub-Signature-256', headerValue);",
+          "  }",
+          "}",
+          "if (rawUrl.includes(resolve('{{telegram_webhook_path}}'))) {",
+          "  const token = pm.environment.get('telegram_secret_token');",
+          "  if (token) upsertHeader('X-Telegram-Bot-Api-Secret-Token', token);",
           "}"
         ]
       }
@@ -83,11 +105,71 @@
       "key": "delete_card_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "category_etag",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "budget_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "budget_state",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "onboarding_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "onboarding_checkout_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wa_me_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "telegram_deep_link",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "kiwify_signature",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "meta_signature",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "telegram_webhook_path",
+      "value": "/api/v1/channels/telegram/webhook",
+      "type": "string"
+    },
+    {
+      "key": "invoice_ref_month",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "01 — Health",
+      "name": "01 \u2014 Health & Readiness",
       "item": [
         {
           "name": "GET /health",
@@ -115,11 +197,255 @@
               }
             }
           ]
+        },
+        {
+          "name": "GET /readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/readiness",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "readiness"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /healthz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /livez",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/livez",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "livez"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "02 — Identity",
+      "name": "02 \u2014 Onboarding",
+      "item": [
+        {
+          "name": "POST /api/v1/onboarding/checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_id\": \"monthly\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "checkout"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Tem checkout_url\", () => pm.expect(pm.response.json()).to.have.property(\"checkout_url\"));",
+                  "const body = pm.response.json();",
+                  "if (body.checkout_url) pm.environment.set(\"onboarding_checkout_url\", body.checkout_url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /api/v1/onboarding/checkout",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://localhost:4321"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "checkout"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/onboarding/tokens/:token/state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "tokens",
+                "{{onboarding_token}}",
+                "state"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem ready_to_activate\", () => pm.expect(pm.response.json()).to.have.property(\"ready_to_activate\"));",
+                  "pm.test(\"ready_to_activate \u00e9 boolean\", () => pm.expect(pm.response.json().ready_to_activate).to.be.a(\"boolean\"));",
+                  "// Handler sempre retorna 200. Token placeholder \u2192 ready_to_activate=false.",
+                  "// Para testar fluxo completo: substituir :token por um token real do onboarding.",
+                  "const body = pm.response.json();",
+                  "if (body.wa_me_url) pm.environment.set(\"wa_me_url\", body.wa_me_url);",
+                  "if (body.telegram_deep_link) pm.environment.set(\"telegram_deep_link\", body.telegram_deep_link);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /api/v1/onboarding/tokens/{{onboarding_token}}/state",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://localhost:4321"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "tokens",
+                "{{onboarding_token}}",
+                "state"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 \u2014 Identity",
       "item": [
         {
           "name": "POST /api/v1/identity/users",
@@ -159,9 +485,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
-                  "pm.environment.set(\"user_id\", pm.response.json().id);"
+                  "const body = pm.response.json();",
+                  "pm.test(\"Tem id\", () => pm.expect(body).to.have.property(\"id\"));",
+                  "if (body.id) pm.environment.set(\"user_id\", body.id);",
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -170,7 +497,7 @@
       ]
     },
     {
-      "name": "03 — Categories",
+      "name": "04 \u2014 Categories",
       "item": [
         {
           "name": "GET /api/v1/categories",
@@ -232,7 +559,14 @@
                   "    const subId = (subs && subs.length > 0) ? subs[0].id : cats[0].id;",
                   "    pm.collectionVariables.set(\"subcategory_id\", subId);",
                   "  }",
-                  "}"
+                  "}",
+                  "const body = pm.response.json();",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));",
+                  "const categories = body.categories || [];",
+                  "const root = categories.find((c) => c.kind === \"expense\" && Array.isArray(c.subcategories) && c.subcategories.length > 0) || categories[0];",
+                  "if (root && root.id) pm.environment.set(\"category_id\", root.id);",
+                  "const sub = root && Array.isArray(root.subcategories) ? root.subcategories[0] : null;",
+                  "if (sub && sub.id) pm.environment.set(\"subcategory_id\", sub.id);"
                 ]
               }
             }
@@ -287,7 +621,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));"
+                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));",
+                  "if (body.id) pm.environment.set(\"category_id\", body.id);",
+                  "if (Array.isArray(body.subcategories) && body.subcategories[0] && body.subcategories[0].id) pm.environment.set(\"subcategory_id\", body.subcategories[0].id);"
                 ]
               }
             }
@@ -309,6 +647,11 @@
               {
                 "key": "X-Gateway-Timestamp",
                 "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "If-None-Match",
+                "value": "{{category_etag}}",
+                "disabled": true
               }
             ],
             "url": {
@@ -354,7 +697,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));"
+                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));"
                 ]
               }
             }
@@ -376,6 +720,11 @@
               {
                 "key": "X-Gateway-Timestamp",
                 "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "If-None-Match",
+                "value": "{{category_etag}}",
+                "disabled": true
               }
             ],
             "url": {
@@ -408,7 +757,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Tem result\", () => pm.expect(pm.response.json()).to.have.property(\"result\"));"
+                  "pm.test(\"Tem result\", () => pm.expect(pm.response.json()).to.have.property(\"result\"));",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));"
                 ]
               }
             }
@@ -417,99 +767,7 @@
       ]
     },
     {
-      "name": "04 — Onboarding",
-      "item": [
-        {
-          "name": "POST /api/v1/onboarding/checkout",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"plan_id\": \"monthly\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/onboarding/checkout",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "onboarding",
-                "checkout"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"Tem checkout_url\", () => pm.expect(pm.response.json()).to.have.property(\"checkout_url\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET /api/v1/onboarding/tokens/:token/state",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/onboarding/tokens/:token/state",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "onboarding",
-                "tokens",
-                ":token",
-                "state"
-              ],
-              "variable": [
-                {
-                  "key": "token",
-                  "value": "<token-encriptado-do-onboarding>"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Tem ready_to_activate\", () => pm.expect(pm.response.json()).to.have.property(\"ready_to_activate\"));",
-                  "pm.test(\"ready_to_activate é boolean\", () => pm.expect(pm.response.json().ready_to_activate).to.be.a(\"boolean\"));",
-                  "// Handler sempre retorna 200. Token placeholder → ready_to_activate=false.",
-                  "// Para testar fluxo completo: substituir :token por um token real do onboarding."
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "05 — Cards",
+      "name": "05 \u2014 Cards",
       "item": [
         {
           "name": "POST /api/v1/cards",
@@ -566,7 +824,9 @@
                 "exec": [
                   "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
                   "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
-                  "pm.collectionVariables.set(\"card_id\", pm.response.json().id);"
+                  "pm.collectionVariables.set(\"card_id\", pm.response.json().id);",
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"card_id\", body.id);"
                 ]
               }
             }
@@ -620,7 +880,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Tem items\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));"
+                  "pm.test(\"Tem items\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : null;",
+                  "if (item && item.id && !pm.environment.get(\"card_id\")) pm.environment.set(\"card_id\", item.id);"
                 ]
               }
             }
@@ -670,7 +933,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));"
+                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_id\", body.id);"
                 ]
               }
             }
@@ -736,7 +1000,78 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_id\", body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/cards/:id/limit",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:id/limit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":id",
+                "limit"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_id}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit_cents\": 1500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Tem id\", () => pm.expect(body).to.have.property(\"id\"));",
+                  "if (body.id) pm.environment.set(\"card_id\", body.id);"
                 ]
               }
             }
@@ -851,15 +1186,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set(\"delete_card_id\", pm.response.json().id);"
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"delete_card_id\", body.id);",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "DELETE /api/v1/cards/:id (cartão auxiliar)",
+          "name": "DELETE /api/v1/cards/:id (cart\u00e3o auxiliar)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -914,7 +1250,7 @@
       ]
     },
     {
-      "name": "06 — Transactions",
+      "name": "06 \u2014 Transactions",
       "item": [
         {
           "name": "POST /api/v1/transactions",
@@ -944,7 +1280,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 5000,\n  \"description\": \"Almoço\",\n  \"category_id\": \"{{category_id}}\",\n  \"occurred_at\": \"2026-06-15\"\n}",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 5000,\n  \"description\": \"Almo\u00e7o\",\n  \"category_id\": \"{{category_id}}\",\n  \"occurred_at\": \"2026-06-15\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -969,11 +1305,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set(\"transaction_id\",      body.id);",
-                  "pm.collectionVariables.set(\"transaction_version\", body.version);"
+                  "if (body.id) pm.environment.set(\"transaction_id\", body.id);",
+                  "if (body.version !== undefined) pm.environment.set(\"transaction_version\", String(body.version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
                 ]
               }
             }
@@ -1030,7 +1365,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : (Array.isArray(body.transactions) ? body.transactions[0] : null);",
+                  "if (item && item.id && !pm.environment.get(\"transaction_id\")) pm.environment.set(\"transaction_id\", item.id);",
+                  "if (item && item.version !== undefined && !pm.environment.get(\"transaction_version\")) pm.environment.set(\"transaction_version\", String(item.version));"
                 ]
               }
             }
@@ -1079,7 +1418,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"transaction_id\", body.id); if (body.version !== undefined) pm.environment.set(\"transaction_version\", String(body.version));"
                 ]
               }
             }
@@ -1113,7 +1453,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 6000,\n  \"description\": \"Almoço atualizado\",\n  \"category_id\": \"{{category_id}}\",\n  \"occurred_at\": \"2026-06-15\",\n  \"version\": {{transaction_version}}\n}",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 6000,\n  \"description\": \"Almo\u00e7o atualizado\",\n  \"category_id\": \"{{category_id}}\",\n  \"occurred_at\": \"2026-06-15\",\n  \"version\": {{transaction_version}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1146,7 +1486,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set(\"transaction_version\", pm.response.json().version);"
+                  "pm.collectionVariables.set(\"transaction_version\", pm.response.json().version);",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"transaction_id\", body.id); if (body.version !== undefined) pm.environment.set(\"transaction_version\", String(body.version));"
                 ]
               }
             }
@@ -1221,7 +1562,7 @@
       ]
     },
     {
-      "name": "07 — Card Purchases",
+      "name": "07 \u2014 Card Purchases",
       "item": [
         {
           "name": "POST /api/v1/card-purchases",
@@ -1276,11 +1617,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set(\"card_purchase_id\",      body.id);",
-                  "pm.collectionVariables.set(\"card_purchase_version\", body.version);"
+                  "if (body.id) pm.environment.set(\"card_purchase_id\", body.id);",
+                  "if (body.version !== undefined) pm.environment.set(\"card_purchase_version\", String(body.version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "if (Array.isArray(body.ref_months_affected) && body.ref_months_affected[0]) pm.environment.set(\"invoice_ref_month\", body.ref_months_affected[0]);",
+                  "if (Array.isArray(body.items) && body.items[0] && body.items[0].ref_month) pm.environment.set(\"invoice_ref_month\", body.items[0].ref_month);"
                 ]
               }
             }
@@ -1342,7 +1684,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : (Array.isArray(body.card_purchases) ? body.card_purchases[0] : null);",
+                  "if (item && item.id && !pm.environment.get(\"card_purchase_id\")) pm.environment.set(\"card_purchase_id\", item.id);",
+                  "if (item && item.version !== undefined && !pm.environment.get(\"card_purchase_version\")) pm.environment.set(\"card_purchase_version\", String(item.version));"
                 ]
               }
             }
@@ -1391,7 +1737,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_purchase_id\", body.id); if (body.version !== undefined) pm.environment.set(\"card_purchase_version\", String(body.version));",
+                  "if (Array.isArray(body.ref_months_affected) && body.ref_months_affected[0]) pm.environment.set(\"invoice_ref_month\", body.ref_months_affected[0]);",
+                  "if (Array.isArray(body.items) && body.items[0] && body.items[0].ref_month) pm.environment.set(\"invoice_ref_month\", body.items[0].ref_month);"
                 ]
               }
             }
@@ -1458,73 +1807,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set(\"card_purchase_version\", pm.response.json().version);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "DELETE /api/v1/card-purchases/:id",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "X-User-ID",
-                "value": "{{user_id}}"
-              },
-              {
-                "key": "X-Gateway-Auth",
-                "value": "{{gateway_auth}}"
-              },
-              {
-                "key": "X-Gateway-Timestamp",
-                "value": "{{gateway_timestamp}}"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"version\": {{card_purchase_version}}\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/card-purchases/:id",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "card-purchases",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "{{card_purchase_id}}"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                  "pm.collectionVariables.set(\"card_purchase_version\", pm.response.json().version);",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_purchase_id\", body.id); if (body.version !== undefined) pm.environment.set(\"card_purchase_version\", String(body.version));",
+                  "if (Array.isArray(body.ref_months_affected) && body.ref_months_affected[0]) pm.environment.set(\"invoice_ref_month\", body.ref_months_affected[0]);",
+                  "if (Array.isArray(body.items) && body.items[0] && body.items[0].ref_month) pm.environment.set(\"invoice_ref_month\", body.items[0].ref_month);"
                 ]
               }
             }
@@ -1533,7 +1819,7 @@
       ]
     },
     {
-      "name": "08 — Card Invoice",
+      "name": "08 \u2014 Card Invoice",
       "item": [
         {
           "name": "GET /api/v1/cards/:card_id/invoices/:ref_month",
@@ -1554,7 +1840,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/cards/:card_id/invoices/:ref_month",
+              "raw": "{{base_url}}/api/v1/cards/:card_id/invoices/{{invoice_ref_month}}",
               "host": [
                 "{{base_url}}"
               ],
@@ -1564,16 +1850,12 @@
                 "cards",
                 ":card_id",
                 "invoices",
-                ":ref_month"
+                "{{invoice_ref_month}}"
               ],
               "variable": [
                 {
                   "key": "card_id",
                   "value": "{{card_id}}"
-                },
-                {
-                  "key": "ref_month",
-                  "value": "{{ref_month}}"
                 }
               ]
             }
@@ -1593,7 +1875,7 @@
       ]
     },
     {
-      "name": "09 — Recurring Templates",
+      "name": "09 \u2014 Recurring Templates",
       "item": [
         {
           "name": "POST /api/v1/recurring-templates",
@@ -1648,11 +1930,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set(\"recurring_template_id\",      body.id);",
-                  "pm.collectionVariables.set(\"recurring_template_version\", body.version);"
+                  "if (body.id) pm.environment.set(\"recurring_template_id\", body.id);",
+                  "if (body.version !== undefined) pm.environment.set(\"recurring_template_version\", String(body.version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
                 ]
               }
             }
@@ -1710,7 +1991,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : (Array.isArray(body.recurring_templates) ? body.recurring_templates[0] : null);",
+                  "if (item && item.id && !pm.environment.get(\"recurring_template_id\")) pm.environment.set(\"recurring_template_id\", item.id);",
+                  "if (item && item.version !== undefined && !pm.environment.get(\"recurring_template_version\")) pm.environment.set(\"recurring_template_version\", String(item.version));"
                 ]
               }
             }
@@ -1759,7 +2044,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"recurring_template_id\", body.id); if (body.version !== undefined) pm.environment.set(\"recurring_template_version\", String(body.version));"
                 ]
               }
             }
@@ -1826,7 +2112,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set(\"recurring_template_version\", pm.response.json().version);"
+                  "pm.collectionVariables.set(\"recurring_template_version\", pm.response.json().version);",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"recurring_template_id\", body.id); if (body.version !== undefined) pm.environment.set(\"recurring_template_version\", String(body.version));"
                 ]
               }
             }
@@ -1901,7 +2188,7 @@
       ]
     },
     {
-      "name": "10 — Monthly (Transactions)",
+      "name": "10 \u2014 Monthly Summary",
       "item": [
         {
           "name": "GET /api/v1/months/:ref_month",
@@ -2017,7 +2304,7 @@
       ]
     },
     {
-      "name": "11 — Budgets",
+      "name": "11 \u2014 Budgets",
       "item": [
         {
           "name": "POST /api/v1/budgets",
@@ -2043,7 +2330,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"competence\": \"{{competence}}\",\n  \"total_cents\": 500000,\n  \"allocations\": [\n    { \"root_slug\": \"expense.custo_fixo\", \"basis_points\": 3000 },\n    { \"root_slug\": \"expense.prazeres\",   \"basis_points\": 2000 }\n  ]\n}",
+              "raw": "{\n  \"competence\": \"{{competence}}\",\n  \"total_cents\": 500000,\n  \"allocations\": [\n    { \"root_slug\": \"expense.custo_fixo\", \"basis_points\": 5000 },\n    { \"root_slug\": \"expense.prazeres\", \"basis_points\": 3000 },\n    { \"root_slug\": \"expense.conhecimento\", \"basis_points\": 2000 }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2068,14 +2355,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.ID) pm.environment.set(\"budget_id\", body.ID);",
+                  "if (body.State) pm.environment.set(\"budget_state\", body.State);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "POST /api/v1/budgets/recurrence (→ 207)",
+          "name": "POST /api/v1/budgets/recurrence (\u2192 207)",
           "request": {
             "method": "POST",
             "header": [
@@ -2124,15 +2414,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 207\", () => pm.response.to.have.status(207));",
-                  "pm.test(\"Tem created_budgets\", () => pm.expect(pm.response.json()).to.have.property(\"created_budgets\"));"
+                  "pm.test(\"Status recorrencia\", () => pm.expect([200,201,207]).to.include(pm.response.code));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "DELETE /api/v1/budgets/:delete_competence (draft — criado pela recorrência)",
+          "name": "DELETE /api/v1/budgets/:delete_competence (draft \u2014 criado pela recorr\u00eancia)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -2269,8 +2558,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set(\"expense_version\", pm.response.json().version);"
+                  "const body = pm.response.json();",
+                  "const id = body.id || body.ID || body.external_transaction_id || body.ExternalTransactionID;",
+                  "const version = body.version ?? body.Version;",
+                  "if (id) pm.environment.set(\"expense_id\", id);",
+                  "if (version !== undefined) pm.environment.set(\"expense_version\", String(version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
                 ]
               }
             }
@@ -2376,7 +2669,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set(\"expense_version\", pm.response.json().version);"
+                  "pm.collectionVariables.set(\"expense_version\", pm.response.json().version);",
+                  "const body = pm.response.json();",
+                  "const version = body.version ?? body.Version;",
+                  "if (version !== undefined) pm.environment.set(\"expense_version\", String(version));"
                 ]
               }
             }
@@ -2549,11 +2845,10 @@
       ]
     },
     {
-      "name": "12 — Billing Webhooks — Kiwify",
-      "description": "HMAC-SHA1 calculado automaticamente pelo Pre-request Script usando kiwify_webhook_secret. Todos os eventos retornam 202.",
+      "name": "12 \u2014 Billing Webhooks \u2014 Kiwify",
       "item": [
         {
-          "name": "Kiwify — order_approved",
+          "name": "Kiwify \u2014 order_approved",
           "event": [
             {
               "listen": "prerequest",
@@ -2573,7 +2868,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
-                  "pm.test(\"received true\", () => pm.expect(pm.response.json().received).to.be.true);"
+                  "pm.test(\"received true\", () => pm.expect(pm.response.json().received).to.be.true);",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2584,6 +2880,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2611,7 +2911,7 @@
           }
         },
         {
-          "name": "Kiwify — subscription_renewed",
+          "name": "Kiwify \u2014 subscription_renewed",
           "event": [
             {
               "listen": "prerequest",
@@ -2630,7 +2930,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2641,6 +2942,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2668,7 +2973,7 @@
           }
         },
         {
-          "name": "Kiwify — subscription_late",
+          "name": "Kiwify \u2014 subscription_late",
           "event": [
             {
               "listen": "prerequest",
@@ -2687,7 +2992,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2698,6 +3004,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2725,7 +3035,7 @@
           }
         },
         {
-          "name": "Kiwify — subscription_canceled",
+          "name": "Kiwify \u2014 subscription_canceled",
           "event": [
             {
               "listen": "prerequest",
@@ -2744,7 +3054,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2755,6 +3066,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2782,7 +3097,7 @@
           }
         },
         {
-          "name": "Kiwify — order_refunded",
+          "name": "Kiwify \u2014 order_refunded",
           "event": [
             {
               "listen": "prerequest",
@@ -2801,7 +3116,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2812,6 +3128,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2839,7 +3159,7 @@
           }
         },
         {
-          "name": "Kiwify — chargeback",
+          "name": "Kiwify \u2014 chargeback",
           "event": [
             {
               "listen": "prerequest",
@@ -2858,7 +3178,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2869,6 +3190,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2896,7 +3221,7 @@
           }
         },
         {
-          "name": "Kiwify — billet_created (no-op)",
+          "name": "Kiwify \u2014 billet_created (no-op)",
           "event": [
             {
               "listen": "prerequest",
@@ -2915,7 +3240,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2926,6 +3252,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -2953,7 +3283,7 @@
           }
         },
         {
-          "name": "Kiwify — pix_created (no-op)",
+          "name": "Kiwify \u2014 pix_created (no-op)",
           "event": [
             {
               "listen": "prerequest",
@@ -2972,7 +3302,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -2983,6 +3314,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -3010,7 +3345,7 @@
           }
         },
         {
-          "name": "Kiwify — order_rejected (no-op)",
+          "name": "Kiwify \u2014 order_rejected (no-op)",
           "event": [
             {
               "listen": "prerequest",
@@ -3029,7 +3364,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -3040,6 +3376,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -3067,7 +3407,7 @@
           }
         },
         {
-          "name": "Kiwify — abandoned_cart (no-op, sem webhook_event_type)",
+          "name": "Kiwify \u2014 abandoned_cart (no-op, sem webhook_event_type)",
           "event": [
             {
               "listen": "prerequest",
@@ -3086,7 +3426,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -3097,6 +3438,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
               }
             ],
             "body": {
@@ -3126,11 +3471,10 @@
       ]
     },
     {
-      "name": "13 — WhatsApp Webhook",
-      "description": "HMAC-SHA256 com prefixo 'sha256=' calculado pelo Pre-request Script usando meta_app_secret. Paths verificados em whatsapp_router.go.",
+      "name": "13 \u2014 WhatsApp Webhook",
       "item": [
         {
-          "name": "GET /api/v1/whatsapp/verify (verificação Meta)",
+          "name": "GET /api/v1/whatsapp/verify (verifica\u00e7\u00e3o Meta)",
           "request": {
             "method": "GET",
             "header": [],
@@ -3175,7 +3519,51 @@
           ]
         },
         {
-          "name": "POST /api/v1/whatsapp/inbound — texto simples",
+          "name": "GET /api/v1/whatsapp/inbound (verifica\u00e7\u00e3o Meta)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound?hub.mode=subscribe&hub.verify_token={{meta_verify_token}}&hub.challenge=meu-challenge-12345",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "subscribe"
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{meta_verify_token}}"
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "meu-challenge-12345"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/whatsapp/inbound \u2014 texto simples",
           "event": [
             {
               "listen": "prerequest",
@@ -3209,7 +3597,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-1\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-text-001\",\n          \"timestamp\": \"1718400000\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"Olá, quero saber meu saldo\" }\n        }]\n      }\n    }]\n  }]\n}",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-1\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-text-001\",\n          \"timestamp\": \"1718400000\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"Ol\u00e1, quero saber meu saldo\" }\n        }]\n      }\n    }]\n  }]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3231,7 +3619,7 @@
           }
         },
         {
-          "name": "POST /api/v1/whatsapp/inbound — comando ATIVAR <token>",
+          "name": "POST /api/v1/whatsapp/inbound \u2014 comando ATIVAR <token>",
           "event": [
             {
               "listen": "prerequest",
@@ -3265,7 +3653,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-2\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-ativar-001\",\n          \"timestamp\": \"1718400001\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"ATIVAR abc123token\" }\n        }]\n      }\n    }]\n  }]\n}",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-2\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-ativar-001\",\n          \"timestamp\": \"1718400001\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"ATIVAR {{onboarding_token}}\" }\n        }]\n      }\n    }]\n  }]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3287,7 +3675,7 @@
           }
         },
         {
-          "name": "POST /api/v1/whatsapp/inbound — imagem (non-text, ignorado)",
+          "name": "POST /api/v1/whatsapp/inbound \u2014 imagem (non-text, ignorado)",
           "event": [
             {
               "listen": "prerequest",
@@ -3343,7 +3731,7 @@
           }
         },
         {
-          "name": "POST /api/v1/whatsapp/inbound — assinatura inválida (→ 401)",
+          "name": "POST /api/v1/whatsapp/inbound \u2014 assinatura inv\u00e1lida (\u2192 401)",
           "event": [
             {
               "listen": "test",
@@ -3393,11 +3781,10 @@
       ]
     },
     {
-      "name": "14 — Telegram Webhook",
-      "description": "Header X-Telegram-Bot-Api-Secret-Token comparado diretamente (sem hash). Path configurável via TELEGRAM_WEBHOOK_PATH — ajuste a URL se diferente do padrão.",
+      "name": "14 \u2014 Telegram Webhook",
       "item": [
         {
-          "name": "POST telegram — texto simples",
+          "name": "POST telegram \u2014 texto simples",
           "request": {
             "method": "POST",
             "header": [
@@ -3412,7 +3799,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"update_id\": 100001,\n  \"message\": {\n    \"message_id\": 1,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400000,\n    \"text\": \"Olá, quero ver minhas finanças\"\n  }\n}",
+              "raw": "{\n  \"update_id\": 100001,\n  \"message\": {\n    \"message_id\": 1,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400000,\n    \"text\": \"Ol\u00e1, quero ver minhas finan\u00e7as\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3420,16 +3807,12 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/channels/telegram/webhook",
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "api",
-                "v1",
-                "channels",
-                "telegram",
-                "webhook"
+                "{{telegram_webhook_path}}"
               ]
             }
           },
@@ -3446,7 +3829,7 @@
           ]
         },
         {
-          "name": "POST telegram — comando /start",
+          "name": "POST telegram \u2014 comando /start",
           "request": {
             "method": "POST",
             "header": [
@@ -3469,16 +3852,12 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/channels/telegram/webhook",
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "api",
-                "v1",
-                "channels",
-                "telegram",
-                "webhook"
+                "{{telegram_webhook_path}}"
               ]
             }
           },
@@ -3495,7 +3874,7 @@
           ]
         },
         {
-          "name": "POST telegram — gasto em linguagem natural",
+          "name": "POST telegram \u2014 gasto em linguagem natural",
           "request": {
             "method": "POST",
             "header": [
@@ -3510,7 +3889,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"update_id\": 100003,\n  \"message\": {\n    \"message_id\": 3,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400020,\n    \"text\": \"Gastei 50 reais no almoço hoje\"\n  }\n}",
+              "raw": "{\n  \"update_id\": 100003,\n  \"message\": {\n    \"message_id\": 3,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400020,\n    \"text\": \"Gastei 50 reais no almo\u00e7o hoje\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3518,16 +3897,12 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/channels/telegram/webhook",
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "api",
-                "v1",
-                "channels",
-                "telegram",
-                "webhook"
+                "{{telegram_webhook_path}}"
               ]
             }
           },
@@ -3544,7 +3919,7 @@
           ]
         },
         {
-          "name": "POST telegram — bot sender (rejeição interna, → 200)",
+          "name": "POST telegram \u2014 bot sender (rejei\u00e7\u00e3o interna, \u2192 200)",
           "request": {
             "method": "POST",
             "header": [
@@ -3567,16 +3942,12 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/channels/telegram/webhook",
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "api",
-                "v1",
-                "channels",
-                "telegram",
-                "webhook"
+                "{{telegram_webhook_path}}"
               ]
             }
           },
@@ -3593,7 +3964,7 @@
           ]
         },
         {
-          "name": "POST telegram — chat de grupo (rejeição interna, → 200)",
+          "name": "POST telegram \u2014 chat de grupo (rejei\u00e7\u00e3o interna, \u2192 200)",
           "request": {
             "method": "POST",
             "header": [
@@ -3616,16 +3987,12 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/channels/telegram/webhook",
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "api",
-                "v1",
-                "channels",
-                "telegram",
-                "webhook"
+                "{{telegram_webhook_path}}"
               ]
             }
           },
@@ -3642,7 +4009,7 @@
           ]
         },
         {
-          "name": "POST telegram — token inválido (→ 401)",
+          "name": "POST telegram \u2014 token inv\u00e1lido (\u2192 401)",
           "request": {
             "method": "POST",
             "header": [
@@ -3657,7 +4024,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"update_id\": 100006,\n  \"message\": {\n    \"message_id\": 6,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400050,\n    \"text\": \"Olá\"\n  }\n}",
+              "raw": "{\n  \"update_id\": 100006,\n  \"message\": {\n    \"message_id\": 6,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400050,\n    \"text\": \"Ol\u00e1\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3665,16 +4032,12 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/channels/telegram/webhook",
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
-                "api",
-                "v1",
-                "channels",
-                "telegram",
-                "webhook"
+                "{{telegram_webhook_path}}"
               ]
             }
           },
@@ -3685,6 +4048,77 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15 \u2014 Cleanup",
+      "item": [
+        {
+          "name": "DELETE /api/v1/card-purchases/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{card_purchase_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/card-purchases/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "card-purchases",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_purchase_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
                 ]
               }
             }

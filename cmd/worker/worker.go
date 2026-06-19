@@ -25,22 +25,18 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
-	budgetsidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/identity"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
-	cardinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
-	cardidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/identity"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
-	notificationadapters "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
-
-	"github.com/google/uuid"
 )
 
 func New() *cobra.Command {
@@ -169,12 +165,12 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: inicializar modulo onboarding: %w", err)
 	}
 
-	channelGateway, err := buildChannelGateway(r.cfg, r.o11y, onboardingModule.WhatsAppGateway)
+	channelGateway, err := bootstrap.BuildChannelGateway(r.cfg, r.o11y, onboardingModule.WhatsAppGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: construir channel gateway: %w", err)
 	}
-	channelResolver := buildBudgetsChannelResolver(identityModule)
-	cardChannelResolver := buildCardChannelResolver(identityModule)
+	channelResolver := bootstrap.BuildBudgetsChannelResolver(identityModule)
+	cardChannelResolver := bootstrap.BuildCardChannelResolver(identityModule)
 
 	cardModule, err := card.NewCardModule(ctx, r.cfg, r.o11y, r.db, passthroughGateway, channelGateway, cardChannelResolver)
 	if err != nil {
@@ -279,55 +275,4 @@ func (r *workerRuntime) shutdown(workerManager *worker.Manager) error {
 	}
 
 	return errors.Join(shutdownErrs...)
-}
-
-func buildChannelGateway(cfg *configs.Config, o11y observability.Observability, whatsappBridge notificationadapters.WhatsAppGatewayBridge) (notification.ChannelGateway, error) {
-	senders := map[string]notification.ChannelSenders{}
-	if whatsappBridge != nil {
-		senders[notification.ChannelWhatsApp] = notificationadapters.NewWhatsAppSender(whatsappBridge).AsChannelSenders()
-	}
-	if cfg.TelegramConfig.Enabled {
-		gateway, err := tgoutbound.NewSharedGateway(o11y, tgoutbound.FactoryConfig{
-			APIBaseURL: cfg.TelegramConfig.APIBaseURL,
-			BotToken:   cfg.TelegramConfig.BotToken,
-			Timeout:    cfg.TelegramConfig.OutboundTimeout,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("worker: build telegram sender: %w", err)
-		}
-		senders[notification.ChannelTelegram] = notificationadapters.NewTelegramSender(gateway).AsChannelSenders()
-	}
-	return notification.NewMultiChannelGateway(senders), nil
-}
-
-func buildBudgetsChannelResolver(identityModule identity.IdentityModule) *budgetsidentity.UserChannelResolverAdapter {
-	if identityModule.ResolvePreferredChannel == nil {
-		return nil
-	}
-	return budgetsidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
-		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
-		if err != nil {
-			return "", "", false, err
-		}
-		if !ok {
-			return "", "", false, nil
-		}
-		return result.Channel, result.ExternalID, true, nil
-	})
-}
-
-func buildCardChannelResolver(identityModule identity.IdentityModule) cardinterfaces.UserChannelResolver {
-	if identityModule.ResolvePreferredChannel == nil {
-		return nil
-	}
-	return cardidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
-		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
-		if err != nil {
-			return "", "", false, err
-		}
-		if !ok {
-			return "", "", false, nil
-		}
-		return result.Channel, result.ExternalID, true, nil
-	})
 }

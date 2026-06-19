@@ -1,0 +1,113 @@
+openapi: 3.2.0
+info:
+  title: MeControla Onboarding API
+  version: 1.0.0
+  description: |
+    Endpoints públicos do fluxo de onboarding.
+    A superfície atual cobre criação de checkout e consulta de status do token.
+servers:
+  - url: /
+tags:
+  - name: Onboarding
+paths:
+  /api/v1/onboarding/checkout:
+    post:
+      operationId: createOnboardingCheckout
+      tags: [Onboarding]
+      summary: Criar sessão de checkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckoutRequest'
+      responses:
+        '201':
+          description: Checkout criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCheckoutResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit do endpoint atingido
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Provedor de checkout indisponível
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/onboarding/tokens/{token}/state:
+    get:
+      operationId: getOnboardingTokenState
+      tags: [Onboarding]
+      summary: Consultar estado do token de ativação
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado do token resolvido
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenStateResponse'
+        '429':
+          description: Rate limit do endpoint atingido
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    CreateCheckoutRequest:
+      type: object
+      required: [plan_id]
+      properties:
+        plan_id:
+          type: string
+    CreateCheckoutResponse:
+      type: object
+      required: [checkout_url]
+      properties:
+        checkout_url:
+          type: string
+          format: uri
+    TokenStateResponse:
+      type: object
+      required: [ready_to_activate]
+      properties:
+        ready_to_activate:
+          type: boolean
+        wa_me_url:
+          type: string
+          format: uri
+        telegram_deep_link:
+          type: string
+        bot_number_display:
+          type: string
+    ErrorEnvelope:
+      type: object
+      additionalProperties: true

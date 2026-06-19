@@ -22,7 +22,7 @@ func TestOpenAPIValidation(t *testing.T) {
 func (s *OpenAPIValidationSuite) SetupSuite() {
 	_, file, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(file)
-	yamlPath := filepath.Join(dir, "openapi.yaml")
+	yamlPath := filepath.Join(dir, "..", "..", "..", "openapi.yaml")
 
 	s.loader = openapi3.NewLoader()
 	doc, err := s.loader.LoadFromFile(yamlPath)
@@ -35,9 +35,9 @@ func (s *OpenAPIValidationSuite) TestDoc_NotNil() {
 }
 
 func (s *OpenAPIValidationSuite) TestDoc_Info() {
-	s.Equal("3.1.0", s.doc.OpenAPI)
+	s.Equal("3.2.0", s.doc.OpenAPI)
 	s.Require().NotNil(s.doc.Info)
-	s.Equal("Card CRUD MVP", s.doc.Info.Title)
+	s.Equal("MeControla Cards API", s.doc.Info.Title)
 }
 
 func (s *OpenAPIValidationSuite) TestDoc_SixEndpoints() {
@@ -46,6 +46,7 @@ func (s *OpenAPIValidationSuite) TestDoc_SixEndpoints() {
 	paths := map[string][]string{
 		"/api/v1/cards":               {"POST", "GET"},
 		"/api/v1/cards/{id}":          {"GET", "PUT", "DELETE"},
+		"/api/v1/cards/{id}/limit":    {"PATCH"},
 		"/api/v1/cards/{id}/invoices": {"GET"},
 	}
 
@@ -62,6 +63,8 @@ func (s *OpenAPIValidationSuite) TestDoc_SixEndpoints() {
 				s.NotNil(pathItem.Put, "PUT %s deve existir", path)
 			case "DELETE":
 				s.NotNil(pathItem.Delete, "DELETE %s deve existir", path)
+			case "PATCH":
+				s.NotNil(pathItem.Patch, "PATCH %s deve existir", path)
 			}
 		}
 	}

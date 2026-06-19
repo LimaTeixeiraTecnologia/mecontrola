@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/spf13/cobra"
 
 	httpserver "github.com/JailtonJunior94/devkit-go/pkg/http_server/chi_server"
@@ -22,20 +20,21 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
+	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
-	budgetsidentity "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/identity"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+	onboardingtelegram "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/telegram"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
-	notificationadapters "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
-	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/health"
+	openapidocs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/openapi"
 
-	"github.com/google/uuid"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
 func New() *cobra.Command {
@@ -114,7 +113,7 @@ func Run() error {
 		}),
 		httpserver.WithShutdownTimeout(15 * time.Second),
 	}
-	if origins := resolveCORSOrigins(cfg); origins != "" {
+	if origins := cfg.HTTPConfig.CORSAllowedOrigins; origins != "" {
 		serverOpts = append(serverOpts, httpserver.WithCORS(origins))
 	}
 
@@ -191,11 +190,11 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "card module initialized", observability.Bool("router_present", cardModule.CardRouter != nil))
 
-	channelGateway, err := buildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
+	channelGateway, err := bootstrap.BuildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
 	if err != nil {
 		return fmt.Errorf("run: build channel gateway: %w", err)
 	}
-	channelResolver := buildBudgetsChannelResolver(identityModule)
+	channelResolver := bootstrap.BuildBudgetsChannelResolver(identityModule)
 	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, db, categoriesModule, identityModule.GatewayAuthMiddleware, channelGateway, channelResolver)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo budgets: %w", err)
@@ -230,8 +229,8 @@ func Run() error {
 		transactionsModule,
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
-		newBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
-		newOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
+		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
+		agentonboarding.NewOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
 		agent.WithSessionStore(db),
 	)
 	if err != nil {
@@ -244,7 +243,7 @@ func Run() error {
 	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
 
 	if cfg.TelegramConfig.Enabled {
-		telegramOnboardingRoute := buildTelegramOnboardingRoute(o11y, cfg.TelegramConfig, onboardingModule.TelegramMessageProcessor)
+		telegramOnboardingRoute := onboardingtelegram.BuildOnboardingRoute(o11y, cfg.TelegramConfig, onboardingModule.TelegramMessageProcessor)
 		tgRouter, tgErr := identityModule.BuildTelegramWebhookRouter(agentModule.TelegramAgentRoute, telegramOnboardingRoute)
 		if tgErr != nil {
 			return fmt.Errorf("run: compor telegram webhook router: %w", tgErr)
@@ -260,70 +259,19 @@ func Run() error {
 		o11y.Logger().Info(ctx, "telegram webhook router skipped (TELEGRAM_ENABLED=false)")
 	}
 
-	srv.RegisterRouters(&readinessRouter{ctx: ctx})
+	srv.RegisterRouters(health.NewReadinessRouter(ctx))
+
+	docsRouter, err := openapidocs.NewRouterIfEnabled(cfg)
+	if err != nil {
+		return fmt.Errorf("run: inicializar docs openapi locais: %w", err)
+	}
+	if docsRouter != nil {
+		srv.RegisterRouters(docsRouter)
+		o11y.Logger().Info(ctx, "local openapi docs wired", observability.String("path", "/__docs"))
+	}
 
 	if err := srv.Start(ctx); err != nil {
 		return fmt.Errorf("run: http server stopped with error: %w", err)
 	}
 	return nil
-}
-
-func resolveCORSOrigins(cfg *configs.Config) string {
-	return cfg.HTTPConfig.CORSAllowedOrigins
-}
-
-type readinessRouter struct {
-	ctx context.Context
-}
-
-func (rt *readinessRouter) Register(r chi.Router) {
-	r.Get("/readiness", func(w http.ResponseWriter, _ *http.Request) {
-		select {
-		case <-rt.ctx.Done():
-			w.WriteHeader(http.StatusServiceUnavailable)
-		default:
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	r.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-}
-
-func buildChannelGateway(cfg *configs.Config, o11y observability.Observability, whatsappBridge notificationadapters.WhatsAppGatewayBridge) (notification.ChannelGateway, error) {
-	senders := map[string]notification.ChannelSenders{}
-	if whatsappBridge != nil {
-		senders[notification.ChannelWhatsApp] = notificationadapters.NewWhatsAppSender(whatsappBridge).AsChannelSenders()
-	}
-	if cfg.TelegramConfig.Enabled {
-		gateway, err := tgoutbound.NewSharedGateway(o11y, tgoutbound.FactoryConfig{
-			APIBaseURL: cfg.TelegramConfig.APIBaseURL,
-			BotToken:   cfg.TelegramConfig.BotToken,
-			Timeout:    cfg.TelegramConfig.OutboundTimeout,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("server: build telegram sender: %w", err)
-		}
-		senders[notification.ChannelTelegram] = notificationadapters.NewTelegramSender(gateway).AsChannelSenders()
-	}
-	return notification.NewMultiChannelGateway(senders), nil
-}
-
-func buildBudgetsChannelResolver(identityModule identity.IdentityModule) *budgetsidentity.UserChannelResolverAdapter {
-	if identityModule.ResolvePreferredChannel == nil {
-		return nil
-	}
-	return budgetsidentity.NewUserChannelResolverAdapter(func(ctx context.Context, userID uuid.UUID) (string, string, bool, error) {
-		result, ok, err := identityModule.ResolvePreferredChannel.Execute(ctx, userID)
-		if err != nil {
-			return "", "", false, err
-		}
-		if !ok {
-			return "", "", false, nil
-		}
-		return result.Channel, result.ExternalID, true, nil
-	})
 }

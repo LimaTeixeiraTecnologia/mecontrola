@@ -1,0 +1,97 @@
+openapi: 3.2.0
+info:
+  title: MeControla Billing API
+  version: 1.0.0
+  description: |
+    Endpoints HTTP do bounded context de billing.
+    Hoje a superfície pública HTTP é o webhook da Kiwify.
+servers:
+  - url: /
+tags:
+  - name: Billing
+paths:
+  /api/v1/billing/webhooks/kiwify:
+    post:
+      operationId: receiveKiwifyWebhook
+      tags: [Billing]
+      summary: Receber webhook da Kiwify
+      parameters:
+        - $ref: '#/components/parameters/KiwifySignatureHeader'
+        - $ref: '#/components/parameters/KiwifySignatureQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KiwifyWebhookPayload'
+      responses:
+        '202':
+          description: Evento aceito para processamento
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAcceptedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          description: Content-Type não suportado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          description: Rate limit do webhook atingido
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    KiwifySignatureHeader:
+      name: X-Kiwify-Signature
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Assinatura HMAC aceita pelo middleware.
+    KiwifySignatureQuery:
+      name: signature
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Alternativa de assinatura aceita pelo middleware.
+  responses:
+    Unauthorized:
+      description: Assinatura inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unprocessable:
+      description: Evento semanticamente inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    WebhookAcceptedResponse:
+      type: object
+      required: [received]
+      properties:
+        received:
+          type: boolean
+          const: true
+    KiwifyWebhookPayload:
+      type: object
+      additionalProperties: true
+      description: Payload raw recebido da Kiwify.
+    ErrorEnvelope:
+      type: object
+      additionalProperties: true

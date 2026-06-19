@@ -1,0 +1,170 @@
+openapi: 3.2.0
+info:
+  title: MeControla Identity API
+  version: 1.0.0
+  description: |
+    Endpoints HTTP do bounded context de identidade.
+    O endpoint de upsert usa autenticação gateway-to-gateway via headers assinados.
+    O webhook Telegram só é registrado quando `TELEGRAM_ENABLED=true`.
+servers:
+  - url: /
+tags:
+  - name: Identity
+  - name: Channels
+paths:
+  /api/v1/identity/users:
+    post:
+      operationId: upsertUserByWhatsApp
+      tags: [Identity]
+      summary: Criar ou atualizar usuário por WhatsApp
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertUserRequest'
+      responses:
+        '200':
+          description: Usuário persistido com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpsertUserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/channels/telegram/webhook:
+    post:
+      operationId: receiveTelegramWebhook
+      tags: [Channels]
+      summary: Receber update do Telegram
+      description: |
+        Registrado apenas quando `TELEGRAM_ENABLED=true`.
+        O path efetivo default é `/api/v1/channels/telegram/webhook` quando `TELEGRAM_WEBHOOK_PATH` não é sobrescrito.
+      parameters:
+        - $ref: '#/components/parameters/TelegramSecretToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Update processado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Payload acima do limite aceito pelo middleware
+        '429':
+          description: Rate limit do webhook atingido
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    XUserID:
+      name: X-User-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    XGatewayAuth:
+      name: X-Gateway-Auth
+      in: header
+      required: true
+      schema:
+        type: string
+    XGatewayTimestamp:
+      name: X-Gateway-Timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+        description: Timestamp UTC aceito pelo middleware de gateway auth.
+    TelegramSecretToken:
+      name: X-Telegram-Bot-Api-Secret-Token
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Não autenticado ou assinatura inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Conflito de unicidade
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    UpsertUserRequest:
+      type: object
+      required: [whatsapp]
+      properties:
+        whatsapp:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+    UpsertUserResponse:
+      type: object
+      required: [id, whatsapp, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        whatsapp:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TelegramUpdate:
+      type: object
+      additionalProperties: true
+      description: Payload raw do Telegram Update.
+    GenericObject:
+      type: object
+      additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      additionalProperties: true

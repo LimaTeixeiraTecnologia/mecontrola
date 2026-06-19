@@ -1,0 +1,365 @@
+openapi: 3.2.0
+info:
+  title: MeControla Cards API
+  version: 1.0.0
+  description: |
+    CRUD de cartões de crédito com cálculo de fatura e atualização de limite.
+    Todos os endpoints exigem gateway auth, principal de usuário e, quando mutáveis, `Idempotency-Key`.
+servers:
+  - url: /
+tags:
+  - name: Cards
+paths:
+  /api/v1/cards:
+    post:
+      tags: [Cards]
+      operationId: createCard
+      summary: Criar cartão
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCardRequest'
+      responses:
+        '201':
+          description: Cartão criado
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Cards]
+      operationId: listCards
+      summary: Listar cartões
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Lista paginada de cartões
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/cards/{id}:
+    get:
+      tags: [Cards]
+      operationId: getCard
+      summary: Obter cartão por ID
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/CardID'
+      responses:
+        '200':
+          description: Cartão encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Cards]
+      operationId: updateCard
+      summary: Atualizar cartão
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CardID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCardRequest'
+      responses:
+        '200':
+          description: Cartão atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Cards]
+      operationId: deleteCard
+      summary: Remover cartão
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CardID'
+      responses:
+        '204':
+          description: Cartão removido
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/cards/{id}/limit:
+    patch:
+      tags: [Cards]
+      operationId: updateCardLimit
+      summary: Atualizar limite do cartão
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CardID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCardLimitRequest'
+      responses:
+        '200':
+          description: Limite atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/cards/{id}/invoices:
+    get:
+      tags: [Cards]
+      operationId: getInvoiceFor
+      summary: Calcular fatura para data de compra
+      parameters:
+        - $ref: '#/components/parameters/XUserID'
+        - $ref: '#/components/parameters/XGatewayAuth'
+        - $ref: '#/components/parameters/XGatewayTimestamp'
+        - $ref: '#/components/parameters/CardID'
+        - name: for
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Datas da fatura
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    XUserID:
+      name: X-User-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    XGatewayAuth:
+      name: X-Gateway-Auth
+      in: header
+      required: true
+      schema:
+        type: string
+    XGatewayTimestamp:
+      name: X-Gateway-Timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    CardID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: Não autenticado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    NotFound:
+      description: Cartão não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Conflict:
+      description: Conflito de versão ou idempotência
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    CreateCardRequest:
+      type: object
+      required: [name, nickname, closing_day, due_day]
+      properties:
+        name:
+          type: string
+        nickname:
+          type: string
+        closing_day:
+          type: integer
+        due_day:
+          type: integer
+    UpdateCardRequest:
+      type: object
+      required: [name, nickname, closing_day, due_day]
+      properties:
+        name:
+          type: string
+        nickname:
+          type: string
+        closing_day:
+          type: integer
+        due_day:
+          type: integer
+        expected_version:
+          type: integer
+    UpdateCardLimitRequest:
+      type: object
+      required: [limit_cents]
+      properties:
+        limit_cents:
+          type: integer
+        expected_version:
+          type: integer
+    Card:
+      type: object
+      required: [id, user_id, name, nickname, closing_day, due_day, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        nickname:
+          type: string
+        closing_day:
+          type: integer
+        due_day:
+          type: integer
+        limit_cents:
+          type: integer
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CardList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+        next_cursor:
+          anyOf:
+            - type: string
+            - type: 'null'
+    Invoice:
+      type: object
+      additionalProperties: true
+    ProblemDetail:
+      type: object
+      additionalProperties: true

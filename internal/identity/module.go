@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -27,6 +26,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/stringsutil"
 	tgdedup "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dedup/postgres"
 	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
 	tghandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/handlers"
@@ -242,7 +242,7 @@ func (b *identityModuleBuilder) buildTelegramWebhookRouter(module IdentityModule
 	rateLimiter := middleware.NewRateLimiter(
 		b.cfg.TelegramConfig.WebhookRateLimitPerMin,
 		b.cfg.TelegramConfig.WebhookRateLimitBurst,
-		b.parseCSV(b.cfg.OnboardingConfig.TrustedProxies),
+		stringsutil.ParseCSV(b.cfg.OnboardingConfig.TrustedProxies),
 	)
 	rateLimitExceededTotal := b.o11y.Metrics().Counter(
 		"telegram_webhook_rate_limit_exceeded_total",
@@ -263,21 +263,6 @@ func (b *identityModuleBuilder) buildTelegramWebhookRouter(module IdentityModule
 		rateLimiter.Middleware,
 		func() { rateLimitExceededTotal.Increment(context.Background()) },
 	), nil
-}
-
-func (b *identityModuleBuilder) parseCSV(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	values := make([]string, 0)
-	for item := range strings.SplitSeq(raw, ",") {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
-			continue
-		}
-		values = append(values, trimmed)
-	}
-	return values
 }
 
 func NewRequireGatewayAuth(cfg configs.IdentityConfig, failureUseCase *usecases.RecordGatewayAuthFailure, o11y observability.Observability) (func(http.Handler) http.Handler, error) {

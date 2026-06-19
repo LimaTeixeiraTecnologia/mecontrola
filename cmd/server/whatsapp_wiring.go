@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/channels"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/stringsutil"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wahandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
@@ -60,7 +60,7 @@ func composeWhatsAppWebhookRouter(
 	waRateLimiter := middleware.NewRateLimiter(
 		cfg.WhatsAppConfig.WebhookRateLimitPerMin,
 		cfg.WhatsAppConfig.WebhookRateLimitBurst,
-		parseCSV(cfg.OnboardingConfig.TrustedProxies),
+		stringsutil.ParseCSV(cfg.OnboardingConfig.TrustedProxies),
 	)
 
 	waRateLimitExceededTotal := o11y.Metrics().Counter(
@@ -77,19 +77,4 @@ func composeWhatsAppWebhookRouter(
 		waRateLimiter.Middleware,
 		func() { waRateLimitExceededTotal.Increment(context.Background()) },
 	)
-}
-
-func parseCSV(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	values := make([]string, 0)
-	for item := range strings.SplitSeq(raw, ",") {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
-			continue
-		}
-		values = append(values, trimmed)
-	}
-	return values
 }
