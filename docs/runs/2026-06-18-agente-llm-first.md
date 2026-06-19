@@ -487,3 +487,21 @@ funções exportadas órfãs após a limpeza (`prompt_builder`/`intent_validator
 `intent_workflow` — compilam limpo, podem ser removidas num passe futuro); API de prompting JSON-schema
 (`RenderSystem`/`ParseIntentJSONSchema`) permanece como fallback; `matchesBudgetCancel` usa `Contains`
 (cue PT-BR amplo); e2e de orçamento multi-turno coberto por unit.
+
+## Validação contra LLM real (2026-06-18) — achado crítico
+
+Rodada autorizada contra OpenRouter/Gemini real (`RUN_REAL_LLM=1`, key do `.env`; depois mantido
+desabilitado por gate em testes):
+- **Tool-calling (Fase 4) reprovou: 39% (11/28) de reconhecimento** contra o Gemini real — a maioria
+  virava `unknown` (o modelo não chamava as tools com o prompt). Testes unitários (stubs) mascaravam isso.
+- **Revertido o parse vivo para JSON-schema** (prompt detalhado): **reconhecimento real 100% (28/28),
+  core 8/8, extração de valor 8/8** — inclui create_card/count_cards/list_cards.
+- **Persistência real comprovada**: e2e (testcontainers) faz `SELECT count(*), max(amount_cents) FROM
+  mecontrola.transactions` e confirma 1 INSERT com valor 5800.
+- Tool catalog + client tool-calling permanecem como infra testada para tuning futuro.
+- Uso de OpenRouter em testes fica DESABILITADO por padrão (gate `RUN_REAL_LLM`; skip sem a flag).
+
+### Pendência de validação real (honesto, não-falso-positivo)
+- **Orçamento multi-turno**: usa chamada LLM separada com `BudgetConfigJSONSchema` (mesmo mecanismo
+  structured-output validado), porém ainda NÃO validado contra Gemini real (só unit com stub). Risco menor
+  (mecanismo provado), mas recomenda-se validação real dedicada antes de produção.
