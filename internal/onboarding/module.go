@@ -65,6 +65,7 @@ type OnboardingModule struct {
 	SaveOnboardingBudgetSplits   *usecases.SaveOnboardingBudgetSplits
 	MarkFirstTransactionRecorded *usecases.MarkFirstTransactionRecorded
 	CompleteOnboardingSession    *usecases.CompleteOnboardingSession
+	SetOnboardingPhase           *usecases.SetOnboardingPhase
 	EventHandlers                []EventHandlerRegistration
 }
 
@@ -109,6 +110,7 @@ type onboardingUseCasesBundle struct {
 	saveBudgetSplits         *usecases.SaveOnboardingBudgetSplits
 	markFirstTransaction     *usecases.MarkFirstTransactionRecorded
 	completeSession          *usecases.CompleteOnboardingSession
+	setPhase                 *usecases.SetOnboardingPhase
 }
 
 func buildTelegramMessages(tgCfg configs.TelegramConfig) map[string]string {
@@ -168,6 +170,7 @@ func NewOnboardingModule(
 		SaveOnboardingBudgetSplits:   useCases.saveBudgetSplits,
 		MarkFirstTransactionRecorded: useCases.markFirstTransaction,
 		CompleteOnboardingSession:    useCases.completeSession,
+		SetOnboardingPhase:           useCases.setPhase,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
 			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
@@ -242,6 +245,7 @@ func buildOnboardingUseCases(
 	saveSplitsUoW := uow.NewUnitOfWork(db)
 	markFirstTxUoW := uow.NewUnitOfWork(db)
 	completeSessionUoW := uow.NewUnitOfWork(db)
+	setPhaseUoW := uow.NewUnitOfWork(db)
 	onboardingSessionRepo := deps.factory.OnboardingSessionRepository(db)
 	urlBuilder := checkout.NewKiwifyURLBuilder(deps.runtimeCfg.CheckoutURLs, deps.runtimeCfg.KiwifyAllowedHosts)
 	activationTemplate := onboardingemail.NewActivationTemplate()
@@ -294,6 +298,7 @@ func buildOnboardingUseCases(
 		saveBudgetSplits:     usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
 		markFirstTransaction: usecases.NewMarkFirstTransactionRecorded(markFirstTxUoW, deps.factory, o11y),
 		completeSession:      usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		setPhase:             usecases.NewSetOnboardingPhase(setPhaseUoW, deps.factory, o11y),
 	}, nil
 }
 

@@ -37,6 +37,7 @@ type onboardingSessionPayloadJSON struct {
 	Objective       string                          `json:"objective,omitempty"`
 	CustomSplit     []onboardingAllocationEntryJSON `json:"custom_split,omitempty"`
 	FirstTxRecorded bool                            `json:"first_tx_recorded,omitempty"`
+	Phase           string                          `json:"phase,omitempty"`
 }
 
 type onboardingCardDraftJSON struct {
@@ -106,6 +107,7 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 		Objective:       pj.Objective,
 		CustomSplit:     fromAllocationJSON(pj.CustomSplit),
 		FirstTxRecorded: pj.FirstTxRecorded,
+		Phase:           pj.Phase,
 	}
 
 	return entities.HydrateOnboardingSession(uid, parsedChannel, parsedState, domainPayload, updatedAt), nil
@@ -134,6 +136,7 @@ func (r *onboardingSessionRepository) Upsert(ctx context.Context, session entiti
 		Objective:       session.Payload().Objective,
 		CustomSplit:     toAllocationJSON(session.Payload().CustomSplit),
 		FirstTxRecorded: session.Payload().FirstTxRecorded,
+		Phase:           session.Payload().Phase,
 	}
 	raw, err := json.Marshal(pj)
 	if err != nil {

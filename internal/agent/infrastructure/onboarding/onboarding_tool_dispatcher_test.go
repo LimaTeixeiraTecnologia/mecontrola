@@ -45,15 +45,15 @@ func TestSplitsSuccessReply_MatchesRunbook(t *testing.T) {
 func TestSplitsMismatchReply_Overflow(t *testing.T) {
 	t.Parallel()
 	got := splitsMismatchReply(600000, 500000)
-	require.Contains(t, got, "passou **R$ 1.000**")
-	require.Contains(t, got, "distribuiu **R$ 6.000**")
-	require.Contains(t, got, "orçamento é **R$ 5.000**")
+	require.Contains(t, got, "passou *R$ 1.000*")
+	require.Contains(t, got, "distribuiu *R$ 6.000*")
+	require.Contains(t, got, "orçamento é *R$ 5.000*")
 }
 
 func TestSplitsMismatchReply_Underflow(t *testing.T) {
 	t.Parallel()
 	got := splitsMismatchReply(400000, 500000)
-	require.Contains(t, got, "faltam **R$ 1.000**")
+	require.Contains(t, got, "faltam *R$ 1.000*")
 }
 
 func TestParseAllocations(t *testing.T) {

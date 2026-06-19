@@ -240,6 +240,7 @@ func Run() error {
 			SaveBudgetSplits: onboardingModule.SaveOnboardingBudgetSplits,
 			MarkFirstTx:      onboardingModule.MarkFirstTransactionRecorded,
 			Complete:         onboardingModule.CompleteOnboardingSession,
+			SetPhase:         onboardingModule.SetOnboardingPhase,
 		}),
 	)
 	if err != nil {

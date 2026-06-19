@@ -20,7 +20,7 @@ import (
 
 const recordTransactionTool = "record_transaction"
 
-const onboardingCompletedReply = "🎉 **Onboarding concluído!** Agora é só me chamar: registrar gastos, ver fatura do cartão, acompanhar metas e pedir o resumo do mês. Conta comigo! ✅"
+const onboardingCompletedReply = "🎉 *Onboarding concluído!* Agora é só me chamar: registrar gastos, ver fatura do cartão, acompanhar metas e pedir o resumo do mês. Conta comigo! ✅"
 
 type onboardingToolDispatcher struct {
 	saveObjective    *onbusecases.SaveOnboardingObjective
@@ -83,7 +83,8 @@ func (d *onboardingToolDispatcher) dispatchObjective(ctx context.Context, userID
 		return appusecases.OnboardingToolResult{}, err
 	}
 	return appusecases.OnboardingToolResult{
-		Reply: fmt.Sprintf("🎯 Anotado: seu foco é **%s**. Vou usar isso pra te manter motivado!", out.Objective),
+		Reply:   fmt.Sprintf("🎯 Anotado: seu foco é *%s*. Vou usar isso pra te manter motivado!", out.Objective),
+		Advance: true,
 	}, nil
 }
 
@@ -99,7 +100,8 @@ func (d *onboardingToolDispatcher) dispatchIncome(ctx context.Context, userID uu
 		return appusecases.OnboardingToolResult{}, err
 	}
 	return appusecases.OnboardingToolResult{
-		Reply: fmt.Sprintf("✅ Orçamento de **R$ %s** registrado!", formatReaisCents(out.IncomeCents)),
+		Reply:   fmt.Sprintf("✅ Orçamento de *R$ %s* registrado!", formatReaisCents(out.IncomeCents)),
+		Advance: true,
 	}, nil
 }
 
@@ -116,7 +118,8 @@ func (d *onboardingToolDispatcher) dispatchCard(ctx context.Context, userID uuid
 		return appusecases.OnboardingToolResult{}, err
 	}
 	return appusecases.OnboardingToolResult{
-		Reply: fmt.Sprintf("💳 Cartão **%s** salvo (vence dia %d 📅). Quer adicionar outro? Se não usa cartão, é só dizer.", out.Name, out.DueDay),
+		Reply:   fmt.Sprintf("💳 Cartão *%s* salvo (vence dia %d 📅). Quer adicionar outro? Se não usa cartão, é só dizer.", out.Name, out.DueDay),
+		Advance: true,
 	}, nil
 }
 
@@ -135,7 +138,7 @@ func (d *onboardingToolDispatcher) dispatchSplits(ctx context.Context, userID uu
 	if !out.Applied {
 		return appusecases.OnboardingToolResult{Reply: splitsMismatchReply(out.SumCents, out.TotalCents)}, nil
 	}
-	return appusecases.OnboardingToolResult{Reply: splitsSuccessReply(out.Allocations)}, nil
+	return appusecases.OnboardingToolResult{Reply: splitsSuccessReply(out.Allocations), Advance: true}, nil
 }
 
 func (d *onboardingToolDispatcher) dispatchRecordTransaction(ctx context.Context, userID uuid.UUID, call agentinterfaces.ToolCall) (appusecases.OnboardingToolResult, error) {
@@ -153,23 +156,23 @@ func (d *onboardingToolDispatcher) dispatchRecordTransaction(ctx context.Context
 	if _, markErr := d.markFirstTx.Execute(ctx, onbusecases.MarkFirstTransactionRecordedInput{UserID: userID}); markErr != nil {
 		return appusecases.OnboardingToolResult{}, markErr
 	}
-	reply := fmt.Sprintf("🏆 Boa! Registrei **R$ %s", formatReaisCents(result.AmountCents))
+	reply := fmt.Sprintf("🏆 Boa! Registrei *R$ %s", formatReaisCents(result.AmountCents))
 	if path := strings.TrimSpace(result.CategoryPath); path != "" {
 		reply += " em " + path
 	}
-	reply += "**. Esse é o primeiro passo pro seu controle financeiro!"
+	reply += "*. Esse é o primeiro passo pro seu controle financeiro!"
 
 	completion, completeErr := d.complete.Execute(ctx, onbusecases.CompleteOnboardingSessionInput{UserID: userID})
 	if completeErr != nil {
 		if errors.Is(completeErr, onbusecases.ErrOnboardingFirstTransactionRequired) {
-			return appusecases.OnboardingToolResult{Reply: reply}, nil
+			return appusecases.OnboardingToolResult{Reply: reply, Advance: true}, nil
 		}
 		return appusecases.OnboardingToolResult{}, completeErr
 	}
 	if completion.Completed {
-		return appusecases.OnboardingToolResult{Reply: reply + "\n\n" + onboardingCompletedReply, Terminal: true}, nil
+		return appusecases.OnboardingToolResult{Reply: reply + "\n\n" + onboardingCompletedReply, Advance: true, Terminal: true}, nil
 	}
-	return appusecases.OnboardingToolResult{Reply: reply, Terminal: completion.AlreadyActive}, nil
+	return appusecases.OnboardingToolResult{Reply: reply, Advance: true, Terminal: completion.AlreadyActive}, nil
 }
 
 func (d *onboardingToolDispatcher) dispatchComplete(ctx context.Context, userID uuid.UUID) (appusecases.OnboardingToolResult, error) {
@@ -213,10 +216,10 @@ func parseAllocations(args map[string]any) ([]onbusecases.BudgetSplitItem, bool)
 func splitsMismatchReply(sumCents, totalCents int64) string {
 	diff := sumCents - totalCents
 	if diff > 0 {
-		return fmt.Sprintf("⚠️ Quase! Você distribuiu **R$ %s**, mas seu orçamento é **R$ %s** — passou **R$ %s**. Quer ajustar pra fechar certinho?",
+		return fmt.Sprintf("⚠️ Quase! Você distribuiu *R$ %s*, mas seu orçamento é *R$ %s* — passou *R$ %s*. Quer ajustar pra fechar certinho?",
 			formatReais(sumCents), formatReais(totalCents), formatReais(diff))
 	}
-	return fmt.Sprintf("⚠️ Quase! Você distribuiu **R$ %s**, mas seu orçamento é **R$ %s** — faltam **R$ %s**. Quer ajustar pra fechar certinho?",
+	return fmt.Sprintf("⚠️ Quase! Você distribuiu *R$ %s*, mas seu orçamento é *R$ %s* — faltam *R$ %s*. Quer ajustar pra fechar certinho?",
 		formatReais(sumCents), formatReais(totalCents), formatReais(-diff))
 }
 

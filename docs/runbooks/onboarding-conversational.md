@@ -1,5 +1,7 @@
 # Runbook — Onboarding Conversacional por IA (interações com o usuário)
 
+> **Arquitetura (atualizada):** máquina de fases determinística + LLM só como extrator de dados. As etapas de texto (boas-vindas, 5 categorias uma a uma, resumo, transição) são **determinísticas e byte-exatas** (fonte de verdade: `internal/agent/application/usecases/onboarding_scripts.go`); o LLM (`AGENT_ONBOARDING_LLM_MODEL=anthropic/claude-haiku-4.5`) é chamado apenas nas fases de dado (objetivo/orçamento/cartão/splits/lançamento) para extrair o valor e chamar a tool. A fase é persistida em `onboarding_sessions.payload.phase` → progressão linear, sem loop. Formatação WhatsApp usa `*negrito*` (asterisco simples).
+
 Canal: WhatsApp. Conduzido por IA (LLM) atrás da flag `AGENT_ONBOARDING_LLM_ENABLED` (default ON).
 Tom: acolhedor, positivo, didático, motivador. Emojis permitidos: 👋 🎯 💰 📊 ✅ 🚀 🏆 💳 📅 🎓 🎉 🏦.
 

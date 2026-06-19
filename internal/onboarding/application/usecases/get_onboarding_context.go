@@ -35,6 +35,7 @@ type GetOnboardingContextResult struct {
 	Cards           []OnboardingCardView
 	CustomSplit     []OnboardingAllocationView
 	FirstTxRecorded bool
+	Phase           string
 }
 
 type GetOnboardingContext struct {
@@ -79,5 +80,6 @@ func (uc *GetOnboardingContext) Execute(ctx context.Context, in GetOnboardingCon
 		Cards:           cards,
 		CustomSplit:     splits,
 		FirstTxRecorded: payload.FirstTxRecorded,
+		Phase:           payload.Phase,
 	}, nil
 }

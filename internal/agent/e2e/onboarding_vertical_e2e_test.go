@@ -206,11 +206,14 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	saveSplits := onbusecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
 	markFirstTx := onbusecases.NewMarkFirstTransactionRecorded(uow.NewUnitOfWork(db), onbfactory, o11y)
 	complete := onbusecases.NewCompleteOnboardingSession(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
+	setPhase := onbusecases.NewSetOnboardingPhase(uow.NewUnitOfWork(db), onbfactory, o11y)
 
 	reader := agentonboarding.NewOnboardingStateReader(getContext)
+	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(setPhase)
+	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, expLogger)
 	chain := newScriptedOpenRouterChain(t)
-	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, 512, o11y)
+	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y)
 	require.NoError(t, err)
 	runner := agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
 
@@ -272,23 +275,62 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	beforeTx, err := e.countTransactions(userID)
 	require.NoError(t, err)
 
-	require.NoError(t, e.postWebhook("quero fazer uma viagem", "wamid.onb.obj."+uuid.New().String()))
+	postOnboarding(t, e, "oi")
+	requireLastReplyContains(t, gateway, "Eu sou o *MeControla*")
+	requireOnboardingPhase(t, db, userID, "welcome")
+
+	progression := []struct {
+		phase   string
+		snippet string
+	}{
+		{"methodology_1", "Custo Fixo"},
+		{"methodology_2", "Conhecimento"},
+		{"methodology_3", "Prazeres"},
+		{"methodology_4", "Metas"},
+		{"methodology_5", "Liberdade Financeira"},
+	}
+	for _, step := range progression {
+		postOnboarding(t, e, "sim")
+		requireLastReplyContains(t, gateway, step.snippet)
+		requireOnboardingPhase(t, db, userID, step.phase)
+	}
+
+	postOnboarding(t, e, "sim")
+	requireLastReplyContains(t, gateway, "objetivo principal")
+	requireOnboardingPhase(t, db, userID, "objective")
+
+	postOnboarding(t, e, "quero fazer uma viagem")
 	require.Equal(t, "fazer uma viagem", onbPayloadString(t, db, userID, "objective"))
-	requireLastReplyContains(t, gateway, "Anotado: seu foco é **fazer uma viagem**")
+	requireLastReplyContains(t, gateway, "🎯 Anotado: seu foco é *fazer uma viagem*.")
+	requireLastReplyContains(t, gateway, "orçamento mensal")
+	requireOnboardingPhase(t, db, userID, "income")
 
-	require.NoError(t, e.postWebhook("ganho 5000 por mes", "wamid.onb.inc."+uuid.New().String()))
+	postOnboarding(t, e, "ganho 5000 por mes")
 	require.Equal(t, int64(500000), onbPayloadInt(t, db, userID, "income_cents"))
-	requireLastReplyEquals(t, gateway, "✅ Orçamento de **R$ 5.000,00** registrado!")
+	requireLastReplyContains(t, gateway, "✅ Orçamento de *R$ 5.000,00* registrado!")
+	requireLastReplyContains(t, gateway, "cartão de crédito")
+	requireOnboardingPhase(t, db, userID, "cards")
 
-	require.NoError(t, e.postWebhook("uso o nubank", "wamid.onb.card."+uuid.New().String()))
+	postOnboarding(t, e, "uso o nubank, vence dia 17")
 	require.Equal(t, 1, onbCardsLen(t, db, userID))
-	requireLastReplyContains(t, gateway, "Cartão **nubank** salvo (vence dia 17")
+	requireLastReplyContains(t, gateway, "💳 Cartão *nubank* salvo (vence dia 17")
+	requireOnboardingPhase(t, db, userID, "cards")
 
-	require.NoError(t, e.postWebhook("distribui assim", "wamid.onb.split."+uuid.New().String()))
-	require.Equal(t, "awaiting_first_transaction", onbState(t, db, userID))
+	postOnboarding(t, e, "não, só esse")
+	requireLastReplyContains(t, gateway, "distribuir seu orçamento")
+	requireOnboardingPhase(t, db, userID, "splits")
+
+	postOnboarding(t, e, "distribui assim")
+	require.Equal(t, 5, onbSplitsLen(t, db, userID))
 	requireLastReplyContains(t, gateway, "✅ Distribuição salva!")
+	requireLastReplyContains(t, gateway, "Seu plano:")
+	requireOnboardingPhase(t, db, userID, "summary")
 
-	require.NoError(t, e.postWebhook("gastei 35 no mercado", "wamid.onb.tx."+uuid.New().String()))
+	postOnboarding(t, e, "tá perfeito")
+	requireLastReplyContains(t, gateway, "primeiro lançamento")
+	requireOnboardingPhase(t, db, userID, "first_tx")
+
+	postOnboarding(t, e, "gastei 35 no mercado")
 	afterTx, err := e.countTransactions(userID)
 	require.NoError(t, err)
 	require.Equal(t, beforeTx+1, afterTx, "primeira transacao real deve ter sido persistida")
@@ -296,7 +338,12 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	last, ok := gateway.LastReply()
 	require.True(t, ok)
 	require.Contains(t, last.Text, "🏆 Boa! Registrei")
-	require.Contains(t, last.Text, "🎉 **Onboarding concluído!**")
+	require.Contains(t, last.Text, "🎉 *Onboarding concluído!*")
+}
+
+func postOnboarding(t *testing.T, e *agentE2ECtx, text string) {
+	t.Helper()
+	require.NoError(t, e.postWebhook(text, "wamid.onb."+uuid.New().String()))
 }
 
 func requireLastReplyContains(t *testing.T, gateway *CapturingGateway, substr string) {
@@ -304,13 +351,6 @@ func requireLastReplyContains(t *testing.T, gateway *CapturingGateway, substr st
 	last, ok := gateway.LastReply()
 	require.True(t, ok, "esperava resposta no gateway")
 	require.Contains(t, last.Text, substr)
-}
-
-func requireLastReplyEquals(t *testing.T, gateway *CapturingGateway, expected string) {
-	t.Helper()
-	last, ok := gateway.LastReply()
-	require.True(t, ok, "esperava resposta no gateway")
-	require.Equal(t, expected, last.Text)
 }
 
 func onbState(t *testing.T, db *sqlx.DB, userID uuid.UUID) string {
@@ -350,5 +390,15 @@ func onbCardsLen(t *testing.T, db *sqlx.DB, userID uuid.UUID) int {
 	var n int
 	require.NoError(t, db.QueryRowContext(queryCtx,
 		`SELECT jsonb_array_length(payload->'cards') FROM mecontrola.onboarding_sessions WHERE user_id = $1`, userID).Scan(&n))
+	return n
+}
+
+func onbSplitsLen(t *testing.T, db *sqlx.DB, userID uuid.UUID) int {
+	t.Helper()
+	queryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var n int
+	require.NoError(t, db.QueryRowContext(queryCtx,
+		`SELECT jsonb_array_length(payload->'custom_split') FROM mecontrola.onboarding_sessions WHERE user_id = $1`, userID).Scan(&n))
 	return n
 }

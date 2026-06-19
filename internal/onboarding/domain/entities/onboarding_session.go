@@ -74,6 +74,7 @@ type OnboardingSessionPayload struct {
 	Objective       string
 	CustomSplit     []OnboardingBudgetAllocationEntry
 	FirstTxRecorded bool
+	Phase           string
 }
 
 type OnboardingCardSplitEntry struct {
@@ -175,6 +176,12 @@ func (s OnboardingSession) WithCustomSplit(allocation valueobjects.BudgetAllocat
 		entries = append(entries, OnboardingBudgetAllocationEntry{Kind: a.Kind.String(), BasisPoints: a.BasisPoints})
 	}
 	s.payload.CustomSplit = entries
+	s.updatedAt = updatedAt
+	return s
+}
+
+func (s OnboardingSession) WithPhase(phase string, updatedAt time.Time) OnboardingSession {
+	s.payload.Phase = phase
 	s.updatedAt = updatedAt
 	return s
 }

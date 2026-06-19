@@ -67,8 +67,12 @@ type recordingDispatcher struct {
 
 func (d *recordingDispatcher) Dispatch(_ context.Context, _ uuid.UUID, _ string, call interfaces.ToolCall) (usecases.OnboardingToolResult, error) {
 	d.calls = append(d.calls, call)
-	return usecases.OnboardingToolResult{Reply: "ok"}, nil
+	return usecases.OnboardingToolResult{Reply: "ok", Advance: true}, nil
 }
+
+type recordingPhaseSetter struct{}
+
+func (recordingPhaseSetter) SetPhase(_ context.Context, _ uuid.UUID, _ string) error { return nil }
 
 func requireRealLLM(t *testing.T) {
 	t.Helper()
@@ -82,7 +86,7 @@ func runRealOnboardingTurn(t *testing.T, snapshot usecases.OnboardingSnapshot, t
 	t.Helper()
 	reader := &recordingReader{snapshot: snapshot}
 	dispatcher := &recordingDispatcher{}
-	uc, err := usecases.NewRunOnboardingTurn(onboardingInterpreter(t), reader, dispatcher, 512, noop.NewProvider())
+	uc, err := usecases.NewRunOnboardingTurn(onboardingInterpreter(t), reader, dispatcher, recordingPhaseSetter{}, 512, noop.NewProvider())
 	require.NoError(t, err)
 	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: text})
 	require.NoError(t, err)
@@ -92,7 +96,7 @@ func runRealOnboardingTurn(t *testing.T, snapshot usecases.OnboardingSnapshot, t
 
 func TestOnboardingRealLLM_ObjectiveToolSelected(t *testing.T) {
 	requireRealLLM(t)
-	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, State: "awaiting_income"}, "quero fazer uma viagem")
+	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseObjective}, "quero fazer uma viagem")
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, usecases.ToolSaveOnboardingObjective, dispatcher.calls[0].FunctionName)
 	require.NotEmpty(t, dispatcher.calls[0].ArgumentsJSON["objective"])
@@ -100,28 +104,28 @@ func TestOnboardingRealLLM_ObjectiveToolSelected(t *testing.T) {
 
 func TestOnboardingRealLLM_IncomeToolSelected(t *testing.T) {
 	requireRealLLM(t)
-	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, State: "awaiting_income", Objective: "fazer uma viagem"}, "meu orçamento é 5 mil por mês")
+	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseIncome, Objective: "fazer uma viagem"}, "meu orçamento é 5 mil por mês")
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, usecases.ToolSaveOnboardingIncome, dispatcher.calls[0].FunctionName)
 }
 
 func TestOnboardingRealLLM_CardToolSelected(t *testing.T) {
 	requireRealLLM(t)
-	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, State: "awaiting_income", Objective: "viagem", IncomeCents: 500000}, "uso o nubank e vence dia 17")
+	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseCards, Objective: "viagem", IncomeCents: 500000}, "uso o nubank e vence dia 17")
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, usecases.ToolSaveOnboardingCard, dispatcher.calls[0].FunctionName)
 }
 
 func TestOnboardingRealLLM_BudgetSplitsToolSelected(t *testing.T) {
 	requireRealLLM(t)
-	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, State: "awaiting_income", Objective: "viagem", IncomeCents: 500000}, "custo fixo 2000, conhecimento 500, prazeres 750, metas 1000 e liberdade financeira 750")
+	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSplits, Objective: "viagem", IncomeCents: 500000}, "custo fixo 2000, conhecimento 500, prazeres 750, metas 1000 e liberdade financeira 750")
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, usecases.ToolSaveOnboardingBudgetSplits, dispatcher.calls[0].FunctionName)
 }
 
 func TestOnboardingRealLLM_QuestionStaysText(t *testing.T) {
 	requireRealLLM(t)
-	out, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, State: "awaiting_income", Objective: "viagem"}, "por que vocês precisam saber meu orçamento?")
+	out, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseIncome, Objective: "viagem"}, "por que vocês precisam saber meu orçamento?")
 	require.Empty(t, dispatcher.calls)
 	require.NotEmpty(t, out.Reply)
 }

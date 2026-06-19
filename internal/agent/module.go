@@ -68,6 +68,7 @@ type OnboardingLLMUseCases struct {
 	SaveBudgetSplits *onbusecases.SaveOnboardingBudgetSplits
 	MarkFirstTx      *onbusecases.MarkFirstTransactionRecorded
 	Complete         *onbusecases.CompleteOnboardingSession
+	SetPhase         *onbusecases.SetOnboardingPhase
 }
 
 func WithOnboardingLLM(uc OnboardingLLMUseCases) AgentModuleOption {
@@ -368,7 +369,8 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		uc.Complete,
 		deps.ExpenseLogger,
 	)
-	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y)
+	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
+	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y)
 	if err != nil {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),
@@ -395,6 +397,9 @@ func (b *agentModuleBuilder) onboardingLLMUnavailable(deps *appservices.IntentRo
 	}
 	if b.onboardingLLM.GetContext == nil {
 		return "context_reader_missing"
+	}
+	if b.onboardingLLM.SetPhase == nil {
+		return "phase_setter_missing"
 	}
 	return ""
 }

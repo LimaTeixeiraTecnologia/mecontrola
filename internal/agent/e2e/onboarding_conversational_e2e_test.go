@@ -66,12 +66,15 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	saveSplits := onbusecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
 	markFirstTx := onbusecases.NewMarkFirstTransactionRecorded(uow.NewUnitOfWork(db), factory, o11y)
 	complete := onbusecases.NewCompleteOnboardingSession(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
+	setPhase := onbusecases.NewSetOnboardingPhase(uow.NewUnitOfWork(db), factory, o11y)
 
 	reader := agentonboarding.NewOnboardingStateReader(getContext)
 	require.NotNil(t, reader)
+	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(setPhase)
+	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, fakeOnboardingExpenseLogger{})
 
-	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, 512, o11y)
+	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y)
 	require.NoError(t, err)
 	return turn
 }
@@ -119,9 +122,22 @@ func queryOnboardingInt(t *testing.T, db *sqlx.DB, userID uuid.UUID, expr string
 	return *value, true
 }
 
+func requireOnboardingPhase(t *testing.T, db *sqlx.DB, userID uuid.UUID, expected string) {
+	t.Helper()
+	got, _ := queryOnboardingString(t, db, userID, "payload->>'phase'")
+	require.Equal(t, expected, got, "fase persistida divergente")
+}
+
+func conversationalTurn(t *testing.T, turn *appusecases.RunOnboardingTurn, userID uuid.UUID, text string) appusecases.RunOnboardingTurnResult {
+	t.Helper()
+	out, err := turn.Execute(context.Background(), appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: text})
+	require.NoError(t, err)
+	require.True(t, out.Handled)
+	return out
+}
+
 func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 	db, _ := postgres.NewTestDatabase(t)
-	ctx := context.Background()
 
 	userID := SeedActiveUserWA(t, db, "+5511955554444")
 	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
@@ -140,149 +156,127 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 			},
 		}),
 		{ToolCalls: []appinterfaces.ToolCall{
-			{ID: "c1", FunctionName: "record_transaction", ArgumentsJSON: map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado"}},
+			{ID: "c1", FunctionName: "record_transaction", ArgumentsJSON: map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado", "category_hint": "mercado"}},
 		}},
 	}}
 	turn := newOnboardingTurnPipeline(t, db, interp)
 
-	objective, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "quero fazer uma viagem"})
-	require.NoError(t, err)
-	require.True(t, objective.Handled)
-	require.Contains(t, objective.Reply, "Anotado: seu foco é **fazer uma viagem**")
+	welcome := conversationalTurn(t, turn, userID, "oi")
+	require.Contains(t, welcome.Reply, "Eu sou o *MeControla*")
+	requireOnboardingPhase(t, db, userID, "welcome")
+
+	m1 := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, m1.Reply, "Custo Fixo")
+	requireOnboardingPhase(t, db, userID, "methodology_1")
+
+	m2 := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, m2.Reply, "Conhecimento")
+	requireOnboardingPhase(t, db, userID, "methodology_2")
+
+	m3 := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, m3.Reply, "Prazeres")
+	requireOnboardingPhase(t, db, userID, "methodology_3")
+
+	m4 := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, m4.Reply, "Metas")
+	requireOnboardingPhase(t, db, userID, "methodology_4")
+
+	m5 := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, m5.Reply, "Liberdade Financeira")
+	requireOnboardingPhase(t, db, userID, "methodology_5")
+
+	objQuestion := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, objQuestion.Reply, "objetivo principal")
+	requireOnboardingPhase(t, db, userID, "objective")
+
+	objective := conversationalTurn(t, turn, userID, "quero fazer uma viagem")
+	require.Contains(t, objective.Reply, "🎯 Anotado: seu foco é *fazer uma viagem*.")
+	require.Contains(t, objective.Reply, "orçamento mensal")
+	requireOnboardingPhase(t, db, userID, "income")
 	gotObjective, _ := queryOnboardingString(t, db, userID, "payload->>'objective'")
 	require.Equal(t, "fazer uma viagem", gotObjective)
 
-	income, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "ganho 5000"})
-	require.NoError(t, err)
-	require.True(t, income.Handled)
-	require.Equal(t, "✅ Orçamento de **R$ 5.000,00** registrado!", income.Reply)
+	income := conversationalTurn(t, turn, userID, "ganho 5000")
+	require.Contains(t, income.Reply, "✅ Orçamento de *R$ 5.000,00* registrado!")
+	require.Contains(t, income.Reply, "cartão de crédito")
+	requireOnboardingPhase(t, db, userID, "cards")
 	gotIncome, _ := queryOnboardingInt(t, db, userID, "(payload->>'income_cents')::bigint")
 	require.Equal(t, int64(500000), gotIncome)
 
-	cardOut, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "tenho nubank dia 17"})
-	require.NoError(t, err)
-	require.True(t, cardOut.Handled)
-	require.Contains(t, cardOut.Reply, "Cartão **nubank** salvo (vence dia 17")
+	cardOut := conversationalTurn(t, turn, userID, "uso o nubank, vence dia 17")
+	require.Contains(t, cardOut.Reply, "💳 Cartão *nubank* salvo (vence dia 17")
+	requireOnboardingPhase(t, db, userID, "cards")
 	cardCount, _ := queryOnboardingInt(t, db, userID, "jsonb_array_length(payload->'cards')")
 	require.Equal(t, int64(1), cardCount)
 
-	splits, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "distribui assim"})
-	require.NoError(t, err)
-	require.True(t, splits.Handled)
-	require.Equal(t, "✅ Distribuição salva! 💰40% (R$2.000) · 🎓10% (R$500) · 🎉15% (R$750) · 🎯20% (R$1.000) · 🏦15% (R$750).", splits.Reply)
-	stateAfterSplits, _ := queryOnboardingString(t, db, userID, "state")
-	require.Equal(t, "awaiting_first_transaction", stateAfterSplits)
+	splitsQuestion := conversationalTurn(t, turn, userID, "não, só esse")
+	require.Contains(t, splitsQuestion.Reply, "distribuir seu orçamento")
+	requireOnboardingPhase(t, db, userID, "splits")
+
+	splits := conversationalTurn(t, turn, userID, "distribui assim")
+	require.Contains(t, splits.Reply, "✅ Distribuição salva! 💰40% (R$2.000) · 🎓10% (R$500) · 🎉15% (R$750) · 🎯20% (R$1.000) · 🏦15% (R$750).")
+	require.Contains(t, splits.Reply, "Seu plano:")
+	require.Contains(t, splits.Reply, "Tá tudo certo?")
+	requireOnboardingPhase(t, db, userID, "summary")
 	splitCount, _ := queryOnboardingInt(t, db, userID, "jsonb_array_length(payload->'custom_split')")
 	require.Equal(t, int64(5), splitCount)
 
-	firstTx, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "gastei 35 no mercado"})
-	require.NoError(t, err)
-	require.True(t, firstTx.Handled)
+	transition := conversationalTurn(t, turn, userID, "tá perfeito")
+	require.Contains(t, transition.Reply, "primeiro lançamento")
+	requireOnboardingPhase(t, db, userID, "first_tx")
+
+	firstTx := conversationalTurn(t, turn, userID, "gastei 35 no mercado")
 	require.Contains(t, firstTx.Reply, "🏆 Boa! Registrei")
-	require.Contains(t, firstTx.Reply, "🎉 **Onboarding concluído!**")
+	require.Contains(t, firstTx.Reply, "🎉 *Onboarding concluído!*")
 	finalState, _ := queryOnboardingString(t, db, userID, "state")
 	require.Equal(t, "active", finalState)
 }
 
-func TestOnboardingConversational_SplitsMismatch_E2E(t *testing.T) {
+func TestOnboardingConversational_MethodologyStrictlyAdvances_E2E(t *testing.T) {
 	db, _ := postgres.NewTestDatabase(t)
-	ctx := context.Background()
 
 	userID := SeedActiveUserWA(t, db, "+5511944443333")
 	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
 
-	interp := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
-		toolCallResponse("save_onboarding_income", map[string]any{"income_cents": 500000}),
-		toolCallResponse("save_onboarding_budget_splits", map[string]any{
-			"allocations": []any{
-				map[string]any{"root_slug": "expense.custo_fixo", "amount_cents": 300000},
-				map[string]any{"root_slug": "expense.conhecimento", "amount_cents": 50000},
-				map[string]any{"root_slug": "expense.prazeres", "amount_cents": 75000},
-				map[string]any{"root_slug": "expense.metas", "amount_cents": 100000},
-				map[string]any{"root_slug": "expense.liberdade_financeira", "amount_cents": 75000},
-			},
-		}),
-	}}
-	turn := newOnboardingTurnPipeline(t, db, interp)
+	turn := newOnboardingTurnPipeline(t, db, &scriptedInterpreter{})
 
-	income, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "ganho 5000"})
-	require.NoError(t, err)
-	require.True(t, income.Handled)
+	welcome := conversationalTurn(t, turn, userID, "oi")
+	require.Contains(t, welcome.Reply, "Eu sou o *MeControla*")
+	requireOnboardingPhase(t, db, userID, "welcome")
 
-	splits, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "distribui assim"})
-	require.NoError(t, err)
-	require.True(t, splits.Handled)
-	require.Contains(t, splits.Reply, "passou **R$ 1.000**")
-
-	splitCount, present := queryOnboardingInt(t, db, userID, "jsonb_array_length(payload->'custom_split')")
-	require.True(t, !present || splitCount == 0)
-	state, _ := queryOnboardingString(t, db, userID, "state")
-	require.NotEqual(t, "active", state)
+	progression := []struct {
+		phase   string
+		snippet string
+	}{
+		{"methodology_1", "Custo Fixo"},
+		{"methodology_2", "Conhecimento"},
+		{"methodology_3", "Prazeres"},
+		{"methodology_4", "Metas"},
+		{"methodology_5", "Liberdade Financeira"},
+	}
+	for _, step := range progression {
+		out := conversationalTurn(t, turn, userID, "sim")
+		require.Contains(t, out.Reply, step.snippet)
+		requireOnboardingPhase(t, db, userID, step.phase)
+	}
 }
 
-func TestOnboardingConversational_CompleteBlockedWithoutFirstTx_E2E(t *testing.T) {
+func TestOnboardingConversational_MethodologyNonAffirmationStays_E2E(t *testing.T) {
 	db, _ := postgres.NewTestDatabase(t)
-	ctx := context.Background()
 
 	userID := SeedActiveUserWA(t, db, "+5511933332222")
 	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
 
-	prep := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
-		toolCallResponse("save_onboarding_objective", map[string]any{"objective": "fazer uma viagem"}),
-		toolCallResponse("save_onboarding_income", map[string]any{"income_cents": 500000}),
-		toolCallResponse("save_onboarding_budget_splits", map[string]any{
-			"allocations": []any{
-				map[string]any{"root_slug": "expense.custo_fixo", "amount_cents": 200000},
-				map[string]any{"root_slug": "expense.conhecimento", "amount_cents": 50000},
-				map[string]any{"root_slug": "expense.prazeres", "amount_cents": 75000},
-				map[string]any{"root_slug": "expense.metas", "amount_cents": 100000},
-				map[string]any{"root_slug": "expense.liberdade_financeira", "amount_cents": 75000},
-			},
-		}),
-	}}
-	prepTurn := newOnboardingTurnPipeline(t, db, prep)
-	for _, text := range []string{"viagem", "ganho 5000", "distribui"} {
-		out, err := prepTurn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: text})
-		require.NoError(t, err)
-		require.True(t, out.Handled)
-	}
-	stateBefore, _ := queryOnboardingString(t, db, userID, "state")
-	require.Equal(t, "awaiting_first_transaction", stateBefore)
+	turn := newOnboardingTurnPipeline(t, db, &scriptedInterpreter{})
 
-	completeInterp := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
-		toolCallResponse("complete_onboarding_session", map[string]any{}),
-	}}
-	completeTurn := newOnboardingTurnPipeline(t, db, completeInterp)
+	conversationalTurn(t, turn, userID, "oi")
+	requireOnboardingPhase(t, db, userID, "welcome")
 
-	out, err := completeTurn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "terminei"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "faça seu primeiro lançamento")
+	advance := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, advance.Reply, "Custo Fixo")
+	requireOnboardingPhase(t, db, userID, "methodology_1")
 
-	state, _ := queryOnboardingString(t, db, userID, "state")
-	require.NotEqual(t, "active", state)
-}
-
-func TestOnboardingConversational_QuestionFreeText_E2E(t *testing.T) {
-	db, _ := postgres.NewTestDatabase(t)
-	ctx := context.Background()
-
-	userID := SeedActiveUserWA(t, db, "+5511922221111")
-	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
-
-	const answer = "🙂 Boa pergunta! Orçamento é tudo que entra por mês. Me conta: qual seu orçamento mensal?"
-	interp := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
-		{RawJSON: []byte(answer)},
-	}}
-	turn := newOnboardingTurnPipeline(t, db, interp)
-
-	out, err := turn.Execute(ctx, appusecases.RunOnboardingTurnInput{UserID: userID, Channel: "whatsapp", Text: "o que é orçamento?"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Equal(t, answer, out.Reply)
-
-	income, present := queryOnboardingInt(t, db, userID, "(payload->>'income_cents')::bigint")
-	require.True(t, !present || income == 0)
-	state, _ := queryOnboardingString(t, db, userID, "state")
-	require.Equal(t, "awaiting_income", state)
+	stay := conversationalTurn(t, turn, userID, "o que é isso?")
+	require.Contains(t, stay.Reply, "Custo Fixo")
+	requireOnboardingPhase(t, db, userID, "methodology_1")
 }

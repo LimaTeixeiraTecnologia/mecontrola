@@ -45,6 +45,7 @@ func (r *onboardingStateReader) Load(ctx context.Context, userID uuid.UUID) (app
 	return appusecases.OnboardingSnapshot{
 		InProgress:      !out.State.IsTerminal(),
 		State:           out.State.String(),
+		Phase:           out.Phase,
 		IncomeCents:     out.IncomeCents,
 		Objective:       out.Objective,
 		Cards:           cards,
