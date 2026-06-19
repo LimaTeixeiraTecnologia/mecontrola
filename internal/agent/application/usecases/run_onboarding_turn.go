@@ -287,7 +287,7 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 	}
 
 	if len(resp.ToolCalls) == 0 {
-		return OnboardingToolResult{Reply: strings.TrimSpace(string(resp.RawJSON)), Advance: false}, nil
+		return OnboardingToolResult{Reply: sanitizeWhatsAppText(string(resp.RawJSON)), Advance: false}, nil
 	}
 
 	var replies []string

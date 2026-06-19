@@ -163,13 +163,15 @@ func TestRunOnboardingTurn_ObjectiveToolAdvancesToIncome(t *testing.T) {
 
 func TestRunOnboardingTurn_ObjectiveQuestionStaysNoAdvance(t *testing.T) {
 	t.Parallel()
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("Pra te ajudar melhor, qual seu objetivo? 😊")}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("Pra te ajudar melhor com seu **objetivo**, me conta? 😊")}}
 	setter := &fakePhaseSetter{}
 	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseObjective}}, &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{}}, setter)
 	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "por que você precisa disso?"})
 	require.NoError(t, err)
 	require.True(t, out.Handled)
 	require.True(t, strings.Contains(out.Reply, "objetivo"))
+	require.NotContains(t, out.Reply, "**")
+	require.Contains(t, out.Reply, "*objetivo*")
 	require.Empty(t, setter.phases)
 }
 

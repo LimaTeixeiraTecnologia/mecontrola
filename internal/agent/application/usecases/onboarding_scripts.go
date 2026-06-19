@@ -87,6 +87,14 @@ func defaultSplitToolCall(budgetCents int64) interfaces.ToolCall {
 	}
 }
 
+func sanitizeWhatsAppText(text string) string {
+	out := strings.TrimSpace(text)
+	for strings.Contains(out, "**") {
+		out = strings.ReplaceAll(out, "**", "*")
+	}
+	return out
+}
+
 func onboardingTextHasDigit(text string) bool {
 	for _, r := range text {
 		if r >= '0' && r <= '9' {
@@ -193,6 +201,7 @@ func onboardingToolByName(name string) (interfaces.ToolSpec, bool) {
 func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string {
 	var b strings.Builder
 	b.WriteString("Você é o MeControla, assistente de onboarding financeiro via WhatsApp. Tom acolhedor e curto.\n")
+	b.WriteString("Formatação WhatsApp: para negrito use UM asterisco (*assim*), NUNCA dois (**assim**). Não use Markdown.\n")
 	b.WriteString("A pessoa está na etapa atual descrita abaixo. Se a mensagem dela contiver o dado pedido, CHAME a ferramenta disponível com os valores corretos. Se for uma dúvida ou conversa, responda em TEXTO curto e gentil (sem ferramenta) e não invente dados.\n\n")
 	switch phase {
 	case OnbPhaseObjective:
