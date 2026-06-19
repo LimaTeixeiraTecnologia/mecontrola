@@ -29,11 +29,14 @@ func NewOnboardingSessionRepository(o11y observability.Observability, db databas
 }
 
 type onboardingSessionPayloadJSON struct {
-	IncomeCents int64                      `json:"income_cents"`
-	Cards       []onboardingCardDraftJSON  `json:"cards"`
-	PendingCard onboardingCardDraftJSON    `json:"pending_card"`
-	HasPending  bool                       `json:"has_pending"`
-	Split       []onboardingSplitEntryJSON `json:"split"`
+	IncomeCents     int64                           `json:"income_cents"`
+	Cards           []onboardingCardDraftJSON       `json:"cards"`
+	PendingCard     onboardingCardDraftJSON         `json:"pending_card"`
+	HasPending      bool                            `json:"has_pending"`
+	Split           []onboardingSplitEntryJSON      `json:"split"`
+	Objective       string                          `json:"objective,omitempty"`
+	CustomSplit     []onboardingAllocationEntryJSON `json:"custom_split,omitempty"`
+	FirstTxRecorded bool                            `json:"first_tx_recorded,omitempty"`
 }
 
 type onboardingCardDraftJSON struct {
@@ -46,6 +49,11 @@ type onboardingCardDraftJSON struct {
 type onboardingSplitEntryJSON struct {
 	Kind    string `json:"kind"`
 	Percent int    `json:"percent"`
+}
+
+type onboardingAllocationEntryJSON struct {
+	Kind        string `json:"kind"`
+	BasisPoints int    `json:"basis_points"`
 }
 
 func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID) (entities.OnboardingSession, error) {
@@ -90,11 +98,14 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 	}
 
 	domainPayload := entities.OnboardingSessionPayload{
-		IncomeCents: pj.IncomeCents,
-		Cards:       fromCardsJSON(pj.Cards),
-		PendingCard: fromCardJSON(pj.PendingCard),
-		HasPending:  pj.HasPending,
-		Split:       fromSplitJSON(pj.Split),
+		IncomeCents:     pj.IncomeCents,
+		Cards:           fromCardsJSON(pj.Cards),
+		PendingCard:     fromCardJSON(pj.PendingCard),
+		HasPending:      pj.HasPending,
+		Split:           fromSplitJSON(pj.Split),
+		Objective:       pj.Objective,
+		CustomSplit:     fromAllocationJSON(pj.CustomSplit),
+		FirstTxRecorded: pj.FirstTxRecorded,
 	}
 
 	return entities.HydrateOnboardingSession(uid, parsedChannel, parsedState, domainPayload, updatedAt), nil
@@ -115,11 +126,14 @@ func (r *onboardingSessionRepository) Upsert(ctx context.Context, session entiti
 	`
 
 	pj := onboardingSessionPayloadJSON{
-		IncomeCents: session.Payload().IncomeCents,
-		Cards:       toCardsJSON(session.Payload().Cards),
-		PendingCard: toCardJSON(session.Payload().PendingCard),
-		HasPending:  session.Payload().HasPending,
-		Split:       toSplitJSON(session.Payload().Split),
+		IncomeCents:     session.Payload().IncomeCents,
+		Cards:           toCardsJSON(session.Payload().Cards),
+		PendingCard:     toCardJSON(session.Payload().PendingCard),
+		HasPending:      session.Payload().HasPending,
+		Split:           toSplitJSON(session.Payload().Split),
+		Objective:       session.Payload().Objective,
+		CustomSplit:     toAllocationJSON(session.Payload().CustomSplit),
+		FirstTxRecorded: session.Payload().FirstTxRecorded,
 	}
 	raw, err := json.Marshal(pj)
 	if err != nil {
@@ -209,6 +223,22 @@ func fromSplitJSON(in []onboardingSplitEntryJSON) []entities.OnboardingCardSplit
 	out := make([]entities.OnboardingCardSplitEntry, 0, len(in))
 	for _, e := range in {
 		out = append(out, entities.OnboardingCardSplitEntry{Kind: e.Kind, Percent: e.Percent})
+	}
+	return out
+}
+
+func toAllocationJSON(in []entities.OnboardingBudgetAllocationEntry) []onboardingAllocationEntryJSON {
+	out := make([]onboardingAllocationEntryJSON, 0, len(in))
+	for _, e := range in {
+		out = append(out, onboardingAllocationEntryJSON{Kind: e.Kind, BasisPoints: e.BasisPoints})
+	}
+	return out
+}
+
+func fromAllocationJSON(in []onboardingAllocationEntryJSON) []entities.OnboardingBudgetAllocationEntry {
+	out := make([]entities.OnboardingBudgetAllocationEntry, 0, len(in))
+	for _, e := range in {
+		out = append(out, entities.OnboardingBudgetAllocationEntry{Kind: e.Kind, BasisPoints: e.BasisPoints})
 	}
 	return out
 }

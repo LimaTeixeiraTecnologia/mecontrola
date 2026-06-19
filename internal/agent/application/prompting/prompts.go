@@ -21,6 +21,9 @@ var personaSystemRaw string
 //go:embed budgets.system.tmpl
 var budgetsSystemRaw string
 
+//go:embed onboarding.system.tmpl
+var onboardingSystemRaw string
+
 var ErrUserTextEmpty = errors.New("agent.application.prompting: user text is empty")
 
 var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(parseIntentUserRaw))
@@ -28,6 +31,8 @@ var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(p
 var personaSystemTpl = template.Must(template.New("persona.system").Parse(personaSystemRaw))
 
 var budgetsSystemTpl = template.Must(template.New("budgets.system").Parse(budgetsSystemRaw))
+
+var onboardingSystemTpl = template.Must(template.New("onboarding.system").Parse(onboardingSystemRaw))
 
 type ParseIntentUserData struct {
 	UserText string
@@ -39,6 +44,25 @@ type PersonaSystemData struct {
 
 type BudgetsPersonaData struct {
 	JourneyHint string
+}
+
+type OnboardingPromptCard struct {
+	Name   string
+	DueDay int
+}
+
+type OnboardingPromptSplit struct {
+	Slug    string
+	Percent int
+}
+
+type OnboardingSystemData struct {
+	State           string
+	IncomeCents     int64
+	Objective       string
+	Cards           []OnboardingPromptCard
+	Splits          []OnboardingPromptSplit
+	FirstTxRecorded bool
 }
 
 func RenderSystem() (string, error) {
@@ -89,6 +113,17 @@ func RenderBudgetsPersona(data BudgetsPersonaData) (string, error) {
 	var buf bytes.Buffer
 	if err := budgetsSystemTpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("agent.application.prompting: execute budgets template: %w", err)
+	}
+	return buf.String(), nil
+}
+
+func RenderOnboardingSystem(data OnboardingSystemData) (string, error) {
+	if strings.TrimSpace(onboardingSystemRaw) == "" {
+		return "", fmt.Errorf("agent.application.prompting: onboarding template is empty")
+	}
+	var buf bytes.Buffer
+	if err := onboardingSystemTpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("agent.application.prompting: execute onboarding template: %w", err)
 	}
 	return buf.String(), nil
 }

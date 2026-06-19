@@ -3,6 +3,7 @@ package entities
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 var (
 	ErrOnboardingSessionUserIDRequired  = errors.New("onboarding: session user id required")
 	ErrOnboardingSessionChannelRequired = errors.New("onboarding: session channel required")
+	ErrOnboardingCardNicknameRequired   = errors.New("onboarding: card nickname required")
 )
 
 type OnboardingChannel uint8
@@ -51,17 +53,37 @@ type OnboardingCardDraft struct {
 	DueDay     int
 }
 
+func NewOnboardingCardDraft(nickname string, dueDay int) (OnboardingCardDraft, error) {
+	name := strings.TrimSpace(nickname)
+	if name == "" {
+		return OnboardingCardDraft{}, ErrOnboardingCardNicknameRequired
+	}
+	due, err := valueobjects.NewCardDueDay(dueDay)
+	if err != nil {
+		return OnboardingCardDraft{}, err
+	}
+	return OnboardingCardDraft{Name: name, DueDay: due.Value()}, nil
+}
+
 type OnboardingSessionPayload struct {
-	IncomeCents int64
-	Cards       []OnboardingCardDraft
-	PendingCard OnboardingCardDraft
-	HasPending  bool
-	Split       []OnboardingCardSplitEntry
+	IncomeCents     int64
+	Cards           []OnboardingCardDraft
+	PendingCard     OnboardingCardDraft
+	HasPending      bool
+	Split           []OnboardingCardSplitEntry
+	Objective       string
+	CustomSplit     []OnboardingBudgetAllocationEntry
+	FirstTxRecorded bool
 }
 
 type OnboardingCardSplitEntry struct {
 	Kind    string
 	Percent int
+}
+
+type OnboardingBudgetAllocationEntry struct {
+	Kind        string
+	BasisPoints int
 }
 
 type OnboardingSession struct {
@@ -120,4 +142,56 @@ func (s OnboardingSession) With(state valueobjects.OnboardingState, payload Onbo
 	s.payload = payload
 	s.updatedAt = updatedAt
 	return s
+}
+
+func (s OnboardingSession) WithObjective(objective valueobjects.FinancialObjective, updatedAt time.Time) OnboardingSession {
+	s.payload.Objective = objective.String()
+	s.updatedAt = updatedAt
+	return s
+}
+
+func (s OnboardingSession) WithIncome(income valueobjects.MonthlyIncome, updatedAt time.Time) OnboardingSession {
+	s.payload.IncomeCents = income.Cents()
+	s.updatedAt = updatedAt
+	return s
+}
+
+func (s OnboardingSession) WithAppendedCard(card OnboardingCardDraft, updatedAt time.Time) OnboardingSession {
+	deduped := make([]OnboardingCardDraft, 0, len(s.payload.Cards)+1)
+	for _, existing := range s.payload.Cards {
+		if !strings.EqualFold(strings.TrimSpace(existing.Name), strings.TrimSpace(card.Name)) {
+			deduped = append(deduped, existing)
+		}
+	}
+	deduped = append(deduped, card)
+	s.payload.Cards = deduped
+	s.updatedAt = updatedAt
+	return s
+}
+
+func (s OnboardingSession) WithCustomSplit(allocation valueobjects.BudgetAllocation, updatedAt time.Time) OnboardingSession {
+	entries := make([]OnboardingBudgetAllocationEntry, 0, 5)
+	for _, a := range allocation.Allocations() {
+		entries = append(entries, OnboardingBudgetAllocationEntry{Kind: a.Kind.String(), BasisPoints: a.BasisPoints})
+	}
+	s.payload.CustomSplit = entries
+	s.updatedAt = updatedAt
+	return s
+}
+
+func (s OnboardingSession) WithFirstTransactionRecorded(updatedAt time.Time) OnboardingSession {
+	s.payload.FirstTxRecorded = true
+	s.updatedAt = updatedAt
+	return s
+}
+
+func (s OnboardingSession) HasFirstTransaction() bool {
+	return s.payload.FirstTxRecorded
+}
+
+func (s OnboardingSession) IsReadyToComplete() bool {
+	return s.payload.FirstTxRecorded &&
+		strings.TrimSpace(s.payload.Objective) != "" &&
+		s.payload.IncomeCents > 0 &&
+		len(s.payload.CustomSplit) == 5
 }

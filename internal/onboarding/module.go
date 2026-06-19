@@ -58,6 +58,13 @@ type OnboardingModule struct {
 	MetaProcessedMessagesCleanup worker.Job
 	SendActivationEmail          *usecases.SendActivationEmail
 	StartBudgetConfiguration     *usecases.StartBudgetConfiguration
+	GetOnboardingContext         *usecases.GetOnboardingContext
+	SaveOnboardingObjective      *usecases.SaveOnboardingObjective
+	SaveOnboardingIncome         *usecases.SaveOnboardingIncome
+	SaveOnboardingCard           *usecases.SaveOnboardingCard
+	SaveOnboardingBudgetSplits   *usecases.SaveOnboardingBudgetSplits
+	MarkFirstTransactionRecorded *usecases.MarkFirstTransactionRecorded
+	CompleteOnboardingSession    *usecases.CompleteOnboardingSession
 	EventHandlers                []EventHandlerRegistration
 }
 
@@ -95,6 +102,13 @@ type onboardingUseCasesBundle struct {
 	startBudgetConfiguration *usecases.StartBudgetConfiguration
 	processOnboardingMessage *usecases.ProcessOnboardingMessage
 	activateTelegram         *usecases.ActivateTelegramByToken
+	getOnboardingContext     *usecases.GetOnboardingContext
+	saveObjective            *usecases.SaveOnboardingObjective
+	saveIncome               *usecases.SaveOnboardingIncome
+	saveCard                 *usecases.SaveOnboardingCard
+	saveBudgetSplits         *usecases.SaveOnboardingBudgetSplits
+	markFirstTransaction     *usecases.MarkFirstTransactionRecorded
+	completeSession          *usecases.CompleteOnboardingSession
 }
 
 func buildTelegramMessages(tgCfg configs.TelegramConfig) map[string]string {
@@ -147,6 +161,13 @@ func NewOnboardingModule(
 		MetaProcessedMessagesCleanup: onboardingjobs.NewMetaProcessedMessagesCleanupJob(useCases.cleanupTables, cfg.MetaCleanupSchedule),
 		SendActivationEmail:          useCases.sendActivationEmail,
 		StartBudgetConfiguration:     useCases.startBudgetConfiguration,
+		GetOnboardingContext:         useCases.getOnboardingContext,
+		SaveOnboardingObjective:      useCases.saveObjective,
+		SaveOnboardingIncome:         useCases.saveIncome,
+		SaveOnboardingCard:           useCases.saveCard,
+		SaveOnboardingBudgetSplits:   useCases.saveBudgetSplits,
+		MarkFirstTransactionRecorded: useCases.markFirstTransaction,
+		CompleteOnboardingSession:    useCases.completeSession,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
 			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
@@ -215,6 +236,13 @@ func buildOnboardingUseCases(
 	processUoW := uow.NewUnitOfWork(db)
 	startBudgetUoW := uow.NewUnitOfWork(db)
 	activateTelegramUoW := uow.NewUnitOfWork(db)
+	saveObjectiveUoW := uow.NewUnitOfWork(db)
+	saveIncomeUoW := uow.NewUnitOfWork(db)
+	saveCardUoW := uow.NewUnitOfWork(db)
+	saveSplitsUoW := uow.NewUnitOfWork(db)
+	markFirstTxUoW := uow.NewUnitOfWork(db)
+	completeSessionUoW := uow.NewUnitOfWork(db)
+	onboardingSessionRepo := deps.factory.OnboardingSessionRepository(db)
 	urlBuilder := checkout.NewKiwifyURLBuilder(deps.runtimeCfg.CheckoutURLs, deps.runtimeCfg.KiwifyAllowedHosts)
 	activationTemplate := onboardingemail.NewActivationTemplate()
 	magicTokenWorkflow := domainservices.NewMagicTokenWorkflow()
@@ -259,6 +287,13 @@ func buildOnboardingUseCases(
 			cfg.TelegramDirectEnabled,
 			o11y,
 		),
+		getOnboardingContext: usecases.NewGetOnboardingContext(onboardingSessionRepo, o11y),
+		saveObjective:        usecases.NewSaveOnboardingObjective(saveObjectiveUoW, deps.factory, o11y),
+		saveIncome:           usecases.NewSaveOnboardingIncome(saveIncomeUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		saveCard:             usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		saveBudgetSplits:     usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		markFirstTransaction: usecases.NewMarkFirstTransactionRecorded(markFirstTxUoW, deps.factory, o11y),
+		completeSession:      usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),
 	}, nil
 }
 

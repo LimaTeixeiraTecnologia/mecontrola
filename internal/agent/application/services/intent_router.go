@@ -168,6 +168,15 @@ type OnboardingContinuation interface {
 	Continue(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID string) (OnboardingConversation, error)
 }
 
+type OnboardingTurnResult struct {
+	Handled bool
+	Reply   string
+}
+
+type OnboardingTurnRunner interface {
+	Run(ctx context.Context, userID uuid.UUID, channel, text string) (OnboardingTurnResult, error)
+}
+
 type ExpenseLogger interface {
 	Execute(ctx context.Context, in ExpenseLoggerInput) (ExpenseLoggerResult, error)
 }
@@ -300,6 +309,7 @@ type IntentRouter struct {
 	budgetCommitter   BudgetConfigCommitter
 	budgetSession     BudgetSessionGateway
 	onboarding        OnboardingContinuation
+	onboardingRunner  OnboardingTurnRunner
 	fallback          Fallback
 	whatsAppGateway   WhatsAppOutbound
 	telegramGateway   TelegramOutbound
@@ -328,6 +338,7 @@ type IntentRouterDeps struct {
 	BudgetCommitter   BudgetConfigCommitter
 	BudgetSession     BudgetSessionGateway
 	Onboarding        OnboardingContinuation
+	OnboardingRunner  OnboardingTurnRunner
 	Fallback          Fallback
 	WhatsAppGateway   WhatsAppOutbound
 	TelegramGateway   TelegramOutbound
@@ -376,6 +387,7 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		budgetCommitter:   deps.BudgetCommitter,
 		budgetSession:     deps.BudgetSession,
 		onboarding:        deps.Onboarding,
+		onboardingRunner:  deps.OnboardingRunner,
 		fallback:          deps.Fallback,
 		whatsAppGateway:   deps.WhatsAppGateway,
 		telegramGateway:   deps.TelegramGateway,
@@ -455,6 +467,17 @@ func (r *IntentRouter) publishEvent(ctx context.Context, principal Principal, ch
 	}
 }
 
+func (r *IntentRouter) degradeOnboarding(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID string) (string, bool) {
+	if r.onboarding == nil {
+		return "", false
+	}
+	conversation, err := r.onboarding.Continue(ctx, userID, channel, peer, text, messageID)
+	if err != nil || !conversation.Handled {
+		return "", false
+	}
+	return conversation.Reply, true
+}
+
 func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.intent_router.route")
 	defer span.End()
@@ -465,7 +488,23 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return RouteResult{Reply: fallbackMissingText, Outcome: OutcomeEmptyText, Kind: intent.KindUnknown}
 	}
 
-	if r.onboarding != nil {
+	if r.onboardingRunner != nil {
+		turn, err := r.onboardingRunner.Run(ctx, principal.UserID, channel, trimmed)
+		if err != nil {
+			span.RecordError(err)
+			r.o11y.Logger().Warn(ctx, "agent.intent_router.onboarding_llm_failed",
+				observability.String("channel", channel),
+				observability.Error(err),
+			)
+			if reply, degraded := r.degradeOnboarding(ctx, principal.UserID, channel, peer, trimmed, messageID); degraded {
+				r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+				return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+			}
+		} else if turn.Handled {
+			r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+			return RouteResult{Reply: turn.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+		}
+	} else if r.onboarding != nil {
 		conversation, err := r.onboarding.Continue(ctx, principal.UserID, channel, peer, trimmed, messageID)
 		if err == nil && conversation.Handled {
 			r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)

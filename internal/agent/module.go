@@ -17,6 +17,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
+	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -24,6 +25,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
@@ -58,10 +60,27 @@ func WithSessionStore(db *sqlx.DB) AgentModuleOption {
 	}
 }
 
+type OnboardingLLMUseCases struct {
+	GetContext       *onbusecases.GetOnboardingContext
+	SaveObjective    *onbusecases.SaveOnboardingObjective
+	SaveIncome       *onbusecases.SaveOnboardingIncome
+	SaveCard         *onbusecases.SaveOnboardingCard
+	SaveBudgetSplits *onbusecases.SaveOnboardingBudgetSplits
+	MarkFirstTx      *onbusecases.MarkFirstTransactionRecorded
+	Complete         *onbusecases.CompleteOnboardingSession
+}
+
+func WithOnboardingLLM(uc OnboardingLLMUseCases) AgentModuleOption {
+	return func(b *agentModuleBuilder) {
+		b.onboardingLLM = &uc
+	}
+}
+
 type llmRuntime struct {
-	ParseInbound   *usecases.ParseInbound
-	Conversational *usecases.ComposeConversationalReply
-	Interpreter    usecases.IntentInterpreter
+	ParseInbound          *usecases.ParseInbound
+	Conversational        *usecases.ComposeConversationalReply
+	Interpreter           usecases.IntentInterpreter
+	OnboardingInterpreter usecases.IntentInterpreter
 }
 
 type agentModuleBuilder struct {
@@ -75,6 +94,7 @@ type agentModuleBuilder struct {
 	whatsAppGateway    whatsAppGateway
 	budgetConfigurator appservices.BudgetConfigurator
 	onboarding         appservices.OnboardingContinuation
+	onboardingLLM      *OnboardingLLMUseCases
 	sessionDB          *sqlx.DB
 	sessionRepo        interfaces.AgentSessionRepository
 	sessionRepoFact    interfaces.AgentSessionRepositoryFactory
@@ -199,6 +219,7 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	b.attachTransactionQueries(&deps)
 	b.attachRecurring(&deps)
 	b.attachBudgetConfigSession(&deps, llmModule)
+	b.attachOnboardingLLM(&deps, llmModule)
 	deps.TelegramGateway = b.buildTelegramGateway()
 
 	router, err := appservices.NewIntentRouter(b.o11y, deps)
@@ -321,6 +342,63 @@ func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentR
 	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(b.sessionRepo, b.sessionUoW)
 }
 
+func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
+	if !b.cfg.AgentConfig.OnboardingLLMEnabled {
+		b.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
+			observability.String("mode", "deterministic"),
+			observability.String("reason", "flag_disabled"),
+		)
+		return
+	}
+	if reason := b.onboardingLLMUnavailable(deps, llmModule); reason != "" {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
+			observability.String("mode", "deterministic"),
+			observability.String("reason", reason),
+		)
+		return
+	}
+	uc := b.onboardingLLM
+	reader := agentonboarding.NewOnboardingStateReader(uc.GetContext)
+	dispatcher := agentonboarding.NewOnboardingToolDispatcher(
+		uc.SaveObjective,
+		uc.SaveIncome,
+		uc.SaveCard,
+		uc.SaveBudgetSplits,
+		uc.MarkFirstTx,
+		uc.Complete,
+		deps.ExpenseLogger,
+	)
+	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y)
+	if err != nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
+			observability.String("mode", "deterministic"),
+			observability.String("reason", "run_turn_build_failed"),
+			observability.Error(err),
+		)
+		return
+	}
+	deps.OnboardingRunner = agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
+	b.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
+		observability.String("mode", "llm"),
+	)
+}
+
+func (b *agentModuleBuilder) onboardingLLMUnavailable(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) string {
+	if b.onboardingLLM == nil {
+		return "usecases_missing"
+	}
+	if llmModule == nil || llmModule.OnboardingInterpreter == nil {
+		return "interpreter_missing"
+	}
+	if deps.ExpenseLogger == nil {
+		return "expense_logger_missing"
+	}
+	if b.onboardingLLM.GetContext == nil {
+		return "context_reader_missing"
+	}
+	return ""
+}
+
 func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound {
 	if !b.cfg.TelegramConfig.Enabled {
 		return nil
@@ -422,27 +500,8 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		return nil, fmt.Errorf("agent.llm: http client: %w", err)
 	}
 
-	primary, err := valueobjects.NewModelSlug(cfg.PrimaryModel)
-	if err != nil {
-		return nil, fmt.Errorf("agent.llm: primary model: %w", err)
-	}
-	providers := []interfaces.LLMProvider{
-		openrouter.NewProvider(client, openrouter.ProviderConfig{
-			Slug:           primary,
-			APIKey:         cfg.OpenRouterAPIKey,
-			HTTPReferer:    cfg.HTTPReferer,
-			XTitle:         cfg.XTitle,
-			MaxTokens:      cfg.MaxTokens,
-			Temperature:    cfg.Temperature,
-			RequestTimeout: cfg.RequestTimeout,
-		}, o11y),
-	}
-	for _, raw := range parseFallbackList(cfg.FallbackModels) {
-		slug, slugErr := valueobjects.NewModelSlug(raw)
-		if slugErr != nil {
-			return nil, fmt.Errorf("agent.llm: fallback model %q: %w", raw, slugErr)
-		}
-		providers = append(providers, openrouter.NewProvider(client, openrouter.ProviderConfig{
+	makeProvider := func(slug valueobjects.ModelSlug) interfaces.LLMProvider {
+		return openrouter.NewProvider(client, openrouter.ProviderConfig{
 			Slug:           slug,
 			APIKey:         cfg.OpenRouterAPIKey,
 			HTTPReferer:    cfg.HTTPReferer,
@@ -450,17 +509,44 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 			MaxTokens:      cfg.MaxTokens,
 			Temperature:    cfg.Temperature,
 			RequestTimeout: cfg.RequestTimeout,
-		}, o11y))
+		}, o11y)
+	}
+	newBreaker := func() *appservices.CircuitBreaker {
+		return appservices.NewCircuitBreaker(appservices.CircuitBreakerConfig{
+			MaxFailures:   cfg.CircuitFailures,
+			FailureWindow: cfg.CircuitWindow,
+			OpenDuration:  cfg.CircuitCooldown,
+		})
 	}
 
-	breaker := appservices.NewCircuitBreaker(appservices.CircuitBreakerConfig{
-		MaxFailures:   cfg.CircuitFailures,
-		FailureWindow: cfg.CircuitWindow,
-		OpenDuration:  cfg.CircuitCooldown,
-	})
-	chain, err := appservices.NewFallbackChain(providers, breaker, o11y)
+	primary, err := valueobjects.NewModelSlug(cfg.PrimaryModel)
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm: primary model: %w", err)
+	}
+	fallbackSlugs := make([]valueobjects.ModelSlug, 0)
+	for _, raw := range parseFallbackList(cfg.FallbackModels) {
+		slug, slugErr := valueobjects.NewModelSlug(raw)
+		if slugErr != nil {
+			return nil, fmt.Errorf("agent.llm: fallback model %q: %w", raw, slugErr)
+		}
+		fallbackSlugs = append(fallbackSlugs, slug)
+	}
+
+	chain, err := buildLLMChain(makeProvider, newBreaker, primary, fallbackSlugs, o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: fallback chain: %w", err)
+	}
+
+	var onboardingInterpreter usecases.IntentInterpreter
+	if strings.TrimSpace(cfg.OnboardingModel) != "" {
+		onbSlug, onbErr := valueobjects.NewModelSlug(cfg.OnboardingModel)
+		if onbErr != nil {
+			return nil, fmt.Errorf("agent.llm: onboarding model %q: %w", cfg.OnboardingModel, onbErr)
+		}
+		onboardingInterpreter, err = buildLLMChain(makeProvider, newBreaker, onbSlug, fallbackSlugs, o11y)
+		if err != nil {
+			return nil, fmt.Errorf("agent.llm: onboarding chain: %w", err)
+		}
 	}
 
 	parseInbound, err := usecases.NewParseInbound(chain, o11y)
@@ -473,7 +559,34 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		return nil, fmt.Errorf("agent.llm: conversational reply: %w", err)
 	}
 
-	return &llmRuntime{ParseInbound: parseInbound, Conversational: conversational, Interpreter: chain}, nil
+	return &llmRuntime{
+		ParseInbound:          parseInbound,
+		Conversational:        conversational,
+		Interpreter:           chain,
+		OnboardingInterpreter: onboardingInterpreter,
+	}, nil
+}
+
+func buildLLMChain(
+	makeProvider func(valueobjects.ModelSlug) interfaces.LLMProvider,
+	newBreaker func() *appservices.CircuitBreaker,
+	primary valueobjects.ModelSlug,
+	fallbacks []valueobjects.ModelSlug,
+	o11y observability.Observability,
+) (usecases.IntentInterpreter, error) {
+	providers := make([]interfaces.LLMProvider, 0, len(fallbacks)+1)
+	providers = append(providers, makeProvider(primary))
+	for _, slug := range fallbacks {
+		if slug.Equal(primary) {
+			continue
+		}
+		providers = append(providers, makeProvider(slug))
+	}
+	chain, err := appservices.NewFallbackChain(providers, newBreaker(), o11y)
+	if err != nil {
+		return nil, err
+	}
+	return chain, nil
 }
 
 func parseFallbackList(raw string) []string {

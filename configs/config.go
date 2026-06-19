@@ -177,6 +177,10 @@ type AgentConfig struct {
 	CircuitFailures   int           `mapstructure:"AGENT_LLM_CIRCUIT_FAILURES"`
 	CircuitWindow     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_WINDOW"`
 	CircuitCooldown   time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
+
+	OnboardingLLMEnabled bool   `mapstructure:"AGENT_ONBOARDING_LLM_ENABLED"`
+	OnboardingMaxTokens  int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
+	OnboardingModel      string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
 }
 
 type TelegramConfig struct {
@@ -1162,6 +1166,9 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_FAILURES", 5)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_WINDOW", 30*time.Second)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_COOLDOWN", 60*time.Second)
+	l.v.SetDefault("AGENT_ONBOARDING_LLM_ENABLED", true)
+	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
+	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")
 }
 
 func (l *configLoader) setTelegramDefaults() {

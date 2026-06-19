@@ -16,6 +16,7 @@ const (
 	OnboardingStateAwaitingCardDueDay
 	OnboardingStateAwaitingMoreCards
 	OnboardingStateAwaitingSplitConfirm
+	OnboardingStateAwaitingFirstTransaction
 	OnboardingStateActive
 )
 
@@ -39,6 +40,8 @@ func (s OnboardingState) String() string {
 		return "awaiting_more_cards"
 	case OnboardingStateAwaitingSplitConfirm:
 		return "awaiting_split_confirm"
+	case OnboardingStateAwaitingFirstTransaction:
+		return "awaiting_first_transaction"
 	case OnboardingStateActive:
 		return "active"
 	default:
@@ -70,6 +73,8 @@ func ParseOnboardingState(raw string) (OnboardingState, error) {
 		return OnboardingStateAwaitingMoreCards, nil
 	case "awaiting_split_confirm":
 		return OnboardingStateAwaitingSplitConfirm, nil
+	case "awaiting_first_transaction":
+		return OnboardingStateAwaitingFirstTransaction, nil
 	case "active":
 		return OnboardingStateActive, nil
 	default:

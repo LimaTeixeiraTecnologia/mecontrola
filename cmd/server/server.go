@@ -232,6 +232,15 @@ func Run() error {
 		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
 		agentonboarding.NewOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
 		agent.WithSessionStore(db),
+		agent.WithOnboardingLLM(agent.OnboardingLLMUseCases{
+			GetContext:       onboardingModule.GetOnboardingContext,
+			SaveObjective:    onboardingModule.SaveOnboardingObjective,
+			SaveIncome:       onboardingModule.SaveOnboardingIncome,
+			SaveCard:         onboardingModule.SaveOnboardingCard,
+			SaveBudgetSplits: onboardingModule.SaveOnboardingBudgetSplits,
+			MarkFirstTx:      onboardingModule.MarkFirstTransactionRecorded,
+			Complete:         onboardingModule.CompleteOnboardingSession,
+		}),
 	)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agent: %w", err)
