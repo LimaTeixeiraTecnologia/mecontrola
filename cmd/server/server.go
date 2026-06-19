@@ -255,8 +255,6 @@ func Run() error {
 				observability.Int64("bot_id", cfg.TelegramConfig.BotID),
 			)
 		}
-	} else {
-		o11y.Logger().Info(ctx, "telegram webhook router skipped (TELEGRAM_ENABLED=false)")
 	}
 
 	srv.RegisterRouters(health.NewReadinessRouter(ctx))
