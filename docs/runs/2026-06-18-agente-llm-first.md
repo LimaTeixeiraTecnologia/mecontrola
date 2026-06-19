@@ -505,3 +505,19 @@ desabilitado por gate em testes):
 - **Orçamento multi-turno**: usa chamada LLM separada com `BudgetConfigJSONSchema` (mesmo mecanismo
   structured-output validado), porém ainda NÃO validado contra Gemini real (só unit com stub). Risco menor
   (mecanismo provado), mas recomenda-se validação real dedicada antes de produção.
+
+## Veredito de produção (2026-06-18, pós-validação real)
+
+Evidências (todas reproduzíveis):
+- **Parse real (Gemini)**: 100% (28/28) reconhecimento, core 8/8, extração de valor 8/8.
+- **Orçamento multi-turno real (Gemini)**: extração single-turn e multi-turn → completo (gated `RUN_REAL_LLM`).
+- **Persistência (testcontainers/Postgres)**: `SELECT count(*)`/`max(amount_cents)` confirma INSERT real.
+- **E2E completo verde**: cria/atualiza/deleta transação, cadastra/conta cartão, compra parcelada,
+  recorrência; outbox (producer) `transactions.*`/`agent.intent.*`; consumer drena e projeta despesa no
+  orçamento; idempotência por WAMID; assinatura inválida rejeitada (não persiste).
+- OpenRouter desabilitado por padrão em testes (gate `RUN_REAL_LLM`).
+
+Gaps operacionais antes de tráfego de produção real (honesto):
+1. Smoke real do webhook Meta (recv→ação→envio Graph API) com credenciais reais — não feito.
+2. Migration `000010` aplicada em testcontainers, não em staging/prod via runner real.
+3. Sem teste de carga/latência; economia de caching não medida no modelo real.
