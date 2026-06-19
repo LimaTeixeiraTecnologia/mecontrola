@@ -18,6 +18,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type CreateTransaction struct {
@@ -60,6 +61,9 @@ func (uc *CreateTransaction) Execute(ctx context.Context, raw input.RawCreateTra
 	if err != nil {
 		span.RecordError(err)
 		return output.Transaction{}, fmt.Errorf("transactions/create_transaction: comando: %w", err)
+	}
+	if cmd.Direction == valueobjects.DirectionOutcome && !cmd.SubcategoryID.IsPresent() {
+		return output.Transaction{}, ErrOutcomeTransactionRequiresSubcategory
 	}
 
 	catSubID := optSubcategoryUUID(cmd.SubcategoryID)

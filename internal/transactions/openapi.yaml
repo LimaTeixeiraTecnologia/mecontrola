@@ -642,6 +642,7 @@ components:
         subcategory_id:
           type: string
           format: uuid
+          description: Obrigatório quando `direction` for `outcome`.
         occurred_at:
           type: string
           format: date-time

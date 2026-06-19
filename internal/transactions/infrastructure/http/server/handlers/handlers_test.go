@@ -132,6 +132,20 @@ func (s *HandlersSuite) TestCreateTransaction_Unauthorized() {
 	s.Equal(http.StatusUnauthorized, rec.Code)
 }
 
+func (s *HandlersSuite) TestCreateTransaction_OutcomeWithoutSubcategory() {
+	uc := new(mockCreateTransactionUC)
+	h := handlers.NewCreateTransactionHandler(uc, s.o11y)
+
+	uc.On("Execute", mock.Anything, mock.Anything).Return(dtooutput.Transaction{}, usecases.ErrOutcomeTransactionRequiresSubcategory)
+	body, _ := json.Marshal(dtoinput.RawCreateTransaction{})
+	req := s.withPrincipal(httptest.NewRequest(http.MethodPost, "/api/v1/transactions", bytes.NewReader(body)))
+	rec := httptest.NewRecorder()
+
+	h.Handle(rec, req)
+
+	s.Equal(http.StatusBadRequest, rec.Code)
+}
+
 func (s *HandlersSuite) TestUpdateTransaction_Success() {
 	uc := new(mockUpdateTransactionUC)
 	h := handlers.NewUpdateTransactionHandler(uc, s.o11y)

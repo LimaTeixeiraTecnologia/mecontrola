@@ -11,11 +11,13 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
 )
 
@@ -53,12 +55,39 @@ func (s *CreateTransactionSuite) SetupTest() {
 
 func (s *CreateTransactionSuite) TestExecute_Success() {
 	catID := uuid.New()
-	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Custo Fixo"}
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	subcategoryID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Delivery", ParentName: "Custo Fixo"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(nil).Once()
-	s.publisher.EXPECT().PublishCreated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	s.publisher.EXPECT().
+		PublishCreated(mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ database.DBTX, evt entities.TransactionCreated) {
+			s.Equal(subcategoryID, evt.SubcategoryID)
+			s.Equal(catID, evt.CategoryID)
+		}).
+		Return(nil).
+		Once()
 
 	result, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   1000,
+		Description:   "Mercado",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().NoError(err)
+	s.Equal("outcome", result.Direction)
+	s.Equal("pix", result.PaymentMethod)
+	s.Equal(int64(1000), result.AmountCents)
+}
+
+func (s *CreateTransactionSuite) TestExecute_OutcomeWithoutSubcategory_ReturnsValidationError() {
+	catID := uuid.New()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
 		Direction:     "outcome",
 		PaymentMethod: "pix",
 		AmountCents:   1000,
@@ -67,10 +96,7 @@ func (s *CreateTransactionSuite) TestExecute_Success() {
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 
-	s.Require().NoError(err)
-	s.Equal("outcome", result.Direction)
-	s.Equal("pix", result.PaymentMethod)
-	s.Equal(int64(1000), result.AmountCents)
+	s.Require().ErrorIs(err, usecases.ErrOutcomeTransactionRequiresSubcategory)
 }
 
 func (s *CreateTransactionSuite) TestExecute_Unauthorized() {
@@ -110,7 +136,7 @@ func (s *CreateTransactionSuite) TestExecute_CategoryValidatorError() {
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(interfaces.CategorySnapshot{}, interfaces.ErrCategoryNotFound).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
-		Direction:     "outcome",
+		Direction:     "income",
 		PaymentMethod: "pix",
 		AmountCents:   1000,
 		Description:   "Mercado",

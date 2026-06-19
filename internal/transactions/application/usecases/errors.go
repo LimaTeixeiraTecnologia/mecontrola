@@ -12,6 +12,7 @@ var ErrTransactionVersionConflict = errors.New("transactions: conflito de versã
 var ErrCardPurchaseNotFound = errors.New("transactions: compra de cartão não encontrada")
 var ErrCardInvoiceNotFound = errors.New("transactions: fatura de cartão não encontrada")
 var ErrCardPurchaseConflict = errors.New("transactions: conflito de versão na compra de cartão")
+var ErrOutcomeTransactionRequiresSubcategory = errors.New("transactions: outcome exige subcategory_id")
 
 func parseISO8601(s string) (time.Time, error) {
 	if s == "" {

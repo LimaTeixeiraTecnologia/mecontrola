@@ -1280,7 +1280,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 5000,\n  \"description\": \"Almo\u00e7o\",\n  \"category_id\": \"{{category_id}}\",\n  \"occurred_at\": \"2026-06-15\"\n}",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 5000,\n  \"description\": \"Almo\u00e7o\",\n  \"category_id\": \"{{category_id}}\",\n  \"subcategory_id\": \"{{subcategory_id}}\",\n  \"occurred_at\": \"2026-06-15\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1453,7 +1453,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 6000,\n  \"description\": \"Almo\u00e7o atualizado\",\n  \"category_id\": \"{{category_id}}\",\n  \"occurred_at\": \"2026-06-15\",\n  \"version\": {{transaction_version}}\n}",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 6000,\n  \"description\": \"Almo\u00e7o atualizado\",\n  \"category_id\": \"{{category_id}}\",\n  \"subcategory_id\": \"{{subcategory_id}}\",\n  \"occurred_at\": \"2026-06-15\",\n  \"version\": {{transaction_version}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2330,7 +2330,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"competence\": \"{{competence}}\",\n  \"total_cents\": 500000,\n  \"allocations\": [\n    { \"root_slug\": \"expense.custo_fixo\", \"basis_points\": 5000 },\n    { \"root_slug\": \"expense.prazeres\", \"basis_points\": 3000 },\n    { \"root_slug\": \"expense.conhecimento\", \"basis_points\": 2000 }\n  ]\n}",
+              "raw": "{\n  \"competence\": \"{{competence}}\",\n  \"total_cents\": 1387440,\n  \"allocations\": [\n    { \"root_slug\": \"expense.custo_fixo\", \"basis_points\": 4000 },\n    { \"root_slug\": \"expense.metas\", \"basis_points\": 2500 },\n    { \"root_slug\": \"expense.prazeres\", \"basis_points\": 1000 },\n    { \"root_slug\": \"expense.conhecimento\", \"basis_points\": 500 },\n    { \"root_slug\": \"expense.liberdade_financeira\", \"basis_points\": 2000 }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

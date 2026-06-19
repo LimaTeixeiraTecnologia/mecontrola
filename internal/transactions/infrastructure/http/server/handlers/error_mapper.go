@@ -30,6 +30,9 @@ func mapError(w http.ResponseWriter, span observability.Span, err error, _ ...er
 	case errors.Is(err, interfaces.ErrCategoryNotFound):
 		span.SetAttributes(observability.String("outcome", "category_not_found"))
 		responses.ErrorWithDetails(w, http.StatusNotFound, "categoria não encontrada", map[string]string{"code": "category_not_found"})
+	case errors.Is(err, usecases.ErrOutcomeTransactionRequiresSubcategory):
+		span.SetAttributes(observability.String("outcome", "validation_error"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, err.Error(), map[string]string{"code": "validation_error"})
 	case errors.Is(err, interfaces.ErrTransactionVersionConflict),
 		errors.Is(err, usecases.ErrTransactionVersionConflict):
 		span.SetAttributes(observability.String("outcome", "conflict"))
