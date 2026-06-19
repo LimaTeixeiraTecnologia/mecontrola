@@ -138,6 +138,11 @@ components:
           format: email
         display_name:
           type: string
+          description: Campo canônico para nome de exibição.
+        displayName:
+          type: string
+          deprecated: true
+          description: Alias legado aceito por compatibilidade; prefira display_name.
     UpsertUserResponse:
       type: object
       required: [id, whatsapp, status, created_at, updated_at]

@@ -121,6 +121,19 @@ func TestRunOnboardingTurn_WelcomeAffirmationAdvancesToMethodology(t *testing.T)
 	require.Equal(t, usecases.OnbPhaseMethodology1, setter.last())
 }
 
+func TestRunOnboardingTurn_MethodologyAdvancesOnNonQuestionReply(t *testing.T) {
+	t.Parallel()
+	for _, reply := range []string{"Faz", "faz sentido", "ok", "show", "👍", "entendi", "bora"} {
+		setter := &fakePhaseSetter{}
+		uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseMethodology1}}, &fakeToolDispatcher{}, setter)
+		out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: reply})
+		require.NoError(t, err)
+		require.True(t, out.Handled)
+		require.Contains(t, out.Reply, "Conhecimento", "reply %q deveria avançar", reply)
+		require.Equal(t, usecases.OnbPhaseMethodology2, setter.last(), "reply %q deveria avançar", reply)
+	}
+}
+
 func TestRunOnboardingTurn_MethodologyNonAffirmationReasks(t *testing.T) {
 	t.Parallel()
 	setter := &fakePhaseSetter{}

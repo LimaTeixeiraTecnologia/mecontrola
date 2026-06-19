@@ -40,13 +40,6 @@ const (
 	scriptCardQuestion = "💳 Quer cadastrar um cartão? Me diz o apelido e o dia de vencimento — ou diga que não usa. 😊"
 )
 
-var onboardingAffirmations = []string{
-	"sim", "s", "claro", "quero", "ok", "okay", "vamos", "bora", "yes", "y", "pode",
-	"isso", "confirmo", "confirmar", "confirma", "faz sentido", "ta bom", "tá bom",
-	"ta", "tá", "beleza", "blz", "pode sim", "pode ser", "perfeito", "certo", "uhum",
-	"aham", "com certeza", "claro que sim", "entendi", "positivo", "manda", "vamo",
-}
-
 var onboardingNegations = []string{
 	"nao", "não", "n", "no", "agora nao", "agora não", "negativo", "nope",
 	"so esse", "só esse", "somente esse", "sem cartao", "sem cartão", "nenhum",
@@ -70,12 +63,18 @@ func looksLikeOnboardingQuestion(normalized string) bool {
 	return false
 }
 
-func matchesOnboardingAffirmation(text string) bool {
+func shouldAdvanceScriptedPhase(text string) bool {
 	normalized := normalizeOnboardingText(text)
-	if normalized == "" || looksLikeOnboardingQuestion(normalized) {
+	if normalized == "" {
 		return false
 	}
-	return matchesCues(normalized, onboardingAffirmations)
+	if looksLikeOnboardingQuestion(normalized) {
+		return false
+	}
+	if matchesCues(normalized, onboardingNegations) {
+		return false
+	}
+	return true
 }
 
 func matchesOnboardingNegation(text string) bool {

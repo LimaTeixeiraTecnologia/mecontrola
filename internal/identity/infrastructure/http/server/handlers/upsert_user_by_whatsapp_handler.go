@@ -33,9 +33,17 @@ func NewUpsertUserByWhatsAppHandler(
 }
 
 type upsertUserRequest struct {
-	WhatsApp    string `json:"whatsapp"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
+	WhatsApp         string `json:"whatsapp"`
+	Email            string `json:"email"`
+	DisplayName      string `json:"display_name"`
+	DisplayNameAlias string `json:"displayName"`
+}
+
+func (r upsertUserRequest) normalizedDisplayName() string {
+	if r.DisplayName != "" {
+		return r.DisplayName
+	}
+	return r.DisplayNameAlias
 }
 
 type upsertUserResponse struct {
@@ -62,7 +70,7 @@ func (h *UpsertUserByWhatsAppHandler) Handle(w http.ResponseWriter, r *http.Requ
 	out, err := h.usecase.Execute(ctx, input.UpsertUserByWhatsApp{
 		WhatsAppNumber: req.WhatsApp,
 		Email:          req.Email,
-		DisplayName:    req.DisplayName,
+		DisplayName:    req.normalizedDisplayName(),
 	})
 	if err != nil {
 		span.RecordError(err)

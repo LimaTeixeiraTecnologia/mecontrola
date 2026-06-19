@@ -179,7 +179,7 @@ func (uc *RunOnboardingTurn) emit(ctx context.Context, userID uuid.UUID, phase, 
 }
 
 func (uc *RunOnboardingTurn) advanceOnAffirmation(ctx context.Context, userID uuid.UUID, text, nextPhase, nextReply, stayReply string) (RunOnboardingTurnResult, error) {
-	if matchesOnboardingAffirmation(text) {
+	if shouldAdvanceScriptedPhase(text) {
 		return uc.emit(ctx, userID, nextPhase, nextReply, "advance")
 	}
 	uc.turnsTotal.Add(ctx, 1, observability.String("phase", "script"), observability.String("outcome", "reask"))
@@ -238,7 +238,7 @@ func (uc *RunOnboardingTurn) splitsPhase(ctx context.Context, in RunOnboardingTu
 }
 
 func (uc *RunOnboardingTurn) summaryPhase(ctx context.Context, userID uuid.UUID, text string) (RunOnboardingTurnResult, error) {
-	if matchesOnboardingAffirmation(text) {
+	if shouldAdvanceScriptedPhase(text) {
 		return uc.emit(ctx, userID, OnbPhaseFirstTx, scriptTransition, "advance")
 	}
 	if err := uc.phases.SetPhase(ctx, userID, OnbPhaseSplits); err != nil {

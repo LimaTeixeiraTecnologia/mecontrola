@@ -102,6 +102,77 @@ func (s *UpsertHandlerSuite) TestHandle() {
 			},
 		},
 		{
+			name: "deve aceitar displayName por compatibilidade",
+			args: args{
+				request: s.requestWithJSON(map[string]string{
+					"whatsapp":    "+5511987654321",
+					"email":       "user@example.com",
+					"displayName": "Compat User",
+				}),
+			},
+			setup: func(deps dependencies) {
+				deps.useCase.EXPECT().Execute(
+					mock.Anything,
+					input.UpsertUserByWhatsApp{
+						WhatsAppNumber: "+5511987654321",
+						Email:          "user@example.com",
+						DisplayName:    "Compat User",
+					},
+				).Return(output.UpsertUserByWhatsApp{
+					ID:             "compat-uuid",
+					WhatsAppNumber: "+5511987654321",
+					Email:          "user@example.com",
+					DisplayName:    "Compat User",
+					Status:         "active",
+					CreatedAt:      now,
+					UpdatedAt:      now,
+				}, nil).Once()
+			},
+			expect: func(response *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, response.Code)
+
+				var payload map[string]any
+				s.Require().NoError(json.NewDecoder(response.Body).Decode(&payload))
+				s.Equal("compat-uuid", payload["id"])
+			},
+		},
+		{
+			name: "deve priorizar display_name quando ambos forem enviados",
+			args: args{
+				request: s.requestWithJSON(map[string]string{
+					"whatsapp":     "+5511987654321",
+					"email":        "user@example.com",
+					"display_name": "Canonical User",
+					"displayName":  "Legacy User",
+				}),
+			},
+			setup: func(deps dependencies) {
+				deps.useCase.EXPECT().Execute(
+					mock.Anything,
+					input.UpsertUserByWhatsApp{
+						WhatsAppNumber: "+5511987654321",
+						Email:          "user@example.com",
+						DisplayName:    "Canonical User",
+					},
+				).Return(output.UpsertUserByWhatsApp{
+					ID:             "canonical-uuid",
+					WhatsAppNumber: "+5511987654321",
+					Email:          "user@example.com",
+					DisplayName:    "Canonical User",
+					Status:         "active",
+					CreatedAt:      now,
+					UpdatedAt:      now,
+				}, nil).Once()
+			},
+			expect: func(response *httptest.ResponseRecorder) {
+				s.Equal(http.StatusOK, response.Code)
+
+				var payload map[string]any
+				s.Require().NoError(json.NewDecoder(response.Body).Decode(&payload))
+				s.Equal("canonical-uuid", payload["id"])
+			},
+		},
+		{
 			name: "deve responder 400 para json malformado",
 			args: args{request: s.requestWithRaw(`{not valid json`)},
 			setup: func(deps dependencies) {
