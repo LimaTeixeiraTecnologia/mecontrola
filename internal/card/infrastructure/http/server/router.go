@@ -13,18 +13,23 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 )
 
+type InvoiceByMonthHandler interface {
+	Handle(w http.ResponseWriter, r *http.Request)
+}
+
 type CardRouter struct {
-	createHandler      *handlers.CreateCardHandler
-	listHandler        *handlers.ListCardsHandler
-	getHandler         *handlers.GetCardHandler
-	updateHandler      *handlers.UpdateCardHandler
-	updateLimitHandler *handlers.UpdateCardLimitHandler
-	deleteHandler      *handlers.DeleteCardHandler
-	invoiceForHandler  *handlers.InvoiceForHandler
-	idemStorage        idempotency.Storage
-	o11y               observability.Observability
-	gatewayAuth        func(http.Handler) http.Handler
-	userRateLimit      func(http.Handler) http.Handler
+	createHandler         *handlers.CreateCardHandler
+	listHandler           *handlers.ListCardsHandler
+	getHandler            *handlers.GetCardHandler
+	updateHandler         *handlers.UpdateCardHandler
+	updateLimitHandler    *handlers.UpdateCardLimitHandler
+	deleteHandler         *handlers.DeleteCardHandler
+	invoiceForHandler     *handlers.InvoiceForHandler
+	invoiceByMonthHandler InvoiceByMonthHandler
+	idemStorage           idempotency.Storage
+	o11y                  observability.Observability
+	gatewayAuth           func(http.Handler) http.Handler
+	userRateLimit         func(http.Handler) http.Handler
 }
 
 func NewCardRouter(
@@ -55,6 +60,10 @@ func NewCardRouter(
 	}
 }
 
+func (rt *CardRouter) WithInvoiceByMonthHandler(h InvoiceByMonthHandler) {
+	rt.invoiceByMonthHandler = h
+}
+
 func (rt *CardRouter) Register(r chi.Router) {
 	idemMiddleware := idempotency.Middleware("card", rt.idemStorage, 24*time.Hour, rt.o11y)
 
@@ -73,6 +82,10 @@ func (rt *CardRouter) Register(r chi.Router) {
 			idSub.With(idemMiddleware).Patch("/limit", rt.updateLimitHandler.Handle)
 			idSub.With(idemMiddleware).Delete("/", rt.deleteHandler.Handle)
 			idSub.Get("/invoices", rt.invoiceForHandler.Handle)
+
+			if rt.invoiceByMonthHandler != nil {
+				idSub.Get("/invoices/{ref_month}", rt.invoiceByMonthHandler.Handle)
+			}
 		})
 	})
 }

@@ -90,12 +90,6 @@ func (d *dummyListCPUC) Execute(_ context.Context, _ usecases.ListCardPurchasesI
 	return usecases.ListCardPurchasesOutput{}, nil
 }
 
-type dummyGetCIUC struct{}
-
-func (d *dummyGetCIUC) Execute(_ context.Context, _ uuid.UUID, _ string) (dtooutput.CardInvoice, error) {
-	return dtooutput.CardInvoice{}, nil
-}
-
 type dummyCreateRTUC struct{}
 
 func (d *dummyCreateRTUC) Execute(_ context.Context, _ dtoinput.RawCreateRecurringTemplate) (dtooutput.RecurringTemplate, error) {
@@ -154,7 +148,6 @@ func buildRouter(t *testing.T) *txserver.TransactionsRouter {
 		handlers.NewDeleteCardPurchaseHandler(&dummyDeleteCPUC{}, o11y),
 		handlers.NewGetCardPurchaseHandler(&dummyGetCPUC{}, o11y),
 		handlers.NewListCardPurchasesHandler(&dummyListCPUC{}, o11y),
-		handlers.NewGetCardInvoiceHandler(&dummyGetCIUC{}, o11y),
 		handlers.NewCreateRecurringTemplateHandler(&dummyCreateRTUC{}, o11y),
 		handlers.NewUpdateRecurringTemplateHandler(&dummyUpdateRTUC{}, o11y),
 		handlers.NewDeleteRecurringTemplateHandler(&dummyDeleteRTUC{}, o11y),
@@ -193,7 +186,6 @@ func TestRouterRegistersAllTransactionRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/card-purchases/" + uuid.New().String()},
 		{http.MethodPatch, "/api/v1/card-purchases/" + uuid.New().String()},
 		{http.MethodDelete, "/api/v1/card-purchases/" + uuid.New().String()},
-		{http.MethodGet, "/api/v1/cards/" + uuid.New().String() + "/invoices/2025-01"},
 		{http.MethodPost, "/api/v1/recurring-templates"},
 		{http.MethodGet, "/api/v1/recurring-templates"},
 		{http.MethodGet, "/api/v1/recurring-templates/" + uuid.New().String()},

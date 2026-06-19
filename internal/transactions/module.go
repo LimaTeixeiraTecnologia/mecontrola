@@ -50,6 +50,7 @@ type TransactionsModule struct {
 	CreateCardPurchaseUC            *usecases.CreateCardPurchase
 	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
 	ListRecurringTemplatesUC        *usecases.ListRecurringTemplates
+	GetCardInvoiceHandler           *handlers.GetCardInvoiceHandler
 }
 
 type transactionsModuleBuilder struct {
@@ -187,6 +188,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
+	getCardInvoiceHandler := handlers.NewGetCardInvoiceHandler(getCI, b.o11y)
 
 	createRT := usecases.NewCreateRecurringTemplate(
 		factory,
@@ -278,7 +280,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		handlers.NewDeleteCardPurchaseHandler(deleteCP, b.o11y),
 		handlers.NewGetCardPurchaseHandler(getCP, b.o11y),
 		handlers.NewListCardPurchasesHandler(listCP, b.o11y),
-		handlers.NewGetCardInvoiceHandler(getCI, b.o11y),
 		handlers.NewCreateRecurringTemplateHandler(createRT, b.o11y),
 		handlers.NewUpdateRecurringTemplateHandler(updateRT, b.o11y),
 		handlers.NewDeleteRecurringTemplateHandler(deleteRT, b.o11y),
@@ -310,6 +311,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		CreateCardPurchaseUC:            createCP,
 		CreateRecurringTemplateUC:       createRT,
 		ListRecurringTemplatesUC:        listRT,
+		GetCardInvoiceHandler:           getCardInvoiceHandler,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "transactions.transaction.created.v1", Handler: recomputeConsumer},
 			{EventType: "transactions.transaction.updated.v1", Handler: recomputeConsumer},

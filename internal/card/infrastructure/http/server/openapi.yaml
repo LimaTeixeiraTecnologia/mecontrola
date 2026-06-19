@@ -197,6 +197,31 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/cards/{id}/invoices/{ref_month}:
+    get:
+      tags: [cards]
+      operationId: getCardInvoiceByMonth
+      summary: Obter fatura do cartão para um mês de referência
+      parameters:
+        - $ref: "#/components/parameters/XUserID"
+        - $ref: "#/components/parameters/CardID"
+        - $ref: "#/components/parameters/RefMonth"
+      responses:
+        "200":
+          description: Fatura do cartão para o mês solicitado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardInvoice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   parameters:
     XUserID:
@@ -229,6 +254,16 @@ components:
         format: uuid
       description: UUID v4 do cartão
       example: "550e8400-e29b-41d4-a716-446655440000"
+
+    RefMonth:
+      name: ref_month
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9]{4}-[0-9]{2}$'
+      description: "Mês de referência no formato YYYY-MM"
+      example: "2025-01"
 
   schemas:
     CreateCardRequest:
@@ -348,6 +383,76 @@ components:
           type: string
           format: date
           example: "2026-01-25"
+
+    CardInvoice:
+      type: object
+      required: [id, user_id, card_id, ref_month, closing_at, due_at, items_total_cents, version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        user_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        card_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        ref_month:
+          type: string
+          pattern: '^[0-9]{4}-[0-9]{2}$'
+          example: "2025-01"
+        closing_at:
+          type: string
+          format: date-time
+          example: "2026-01-15T10:30:00Z"
+        due_at:
+          type: string
+          format: date-time
+          example: "2026-01-25T10:30:00Z"
+        items_total_cents:
+          type: integer
+          example: 12345
+        version:
+          type: integer
+          example: 1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CardInvoiceItem"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-01-15T10:30:00Z"
+
+    CardInvoiceItem:
+      type: object
+      required: [id, invoice_id, ref_month, installment_index, amount_cents]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440002"
+        invoice_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        ref_month:
+          type: string
+          pattern: '^[0-9]{4}-[0-9]{2}$'
+          example: "2025-01"
+        installment_index:
+          type: integer
+          example: 1
+        amount_cents:
+          type: integer
+          example: 12345
 
     Error:
       type: object

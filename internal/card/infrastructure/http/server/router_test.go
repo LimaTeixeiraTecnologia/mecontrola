@@ -177,3 +177,40 @@ func (s *CardRouterSuite) TestGet_NoIdempotencyRequired() {
 	s.router.ServeHTTP(rr, req)
 	s.Equal(http.StatusOK, rr.Code)
 }
+
+type dummyInvoiceByMonthHandler struct{}
+
+func (dummyInvoiceByMonthHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *CardRouterSuite) TestInvoiceByMonthRoute_WhenHandlerProvided() {
+	invoiceByMonth := dummyInvoiceByMonthHandler{}
+	o11y := noop.NewProvider()
+	passthrough := func(next http.Handler) http.Handler { return next }
+	cardRouter := server.NewCardRouter(
+		handlers.NewCreateCardHandler(s.createUC, o11y),
+		handlers.NewListCardsHandler(s.listUC, o11y),
+		handlers.NewGetCardHandler(s.getUC, o11y),
+		handlers.NewUpdateCardHandler(s.updateUC, o11y),
+		handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y),
+		handlers.NewDeleteCardHandler(s.deleteUC, o11y),
+		handlers.NewInvoiceForHandler(s.invoiceUC, o11y),
+		s.idemStorage,
+		o11y,
+		passthrough,
+		passthrough,
+	)
+	cardRouter.WithInvoiceByMonthHandler(invoiceByMonth)
+
+	r := chi.NewRouter()
+	cardRouter.Register(r)
+
+	userID := uuid.New().String()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cards/"+uuid.New().String()+"/invoices/2025-01", nil)
+	req.Header.Set("X-User-ID", userID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	s.Equal(http.StatusOK, rec.Code)
+}

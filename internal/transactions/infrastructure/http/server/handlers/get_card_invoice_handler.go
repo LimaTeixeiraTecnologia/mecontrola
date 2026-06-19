@@ -29,10 +29,10 @@ func (h *GetCardInvoiceHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.o11y.Tracer().Start(r.Context(), "transactions.handler.get_card_invoice")
 	defer span.End()
 
-	cardID, err := uuid.Parse(chi.URLParam(r, "card_id"))
+	cardID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		span.SetAttributes(observability.String("outcome", "invalid_payload"))
-		responses.ErrorWithDetails(w, http.StatusBadRequest, "card_id inválido", map[string]string{"code": "validation_error"})
+		responses.ErrorWithDetails(w, http.StatusBadRequest, "id do cartão inválido", map[string]string{"code": "validation_error"})
 		return
 	}
 

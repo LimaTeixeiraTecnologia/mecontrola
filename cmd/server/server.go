@@ -189,10 +189,7 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
-	if cardModule.CardRouter != nil {
-		srv.RegisterRouters(cardModule.CardRouter)
-	}
-	o11y.Logger().Info(ctx, "card module wired", observability.Bool("router_registered", cardModule.CardRouter != nil))
+	o11y.Logger().Info(ctx, "card module initialized", observability.Bool("router_present", cardModule.CardRouter != nil))
 
 	channelGateway, err := buildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
 	if err != nil {
@@ -212,6 +209,13 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo transactions: %w", err)
 	}
+	if cardModule.CardRouter != nil && transactionsModule.GetCardInvoiceHandler != nil {
+		cardModule.CardRouter.WithInvoiceByMonthHandler(transactionsModule.GetCardInvoiceHandler)
+	}
+	if cardModule.CardRouter != nil {
+		srv.RegisterRouters(cardModule.CardRouter)
+	}
+	o11y.Logger().Info(ctx, "card module wired", observability.Bool("router_registered", cardModule.CardRouter != nil))
 	if transactionsModule.Router != nil {
 		srv.RegisterRouters(transactionsModule.Router)
 	}

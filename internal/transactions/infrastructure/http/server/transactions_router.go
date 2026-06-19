@@ -24,7 +24,6 @@ type TransactionsRouter struct {
 	deleteCardPurchase      *handlers.DeleteCardPurchaseHandler
 	getCardPurchase         *handlers.GetCardPurchaseHandler
 	listCardPurchases       *handlers.ListCardPurchasesHandler
-	getCardInvoice          *handlers.GetCardInvoiceHandler
 	createRecurringTemplate *handlers.CreateRecurringTemplateHandler
 	updateRecurringTemplate *handlers.UpdateRecurringTemplateHandler
 	deleteRecurringTemplate *handlers.DeleteRecurringTemplateHandler
@@ -49,7 +48,6 @@ func NewTransactionsRouter(
 	deleteCP *handlers.DeleteCardPurchaseHandler,
 	getCP *handlers.GetCardPurchaseHandler,
 	listCP *handlers.ListCardPurchasesHandler,
-	getCI *handlers.GetCardInvoiceHandler,
 	createRT *handlers.CreateRecurringTemplateHandler,
 	updateRT *handlers.UpdateRecurringTemplateHandler,
 	deleteRT *handlers.DeleteRecurringTemplateHandler,
@@ -73,7 +71,6 @@ func NewTransactionsRouter(
 		deleteCardPurchase:      deleteCP,
 		getCardPurchase:         getCP,
 		listCardPurchases:       listCP,
-		getCardInvoice:          getCI,
 		createRecurringTemplate: createRT,
 		updateRecurringTemplate: updateRT,
 		deleteRecurringTemplate: deleteRT,
@@ -110,10 +107,6 @@ func (rt *TransactionsRouter) Register(r chi.Router) {
 			sub.Get("/{id}", rt.getCardPurchase.Handle)
 			sub.With(idem).Patch("/{id}", rt.updateCardPurchase.Handle)
 			sub.With(idem).Delete("/{id}", rt.deleteCardPurchase.Handle)
-		})
-
-		g.Route("/api/v1/cards", func(sub chi.Router) {
-			sub.Get("/{card_id}/invoices/{ref_month}", rt.getCardInvoice.Handle)
 		})
 
 		g.Route("/api/v1/recurring-templates", func(sub chi.Router) {
