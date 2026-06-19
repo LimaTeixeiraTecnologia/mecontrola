@@ -309,7 +309,7 @@ func TestParseInbound_Execute_ProviderError_Fallback(t *testing.T) {
 	}
 }
 
-func TestParseInbound_Execute_ForwardsToolsToInterpreter(t *testing.T) {
+func TestParseInbound_Execute_ForwardsJSONSchemaToInterpreter(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind":"how_am_i_doing"}`)}}
@@ -324,58 +324,14 @@ func TestParseInbound_Execute_ForwardsToolsToInterpreter(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if fake.lastRequest.JSONSchema != nil {
-		t.Fatalf("expected JSONSchema to be nil in tool-calling mode")
+	if fake.lastRequest.JSONSchema == nil {
+		t.Fatalf("expected JSONSchema to be set in structured-output mode")
 	}
-	if len(fake.lastRequest.Tools) != len(usecases.AgentToolCatalog()) {
-		t.Fatalf("tools len = %d, want %d", len(fake.lastRequest.Tools), len(usecases.AgentToolCatalog()))
+	if fake.lastRequest.JSONSchema.Name != "mecontrola_parse_intent" {
+		t.Fatalf("schema name = %q, want mecontrola_parse_intent", fake.lastRequest.JSONSchema.Name)
 	}
-	if fake.lastRequest.ToolChoice != "auto" {
-		t.Fatalf("tool choice = %q, want auto", fake.lastRequest.ToolChoice)
-	}
-	var hasRecord bool
-	for _, tool := range fake.lastRequest.Tools {
-		if tool.Name == "record_transaction" {
-			hasRecord = true
-		}
-	}
-	if !hasRecord {
-		t.Fatalf("tools must include record_transaction")
-	}
-}
-
-func TestParseInbound_Execute_ToolCall_MapsToIntent(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakeInterpreter{resp: interfaces.LLMResponse{
-		ToolCalls: []interfaces.ToolCall{
-			{
-				ID:           "call_1",
-				FunctionName: "record_transaction",
-				ArgumentsJSON: map[string]any{
-					"direction":    "outcome",
-					"amount_cents": float64(5800),
-					"merchant":     "iFood",
-				},
-			},
-		},
-	}}
-	uc, err := usecases.NewParseInbound(fake, noop.NewProvider())
-	if err != nil {
-		t.Fatalf("NewParseInbound: %v", err)
-	}
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: "gastei 58 no iFood"})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindLogExpense {
-		t.Fatalf("kind = %v, want log_expense", out.Intent.Kind())
-	}
-	if out.Intent.AmountCents() != 5800 || out.Intent.Merchant() != "iFood" {
-		t.Fatalf("intent = %+v", out.Intent)
-	}
-	if out.DirectReply != "" {
-		t.Fatalf("direct reply must be empty for tool call, got %q", out.DirectReply)
+	if len(fake.lastRequest.Tools) != 0 {
+		t.Fatalf("tools must be empty in structured-output mode, got %d", len(fake.lastRequest.Tools))
 	}
 }
 

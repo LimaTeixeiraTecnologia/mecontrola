@@ -35,7 +35,7 @@ type ParseInbound struct {
 	o11y              observability.Observability
 	parsedTotal       observability.Counter
 	decodeFailedTotal observability.Counter
-	tools             []interfaces.ToolSpec
+	schema            *interfaces.JSONSchemaSpec
 }
 
 func NewParseInbound(interpreter IntentInterpreter, o11y observability.Observability) (*ParseInbound, error) {
@@ -60,7 +60,11 @@ func NewParseInbound(interpreter IntentInterpreter, o11y observability.Observabi
 		o11y:              o11y,
 		parsedTotal:       parsedTotal,
 		decodeFailedTotal: decodeFailedTotal,
-		tools:             AgentToolCatalog(),
+		schema: &interfaces.JSONSchemaSpec{
+			Name:   "mecontrola_parse_intent",
+			Strict: true,
+			Schema: prompting.ParseIntentJSONSchema(),
+		},
 	}, nil
 }
 
@@ -72,7 +76,6 @@ const (
 	outcomeFallbackInvalid = "fallback_invalid_json"
 	outcomeFallbackMissing = "fallback_missing_kind"
 	outcomeFallbackDomain  = "fallback_domain_invariant"
-	outcomeFallbackTool    = "fallback_tool_unsupported"
 	outcomeProviderError   = "provider_error"
 )
 
@@ -85,16 +88,19 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		return ParseInboundOutput{}, ErrParseInboundEmptyText
 	}
 
-	system, err := prompting.RenderToolSystem()
+	system, err := prompting.RenderSystem()
 	if err != nil {
-		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render tool system: %w", err)
+		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render system: %w", err)
+	}
+	user, err := prompting.RenderUser(trimmed)
+	if err != nil {
+		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render user: %w", err)
 	}
 
 	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
 		SystemPrompt: system,
-		UserMessage:  trimmed,
-		Tools:        uc.tools,
-		ToolChoice:   "auto",
+		UserMessage:  user,
+		JSONSchema:   uc.schema,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -106,26 +112,7 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		return ParseInboundOutput{Intent: fallback}, nil
 	}
 
-	if len(resp.ToolCalls) > 0 {
-		return uc.fromToolCall(ctx, resp, trimmed)
-	}
-
 	return uc.fromContent(ctx, resp, trimmed)
-}
-
-func (uc *ParseInbound) fromToolCall(ctx context.Context, resp interfaces.LLMResponse, trimmed string) (ParseInboundOutput, error) {
-	built, callErr := ToolCallToIntent(resp.ToolCalls[0], trimmed)
-	if callErr != nil {
-		uc.recordOutcome(ctx, intent.KindUnknown, outcomeFallbackTool)
-		uc.decodeFailedTotal.Add(ctx, 1, observability.String("reason", outcomeFallbackTool))
-		fallback, fbErr := intent.NewUnknown(trimmed)
-		if fbErr != nil {
-			return ParseInboundOutput{}, errors.Join(fmt.Errorf("agent.usecase.parse_inbound: tool call: %w", callErr), fbErr)
-		}
-		return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON}, nil
-	}
-	uc.recordOutcome(ctx, built.Kind(), outcomeOK)
-	return ParseInboundOutput{Intent: built, Raw: resp.RawJSON}, nil
 }
 
 func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed string) (ParseInboundOutput, error) {

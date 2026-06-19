@@ -49,6 +49,11 @@ func TestParseInbound_RealLLM_RecognitionMatrix(t *testing.T) {
 		{"minha saúde financeira tá ok?", intent.KindHowAmIDoing, 0},
 		{"quero configurar meu orçamento", intent.KindConfigureBudget, 0},
 		{"vamos montar meu planejamento financeiro", intent.KindConfigureBudget, 0},
+		{"cadastra meu nubank que fecha dia 3 e vence dia 10", intent.KindCreateCard, 0},
+		{"adiciona o cartão itaú", intent.KindCreateCard, 0},
+		{"quantos cartões eu tenho?", intent.KindCountCards, 0},
+		{"tenho quantos cartões cadastrados?", intent.KindCountCards, 0},
+		{"quais meus cartões?", intent.KindListCards, 0},
 		{"oi, tudo bem?", intent.KindUnknown, 0},
 		{"qual a capital da França?", intent.KindUnknown, 0},
 	}
