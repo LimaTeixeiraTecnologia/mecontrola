@@ -204,7 +204,7 @@ func (uc *RunOnboardingTurn) dataPhase(ctx context.Context, in RunOnboardingTurn
 
 func (uc *RunOnboardingTurn) cardsPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {
 	if matchesOnboardingNegation(in.Text) {
-		return uc.emit(ctx, in.UserID, OnbPhaseSplits, scriptSplits, "cards_done")
+		return uc.emit(ctx, in.UserID, OnbPhaseSplits, buildSplitsQuestion(snapshot.IncomeCents), "cards_done")
 	}
 	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseCards)
 	if err != nil {
@@ -218,7 +218,13 @@ func (uc *RunOnboardingTurn) cardsPhase(ctx context.Context, in RunOnboardingTur
 }
 
 func (uc *RunOnboardingTurn) splitsPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {
-	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseSplits)
+	var out OnboardingToolResult
+	var err error
+	if !onboardingTextHasDigit(in.Text) && shouldAdvanceScriptedPhase(in.Text) && snapshot.IncomeCents > 0 {
+		out, err = uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, defaultSplitToolCall(snapshot.IncomeCents))
+	} else {
+		out, err = uc.runDataPhase(ctx, in, snapshot, OnbPhaseSplits)
+	}
 	if err != nil {
 		return RunOnboardingTurnResult{}, err
 	}
@@ -245,7 +251,11 @@ func (uc *RunOnboardingTurn) summaryPhase(ctx context.Context, userID uuid.UUID,
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase splits: %w", err)
 	}
 	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseSummary), observability.String("outcome", "adjust"))
-	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies("Sem problema! Vamos ajustar a distribuição.", scriptSplits)}, nil
+	snapshot, err := uc.reader.Load(ctx, userID)
+	if err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: reload for adjust: %w", err)
+	}
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies("Sem problema! Vamos ajustar a distribuição.", buildSplitsQuestion(snapshot.IncomeCents))}, nil
 }
 
 func (uc *RunOnboardingTurn) firstTransactionPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {

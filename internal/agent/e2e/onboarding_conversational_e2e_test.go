@@ -146,15 +146,6 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 		toolCallResponse("save_onboarding_objective", map[string]any{"objective": "fazer uma viagem"}),
 		toolCallResponse("save_onboarding_income", map[string]any{"income_cents": 500000}),
 		toolCallResponse("save_onboarding_card", map[string]any{"nickname": "nubank", "due_day": 17}),
-		toolCallResponse("save_onboarding_budget_splits", map[string]any{
-			"allocations": []any{
-				map[string]any{"root_slug": "expense.custo_fixo", "amount_cents": 200000},
-				map[string]any{"root_slug": "expense.conhecimento", "amount_cents": 50000},
-				map[string]any{"root_slug": "expense.prazeres", "amount_cents": 75000},
-				map[string]any{"root_slug": "expense.metas", "amount_cents": 100000},
-				map[string]any{"root_slug": "expense.liberdade_financeira", "amount_cents": 75000},
-			},
-		}),
 		{ToolCalls: []appinterfaces.ToolCall{
 			{ID: "c1", FunctionName: "record_transaction", ArgumentsJSON: map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado", "category_hint": "mercado"}},
 		}},

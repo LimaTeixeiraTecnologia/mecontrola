@@ -184,6 +184,38 @@ func TestRunOnboardingTurn_CardsNegationAdvancesToSplits(t *testing.T) {
 	require.Equal(t, usecases.OnbPhaseSplits, setter.last())
 }
 
+func TestRunOnboardingTurn_SplitsDefaultAppliedWithoutLLM(t *testing.T) {
+	t.Parallel()
+	interp := &fakeTurnInterpreter{}
+	dispatcher := &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{
+		usecases.ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição salva!", Advance: true},
+	}}
+	setter := &fakePhaseSetter{}
+	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSplits, IncomeCents: 500000}}, dispatcher, setter)
+	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "sim, pode usar essa"})
+	require.NoError(t, err)
+	require.True(t, out.Handled)
+	require.False(t, interp.called)
+	require.Equal(t, 1, dispatcher.calls)
+	require.Contains(t, out.Reply, "Distribuição salva")
+	require.Equal(t, usecases.OnbPhaseSummary, setter.last())
+}
+
+func TestRunOnboardingTurn_SplitsCustomUsesLLM(t *testing.T) {
+	t.Parallel()
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: usecases.ToolSaveOnboardingBudgetSplits}}}}
+	dispatcher := &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{
+		usecases.ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição salva!", Advance: true},
+	}}
+	setter := &fakePhaseSetter{}
+	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSplits, IncomeCents: 500000}}, dispatcher, setter)
+	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "custo fixo 5000, conhecimento 1000, prazeres 1500, metas 3000, liberdade 2000"})
+	require.NoError(t, err)
+	require.True(t, out.Handled)
+	require.True(t, interp.called)
+	require.Equal(t, usecases.OnbPhaseSummary, setter.last())
+}
+
 func TestRunOnboardingTurn_SummaryAffirmationAdvancesToFirstTx(t *testing.T) {
 	t.Parallel()
 	setter := &fakePhaseSetter{}

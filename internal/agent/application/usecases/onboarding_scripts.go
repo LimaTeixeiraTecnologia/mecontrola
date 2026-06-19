@@ -35,10 +35,66 @@ const (
 	scriptObjective    = "🎯 Show! Agora me conta: qual é o seu *objetivo principal*? O que você quer conquistar organizando o dinheiro? (ex: quitar dívidas, fazer uma viagem, comprar um carro, criar uma reserva)"
 	scriptIncome       = "💰 Pra montar seu plano, qual é o seu *orçamento mensal* aproximado? (o quanto você tem por mês)"
 	scriptCards        = "💳 Você usa *cartão de crédito*? Se sim, me diz o *apelido* e o *dia de vencimento* da fatura. Se não usar, é só dizer. 😊"
-	scriptSplits       = "📊 Agora vamos distribuir seu orçamento entre as 5 categorias — *em reais*. Quanto você quer reservar por mês pra cada uma?\n\n💰 Custo Fixo · 🎓 Conhecimento · 🎉 Prazeres · 🎯 Metas · 🏦 Liberdade Financeira"
 	scriptTransition   = "🚀 Seu plano tá pronto e estruturado! Falta só *um passo* pra você dominar o app.\n\n📝 Bora fazer seu *primeiro lançamento*? Me manda do jeito que você fala no dia a dia, tipo \"gastei 35 no mercado\" ou \"recebi 2500 de salário\"."
 	scriptCardQuestion = "💳 Quer cadastrar um cartão? Me diz o apelido e o dia de vencimento — ou diga que não usa. 😊"
 )
+
+var onboardingDefaultSplit = []struct {
+	slug string
+	bp   int
+}{
+	{"expense.custo_fixo", 4000},
+	{"expense.conhecimento", 1000},
+	{"expense.prazeres", 1500},
+	{"expense.metas", 2000},
+	{"expense.liberdade_financeira", 1500},
+}
+
+func defaultSplitAmounts(budgetCents int64) []int64 {
+	amounts := make([]int64, len(onboardingDefaultSplit))
+	var assigned int64
+	for i, e := range onboardingDefaultSplit {
+		if i == len(onboardingDefaultSplit)-1 {
+			amounts[i] = budgetCents - assigned
+			continue
+		}
+		amounts[i] = budgetCents * int64(e.bp) / 10000
+		assigned += amounts[i]
+	}
+	return amounts
+}
+
+func buildSplitsQuestion(budgetCents int64) string {
+	amounts := defaultSplitAmounts(budgetCents)
+	parts := make([]string, len(onboardingDefaultSplit))
+	for i, e := range onboardingDefaultSplit {
+		parts[i] = fmt.Sprintf("%s %d%% (R$ %s)", onboardingSlugEmoji(e.slug), e.bp/100, formatBRLCents(amounts[i]))
+	}
+	return "📊 Agora vamos distribuir seu orçamento entre as 5 categorias.\n\nMinha sugestão:\n" +
+		strings.Join(parts, "\n") +
+		"\n\nResponde *sim* pra usar essa distribuição, ou me manda os valores *em reais* do seu jeito (a soma precisa fechar R$ " + formatBRLCents(budgetCents) + ")."
+}
+
+func defaultSplitToolCall(budgetCents int64) interfaces.ToolCall {
+	amounts := defaultSplitAmounts(budgetCents)
+	allocations := make([]any, len(onboardingDefaultSplit))
+	for i, e := range onboardingDefaultSplit {
+		allocations[i] = map[string]any{"root_slug": e.slug, "amount_cents": amounts[i]}
+	}
+	return interfaces.ToolCall{
+		FunctionName:  ToolSaveOnboardingBudgetSplits,
+		ArgumentsJSON: map[string]any{"allocations": allocations},
+	}
+}
+
+func onboardingTextHasDigit(text string) bool {
+	for _, r := range text {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	return false
+}
 
 var onboardingNegations = []string{
 	"nao", "não", "n", "no", "agora nao", "agora não", "negativo", "nope",
@@ -144,7 +200,7 @@ func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string
 	case OnbPhaseIncome:
 		b.WriteString("Etapa: orçamento mensal. Converta o valor para centavos (R$ 5.000 = 500000, 5 mil = 500000) e chame save_onboarding_income.")
 	case OnbPhaseCards:
-		b.WriteString("Etapa: cartão de crédito. Extraia o apelido e o dia de vencimento e chame save_onboarding_card. Peça só apelido e vencimento.")
+		b.WriteString("Etapa: cartão de crédito. Use o apelido EXATO que a pessoa escreveu (não abrevie). Só chame save_onboarding_card se a pessoa informar TANTO o apelido QUANTO o dia de vencimento (1 a 31). Se faltar o dia de vencimento, NÃO chame a ferramenta: pergunte em texto o dia de vencimento da fatura. Nunca invente o dia.")
 	case OnbPhaseSplits:
 		b.WriteString("Etapa: distribuição do orçamento EM REAIS por categoria. Converta cada valor para centavos e mapeie os nomes para root_slug: Custo Fixo->expense.custo_fixo, Conhecimento->expense.conhecimento, Prazeres->expense.prazeres, Metas->expense.metas, Liberdade Financeira->expense.liberdade_financeira. Envie as 5 categorias (0 para as não citadas) e chame save_onboarding_budget_splits.")
 	case OnbPhaseFirstTx:
