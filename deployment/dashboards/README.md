@@ -60,7 +60,7 @@ Dashboards **e alertas** sobem sozinhos a cada deploy — não precisa importar 
 O `otel-lgtm` monta (ver `compose.*.yml`):
 
 - `../dashboards` → `/etc/dashboards` + provider `dashboards-provider.yaml` → dashboards aparecem na pasta **MeControla**.
-- `../telemetry/grafana/provisioning/alerting/rules.yaml` → 6 regras de alerta (pasta **MeControla Alerts**).
+- `../telemetry/grafana/provisioning/alerting/rules.yaml` + `templates.yaml` → 6 regras de alerta e template de notificacao (pasta **MeControla Alerts**).
 
 ## Alertas proativos
 
@@ -68,12 +68,12 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 
 | Grupo | Regra | Dispara quando |
 |-------|-------|----------------|
-| tecnico | API sem métricas (down) | sem `http_server_request_active` há >5min |
-| tecnico | API erro 5xx alto | 5xx > 5% por 5min |
-| tecnico | API latência p99 alta | p99 > 1s por 10min |
-| tecnico | Postgres pool com espera | >1 wait/s por 5min |
-| negocio | Tokens pagos não consumidos | `onboarding_tokens_paid_unconsumed_ratio` > 25% por 15min |
-| plataforma | Collector falhando export | `otelcol_exporter_send_failed_metric_points` > 0 por 5min |
+| tecnico | API sem métricas | sem `http_server_request_active` há >5min |
+| tecnico | Erro 5xx alto na API | 5xx > 5% por 5min |
+| tecnico | Latência p99 alta na API | p99 > 1s por 10min |
+| tecnico | Espera por conexão no pool do Postgres | >1 wait/s por 5min |
+| negocio | Tokens pagos sem consumo no onboarding | `onboarding_tokens_paid_unconsumed_ratio` > 25% por 15min |
+| plataforma | Falha na exportação de métricas do collector | `otelcol_exporter_send_failed_metric_points` > 0 por 5min |
 
 > Alertas de **queda de volume** (ex.: "webhooks pararam") foram omitidos de propósito —
 > num produto novo de baixo tráfego eles geram falso-positivo. Reavaliar quando houver baseline.
@@ -81,10 +81,10 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 
 ### Notificação no Telegram (contém segredo → via API, não em arquivo)
 
-O contact point + notification policy do Telegram são criados por
+O contact point + notification policy do Telegram sao criados por
 `deployment/telemetry/grafana/setup-alerting-telegram.sh` (idempotente). O Grafana 11 coage
 `chatid` numérico a number quando interpolado de env em arquivo, então o segredo entra pela API
-(onde controlamos o tipo string). No deploy isso roda automático se `ALERT_TELEGRAM_*` estiverem no `.env`.
+(onde controlamos o tipo string). A mensagem usa o template `mc.telegram.message`, em portugues, com emoji, severidade, resumo, contexto e links de fonte/silenciamento. No deploy isso roda automatico se `ALERT_TELEGRAM_*` estiverem no `.env`.
 
 Manual (na VPS, com otel-lgtm no ar) — o script lê o `.env` sozinho:
 

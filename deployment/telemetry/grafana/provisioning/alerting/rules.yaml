@@ -7,14 +7,15 @@ groups:
     interval: 1m
     rules:
       - uid: mc-api-down
-        title: API sem métricas (provável down)
+        title: API sem métricas
         condition: C
         for: 5m
         noDataState: OK
         execErrState: Error
         labels: { severity: critical }
         annotations:
-          summary: "mecontrola-api parou de exportar métricas há >5min (provável crash/queda)"
+          summary: "Sem métricas HTTP da API por mais de 5 minutos."
+          description: "A API provavelmente caiu, travou ou parou de exportar métricas. Verifique processo, container e logs recentes."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -38,14 +39,15 @@ groups:
                   evaluator: { type: gt, params: [0] }
 
       - uid: mc-api-5xx
-        title: API erro 5xx alto
+        title: Erro 5xx alto na API
         condition: C
         for: 5m
         noDataState: OK
         execErrState: Error
         labels: { severity: critical }
         annotations:
-          summary: "Taxa de respostas 5xx da API acima de 5% por 5min"
+          summary: "Taxa de respostas 5xx da API acima de 5% por 5 minutos."
+          description: "A API esta respondendo com erro em volume anormal. Verifique endpoints com falha, traces e logs recentes."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -69,14 +71,15 @@ groups:
                   evaluator: { type: gt, params: [5] }
 
       - uid: mc-api-latency-p99
-        title: API latência p99 alta
+        title: Latência p99 alta na API
         condition: C
         for: 10m
         noDataState: OK
         execErrState: Error
         labels: { severity: warning }
         annotations:
-          summary: "p99 de latência da API acima de 1s por 10min"
+          summary: "p99 de latência da API acima de 1 segundo por 10 minutos."
+          description: "Ha lentidao sustentada nas requisicoes mais demoradas. Verifique pressao em banco, dependencias externas e endpoints mais lentos."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -100,14 +103,15 @@ groups:
                   evaluator: { type: gt, params: [1] }
 
       - uid: mc-db-pool-wait
-        title: Postgres pool com espera por conexão
+        title: Espera por conexão no pool do Postgres
         condition: C
         for: 5m
         noDataState: OK
         execErrState: Error
         labels: { severity: warning }
         annotations:
-          summary: "Pool do Postgres com >1 espera/s por 5min (saturação de conexões)"
+          summary: "Pool do Postgres com mais de 1 espera por segundo por 5 minutos."
+          description: "A aplicacao esta esperando conexao do banco com frequencia. Verifique saturacao do pool, queries lentas e concorrencia."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -136,14 +140,15 @@ groups:
     interval: 5m
     rules:
       - uid: mc-onboarding-unconsumed
-        title: Onboarding com muitos tokens pagos não consumidos
+        title: Tokens pagos sem consumo no onboarding
         condition: C
         for: 15m
         noDataState: OK
         execErrState: Error
         labels: { severity: warning }
         annotations:
-          summary: "Ratio de tokens pagos sem ativação acima de 25% por 15min (clientes pagaram e não ativaram)"
+          summary: "Mais de 25% dos tokens pagos seguem sem ativacao por 15 minutos."
+          description: "Ha clientes que pagaram, mas ainda nao ativaram ou nao consumiram o onboarding como esperado. Verifique fluxo de ativacao, entrega de email e consumo de tokens."
         data:
           - refId: A
             relativeTimeRange: { from: 900, to: 0 }
@@ -172,14 +177,15 @@ groups:
     interval: 1m
     rules:
       - uid: mc-collector-export-fail
-        title: Collector falhando ao exportar métricas
+        title: Falha na exportação de métricas do collector
         condition: C
         for: 5m
         noDataState: OK
         execErrState: Error
         labels: { severity: critical }
         annotations:
-          summary: "otelcol com falhas de export de métricas para o Prometheus por 5min"
+          summary: "Collector falhando ao exportar metricas por 5 minutos."
+          description: "O otelcol nao esta conseguindo enviar metricas ao Prometheus de forma continua. Verifique conectividade, filas internas e logs do collector."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }

@@ -1,0 +1,35 @@
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: mecontrola-telegram
+    template: |
+      {{ define "mc.telegram.severity_emoji" -}}
+      {{- if eq .Labels.severity "critical" -}}🔴{{- else if eq .Labels.severity "warning" -}}🟡{{- else -}}🔵{{- end -}}
+      {{- end }}
+
+      {{ define "mc.telegram.severity_text" -}}
+      {{- if eq .Labels.severity "critical" -}}Critico{{- else if eq .Labels.severity "warning" -}}Aviso{{- else -}}{{ .Labels.severity }}{{- end -}}
+      {{- end }}
+
+      {{ define "mc.telegram.status_text" -}}
+      {{- if eq .Status "resolved" -}}Resolvido{{- else -}}Disparando{{- end -}}
+      {{- end }}
+
+      {{ define "mc.telegram.alert" -}}
+      {{ template "mc.telegram.severity_emoji" . }} <b>{{ template "mc.telegram.severity_text" . }}</b> | <b>{{ template "mc.telegram.status_text" . }}</b>
+      <b>Alerta:</b> {{ .Labels.alertname }}
+      {{ with .Annotations.summary }}<b>Resumo:</b> {{ . }}{{ end }}
+      {{ with .Annotations.description }}<b>Contexto:</b> {{ . }}{{ end }}
+      {{ with .ValueString }}<b>Valor atual:</b> {{ . }}{{ end }}
+      {{ with .GeneratorURL }}<a href="{{ . }}">Fonte</a>{{ end }}{{ with .SilenceURL }} | <a href="{{ . }}">Silenciar</a>{{ end }}
+      {{- end }}
+
+      {{ define "mc.telegram.message" -}}
+      {{- range $index, $alert := .Alerts }}
+      {{- if gt $index 0 }}
+      <b>---</b>
+      {{- end }}
+      {{ template "mc.telegram.alert" $alert }}
+      {{- end }}
+      {{- end }}

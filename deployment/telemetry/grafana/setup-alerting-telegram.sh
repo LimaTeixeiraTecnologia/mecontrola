@@ -42,6 +42,7 @@ read -r -d '' CONTACT_POINT <<JSON || true
   "settings": {
     "bottoken": "${ALERT_TELEGRAM_BOT_TOKEN}",
     "chatid": "${ALERT_TELEGRAM_CHAT_ID}",
+    "message": "{{ template \"mc.telegram.message\" . }}",
     "parse_mode": "HTML"
   },
   "disableResolveMessage": false
