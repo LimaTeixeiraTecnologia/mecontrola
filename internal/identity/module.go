@@ -35,6 +35,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
 	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/ratelimit"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/status"
+	statuspostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/status/postgres"
 )
 
 type EventHandlerRegistration struct {
@@ -63,6 +65,7 @@ type IdentityModule struct {
 	ResolvePreferredChannel    *usecases.ResolvePreferredChannel
 	WhatsAppLimiter            *ratelimit.Limiter
 	WhatsAppDedupRepository    dedup.MessageRepository
+	WhatsAppMessageStatusRepo  status.MessageStatusRepository
 	OutboxPublisher            outbox.Publisher
 	EventHandlers              []EventHandlerRegistration
 	telegramRouterBuilder      *identityModuleBuilder
@@ -165,6 +168,7 @@ func (b *identityModuleBuilder) build() (IdentityModule, error) { //nolint:reviv
 		ResolvePreferredChannel:    resolvePreferredChannel,
 		WhatsAppLimiter:            whatsAppLimiter,
 		WhatsAppDedupRepository:    deduppostgres.NewMessageRepository(b.o11y, b.db),
+		WhatsAppMessageStatusRepo:  statuspostgres.NewMessageStatusRepository(b.o11y, b.db),
 		OutboxPublisher:            publisher,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "billing.subscription.activated", Handler: subscriptionProjector},

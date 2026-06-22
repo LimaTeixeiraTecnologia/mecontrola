@@ -22,6 +22,7 @@ func (cw *captureWriter) WriteHeader(code int) {
 type WhatsAppWebhookRouter struct {
 	verifyHandler       *wahandlers.VerifyHandler
 	inboundHandler      *wahandlers.InboundHandler
+	statusHandler       *wahandlers.StatusHandler
 	secretCurrent       string
 	secretNext          string
 	rateLimitMiddleware func(http.Handler) http.Handler
@@ -31,6 +32,7 @@ type WhatsAppWebhookRouter struct {
 func NewWhatsAppWebhookRouter(
 	verifyHandler *wahandlers.VerifyHandler,
 	inboundHandler *wahandlers.InboundHandler,
+	statusHandler *wahandlers.StatusHandler,
 	secretCurrent string,
 	secretNext string,
 	rateLimitMiddleware func(http.Handler) http.Handler,
@@ -39,6 +41,7 @@ func NewWhatsAppWebhookRouter(
 	return &WhatsAppWebhookRouter{
 		verifyHandler:       verifyHandler,
 		inboundHandler:      inboundHandler,
+		statusHandler:       statusHandler,
 		secretCurrent:       secretCurrent,
 		secretNext:          secretNext,
 		rateLimitMiddleware: rateLimitMiddleware,
@@ -54,6 +57,10 @@ func (rt *WhatsAppWebhookRouter) Register(r chi.Router) {
 			rt.rateLimitWithMetric,
 			signature.Compose(rt.secretCurrent, rt.secretNext, nil),
 		).Post("/inbound", rt.inboundHandler.Handle)
+		sub.With(
+			rt.rateLimitWithMetric,
+			signature.Compose(rt.secretCurrent, rt.secretNext, nil),
+		).Post("/status", rt.statusHandler.Handle)
 	})
 }
 

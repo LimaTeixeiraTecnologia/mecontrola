@@ -16,6 +16,7 @@ import (
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wahandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
+	wastatus "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/status"
 )
 
 func composeWhatsAppWebhookRouter(
@@ -57,6 +58,9 @@ func composeWhatsAppWebhookRouter(
 	verifyHandler := wahandlers.NewVerifyHandler(cfg.WhatsAppConfig.VerifyToken)
 	inboundHandler := wahandlers.NewInboundHandler(disp, o11y)
 
+	recordMessageStatus := wastatus.NewRecordMessageStatus(identityModule.WhatsAppMessageStatusRepo, o11y)
+	statusHandler := wahandlers.NewStatusHandler(recordMessageStatus, o11y)
+
 	waRateLimiter := middleware.NewRateLimiter(
 		cfg.WhatsAppConfig.WebhookRateLimitPerMin,
 		cfg.WhatsAppConfig.WebhookRateLimitBurst,
@@ -72,6 +76,7 @@ func composeWhatsAppWebhookRouter(
 	return identityserver.NewWhatsAppWebhookRouter(
 		verifyHandler,
 		inboundHandler,
+		statusHandler,
 		cfg.WhatsAppConfig.AppSecret,
 		cfg.WhatsAppConfig.AppSecretNext,
 		waRateLimiter.Middleware,

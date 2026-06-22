@@ -19,12 +19,19 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/handlers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/status"
 )
 
 type rateLimitNoopDispatcher struct{}
 
 func (d *rateLimitNoopDispatcher) Route(_ context.Context, _ json.RawMessage) (dispatcher.RouteOutcome, error) {
 	return dispatcher.OutcomeAgent, nil
+}
+
+type rateLimitNoopStatusRecorder struct{}
+
+func (r *rateLimitNoopStatusRecorder) Execute(_ context.Context, _ []status.MessageStatus) error {
+	return nil
 }
 
 type WhatsAppRateLimitSuite struct {
@@ -41,10 +48,12 @@ func buildTestRouter(requestsPerMinute, burst int, onExceeded func()) (*httptest
 	o11y := noop.NewProvider()
 	verifyHandler := handlers.NewVerifyHandler("test-token")
 	inboundHandler := handlers.NewInboundHandler(&rateLimitNoopDispatcher{}, o11y)
+	statusHandler := handlers.NewStatusHandler(&rateLimitNoopStatusRecorder{}, o11y)
 
 	router := identityserver.NewWhatsAppWebhookRouter(
 		verifyHandler,
 		inboundHandler,
+		statusHandler,
 		"testsecret",
 		"",
 		rateLimiter.Middleware,
