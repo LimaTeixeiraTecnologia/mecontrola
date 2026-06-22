@@ -45,6 +45,7 @@ type Provider struct {
 	callTotal observability.Counter
 	callError observability.Counter
 	toolCalls observability.Counter
+	tokens    observability.Counter
 	latency   observability.Histogram
 }
 
@@ -64,16 +65,31 @@ func NewProvider(client *httpclient.Client, cfg ProviderConfig, o11y observabili
 		"Total de tool calls emitidos por modelo e function",
 		"1",
 	)
+	tokens := o11y.Metrics().Counter(
+		"agent_llm_tokens_total",
+		"Total de tokens consumidos por modelo e tipo (prompt|completion)",
+		"1",
+	)
 	latency := o11y.Metrics().HistogramWithBuckets(
 		"agent_llm_provider_latency_seconds",
 		"Latencia de respostas dos providers LLM",
 		"s",
 		[]float64{0.1, 0.25, 0.5, 1, 2, 5, 10},
 	)
-	return &Provider{cfg: cfg, client: client, o11y: o11y, callTotal: callTotal, callError: callError, toolCalls: toolCalls, latency: latency}
+	return &Provider{cfg: cfg, client: client, o11y: o11y, callTotal: callTotal, callError: callError, toolCalls: toolCalls, tokens: tokens, latency: latency}
 }
 
 func (p *Provider) Slug() valueobjects.ModelSlug { return p.cfg.Slug }
+
+func (p *Provider) recordTokens(ctx context.Context, usage chatUsage) {
+	model := p.cfg.Slug.String()
+	if usage.PromptTokens > 0 {
+		p.tokens.Add(ctx, int64(usage.PromptTokens), observability.String("model", model), observability.String("type", "prompt"))
+	}
+	if usage.CompletionTokens > 0 {
+		p.tokens.Add(ctx, int64(usage.CompletionTokens), observability.String("model", model), observability.String("type", "completion"))
+	}
+}
 
 type chatMessage struct {
 	Role      string     `json:"role"`
@@ -191,6 +207,7 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 		)
 	}
 	p.callTotal.Add(ctx, 1, observability.String("model", p.cfg.Slug.String()), observability.String("status", status))
+	p.recordTokens(ctx, parsed.Usage)
 
 	message := parsed.Choices[0].Message
 	result := interfaces.LLMResponse{
