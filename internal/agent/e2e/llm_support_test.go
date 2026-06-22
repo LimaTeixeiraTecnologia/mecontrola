@@ -48,7 +48,7 @@ func realParser(t *testing.T) *usecases.ParseInbound {
 	breaker := services.NewCircuitBreaker(services.CircuitBreakerConfig{MaxFailures: 5, FailureWindow: 30 * time.Second, OpenDuration: 60 * time.Second})
 	chain, err := services.NewFallbackChain([]appservices.LLMProvider{provider}, breaker, noop.NewProvider())
 	require.NoError(t, err)
-	parser, err := usecases.NewParseInbound(chain, noop.NewProvider())
+	parser, err := usecases.NewParseInbound(chain, 2000, noop.NewProvider())
 	require.NoError(t, err)
 	return parser
 }
