@@ -28,16 +28,16 @@ func (s *ComposeConversationalReplySuite) SetupTest() {
 }
 
 func (s *ComposeConversationalReplySuite) newSUT(fi *fakeInterpreter, maxTokens int) *ComposeConversationalReply {
-	uc, err := NewComposeConversationalReply(fi, maxTokens, fake.NewProvider())
+	uc, err := NewComposeConversationalReply(fi, maxTokens, fake.NewProvider(), nil, nil, nil, nil)
 	s.Require().NoError(err)
 	return uc
 }
 
 func (s *ComposeConversationalReplySuite) TestNilDeps() {
-	_, err := NewComposeConversationalReply(nil, 200, fake.NewProvider())
+	_, err := NewComposeConversationalReply(nil, 200, fake.NewProvider(), nil, nil, nil, nil)
 	s.Require().Error(err)
 
-	_, err = NewComposeConversationalReply(&fakeInterpreter{}, 200, nil)
+	_, err = NewComposeConversationalReply(&fakeInterpreter{}, 200, nil, nil, nil, nil, nil)
 	s.Require().Error(err)
 }
 

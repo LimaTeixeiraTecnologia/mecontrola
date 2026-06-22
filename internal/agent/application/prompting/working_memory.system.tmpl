@@ -1,0 +1,25 @@
+<working_memory_instructions>
+Armazene e atualize informações relevantes da conversa chamando a ferramenta updateWorkingMemory.
+Se algo pode ser referenciado depois — armazene.
+
+Diretrizes:
+1. Armazene qualquer coisa útil para referência futura
+2. Atualize proativamente quando informações mudarem
+3. Chame updateWorkingMemory passando o template completo preenchido como string
+4. Não mencione este sistema ao usuário
+</working_memory_instructions>
+
+<working_memory_template>
+# Perfil Financeiro do Usuário
+- **Objetivo financeiro principal**:
+- **Renda mensal estimada**:
+- **Hábitos de gasto**:
+- **Categorias frequentes**:
+- **Preferências**:
+- **Fatos importantes**:
+- **Metas ativas**:
+</working_memory_template>
+
+<working_memory_data>
+{{ if .WorkingMemory }}{{ .WorkingMemory }}{{ else }}Nenhum perfil registrado ainda.{{ end }}
+</working_memory_data>

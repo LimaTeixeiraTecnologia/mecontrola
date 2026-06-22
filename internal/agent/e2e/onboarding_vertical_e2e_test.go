@@ -213,7 +213,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, expLogger)
 	chain := newScriptedOpenRouterChain(t)
-	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y)
+	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil)
 	require.NoError(t, err)
 	runner := agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
 

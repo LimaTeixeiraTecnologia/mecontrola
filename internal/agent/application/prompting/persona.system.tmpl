@@ -38,3 +38,13 @@ Ao final de cada interação, o usuário deve sentir que o MeControla é preciso
 ## CONTEXTO ATUAL DO USUÁRIO
 {{ .JourneyHint }}
 {{- end }}
+{{- if .ObservationContext }}
+
+## CONTEXTO DE SESSÕES ANTERIORES
+{{ .ObservationContext }}
+{{- end }}
+{{- if .WorkingMemory }}
+
+## MEMÓRIA DO USUÁRIO
+{{ .WorkingMemory }}
+{{- end }}

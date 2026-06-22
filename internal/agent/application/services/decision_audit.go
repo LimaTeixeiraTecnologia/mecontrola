@@ -88,6 +88,7 @@ type decisionContext struct {
 	pending    entities.AgentDecision
 	recorded   bool
 	conflicted bool
+	failed     bool
 }
 
 func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) decisionContext {
@@ -133,7 +134,7 @@ func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) dec
 			observability.String("message_id", in.MessageID),
 			observability.Error(insertErr),
 		)
-		return decisionContext{}
+		return decisionContext{failed: true}
 	}
 	return decisionContext{auditor: a, pending: decision, recorded: true}
 }

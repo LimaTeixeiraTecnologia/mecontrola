@@ -83,7 +83,7 @@ func (s *RunOnboardingTurnSuite) SetupTest() {
 }
 
 func (s *RunOnboardingTurnSuite) newTurn(interp IntentInterpreter, reader OnboardingStateReader, dispatcher OnboardingToolDispatcher, phases OnboardingPhaseSetter) *RunOnboardingTurn {
-	uc, err := NewRunOnboardingTurn(interp, reader, dispatcher, phases, 512, fake.NewProvider())
+	uc, err := NewRunOnboardingTurn(interp, reader, dispatcher, phases, 512, fake.NewProvider(), nil)
 	s.Require().NoError(err)
 	return uc
 }

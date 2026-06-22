@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 )
 
 type OnboardingSnapshotCard struct {
@@ -61,6 +64,11 @@ type RunOnboardingTurnResult struct {
 	Reply   string
 }
 
+type onboardingSessionReader interface {
+	GetByUserAndChannel(ctx context.Context, userID uuid.UUID, channel string) (interfaces.AgentSessionRecord, error)
+	Upsert(ctx context.Context, record interfaces.AgentSessionRecord) error
+}
+
 type RunOnboardingTurn struct {
 	interpreter IntentInterpreter
 	reader      OnboardingStateReader
@@ -69,6 +77,8 @@ type RunOnboardingTurn struct {
 	maxTokens   int
 	o11y        observability.Observability
 	turnsTotal  observability.Counter
+	turnHistory services.TurnHistory
+	sessionRepo onboardingSessionReader
 }
 
 func NewRunOnboardingTurn(
@@ -78,6 +88,7 @@ func NewRunOnboardingTurn(
 	phases OnboardingPhaseSetter,
 	maxTokens int,
 	o11y observability.Observability,
+	sessionRepo onboardingSessionReader,
 ) (*RunOnboardingTurn, error) {
 	if interpreter == nil {
 		return nil, fmt.Errorf("agent.usecase.run_onboarding_turn: interpreter is nil")
@@ -107,6 +118,7 @@ func NewRunOnboardingTurn(
 		maxTokens:   maxTokens,
 		o11y:        o11y,
 		turnsTotal:  turnsTotal,
+		sessionRepo: sessionRepo,
 	}, nil
 }
 
@@ -274,9 +286,12 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: tool not found for phase %s", phase)
 	}
 
+	llmMessages, sessionRecord, sessionFound := uc.loadOnbHistory(ctx, in.UserID, in.Channel)
+
 	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
 		SystemPrompt: onboardingDataPhasePrompt(phase, snapshot),
 		UserMessage:  strings.TrimSpace(in.Text),
+		Messages:     llmMessages,
 		Tools:        []interfaces.ToolSpec{tool},
 		ToolChoice:   "auto",
 		FreeText:     true,
@@ -285,6 +300,12 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 	if err != nil {
 		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: interpret %s: %w", phase, err)
 	}
+
+	assistantReply := sanitizeWhatsAppText(string(resp.RawJSON))
+	if assistantReply == "" && len(resp.ToolCalls) > 0 {
+		assistantReply = "[tool_call]"
+	}
+	uc.saveOnbTurn(ctx, in.UserID, in.Channel, strings.TrimSpace(in.Text), assistantReply, sessionRecord, sessionFound)
 
 	if len(resp.ToolCalls) == 0 {
 		return OnboardingToolResult{Reply: sanitizeWhatsAppText(string(resp.RawJSON)), Advance: false}, nil
@@ -305,6 +326,49 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 		}
 	}
 	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance}, nil
+}
+
+func (uc *RunOnboardingTurn) loadOnbHistory(ctx context.Context, userID uuid.UUID, channel string) ([]interfaces.ConversationMessage, interfaces.AgentSessionRecord, bool) {
+	if uc.sessionRepo == nil || userID == uuid.Nil {
+		return nil, interfaces.AgentSessionRecord{}, false
+	}
+	rec, err := uc.sessionRepo.GetByUserAndChannel(ctx, userID, channel)
+	if err != nil {
+		return nil, interfaces.AgentSessionRecord{}, false
+	}
+	turns, deErr := uc.turnHistory.Deserialize(rec.RecentTurns)
+	if deErr != nil || len(turns) == 0 {
+		return nil, rec, true
+	}
+	return uc.turnHistory.ToLLMMessages(turns), rec, true
+}
+
+func (uc *RunOnboardingTurn) saveOnbTurn(ctx context.Context, userID uuid.UUID, channel, userMsg, assistantReply string, sessionRecord interfaces.AgentSessionRecord, sessionFound bool) {
+	if uc.sessionRepo == nil || userID == uuid.Nil {
+		return
+	}
+	var existingTurns []entities.ConversationMessage
+	if sessionFound {
+		existingTurns, _ = uc.turnHistory.Deserialize(sessionRecord.RecentTurns)
+	}
+	updatedTurns := uc.turnHistory.Append(existingTurns, userMsg, assistantReply, time.Now().UTC(), 3)
+	serialized, serErr := uc.turnHistory.Serialize(updatedTurns)
+	if serErr != nil {
+		return
+	}
+	newRecord := sessionRecord
+	if !sessionFound {
+		newRecord = interfaces.AgentSessionRecord{
+			ID:            uuid.New(),
+			UserID:        userID,
+			Channel:       channel,
+			PendingAction: []byte("{}"),
+		}
+	}
+	newRecord.RecentTurns = serialized
+	newRecord.UpdatedAt = time.Now().UTC()
+	newRecord.ExpiresAt = time.Now().UTC().Add(24 * time.Hour)
+	_ = uc.sessionRepo.Upsert(ctx, newRecord)
 }
 
 func joinReplies(parts ...string) string {

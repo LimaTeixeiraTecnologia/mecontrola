@@ -758,6 +758,48 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_MissingResolver() {
 	s.NotContains(s.wa.sent[0].Text, "entendi direito", "MissingResolver não deve sugerir reformular")
 }
 
+func (s *IntentRouterSuite) TestRouteWhatsApp_GatewayFailure_OutcomePreserved() {
+	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
+		Persisted:    true,
+		AmountCents:  5800,
+		CategoryPath: "Prazeres > Delivery",
+	}}
+	s.parser.intent = s.buildLogExpense()
+	s.wa.err = errors.New("connection timeout")
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(1, s.expenses.calls)
+	s.Equal(1, s.wa.calls)
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_PolicyBlocked_WriteWithLowConfidence() {
+	s.parser.intent = s.buildLogExpense()
+	s.parser.confidence = 0.5
+
+	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
+		Parser:              s.parser,
+		Fallback:            s.fallback,
+		WhatsAppGateway:     s.wa,
+		TelegramGateway:     s.tg,
+		Location:            time.UTC,
+		PolicyMinConfidence: 0.8,
+	})
+	s.Require().NoError(err)
+
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
+
+	s.Equal(services.OutcomePolicyBlocked, result.Outcome)
+	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "Pode reescrever")
+}
+
 func TestIntentRouterSuite(t *testing.T) {
 	suite.Run(t, new(IntentRouterSuite))
 }

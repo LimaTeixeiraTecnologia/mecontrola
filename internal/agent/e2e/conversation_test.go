@@ -58,7 +58,7 @@ func TestComposeConversationalReply_E2E_FullStackOverHTTP(t *testing.T) {
 	chain, err := services.NewFallbackChain([]interfaces.LLMProvider{provider}, breaker, noop.NewProvider())
 	require.NoError(t, err)
 
-	uc, err := usecases.NewComposeConversationalReply(chain, 150, noop.NewProvider())
+	uc, err := usecases.NewComposeConversationalReply(chain, 150, noop.NewProvider(), nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	out, err := uc.Execute(context.Background(), usecases.ComposeConversationalInput{
@@ -98,7 +98,7 @@ func TestComposeConversationalReply_E2E_ProviderDownReturnsRedirect(t *testing.T
 	chain, err := services.NewFallbackChain([]interfaces.LLMProvider{provider}, breaker, noop.NewProvider())
 	require.NoError(t, err)
 
-	uc, err := usecases.NewComposeConversationalReply(chain, 150, noop.NewProvider())
+	uc, err := usecases.NewComposeConversationalReply(chain, 150, noop.NewProvider(), nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	out, err := uc.Execute(context.Background(), usecases.ComposeConversationalInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})

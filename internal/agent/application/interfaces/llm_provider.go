@@ -24,9 +24,15 @@ type ToolCall struct {
 	ArgumentsJSON map[string]any
 }
 
+type ConversationMessage struct {
+	Role    string
+	Content string
+}
+
 type LLMRequest struct {
 	SystemPrompt string
 	UserMessage  string
+	Messages     []ConversationMessage
 	JSONSchema   *JSONSchemaSpec
 	FreeText     bool
 	MaxTokens    int

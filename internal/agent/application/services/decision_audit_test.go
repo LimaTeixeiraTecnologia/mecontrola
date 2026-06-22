@@ -151,6 +151,9 @@ func TestDecisionAudit_Begin_NotRecorded_WhenInsertFails(t *testing.T) {
 	if dc.recorded {
 		t.Fatal("esperava decisionContext nao gravado quando Insert falha")
 	}
+	if !dc.failed {
+		t.Fatal("esperava decisionContext failed quando Insert falha com erro nao-conflito")
+	}
 }
 
 func TestDecisionAudit_Settle_NoopWhenNotRecorded(t *testing.T) {

@@ -235,12 +235,16 @@ func (p *Provider) Interpret(ctx context.Context, req interfaces.LLMRequest) (in
 }
 
 func (p *Provider) buildRequestBody(req interfaces.LLMRequest) chatRequest {
+	msgs := make([]chatMessage, 0, len(req.Messages)+2)
+	msgs = append(msgs, chatMessage{Role: "system", Content: req.SystemPrompt})
+	for _, m := range req.Messages {
+		msgs = append(msgs, chatMessage{Role: m.Role, Content: m.Content})
+	}
+	msgs = append(msgs, chatMessage{Role: "user", Content: req.UserMessage})
+
 	body := chatRequest{
-		Model: p.cfg.Slug.String(),
-		Messages: []chatMessage{
-			{Role: "system", Content: req.SystemPrompt},
-			{Role: "user", Content: req.UserMessage},
-		},
+		Model:       p.cfg.Slug.String(),
+		Messages:    msgs,
 		MaxTokens:   resolveMaxTokens(req.MaxTokens, p.cfg.MaxTokens),
 		Temperature: p.cfg.Temperature,
 	}

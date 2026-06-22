@@ -21,6 +21,9 @@ var personaSystemRaw string
 //go:embed budgets.system.tmpl
 var budgetsSystemRaw string
 
+//go:embed working_memory.system.tmpl
+var workingMemorySystemRaw string
+
 var ErrUserTextEmpty = errors.New("agent.application.prompting: user text is empty")
 
 var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(parseIntentUserRaw))
@@ -29,16 +32,24 @@ var personaSystemTpl = template.Must(template.New("persona.system").Parse(person
 
 var budgetsSystemTpl = template.Must(template.New("budgets.system").Parse(budgetsSystemRaw))
 
+var workingMemorySystemTpl = template.Must(template.New("working_memory.system").Parse(workingMemorySystemRaw))
+
 type ParseIntentUserData struct {
 	UserText string
 }
 
 type PersonaSystemData struct {
-	JourneyHint string
+	JourneyHint        string
+	WorkingMemory      string
+	ObservationContext string
 }
 
 type BudgetsPersonaData struct {
 	JourneyHint string
+}
+
+type WorkingMemorySystemData struct {
+	WorkingMemory string
 }
 
 func RenderSystem() (string, error) {
@@ -78,6 +89,14 @@ func RenderUser(text string) (string, error) {
 	var buf bytes.Buffer
 	if err := parseIntentUserTpl.Execute(&buf, ParseIntentUserData{UserText: trimmed}); err != nil {
 		return "", fmt.Errorf("agent.application.prompting: execute user template: %w", err)
+	}
+	return buf.String(), nil
+}
+
+func RenderWorkingMemorySystem(data WorkingMemorySystemData) (string, error) {
+	var buf bytes.Buffer
+	if err := workingMemorySystemTpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("agent.application.prompting: execute working_memory template: %w", err)
 	}
 	return buf.String(), nil
 }

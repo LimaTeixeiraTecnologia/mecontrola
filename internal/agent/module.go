@@ -110,6 +110,8 @@ type agentModuleBuilder struct {
 	sessionUoW         uow.UnitOfWork
 	decisionRepoFact   interfaces.AgentDecisionRepositoryFactory
 	decisionUoW        uow.UnitOfWork
+	wmRepo             interfaces.WorkingMemoryRepository
+	obsRepo            interfaces.ObservationRepository
 	outboxPublisher    outbox.Publisher
 }
 
@@ -186,6 +188,10 @@ func (b *agentModuleBuilder) prepareSessionStore() {
 	b.sessionUoW = uow.NewUnitOfWork(b.sessionDB)
 	b.decisionRepoFact = agentrepo.NewDecisionRepositoryFactory(b.o11y)
 	b.decisionUoW = uow.NewUnitOfWork(b.sessionDB)
+	wmFactory := agentrepo.NewWorkingMemoryRepositoryFactory(b.o11y)
+	b.wmRepo = wmFactory.WorkingMemoryRepository(b.sessionDB)
+	obsFactory := agentrepo.NewObservationRepositoryFactory(b.o11y)
+	b.obsRepo = obsFactory.ObservationRepository(b.sessionDB)
 }
 
 func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
@@ -209,6 +215,28 @@ func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
 	llmModule, err := newLLMRuntime(b.cfg.AgentConfig, b.o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: %w", err)
+	}
+	if b.sessionRepo != nil && b.wmRepo != nil && b.obsRepo != nil {
+		redactor, redactErr := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
+		if redactErr == nil {
+			obsSvc := appservices.NewObservationMemory(llmModule.Interpreter, b.obsRepo, b.o11y, 6, 3)
+			conv, convErr := usecases.NewComposeConversationalReply(
+				llmModule.Interpreter,
+				b.cfg.AgentConfig.ProseMaxTokens,
+				b.o11y,
+				b.sessionRepo,
+				b.wmRepo,
+				obsSvc,
+				redactor,
+			)
+			if convErr == nil {
+				llmModule.Conversational = conv
+			} else {
+				b.o11y.Logger().Warn(context.Background(), "agent.module.conversational_rebuild_failed", observability.Error(convErr))
+			}
+		} else {
+			b.o11y.Logger().Warn(context.Background(), "agent.module.sanitizer_create_failed", observability.Error(redactErr))
+		}
 	}
 	return llmModule, nil
 }
@@ -400,10 +428,12 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		uc.SaveBudgetSplits,
 		uc.MarkFirstTx,
 		uc.Complete,
+		uc.GetContext,
+		b.wmRepo,
 		deps.ExpenseLogger,
 	)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
-	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y)
+	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, b.sessionRepo)
 	if err != nil {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),
@@ -599,7 +629,7 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
 	}
 
-	conversational, err := usecases.NewComposeConversationalReply(chain, cfg.ProseMaxTokens, o11y)
+	conversational, err := usecases.NewComposeConversationalReply(chain, cfg.ProseMaxTokens, o11y, nil, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: conversational reply: %w", err)
 	}

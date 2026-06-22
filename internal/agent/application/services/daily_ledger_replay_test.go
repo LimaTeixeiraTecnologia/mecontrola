@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -205,14 +206,72 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				s.Equal(1, expenseCalls)
 			},
 		},
+		{
+			name: "audit insert falha por erro transitorio bloqueia execucao",
+			args: args{messageID: "wamid.fail", confidence: 0.95},
+			dependencies: dependencies{
+				repo: func() *interfacesmocks.AgentDecisionRepository {
+					s.repo.EXPECT().
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.fail").
+						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).Once()
+					s.repo.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).
+						Return(errors.New("db timeout")).Once()
+					return s.repo
+				}(),
+				factory: func() *interfacesmocks.AgentDecisionRepositoryFactory {
+					s.factory.EXPECT().AgentDecisionRepository(mock.Anything).Return(s.repo)
+					return s.factory
+				}(),
+				uow: func() *uowmocks.UnitOfWork {
+					s.uow.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
+						return fn(ctx, nil)
+					})
+					return s.uow
+				}(),
+			},
+			expect: func(result RouteResult, expenseCalls int) {
+				s.Equal(OutcomeUsecaseError, result.Outcome)
+				s.Equal(0, expenseCalls)
+			},
+		},
+		{
+			name: "settle falha apos execucao bem-sucedida nao afeta resposta",
+			args: args{messageID: "wamid.settle", confidence: 0.95},
+			dependencies: dependencies{
+				repo: func() *interfacesmocks.AgentDecisionRepository {
+					s.repo.EXPECT().
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.settle").
+						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).Once()
+					s.repo.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).Return(nil).Once()
+					s.repo.EXPECT().UpdateSettlement(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).
+						Return(errors.New("db connection lost")).Once()
+					return s.repo
+				}(),
+				factory: func() *interfacesmocks.AgentDecisionRepositoryFactory {
+					s.factory.EXPECT().AgentDecisionRepository(mock.Anything).Return(s.repo)
+					return s.factory
+				}(),
+				uow: func() *uowmocks.UnitOfWork {
+					s.uow.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
+						return fn(ctx, nil)
+					})
+					return s.uow
+				}(),
+			},
+			expect: func(result RouteResult, expenseCalls int) {
+				s.Equal(OutcomeRouted, result.Outcome)
+				s.Equal(1, expenseCalls)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
+			callsBefore := s.expenses.calls
 			agent := s.buildAgent(scenario.dependencies.factory, scenario.dependencies.uow)
 			principal := Principal{UserID: uuid.New()}
 			result := agent.dispatchWrite(s.ctx, principal, ChannelWhatsApp, scenario.args.messageID, "gastei 58 no iFood", s.writeIntent(scenario.args.confidence))
-			scenario.expect(result, s.expenses.calls)
+			scenario.expect(result, s.expenses.calls-callsBefore)
 		})
 	}
 }

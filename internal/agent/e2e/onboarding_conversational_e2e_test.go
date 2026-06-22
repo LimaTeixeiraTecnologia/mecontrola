@@ -74,7 +74,7 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, fakeOnboardingExpenseLogger{})
 
-	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y)
+	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil)
 	require.NoError(t, err)
 	return turn
 }

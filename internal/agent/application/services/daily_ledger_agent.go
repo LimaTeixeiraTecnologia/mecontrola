@@ -128,7 +128,7 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return RouteResult{Reply: parsed.DirectReply, Outcome: OutcomeRouted, Kind: intent.KindUnknown}
 	}
 
-	if isWriteKind(kind) {
+	if kind.IsWrite() {
 		return a.dispatchWrite(ctx, principal, channel, messageID, text, parsed)
 	}
 
@@ -210,6 +210,10 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 		a.record(ctx, kind.String(), channel, OutcomeReplay)
 		return RouteResult{Reply: alreadyProcessedText, Outcome: OutcomeReplay, Kind: kind}
 	}
+	if auditCtx.failed {
+		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
+	}
 
 	var result RouteResult
 	switch kind {
@@ -224,7 +228,12 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 	case intent.KindConfigureBudget:
 		result = a.routeConfigureBudget(ctx, effectiveUserID, channel, trimmed)
 	default:
-		result = a.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.unknown_write_kind",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+		)
+		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
+		result = RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
 	}
 
 	auditCtx.settle(ctx, result.Outcome == OutcomeRouted)
