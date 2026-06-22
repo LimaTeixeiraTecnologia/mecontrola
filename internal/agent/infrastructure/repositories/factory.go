@@ -16,6 +16,14 @@ func NewRepositoryFactory(o11y observability.Observability) interfaces.AgentSess
 	return &repositoryFactory{o11y: o11y}
 }
 
+func NewDecisionRepositoryFactory(o11y observability.Observability) interfaces.AgentDecisionRepositoryFactory {
+	return &repositoryFactory{o11y: o11y}
+}
+
 func (f *repositoryFactory) AgentSessionRepository(db database.DBTX) interfaces.AgentSessionRepository {
 	return postgres.NewAgentSessionRepository(f.o11y, db)
+}
+
+func (f *repositoryFactory) AgentDecisionRepository(db database.DBTX) interfaces.AgentDecisionRepository {
+	return postgres.NewAgentDecisionRepository(f.o11y, db)
 }
