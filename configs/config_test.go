@@ -1514,6 +1514,9 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.WhatsAppConfig.PhoneNumberID = "1234567890123"
 	cfg.WhatsAppConfig.AppSecret = "real-app-secret-for-testing"
 	cfg.WhatsAppConfig.VerifyToken = "real-verify-token-for-testing"
+	cfg.WhatsAppConfig.DedupHousekeepingSchedule = "@daily"
+	cfg.WhatsAppConfig.DedupHousekeepingRetentionDays = 30
+	cfg.WhatsAppConfig.DedupHousekeepingBatch = 10000
 	cfg.OnboardingConfig.TokenEncryptionKey = "testencryptionkey1234567890abcde"
 	cfg.AgentConfig.OpenRouterAPIKey = "sk-real-key-for-testing"
 	cfg.AgentConfig.PrimaryModel = "google/gemini-2.5-flash-lite"

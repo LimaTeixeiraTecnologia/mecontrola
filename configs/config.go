@@ -160,6 +160,10 @@ type WhatsAppConfig struct {
 	InvalidCountry         string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
 	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
+
+	DedupHousekeepingSchedule      string `mapstructure:"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE"`
+	DedupHousekeepingRetentionDays int    `mapstructure:"WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS"`
+	DedupHousekeepingBatch         int    `mapstructure:"WHATSAPP_DEDUP_HOUSEKEEPING_BATCH"`
 }
 
 type AgentConfig struct {
@@ -174,7 +178,6 @@ type AgentConfig struct {
 	ProseMaxTokens    int           `mapstructure:"AGENT_LLM_PROSE_MAX_TOKENS"`
 	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
 	RequestTimeout    time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
-	PromptPadTokens   int           `mapstructure:"AGENT_LLM_PROMPT_PAD_TOKENS"`
 	CircuitFailures   int           `mapstructure:"AGENT_LLM_CIRCUIT_FAILURES"`
 	CircuitWindow     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_WINDOW"`
 	CircuitCooldown   time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
@@ -501,6 +504,9 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_INVALID_COUNTRY",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
+		"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE",
+		"WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS",
+		"WHATSAPP_DEDUP_HOUSEKEEPING_BATCH",
 		"BUDGETS_PENDING_REAPER_INTERVAL",
 		"BUDGETS_PENDING_TTL_HOURS",
 		"BUDGETS_ABANDONED_DRAFT_CRON",
@@ -883,6 +889,28 @@ func (c *Config) validateProductionWhatsApp() []string {
 			}
 		}
 	}
+
+	if c.WhatsAppConfig.DedupHousekeepingRetentionDays < 1 || c.WhatsAppConfig.DedupHousekeepingRetentionDays > 3650 {
+		errs = append(errs, fmt.Sprintf(
+			"WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS inválido %d: deve estar no intervalo [1..3650]",
+			c.WhatsAppConfig.DedupHousekeepingRetentionDays,
+		))
+	}
+	if c.WhatsAppConfig.DedupHousekeepingBatch < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"WHATSAPP_DEDUP_HOUSEKEEPING_BATCH inválido %d: deve ser maior que zero",
+			c.WhatsAppConfig.DedupHousekeepingBatch,
+		))
+	}
+	if c.WhatsAppConfig.DedupHousekeepingSchedule != "" {
+		if _, err := cron.ParseStandard(c.WhatsAppConfig.DedupHousekeepingSchedule); err != nil {
+			errs = append(errs, fmt.Sprintf(
+				"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE inválido %q: %v",
+				c.WhatsAppConfig.DedupHousekeepingSchedule, err,
+			))
+		}
+	}
+
 	return errs
 }
 
@@ -1154,20 +1182,22 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
+	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE", "@daily")
+	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS", 30)
+	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_BATCH", 10000)
 }
 
 func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
 	l.v.SetDefault("AGENT_LLM_HTTP_REFERER", "https://mecontrola.app")
 	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
-	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
-	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "openai/gpt-5-nano,mistralai/mistral-small-3.2-24b-instruct,anthropic/claude-haiku-4.5")
+	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "openai/gpt-5-nano")
+	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "anthropic/claude-haiku-4.5")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
 	l.v.SetDefault("AGENT_LLM_MAX_INPUT_CHARS", 2000)
 	l.v.SetDefault("AGENT_LLM_PROSE_MAX_TOKENS", 200)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
 	l.v.SetDefault("AGENT_LLM_REQUEST_TIMEOUT", 8*time.Second)
-	l.v.SetDefault("AGENT_LLM_PROMPT_PAD_TOKENS", 1100)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_FAILURES", 5)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_WINDOW", 30*time.Second)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_COOLDOWN", 60*time.Second)
