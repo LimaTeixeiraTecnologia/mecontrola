@@ -23,15 +23,8 @@ import (
 	jobhandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/stringsutil"
-	tgdedup "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dedup/postgres"
-	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
-	tghandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/handlers"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
-	tgpayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
 	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/ratelimit"
@@ -47,7 +40,6 @@ type EventHandlerRegistration struct {
 type IdentityModule struct {
 	RepositoryFactory          interfaces.RepositoryFactory
 	UserRouter                 *server.UserRouter
-	TelegramWebhookRouter      *server.TelegramWebhookRouter
 	UpsertUserUseCase          *usecases.UpsertUserByWhatsApp
 	FindUserByIDUseCase        *usecases.FindUserByID
 	FindUserByWhatsApp         *usecases.FindUserByWhatsApp
@@ -68,14 +60,6 @@ type IdentityModule struct {
 	WhatsAppMessageStatusRepo  status.MessageStatusRepository
 	OutboxPublisher            outbox.Publisher
 	EventHandlers              []EventHandlerRegistration
-	telegramRouterBuilder      *identityModuleBuilder
-}
-
-func (m IdentityModule) BuildTelegramWebhookRouter(agentRoute tgdispatcher.AgentRoute, onboardingRoute tgdispatcher.OnboardingRoute) (*server.TelegramWebhookRouter, error) {
-	if m.telegramRouterBuilder == nil {
-		return nil, nil
-	}
-	return m.telegramRouterBuilder.buildTelegramWebhookRouter(m, agentRoute, onboardingRoute)
 }
 
 type identityModuleBuilder struct {
@@ -184,89 +168,11 @@ func (b *identityModuleBuilder) build() (IdentityModule, error) { //nolint:reviv
 		},
 	}
 
-	module.telegramRouterBuilder = b
 	return module, nil
 }
 
 func newIdentityPublisher(db database.DBTX, outboxFactory outbox.OutboxRepositoryFactory, cfg configs.OutboxConfig, o11y observability.Observability) outbox.Publisher {
 	return &identityPublisher{db: db, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
-}
-
-func (b *identityModuleBuilder) buildTelegramWebhookRouter(module IdentityModule, agentRouteOverride tgdispatcher.AgentRoute, onboardingRouteOverride tgdispatcher.OnboardingRoute) (*server.TelegramWebhookRouter, error) {
-	if !b.cfg.TelegramConfig.Enabled {
-		return nil, nil
-	}
-
-	gateway, err := outbound.NewSharedGateway(b.o11y, outbound.FactoryConfig{
-		APIBaseURL: b.cfg.TelegramConfig.APIBaseURL,
-		BotToken:   b.cfg.TelegramConfig.BotToken,
-		Timeout:    b.cfg.TelegramConfig.OutboundTimeout,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("identity: compose telegram webhook router: %w", err)
-	}
-	dedupRepo := tgdedup.NewUpdateRepository(b.o11y, b.db)
-	onboardingReply := b.cfg.TelegramConfig.OnboardingFallback
-
-	stubOnboardingRoute := func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
-		if onboardingReply == "" {
-			return tgdispatcher.OutcomeFallback
-		}
-		if err := gateway.SendTextMessage(ctx, msg.ChatID, onboardingReply); err != nil {
-			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.onboarding_route_failed",
-				observability.Error(err),
-			)
-		}
-		return tgdispatcher.OutcomeFallback
-	}
-	onboardingRoute := stubOnboardingRoute
-	if onboardingRouteOverride != nil {
-		onboardingRoute = onboardingRouteOverride
-	}
-
-	agentRoute := agentRouteOverride
-	if agentRoute == nil {
-		agentRoute = func(_ context.Context, _ tgpayload.Message) tgdispatcher.RouteOutcome {
-			return tgdispatcher.OutcomeAgent
-		}
-	}
-
-	dispatcher := tgdispatcher.New(
-		b.cfg.TelegramConfig.BotID,
-		dedupRepo,
-		module.ResolvePrincipalByIdentity,
-		module.WhatsAppLimiter,
-		module.OutboxPublisher,
-		onboardingRoute,
-		agentRoute,
-		b.o11y,
-	)
-
-	inboundHandler := tghandlers.NewInboundHandler(dispatcher, b.o11y)
-	rateLimiter := middleware.NewRateLimiter(
-		b.cfg.TelegramConfig.WebhookRateLimitPerMin,
-		b.cfg.TelegramConfig.WebhookRateLimitBurst,
-		stringsutil.ParseCSV(b.cfg.OnboardingConfig.TrustedProxies),
-	)
-	rateLimitExceededTotal := b.o11y.Metrics().Counter(
-		"telegram_webhook_rate_limit_exceeded_total",
-		"Total de requisicoes bloqueadas pelo rate limit do webhook Telegram",
-		"1",
-	)
-
-	webhookPath := b.cfg.TelegramConfig.WebhookPath
-	if webhookPath == "" {
-		webhookPath = "/api/v1/channels/telegram/webhook"
-	}
-
-	return server.NewTelegramWebhookRouter(
-		inboundHandler,
-		b.cfg.TelegramConfig.SecretToken,
-		b.cfg.TelegramConfig.SecretTokenNext,
-		webhookPath,
-		rateLimiter.Middleware,
-		func() { rateLimitExceededTotal.Increment(context.Background()) },
-	), nil
 }
 
 func NewRequireGatewayAuth(cfg configs.IdentityConfig, failureUseCase *usecases.RecordGatewayAuthFailure, o11y observability.Observability) (func(http.Handler) http.Handler, error) {

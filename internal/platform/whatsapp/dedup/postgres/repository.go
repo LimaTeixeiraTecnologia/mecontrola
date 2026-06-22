@@ -56,10 +56,11 @@ func (r *messageRepository) DeleteProcessedBefore(ctx context.Context, before ti
 
 	const q = `
 		DELETE FROM mecontrola.channel_processed_messages
-		 WHERE ctid IN (
-			SELECT ctid
+		 WHERE (channel, message_id) IN (
+			SELECT channel, message_id
 			  FROM mecontrola.channel_processed_messages
 			 WHERE channel = $1 AND processed_at <= $2
+			 ORDER BY processed_at
 			 LIMIT $3
 		)`
 

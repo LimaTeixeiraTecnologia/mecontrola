@@ -29,7 +29,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
-	onboardingtelegram "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/telegram"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/health"
 	openapidocs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/openapi"
@@ -253,19 +252,16 @@ func Run() error {
 	srv.RegisterRouters(waWebhookRouter)
 	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
 
-	if cfg.TelegramConfig.Enabled {
-		telegramOnboardingRoute := onboardingtelegram.BuildOnboardingRoute(o11y, cfg.TelegramConfig, onboardingModule.TelegramMessageProcessor)
-		tgRouter, tgErr := identityModule.BuildTelegramWebhookRouter(agentModule.TelegramAgentRoute, telegramOnboardingRoute)
-		if tgErr != nil {
-			return fmt.Errorf("run: compor telegram webhook router: %w", tgErr)
-		}
-		if tgRouter != nil {
-			srv.RegisterRouters(tgRouter)
-			o11y.Logger().Info(ctx, "telegram webhook router wired",
-				observability.String("path", cfg.TelegramConfig.WebhookPath),
-				observability.Int64("bot_id", cfg.TelegramConfig.BotID),
-			)
-		}
+	tgRouter, tgErr := composeTelegramWebhookRouter(cfg, o11y, db, identityModule, onboardingModule, agentModule)
+	if tgErr != nil {
+		return fmt.Errorf("run: compor telegram webhook router: %w", tgErr)
+	}
+	if tgRouter != nil {
+		srv.RegisterRouters(tgRouter)
+		o11y.Logger().Info(ctx, "telegram webhook router wired",
+			observability.String("path", cfg.TelegramConfig.WebhookPath),
+			observability.Int64("bot_id", cfg.TelegramConfig.BotID),
+		)
 	}
 
 	srv.RegisterRouters(health.NewReadinessRouter(ctx))

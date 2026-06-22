@@ -50,6 +50,11 @@ func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) dec
 		return decisionContext{}
 	}
 	if in.LLMModel == "" || in.PromptSHA256 == "" || in.MessageID == "" {
+		a.o11y.Logger().Warn(ctx, "agent.decision_audit.begin_skipped",
+			observability.String("message_id", in.MessageID),
+			observability.String("llm_model", in.LLMModel),
+			observability.String("reason", "incomplete_parsed_intent"),
+		)
 		return decisionContext{}
 	}
 
@@ -61,7 +66,7 @@ func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) dec
 		IntentKind:       in.IntentKind,
 		PromptSHA256:     in.PromptSHA256,
 		LLMModel:         in.LLMModel,
-		RedactedResponse: a.redactResponse(in.DirectReply, in.RawResponse),
+		RedactedResponse: a.redactResponse(ctx, in.DirectReply, in.RawResponse),
 		TraceID:          in.TraceID,
 		DecidedAction:    in.IntentKind,
 		CreatedAt:        time.Now().UTC(),
@@ -118,7 +123,7 @@ func (a *decisionAuditor) settle(ctx context.Context, pending entities.AgentDeci
 	}
 }
 
-func (a *decisionAuditor) redactResponse(directReply string, raw []byte) json.RawMessage {
+func (a *decisionAuditor) redactResponse(ctx context.Context, directReply string, raw []byte) json.RawMessage {
 	payload := directReply
 	if payload == "" {
 		payload = string(raw)
@@ -127,9 +132,14 @@ func (a *decisionAuditor) redactResponse(directReply string, raw []byte) json.Ra
 		return json.RawMessage(`{}`)
 	}
 	if a.redactor != nil {
-		if cleaned, cleanErr := a.redactor.Clean(payload); cleanErr == nil {
-			payload = cleaned
+		cleaned, cleanErr := a.redactor.Clean(payload)
+		if cleanErr != nil {
+			a.o11y.Logger().Warn(ctx, "agent.decision_audit.redactor_failed",
+				observability.Error(cleanErr),
+			)
+			return json.RawMessage(`{}`)
 		}
+		payload = cleaned
 	}
 	encoded, err := json.Marshal(struct {
 		Redacted string `json:"redacted"`
