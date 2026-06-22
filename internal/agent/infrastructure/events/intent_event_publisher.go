@@ -40,6 +40,7 @@ type intentEventPayload struct {
 	LatencyMS        int64  `json:"latency_ms,omitempty"`
 	PromptTokens     int    `json:"prompt_tokens,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty"`
+	TraceID          string `json:"trace_id,omitempty"`
 	OccurredAt       string `json:"occurred_at"`
 }
 
@@ -69,6 +70,7 @@ func (p *IntentEventPublisher) publish(ctx context.Context, ev interfaces.Intent
 		LatencyMS:        ev.LatencyMS,
 		PromptTokens:     ev.PromptTokens,
 		CompletionTokens: ev.CompletionTokens,
+		TraceID:          ev.TraceID,
 		OccurredAt:       occurredAt.Format(time.RFC3339),
 	}
 	raw, err := json.Marshal(payload)

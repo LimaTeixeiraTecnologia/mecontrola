@@ -12,6 +12,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
@@ -100,6 +101,8 @@ type agentModuleBuilder struct {
 	sessionRepo        interfaces.AgentSessionRepository
 	sessionRepoFact    interfaces.AgentSessionRepositoryFactory
 	sessionUoW         uow.UnitOfWork
+	decisionRepoFact   interfaces.AgentDecisionRepositoryFactory
+	decisionUoW        uow.UnitOfWork
 }
 
 func NewAgentModule(
@@ -173,6 +176,8 @@ func (b *agentModuleBuilder) prepareSessionStore() {
 	b.sessionRepoFact = factory
 	b.sessionRepo = factory.AgentSessionRepository(b.sessionDB)
 	b.sessionUoW = uow.NewUnitOfWork(b.sessionDB)
+	b.decisionRepoFact = agentrepo.NewDecisionRepositoryFactory(b.o11y)
+	b.decisionUoW = uow.NewUnitOfWork(b.sessionDB)
 }
 
 func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
@@ -221,6 +226,7 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	b.attachRecurring(&deps)
 	b.attachBudgetConfigSession(&deps, llmModule)
 	b.attachOnboardingLLM(&deps, llmModule)
+	b.attachDecisionAudit(&deps)
 	deps.TelegramGateway = b.buildTelegramGateway()
 
 	router, err := appservices.NewIntentRouter(b.o11y, deps)
@@ -341,6 +347,24 @@ func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentR
 		b.budgetsModule.ActivateBudgetUC,
 	)
 	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(b.sessionRepo, b.sessionUoW)
+}
+
+func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterDeps) {
+	if b.decisionRepoFact == nil || b.decisionUoW == nil {
+		return
+	}
+	deps.Decision = appservices.DecisionAuditDeps{
+		Factory: b.decisionRepoFact,
+		UoW:     b.decisionUoW,
+	}
+	redactor, err := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
+	if err != nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.decision_audit_redactor_failed",
+			observability.Error(err),
+		)
+		return
+	}
+	deps.Redactor = redactor
 }
 
 func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
@@ -473,7 +497,13 @@ func (a *intentParserAdapter) Parse(ctx context.Context, userID uuid.UUID, text 
 	if err != nil {
 		return appservices.ParsedIntent{}, err
 	}
-	return appservices.ParsedIntent{Intent: out.Intent, Raw: out.Raw, DirectReply: out.DirectReply}, nil
+	return appservices.ParsedIntent{
+		Intent:       out.Intent,
+		Raw:          out.Raw,
+		DirectReply:  out.DirectReply,
+		LLMModel:     out.LLMModel,
+		PromptSHA256: out.PromptSHA256,
+	}, nil
 }
 
 type fallbackAdapter struct {

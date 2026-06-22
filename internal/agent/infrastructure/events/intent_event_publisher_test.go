@@ -44,6 +44,7 @@ func buildEvent() interfaces.IntentEvent {
 		LatencyMS:        850,
 		PromptTokens:     720,
 		CompletionTokens: 80,
+		TraceID:          "0af7651916cd43dd8448eb211c80319c",
 		OccurredAt:       time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
 	}
 }
@@ -73,6 +74,21 @@ func TestIntentEventPublisher_PublishExecuted_EmitsCorrectShape(t *testing.T) {
 	assert.Equal(t, float64(850), payload["latency_ms"])
 	assert.Equal(t, float64(720), payload["prompt_tokens"])
 	assert.Equal(t, float64(80), payload["completion_tokens"])
+	assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", payload["trace_id"])
+}
+
+func TestIntentEventPublisher_EmptyTraceID_IsOmitted(t *testing.T) {
+	pub := &capturePublisher{}
+	sut := events.NewIntentEventPublisher(pub, noop.NewProvider())
+
+	ev := buildEvent()
+	ev.TraceID = ""
+	require.NoError(t, sut.PublishExecuted(context.Background(), ev))
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(pub.got.Payload, &payload))
+	_, present := payload["trace_id"]
+	assert.False(t, present)
 }
 
 func TestIntentEventPublisher_PublishRejected_EmitsCorrectType(t *testing.T) {

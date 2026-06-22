@@ -22,6 +22,7 @@ type IntentEvent struct {
 	LatencyMS        int64
 	PromptTokens     int
 	CompletionTokens int
+	TraceID          string
 	OccurredAt       time.Time
 }
 

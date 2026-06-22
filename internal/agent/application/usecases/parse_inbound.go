@@ -2,6 +2,8 @@ package usecases
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,9 +28,11 @@ type ParseInboundInput struct {
 }
 
 type ParseInboundOutput struct {
-	Intent      intent.Intent
-	Raw         []byte
-	DirectReply string
+	Intent       intent.Intent
+	Raw          []byte
+	DirectReply  string
+	LLMModel     string
+	PromptSHA256 string
 }
 
 type ParseInbound struct {
@@ -98,6 +102,8 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: sanitize: %w", err)
 	}
 
+	promptDigest := digestPrompt(trimmed)
+
 	system, err := prompting.RenderSystem()
 	if err != nil {
 		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render system: %w", err)
@@ -119,17 +125,18 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		if fbErr != nil {
 			return ParseInboundOutput{}, errors.Join(fmt.Errorf("agent.usecase.parse_inbound: provider: %w", err), fbErr)
 		}
-		return ParseInboundOutput{Intent: fallback}, nil
+		return ParseInboundOutput{Intent: fallback, PromptSHA256: promptDigest}, nil
 	}
 
-	return uc.fromContent(ctx, resp, trimmed)
+	return uc.fromContent(ctx, resp, trimmed, promptDigest)
 }
 
-func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed string) (ParseInboundOutput, error) {
+func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed, promptDigest string) (ParseInboundOutput, error) {
+	llmModel := resp.Provider.String()
 	parsed, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
 	if parseErr == nil {
 		uc.recordOutcome(ctx, parsed.Kind(), outcomeOK)
-		return ParseInboundOutput{Intent: parsed, Raw: resp.RawJSON}, nil
+		return ParseInboundOutput{Intent: parsed, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
 	}
 
 	directReply := strings.TrimSpace(string(resp.RawJSON))
@@ -139,7 +146,7 @@ func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResp
 		if fbErr != nil {
 			return ParseInboundOutput{}, fbErr
 		}
-		return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON, DirectReply: directReply}, nil
+		return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON, DirectReply: directReply, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
 	}
 
 	uc.recordOutcome(ctx, intent.KindUnknown, parseErr.Outcome)
@@ -148,7 +155,12 @@ func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResp
 	if fbErr != nil {
 		return ParseInboundOutput{}, errors.Join(parseErr, fbErr)
 	}
-	return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON}, nil
+	return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
+}
+
+func digestPrompt(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
 
 func (uc *ParseInbound) recordOutcome(ctx context.Context, kind intent.Kind, outcome string) {
