@@ -1,0 +1,4154 @@
+{
+  "info": {
+    "_postman_id": "mecontrola-api-21313388-f3f9-4b6a-9f91-569ecabf03bb",
+    "name": "me controla api [completo]",
+    "description": "Colecao completa da API MeControla com todos os endpoints e jornadas.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const resolve = (v) => pm.variables.replaceIn(v || '');",
+          "const upsertHeader = (key, value) => { if (value === undefined || value === null || value === '') return; if (pm.request.headers.has(key)) { pm.request.headers.upsert({ key, value }); } else { pm.request.headers.add({ key, value }); } };",
+          "const rawUrl = resolve(pm.request.url.toString());",
+          "const rawBody = pm.request.body && pm.request.body.mode === 'raw' ? resolve(pm.request.body.raw) : '';",
+          "const gatewaySecret = pm.environment.get('gateway_secret');",
+          "const userId = pm.environment.get('user_id');",
+          "if (gatewaySecret && userId && gatewaySecret.length >= 64) {",
+          "  const timestamp = String(Math.floor(Date.now() / 1000));",
+          "  pm.environment.set('gateway_timestamp', timestamp);",
+          "  const secretBytes = CryptoJS.enc.Hex.parse(gatewaySecret);",
+          "  const message = userId.toLowerCase() + '.' + timestamp;",
+          "  const sig = CryptoJS.HmacSHA256(message, secretBytes).toString(CryptoJS.enc.Hex);",
+          "  pm.environment.set('gateway_auth', sig);",
+          "}",
+          "if (rawUrl.includes('/api/v1/billing/webhooks/kiwify')) {",
+          "  const secret = pm.environment.get('kiwify_webhook_secret');",
+          "  if (secret) {",
+          "    const sig = CryptoJS.HmacSHA1(rawBody, secret).toString(CryptoJS.enc.Hex);",
+          "    pm.environment.set('kiwify_signature', sig);",
+          "    upsertHeader('X-Kiwify-Signature', sig);",
+          "  }",
+          "}",
+          "if (rawUrl.includes('/api/v1/whatsapp/inbound')) {",
+          "  const secret = pm.environment.get('meta_app_secret');",
+          "  if (secret) {",
+          "    const sig = CryptoJS.HmacSHA256(rawBody, secret).toString(CryptoJS.enc.Hex);",
+          "    const headerValue = 'sha256=' + sig;",
+          "    pm.environment.set('meta_signature', headerValue);",
+          "    upsertHeader('X-Hub-Signature-256', headerValue);",
+          "  }",
+          "}",
+          "if (rawUrl.includes(resolve('{{telegram_webhook_path}}'))) {",
+          "  const token = pm.environment.get('telegram_secret_token');",
+          "  if (token) upsertHeader('X-Telegram-Bot-Api-Secret-Token', token);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "card_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_purchase_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recurring_template_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subcategory_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_version",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_purchase_version",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recurring_template_version",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_version",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "delete_card_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_etag",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "budget_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "budget_state",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "onboarding_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "funnel_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "onboarding_checkout_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wa_me_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "telegram_deep_link",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "kiwify_signature",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "meta_signature",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "telegram_webhook_path",
+      "value": "/api/v1/channels/telegram/webhook",
+      "type": "string"
+    },
+    {
+      "key": "invoice_ref_month",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expected_ready_to_activate",
+      "value": "false",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 — Health & Readiness",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/readiness",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "readiness"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /healthz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /livez",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/livez",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "livez"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 — Onboarding",
+      "item": [
+        {
+          "name": "POST /api/v1/onboarding/checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_id\": \"monthly\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "checkout"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Tem checkout_url\", () => pm.expect(pm.response.json()).to.have.property(\"checkout_url\"));",
+                  "const body = pm.response.json();",
+                  "if (body.checkout_url) {",
+                  "  pm.environment.set(\"onboarding_checkout_url\", body.checkout_url);",
+                  "  const url = new URL(body.checkout_url);",
+                  "  const token = url.searchParams.get(\"sck\") || \"\";",
+                  "  pm.test(\"checkout_url contem sck\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
+                  "  pm.environment.set(\"onboarding_token\", token);",
+                  "  pm.environment.set(\"funnel_token\", token);",
+                  "}",
+                  "pm.environment.set(\"expected_ready_to_activate\", \"false\");",
+                  "pm.environment.unset(\"wa_me_url\");",
+                  "pm.environment.unset(\"telegram_deep_link\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /api/v1/onboarding/checkout",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://localhost:4321"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "checkout"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/onboarding/tokens/:token/state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "tokens",
+                "{{onboarding_token}}",
+                "state"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem ready_to_activate\", () => pm.expect(pm.response.json()).to.have.property(\"ready_to_activate\"));",
+                  "pm.test(\"ready_to_activate é boolean\", () => pm.expect(pm.response.json().ready_to_activate).to.be.a(\"boolean\"));",
+                  "const body = pm.response.json();",
+                  "const expectedRaw = (pm.environment.get(\"expected_ready_to_activate\") || \"\").trim().toLowerCase();",
+                  "if (expectedRaw === \"true\" || expectedRaw === \"false\") {",
+                  "  const expected = expectedRaw === \"true\";",
+                  "  pm.test(`ready_to_activate=${expected}`, () => pm.expect(body.ready_to_activate).to.equal(expected));",
+                  "}",
+                  "if (body.wa_me_url) pm.environment.set(\"wa_me_url\", body.wa_me_url);",
+                  "if (body.telegram_deep_link) pm.environment.set(\"telegram_deep_link\", body.telegram_deep_link);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /api/v1/onboarding/tokens/{{onboarding_token}}/state",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://localhost:4321"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "tokens",
+                "{{onboarding_token}}",
+                "state"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 — Identity",
+      "item": [
+        {
+          "name": "POST /api/v1/identity/users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"whatsapp\": \"{{user_whatsapp}}\",\n  \"email\": \"{{user_email}}\",\n  \"display_name\": \"{{user_display_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/identity/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity",
+                "users"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"Tem id\", () => pm.expect(body).to.have.property(\"id\"));",
+                  "if (body.id) pm.environment.set(\"user_id\", body.id);",
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 — Categories",
+      "item": [
+        {
+          "name": "GET /api/v1/categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories?kind=expense&include_deprecated=false",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "expense"
+                },
+                {
+                  "key": "parent_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "include_deprecated",
+                  "value": "false"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));",
+                  "if (pm.response.code === 200) {",
+                  "  const cats = pm.response.json().categories;",
+                  "  if (cats && cats.length > 0) {",
+                  "    pm.collectionVariables.set(\"category_id\", cats[0].id);",
+                  "    const subs = cats[0].subcategories;",
+                  "    const subId = (subs && subs.length > 0) ? subs[0].id : cats[0].id;",
+                  "    pm.collectionVariables.set(\"subcategory_id\", subId);",
+                  "  }",
+                  "}",
+                  "const body = pm.response.json();",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));",
+                  "const categories = body.categories || [];",
+                  "const root = categories.find((c) => c.kind === \"expense\" && Array.isArray(c.subcategories) && c.subcategories.length > 0) || categories[0];",
+                  "if (root && root.id) pm.environment.set(\"category_id\", root.id);",
+                  "const sub = root && Array.isArray(root.subcategories) ? root.subcategories[0] : null;",
+                  "if (sub && sub.id) pm.environment.set(\"subcategory_id\", sub.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/categories/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/:id?include_deprecated=false",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{category_id}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "include_deprecated",
+                  "value": "false"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));",
+                  "if (body.id) pm.environment.set(\"category_id\", body.id);",
+                  "if (Array.isArray(body.subcategories) && body.subcategories[0] && body.subcategories[0].id) pm.environment.set(\"subcategory_id\", body.subcategories[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/category-dictionary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "If-None-Match",
+                "value": "{{category_etag}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/category-dictionary?kind=expense&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "category-dictionary"
+              ],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "kind",
+                  "value": "expense"
+                },
+                {
+                  "key": "signal_type",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 ou 304\", () => pm.expect(pm.response.code).to.be.oneOf([200, 304]));",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/category-dictionary/search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "If-None-Match",
+                "value": "{{category_etag}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/category-dictionary/search?q=aliment&kind=expense",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "category-dictionary",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "aliment"
+                },
+                {
+                  "key": "kind",
+                  "value": "expense"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem result\", () => pm.expect(pm.response.json()).to.have.property(\"result\"));",
+                  "if (pm.response.headers.has(\"ETag\")) pm.environment.set(\"category_etag\", pm.response.headers.get(\"ETag\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 — Cards",
+      "item": [
+        {
+          "name": "POST /api/v1/cards",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nubank\",\n  \"nickname\": \"Nu pessoal\",\n  \"closing_day\": 3,\n  \"due_day\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
+                  "pm.collectionVariables.set(\"card_id\", pm.response.json().id);",
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"card_id\", body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/cards",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards"
+              ],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem items\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : null;",
+                  "if (item && item.id && !pm.environment.get(\"card_id\")) pm.environment.set(\"card_id\", item.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/cards/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_id\", body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/v1/cards/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nubank Updated\",\n  \"nickname\": \"Nu\",\n  \"closing_day\": 5,\n  \"due_day\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_id\", body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/cards/:id/limit",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:id/limit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":id",
+                "limit"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_id}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit_cents\": 1500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Tem id\", () => pm.expect(body).to.have.property(\"id\"));",
+                  "if (body.id) pm.environment.set(\"card_id\", body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/cards/:id/invoices (query: for=YYYY-MM-DD)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:id/invoices?for=2026-06-15",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":id",
+                "invoices"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_id}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "for",
+                  "value": "2026-06-15"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/cards (auxiliar para deletar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aux Delete\",\n  \"nickname\": \"aux-del\",\n  \"closing_day\": 10,\n  \"due_day\": 17\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"delete_card_id\", body.id);",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/cards/:id (cartão auxiliar)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{delete_card_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 — Transactions",
+      "item": [
+        {
+          "name": "POST /api/v1/transactions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 5000,\n  \"description\": \"Almoço\",\n  \"category_id\": \"{{category_id}}\",\n  \"subcategory_id\": \"{{subcategory_id}}\",\n  \"occurred_at\": \"2026-06-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"transaction_id\", body.id);",
+                  "if (body.version !== undefined) pm.environment.set(\"transaction_version\", String(body.version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions?ref_month={{ref_month}}&limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "ref_month",
+                  "value": "{{ref_month}}"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : (Array.isArray(body.transactions) ? body.transactions[0] : null);",
+                  "if (item && item.id && !pm.environment.get(\"transaction_id\")) pm.environment.set(\"transaction_id\", item.id);",
+                  "if (item && item.version !== undefined && !pm.environment.get(\"transaction_version\")) pm.environment.set(\"transaction_version\", String(item.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/transactions/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{transaction_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"transaction_id\", body.id); if (body.version !== undefined) pm.environment.set(\"transaction_version\", String(body.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/transactions/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 6000,\n  \"description\": \"Almoço atualizado\",\n  \"category_id\": \"{{category_id}}\",\n  \"subcategory_id\": \"{{subcategory_id}}\",\n  \"occurred_at\": \"2026-06-15\",\n  \"version\": {{transaction_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{transaction_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"transaction_version\", pm.response.json().version);",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"transaction_id\", body.id); if (body.version !== undefined) pm.environment.set(\"transaction_version\", String(body.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/transactions/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{transaction_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{transaction_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 — Card Purchases",
+      "item": [
+        {
+          "name": "POST /api/v1/card-purchases",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"{{card_id}}\",\n  \"total_amount_cents\": 120000,\n  \"installments_total\": 3,\n  \"description\": \"TV 55 polegadas\",\n  \"category_id\": \"{{category_id}}\",\n  \"purchased_at\": \"2026-06-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/card-purchases",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "card-purchases"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"card_purchase_id\", body.id);",
+                  "if (body.version !== undefined) pm.environment.set(\"card_purchase_version\", String(body.version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "if (Array.isArray(body.ref_months_affected) && body.ref_months_affected[0]) pm.environment.set(\"invoice_ref_month\", body.ref_months_affected[0]);",
+                  "if (Array.isArray(body.items) && body.items[0] && body.items[0].ref_month) pm.environment.set(\"invoice_ref_month\", body.items[0].ref_month);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/card-purchases",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/card-purchases?ref_month={{ref_month}}&limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "card-purchases"
+              ],
+              "query": [
+                {
+                  "key": "card_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "ref_month",
+                  "value": "{{ref_month}}"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : (Array.isArray(body.card_purchases) ? body.card_purchases[0] : null);",
+                  "if (item && item.id && !pm.environment.get(\"card_purchase_id\")) pm.environment.set(\"card_purchase_id\", item.id);",
+                  "if (item && item.version !== undefined && !pm.environment.get(\"card_purchase_version\")) pm.environment.set(\"card_purchase_version\", String(item.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/card-purchases/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/card-purchases/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "card-purchases",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_purchase_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_purchase_id\", body.id); if (body.version !== undefined) pm.environment.set(\"card_purchase_version\", String(body.version));",
+                  "if (Array.isArray(body.ref_months_affected) && body.ref_months_affected[0]) pm.environment.set(\"invoice_ref_month\", body.ref_months_affected[0]);",
+                  "if (Array.isArray(body.items) && body.items[0] && body.items[0].ref_month) pm.environment.set(\"invoice_ref_month\", body.items[0].ref_month);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/card-purchases/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"total_amount_cents\": 120000,\n  \"installments_total\": 3,\n  \"description\": \"TV 55\\\" Samsung\",\n  \"category_id\": \"{{category_id}}\",\n  \"purchased_at\": \"2026-06-15\",\n  \"version\": {{card_purchase_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/card-purchases/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "card-purchases",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_purchase_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"card_purchase_version\", pm.response.json().version);",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"card_purchase_id\", body.id); if (body.version !== undefined) pm.environment.set(\"card_purchase_version\", String(body.version));",
+                  "if (Array.isArray(body.ref_months_affected) && body.ref_months_affected[0]) pm.environment.set(\"invoice_ref_month\", body.ref_months_affected[0]);",
+                  "if (Array.isArray(body.items) && body.items[0] && body.items[0].ref_month) pm.environment.set(\"invoice_ref_month\", body.items[0].ref_month);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 — Card Invoice",
+      "item": [
+        {
+          "name": "GET /api/v1/cards/:card_id/invoices/:ref_month",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/:card_id/invoices/{{invoice_ref_month}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                ":card_id",
+                "invoices",
+                "{{invoice_ref_month}}"
+              ],
+              "variable": [
+                {
+                  "key": "card_id",
+                  "value": "{{card_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 — Recurring Templates",
+      "item": [
+        {
+          "name": "POST /api/v1/recurring-templates",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 9900,\n  \"description\": \"Netflix\",\n  \"category_id\": \"{{category_id}}\",\n  \"frequency\": \"monthly\",\n  \"day_of_month\": 15,\n  \"installments_total\": 0,\n  \"started_at\": \"2026-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/recurring-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recurring-templates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set(\"recurring_template_id\", body.id);",
+                  "if (body.version !== undefined) pm.environment.set(\"recurring_template_version\", String(body.version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/recurring-templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/recurring-templates?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recurring-templates"
+              ],
+              "query": [
+                {
+                  "key": "active",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const item = Array.isArray(body.items) ? body.items[0] : (Array.isArray(body.recurring_templates) ? body.recurring_templates[0] : null);",
+                  "if (item && item.id && !pm.environment.get(\"recurring_template_id\")) pm.environment.set(\"recurring_template_id\", item.id);",
+                  "if (item && item.version !== undefined && !pm.environment.get(\"recurring_template_version\")) pm.environment.set(\"recurring_template_version\", String(item.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/recurring-templates/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/recurring-templates/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recurring-templates",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{recurring_template_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"recurring_template_id\", body.id); if (body.version !== undefined) pm.environment.set(\"recurring_template_version\", String(body.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/recurring-templates/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"direction\": \"outcome\",\n  \"payment_method\": \"pix\",\n  \"amount_cents\": 10900,\n  \"description\": \"Netflix premium\",\n  \"category_id\": \"{{category_id}}\",\n  \"frequency\": \"monthly\",\n  \"day_of_month\": 15,\n  \"installments_total\": 0,\n  \"started_at\": \"2026-01-01\",\n  \"version\": {{recurring_template_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/recurring-templates/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recurring-templates",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{recurring_template_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"recurring_template_version\", pm.response.json().version);",
+                  "const body = pm.response.json(); if (body.id) pm.environment.set(\"recurring_template_id\", body.id); if (body.version !== undefined) pm.environment.set(\"recurring_template_version\", String(body.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/recurring-templates/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{recurring_template_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/recurring-templates/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recurring-templates",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{recurring_template_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10 — Monthly Summary",
+      "item": [
+        {
+          "name": "GET /api/v1/months/:ref_month",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/months/:ref_month",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "months",
+                ":ref_month"
+              ],
+              "variable": [
+                {
+                  "key": "ref_month",
+                  "value": "{{ref_month}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem ref_month\", () => pm.expect(pm.response.json()).to.have.property(\"ref_month\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/months/:ref_month/entries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/months/:ref_month/entries?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "months",
+                ":ref_month",
+                "entries"
+              ],
+              "variable": [
+                {
+                  "key": "ref_month",
+                  "value": "{{ref_month}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11 — Budgets",
+      "item": [
+        {
+          "name": "POST /api/v1/budgets",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"competence\": \"{{competence}}\",\n  \"total_cents\": 1387440,\n  \"allocations\": [\n    { \"root_slug\": \"expense.custo_fixo\", \"basis_points\": 4000 },\n    { \"root_slug\": \"expense.metas\", \"basis_points\": 2500 },\n    { \"root_slug\": \"expense.prazeres\", \"basis_points\": 1000 },\n    { \"root_slug\": \"expense.conhecimento\", \"basis_points\": 500 },\n    { \"root_slug\": \"expense.liberdade_financeira\", \"basis_points\": 2000 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.ID) pm.environment.set(\"budget_id\", body.ID);",
+                  "if (body.State) pm.environment.set(\"budget_state\", body.State);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/budgets/recurrence (→ 207)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_competence\": \"{{competence}}\",\n  \"months\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/recurrence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                "recurrence"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status recorrencia\", () => pm.expect([200,201,207]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/budgets/:delete_competence (draft — criado pela recorrência)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/:competence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                ":competence"
+              ],
+              "variable": [
+                {
+                  "key": "competence",
+                  "value": "{{delete_competence}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204 (budget draft deletado)\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/budgets/alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/alerts?competence={{competence}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                "alerts"
+              ],
+              "query": [
+                {
+                  "key": "competence",
+                  "value": "{{competence}}"
+                },
+                {
+                  "key": "root_slug",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "threshold",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/budgets/expenses",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('expense_external_id') || pm.environment.get('expense_external_id') === '' || pm.environment.get('expense_external_id') === '<uuid-gerado-pelo-cliente>') {",
+                  "  const uuid = pm.variables.replaceIn('{{$guid}}');",
+                  "  pm.environment.set('expense_external_id', uuid);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const id = body.id || body.ID || body.external_transaction_id || body.ExternalTransactionID;",
+                  "const version = body.version ?? body.Version;",
+                  "if (id) pm.environment.set(\"expense_id\", id);",
+                  "if (version !== undefined) pm.environment.set(\"expense_version\", String(version));",
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_transaction_id\": \"{{expense_external_id}}\",\n  \"subcategory_id\": \"{{subcategory_id}}\",\n  \"competence\": \"{{competence}}\",\n  \"amount_cents\": 4500,\n  \"occurred_at\": \"2026-06-15T12:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/expenses",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                "expenses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /api/v1/budgets/expenses/:id (id = external_transaction_id)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subcategory_id\": \"{{subcategory_id}}\",\n  \"competence\": \"{{competence}}\",\n  \"amount_cents\": 5000,\n  \"occurred_at\": \"2026-06-15T12:00:00Z\",\n  \"expected_version\": {{expense_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/expenses/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                "expenses",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{expense_external_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"expense_version\", pm.response.json().version);",
+                  "const body = pm.response.json();",
+                  "const version = body.version ?? body.Version;",
+                  "if (version !== undefined) pm.environment.set(\"expense_version\", String(version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/budgets/expenses/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_version\": {{expense_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/expenses/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                "expenses",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{expense_external_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/budgets/:competence/activate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/:competence/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                ":competence",
+                "activate"
+              ],
+              "variable": [
+                {
+                  "key": "competence",
+                  "value": "{{competence}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/budgets/:competence/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/budgets/:competence/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "budgets",
+                ":competence",
+                "summary"
+              ],
+              "variable": [
+                {
+                  "key": "competence",
+                  "value": "{{competence}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Tem competence\", () => pm.expect(pm.response.json()).to.have.property(\"competence\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12 — Billing Webhooks — Kiwify",
+      "item": [
+        {
+          "name": "Kiwify — order_approved",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"received true\", () => pm.expect(pm.response.json().received).to.be.true);",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));",
+                  "pm.environment.set(\"expected_ready_to_activate\", \"true\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-approved-{{$timestamp}}\",\n  \"order_ref\": \"ref-approved-{{$timestamp}}\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"order_approved\",\n  \"subscription_id\": \"sub-approved-{{$timestamp}}\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — subscription_renewed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-renewed-001\",\n  \"order_ref\": \"ref-002\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_renewed\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-08-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-07-15 10:00:00\",\n  \"updated_at\": \"2026-07-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — subscription_late",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-late-001\",\n  \"order_ref\": \"ref-003\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"subscription_late\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"late\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-07-18 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — subscription_canceled",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-canceled-001\",\n  \"order_ref\": \"ref-004\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_canceled\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-07-01 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — order_refunded",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-refunded-001\",\n  \"order_ref\": \"ref-005\",\n  \"order_status\": \"refunded\",\n  \"webhook_event_type\": \"order_refunded\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"refunded_at\": \"2026-06-20 10:00:00\",\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-20 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — chargeback",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-chargeback-001\",\n  \"order_ref\": \"ref-006\",\n  \"order_status\": \"chargedback\",\n  \"webhook_event_type\": \"chargeback\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-22 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — billet_created (no-op)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-billet-001\",\n  \"order_ref\": \"ref-007\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"billet_created\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — pix_created (no-op)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-pix-001\",\n  \"order_ref\": \"ref-008\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"pix_created\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — order_rejected (no-op)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"order-rejected-001\",\n  \"order_ref\": \"ref-009\",\n  \"order_status\": \"refused\",\n  \"webhook_event_type\": \"order_rejected\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Kiwify — abandoned_cart (no-op, sem webhook_event_type)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('kiwify_webhook_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA1(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Kiwify-Signature', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"Status webhook\", () => pm.expect([200,202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Kiwify-Signature",
+                "value": "{{kiwify_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"c6euk9v1lfj9jqxhfs\",\n  \"status\": \"abandoned\",\n  \"checkout_link\": \"IDhfYNV\",\n  \"country\": \"br\",\n  \"cpf\": \"30574187242\",\n  \"created_at\": \"2026-06-15T15:44:25.411Z\",\n  \"email\": \"johndoe@example.com\",\n  \"name\": \"John Doe\",\n  \"offer_name\": null,\n  \"phone\": \"(11) 99999-9999\",\n  \"product_id\": \"prod-monthly-001\",\n  \"product_name\": \"MeControla Mensal\",\n  \"store_id\": \"Q33AnzwYbfkFFwS\",\n  \"subscription_plan\": \"Mensal\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 — WhatsApp Webhook",
+      "item": [
+        {
+          "name": "GET /api/v1/whatsapp/verify (verificação Meta)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/verify?hub.mode=subscribe&hub.verify_token={{meta_verify_token}}&hub.challenge=meu-challenge-12345",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "verify"
+              ],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "subscribe"
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{meta_verify_token}}"
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "meu-challenge-12345"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Retorna challenge\", () => pm.expect(pm.response.text()).to.equal(\"meu-challenge-12345\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/whatsapp/inbound (verificação Meta)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound?hub.mode=subscribe&hub.verify_token={{meta_verify_token}}&hub.challenge=meu-challenge-12345",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "subscribe"
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{meta_verify_token}}"
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "meu-challenge-12345"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/whatsapp/inbound — texto simples",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('meta_app_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = 'sha256=' + CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Hub-Signature-256', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-1\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-text-001\",\n          \"timestamp\": \"1718400000\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"Olá, quero saber meu saldo\" }\n        }]\n      }\n    }]\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /api/v1/whatsapp/inbound — comando ATIVAR <token>",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('meta_app_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = 'sha256=' + CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Hub-Signature-256', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-2\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-ativar-001\",\n          \"timestamp\": \"1718400001\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"ATIVAR {{onboarding_token}}\" }\n        }]\n      }\n    }]\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /api/v1/whatsapp/inbound — imagem (non-text, ignorado)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('meta_app_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const sig = 'sha256=' + CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.add({ key: 'X-Hub-Signature-256', value: sig });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 (non-text ignorado silenciosamente)\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-3\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-image-001\",\n          \"timestamp\": \"1718400002\",\n          \"type\": \"image\"\n        }]\n      }\n    }]\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /api/v1/whatsapp/inbound — assinatura inválida (→ 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Hub-Signature-256",
+                "value": "sha256=assinatura-invalida-xpto"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{\n    \"id\": \"entry-1\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"messaging_product\": \"whatsapp\",\n        \"metadata\": {\n          \"display_phone_number\": \"+5511988776655\",\n          \"phone_number_id\": \"{{whatsapp_phone_number_id}}\"\n        },\n        \"messages\": [{\n          \"from\": \"{{user_whatsapp_from}}\",\n          \"id\": \"wamid-invalid-001\",\n          \"timestamp\": \"1718400000\",\n          \"type\": \"text\",\n          \"text\": { \"body\": \"teste\" }\n        }]\n      }\n    }]\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 — Telegram Webhook",
+      "item": [
+        {
+          "name": "POST telegram — texto simples",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "{{telegram_secret_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"update_id\": 100001,\n  \"message\": {\n    \"message_id\": 1,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400000,\n    \"text\": \"Olá, quero ver minhas finanças\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{telegram_webhook_path}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST telegram — comando /start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "{{telegram_secret_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"update_id\": 100002,\n  \"message\": {\n    \"message_id\": 2,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400010,\n    \"text\": \"/start\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{telegram_webhook_path}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST telegram — gasto em linguagem natural",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "{{telegram_secret_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"update_id\": 100003,\n  \"message\": {\n    \"message_id\": 3,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400020,\n    \"text\": \"Gastei 50 reais no almoço hoje\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{telegram_webhook_path}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST telegram — bot sender (rejeição interna, → 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "{{telegram_secret_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"update_id\": 100004,\n  \"message\": {\n    \"message_id\": 4,\n    \"from\": { \"id\": 111111111, \"is_bot\": true, \"language_code\": \"en\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400030,\n    \"text\": \"Sou um bot\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{telegram_webhook_path}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 (bot_sender rejeitado internamente)\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST telegram — chat de grupo (rejeição interna, → 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "{{telegram_secret_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"update_id\": 100005,\n  \"message\": {\n    \"message_id\": 5,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": -100123456789, \"type\": \"group\" },\n    \"date\": 1718400040,\n    \"text\": \"Mensagem no grupo\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{telegram_webhook_path}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 (non_private_chat rejeitado internamente)\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST telegram — token inválido (→ 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "token-invalido-xpto"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"update_id\": 100006,\n  \"message\": {\n    \"message_id\": 6,\n    \"from\": { \"id\": 987654321, \"is_bot\": false, \"language_code\": \"pt-BR\" },\n    \"chat\": { \"id\": 987654321, \"type\": \"private\" },\n    \"date\": 1718400050,\n    \"text\": \"Olá\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{telegram_webhook_path}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{telegram_webhook_path}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15 — Cleanup",
+      "item": [
+        {
+          "name": "DELETE /api/v1/card-purchases/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-ID",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-Gateway-Auth",
+                "value": "{{gateway_auth}}"
+              },
+              {
+                "key": "X-Gateway-Timestamp",
+                "value": "{{gateway_timestamp}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{card_purchase_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/card-purchases/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "card-purchases",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{card_purchase_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
