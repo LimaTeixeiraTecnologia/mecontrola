@@ -21,9 +21,6 @@ var personaSystemRaw string
 //go:embed budgets.system.tmpl
 var budgetsSystemRaw string
 
-//go:embed onboarding.system.tmpl
-var onboardingSystemRaw string
-
 var ErrUserTextEmpty = errors.New("agent.application.prompting: user text is empty")
 
 var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(parseIntentUserRaw))
@@ -31,8 +28,6 @@ var parseIntentUserTpl = template.Must(template.New("parse_intent.user").Parse(p
 var personaSystemTpl = template.Must(template.New("persona.system").Parse(personaSystemRaw))
 
 var budgetsSystemTpl = template.Must(template.New("budgets.system").Parse(budgetsSystemRaw))
-
-var onboardingSystemTpl = template.Must(template.New("onboarding.system").Parse(onboardingSystemRaw))
 
 type ParseIntentUserData struct {
 	UserText string
@@ -46,53 +41,11 @@ type BudgetsPersonaData struct {
 	JourneyHint string
 }
 
-type OnboardingPromptCard struct {
-	Name   string
-	DueDay int
-}
-
-type OnboardingPromptSplit struct {
-	Slug    string
-	Percent int
-}
-
-type OnboardingSystemData struct {
-	State           string
-	IncomeCents     int64
-	Objective       string
-	Cards           []OnboardingPromptCard
-	Splits          []OnboardingPromptSplit
-	FirstTxRecorded bool
-}
-
 func RenderSystem() (string, error) {
 	if strings.TrimSpace(parseIntentSystemRaw) == "" {
 		return "", fmt.Errorf("agent.application.prompting: system template is empty")
 	}
 	return parseIntentSystemRaw, nil
-}
-
-const toolSystemPrompt = `Você é o MeControla, parceiro financeiro conversacional em PT-BR. Responda sempre curto, claro e acolhedor.
-
-Use uma ferramenta SOMENTE quando o usuário pedir uma AÇÃO concreta que ela executa:
-- record_transaction: registrar um gasto ou recebimento (ex: "gastei 58 no iFood", "recebi 5000 de salário").
-- monthly_summary: mostrar o resumo do mês / orçamento.
-- list_cards: listar os cartões cadastrados.
-- create_card: cadastrar um novo cartão (apelido, fechamento, vencimento, limite).
-- count_cards: dizer quantos cartões o usuário tem.
-- configure_budget: iniciar a configuração do orçamento mensal.
-
-Regras invioláveis:
-- Se faltar um dado obrigatório da ação, NÃO chame a ferramenta: responda em TEXTO fazendo UMA pergunta objetiva para obter o dado.
-- Nunca invente valores, datas ou nomes que o usuário não informou.
-- Antes de qualquer escrita sensível, confirme com o usuário em texto quando houver ambiguidade.
-- Para conversa, dúvida ou pedido fora dessas ações, responda em TEXTO curto e gentil, sem chamar ferramenta.`
-
-func RenderToolSystem() (string, error) {
-	if strings.TrimSpace(toolSystemPrompt) == "" {
-		return "", fmt.Errorf("agent.application.prompting: tool system prompt is empty")
-	}
-	return toolSystemPrompt, nil
 }
 
 func RenderPersonaSystem(data PersonaSystemData) (string, error) {
@@ -113,17 +66,6 @@ func RenderBudgetsPersona(data BudgetsPersonaData) (string, error) {
 	var buf bytes.Buffer
 	if err := budgetsSystemTpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("agent.application.prompting: execute budgets template: %w", err)
-	}
-	return buf.String(), nil
-}
-
-func RenderOnboardingSystem(data OnboardingSystemData) (string, error) {
-	if strings.TrimSpace(onboardingSystemRaw) == "" {
-		return "", fmt.Errorf("agent.application.prompting: onboarding template is empty")
-	}
-	var buf bytes.Buffer
-	if err := onboardingSystemTpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("agent.application.prompting: execute onboarding template: %w", err)
 	}
 	return buf.String(), nil
 }

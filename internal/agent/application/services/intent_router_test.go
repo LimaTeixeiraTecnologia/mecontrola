@@ -230,6 +230,53 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_FailureIsHonest() {
 	s.Contains(s.wa.sent[0].Text, "Não consegui registrar")
 }
 
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_AmbiguousAsksToChoose() {
+	s.expenses = &fakeExpenseLogger{err: &services.CategoryAmbiguousError{
+		Hint:       "academia",
+		Candidates: []string{"Prazeres > Academia", "Custo Fixo > Academia"},
+	}}
+	s.parser.intent = s.buildLogExpense()
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 na academia", WhatsAppTo: "+5511999"})
+
+	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "mais de uma categoria")
+	s.Contains(s.wa.sent[0].Text, "Prazeres > Academia")
+	s.Contains(s.wa.sent[0].Text, "Custo Fixo > Academia")
+	s.NotContains(s.wa.sent[0].Text, "Não consegui registrar")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_NotFoundAsksToRephrase() {
+	s.expenses = &fakeExpenseLogger{err: services.ErrCategoryNotFound}
+	s.parser.intent = s.buildLogExpense()
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
+
+	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "Não encontrei a categoria")
+	s.Contains(s.wa.sent[0].Text, "Prazeres")
+}
+
+func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_NoHintAsksWhichCategory() {
+	s.expenses = &fakeExpenseLogger{err: services.ErrCategoryHintMissing}
+	s.parser.intent = s.buildLogExpense()
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58", WhatsAppTo: "+5511999"})
+
+	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "categoria")
+	s.NotContains(s.wa.sent[0].Text, "Não consegui registrar")
+}
+
 func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_PersistedConfirms() {
 	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
 		Persisted:    true,

@@ -1,0 +1,769 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
+	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
+	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
+)
+
+type DailyLedgerAgent struct {
+	parser            IntentParser
+	monthlySummary    MonthlySummaryReader
+	cardLister        CardLister
+	cardInvoice       CardInvoiceReader
+	cardCreator       CardCreator
+	cardCounter       CardCounter
+	expenseLogger     ExpenseLogger
+	cardPurchaseLog   CardPurchaseLogger
+	transactionLister TransactionLister
+	lastDeleter       LastTransactionDeleter
+	lastEditor        LastTransactionEditor
+	recurringCreator  RecurringCreator
+	recurringLister   RecurringLister
+	budgetConfig      BudgetConfigurator
+	budgetConvo       BudgetConversation
+	budgetCommitter   BudgetConfigCommitter
+	budgetSession     BudgetSessionGateway
+	fallback          Fallback
+	auditor           *decisionAuditor
+	o11y              observability.Observability
+	routedTotal       observability.Counter
+	authzDeniedTotal  observability.Counter
+	loc               *time.Location
+}
+
+func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) *DailyLedgerAgent {
+	return &DailyLedgerAgent{
+		parser:            deps.Parser,
+		monthlySummary:    deps.MonthlySummary,
+		cardLister:        deps.CardLister,
+		cardInvoice:       deps.CardInvoice,
+		cardCreator:       deps.CardCreator,
+		cardCounter:       deps.CardCounter,
+		expenseLogger:     deps.ExpenseLogger,
+		cardPurchaseLog:   deps.CardPurchaseLog,
+		transactionLister: deps.TransactionLister,
+		lastDeleter:       deps.LastDeleter,
+		lastEditor:        deps.LastEditor,
+		recurringCreator:  deps.RecurringCreator,
+		recurringLister:   deps.RecurringLister,
+		budgetConfig:      deps.BudgetConfig,
+		budgetConvo:       deps.BudgetConvo,
+		budgetCommitter:   deps.BudgetCommitter,
+		budgetSession:     deps.BudgetSession,
+		fallback:          deps.Fallback,
+		auditor:           newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
+		o11y:              o11y,
+		routedTotal:       routedTotal,
+		authzDeniedTotal:  authzDeniedTotal,
+		loc:               loc,
+	}
+}
+
+func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
+	if a.budgetSessionEnabled() {
+		if handled, result := a.continuePendingBudgetSession(ctx, principal.UserID, channel, text); handled {
+			return result
+		}
+	}
+
+	parsed, err := a.parser.Parse(ctx, principal.UserID, text)
+	if err != nil {
+		if span := a.o11y.Tracer().SpanFromContext(ctx); span != nil {
+			span.RecordError(err)
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.parse_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		reply := a.delegateFallback(ctx, principal.UserID, channel, text)
+		a.record(ctx, intent.KindUnknown.String(), channel, OutcomeParseError)
+		return RouteResult{Reply: reply, Outcome: OutcomeParseError, Kind: intent.KindUnknown}
+	}
+
+	kind := parsed.Intent.Kind()
+	if span := a.o11y.Tracer().SpanFromContext(ctx); span != nil {
+		span.SetAttributes(
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+		)
+	}
+
+	if kind == intent.KindUnknown && strings.TrimSpace(parsed.DirectReply) != "" {
+		a.record(ctx, intent.KindUnknown.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: parsed.DirectReply, Outcome: OutcomeRouted, Kind: intent.KindUnknown}
+	}
+
+	if isWriteKind(kind) {
+		return a.dispatchWrite(ctx, principal, channel, messageID, text, parsed)
+	}
+
+	switch kind {
+	case intent.KindLogExpense:
+		return a.routeLogExpense(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindLogIncome:
+		return a.routeLogIncome(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindMonthlySummary:
+		return a.routeMonthlySummary(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindQueryCategory:
+		return a.routeQueryCategory(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindQueryGoal:
+		return a.routeQueryGoal(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindQueryCard:
+		return a.routeQueryCard(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindHowAmIDoing:
+		return a.routeHowAmIDoing(ctx, principal.UserID, channel)
+	case intent.KindConfigureBudget:
+		return a.routeConfigureBudget(ctx, principal.UserID, channel, text)
+	case intent.KindLogCardPurchase:
+		return a.routeLogCardPurchase(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindListTransactions:
+		return a.routeListTransactions(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindDeleteLastTransaction:
+		return a.routeDeleteLastTransaction(ctx, principal.UserID, channel)
+	case intent.KindEditLastTransaction:
+		return a.routeEditLastTransaction(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindCreateRecurring:
+		return a.routeCreateRecurring(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindListRecurring:
+		return a.routeListRecurring(ctx, principal.UserID, channel)
+	case intent.KindListCards:
+		return a.routeListCards(ctx, principal.UserID, channel)
+	case intent.KindCreateCard:
+		return a.routeCreateCard(ctx, principal.UserID, channel, parsed.Intent)
+	case intent.KindCountCards:
+		return a.routeCountCards(ctx, principal.UserID, channel)
+	case intent.KindUnknown:
+		reply := a.delegateFallback(ctx, principal.UserID, channel, text)
+		a.record(ctx, intent.KindUnknown.String(), channel, OutcomeFallback)
+		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: intent.KindUnknown}
+	default:
+		reply := a.delegateFallback(ctx, principal.UserID, channel, text)
+		a.record(ctx, kind.String(), channel, OutcomeFallback)
+		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: kind}
+	}
+}
+
+func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
+	kind := parsed.Intent.Kind()
+
+	effectiveUserID := principal.UserID
+	if !a.authorizeWrite(ctx, principal, effectiveUserID, kind, channel) {
+		return RouteResult{Reply: authzDeniedText, Outcome: OutcomeAuthzDenied, Kind: kind}
+	}
+
+	auditCtx := a.beginDecisionAudit(ctx, principal, channel, messageID, kind, parsed)
+
+	var result RouteResult
+	switch kind {
+	case intent.KindLogExpense:
+		result = a.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
+	case intent.KindLogIncome:
+		result = a.routeLogIncome(ctx, effectiveUserID, channel, parsed.Intent)
+	case intent.KindLogCardPurchase:
+		result = a.routeLogCardPurchase(ctx, effectiveUserID, channel, parsed.Intent)
+	case intent.KindCreateCard:
+		result = a.routeCreateCard(ctx, effectiveUserID, channel, parsed.Intent)
+	case intent.KindConfigureBudget:
+		result = a.routeConfigureBudget(ctx, effectiveUserID, channel, trimmed)
+	default:
+		result = a.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
+	}
+
+	auditCtx.settle(ctx, result.Outcome == OutcomeRouted)
+	return result
+}
+
+func (a *DailyLedgerAgent) authorizeWrite(ctx context.Context, principal Principal, effectiveUserID uuid.UUID, kind intent.Kind, channel string) bool {
+	if effectiveUserID == principal.UserID && effectiveUserID != uuid.Nil {
+		return true
+	}
+	a.o11y.Logger().Warn(ctx, "agent.intent_router.authz_denied",
+		observability.String("kind", kind.String()),
+		observability.String("channel", channel),
+	)
+	a.authzDeniedTotal.Add(ctx, 1, observability.String("kind", kind.String()))
+	a.record(ctx, kind.String(), channel, OutcomeAuthzDenied)
+	return false
+}
+
+func (a *DailyLedgerAgent) beginDecisionAudit(ctx context.Context, principal Principal, channel, messageID string, kind intent.Kind, parsed ParsedIntent) decisionContext {
+	if a.auditor == nil {
+		return decisionContext{}
+	}
+	traceID := ""
+	if span := a.o11y.Tracer().SpanFromContext(ctx); span != nil {
+		traceID = span.TraceID()
+	}
+	return a.auditor.begin(ctx, decisionRecordInput{
+		UserID:       principal.UserID,
+		Channel:      channel,
+		MessageID:    messageID,
+		IntentKind:   kind.String(),
+		PromptSHA256: parsed.PromptSHA256,
+		LLMModel:     parsed.LLMModel,
+		TraceID:      traceID,
+		DirectReply:  parsed.DirectReply,
+		RawResponse:  parsed.Raw,
+	})
+}
+
+func (a *DailyLedgerAgent) routeLogExpense(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.expenseLogger == nil {
+		a.record(ctx, intent.KindLogExpense.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogExpense}
+	}
+	result, err := a.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		if clarify, ok := a.categoryClarification(ctx, channel, intent.KindLogExpense, in, err); ok {
+			return clarify
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_expense_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindLogExpense.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogExpense}
+	}
+	a.record(ctx, intent.KindLogExpense.String(), channel, OutcomeRouted)
+	reply := formatPersistedExpense(result.AmountCents, in.Merchant(), result.CategoryPath)
+	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindLogExpense}
+}
+
+func (a *DailyLedgerAgent) routeLogIncome(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.expenseLogger == nil {
+		a.record(ctx, intent.KindLogIncome.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogIncome}
+	}
+	result, err := a.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		if clarify, ok := a.categoryClarification(ctx, channel, intent.KindLogIncome, in, err); ok {
+			return clarify
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_income_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindLogIncome.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogIncome}
+	}
+	a.record(ctx, intent.KindLogIncome.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedIncome(result.AmountCents, in.Merchant(), result.CategoryPath), Outcome: OutcomeRouted, Kind: intent.KindLogIncome}
+}
+
+func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, channel string, kind intent.Kind, in intent.Intent, err error) (RouteResult, bool) {
+	var ambiguous *CategoryAmbiguousError
+	if errors.As(err, &ambiguous) {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.category_ambiguous",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+		)
+		a.record(ctx, kind.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCategoryAmbiguous(ambiguous.Candidates), Outcome: OutcomeClarify, Kind: kind}, true
+	}
+	if errors.Is(err, ErrCategoryNotFound) {
+		a.record(ctx, kind.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCategoryNotFound(resolveCategoryHint(in)), Outcome: OutcomeClarify, Kind: kind}, true
+	}
+	if errors.Is(err, ErrCategoryHintMissing) {
+		a.record(ctx, kind.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: categoryNoHintText, Outcome: OutcomeClarify, Kind: kind}, true
+	}
+	return RouteResult{}, false
+}
+
+func resolveCategoryHint(in intent.Intent) string {
+	hint := strings.TrimSpace(in.CategoryHint())
+	if hint == "" {
+		hint = strings.TrimSpace(in.Merchant())
+	}
+	return hint
+}
+
+func (a *DailyLedgerAgent) routeMonthlySummary(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.monthlySummary == nil {
+		a.record(ctx, intent.KindMonthlySummary.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindMonthlySummary}
+	}
+	competence := in.RefMonth()
+	if competence == "" {
+		now := time.Now().UTC().In(a.loc)
+		competence = fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	}
+	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
+		return a.monthlySummary.Execute(ctx, userID.String(), competence)
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.monthly_summary_failed",
+			observability.String("competence", competence),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindMonthlySummary.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindMonthlySummary}
+	}
+	a.record(ctx, intent.KindMonthlySummary.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatMonthlySummary(summary), Outcome: OutcomeRouted, Kind: intent.KindMonthlySummary}
+}
+
+func (a *DailyLedgerAgent) routeQueryCategory(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.monthlySummary == nil {
+		a.record(ctx, intent.KindQueryCategory.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindQueryCategory}
+	}
+	now := time.Now().UTC().In(a.loc)
+	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
+		return a.monthlySummary.Execute(ctx, userID.String(), competence)
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.query_category_failed",
+			observability.String("category", in.CategoryName()),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindQueryCategory.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCategory}
+	}
+	a.record(ctx, intent.KindQueryCategory.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCategoryAllocation(summary, in.CategoryName()), Outcome: OutcomeRouted, Kind: intent.KindQueryCategory}
+}
+
+func (a *DailyLedgerAgent) routeQueryGoal(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.monthlySummary == nil {
+		a.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: formatGoalUnavailable(in.GoalName()), Outcome: OutcomeMissingResolver, Kind: intent.KindQueryGoal}
+	}
+	now := time.Now().UTC().In(a.loc)
+	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
+		return a.monthlySummary.Execute(ctx, userID.String(), competence)
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.query_goal_failed",
+			observability.String("competence", competence),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryGoal}
+	}
+	a.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatGoalProgress(summary, in.GoalName()), Outcome: OutcomeRouted, Kind: intent.KindQueryGoal}
+}
+
+func (a *DailyLedgerAgent) routeQueryCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.cardLister == nil || a.cardInvoice == nil {
+		a.record(ctx, intent.KindQueryCard.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindQueryCard}
+	}
+	cards, err := withReadRetry(ctx, func(ctx context.Context) (cardoutput.CardList, error) {
+		return a.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.query_card_list_failed",
+			observability.String("card_name", in.CardName()),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindQueryCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCard}
+	}
+	resolved, ok := resolveCardByName(cards, in.CardName())
+	if !ok {
+		a.record(ctx, intent.KindQueryCard.String(), channel, OutcomeMissingResolver)
+		return RouteResult{
+			Reply:   formatCardNotFound(in.CardName()),
+			Outcome: OutcomeMissingResolver,
+			Kind:    intent.KindQueryCard,
+		}
+	}
+	cardID, parseErr := uuid.Parse(resolved.ID)
+	if parseErr != nil {
+		a.record(ctx, intent.KindQueryCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCard}
+	}
+	now := time.Now().UTC().In(a.loc)
+	invoice, err := withReadRetry(ctx, func(ctx context.Context) (cardoutput.Invoice, error) {
+		return a.cardInvoice.Execute(ctx, cardinput.InvoiceFor{
+			CardID:   cardID,
+			UserID:   userID,
+			Purchase: now,
+		})
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.query_card_invoice_failed",
+			observability.String("card_name", in.CardName()),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindQueryCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCard}
+	}
+	a.record(ctx, intent.KindQueryCard.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCardInvoice(resolved, invoice), Outcome: OutcomeRouted, Kind: intent.KindQueryCard}
+}
+
+func (a *DailyLedgerAgent) routeConfigureBudget(ctx context.Context, userID uuid.UUID, channel, text string) RouteResult {
+	if a.budgetSessionEnabled() {
+		return a.startBudgetSession(ctx, userID, channel, text)
+	}
+	if a.budgetConfig == nil {
+		a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindConfigureBudget}
+	}
+	reply, err := a.budgetConfig.Start(ctx, userID, channel)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.configure_budget_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+	}
+	if strings.TrimSpace(reply) == "" {
+		reply = "Beleza! Qual a sua renda mensal? Pode me dizer o valor."
+	}
+	a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+}
+
+func (a *DailyLedgerAgent) budgetSessionEnabled() bool {
+	return a.budgetSession != nil && a.budgetConvo != nil && a.budgetCommitter != nil
+}
+
+func (a *DailyLedgerAgent) startBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string) RouteResult {
+	now := time.Now().UTC().In(a.loc)
+	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	return a.advanceBudgetSession(ctx, userID, channel, text, budgetdraft.New(competence))
+}
+
+func (a *DailyLedgerAgent) continuePendingBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	draft, found, err := a.budgetSession.Load(ctx, userID, channel)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_load_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	if !found {
+		return false, RouteResult{}
+	}
+	if matchesBudgetCancel(text) {
+		if clearErr := a.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
+				observability.String("channel", channel),
+				observability.Error(clearErr),
+			)
+		}
+		a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+		return true, RouteResult{Reply: budgetCancelledText, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+	}
+	return true, a.advanceBudgetSession(ctx, userID, channel, text, draft)
+}
+
+func (a *DailyLedgerAgent) advanceBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string, draft budgetdraft.Draft) RouteResult {
+	result, err := a.budgetConvo.Configure(ctx, text, draft)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_configure_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+	}
+
+	if !result.Complete {
+		if saveErr := a.budgetSession.Save(ctx, userID, channel, result.Draft); saveErr != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_save_failed",
+				observability.String("channel", channel),
+				observability.Error(saveErr),
+			)
+			a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+			return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+		}
+		a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: result.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+	}
+
+	reply, commitErr := a.budgetCommitter.Commit(ctx, userID, result.Draft)
+	if commitErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_commit_failed",
+			observability.String("channel", channel),
+			observability.Error(commitErr),
+		)
+		if saveErr := a.budgetSession.Save(ctx, userID, channel, result.Draft); saveErr != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_save_failed",
+				observability.String("channel", channel),
+				observability.Error(saveErr),
+			)
+		}
+		a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: reply, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+	}
+
+	if clearErr := a.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
+			observability.String("channel", channel),
+			observability.Error(clearErr),
+		)
+	}
+	a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+}
+
+func (a *DailyLedgerAgent) routeHowAmIDoing(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if a.monthlySummary == nil {
+		a.record(ctx, intent.KindHowAmIDoing.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindHowAmIDoing}
+	}
+	now := time.Now().UTC().In(a.loc)
+	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
+		return a.monthlySummary.Execute(ctx, userID.String(), competence)
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.how_am_i_doing_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindHowAmIDoing.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindHowAmIDoing}
+	}
+	a.record(ctx, intent.KindHowAmIDoing.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatHowAmIDoing(summary), Outcome: OutcomeRouted, Kind: intent.KindHowAmIDoing}
+}
+
+func (a *DailyLedgerAgent) routeLogCardPurchase(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.cardPurchaseLog == nil {
+		a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
+	}
+	result, err := a.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_card_purchase_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogCardPurchase}
+	}
+	if !result.CardFound {
+		a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: formatCardPurchaseCardMissing(in.CardHint()), Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
+	}
+	a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedCardPurchase(result), Outcome: OutcomeRouted, Kind: intent.KindLogCardPurchase}
+}
+
+func (a *DailyLedgerAgent) routeListTransactions(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.transactionLister == nil {
+		a.record(ctx, intent.KindListTransactions.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindListTransactions}
+	}
+	refMonth := in.RefMonth()
+	if refMonth == "" {
+		refMonth = a.currentCompetence()
+	}
+	list, err := withReadRetry(ctx, func(ctx context.Context) (TransactionListResult, error) {
+		return a.transactionLister.Execute(ctx, TransactionListInput{UserID: userID.String(), RefMonth: refMonth})
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.list_transactions_failed",
+			observability.String("ref_month", refMonth),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindListTransactions.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListTransactions}
+	}
+	a.record(ctx, intent.KindListTransactions.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatTransactionList(list), Outcome: OutcomeRouted, Kind: intent.KindListTransactions}
+}
+
+func (a *DailyLedgerAgent) routeDeleteLastTransaction(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if a.transactionLister == nil || a.lastDeleter == nil {
+		a.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindDeleteLastTransaction}
+	}
+	last, found, err := a.mostRecentTransaction(ctx, userID)
+	if err != nil {
+		a.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteLastTransaction}
+	}
+	if !found {
+		a.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: noTransactionsText, Outcome: OutcomeRouted, Kind: intent.KindDeleteLastTransaction}
+	}
+	if err := a.lastDeleter.Execute(ctx, userID.String(), last.ID, last.Version); err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.delete_last_transaction_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteLastTransaction}
+	}
+	a.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatDeletedTransaction(last), Outcome: OutcomeRouted, Kind: intent.KindDeleteLastTransaction}
+}
+
+func (a *DailyLedgerAgent) routeEditLastTransaction(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.transactionLister == nil || a.lastEditor == nil {
+		a.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindEditLastTransaction}
+	}
+	last, found, err := a.mostRecentTransaction(ctx, userID)
+	if err != nil {
+		a.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditLastTransaction}
+	}
+	if !found {
+		a.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeRouted)
+		return RouteResult{Reply: noTransactionsText, Outcome: OutcomeRouted, Kind: intent.KindEditLastTransaction}
+	}
+	result, err := a.lastEditor.Execute(ctx, EditTransactionInput{UserID: userID.String(), Current: last, NewAmount: in.AmountCents()})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.edit_last_transaction_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditLastTransaction}
+	}
+	a.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatEditedTransaction(result), Outcome: OutcomeRouted, Kind: intent.KindEditLastTransaction}
+}
+
+func (a *DailyLedgerAgent) routeCreateRecurring(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.recurringCreator == nil {
+		a.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindCreateRecurring}
+	}
+	result, err := a.recurringCreator.Execute(ctx, RecurringCreatorInput{UserID: userID.String(), Intent: in})
+	if err != nil {
+		if clarify, ok := a.categoryClarification(ctx, channel, intent.KindCreateRecurring, in, err); ok {
+			return clarify
+		}
+		if errors.Is(err, ErrRecurringInvalidDay) {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.create_recurring_invalid_day",
+				observability.Error(err),
+			)
+			a.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeClarify)
+			return RouteResult{Reply: recurringInvalidDayText, Outcome: OutcomeClarify, Kind: intent.KindCreateRecurring}
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.create_recurring_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindCreateRecurring}
+	}
+	a.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedRecurring(result), Outcome: OutcomeRouted, Kind: intent.KindCreateRecurring}
+}
+
+func (a *DailyLedgerAgent) routeListRecurring(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if a.recurringLister == nil {
+		a.record(ctx, intent.KindListRecurring.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindListRecurring}
+	}
+	items, err := withReadRetry(ctx, func(ctx context.Context) ([]RecurringView, error) {
+		return a.recurringLister.Execute(ctx, userID.String())
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.list_recurring_failed",
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindListRecurring.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListRecurring}
+	}
+	a.record(ctx, intent.KindListRecurring.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatRecurringList(items), Outcome: OutcomeRouted, Kind: intent.KindListRecurring}
+}
+
+func (a *DailyLedgerAgent) routeListCards(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if a.cardLister == nil {
+		a.record(ctx, intent.KindListCards.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindListCards}
+	}
+	cards, err := withReadRetry(ctx, func(ctx context.Context) (cardoutput.CardList, error) {
+		return a.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.list_cards_failed", observability.Error(err))
+		a.record(ctx, intent.KindListCards.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListCards}
+	}
+	a.record(ctx, intent.KindListCards.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCardList(cards), Outcome: OutcomeRouted, Kind: intent.KindListCards}
+}
+
+func (a *DailyLedgerAgent) routeCreateCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.cardCreator == nil {
+		a.record(ctx, intent.KindCreateCard.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindCreateCard}
+	}
+	result, err := a.cardCreator.Execute(ctx, userID, in)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.create_card_failed", observability.Error(err))
+		a.record(ctx, intent.KindCreateCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: createCardErrorText(err), Outcome: OutcomeUsecaseError, Kind: intent.KindCreateCard}
+	}
+	a.record(ctx, intent.KindCreateCard.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCreatedCard(result), Outcome: OutcomeRouted, Kind: intent.KindCreateCard}
+}
+
+func (a *DailyLedgerAgent) routeCountCards(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
+	if a.cardCounter == nil {
+		a.record(ctx, intent.KindCountCards.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindCountCards}
+	}
+	total, err := withReadRetry(ctx, func(ctx context.Context) (int64, error) {
+		return a.cardCounter.Execute(ctx, userID)
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.count_cards_failed", observability.Error(err))
+		a.record(ctx, intent.KindCountCards.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindCountCards}
+	}
+	a.record(ctx, intent.KindCountCards.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCardCount(total), Outcome: OutcomeRouted, Kind: intent.KindCountCards}
+}
+
+func (a *DailyLedgerAgent) currentCompetence() string {
+	now := time.Now().UTC().In(a.loc)
+	return fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
+}
+
+func (a *DailyLedgerAgent) mostRecentTransaction(ctx context.Context, userID uuid.UUID) (TransactionView, bool, error) {
+	list, err := a.transactionLister.Execute(ctx, TransactionListInput{UserID: userID.String(), RefMonth: a.currentCompetence()})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.most_recent_transaction_failed",
+			observability.Error(err),
+		)
+		return TransactionView{}, false, err
+	}
+	return pickMostRecent(list.Transactions)
+}
+
+func (a *DailyLedgerAgent) delegateFallback(ctx context.Context, userID uuid.UUID, channel, text string) string {
+	reply, err := a.fallback.Reply(ctx, userID, channel, text)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.fallback_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return fallbackParseError
+	}
+	if strings.TrimSpace(reply) == "" {
+		return fallbackParseError
+	}
+	return reply
+}
+
+func (a *DailyLedgerAgent) record(ctx context.Context, kind, channel, outcome string) {
+	a.routedTotal.Add(ctx, 1,
+		observability.String("kind", kind),
+		observability.String("channel", channel),
+		observability.String("outcome", outcome),
+	)
+}

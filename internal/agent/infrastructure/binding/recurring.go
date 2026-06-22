@@ -26,7 +26,7 @@ func NewRecurringCreatorAdapter(uc *usecases.CreateRecurringFromAgent) *Recurrin
 func (a *RecurringCreatorAdapter) Execute(ctx context.Context, in appservices.RecurringCreatorInput) (appservices.RecurringCreatorResult, error) {
 	result, err := a.uc.Execute(ctx, usecases.CreateRecurringFromAgentInput{UserID: in.UserID, Intent: in.Intent})
 	if err != nil {
-		return appservices.RecurringCreatorResult{}, err
+		return appservices.RecurringCreatorResult{}, translateRecurringError(err)
 	}
 	return appservices.RecurringCreatorResult{
 		Persisted:    result.Persisted,

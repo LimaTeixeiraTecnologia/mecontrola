@@ -307,3 +307,47 @@ func (s *ParseInboundSuite) TestExecuteUnknownKindStringFallback() {
 	s.Require().NoError(err)
 	s.Equal(intent.KindUnknown, out.Intent.Kind())
 }
+
+func (s *ParseInboundSuite) decodeFailureReasons(provider *fake.Provider) []string {
+	metrics, ok := provider.Metrics().(*fake.FakeMetrics)
+	s.Require().True(ok)
+	counter := metrics.GetCounter("agent_intent_parse_decode_failed_total")
+	s.Require().NotNil(counter)
+	reasons := make([]string, 0)
+	for _, v := range counter.GetValues() {
+		for _, f := range v.Fields {
+			if f.Key == "reason" {
+				reasons = append(reasons, f.StringValue())
+			}
+		}
+	}
+	return reasons
+}
+
+func (s *ParseInboundSuite) TestInvalidJSONRecordsDecodeFailure() {
+	provider := fake.NewProvider()
+	uc, err := NewParseInbound(&fakeInterpreter{
+		resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind": "log_expense", broken`)},
+	}, 2000, provider)
+	s.Require().NoError(err)
+
+	out, execErr := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "gastei 58 no ifood"})
+	s.Require().NoError(execErr)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
+	s.Empty(out.DirectReply)
+	s.Contains(s.decodeFailureReasons(provider), outcomeFallbackInvalid)
+}
+
+func (s *ParseInboundSuite) TestRefusalProseStaysDirectReply() {
+	provider := fake.NewProvider()
+	const reply = "Desculpe, não posso ajudar com isso."
+	uc, err := NewParseInbound(&fakeInterpreter{
+		resp: interfaces.LLMResponse{RawJSON: []byte(reply)},
+	}, 2000, provider)
+	s.Require().NoError(err)
+
+	out, execErr := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "faça algo"})
+	s.Require().NoError(execErr)
+	s.Equal(reply, out.DirectReply)
+	s.NotContains(s.decodeFailureReasons(provider), outcomeFallbackInvalid)
+}

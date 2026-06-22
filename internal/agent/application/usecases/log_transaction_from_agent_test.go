@@ -122,6 +122,39 @@ func (s *LogTransactionSuite) TestAmbiguousReturnsAmbiguous() {
 	s.Require().ErrorIs(err, ErrLogTransactionCategoryAmbiguous)
 }
 
+func (s *LogTransactionSuite) TestAmbiguousCarriesCandidates() {
+	rootID := uuid.New()
+	resolver := &fakeResolver{out: &categoriesoutput.DictionarySearchOutput{
+		Candidates: []categoriesoutput.CandidateOutput{
+			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Prazeres", IsAmbiguous: true},
+			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Custo Fixo"},
+			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Conhecimento"},
+			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Metas"},
+		},
+	}}
+	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+		UserID: uuid.NewString(),
+		Intent: s.expenseIntent(5800, "ifood", ""),
+	})
+	s.Require().ErrorIs(err, ErrLogTransactionCategoryAmbiguous)
+
+	var ambiguous *CategoryAmbiguousError
+	s.Require().ErrorAs(err, &ambiguous)
+	s.Equal("ifood", ambiguous.Hint)
+	s.Equal([]string{"Prazeres", "Custo Fixo", "Conhecimento"}, ambiguous.Candidates)
+}
+
+func (s *LogTransactionSuite) TestCategoryAmbiguousErrorUnwrap() {
+	err := newCategoryAmbiguousError("ifood", []categoriesoutput.CandidateOutput{
+		{Path: "Prazeres"},
+		{Path: " "},
+	})
+	s.Require().ErrorIs(err, ErrLogTransactionCategoryAmbiguous)
+	s.Equal([]string{"Prazeres"}, err.Candidates)
+	s.Contains(err.Error(), "ifood")
+}
+
 func (s *LogTransactionSuite) TestCreateFailurePropagates() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres")}
 	boom := errors.New("create exploded")

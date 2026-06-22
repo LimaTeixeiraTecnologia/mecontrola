@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
@@ -34,6 +35,7 @@ const (
 	OutcomeReplyFailed     = "reply_failed"
 	OutcomeEmptyText       = "empty_text"
 	OutcomeAuthzDenied     = "authz_denied"
+	OutcomeClarify         = "clarify"
 )
 
 const (
@@ -50,6 +52,26 @@ var (
 	ErrWhatsAppGatewayNil = errors.New("agent.intent_router: whatsapp gateway is nil")
 )
 
+var (
+	ErrCategoryAmbiguous   = errors.New("agent.intent_router: categoria ambigua")
+	ErrCategoryNotFound    = errors.New("agent.intent_router: categoria nao encontrada")
+	ErrCategoryHintMissing = errors.New("agent.intent_router: sem hint de categoria")
+	ErrRecurringInvalidDay = errors.New("agent.intent_router: dia da recorrencia invalido")
+)
+
+type CategoryAmbiguousError struct {
+	Hint       string
+	Candidates []string
+}
+
+func (e *CategoryAmbiguousError) Error() string {
+	return fmt.Sprintf("%s: hint=%q candidatos=%s", ErrCategoryAmbiguous.Error(), e.Hint, strings.Join(e.Candidates, ", "))
+}
+
+func (e *CategoryAmbiguousError) Unwrap() error {
+	return ErrCategoryAmbiguous
+}
+
 const (
 	defaultListCardsLimit   = 200
 	fallbackMissingText     = "Não recebi nenhuma mensagem. Me conta o que você precisa nas suas finanças 😊"
@@ -58,7 +80,32 @@ const (
 	registerUnavailableText = "Ainda não consigo registrar lançamentos por aqui. Já já isso fica disponível pra você 🙏"
 	noTransactionsText      = "Não encontrei nenhum lançamento recente seu para mexer. Quer registrar um agora? 😊"
 	budgetCancelledText     = "Ok, cancelei a configuração do orçamento. Quando quiser, é só chamar de novo. 😊"
+	categoryNoHintText      = "Pra registrar certinho, me diz em qual categoria você quer anotar isso? 🙂"
+	recurringInvalidDayText = "Pra criar uma recorrência, o dia do mês precisa estar entre 1 e 28. Me confirma o dia certo? 🙂"
 )
+
+func formatCategoryAmbiguous(candidates []string) string {
+	var sb strings.Builder
+	sb.WriteString("Encontrei mais de uma categoria parecida. Qual delas você quer usar?")
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
+		}
+		sb.WriteString("\n• ")
+		sb.WriteString(trimmed)
+	}
+	sb.WriteString("\nÉ só me dizer o nome. 🙂")
+	return sb.String()
+}
+
+func formatCategoryNotFound(hint string) string {
+	trimmed := strings.TrimSpace(hint)
+	if trimmed == "" {
+		return "Não encontrei uma categoria pra isso. Pode reformular ou me dizer a categoria? 🙂"
+	}
+	return fmt.Sprintf("Não encontrei a categoria %q. Pode reformular ou me dizer outra categoria? 🙂", trimmed)
+}
 
 var budgetCancelCues = []string{
 	"cancelar", "cancela", "deixa pra lá", "deixa pra la", "esquece", "parar",
@@ -302,34 +349,13 @@ type ExpenseLoggerResult struct {
 }
 
 type IntentRouter struct {
-	parser            IntentParser
-	monthlySummary    MonthlySummaryReader
-	cardLister        CardLister
-	cardInvoice       CardInvoiceReader
-	cardCreator       CardCreator
-	cardCounter       CardCounter
-	expenseLogger     ExpenseLogger
-	cardPurchaseLog   CardPurchaseLogger
-	transactionLister TransactionLister
-	lastDeleter       LastTransactionDeleter
-	lastEditor        LastTransactionEditor
-	recurringCreator  RecurringCreator
-	recurringLister   RecurringLister
-	budgetConfig      BudgetConfigurator
-	budgetConvo       BudgetConversation
-	budgetCommitter   BudgetConfigCommitter
-	budgetSession     BudgetSessionGateway
-	onboarding        OnboardingContinuation
-	onboardingRunner  OnboardingTurnRunner
-	fallback          Fallback
-	whatsAppGateway   WhatsAppOutbound
-	telegramGateway   TelegramOutbound
-	eventPublisher    interfaces.IntentEventPublisher
-	auditor           *decisionAuditor
-	o11y              observability.Observability
-	routedTotal       observability.Counter
-	authzDeniedTotal  observability.Counter
-	loc               *time.Location
+	onboarding      *OnboardingAgent
+	daily           *DailyLedgerAgent
+	whatsAppGateway WhatsAppOutbound
+	telegramGateway TelegramOutbound
+	eventPublisher  interfaces.IntentEventPublisher
+	o11y            observability.Observability
+	routedTotal     observability.Counter
 }
 
 type IntentRouterDeps struct {
@@ -392,36 +418,47 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		"Total de dispatches de escrita negados pela guarda de autorizacao por kind",
 		"1",
 	)
+	daily := newDailyLedgerAgent(o11y, routedTotal, authzDeniedTotal, loc, deps)
+	warnMissingToolBindings(o11y, deps)
 	return &IntentRouter{
-		parser:            deps.Parser,
-		monthlySummary:    deps.MonthlySummary,
-		cardLister:        deps.CardLister,
-		cardInvoice:       deps.CardInvoice,
-		cardCreator:       deps.CardCreator,
-		cardCounter:       deps.CardCounter,
-		expenseLogger:     deps.ExpenseLogger,
-		cardPurchaseLog:   deps.CardPurchaseLog,
-		transactionLister: deps.TransactionLister,
-		lastDeleter:       deps.LastDeleter,
-		lastEditor:        deps.LastEditor,
-		recurringCreator:  deps.RecurringCreator,
-		recurringLister:   deps.RecurringLister,
-		budgetConfig:      deps.BudgetConfig,
-		budgetConvo:       deps.BudgetConvo,
-		budgetCommitter:   deps.BudgetCommitter,
-		budgetSession:     deps.BudgetSession,
-		onboarding:        deps.Onboarding,
-		onboardingRunner:  deps.OnboardingRunner,
-		fallback:          deps.Fallback,
-		whatsAppGateway:   deps.WhatsAppGateway,
-		telegramGateway:   deps.TelegramGateway,
-		eventPublisher:    deps.EventPublisher,
-		auditor:           newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
-		o11y:              o11y,
-		routedTotal:       routedTotal,
-		authzDeniedTotal:  authzDeniedTotal,
-		loc:               loc,
+		onboarding:      newOnboardingAgent(o11y, routedTotal, deps),
+		daily:           daily,
+		whatsAppGateway: deps.WhatsAppGateway,
+		telegramGateway: deps.TelegramGateway,
+		eventPublisher:  deps.EventPublisher,
+		o11y:            o11y,
+		routedTotal:     routedTotal,
 	}, nil
+}
+
+func warnMissingToolBindings(o11y observability.Observability, deps IntentRouterDeps) {
+	registry, err := tools.DefaultRegistry()
+	if err != nil {
+		o11y.Logger().Warn(context.Background(), "agent.intent_router.tool_registry_unavailable",
+			observability.Error(err),
+		)
+		return
+	}
+	bindings := map[string]bool{
+		"record_transaction": deps.ExpenseLogger != nil,
+		"monthly_summary":    deps.MonthlySummary != nil,
+		"list_cards":         deps.CardLister != nil,
+		"create_card":        deps.CardCreator != nil,
+		"count_cards":        deps.CardCounter != nil,
+		"configure_budget":   deps.BudgetConfig != nil,
+	}
+	for _, spec := range registry.Specs() {
+		present, tracked := bindings[spec.Name]
+		if !tracked {
+			continue
+		}
+		if !present {
+			o11y.Logger().Warn(context.Background(), "agent.intent_router.tool_binding_ausente",
+				observability.String("tool", spec.Name),
+				observability.String("kind", spec.IntentKind.String()),
+			)
+		}
+	}
 }
 
 func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
@@ -496,18 +533,7 @@ func (r *IntentRouter) publishEvent(ctx context.Context, principal Principal, ch
 	}
 }
 
-func (r *IntentRouter) degradeOnboarding(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID string) (string, bool) {
-	if r.onboarding == nil {
-		return "", false
-	}
-	conversation, err := r.onboarding.Continue(ctx, userID, channel, peer, text, messageID)
-	if err != nil || !conversation.Handled {
-		return "", false
-	}
-	return conversation.Reply, true
-}
-
-func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
+func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.intent_router.route")
 	defer span.End()
 
@@ -517,107 +543,15 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return RouteResult{Reply: fallbackMissingText, Outcome: OutcomeEmptyText, Kind: intent.KindUnknown}
 	}
 
-	if r.onboardingRunner != nil {
-		turn, err := r.onboardingRunner.Run(ctx, principal.UserID, channel, trimmed)
-		if err != nil {
-			span.RecordError(err)
-			r.o11y.Logger().Warn(ctx, "agent.intent_router.onboarding_llm_failed",
-				observability.String("channel", channel),
-				observability.Error(err),
-			)
-			if reply, degraded := r.degradeOnboarding(ctx, principal.UserID, channel, peer, trimmed, messageID); degraded {
-				r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-				return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-			}
-		} else if turn.Handled {
-			r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-			return RouteResult{Reply: turn.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-		}
-	} else if r.onboarding != nil {
-		conversation, err := r.onboarding.Continue(ctx, principal.UserID, channel, peer, trimmed, messageID)
-		if err == nil && conversation.Handled {
-			r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-			return RouteResult{Reply: conversation.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-		}
+	if result, ok := r.onboarding.Handle(ctx, principal.UserID, channel, peer, trimmed, messageID); ok {
+		return result
 	}
 
-	if r.budgetSessionEnabled() {
-		if handled, result := r.continuePendingBudgetSession(ctx, principal.UserID, channel, trimmed); handled {
-			return result
-		}
-	}
+	return r.daily.Handle(ctx, principal, channel, peer, trimmed, messageID)
+}
 
-	parsed, err := r.parser.Parse(ctx, principal.UserID, trimmed)
-	if err != nil {
-		span.RecordError(err)
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.parse_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		reply := r.delegateFallback(ctx, principal.UserID, channel, trimmed)
-		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeParseError)
-		return RouteResult{Reply: reply, Outcome: OutcomeParseError, Kind: intent.KindUnknown}
-	}
-
-	kind := parsed.Intent.Kind()
-	span.SetAttributes(
-		observability.String("kind", kind.String()),
-		observability.String("channel", channel),
-	)
-
-	if kind == intent.KindUnknown && strings.TrimSpace(parsed.DirectReply) != "" {
-		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeRouted)
-		return RouteResult{Reply: parsed.DirectReply, Outcome: OutcomeRouted, Kind: intent.KindUnknown}
-	}
-
-	if isWriteKind(kind) {
-		return r.dispatchWrite(ctx, principal, channel, messageID, trimmed, parsed)
-	}
-
-	switch kind {
-	case intent.KindLogExpense:
-		return r.routeLogExpense(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindLogIncome:
-		return r.routeLogIncome(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindMonthlySummary:
-		return r.routeMonthlySummary(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindQueryCategory:
-		return r.routeQueryCategory(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindQueryGoal:
-		return r.routeQueryGoal(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindQueryCard:
-		return r.routeQueryCard(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindHowAmIDoing:
-		return r.routeHowAmIDoing(ctx, principal.UserID, channel)
-	case intent.KindConfigureBudget:
-		return r.routeConfigureBudget(ctx, principal.UserID, channel, trimmed)
-	case intent.KindLogCardPurchase:
-		return r.routeLogCardPurchase(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindListTransactions:
-		return r.routeListTransactions(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindDeleteLastTransaction:
-		return r.routeDeleteLastTransaction(ctx, principal.UserID, channel)
-	case intent.KindEditLastTransaction:
-		return r.routeEditLastTransaction(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindCreateRecurring:
-		return r.routeCreateRecurring(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindListRecurring:
-		return r.routeListRecurring(ctx, principal.UserID, channel)
-	case intent.KindListCards:
-		return r.routeListCards(ctx, principal.UserID, channel)
-	case intent.KindCreateCard:
-		return r.routeCreateCard(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindCountCards:
-		return r.routeCountCards(ctx, principal.UserID, channel)
-	case intent.KindUnknown:
-		reply := r.delegateFallback(ctx, principal.UserID, channel, trimmed)
-		r.record(ctx, intent.KindUnknown.String(), channel, OutcomeFallback)
-		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: intent.KindUnknown}
-	default:
-		reply := r.delegateFallback(ctx, principal.UserID, channel, trimmed)
-		r.record(ctx, kind.String(), channel, OutcomeFallback)
-		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: kind}
-	}
+func (r *IntentRouter) authorizeWrite(ctx context.Context, principal Principal, effectiveUserID uuid.UUID, kind intent.Kind, channel string) bool {
+	return r.daily.authorizeWrite(ctx, principal, effectiveUserID, kind, channel)
 }
 
 func isWriteKind(kind intent.Kind) bool {
@@ -631,535 +565,6 @@ func isWriteKind(kind intent.Kind) bool {
 	default:
 		return false
 	}
-}
-
-func (r *IntentRouter) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
-	kind := parsed.Intent.Kind()
-
-	effectiveUserID := principal.UserID
-	if !r.authorizeWrite(ctx, principal, effectiveUserID, kind, channel) {
-		return RouteResult{Reply: authzDeniedText, Outcome: OutcomeAuthzDenied, Kind: kind}
-	}
-
-	auditCtx := r.beginDecisionAudit(ctx, principal, channel, messageID, kind, parsed)
-
-	var result RouteResult
-	switch kind {
-	case intent.KindLogExpense:
-		result = r.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindLogIncome:
-		result = r.routeLogIncome(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindLogCardPurchase:
-		result = r.routeLogCardPurchase(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindCreateCard:
-		result = r.routeCreateCard(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindConfigureBudget:
-		result = r.routeConfigureBudget(ctx, effectiveUserID, channel, trimmed)
-	default:
-		result = r.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
-	}
-
-	auditCtx.settle(ctx, result.Outcome == OutcomeRouted)
-	return result
-}
-
-func (r *IntentRouter) authorizeWrite(ctx context.Context, principal Principal, effectiveUserID uuid.UUID, kind intent.Kind, channel string) bool {
-	if effectiveUserID == principal.UserID && effectiveUserID != uuid.Nil {
-		return true
-	}
-	r.o11y.Logger().Warn(ctx, "agent.intent_router.authz_denied",
-		observability.String("kind", kind.String()),
-		observability.String("channel", channel),
-	)
-	r.authzDeniedTotal.Add(ctx, 1, observability.String("kind", kind.String()))
-	r.record(ctx, kind.String(), channel, OutcomeAuthzDenied)
-	return false
-}
-
-func (r *IntentRouter) beginDecisionAudit(ctx context.Context, principal Principal, channel, messageID string, kind intent.Kind, parsed ParsedIntent) decisionContext {
-	if r.auditor == nil {
-		return decisionContext{}
-	}
-	traceID := ""
-	if span := r.o11y.Tracer().SpanFromContext(ctx); span != nil {
-		traceID = span.TraceID()
-	}
-	return r.auditor.begin(ctx, decisionRecordInput{
-		UserID:       principal.UserID,
-		Channel:      channel,
-		MessageID:    messageID,
-		IntentKind:   kind.String(),
-		PromptSHA256: parsed.PromptSHA256,
-		LLMModel:     parsed.LLMModel,
-		TraceID:      traceID,
-		DirectReply:  parsed.DirectReply,
-		RawResponse:  parsed.Raw,
-	})
-}
-
-func (r *IntentRouter) routeLogExpense(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.expenseLogger == nil {
-		r.record(ctx, intent.KindLogExpense.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogExpense}
-	}
-	result, err := r.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.log_expense_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindLogExpense.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogExpense}
-	}
-	r.record(ctx, intent.KindLogExpense.String(), channel, OutcomeRouted)
-	reply := formatPersistedExpense(result.AmountCents, in.Merchant(), result.CategoryPath)
-	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindLogExpense}
-}
-
-func (r *IntentRouter) routeLogIncome(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.expenseLogger == nil {
-		r.record(ctx, intent.KindLogIncome.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogIncome}
-	}
-	result, err := r.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.log_income_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindLogIncome.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogIncome}
-	}
-	r.record(ctx, intent.KindLogIncome.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatPersistedIncome(result.AmountCents, in.Merchant(), result.CategoryPath), Outcome: OutcomeRouted, Kind: intent.KindLogIncome}
-}
-
-func (r *IntentRouter) routeMonthlySummary(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.monthlySummary == nil {
-		r.record(ctx, intent.KindMonthlySummary.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindMonthlySummary}
-	}
-	competence := in.RefMonth()
-	if competence == "" {
-		now := time.Now().UTC().In(r.loc)
-		competence = fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
-	}
-	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
-		return r.monthlySummary.Execute(ctx, userID.String(), competence)
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.monthly_summary_failed",
-			observability.String("competence", competence),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindMonthlySummary.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindMonthlySummary}
-	}
-	r.record(ctx, intent.KindMonthlySummary.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatMonthlySummary(summary), Outcome: OutcomeRouted, Kind: intent.KindMonthlySummary}
-}
-
-func (r *IntentRouter) routeQueryCategory(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.monthlySummary == nil {
-		r.record(ctx, intent.KindQueryCategory.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindQueryCategory}
-	}
-	now := time.Now().UTC().In(r.loc)
-	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
-	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
-		return r.monthlySummary.Execute(ctx, userID.String(), competence)
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.query_category_failed",
-			observability.String("category", in.CategoryName()),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindQueryCategory.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCategory}
-	}
-	r.record(ctx, intent.KindQueryCategory.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatCategoryAllocation(summary, in.CategoryName()), Outcome: OutcomeRouted, Kind: intent.KindQueryCategory}
-}
-
-func (r *IntentRouter) routeQueryGoal(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.monthlySummary == nil {
-		r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: formatGoalUnavailable(in.GoalName()), Outcome: OutcomeMissingResolver, Kind: intent.KindQueryGoal}
-	}
-	now := time.Now().UTC().In(r.loc)
-	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
-	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
-		return r.monthlySummary.Execute(ctx, userID.String(), competence)
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.query_goal_failed",
-			observability.String("competence", competence),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryGoal}
-	}
-	r.record(ctx, intent.KindQueryGoal.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatGoalProgress(summary, in.GoalName()), Outcome: OutcomeRouted, Kind: intent.KindQueryGoal}
-}
-
-func (r *IntentRouter) routeQueryCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.cardLister == nil || r.cardInvoice == nil {
-		r.record(ctx, intent.KindQueryCard.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindQueryCard}
-	}
-	cards, err := withReadRetry(ctx, func(ctx context.Context) (cardoutput.CardList, error) {
-		return r.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.query_card_list_failed",
-			observability.String("card_name", in.CardName()),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindQueryCard.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCard}
-	}
-	resolved, ok := resolveCardByName(cards, in.CardName())
-	if !ok {
-		r.record(ctx, intent.KindQueryCard.String(), channel, OutcomeMissingResolver)
-		return RouteResult{
-			Reply:   formatCardNotFound(in.CardName()),
-			Outcome: OutcomeMissingResolver,
-			Kind:    intent.KindQueryCard,
-		}
-	}
-	cardID, parseErr := uuid.Parse(resolved.ID)
-	if parseErr != nil {
-		r.record(ctx, intent.KindQueryCard.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCard}
-	}
-	now := time.Now().UTC().In(r.loc)
-	invoice, err := withReadRetry(ctx, func(ctx context.Context) (cardoutput.Invoice, error) {
-		return r.cardInvoice.Execute(ctx, cardinput.InvoiceFor{
-			CardID:   cardID,
-			UserID:   userID,
-			Purchase: now,
-		})
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.query_card_invoice_failed",
-			observability.String("card_name", in.CardName()),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindQueryCard.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindQueryCard}
-	}
-	r.record(ctx, intent.KindQueryCard.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatCardInvoice(resolved, invoice), Outcome: OutcomeRouted, Kind: intent.KindQueryCard}
-}
-
-func (r *IntentRouter) routeConfigureBudget(ctx context.Context, userID uuid.UUID, channel, text string) RouteResult {
-	if r.budgetSessionEnabled() {
-		return r.startBudgetSession(ctx, userID, channel, text)
-	}
-	if r.budgetConfig == nil {
-		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindConfigureBudget}
-	}
-	reply, err := r.budgetConfig.Start(ctx, userID, channel)
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.configure_budget_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
-	}
-	if strings.TrimSpace(reply) == "" {
-		reply = "Beleza! Qual a sua renda mensal? Pode me dizer o valor."
-	}
-	r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-}
-
-func (r *IntentRouter) budgetSessionEnabled() bool {
-	return r.budgetSession != nil && r.budgetConvo != nil && r.budgetCommitter != nil
-}
-
-func (r *IntentRouter) startBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string) RouteResult {
-	now := time.Now().UTC().In(r.loc)
-	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
-	return r.advanceBudgetSession(ctx, userID, channel, text, budgetdraft.New(competence))
-}
-
-func (r *IntentRouter) continuePendingBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
-	draft, found, err := r.budgetSession.Load(ctx, userID, channel)
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_load_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		return false, RouteResult{}
-	}
-	if !found {
-		return false, RouteResult{}
-	}
-	if matchesBudgetCancel(text) {
-		if clearErr := r.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
-			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
-				observability.String("channel", channel),
-				observability.Error(clearErr),
-			)
-		}
-		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-		return true, RouteResult{Reply: budgetCancelledText, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-	}
-	return true, r.advanceBudgetSession(ctx, userID, channel, text, draft)
-}
-
-func (r *IntentRouter) advanceBudgetSession(ctx context.Context, userID uuid.UUID, channel, text string, draft budgetdraft.Draft) RouteResult {
-	result, err := r.budgetConvo.Configure(ctx, text, draft)
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_configure_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
-	}
-
-	if !result.Complete {
-		if saveErr := r.budgetSession.Save(ctx, userID, channel, result.Draft); saveErr != nil {
-			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_save_failed",
-				observability.String("channel", channel),
-				observability.Error(saveErr),
-			)
-			r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
-			return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
-		}
-		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-		return RouteResult{Reply: result.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-	}
-
-	reply, commitErr := r.budgetCommitter.Commit(ctx, userID, result.Draft)
-	if commitErr != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_commit_failed",
-			observability.String("channel", channel),
-			observability.Error(commitErr),
-		)
-		if saveErr := r.budgetSession.Save(ctx, userID, channel, result.Draft); saveErr != nil {
-			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_save_failed",
-				observability.String("channel", channel),
-				observability.Error(saveErr),
-			)
-		}
-		r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: reply, Outcome: OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
-	}
-
-	if clearErr := r.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
-			observability.String("channel", channel),
-			observability.Error(clearErr),
-		)
-	}
-	r.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-}
-
-func (r *IntentRouter) routeHowAmIDoing(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
-	if r.monthlySummary == nil {
-		r.record(ctx, intent.KindHowAmIDoing.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindHowAmIDoing}
-	}
-	now := time.Now().UTC().In(r.loc)
-	competence := fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
-	summary, err := withReadRetry(ctx, func(ctx context.Context) (budgetsoutput.MonthlySummaryOutput, error) {
-		return r.monthlySummary.Execute(ctx, userID.String(), competence)
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.how_am_i_doing_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindHowAmIDoing.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindHowAmIDoing}
-	}
-	r.record(ctx, intent.KindHowAmIDoing.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatHowAmIDoing(summary), Outcome: OutcomeRouted, Kind: intent.KindHowAmIDoing}
-}
-
-func (r *IntentRouter) routeLogCardPurchase(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.cardPurchaseLog == nil {
-		r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
-	}
-	result, err := r.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{UserID: userID.String(), Intent: in})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.log_card_purchase_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogCardPurchase}
-	}
-	if !result.CardFound {
-		r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: formatCardPurchaseCardMissing(in.CardHint()), Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
-	}
-	r.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatPersistedCardPurchase(result), Outcome: OutcomeRouted, Kind: intent.KindLogCardPurchase}
-}
-
-func (r *IntentRouter) routeListTransactions(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.transactionLister == nil {
-		r.record(ctx, intent.KindListTransactions.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindListTransactions}
-	}
-	refMonth := in.RefMonth()
-	if refMonth == "" {
-		refMonth = r.currentCompetence()
-	}
-	list, err := withReadRetry(ctx, func(ctx context.Context) (TransactionListResult, error) {
-		return r.transactionLister.Execute(ctx, TransactionListInput{UserID: userID.String(), RefMonth: refMonth})
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.list_transactions_failed",
-			observability.String("ref_month", refMonth),
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindListTransactions.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListTransactions}
-	}
-	r.record(ctx, intent.KindListTransactions.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatTransactionList(list), Outcome: OutcomeRouted, Kind: intent.KindListTransactions}
-}
-
-func (r *IntentRouter) routeDeleteLastTransaction(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
-	if r.transactionLister == nil || r.lastDeleter == nil {
-		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindDeleteLastTransaction}
-	}
-	last, found, err := r.mostRecentTransaction(ctx, userID)
-	if err != nil {
-		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteLastTransaction}
-	}
-	if !found {
-		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeRouted)
-		return RouteResult{Reply: noTransactionsText, Outcome: OutcomeRouted, Kind: intent.KindDeleteLastTransaction}
-	}
-	if err := r.lastDeleter.Execute(ctx, userID.String(), last.ID, last.Version); err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.delete_last_transaction_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteLastTransaction}
-	}
-	r.record(ctx, intent.KindDeleteLastTransaction.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatDeletedTransaction(last), Outcome: OutcomeRouted, Kind: intent.KindDeleteLastTransaction}
-}
-
-func (r *IntentRouter) routeEditLastTransaction(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.transactionLister == nil || r.lastEditor == nil {
-		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindEditLastTransaction}
-	}
-	last, found, err := r.mostRecentTransaction(ctx, userID)
-	if err != nil {
-		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditLastTransaction}
-	}
-	if !found {
-		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeRouted)
-		return RouteResult{Reply: noTransactionsText, Outcome: OutcomeRouted, Kind: intent.KindEditLastTransaction}
-	}
-	result, err := r.lastEditor.Execute(ctx, EditTransactionInput{UserID: userID.String(), Current: last, NewAmount: in.AmountCents()})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.edit_last_transaction_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditLastTransaction}
-	}
-	r.record(ctx, intent.KindEditLastTransaction.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatEditedTransaction(result), Outcome: OutcomeRouted, Kind: intent.KindEditLastTransaction}
-}
-
-func (r *IntentRouter) routeCreateRecurring(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.recurringCreator == nil {
-		r.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindCreateRecurring}
-	}
-	result, err := r.recurringCreator.Execute(ctx, RecurringCreatorInput{UserID: userID.String(), Intent: in})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.create_recurring_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindCreateRecurring}
-	}
-	r.record(ctx, intent.KindCreateRecurring.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatPersistedRecurring(result), Outcome: OutcomeRouted, Kind: intent.KindCreateRecurring}
-}
-
-func (r *IntentRouter) routeListRecurring(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
-	if r.recurringLister == nil {
-		r.record(ctx, intent.KindListRecurring.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindListRecurring}
-	}
-	items, err := withReadRetry(ctx, func(ctx context.Context) ([]RecurringView, error) {
-		return r.recurringLister.Execute(ctx, userID.String())
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.list_recurring_failed",
-			observability.Error(err),
-		)
-		r.record(ctx, intent.KindListRecurring.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListRecurring}
-	}
-	r.record(ctx, intent.KindListRecurring.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatRecurringList(items), Outcome: OutcomeRouted, Kind: intent.KindListRecurring}
-}
-
-func (r *IntentRouter) routeListCards(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
-	if r.cardLister == nil {
-		r.record(ctx, intent.KindListCards.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindListCards}
-	}
-	cards, err := withReadRetry(ctx, func(ctx context.Context) (cardoutput.CardList, error) {
-		return r.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.list_cards_failed", observability.Error(err))
-		r.record(ctx, intent.KindListCards.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindListCards}
-	}
-	r.record(ctx, intent.KindListCards.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatCardList(cards), Outcome: OutcomeRouted, Kind: intent.KindListCards}
-}
-
-func (r *IntentRouter) routeCreateCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if r.cardCreator == nil {
-		r.record(ctx, intent.KindCreateCard.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindCreateCard}
-	}
-	result, err := r.cardCreator.Execute(ctx, userID, in)
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.create_card_failed", observability.Error(err))
-		r.record(ctx, intent.KindCreateCard.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: createCardErrorText(err), Outcome: OutcomeUsecaseError, Kind: intent.KindCreateCard}
-	}
-	r.record(ctx, intent.KindCreateCard.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatCreatedCard(result), Outcome: OutcomeRouted, Kind: intent.KindCreateCard}
-}
-
-func (r *IntentRouter) routeCountCards(ctx context.Context, userID uuid.UUID, channel string) RouteResult {
-	if r.cardCounter == nil {
-		r.record(ctx, intent.KindCountCards.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: intent.KindCountCards}
-	}
-	total, err := withReadRetry(ctx, func(ctx context.Context) (int64, error) {
-		return r.cardCounter.Execute(ctx, userID)
-	})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.count_cards_failed", observability.Error(err))
-		r.record(ctx, intent.KindCountCards.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindCountCards}
-	}
-	r.record(ctx, intent.KindCountCards.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatCardCount(total), Outcome: OutcomeRouted, Kind: intent.KindCountCards}
 }
 
 func withReadRetry[T any](ctx context.Context, op func(context.Context) (T, error)) (T, error) {
@@ -1204,22 +609,6 @@ func isTransientReadError(err error) bool {
 	return false
 }
 
-func (r *IntentRouter) currentCompetence() string {
-	now := time.Now().UTC().In(r.loc)
-	return fmt.Sprintf("%04d-%02d", now.Year(), int(now.Month()))
-}
-
-func (r *IntentRouter) mostRecentTransaction(ctx context.Context, userID uuid.UUID) (TransactionView, bool, error) {
-	list, err := r.transactionLister.Execute(ctx, TransactionListInput{UserID: userID.String(), RefMonth: r.currentCompetence()})
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.most_recent_transaction_failed",
-			observability.Error(err),
-		)
-		return TransactionView{}, false, err
-	}
-	return pickMostRecent(list.Transactions)
-}
-
 func pickMostRecent(items []TransactionView) (TransactionView, bool, error) {
 	if len(items) == 0 {
 		return TransactionView{}, false, nil
@@ -1238,21 +627,6 @@ func moreRecent(candidate, current TransactionView) bool {
 		return candidate.ID > current.ID
 	}
 	return candidate.CreatedAt.After(current.CreatedAt)
-}
-
-func (r *IntentRouter) delegateFallback(ctx context.Context, userID uuid.UUID, channel, text string) string {
-	reply, err := r.fallback.Reply(ctx, userID, channel, text)
-	if err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.fallback_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		return fallbackParseError
-	}
-	if strings.TrimSpace(reply) == "" {
-		return fallbackParseError
-	}
-	return reply
 }
 
 func (r *IntentRouter) record(ctx context.Context, kind, channel, outcome string) {

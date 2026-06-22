@@ -23,6 +23,34 @@ var (
 	ErrLogTransactionCategoryNotFound  = errors.New("agent: log transaction: categoria nao encontrada")
 )
 
+type CategoryAmbiguousError struct {
+	Hint       string
+	Candidates []string
+}
+
+func (e *CategoryAmbiguousError) Error() string {
+	return fmt.Sprintf("%s: hint=%q candidatos=%s", ErrLogTransactionCategoryAmbiguous.Error(), e.Hint, strings.Join(e.Candidates, ", "))
+}
+
+func (e *CategoryAmbiguousError) Unwrap() error {
+	return ErrLogTransactionCategoryAmbiguous
+}
+
+func newCategoryAmbiguousError(hint string, candidates []categoriesoutput.CandidateOutput) *CategoryAmbiguousError {
+	limit := len(candidates)
+	if limit > 3 {
+		limit = 3
+	}
+	paths := make([]string, 0, limit)
+	for _, candidate := range candidates[:limit] {
+		path := strings.TrimSpace(candidate.Path)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return &CategoryAmbiguousError{Hint: strings.TrimSpace(hint), Candidates: paths}
+}
+
 const (
 	directionOutcome  = "outcome"
 	directionIncome   = "income"
@@ -174,7 +202,7 @@ func (uc *LogTransactionFromAgent) resolve(ctx context.Context, hint string, kin
 	top := result.Candidates[0]
 	if top.IsAmbiguous && len(result.Candidates) > 1 {
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "ambiguous"))
-		return categoriesoutput.CandidateOutput{}, "", ErrLogTransactionCategoryAmbiguous
+		return categoriesoutput.CandidateOutput{}, "", newCategoryAmbiguousError(hint, result.Candidates)
 	}
 	return top, top.Path, nil
 }

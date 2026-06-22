@@ -140,7 +140,7 @@ func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResp
 	}
 
 	directReply := strings.TrimSpace(string(resp.RawJSON))
-	if directReply != "" {
+	if directReply != "" && !looksLikeJSON(directReply) {
 		uc.recordOutcome(ctx, intent.KindUnknown, outcomeDirectReply)
 		fallback, fbErr := intent.NewUnknown(trimmed)
 		if fbErr != nil {
@@ -149,6 +149,13 @@ func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResp
 		return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON, DirectReply: directReply, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
 	}
 
+	if parseErr.Outcome == outcomeFallbackInvalid {
+		uc.o11y.Logger().Warn(ctx, "agent.usecase.parse_inbound.decode_failed",
+			observability.String("outcome", parseErr.Outcome),
+			observability.String("raw", truncateRunes(string(resp.RawJSON), decodeFailureLogRunes)),
+			observability.Error(parseErr),
+		)
+	}
 	uc.recordOutcome(ctx, intent.KindUnknown, parseErr.Outcome)
 	uc.decodeFailedTotal.Add(ctx, 1, observability.String("reason", parseErr.Outcome))
 	fallback, fbErr := intent.NewUnknown(trimmed)
@@ -156,6 +163,33 @@ func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResp
 		return ParseInboundOutput{}, errors.Join(parseErr, fbErr)
 	}
 	return ParseInboundOutput{Intent: fallback, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
+}
+
+const decodeFailureLogRunes = 200
+
+func looksLikeJSON(text string) bool {
+	trimmed := strings.TrimSpace(stripFencesString(text))
+	if trimmed == "" {
+		return false
+	}
+	switch trimmed[0] {
+	case '{', '[':
+		return true
+	default:
+		return false
+	}
+}
+
+func stripFencesString(text string) string {
+	return string(stripFences([]byte(text)))
+}
+
+func truncateRunes(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
 
 func digestPrompt(text string) string {

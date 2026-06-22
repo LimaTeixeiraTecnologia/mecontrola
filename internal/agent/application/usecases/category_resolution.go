@@ -32,7 +32,7 @@ func resolveCategoryCandidate(
 	top := result.Candidates[0]
 	if top.IsAmbiguous && len(result.Candidates) > 1 {
 		resolveBad.Add(ctx, 1, observability.String("reason", "ambiguous"))
-		return categoriesoutput.CandidateOutput{}, "", ErrLogTransactionCategoryAmbiguous
+		return categoriesoutput.CandidateOutput{}, "", newCategoryAmbiguousError(hint, result.Candidates)
 	}
 	return top, top.Path, nil
 }

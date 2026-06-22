@@ -76,7 +76,7 @@ func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in appservices.E
 		Intent: in.Intent,
 	})
 	if err != nil {
-		return appservices.ExpenseLoggerResult{}, err
+		return appservices.ExpenseLoggerResult{}, translateCategoryError(err)
 	}
 	return appservices.ExpenseLoggerResult{
 		Persisted:    result.Persisted,
