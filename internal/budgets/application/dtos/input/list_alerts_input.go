@@ -1,6 +1,12 @@
 package input
 
-import "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
+)
 
 type ListAlertsInput struct {
 	UserID     string
@@ -9,4 +15,12 @@ type ListAlertsInput struct {
 	Threshold  *valueobjects.Threshold
 	Cursor     string
 	Limit      int
+}
+
+func (i *ListAlertsInput) Validate() error {
+	var errs []error
+	if _, err := uuid.Parse(i.UserID); err != nil {
+		errs = append(errs, ErrInputInvalidUserID)
+	}
+	return errors.Join(errs...)
 }

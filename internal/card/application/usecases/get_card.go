@@ -34,6 +34,10 @@ func (u *GetCard) Execute(ctx context.Context, in input.GetCard) (output.Card, e
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.Card{}, err
+	}
+
 	card, err := u.repo.GetByIDForUser(ctx, in.ID.String(), in.UserID.String())
 	if err != nil {
 		outcome := classifyCardOutcome(err)

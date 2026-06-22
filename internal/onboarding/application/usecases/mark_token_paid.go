@@ -37,8 +37,8 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.mark_token_paid")
 	defer span.End()
 
-	if in.FunnelToken == "" {
-		return fmt.Errorf("onboarding: mark token paid: funnel token is required")
+	if err := in.Validate(); err != nil {
+		return err
 	}
 
 	clearToken, err := valueobjects.TokenFromClear(in.FunnelToken)

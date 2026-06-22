@@ -55,6 +55,10 @@ func (uc *LinkChannelToUser) Execute(ctx context.Context, in input.LinkChannelTo
 	ctx, span := uc.o11y.Tracer().Start(ctx, "identity.usecase.link_channel_to_user")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return LinkChannelResult{}, err
+	}
+
 	if in.UserID == uuid.Nil {
 		return LinkChannelResult{}, fmt.Errorf("%s %w", prefixLinkChannelToUser, application.ErrUserNotFound)
 	}

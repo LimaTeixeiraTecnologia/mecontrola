@@ -42,6 +42,10 @@ func (u *RecordGatewayAuthFailure) Handle(ctx context.Context, in input.RecordGa
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.record_gateway_auth_failure")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	reason := entities.AuthEventReason(in.Reason)
 	if _, ok := gatewayReasons[reason]; !ok {
 		return fmt.Errorf("%s %w: %q", prefixRecordGatewayAuthFailure, ErrInvalidGatewayReason, in.Reason)

@@ -38,6 +38,10 @@ func (uc *ProcessSubscriptionCanceled) Execute(ctx context.Context, in input.Pro
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_subscription_canceled")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	eventKey := fmt.Sprintf("subscription_canceled:%s", in.KiwifySubID)
 
 	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {

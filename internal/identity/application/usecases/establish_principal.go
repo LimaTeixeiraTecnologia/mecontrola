@@ -127,6 +127,10 @@ func (u *EstablishPrincipal) Execute(ctx context.Context, in input.EstablishPrin
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return auth.Principal{}, err
+	}
+
 	start := time.Now()
 
 	wa, err := valueobjects.NewWhatsAppNumber(in.WhatsAppNumber)

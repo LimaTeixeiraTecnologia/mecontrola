@@ -37,6 +37,10 @@ func (uc *ProcessRefundOrChargeback) Execute(ctx context.Context, in input.Proce
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_refund_or_chargeback")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	trigger := in.Trigger
 	if trigger == "" {
 		trigger = "order_refunded"

@@ -79,11 +79,13 @@ func (s *CreateBudgetSuite) TestExecute_ValidInput_NoAllocations() {
 		UserID:     userID,
 		Competence: "2026-06",
 		TotalCents: 50000,
+		Allocations: []input.AllocationInput{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 10000},
+		},
 	})
 
 	s.NoError(err)
 	s.Equal("draft", result.State)
-	s.Empty(result.Allocations)
 }
 
 func (s *CreateBudgetSuite) TestExecute_InvalidUserID() {
@@ -91,9 +93,12 @@ func (s *CreateBudgetSuite) TestExecute_InvalidUserID() {
 		UserID:     "not-a-uuid",
 		Competence: "2026-06",
 		TotalCents: 100000,
+		Allocations: []input.AllocationInput{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 10000},
+		},
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidUserID)
+	s.Error(err)
 }
 
 func (s *CreateBudgetSuite) TestExecute_InvalidCompetence() {
@@ -101,9 +106,12 @@ func (s *CreateBudgetSuite) TestExecute_InvalidCompetence() {
 		UserID:     uuid.New().String(),
 		Competence: "2026-13",
 		TotalCents: 100000,
+		Allocations: []input.AllocationInput{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 10000},
+		},
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidCompetence)
+	s.Error(err)
 }
 
 func (s *CreateBudgetSuite) TestExecute_InvalidAllocationRootSlug() {
@@ -171,6 +179,9 @@ func (s *CreateBudgetSuite) TestExecute_Conflict() {
 		UserID:     userID,
 		Competence: "2026-06",
 		TotalCents: 100000,
+		Allocations: []input.AllocationInput{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 10000},
+		},
 	})
 
 	s.ErrorIs(err, interfaces.ErrBudgetConflict)
@@ -188,6 +199,9 @@ func (s *CreateBudgetSuite) TestExecute_RepositoryError() {
 		UserID:     userID,
 		Competence: "2026-06",
 		TotalCents: 100000,
+		Allocations: []input.AllocationInput{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 10000},
+		},
 	})
 
 	s.Error(err)

@@ -34,6 +34,10 @@ func (u *ListCards) Execute(ctx context.Context, in input.ListCards) (output.Car
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.CardList{}, err
+	}
+
 	if in.Cursor != "" {
 		if _, err := pagination.C.Decode(in.Cursor); err != nil {
 			span.SetAttributes(observability.String("outcome", "invalid"))

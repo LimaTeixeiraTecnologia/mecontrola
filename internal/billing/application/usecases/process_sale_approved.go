@@ -32,9 +32,13 @@ func NewProcessSaleApproved(
 	return &ProcessSaleApproved{uow: u, factory: factory, publisher: publisher, o11y: o11y}
 }
 
-func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSaleApprovedInput) error {
+func (uc *ProcessSaleApproved) Execute(ctx context.Context, in input.ProcessSaleApprovedInput) error { //nolint:revive // complexidade herdada do fluxo de webhook Kiwify com múltiplos caminhos de negócio
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_sale_approved")
 	defer span.End()
+
+	if err := in.Validate(); err != nil {
+		return err
+	}
 
 	kiwifySubID, err := valueobjects.NewKiwifySubscriptionID(in.KiwifySubID)
 	if err != nil {

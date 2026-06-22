@@ -33,6 +33,10 @@ func (uc *DeleteDraftBudget) Execute(ctx context.Context, in input.DeleteDraftIn
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.delete_draft_budget")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	cmd, err := commands.NewDeleteDraftBudgetCommand(in.UserID, in.Competence)
 	if err != nil {
 		return err

@@ -12,6 +12,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/prompting"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
@@ -32,18 +33,23 @@ type ParseInboundOutput struct {
 
 type ParseInbound struct {
 	interpreter       IntentInterpreter
+	sanitizer         *sanitize.Sanitizer
 	o11y              observability.Observability
 	parsedTotal       observability.Counter
 	decodeFailedTotal observability.Counter
 	schema            *interfaces.JSONSchemaSpec
 }
 
-func NewParseInbound(interpreter IntentInterpreter, o11y observability.Observability) (*ParseInbound, error) {
+func NewParseInbound(interpreter IntentInterpreter, maxInputChars int, o11y observability.Observability) (*ParseInbound, error) {
 	if interpreter == nil {
 		return nil, fmt.Errorf("agent.usecase.parse_inbound: interpreter is nil")
 	}
 	if o11y == nil {
 		return nil, fmt.Errorf("agent.usecase.parse_inbound: observability is nil")
+	}
+	sanitizer, err := sanitize.NewSanitizer(maxInputChars)
+	if err != nil {
+		return nil, fmt.Errorf("agent.usecase.parse_inbound: sanitizer: %w", err)
 	}
 	parsedTotal := o11y.Metrics().Counter(
 		"agent_intent_parsed_total",
@@ -57,6 +63,7 @@ func NewParseInbound(interpreter IntentInterpreter, o11y observability.Observabi
 	)
 	return &ParseInbound{
 		interpreter:       interpreter,
+		sanitizer:         sanitizer,
 		o11y:              o11y,
 		parsedTotal:       parsedTotal,
 		decodeFailedTotal: decodeFailedTotal,
@@ -83,9 +90,12 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agent.usecase.parse_inbound")
 	defer span.End()
 
-	trimmed := strings.TrimSpace(input.Text)
-	if trimmed == "" {
-		return ParseInboundOutput{}, ErrParseInboundEmptyText
+	trimmed, err := uc.sanitizer.Clean(input.Text)
+	if err != nil {
+		if errors.Is(err, sanitize.ErrEmpty) {
+			return ParseInboundOutput{}, ErrParseInboundEmptyText
+		}
+		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: sanitize: %w", err)
 	}
 
 	system, err := prompting.RenderSystem()

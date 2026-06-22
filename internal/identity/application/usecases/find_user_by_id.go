@@ -29,6 +29,10 @@ func (u *FindUserByID) Execute(ctx context.Context, in input.FindUserByID) (outp
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.find_user_by_id")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.FindUser{}, err
+	}
+
 	result, err := u.repo.FindByID(ctx, in.ID)
 	if err != nil {
 		span.RecordError(err)

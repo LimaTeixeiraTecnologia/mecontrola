@@ -56,6 +56,10 @@ func (uc *UpsertExpense) Execute(ctx context.Context, in input.UpsertExpenseInpu
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.upsert_expense")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.ExpenseOutput{}, err
+	}
+
 	cmd, err := commands.NewUpsertExpenseCommand(
 		in.UserID, in.SubcategoryID, in.Source, in.ExternalTransactionID,
 		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion,

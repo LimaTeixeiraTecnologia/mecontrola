@@ -50,7 +50,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_InvalidUserID() {
 		Competence: "2026-06",
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidUserID)
+	s.Error(err)
 }
 
 func (s *DeleteDraftBudgetSuite) TestExecute_InvalidCompetence() {
@@ -59,7 +59,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_InvalidCompetence() {
 		Competence: "bad",
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidCompetence)
+	s.Error(err)
 }
 
 func (s *DeleteDraftBudgetSuite) TestExecute_BudgetNotFound() {

@@ -30,6 +30,10 @@ func (u *FindUserByWhatsApp) Execute(ctx context.Context, in input.FindUserByWha
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.find_user_by_whatsapp")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.FindUser{}, err
+	}
+
 	whatsapp, err := valueobjects.NewWhatsAppNumber(in.WhatsAppNumber)
 	if err != nil {
 		return output.FindUser{}, fmt.Errorf("%s parse whatsapp: %w", prefixFindUserByWhatsApp, err)

@@ -143,7 +143,7 @@ func (s *UpdateCardLimitSuite) TestExecute_NegativeLimit_RejectedBeforeUoW() {
 	_, err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)
-	s.Require().ErrorIs(err, domain.ErrCardLimitNegative)
+	s.Require().ErrorIs(err, input.ErrCardLimitCentsInvalid)
 }
 
 func (s *UpdateCardLimitSuite) TestExecute_TooLarge_RejectedBeforeUoW() {

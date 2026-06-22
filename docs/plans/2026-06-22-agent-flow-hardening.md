@@ -12,9 +12,13 @@
   outro módulo (sem SQL direto, sem compartilhar transação com a UoW de outro módulo, sem importar repo de domínio
   alheio). Toda escrita do agent em tabela agent-owned usa UoW própria do agent.
 
-> **STATUS: PLANO. NADA IMPLEMENTADO.** Este documento é especificação para implementação futura. Nenhum código
-> deste plano está no repositório (uma POC local de P0-1/P0-3 foi escrita e revertida a pedido em 2026-06-22 — o
-> design validado dela está preservado nas seções 6.A e 6.B abaixo para reuso fiel).
+> **STATUS (2026-06-22): P0-3 IMPLEMENTADO E VALIDADO.** Demais itens permanecem como especificação futura.
+> P0-3 entregue: `internal/agent/application/sanitize/{sanitizer.go,sanitizer_test.go}`, wiring em
+> `parse_inbound.go` (`NewParseInbound(chain, cfg.MaxInputChars, o11y)` + `Sanitizer.Clean`), config
+> `AGENT_LLM_MAX_INPUT_CHARS` (default 2000, validação prod `(0..8192]`) em `configs/config.go` + `.env.example`.
+> Gates: `go build ./...`, `go vet ./...`, `go test ./internal/agent/...` (inclui e2e + onboarding), `go test
+> ./configs/...` — todos verdes. Zero-comentários/R0/R5/R7 OK. **Onboarding não regrediu** (é tratado antes do
+> parser no `route()`, então a sanitização do `parse_inbound` não o afeta). Design de 6.A/6.B preservado para reuso.
 
 ## 1. Context
 

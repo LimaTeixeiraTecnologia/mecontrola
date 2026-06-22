@@ -39,6 +39,10 @@ func (u *UpsertUserByWhatsApp) Execute(ctx context.Context, in input.UpsertUserB
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.upsert_user_by_whatsapp")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.UpsertUserByWhatsApp{}, err
+	}
+
 	whatsapp, email, err := u.parseInput(in)
 	if err != nil {
 		return output.UpsertUserByWhatsApp{}, err

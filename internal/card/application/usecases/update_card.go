@@ -53,6 +53,10 @@ func (u *UpdateCard) Execute(ctx context.Context, in input.UpdateCard) (output.C
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.Card{}, err
+	}
+
 	ic, hasIdem := idempotency.FromContext(ctx)
 
 	var card entities.Card

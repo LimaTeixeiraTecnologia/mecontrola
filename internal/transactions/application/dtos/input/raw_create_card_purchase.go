@@ -1,6 +1,10 @@
 package input
 
-import "github.com/google/uuid"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+)
 
 type RawCreateCardPurchase struct {
 	CardID            uuid.UUID  `json:"card_id"`
@@ -10,4 +14,27 @@ type RawCreateCardPurchase struct {
 	CategoryID        uuid.UUID  `json:"category_id"`
 	SubcategoryID     *uuid.UUID `json:"subcategory_id,omitempty"`
 	PurchasedAt       string     `json:"purchased_at"`
+}
+
+func (i *RawCreateCardPurchase) Validate() error {
+	var errs []error
+	if i.CardID == uuid.Nil {
+		errs = append(errs, ErrInputCardIDRequired)
+	}
+	if i.TotalAmountCents <= 0 {
+		errs = append(errs, ErrInputTotalAmountRequired)
+	}
+	if i.InstallmentsTotal < 1 || i.InstallmentsTotal > 24 {
+		errs = append(errs, ErrInputInstallmentsOutOfRange)
+	}
+	if i.Description == "" {
+		errs = append(errs, ErrInputDescriptionRequired)
+	}
+	if i.CategoryID == uuid.Nil {
+		errs = append(errs, ErrInputCategoryIDRequired)
+	}
+	if i.PurchasedAt == "" {
+		errs = append(errs, ErrInputPurchasedAtRequired)
+	}
+	return errors.Join(errs...)
 }

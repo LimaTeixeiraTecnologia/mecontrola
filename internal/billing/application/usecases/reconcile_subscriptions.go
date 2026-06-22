@@ -50,6 +50,10 @@ func (uc *ReconcileSubscriptions) Execute(ctx context.Context, in input.Reconcil
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.reconcile_subscriptions")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	var saleErrors []error
 	for page := 1; page <= reconcileMaxPages; page++ {
 		salesPage, listErr := uc.kiwifyClient.ListSalesUpdatedSince(ctx, in.WindowStart, in.WindowEnd, page)

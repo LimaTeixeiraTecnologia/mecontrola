@@ -30,19 +30,21 @@ Requisitos obrigatórios:
 - Puro: sem IO, sem `context.Context` (DMMF Princípio 6)
 - Delegar a VO smart constructors quando existirem (DMMF Princípio 1)
 
-### R-DTO-002 — Use case DEVE chamar Validate() como primeiro statement [HARD]
+### R-DTO-002 — Use case DEVE chamar Validate() logo após abertura do span [HARD]
 
 ```go
 func (uc *Foo) Execute(ctx context.Context, in input.FooInput) (output.FooOutput, error) {
+    ctx, span := uc.o11y.Tracer().Start(ctx, "module.usecase.foo")
+    defer span.End()
+
     if err := in.Validate(); err != nil {
         return output.FooOutput{}, err
     }
-    ctx, span := uc.o11y.Tracer().Start(ctx, "module.usecase.foo")
-    defer span.End()
     ...
 ```
 
-Posição: **antes** de span, command construction e qualquer IO.
+Posição: **imediatamente após** `defer span.End()`, antes de command construction e qualquer IO.
+Motivo: o span deve estar aberto para que o erro de validação apareça no trace.
 
 ### R-DTO-003 — Não duplicar validação semântica de enum [HARD]
 

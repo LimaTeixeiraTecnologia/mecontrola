@@ -1,6 +1,10 @@
 package input
 
-import "github.com/google/uuid"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+)
 
 type CreateCard struct {
 	UserID     uuid.UUID
@@ -9,4 +13,24 @@ type CreateCard struct {
 	ClosingDay int
 	DueDay     int
 	LimitCents int64
+}
+
+func (i *CreateCard) Validate() error {
+	var errs []error
+	if i.UserID == uuid.Nil {
+		errs = append(errs, ErrCardUserIDRequired)
+	}
+	if i.Name == "" {
+		errs = append(errs, ErrCardNameRequired)
+	}
+	if i.ClosingDay <= 0 {
+		errs = append(errs, ErrCardClosingDayInvalid)
+	}
+	if i.DueDay <= 0 {
+		errs = append(errs, ErrCardDueDayInvalid)
+	}
+	if i.LimitCents <= 0 {
+		errs = append(errs, ErrCardLimitCentsInvalid)
+	}
+	return errors.Join(errs...)
 }

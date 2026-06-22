@@ -113,6 +113,10 @@ func (u *ProcessKiwifyWebhook) Execute(ctx context.Context, in input.ProcessKiwi
 	ctx, span := u.o11y.Tracer().Start(ctx, "billing.usecase.process_kiwify_webhook")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	payload, err := kiwifypayload.Decode(in.RawBody)
 	if err != nil {
 		return errors.Join(

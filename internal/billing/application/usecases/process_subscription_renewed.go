@@ -40,6 +40,10 @@ func (uc *ProcessSubscriptionRenewed) Execute(ctx context.Context, in input.Proc
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_subscription_renewed")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	kiwifySubID, err := valueobjects.NewKiwifySubscriptionID(in.KiwifySubID)
 	if err != nil {
 		return ErrKiwifySubscriptionIDInvalid

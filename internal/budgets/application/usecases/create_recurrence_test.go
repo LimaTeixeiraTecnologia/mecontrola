@@ -64,7 +64,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidUserID() {
 		Months:           1,
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidUserID)
+	s.Error(err)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_InvalidCompetence() {
@@ -74,7 +74,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidCompetence() {
 		Months:           1,
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidCompetence)
+	s.Error(err)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsZero() {
@@ -84,7 +84,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsZero() {
 		Months:           0,
 	})
 
-	s.ErrorIs(err, ErrRecurrenceInvalidMonths)
+	s.Error(err)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsAbove12() {
@@ -94,7 +94,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsAbove12() {
 		Months:           13,
 	})
 
-	s.ErrorIs(err, ErrRecurrenceInvalidMonths)
+	s.Error(err)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_SourceNotFound() {

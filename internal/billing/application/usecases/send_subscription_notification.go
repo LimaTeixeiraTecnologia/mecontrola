@@ -37,6 +37,10 @@ func (u *SendSubscriptionNotification) Execute(ctx context.Context, in input.Sen
 	ctx, span := u.o11y.Tracer().Start(ctx, "billing.usecase.send_subscription_notification")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	var base notificationPayloadBase
 	if err := json.Unmarshal(in.Payload, &base); err != nil {
 		u.o11y.Logger().Error(ctx, "billing.notification.failed",

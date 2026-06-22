@@ -28,6 +28,10 @@ func (u *ProjectAuthEvent) Execute(ctx context.Context, in input.ProjectAuthEven
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.project_auth_event")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	authEv, err := parseAuthEvent(in.Payload)
 	if err != nil {
 		span.RecordError(err)

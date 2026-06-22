@@ -82,6 +82,10 @@ func (u *ResolvePrincipalByIdentity) Execute(ctx context.Context, in input.Resol
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.resolve_principal_by_identity")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return auth.Principal{}, err
+	}
+
 	start := time.Now()
 
 	channel, err := valueobjects.NewChannel(in.Channel)

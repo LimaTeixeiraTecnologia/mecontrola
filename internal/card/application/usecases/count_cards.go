@@ -30,6 +30,10 @@ func (u *CountCards) Execute(ctx context.Context, in input.CountCards) (output.C
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.CardCount{}, err
+	}
+
 	total, err := u.repo.CountActiveByUser(ctx, in.UserID.String())
 	if err != nil {
 		span.RecordError(err)

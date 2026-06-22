@@ -1,6 +1,8 @@
 package input
 
 import (
+	"errors"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
@@ -15,13 +17,14 @@ type SearchDictionaryInput struct {
 }
 
 func (i *SearchDictionaryInput) Validate() error {
+	var errs []error
 	if !i.Kind.IsValid() {
-		return ErrInvalidKind
+		errs = append(errs, ErrInvalidKind)
 	}
 	if _, err := valueobjects.NewSearchQuery(i.Query); err != nil {
-		return err
+		errs = append(errs, err)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (i *SearchDictionaryInput) NormalizedQuery() string {

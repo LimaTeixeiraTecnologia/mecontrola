@@ -32,6 +32,10 @@ func (uc *GetCategory) Execute(ctx context.Context, in *input.GetCategoryInput) 
 	ctx, span := uc.o11y.Tracer().Start(ctx, "categories.usecase.get")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return nil, err
+	}
+
 	version, err := uc.version.Current(ctx)
 	if err != nil {
 		span.RecordError(err)

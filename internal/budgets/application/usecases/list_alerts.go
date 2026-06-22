@@ -38,6 +38,10 @@ func (uc *ListAlerts) Execute(ctx context.Context, in input.ListAlertsInput) (ou
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.list_alerts")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.ListAlertsOutput{}, err
+	}
+
 	limit := in.Limit
 	if limit < 0 {
 		limit = 0

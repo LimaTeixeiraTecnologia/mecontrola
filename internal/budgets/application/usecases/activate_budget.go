@@ -40,6 +40,10 @@ func (uc *ActivateBudget) Execute(ctx context.Context, in input.ActivateBudgetIn
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.activate_budget")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.BudgetOutput{}, err
+	}
+
 	cmd, err := commands.NewActivateBudgetCommand(in.UserID, in.Competence)
 	if err != nil {
 		return output.BudgetOutput{}, err

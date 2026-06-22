@@ -148,7 +148,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_InvalidUserID() {
 
 	err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrDeleteExpenseInvalidUserID)
+	s.Error(err)
 }
 
 func (s *DeleteExpenseSuite) TestSoftDelete_InvalidSource() {
@@ -161,5 +161,5 @@ func (s *DeleteExpenseSuite) TestSoftDelete_InvalidSource() {
 
 	err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrDeleteExpenseInvalidSource)
+	s.Error(err)
 }

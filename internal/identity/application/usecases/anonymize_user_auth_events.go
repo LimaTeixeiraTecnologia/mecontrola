@@ -34,6 +34,10 @@ func (u *AnonymizeUserAuthEvents) Execute(ctx context.Context, in input.Anonymiz
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.anonymize_user_auth_events")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	var p anonymizeUserPayload
 	if err := json.Unmarshal(in.Payload, &p); err != nil {
 		u.o11y.Logger().Error(ctx, "identity.usecase.anonymize_user_auth_events.decode_failed",

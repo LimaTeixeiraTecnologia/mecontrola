@@ -11,3 +11,7 @@ type ListDictionaryInput struct {
 	Cursor     string
 	PageSize   int
 }
+
+func (i *ListDictionaryInput) Validate() error {
+	return nil
+}

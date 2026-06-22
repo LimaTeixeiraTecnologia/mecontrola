@@ -30,6 +30,10 @@ func (uc *ListDictionary) Execute(ctx context.Context, in *input.ListDictionaryI
 	ctx, span := uc.o11y.Tracer().Start(ctx, "categories.usecase.list_dictionary")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return nil, err
+	}
+
 	version, err := uc.version.Current(ctx)
 	if err != nil {
 		span.RecordError(err)

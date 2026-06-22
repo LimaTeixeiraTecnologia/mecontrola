@@ -37,6 +37,10 @@ func (uc *ProcessSubscriptionLate) Execute(ctx context.Context, in input.Process
 	ctx, span := uc.o11y.Tracer().Start(ctx, "billing.usecase.process_subscription_late")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	eventKey := fmt.Sprintf("subscription_late:%s:%s", in.KiwifySubID, in.OccurredAt.UTC().Format("2006-01-02T15:04:05Z07:00"))
 
 	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (entities.Subscription, error) {

@@ -554,7 +554,7 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		}
 	}
 
-	parseInbound, err := usecases.NewParseInbound(chain, o11y)
+	parseInbound, err := usecases.NewParseInbound(chain, cfg.MaxInputChars, o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
 	}

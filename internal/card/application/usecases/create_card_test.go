@@ -51,6 +51,7 @@ func (s *CreateCardSuite) makeInput() input.CreateCard {
 		Nickname:   "Nu",
 		ClosingDay: 15,
 		DueDay:     22,
+		LimitCents: 500000,
 	}
 }
 
@@ -99,7 +100,7 @@ func (s *CreateCardSuite) TestExecute_InvalidName() {
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
-	s.Require().ErrorIs(err, domain.ErrInvalidCardName)
+	s.Require().ErrorIs(err, input.ErrCardNameRequired)
 }
 
 func (s *CreateCardSuite) TestExecute_InvalidNickname() {
@@ -121,7 +122,7 @@ func (s *CreateCardSuite) TestExecute_InvalidClosingDay() {
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
-	s.Require().ErrorIs(err, domain.ErrInvalidClosingDay)
+	s.Require().ErrorIs(err, input.ErrCardClosingDayInvalid)
 }
 
 func (s *CreateCardSuite) TestExecute_NicknameConflict() {

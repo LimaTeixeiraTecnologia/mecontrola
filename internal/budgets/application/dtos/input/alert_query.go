@@ -9,3 +9,7 @@ type AlertQuery struct {
 	Cursor     string
 	Limit      int
 }
+
+func (i *AlertQuery) Validate() error {
+	return nil
+}

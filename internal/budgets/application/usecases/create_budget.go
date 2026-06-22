@@ -37,6 +37,10 @@ func (uc *CreateBudget) Execute(ctx context.Context, in input.CreateBudgetInput)
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.create_budget")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.BudgetOutput{}, err
+	}
+
 	cmd, err := commands.NewCreateBudgetCommand(in.UserID, in.Competence, in.TotalCents, convertAllocations(in.Allocations))
 	if err != nil {
 		return output.BudgetOutput{}, err

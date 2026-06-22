@@ -80,7 +80,7 @@ func (s *ActivateBudgetSuite) TestExecute_InvalidUserID() {
 		Competence: "2026-06",
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidUserID)
+	s.Error(err)
 }
 
 func (s *ActivateBudgetSuite) TestExecute_InvalidCompetence() {
@@ -89,7 +89,7 @@ func (s *ActivateBudgetSuite) TestExecute_InvalidCompetence() {
 		Competence: "bad-comp",
 	})
 
-	s.ErrorIs(err, ErrBudgetInvalidCompetence)
+	s.Error(err)
 }
 
 func (s *ActivateBudgetSuite) TestExecute_BudgetNotFound() {

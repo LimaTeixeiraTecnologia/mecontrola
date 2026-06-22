@@ -98,6 +98,10 @@ func (uc *ConsumeMagicToken) Execute(ctx context.Context, in input.ConsumeMagicT
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.consume_magic_token")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return ConsumeResult{}, err
+	}
+
 	start := time.Now()
 
 	token, err := valueobjects.TokenFromClear(in.Token)

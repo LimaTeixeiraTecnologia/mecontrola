@@ -181,5 +181,5 @@ func (s *LinkChannelToUserSuite) TestExecute_NilUserID_Rejects() {
 	})
 
 	s.Require().Error(execErr)
-	s.True(errors.Is(execErr, identityapp.ErrUserNotFound))
+	s.True(errors.Is(execErr, input.ErrUserIDRequired))
 }

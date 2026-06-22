@@ -47,6 +47,10 @@ func (uc *CreateRecurringTemplate) Execute(ctx context.Context, raw input.RawCre
 	ctx, span := uc.o11y.Tracer().Start(ctx, "transactions.usecase.create_recurring_template")
 	defer span.End()
 
+	if err := raw.Validate(); err != nil {
+		return output.RecurringTemplate{}, err
+	}
+
 	principal, ok := auth.FromContext(ctx)
 	if !ok {
 		return output.RecurringTemplate{}, ErrUsecaseUnauthorized

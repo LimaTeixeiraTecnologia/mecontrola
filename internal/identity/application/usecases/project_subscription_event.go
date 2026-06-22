@@ -60,6 +60,10 @@ func (u *ProjectSubscriptionEvent) Execute(ctx context.Context, in input.Project
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.project_subscription_event")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	switch in.EventType {
 	case eventTypeActivated, eventTypeRenewed, eventTypePastDue, eventTypeCanceled, eventTypeRefunded:
 		subscriptionID, err := extractSubscriptionRef(in.Payload, in.EventType)

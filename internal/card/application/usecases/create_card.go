@@ -52,6 +52,10 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.Card{}, err
+	}
+
 	u.o11y.Logger().Info(ctx, "card.create.started",
 		observability.String("user_id", in.UserID.String()),
 	)

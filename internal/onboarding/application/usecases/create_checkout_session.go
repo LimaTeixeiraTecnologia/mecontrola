@@ -51,8 +51,8 @@ func (uc *CreateCheckoutSession) Execute(ctx context.Context, in input.CreateChe
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.create_checkout_session")
 	defer span.End()
 
-	if in.PlanID == "" {
-		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: plan id is required")
+	if err := in.Validate(); err != nil {
+		return output.CreateCheckoutSessionOutput{}, err
 	}
 
 	token, err := valueobjects.NewToken()

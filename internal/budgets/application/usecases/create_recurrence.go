@@ -48,6 +48,10 @@ func (uc *CreateRecurrence) Execute(ctx context.Context, in input.CreateRecurren
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.create_recurrence")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.RecurrenceResultOutput{}, err
+	}
+
 	cmd, err := commands.NewCreateRecurrenceCommand(in.UserID, in.SourceCompetence, in.Months)
 	if err != nil {
 		return output.RecurrenceResultOutput{}, err

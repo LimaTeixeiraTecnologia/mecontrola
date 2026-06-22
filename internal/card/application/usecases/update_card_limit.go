@@ -58,6 +58,10 @@ func (u *UpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit)
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return output.Card{}, err
+	}
+
 	limit, err := valueobjects.NewCardLimit(in.LimitCents)
 	if err != nil {
 		span.SetAttributes(observability.String("outcome", "invalid"))

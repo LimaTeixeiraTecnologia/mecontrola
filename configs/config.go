@@ -170,6 +170,7 @@ type AgentConfig struct {
 	PrimaryModel      string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
 	FallbackModels    string        `mapstructure:"AGENT_LLM_FALLBACK_MODELS"`
 	MaxTokens         int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	MaxInputChars     int           `mapstructure:"AGENT_LLM_MAX_INPUT_CHARS"`
 	ProseMaxTokens    int           `mapstructure:"AGENT_LLM_PROSE_MAX_TOKENS"`
 	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
 	RequestTimeout    time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
@@ -905,6 +906,9 @@ func (c *Config) validateProductionAgent() []string {
 	if c.AgentConfig.MaxTokens <= 0 || c.AgentConfig.MaxTokens > 4096 {
 		errs = append(errs, "AGENT_LLM_MAX_TOKENS deve estar no intervalo (0..4096] em production")
 	}
+	if c.AgentConfig.MaxInputChars <= 0 || c.AgentConfig.MaxInputChars > 8192 {
+		errs = append(errs, "AGENT_LLM_MAX_INPUT_CHARS deve estar no intervalo (0..8192] em production")
+	}
 	if c.AgentConfig.RequestTimeout <= 0 || c.AgentConfig.RequestTimeout > 30*time.Second {
 		errs = append(errs, "AGENT_LLM_REQUEST_TIMEOUT deve estar no intervalo (0..30s] em production")
 	}
@@ -1159,6 +1163,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
 	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "openai/gpt-5-nano,mistralai/mistral-small-3.2-24b-instruct,anthropic/claude-haiku-4.5")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
+	l.v.SetDefault("AGENT_LLM_MAX_INPUT_CHARS", 2000)
 	l.v.SetDefault("AGENT_LLM_PROSE_MAX_TOKENS", 200)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
 	l.v.SetDefault("AGENT_LLM_REQUEST_TIMEOUT", 8*time.Second)

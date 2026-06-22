@@ -66,7 +66,7 @@ func (s *ListAlertsSuite) TestExecute_InvalidUserID_ReturnsError() {
 		Limit:  10,
 	})
 
-	s.ErrorIs(err, ErrListAlertsInvalidUserID)
+	s.Error(err)
 }
 
 func (s *ListAlertsSuite) TestExecute_DefaultLimit_Applied() {

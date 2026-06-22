@@ -41,6 +41,10 @@ func (u *SoftDeleteCard) Execute(ctx context.Context, in input.SoftDeleteCard) e
 	)
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	ic, hasIdem := idempotency.FromContext(ctx)
 
 	err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {

@@ -63,6 +63,10 @@ func (uc *CreateCardPurchase) Execute(ctx context.Context, raw input.RawCreateCa
 		return output.CardPurchase{}, ErrUsecaseUnauthorized
 	}
 
+	if err := raw.Validate(); err != nil {
+		return output.CardPurchase{}, err
+	}
+
 	purchasedAt, parseErr := parseISO8601(raw.PurchasedAt)
 	if parseErr != nil {
 		return output.CardPurchase{}, fmt.Errorf("transactions/create_card_purchase: purchased_at inválido: %w", parseErr)

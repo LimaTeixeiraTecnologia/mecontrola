@@ -38,6 +38,10 @@ func (u *MarkUserDeleted) Execute(ctx context.Context, in input.MarkUserDeleted)
 	ctx, span := u.o11y.Tracer().Start(ctx, "identity.usecase.mark_user_deleted")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	err := u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
 		now := time.Now().UTC()
 		userRepo := u.factory.UserRepository(tx)

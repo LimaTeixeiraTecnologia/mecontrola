@@ -51,6 +51,10 @@ func (uc *UpdateTransaction) Execute(ctx context.Context, txID string, raw input
 	ctx, span := uc.o11y.Tracer().Start(ctx, "transactions.usecase.update_transaction")
 	defer span.End()
 
+	if err := raw.Validate(); err != nil {
+		return output.Transaction{}, err
+	}
+
 	principal, ok := auth.FromContext(ctx)
 	if !ok {
 		return output.Transaction{}, ErrUsecaseUnauthorized

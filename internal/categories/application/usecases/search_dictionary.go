@@ -34,9 +34,10 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 	ctx, span := uc.o11y.Tracer().Start(ctx, "categories.usecase.search")
 	defer span.End()
 
-	if !in.Kind.IsValid() {
-		return nil, valueobjects.ErrInvalidKind
+	if err := in.Validate(); err != nil {
+		return nil, err
 	}
+
 	query, err := in.SearchQuery()
 	if err != nil {
 		return nil, err

@@ -1518,6 +1518,7 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.AgentConfig.OpenRouterAPIKey = "sk-real-key-for-testing"
 	cfg.AgentConfig.PrimaryModel = "google/gemini-2.5-flash-lite"
 	cfg.AgentConfig.MaxTokens = 256
+	cfg.AgentConfig.MaxInputChars = 2000
 	cfg.AgentConfig.RequestTimeout = 8 * time.Second
 	return cfg
 }

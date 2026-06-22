@@ -39,6 +39,10 @@ func (uc *HandlePaidWithoutToken) Execute(ctx context.Context, in input.HandlePa
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.handle_paid_without_token")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	payload, err := json.Marshal(map[string]any{
 		"external_sale_id":       in.ExternalSaleID,
 		"customer_mobile_masked": maskMobile(in.CustomerMobileE164),

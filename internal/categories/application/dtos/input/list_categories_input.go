@@ -11,3 +11,7 @@ type ListCategoriesInput struct {
 	ParentID          *uuid.UUID
 	IncludeDeprecated bool
 }
+
+func (i *ListCategoriesInput) Validate() error {
+	return nil
+}

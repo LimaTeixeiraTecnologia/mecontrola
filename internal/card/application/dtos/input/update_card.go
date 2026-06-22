@@ -1,6 +1,10 @@
 package input
 
-import "github.com/google/uuid"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+)
 
 type UpdateCard struct {
 	ID         uuid.UUID
@@ -9,4 +13,15 @@ type UpdateCard struct {
 	Nickname   *string
 	ClosingDay *int
 	DueDay     *int
+}
+
+func (i *UpdateCard) Validate() error {
+	var errs []error
+	if i.ID == uuid.Nil {
+		errs = append(errs, ErrCardIDRequired)
+	}
+	if i.UserID == uuid.Nil {
+		errs = append(errs, ErrCardUserIDRequired)
+	}
+	return errors.Join(errs...)
 }

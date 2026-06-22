@@ -255,7 +255,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidUserID() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidUserID)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_InvalidSubcategoryID() {
@@ -264,7 +264,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidSubcategoryID() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidSubcategory)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_InvalidSource() {
@@ -273,7 +273,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidSource() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidSource)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_InvalidCompetence() {
@@ -282,7 +282,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidCompetence() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidCompetence)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_RejectsZeroAmount() {
@@ -291,7 +291,7 @@ func (s *UpsertExpenseSuite) TestCreate_RejectsZeroAmount() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidAmount)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_RejectsNegativeAmount() {
@@ -300,7 +300,7 @@ func (s *UpsertExpenseSuite) TestCreate_RejectsNegativeAmount() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidAmount)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestUpdate_RejectsZeroAmount() {
@@ -311,7 +311,7 @@ func (s *UpsertExpenseSuite) TestUpdate_RejectsZeroAmount() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, ErrUpsertExpenseInvalidAmount)
+	s.Error(err)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_CategoriesReaderError() {

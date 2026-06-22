@@ -29,6 +29,10 @@ func (uc *ListCategories) Execute(ctx context.Context, in *input.ListCategoriesI
 	ctx, span := uc.o11y.Tracer().Start(ctx, "categories.usecase.list")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return nil, err
+	}
+
 	version, err := uc.version.Current(ctx)
 	if err != nil {
 		span.RecordError(err)

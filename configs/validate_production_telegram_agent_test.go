@@ -124,6 +124,7 @@ func TestValidateProductionAgent_AcceptableConfigPasses(t *testing.T) {
 		OpenRouterAPIKey: "sk-real-key",
 		PrimaryModel:     "google/gemini-2.5-flash-lite",
 		MaxTokens:        256,
+		MaxInputChars:    2000,
 		RequestTimeout:   8 * time.Second,
 	}
 

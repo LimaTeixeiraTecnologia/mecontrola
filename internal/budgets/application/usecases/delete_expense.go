@@ -48,6 +48,10 @@ func (uc *DeleteExpense) Execute(ctx context.Context, in input.DeleteExpenseInpu
 	ctx, span := uc.o11y.Tracer().Start(ctx, "budgets.usecase.delete_expense")
 	defer span.End()
 
+	if err := in.Validate(); err != nil {
+		return err
+	}
+
 	cmd, err := commands.NewDeleteExpenseCommand(in.UserID, in.Source, in.ExternalTransactionID, in.ExpectedVersion)
 	if err != nil {
 		return err
