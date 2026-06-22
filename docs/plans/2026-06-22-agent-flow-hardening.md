@@ -12,7 +12,26 @@
   outro módulo (sem SQL direto, sem compartilhar transação com a UoW de outro módulo, sem importar repo de domínio
   alheio). Toda escrita do agent em tabela agent-owned usa UoW própria do agent.
 
-> **STATUS (2026-06-22): P0-3 IMPLEMENTADO E VALIDADO.** Demais itens permanecem como especificação futura.
+> **STATUS (2026-06-22): TODAS AS 10 FASES IMPLEMENTADAS E VALIDADAS na `main`** (sem branch/PR).
+> Concluídas: P0-1 (auditoria agent-owned `agent_decisions`, migration 000011), P0-2 (guarda authz fail-closed +
+> métrica `agent_authz_denied_total`), P0-3 (sanitização/PII), P1-1 (`trace_id` no evento), P1-2 (retry só em
+> LEITURA — escrita nunca re-tentada p/ não duplicar lançamento), P1-3 (status callbacks Meta, migration 000012 +
+> tabela `whatsapp_message_status`), P1-4 (housekeeping dedup), P1-5 (métrica `agent_llm_tokens_total`), P2-2
+> (remoção de config morto), P2-3 (testes de regressão authz/retry/isolamento).
+> Evidência: `go build ./...`, `go vet ./...`, `go test ./...` e migrations integration — todos verdes. Onboarding
+> intacto (e2e + onboarding verdes em cada lote). Gates zero-comentários / SQL-adapter / init / R-TXN OK.
+> Resíduos documentados: `agent_decisions.resulting_event_id` usa `uuid.New()` (bindings não expõem event id real);
+> guarda P0-2 é defense-in-depth (isolamento já estrutural).
+> P1-5: métrica `agent_llm_tokens_total{model,type}` emitida no provider OpenRouter (`recordTokens`).
+> P2-2: removido config morto `AGENT_LLM_PROMPT_PAD_TOKENS` (struct+default+`.env.example`; sem uso em produção/teste).
+> Pendentes como PR contida cada (superfície de regressão em `cmd/server`/contratos): P1-4 (housekeeping dedup),
+> P0-1 (auditoria agent-owned + wiring), P0-2 (authz defense-in-depth), P1-2 (retry agent→módulo),
+> P1-3 (status callbacks Meta), P2-3 (testes de isolamento/replay).
+> P1-1 entregue: `trace_id` (via `Tracer().SpanFromContext(ctx).TraceID()`) como campo explícito em
+> `interfaces.IntentEvent` + payload `trace_id,omitempty` em `intent_event_publisher.go`, populado em
+> `IntentRouter.publishEvent`. Testes: shape com trace_id + omitempty. Suite agent (e2e+onboarding) verde.
+> Regra arquitetural reforçada: `internal/agent` chama `internal/<modulos>` via `binding/`→usecase e mantém
+> persistência própria quando necessário (agent-owned), sem compartilhar transação com outro módulo.
 > P0-3 entregue: `internal/agent/application/sanitize/{sanitizer.go,sanitizer_test.go}`, wiring em
 > `parse_inbound.go` (`NewParseInbound(chain, cfg.MaxInputChars, o11y)` + `Sanitizer.Clean`), config
 > `AGENT_LLM_MAX_INPUT_CHARS` (default 2000, validação prod `(0..8192]`) em `configs/config.go` + `.env.example`.
@@ -128,7 +147,7 @@ instrução anti-override, mas isso é insuficiente para um canal que dispara es
 
 ### P2 — Qualidade conversacional & testes
 
-- **P2-1 — Conversa single-turn.** `recent_turns` persistido em `agent_sessions` mas não enviado ao LLM.
+- **P2-1 — Conversa single-turn.** `recent_turns` persistido em `agent_sessions` mas não enviado ao LLM. **Decidido NÃO-GOAL do MVP** (ver seção 11 com prós/contras + custo).
 - **P2-2 — Config morta / truncamento silencioso.** `AGENT_LLM_PROMPT_PAD_TOKENS` nunca usado; sem pré-flight de
   tokens (truncamento só detectado por `finish_reason=length`).
 - **P2-3 — Lacunas de teste.** Faltam testes de: isolamento multi-usuário; replay/idempotência; recuperação de
@@ -197,9 +216,9 @@ instrução anti-override, mas isso é insuficiente para um canal que dispara es
 - **P1-5:** persistir tokens por decisão (reusar P0-1) + métrica `agent_llm_tokens_total{model,kind}`; alerta de teto.
 
 ### P2 (resumo)
-- **P2-1:** enviar `recent_turns` (janela curta) ao LLM no `compose_conversational_reply`/onboarding.
-- **P2-2:** remover `AGENT_LLM_PROMPT_PAD_TOKENS` ou implementar pré-flight de contagem de tokens.
-- **P2-3:** novos testes (isolamento multi-usuário, replay, falha parcial budget, dispatch sem principal).
+- **P2-1:** ❌ **NÃO-GOAL do MVP** (decisão 2026-06-22) — ver seção 11 com a análise de custo. Conversa segue single-turn.
+- **P2-2:** ✅ feito — removido `AGENT_LLM_PROMPT_PAD_TOKENS`.
+- **P2-3:** ✅ feito — testes de authz/retry/isolamento (e demais cobertos pelas suítes existentes).
 
 ### 6.A — Design validado da fundação P0-1 (auditoria agent-owned) — POC revertida, preservada
 
@@ -323,3 +342,36 @@ VALIDAÇÃO POR ITEM (obrigatória, sem falso positivo):
 - Reportar arquivos alterados, validações executadas, riscos residuais e suposições.
 - NÃO marcar como concluído sem evidência de teste passando. Não expandir escopo além do item.
 ```
+
+---
+
+## 11. P2-1 — Histórico multi-turn ao LLM: NÃO-GOAL do MVP (decisão 2026-06-22)
+
+**Decisão:** a conversa permanece **single-turn**. P2-1 NÃO será implementada no MVP. A razão NÃO é custo de tokens
+(que é desprezível) — é **risco de determinismo/regressão, +1 escrita de DB por mensagem e complexidade vs. ganho
+marginal** para um UX de comandos curtos.
+
+### Estado atual (verificado)
+- `interfaces.LLMRequest` (`llm_provider.go:27`) é single-message: só `SystemPrompt` + `UserMessage` (sem campo de
+  histórico). O `buildRequestBody` do OpenRouter monta apenas `[system, user]`.
+- `agent_sessions.recent_turns` existe no schema mas é **placeholder vazio**: gravado sempre como `[]`
+  (`binding/budget_config.go:145,172`), nunca populado com trocas reais nem lido para prompt.
+- 3 pontos chamam o LLM (todos single-turn): `parse_inbound`, `compose_conversational_reply`, `run_onboarding_turn`.
+
+### Prós vs. Contras
+- Prós: coerência conversacional (referências a turnos anteriores), menos repetição, melhor desambiguação na prosa.
+- Contras: determinismo↓ (perde a previsibilidade do `temperature=0` single-turn); +1 escrita de DB por mensagem;
+  PII precisa ser redigida a cada reenvio (reusar Sanitizer); regressão se aplicado a intent-parse (contamina
+  classificação → lançamento duplicado) ou onboarding (quebra narração determinística); complexidade (contrato +
+  provider + VO `ConversationTurn` + persistência + testes).
+
+### Estimativa de custo (modelo primário `google/gemini-2.5-flash-lite`; preços aprox., verificar em openrouter.ai)
+- Tokens: histórico de 3 turnos ≈ **+390 input/turno de conversa** (zero impacto no intent-parse). Preço aprox.
+  $0.10/1M in, $0.40/1M out.
+- Premissas: 200 msg/usuário/mês, 15% conversa (30 turnos/mês), janela 3.
+- **Δ incremental P2-1 ≈ $0.0012/usuário/mês** (≈ um décimo de centavo). Total do bot ≈ $0.021→$0.022/usuário/mês.
+- Escala: 1k usuários ≈ +$1.2/mês; 10k ≈ +$12/mês; 100k ≈ +$120/mês. (Fallback p/ `claude-haiku-4.5` ≈ 10× — raro.)
+
+### Se um dia for reativada — escopo seguro obrigatório
+Apenas em `compose_conversational_reply`; janela de 3 turnos; histórico **redigido** via Sanitizer; **NUNCA** em
+`parse_inbound` nem onboarding. Modelar `ConversationTurn` como VO DMMF (role enum `iota+1`, content validado).
