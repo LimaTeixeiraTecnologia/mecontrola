@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,13 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
@@ -21,6 +20,7 @@ import (
 type ProcessRefundOrChargebackSuite struct {
 	suite.Suite
 	ctx           context.Context
+	obs           *fake.Provider
 	uowMock       *mocks.UnitOfWorkSubscription
 	factoryMock   *mocks.RepositoryFactory
 	subRepoMock   *mocks.SubscriptionRepository
@@ -33,6 +33,7 @@ func TestProcessRefundOrChargeback(t *testing.T) {
 }
 
 func (s *ProcessRefundOrChargebackSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.uowMock = mocks.NewUnitOfWorkSubscription(s.T())
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
@@ -79,9 +80,9 @@ func (s *ProcessRefundOrChargebackSuite) canceledSub() entities.Subscription {
 	)
 }
 
-func (s *ProcessRefundOrChargebackSuite) expectRepositories(times int) {
-	s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(times)
-	s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(times)
+type refundDeps struct {
+	factoryMock   *mocks.RepositoryFactory
+	publisherMock *mocks.SubscriptionEventPublisher
 }
 
 func (s *ProcessRefundOrChargebackSuite) TestExecute() {
@@ -95,11 +96,13 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 		duplicates  int
 	}
 
+	now := time.Now().UTC()
+
 	scenarios := []struct {
-		name   string
-		args   args
-		setup  func(args)
-		expect func(result)
+		name         string
+		args         args
+		dependencies refundDeps
+		expect       func(result)
 	}{
 		{
 			name: "deve transicionar assinatura ativa para refunded",
@@ -109,30 +112,31 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "order_refunded",
-						OccurredAt: time.Now().UTC(),
+						OccurredAt: now,
 					},
 				},
 			},
-			setup: func(args args) {
+			dependencies: func() refundDeps {
 				sub := s.activeSub()
-				occurredAt := args.inputs[0].OccurredAt
+				occurredAt := now
 
-				s.expectRepositories(1)
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(1)
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", occurredAt).
+					MarkApplied(mock.Anything, "order_refunded:sale-001", "order_refunded", "sale-001", occurredAt).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByOrderID(mock.Anything, "order-001").
 					Return(sub, nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, occurredAt).
+					ApplyTransition(mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, occurredAt).
 					Return(nil).
 					Once()
 				s.publisherMock.EXPECT().
 					PublishRefunded(
-						s.ctx,
+						mock.Anything,
 						mock.Anything,
 						mock.MatchedBy(func(updated entities.Subscription) bool {
 							return updated.ID() == "sub-001" &&
@@ -145,7 +149,8 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 					).
 					Return(nil).
 					Once()
-			},
+				return refundDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(result result) {
 				s.NoError(result.err)
 				s.Equal(1, result.transitions)
@@ -160,40 +165,44 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "order_refunded",
-						OccurredAt: time.Now().UTC(),
+						OccurredAt: now,
 					},
 					{
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "chargeback",
-						OccurredAt: time.Now().UTC().Add(time.Hour),
+						OccurredAt: now.Add(time.Hour),
 					},
 				},
 			},
-			setup: func(args args) {
+			dependencies: func() refundDeps {
 				sub := s.activeSub()
-				s.expectRepositories(len(args.inputs))
+				chargebackAt := now.Add(time.Hour)
+
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(2)
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(2)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(mock.Anything, "order_refunded:sale-001", "order_refunded", "sale-001", now).
 					Return(nil).
 					Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "chargeback:sale-001", "chargeback", "sale-001", args.inputs[1].OccurredAt).
+					MarkApplied(mock.Anything, "chargeback:sale-001", "chargeback", "sale-001", chargebackAt).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByOrderID(mock.Anything, "order-001").
 					Return(sub, nil).
 					Twice()
 				s.subRepoMock.EXPECT().
-					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, mock.Anything).
+					ApplyTransition(mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, mock.Anything).
 					Return(nil).
 					Twice()
 				s.publisherMock.EXPECT().
-					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-001").
+					PublishRefunded(mock.Anything, mock.Anything, mock.Anything, "sub-001").
 					Return(nil).
 					Twice()
-			},
+				return refundDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(result result) {
 				s.NoError(result.err)
 				s.Equal(2, result.transitions)
@@ -208,40 +217,43 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "order_refunded",
-						OccurredAt: time.Now().UTC(),
+						OccurredAt: now,
 					},
 					{
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "chargeback",
-						OccurredAt: time.Now().UTC(),
+						OccurredAt: now,
 					},
 				},
 			},
-			setup: func(args args) {
+			dependencies: func() refundDeps {
 				sub := s.activeSub()
-				s.expectRepositories(len(args.inputs))
+
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(2)
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(2)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(mock.Anything, "order_refunded:sale-001", "order_refunded", "sale-001", now).
 					Return(nil).
 					Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "chargeback:sale-001", "chargeback", "sale-001", args.inputs[1].OccurredAt).
+					MarkApplied(mock.Anything, "chargeback:sale-001", "chargeback", "sale-001", now).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByOrderID(mock.Anything, "order-001").
 					Return(sub, nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, args.inputs[0].OccurredAt).
+					ApplyTransition(mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, now).
 					Return(nil).
 					Once()
 				s.publisherMock.EXPECT().
-					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-001").
+					PublishRefunded(mock.Anything, mock.Anything, mock.Anything, "sub-001").
 					Return(nil).
 					Once()
-			},
+				return refundDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(result result) {
 				s.NoError(result.err)
 				s.Equal(1, result.transitions)
@@ -256,32 +268,33 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "order_refunded",
-						OccurredAt: time.Now().UTC(),
+						OccurredAt: now,
 					},
 				},
 			},
-			setup: func(args args) {
+			dependencies: func() refundDeps {
 				sub := s.canceledSub()
-				occurredAt := args.inputs[0].OccurredAt
 
-				s.expectRepositories(1)
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(1)
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", occurredAt).
+					MarkApplied(mock.Anything, "order_refunded:sale-001", "order_refunded", "sale-001", now).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByOrderID(s.ctx, "order-001").
+					FindByOrderID(mock.Anything, "order-001").
 					Return(sub, nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusRefunded, time.Time{}, occurredAt).
+					ApplyTransition(mock.Anything, "sub-001", valueobjects.StatusRefunded, time.Time{}, now).
 					Return(nil).
 					Once()
 				s.publisherMock.EXPECT().
-					PublishRefunded(s.ctx, mock.Anything, mock.Anything, "sub-001").
+					PublishRefunded(mock.Anything, mock.Anything, mock.Anything, "sub-001").
 					Return(nil).
 					Once()
-			},
+				return refundDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(result result) {
 				s.NoError(result.err)
 				s.Equal(1, result.transitions)
@@ -296,20 +309,22 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 						SaleID:     "sale-001",
 						OrderID:    "order-001",
 						Trigger:    "order_refunded",
-						OccurredAt: time.Now().UTC(),
+						OccurredAt: now,
 					},
 				},
 			},
-			setup: func(args args) {
-				s.expectRepositories(1)
+			dependencies: func() refundDeps {
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Times(1)
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Times(1)
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, "order_refunded:sale-001", "order_refunded", "sale-001", args.inputs[0].OccurredAt).
+					MarkApplied(mock.Anything, "order_refunded:sale-001", "order_refunded", "sale-001", now).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
-			},
+				return refundDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(result result) {
 				s.Error(result.err)
-				s.ErrorIs(result.err, usecases.ErrEventAlreadyProcessed)
+				s.ErrorIs(result.err, ErrEventAlreadyProcessed)
 				s.Zero(result.transitions)
 				s.Zero(result.duplicates)
 			},
@@ -318,9 +333,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
-			sut := usecases.NewProcessRefundOrChargeback(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-			scenario.setup(scenario.args)
+			sut := NewProcessRefundOrChargeback(s.uowMock, scenario.dependencies.factoryMock, scenario.dependencies.publisherMock, s.obs)
 
 			result := result{}
 			for _, currentInput := range scenario.args.inputs {
@@ -336,7 +349,7 @@ func (s *ProcessRefundOrChargebackSuite) TestExecute() {
 					result.transitions++
 					continue
 				}
-				if errors.Is(err, usecases.ErrEventAlreadyProcessed) {
+				if errors.Is(err, ErrEventAlreadyProcessed) {
 					result.duplicates++
 					continue
 				}

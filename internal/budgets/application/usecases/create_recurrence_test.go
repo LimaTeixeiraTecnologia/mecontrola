@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -15,7 +16,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -23,11 +23,12 @@ import (
 
 type CreateRecurrenceSuite struct {
 	suite.Suite
+	obs     observability.Observability
 	ctx     context.Context
 	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	uow     *uowMocks.UnitOfWorkVoid
-	useCase *usecases.CreateRecurrence
+	useCase *CreateRecurrence
 }
 
 func TestCreateRecurrenceSuite(t *testing.T) {
@@ -35,12 +36,13 @@ func TestCreateRecurrenceSuite(t *testing.T) {
 }
 
 func (s *CreateRecurrenceSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
 	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
-	s.useCase = usecases.NewCreateRecurrence(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewCreateRecurrence(s.factory, s.uow, s.obs)
 }
 
 func buildSourceBudget(userID uuid.UUID, comp valueobjects.Competence) entities.Budget {
@@ -62,7 +64,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidUserID() {
 		Months:           1,
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidUserID)
+	s.ErrorIs(err, ErrBudgetInvalidUserID)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_InvalidCompetence() {
@@ -72,7 +74,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidCompetence() {
 		Months:           1,
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidCompetence)
+	s.ErrorIs(err, ErrBudgetInvalidCompetence)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsZero() {
@@ -82,7 +84,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsZero() {
 		Months:           0,
 	})
 
-	s.ErrorIs(err, usecases.ErrRecurrenceInvalidMonths)
+	s.ErrorIs(err, ErrRecurrenceInvalidMonths)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsAbove12() {
@@ -92,7 +94,7 @@ func (s *CreateRecurrenceSuite) TestExecute_InvalidMonthsAbove12() {
 		Months:           13,
 	})
 
-	s.ErrorIs(err, usecases.ErrRecurrenceInvalidMonths)
+	s.ErrorIs(err, ErrRecurrenceInvalidMonths)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_SourceNotFound() {
@@ -100,7 +102,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceNotFound() {
 	comp, _ := valueobjects.NewCompetence("2026-06")
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
@@ -110,7 +112,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceNotFound() {
 		Months:           1,
 	})
 
-	s.ErrorIs(err, usecases.ErrRecurrenceSourceInvalid)
+	s.ErrorIs(err, ErrRecurrenceSourceInvalid)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_SourceNegativeTotal() {
@@ -121,7 +123,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceNegativeTotal() {
 	zeroBudget := entities.NewBudget(userID, comp, 0, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(zeroBudget, nil).
 		Once()
 
@@ -131,7 +133,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceNegativeTotal() {
 		Months:           1,
 	})
 
-	s.ErrorIs(err, usecases.ErrRecurrenceSourceNegativeTotal)
+	s.ErrorIs(err, ErrRecurrenceSourceNegativeTotal)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_SourceDraftWithPartialAllocations() {
@@ -146,7 +148,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceDraftWithPartialAllocations() 
 	})
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(b, nil).
 		Once()
 
@@ -156,7 +158,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceDraftWithPartialAllocations() 
 		Months:           1,
 	})
 
-	s.ErrorIs(err, usecases.ErrRecurrenceSourceDraftWithoutFullAllocs)
+	s.ErrorIs(err, ErrRecurrenceSourceDraftWithoutFullAllocs)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_RF21a_CreatesNewBudget() {
@@ -167,17 +169,17 @@ func (s *CreateRecurrenceSuite) TestExecute_RF21a_CreatesNewBudget() {
 	source := buildSourceBudget(userID, sourceComp)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, nextComp).
+		GetByUserCompetence(mock.Anything, userID, nextComp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -209,17 +211,17 @@ func (s *CreateRecurrenceSuite) TestExecute_RF21b_UpdatesExistingDraft() {
 	})
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, nextComp).
+		GetByUserCompetence(mock.Anything, userID, nextComp).
 		Return(existingDraft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything).
+		Activate(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -245,17 +247,17 @@ func (s *CreateRecurrenceSuite) TestExecute_RF21b_CompletedFromAutoDraft() {
 	autoDraft := entities.NewAutoDraftBudget(userID, nextComp, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, nextComp).
+		GetByUserCompetence(mock.Anything, userID, nextComp).
 		Return(autoDraft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything).
+		Activate(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -289,12 +291,12 @@ func (s *CreateRecurrenceSuite) TestExecute_RF23a_ConflictOnActiveExisting() {
 	)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, nextComp).
+		GetByUserCompetence(mock.Anything, userID, nextComp).
 		Return(activeNext, nil).
 		Once()
 
@@ -325,7 +327,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceAutoDraftWithoutAllocations() 
 	)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(autoDraftNoAllocs, nil).
 		Once()
 
@@ -335,7 +337,7 @@ func (s *CreateRecurrenceSuite) TestExecute_SourceAutoDraftWithoutAllocations() 
 		Months:           1,
 	})
 
-	s.ErrorIs(err, usecases.ErrRecurrenceSourceAutoDraftWithoutAllocs)
+	s.ErrorIs(err, ErrRecurrenceSourceAutoDraftWithoutAllocs)
 }
 
 func (s *CreateRecurrenceSuite) TestExecute_ConflictOnCreateDraft() {
@@ -346,17 +348,17 @@ func (s *CreateRecurrenceSuite) TestExecute_ConflictOnCreateDraft() {
 	source := buildSourceBudget(userID, sourceComp)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, nextComp).
+		GetByUserCompetence(mock.Anything, userID, nextComp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(interfaces.ErrBudgetConflict).
 		Once()
 
@@ -381,17 +383,17 @@ func (s *CreateRecurrenceSuite) TestExecute_ActivateErrorOnExistingDraft() {
 	existingDraft := entities.NewBudget(userID, nextComp, 50000, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, nextComp).
+		GetByUserCompetence(mock.Anything, userID, nextComp).
 		Return(existingDraft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		Activate(s.ctx, mock.Anything).
+		Activate(mock.Anything, mock.Anything).
 		Return(errors.New("db failure")).
 		Once()
 
@@ -413,7 +415,7 @@ func (s *CreateRecurrenceSuite) TestExecute_MultipleMonths() {
 	source := buildSourceBudget(userID, sourceComp)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, sourceComp).
+		GetByUserCompetence(mock.Anything, userID, sourceComp).
 		Return(source, nil).
 		Once()
 
@@ -422,19 +424,19 @@ func (s *CreateRecurrenceSuite) TestExecute_MultipleMonths() {
 	comp09, _ := valueobjects.NewCompetence("2026-09")
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp07).
+		GetByUserCompetence(mock.Anything, userID, comp07).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Times(3)
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp08).
+		GetByUserCompetence(mock.Anything, userID, comp08).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp09).
+		GetByUserCompetence(mock.Anything, userID, comp09).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 

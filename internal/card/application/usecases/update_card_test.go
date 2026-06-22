@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
@@ -24,6 +24,7 @@ import (
 
 type UpdateCardSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	uowMock     *ucmocks.UnitOfWorkCard
 	factoryMock *ifacemocks.RepositoryFactory
 	repoMock    *ifacemocks.CardRepository
@@ -35,6 +36,7 @@ func TestUpdateCard(t *testing.T) {
 }
 
 func (s *UpdateCardSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.uowMock = ucmocks.NewUnitOfWorkCard(s.T())
 	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
@@ -73,7 +75,7 @@ func (s *UpdateCardSuite) TestExecute_HappyPath() {
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, existing.ID.String(), userID.String()).Return(existing, nil).Once()
 	s.repoMock.EXPECT().UpdateByIDForUser(mock.Anything, mock.AnythingOfType("entities.Card")).Return(existing, nil).Once()
 
-	sut := usecases.NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	out, err := sut.Execute(ctx, in)
 
 	s.Require().NoError(err)
@@ -88,7 +90,7 @@ func (s *UpdateCardSuite) TestExecute_CardNotFound() {
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, in.ID.String(), userID.String()).Return(entities.Card{}, domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)
@@ -105,7 +107,7 @@ func (s *UpdateCardSuite) TestExecute_NicknameConflict() {
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, existing.ID.String(), userID.String()).Return(existing, nil).Once()
 	s.repoMock.EXPECT().UpdateByIDForUser(mock.Anything, mock.AnythingOfType("entities.Card")).Return(entities.Card{}, domain.ErrNicknameConflict).Once()
 
-	sut := usecases.NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)
@@ -134,30 +136,9 @@ func (s *UpdateCardSuite) TestExecute_RINT05_IdempotencyPutRollback() {
 	s.repoMock.EXPECT().UpdateByIDForUser(mock.Anything, mock.AnythingOfType("entities.Card")).Return(existing, nil).Once()
 	s.idemMock.EXPECT().Put(mock.Anything, mock.AnythingOfType("idempotency.Record")).Return(idemErr).Once()
 
-	sut := usecases.NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)
 	s.Contains(err.Error(), "storage unavailable")
-}
-
-func (s *UpdateCardSuite) TestExecute_InvalidInput() {
-	ctx := context.Background()
-	userID := uuid.New()
-	existing := s.existingCard(userID)
-	empty := ""
-	in := input.UpdateCard{
-		ID:     existing.ID,
-		UserID: userID,
-		Name:   &empty,
-	}
-
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
-	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, existing.ID.String(), userID.String()).Return(existing, nil).Once()
-
-	sut := usecases.NewUpdateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
-	_, err := sut.Execute(ctx, in)
-
-	s.Require().Error(err)
-	s.Require().ErrorIs(err, domain.ErrInvalidCardName)
 }

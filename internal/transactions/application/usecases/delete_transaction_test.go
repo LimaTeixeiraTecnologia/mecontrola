@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +13,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -28,7 +27,7 @@ type DeleteTransactionSuite struct {
 	repo      *mockInterfaces.TransactionRepository
 	publisher *mockInterfaces.TransactionEventPublisher
 	uow       *uowMocks.UnitOfWorkVoid
-	useCase   *usecases.DeleteTransaction
+	useCase   *DeleteTransaction
 }
 
 func TestDeleteTransactionSuite(t *testing.T) {
@@ -43,7 +42,7 @@ func (s *DeleteTransactionSuite) SetupTest() {
 	s.factory.EXPECT().TransactionRepository(mock.Anything).Return(s.repo).Maybe()
 	s.publisher = mockInterfaces.NewTransactionEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
-	s.useCase = usecases.NewDeleteTransaction(s.factory, s.uow, s.publisher, noop.NewProvider())
+	s.useCase = NewDeleteTransaction(s.factory, s.uow, s.publisher, fake.NewProvider())
 }
 
 func (s *DeleteTransactionSuite) makeExistingTransaction(txID uuid.UUID) *entities.Transaction {

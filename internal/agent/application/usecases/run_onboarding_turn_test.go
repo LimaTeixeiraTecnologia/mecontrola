@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -7,13 +7,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 )
 
 type fakeTurnInterpreter struct {
@@ -28,24 +26,24 @@ func (f *fakeTurnInterpreter) Interpret(_ context.Context, _ interfaces.LLMReque
 }
 
 type fakeStateReader struct {
-	snapshot usecases.OnboardingSnapshot
+	snapshot OnboardingSnapshot
 	err      error
 }
 
-func (f *fakeStateReader) Load(_ context.Context, _ uuid.UUID) (usecases.OnboardingSnapshot, error) {
+func (f *fakeStateReader) Load(_ context.Context, _ uuid.UUID) (OnboardingSnapshot, error) {
 	return f.snapshot, f.err
 }
 
 type fakeToolDispatcher struct {
 	calls   int
-	results map[string]usecases.OnboardingToolResult
+	results map[string]OnboardingToolResult
 	err     error
 }
 
-func (f *fakeToolDispatcher) Dispatch(_ context.Context, _ uuid.UUID, _ string, call interfaces.ToolCall) (usecases.OnboardingToolResult, error) {
+func (f *fakeToolDispatcher) Dispatch(_ context.Context, _ uuid.UUID, _ string, call interfaces.ToolCall) (OnboardingToolResult, error) {
 	f.calls++
 	if f.err != nil {
-		return usecases.OnboardingToolResult{}, f.err
+		return OnboardingToolResult{}, f.err
 	}
 	return f.results[call.FunctionName], nil
 }
@@ -71,183 +69,181 @@ func (f *fakePhaseSetter) last() string {
 	return f.phases[len(f.phases)-1]
 }
 
-func newTurn(t *testing.T, interp usecases.IntentInterpreter, reader usecases.OnboardingStateReader, dispatcher usecases.OnboardingToolDispatcher, phases usecases.OnboardingPhaseSetter) *usecases.RunOnboardingTurn {
-	t.Helper()
-	uc, err := usecases.NewRunOnboardingTurn(interp, reader, dispatcher, phases, 512, noop.NewProvider())
-	require.NoError(t, err)
+type RunOnboardingTurnSuite struct {
+	suite.Suite
+	ctx context.Context
+}
+
+func TestRunOnboardingTurnSuite(t *testing.T) {
+	suite.Run(t, new(RunOnboardingTurnSuite))
+}
+
+func (s *RunOnboardingTurnSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *RunOnboardingTurnSuite) newTurn(interp IntentInterpreter, reader OnboardingStateReader, dispatcher OnboardingToolDispatcher, phases OnboardingPhaseSetter) *RunOnboardingTurn {
+	uc, err := NewRunOnboardingTurn(interp, reader, dispatcher, phases, 512, fake.NewProvider())
+	s.Require().NoError(err)
 	return uc
 }
 
-func TestRunOnboardingTurn_NotInProgress(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestNotInProgress() {
 	interp := &fakeTurnInterpreter{}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: false}}, &fakeToolDispatcher{}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
-	require.NoError(t, err)
-	require.False(t, out.Handled)
-	require.False(t, interp.called)
-	require.Empty(t, setter.phases)
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: false}}, &fakeToolDispatcher{}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
+	s.Require().NoError(err)
+	s.False(out.Handled)
+	s.False(interp.called)
+	s.Empty(setter.phases)
 }
 
-func TestRunOnboardingTurn_ReaderError(t *testing.T) {
-	t.Parallel()
-	uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{err: errors.New("boom")}, &fakeToolDispatcher{}, &fakePhaseSetter{})
-	_, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
-	require.Error(t, err)
+func (s *RunOnboardingTurnSuite) TestReaderError() {
+	uc := s.newTurn(&fakeTurnInterpreter{}, &fakeStateReader{err: errors.New("boom")}, &fakeToolDispatcher{}, &fakePhaseSetter{})
+	_, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
+	s.Require().Error(err)
 }
 
-func TestRunOnboardingTurn_NewSessionEmitsWelcome(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestNewSessionEmitsWelcome() {
 	interp := &fakeTurnInterpreter{}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: ""}}, &fakeToolDispatcher{}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "Eu sou o *MeControla*")
-	require.Equal(t, usecases.OnbPhaseWelcome, setter.last())
-	require.False(t, interp.called)
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: ""}}, &fakeToolDispatcher{}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "Eu sou o *MeControla*")
+	s.Equal(OnbPhaseWelcome, setter.last())
+	s.False(interp.called)
 }
 
-func TestRunOnboardingTurn_WelcomeAffirmationAdvancesToMethodology(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestWelcomeAffirmationAdvancesToMethodology() {
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseWelcome}}, &fakeToolDispatcher{}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "sim"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "Custo Fixo")
-	require.Equal(t, usecases.OnbPhaseMethodology1, setter.last())
+	uc := s.newTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseWelcome}}, &fakeToolDispatcher{}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "sim"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "Custo Fixo")
+	s.Equal(OnbPhaseMethodology1, setter.last())
 }
 
-func TestRunOnboardingTurn_MethodologyAdvancesOnNonQuestionReply(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestMethodologyAdvancesOnNonQuestionReply() {
 	for _, reply := range []string{"Faz", "faz sentido", "ok", "show", "👍", "entendi", "bora"} {
 		setter := &fakePhaseSetter{}
-		uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseMethodology1}}, &fakeToolDispatcher{}, setter)
-		out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: reply})
-		require.NoError(t, err)
-		require.True(t, out.Handled)
-		require.Contains(t, out.Reply, "Conhecimento", "reply %q deveria avançar", reply)
-		require.Equal(t, usecases.OnbPhaseMethodology2, setter.last(), "reply %q deveria avançar", reply)
+		uc := s.newTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseMethodology1}}, &fakeToolDispatcher{}, setter)
+		out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: reply})
+		s.Require().NoError(err)
+		s.True(out.Handled)
+		s.Contains(out.Reply, "Conhecimento", "reply %q deveria avançar", reply)
+		s.Equal(OnbPhaseMethodology2, setter.last(), "reply %q deveria avançar", reply)
 	}
 }
 
-func TestRunOnboardingTurn_MethodologyNonAffirmationReasks(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestMethodologyNonAffirmationReasks() {
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseMethodology1}}, &fakeToolDispatcher{}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "espera, o que é isso?"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "Custo Fixo")
-	require.Empty(t, setter.phases)
+	uc := s.newTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseMethodology1}}, &fakeToolDispatcher{}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "espera, o que é isso?"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "Custo Fixo")
+	s.Empty(setter.phases)
 }
 
-func TestRunOnboardingTurn_ObjectiveToolAdvancesToIncome(t *testing.T) {
-	t.Parallel()
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: usecases.ToolSaveOnboardingObjective}}}}
-	dispatcher := &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{
-		usecases.ToolSaveOnboardingObjective: {Reply: "🎯 Anotado!", Advance: true},
+func (s *RunOnboardingTurnSuite) TestObjectiveToolAdvancesToIncome() {
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingObjective}}}}
+	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
+		ToolSaveOnboardingObjective: {Reply: "🎯 Anotado!", Advance: true},
 	}}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseObjective}}, dispatcher, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "quero fazer uma viagem"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "🎯 Anotado!")
-	require.Contains(t, out.Reply, "orçamento mensal")
-	require.Equal(t, usecases.OnbPhaseIncome, setter.last())
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseObjective}}, dispatcher, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "quero fazer uma viagem"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "🎯 Anotado!")
+	s.Contains(out.Reply, "orçamento mensal")
+	s.Equal(OnbPhaseIncome, setter.last())
 }
 
-func TestRunOnboardingTurn_ObjectiveQuestionStaysNoAdvance(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestObjectiveQuestionStaysNoAdvance() {
 	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("Pra te ajudar melhor com seu **objetivo**, me conta? 😊")}}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseObjective}}, &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{}}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "por que você precisa disso?"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.True(t, strings.Contains(out.Reply, "objetivo"))
-	require.NotContains(t, out.Reply, "**")
-	require.Contains(t, out.Reply, "*objetivo*")
-	require.Empty(t, setter.phases)
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseObjective}}, &fakeToolDispatcher{results: map[string]OnboardingToolResult{}}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "por que você precisa disso?"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.True(strings.Contains(out.Reply, "objetivo"))
+	s.NotContains(out.Reply, "**")
+	s.Contains(out.Reply, "*objetivo*")
+	s.Empty(setter.phases)
 }
 
-func TestRunOnboardingTurn_CardsNegationAdvancesToSplits(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestCardsNegationAdvancesToSplits() {
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseCards}}, &fakeToolDispatcher{}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "não uso cartão"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "distribuir seu orçamento")
-	require.Equal(t, usecases.OnbPhaseSplits, setter.last())
+	uc := s.newTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseCards}}, &fakeToolDispatcher{}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "não uso cartão"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "distribuir seu orçamento")
+	s.Equal(OnbPhaseSplits, setter.last())
 }
 
-func TestRunOnboardingTurn_SplitsDefaultAppliedWithoutLLM(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestSplitsDefaultAppliedWithoutLLM() {
 	interp := &fakeTurnInterpreter{}
-	dispatcher := &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{
-		usecases.ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição salva!", Advance: true},
+	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
+		ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição salva!", Advance: true},
 	}}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSplits, IncomeCents: 500000}}, dispatcher, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "sim, pode usar essa"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.False(t, interp.called)
-	require.Equal(t, 1, dispatcher.calls)
-	require.Contains(t, out.Reply, "Distribuição salva")
-	require.Equal(t, usecases.OnbPhaseSummary, setter.last())
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseSplits, IncomeCents: 500000}}, dispatcher, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "sim, pode usar essa"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.False(interp.called)
+	s.Equal(1, dispatcher.calls)
+	s.Contains(out.Reply, "Distribuição salva")
+	s.Equal(OnbPhaseSummary, setter.last())
 }
 
-func TestRunOnboardingTurn_SplitsCustomUsesLLM(t *testing.T) {
-	t.Parallel()
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: usecases.ToolSaveOnboardingBudgetSplits}}}}
-	dispatcher := &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{
-		usecases.ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição salva!", Advance: true},
+func (s *RunOnboardingTurnSuite) TestSplitsCustomUsesLLM() {
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingBudgetSplits}}}}
+	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
+		ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição salva!", Advance: true},
 	}}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSplits, IncomeCents: 500000}}, dispatcher, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "custo fixo 5000, conhecimento 1000, prazeres 1500, metas 3000, liberdade 2000"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.True(t, interp.called)
-	require.Equal(t, usecases.OnbPhaseSummary, setter.last())
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseSplits, IncomeCents: 500000}}, dispatcher, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "custo fixo 5000, conhecimento 1000, prazeres 1500, metas 3000, liberdade 2000"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.True(interp.called)
+	s.Equal(OnbPhaseSummary, setter.last())
 }
 
-func TestRunOnboardingTurn_SummaryAffirmationAdvancesToFirstTx(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestSummaryAffirmationAdvancesToFirstTx() {
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, &fakeTurnInterpreter{}, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSummary}}, &fakeToolDispatcher{}, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "tá perfeito"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "primeiro lançamento")
-	require.Equal(t, usecases.OnbPhaseFirstTx, setter.last())
+	uc := s.newTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseSummary}}, &fakeToolDispatcher{}, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "tá perfeito"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "primeiro lançamento")
+	s.Equal(OnbPhaseFirstTx, setter.last())
 }
 
-func TestRunOnboardingTurn_FirstTxRecordsAndCompletes(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestFirstTxRecordsAndCompletes() {
 	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: "record_transaction"}}}}
-	dispatcher := &fakeToolDispatcher{results: map[string]usecases.OnboardingToolResult{
+	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		"record_transaction": {Reply: "🏆 Boa!\n\n🎉 *Onboarding concluído!*", Advance: true, Terminal: true},
 	}}
 	setter := &fakePhaseSetter{}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseFirstTx}}, dispatcher, setter)
-	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "gastei 35 no mercado"})
-	require.NoError(t, err)
-	require.True(t, out.Handled)
-	require.Contains(t, out.Reply, "Onboarding concluído")
-	require.Equal(t, 1, dispatcher.calls)
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseFirstTx}}, dispatcher, setter)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "gastei 35 no mercado"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "Onboarding concluído")
+	s.Equal(1, dispatcher.calls)
 }
 
-func TestRunOnboardingTurn_InterpretErrorAtDataPhase(t *testing.T) {
-	t.Parallel()
+func (s *RunOnboardingTurnSuite) TestInterpretErrorAtDataPhase() {
 	interp := &fakeTurnInterpreter{err: errors.New("provider down")}
-	uc := newTurn(t, interp, &fakeStateReader{snapshot: usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseObjective}}, &fakeToolDispatcher{}, &fakePhaseSetter{})
-	_, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "viagem"})
-	require.Error(t, err)
+	uc := s.newTurn(interp, &fakeStateReader{snapshot: OnboardingSnapshot{InProgress: true, Phase: OnbPhaseObjective}}, &fakeToolDispatcher{}, &fakePhaseSetter{})
+	_, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "viagem"})
+	s.Require().Error(err)
 }

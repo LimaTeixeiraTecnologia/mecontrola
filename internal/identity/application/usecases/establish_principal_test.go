@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -17,7 +17,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
@@ -27,7 +26,13 @@ import (
 
 type EstablishPrincipalSuite struct {
 	suite.Suite
-	ctx context.Context
+	ctx       context.Context
+	obs       observability.Observability
+	factory   *interfacesmocks.MockRepositoryFactory
+	repo      *interfacesmocks.MockUserRepository
+	idRepo    *interfacesmocks.MockUserIdentityRepository
+	publisher *outboxmocks.Publisher
+	uow       *usecasemocks.UnitOfWorkGeneric[EstablishResult]
 }
 
 func TestEstablishPrincipal(t *testing.T) {
@@ -35,7 +40,13 @@ func TestEstablishPrincipal(t *testing.T) {
 }
 
 func (s *EstablishPrincipalSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
+	s.factory = interfacesmocks.NewMockRepositoryFactory(s.T())
+	s.repo = interfacesmocks.NewMockUserRepository(s.T())
+	s.idRepo = interfacesmocks.NewMockUserIdentityRepository(s.T())
+	s.publisher = outboxmocks.NewPublisher(s.T())
+	s.uow = usecasemocks.NewUnitOfWorkGeneric[EstablishResult](s.T())
 }
 
 func (s *EstablishPrincipalSuite) mustWhatsApp(raw string) valueobjects.WhatsAppNumber {
@@ -53,8 +64,6 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 
 	type dependencies struct {
 		factory   *interfacesmocks.MockRepositoryFactory
-		repo      *interfacesmocks.MockUserRepository
-		idRepo    *interfacesmocks.MockUserIdentityRepository
 		publisher *outboxmocks.Publisher
 	}
 
@@ -72,22 +81,28 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 	s.Require().NoError(err)
 
 	scenarios := []struct {
-		name   string
-		args   args
-		setup  func(dependencies)
-		expect func(auth.Principal, error)
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(auth.Principal, error)
 	}{
 		{
 			name: "deve retornar Principal para usuario ativo",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
-					return ev.AggregateUserID == "a0a0a0a0-0000-0000-0000-000000000001"
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+						return ev.AggregateUserID == "a0a0a0a0-0000-0000-0000-000000000001"
+					})).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -98,14 +113,20 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 		{
 			name: "deve retornar ErrUnknownUser e publicar unknown_user para usuario inexistente",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
-					return ev.AggregateUserID == ""
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+						return ev.AggregateUserID == ""
+					})).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().ErrorIs(err, application.ErrUnknownUser)
@@ -115,12 +136,16 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 		{
 			name: "deve propagar erro de banco de dados",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				dbErr := errors.New("db unavailable")
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, dbErr).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					dbErr := errors.New("db unavailable")
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, dbErr).Once()
+					return s.factory
+				}(),
+				publisher: s.publisher,
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().Error(err)
@@ -131,13 +156,19 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 		{
 			name: "deve propagar erro de outbox e nao retornar Principal (rollback observavel via erro)",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				pubErr := errors.New("outbox unavailable")
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(pubErr).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					pubErr := errors.New("outbox unavailable")
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(pubErr).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().Error(err)
@@ -152,12 +183,18 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 				RequestID:      "req-abc-123",
 				ClientIPRaw:    "1.2.3.4",
 			}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -171,12 +208,18 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 				RequestID:      "req-xyz-999",
 				ClientIPRaw:    "",
 			}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -188,12 +231,18 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 			args: args{in: input.EstablishPrincipalInput{
 				WhatsAppNumber: validWA,
 			}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -206,12 +255,18 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 				WhatsAppNumber: validWA,
 				ClientIPRaw:    "not-an-ip",
 			}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -224,7 +279,10 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 				WhatsAppNumber: validWA,
 				RequestID:      string(make([]byte, 129)),
 			}},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{
+				factory:   s.factory,
+				publisher: s.publisher,
+			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().Error(err)
 				s.Contains(err.Error(), "parse request_id")
@@ -234,18 +292,24 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 		{
 			name: "deve resolver via user_identities sem tocar users (path identity)",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				identity, errID := entities.NewUserIdentity(
-					uuid.MustParse("b1b1b1b1-0000-0000-0000-000000000002"),
-					uuid.MustParse("a0a0a0a0-0000-0000-0000-000000000001"),
-					channelWA, externalIDWA, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-				)
-				s.Require().NoError(errID)
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(identity, true, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
-					return ev.AggregateUserID == "a0a0a0a0-0000-0000-0000-000000000001"
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					identity, errID := entities.NewUserIdentity(
+						uuid.MustParse("b1b1b1b1-0000-0000-0000-000000000002"),
+						uuid.MustParse("a0a0a0a0-0000-0000-0000-000000000001"),
+						channelWA, externalIDWA, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					)
+					s.Require().NoError(errID)
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(identity, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+						return ev.AggregateUserID == "a0a0a0a0-0000-0000-0000-000000000001"
+					})).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
@@ -257,10 +321,14 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 		{
 			name: "deve propagar erro do lookup identity (db indisponivel)",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).
-					Return(entities.UserIdentity{}, false, errors.New("identity db unavailable")).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).
+						Return(entities.UserIdentity{}, false, errors.New("identity db unavailable")).Once()
+					return s.factory
+				}(),
+				publisher: s.publisher,
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().Error(err)
@@ -271,14 +339,20 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 		{
 			name: "deve retornar ErrUnknownUser quando ambos caminhos retornam vazio",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
-			setup: func(deps dependencies) {
-				deps.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(deps.idRepo).Once()
-				deps.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, nil).Once()
-				deps.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
-					return ev.AggregateUserID == ""
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(entities.User{}, false, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+						return ev.AggregateUserID == ""
+					})).Return(nil).Once()
+					return s.publisher
+				}(),
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().ErrorIs(err, application.ErrUnknownUser)
@@ -289,18 +363,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			deps := dependencies{
-				factory:   interfacesmocks.NewMockRepositoryFactory(s.T()),
-				repo:      interfacesmocks.NewMockUserRepository(s.T()),
-				idRepo:    interfacesmocks.NewMockUserIdentityRepository(s.T()),
-				publisher: outboxmocks.NewPublisher(s.T()),
-			}
-			scenario.setup(deps)
-
-			uow := usecasemocks.NewUnitOfWorkGeneric[usecases.EstablishResult](s.T())
-			sut := usecases.NewEstablishPrincipal(uow, deps.factory, deps.publisher, noop.NewProvider())
+			sut := NewEstablishPrincipal(s.uow, scenario.dependencies.factory, scenario.dependencies.publisher, s.obs)
 			p, err := sut.Execute(s.ctx, scenario.args.in)
-
 			scenario.expect(p, err)
 		})
 	}
@@ -308,12 +372,6 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 
 func (s *EstablishPrincipalSuite) TestExecute_FallbacksTraceIDWhenRequestIDMissing() {
 	const validWA = "+5511987654321"
-
-	factory := interfacesmocks.NewMockRepositoryFactory(s.T())
-	repo := interfacesmocks.NewMockUserRepository(s.T())
-	idRepo := interfacesmocks.NewMockUserIdentityRepository(s.T())
-	publisher := outboxmocks.NewPublisher(s.T())
-	o11y := fake.NewProvider()
 
 	wa := s.mustWhatsApp(validWA)
 	channelWA := valueobjects.ChannelWhatsApp()
@@ -327,19 +385,18 @@ func (s *EstablishPrincipalSuite) TestExecute_FallbacksTraceIDWhenRequestIDMissi
 	)
 	s.Require().NoError(err)
 
-	factory.EXPECT().UserIdentityRepository(mock.Anything).Return(idRepo).Once()
-	idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-	factory.EXPECT().UserRepository(mock.Anything).Return(repo).Once()
-	repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+	s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+	s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+	s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+	s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
 
 	var captured outbox.Event
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
 		captured = ev
 		return nil
 	}).Once()
 
-	uow := usecasemocks.NewUnitOfWorkGeneric[usecases.EstablishResult](s.T())
-	sut := usecases.NewEstablishPrincipal(uow, factory, publisher, o11y)
+	sut := NewEstablishPrincipal(s.uow, s.factory, s.publisher, s.obs)
 
 	_, err = sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: validWA})
 	s.Require().NoError(err)

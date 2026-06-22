@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +13,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	ifmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -22,7 +21,7 @@ import (
 
 type GetCardPurchaseSuite struct {
 	suite.Suite
-	uc        *usecases.GetCardPurchase
+	uc        *GetCardPurchase
 	factory   *ifmocks.RepositoryFactory
 	purchases *ifmocks.CardPurchaseRepository
 }
@@ -36,12 +35,12 @@ func (s *GetCardPurchaseSuite) SetupTest() {
 	s.purchases = ifmocks.NewCardPurchaseRepository(s.T())
 	s.factory.On("CardPurchaseRepository", mock.Anything).Return(s.purchases).Maybe()
 	uow := ucmocks.NewUnitOfWorkCardPurchaseOutput(s.T())
-	s.uc = usecases.NewGetCardPurchase(s.factory, uow, noop.NewProvider())
+	s.uc = NewGetCardPurchase(s.factory, uow, fake.NewProvider())
 }
 
 func (s *GetCardPurchaseSuite) TestExecute_Unauthorized() {
 	_, err := s.uc.Execute(context.Background(), uuid.New())
-	s.ErrorIs(err, usecases.ErrUsecaseUnauthorized)
+	s.ErrorIs(err, ErrUsecaseUnauthorized)
 }
 
 func (s *GetCardPurchaseSuite) TestExecute_Success() {
@@ -69,7 +68,7 @@ func (s *GetCardPurchaseSuite) TestExecute_Success() {
 
 type ListCardPurchasesSuite struct {
 	suite.Suite
-	uc        *usecases.ListCardPurchases
+	uc        *ListCardPurchases
 	factory   *ifmocks.RepositoryFactory
 	purchases *ifmocks.CardPurchaseRepository
 }
@@ -83,12 +82,12 @@ func (s *ListCardPurchasesSuite) SetupTest() {
 	s.purchases = ifmocks.NewCardPurchaseRepository(s.T())
 	s.factory.On("CardPurchaseRepository", mock.Anything).Return(s.purchases).Maybe()
 	uow := ucmocks.NewUnitOfWorkListCardPurchases(s.T())
-	s.uc = usecases.NewListCardPurchases(s.factory, uow, noop.NewProvider())
+	s.uc = NewListCardPurchases(s.factory, uow, fake.NewProvider())
 }
 
 func (s *ListCardPurchasesSuite) TestExecute_Unauthorized() {
-	_, err := s.uc.Execute(context.Background(), usecases.ListCardPurchasesInput{})
-	s.ErrorIs(err, usecases.ErrUsecaseUnauthorized)
+	_, err := s.uc.Execute(context.Background(), ListCardPurchasesInput{})
+	s.ErrorIs(err, ErrUsecaseUnauthorized)
 }
 
 func (s *ListCardPurchasesSuite) TestExecute_EmptyList() {
@@ -98,14 +97,14 @@ func (s *ListCardPurchasesSuite) TestExecute_EmptyList() {
 	principal, _ := auth.FromContext(ctx)
 	s.purchases.On("ListByCardAndMonth", mock.Anything, principal.UserID, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return([]*entities.CardPurchase{}, interfaces.Cursor{}, nil)
-	out, err := s.uc.Execute(ctx, usecases.ListCardPurchasesInput{CardID: uuid.New()})
+	out, err := s.uc.Execute(ctx, ListCardPurchasesInput{CardID: uuid.New()})
 	s.NoError(err)
 	s.Empty(out.Items)
 }
 
 type GetCardInvoiceSuite struct {
 	suite.Suite
-	uc       *usecases.GetCardInvoice
+	uc       *GetCardInvoice
 	factory  *ifmocks.RepositoryFactory
 	invoices *ifmocks.CardInvoiceRepository
 }
@@ -119,12 +118,12 @@ func (s *GetCardInvoiceSuite) SetupTest() {
 	s.invoices = ifmocks.NewCardInvoiceRepository(s.T())
 	s.factory.On("CardInvoiceRepository", mock.Anything).Return(s.invoices).Maybe()
 	uow := ucmocks.NewUnitOfWorkCardInvoiceOutput(s.T())
-	s.uc = usecases.NewGetCardInvoice(s.factory, uow, noop.NewProvider())
+	s.uc = NewGetCardInvoice(s.factory, uow, fake.NewProvider())
 }
 
 func (s *GetCardInvoiceSuite) TestExecute_Unauthorized() {
 	_, err := s.uc.Execute(context.Background(), uuid.New(), "2024-01")
-	s.ErrorIs(err, usecases.ErrUsecaseUnauthorized)
+	s.ErrorIs(err, ErrUsecaseUnauthorized)
 }
 
 func (s *GetCardInvoiceSuite) TestExecute_InvalidRefMonth() {
@@ -144,5 +143,5 @@ func (s *GetCardInvoiceSuite) TestExecute_NotFound_ReturnsError() {
 	s.invoices.On("GetByMonth", mock.Anything, principal.UserID, mock.Anything, rm).
 		Return((*entities.CardInvoice)(nil), ([]*entities.CardInvoiceItem)(nil), nil)
 	_, err := s.uc.Execute(ctx, uuid.New(), "2024-01")
-	s.ErrorIs(err, usecases.ErrCardInvoiceNotFound)
+	s.ErrorIs(err, ErrCardInvoiceNotFound)
 }

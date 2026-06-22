@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
@@ -67,6 +67,8 @@ func buildExpiredPaidTokenWithOutreach(fromE164 string) entities.MagicToken {
 
 type TryFallbackActivationSuite struct {
 	suite.Suite
+	ctx        context.Context
+	obs        observability.Observability
 	tokenRepo  *mocks.MagicTokenRepository
 	factory    *mocks.RepositoryFactory
 	identityGW *mocks.IdentityGateway
@@ -80,6 +82,8 @@ func TestTryFallbackActivation(t *testing.T) {
 }
 
 func (s *TryFallbackActivationSuite) SetupTest() {
+	s.obs = fake.NewProvider()
+	s.ctx = context.Background()
 	s.tokenRepo = mocks.NewMagicTokenRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.identityGW = mocks.NewIdentityGateway(s.T())
@@ -91,39 +95,47 @@ func (s *TryFallbackActivationSuite) SetupTest() {
 }
 
 func (s *TryFallbackActivationSuite) TestExecute() {
+	type dependencies struct {
+		tokenRepo  *mocks.MagicTokenRepository
+		factory    *mocks.RepositoryFactory
+		identityGW *mocks.IdentityGateway
+		binder     *mocks.SubscriptionBinder
+		publisher  *outboxmocks.Publisher
+		fromE164   string
+	}
 	scenarios := []struct {
-		name   string
-		setup  func() string
-		expect func(result usecases.FallbackResult, err error)
+		name         string
+		dependencies dependencies
+		expect       func(result FallbackResult, err error)
 	}{
 		{
 			name: "deve retornar NoMatch quando token nao for encontrado",
-			setup: func() string {
+			dependencies: func() dependencies {
 				fromE164 := "+5511999990001"
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
-				return fromE164
-			},
-			expect: func(result usecases.FallbackResult, err error) {
+				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
+			}(),
+			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
-				s.Equal(usecases.FallbackOutcomeNoMatch, result.Outcome)
+				s.Equal(FallbackOutcomeNoMatch, result.Outcome)
 			},
 		},
 		{
 			name: "deve retornar OutreachRequired quando token sem outreach",
-			setup: func() string {
+			dependencies: func() dependencies {
 				fromE164 := "+5511999990002"
 				token := buildPaidTokenWithoutOutreach(fromE164)
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				return fromE164
-			},
-			expect: func(result usecases.FallbackResult, err error) {
+				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
+			}(),
+			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
-				s.Equal(usecases.FallbackOutcomeOutreachRequired, result.Outcome)
+				s.Equal(FallbackOutcomeOutreachRequired, result.Outcome)
 			},
 		},
 		{
 			name: "deve ativar quando token com outreach",
-			setup: func() string {
+			dependencies: func() dependencies {
 				fromE164 := "+5511999990003"
 				token := buildPaidTokenWithOutreach(fromE164)
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
@@ -131,47 +143,47 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
 				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
-				return fromE164
-			},
-			expect: func(result usecases.FallbackResult, err error) {
+				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
+			}(),
+			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
-				s.Equal(usecases.FallbackOutcomeActivated, result.Outcome)
+				s.Equal(FallbackOutcomeActivated, result.Outcome)
 			},
 		},
 		{
 			name: "deve retornar NoMatch quando token expirado",
-			setup: func() string {
+			dependencies: func() dependencies {
 				fromE164 := "+5511999990004"
 				token := buildExpiredPaidTokenWithOutreach(fromE164)
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				return fromE164
-			},
-			expect: func(result usecases.FallbackResult, err error) {
+				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
+			}(),
+			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
-				s.Equal(usecases.FallbackOutcomeNoMatch, result.Outcome)
+				s.Equal(FallbackOutcomeNoMatch, result.Outcome)
 			},
 		},
 		{
 			name: "deve retornar erro quando identity gateway falha",
-			setup: func() string {
+			dependencies: func() dependencies {
 				fromE164 := "+5511999990005"
 				token := buildPaidTokenWithOutreach(fromE164)
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
 				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{}, errors.New("identity unavailable")).Once()
-				return fromE164
-			},
-			expect: func(result usecases.FallbackResult, err error) {
+				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
+			}(),
+			expect: func(result FallbackResult, err error) {
 				s.Error(err)
 			},
 		},
 		{
 			name: "deve retornar erro quando find falha",
-			setup: func() string {
+			dependencies: func() dependencies {
 				fromE164 := "+5511999990006"
 				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(entities.MagicToken{}, errors.New("db error")).Once()
-				return fromE164
-			},
-			expect: func(result usecases.FallbackResult, err error) {
+				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
+			}(),
+			expect: func(result FallbackResult, err error) {
 				s.Error(err)
 			},
 		},
@@ -179,12 +191,10 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
-			fromE164 := scenario.setup()
 			idGen := id.NewUUIDGenerator()
-			bind := binding.NewSubscriptionBindingService(s.identityGW, s.binder, services.NewMagicTokenWorkflow(), s.publisher, idGen)
-			uc := usecases.NewTryFallbackActivation(&unitOfWorkFallback{}, s.factory, bind, noop.NewProvider())
-			result, err := uc.Execute(context.Background(), fromE164)
+			bind := binding.NewSubscriptionBindingService(scenario.dependencies.identityGW, scenario.dependencies.binder, services.NewMagicTokenWorkflow(), scenario.dependencies.publisher, idGen)
+			uc := NewTryFallbackActivation(&unitOfWorkFallback{}, scenario.dependencies.factory, bind, s.obs)
+			result, err := uc.Execute(s.ctx, scenario.dependencies.fromE164)
 			scenario.expect(result, err)
 		})
 	}

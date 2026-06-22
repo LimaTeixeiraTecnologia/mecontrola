@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -7,19 +7,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 )
 
 type AnonymizeUserAuthEventsSuite struct {
 	suite.Suite
-	ctx context.Context
+	ctx      context.Context
+	obs      observability.Observability
+	repoMock *ifacemocks.AuthEventsRepository
 }
 
 func TestAnonymizeUserAuthEvents(t *testing.T) {
@@ -27,7 +29,9 @@ func TestAnonymizeUserAuthEvents(t *testing.T) {
 }
 
 func (s *AnonymizeUserAuthEventsSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
+	s.repoMock = ifacemocks.NewAuthEventsRepository(s.T())
 }
 
 func (s *AnonymizeUserAuthEventsSuite) validPayload(userID string) []byte {
@@ -45,15 +49,16 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 	type args struct {
 		in input.AnonymizeUserAuthEvents
 	}
+
 	type dependencies struct {
-		repo *ifacemocks.AuthEventsRepository
+		repoMock *ifacemocks.AuthEventsRepository
 	}
 
 	scenarios := []struct {
-		name   string
-		args   func() args
-		setup  func(dependencies)
-		expect func(error)
+		name         string
+		args         func() args
+		dependencies dependencies
+		expect       func(error)
 	}{
 		{
 			name: "deve anonimizar linhas do user",
@@ -62,9 +67,12 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 					Payload: s.validPayload(uuid.New().String()),
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().AnonymizeByUserID(mock.Anything, mock.AnythingOfType("uuid.UUID")).
-					Return(nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().AnonymizeByUserID(mock.Anything, mock.AnythingOfType("uuid.UUID")).
+						Return(nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().NoError(err)
@@ -77,9 +85,12 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 					Payload: s.validPayload(uuid.New().String()),
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().AnonymizeByUserID(mock.Anything, mock.AnythingOfType("uuid.UUID")).
-					Return(fmt.Errorf("db error")).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().AnonymizeByUserID(mock.Anything, mock.AnythingOfType("uuid.UUID")).
+						Return(fmt.Errorf("db error")).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().Error(err)
@@ -93,7 +104,7 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 					Payload: []byte("{invalid"),
 				}}
 			},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{repoMock: s.repoMock},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.ErrorContains(err, "decode")
@@ -111,7 +122,7 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 				s.Require().NoError(err)
 				return args{in: input.AnonymizeUserAuthEvents{Payload: raw}}
 			},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{repoMock: s.repoMock},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.ErrorContains(err, "parse user_id")
@@ -121,11 +132,8 @@ func (s *AnonymizeUserAuthEventsSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			repo := ifacemocks.NewAuthEventsRepository(s.T())
-			scenario.setup(dependencies{repo: repo})
-
 			a := scenario.args()
-			sut := usecases.NewAnonymizeUserAuthEvents(repo, noop.NewProvider())
+			sut := NewAnonymizeUserAuthEvents(scenario.dependencies.repoMock, s.obs)
 			err := sut.Execute(s.ctx, a.in)
 			scenario.expect(err)
 		})

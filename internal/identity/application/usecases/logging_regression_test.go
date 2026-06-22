@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	interfacesmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	usecasemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
@@ -22,8 +21,13 @@ import (
 
 type LoggingRegressionSuite struct {
 	suite.Suite
-	ctx      context.Context
-	fakeO11y *fake.Provider
+	ctx       context.Context
+	fakeO11y  *fake.Provider
+	factory   *interfacesmocks.MockRepositoryFactory
+	repo      *interfacesmocks.MockUserRepository
+	idRepo    *interfacesmocks.MockUserIdentityRepository
+	publisher *outboxmocks.Publisher
+	uow       *usecasemocks.UnitOfWorkGeneric[EstablishResult]
 }
 
 func TestLoggingRegression(t *testing.T) {
@@ -33,6 +37,11 @@ func TestLoggingRegression(t *testing.T) {
 func (s *LoggingRegressionSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.fakeO11y = fake.NewProvider()
+	s.factory = interfacesmocks.NewMockRepositoryFactory(s.T())
+	s.repo = interfacesmocks.NewMockUserRepository(s.T())
+	s.idRepo = interfacesmocks.NewMockUserIdentityRepository(s.T())
+	s.publisher = outboxmocks.NewPublisher(s.T())
+	s.uow = usecasemocks.NewUnitOfWorkGeneric[EstablishResult](s.T())
 }
 
 func (s *LoggingRegressionSuite) TestNoSensitiveFieldsOnSuccess() {
@@ -49,23 +58,17 @@ func (s *LoggingRegressionSuite) TestNoSensitiveFieldsOnSuccess() {
 	)
 	s.Require().NoError(err)
 
-	factory := interfacesmocks.NewMockRepositoryFactory(s.T())
-	repo := interfacesmocks.NewMockUserRepository(s.T())
-	idRepo := interfacesmocks.NewMockUserIdentityRepository(s.T())
-	publisher := outboxmocks.NewPublisher(s.T())
-	uow := usecasemocks.NewUnitOfWorkGeneric[usecases.EstablishResult](s.T())
-
 	channelWA := valueobjects.ChannelWhatsApp()
 	externalIDWA, errExt := valueobjects.NewExternalID(channelWA, wa.String())
 	s.Require().NoError(errExt)
 
-	factory.EXPECT().UserIdentityRepository(mock.Anything).Return(idRepo).Once()
-	idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-	factory.EXPECT().UserRepository(mock.Anything).Return(repo).Once()
-	repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(user, true, nil).Once()
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+	s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+	s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+	s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+	s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(user, true, nil).Once()
+	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	sut := usecases.NewEstablishPrincipal(uow, factory, publisher, s.fakeO11y)
+	sut := NewEstablishPrincipal(s.uow, s.factory, s.publisher, s.fakeO11y)
 	_, _ = sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: waRaw})
 
 	s.assertNoSensitiveFieldsInLogs()
@@ -76,23 +79,17 @@ func (s *LoggingRegressionSuite) TestNoSensitiveFieldsOnDBError() {
 	wa, err := valueobjects.NewWhatsAppNumber(waRaw)
 	s.Require().NoError(err)
 
-	factory := interfacesmocks.NewMockRepositoryFactory(s.T())
-	repo := interfacesmocks.NewMockUserRepository(s.T())
-	idRepo := interfacesmocks.NewMockUserIdentityRepository(s.T())
-	publisher := outboxmocks.NewPublisher(s.T())
-	uow := usecasemocks.NewUnitOfWorkGeneric[usecases.EstablishResult](s.T())
-
 	channelWA := valueobjects.ChannelWhatsApp()
 	externalIDWA, errExt := valueobjects.NewExternalID(channelWA, wa.String())
 	s.Require().NoError(errExt)
 
-	factory.EXPECT().UserIdentityRepository(mock.Anything).Return(idRepo).Once()
-	idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
-	factory.EXPECT().UserRepository(mock.Anything).Return(repo).Once()
-	repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).
+	s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+	s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+	s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+	s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).
 		Return(entities.User{}, false, errors.New("db_unavailable")).Once()
 
-	sut := usecases.NewEstablishPrincipal(uow, factory, publisher, s.fakeO11y)
+	sut := NewEstablishPrincipal(s.uow, s.factory, s.publisher, s.fakeO11y)
 	_, _ = sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: waRaw})
 
 	s.assertNoSensitiveFieldsInLogs()

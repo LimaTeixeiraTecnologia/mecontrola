@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -22,12 +22,13 @@ import (
 type EvaluateThresholdAlertsSuite struct {
 	suite.Suite
 	ctx        context.Context
+	obs        observability.Observability
 	factory    *mockInterfaces.RepositoryFactory
 	sentRepo   *mockInterfaces.ThresholdAlertSentRepository
 	cardReader *mockInterfaces.CardThresholdReader
 	publisher  *mockInterfaces.ThresholdAlertPublisher
 	uow        *uowMocks.UnitOfWorkVoid
-	useCase    *usecases.EvaluateThresholdAlerts
+	useCase    *EvaluateThresholdAlerts
 }
 
 func TestEvaluateThresholdAlertsSuite(t *testing.T) {
@@ -35,6 +36,7 @@ func TestEvaluateThresholdAlertsSuite(t *testing.T) {
 }
 
 func (s *EvaluateThresholdAlertsSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.sentRepo = mockInterfaces.NewThresholdAlertSentRepository(s.T())
@@ -49,24 +51,24 @@ func (s *EvaluateThresholdAlertsSuite) SetupTest() {
 		Goal:     valueobjects.MustThresholdRatio(0.50),
 		Card:     valueobjects.MustThresholdRatio(0.85),
 	}
-	s.useCase = usecases.NewEvaluateThresholdAlerts(
+	s.useCase = NewEvaluateThresholdAlerts(
 		s.factory,
 		s.publisher,
 		s.uow,
 		cfg,
 		time.UTC,
 		100,
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
 func (s *EvaluateThresholdAlertsSuite) TestExecute_NoActiveBudgets_NoOp() {
 	s.sentRepo.EXPECT().
-		ListActiveForThresholdScan(s.ctx, mock.Anything, 100).
+		ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).
 		Return(nil, nil).
 		Once()
 	s.cardReader.EXPECT().
-		ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).
+		ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).
 		Return(nil, nil).
 		Once()
 
@@ -91,22 +93,22 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCategoryAlert() {
 	}
 
 	s.sentRepo.EXPECT().
-		ListActiveForThresholdScan(s.ctx, mock.Anything, 100).
+		ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).
 		Return(active, nil).
 		Once()
 
 	s.cardReader.EXPECT().
-		ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).
+		ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).
 		Return(nil, nil).
 		Once()
 
 	s.sentRepo.EXPECT().
-		ListSentForDay(s.ctx, mock.Anything).
+		ListSentForDay(mock.Anything, mock.Anything).
 		Return(nil, nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.MatchedBy(func(alert services.DomainAlert) bool {
+		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(alert services.DomainAlert) bool {
 			return alert.UserID == userID &&
 				alert.BudgetID == budgetID &&
 				alert.Kind == services.ThresholdAlertCategory &&
@@ -117,7 +119,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCategoryAlert() {
 		Once()
 
 	s.sentRepo.EXPECT().
-		InsertSent(s.ctx, mock.MatchedBy(func(rec interfaces.ThresholdAlertSentRecord) bool {
+		InsertSent(mock.Anything, mock.MatchedBy(func(rec interfaces.ThresholdAlertSentRecord) bool {
 			return rec.UserID == userID &&
 				rec.BudgetID == budgetID &&
 				rec.Kind == services.ThresholdAlertCategory
@@ -145,16 +147,16 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_GoalKindWhenRootIsMetas() {
 		},
 	}
 
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(s.ctx, mock.Anything, 100).Return(active, nil).Once()
-	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).Return(nil, nil).Once()
-	s.sentRepo.EXPECT().ListSentForDay(s.ctx, mock.Anything).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
+	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.MatchedBy(func(a services.DomainAlert) bool {
+		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(a services.DomainAlert) bool {
 			return a.Kind == services.ThresholdAlertGoal
 		}), mock.Anything).
 		Return(nil).
 		Once()
-	s.sentRepo.EXPECT().InsertSent(s.ctx, mock.Anything).Return(nil).Once()
+	s.sentRepo.EXPECT().InsertSent(mock.Anything, mock.Anything).Return(nil).Once()
 
 	err := s.useCase.Execute(s.ctx)
 	s.NoError(err)
@@ -177,10 +179,10 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DedupsAlreadySent() {
 		},
 	}
 
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(s.ctx, mock.Anything, 100).Return(active, nil).Once()
-	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
+	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).Return(nil, nil).Once()
 	s.sentRepo.EXPECT().
-		ListSentForDay(s.ctx, mock.Anything).
+		ListSentForDay(mock.Anything, mock.Anything).
 		Return([]interfaces.ThresholdAlertSentRecord{
 			{
 				UserID:   userID,
@@ -198,7 +200,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DedupsAlreadySent() {
 
 func (s *EvaluateThresholdAlertsSuite) TestExecute_ListActiveError_Propagates() {
 	s.sentRepo.EXPECT().
-		ListActiveForThresholdScan(s.ctx, mock.Anything, 100).
+		ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).
 		Return(nil, errors.New("db boom")).
 		Once()
 
@@ -222,10 +224,10 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_PublishError_Propagates() {
 		},
 	}
 
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(s.ctx, mock.Anything, 100).Return(active, nil).Once()
-	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).Return(nil, nil).Once()
-	s.sentRepo.EXPECT().ListSentForDay(s.ctx, mock.Anything).Return(nil, nil).Once()
-	s.publisher.EXPECT().Publish(s.ctx, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("outbox down")).Once()
+	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
+	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
+	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("outbox down")).Once()
 
 	err := s.useCase.Execute(s.ctx)
 	s.Error(err)
@@ -235,15 +237,15 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCardLimitAlert() {
 	userID := uuid.New()
 	cardID := uuid.New()
 
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(s.ctx, mock.Anything, 100).Return(nil, nil).Once()
-	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).Return([]interfaces.ActiveCardForScan{
+	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(nil, nil).Once()
+	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).Return([]interfaces.ActiveCardForScan{
 		{UserID: userID, CardID: cardID, LimitCents: 500000, SpentCents: 450000},
 	}, nil).Once()
 
-	s.sentRepo.EXPECT().ListSentForDay(s.ctx, mock.Anything).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.MatchedBy(func(a services.DomainAlert) bool {
+		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(a services.DomainAlert) bool {
 			return a.UserID == userID &&
 				a.BudgetID == cardID &&
 				a.CardID == cardID &&
@@ -255,7 +257,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCardLimitAlert() {
 		Once()
 
 	s.sentRepo.EXPECT().
-		InsertSent(s.ctx, mock.MatchedBy(func(rec interfaces.ThresholdAlertSentRecord) bool {
+		InsertSent(mock.Anything, mock.MatchedBy(func(rec interfaces.ThresholdAlertSentRecord) bool {
 			return rec.UserID == userID && rec.BudgetID == cardID && rec.Kind == services.ThresholdAlertCardLimit
 		})).
 		Return(nil).
@@ -269,11 +271,11 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_CardBelowThreshold_NoAlert() 
 	userID := uuid.New()
 	cardID := uuid.New()
 
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(s.ctx, mock.Anything, 100).Return(nil, nil).Once()
-	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).Return([]interfaces.ActiveCardForScan{
+	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(nil, nil).Once()
+	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).Return([]interfaces.ActiveCardForScan{
 		{UserID: userID, CardID: cardID, LimitCents: 500000, SpentCents: 420000},
 	}, nil).Once()
-	s.sentRepo.EXPECT().ListSentForDay(s.ctx, mock.Anything).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
 
 	err := s.useCase.Execute(s.ctx)
 	s.NoError(err)
@@ -283,11 +285,11 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_CardZeroLimit_Ignored() {
 	userID := uuid.New()
 	cardID := uuid.New()
 
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(s.ctx, mock.Anything, 100).Return(nil, nil).Once()
-	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(s.ctx, mock.Anything, 100).Return([]interfaces.ActiveCardForScan{
+	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(nil, nil).Once()
+	s.cardReader.EXPECT().ListActiveCardsForThresholdScan(mock.Anything, mock.Anything, 100).Return([]interfaces.ActiveCardForScan{
 		{UserID: userID, CardID: cardID, LimitCents: 0, SpentCents: 100000},
 	}, nil).Once()
-	s.sentRepo.EXPECT().ListSentForDay(s.ctx, mock.Anything).Return(nil, nil).Once()
+	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
 
 	err := s.useCase.Execute(s.ctx)
 	s.NoError(err)

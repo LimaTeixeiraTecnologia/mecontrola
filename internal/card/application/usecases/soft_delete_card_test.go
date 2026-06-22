@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
@@ -22,6 +22,7 @@ import (
 
 type SoftDeleteCardSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	uowMock     *ucmocks.UnitOfWorkVoid
 	factoryMock *ifacemocks.RepositoryFactory
 	repoMock    *ifacemocks.CardRepository
@@ -33,6 +34,7 @@ func TestSoftDeleteCard(t *testing.T) {
 }
 
 func (s *SoftDeleteCardSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.uowMock = ucmocks.NewUnitOfWorkVoid(s.T())
 	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
@@ -48,7 +50,7 @@ func (s *SoftDeleteCardSuite) TestExecute_HappyPath() {
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().SoftDeleteByIDForUser(mock.Anything, cardID.String(), userID.String(), mock.AnythingOfType("time.Time")).Return(nil).Once()
 
-	sut := usecases.NewSoftDeleteCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewSoftDeleteCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	err := sut.Execute(ctx, in)
 
 	s.Require().NoError(err)
@@ -63,7 +65,7 @@ func (s *SoftDeleteCardSuite) TestExecute_CardNotFound() {
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().SoftDeleteByIDForUser(mock.Anything, cardID.String(), userID.String(), mock.AnythingOfType("time.Time")).Return(domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewSoftDeleteCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewSoftDeleteCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)
@@ -95,7 +97,7 @@ func (s *SoftDeleteCardSuite) TestExecute_RINT05_IdempotencyPutRollback() {
 	idemErr := errors.New("idempotency storage down")
 	s.idemMock.EXPECT().Put(mock.Anything, mock.AnythingOfType("idempotency.Record")).Return(idemErr).Once()
 
-	sut := usecases.NewSoftDeleteCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewSoftDeleteCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)

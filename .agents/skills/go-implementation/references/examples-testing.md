@@ -68,15 +68,22 @@ func (s *NormalizeSuite) TestNormalize() {
 }
 ```
 
-## Esqueleto canonico testify/suite (R4 — todos os `_test.go`)
-Padrao obrigatorio e inegociavel para todos os arquivos `_test.go`:
-`package <pacote>_test`, suite struct com mocks tipados, registrador `suite.Run`, `SetupTest`
-reiniciando contexto e mocks, tabela `scenarios` com `args`, `setup func()` e `expect func(...)`,
-e SUT real instanciado dentro do loop. Cenarios minimos: happy path, erro de validacao de dominio,
-erro de infraestrutura e edge case/idempotencia quando aplicavel.
+## Esqueleto canonico testify/suite (R-TESTING-001 — use cases)
+Padrao obrigatorio e inegociavel para `internal/*/application/usecases/*_test.go`:
+`package <pacote>` (whitebox, mesmo pacote), suite struct com `obs observability.Observability`
+e mocks tipados, `SetupTest` com `fake.NewProvider()` reiniciando todos os mocks,
+tabela `scenarios` com `args`, `dependencies struct` + IIFE por mock e `expect func(...)`,
+e SUT real instanciado dentro do `s.Run`. Cenarios minimos: happy path, erro de validacao de
+dominio, erro de infraestrutura e edge case/idempotencia quando aplicavel.
+
+Anti-padroes proibidos:
+- `noop.NewProvider()` — use `fake.NewProvider()`
+- `setup func()` como campo do cenario — use `dependencies struct` com IIFE
+- `s.SetupTest()` manual dentro de loop ou metodo — testify ja chama automaticamente
+- `package <X>_test` — use `package <X>` (whitebox)
 
 ```go
-package services_test
+package usecases // mesmo pacote — whitebox
 
 import (
     "context"
@@ -85,49 +92,59 @@ import (
 
     "github.com/stretchr/testify/mock"
     "github.com/stretchr/testify/suite"
+    "github.com/JailtonJunior94/devkit-go/pkg/observability"
+    "github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
     "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/application/dtos/input"
     "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/application/dtos/output"
-    "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/application/services"
     domainerrors "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/domain/errors"
-    repositoryMock "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/domain/interfaces/mocks"
+    repositoryMock "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/infrastructure/repositories/mocks"
 )
 
-type CreateUserServiceSuite struct {
+type CreateUserUseCaseSuite struct {
     suite.Suite
 
     ctx            context.Context
+    obs            observability.Observability
     userRepository *repositoryMock.UserRepository
 }
 
-func TestCreateUserServiceSuite(t *testing.T) {
-    suite.Run(t, new(CreateUserServiceSuite))
+func TestCreateUserUseCaseSuite(t *testing.T) {
+    suite.Run(t, new(CreateUserUseCaseSuite))
 }
 
-func (s *CreateUserServiceSuite) SetupTest() {
+func (s *CreateUserUseCaseSuite) SetupTest() {
+    s.obs = fake.NewProvider()
     s.ctx = context.Background()
     s.userRepository = repositoryMock.NewUserRepository(s.T())
 }
 
-func (s *CreateUserServiceSuite) TestExecute() {
+func (s *CreateUserUseCaseSuite) TestExecute() {
     type args struct {
         input *input.CreateUserInput
     }
 
+    type dependencies struct {
+        userRepository *repositoryMock.UserRepository
+    }
+
     scenarios := []struct {
-        name   string
-        args   args
-        setup  func()
-        expect func(result *output.UserOutput, err error)
+        name         string
+        args         args
+        dependencies dependencies
+        expect       func(result *output.UserOutput, err error)
     }{
         {
             name: "deve criar usuario com sucesso",
             args: args{input: &input.CreateUserInput{Name: "Joao", Email: "joao@email.com"}},
-            setup: func() {
-                s.userRepository.EXPECT().
-                    Save(s.ctx, mock.Anything).
-                    Return(nil).
-                    Once()
+            dependencies: dependencies{
+                userRepository: func() *repositoryMock.UserRepository {
+                    s.userRepository.EXPECT().
+                        Save(s.ctx, mock.AnythingOfType("*entities.User")).
+                        Return(nil).
+                        Once()
+                    return s.userRepository
+                }(),
             },
             expect: func(result *output.UserOutput, err error) {
                 s.NoError(err)
@@ -137,9 +154,7 @@ func (s *CreateUserServiceSuite) TestExecute() {
         {
             name: "deve retornar erro ao validar input invalido",
             args: args{input: &input.CreateUserInput{Name: "", Email: ""}},
-            setup: func() {
-                // Nenhum mock necessario: a validacao deve falhar antes de IO.
-            },
+            dependencies: dependencies{userRepository: s.userRepository},
             expect: func(result *output.UserOutput, err error) {
                 s.Error(err)
                 s.ErrorIs(err, domainerrors.ErrInvalidInput)
@@ -149,11 +164,14 @@ func (s *CreateUserServiceSuite) TestExecute() {
         {
             name: "deve retornar erro ao salvar no repositorio",
             args: args{input: &input.CreateUserInput{Name: "Joao", Email: "joao@email.com"}},
-            setup: func() {
-                s.userRepository.EXPECT().
-                    Save(s.ctx, mock.Anything).
-                    Return(errors.New("falha no banco")).
-                    Once()
+            dependencies: dependencies{
+                userRepository: func() *repositoryMock.UserRepository {
+                    s.userRepository.EXPECT().
+                        Save(s.ctx, mock.AnythingOfType("*entities.User")).
+                        Return(errors.New("falha no banco")).
+                        Once()
+                    return s.userRepository
+                }(),
             },
             expect: func(result *output.UserOutput, err error) {
                 s.Error(err)
@@ -165,11 +183,8 @@ func (s *CreateUserServiceSuite) TestExecute() {
 
     for _, scenario := range scenarios {
         s.Run(scenario.name, func() {
-            s.SetupTest()
-            scenario.setup()
-
-            service := services.NewCreateUserService(s.userRepository)
-            result, err := service.Execute(s.ctx, scenario.args.input)
+            uc := NewCreateUserUseCase(s.obs, scenario.dependencies.userRepository)
+            result, err := uc.Execute(s.ctx, scenario.args.input)
             scenario.expect(result, err)
         })
     }
@@ -177,11 +192,8 @@ func (s *CreateUserServiceSuite) TestExecute() {
 ```
 
 Regras de adaptacao do exemplo:
-- Substituir nomes, imports e DTOs pelos packages reais do bounded context; exemplos externos servem
-  apenas como forma estrutural.
-- Usar mocks gerados por `mockery.yml` com `with-expecter: true`; nao escrever mocks manuais para
-  dependencias mockaveis.
-- Criar helpers locais pequenos apenas para matchers ou stubs triviais de valor, por exemplo
-  `decimalMatcher(expected string) any` com `mock.MatchedBy`.
-- Reexecutar `s.SetupTest()` dentro de cada `s.Run` quando os cenarios compartilham a mesma suite e
-  configuram expectativas diferentes.
+- Substituir nomes, imports e DTOs pelos packages reais do bounded context.
+- Usar mocks gerados por `mockery.yml` com `with-expecter: true`; nao escrever mocks manuais.
+- Quando o use case nao recebe `obs`, omitir o campo `obs` da suite e remover `fake.NewProvider()`.
+- Arquivos `*_integration_test.go` podem usar `package <X>_test` e nao precisam seguir este esqueleto.
+- Ver `.claude/rules/go-testing.md` para regras completas e gates de verificacao.

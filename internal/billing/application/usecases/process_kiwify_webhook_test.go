@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 )
 
@@ -33,7 +32,7 @@ type ProcessKiwifyWebhookTelemetrySuite struct {
 	subCanceled  *ucmocks.ProcessSubscriptionCanceled
 	refund       *ucmocks.ProcessRefundOrChargeback
 	eventRepo    *ucmocks.KiwifyEventRepository
-	uc           *usecases.ProcessKiwifyWebhook
+	uc           *ProcessKiwifyWebhook
 }
 
 func TestProcessKiwifyWebhookTelemetrySuite(t *testing.T) {
@@ -50,7 +49,7 @@ func (s *ProcessKiwifyWebhookTelemetrySuite) SetupTest() {
 	s.eventRepo = ucmocks.NewKiwifyEventRepository(s.T())
 	s.eventRepo.EXPECT().Persist(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	s.uc = usecases.NewProcessKiwifyWebhook(
+	s.uc = NewProcessKiwifyWebhook(
 		s.saleApproved,
 		s.subRenewed,
 		s.subLate,
@@ -151,18 +150,38 @@ func (s *ProcessKiwifyWebhookTelemetrySuite) TestDeveSegmentarCarrierPorTracking
 
 	for _, sc := range scenarios {
 		s.Run(sc.name, func() {
-			s.SetupTest()
-			s.saleApproved.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil).Maybe()
+			o11y := fake.NewProvider()
+			saleApproved := ucmocks.NewProcessSaleApproved(s.T())
+			subRenewed := ucmocks.NewProcessSubscriptionRenewed(s.T())
+			subLate := ucmocks.NewProcessSubscriptionLate(s.T())
+			subCanceled := ucmocks.NewProcessSubscriptionCanceled(s.T())
+			refund := ucmocks.NewProcessRefundOrChargeback(s.T())
+			eventRepo := ucmocks.NewKiwifyEventRepository(s.T())
+			eventRepo.EXPECT().Persist(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			sut := NewProcessKiwifyWebhook(saleApproved, subRenewed, subLate, subCanceled, refund, eventRepo, o11y)
+
+			saleApproved.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil).Maybe()
 			body := s.bodyWithCarrier("order_approved", sc.sck, sc.s1, sc.src)
 
-			err := s.uc.Execute(context.Background(), input.ProcessKiwifyWebhookInput{RawBody: body, SignatureStatus: "valid"})
+			err := sut.Execute(context.Background(), input.ProcessKiwifyWebhookInput{RawBody: body, SignatureStatus: "valid"})
 
 			require.NoError(s.T(), err)
-			totals := s.counterValuesByLabel(metricTrackingCarrier, "carrier")
+
+			c := o11y.Metrics().(*fake.FakeMetrics).GetCounter(metricTrackingCarrier)
+			totals := make(map[string]int64)
+			if c != nil {
+				for _, v := range c.GetValues() {
+					for _, f := range v.Fields {
+						if f.Key == "carrier" {
+							totals[f.StringValue()] += v.Value
+						}
+					}
+				}
+			}
 			assert.Equal(s.T(), int64(1), totals[sc.expectedLabel], "carrier=%s totals=%v", sc.expectedLabel, totals)
 
 			seenLegacy := false
-			for _, entry := range s.logEntries() {
+			for _, entry := range o11y.Logger().(*fake.FakeLogger).GetEntries() {
 				if entry.Message == logLegacyCarrierSeen {
 					seenLegacy = true
 					break

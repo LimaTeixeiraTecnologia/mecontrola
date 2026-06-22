@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -22,10 +22,11 @@ import (
 type ListAlertsSuite struct {
 	suite.Suite
 	ctx     context.Context
+	obs     observability.Observability
 	factory *mockInterfaces.RepositoryFactory
 	alerts  *mockInterfaces.AlertRepository
 	uow     *uowMocks.UnitOfWorkListAlertsOutput
-	useCase *usecases.ListAlerts
+	useCase *ListAlerts
 }
 
 func TestListAlertsSuite(t *testing.T) {
@@ -33,12 +34,13 @@ func TestListAlertsSuite(t *testing.T) {
 }
 
 func (s *ListAlertsSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.alerts = mockInterfaces.NewAlertRepository(s.T())
 	s.factory.EXPECT().AlertRepository(mock.Anything).Return(s.alerts).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkListAlertsOutput(s.T())
-	s.useCase = usecases.NewListAlerts(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewListAlerts(s.factory, s.uow, s.obs)
 }
 
 func buildAlertEntity(userID uuid.UUID) entities.Alert {
@@ -64,14 +66,14 @@ func (s *ListAlertsSuite) TestExecute_InvalidUserID_ReturnsError() {
 		Limit:  10,
 	})
 
-	s.ErrorIs(err, usecases.ErrListAlertsInvalidUserID)
+	s.ErrorIs(err, ErrListAlertsInvalidUserID)
 }
 
 func (s *ListAlertsSuite) TestExecute_DefaultLimit_Applied() {
 	userID := uuid.New()
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Limit == 50
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -91,7 +93,7 @@ func (s *ListAlertsSuite) TestExecute_NegativeLimit_AppliesDefault() {
 	userID := uuid.New()
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Limit == 50
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -110,7 +112,7 @@ func (s *ListAlertsSuite) TestExecute_ExceedsMaxLimit_CappedAt200() {
 	userID := uuid.New()
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Limit == 200
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -131,7 +133,7 @@ func (s *ListAlertsSuite) TestExecute_ReturnsAlerts_WithNextCursor() {
 	nextCursor := "cursor-abc"
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Limit == 10
 		})).
 		Return([]entities.Alert{alert}, nextCursor, nil).
@@ -156,7 +158,7 @@ func (s *ListAlertsSuite) TestExecute_WithCursorPagination() {
 	cursor := "cursor-page2"
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Cursor == cursor && q.Limit == 20
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -178,7 +180,7 @@ func (s *ListAlertsSuite) TestExecute_WithCompetenceFilter() {
 	comp, _ := valueobjects.NewCompetence("2026-05")
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Competence != nil && q.Competence.String() == "2026-05"
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -199,7 +201,7 @@ func (s *ListAlertsSuite) TestExecute_WithRootSlugFilter() {
 	slug := valueobjects.RootSlugCustoFixo
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.RootSlug != nil && *q.RootSlug == valueobjects.RootSlugCustoFixo
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -220,7 +222,7 @@ func (s *ListAlertsSuite) TestExecute_WithThresholdFilter() {
 	threshold := valueobjects.Threshold100
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
+		ListForUser(mock.Anything, userID, mock.MatchedBy(func(q input.AlertQuery) bool {
 			return q.Threshold != nil && *q.Threshold == valueobjects.Threshold100
 		})).
 		Return([]entities.Alert{}, "", nil).
@@ -240,7 +242,7 @@ func (s *ListAlertsSuite) TestExecute_RepositoryError_PropagatesError() {
 	userID := uuid.New()
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.Anything).
+		ListForUser(mock.Anything, userID, mock.Anything).
 		Return(nil, "", errors.New("db error")).
 		Once()
 
@@ -258,12 +260,12 @@ func (s *ListAlertsSuite) TestExecute_UserIsolation_DifferentUserDifferentResult
 	alert1 := buildAlertEntity(userID1)
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID1, mock.Anything).
+		ListForUser(mock.Anything, userID1, mock.Anything).
 		Return([]entities.Alert{alert1}, "", nil).
 		Once()
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID2, mock.Anything).
+		ListForUser(mock.Anything, userID2, mock.Anything).
 		Return([]entities.Alert{}, "", nil).
 		Once()
 
@@ -297,7 +299,7 @@ func (s *ListAlertsSuite) TestExecute_AlertStateMapping() {
 	}
 
 	s.alerts.EXPECT().
-		ListForUser(s.ctx, userID, mock.Anything).
+		ListForUser(mock.Anything, userID, mock.Anything).
 		Return(stateAlerts, "", nil).
 		Once()
 

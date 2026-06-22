@@ -1,15 +1,14 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	categoriesinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	categoriesoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
@@ -26,12 +25,12 @@ func (f *fakeResolver) Execute(_ context.Context, _ *categoriesinput.SearchDicti
 
 type fakeCreator struct {
 	called bool
-	in     usecases.CreateTransactionCommand
-	result usecases.CreateTransactionResult
+	in     CreateTransactionCommand
+	result CreateTransactionResult
 	err    error
 }
 
-func (f *fakeCreator) Execute(_ context.Context, in usecases.CreateTransactionCommand) (usecases.CreateTransactionResult, error) {
+func (f *fakeCreator) Execute(_ context.Context, in CreateTransactionCommand) (CreateTransactionResult, error) {
 	f.called = true
 	f.in = in
 	return f.result, f.err
@@ -39,10 +38,15 @@ func (f *fakeCreator) Execute(_ context.Context, in usecases.CreateTransactionCo
 
 type LogTransactionSuite struct {
 	suite.Suite
+	ctx context.Context
 }
 
 func TestLogTransactionSuite(t *testing.T) {
 	suite.Run(t, new(LogTransactionSuite))
+}
+
+func (s *LogTransactionSuite) SetupTest() {
+	s.ctx = context.Background()
 }
 
 func (s *LogTransactionSuite) expenseIntent(amount int64, hint, merchant string) intent.Intent {
@@ -73,33 +77,33 @@ func (s *LogTransactionSuite) candidates(path string) *categoriesoutput.Dictiona
 }
 
 func (s *LogTransactionSuite) TestInvalidKindRejected() {
-	uc := usecases.NewLogTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, noop.NewProvider())
+	uc := NewLogTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, fake.NewProvider())
 	unknown, err := intent.NewUnknown("oi")
 	s.Require().NoError(err)
-	_, err = uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	_, err = uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: unknown,
 	})
-	s.Require().ErrorIs(err, usecases.ErrLogTransactionInvalidIntent)
+	s.Require().ErrorIs(err, ErrLogTransactionInvalidIntent)
 }
 
 func (s *LogTransactionSuite) TestExpenseNoHintReturnsError() {
-	uc := usecases.NewLogTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, noop.NewProvider())
-	_, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	uc := NewLogTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "", ""),
 	})
-	s.Require().ErrorIs(err, usecases.ErrLogTransactionNoCategoryHint)
+	s.Require().ErrorIs(err, ErrLogTransactionNoCategoryHint)
 }
 
 func (s *LogTransactionSuite) TestNoCandidateReturnsNotFound() {
 	resolver := &fakeResolver{out: &categoriesoutput.DictionarySearchOutput{Candidates: nil}}
-	uc := usecases.NewLogTransactionFromAgent(resolver, &fakeCreator{}, noop.NewProvider())
-	_, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", ""),
 	})
-	s.Require().ErrorIs(err, usecases.ErrLogTransactionCategoryNotFound)
+	s.Require().ErrorIs(err, ErrLogTransactionCategoryNotFound)
 }
 
 func (s *LogTransactionSuite) TestAmbiguousReturnsAmbiguous() {
@@ -110,20 +114,20 @@ func (s *LogTransactionSuite) TestAmbiguousReturnsAmbiguous() {
 			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Custo Fixo"},
 		},
 	}}
-	uc := usecases.NewLogTransactionFromAgent(resolver, &fakeCreator{}, noop.NewProvider())
-	_, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", ""),
 	})
-	s.Require().ErrorIs(err, usecases.ErrLogTransactionCategoryAmbiguous)
+	s.Require().ErrorIs(err, ErrLogTransactionCategoryAmbiguous)
 }
 
 func (s *LogTransactionSuite) TestCreateFailurePropagates() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres")}
 	boom := errors.New("create exploded")
 	creator := &fakeCreator{err: boom}
-	uc := usecases.NewLogTransactionFromAgent(resolver, creator, noop.NewProvider())
-	_, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", "iFood"),
 	})
@@ -134,9 +138,9 @@ func (s *LogTransactionSuite) TestCreateFailurePropagates() {
 
 func (s *LogTransactionSuite) TestExpenseHappyPathCreatesOutcome() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres > Delivery")}
-	creator := &fakeCreator{result: usecases.CreateTransactionResult{AmountCents: 5800, Direction: "expense"}}
-	uc := usecases.NewLogTransactionFromAgent(resolver, creator, noop.NewProvider())
-	out, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 5800, Direction: "expense"}}
+	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", "iFood"),
 	})
@@ -152,9 +156,9 @@ func (s *LogTransactionSuite) TestExpenseHappyPathCreatesOutcome() {
 
 func (s *LogTransactionSuite) TestIncomeHappyPathCreatesIncome() {
 	resolver := &fakeResolver{out: s.candidates("Salário")}
-	creator := &fakeCreator{result: usecases.CreateTransactionResult{AmountCents: 1640000, Direction: "income"}}
-	uc := usecases.NewLogTransactionFromAgent(resolver, creator, noop.NewProvider())
-	out, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 1640000, Direction: "income"}}
+	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.incomeIntent(1640000, "salário"),
 	})
@@ -166,9 +170,9 @@ func (s *LogTransactionSuite) TestIncomeHappyPathCreatesIncome() {
 
 func (s *LogTransactionSuite) TestIncomeWithoutHintUsesDefault() {
 	resolver := &fakeResolver{out: s.candidates("Salário")}
-	creator := &fakeCreator{result: usecases.CreateTransactionResult{AmountCents: 300000, Direction: "income"}}
-	uc := usecases.NewLogTransactionFromAgent(resolver, creator, noop.NewProvider())
-	out, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 300000, Direction: "income"}}
+	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.incomeIntent(300000, ""),
 	})
@@ -179,9 +183,9 @@ func (s *LogTransactionSuite) TestIncomeWithoutHintUsesDefault() {
 
 func (s *LogTransactionSuite) TestExpenseFallsBackToMerchantWhenHintEmpty() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres")}
-	creator := &fakeCreator{result: usecases.CreateTransactionResult{AmountCents: 5800, Direction: "expense"}}
-	uc := usecases.NewLogTransactionFromAgent(resolver, creator, noop.NewProvider())
-	out, err := uc.Execute(context.Background(), usecases.LogTransactionFromAgentInput{
+	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 5800, Direction: "expense"}}
+	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "", "iFood"),
 	})

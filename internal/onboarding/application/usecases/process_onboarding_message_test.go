@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,18 +6,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
@@ -41,10 +40,11 @@ func (f *fixedIDGen) NewID() string { return f.id }
 
 type ProcessOnboardingMessageSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
 	factory     *mocks.RepositoryFactory
 	publisher   *outboxmocks.Publisher
-	uc          *usecases.ProcessOnboardingMessage
+	uc          *ProcessOnboardingMessage
 	userID      uuid.UUID
 }
 
@@ -53,18 +53,19 @@ func TestProcessOnboardingMessageSuite(t *testing.T) {
 }
 
 func (s *ProcessOnboardingMessageSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.publisher = outboxmocks.NewPublisher(s.T())
 	s.factory.EXPECT().OnboardingSessionRepository(mock.Anything).Return(s.sessionRepo).Maybe()
 	s.userID = uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	s.uc = usecases.NewProcessOnboardingMessage(
+	s.uc = NewProcessOnboardingMessage(
 		&unitOfWorkProcess{},
 		s.factory,
 		services.NewOnboardingWorkflow(),
 		s.publisher,
 		&fixedIDGen{id: "22222222-2222-2222-2222-222222222222"},
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
@@ -72,7 +73,7 @@ func (s *ProcessOnboardingMessageSuite) TestSessionNotFound() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 
-	_, err := s.uc.Execute(context.Background(), usecases.ProcessOnboardingMessageInput{
+	_, err := s.uc.Execute(context.Background(), ProcessOnboardingMessageInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelWhatsApp,
 		Text:    "oi",
@@ -91,13 +92,13 @@ func (s *ProcessOnboardingMessageSuite) TestAwaitingTokenRepliesOnly() {
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.ProcessOnboardingMessageInput{
+	result, err := s.uc.Execute(context.Background(), ProcessOnboardingMessageInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelWhatsApp,
 		Text:    "ola",
 	})
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), usecases.ProcessOnboardingOutcomeReplyOnly, result.Outcome)
+	require.Equal(s.T(), ProcessOnboardingOutcomeReplyOnly, result.Outcome)
 	require.NotEmpty(s.T(), result.Reply)
 }
 
@@ -117,13 +118,13 @@ func (s *ProcessOnboardingMessageSuite) TestAwaitingIncomeAdvancesAndPublishes()
 		return evt.Type == "onboarding.income_registered"
 	})).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.ProcessOnboardingMessageInput{
+	result, err := s.uc.Execute(context.Background(), ProcessOnboardingMessageInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelWhatsApp,
 		Text:    "R$ 3500",
 	})
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), usecases.ProcessOnboardingOutcomeAdvanced, result.Outcome)
+	require.Equal(s.T(), ProcessOnboardingOutcomeAdvanced, result.Outcome)
 	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingCardDecision, result.ToState)
 }
 
@@ -148,17 +149,17 @@ func (s *ProcessOnboardingMessageSuite) TestSplitConfirmCompletes() {
 	})).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Twice()
 
-	result, err := s.uc.Execute(context.Background(), usecases.ProcessOnboardingMessageInput{
+	result, err := s.uc.Execute(context.Background(), ProcessOnboardingMessageInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelWhatsApp,
 		Text:    "sim",
 	})
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), usecases.ProcessOnboardingOutcomeCompleted, result.Outcome)
+	require.Equal(s.T(), ProcessOnboardingOutcomeCompleted, result.Outcome)
 }
 
 func (s *ProcessOnboardingMessageSuite) TestNilUserIDRejected() {
-	_, err := s.uc.Execute(context.Background(), usecases.ProcessOnboardingMessageInput{
+	_, err := s.uc.Execute(context.Background(), ProcessOnboardingMessageInput{
 		UserID: uuid.Nil,
 		Text:   "x",
 	})

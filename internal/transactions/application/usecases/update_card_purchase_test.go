@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -14,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	ifmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -24,7 +23,7 @@ import (
 
 type UpdateCardPurchaseSuite struct {
 	suite.Suite
-	uc           *usecases.UpdateCardPurchase
+	uc           *UpdateCardPurchase
 	factory      *ifmocks.RepositoryFactory
 	purchases    *ifmocks.CardPurchaseRepository
 	invoices     *ifmocks.CardInvoiceRepository
@@ -53,9 +52,9 @@ func (s *UpdateCardPurchaseSuite) SetupTest() {
 	wf := services.NewCardPurchaseWorkflow()
 	uow := ucmocks.NewUnitOfWorkCardPurchase(s.T())
 	idGen := &testIDGen{}
-	s.uc = usecases.NewUpdateCardPurchase(
+	s.uc = NewUpdateCardPurchase(
 		s.factory, s.catValidator, &wf,
-		s.publisher, uow, idGen, noop.NewProvider(),
+		s.publisher, uow, idGen, fake.NewProvider(),
 	)
 }
 
@@ -68,7 +67,7 @@ func (s *UpdateCardPurchaseSuite) ctx() context.Context {
 
 func (s *UpdateCardPurchaseSuite) TestExecute_Unauthorized() {
 	_, err := s.uc.Execute(context.Background(), uuid.New(), input.RawUpdateCardPurchase{})
-	s.ErrorIs(err, usecases.ErrUsecaseUnauthorized)
+	s.ErrorIs(err, ErrUsecaseUnauthorized)
 }
 
 func (s *UpdateCardPurchaseSuite) TestExecute_Cascade12To3_NegativeDeltas() {

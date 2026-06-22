@@ -1,15 +1,14 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	categoriesoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
 )
@@ -25,12 +24,12 @@ func candidatesOutput(path string) *categoriesoutput.DictionarySearchOutput {
 
 type fakeCardPurchaseCreator struct {
 	called bool
-	in     usecases.CreateCardPurchaseCommand
-	result usecases.CreateCardPurchaseResult
+	in     CreateCardPurchaseCommand
+	result CreateCardPurchaseResult
 	err    error
 }
 
-func (f *fakeCardPurchaseCreator) Execute(_ context.Context, in usecases.CreateCardPurchaseCommand) (usecases.CreateCardPurchaseResult, error) {
+func (f *fakeCardPurchaseCreator) Execute(_ context.Context, in CreateCardPurchaseCommand) (CreateCardPurchaseResult, error) {
 	f.called = true
 	f.in = in
 	return f.result, f.err
@@ -38,10 +37,15 @@ func (f *fakeCardPurchaseCreator) Execute(_ context.Context, in usecases.CreateC
 
 type LogCardPurchaseSuite struct {
 	suite.Suite
+	ctx context.Context
 }
 
 func TestLogCardPurchaseSuite(t *testing.T) {
 	suite.Run(t, new(LogCardPurchaseSuite))
+}
+
+func (s *LogCardPurchaseSuite) SetupTest() {
+	s.ctx = context.Background()
 }
 
 func (s *LogCardPurchaseSuite) intent() intent.Intent {
@@ -53,10 +57,10 @@ func (s *LogCardPurchaseSuite) intent() intent.Intent {
 }
 
 func (s *LogCardPurchaseSuite) TestPersistedWhenCardFound() {
-	creator := &fakeCardPurchaseCreator{result: usecases.CreateCardPurchaseResult{CardFound: true, CardName: "Nubank"}}
-	uc := usecases.NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa > Eletro")}, creator, noop.NewProvider())
+	creator := &fakeCardPurchaseCreator{result: CreateCardPurchaseResult{CardFound: true, CardName: "Nubank"}}
+	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa > Eletro")}, creator, fake.NewProvider())
 
-	out, err := uc.Execute(context.Background(), usecases.LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	out, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().NoError(err)
 	s.True(out.Persisted)
 	s.True(out.CardFound)
@@ -67,10 +71,10 @@ func (s *LogCardPurchaseSuite) TestPersistedWhenCardFound() {
 }
 
 func (s *LogCardPurchaseSuite) TestNotPersistedWhenCardMissing() {
-	creator := &fakeCardPurchaseCreator{result: usecases.CreateCardPurchaseResult{CardFound: false}}
-	uc := usecases.NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, noop.NewProvider())
+	creator := &fakeCardPurchaseCreator{result: CreateCardPurchaseResult{CardFound: false}}
+	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, fake.NewProvider())
 
-	out, err := uc.Execute(context.Background(), usecases.LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	out, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().NoError(err)
 	s.False(out.Persisted)
 	s.False(out.CardFound)
@@ -78,29 +82,29 @@ func (s *LogCardPurchaseSuite) TestNotPersistedWhenCardMissing() {
 
 func (s *LogCardPurchaseSuite) TestCategoryNotFoundFails() {
 	creator := &fakeCardPurchaseCreator{}
-	uc := usecases.NewLogCardPurchaseFromAgent(&fakeResolver{out: &categoriesoutput.DictionarySearchOutput{}}, creator, noop.NewProvider())
+	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: &categoriesoutput.DictionarySearchOutput{}}, creator, fake.NewProvider())
 
-	_, err := uc.Execute(context.Background(), usecases.LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	_, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().Error(err)
 	s.False(creator.called)
 }
 
 func (s *LogCardPurchaseSuite) TestCreateErrorPropagates() {
 	creator := &fakeCardPurchaseCreator{err: errors.New("boom")}
-	uc := usecases.NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, noop.NewProvider())
+	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, fake.NewProvider())
 
-	_, err := uc.Execute(context.Background(), usecases.LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	_, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().Error(err)
 }
 
 type fakeRecurringTemplateCreator struct {
 	called bool
-	in     usecases.CreateRecurringCommand
-	result usecases.CreateRecurringResult
+	in     CreateRecurringCommand
+	result CreateRecurringResult
 	err    error
 }
 
-func (f *fakeRecurringTemplateCreator) Execute(_ context.Context, in usecases.CreateRecurringCommand) (usecases.CreateRecurringResult, error) {
+func (f *fakeRecurringTemplateCreator) Execute(_ context.Context, in CreateRecurringCommand) (CreateRecurringResult, error) {
 	f.called = true
 	f.in = in
 	return f.result, f.err
@@ -108,10 +112,15 @@ func (f *fakeRecurringTemplateCreator) Execute(_ context.Context, in usecases.Cr
 
 type CreateRecurringSuite struct {
 	suite.Suite
+	ctx context.Context
 }
 
 func TestCreateRecurringSuite(t *testing.T) {
 	suite.Run(t, new(CreateRecurringSuite))
+}
+
+func (s *CreateRecurringSuite) SetupTest() {
+	s.ctx = context.Background()
 }
 
 func (s *CreateRecurringSuite) intent(direction string) intent.Intent {
@@ -123,10 +132,10 @@ func (s *CreateRecurringSuite) intent(direction string) intent.Intent {
 }
 
 func (s *CreateRecurringSuite) TestPersistedIncome() {
-	creator := &fakeRecurringTemplateCreator{result: usecases.CreateRecurringResult{Persisted: true}}
-	uc := usecases.NewCreateRecurringFromAgent(&fakeResolver{out: candidatesOutput("Salário")}, creator, noop.NewProvider())
+	creator := &fakeRecurringTemplateCreator{result: CreateRecurringResult{Persisted: true}}
+	uc := NewCreateRecurringFromAgent(&fakeResolver{out: candidatesOutput("Salário")}, creator, fake.NewProvider())
 
-	out, err := uc.Execute(context.Background(), usecases.CreateRecurringFromAgentInput{UserID: uuid.NewString(), Intent: s.intent("income")})
+	out, err := uc.Execute(s.ctx, CreateRecurringFromAgentInput{UserID: uuid.NewString(), Intent: s.intent("income")})
 	s.Require().NoError(err)
 	s.True(out.Persisted)
 	s.Equal("income", out.Direction)
@@ -138,17 +147,17 @@ func (s *CreateRecurringSuite) TestPersistedIncome() {
 
 func (s *CreateRecurringSuite) TestCategoryNotFoundFailsForOutcome() {
 	creator := &fakeRecurringTemplateCreator{}
-	uc := usecases.NewCreateRecurringFromAgent(&fakeResolver{out: &categoriesoutput.DictionarySearchOutput{}}, creator, noop.NewProvider())
+	uc := NewCreateRecurringFromAgent(&fakeResolver{out: &categoriesoutput.DictionarySearchOutput{}}, creator, fake.NewProvider())
 
-	_, err := uc.Execute(context.Background(), usecases.CreateRecurringFromAgentInput{UserID: uuid.NewString(), Intent: s.intent("outcome")})
+	_, err := uc.Execute(s.ctx, CreateRecurringFromAgentInput{UserID: uuid.NewString(), Intent: s.intent("outcome")})
 	s.Require().Error(err)
 	s.False(creator.called)
 }
 
 func (s *CreateRecurringSuite) TestCreateErrorPropagates() {
 	creator := &fakeRecurringTemplateCreator{err: errors.New("boom")}
-	uc := usecases.NewCreateRecurringFromAgent(&fakeResolver{out: candidatesOutput("Salário")}, creator, noop.NewProvider())
+	uc := NewCreateRecurringFromAgent(&fakeResolver{out: candidatesOutput("Salário")}, creator, fake.NewProvider())
 
-	_, err := uc.Execute(context.Background(), usecases.CreateRecurringFromAgentInput{UserID: uuid.NewString(), Intent: s.intent("income")})
+	_, err := uc.Execute(s.ctx, CreateRecurringFromAgentInput{UserID: uuid.NewString(), Intent: s.intent("income")})
 	s.Require().Error(err)
 }

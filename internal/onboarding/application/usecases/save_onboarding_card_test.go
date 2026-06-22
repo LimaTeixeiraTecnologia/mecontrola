@@ -1,20 +1,19 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
@@ -22,10 +21,11 @@ import (
 
 type SaveOnboardingCardSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
 	factory     *mocks.RepositoryFactory
 	publisher   *outboxmocks.Publisher
-	uc          *usecases.SaveOnboardingCard
+	uc          *SaveOnboardingCard
 	userID      uuid.UUID
 }
 
@@ -34,17 +34,18 @@ func TestSaveOnboardingCardSuite(t *testing.T) {
 }
 
 func (s *SaveOnboardingCardSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.publisher = outboxmocks.NewPublisher(s.T())
 	s.factory.EXPECT().OnboardingSessionRepository(mock.Anything).Return(s.sessionRepo).Maybe()
 	s.userID = uuid.MustParse("88888888-8888-8888-8888-888888888888")
-	s.uc = usecases.NewSaveOnboardingCard(
+	s.uc = NewSaveOnboardingCard(
 		&onboardingUoWStub{},
 		s.factory,
 		s.publisher,
 		&onboardingFixedIDGen{id: "99999999-9999-9999-9999-999999999999"},
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
@@ -62,7 +63,7 @@ func (s *SaveOnboardingCardSuite) TestHappyPath() {
 	})).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingCardInput{
+	result, err := s.uc.Execute(context.Background(), SaveOnboardingCardInput{
 		UserID:   s.userID,
 		Nickname: "nubank",
 		DueDay:   17,
@@ -74,7 +75,7 @@ func (s *SaveOnboardingCardSuite) TestHappyPath() {
 }
 
 func (s *SaveOnboardingCardSuite) TestEmptyNicknameRejectedBeforeTx() {
-	_, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingCardInput{
+	_, err := s.uc.Execute(context.Background(), SaveOnboardingCardInput{
 		UserID:   s.userID,
 		Nickname: "   ",
 		DueDay:   10,
@@ -84,7 +85,7 @@ func (s *SaveOnboardingCardSuite) TestEmptyNicknameRejectedBeforeTx() {
 }
 
 func (s *SaveOnboardingCardSuite) TestInvalidDueDayRejectedBeforeTx() {
-	_, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingCardInput{
+	_, err := s.uc.Execute(context.Background(), SaveOnboardingCardInput{
 		UserID:   s.userID,
 		Nickname: "nubank",
 		DueDay:   40,
@@ -97,7 +98,7 @@ func (s *SaveOnboardingCardSuite) TestSessionNotFound() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 
-	_, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingCardInput{
+	_, err := s.uc.Execute(context.Background(), SaveOnboardingCardInput{
 		UserID:   s.userID,
 		Nickname: "nubank",
 		DueDay:   17,

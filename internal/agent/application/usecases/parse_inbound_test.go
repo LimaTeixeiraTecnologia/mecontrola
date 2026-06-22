@@ -1,15 +1,15 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
@@ -24,67 +24,68 @@ func (f *fakeInterpreter) Interpret(_ context.Context, req interfaces.LLMRequest
 	return f.resp, f.err
 }
 
-func newSUT(t *testing.T, resp string, err error) *usecases.ParseInbound {
-	t.Helper()
-	uc, ucErr := usecases.NewParseInbound(&fakeInterpreter{
+type ParseInboundSuite struct {
+	suite.Suite
+	ctx context.Context
+}
+
+func TestParseInboundSuite(t *testing.T) {
+	suite.Run(t, new(ParseInboundSuite))
+}
+
+func (s *ParseInboundSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *ParseInboundSuite) newSUT(resp string, err error) *ParseInbound {
+	uc, ucErr := NewParseInbound(&fakeInterpreter{
 		resp: interfaces.LLMResponse{RawJSON: []byte(resp)},
 		err:  err,
-	}, noop.NewProvider())
-	if ucErr != nil {
-		t.Fatalf("NewParseInbound: %v", ucErr)
-	}
+	}, fake.NewProvider())
+	s.Require().NoError(ucErr)
 	return uc
 }
 
-func TestParseInbound_NewParseInbound_NilDeps(t *testing.T) {
-	t.Parallel()
-	if _, err := usecases.NewParseInbound(nil, noop.NewProvider()); err == nil {
-		t.Fatalf("expected error for nil interpreter")
-	}
-	if _, err := usecases.NewParseInbound(&fakeInterpreter{}, nil); err == nil {
-		t.Fatalf("expected error for nil o11y")
-	}
+func (s *ParseInboundSuite) TestNewParseInboundNilDeps() {
+	_, err := NewParseInbound(nil, fake.NewProvider())
+	s.Require().Error(err)
+
+	_, err = NewParseInbound(&fakeInterpreter{}, nil)
+	s.Require().Error(err)
 }
 
-func TestParseInbound_Execute_EmptyText(t *testing.T) {
-	t.Parallel()
-	uc := newSUT(t, `{"kind":"unknown","raw_text":"x"}`, nil)
-	_, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteEmptyText() {
+	uc := s.newSUT(`{"kind":"unknown","raw_text":"x"}`, nil)
+	_, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "   ",
 	})
-	if !errors.Is(err, usecases.ErrParseInboundEmptyText) {
-		t.Fatalf("err = %v", err)
-	}
+	s.Require().ErrorIs(err, ErrParseInboundEmptyText)
 }
 
-func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela exaustiva por intent kind
-	t.Parallel()
-
+func (s *ParseInboundSuite) TestExecuteAllKinds() { //nolint:revive // tabela exaustiva por intent kind
 	cases := []struct {
 		name    string
 		llmJSON string
 		want    intent.Kind
-		check   func(t *testing.T, got intent.Intent)
+		check   func(got intent.Intent)
 	}{
 		{
 			name:    "log_expense",
 			llmJSON: `{"kind":"log_expense","amount_cents":5800,"merchant":"iFood","category_hint":"Alimentação","payment_method":"credit","card_hint":"nubank"}`,
 			want:    intent.KindLogExpense,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.AmountCents() != 5800 || got.Merchant() != "iFood" || got.PaymentMethod() != "credit" {
-					t.Fatalf("got = %+v", got)
-				}
+			check: func(got intent.Intent) {
+				s.Equal(int64(5800), got.AmountCents())
+				s.Equal("iFood", got.Merchant())
+				s.Equal("credit", got.PaymentMethod())
 			},
 		},
 		{
 			name:    "query_category",
 			llmJSON: `{"kind":"query_category","category_name":"Prazeres"}`,
 			want:    intent.KindQueryCategory,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.CategoryName() != "Prazeres" {
-					t.Fatalf("category_name = %q", got.CategoryName())
-				}
+			check: func(got intent.Intent) {
+				s.Equal("Prazeres", got.CategoryName())
 			},
 		},
 		{
@@ -101,10 +102,8 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela
 			name:    "monthly_summary_with_ref_month",
 			llmJSON: `{"kind":"monthly_summary","ref_month":"2026-06"}`,
 			want:    intent.KindMonthlySummary,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.RefMonth() != "2026-06" {
-					t.Fatalf("ref_month = %q", got.RefMonth())
-				}
+			check: func(got intent.Intent) {
+				s.Equal("2026-06", got.RefMonth())
 			},
 		},
 		{
@@ -121,10 +120,8 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela
 			name:    "unknown_with_raw_text",
 			llmJSON: `{"kind":"unknown","raw_text":"oi bom dia"}`,
 			want:    intent.KindUnknown,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.RawText() != "oi bom dia" {
-					t.Fatalf("raw_text = %q", got.RawText())
-				}
+			check: func(got intent.Intent) {
+				s.Equal("oi bom dia", got.RawText())
 			},
 		},
 		{
@@ -136,20 +133,18 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela
 			name:    "log_card_purchase",
 			llmJSON: `{"kind":"log_card_purchase","amount_cents":120000,"merchant":"supermercado","card_hint":"nubank","installments":6}`,
 			want:    intent.KindLogCardPurchase,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.AmountCents() != 120000 || got.Installments() != 6 || got.CardHint() != "nubank" {
-					t.Fatalf("got = %+v", got)
-				}
+			check: func(got intent.Intent) {
+				s.Equal(int64(120000), got.AmountCents())
+				s.Equal(6, got.Installments())
+				s.Equal("nubank", got.CardHint())
 			},
 		},
 		{
 			name:    "list_transactions",
 			llmJSON: `{"kind":"list_transactions","ref_month":"2026-06"}`,
 			want:    intent.KindListTransactions,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.RefMonth() != "2026-06" {
-					t.Fatalf("ref_month = %q", got.RefMonth())
-				}
+			check: func(got intent.Intent) {
+				s.Equal("2026-06", got.RefMonth())
 			},
 		},
 		{
@@ -161,30 +156,28 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela
 			name:    "edit_last_transaction",
 			llmJSON: `{"kind":"edit_last_transaction","amount_cents":8000}`,
 			want:    intent.KindEditLastTransaction,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.AmountCents() != 8000 {
-					t.Fatalf("amount_cents = %d", got.AmountCents())
-				}
+			check: func(got intent.Intent) {
+				s.Equal(int64(8000), got.AmountCents())
 			},
 		},
 		{
 			name:    "create_recurring_explicit_direction",
 			llmJSON: `{"kind":"create_recurring","amount_cents":500000,"merchant":"salário","direction":"income","frequency":"monthly","day_of_month":5}`,
 			want:    intent.KindCreateRecurring,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.Direction() != "income" || got.Frequency() != "monthly" || got.DayOfMonth() != 5 {
-					t.Fatalf("got = %+v", got)
-				}
+			check: func(got intent.Intent) {
+				s.Equal("income", got.Direction())
+				s.Equal("monthly", got.Frequency())
+				s.Equal(5, got.DayOfMonth())
 			},
 		},
 		{
 			name:    "create_recurring_infers_outcome_default",
 			llmJSON: `{"kind":"create_recurring","amount_cents":120000,"merchant":"aluguel","day_of_month":0}`,
 			want:    intent.KindCreateRecurring,
-			check: func(t *testing.T, got intent.Intent) {
-				if got.Direction() != "outcome" || got.Frequency() != "monthly" || got.DayOfMonth() != 1 {
-					t.Fatalf("got = %+v", got)
-				}
+			check: func(got intent.Intent) {
+				s.Equal("outcome", got.Direction())
+				s.Equal("monthly", got.Frequency())
+				s.Equal(1, got.DayOfMonth())
 			},
 		},
 		{
@@ -200,192 +193,117 @@ func TestParseInbound_Execute_AllKinds(t *testing.T) { //nolint:revive // tabela
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			uc := newSUT(t, tc.llmJSON, nil)
-			out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+		s.Run(tc.name, func() {
+			uc := s.newSUT(tc.llmJSON, nil)
+			out, err := uc.Execute(s.ctx, ParseInboundInput{
 				UserID: uuid.New(),
 				Text:   "qualquer texto",
 			})
-			if err != nil {
-				t.Fatalf("unexpected err: %v", err)
-			}
-			if out.Intent.Kind() != tc.want {
-				t.Fatalf("kind = %v, want %v", out.Intent.Kind(), tc.want)
-			}
+			s.Require().NoError(err)
+			s.Equal(tc.want, out.Intent.Kind())
 			if tc.check != nil {
-				tc.check(t, out.Intent)
+				tc.check(out.Intent)
 			}
 		})
 	}
 }
 
-func TestParseInbound_Execute_CreateRecurring_InfersIncomeFromText(t *testing.T) {
-	t.Parallel()
-
-	uc := newSUT(t, `{"kind":"create_recurring","amount_cents":500000,"merchant":"salário"}`, nil)
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteCreateRecurringInfersIncomeFromText() {
+	uc := s.newSUT(`{"kind":"create_recurring","amount_cents":500000,"merchant":"salário"}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "todo mês recebo 5000 de salário",
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindCreateRecurring {
-		t.Fatalf("kind = %v", out.Intent.Kind())
-	}
-	if out.Intent.Direction() != "income" {
-		t.Fatalf("direction = %q, want income (inferido do texto)", out.Intent.Direction())
-	}
+	s.Require().NoError(err)
+	s.Equal(intent.KindCreateRecurring, out.Intent.Kind())
+	s.Equal("income", out.Intent.Direction())
 }
 
-func TestParseInbound_Execute_InvalidJSON_Fallback(t *testing.T) {
-	t.Parallel()
-
-	uc := newSUT(t, `not a json`, nil)
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteInvalidJSONFallback() {
+	uc := s.newSUT(`not a json`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "preciso pagar a fatura",
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v", out.Intent.Kind())
-	}
-	if out.Intent.RawText() != "preciso pagar a fatura" {
-		t.Fatalf("raw_text = %q", out.Intent.RawText())
-	}
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
+	s.Equal("preciso pagar a fatura", out.Intent.RawText())
 }
 
-func TestParseInbound_Execute_MissingKind_Fallback(t *testing.T) {
-	t.Parallel()
-
-	uc := newSUT(t, `{"amount_cents":100}`, nil)
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteMissingKindFallback() {
+	uc := s.newSUT(`{"amount_cents":100}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "gastei algo",
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v", out.Intent.Kind())
-	}
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
 }
 
-func TestParseInbound_Execute_DomainInvariantViolation_Fallback(t *testing.T) {
-	t.Parallel()
-
-	uc := newSUT(t, `{"kind":"log_expense","amount_cents":0}`, nil)
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteDomainInvariantViolationFallback() {
+	uc := s.newSUT(`{"kind":"log_expense","amount_cents":0}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "gastei algo",
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v", out.Intent.Kind())
-	}
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
 }
 
-func TestParseInbound_Execute_ProviderError_Fallback(t *testing.T) {
-	t.Parallel()
-
-	uc := newSUT(t, ``, errors.New("upstream timeout"))
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteProviderErrorFallback() {
+	uc := s.newSUT(``, errors.New("upstream timeout"))
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "como tá meu cartão?",
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v", out.Intent.Kind())
-	}
-	if out.Intent.RawText() != "como tá meu cartão?" {
-		t.Fatalf("raw_text = %q", out.Intent.RawText())
-	}
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
+	s.Equal("como tá meu cartão?", out.Intent.RawText())
 }
 
-func TestParseInbound_Execute_ForwardsJSONSchemaToInterpreter(t *testing.T) {
-	t.Parallel()
+func (s *ParseInboundSuite) TestExecuteForwardsJSONSchemaToInterpreter() {
+	fi := &fakeInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind":"how_am_i_doing"}`)}}
+	uc, err := NewParseInbound(fi, fake.NewProvider())
+	s.Require().NoError(err)
 
-	fake := &fakeInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind":"how_am_i_doing"}`)}}
-	uc, err := usecases.NewParseInbound(fake, noop.NewProvider())
-	if err != nil {
-		t.Fatalf("NewParseInbound: %v", err)
-	}
-	if _, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+	_, err = uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "como tá meu mês?",
-	}); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-
-	if fake.lastRequest.JSONSchema == nil {
-		t.Fatalf("expected JSONSchema to be set in structured-output mode")
-	}
-	if fake.lastRequest.JSONSchema.Name != "mecontrola_parse_intent" {
-		t.Fatalf("schema name = %q, want mecontrola_parse_intent", fake.lastRequest.JSONSchema.Name)
-	}
-	if len(fake.lastRequest.Tools) != 0 {
-		t.Fatalf("tools must be empty in structured-output mode, got %d", len(fake.lastRequest.Tools))
-	}
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(fi.lastRequest.JSONSchema)
+	s.Equal("mecontrola_parse_intent", fi.lastRequest.JSONSchema.Name)
+	s.Empty(fi.lastRequest.Tools)
 }
 
-func TestParseInbound_Execute_NoToolCall_PropagatesDirectReply(t *testing.T) {
-	t.Parallel()
-
+func (s *ParseInboundSuite) TestExecuteNoToolCallPropagatesDirectReply() {
 	const reply = "Claro! Qual o valor que você gastou?"
-	uc := newSUT(t, reply, nil)
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: "quero registrar um gasto"})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v, want unknown", out.Intent.Kind())
-	}
-	if out.DirectReply != reply {
-		t.Fatalf("direct reply = %q, want %q", out.DirectReply, reply)
-	}
+	uc := s.newSUT(reply, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "quero registrar um gasto"})
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
+	s.Equal(reply, out.DirectReply)
 }
 
-func TestParseInbound_Execute_UnsupportedToolCall_Fallback(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakeInterpreter{resp: interfaces.LLMResponse{
+func (s *ParseInboundSuite) TestExecuteUnsupportedToolCallFallback() {
+	fi := &fakeInterpreter{resp: interfaces.LLMResponse{
 		ToolCalls: []interfaces.ToolCall{{ID: "call_x", FunctionName: "nonexistent_tool"}},
 	}}
-	uc, err := usecases.NewParseInbound(fake, noop.NewProvider())
-	if err != nil {
-		t.Fatalf("NewParseInbound: %v", err)
-	}
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: "faça algo estranho"})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v, want unknown", out.Intent.Kind())
-	}
-	if out.DirectReply != "" {
-		t.Fatalf("direct reply must be empty on tool fallback, got %q", out.DirectReply)
-	}
+	uc, err := NewParseInbound(fi, fake.NewProvider())
+	s.Require().NoError(err)
+
+	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "faça algo estranho"})
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
+	s.Empty(out.DirectReply)
 }
 
-func TestParseInbound_Execute_UnknownKindString_Fallback(t *testing.T) {
-	t.Parallel()
-
-	uc := newSUT(t, `{"kind":"bogus"}`, nil)
-	out, err := uc.Execute(context.Background(), usecases.ParseInboundInput{
+func (s *ParseInboundSuite) TestExecuteUnknownKindStringFallback() {
+	uc := s.newSUT(`{"kind":"bogus"}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "texto",
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if out.Intent.Kind() != intent.KindUnknown {
-		t.Fatalf("kind = %v", out.Intent.Kind())
-	}
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
 }

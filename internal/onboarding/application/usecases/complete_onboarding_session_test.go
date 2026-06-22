@@ -1,20 +1,19 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
@@ -22,10 +21,11 @@ import (
 
 type CompleteOnboardingSessionSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
 	factory     *mocks.RepositoryFactory
 	publisher   *outboxmocks.Publisher
-	uc          *usecases.CompleteOnboardingSession
+	uc          *CompleteOnboardingSession
 	userID      uuid.UUID
 }
 
@@ -34,17 +34,18 @@ func TestCompleteOnboardingSessionSuite(t *testing.T) {
 }
 
 func (s *CompleteOnboardingSessionSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.publisher = outboxmocks.NewPublisher(s.T())
 	s.factory.EXPECT().OnboardingSessionRepository(mock.Anything).Return(s.sessionRepo).Maybe()
 	s.userID = uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
-	s.uc = usecases.NewCompleteOnboardingSession(
+	s.uc = NewCompleteOnboardingSession(
 		&onboardingUoWStub{},
 		s.factory,
 		s.publisher,
 		&onboardingFixedIDGen{id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"},
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
@@ -58,7 +59,7 @@ func (s *CompleteOnboardingSessionSuite) TestActiveSessionAlreadyActive() {
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.CompleteOnboardingSessionInput{UserID: s.userID})
+	result, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
 	require.NoError(s.T(), err)
 	require.True(s.T(), result.AlreadyActive)
 	require.False(s.T(), result.Completed)
@@ -76,8 +77,8 @@ func (s *CompleteOnboardingSessionSuite) TestMissingFirstTransactionRejected() {
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 
-	_, err := s.uc.Execute(context.Background(), usecases.CompleteOnboardingSessionInput{UserID: s.userID})
-	require.ErrorIs(s.T(), err, usecases.ErrOnboardingFirstTransactionRequired)
+	_, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
+	require.ErrorIs(s.T(), err, ErrOnboardingFirstTransactionRequired)
 	s.sessionRepo.AssertNotCalled(s.T(), "Upsert", mock.Anything, mock.Anything)
 }
 
@@ -95,7 +96,7 @@ func (s *CompleteOnboardingSessionSuite) TestHappyPath() {
 	})).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.CompleteOnboardingSessionInput{UserID: s.userID})
+	result, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
 	require.NoError(s.T(), err)
 	require.True(s.T(), result.Completed)
 	require.False(s.T(), result.AlreadyActive)
@@ -105,6 +106,6 @@ func (s *CompleteOnboardingSessionSuite) TestSessionNotFound() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 
-	_, err := s.uc.Execute(context.Background(), usecases.CompleteOnboardingSessionInput{UserID: s.userID})
+	_, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
 	require.ErrorIs(s.T(), err, appinterfaces.ErrOnboardingSessionNotFound)
 }

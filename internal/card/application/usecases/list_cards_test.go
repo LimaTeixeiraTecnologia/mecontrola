@@ -1,11 +1,12 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/pagination"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -21,6 +21,7 @@ import (
 
 type ListCardsSuite struct {
 	suite.Suite
+	obs      observability.Observability
 	repoMock *ifacemocks.CardRepository
 }
 
@@ -29,6 +30,7 @@ func TestListCards(t *testing.T) {
 }
 
 func (s *ListCardsSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 }
 
@@ -46,7 +48,7 @@ func (s *ListCardsSuite) TestExecute_HappyPath() {
 
 	s.repoMock.EXPECT().ListByUser(mock.Anything, userID.String(), "", 10).Return(cards, "", nil).Once()
 
-	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
+	sut := NewListCards(s.repoMock, s.obs)
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -67,7 +69,7 @@ func (s *ListCardsSuite) TestExecute_WithCursor() {
 
 	s.repoMock.EXPECT().ListByUser(mock.Anything, userID.String(), cursor, 5).Return(cards, nextCursor, nil).Once()
 
-	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
+	sut := NewListCards(s.repoMock, s.obs)
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -83,7 +85,7 @@ func (s *ListCardsSuite) TestExecute_InvalidCursor_Base64() {
 		Limit:  10,
 	}
 
-	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
+	sut := NewListCards(s.repoMock, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -98,7 +100,7 @@ func (s *ListCardsSuite) TestExecute_InvalidCursor_EmptyJSON() {
 		Limit:  10,
 	}
 
-	sut := usecases.NewListCards(s.repoMock, noop.NewProvider())
+	sut := NewListCards(s.repoMock, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)

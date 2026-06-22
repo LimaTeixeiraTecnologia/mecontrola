@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 )
 
@@ -38,6 +38,7 @@ func (s *stubChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, 
 
 type NotifyThresholdAlertSuite struct {
 	suite.Suite
+	obs      observability.Observability
 	repo     *mocks.ThresholdAlertSentRepository
 	resolver *mocks.UserChannelResolver
 }
@@ -47,6 +48,7 @@ func TestNotifyThresholdAlert(t *testing.T) {
 }
 
 func (s *NotifyThresholdAlertSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.repo = mocks.NewThresholdAlertSentRepository(s.T())
 	s.resolver = mocks.NewUserChannelResolver(s.T())
 }
@@ -57,9 +59,13 @@ func (s *NotifyThresholdAlertSuite) TestExecute() {
 	refDay := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
 	kind := services.ThresholdAlertCategory
 
+	type dependencies struct {
+		gw *stubChannelGateway
+	}
+
 	scenarios := []struct {
 		name          string
-		setup         func(gw *stubChannelGateway)
+		dependencies  dependencies
 		expectOutcome string
 		expectError   bool
 		expectChannel string
@@ -67,61 +73,72 @@ func (s *NotifyThresholdAlertSuite) TestExecute() {
 	}{
 		{
 			name: "envia notificacao com sucesso",
-			setup: func(_ *stubChannelGateway) {
-				s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
-				s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "whatsapp", ExternalID: "+5511999990000"}, true, nil).Once()
-				s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "whatsapp", mock.Anything).Return(true, nil).Once()
+			dependencies: dependencies{
+				gw: func() *stubChannelGateway {
+					s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
+					s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "whatsapp", ExternalID: "+5511999990000"}, true, nil).Once()
+					s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "whatsapp", mock.Anything).Return(true, nil).Once()
+					return &stubChannelGateway{}
+				}(),
 			},
-			expectOutcome: usecases.NotifyOutcomeSent,
+			expectOutcome: NotifyOutcomeSent,
 			expectChannel: "whatsapp",
 			expectTextHas: "utilizou",
 		},
 		{
 			name: "skipa se ja notificado",
-			setup: func(_ *stubChannelGateway) {
-				s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(true, nil).Once()
+			dependencies: dependencies{
+				gw: func() *stubChannelGateway {
+					s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(true, nil).Once()
+					return &stubChannelGateway{}
+				}(),
 			},
-			expectOutcome: usecases.NotifyOutcomeAlreadySent,
+			expectOutcome: NotifyOutcomeAlreadySent,
 		},
 		{
 			name: "outcome=no_channel quando resolver nao retorna preferencia",
-			setup: func(_ *stubChannelGateway) {
-				s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
-				s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{}, false, nil).Once()
+			dependencies: dependencies{
+				gw: func() *stubChannelGateway {
+					s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
+					s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{}, false, nil).Once()
+					return &stubChannelGateway{}
+				}(),
 			},
-			expectOutcome: usecases.NotifyOutcomeNoChannel,
+			expectOutcome: NotifyOutcomeNoChannel,
 		},
 		{
 			name: "outcome=channel_failed quando gateway falha",
-			setup: func(gw *stubChannelGateway) {
-				gw.err = errors.New("meta down")
-				s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
-				s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "whatsapp", ExternalID: "+5511"}, true, nil).Once()
-				s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "whatsapp", mock.Anything).Return(true, nil).Once()
+			dependencies: dependencies{
+				gw: func() *stubChannelGateway {
+					s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
+					s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "whatsapp", ExternalID: "+5511"}, true, nil).Once()
+					s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "whatsapp", mock.Anything).Return(true, nil).Once()
+					return &stubChannelGateway{err: errors.New("meta down")}
+				}(),
 			},
-			expectOutcome: usecases.NotifyOutcomeChannelFailed,
+			expectOutcome: NotifyOutcomeChannelFailed,
 			expectError:   true,
 			expectChannel: "whatsapp",
 		},
 		{
 			name: "outcome=already_sent quando MarkNotified nao atualiza linha (concorrencia)",
-			setup: func(_ *stubChannelGateway) {
-				s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
-				s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "telegram", ExternalID: "1234"}, true, nil).Once()
-				s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "telegram", mock.Anything).Return(false, nil).Once()
+			dependencies: dependencies{
+				gw: func() *stubChannelGateway {
+					s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
+					s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "telegram", ExternalID: "1234"}, true, nil).Once()
+					s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "telegram", mock.Anything).Return(false, nil).Once()
+					return &stubChannelGateway{}
+				}(),
 			},
-			expectOutcome: usecases.NotifyOutcomeAlreadySent,
+			expectOutcome: NotifyOutcomeAlreadySent,
 			expectChannel: "telegram",
 		},
 	}
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
-			gw := &stubChannelGateway{}
-			scenario.setup(gw)
-			uc := usecases.NewNotifyThresholdAlert(s.repo, s.resolver, gw, noop.NewProvider())
-			result, err := uc.Execute(context.Background(), usecases.NotifyThresholdAlertInput{
+			uc := NewNotifyThresholdAlert(s.repo, s.resolver, scenario.dependencies.gw, s.obs)
+			result, err := uc.Execute(context.Background(), NotifyThresholdAlertInput{
 				UserID:               userID,
 				BudgetID:             budgetID,
 				Kind:                 kind,
@@ -140,7 +157,7 @@ func (s *NotifyThresholdAlertSuite) TestExecute() {
 				s.Equal(scenario.expectChannel, result.Channel)
 			}
 			if scenario.expectTextHas != "" {
-				s.True(strings.Contains(gw.sentText, scenario.expectTextHas), "expected message contains %q, got %q", scenario.expectTextHas, gw.sentText)
+				s.True(strings.Contains(scenario.dependencies.gw.sentText, scenario.expectTextHas), "expected message contains %q, got %q", scenario.expectTextHas, scenario.dependencies.gw.sentText)
 			}
 		})
 	}

@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,19 +6,21 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
 type RecordGatewayAuthFailureSuite struct {
 	suite.Suite
-	ctx context.Context
+	ctx           context.Context
+	obs           observability.Observability
+	publisherMock *outboxmocks.Publisher
 }
 
 func TestRecordGatewayAuthFailure(t *testing.T) {
@@ -26,7 +28,9 @@ func TestRecordGatewayAuthFailure(t *testing.T) {
 }
 
 func (s *RecordGatewayAuthFailureSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
+	s.publisherMock = outboxmocks.NewPublisher(s.T())
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_ValidReasons() {
@@ -39,8 +43,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_ValidReasons() {
 
 	for _, reason := range validReasons {
 		s.Run(reason, func() {
-			publisher := outboxmocks.NewPublisher(s.T())
-			publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+			s.publisherMock.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
 				var payload map[string]any
 				if err := json.Unmarshal(ev.Payload, &payload); err != nil {
 					return false
@@ -50,7 +53,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_ValidReasons() {
 					ev.AggregateType == "auth_event"
 			})).Return(nil).Once()
 
-			sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+			sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 			err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 				Reason:      reason,
 				RequestID:   "req-abc-123",
@@ -62,26 +65,23 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_ValidReasons() {
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidReason() {
-	publisher := outboxmocks.NewPublisher(s.T())
-
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason: "unknown_reason",
 	})
 	s.Require().Error(err)
-	s.ErrorIs(err, usecases.ErrInvalidGatewayReason)
+	s.ErrorIs(err, ErrInvalidGatewayReason)
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_PublishesRequestIDAndClientIP() {
 	var capturedEvent outbox.Event
 
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
 		capturedEvent = ev
 		return nil
 	}).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason:      "gateway_invalid_signature",
 		RequestID:   "req-xyz-001",
@@ -100,8 +100,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_PublishesRequestIDAndClientIP
 func (s *RecordGatewayAuthFailureSuite) TestHandle_UniqueEventIDsPerCall() {
 	var eventIDs []string
 
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
 		var payload map[string]any
 		if err := json.Unmarshal(ev.Payload, &payload); err != nil {
 			return err
@@ -110,7 +109,7 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_UniqueEventIDsPerCall() {
 		return nil
 	}).Times(2)
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	in := input.RecordGatewayAuthFailureInput{
 		Reason: "gateway_missing_header",
 	}
@@ -123,10 +122,9 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_UniqueEventIDsPerCall() {
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_OutboxPublishError() {
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox down")).Once()
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox down")).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason: "gateway_stale_timestamp",
 	})
@@ -137,13 +135,12 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_OutboxPublishError() {
 func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidClientIP() {
 	var capturedEvent outbox.Event
 
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
 		capturedEvent = ev
 		return nil
 	}).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason:      "gateway_missing_header",
 		ClientIPRaw: "not-a-valid-ip",
@@ -157,10 +154,9 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidClientIP() {
 }
 
 func (s *RecordGatewayAuthFailureSuite) TestHandle_WithoutRequestIDAndClientIP() {
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		Reason: "gateway_invalid_signature",
 	})
@@ -170,13 +166,12 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_WithoutRequestIDAndClientIP()
 func (s *RecordGatewayAuthFailureSuite) TestHandle_WithUserID() {
 	var capturedEvent outbox.Event
 
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
 		capturedEvent = ev
 		return nil
 	}).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		UserIDRaw: "a0a0a0a0-0000-0000-0000-000000000001",
 		Reason:    "gateway_invalid_signature",
@@ -192,13 +187,12 @@ func (s *RecordGatewayAuthFailureSuite) TestHandle_WithUserID() {
 func (s *RecordGatewayAuthFailureSuite) TestHandle_InvalidUserIDStillPublishes() {
 	var capturedEvent outbox.Event
 
-	publisher := outboxmocks.NewPublisher(s.T())
-	publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
+	s.publisherMock.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {
 		capturedEvent = ev
 		return nil
 	}).Once()
 
-	sut := usecases.NewRecordGatewayAuthFailure(publisher, fake.NewProvider())
+	sut := NewRecordGatewayAuthFailure(s.publisherMock, s.obs)
 	err := sut.Handle(s.ctx, input.RecordGatewayAuthFailureInput{
 		UserIDRaw:   "not-a-uuid",
 		Reason:      "gateway_invalid_signature",

@@ -1,22 +1,21 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
@@ -31,9 +30,10 @@ func (u *unitOfWorkStartBudget) Do(ctx context.Context, fn func(context.Context,
 
 type StartBudgetConfigurationSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
 	factory     *mocks.RepositoryFactory
-	uc          *usecases.StartBudgetConfiguration
+	uc          *StartBudgetConfiguration
 	userID      uuid.UUID
 }
 
@@ -42,22 +42,23 @@ func TestStartBudgetConfigurationSuite(t *testing.T) {
 }
 
 func (s *StartBudgetConfigurationSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.factory.EXPECT().OnboardingSessionRepository(mock.Anything).Return(s.sessionRepo).Maybe()
 	s.userID = uuid.MustParse("33333333-3333-3333-3333-333333333333")
-	s.uc = usecases.NewStartBudgetConfiguration(
+	s.uc = NewStartBudgetConfiguration(
 		&unitOfWorkStartBudget{},
 		s.factory,
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
 func (s *StartBudgetConfigurationSuite) TestUserIDRequired() {
-	_, err := s.uc.Execute(context.Background(), usecases.StartBudgetConfigurationInput{
+	_, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		Channel: entities.OnboardingChannelTelegram,
 	})
-	require.ErrorIs(s.T(), err, usecases.ErrStartBudgetUserIDRequired)
+	require.ErrorIs(s.T(), err, ErrStartBudgetUserIDRequired)
 }
 
 func (s *StartBudgetConfigurationSuite) TestSessionNotFoundCreatesAwaitingIncome() {
@@ -69,12 +70,12 @@ func (s *StartBudgetConfigurationSuite) TestSessionNotFoundCreatesAwaitingIncome
 			sess.State() == valueobjects.OnboardingStateAwaitingIncome
 	})).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.StartBudgetConfigurationInput{
+	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelTelegram,
 	})
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), usecases.StartBudgetOutcomeStarted, result.Outcome)
+	require.Equal(s.T(), StartBudgetOutcomeStarted, result.Outcome)
 	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingIncome, result.NewState)
 	require.Contains(s.T(), result.Reply, "renda mensal")
 }
@@ -93,12 +94,12 @@ func (s *StartBudgetConfigurationSuite) TestActiveSessionResetsToAwaitingIncome(
 			sess.Payload().IncomeCents == 0
 	})).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.StartBudgetConfigurationInput{
+	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelTelegram,
 	})
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), usecases.StartBudgetOutcomeReset, result.Outcome)
+	require.Equal(s.T(), StartBudgetOutcomeReset, result.Outcome)
 	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingIncome, result.NewState)
 }
 
@@ -112,12 +113,12 @@ func (s *StartBudgetConfigurationSuite) TestNonTerminalSessionReturnsResume() {
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(existing, nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.StartBudgetConfigurationInput{
+	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		UserID:  s.userID,
 		Channel: entities.OnboardingChannelTelegram,
 	})
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), usecases.StartBudgetOutcomeResume, result.Outcome)
+	require.Equal(s.T(), StartBudgetOutcomeResume, result.Outcome)
 	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingCardDecision, result.NewState)
 	require.Contains(s.T(), result.Reply, "configurando seu orçamento")
 	require.Contains(s.T(), result.Reply, "cartao")

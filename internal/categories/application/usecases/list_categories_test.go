@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
@@ -23,9 +23,10 @@ type ListCategoriesSuite struct {
 	suite.Suite
 
 	ctx           context.Context
+	obs           observability.Observability
 	repo          *mockInterfaces.CategoryRepository
 	versionReader *mockInterfaces.VersionReader
-	useCase       *usecases.ListCategories
+	useCase       *ListCategories
 }
 
 func TestListCategoriesSuite(t *testing.T) {
@@ -33,14 +34,15 @@ func TestListCategoriesSuite(t *testing.T) {
 }
 
 func (s *ListCategoriesSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.repo = mockInterfaces.NewCategoryRepository(s.T())
 	s.versionReader = mockInterfaces.NewVersionReader(s.T())
-	s.useCase = usecases.NewListCategories(s.repo, s.versionReader, services.NewPTBRCollator(), noop.NewProvider())
+	s.useCase = NewListCategories(s.repo, s.versionReader, services.NewPTBRCollator(), s.obs)
 }
 
 func (s *ListCategoriesSuite) TestExecute_HappyPath_Tree() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	subID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
@@ -63,7 +65,7 @@ func (s *ListCategoriesSuite) TestExecute_HappyPath_Tree() {
 		},
 	}
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(categories, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(categories, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
 
@@ -77,10 +79,10 @@ func (s *ListCategoriesSuite) TestExecute_HappyPath_Tree() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_FilterByKind() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
 	kind := valueobjects.KindIncome
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.Category{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{
 		Kind: &kind,
@@ -91,10 +93,10 @@ func (s *ListCategoriesSuite) TestExecute_FilterByKind() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_FilterByParentID() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
 	parentID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.Category{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{
 		ParentID: &parentID,
@@ -105,9 +107,9 @@ func (s *ListCategoriesSuite) TestExecute_FilterByParentID() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_IncludeDeprecated() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.Category{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{
 		IncludeDeprecated: true,
@@ -118,7 +120,7 @@ func (s *ListCategoriesSuite) TestExecute_IncludeDeprecated() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_VersionError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(0), errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(0), errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
 
@@ -128,8 +130,8 @@ func (s *ListCategoriesSuite) TestExecute_VersionError() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_RepoError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(nil, errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(nil, errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
 
@@ -139,8 +141,8 @@ func (s *ListCategoriesSuite) TestExecute_RepoError() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_EmptyResult() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.Category{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
 
@@ -151,7 +153,7 @@ func (s *ListCategoriesSuite) TestExecute_EmptyResult() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_PTBROrdering() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
 	id1 := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	id2 := uuid.MustParse("22222222-2222-2222-2222-222222222222")
@@ -181,7 +183,7 @@ func (s *ListCategoriesSuite) TestExecute_PTBROrdering() {
 		},
 	}
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(categories, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(categories, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{})
 
@@ -199,7 +201,7 @@ func (s *ListCategoriesSuite) TestExecute_PTBROrdering() {
 }
 
 func (s *ListCategoriesSuite) TestExecute_WithDeprecatedCategories() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	deprecatedAt := time.Now()
@@ -215,7 +217,7 @@ func (s *ListCategoriesSuite) TestExecute_WithDeprecatedCategories() {
 		},
 	}
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(categories, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(categories, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListCategoriesInput{
 		IncludeDeprecated: true,

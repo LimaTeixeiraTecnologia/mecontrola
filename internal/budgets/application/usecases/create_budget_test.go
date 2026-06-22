@@ -1,11 +1,12 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,17 +14,17 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 )
 
 type CreateBudgetSuite struct {
 	suite.Suite
+	obs     observability.Observability
 	ctx     context.Context
 	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	uow     *uowMocks.UnitOfWorkBudget
-	useCase *usecases.CreateBudget
+	useCase *CreateBudget
 }
 
 func TestCreateBudgetSuite(t *testing.T) {
@@ -31,19 +32,20 @@ func TestCreateBudgetSuite(t *testing.T) {
 }
 
 func (s *CreateBudgetSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
 	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkBudget(s.T())
-	s.useCase = usecases.NewCreateBudget(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewCreateBudget(s.factory, s.uow, s.obs)
 }
 
 func (s *CreateBudgetSuite) TestExecute_ValidInput_WithAllocations() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -69,7 +71,7 @@ func (s *CreateBudgetSuite) TestExecute_ValidInput_NoAllocations() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -91,7 +93,7 @@ func (s *CreateBudgetSuite) TestExecute_InvalidUserID() {
 		TotalCents: 100000,
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidUserID)
+	s.ErrorIs(err, ErrBudgetInvalidUserID)
 }
 
 func (s *CreateBudgetSuite) TestExecute_InvalidCompetence() {
@@ -101,7 +103,7 @@ func (s *CreateBudgetSuite) TestExecute_InvalidCompetence() {
 		TotalCents: 100000,
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidCompetence)
+	s.ErrorIs(err, ErrBudgetInvalidCompetence)
 }
 
 func (s *CreateBudgetSuite) TestExecute_InvalidAllocationRootSlug() {
@@ -114,7 +116,7 @@ func (s *CreateBudgetSuite) TestExecute_InvalidAllocationRootSlug() {
 		},
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidAllocationRootSlug)
+	s.ErrorIs(err, ErrBudgetInvalidAllocationRootSlug)
 }
 
 func (s *CreateBudgetSuite) TestExecute_BasisPointsNegative() {
@@ -127,7 +129,7 @@ func (s *CreateBudgetSuite) TestExecute_BasisPointsNegative() {
 		},
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetAllocationBasisPointsInvalid)
+	s.ErrorIs(err, ErrBudgetAllocationBasisPointsInvalid)
 }
 
 func (s *CreateBudgetSuite) TestExecute_BasisPointsAbove10000() {
@@ -140,7 +142,7 @@ func (s *CreateBudgetSuite) TestExecute_BasisPointsAbove10000() {
 		},
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetAllocationBasisPointsInvalid)
+	s.ErrorIs(err, ErrBudgetAllocationBasisPointsInvalid)
 }
 
 func (s *CreateBudgetSuite) TestExecute_AllocationSumExceeds10000() {
@@ -154,14 +156,14 @@ func (s *CreateBudgetSuite) TestExecute_AllocationSumExceeds10000() {
 		},
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetAllocationSumExceeds10000)
+	s.ErrorIs(err, ErrBudgetAllocationSumExceeds10000)
 }
 
 func (s *CreateBudgetSuite) TestExecute_Conflict() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(interfaces.ErrBudgetConflict).
 		Once()
 
@@ -178,7 +180,7 @@ func (s *CreateBudgetSuite) TestExecute_RepositoryError() {
 	userID := uuid.New().String()
 
 	s.repo.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(errors.New("db error")).
 		Once()
 

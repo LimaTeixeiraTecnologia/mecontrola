@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -16,7 +16,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -33,7 +32,7 @@ type UpdateTransactionSuite struct {
 	catVal    *mockInterfaces.CategoryValidator
 	publisher *mockInterfaces.TransactionEventPublisher
 	uow       *uowMocks.UnitOfWorkTransaction
-	useCase   *usecases.UpdateTransaction
+	useCase   *UpdateTransaction
 }
 
 func TestUpdateTransactionSuite(t *testing.T) {
@@ -49,10 +48,10 @@ func (s *UpdateTransactionSuite) SetupTest() {
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
 	s.publisher = mockInterfaces.NewTransactionEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkTransaction(s.T())
-	s.useCase = usecases.NewUpdateTransaction(
+	s.useCase = NewUpdateTransaction(
 		s.factory, s.uow, s.catVal,
 		services.TransactionWorkflow{}, s.publisher,
-		noop.NewProvider(),
+		fake.NewProvider(),
 	)
 }
 

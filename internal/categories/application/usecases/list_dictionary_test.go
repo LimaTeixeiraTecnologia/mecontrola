@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
@@ -22,9 +22,10 @@ type ListDictionarySuite struct {
 	suite.Suite
 
 	ctx           context.Context
+	obs           observability.Observability
 	repo          *mockInterfaces.DictionaryRepository
 	versionReader *mockInterfaces.VersionReader
-	useCase       *usecases.ListDictionary
+	useCase       *ListDictionary
 }
 
 func TestListDictionarySuite(t *testing.T) {
@@ -32,14 +33,15 @@ func TestListDictionarySuite(t *testing.T) {
 }
 
 func (s *ListDictionarySuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.repo = mockInterfaces.NewDictionaryRepository(s.T())
 	s.versionReader = mockInterfaces.NewVersionReader(s.T())
-	s.useCase = usecases.NewListDictionary(s.repo, s.versionReader, noop.NewProvider())
+	s.useCase = NewListDictionary(s.repo, s.versionReader, s.obs)
 }
 
 func (s *ListDictionarySuite) TestExecute_HappyPath() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	categoryID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	entries := []entities.DictionaryEntry{
@@ -55,7 +57,7 @@ func (s *ListDictionarySuite) TestExecute_HappyPath() {
 		},
 	}
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(entries, "next-cursor", nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(entries, "next-cursor", nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{})
 
@@ -68,7 +70,7 @@ func (s *ListDictionarySuite) TestExecute_HappyPath() {
 }
 
 func (s *ListDictionarySuite) TestExecute_WithPagination() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
 	kind := valueobjects.KindIncome
 	signalType := valueobjects.SignalTypeAlias
@@ -76,7 +78,7 @@ func (s *ListDictionarySuite) TestExecute_WithPagination() {
 	cursor := "some-cursor"
 	pageSize := 25
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.DictionaryEntry{}, "", nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, "", nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{
 		Kind:       &kind,
@@ -91,9 +93,9 @@ func (s *ListDictionarySuite) TestExecute_WithPagination() {
 }
 
 func (s *ListDictionarySuite) TestExecute_DefaultPageSize() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.DictionaryEntry{}, "", nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, "", nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{
 		PageSize: 0,
@@ -104,9 +106,9 @@ func (s *ListDictionarySuite) TestExecute_DefaultPageSize() {
 }
 
 func (s *ListDictionarySuite) TestExecute_MaxPageSize() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.DictionaryEntry{}, "", nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, "", nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{
 		PageSize: 500,
@@ -117,7 +119,7 @@ func (s *ListDictionarySuite) TestExecute_MaxPageSize() {
 }
 
 func (s *ListDictionarySuite) TestExecute_VersionError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(0), errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(0), errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{})
 
@@ -127,8 +129,8 @@ func (s *ListDictionarySuite) TestExecute_VersionError() {
 }
 
 func (s *ListDictionarySuite) TestExecute_RepoError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(nil, "", errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(nil, "", errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{})
 
@@ -138,7 +140,7 @@ func (s *ListDictionarySuite) TestExecute_RepoError() {
 }
 
 func (s *ListDictionarySuite) TestExecute_WithDeprecatedEntries() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	categoryID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	deprecatedAt := time.Now()
@@ -155,7 +157,7 @@ func (s *ListDictionarySuite) TestExecute_WithDeprecatedEntries() {
 		},
 	}
 
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return(entries, "", nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return(entries, "", nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.ListDictionaryInput{})
 

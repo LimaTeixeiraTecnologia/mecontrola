@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +13,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
@@ -25,7 +24,7 @@ type ListMonthlyEntriesSuite struct {
 	factory  *mockInterfaces.RepositoryFactory
 	summRepo *mockInterfaces.MonthlySummaryRepository
 	uow      *uowMocks.UnitOfWorkMonthlyEntries
-	useCase  *usecases.ListMonthlyEntries
+	useCase  *ListMonthlyEntries
 }
 
 func TestListMonthlyEntriesSuite(t *testing.T) {
@@ -39,7 +38,7 @@ func (s *ListMonthlyEntriesSuite) SetupTest() {
 	s.summRepo = mockInterfaces.NewMonthlySummaryRepository(s.T())
 	s.factory.EXPECT().MonthlySummaryRepository(mock.Anything).Return(s.summRepo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkMonthlyEntries(s.T())
-	s.useCase = usecases.NewListMonthlyEntries(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewListMonthlyEntries(s.factory, s.uow, fake.NewProvider())
 }
 
 func (s *ListMonthlyEntriesSuite) TestExecute_ReturnsCombinedEntries() {

@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -46,6 +46,7 @@ func (s *spyUoWVoid) Do(ctx context.Context, fn func(context.Context, database.D
 
 type ApplyPendingEventSuite struct {
 	suite.Suite
+	obs        observability.Observability
 	ctx        context.Context
 	factory    *mockInterfaces.RepositoryFactory
 	expenses   *mockInterfaces.ExpenseRepository
@@ -54,7 +55,7 @@ type ApplyPendingEventSuite struct {
 	publisher  *mockInterfaces.ExpenseCommittedPublisher
 	uowExpense *uowMocks.UnitOfWorkExpense
 	uowVoid    *uowMocks.UnitOfWorkVoid
-	useCase    *usecases.ApplyPendingEvent
+	useCase    *ApplyPendingEvent
 }
 
 func TestApplyPendingEventSuite(t *testing.T) {
@@ -62,6 +63,7 @@ func TestApplyPendingEventSuite(t *testing.T) {
 }
 
 func (s *ApplyPendingEventSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.expenses = mockInterfaces.NewExpenseRepository(s.T())
@@ -73,12 +75,12 @@ func (s *ApplyPendingEventSuite) SetupTest() {
 	s.uowExpense = uowMocks.NewUnitOfWorkExpense(s.T())
 	s.uowVoid = uowMocks.NewUnitOfWorkVoid(s.T())
 
-	autoDraft := usecases.NewCreateOrAutoDraftForExpense(s.factory)
+	autoDraft := NewCreateOrAutoDraftForExpense(s.factory)
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	upsert := usecases.NewUpsertExpense(s.factory, s.categories, s.publisher, autoDraft, s.uowExpense, noop.NewProvider(), loc)
-	del := usecases.NewDeleteExpense(s.factory, s.publisher, s.uowVoid, noop.NewProvider(), loc)
+	upsert := NewUpsertExpense(s.factory, s.categories, s.publisher, autoDraft, s.uowExpense, s.obs, loc)
+	del := NewDeleteExpense(s.factory, s.publisher, s.uowVoid, s.obs, loc)
 
-	s.useCase = usecases.NewApplyPendingEvent(s.factory, upsert, del, 24*time.Hour, noop.NewProvider())
+	s.useCase = NewApplyPendingEvent(s.factory, upsert, del, 24*time.Hour, s.obs)
 }
 
 func (s *ApplyPendingEventSuite) buildPayload(subcategoryID string, competence string, amountCents int64, occurredAt time.Time) []byte {
@@ -118,44 +120,44 @@ func (s *ApplyPendingEventSuite) TestCreate_ExpenseNotFound_Applied() {
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 1, valueobjects.MutationKindCreate, payload, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, mock.Anything).
+		GetByUserCompetence(mock.Anything, mock.Anything, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.budgets.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	s.expenses.EXPECT().
-		Insert(s.ctx, mock.Anything).
+		Insert(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeApplied, outcome)
+	s.Equal(PendingEventOutcomeApplied, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestCreate_ExpenseAlreadyExists_ObsoleteIdempotent() {
@@ -170,14 +172,14 @@ func (s *ApplyPendingEventSuite) TestCreate_ExpenseAlreadyExists_ObsoleteIdempot
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 1, valueobjects.MutationKindCreate, payload, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeObsoleteIdempotent, outcome)
+	s.Equal(PendingEventOutcomeObsoleteIdempotent, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestUpdate_VersionMatch_Applied() {
@@ -192,34 +194,34 @@ func (s *ApplyPendingEventSuite) TestUpdate_VersionMatch_Applied() {
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 2, valueobjects.MutationKindUpdate, payload, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		Update(s.ctx, mock.Anything, int64(1)).
+		Update(mock.Anything, mock.Anything, int64(1)).
 		Return(nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeApplied, outcome)
+	s.Equal(PendingEventOutcomeApplied, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestUpdate_VersionGap_StillPending() {
@@ -234,14 +236,14 @@ func (s *ApplyPendingEventSuite) TestUpdate_VersionGap_StillPending() {
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 3, valueobjects.MutationKindUpdate, payload, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeStillPending, outcome)
+	s.Equal(PendingEventOutcomeStillPending, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestUpdate_ExpenseNotFound_StillPending() {
@@ -255,14 +257,14 @@ func (s *ApplyPendingEventSuite) TestUpdate_ExpenseNotFound_StillPending() {
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 2, valueobjects.MutationKindUpdate, payload, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeStillPending, outcome)
+	s.Equal(PendingEventOutcomeStillPending, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestDelete_VersionMatch_Applied() {
@@ -275,29 +277,29 @@ func (s *ApplyPendingEventSuite) TestDelete_VersionMatch_Applied() {
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 2, valueobjects.MutationKindDelete, []byte("{}"), time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		SoftDelete(s.ctx, mock.Anything, int64(1)).
+		SoftDelete(mock.Anything, mock.Anything, int64(1)).
 		Return(int64(2), nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeApplied, outcome)
+	s.Equal(PendingEventOutcomeApplied, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestExpiredEvent_Expired() {
@@ -312,7 +314,7 @@ func (s *ApplyPendingEventSuite) TestExpiredEvent_Expired() {
 	outcome, err := s.useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeExpired, outcome)
+	s.Equal(PendingEventOutcomeExpired, outcome)
 }
 
 func (s *ApplyPendingEventSuite) TestAtomicity_ReusesCallerTransaction_NoNestedUoW() {
@@ -327,11 +329,11 @@ func (s *ApplyPendingEventSuite) TestAtomicity_ReusesCallerTransaction_NoNestedU
 	upsertSpy := &spyUoWExpense{}
 	deleteSpy := &spyUoWVoid{}
 
-	autoDraft := usecases.NewCreateOrAutoDraftForExpense(factory)
+	autoDraft := NewCreateOrAutoDraftForExpense(factory)
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	upsert := usecases.NewUpsertExpense(factory, categories, publisher, autoDraft, upsertSpy, noop.NewProvider(), loc)
-	del := usecases.NewDeleteExpense(factory, publisher, deleteSpy, noop.NewProvider(), loc)
-	useCase := usecases.NewApplyPendingEvent(factory, upsert, del, 24*time.Hour, noop.NewProvider())
+	upsert := NewUpsertExpense(factory, categories, publisher, autoDraft, upsertSpy, fake.NewProvider(), loc)
+	del := NewDeleteExpense(factory, publisher, deleteSpy, fake.NewProvider(), loc)
+	useCase := NewApplyPendingEvent(factory, upsert, del, 24*time.Hour, fake.NewProvider())
 
 	userID := uuid.New()
 	extIDStr := "00000000-0000-4000-8000-000000000099"
@@ -343,44 +345,44 @@ func (s *ApplyPendingEventSuite) TestAtomicity_ReusesCallerTransaction_NoNestedU
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 1, valueobjects.MutationKindCreate, payload, time.Now().UTC())
 
 	expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, mock.Anything).
+		GetByUserCompetence(mock.Anything, mock.Anything, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	budgets.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	expenses.EXPECT().
-		Insert(s.ctx, mock.Anything).
+		Insert(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	outcome, err := useCase.Execute(s.ctx, nil, evt)
 
 	s.NoError(err)
-	s.Equal(usecases.PendingEventOutcomeApplied, outcome)
+	s.Equal(PendingEventOutcomeApplied, outcome)
 	s.Equal(0, upsertSpy.calls, "ApplyPendingEvent não deve abrir nova UnitOfWork no upsert")
 	s.Equal(0, deleteSpy.calls, "ApplyPendingEvent não deve abrir nova UnitOfWork no delete")
 }
@@ -397,11 +399,11 @@ func (s *ApplyPendingEventSuite) TestAtomicity_MutationFailurePropagates_NoPendi
 	upsertSpy := &spyUoWExpense{}
 	deleteSpy := &spyUoWVoid{}
 
-	autoDraft := usecases.NewCreateOrAutoDraftForExpense(factory)
+	autoDraft := NewCreateOrAutoDraftForExpense(factory)
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	upsert := usecases.NewUpsertExpense(factory, categories, publisher, autoDraft, upsertSpy, noop.NewProvider(), loc)
-	del := usecases.NewDeleteExpense(factory, publisher, deleteSpy, noop.NewProvider(), loc)
-	useCase := usecases.NewApplyPendingEvent(factory, upsert, del, 24*time.Hour, noop.NewProvider())
+	upsert := NewUpsertExpense(factory, categories, publisher, autoDraft, upsertSpy, fake.NewProvider(), loc)
+	del := NewDeleteExpense(factory, publisher, deleteSpy, fake.NewProvider(), loc)
+	useCase := NewApplyPendingEvent(factory, upsert, del, 24*time.Hour, fake.NewProvider())
 
 	userID := uuid.New()
 	extIDStr := "00000000-0000-4000-8000-000000000100"
@@ -413,33 +415,33 @@ func (s *ApplyPendingEventSuite) TestAtomicity_MutationFailurePropagates_NoPendi
 	evt := entities.NewPendingEvent(uuid.New(), source, userID, extID, 1, valueobjects.MutationKindCreate, payload, time.Now().UTC())
 
 	expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, mock.Anything).
+		GetByUserCompetence(mock.Anything, mock.Anything, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	budgets.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	wantErr := errors.New("simulated network failure between commits")
 	expenses.EXPECT().
-		Insert(s.ctx, mock.Anything).
+		Insert(mock.Anything, mock.Anything).
 		Return(wantErr).
 		Once()
 
@@ -447,6 +449,6 @@ func (s *ApplyPendingEventSuite) TestAtomicity_MutationFailurePropagates_NoPendi
 
 	s.Error(err)
 	s.ErrorIs(err, wantErr)
-	s.Equal(usecases.PendingEventOutcome(0), outcome)
+	s.Equal(PendingEventOutcome(0), outcome)
 	s.Equal(0, upsertSpy.calls, "falha deve propagar do ExecuteInTx sem abrir UoW separada")
 }

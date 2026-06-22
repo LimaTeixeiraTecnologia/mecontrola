@@ -1,17 +1,16 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/domain/valueobjects"
@@ -20,6 +19,7 @@ import (
 type ProcessSubscriptionCanceledSuite struct {
 	suite.Suite
 	ctx           context.Context
+	obs           *fake.Provider
 	uowMock       *mocks.UnitOfWorkSubscription
 	factoryMock   *mocks.RepositoryFactory
 	subRepoMock   *mocks.SubscriptionRepository
@@ -32,6 +32,7 @@ func TestProcessSubscriptionCanceled(t *testing.T) {
 }
 
 func (s *ProcessSubscriptionCanceledSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.uowMock = mocks.NewUnitOfWorkSubscription(s.T())
 	s.factoryMock = mocks.NewRepositoryFactory(s.T())
@@ -58,9 +59,9 @@ func (s *ProcessSubscriptionCanceledSuite) activeSub(lastEventAt time.Time) enti
 	)
 }
 
-func (s *ProcessSubscriptionCanceledSuite) expectRepositories() {
-	s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
-	s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
+type canceledDeps struct {
+	factoryMock   *mocks.RepositoryFactory
+	publisherMock *mocks.SubscriptionEventPublisher
 }
 
 func (s *ProcessSubscriptionCanceledSuite) TestExecute() {
@@ -68,44 +69,44 @@ func (s *ProcessSubscriptionCanceledSuite) TestExecute() {
 		input input.ProcessSubscriptionCanceledInput
 	}
 
+	now := time.Now().UTC()
+
 	scenarios := []struct {
-		name   string
-		args   args
-		setup  func(args)
-		expect func(error)
+		name         string
+		args         args
+		dependencies canceledDeps
+		expect       func(error)
 	}{
 		{
 			name: "deve transicionar para canceled pending preservando period end e grace end zerado",
 			args: args{
-				input: func() input.ProcessSubscriptionCanceledInput {
-					now := time.Now().UTC()
-					return input.ProcessSubscriptionCanceledInput{
-						OrderID:     "order-001",
-						KiwifySubID: "kiwify-sub-001",
-						OccurredAt:  now,
-					}
-				}(),
+				input: input.ProcessSubscriptionCanceledInput{
+					OrderID:     "order-001",
+					KiwifySubID: "kiwify-sub-001",
+					OccurredAt:  now,
+				},
 			},
-			setup: func(args args) {
-				sub := s.activeSub(args.input.OccurredAt.Add(-2 * time.Hour))
+			dependencies: func() canceledDeps {
+				sub := s.activeSub(now.Add(-2 * time.Hour))
 				eventKey := "subscription_canceled:kiwify-sub-001"
 
-				s.expectRepositories()
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, eventKey, "subscription_canceled", "kiwify-sub-001", args.input.OccurredAt).
+					MarkApplied(mock.Anything, eventKey, "subscription_canceled", "kiwify-sub-001", now).
 					Return(nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					FindByKiwifySubID(s.ctx, "kiwify-sub-001").
+					FindByKiwifySubID(mock.Anything, "kiwify-sub-001").
 					Return(sub, nil).
 					Once()
 				s.subRepoMock.EXPECT().
-					ApplyTransition(s.ctx, "sub-001", valueobjects.StatusCanceledPending, time.Time{}, args.input.OccurredAt).
+					ApplyTransition(mock.Anything, "sub-001", valueobjects.StatusCanceledPending, time.Time{}, now).
 					Return(nil).
 					Once()
 				s.publisherMock.EXPECT().
 					PublishCanceled(
-						s.ctx,
+						mock.Anything,
 						mock.Anything,
 						mock.MatchedBy(func(updated entities.Subscription) bool {
 							return updated.ID() == "sub-001" &&
@@ -113,13 +114,14 @@ func (s *ProcessSubscriptionCanceledSuite) TestExecute() {
 								updated.Status() == valueobjects.StatusCanceledPending &&
 								updated.PeriodEnd().Equal(sub.PeriodEnd()) &&
 								updated.GraceEnd().IsZero() &&
-								updated.LastEventAt().Equal(args.input.OccurredAt)
+								updated.LastEventAt().Equal(now)
 						}),
 						"sub-001",
 					).
 					Return(nil).
 					Once()
-			},
+				return canceledDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(err error) {
 				s.NoError(err)
 			},
@@ -127,39 +129,34 @@ func (s *ProcessSubscriptionCanceledSuite) TestExecute() {
 		{
 			name: "deve retornar erro de evento ja processado em cenario idempotente",
 			args: args{
-				input: func() input.ProcessSubscriptionCanceledInput {
-					now := time.Now().UTC()
-					return input.ProcessSubscriptionCanceledInput{
-						OrderID:     "order-001",
-						KiwifySubID: "kiwify-sub-001",
-						OccurredAt:  now,
-					}
-				}(),
+				input: input.ProcessSubscriptionCanceledInput{
+					OrderID:     "order-001",
+					KiwifySubID: "kiwify-sub-001",
+					OccurredAt:  now,
+				},
 			},
-			setup: func(args args) {
+			dependencies: func() canceledDeps {
 				eventKey := "subscription_canceled:kiwify-sub-001"
 
-				s.expectRepositories()
+				s.factoryMock.EXPECT().ProcessedEventRepository(mock.Anything).Return(s.eventRepoMock).Once()
+				s.factoryMock.EXPECT().SubscriptionRepository(mock.Anything).Return(s.subRepoMock).Once()
 				s.eventRepoMock.EXPECT().
-					MarkApplied(s.ctx, eventKey, "subscription_canceled", "kiwify-sub-001", args.input.OccurredAt).
+					MarkApplied(mock.Anything, eventKey, "subscription_canceled", "kiwify-sub-001", now).
 					Return(application.ErrEventAlreadyProcessed).
 					Once()
-			},
+				return canceledDeps{factoryMock: s.factoryMock, publisherMock: s.publisherMock}
+			}(),
 			expect: func(err error) {
 				s.Error(err)
-				s.ErrorIs(err, usecases.ErrEventAlreadyProcessed)
+				s.ErrorIs(err, ErrEventAlreadyProcessed)
 			},
 		},
 	}
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
-			sut := usecases.NewProcessSubscriptionCanceled(s.uowMock, s.factoryMock, s.publisherMock, noop.NewProvider())
-			scenario.setup(scenario.args)
-
+			sut := NewProcessSubscriptionCanceled(s.uowMock, scenario.dependencies.factoryMock, scenario.dependencies.publisherMock, s.obs)
 			err := sut.Execute(s.ctx, scenario.args.input)
-
 			scenario.expect(err)
 		})
 	}

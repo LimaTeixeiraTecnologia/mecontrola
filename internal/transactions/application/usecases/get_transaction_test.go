@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +13,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -27,7 +26,7 @@ type GetTransactionSuite struct {
 	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.TransactionRepository
 	uow     *uowMocks.UnitOfWorkOutputTransaction
-	useCase *usecases.GetTransaction
+	useCase *GetTransaction
 }
 
 func TestGetTransactionSuite(t *testing.T) {
@@ -41,7 +40,7 @@ func (s *GetTransactionSuite) SetupTest() {
 	s.repo = mockInterfaces.NewTransactionRepository(s.T())
 	s.factory.EXPECT().TransactionRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkOutputTransaction(s.T())
-	s.useCase = usecases.NewGetTransaction(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewGetTransaction(s.factory, s.uow, fake.NewProvider())
 }
 
 func (s *GetTransactionSuite) makeTransaction(txID uuid.UUID) *entities.Transaction {

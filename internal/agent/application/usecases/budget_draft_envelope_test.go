@@ -1,11 +1,10 @@
-package usecases_test
+package usecases
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 )
 
@@ -24,11 +23,11 @@ func (s *BudgetDraftEnvelopeSuite) TestEncodeDecodeRoundTrip() {
 	})
 	s.Require().NoError(err)
 
-	raw, err := usecases.EncodeBudgetDraft(draft)
+	raw, err := EncodeBudgetDraft(draft)
 	s.Require().NoError(err)
-	s.True(usecases.IsBudgetConfigPending(raw))
+	s.True(IsBudgetConfigPending(raw))
 
-	decoded, err := usecases.DecodeBudgetDraft(raw)
+	decoded, err := DecodeBudgetDraft(raw)
 	s.Require().NoError(err)
 	s.Equal(int64(500000), decoded.TotalCents())
 	s.Equal("2026-06", decoded.Competence())
@@ -36,13 +35,13 @@ func (s *BudgetDraftEnvelopeSuite) TestEncodeDecodeRoundTrip() {
 }
 
 func (s *BudgetDraftEnvelopeSuite) TestIsBudgetConfigPendingFalseForEmptyOrOther() {
-	s.False(usecases.IsBudgetConfigPending(nil))
-	s.False(usecases.IsBudgetConfigPending([]byte("{}")))
-	s.False(usecases.IsBudgetConfigPending([]byte(`{"kind":"awaiting_amount"}`)))
-	s.False(usecases.IsBudgetConfigPending([]byte("garbage")))
+	s.False(IsBudgetConfigPending(nil))
+	s.False(IsBudgetConfigPending([]byte("{}")))
+	s.False(IsBudgetConfigPending([]byte(`{"kind":"awaiting_amount"}`)))
+	s.False(IsBudgetConfigPending([]byte("garbage")))
 }
 
 func (s *BudgetDraftEnvelopeSuite) TestDecodeRejectsWrongKind() {
-	_, err := usecases.DecodeBudgetDraft([]byte(`{"kind":"other","total_cents":1}`))
+	_, err := DecodeBudgetDraft([]byte(`{"kind":"other","total_cents":1}`))
 	s.Require().Error(err)
 }

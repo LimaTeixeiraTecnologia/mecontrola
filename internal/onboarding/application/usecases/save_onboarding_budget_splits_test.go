@@ -1,20 +1,19 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
@@ -22,10 +21,11 @@ import (
 
 type SaveOnboardingBudgetSplitsSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
 	factory     *mocks.RepositoryFactory
 	publisher   *outboxmocks.Publisher
-	uc          *usecases.SaveOnboardingBudgetSplits
+	uc          *SaveOnboardingBudgetSplits
 	userID      uuid.UUID
 }
 
@@ -34,17 +34,18 @@ func TestSaveOnboardingBudgetSplitsSuite(t *testing.T) {
 }
 
 func (s *SaveOnboardingBudgetSplitsSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.publisher = outboxmocks.NewPublisher(s.T())
 	s.factory.EXPECT().OnboardingSessionRepository(mock.Anything).Return(s.sessionRepo).Maybe()
 	s.userID = uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-	s.uc = usecases.NewSaveOnboardingBudgetSplits(
+	s.uc = NewSaveOnboardingBudgetSplits(
 		&onboardingUoWStub{},
 		s.factory,
 		s.publisher,
 		&onboardingFixedIDGen{id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
@@ -66,9 +67,9 @@ func (s *SaveOnboardingBudgetSplitsSuite) TestHappyPath() {
 	})).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingBudgetSplitsInput{
+	result, err := s.uc.Execute(context.Background(), SaveOnboardingBudgetSplitsInput{
 		UserID: s.userID,
-		Allocations: []usecases.BudgetSplitItem{
+		Allocations: []BudgetSplitItem{
 			{Kind: valueobjects.CategoryKindFixedCost, AmountCents: 200000},
 			{Kind: valueobjects.CategoryKindKnowledge, AmountCents: 50000},
 			{Kind: valueobjects.CategoryKindPleasures, AmountCents: 75000},
@@ -96,9 +97,9 @@ func (s *SaveOnboardingBudgetSplitsSuite) TestHappyPath() {
 func (s *SaveOnboardingBudgetSplitsSuite) TestSumMismatchNotApplied() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(s.seedSession(), nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingBudgetSplitsInput{
+	result, err := s.uc.Execute(context.Background(), SaveOnboardingBudgetSplitsInput{
 		UserID: s.userID,
-		Allocations: []usecases.BudgetSplitItem{
+		Allocations: []BudgetSplitItem{
 			{Kind: valueobjects.CategoryKindFixedCost, AmountCents: 300000},
 			{Kind: valueobjects.CategoryKindKnowledge, AmountCents: 50000},
 			{Kind: valueobjects.CategoryKindPleasures, AmountCents: 75000},
@@ -118,9 +119,9 @@ func (s *SaveOnboardingBudgetSplitsSuite) TestSessionNotFound() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 
-	_, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingBudgetSplitsInput{
+	_, err := s.uc.Execute(context.Background(), SaveOnboardingBudgetSplitsInput{
 		UserID: s.userID,
-		Allocations: []usecases.BudgetSplitItem{
+		Allocations: []BudgetSplitItem{
 			{Kind: valueobjects.CategoryKindFixedCost, AmountCents: 200000},
 			{Kind: valueobjects.CategoryKindKnowledge, AmountCents: 50000},
 			{Kind: valueobjects.CategoryKindPleasures, AmountCents: 75000},

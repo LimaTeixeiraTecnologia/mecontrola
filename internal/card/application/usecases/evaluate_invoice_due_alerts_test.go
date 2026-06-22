@@ -1,18 +1,18 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
@@ -21,13 +21,14 @@ import (
 
 type EvaluateInvoiceDueAlertsSuite struct {
 	suite.Suite
+	obs       observability.Observability
 	ctx       context.Context
 	factory   *mockInterfaces.RepositoryFactory
 	cardRepo  *mockInterfaces.CardRepository
 	sentRepo  *mockInterfaces.InvoiceDueAlertSentRepository
 	publisher *mockInterfaces.InvoiceDuePublisher
 	uow       *uowMocks.UnitOfWorkVoid
-	useCase   *usecases.EvaluateInvoiceDueAlerts
+	useCase   *EvaluateInvoiceDueAlerts
 }
 
 func TestEvaluateInvoiceDueAlertsSuite(t *testing.T) {
@@ -35,6 +36,7 @@ func TestEvaluateInvoiceDueAlertsSuite(t *testing.T) {
 }
 
 func (s *EvaluateInvoiceDueAlertsSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.cardRepo = mockInterfaces.NewCardRepository(s.T())
@@ -44,14 +46,14 @@ func (s *EvaluateInvoiceDueAlertsSuite) SetupTest() {
 	s.factory.EXPECT().InvoiceDueAlertSentRepository(mock.Anything).Return(s.sentRepo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 
-	s.useCase = usecases.NewEvaluateInvoiceDueAlerts(
+	s.useCase = NewEvaluateInvoiceDueAlerts(
 		s.factory,
 		s.publisher,
 		s.uow,
 		time.UTC,
 		3,
 		100,
-		noop.NewProvider(),
+		s.obs,
 	)
 }
 
@@ -79,7 +81,7 @@ func (s *EvaluateInvoiceDueAlertsSuite) buildCardDueInDays(days int) entities.Ca
 
 func (s *EvaluateInvoiceDueAlertsSuite) TestExecute_NoCards_NoOp() {
 	s.cardRepo.EXPECT().
-		FindCardsWithInvoiceDueWithin(s.ctx, 3, 100).
+		FindCardsWithInvoiceDueWithin(mock.Anything, 3, 100).
 		Return(nil, nil).
 		Once()
 
@@ -91,15 +93,15 @@ func (s *EvaluateInvoiceDueAlertsSuite) TestExecute_DueInThreeDays_PublishesOneE
 	card := s.buildCardDueInDays(3)
 
 	s.cardRepo.EXPECT().
-		FindCardsWithInvoiceDueWithin(s.ctx, 3, 100).
+		FindCardsWithInvoiceDueWithin(mock.Anything, 3, 100).
 		Return([]entities.Card{card}, nil).
 		Once()
 	s.sentRepo.EXPECT().
-		ListSentForDueDates(s.ctx, mock.Anything).
+		ListSentForDueDates(mock.Anything, mock.Anything).
 		Return(nil, nil).
 		Once()
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.MatchedBy(func(a services.InvoiceDueAlert) bool {
+		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(a services.InvoiceDueAlert) bool {
 			return a.UserID == card.UserID &&
 				a.CardID == card.ID &&
 				a.LimitCents == card.LimitCents &&
@@ -108,7 +110,7 @@ func (s *EvaluateInvoiceDueAlertsSuite) TestExecute_DueInThreeDays_PublishesOneE
 		Return(nil).
 		Once()
 	s.sentRepo.EXPECT().
-		InsertSent(s.ctx, card.UserID, card.ID, mock.Anything).
+		InsertSent(mock.Anything, card.UserID, card.ID, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -121,11 +123,11 @@ func (s *EvaluateInvoiceDueAlertsSuite) TestExecute_AlreadySent_PublishesZero() 
 	dueDate := nextDue(card.Cycle.DueDay)
 
 	s.cardRepo.EXPECT().
-		FindCardsWithInvoiceDueWithin(s.ctx, 3, 100).
+		FindCardsWithInvoiceDueWithin(mock.Anything, 3, 100).
 		Return([]entities.Card{card}, nil).
 		Once()
 	s.sentRepo.EXPECT().
-		ListSentForDueDates(s.ctx, mock.Anything).
+		ListSentForDueDates(mock.Anything, mock.Anything).
 		Return([]interfaces.InvoiceDueAlertSentRecord{
 			{UserID: card.UserID, CardID: card.ID, RefDueDate: dueDate},
 		}, nil).

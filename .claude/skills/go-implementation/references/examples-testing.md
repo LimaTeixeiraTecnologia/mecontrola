@@ -27,56 +27,63 @@ type clock interface {
 }
 ```
 
-## Fuzz test para parser/validador
+## Table-driven test com testify/suite
 ```go
-// domain/order/money_test.go
-func FuzzParseMoney(f *testing.F) {
-    f.Add("100.00")
-    f.Add("0")
-    f.Add("-1")
-    f.Add("")
-    f.Add("99999999.99")
-    f.Add("not-a-number")
+package valueobjects_test
 
-    f.Fuzz(func(t *testing.T, input string) {
-        result, err := ParseMoney(input)
-        if err != nil {
-            return // input invalido e esperado — apenas nao deve panic
-        }
-        // round-trip: valor parseado deve ser re-serializavel
-        assert.Equal(t, result.String(), ParseMoney(result.String()))
-    })
+import (
+    "testing"
+
+    "github.com/stretchr/testify/suite"
+
+    "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/domain/valueobjects"
+)
+
+type NormalizeSuite struct {
+    suite.Suite
 }
-```
 
-## Table-driven test com testify
-```go
-func TestNormalize(t *testing.T) {
-    tests := []struct {
+func TestNormalizeSuite(t *testing.T) {
+    suite.Run(t, new(NormalizeSuite))
+}
+
+func (s *NormalizeSuite) SetupTest() {}
+
+func (s *NormalizeSuite) TestNormalize() {
+    scenarios := []struct {
         name string
         in   string
         want string
     }{
-        {name: "trim", in: " a ", want: "a"},
-        {name: "empty", in: "", want: ""},
+        {name: "deve remover espacos ao redor", in: " a ", want: "a"},
+        {name: "deve manter string vazia", in: "", want: ""},
     }
 
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            got := Normalize(tt.in)
-            assert.Equal(t, tt.want, got)
+    for _, scenario := range scenarios {
+        s.Run(scenario.name, func() {
+            got := valueobjects.Normalize(scenario.in)
+            s.Equal(scenario.want, got)
         })
     }
 }
 ```
 
-## Esqueleto canonico testify/suite (R4 — use case / service / handler)
-Padrao obrigatorio para testes de use case, service e handler: suite struct com mocks tipados,
-registrador `suite.Run`, `SetupTest` reiniciando mocks e tabela `scenarios` com SUT instanciado
-dentro do loop. Cenarios minimos: happy path, erro de validacao de dominio, erro de infraestrutura.
+## Esqueleto canonico testify/suite (R-TESTING-001 — use cases)
+Padrao obrigatorio e inegociavel para `internal/*/application/usecases/*_test.go`:
+`package <pacote>` (whitebox, mesmo pacote), suite struct com `obs observability.Observability`
+e mocks tipados, `SetupTest` com `fake.NewProvider()` reiniciando todos os mocks,
+tabela `scenarios` com `args`, `dependencies struct` + IIFE por mock e `expect func(...)`,
+e SUT real instanciado dentro do `s.Run`. Cenarios minimos: happy path, erro de validacao de
+dominio, erro de infraestrutura e edge case/idempotencia quando aplicavel.
+
+Anti-padroes proibidos:
+- `noop.NewProvider()` — use `fake.NewProvider()`
+- `setup func()` como campo do cenario — use `dependencies struct` com IIFE
+- `s.SetupTest()` manual dentro de loop ou metodo — testify ja chama automaticamente
+- `package <X>_test` — use `package <X>` (whitebox)
 
 ```go
-package usecase // ou usecase_test para blackbox
+package usecases // mesmo pacote — whitebox
 
 import (
     "context"
@@ -85,104 +92,108 @@ import (
 
     "github.com/stretchr/testify/mock"
     "github.com/stretchr/testify/suite"
-
     "github.com/JailtonJunior94/devkit-go/pkg/observability"
     "github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
-    "github.com/seu-org/seu-projeto/internal/<dominio>/application/dtos"
-    repositoryMock "github.com/seu-org/seu-projeto/internal/<dominio>/infrastructure/repositories/mocks"
+    "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/application/dtos/input"
+    "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/application/dtos/output"
+    domainerrors "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/domain/errors"
+    repositoryMock "github.com/LimaTeixeiraTecnologia/mecontrola/internal/<modulo>/infrastructure/repositories/mocks"
 )
 
-// 1. Suite struct — um campo mock por dependencia
 type CreateUserUseCaseSuite struct {
     suite.Suite
 
-    ctx      context.Context
-    obs      observability.Observability
-    userMock *repositoryMock.UserRepository
+    ctx            context.Context
+    obs            observability.Observability
+    userRepository *repositoryMock.UserRepository
 }
 
-// 2. Registrador — APENAS suite.Run
 func TestCreateUserUseCaseSuite(t *testing.T) {
     suite.Run(t, new(CreateUserUseCaseSuite))
 }
 
-// 3. SetupTest — reinicia mocks a cada cenario
 func (s *CreateUserUseCaseSuite) SetupTest() {
     s.obs = fake.NewProvider()
     s.ctx = context.Background()
-    s.userMock = repositoryMock.NewUserRepository(s.T())
+    s.userRepository = repositoryMock.NewUserRepository(s.T())
 }
 
-// 4. Metodo de teste principal — table-driven
 func (s *CreateUserUseCaseSuite) TestExecute() {
     type args struct {
-        input *dtos.UserInput
+        input *input.CreateUserInput
     }
 
     type dependencies struct {
-        userMock *repositoryMock.UserRepository
+        userRepository *repositoryMock.UserRepository
     }
 
     scenarios := []struct {
         name         string
         args         args
         dependencies dependencies
-        expect       func(output *dtos.UserOutput, err error)
+        expect       func(result *output.UserOutput, err error)
     }{
         {
             name: "deve criar usuario com sucesso",
-            args: args{input: &dtos.UserInput{Name: "Joao", Email: "joao@email.com"}},
+            args: args{input: &input.CreateUserInput{Name: "Joao", Email: "joao@email.com"}},
             dependencies: dependencies{
-                userMock: func() *repositoryMock.UserRepository {
-                    s.userMock.
-                        EXPECT().
+                userRepository: func() *repositoryMock.UserRepository {
+                    s.userRepository.EXPECT().
                         Save(s.ctx, mock.AnythingOfType("*entities.User")).
                         Return(nil).
                         Once()
-                    return s.userMock
+                    return s.userRepository
                 }(),
             },
-            expect: func(output *dtos.UserOutput, err error) {
+            expect: func(result *output.UserOutput, err error) {
                 s.NoError(err)
-                s.NotNil(output)
+                s.NotNil(result)
             },
         },
         {
             name: "deve retornar erro ao validar input invalido",
-            args: args{input: &dtos.UserInput{Name: "", Email: ""}},
-            dependencies: dependencies{userMock: s.userMock},
-            expect: func(output *dtos.UserOutput, err error) {
+            args: args{input: &input.CreateUserInput{Name: "", Email: ""}},
+            dependencies: dependencies{userRepository: s.userRepository},
+            expect: func(result *output.UserOutput, err error) {
                 s.Error(err)
-                s.Nil(output)
+                s.ErrorIs(err, domainerrors.ErrInvalidInput)
+                s.Nil(result)
             },
         },
         {
             name: "deve retornar erro ao salvar no repositorio",
-            args: args{input: &dtos.UserInput{Name: "Joao", Email: "joao@email.com"}},
+            args: args{input: &input.CreateUserInput{Name: "Joao", Email: "joao@email.com"}},
             dependencies: dependencies{
-                userMock: func() *repositoryMock.UserRepository {
-                    s.userMock.
-                        EXPECT().
+                userRepository: func() *repositoryMock.UserRepository {
+                    s.userRepository.EXPECT().
                         Save(s.ctx, mock.AnythingOfType("*entities.User")).
                         Return(errors.New("falha no banco")).
                         Once()
-                    return s.userMock
+                    return s.userRepository
                 }(),
             },
-            expect: func(output *dtos.UserOutput, err error) {
+            expect: func(result *output.UserOutput, err error) {
                 s.Error(err)
-                s.Nil(output)
+                s.Contains(err.Error(), "falha no banco")
+                s.Nil(result)
             },
         },
     }
 
     for _, scenario := range scenarios {
         s.Run(scenario.name, func() {
-            uc := NewCreateUserUseCase(s.obs, scenario.dependencies.userMock)
-            output, err := uc.Execute(s.ctx, scenario.args.input)
-            scenario.expect(output, err)
+            uc := NewCreateUserUseCase(s.obs, scenario.dependencies.userRepository)
+            result, err := uc.Execute(s.ctx, scenario.args.input)
+            scenario.expect(result, err)
         })
     }
 }
 ```
+
+Regras de adaptacao do exemplo:
+- Substituir nomes, imports e DTOs pelos packages reais do bounded context.
+- Usar mocks gerados por `mockery.yml` com `with-expecter: true`; nao escrever mocks manuais.
+- Quando o use case nao recebe `obs`, omitir o campo `obs` da suite e remover `fake.NewProvider()`.
+- Arquivos `*_integration_test.go` podem usar `package <X>_test` e nao precisam seguir este esqueleto.
+- Ver `.claude/rules/go-testing.md` para regras completas e gates de verificacao.

@@ -1,18 +1,18 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -20,6 +20,7 @@ import (
 
 type GetCardSuite struct {
 	suite.Suite
+	obs      observability.Observability
 	repoMock *ifacemocks.CardRepository
 }
 
@@ -28,6 +29,7 @@ func TestGetCard(t *testing.T) {
 }
 
 func (s *GetCardSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 }
 
@@ -44,7 +46,7 @@ func (s *GetCardSuite) TestExecute_HappyPath() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewGetCard(s.repoMock, noop.NewProvider())
+	sut := NewGetCard(s.repoMock, s.obs)
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -56,7 +58,7 @@ func (s *GetCardSuite) TestExecute_NotFound() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, in.ID.String(), in.UserID.String()).Return(entities.Card{}, domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewGetCard(s.repoMock, noop.NewProvider())
+	sut := NewGetCard(s.repoMock, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -73,7 +75,7 @@ func (s *GetCardSuite) TestExecute_SoftDeletedReturnsNotFound() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewGetCard(s.repoMock, noop.NewProvider())
+	sut := NewGetCard(s.repoMock, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)

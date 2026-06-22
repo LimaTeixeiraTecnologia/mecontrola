@@ -1,17 +1,17 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -19,6 +19,7 @@ import (
 
 type GetCardForUserSuite struct {
 	suite.Suite
+	obs      observability.Observability
 	repoMock *ifacemocks.CardRepository
 }
 
@@ -27,6 +28,7 @@ func TestGetCardForUser(t *testing.T) {
 }
 
 func (s *GetCardForUserSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 }
 
@@ -42,7 +44,7 @@ func (s *GetCardForUserSuite) TestExecute_HappyPath() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewGetCardForUser(s.repoMock, noop.NewProvider())
+	sut := NewGetCardForUser(s.repoMock, s.obs)
 	got, err := sut.Execute(context.Background(), card.ID, card.UserID)
 
 	s.Require().NoError(err)
@@ -56,7 +58,7 @@ func (s *GetCardForUserSuite) TestExecute_CardNotFound() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, cardID.String(), userID.String()).Return(entities.Card{}, domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewGetCardForUser(s.repoMock, noop.NewProvider())
+	sut := NewGetCardForUser(s.repoMock, s.obs)
 	_, err := sut.Execute(context.Background(), cardID, userID)
 
 	s.Require().Error(err)
@@ -72,7 +74,7 @@ func (s *GetCardForUserSuite) TestExecute_OwnershipMismatch_SoftDeleted() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewGetCardForUser(s.repoMock, noop.NewProvider())
+	sut := NewGetCardForUser(s.repoMock, s.obs)
 	_, err := sut.Execute(context.Background(), card.ID, card.UserID)
 
 	s.Require().Error(err)

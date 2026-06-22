@@ -1,18 +1,18 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -20,6 +20,7 @@ import (
 
 type InvoiceForSuite struct {
 	suite.Suite
+	obs      observability.Observability
 	repoMock *ifacemocks.CardRepository
 	loc      *time.Location
 }
@@ -29,6 +30,7 @@ func TestInvoiceFor(t *testing.T) {
 }
 
 func (s *InvoiceForSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	s.Require().NoError(err)
@@ -49,7 +51,7 @@ func (s *InvoiceForSuite) TestExecute_HappyPath() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
+	sut := NewInvoiceFor(s.repoMock, s.loc, s.obs)
 	out, err := sut.Execute(context.Background(), in)
 
 	s.Require().NoError(err)
@@ -62,7 +64,7 @@ func (s *InvoiceForSuite) TestExecute_CardNotFound() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, in.CardID.String(), in.UserID.String()).Return(entities.Card{}, domain.ErrCardNotFound).Once()
 
-	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
+	sut := NewInvoiceFor(s.repoMock, s.loc, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -80,7 +82,7 @@ func (s *InvoiceForSuite) TestExecute_SoftDeletedCardReturnsNotFound() {
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 
-	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
+	sut := NewInvoiceFor(s.repoMock, s.loc, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)
@@ -90,7 +92,7 @@ func (s *InvoiceForSuite) TestExecute_SoftDeletedCardReturnsNotFound() {
 func (s *InvoiceForSuite) TestExecute_ZeroPurchaseDate() {
 	in := input.InvoiceFor{CardID: uuid.New(), UserID: uuid.New(), Purchase: time.Time{}}
 
-	sut := usecases.NewInvoiceFor(s.repoMock, s.loc, noop.NewProvider())
+	sut := NewInvoiceFor(s.repoMock, s.loc, s.obs)
 	_, err := sut.Execute(context.Background(), in)
 
 	s.Require().Error(err)

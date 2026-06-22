@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -15,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -32,7 +31,7 @@ type UpdateRecurringTemplateSuite struct {
 	catVal     *mockInterfaces.CategoryValidator
 	publisher  *mockInterfaces.RecurringTemplateEventPublisher
 	uow        *uowMocks.UnitOfWorkRecurringTemplate
-	useCase    *usecases.UpdateRecurringTemplate
+	useCase    *UpdateRecurringTemplate
 }
 
 func TestUpdateRecurringTemplateSuite(t *testing.T) {
@@ -49,8 +48,8 @@ func (s *UpdateRecurringTemplateSuite) SetupTest() {
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
 	s.publisher = mockInterfaces.NewRecurringTemplateEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkRecurringTemplate(s.T())
-	s.useCase = usecases.NewUpdateRecurringTemplate(
-		s.factory, s.uow, s.catVal, s.publisher, noop.NewProvider(),
+	s.useCase = NewUpdateRecurringTemplate(
+		s.factory, s.uow, s.catVal, s.publisher, fake.NewProvider(),
 	)
 }
 

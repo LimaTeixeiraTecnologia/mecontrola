@@ -1,18 +1,17 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	ifmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -22,7 +21,7 @@ import (
 
 type DeleteCardPurchaseSuite struct {
 	suite.Suite
-	uc        *usecases.DeleteCardPurchase
+	uc        *DeleteCardPurchase
 	factory   *ifmocks.RepositoryFactory
 	purchases *ifmocks.CardPurchaseRepository
 	invoices  *ifmocks.CardInvoiceRepository
@@ -49,14 +48,14 @@ func (s *DeleteCardPurchaseSuite) SetupTest() {
 	wf := services.NewCardPurchaseWorkflow()
 	uow := ucmocks.NewUnitOfWorkCardPurchase(s.T())
 	idGen := &testIDGen{}
-	s.uc = usecases.NewDeleteCardPurchase(
-		s.factory, &wf, s.publisher, uow, idGen, noop.NewProvider(),
+	s.uc = NewDeleteCardPurchase(
+		s.factory, &wf, s.publisher, uow, idGen, fake.NewProvider(),
 	)
 }
 
 func (s *DeleteCardPurchaseSuite) TestExecute_Unauthorized() {
 	err := s.uc.Execute(context.Background(), uuid.New(), 1)
-	s.ErrorIs(err, usecases.ErrUsecaseUnauthorized)
+	s.ErrorIs(err, ErrUsecaseUnauthorized)
 }
 
 func (s *DeleteCardPurchaseSuite) TestExecute_SoftDeletesAndPublishes() {

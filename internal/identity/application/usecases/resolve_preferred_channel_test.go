@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,19 +6,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
 type ResolvePreferredChannelSuite struct {
 	suite.Suite
-	repo *mocks.UserIdentityRepository
+	ctx      context.Context
+	obs      observability.Observability
+	repoMock *mocks.UserIdentityRepository
 }
 
 func TestResolvePreferredChannel(t *testing.T) {
@@ -26,10 +28,12 @@ func TestResolvePreferredChannel(t *testing.T) {
 }
 
 func (s *ResolvePreferredChannelSuite) SetupTest() {
-	s.repo = mocks.NewUserIdentityRepository(s.T())
+	s.obs = fake.NewProvider()
+	s.ctx = context.Background()
+	s.repoMock = mocks.NewUserIdentityRepository(s.T())
 }
 
-func hydrate(s *ResolvePreferredChannelSuite, userID uuid.UUID, channel, externalID string, verifiedAt time.Time, unlinked time.Time) entities.UserIdentity {
+func hydrateIdentity(s *ResolvePreferredChannelSuite, userID uuid.UUID, channel, externalID string, verifiedAt time.Time, unlinked time.Time) entities.UserIdentity {
 	identity, err := entities.HydrateUserIdentity(uuid.New(), userID, channel, externalID, verifiedAt, verifiedAt, unlinked)
 	s.Require().NoError(err)
 	return identity
@@ -39,22 +43,29 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 	now := time.Now().UTC()
 	userID := uuid.New()
 
+	type dependencies struct {
+		repoMock *mocks.UserIdentityRepository
+	}
+
 	scenarios := []struct {
-		name      string
-		setup     func()
-		expectCh  string
-		expectExt string
-		expectOK  bool
-		expectErr bool
+		name         string
+		dependencies dependencies
+		expectCh     string
+		expectExt    string
+		expectOK     bool
+		expectErr    bool
 	}{
 		{
 			name: "prefere whatsapp quando ambos presentes",
-			setup: func() {
-				identities := []entities.UserIdentity{
-					hydrate(s, userID, "telegram", "100", now.Add(-time.Hour), time.Time{}),
-					hydrate(s, userID, "whatsapp", "+5511999990000", now.Add(-2*time.Hour), time.Time{}),
-				}
-				s.repo.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *mocks.UserIdentityRepository {
+					identities := []entities.UserIdentity{
+						hydrateIdentity(s, userID, "telegram", "100", now.Add(-time.Hour), time.Time{}),
+						hydrateIdentity(s, userID, "whatsapp", "+5511999990000", now.Add(-2*time.Hour), time.Time{}),
+					}
+					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expectCh:  "whatsapp",
 			expectExt: "+5511999990000",
@@ -62,11 +73,14 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 		},
 		{
 			name: "retorna telegram quando whatsapp ausente",
-			setup: func() {
-				identities := []entities.UserIdentity{
-					hydrate(s, userID, "telegram", "100", now.Add(-time.Hour), time.Time{}),
-				}
-				s.repo.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *mocks.UserIdentityRepository {
+					identities := []entities.UserIdentity{
+						hydrateIdentity(s, userID, "telegram", "100", now.Add(-time.Hour), time.Time{}),
+					}
+					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expectCh:  "telegram",
 			expectExt: "100",
@@ -74,12 +88,15 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 		},
 		{
 			name: "ignora identidade unlinked",
-			setup: func() {
-				identities := []entities.UserIdentity{
-					hydrate(s, userID, "whatsapp", "+5511999990001", now.Add(-2*time.Hour), now.Add(-time.Hour)),
-					hydrate(s, userID, "telegram", "200", now.Add(-time.Hour), time.Time{}),
-				}
-				s.repo.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *mocks.UserIdentityRepository {
+					identities := []entities.UserIdentity{
+						hydrateIdentity(s, userID, "whatsapp", "+5511999990001", now.Add(-2*time.Hour), now.Add(-time.Hour)),
+						hydrateIdentity(s, userID, "telegram", "200", now.Add(-time.Hour), time.Time{}),
+					}
+					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expectCh:  "telegram",
 			expectExt: "200",
@@ -87,15 +104,21 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 		},
 		{
 			name: "retorna ok=false quando sem identidades",
-			setup: func() {
-				s.repo.EXPECT().ListByUser(mock.Anything, userID).Return([]entities.UserIdentity{}, nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *mocks.UserIdentityRepository {
+					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return([]entities.UserIdentity{}, nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expectOK: false,
 		},
 		{
 			name: "propaga erro do repository",
-			setup: func() {
-				s.repo.EXPECT().ListByUser(mock.Anything, userID).Return(nil, errors.New("db error")).Once()
+			dependencies: dependencies{
+				repoMock: func() *mocks.UserIdentityRepository {
+					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(nil, errors.New("db error")).Once()
+					return s.repoMock
+				}(),
 			},
 			expectErr: true,
 		},
@@ -103,9 +126,7 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
-			scenario.setup()
-			uc := usecases.NewResolvePreferredChannel(s.repo, noop.NewProvider())
+			uc := NewResolvePreferredChannel(scenario.dependencies.repoMock, s.obs)
 			result, ok, err := uc.Execute(context.Background(), userID)
 			if scenario.expectErr {
 				s.Require().Error(err)

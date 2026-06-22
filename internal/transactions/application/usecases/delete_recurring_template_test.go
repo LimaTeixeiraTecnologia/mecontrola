@@ -1,18 +1,17 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 )
 
@@ -25,7 +24,7 @@ type DeleteRecurringTemplateSuite struct {
 	repo       *mockInterfaces.RecurringTemplateRepository
 	publisher  *mockInterfaces.RecurringTemplateEventPublisher
 	uow        *uowMocks.UnitOfWorkVoid
-	useCase    *usecases.DeleteRecurringTemplate
+	useCase    *DeleteRecurringTemplate
 }
 
 func TestDeleteRecurringTemplateSuite(t *testing.T) {
@@ -41,8 +40,8 @@ func (s *DeleteRecurringTemplateSuite) SetupTest() {
 	s.factory.EXPECT().RecurringTemplateRepository(mock.Anything).Return(s.repo).Maybe()
 	s.publisher = mockInterfaces.NewRecurringTemplateEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
-	s.useCase = usecases.NewDeleteRecurringTemplate(
-		s.factory, s.uow, s.publisher, noop.NewProvider(),
+	s.useCase = NewDeleteRecurringTemplate(
+		s.factory, s.uow, s.publisher, fake.NewProvider(),
 	)
 }
 

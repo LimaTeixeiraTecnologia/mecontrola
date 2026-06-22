@@ -1,16 +1,16 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 )
@@ -18,12 +18,13 @@ import (
 type PurgeRetentionSuite struct {
 	suite.Suite
 	ctx      context.Context
+	obs      observability.Observability
 	factory  *mockInterfaces.RepositoryFactory
 	pending  *mockInterfaces.PendingEventRepository
 	expenses *mockInterfaces.ExpenseRepository
 	alerts   *mockInterfaces.AlertRepository
 	uow      *uowMocks.UnitOfWorkVoid
-	useCase  *usecases.PurgeRetention
+	useCase  *PurgeRetention
 }
 
 func TestPurgeRetentionSuite(t *testing.T) {
@@ -31,6 +32,7 @@ func TestPurgeRetentionSuite(t *testing.T) {
 }
 
 func (s *PurgeRetentionSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.pending = mockInterfaces.NewPendingEventRepository(s.T())
@@ -42,12 +44,12 @@ func (s *PurgeRetentionSuite) SetupTest() {
 	s.factory.EXPECT().ExpenseRepository(mock.Anything).Return(s.expenses).Maybe()
 	s.factory.EXPECT().AlertRepository(mock.Anything).Return(s.alerts).Maybe()
 
-	s.useCase = usecases.NewPurgeRetention(s.factory, s.uow, 250, noop.NewProvider())
+	s.useCase = NewPurgeRetention(s.factory, s.uow, 250, s.obs)
 }
 
 func (s *PurgeRetentionSuite) TestExecute_DefersWhenPendingExists() {
 	s.pending.EXPECT().
-		ListReady(s.ctx, 1).
+		ListReady(mock.Anything, 1).
 		Return([]entities.PendingEvent{entities.PendingEvent{}}, nil).
 		Once()
 
@@ -58,15 +60,15 @@ func (s *PurgeRetentionSuite) TestExecute_DefersWhenPendingExists() {
 
 func (s *PurgeRetentionSuite) TestExecute_PurgesExpensesAndAlerts() {
 	s.pending.EXPECT().
-		ListReady(s.ctx, 1).
+		ListReady(mock.Anything, 1).
 		Return(nil, nil).
 		Once()
 	s.expenses.EXPECT().
-		PurgeDeleted(s.ctx, "24 months", 250).
+		PurgeDeleted(mock.Anything, "24 months", 250).
 		Return(int64(2), nil).
 		Once()
 	s.alerts.EXPECT().
-		PurgeOld(s.ctx, "24 months", 250).
+		PurgeOld(mock.Anything, "24 months", 250).
 		Return(int64(3), nil).
 		Once()
 
@@ -77,11 +79,11 @@ func (s *PurgeRetentionSuite) TestExecute_PurgesExpensesAndAlerts() {
 
 func (s *PurgeRetentionSuite) TestExecute_ExpensePurgeError() {
 	s.pending.EXPECT().
-		ListReady(s.ctx, 1).
+		ListReady(mock.Anything, 1).
 		Return(nil, nil).
 		Once()
 	s.expenses.EXPECT().
-		PurgeDeleted(s.ctx, "24 months", 250).
+		PurgeDeleted(mock.Anything, "24 months", 250).
 		Return(int64(0), errors.New("db boom")).
 		Once()
 

@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
@@ -23,6 +23,7 @@ import (
 
 type CreateCardSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	ctx         context.Context
 	uowMock     *ucmocks.UnitOfWorkCard
 	factoryMock *ifacemocks.RepositoryFactory
@@ -35,6 +36,7 @@ func TestCreateCard(t *testing.T) {
 }
 
 func (s *CreateCardSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.uowMock = ucmocks.NewUnitOfWorkCard(s.T())
 	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
@@ -57,7 +59,7 @@ func (s *CreateCardSuite) TestExecute_HappyPath() {
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	out, err := sut.Execute(s.ctx, in)
 
 	s.Require().NoError(err)
@@ -82,7 +84,7 @@ func (s *CreateCardSuite) TestExecute_WithIdempotency() {
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
 	s.idemMock.EXPECT().Put(mock.Anything, mock.AnythingOfType("idempotency.Record")).Return(nil).Once()
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	out, err := sut.Execute(ctx, in)
 
 	s.Require().NoError(err)
@@ -93,7 +95,7 @@ func (s *CreateCardSuite) TestExecute_InvalidName() {
 	in := s.makeInput()
 	in.Name = ""
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
@@ -104,7 +106,7 @@ func (s *CreateCardSuite) TestExecute_InvalidNickname() {
 	in := s.makeInput()
 	in.Nickname = ""
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
@@ -115,7 +117,7 @@ func (s *CreateCardSuite) TestExecute_InvalidClosingDay() {
 	in := s.makeInput()
 	in.ClosingDay = 0
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
@@ -127,7 +129,7 @@ func (s *CreateCardSuite) TestExecute_NicknameConflict() {
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(domain.ErrNicknameConflict).Once()
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
@@ -140,7 +142,7 @@ func (s *CreateCardSuite) TestExecute_RepositoryError() {
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(repoErr).Once()
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(s.ctx, in)
 
 	s.Require().Error(err)
@@ -169,7 +171,7 @@ func (s *CreateCardSuite) TestExecute_RINT05_IdempotencyPutErrorCausesRollback()
 		}).Once()
 	s.idemMock.EXPECT().Put(mock.Anything, mock.AnythingOfType("idempotency.Record")).Return(idemErr).Once()
 
-	sut := usecases.NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, noop.NewProvider())
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(ctx, in)
 
 	s.Require().Error(err)

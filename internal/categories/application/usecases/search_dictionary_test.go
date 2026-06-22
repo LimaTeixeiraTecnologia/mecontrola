@@ -1,11 +1,12 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
@@ -23,11 +23,12 @@ type SearchDictionarySuite struct {
 	suite.Suite
 
 	ctx           context.Context
+	obs           observability.Observability
 	repo          *mockInterfaces.DictionaryRepository
 	categoryRepo  *mockInterfaces.CategoryRepository
 	versionReader *mockInterfaces.VersionReader
 	resolver      *services.CandidateResolver
-	useCase       *usecases.SearchDictionary
+	useCase       *SearchDictionary
 }
 
 func TestSearchDictionarySuite(t *testing.T) {
@@ -35,16 +36,17 @@ func TestSearchDictionarySuite(t *testing.T) {
 }
 
 func (s *SearchDictionarySuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.repo = mockInterfaces.NewDictionaryRepository(s.T())
 	s.categoryRepo = mockInterfaces.NewCategoryRepository(s.T())
 	s.versionReader = mockInterfaces.NewVersionReader(s.T())
 	s.resolver = services.NewCandidateResolver()
-	s.useCase = usecases.NewSearchDictionary(s.repo, s.categoryRepo, s.versionReader, s.resolver, noop.NewProvider())
+	s.useCase = NewSearchDictionary(s.repo, s.categoryRepo, s.versionReader, s.resolver, s.obs)
 }
 
 func (s *SearchDictionarySuite) TestExecute_HappyPath_SingleMatch() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	categoryID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
@@ -60,9 +62,9 @@ func (s *SearchDictionarySuite) TestExecute_HappyPath_SingleMatch() {
 		},
 	}
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return(entries, nil).Once()
 
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID}).Return([]entities.Category{
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{categoryID}).Return([]entities.Category{
 		{ID: categoryID, Name: "Aluguel", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
@@ -78,9 +80,9 @@ func (s *SearchDictionarySuite) TestExecute_HappyPath_SingleMatch() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_NoMatch() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "xyz123",
@@ -144,7 +146,7 @@ func (s *SearchDictionarySuite) TestExecute_InvalidQuery_OnlyPunctuation() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_VersionError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(0), errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(0), errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "aluguel",
@@ -157,8 +159,8 @@ func (s *SearchDictionarySuite) TestExecute_VersionError() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_RepoError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(nil, errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return(nil, errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "aluguel",
@@ -171,9 +173,9 @@ func (s *SearchDictionarySuite) TestExecute_RepoError() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_QueryNormalization() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "  ALUGUEL!!!  ",
@@ -185,7 +187,7 @@ func (s *SearchDictionarySuite) TestExecute_QueryNormalization() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	categoryID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
 
@@ -202,7 +204,7 @@ func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
 	}
 
 	s.repo.EXPECT().
-		Search(s.ctx, interfaces.DictionarySearchQuery{
+		Search(mock.Anything, interfaces.DictionarySearchQuery{
 			Kind:              valueobjects.KindExpense,
 			Term:              "energia",
 			Limit:             100,
@@ -211,7 +213,7 @@ func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
 		Return(entries, nil).
 		Once()
 
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID}).Return([]entities.Category{
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{categoryID}).Return([]entities.Category{
 		{ID: categoryID, Name: "Energia", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
@@ -227,7 +229,7 @@ func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	categoryID1 := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	categoryID2 := uuid.MustParse("22222222-2222-2222-2222-222222222222")
@@ -253,9 +255,9 @@ func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {
 		},
 	}
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return(entries, nil).Once()
 
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID1, categoryID2}).Return([]entities.Category{
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{categoryID1, categoryID2}).Return([]entities.Category{
 		{ID: categoryID1, Name: "Transporte Recorrente", Kind: valueobjects.KindExpense},
 		{ID: categoryID2, Name: "Transporte Lazer", Kind: valueobjects.KindExpense},
 	}, nil).Once()
@@ -272,7 +274,7 @@ func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_FetchesMissingParents() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	parentID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 	childID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -288,13 +290,13 @@ func (s *SearchDictionarySuite) TestExecute_FetchesMissingParents() {
 		},
 	}
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return(entries, nil).Once()
 
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{childID}).Return([]entities.Category{
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{childID}).Return([]entities.Category{
 		{ID: childID, Name: "Aluguel", Kind: valueobjects.KindExpense, ParentID: &parentID},
 	}, nil).Once()
 
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{parentID}).Return([]entities.Category{
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{parentID}).Return([]entities.Category{
 		{ID: parentID, Name: "Custo Fixo", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
@@ -312,7 +314,7 @@ func (s *SearchDictionarySuite) TestExecute_FetchesMissingParents() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_SkipsParentFetchWhenAllRoots() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	rootID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
 
@@ -327,8 +329,8 @@ func (s *SearchDictionarySuite) TestExecute_SkipsParentFetchWhenAllRoots() {
 		},
 	}
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{rootID}).Return([]entities.Category{
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return(entries, nil).Once()
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{rootID}).Return([]entities.Category{
 		{ID: rootID, Name: "Metas", Kind: valueobjects.KindExpense},
 	}, nil).Once()
 
@@ -343,7 +345,7 @@ func (s *SearchDictionarySuite) TestExecute_SkipsParentFetchWhenAllRoots() {
 }
 
 func (s *SearchDictionarySuite) TestExecute_PropagatesBatchFetchError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	categoryID := uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
 	entries := []entities.DictionaryEntry{
@@ -357,8 +359,8 @@ func (s *SearchDictionarySuite) TestExecute_PropagatesBatchFetchError() {
 		},
 	}
 
-	s.repo.EXPECT().Search(s.ctx, mock.Anything).Return(entries, nil).Once()
-	s.categoryRepo.EXPECT().ListByIDs(s.ctx, []uuid.UUID{categoryID}).Return(nil, errors.New("db error")).Once()
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return(entries, nil).Once()
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{categoryID}).Return(nil, errors.New("db error")).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "energia",

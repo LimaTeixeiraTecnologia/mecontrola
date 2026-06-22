@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
@@ -42,7 +41,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_NoActiveSummaries() {
 		ListActiveSince(mock.Anything, mock.Anything, interfaces.Cursor{}, 200).
 		Return(nil, interfaces.Cursor{}, nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -69,7 +68,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_NoDrift_NoUpdate() {
 		Get(mock.Anything, userID, rm).
 		Return(&summary, nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -100,7 +99,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_WithDrift_Corrects() {
 		Upsert(mock.Anything, userID, rm, int64(60000), int64(30000), mock.Anything).
 		Return(nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -130,7 +129,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_SummaryAbsent_Upserts() {
 		Upsert(mock.Anything, userID, rm, int64(30000), int64(15000), mock.Anything).
 		Return(nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().NoError(err)
 }
@@ -143,7 +142,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_InvalidRefMonth_Skips() {
 		ListActiveSince(mock.Anything, mock.Anything, interfaces.Cursor{}, 200).
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().Error(err)
 }
@@ -161,7 +160,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_TxRepoError_ReturnsError() {
 		SumByMonth(mock.Anything, userID, rm).
 		Return(int64(0), int64(0), errors.New("db error")).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().Error(err)
 }
@@ -183,7 +182,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_CardInvoiceRepoError_ReturnsE
 		SumByMonth(mock.Anything, userID, rm).
 		Return(int64(0), errors.New("invoice db error")).Once()
 
-	uc := usecases.NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, noop.NewProvider())
+	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
 	err := uc.Execute(s.ctx)
 	s.Require().Error(err)
 }

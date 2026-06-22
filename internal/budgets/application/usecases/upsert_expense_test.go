@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -14,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -23,14 +23,15 @@ import (
 type UpsertExpenseSuite struct {
 	suite.Suite
 	ctx        context.Context
+	obs        observability.Observability
 	factory    *mockInterfaces.RepositoryFactory
 	expenses   *mockInterfaces.ExpenseRepository
 	budgets    *mockInterfaces.BudgetRepository
 	categories *mockInterfaces.CategoriesReader
 	publisher  *mockInterfaces.ExpenseCommittedPublisher
-	autoDraft  *usecases.CreateOrAutoDraftForExpense
+	autoDraft  *CreateOrAutoDraftForExpense
 	uow        *uowMocks.UnitOfWorkExpense
-	useCase    *usecases.UpsertExpense
+	useCase    *UpsertExpense
 }
 
 func TestUpsertExpenseSuite(t *testing.T) {
@@ -38,6 +39,7 @@ func TestUpsertExpenseSuite(t *testing.T) {
 }
 
 func (s *UpsertExpenseSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.expenses = mockInterfaces.NewExpenseRepository(s.T())
@@ -47,10 +49,10 @@ func (s *UpsertExpenseSuite) SetupTest() {
 	s.categories = mockInterfaces.NewCategoriesReader(s.T())
 	s.publisher = mockInterfaces.NewExpenseCommittedPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkExpense(s.T())
-	s.autoDraft = usecases.NewCreateOrAutoDraftForExpense(s.factory)
+	s.autoDraft = NewCreateOrAutoDraftForExpense(s.factory)
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	s.useCase = usecases.NewUpsertExpense(
-		s.factory, s.categories, s.publisher, s.autoDraft, s.uow, noop.NewProvider(), loc,
+	s.useCase = NewUpsertExpense(
+		s.factory, s.categories, s.publisher, s.autoDraft, s.uow, s.obs, loc,
 	)
 }
 
@@ -70,32 +72,32 @@ func (s *UpsertExpenseSuite) TestCreate_FreshExpense() {
 	in := s.validInput()
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	s.budgets.EXPECT().
-		GetByUserCompetence(s.ctx, mock.Anything, mock.Anything).
+		GetByUserCompetence(mock.Anything, mock.Anything, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
 	s.budgets.EXPECT().
-		CreateDraft(s.ctx, mock.Anything).
+		CreateDraft(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	s.expenses.EXPECT().
-		Insert(s.ctx, mock.Anything).
+		Insert(mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -111,7 +113,7 @@ func (s *UpsertExpenseSuite) TestCreate_IdempotentRetry() {
 	in := s.validInput()
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
@@ -125,7 +127,7 @@ func (s *UpsertExpenseSuite) TestCreate_IdempotentRetry() {
 	existing, _ := entities.NewExpense(userID, source, extID, subID, rootSlug, competence, 5000, time.Now().UTC(), time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
@@ -141,25 +143,25 @@ func (s *UpsertExpenseSuite) TestCreate_WithExplicitVersionRejected() {
 	in.ExpectedVersion = &v
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseExplicitVersion)
+	s.ErrorIs(err, ErrUpsertExpenseExplicitVersion)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_TombstoneBlocksRecreation() {
 	in := s.validInput()
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
@@ -169,7 +171,7 @@ func (s *UpsertExpenseSuite) TestCreate_TombstoneBlocksRecreation() {
 	tombstone := entities.NewExpenseTombstone(userID, source, extID, 2, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, tombstone, nil).
 		Once()
 
@@ -193,22 +195,22 @@ func (s *UpsertExpenseSuite) TestUpdate_Success() {
 	existing, _ := entities.NewExpense(userID, source, extID, subID, rootSlug, competence, 5000, time.Now().UTC(), time.Now().UTC())
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.conhecimento", false, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		Update(s.ctx, mock.Anything, int64(1)).
+		Update(mock.Anything, mock.Anything, int64(1)).
 		Return(nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -233,12 +235,12 @@ func (s *UpsertExpenseSuite) TestUpdate_VersionConflict() {
 	existing, _ := entities.NewExpense(userID, source, extID, subID, rootSlug, competence, 5000, time.Now().UTC(), time.Now().UTC())
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("expense.custo_fixo", false, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
@@ -253,7 +255,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidUserID() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidUserID)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidUserID)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_InvalidSubcategoryID() {
@@ -262,7 +264,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidSubcategoryID() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidSubcategory)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidSubcategory)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_InvalidSource() {
@@ -271,7 +273,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidSource() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidSource)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidSource)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_InvalidCompetence() {
@@ -280,7 +282,7 @@ func (s *UpsertExpenseSuite) TestCreate_InvalidCompetence() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidCompetence)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidCompetence)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_RejectsZeroAmount() {
@@ -289,7 +291,7 @@ func (s *UpsertExpenseSuite) TestCreate_RejectsZeroAmount() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidAmount)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidAmount)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_RejectsNegativeAmount() {
@@ -298,7 +300,7 @@ func (s *UpsertExpenseSuite) TestCreate_RejectsNegativeAmount() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidAmount)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidAmount)
 }
 
 func (s *UpsertExpenseSuite) TestUpdate_RejectsZeroAmount() {
@@ -309,14 +311,14 @@ func (s *UpsertExpenseSuite) TestUpdate_RejectsZeroAmount() {
 
 	_, err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrUpsertExpenseInvalidAmount)
+	s.ErrorIs(err, ErrUpsertExpenseInvalidAmount)
 }
 
 func (s *UpsertExpenseSuite) TestCreate_CategoriesReaderError() {
 	in := s.validInput()
 
 	s.categories.EXPECT().
-		ValidateExpenseSubcategory(s.ctx, mock.Anything).
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
 		Return("", false, errors.New("categories unavailable")).
 		Once()
 

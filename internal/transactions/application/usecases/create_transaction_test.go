@@ -1,11 +1,11 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -15,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
@@ -30,7 +29,7 @@ type CreateTransactionSuite struct {
 	catVal    *mockInterfaces.CategoryValidator
 	publisher *mockInterfaces.TransactionEventPublisher
 	uow       *uowMocks.UnitOfWorkTransaction
-	useCase   *usecases.CreateTransaction
+	useCase   *CreateTransaction
 }
 
 func TestCreateTransactionSuite(t *testing.T) {
@@ -46,10 +45,10 @@ func (s *CreateTransactionSuite) SetupTest() {
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
 	s.publisher = mockInterfaces.NewTransactionEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkTransaction(s.T())
-	s.useCase = usecases.NewCreateTransaction(
+	s.useCase = NewCreateTransaction(
 		s.factory, s.uow, s.catVal,
 		services.TransactionWorkflow{}, s.publisher,
-		noop.NewProvider(),
+		fake.NewProvider(),
 	)
 }
 
@@ -96,7 +95,7 @@ func (s *CreateTransactionSuite) TestExecute_OutcomeWithoutSubcategory_ReturnsVa
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 
-	s.Require().ErrorIs(err, usecases.ErrOutcomeTransactionRequiresSubcategory)
+	s.Require().ErrorIs(err, ErrOutcomeTransactionRequiresSubcategory)
 }
 
 func (s *CreateTransactionSuite) TestExecute_Unauthorized() {

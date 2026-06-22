@@ -1,29 +1,29 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type SaveOnboardingObjectiveSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
 	factory     *mocks.RepositoryFactory
-	uc          *usecases.SaveOnboardingObjective
+	uc          *SaveOnboardingObjective
 	userID      uuid.UUID
 }
 
@@ -32,11 +32,12 @@ func TestSaveOnboardingObjectiveSuite(t *testing.T) {
 }
 
 func (s *SaveOnboardingObjectiveSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.factory = mocks.NewRepositoryFactory(s.T())
 	s.factory.EXPECT().OnboardingSessionRepository(mock.Anything).Return(s.sessionRepo).Maybe()
 	s.userID = uuid.MustParse("55555555-5555-5555-5555-555555555555")
-	s.uc = usecases.NewSaveOnboardingObjective(&onboardingUoWStub{}, s.factory, noop.NewProvider())
+	s.uc = NewSaveOnboardingObjective(&onboardingUoWStub{}, s.factory, s.obs)
 }
 
 func (s *SaveOnboardingObjectiveSuite) TestHappyPath() {
@@ -52,7 +53,7 @@ func (s *SaveOnboardingObjectiveSuite) TestHappyPath() {
 		return sess.Payload().Objective == "comprar uma casa"
 	})).Return(nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingObjectiveInput{
+	result, err := s.uc.Execute(context.Background(), SaveOnboardingObjectiveInput{
 		UserID:    s.userID,
 		Objective: "  comprar   uma casa ",
 	})
@@ -61,7 +62,7 @@ func (s *SaveOnboardingObjectiveSuite) TestHappyPath() {
 }
 
 func (s *SaveOnboardingObjectiveSuite) TestInvalidObjectiveRejectedBeforeTx() {
-	_, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingObjectiveInput{
+	_, err := s.uc.Execute(context.Background(), SaveOnboardingObjectiveInput{
 		UserID:    s.userID,
 		Objective: "",
 	})
@@ -73,7 +74,7 @@ func (s *SaveOnboardingObjectiveSuite) TestSessionNotFound() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 
-	_, err := s.uc.Execute(context.Background(), usecases.SaveOnboardingObjectiveInput{
+	_, err := s.uc.Execute(context.Background(), SaveOnboardingObjectiveInput{
 		UserID:    s.userID,
 		Objective: "meta valida",
 	})

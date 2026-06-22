@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -14,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
@@ -28,7 +27,7 @@ type ListRecurringTemplatesSuite struct {
 	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.RecurringTemplateRepository
 	uow     *uowMocks.UnitOfWorkRecurringTemplatePage
-	useCase *usecases.ListRecurringTemplates
+	useCase *ListRecurringTemplates
 }
 
 func TestListRecurringTemplatesSuite(t *testing.T) {
@@ -42,7 +41,7 @@ func (s *ListRecurringTemplatesSuite) SetupTest() {
 	s.repo = mockInterfaces.NewRecurringTemplateRepository(s.T())
 	s.factory.EXPECT().RecurringTemplateRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkRecurringTemplatePage(s.T())
-	s.useCase = usecases.NewListRecurringTemplates(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewListRecurringTemplates(s.factory, s.uow, fake.NewProvider())
 }
 
 func (s *ListRecurringTemplatesSuite) buildTemplate() *entities.RecurringTemplate {

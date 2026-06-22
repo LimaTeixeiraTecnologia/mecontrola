@@ -1,17 +1,17 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
@@ -20,6 +20,8 @@ import (
 
 type MarkTokenPaidSuite struct {
 	suite.Suite
+	ctx       context.Context
+	obs       observability.Observability
 	tokenRepo *mocks.MagicTokenRepository
 }
 
@@ -28,18 +30,24 @@ func TestMarkTokenPaidSuite(t *testing.T) {
 }
 
 func (s *MarkTokenPaidSuite) SetupTest() {
+	s.obs = fake.NewProvider()
+	s.ctx = context.Background()
 	s.tokenRepo = mocks.NewMagicTokenRepository(s.T())
 }
 
 func (s *MarkTokenPaidSuite) TestExecute() {
+	type dependencies struct {
+		tokenRepo *mocks.MagicTokenRepository
+		in        input.MarkTokenPaidInput
+	}
 	scenarios := []struct {
-		name   string
-		setup  func() input.MarkTokenPaidInput
-		expect func(in input.MarkTokenPaidInput, err error)
+		name         string
+		dependencies dependencies
+		expect       func(in input.MarkTokenPaidInput, err error)
 	}{
 		{
 			name: "deve usar hash decodificado e armazenar subscription ID com sucesso",
-			setup: func() input.MarkTokenPaidInput {
+			dependencies: func() dependencies {
 				clearToken, _ := valueobjects.NewToken()
 				expectedHash := clearToken.Hash()
 				token, _ := entities.NewMagicToken("tok-id", expectedHash, "plan-1", time.Now().UTC().Add(7*24*time.Hour))
@@ -48,33 +56,39 @@ func (s *MarkTokenPaidSuite) TestExecute() {
 				s.tokenRepo.EXPECT().UpdateMarkPaid(mock.Anything, mock.MatchedBy(func(t entities.MagicToken) bool {
 					return t.SubscriptionID() == "sub-001"
 				})).Return(nil).Once()
-				return input.MarkTokenPaidInput{
-					SubscriptionID:     "sub-001",
-					FunnelToken:        clearToken.ClearText(),
-					CustomerMobileE164: "+5511999999999",
-					CustomerEmail:      "user@example.com",
-					ExternalSaleID:     "sale-001",
-					PaidAt:             time.Now().UTC(),
+				return dependencies{
+					tokenRepo: s.tokenRepo,
+					in: input.MarkTokenPaidInput{
+						SubscriptionID:     "sub-001",
+						FunnelToken:        clearToken.ClearText(),
+						CustomerMobileE164: "+5511999999999",
+						CustomerEmail:      "user@example.com",
+						ExternalSaleID:     "sale-001",
+						PaidAt:             time.Now().UTC(),
+					},
 				}
-			},
+			}(),
 			expect: func(in input.MarkTokenPaidInput, err error) {
 				s.NoError(err)
 			},
 		},
 		{
 			name: "deve retornar erro quando token nao for encontrado",
-			setup: func() input.MarkTokenPaidInput {
+			dependencies: func() dependencies {
 				clearToken, _ := valueobjects.NewToken()
 				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
-				return input.MarkTokenPaidInput{
-					SubscriptionID:     "sub-002",
-					FunnelToken:        clearToken.ClearText(),
-					CustomerMobileE164: "+5511999999999",
-					CustomerEmail:      "user@example.com",
-					ExternalSaleID:     "sale-002",
-					PaidAt:             time.Now().UTC(),
+				return dependencies{
+					tokenRepo: s.tokenRepo,
+					in: input.MarkTokenPaidInput{
+						SubscriptionID:     "sub-002",
+						FunnelToken:        clearToken.ClearText(),
+						CustomerMobileE164: "+5511999999999",
+						CustomerEmail:      "user@example.com",
+						ExternalSaleID:     "sale-002",
+						PaidAt:             time.Now().UTC(),
+					},
 				}
-			},
+			}(),
 			expect: func(in input.MarkTokenPaidInput, err error) {
 				s.Error(err)
 			},
@@ -83,11 +97,9 @@ func (s *MarkTokenPaidSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
-			in := scenario.setup()
-			uc := usecases.NewMarkTokenPaid(s.tokenRepo, services.NewMagicTokenWorkflow(), noop.NewProvider())
-			err := uc.Execute(context.Background(), in)
-			scenario.expect(in, err)
+			uc := NewMarkTokenPaid(scenario.dependencies.tokenRepo, services.NewMagicTokenWorkflow(), s.obs)
+			err := uc.Execute(s.ctx, scenario.dependencies.in)
+			scenario.expect(scenario.dependencies.in, err)
 		})
 	}
 }

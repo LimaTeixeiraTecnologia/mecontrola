@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -14,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -22,11 +22,12 @@ import (
 
 type DeleteDraftBudgetSuite struct {
 	suite.Suite
+	obs     observability.Observability
 	ctx     context.Context
 	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.BudgetRepository
 	uow     *uowMocks.UnitOfWorkVoid
-	useCase *usecases.DeleteDraftBudget
+	useCase *DeleteDraftBudget
 }
 
 func TestDeleteDraftBudgetSuite(t *testing.T) {
@@ -34,12 +35,13 @@ func TestDeleteDraftBudgetSuite(t *testing.T) {
 }
 
 func (s *DeleteDraftBudgetSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
 	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
-	s.useCase = usecases.NewDeleteDraftBudget(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewDeleteDraftBudget(s.factory, s.uow, s.obs)
 }
 
 func (s *DeleteDraftBudgetSuite) TestExecute_InvalidUserID() {
@@ -48,7 +50,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_InvalidUserID() {
 		Competence: "2026-06",
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidUserID)
+	s.ErrorIs(err, ErrBudgetInvalidUserID)
 }
 
 func (s *DeleteDraftBudgetSuite) TestExecute_InvalidCompetence() {
@@ -57,7 +59,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_InvalidCompetence() {
 		Competence: "bad",
 	})
 
-	s.ErrorIs(err, usecases.ErrBudgetInvalidCompetence)
+	s.ErrorIs(err, ErrBudgetInvalidCompetence)
 }
 
 func (s *DeleteDraftBudgetSuite) TestExecute_BudgetNotFound() {
@@ -65,7 +67,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_BudgetNotFound() {
 	comp, _ := valueobjects.NewCompetence("2026-06")
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
 
@@ -93,7 +95,7 @@ func (s *DeleteDraftBudgetSuite) TestExecute_ActiveBudgetRejected() {
 	)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(activeBudget, nil).
 		Once()
 
@@ -113,12 +115,12 @@ func (s *DeleteDraftBudgetSuite) TestExecute_DraftDeletedSuccessfully() {
 	draft := entities.NewBudget(userID, comp, 100000, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		DeleteDraft(s.ctx, userID, comp).
+		DeleteDraft(mock.Anything, userID, comp).
 		Return(nil).
 		Once()
 
@@ -138,12 +140,12 @@ func (s *DeleteDraftBudgetSuite) TestExecute_DeleteRepositoryError() {
 	draft := entities.NewBudget(userID, comp, 100000, now)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(s.ctx, userID, comp).
+		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(draft, nil).
 		Once()
 
 	s.repo.EXPECT().
-		DeleteDraft(s.ctx, userID, comp).
+		DeleteDraft(mock.Anything, userID, comp).
 		Return(errors.New("db error")).
 		Once()
 

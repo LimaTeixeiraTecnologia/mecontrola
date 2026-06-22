@@ -1,11 +1,12 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -13,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
@@ -21,12 +21,13 @@ import (
 
 type DeleteExpenseSuite struct {
 	suite.Suite
+	obs       observability.Observability
 	ctx       context.Context
 	factory   *mockInterfaces.RepositoryFactory
 	expenses  *mockInterfaces.ExpenseRepository
 	publisher *mockInterfaces.ExpenseCommittedPublisher
 	uow       *uowMocks.UnitOfWorkVoid
-	useCase   *usecases.DeleteExpense
+	useCase   *DeleteExpense
 }
 
 func TestDeleteExpenseSuite(t *testing.T) {
@@ -34,6 +35,7 @@ func TestDeleteExpenseSuite(t *testing.T) {
 }
 
 func (s *DeleteExpenseSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.expenses = mockInterfaces.NewExpenseRepository(s.T())
@@ -41,7 +43,7 @@ func (s *DeleteExpenseSuite) SetupTest() {
 	s.publisher = mockInterfaces.NewExpenseCommittedPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 	loc, _ := time.LoadLocation("America/Sao_Paulo")
-	s.useCase = usecases.NewDeleteExpense(s.factory, s.publisher, s.uow, noop.NewProvider(), loc)
+	s.useCase = NewDeleteExpense(s.factory, s.publisher, s.uow, s.obs, loc)
 }
 
 func (s *DeleteExpenseSuite) buildExisting(userID uuid.UUID, extIDStr string) entities.Expense {
@@ -69,17 +71,17 @@ func (s *DeleteExpenseSuite) TestSoftDelete_Success() {
 	existing := s.buildExisting(userID, in.ExternalTransactionID)
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
 	s.expenses.EXPECT().
-		SoftDelete(s.ctx, mock.Anything, int64(1)).
+		SoftDelete(mock.Anything, mock.Anything, int64(1)).
 		Return(int64(2), nil).
 		Once()
 
 	s.publisher.EXPECT().
-		Publish(s.ctx, mock.Anything, mock.Anything).
+		Publish(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -97,7 +99,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_IdempotentRetry() {
 	tombstone := entities.NewExpenseTombstone(userID, source, extID, 2, time.Now().UTC())
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, tombstone, nil).
 		Once()
 
@@ -113,7 +115,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_VersionConflict() {
 	existing := s.buildExisting(userID, in.ExternalTransactionID)
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(existing, entities.ExpenseTombstone{}, nil).
 		Once()
 
@@ -127,7 +129,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_NotFound() {
 	in := s.validInput(userID)
 
 	s.expenses.EXPECT().
-		GetByIdentity(s.ctx, mock.Anything).
+		GetByIdentity(mock.Anything, mock.Anything).
 		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
 		Once()
 
@@ -146,7 +148,7 @@ func (s *DeleteExpenseSuite) TestSoftDelete_InvalidUserID() {
 
 	err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrDeleteExpenseInvalidUserID)
+	s.ErrorIs(err, ErrDeleteExpenseInvalidUserID)
 }
 
 func (s *DeleteExpenseSuite) TestSoftDelete_InvalidSource() {
@@ -159,5 +161,5 @@ func (s *DeleteExpenseSuite) TestSoftDelete_InvalidSource() {
 
 	err := s.useCase.Execute(s.ctx, in)
 
-	s.ErrorIs(err, usecases.ErrDeleteExpenseInvalidSource)
+	s.ErrorIs(err, ErrDeleteExpenseInvalidSource)
 }

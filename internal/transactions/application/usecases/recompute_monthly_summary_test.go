@@ -1,17 +1,16 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
@@ -26,7 +25,7 @@ type RecomputeMonthlySummarySuite struct {
 	invRepo  *mockInterfaces.CardInvoiceRepository
 	summRepo *mockInterfaces.MonthlySummaryRepository
 	uow      *uowMocks.UnitOfWorkEmpty
-	useCase  *usecases.RecomputeMonthlySummary
+	useCase  *RecomputeMonthlySummary
 }
 
 func TestRecomputeMonthlySummarySuite(t *testing.T) {
@@ -49,7 +48,7 @@ func (s *RecomputeMonthlySummarySuite) SetupTest() {
 	s.factory.EXPECT().MonthlySummaryRepository(mock.Anything).Return(s.summRepo).Maybe()
 
 	s.uow = uowMocks.NewUnitOfWorkEmpty(s.T())
-	s.useCase = usecases.NewRecomputeMonthlySummary(s.factory, s.uow, noop.NewProvider())
+	s.useCase = NewRecomputeMonthlySummary(s.factory, s.uow, fake.NewProvider())
 }
 
 func (s *RecomputeMonthlySummarySuite) TestExecute_Success() {
@@ -57,7 +56,7 @@ func (s *RecomputeMonthlySummarySuite) TestExecute_Success() {
 	s.invRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(3000), nil).Once()
 	s.summRepo.EXPECT().Upsert(mock.Anything, s.userID, s.refMonth, int64(10000), int64(8000), mock.Anything).Return(nil).Once()
 
-	err := s.useCase.Execute(s.ctx, usecases.RecomputeMonthlySummaryInput{
+	err := s.useCase.Execute(s.ctx, RecomputeMonthlySummaryInput{
 		UserID:   s.userID,
 		RefMonth: s.refMonth,
 	})
@@ -69,7 +68,7 @@ func (s *RecomputeMonthlySummarySuite) TestExecute_SoftDeleteFiltered() {
 	s.invRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(0), nil).Once()
 	s.summRepo.EXPECT().Upsert(mock.Anything, s.userID, s.refMonth, int64(0), int64(0), mock.Anything).Return(nil).Once()
 
-	err := s.useCase.Execute(s.ctx, usecases.RecomputeMonthlySummaryInput{
+	err := s.useCase.Execute(s.ctx, RecomputeMonthlySummaryInput{
 		UserID:   s.userID,
 		RefMonth: s.refMonth,
 	})
@@ -79,7 +78,7 @@ func (s *RecomputeMonthlySummarySuite) TestExecute_SoftDeleteFiltered() {
 func (s *RecomputeMonthlySummarySuite) TestExecute_SumByMonthError() {
 	s.txRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(0), int64(0), errors.New("db error")).Once()
 
-	err := s.useCase.Execute(s.ctx, usecases.RecomputeMonthlySummaryInput{
+	err := s.useCase.Execute(s.ctx, RecomputeMonthlySummaryInput{
 		UserID:   s.userID,
 		RefMonth: s.refMonth,
 	})

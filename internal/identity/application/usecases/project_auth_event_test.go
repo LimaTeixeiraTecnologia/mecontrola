@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -7,20 +7,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	ifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
 type ProjectAuthEventSuite struct {
 	suite.Suite
-	ctx context.Context
+	ctx      context.Context
+	obs      observability.Observability
+	repoMock *ifacemocks.AuthEventsRepository
 }
 
 func TestProjectAuthEvent(t *testing.T) {
@@ -28,7 +30,9 @@ func TestProjectAuthEvent(t *testing.T) {
 }
 
 func (s *ProjectAuthEventSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
+	s.repoMock = ifacemocks.NewAuthEventsRepository(s.T())
 }
 
 func (s *ProjectAuthEventSuite) validPayload(kind string, userID *string, reason *string) []byte {
@@ -53,15 +57,16 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 	type args struct {
 		in input.ProjectAuthEvent
 	}
+
 	type dependencies struct {
-		repo *ifacemocks.AuthEventsRepository
+		repoMock *ifacemocks.AuthEventsRepository
 	}
 
 	scenarios := []struct {
-		name   string
-		args   func() args
-		setup  func(dependencies)
-		expect func(error)
+		name         string
+		args         func() args
+		dependencies dependencies
+		expect       func(error)
 	}{
 		{
 			name: "deve inserir auth event com user_id",
@@ -72,12 +77,15 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   s.validPayload("principal_established", &uid, nil),
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
-					return ev.Kind() == entities.AuthEventKindPrincipalEstablished &&
-						ev.UserID() != nil &&
-						ev.Source() == entities.AuthEventSourceWhatsApp
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
+						return ev.Kind() == entities.AuthEventKindPrincipalEstablished &&
+							ev.UserID() != nil &&
+							ev.Source() == entities.AuthEventSourceWhatsApp
+					})).Return(nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().NoError(err)
@@ -91,11 +99,14 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   s.validPayload("unknown_user", nil, nil),
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
-					return ev.Kind() == entities.AuthEventKindUnknownUser &&
-						ev.UserID() == nil
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
+						return ev.Kind() == entities.AuthEventKindUnknownUser &&
+							ev.UserID() == nil
+					})).Return(nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().NoError(err)
@@ -110,12 +121,15 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   s.validPayload("failed", nil, &reason),
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
-					return ev.Kind() == entities.AuthEventKindFailed &&
-						ev.Reason() != nil &&
-						*ev.Reason() == entities.AuthEventReasonInvalidSignature
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
+						return ev.Kind() == entities.AuthEventKindFailed &&
+							ev.Reason() != nil &&
+							*ev.Reason() == entities.AuthEventReasonInvalidSignature
+					})).Return(nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().NoError(err)
@@ -140,15 +154,18 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   raw,
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
-					return ev.Kind() == entities.AuthEventKindFailed &&
-						ev.Source() == entities.AuthEventSourceGateway &&
-						ev.RequestID() == "req-gateway-001" &&
-						ev.ClientIP() == "10.0.0.1" &&
-						ev.Reason() != nil &&
-						*ev.Reason() == entities.AuthEventReasonGatewayInvalidSignature
-				})).Return(nil).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(ev entities.AuthEvent) bool {
+						return ev.Kind() == entities.AuthEventKindFailed &&
+							ev.Source() == entities.AuthEventSourceGateway &&
+							ev.RequestID() == "req-gateway-001" &&
+							ev.ClientIP() == "10.0.0.1" &&
+							ev.Reason() != nil &&
+							*ev.Reason() == entities.AuthEventReasonGatewayInvalidSignature
+					})).Return(nil).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().NoError(err)
@@ -162,9 +179,12 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   s.validPayload("principal_established", nil, nil),
 				}}
 			},
-			setup: func(deps dependencies) {
-				deps.repo.EXPECT().Insert(mock.Anything, mock.Anything).
-					Return(fmt.Errorf("db error")).Once()
+			dependencies: dependencies{
+				repoMock: func() *ifacemocks.AuthEventsRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.Anything).
+						Return(fmt.Errorf("db error")).Once()
+					return s.repoMock
+				}(),
 			},
 			expect: func(err error) {
 				s.Require().Error(err)
@@ -179,7 +199,7 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   []byte("not-json"),
 				}}
 			},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{repoMock: s.repoMock},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.ErrorContains(err, "decode")
@@ -201,7 +221,7 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   raw,
 				}}
 			},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{repoMock: s.repoMock},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.ErrorContains(err, "parse event_id")
@@ -223,7 +243,7 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   raw,
 				}}
 			},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{repoMock: s.repoMock},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.ErrorContains(err, "parse occurred_at")
@@ -247,7 +267,7 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 					Payload:   raw,
 				}}
 			},
-			setup: func(deps dependencies) {},
+			dependencies: dependencies{repoMock: s.repoMock},
 			expect: func(err error) {
 				s.Require().Error(err)
 				s.ErrorContains(err, "parse user_id")
@@ -257,11 +277,8 @@ func (s *ProjectAuthEventSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			repo := ifacemocks.NewAuthEventsRepository(s.T())
-			scenario.setup(dependencies{repo: repo})
-
 			a := scenario.args()
-			sut := usecases.NewProjectAuthEvent(repo, noop.NewProvider())
+			sut := NewProjectAuthEvent(scenario.dependencies.repoMock, s.obs)
 			err := sut.Execute(s.ctx, a.in)
 			scenario.expect(err)
 		})

@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -14,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
@@ -24,9 +24,10 @@ type GetCategorySuite struct {
 	suite.Suite
 
 	ctx           context.Context
+	obs           observability.Observability
 	repo          *mockInterfaces.CategoryRepository
 	versionReader *mockInterfaces.VersionReader
-	useCase       *usecases.GetCategory
+	useCase       *GetCategory
 }
 
 func TestGetCategorySuite(t *testing.T) {
@@ -34,14 +35,15 @@ func TestGetCategorySuite(t *testing.T) {
 }
 
 func (s *GetCategorySuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.repo = mockInterfaces.NewCategoryRepository(s.T())
 	s.versionReader = mockInterfaces.NewVersionReader(s.T())
-	s.useCase = usecases.NewGetCategory(s.repo, s.versionReader, services.NewPTBRCollator(), noop.NewProvider())
+	s.useCase = NewGetCategory(s.repo, s.versionReader, services.NewPTBRCollator(), s.obs)
 }
 
 func (s *GetCategorySuite) TestExecute_RootWithSubcategories() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	subID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
@@ -54,8 +56,8 @@ func (s *GetCategorySuite) TestExecute_RootWithSubcategories() {
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}
 
-	s.repo.EXPECT().GetByID(s.ctx, rootID).Return(rootCategory, nil).Once()
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{
+	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(rootCategory, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.Category{
 		{
 			ID:             subID,
 			Slug:           "aluguel",
@@ -79,7 +81,7 @@ func (s *GetCategorySuite) TestExecute_RootWithSubcategories() {
 }
 
 func (s *GetCategorySuite) TestExecute_SubcategoryWithPath() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	subID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
@@ -101,8 +103,8 @@ func (s *GetCategorySuite) TestExecute_SubcategoryWithPath() {
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}
 
-	s.repo.EXPECT().GetByID(s.ctx, subID).Return(subCategory, nil).Once()
-	s.repo.EXPECT().GetByID(s.ctx, rootID).Return(rootCategory, nil).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, subID).Return(subCategory, nil).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(rootCategory, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
 		ID: subID,
@@ -116,22 +118,22 @@ func (s *GetCategorySuite) TestExecute_SubcategoryWithPath() {
 }
 
 func (s *GetCategorySuite) TestExecute_NotFound() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
-	s.repo.EXPECT().GetByID(s.ctx, id).Return(entities.Category{}, interfaces.ErrNotFound).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, id).Return(entities.Category{}, interfaces.ErrNotFound).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
 		ID: id,
 	})
 
-	s.ErrorIs(err, usecases.ErrCategoryNotFound)
+	s.ErrorIs(err, ErrCategoryNotFound)
 	s.Nil(result)
 }
 
 func (s *GetCategorySuite) TestExecute_DeprecatedWithoutFlag() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	deprecatedAt := time.Now()
@@ -145,19 +147,19 @@ func (s *GetCategorySuite) TestExecute_DeprecatedWithoutFlag() {
 		DeprecatedAt:   &deprecatedAt,
 	}
 
-	s.repo.EXPECT().GetByID(s.ctx, id).Return(category, nil).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, id).Return(category, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
 		ID:                id,
 		IncludeDeprecated: false,
 	})
 
-	s.ErrorIs(err, usecases.ErrCategoryNotFound)
+	s.ErrorIs(err, ErrCategoryNotFound)
 	s.Nil(result)
 }
 
 func (s *GetCategorySuite) TestExecute_DeprecatedWithFlag() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(42), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	deprecatedAt := time.Now()
@@ -172,8 +174,8 @@ func (s *GetCategorySuite) TestExecute_DeprecatedWithFlag() {
 		ParentID:       &id,
 	}
 
-	s.repo.EXPECT().GetByID(s.ctx, id).Return(category, nil).Once()
-	s.repo.EXPECT().GetByID(s.ctx, id).Return(category, nil).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, id).Return(category, nil).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, id).Return(category, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
 		ID:                id,
@@ -186,7 +188,7 @@ func (s *GetCategorySuite) TestExecute_DeprecatedWithFlag() {
 }
 
 func (s *GetCategorySuite) TestExecute_RootWithoutChildren() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(1), nil).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
 
 	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
@@ -198,8 +200,8 @@ func (s *GetCategorySuite) TestExecute_RootWithoutChildren() {
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}
 
-	s.repo.EXPECT().GetByID(s.ctx, rootID).Return(rootCategory, nil).Once()
-	s.repo.EXPECT().List(s.ctx, mock.Anything).Return([]entities.Category{}, nil).Once()
+	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(rootCategory, nil).Once()
+	s.repo.EXPECT().List(mock.Anything, mock.Anything).Return([]entities.Category{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.GetCategoryInput{
 		ID: rootID,
@@ -212,7 +214,7 @@ func (s *GetCategorySuite) TestExecute_RootWithoutChildren() {
 }
 
 func (s *GetCategorySuite) TestExecute_VersionError() {
-	s.versionReader.EXPECT().Current(s.ctx).Return(int64(0), errors.New("db error")).Once()
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(0), errors.New("db error")).Once()
 
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 

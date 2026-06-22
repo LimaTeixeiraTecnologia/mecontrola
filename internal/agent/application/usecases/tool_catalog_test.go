@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"testing"
@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
@@ -19,7 +18,7 @@ func TestToolCatalog(t *testing.T) {
 }
 
 func (s *ToolCatalogSuite) TestCatalogExposesMVPTools() {
-	catalog := usecases.AgentToolCatalog()
+	catalog := AgentToolCatalog()
 
 	names := make(map[string]bool, len(catalog))
 	for _, tool := range catalog {
@@ -49,7 +48,7 @@ func (s *ToolCatalogSuite) TestCreateCardMapsToKind() {
 		},
 	}
 
-	got, err := usecases.ToolCallToIntent(call, "cadastra meu nubank")
+	got, err := ToolCallToIntent(call, "cadastra meu nubank")
 	s.Require().NoError(err)
 	s.Equal(intent.KindCreateCard, got.Kind())
 	s.Equal("nubank", got.CardNickname())
@@ -61,13 +60,13 @@ func (s *ToolCatalogSuite) TestCreateCardMapsToKind() {
 
 func (s *ToolCatalogSuite) TestCreateCardWithoutNicknameFails() {
 	call := interfaces.ToolCall{FunctionName: "create_card", ArgumentsJSON: map[string]any{}}
-	_, err := usecases.ToolCallToIntent(call, "cadastra um cartao")
+	_, err := ToolCallToIntent(call, "cadastra um cartao")
 	s.Require().Error(err)
 	s.ErrorIs(err, intent.ErrCardNicknameEmpty)
 }
 
 func (s *ToolCatalogSuite) TestCountCardsMapsToKind() {
-	got, err := usecases.ToolCallToIntent(interfaces.ToolCall{FunctionName: "count_cards"}, "quantos cartoes eu tenho")
+	got, err := ToolCallToIntent(interfaces.ToolCall{FunctionName: "count_cards"}, "quantos cartoes eu tenho")
 	s.Require().NoError(err)
 	s.Equal(intent.KindCountCards, got.Kind())
 }
@@ -83,7 +82,7 @@ func (s *ToolCatalogSuite) TestRecordTransactionOutcomeMapsToLogExpense() {
 		},
 	}
 
-	got, err := usecases.ToolCallToIntent(call, "gastei 58 no ifood")
+	got, err := ToolCallToIntent(call, "gastei 58 no ifood")
 	s.Require().NoError(err)
 	s.Equal(intent.KindLogExpense, got.Kind())
 	s.Equal(int64(5800), got.AmountCents())
@@ -100,7 +99,7 @@ func (s *ToolCatalogSuite) TestRecordTransactionIncomeMapsToLogIncome() {
 		},
 	}
 
-	got, err := usecases.ToolCallToIntent(call, "recebi meu salario")
+	got, err := ToolCallToIntent(call, "recebi meu salario")
 	s.Require().NoError(err)
 	s.Equal(intent.KindLogIncome, got.Kind())
 	s.Equal(int64(900000), got.AmountCents())
@@ -109,23 +108,23 @@ func (s *ToolCatalogSuite) TestRecordTransactionIncomeMapsToLogIncome() {
 func (s *ToolCatalogSuite) TestMonthlySummaryMapsToKind() {
 	call := interfaces.ToolCall{FunctionName: "monthly_summary", ArgumentsJSON: map[string]any{"ref_month": "2026-06"}}
 
-	got, err := usecases.ToolCallToIntent(call, "resumo do mes")
+	got, err := ToolCallToIntent(call, "resumo do mes")
 	s.Require().NoError(err)
 	s.Equal(intent.KindMonthlySummary, got.Kind())
 }
 
 func (s *ToolCatalogSuite) TestListCardsAndConfigureBudgetMapToKinds() {
-	listCards, err := usecases.ToolCallToIntent(interfaces.ToolCall{FunctionName: "list_cards"}, "meus cartoes")
+	listCards, err := ToolCallToIntent(interfaces.ToolCall{FunctionName: "list_cards"}, "meus cartoes")
 	s.Require().NoError(err)
 	s.Equal(intent.KindListCards, listCards.Kind())
 
-	configBudget, err := usecases.ToolCallToIntent(interfaces.ToolCall{FunctionName: "configure_budget"}, "configurar orcamento")
+	configBudget, err := ToolCallToIntent(interfaces.ToolCall{FunctionName: "configure_budget"}, "configurar orcamento")
 	s.Require().NoError(err)
 	s.Equal(intent.KindConfigureBudget, configBudget.Kind())
 }
 
 func (s *ToolCatalogSuite) TestUnsupportedToolReturnsError() {
-	_, err := usecases.ToolCallToIntent(interfaces.ToolCall{FunctionName: "launch_rocket"}, "?")
+	_, err := ToolCallToIntent(interfaces.ToolCall{FunctionName: "launch_rocket"}, "?")
 	s.Require().Error(err)
-	s.ErrorIs(err, usecases.ErrToolUnsupported)
+	s.ErrorIs(err, ErrToolUnsupported)
 }

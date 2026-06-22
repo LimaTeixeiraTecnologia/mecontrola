@@ -1,28 +1,28 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
-
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type GetOnboardingContextSuite struct {
 	suite.Suite
+	obs         observability.Observability
 	sessionRepo *mocks.OnboardingSessionRepository
-	uc          *usecases.GetOnboardingContext
+	uc          *GetOnboardingContext
 	userID      uuid.UUID
 }
 
@@ -31,9 +31,10 @@ func TestGetOnboardingContextSuite(t *testing.T) {
 }
 
 func (s *GetOnboardingContextSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.sessionRepo = mocks.NewOnboardingSessionRepository(s.T())
 	s.userID = uuid.MustParse("44444444-4444-4444-4444-444444444444")
-	s.uc = usecases.NewGetOnboardingContext(s.sessionRepo, noop.NewProvider())
+	s.uc = NewGetOnboardingContext(s.sessionRepo, s.obs)
 }
 
 func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
@@ -61,7 +62,7 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.GetOnboardingContextInput{UserID: s.userID})
+	result, err := s.uc.Execute(context.Background(), GetOnboardingContextInput{UserID: s.userID})
 	require.NoError(s.T(), err)
 	require.True(s.T(), result.Found)
 	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingFirstTransaction, result.State)
@@ -80,12 +81,12 @@ func (s *GetOnboardingContextSuite) TestNotFoundReturnsFoundFalse() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 
-	result, err := s.uc.Execute(context.Background(), usecases.GetOnboardingContextInput{UserID: s.userID})
+	result, err := s.uc.Execute(context.Background(), GetOnboardingContextInput{UserID: s.userID})
 	require.NoError(s.T(), err)
 	require.False(s.T(), result.Found)
 }
 
 func (s *GetOnboardingContextSuite) TestNilUserIDRejected() {
-	_, err := s.uc.Execute(context.Background(), usecases.GetOnboardingContextInput{UserID: uuid.Nil})
+	_, err := s.uc.Execute(context.Background(), GetOnboardingContextInput{UserID: uuid.Nil})
 	require.Error(s.T(), err)
 }

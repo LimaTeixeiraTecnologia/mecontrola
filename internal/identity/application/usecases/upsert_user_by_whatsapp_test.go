@@ -1,4 +1,4 @@
-package usecases_test
+package usecases
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/output"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
@@ -22,7 +22,11 @@ import (
 
 type UpsertUserByWhatsAppSuite struct {
 	suite.Suite
-	ctx context.Context
+	ctx         context.Context
+	obs         observability.Observability
+	uowMock     *mocks.UnitOfWorkUser
+	factoryMock *mocks.RepositoryFactory
+	repoMock    *mocks.UserRepository
 }
 
 func TestUpsertUserByWhatsApp(t *testing.T) {
@@ -30,7 +34,11 @@ func TestUpsertUserByWhatsApp(t *testing.T) {
 }
 
 func (s *UpsertUserByWhatsAppSuite) SetupTest() {
+	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
+	s.uowMock = mocks.NewUnitOfWorkUser(s.T())
+	s.factoryMock = mocks.NewRepositoryFactory(s.T())
+	s.repoMock = mocks.NewUserRepository(s.T())
 }
 
 func (s *UpsertUserByWhatsAppSuite) validInput() input.UpsertUserByWhatsApp {
@@ -74,39 +82,40 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 	}
 
 	type dependencies struct {
-		uow     *mocks.UnitOfWorkUser
-		factory *mocks.RepositoryFactory
-		repo    *mocks.UserRepository
+		factoryMock *mocks.RepositoryFactory
 	}
 
 	findErr := errors.New("connection refused")
 	upsertErr := errors.New("unique violation")
 
 	scenarios := []struct {
-		name   string
-		args   args
-		setup  func(dependencies)
-		expect func(output.UpsertUserByWhatsApp, error)
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(output.UpsertUserByWhatsApp, error)
 	}{
 		{
 			name: "deve criar novo usuario quando whatsapp for inedito",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				email := s.validEmail()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().
-					UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
-						s.Equal(whatsApp.String(), candidate.WhatsApp().String())
-						s.Equal(email.String(), candidate.Email().String())
-						s.Equal("Test User", candidate.DisplayName())
-						s.False(now.IsZero())
-						return candidate, nil
-					}).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					email := s.validEmail()
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().
+						UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
+						RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
+							s.Equal(whatsApp.String(), candidate.WhatsApp().String())
+							s.Equal(email.String(), candidate.Email().String())
+							s.Equal("Test User", candidate.DisplayName())
+							s.False(now.IsZero())
+							return candidate, nil
+						}).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().NoError(err)
@@ -119,21 +128,24 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 		{
 			name: "deve atualizar display name quando usuario existir sem nome",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				email := s.validEmail()
-				existing := entities.New(whatsApp, entities.WithEmail(email))
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(existing, nil).Once()
-				deps.repo.EXPECT().
-					UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
-						s.Equal("Test User", candidate.DisplayName())
-						s.Equal(email.String(), candidate.Email().String())
-						s.False(now.IsZero())
-						return candidate, nil
-					}).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					email := s.validEmail()
+					existing := entities.New(whatsApp, entities.WithEmail(email))
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(existing, nil).Once()
+					s.repoMock.EXPECT().
+						UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
+						RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
+							s.Equal("Test User", candidate.DisplayName())
+							s.Equal(email.String(), candidate.Email().String())
+							s.False(now.IsZero())
+							return candidate, nil
+						}).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().NoError(err)
@@ -144,21 +156,24 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 		{
 			name: "deve preservar display name quando usuario ja estiver preenchido",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				email := s.validEmail()
-				existing := entities.New(whatsApp, entities.WithEmail(email), entities.WithDisplayName("Existing Name"))
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(existing, nil).Once()
-				deps.repo.EXPECT().
-					UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
-						s.Equal("Existing Name", candidate.DisplayName())
-						s.Equal(email.String(), candidate.Email().String())
-						s.False(now.IsZero())
-						return candidate, nil
-					}).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					email := s.validEmail()
+					existing := entities.New(whatsApp, entities.WithEmail(email), entities.WithDisplayName("Existing Name"))
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(existing, nil).Once()
+					s.repoMock.EXPECT().
+						UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
+						RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
+							s.Equal("Existing Name", candidate.DisplayName())
+							s.Equal(email.String(), candidate.Email().String())
+							s.False(now.IsZero())
+							return candidate, nil
+						}).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().NoError(err)
@@ -168,10 +183,13 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 		{
 			name: "deve propagar erro ao buscar usuario ativo",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, findErr).Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, findErr).Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().Error(err)
@@ -182,15 +200,18 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 		{
 			name: "deve propagar erro ao persistir novo usuario",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().
-					UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
-					Return(entities.User{}, upsertErr).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().
+						UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
+						Return(entities.User{}, upsertErr).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().Error(err)
@@ -202,25 +223,28 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 		{
 			name: "deve reanimar usuario dentro da janela preservando uuid",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				deletedAt := time.Now().UTC().Add(-10 * 24 * time.Hour)
-				deletedUser := s.hydrateDeletedUser("original-uuid", deletedAt)
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(deletedUser, nil).Once()
-				deps.repo.EXPECT().
-					Reanimate(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
-						s.Equal("original-uuid", candidate.ID())
-						s.Equal(entities.StatusActive, candidate.Status())
-						s.True(candidate.DeletedAt().IsZero())
-						s.Equal("user@example.com", candidate.Email().String())
-						s.Equal("Test User", candidate.DisplayName())
-						s.False(now.IsZero())
-						return candidate, nil
-					}).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					deletedAt := time.Now().UTC().Add(-10 * 24 * time.Hour)
+					deletedUser := s.hydrateDeletedUser("original-uuid", deletedAt)
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(deletedUser, nil).Once()
+					s.repoMock.EXPECT().
+						Reanimate(mock.Anything, mock.Anything, mock.Anything).
+						RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
+							s.Equal("original-uuid", candidate.ID())
+							s.Equal(entities.StatusActive, candidate.Status())
+							s.True(candidate.DeletedAt().IsZero())
+							s.Equal("user@example.com", candidate.Email().String())
+							s.Equal("Test User", candidate.DisplayName())
+							s.False(now.IsZero())
+							return candidate, nil
+						}).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().NoError(err)
@@ -233,22 +257,25 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 		{
 			name: "deve criar novo usuario quando registro deletado estiver fora da janela",
 			args: args{input: s.validInput()},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				expiredUser := s.hydrateDeletedUser("original-uuid", time.Now().UTC().Add(-(domain.ReanimationWindow + time.Hour)))
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(expiredUser, nil).Once()
-				deps.repo.EXPECT().
-					UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
-						s.NotEqual("original-uuid", candidate.ID())
-						s.Equal("Test User", candidate.DisplayName())
-						s.Equal("user@example.com", candidate.Email().String())
-						s.False(now.IsZero())
-						return candidate, nil
-					}).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					expiredUser := s.hydrateDeletedUser("original-uuid", time.Now().UTC().Add(-(domain.ReanimationWindow + time.Hour)))
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(expiredUser, nil).Once()
+					s.repoMock.EXPECT().
+						UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
+						RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
+							s.NotEqual("original-uuid", candidate.ID())
+							s.Equal("Test User", candidate.DisplayName())
+							s.Equal("user@example.com", candidate.Email().String())
+							s.False(now.IsZero())
+							return candidate, nil
+						}).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().NoError(err)
@@ -260,15 +287,14 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 			args: args{
 				input: input.UpsertUserByWhatsApp{
 					WhatsAppNumber: "+5511987654321",
+					DisplayName:    "Test User",
 					Email:          "not-an-email",
 				},
 			},
-			setup: func(deps dependencies) {
-				_ = deps
-			},
+			dependencies: dependencies{factoryMock: s.factoryMock},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().Error(err)
-				s.ErrorIs(err, application.ErrInvalidEmail)
+				s.ErrorIs(err, valueobjects.ErrEmailInvalid)
 				s.Empty(out.ID)
 			},
 		},
@@ -280,20 +306,23 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 					DisplayName:    "Test User",
 				},
 			},
-			setup: func(deps dependencies) {
-				whatsApp := s.validWhatsApp()
-				deps.factory.EXPECT().UserRepository(mock.Anything).Return(deps.repo).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
-				deps.repo.EXPECT().
-					UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
-					RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
-						s.Equal("Test User", candidate.DisplayName())
-						s.Empty(candidate.Email().String())
-						s.False(now.IsZero())
-						return candidate, nil
-					}).
-					Once()
+			dependencies: dependencies{
+				factoryMock: func() *mocks.RepositoryFactory {
+					whatsApp := s.validWhatsApp()
+					s.factoryMock.EXPECT().UserRepository(mock.Anything).Return(s.repoMock).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumber(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().FindByWhatsAppNumberIncludingDeleted(mock.Anything, whatsApp).Return(entities.User{}, application.ErrUserNotFound).Once()
+					s.repoMock.EXPECT().
+						UpsertByWhatsAppNumber(mock.Anything, mock.Anything, mock.Anything).
+						RunAndReturn(func(ctx context.Context, candidate entities.User, now time.Time) (entities.User, error) {
+							s.Equal("Test User", candidate.DisplayName())
+							s.Empty(candidate.Email().String())
+							s.False(now.IsZero())
+							return candidate, nil
+						}).
+						Once()
+					return s.factoryMock
+				}(),
 			},
 			expect: func(out output.UpsertUserByWhatsApp, err error) {
 				s.Require().NoError(err)
@@ -305,16 +334,8 @@ func (s *UpsertUserByWhatsAppSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			deps := dependencies{
-				uow:     mocks.NewUnitOfWorkUser(s.T()),
-				factory: mocks.NewRepositoryFactory(s.T()),
-				repo:    mocks.NewUserRepository(s.T()),
-			}
-			scenario.setup(deps)
-
-			sut := usecases.NewUpsertUserByWhatsApp(deps.uow, deps.factory, noop.NewProvider())
+			sut := NewUpsertUserByWhatsApp(s.uowMock, scenario.dependencies.factoryMock, s.obs)
 			out, err := sut.Execute(s.ctx, scenario.args.input)
-
 			scenario.expect(out, err)
 		})
 	}
