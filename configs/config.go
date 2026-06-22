@@ -1191,7 +1191,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
 	l.v.SetDefault("AGENT_LLM_HTTP_REFERER", "https://mecontrola.app")
 	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
-	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "openai/gpt-5-nano")
+	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
 	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "anthropic/claude-haiku-4.5")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
 	l.v.SetDefault("AGENT_LLM_MAX_INPUT_CHARS", 2000)
