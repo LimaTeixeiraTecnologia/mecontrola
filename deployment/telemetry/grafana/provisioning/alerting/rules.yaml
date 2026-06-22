@@ -207,3 +207,168 @@ groups:
                   operator: { type: and }
                   query: { params: [C] }
                   evaluator: { type: gt, params: [0] }
+
+  - orgId: 1
+    name: agente
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-agent-parse-unknown
+        title: Parser de intent caindo em unknown
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Parser de intent caindo em unknown/fallback acima de 30%."
+          description: "Modelo (primario ou fallback) provavelmente parou de honrar response_format json_schema. Ver runbook docs/runbooks/agent-parser-policy.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(agent_intent_parsed_total{job="mecontrola-api", outcome=~"provider_error|fallback_invalid_json|fallback_missing_kind|fallback_domain_invariant"}[10m])) / clamp_min(sum(rate(agent_intent_parsed_total{job="mecontrola-api"}[10m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [30] }
+
+      - uid: mc-agent-fallback-exhausted
+        title: Cadeia de fallback de LLM esgotada
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Cadeia de fallback de LLM esgotada (todos os providers falharam)."
+          description: "Nenhum provider respondeu. Verifique OPENROUTER_API_KEY, creditos, circuit breaker aberto e status do OpenRouter."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(increase(agent_llm_fallback_exhausted_total{job="mecontrola-api"}[10m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-agent-llm-error-rate
+        title: Taxa de erro dos providers LLM alta
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Taxa de erro dos providers LLM acima de 20%."
+          description: "Ver reason em agent_llm_provider_errors_total (timeout/rate_limited/upstream_5xx/no_credit). Verifique disponibilidade do OpenRouter."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(agent_llm_provider_errors_total{job="mecontrola-api"}[10m])) / clamp_min(sum(rate(agent_llm_provider_call_total{job="mecontrola-api"}[10m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [20] }
+
+      - uid: mc-agent-policy-block-rate
+        title: Politica de confianca bloqueando muitas escritas
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Politica de confianca bloqueando acima de 25% das escritas."
+          description: "Pode indicar degradacao do modelo (confidence baixa) ou AGENT_POLICY_MIN_CONFIDENCE mal calibrado. Ver agent_intent_confidence_histogram."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(agent_policy_blocks_total{job="mecontrola-api"}[15m])) / clamp_min(sum(rate(agent_intent_routed_total{job="mecontrola-api"}[15m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [25] }
+
+      - uid: mc-agent-idempotency-replay
+        title: Replays idempotentes acima do esperado
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Replays idempotentes acima do esperado."
+          description: "Reentrega de webhook ou tentativa de duplicacao elevada. Confirme que o guard evita dupla execucao; investigue origem das mensagens repetidas."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(agent_idempotency_replay_total{job="mecontrola-api"}[5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [1] }
