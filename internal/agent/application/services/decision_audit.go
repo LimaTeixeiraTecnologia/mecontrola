@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -39,10 +40,54 @@ func (a *decisionAuditor) enabled() bool {
 	return a != nil && a.factory != nil && a.uow != nil
 }
 
+func (a *decisionAuditor) lookup(ctx context.Context, userID uuid.UUID, channel, messageID string) (string, bool) {
+	if !a.enabled() {
+		return "", false
+	}
+	var (
+		snapshot interfaces.AgentDecisionSnapshot
+		found    bool
+	)
+	err := a.uow.Do(ctx, func(ctx context.Context, db database.DBTX) error {
+		result, ok, findErr := a.factory.AgentDecisionRepository(db).FindByMessage(ctx, userID, channel, messageID)
+		if findErr != nil {
+			return findErr
+		}
+		snapshot = result
+		found = ok
+		return nil
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.decision_audit.lookup_failed",
+			observability.String("message_id", messageID),
+			observability.Error(err),
+		)
+		return "", false
+	}
+	if !found {
+		return "", false
+	}
+	return decodeRedactedReply(snapshot.RedactedResponse), true
+}
+
+func decodeRedactedReply(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var payload struct {
+		Redacted string `json:"redacted"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return payload.Redacted
+}
+
 type decisionContext struct {
-	auditor  *decisionAuditor
-	pending  entities.AgentDecision
-	recorded bool
+	auditor    *decisionAuditor
+	pending    entities.AgentDecision
+	recorded   bool
+	conflicted bool
 }
 
 func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) decisionContext {
@@ -81,6 +126,9 @@ func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) dec
 		return a.factory.AgentDecisionRepository(db).Insert(ctx, decision)
 	})
 	if insertErr != nil {
+		if errors.Is(insertErr, interfaces.ErrAgentDecisionConflict) {
+			return decisionContext{conflicted: true}
+		}
 		a.o11y.Logger().Warn(ctx, "agent.decision_audit.insert_failed",
 			observability.String("message_id", in.MessageID),
 			observability.Error(insertErr),

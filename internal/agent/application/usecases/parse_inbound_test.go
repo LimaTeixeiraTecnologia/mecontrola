@@ -250,6 +250,38 @@ func (s *ParseInboundSuite) TestExecuteDomainInvariantViolationFallback() {
 	s.Equal(intent.KindUnknown, out.Intent.Kind())
 }
 
+func (s *ParseInboundSuite) TestExecuteRecoversInstallmentsFromText() {
+	uc := s.newSUT(`{"kind":"log_card_purchase","amount_cents":120000,"card_hint":"nubank"}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "comprei 1200 em 6x no nubank"})
+	s.Require().NoError(err)
+	s.Equal(intent.KindLogCardPurchase, out.Intent.Kind())
+	s.Equal(6, out.Intent.Installments())
+}
+
+func (s *ParseInboundSuite) TestExecuteRecoversInstallmentsVariants() {
+	cases := map[string]int{
+		"parcelei 600 em 6 vezes no nubank": 6,
+		"passei 900 no cartão em 3x":        3,
+		"comprei em 12 parcelas":            12,
+	}
+	for text, want := range cases {
+		s.Run(text, func() {
+			uc := s.newSUT(`{"kind":"log_card_purchase","amount_cents":90000,"card_hint":"nubank"}`, nil)
+			out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: text})
+			s.Require().NoError(err)
+			s.Equal(intent.KindLogCardPurchase, out.Intent.Kind())
+			s.Equal(want, out.Intent.Installments())
+		})
+	}
+}
+
+func (s *ParseInboundSuite) TestExecuteCardPurchaseWithoutInstallmentCueFallsBack() {
+	uc := s.newSUT(`{"kind":"log_card_purchase","amount_cents":120000,"card_hint":"nubank"}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "comprei algo caro no cartão"})
+	s.Require().NoError(err)
+	s.Equal(intent.KindUnknown, out.Intent.Kind())
+}
+
 func (s *ParseInboundSuite) TestExecuteProviderErrorFallback() {
 	uc := s.newSUT(``, errors.New("upstream timeout"))
 	out, err := uc.Execute(s.ctx, ParseInboundInput{

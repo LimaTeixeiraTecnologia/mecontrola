@@ -72,6 +72,19 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 	}
 }
 
+func (k Kind) IsWrite() bool {
+	switch k {
+	case KindLogExpense,
+		KindLogIncome,
+		KindLogCardPurchase,
+		KindCreateCard,
+		KindConfigureBudget:
+		return true
+	default:
+		return false
+	}
+}
+
 func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo por intent kind
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "log_expense":

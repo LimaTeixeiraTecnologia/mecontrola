@@ -167,20 +167,21 @@ type WhatsAppConfig struct {
 }
 
 type AgentConfig struct {
-	OpenRouterBaseURL string        `mapstructure:"OPENROUTER_BASE_URL"`
-	OpenRouterAPIKey  string        `mapstructure:"OPENROUTER_API_KEY"`
-	HTTPReferer       string        `mapstructure:"AGENT_LLM_HTTP_REFERER"`
-	XTitle            string        `mapstructure:"AGENT_LLM_X_TITLE"`
-	PrimaryModel      string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
-	FallbackModels    string        `mapstructure:"AGENT_LLM_FALLBACK_MODELS"`
-	MaxTokens         int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
-	MaxInputChars     int           `mapstructure:"AGENT_LLM_MAX_INPUT_CHARS"`
-	ProseMaxTokens    int           `mapstructure:"AGENT_LLM_PROSE_MAX_TOKENS"`
-	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
-	RequestTimeout    time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
-	CircuitFailures   int           `mapstructure:"AGENT_LLM_CIRCUIT_FAILURES"`
-	CircuitWindow     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_WINDOW"`
-	CircuitCooldown   time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
+	OpenRouterBaseURL   string        `mapstructure:"OPENROUTER_BASE_URL"`
+	OpenRouterAPIKey    string        `mapstructure:"OPENROUTER_API_KEY"`
+	HTTPReferer         string        `mapstructure:"AGENT_LLM_HTTP_REFERER"`
+	XTitle              string        `mapstructure:"AGENT_LLM_X_TITLE"`
+	PrimaryModel        string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
+	FallbackModels      string        `mapstructure:"AGENT_LLM_FALLBACK_MODELS"`
+	MaxTokens           int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	MaxInputChars       int           `mapstructure:"AGENT_LLM_MAX_INPUT_CHARS"`
+	ProseMaxTokens      int           `mapstructure:"AGENT_LLM_PROSE_MAX_TOKENS"`
+	Temperature         float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
+	RequestTimeout      time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
+	CircuitFailures     int           `mapstructure:"AGENT_LLM_CIRCUIT_FAILURES"`
+	CircuitWindow       time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_WINDOW"`
+	CircuitCooldown     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
+	PolicyMinConfidence float64       `mapstructure:"AGENT_POLICY_MIN_CONFIDENCE"`
 
 	OnboardingLLMEnabled bool   `mapstructure:"AGENT_ONBOARDING_LLM_ENABLED"`
 	OnboardingMaxTokens  int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
@@ -1192,7 +1193,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_HTTP_REFERER", "https://mecontrola.app")
 	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
 	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
-	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "anthropic/claude-haiku-4.5")
+	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "mistralai/mistral-small-3.2-24b-instruct")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
 	l.v.SetDefault("AGENT_LLM_MAX_INPUT_CHARS", 2000)
 	l.v.SetDefault("AGENT_LLM_PROSE_MAX_TOKENS", 200)
@@ -1201,6 +1202,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_FAILURES", 5)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_WINDOW", 30*time.Second)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_COOLDOWN", 60*time.Second)
+	l.v.SetDefault("AGENT_POLICY_MIN_CONFIDENCE", 0.8)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_ENABLED", true)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")

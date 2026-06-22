@@ -178,8 +178,9 @@ func ParseIntentJSONSchema() map[string]any {
 			"closing_day":    map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
 			"due_day":        map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
 			"limit_cents":    map[string]any{"type": "integer", "minimum": 0},
+			"confidence":     map[string]any{"type": "number", "minimum": 0, "maximum": 1},
 		},
-		"required":             []string{"kind"},
+		"required":             []string{"kind", "confidence"},
 		"additionalProperties": false,
 	}
 }

@@ -95,3 +95,60 @@ groups:
         annotations:
           summary: "Último backup bem-sucedido há mais de 25 horas"
           description: "Último sucesso: {{ $value | humanizeDuration }} atrás. Verifique cron de backup e logs do pgBackRest."
+
+  - name: mecontrola.agent
+    interval: 1m
+    rules:
+      - alert: AgentParseUnknownRateHigh
+        expr: |
+          sum(rate(agent_intent_parsed_total{outcome=~"provider_error|fallback_invalid_json|fallback_missing_kind|fallback_domain_invariant"}[10m]))
+          /
+          (sum(rate(agent_intent_parsed_total[10m])) + 0.0001) > 0.30
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Parser de intent caindo em unknown/fallback acima de 30%"
+          description: "O parser está falhando em classificar. Causa provável: modelo (primário ou fallback) parou de honrar response_format json_schema. Ver runbook docs/runbooks/agent-parser-policy.md."
+
+      - alert: AgentLLMFallbackExhausted
+        expr: sum(increase(agent_llm_fallback_exhausted_total[10m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cadeia de fallback de LLM esgotada (todos os providers falharam)"
+          description: "Nenhum provider respondeu. Verifique OPENROUTER_API_KEY, créditos, circuit breaker aberto e status do OpenRouter."
+
+      - alert: AgentLLMProviderErrorRateHigh
+        expr: |
+          sum(rate(agent_llm_provider_errors_total[10m]))
+          /
+          (sum(rate(agent_llm_provider_call_total[10m])) + 0.0001) > 0.20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taxa de erro dos providers LLM > 20%"
+          description: "Erros por reason em agent_llm_provider_errors_total. Verifique rate limit, timeout e disponibilidade do OpenRouter."
+
+      - alert: AgentPolicyBlockRateHigh
+        expr: |
+          sum(rate(agent_policy_blocks_total[15m]))
+          /
+          (sum(rate(agent_intent_routed_total{outcome="routed"}[15m])) + sum(rate(agent_policy_blocks_total[15m])) + 0.0001) > 0.25
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Política de confiança bloqueando > 25% das escritas"
+          description: "Pode indicar degradação do modelo (confidence baixa) ou threshold AGENT_POLICY_MIN_CONFIDENCE mal calibrado. Ver agent_intent_confidence_histogram."
+
+      - alert: AgentIdempotencyReplaySpike
+        expr: sum(rate(agent_idempotency_replay_total[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replays idempotentes acima do esperado"
+          description: "Reentrega de webhook ou tentativa de duplicação elevada. Confirme se o guard está evitando dupla execução; investigue origem das mensagens repetidas."

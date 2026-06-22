@@ -12,63 +12,86 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 )
 
+const defaultPolicyMinConfidence = 0.8
+
 type DailyLedgerAgent struct {
-	parser            IntentParser
-	monthlySummary    MonthlySummaryReader
-	cardLister        CardLister
-	cardInvoice       CardInvoiceReader
-	cardCreator       CardCreator
-	cardCounter       CardCounter
-	expenseLogger     ExpenseLogger
-	cardPurchaseLog   CardPurchaseLogger
-	transactionLister TransactionLister
-	lastDeleter       LastTransactionDeleter
-	lastEditor        LastTransactionEditor
-	recurringCreator  RecurringCreator
-	recurringLister   RecurringLister
-	budgetConfig      BudgetConfigurator
-	budgetConvo       BudgetConversation
-	budgetCommitter   BudgetConfigCommitter
-	budgetSession     BudgetSessionGateway
-	fallback          Fallback
-	auditor           *decisionAuditor
-	o11y              observability.Observability
-	routedTotal       observability.Counter
-	authzDeniedTotal  observability.Counter
-	loc               *time.Location
+	parser                 IntentParser
+	monthlySummary         MonthlySummaryReader
+	cardLister             CardLister
+	cardInvoice            CardInvoiceReader
+	cardCreator            CardCreator
+	cardCounter            CardCounter
+	expenseLogger          ExpenseLogger
+	cardPurchaseLog        CardPurchaseLogger
+	transactionLister      TransactionLister
+	lastDeleter            LastTransactionDeleter
+	lastEditor             LastTransactionEditor
+	recurringCreator       RecurringCreator
+	recurringLister        RecurringLister
+	budgetConfig           BudgetConfigurator
+	budgetConvo            BudgetConversation
+	budgetCommitter        BudgetConfigCommitter
+	budgetSession          BudgetSessionGateway
+	fallback               Fallback
+	auditor                *decisionAuditor
+	policy                 domainservices.PolicyEvaluator
+	o11y                   observability.Observability
+	routedTotal            observability.Counter
+	authzDeniedTotal       observability.Counter
+	policyBlockedTotal     observability.Counter
+	idempotencyReplayTotal observability.Counter
+	loc                    *time.Location
 }
 
-func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) *DailyLedgerAgent {
+func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) *DailyLedgerAgent {
 	return &DailyLedgerAgent{
-		parser:            deps.Parser,
-		monthlySummary:    deps.MonthlySummary,
-		cardLister:        deps.CardLister,
-		cardInvoice:       deps.CardInvoice,
-		cardCreator:       deps.CardCreator,
-		cardCounter:       deps.CardCounter,
-		expenseLogger:     deps.ExpenseLogger,
-		cardPurchaseLog:   deps.CardPurchaseLog,
-		transactionLister: deps.TransactionLister,
-		lastDeleter:       deps.LastDeleter,
-		lastEditor:        deps.LastEditor,
-		recurringCreator:  deps.RecurringCreator,
-		recurringLister:   deps.RecurringLister,
-		budgetConfig:      deps.BudgetConfig,
-		budgetConvo:       deps.BudgetConvo,
-		budgetCommitter:   deps.BudgetCommitter,
-		budgetSession:     deps.BudgetSession,
-		fallback:          deps.Fallback,
-		auditor:           newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
-		o11y:              o11y,
-		routedTotal:       routedTotal,
-		authzDeniedTotal:  authzDeniedTotal,
-		loc:               loc,
+		parser:                 deps.Parser,
+		monthlySummary:         deps.MonthlySummary,
+		cardLister:             deps.CardLister,
+		cardInvoice:            deps.CardInvoice,
+		cardCreator:            deps.CardCreator,
+		cardCounter:            deps.CardCounter,
+		expenseLogger:          deps.ExpenseLogger,
+		cardPurchaseLog:        deps.CardPurchaseLog,
+		transactionLister:      deps.TransactionLister,
+		lastDeleter:            deps.LastDeleter,
+		lastEditor:             deps.LastEditor,
+		recurringCreator:       deps.RecurringCreator,
+		recurringLister:        deps.RecurringLister,
+		budgetConfig:           deps.BudgetConfig,
+		budgetConvo:            deps.BudgetConvo,
+		budgetCommitter:        deps.BudgetCommitter,
+		budgetSession:          deps.BudgetSession,
+		fallback:               deps.Fallback,
+		auditor:                newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
+		policy:                 domainservices.NewPolicyEvaluator(resolvePolicyThreshold(deps.PolicyMinConfidence)),
+		o11y:                   o11y,
+		routedTotal:            routedTotal,
+		authzDeniedTotal:       authzDeniedTotal,
+		policyBlockedTotal:     policyBlockedTotal,
+		idempotencyReplayTotal: idempotencyReplayTotal,
+		loc:                    loc,
 	}
+}
+
+func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
+	value := raw
+	if value <= 0 || value > 1 {
+		value = defaultPolicyMinConfidence
+	}
+	confidence, err := valueobjects.NewConfidence(value)
+	if err != nil {
+		fallback, _ := valueobjects.NewConfidence(defaultPolicyMinConfidence)
+		return fallback
+	}
+	return confidence
 }
 
 func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
@@ -163,7 +186,30 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 		return RouteResult{Reply: authzDeniedText, Outcome: OutcomeAuthzDenied, Kind: kind}
 	}
 
+	if replay, replayed := a.replayDecision(ctx, principal.UserID, channel, messageID, kind); replayed {
+		return replay
+	}
+
+	if a.policy.Evaluate(kind, parsed.Confidence) == domainservices.PolicyDecisionClarify {
+		a.policyBlockedTotal.Add(ctx, 1, observability.String("kind", kind.String()))
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.policy_blocked",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+		)
+		a.record(ctx, kind.String(), channel, OutcomePolicyBlocked)
+		return RouteResult{Reply: policyLowConfidenceText, Outcome: OutcomePolicyBlocked, Kind: kind}
+	}
+
 	auditCtx := a.beginDecisionAudit(ctx, principal, channel, messageID, kind, parsed)
+	if auditCtx.conflicted {
+		a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind.String()))
+		a.o11y.Logger().Info(ctx, "agent.intent_router.idempotent_conflict_replay",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+		)
+		a.record(ctx, kind.String(), channel, OutcomeReplay)
+		return RouteResult{Reply: alreadyProcessedText, Outcome: OutcomeReplay, Kind: kind}
+	}
 
 	var result RouteResult
 	switch kind {
@@ -196,6 +242,27 @@ func (a *DailyLedgerAgent) authorizeWrite(ctx context.Context, principal Princip
 	a.authzDeniedTotal.Add(ctx, 1, observability.String("kind", kind.String()))
 	a.record(ctx, kind.String(), channel, OutcomeAuthzDenied)
 	return false
+}
+
+func (a *DailyLedgerAgent) replayDecision(ctx context.Context, userID uuid.UUID, channel, messageID string, kind intent.Kind) (RouteResult, bool) {
+	if a.auditor == nil || strings.TrimSpace(messageID) == "" {
+		return RouteResult{}, false
+	}
+	priorReply, found := a.auditor.lookup(ctx, userID, channel, messageID)
+	if !found {
+		return RouteResult{}, false
+	}
+	a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind.String()))
+	a.o11y.Logger().Info(ctx, "agent.intent_router.idempotent_replay",
+		observability.String("kind", kind.String()),
+		observability.String("channel", channel),
+	)
+	a.record(ctx, kind.String(), channel, OutcomeReplay)
+	reply := strings.TrimSpace(priorReply)
+	if reply == "" {
+		reply = alreadyProcessedText
+	}
+	return RouteResult{Reply: reply, Outcome: OutcomeReplay, Kind: kind}, true
 }
 
 func (a *DailyLedgerAgent) beginDecisionAudit(ctx context.Context, principal Principal, channel, messageID string, kind intent.Kind, parsed ParsedIntent) decisionContext {

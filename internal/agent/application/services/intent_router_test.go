@@ -15,6 +15,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -23,11 +24,20 @@ import (
 type fakeParser struct {
 	intent      intent.Intent
 	directReply string
+	confidence  float64
 	err         error
 }
 
 func (f *fakeParser) Parse(_ context.Context, _ uuid.UUID, _ string) (services.ParsedIntent, error) {
-	return services.ParsedIntent{Intent: f.intent, DirectReply: f.directReply}, f.err
+	raw := f.confidence
+	if raw <= 0 {
+		raw = 1
+	}
+	confidence, confErr := valueobjects.NewConfidence(raw)
+	if confErr != nil {
+		return services.ParsedIntent{}, confErr
+	}
+	return services.ParsedIntent{Intent: f.intent, Confidence: confidence, DirectReply: f.directReply}, f.err
 }
 
 type fakeMonthlySummary struct {

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -16,6 +18,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/prompting"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 )
 
 type IntentInterpreter interface {
@@ -29,6 +32,7 @@ type ParseInboundInput struct {
 
 type ParseInboundOutput struct {
 	Intent       intent.Intent
+	Confidence   valueobjects.Confidence
 	Raw          []byte
 	DirectReply  string
 	LLMModel     string
@@ -36,12 +40,13 @@ type ParseInboundOutput struct {
 }
 
 type ParseInbound struct {
-	interpreter       IntentInterpreter
-	sanitizer         *sanitize.Sanitizer
-	o11y              observability.Observability
-	parsedTotal       observability.Counter
-	decodeFailedTotal observability.Counter
-	schema            *interfaces.JSONSchemaSpec
+	interpreter         IntentInterpreter
+	sanitizer           *sanitize.Sanitizer
+	o11y                observability.Observability
+	parsedTotal         observability.Counter
+	decodeFailedTotal   observability.Counter
+	confidenceHistogram observability.Histogram
+	schema              *interfaces.JSONSchemaSpec
 }
 
 func NewParseInbound(interpreter IntentInterpreter, maxInputChars int, o11y observability.Observability) (*ParseInbound, error) {
@@ -65,15 +70,22 @@ func NewParseInbound(interpreter IntentInterpreter, maxInputChars int, o11y obse
 		"Total de falhas de decode do JSON de intent retornado pelo provider LLM por motivo",
 		"1",
 	)
+	confidenceHistogram := o11y.Metrics().HistogramWithBuckets(
+		"agent_intent_confidence_histogram",
+		"Distribuição da confiança reportada pelo parser de intent por kind",
+		"1",
+		[]float64{0.1, 0.25, 0.5, 0.65, 0.8, 0.9, 0.95, 1},
+	)
 	return &ParseInbound{
-		interpreter:       interpreter,
-		sanitizer:         sanitizer,
-		o11y:              o11y,
-		parsedTotal:       parsedTotal,
-		decodeFailedTotal: decodeFailedTotal,
+		interpreter:         interpreter,
+		sanitizer:           sanitizer,
+		o11y:                o11y,
+		parsedTotal:         parsedTotal,
+		decodeFailedTotal:   decodeFailedTotal,
+		confidenceHistogram: confidenceHistogram,
 		schema: &interfaces.JSONSchemaSpec{
 			Name:   "mecontrola_parse_intent",
-			Strict: true,
+			Strict: false,
 			Schema: prompting.ParseIntentJSONSchema(),
 		},
 	}, nil
@@ -133,10 +145,11 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 
 func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed, promptDigest string) (ParseInboundOutput, error) {
 	llmModel := resp.Provider.String()
-	parsed, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
+	parsed, confidence, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
 	if parseErr == nil {
 		uc.recordOutcome(ctx, parsed.Kind(), outcomeOK)
-		return ParseInboundOutput{Intent: parsed, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
+		uc.confidenceHistogram.Record(ctx, confidence.Value(), observability.String("kind", parsed.Kind().String()))
+		return ParseInboundOutput{Intent: parsed, Confidence: confidence, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
 	}
 
 	directReply := strings.TrimSpace(string(resp.RawJSON))
@@ -166,6 +179,8 @@ func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResp
 }
 
 const decodeFailureLogRunes = 200
+
+const defaultConfidence = 1.0
 
 func looksLikeJSON(text string) bool {
 	trimmed := strings.TrimSpace(stripFencesString(text))
@@ -213,52 +228,66 @@ func (e *parseInboundError) Error() string { return e.Err.Error() }
 func (e *parseInboundError) Unwrap() error { return e.Err }
 
 type rawIntentDTO struct {
-	Kind          string `json:"kind"`
-	AmountCents   int64  `json:"amount_cents"`
-	Merchant      string `json:"merchant"`
-	CategoryHint  string `json:"category_hint"`
-	PaymentMethod string `json:"payment_method"`
-	CardHint      string `json:"card_hint"`
-	CategoryName  string `json:"category_name"`
-	GoalName      string `json:"goal_name"`
-	CardName      string `json:"card_name"`
-	CardNickname  string `json:"nickname"`
-	RefMonth      string `json:"ref_month"`
-	RawText       string `json:"raw_text"`
-	Installments  int    `json:"installments"`
-	Direction     string `json:"direction"`
-	Frequency     string `json:"frequency"`
-	DayOfMonth    int    `json:"day_of_month"`
-	ClosingDay    int    `json:"closing_day"`
-	DueDay        int    `json:"due_day"`
-	LimitCents    int64  `json:"limit_cents"`
+	Kind          string   `json:"kind"`
+	AmountCents   int64    `json:"amount_cents"`
+	Merchant      string   `json:"merchant"`
+	CategoryHint  string   `json:"category_hint"`
+	PaymentMethod string   `json:"payment_method"`
+	CardHint      string   `json:"card_hint"`
+	CategoryName  string   `json:"category_name"`
+	GoalName      string   `json:"goal_name"`
+	CardName      string   `json:"card_name"`
+	CardNickname  string   `json:"nickname"`
+	RefMonth      string   `json:"ref_month"`
+	RawText       string   `json:"raw_text"`
+	Installments  int      `json:"installments"`
+	Direction     string   `json:"direction"`
+	Frequency     string   `json:"frequency"`
+	DayOfMonth    int      `json:"day_of_month"`
+	ClosingDay    int      `json:"closing_day"`
+	DueDay        int      `json:"due_day"`
+	LimitCents    int64    `json:"limit_cents"`
+	Confidence    *float64 `json:"confidence"`
 }
 
-func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, *parseInboundError) {
+func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, valueobjects.Confidence, *parseInboundError) {
 	cleaned := stripFences(raw)
 	if len(cleaned) == 0 {
-		return intent.Intent{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: empty payload")}
+		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: empty payload")}
 	}
 
 	var dto rawIntentDTO
 	if err := json.Unmarshal(cleaned, &dto); err != nil {
-		return intent.Intent{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: unmarshal: %w", err)}
+		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: unmarshal: %w", err)}
 	}
 
 	if strings.TrimSpace(dto.Kind) == "" {
-		return intent.Intent{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: fmt.Errorf("agent.usecase.parse_inbound: missing kind")}
+		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: fmt.Errorf("agent.usecase.parse_inbound: missing kind")}
 	}
 
 	kind, err := intent.ParseKind(dto.Kind)
 	if err != nil {
-		return intent.Intent{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: err}
+		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: err}
 	}
 
 	built, err := build(kind, dto, fallbackText)
 	if err != nil {
-		return intent.Intent{}, &parseInboundError{Outcome: outcomeFallbackDomain, Err: err}
+		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackDomain, Err: err}
 	}
-	return built, nil
+	return built, resolveConfidence(dto.Confidence), nil
+}
+
+func resolveConfidence(raw *float64) valueobjects.Confidence {
+	value := defaultConfidence
+	if raw != nil {
+		value = min(max(*raw, 0), 1)
+	}
+	confidence, err := valueobjects.NewConfidence(value)
+	if err != nil {
+		neutral, _ := valueobjects.NewConfidence(defaultConfidence)
+		return neutral
+	}
+	return confidence
 }
 
 func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Intent, error) { //nolint:revive // dispatch exaustivo por intent kind
@@ -296,7 +325,7 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 			Merchant:     dto.Merchant,
 			CategoryHint: dto.CategoryHint,
 			CardHint:     dto.CardHint,
-			Installments: dto.Installments,
+			Installments: resolveInstallments(dto.Installments, fallbackText),
 		})
 	case intent.KindListTransactions:
 		return intent.NewListTransactions(dto.RefMonth)
@@ -346,6 +375,27 @@ var recurringIncomeCues = []string{
 	"salário", "salario", "recebo", "recebimento", "pró-labore", "pro-labore",
 	"prolabore", "rendimento", "provento", "pensão", "pensao", "aposentadoria",
 	"aluguel recebido", "freela", "freelance",
+}
+
+const minCardInstallments = 2
+
+func resolveInstallments(raw int, text string) int {
+	if raw >= minCardInstallments {
+		return raw
+	}
+	re, err := regexp.Compile(`(?i)(\d{1,2})\s*(?:x\b|vez(?:es)?|parcelas?)`)
+	if err != nil {
+		return raw
+	}
+	match := re.FindStringSubmatch(text)
+	if len(match) < 2 {
+		return raw
+	}
+	parsed, convErr := strconv.Atoi(match[1])
+	if convErr != nil {
+		return raw
+	}
+	return parsed
 }
 
 func inferRecurringDirection(direction, merchant, fallbackText string) string {

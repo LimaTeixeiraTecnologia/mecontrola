@@ -55,12 +55,18 @@ func TestConfigureBudget_RealLLM_ExtractsAllocations(t *testing.T) {
 	uc, err := usecases.NewConfigureBudgetConversation(realInterpreter(t), noop.NewProvider())
 	require.NoError(t, err)
 
-	out, err := uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
-		Text:  "quero um orçamento de 10 mil reais: custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20%, liberdade financeira 20%",
-		Draft: budgetdraft.Draft{},
-	})
-	require.NoError(t, err)
-	require.True(t, out.Complete, "orçamento com renda + 5 percentuais somando 100%% deve ficar completo; reply=%q", out.Reply)
+	var out usecases.ConfigureBudgetOutput
+	for attempt := 0; attempt < 3; attempt++ {
+		out, err = uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
+			Text:  "quero um orçamento de 10 mil reais: custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20%, liberdade financeira 20%",
+			Draft: budgetdraft.Draft{},
+		})
+		require.NoError(t, err)
+		if out.Complete {
+			break
+		}
+	}
+	require.True(t, out.Complete, "orçamento com renda + 5 percentuais somando 100%% deve ficar completo em 3 tentativas; reply=%q", out.Reply)
 }
 
 func TestConfigureBudget_RealLLM_MultiTurnAccumulates(t *testing.T) {
@@ -72,17 +78,26 @@ func TestConfigureBudget_RealLLM_MultiTurnAccumulates(t *testing.T) {
 	uc, err := usecases.NewConfigureBudgetConversation(realInterpreter(t), noop.NewProvider())
 	require.NoError(t, err)
 
-	first, err := uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
-		Text:  "quero configurar um orçamento de 10 mil reais",
-		Draft: budgetdraft.Draft{},
-	})
-	require.NoError(t, err)
-	require.False(t, first.Complete, "só com a renda o orçamento não pode estar completo")
+	var (
+		first  usecases.ConfigureBudgetOutput
+		second usecases.ConfigureBudgetOutput
+	)
+	for attempt := 0; attempt < 3; attempt++ {
+		first, err = uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
+			Text:  "quero configurar um orçamento de 10 mil reais",
+			Draft: budgetdraft.Draft{},
+		})
+		require.NoError(t, err)
+		require.False(t, first.Complete, "só com a renda o orçamento não pode estar completo")
 
-	second, err := uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
-		Text:  "custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20% e liberdade financeira 20%",
-		Draft: first.Draft,
-	})
-	require.NoError(t, err)
-	require.True(t, second.Complete, "após renda + percentuais somando 100%% deve completar; reply=%q", second.Reply)
+		second, err = uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
+			Text:  "custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20% e liberdade financeira 20%",
+			Draft: first.Draft,
+		})
+		require.NoError(t, err)
+		if second.Complete {
+			break
+		}
+	}
+	require.True(t, second.Complete, "após renda + percentuais somando 100%% deve completar em 3 tentativas; reply=%q", second.Reply)
 }

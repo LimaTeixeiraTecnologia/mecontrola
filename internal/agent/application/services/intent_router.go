@@ -15,6 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -36,6 +37,8 @@ const (
 	OutcomeEmptyText       = "empty_text"
 	OutcomeAuthzDenied     = "authz_denied"
 	OutcomeClarify         = "clarify"
+	OutcomePolicyBlocked   = "policy_blocked"
+	OutcomeReplay          = "replay"
 )
 
 const (
@@ -44,6 +47,10 @@ const (
 )
 
 const authzDeniedText = "Não consegui concluir essa ação agora. Tente de novo em instantes 🙏"
+
+const policyLowConfidenceText = "Não tenho certeza se entendi direito pra registrar isso. Pode reescrever com mais detalhes (valor, descrição e categoria)? 🙂"
+
+const alreadyProcessedText = "Essa mensagem já foi processada ✅"
 
 var (
 	ErrIntentParserNil    = errors.New("agent.intent_router: intent parser is nil")
@@ -126,6 +133,7 @@ func matchesBudgetCancel(text string) bool {
 
 type ParsedIntent struct {
 	Intent       intent.Intent
+	Confidence   valueobjects.Confidence
 	Raw          []byte
 	DirectReply  string
 	LLMModel     string
@@ -359,32 +367,33 @@ type IntentRouter struct {
 }
 
 type IntentRouterDeps struct {
-	Parser            IntentParser
-	MonthlySummary    MonthlySummaryReader
-	CardLister        CardLister
-	CardInvoice       CardInvoiceReader
-	CardCreator       CardCreator
-	CardCounter       CardCounter
-	ExpenseLogger     ExpenseLogger
-	CardPurchaseLog   CardPurchaseLogger
-	TransactionLister TransactionLister
-	LastDeleter       LastTransactionDeleter
-	LastEditor        LastTransactionEditor
-	RecurringCreator  RecurringCreator
-	RecurringLister   RecurringLister
-	BudgetConfig      BudgetConfigurator
-	BudgetConvo       BudgetConversation
-	BudgetCommitter   BudgetConfigCommitter
-	BudgetSession     BudgetSessionGateway
-	Onboarding        OnboardingContinuation
-	OnboardingRunner  OnboardingTurnRunner
-	Fallback          Fallback
-	WhatsAppGateway   WhatsAppOutbound
-	TelegramGateway   TelegramOutbound
-	EventPublisher    interfaces.IntentEventPublisher
-	Decision          DecisionAuditDeps
-	Redactor          DecisionRedactor
-	Location          *time.Location
+	Parser              IntentParser
+	MonthlySummary      MonthlySummaryReader
+	CardLister          CardLister
+	CardInvoice         CardInvoiceReader
+	CardCreator         CardCreator
+	CardCounter         CardCounter
+	ExpenseLogger       ExpenseLogger
+	CardPurchaseLog     CardPurchaseLogger
+	TransactionLister   TransactionLister
+	LastDeleter         LastTransactionDeleter
+	LastEditor          LastTransactionEditor
+	RecurringCreator    RecurringCreator
+	RecurringLister     RecurringLister
+	BudgetConfig        BudgetConfigurator
+	BudgetConvo         BudgetConversation
+	BudgetCommitter     BudgetConfigCommitter
+	BudgetSession       BudgetSessionGateway
+	Onboarding          OnboardingContinuation
+	OnboardingRunner    OnboardingTurnRunner
+	Fallback            Fallback
+	WhatsAppGateway     WhatsAppOutbound
+	TelegramGateway     TelegramOutbound
+	EventPublisher      interfaces.IntentEventPublisher
+	Decision            DecisionAuditDeps
+	Redactor            DecisionRedactor
+	Location            *time.Location
+	PolicyMinConfidence float64
 }
 
 type DecisionRedactor interface {
@@ -418,7 +427,17 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		"Total de dispatches de escrita negados pela guarda de autorizacao por kind",
 		"1",
 	)
-	daily := newDailyLedgerAgent(o11y, routedTotal, authzDeniedTotal, loc, deps)
+	policyBlockedTotal := o11y.Metrics().Counter(
+		"agent_policy_blocks_total",
+		"Total de dispatches de escrita bloqueados pela politica de confianca por kind",
+		"1",
+	)
+	idempotencyReplayTotal := o11y.Metrics().Counter(
+		"agent_idempotency_replay_total",
+		"Total de dispatches de escrita servidos por replay idempotente por kind",
+		"1",
+	)
+	daily := newDailyLedgerAgent(o11y, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal, loc, deps)
 	warnMissingToolBindings(o11y, deps)
 	return &IntentRouter{
 		onboarding:      newOnboardingAgent(o11y, routedTotal, deps),
@@ -555,16 +574,7 @@ func (r *IntentRouter) authorizeWrite(ctx context.Context, principal Principal, 
 }
 
 func isWriteKind(kind intent.Kind) bool {
-	switch kind {
-	case intent.KindLogExpense,
-		intent.KindLogIncome,
-		intent.KindLogCardPurchase,
-		intent.KindCreateCard,
-		intent.KindConfigureBudget:
-		return true
-	default:
-		return false
-	}
+	return kind.IsWrite()
 }
 
 func withReadRetry[T any](ctx context.Context, op func(context.Context) (T, error)) (T, error) {

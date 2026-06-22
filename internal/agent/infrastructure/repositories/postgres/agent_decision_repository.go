@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -65,6 +67,28 @@ func (r *agentDecisionRepository) Insert(ctx context.Context, decision entities.
 		return fmt.Errorf("%s insert: %w", prefixAgentDecisionRepository, err)
 	}
 	return nil
+}
+
+func (r *agentDecisionRepository) FindByMessage(ctx context.Context, userID uuid.UUID, channel, messageID string) (interfaces.AgentDecisionSnapshot, bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "agent.decision.repository.pg.find_by_message")
+	defer span.End()
+
+	const query = `
+		SELECT status, redacted_response
+		  FROM mecontrola.agent_decisions
+		 WHERE user_id = $1 AND channel = $2 AND message_id = $3
+	`
+
+	var snapshot interfaces.AgentDecisionSnapshot
+	err := r.db.QueryRowContext(ctx, query, userID, channel, messageID).Scan(&snapshot.Status, &snapshot.RedactedResponse)
+	if errors.Is(err, sql.ErrNoRows) {
+		return interfaces.AgentDecisionSnapshot{}, false, nil
+	}
+	if err != nil {
+		span.RecordError(err)
+		return interfaces.AgentDecisionSnapshot{}, false, fmt.Errorf("%s find_by_message: %w", prefixAgentDecisionRepository, err)
+	}
+	return snapshot, true, nil
 }
 
 func (r *agentDecisionRepository) UpdateSettlement(ctx context.Context, decision entities.AgentDecision) error {

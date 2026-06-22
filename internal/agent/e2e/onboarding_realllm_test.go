@@ -29,7 +29,7 @@ func onboardingInterpreter(t *testing.T) usecases.IntentInterpreter {
 	}
 	model := os.Getenv("OPENROUTER_TEST_MODEL")
 	if model == "" {
-		model = "google/gemini-2.5-flash-lite"
+		model = "anthropic/claude-haiku-4.5"
 	}
 	slug, err := valueobjects.NewModelSlug(model)
 	require.NoError(t, err)

@@ -93,6 +93,7 @@ REGRAS DE EXTRAÇÃO:
 - nickname (create_card): apelido curto do cartão ("nubank", "itaú"). limit_cents: converta para centavos.
 - "quantos cartões" é "count_cards" (contagem); "quais/lista meus cartões" é "list_cards" (listagem).
 - NUNCA inclua os campos user_id, tenant_id, principal_id ou customer_id no JSON.
+- confidence: devolva SEMPRE um número entre 0 e 1 indicando o quão certo você está da classificação e dos valores extraídos. Use valores altos (>= 0.8) quando a mensagem for clara e inequívoca; use valores baixos (< 0.8) quando houver ambiguidade, dados faltando ou dúvida sobre o valor/categoria.
 
 EXEMPLOS (entrada -> saída JSON). Use-os para classificar corretamente, especialmente cartão e meta — perguntas sobre fatura/limite/cartão e sobre meta/objetivo NUNCA são "unknown":
 
@@ -135,7 +136,8 @@ FORMATO DA RESPOSTA — OBRIGATÓRIO JSON ESTRITO:
   "installments": <inteiro ou 0>,
   "direction": "<string>",
   "frequency": "<string>",
-  "day_of_month": <inteiro ou 0>
+  "day_of_month": <inteiro ou 0>,
+  "confidence": <número entre 0 e 1>
 }
 
 Campos não usados pela intent devem vir como string vazia "" ou 0. Devolva APENAS o JSON, sem markdown, sem comentários, sem prosa.

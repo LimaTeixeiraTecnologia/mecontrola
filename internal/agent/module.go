@@ -220,9 +220,10 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	}
 
 	deps := appservices.IntentRouterDeps{
-		Parser:          &intentParserAdapter{uc: llmModule.ParseInbound},
-		Fallback:        &fallbackAdapter{runtime: llmModule},
-		WhatsAppGateway: b.whatsAppGateway,
+		Parser:              &intentParserAdapter{uc: llmModule.ParseInbound},
+		Fallback:            &fallbackAdapter{runtime: llmModule},
+		WhatsAppGateway:     b.whatsAppGateway,
+		PolicyMinConfidence: b.cfg.AgentConfig.PolicyMinConfidence,
 	}
 	if b.outboxPublisher != nil {
 		deps.EventPublisher = agentevents.NewIntentEventPublisher(b.outboxPublisher, b.o11y)
@@ -507,6 +508,7 @@ func (a *intentParserAdapter) Parse(ctx context.Context, userID uuid.UUID, text 
 	}
 	return appservices.ParsedIntent{
 		Intent:       out.Intent,
+		Confidence:   out.Confidence,
 		Raw:          out.Raw,
 		DirectReply:  out.DirectReply,
 		LLMModel:     out.LLMModel,

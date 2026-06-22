@@ -67,10 +67,8 @@ packages:
       WhatsAppGateway: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/handlers:
     interfaces:
-      consumeMagicTokenUseCase: {}
       createCheckoutSessionUseCase: {}
       getTokenStateUseCase: {}
-      tryFallbackActivationUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/jobs/handlers:
     interfaces:
       expireTokensUseCase: {}
@@ -134,3 +132,13 @@ packages:
       CategoryRepository: {}
       DictionaryRepository: {}
       VersionReader: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases:
+    interfaces:
+      IntentInterpreter: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces:
+    interfaces:
+      AgentDecisionRepository: {}
+      AgentDecisionRepositoryFactory: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow:
+    interfaces:
+      UnitOfWork: {}

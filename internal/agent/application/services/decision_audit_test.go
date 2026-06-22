@@ -15,6 +15,10 @@ import (
 
 type stubDecisionRepo struct {
 	insertErr error
+	snapshot  interfaces.AgentDecisionSnapshot
+	found     bool
+	findErr   error
+	findCalls int
 }
 
 func (r *stubDecisionRepo) Insert(_ context.Context, _ entities.AgentDecision) error {
@@ -23,6 +27,11 @@ func (r *stubDecisionRepo) Insert(_ context.Context, _ entities.AgentDecision) e
 
 func (r *stubDecisionRepo) UpdateSettlement(_ context.Context, _ entities.AgentDecision) error {
 	return nil
+}
+
+func (r *stubDecisionRepo) FindByMessage(_ context.Context, _ uuid.UUID, _, _ string) (interfaces.AgentDecisionSnapshot, bool, error) {
+	r.findCalls++
+	return r.snapshot, r.found, r.findErr
 }
 
 type stubDecisionFactory struct {

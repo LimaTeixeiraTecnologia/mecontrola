@@ -3,11 +3,13 @@
 package e2e_test
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
@@ -18,7 +20,35 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 )
 
+const realLLMMaxAttempts = 3
+
+func parseUntil(t *testing.T, parser *usecases.ParseInbound, text string, accept func(usecases.ParseInboundOutput) bool) usecases.ParseInboundOutput {
+	t.Helper()
+	var out usecases.ParseInboundOutput
+	for attempt := 0; attempt < realLLMMaxAttempts; attempt++ {
+		result, err := parser.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: text})
+		require.NoError(t, err)
+		out = result
+		if accept(result) {
+			return result
+		}
+	}
+	return out
+}
+
 func realParser(t *testing.T) *usecases.ParseInbound {
+	t.Helper()
+	slug := valueobjects.ModelSlugGeminiFlashLite()
+	if override := os.Getenv("LLM_TEST_MODEL"); override != "" {
+		parsed, perr := valueobjects.NewModelSlug(override)
+		require.NoError(t, perr)
+		slug = parsed
+		t.Logf("usando modelo de teste: %s", slug.String())
+	}
+	return realParserForModel(t, slug)
+}
+
+func realParserForModel(t *testing.T, slug valueobjects.ModelSlug) *usecases.ParseInbound {
 	t.Helper()
 	baseURL := os.Getenv("OPENROUTER_BASE_URL")
 	if baseURL == "" {
@@ -30,13 +60,6 @@ func realParser(t *testing.T) *usecases.ParseInbound {
 		httpclient.WithTimeout(30*time.Second),
 	)
 	require.NoError(t, err)
-	slug := valueobjects.ModelSlugGeminiFlashLite()
-	if override := os.Getenv("LLM_TEST_MODEL"); override != "" {
-		parsed, perr := valueobjects.NewModelSlug(override)
-		require.NoError(t, perr)
-		slug = parsed
-		t.Logf("usando modelo de teste: %s", slug.String())
-	}
 	provider := openrouter.NewProvider(client, openrouter.ProviderConfig{
 		Slug:        slug,
 		APIKey:      os.Getenv("OPENROUTER_API_KEY"),

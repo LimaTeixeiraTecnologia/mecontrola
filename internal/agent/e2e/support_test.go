@@ -15,6 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	agentvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
@@ -101,7 +102,12 @@ func (a *parserAdapter) Parse(ctx context.Context, userID uuid.UUID, text string
 	if err != nil {
 		return services.ParsedIntent{}, err
 	}
-	return services.ParsedIntent{Intent: out.Intent, Raw: out.Raw}, nil
+	return services.ParsedIntent{Intent: out.Intent, Confidence: out.Confidence, Raw: out.Raw}, nil
+}
+
+func fullConfidence() agentvo.Confidence {
+	confidence, _ := agentvo.NewConfidence(1)
+	return confidence
 }
 
 type StubParser struct {
@@ -115,13 +121,13 @@ func NewStubParser(table map[string]intent.Intent, defaultFn func() intent.Inten
 
 func (s *StubParser) Parse(_ context.Context, _ uuid.UUID, text string) (services.ParsedIntent, error) {
 	if in, ok := s.table[text]; ok {
-		return services.ParsedIntent{Intent: in}, nil
+		return services.ParsedIntent{Intent: in, Confidence: fullConfidence()}, nil
 	}
 	if s.defaultFn != nil {
-		return services.ParsedIntent{Intent: s.defaultFn()}, nil
+		return services.ParsedIntent{Intent: s.defaultFn(), Confidence: fullConfidence()}, nil
 	}
 	unknown, _ := intent.NewUnknown(text)
-	return services.ParsedIntent{Intent: unknown}, nil
+	return services.ParsedIntent{Intent: unknown, Confidence: fullConfidence()}, nil
 }
 
 type StubFallback struct {

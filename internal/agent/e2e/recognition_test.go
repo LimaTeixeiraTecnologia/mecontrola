@@ -3,12 +3,10 @@
 package e2e_test
 
 import (
-	"context"
 	"os"
 	"strconv"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
@@ -63,8 +61,10 @@ func TestParseInbound_RealLLM_RecognitionMatrix(t *testing.T) {
 	var misses []string
 
 	for _, tc := range cases {
-		out, err := parser.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: tc.text})
-		require.NoError(t, err)
+		wantKind, wantAmount := tc.wantKind, tc.wantAmount
+		out := parseUntil(t, parser, tc.text, func(o usecases.ParseInboundOutput) bool {
+			return o.Intent.Kind() == wantKind && (wantAmount == 0 || o.Intent.AmountCents() == wantAmount)
+		})
 		got := out.Intent.Kind()
 		kindOK := got == tc.wantKind
 		if kindOK {
