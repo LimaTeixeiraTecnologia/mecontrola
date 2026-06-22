@@ -232,6 +232,7 @@ func Run() error {
 		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
 		agentonboarding.NewOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
 		agent.WithSessionStore(db),
+		agent.WithOutboxPublisher(identityModule.OutboxPublisher),
 		agent.WithOnboardingLLM(agent.OnboardingLLMUseCases{
 			GetContext:       onboardingModule.GetOnboardingContext,
 			SaveObjective:    onboardingModule.SaveOnboardingObjective,

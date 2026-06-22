@@ -29,6 +29,7 @@ import (
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
 	tgpayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/payload"
@@ -58,6 +59,12 @@ type AgentModuleOption func(*agentModuleBuilder)
 func WithSessionStore(db *sqlx.DB) AgentModuleOption {
 	return func(b *agentModuleBuilder) {
 		b.sessionDB = db
+	}
+}
+
+func WithOutboxPublisher(pub outbox.Publisher) AgentModuleOption {
+	return func(b *agentModuleBuilder) {
+		b.outboxPublisher = pub
 	}
 }
 
@@ -103,6 +110,7 @@ type agentModuleBuilder struct {
 	sessionUoW         uow.UnitOfWork
 	decisionRepoFact   interfaces.AgentDecisionRepositoryFactory
 	decisionUoW        uow.UnitOfWork
+	outboxPublisher    outbox.Publisher
 }
 
 func NewAgentModule(
@@ -216,8 +224,8 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 		Fallback:        &fallbackAdapter{runtime: llmModule},
 		WhatsAppGateway: b.whatsAppGateway,
 	}
-	if b.identityModule.OutboxPublisher != nil {
-		deps.EventPublisher = agentevents.NewIntentEventPublisher(b.identityModule.OutboxPublisher, b.o11y)
+	if b.outboxPublisher != nil {
+		deps.EventPublisher = agentevents.NewIntentEventPublisher(b.outboxPublisher, b.o11y)
 	}
 	b.fillIntentRouterDeps(&deps)
 	b.attachExpenseLogger(&deps)
