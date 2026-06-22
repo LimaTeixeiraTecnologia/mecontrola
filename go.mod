@@ -3,7 +3,7 @@ module github.com/LimaTeixeiraTecnologia/mecontrola
 go 1.26.4
 
 require (
-	github.com/JailtonJunior94/devkit-go v0.5.4
+	github.com/JailtonJunior94/devkit-go v0.5.5
 	github.com/XSAM/otelsql v0.42.0
 	github.com/cucumber/godog v0.15.0
 	github.com/getkin/kin-openapi v0.140.0

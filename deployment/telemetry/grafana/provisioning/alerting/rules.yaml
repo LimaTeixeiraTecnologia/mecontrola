@@ -194,7 +194,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'sum(rate(otelcol_exporter_send_failed_metric_points[5m]))'
+              expr: 'sum(rate(otelcol_exporter_send_failed_metric_points_total[5m]))'
           - refId: C
             datasourceUid: __expr__
             model:
