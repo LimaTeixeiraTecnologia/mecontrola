@@ -1,0 +1,508 @@
+{
+  "info": {
+    "_postman_id": "onboarding-sim-2users-v1",
+    "name": "mecontrola — onboarding simulation [Jailton + Stefany]",
+    "description": "Simula onboarding completo sem pagamento Kiwify real.\n\nFluxo por usuário:\n  1. POST /checkout → extrai token do sck\n  2. GET /tokens/:token/state → PENDING (ready=false)\n  3. POST /billing/webhooks/kiwify → simula order_approved (body+HMAC gerados em pre-request)\n  4. GET /tokens/:token/state → PAID (ready=true)\n  5. POST /whatsapp/inbound ATIVAR <token> → CONSUMED (HMAC+timestamp+WAMID únicos)\n\nPré-requisito: importar o environment onboarding-simulation.postman_environment.json e preencher os secrets.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "onboarding_token_u1", "value": "", "type": "string" },
+    { "key": "funnel_token_u1",     "value": "", "type": "string" },
+    { "key": "onboarding_token_u2", "value": "", "type": "string" },
+    { "key": "funnel_token_u2",     "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "00 — Health",
+      "item": [
+        {
+          "name": "GET /healthz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": ["{{base_url}}"],
+              "path": ["healthz"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 — Jailton (+5511986896322)",
+      "item": [
+        {
+          "name": "1.1 — POST /checkout — plano mensal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"plan_id\":\"monthly\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","onboarding","checkout"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Tem checkout_url\", () => pm.expect(pm.response.json()).to.have.property(\"checkout_url\"));",
+                  "const body = pm.response.json();",
+                  "if (body.checkout_url) {",
+                  "  let token = '';",
+                  "  try { token = new URL(body.checkout_url).searchParams.get('sck') || ''; } catch(e) {}",
+                  "  pm.test(\"checkout_url contem sck\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
+                  "  pm.collectionVariables.set(\"onboarding_token_u1\", token);",
+                  "  pm.collectionVariables.set(\"funnel_token_u1\", token);",
+                  "  console.log(\"[U1] token=\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 — GET /tokens/:token/state [PENDING → ready=false]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/state",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","onboarding","tokens","{{onboarding_token_u1}}","state"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"ready_to_activate=false (PENDING)\", () => pm.expect(body.ready_to_activate).to.equal(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 — POST /billing/webhooks/kiwify — order_approved [U1]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts  = String(Math.floor(Date.now() / 1000));",
+                  "const uid = Math.random().toString(36).substr(2, 8);",
+                  "const funnelToken = pm.collectionVariables.get('funnel_token_u1') || '';",
+                  "const productId   = pm.environment.get('kiwify_product_id_monthly') || '2d7d8e25-ecfd-45f0-98ba-54a496060959';",
+                  "const now = new Date();",
+                  "const isoNow  = now.toISOString().replace('T',' ').split('.')[0];",
+                  "const isoNext = new Date(now.getTime() + 30*24*3600*1000).toISOString().replace('T',' ').split('.')[0];",
+                  "const payload = {",
+                  "  order_id: 'order-u1-' + ts + '-' + uid,",
+                  "  order_ref: 'ref-u1-' + ts + '-' + uid,",
+                  "  order_status: 'paid',",
+                  "  webhook_event_type: 'order_approved',",
+                  "  subscription_id: 'sub-u1-' + ts + '-' + uid,",
+                  "  Product: { product_id: productId, product_name: 'MeControla Mensal' },",
+                  "  Customer: { email: 'jailton.junior94@outlook.com', mobile: '+5511986896322', CPF: '00000000000' },",
+                  "  Subscription: { status: 'active', start_date: isoNow, next_payment: isoNext },",
+                  "  TrackingParameters: { sck: funnelToken, s1: null, src: null },",
+                  "  approved_date: isoNow,",
+                  "  updated_at: isoNow,",
+                  "  created_at: isoNow",
+                  "};",
+                  "const rawBody = JSON.stringify(payload);",
+                  "const secret  = pm.environment.get('kiwify_webhook_secret');",
+                  "const sig     = CryptoJS.HmacSHA1(rawBody, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.body.raw = rawBody;",
+                  "pm.request.headers.upsert({ key: 'X-Kiwify-Signature', value: sig });",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"received=true\", () => pm.expect(pm.response.json().received).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","billing","webhooks","kiwify"]
+            }
+          }
+        },
+        {
+          "name": "1.4 — GET /tokens/:token/state [PAID → ready=true]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/state",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","onboarding","tokens","{{onboarding_token_u1}}","state"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"ready_to_activate=true (PAID)\", () => pm.expect(body.ready_to_activate).to.equal(true));",
+                  "if (body.wa_me_url) console.log('[U1] wa_me_url=', body.wa_me_url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 — POST /whatsapp/inbound — ATIVAR [U1]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts    = String(Math.floor(Date.now() / 1000));",
+                  "const uid   = Math.random().toString(36).substr(2, 8);",
+                  "const wamid = 'wamid.u1.' + ts + '.' + uid;",
+                  "const token = pm.collectionVariables.get('onboarding_token_u1') || '';",
+                  "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                  "const payload = {",
+                  "  object: 'whatsapp_business_account',",
+                  "  entry: [{",
+                  "    id: 'entry-u1',",
+                  "    changes: [{",
+                  "      field: 'messages',",
+                  "      value: {",
+                  "        messaging_product: 'whatsapp',",
+                  "        metadata: { display_phone_number: '5511986896322', phone_number_id: phoneNumberId },",
+                  "        messages: [{",
+                  "          from: '5511986896322',",
+                  "          id: wamid,",
+                  "          timestamp: ts,",
+                  "          type: 'text',",
+                  "          text: { body: 'ATIVAR ' + token }",
+                  "        }]",
+                  "      }",
+                  "    }]",
+                  "  }]",
+                  "};",
+                  "const rawBody = JSON.stringify(payload);",
+                  "const secret  = pm.environment.get('meta_app_secret');",
+                  "const sig     = 'sha256=' + CryptoJS.HmacSHA256(rawBody, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.body.raw = rawBody;",
+                  "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
+                  "console.log('[U1] WAMID=', wamid, 'token=', token);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","whatsapp","inbound"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Stefany (+5511930111763)",
+      "item": [
+        {
+          "name": "2.1 — POST /checkout — plano mensal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"plan_id\":\"monthly\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","onboarding","checkout"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Tem checkout_url\", () => pm.expect(pm.response.json()).to.have.property(\"checkout_url\"));",
+                  "const body = pm.response.json();",
+                  "if (body.checkout_url) {",
+                  "  let token = '';",
+                  "  try { token = new URL(body.checkout_url).searchParams.get('sck') || ''; } catch(e) {}",
+                  "  pm.test(\"checkout_url contem sck\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
+                  "  pm.collectionVariables.set(\"onboarding_token_u2\", token);",
+                  "  pm.collectionVariables.set(\"funnel_token_u2\", token);",
+                  "  console.log(\"[U2] token=\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 — GET /tokens/:token/state [PENDING → ready=false]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u2}}/state",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","onboarding","tokens","{{onboarding_token_u2}}","state"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"ready_to_activate=false (PENDING)\", () => pm.expect(body.ready_to_activate).to.equal(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 — POST /billing/webhooks/kiwify — order_approved [U2]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts  = String(Math.floor(Date.now() / 1000));",
+                  "const uid = Math.random().toString(36).substr(2, 8);",
+                  "const funnelToken = pm.collectionVariables.get('funnel_token_u2') || '';",
+                  "const productId   = pm.environment.get('kiwify_product_id_monthly') || '2d7d8e25-ecfd-45f0-98ba-54a496060959';",
+                  "const now = new Date();",
+                  "const isoNow  = now.toISOString().replace('T',' ').split('.')[0];",
+                  "const isoNext = new Date(now.getTime() + 30*24*3600*1000).toISOString().replace('T',' ').split('.')[0];",
+                  "const payload = {",
+                  "  order_id: 'order-u2-' + ts + '-' + uid,",
+                  "  order_ref: 'ref-u2-' + ts + '-' + uid,",
+                  "  order_status: 'paid',",
+                  "  webhook_event_type: 'order_approved',",
+                  "  subscription_id: 'sub-u2-' + ts + '-' + uid,",
+                  "  Product: { product_id: productId, product_name: 'MeControla Mensal' },",
+                  "  Customer: { email: 'stefanykelly.lima@hotmail.com', mobile: '+5511930111763', CPF: '00000000000' },",
+                  "  Subscription: { status: 'active', start_date: isoNow, next_payment: isoNext },",
+                  "  TrackingParameters: { sck: funnelToken, s1: null, src: null },",
+                  "  approved_date: isoNow,",
+                  "  updated_at: isoNow,",
+                  "  created_at: isoNow",
+                  "};",
+                  "const rawBody = JSON.stringify(payload);",
+                  "const secret  = pm.environment.get('kiwify_webhook_secret');",
+                  "const sig     = CryptoJS.HmacSHA1(rawBody, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.body.raw = rawBody;",
+                  "pm.request.headers.upsert({ key: 'X-Kiwify-Signature', value: sig });",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"received=true\", () => pm.expect(pm.response.json().received).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","billing","webhooks","kiwify"]
+            }
+          }
+        },
+        {
+          "name": "2.4 — GET /tokens/:token/state [PAID → ready=true]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u2}}/state",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","onboarding","tokens","{{onboarding_token_u2}}","state"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"ready_to_activate=true (PAID)\", () => pm.expect(body.ready_to_activate).to.equal(true));",
+                  "if (body.wa_me_url) console.log('[U2] wa_me_url=', body.wa_me_url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 — POST /whatsapp/inbound — ATIVAR [U2]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts    = String(Math.floor(Date.now() / 1000));",
+                  "const uid   = Math.random().toString(36).substr(2, 8);",
+                  "const wamid = 'wamid.u2.' + ts + '.' + uid;",
+                  "const token = pm.collectionVariables.get('onboarding_token_u2') || '';",
+                  "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                  "const payload = {",
+                  "  object: 'whatsapp_business_account',",
+                  "  entry: [{",
+                  "    id: 'entry-u2',",
+                  "    changes: [{",
+                  "      field: 'messages',",
+                  "      value: {",
+                  "        messaging_product: 'whatsapp',",
+                  "        metadata: { display_phone_number: '5511930111763', phone_number_id: phoneNumberId },",
+                  "        messages: [{",
+                  "          from: '5511930111763',",
+                  "          id: wamid,",
+                  "          timestamp: ts,",
+                  "          type: 'text',",
+                  "          text: { body: 'ATIVAR ' + token }",
+                  "        }]",
+                  "      }",
+                  "    }]",
+                  "  }]",
+                  "};",
+                  "const rawBody = JSON.stringify(payload);",
+                  "const secret  = pm.environment.get('meta_app_secret');",
+                  "const sig     = 'sha256=' + CryptoJS.HmacSHA256(rawBody, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.body.raw = rawBody;",
+                  "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
+                  "console.log('[U2] WAMID=', wamid, 'token=', token);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","whatsapp","inbound"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

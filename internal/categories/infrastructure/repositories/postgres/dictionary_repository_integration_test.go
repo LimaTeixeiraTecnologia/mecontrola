@@ -232,6 +232,79 @@ func (s *DictionaryRepositoryIntegrationSuite) TestSearchOrdersBySignalTypePrece
 	}
 }
 
+func (s *DictionaryRepositoryIntegrationSuite) TestSearchTokens() {
+	ctx := context.Background()
+
+	scenarios := []struct {
+		name      string
+		query     interfaces.DictionaryTokenSearchQuery
+		expectMin int
+		wantTerm  string
+	}{
+		{
+			name:      "deve casar sinonimo mercado por token",
+			query:     interfaces.DictionaryTokenSearchQuery{Kind: valueobjects.KindExpense, Tokens: []string{"netflix", "mercado"}, Limit: 50},
+			expectMin: 1,
+			wantTerm:  "mercado",
+		},
+		{
+			name:      "deve casar netflix por token",
+			query:     interfaces.DictionaryTokenSearchQuery{Kind: valueobjects.KindExpense, Tokens: []string{"netflix"}, Limit: 50},
+			expectMin: 1,
+			wantTerm:  "netflix",
+		},
+		{
+			name:      "deve retornar vazio quando token nao existe",
+			query:     interfaces.DictionaryTokenSearchQuery{Kind: valueobjects.KindExpense, Tokens: []string{"zzzznaoexiste"}, Limit: 50},
+			expectMin: 0,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			entries, err := s.repo.SearchTokens(ctx, scenario.query)
+			s.Require().NoError(err)
+			s.Assert().GreaterOrEqual(len(entries), scenario.expectMin)
+			if scenario.wantTerm != "" {
+				found := false
+				for _, e := range entries {
+					if e.Term == scenario.wantTerm {
+						found = true
+					}
+				}
+				s.Assert().Truef(found, "esperava termo %q nos resultados", scenario.wantTerm)
+			}
+		})
+	}
+}
+
+func (s *DictionaryRepositoryIntegrationSuite) TestSearchFuzzyToleratesTypo() {
+	ctx := context.Background()
+
+	entries, err := s.repo.SearchFuzzy(ctx, interfaces.DictionaryFuzzySearchQuery{
+		Kind:          valueobjects.KindExpense,
+		Tokens:        []string{"netflyx"},
+		MinSimilarity: 0.4,
+		Limit:         50,
+	})
+	s.Require().NoError(err)
+	s.Require().NotEmpty(entries)
+	s.Assert().Equal("netflix", entries[0].Term)
+}
+
+func (s *DictionaryRepositoryIntegrationSuite) TestSearchFuzzyEmptyForGibberish() {
+	ctx := context.Background()
+
+	entries, err := s.repo.SearchFuzzy(ctx, interfaces.DictionaryFuzzySearchQuery{
+		Kind:          valueobjects.KindExpense,
+		Tokens:        []string{"qwxzkjpv"},
+		MinSimilarity: 0.4,
+		Limit:         50,
+	})
+	s.Require().NoError(err)
+	s.Assert().Empty(entries)
+}
+
 func ptrKind(k valueobjects.Kind) *valueobjects.Kind {
 	return &k
 }

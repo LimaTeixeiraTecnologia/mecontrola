@@ -17,6 +17,8 @@ type Candidate struct {
 	MatchedTerm    string
 	SignalType     valueobjects.SignalType
 	Confidence     valueobjects.Confidence
+	Quality        valueobjects.MatchQuality
+	Score          valueobjects.MatchScore
 	IsAmbiguous    bool
 	MatchReason    string
 }
@@ -29,8 +31,15 @@ func (c Candidate) GetSignalType() valueobjects.SignalType {
 	return c.SignalType
 }
 func (c Candidate) GetConfidence() valueobjects.Confidence { return c.Confidence }
+func (c Candidate) GetQuality() valueobjects.MatchQuality  { return c.Quality }
+func (c Candidate) GetScore() float64                      { return c.Score.Float64() }
 func (c Candidate) GetIsAmbiguous() bool                   { return c.IsAmbiguous }
 func (c Candidate) GetMatchReason() string                 { return c.MatchReason }
+
+type ScoredEntry struct {
+	Entry   entities.DictionaryEntry
+	Quality valueobjects.MatchQuality
+}
 
 type CandidateResolver struct{}
 
@@ -39,13 +48,21 @@ func NewCandidateResolver() *CandidateResolver {
 }
 
 func (r *CandidateResolver) Resolve(entries []entities.DictionaryEntry, categories map[uuid.UUID]entities.Category) ([]Candidate, bool) {
+	scored := make([]ScoredEntry, 0, len(entries))
+	for _, entry := range entries {
+		scored = append(scored, ScoredEntry{Entry: entry, Quality: valueobjects.MatchQualityExact})
+	}
+	return r.ResolveScored(scored, categories)
+}
+
+func (r *CandidateResolver) ResolveScored(entries []ScoredEntry, categories map[uuid.UUID]entities.Category) ([]Candidate, bool) {
 	if len(entries) == 0 {
 		return nil, false
 	}
 
-	grouped := make(map[uuid.UUID][]entities.DictionaryEntry)
+	grouped := make(map[uuid.UUID][]ScoredEntry)
 	for _, entry := range entries {
-		grouped[entry.CategoryID] = append(grouped[entry.CategoryID], entry)
+		grouped[entry.Entry.CategoryID] = append(grouped[entry.Entry.CategoryID], entry)
 	}
 
 	candidates := make([]Candidate, 0, len(grouped))
@@ -57,11 +74,13 @@ func (r *CandidateResolver) Resolve(entries []entities.DictionaryEntry, categori
 			CategoryID:     categoryID,
 			RootCategoryID: r.findRootID(category, categories),
 			Path:           r.buildPath(category, categories),
-			MatchedTerm:    winner.Term,
-			SignalType:     winner.SignalType,
-			Confidence:     winner.Confidence,
-			IsAmbiguous:    winner.IsAmbiguous,
-			MatchReason:    r.buildMatchReason(winner),
+			MatchedTerm:    winner.Entry.Term,
+			SignalType:     winner.Entry.SignalType,
+			Confidence:     winner.Entry.Confidence,
+			Quality:        winner.Quality,
+			Score:          valueobjects.NewMatchScore(winner.Entry.SignalType, winner.Entry.Confidence, winner.Quality),
+			IsAmbiguous:    winner.Entry.IsAmbiguous,
+			MatchReason:    r.buildMatchReason(winner.Entry),
 		}
 		candidates = append(candidates, candidate)
 	}
@@ -82,13 +101,18 @@ func (r *CandidateResolver) Resolve(entries []entities.DictionaryEntry, categori
 	return candidates, hasMore
 }
 
-func (r *CandidateResolver) selectWinner(entries []entities.DictionaryEntry) entities.DictionaryEntry {
+func (r *CandidateResolver) selectWinner(entries []ScoredEntry) ScoredEntry {
 	if len(entries) == 1 {
 		return entries[0]
 	}
 
-	slices.SortFunc(entries, func(a, b entities.DictionaryEntry) int {
-		return cmp.Compare(b.SignalType.Precedence(), a.SignalType.Precedence())
+	slices.SortFunc(entries, func(a, b ScoredEntry) int {
+		scoreA := valueobjects.NewMatchScore(a.Entry.SignalType, a.Entry.Confidence, a.Quality)
+		scoreB := valueobjects.NewMatchScore(b.Entry.SignalType, b.Entry.Confidence, b.Quality)
+		if diff := cmp.Compare(scoreB, scoreA); diff != 0 {
+			return diff
+		}
+		return cmp.Compare(b.Entry.SignalType.Precedence(), a.Entry.SignalType.Precedence())
 	})
 
 	return entries[0]
@@ -96,9 +120,11 @@ func (r *CandidateResolver) selectWinner(entries []entities.DictionaryEntry) ent
 
 func (r *CandidateResolver) sortCandidates(candidates []Candidate) {
 	slices.SortFunc(candidates, func(a, b Candidate) int {
-		precDiff := cmp.Compare(b.SignalType.Precedence(), a.SignalType.Precedence())
-		if precDiff != 0 {
-			return precDiff
+		if diff := cmp.Compare(b.Score, a.Score); diff != 0 {
+			return diff
+		}
+		if diff := cmp.Compare(b.SignalType.Precedence(), a.SignalType.Precedence()); diff != 0 {
+			return diff
 		}
 		return cmp.Compare(a.Path, b.Path)
 	})

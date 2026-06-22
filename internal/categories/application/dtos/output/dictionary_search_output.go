@@ -13,6 +13,8 @@ type CandidateOutput struct {
 	MatchedTerm    string    `json:"matched_term"`
 	SignalType     string    `json:"signal_type"`
 	Confidence     string    `json:"confidence"`
+	MatchQuality   string    `json:"match_quality"`
+	Score          float64   `json:"score"`
 	IsAmbiguous    bool      `json:"is_ambiguous"`
 	MatchReason    string    `json:"match_reason"`
 }
@@ -34,6 +36,8 @@ func NewCandidateOutputFromService(c CandidateLike) CandidateOutput {
 		MatchedTerm:    c.GetMatchedTerm(),
 		SignalType:     c.GetSignalType().String(),
 		Confidence:     c.GetConfidence().String(),
+		MatchQuality:   c.GetQuality().String(),
+		Score:          c.GetScore(),
 		IsAmbiguous:    c.GetIsAmbiguous(),
 		MatchReason:    c.GetMatchReason(),
 	}
@@ -46,6 +50,8 @@ type CandidateLike interface {
 	GetMatchedTerm() string
 	GetSignalType() valueobjects.SignalType
 	GetConfidence() valueobjects.Confidence
+	GetQuality() valueobjects.MatchQuality
+	GetScore() float64
 	GetIsAmbiguous() bool
 	GetMatchReason() string
 }

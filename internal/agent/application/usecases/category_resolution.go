@@ -13,10 +13,20 @@ import (
 	categoriesvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
+func newMatchScoreHistogram(o11y observability.Observability) observability.Histogram {
+	return o11y.Metrics().HistogramWithBuckets(
+		"agent_category_match_score",
+		"Distribuição do score de match de categoria por outcome",
+		"1",
+		[]float64{0.3, 0.4, 0.55, 0.65, 0.7, 0.79, 0.8, 0.9, 1},
+	)
+}
+
 func resolveCategoryCandidate(
 	ctx context.Context,
 	resolver CategoryResolver,
 	resolveBad observability.Counter,
+	scoreHistogram observability.Histogram,
 	hint string,
 	kind categoriesvo.Kind,
 ) (categoriesoutput.CandidateOutput, string, error) {
@@ -31,10 +41,30 @@ func resolveCategoryCandidate(
 	}
 	top := result.Candidates[0]
 	if top.IsAmbiguous && len(result.Candidates) > 1 {
+		recordMatchScore(ctx, scoreHistogram, top.Score, "ambiguous")
 		resolveBad.Add(ctx, 1, observability.String("reason", "ambiguous"))
 		return categoriesoutput.CandidateOutput{}, "", newCategoryAmbiguousError(hint, result.Candidates)
 	}
-	return top, top.Path, nil
+	switch {
+	case top.Score >= categoriesvo.ScoreAutoThreshold:
+		recordMatchScore(ctx, scoreHistogram, top.Score, "auto_logged")
+		return top, top.Path, nil
+	case top.Score >= categoriesvo.ScoreConfirmThreshold:
+		recordMatchScore(ctx, scoreHistogram, top.Score, "needs_confirmation")
+		resolveBad.Add(ctx, 1, observability.String("reason", "needs_confirmation"))
+		return categoriesoutput.CandidateOutput{}, "", newCategoryNeedsConfirmationError(hint, result.Candidates)
+	default:
+		recordMatchScore(ctx, scoreHistogram, top.Score, "low_score")
+		resolveBad.Add(ctx, 1, observability.String("reason", "low_score"))
+		return categoriesoutput.CandidateOutput{}, "", ErrLogTransactionCategoryNotFound
+	}
+}
+
+func recordMatchScore(ctx context.Context, h observability.Histogram, score float64, outcome string) {
+	if h == nil {
+		return
+	}
+	h.Record(ctx, score, observability.String("outcome", outcome))
 }
 
 func candidateSubcategoryUUID(candidate categoriesoutput.CandidateOutput) *uuid.UUID {

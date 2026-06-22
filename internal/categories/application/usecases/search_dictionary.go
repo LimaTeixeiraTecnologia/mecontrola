@@ -16,7 +16,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
-const searchCandidateLimit = 100
+const (
+	searchCandidateLimit = 100
+	fuzzyMinSimilarity   = 0.4
+)
 
 type SearchDictionary struct {
 	repo         interfaces.DictionaryRepository
@@ -49,18 +52,13 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 		return nil, fmt.Errorf("ler versao: %w", err)
 	}
 
-	entries, err := uc.repo.Search(ctx, interfaces.DictionarySearchQuery{
-		Kind:              in.Kind,
-		Term:              query.Trimmed(),
-		Limit:             searchCandidateLimit,
-		IncludeDeprecated: false,
-	})
+	scored, err := uc.resolveEntries(ctx, in.Kind, query)
 	if err != nil {
 		span.RecordError(err)
-		return nil, fmt.Errorf("buscar dicionario: %w", err)
+		return nil, err
 	}
 
-	if len(entries) == 0 {
+	if len(scored) == 0 {
 		return &output.DictionarySearchOutput{
 			Result:  "no_match",
 			Outcome: valueobjects.SearchOutcomeNoMatch,
@@ -68,21 +66,30 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 		}, nil
 	}
 
+	entries := make([]entities.DictionaryEntry, 0, len(scored))
+	for _, se := range scored {
+		entries = append(entries, se.Entry)
+	}
+
 	categories, err := uc.buildCategoryMap(ctx, entries)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("buscar categorias: %w", err)
 	}
-	candidates, hasMore := uc.resolver.Resolve(entries, categories)
-
-	outcome := valueobjects.ClassifyOutcome(len(candidates))
-	if outcome == valueobjects.SearchOutcomeNoMatch {
+	candidates, hasMore := uc.resolver.ResolveScored(scored, categories)
+	if len(candidates) == 0 {
 		return &output.DictionarySearchOutput{
 			Result:  "no_match",
-			Outcome: outcome,
+			Outcome: valueobjects.SearchOutcomeNoMatch,
 			Version: version,
 		}, nil
 	}
+
+	scores := make([]valueobjects.MatchScore, 0, len(candidates))
+	for _, c := range candidates {
+		scores = append(scores, c.Score)
+	}
+	outcome := valueobjects.ClassifyByScore(scores)
 
 	candidateOutputs := make([]output.CandidateOutput, 0, len(candidates))
 	for _, c := range candidates {
@@ -97,6 +104,60 @@ func (uc *SearchDictionary) Execute(ctx context.Context, in *input.SearchDiction
 		Outcome:       outcome,
 		Version:       version,
 	}, nil
+}
+
+func (uc *SearchDictionary) resolveEntries(ctx context.Context, kind valueobjects.Kind, query valueobjects.SearchQuery) ([]services.ScoredEntry, error) {
+	exact, err := uc.repo.Search(ctx, interfaces.DictionarySearchQuery{
+		Kind:  kind,
+		Term:  query.Trimmed(),
+		Limit: searchCandidateLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("buscar dicionario: %w", err)
+	}
+	if len(exact) > 0 {
+		return scoredEntries(exact, valueobjects.MatchQualityExact), nil
+	}
+
+	tokens := query.Tokens()
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+
+	byToken, err := uc.repo.SearchTokens(ctx, interfaces.DictionaryTokenSearchQuery{
+		Kind:   kind,
+		Tokens: tokens,
+		Limit:  searchCandidateLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("buscar dicionario por token: %w", err)
+	}
+	if len(byToken) > 0 {
+		return scoredEntries(byToken, valueobjects.MatchQualityToken), nil
+	}
+
+	byFuzzy, err := uc.repo.SearchFuzzy(ctx, interfaces.DictionaryFuzzySearchQuery{
+		Kind:          kind,
+		Tokens:        tokens,
+		MinSimilarity: fuzzyMinSimilarity,
+		Limit:         searchCandidateLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("buscar dicionario fuzzy: %w", err)
+	}
+	if len(byFuzzy) > 0 {
+		return scoredEntries(byFuzzy, valueobjects.MatchQualityFuzzy), nil
+	}
+
+	return nil, nil
+}
+
+func scoredEntries(entries []entities.DictionaryEntry, quality valueobjects.MatchQuality) []services.ScoredEntry {
+	scored := make([]services.ScoredEntry, 0, len(entries))
+	for _, e := range entries {
+		scored = append(scored, services.ScoredEntry{Entry: e, Quality: quality})
+	}
+	return scored
 }
 
 func (uc *SearchDictionary) buildCategoryMap(ctx context.Context, entries []entities.DictionaryEntry) (map[uuid.UUID]entities.Category, error) {

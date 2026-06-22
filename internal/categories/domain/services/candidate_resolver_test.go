@@ -50,6 +50,74 @@ func (s *CandidateResolverSuite) TestResolveEmptyEntries() {
 	s.False(hasMore)
 }
 
+func BenchmarkResolveScored(b *testing.B) {
+	resolver := services.NewCandidateResolver()
+	categories := make(map[uuid.UUID]entities.Category, 20)
+	scored := make([]services.ScoredEntry, 0, 20)
+	for range 20 {
+		id := uuid.New()
+		categories[id] = entities.Category{ID: id, Name: "Cat", Kind: valueobjects.KindExpense, AllocationType: valueobjects.AllocationTypeConsumption}
+		scored = append(scored, services.ScoredEntry{
+			Entry: entities.DictionaryEntry{
+				ID:         uuid.New(),
+				CategoryID: id,
+				Kind:       valueobjects.KindExpense,
+				Term:       "termo",
+				SignalType: valueobjects.SignalTypeAlias,
+				Confidence: valueobjects.ConfidenceHigh,
+			},
+			Quality: valueobjects.MatchQualityToken,
+		})
+	}
+
+	for b.Loop() {
+		_, _ = resolver.ResolveScored(scored, categories)
+	}
+}
+
+func (s *CandidateResolverSuite) TestResolveExactPopulatesScoreAndQuality() {
+	resolver := services.NewCandidateResolver()
+	id := uuid.New()
+	categories := map[uuid.UUID]entities.Category{
+		id: s.newCategory(id, "Aluguel", valueobjects.KindExpense, nil),
+	}
+	entries := []entities.DictionaryEntry{
+		s.newEntry(id, valueobjects.KindExpense, "aluguel", valueobjects.SignalTypeCanonicalName, valueobjects.ConfidenceHigh, false),
+	}
+
+	candidates, _ := resolver.Resolve(entries, categories)
+
+	s.Require().Len(candidates, 1)
+	s.Equal(valueobjects.MatchQualityExact, candidates[0].Quality)
+	s.True(candidates[0].Score.IsAuto())
+}
+
+func (s *CandidateResolverSuite) TestResolveScoredRanksExactAboveTokenAboveFuzzy() {
+	resolver := services.NewCandidateResolver()
+	exactID := uuid.New()
+	tokenID := uuid.New()
+	fuzzyID := uuid.New()
+	categories := map[uuid.UUID]entities.Category{
+		exactID: s.newCategory(exactID, "Exato", valueobjects.KindExpense, nil),
+		tokenID: s.newCategory(tokenID, "Token", valueobjects.KindExpense, nil),
+		fuzzyID: s.newCategory(fuzzyID, "Fuzzy", valueobjects.KindExpense, nil),
+	}
+	scored := []services.ScoredEntry{
+		{Entry: s.newEntry(fuzzyID, valueobjects.KindExpense, "termo", valueobjects.SignalTypeCanonicalName, valueobjects.ConfidenceHigh, false), Quality: valueobjects.MatchQualityFuzzy},
+		{Entry: s.newEntry(exactID, valueobjects.KindExpense, "termo", valueobjects.SignalTypeCanonicalName, valueobjects.ConfidenceHigh, false), Quality: valueobjects.MatchQualityExact},
+		{Entry: s.newEntry(tokenID, valueobjects.KindExpense, "termo", valueobjects.SignalTypeCanonicalName, valueobjects.ConfidenceHigh, false), Quality: valueobjects.MatchQualityToken},
+	}
+
+	candidates, _ := resolver.ResolveScored(scored, categories)
+
+	s.Require().Len(candidates, 3)
+	s.Equal(valueobjects.MatchQualityExact, candidates[0].Quality)
+	s.Equal(valueobjects.MatchQualityToken, candidates[1].Quality)
+	s.Equal(valueobjects.MatchQualityFuzzy, candidates[2].Quality)
+	s.Greater(candidates[0].Score, candidates[1].Score)
+	s.Greater(candidates[1].Score, candidates[2].Score)
+}
+
 func (s *CandidateResolverSuite) TestResolveHighUnequivocal() {
 	resolver := services.NewCandidateResolver()
 

@@ -17,7 +17,7 @@ func candidatesOutput(path string) *categoriesoutput.DictionarySearchOutput {
 	id := uuid.New()
 	return &categoriesoutput.DictionarySearchOutput{
 		Candidates: []categoriesoutput.CandidateOutput{
-			{CategoryID: id, RootCategoryID: id, Path: path},
+			{CategoryID: id, RootCategoryID: id, Path: path, Score: 0.95},
 		},
 	}
 }

@@ -346,6 +346,14 @@ func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, channel st
 		a.record(ctx, kind.String(), channel, OutcomeClarify)
 		return RouteResult{Reply: formatCategoryAmbiguous(ambiguous.Candidates), Outcome: OutcomeClarify, Kind: kind}, true
 	}
+	if needsConfirmation, ok := errors.AsType[*CategoryNeedsConfirmationError](err); ok {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.category_needs_confirmation",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+		)
+		a.record(ctx, kind.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCategoryNeedsConfirmation(needsConfirmation.Candidates), Outcome: OutcomeClarify, Kind: kind}, true
+	}
 	if errors.Is(err, ErrCategoryNotFound) {
 		a.record(ctx, kind.String(), channel, OutcomeClarify)
 		return RouteResult{Reply: formatCategoryNotFound(resolveCategoryHint(in)), Outcome: OutcomeClarify, Kind: kind}, true

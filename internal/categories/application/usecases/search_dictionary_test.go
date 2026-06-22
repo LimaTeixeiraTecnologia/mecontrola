@@ -83,6 +83,8 @@ func (s *SearchDictionarySuite) TestExecute_NoMatch() {
 	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().SearchTokens(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().SearchFuzzy(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "xyz123",
@@ -176,6 +178,8 @@ func (s *SearchDictionarySuite) TestExecute_QueryNormalization() {
 	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
 
 	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().SearchTokens(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().SearchFuzzy(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
 		Query: "  ALUGUEL!!!  ",
@@ -226,6 +230,89 @@ func (s *SearchDictionarySuite) TestExecute_TrimsQueryBeforeRepoSearch() {
 	s.NotNil(result)
 	s.Equal("candidates", result.Result)
 	s.Len(result.Candidates, 1)
+}
+
+func (s *SearchDictionarySuite) TestExecute_TokenFallbackWhenExactEmpty() {
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
+
+	categoryID := uuid.MustParse("77777777-7777-7777-7777-777777777777")
+
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().
+		SearchTokens(mock.Anything, interfaces.DictionaryTokenSearchQuery{
+			Kind:   valueobjects.KindExpense,
+			Tokens: []string{"netflix"},
+			Limit:  100,
+		}).
+		Return([]entities.DictionaryEntry{
+			{
+				ID:         uuid.MustParse("88888888-8888-8888-8888-888888888888"),
+				CategoryID: categoryID,
+				Kind:       valueobjects.KindExpense,
+				Term:       "netflix",
+				SignalType: valueobjects.SignalTypeMerchant,
+				Confidence: valueobjects.ConfidenceHigh,
+			},
+		}, nil).
+		Once()
+
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{categoryID}).Return([]entities.Category{
+		{ID: categoryID, Name: "Streaming", Kind: valueobjects.KindExpense},
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
+		Query: "paguei netflix hoje",
+		Kind:  valueobjects.KindExpense,
+	})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal("candidates", result.Result)
+	s.Len(result.Candidates, 1)
+	s.Equal("token", result.Candidates[0].MatchQuality)
+}
+
+func (s *SearchDictionarySuite) TestExecute_FuzzyFallbackWhenExactAndTokenEmpty() {
+	s.versionReader.EXPECT().Current(mock.Anything).Return(int64(42), nil).Once()
+
+	categoryID := uuid.MustParse("99999999-9999-9999-9999-999999999999")
+
+	s.repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().SearchTokens(mock.Anything, mock.Anything).Return([]entities.DictionaryEntry{}, nil).Once()
+	s.repo.EXPECT().
+		SearchFuzzy(mock.Anything, interfaces.DictionaryFuzzySearchQuery{
+			Kind:          valueobjects.KindExpense,
+			Tokens:        []string{"netflyx"},
+			MinSimilarity: 0.4,
+			Limit:         100,
+		}).
+		Return([]entities.DictionaryEntry{
+			{
+				ID:         uuid.MustParse("aaaa1111-aaaa-1111-aaaa-111111111111"),
+				CategoryID: categoryID,
+				Kind:       valueobjects.KindExpense,
+				Term:       "netflix",
+				SignalType: valueobjects.SignalTypeCanonicalName,
+				Confidence: valueobjects.ConfidenceHigh,
+			},
+		}, nil).
+		Once()
+
+	s.categoryRepo.EXPECT().ListByIDs(mock.Anything, []uuid.UUID{categoryID}).Return([]entities.Category{
+		{ID: categoryID, Name: "Streaming", Kind: valueobjects.KindExpense},
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, &input.SearchDictionaryInput{
+		Query: "netflyx",
+		Kind:  valueobjects.KindExpense,
+	})
+
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal("candidates", result.Result)
+	s.Len(result.Candidates, 1)
+	s.Equal("fuzzy", result.Candidates[0].MatchQuality)
+	s.Less(result.Candidates[0].Score, valueobjects.ScoreAutoThreshold)
 }
 
 func (s *SearchDictionarySuite) TestExecute_AmbiguousMatch() {

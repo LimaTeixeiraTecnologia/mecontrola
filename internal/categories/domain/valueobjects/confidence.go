@@ -49,3 +49,16 @@ func (c Confidence) IsValid() bool {
 		return false
 	}
 }
+
+func (c Confidence) Weight() float64 {
+	switch c {
+	case ConfidenceHigh:
+		return 1.0
+	case ConfidenceMedium:
+		return 0.66
+	case ConfidenceLow:
+		return 0.33
+	default:
+		return 0.0
+	}
+}

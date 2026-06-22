@@ -17,10 +17,11 @@ import (
 )
 
 var (
-	ErrLogTransactionInvalidIntent     = errors.New("agent: log transaction: intent invalido")
-	ErrLogTransactionNoCategoryHint    = errors.New("agent: log transaction: sem hint de categoria")
-	ErrLogTransactionCategoryAmbiguous = errors.New("agent: log transaction: categoria ambigua")
-	ErrLogTransactionCategoryNotFound  = errors.New("agent: log transaction: categoria nao encontrada")
+	ErrLogTransactionInvalidIntent             = errors.New("agent: log transaction: intent invalido")
+	ErrLogTransactionNoCategoryHint            = errors.New("agent: log transaction: sem hint de categoria")
+	ErrLogTransactionCategoryAmbiguous         = errors.New("agent: log transaction: categoria ambigua")
+	ErrLogTransactionCategoryNeedsConfirmation = errors.New("agent: log transaction: categoria precisa de confirmacao")
+	ErrLogTransactionCategoryNotFound          = errors.New("agent: log transaction: categoria nao encontrada")
 )
 
 type CategoryAmbiguousError struct {
@@ -36,11 +37,21 @@ func (e *CategoryAmbiguousError) Unwrap() error {
 	return ErrLogTransactionCategoryAmbiguous
 }
 
-func newCategoryAmbiguousError(hint string, candidates []categoriesoutput.CandidateOutput) *CategoryAmbiguousError {
-	limit := len(candidates)
-	if limit > 3 {
-		limit = 3
-	}
+type CategoryNeedsConfirmationError struct {
+	Hint       string
+	Candidates []string
+}
+
+func (e *CategoryNeedsConfirmationError) Error() string {
+	return fmt.Sprintf("%s: hint=%q candidatos=%s", ErrLogTransactionCategoryNeedsConfirmation.Error(), e.Hint, strings.Join(e.Candidates, ", "))
+}
+
+func (e *CategoryNeedsConfirmationError) Unwrap() error {
+	return ErrLogTransactionCategoryNeedsConfirmation
+}
+
+func candidatePaths(candidates []categoriesoutput.CandidateOutput) []string {
+	limit := min(len(candidates), 3)
 	paths := make([]string, 0, limit)
 	for _, candidate := range candidates[:limit] {
 		path := strings.TrimSpace(candidate.Path)
@@ -48,7 +59,15 @@ func newCategoryAmbiguousError(hint string, candidates []categoriesoutput.Candid
 			paths = append(paths, path)
 		}
 	}
-	return &CategoryAmbiguousError{Hint: strings.TrimSpace(hint), Candidates: paths}
+	return paths
+}
+
+func newCategoryAmbiguousError(hint string, candidates []categoriesoutput.CandidateOutput) *CategoryAmbiguousError {
+	return &CategoryAmbiguousError{Hint: strings.TrimSpace(hint), Candidates: candidatePaths(candidates)}
+}
+
+func newCategoryNeedsConfirmationError(hint string, candidates []categoriesoutput.CandidateOutput) *CategoryNeedsConfirmationError {
+	return &CategoryNeedsConfirmationError{Hint: strings.TrimSpace(hint), Candidates: candidatePaths(candidates)}
 }
 
 const (
@@ -82,11 +101,12 @@ type CreateTransactionResult struct {
 }
 
 type LogTransactionFromAgent struct {
-	resolver   CategoryResolver
-	creator    TransactionCreator
-	o11y       observability.Observability
-	persisted  observability.Counter
-	resolveBad observability.Counter
+	resolver       CategoryResolver
+	creator        TransactionCreator
+	o11y           observability.Observability
+	persisted      observability.Counter
+	resolveBad     observability.Counter
+	scoreHistogram observability.Histogram
 }
 
 func NewLogTransactionFromAgent(
@@ -105,11 +125,12 @@ func NewLogTransactionFromAgent(
 		"1",
 	)
 	return &LogTransactionFromAgent{
-		resolver:   resolver,
-		creator:    creator,
-		o11y:       o11y,
-		persisted:  persisted,
-		resolveBad: resolveBad,
+		resolver:       resolver,
+		creator:        creator,
+		o11y:           o11y,
+		persisted:      persisted,
+		resolveBad:     resolveBad,
+		scoreHistogram: newMatchScoreHistogram(o11y),
 	}
 }
 
@@ -201,10 +222,22 @@ func (uc *LogTransactionFromAgent) resolve(ctx context.Context, hint string, kin
 	}
 	top := result.Candidates[0]
 	if top.IsAmbiguous && len(result.Candidates) > 1 {
+		recordMatchScore(ctx, uc.scoreHistogram, top.Score, "ambiguous")
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "ambiguous"))
 		return categoriesoutput.CandidateOutput{}, "", newCategoryAmbiguousError(hint, result.Candidates)
 	}
-	return top, top.Path, nil
+	switch {
+	case top.Score >= categoriesvo.ScoreAutoThreshold:
+		recordMatchScore(ctx, uc.scoreHistogram, top.Score, "auto_logged")
+		return top, top.Path, nil
+	case top.Score >= categoriesvo.ScoreConfirmThreshold:
+		recordMatchScore(ctx, uc.scoreHistogram, top.Score, "needs_confirmation")
+		uc.resolveBad.Add(ctx, 1, observability.String("reason", "needs_confirmation"))
+		return categoriesoutput.CandidateOutput{}, "", newCategoryNeedsConfirmationError(hint, result.Candidates)
+	default:
+		uc.resolveBad.Add(ctx, 1, observability.String("reason", "low_score"))
+		return categoriesoutput.CandidateOutput{}, "", ErrLogTransactionCategoryNotFound
+	}
 }
 
 func directionForKind(kind intent.Kind) (string, categoriesvo.Kind, error) {

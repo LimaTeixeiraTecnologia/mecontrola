@@ -50,3 +50,27 @@ func TestNormalizeSearchQuery(t *testing.T) {
 	assert.Equal(t, "", valueobjects.NormalizeSearchQuery("   "))
 	assert.Equal(t, "abc123", valueobjects.NormalizeSearchQuery("abc-123"))
 }
+
+func TestSearchQueryTokens(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{name: "remove verbo e adverbio stopword", input: "paguei netflix hoje", want: []string{"netflix"}},
+		{name: "preserva fronteira multi-token", input: "transporte por aplicativo", want: []string{"transporte", "aplicativo"}},
+		{name: "remove preposicoes", input: "conta de energia da casa", want: []string{"conta", "energia", "casa"}},
+		{name: "dedup tokens repetidos", input: "uber uber uber", want: []string{"uber"}},
+		{name: "lowercase e pontuacao", input: "IPTU, 2026!", want: []string{"iptu", "2026"}},
+		{name: "remove acentos dos tokens", input: "saúde mental", want: []string{"saude", "mental"}},
+		{name: "stopword acentuada e removida", input: "compra para amanhã", want: []string{"compra"}},
+		{name: "token unico", input: "mercado", want: []string{"mercado"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := valueobjects.NewSearchQuery(tc.input)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, q.Tokens())
+		})
+	}
+}

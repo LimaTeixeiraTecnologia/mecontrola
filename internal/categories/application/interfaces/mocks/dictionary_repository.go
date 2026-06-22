@@ -180,3 +180,139 @@ func (_c *DictionaryRepository_Search_Call) RunAndReturn(run func(ctx context.Co
 	_c.Call.Return(run)
 	return _c
 }
+
+// SearchFuzzy provides a mock function for the type DictionaryRepository
+func (_mock *DictionaryRepository) SearchFuzzy(ctx context.Context, q interfaces.DictionaryFuzzySearchQuery) ([]entities.DictionaryEntry, error) {
+	ret := _mock.Called(ctx, q)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SearchFuzzy")
+	}
+
+	var r0 []entities.DictionaryEntry
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.DictionaryFuzzySearchQuery) ([]entities.DictionaryEntry, error)); ok {
+		return returnFunc(ctx, q)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.DictionaryFuzzySearchQuery) []entities.DictionaryEntry); ok {
+		r0 = returnFunc(ctx, q)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.DictionaryEntry)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, interfaces.DictionaryFuzzySearchQuery) error); ok {
+		r1 = returnFunc(ctx, q)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DictionaryRepository_SearchFuzzy_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SearchFuzzy'
+type DictionaryRepository_SearchFuzzy_Call struct {
+	*mock.Call
+}
+
+// SearchFuzzy is a helper method to define mock.On call
+//   - ctx context.Context
+//   - q interfaces.DictionaryFuzzySearchQuery
+func (_e *DictionaryRepository_Expecter) SearchFuzzy(ctx any, q any) *DictionaryRepository_SearchFuzzy_Call {
+	return &DictionaryRepository_SearchFuzzy_Call{Call: _e.mock.On("SearchFuzzy", ctx, q)}
+}
+
+func (_c *DictionaryRepository_SearchFuzzy_Call) Run(run func(ctx context.Context, q interfaces.DictionaryFuzzySearchQuery)) *DictionaryRepository_SearchFuzzy_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 interfaces.DictionaryFuzzySearchQuery
+		if args[1] != nil {
+			arg1 = args[1].(interfaces.DictionaryFuzzySearchQuery)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *DictionaryRepository_SearchFuzzy_Call) Return(dictionaryEntrys []entities.DictionaryEntry, err error) *DictionaryRepository_SearchFuzzy_Call {
+	_c.Call.Return(dictionaryEntrys, err)
+	return _c
+}
+
+func (_c *DictionaryRepository_SearchFuzzy_Call) RunAndReturn(run func(ctx context.Context, q interfaces.DictionaryFuzzySearchQuery) ([]entities.DictionaryEntry, error)) *DictionaryRepository_SearchFuzzy_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SearchTokens provides a mock function for the type DictionaryRepository
+func (_mock *DictionaryRepository) SearchTokens(ctx context.Context, q interfaces.DictionaryTokenSearchQuery) ([]entities.DictionaryEntry, error) {
+	ret := _mock.Called(ctx, q)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SearchTokens")
+	}
+
+	var r0 []entities.DictionaryEntry
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.DictionaryTokenSearchQuery) ([]entities.DictionaryEntry, error)); ok {
+		return returnFunc(ctx, q)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.DictionaryTokenSearchQuery) []entities.DictionaryEntry); ok {
+		r0 = returnFunc(ctx, q)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.DictionaryEntry)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, interfaces.DictionaryTokenSearchQuery) error); ok {
+		r1 = returnFunc(ctx, q)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DictionaryRepository_SearchTokens_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SearchTokens'
+type DictionaryRepository_SearchTokens_Call struct {
+	*mock.Call
+}
+
+// SearchTokens is a helper method to define mock.On call
+//   - ctx context.Context
+//   - q interfaces.DictionaryTokenSearchQuery
+func (_e *DictionaryRepository_Expecter) SearchTokens(ctx any, q any) *DictionaryRepository_SearchTokens_Call {
+	return &DictionaryRepository_SearchTokens_Call{Call: _e.mock.On("SearchTokens", ctx, q)}
+}
+
+func (_c *DictionaryRepository_SearchTokens_Call) Run(run func(ctx context.Context, q interfaces.DictionaryTokenSearchQuery)) *DictionaryRepository_SearchTokens_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 interfaces.DictionaryTokenSearchQuery
+		if args[1] != nil {
+			arg1 = args[1].(interfaces.DictionaryTokenSearchQuery)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *DictionaryRepository_SearchTokens_Call) Return(dictionaryEntrys []entities.DictionaryEntry, err error) *DictionaryRepository_SearchTokens_Call {
+	_c.Call.Return(dictionaryEntrys, err)
+	return _c
+}
+
+func (_c *DictionaryRepository_SearchTokens_Call) RunAndReturn(run func(ctx context.Context, q interfaces.DictionaryTokenSearchQuery) ([]entities.DictionaryEntry, error)) *DictionaryRepository_SearchTokens_Call {
+	_c.Call.Return(run)
+	return _c
+}

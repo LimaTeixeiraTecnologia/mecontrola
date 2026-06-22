@@ -31,11 +31,12 @@ type CreateCardPurchaseResult struct {
 }
 
 type LogCardPurchaseFromAgent struct {
-	resolver   CategoryResolver
-	creator    CardPurchaseCreator
-	o11y       observability.Observability
-	persisted  observability.Counter
-	resolveBad observability.Counter
+	resolver       CategoryResolver
+	creator        CardPurchaseCreator
+	o11y           observability.Observability
+	persisted      observability.Counter
+	resolveBad     observability.Counter
+	scoreHistogram observability.Histogram
 }
 
 func NewLogCardPurchaseFromAgent(
@@ -54,11 +55,12 @@ func NewLogCardPurchaseFromAgent(
 		"1",
 	)
 	return &LogCardPurchaseFromAgent{
-		resolver:   resolver,
-		creator:    creator,
-		o11y:       o11y,
-		persisted:  persisted,
-		resolveBad: resolveBad,
+		resolver:       resolver,
+		creator:        creator,
+		o11y:           o11y,
+		persisted:      persisted,
+		resolveBad:     resolveBad,
+		scoreHistogram: newMatchScoreHistogram(o11y),
 	}
 }
 
@@ -96,7 +98,7 @@ func (uc *LogCardPurchaseFromAgent) Execute(ctx context.Context, in LogCardPurch
 		return LogCardPurchaseFromAgentResult{}, ErrLogTransactionNoCategoryHint
 	}
 
-	candidate, path, err := resolveCategoryCandidate(ctx, uc.resolver, uc.resolveBad, hint, categoriesvo.KindExpense)
+	candidate, path, err := resolveCategoryCandidate(ctx, uc.resolver, uc.resolveBad, uc.scoreHistogram, hint, categoriesvo.KindExpense)
 	if err != nil {
 		return LogCardPurchaseFromAgentResult{}, err
 	}

@@ -53,11 +53,13 @@ func (s *SearchDictionaryHandlerSuite) TestHandle_Success_Candidates() {
 		Result: "candidates",
 		Candidates: []output.CandidateOutput{
 			{
-				CategoryID:  uuid.MustParse("11111111-1111-1111-1111-111111111111"),
-				Path:        "Salario > Salario",
-				MatchedTerm: "salario",
-				SignalType:  "canonical_name",
-				Confidence:  "high",
+				CategoryID:   uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+				Path:         "Salario > Salario",
+				MatchedTerm:  "salario",
+				SignalType:   "canonical_name",
+				Confidence:   "high",
+				MatchQuality: "exact",
+				Score:        0.95,
 			},
 		},
 		HasMore: false,
@@ -73,11 +75,16 @@ func (s *SearchDictionaryHandlerSuite) TestHandle_Success_Candidates() {
 	s.Equal(http.StatusOK, rec.Code)
 	s.Equal(`"v42"`, rec.Header().Get("ETag"))
 
+	s.Contains(rec.Body.String(), `"match_quality":"exact"`)
+	s.Contains(rec.Body.String(), `"score":0.95`)
+
 	var response output.DictionarySearchOutput
 	err := json.Unmarshal(rec.Body.Bytes(), &response)
 	s.NoError(err)
 	s.Equal("candidates", response.Result)
 	s.Len(response.Candidates, 1)
+	s.Equal("exact", response.Candidates[0].MatchQuality)
+	s.InDelta(0.95, response.Candidates[0].Score, 1e-9)
 }
 
 func (s *SearchDictionaryHandlerSuite) TestHandle_Success_NoMatch() {

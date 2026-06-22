@@ -31,11 +31,12 @@ type CreateRecurringResult struct {
 }
 
 type CreateRecurringFromAgent struct {
-	resolver   CategoryResolver
-	creator    RecurringTemplateCreator
-	o11y       observability.Observability
-	persisted  observability.Counter
-	resolveBad observability.Counter
+	resolver       CategoryResolver
+	creator        RecurringTemplateCreator
+	o11y           observability.Observability
+	persisted      observability.Counter
+	resolveBad     observability.Counter
+	scoreHistogram observability.Histogram
 }
 
 func NewCreateRecurringFromAgent(
@@ -54,11 +55,12 @@ func NewCreateRecurringFromAgent(
 		"1",
 	)
 	return &CreateRecurringFromAgent{
-		resolver:   resolver,
-		creator:    creator,
-		o11y:       o11y,
-		persisted:  persisted,
-		resolveBad: resolveBad,
+		resolver:       resolver,
+		creator:        creator,
+		o11y:           o11y,
+		persisted:      persisted,
+		resolveBad:     resolveBad,
+		scoreHistogram: newMatchScoreHistogram(o11y),
 	}
 }
 
@@ -106,7 +108,7 @@ func (uc *CreateRecurringFromAgent) Execute(ctx context.Context, in CreateRecurr
 		hint = defaultIncomeHint
 	}
 
-	candidate, path, err := resolveCategoryCandidate(ctx, uc.resolver, uc.resolveBad, hint, categoryKind)
+	candidate, path, err := resolveCategoryCandidate(ctx, uc.resolver, uc.resolveBad, uc.scoreHistogram, hint, categoryKind)
 	if err != nil {
 		return CreateRecurringFromAgentResult{}, err
 	}

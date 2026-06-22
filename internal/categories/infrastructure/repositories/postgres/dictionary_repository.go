@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -88,6 +89,126 @@ func (r *dictionaryRepository) Search(ctx context.Context, q interfaces.Dictiona
 	}()
 
 	return r.scanEntries(rows)
+}
+
+func (r *dictionaryRepository) SearchTokens(ctx context.Context, q interfaces.DictionaryTokenSearchQuery) (entries []entities.DictionaryEntry, err error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.dictionary.search_tokens")
+	defer span.End()
+
+	if len(q.Tokens) == 0 {
+		return nil, nil
+	}
+
+	query, args := buildTokenSearchQuery(q)
+	rows, qerr := r.db.QueryContext(ctx, query, args...)
+	if qerr != nil {
+		span.RecordError(qerr)
+		return nil, fmt.Errorf("categories/postgres: dictionary search tokens: %w", qerr)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("categories/postgres: close token rows: %w", cerr))
+		}
+	}()
+
+	return r.scanEntries(rows)
+}
+
+func (r *dictionaryRepository) SearchFuzzy(ctx context.Context, q interfaces.DictionaryFuzzySearchQuery) (entries []entities.DictionaryEntry, err error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "categories.repository.dictionary.search_fuzzy")
+	defer span.End()
+
+	if len(q.Tokens) == 0 {
+		return nil, nil
+	}
+
+	query, args := buildFuzzySearchQuery(q)
+	rows, qerr := r.db.QueryContext(ctx, query, args...)
+	if qerr != nil {
+		span.RecordError(qerr)
+		return nil, fmt.Errorf("categories/postgres: dictionary search fuzzy: %w", qerr)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("categories/postgres: close fuzzy rows: %w", cerr))
+		}
+	}()
+
+	return r.scanEntries(rows)
+}
+
+func buildTokenSearchQuery(q interfaces.DictionaryTokenSearchQuery) (string, []any) {
+	args := make([]any, 0, len(q.Tokens)+2)
+	args = append(args, q.Kind.String())
+
+	var placeholders strings.Builder
+	for i, token := range q.Tokens {
+		if i > 0 {
+			placeholders.WriteString(", ")
+		}
+		fmt.Fprintf(&placeholders, "lower(mecontrola.immutable_unaccent($%d))", i+2)
+		args = append(args, token)
+	}
+
+	deprecatedFilter := "AND deprecated_at IS NULL"
+	if q.IncludeDeprecated {
+		deprecatedFilter = ""
+	}
+
+	limitIdx := len(args) + 1
+	args = append(args, q.Limit)
+
+	query := `
+		SELECT id, category_id, kind, term, signal_type, confidence, is_ambiguous, deprecated_at
+		FROM mecontrola.category_dictionary
+		WHERE kind = $1
+		  AND term_normalized IN (` + placeholders.String() + `)
+		  ` + deprecatedFilter + `
+		ORDER BY
+			CASE signal_type
+				WHEN 'canonical_name' THEN 1
+				WHEN 'alias' THEN 2
+				WHEN 'phrase' THEN 3
+				WHEN 'merchant' THEN 4
+				WHEN 'segment' THEN 5
+			END,
+			term COLLATE "pt-BR-x-icu"
+		LIMIT $` + strconv.Itoa(limitIdx) + `
+	`
+	return query, args
+}
+
+func buildFuzzySearchQuery(q interfaces.DictionaryFuzzySearchQuery) (string, []any) {
+	args := make([]any, 0, len(q.Tokens)+3)
+	args = append(args, q.Kind.String())
+
+	simExprs := make([]string, 0, len(q.Tokens))
+	for i, token := range q.Tokens {
+		simExprs = append(simExprs, fmt.Sprintf("similarity(term_normalized, lower(mecontrola.immutable_unaccent($%d)))", i+2))
+		args = append(args, token)
+	}
+	bestSimilarity := "GREATEST(" + strings.Join(simExprs, ", ") + ")"
+
+	minSimilarityIdx := len(args) + 1
+	args = append(args, q.MinSimilarity)
+	limitIdx := len(args) + 1
+	args = append(args, q.Limit)
+
+	deprecatedFilter := "AND deprecated_at IS NULL"
+	if q.IncludeDeprecated {
+		deprecatedFilter = ""
+	}
+
+	query := `
+		SELECT id, category_id, kind, term, signal_type, confidence, is_ambiguous, deprecated_at
+		FROM mecontrola.category_dictionary
+		WHERE kind = $1
+		  AND ` + bestSimilarity + ` >= $` + strconv.Itoa(minSimilarityIdx) + `
+		  ` + deprecatedFilter + `
+		ORDER BY ` + bestSimilarity + ` DESC, term COLLATE "pt-BR-x-icu"
+		LIMIT $` + strconv.Itoa(limitIdx) + `
+	`
+	return query, args
 }
 
 func buildSearchQuery(includeDeprecated bool) string {

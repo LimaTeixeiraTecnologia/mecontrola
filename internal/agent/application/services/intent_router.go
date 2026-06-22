@@ -61,10 +61,11 @@ var (
 )
 
 var (
-	ErrCategoryAmbiguous   = errors.New("agent.intent_router: categoria ambigua")
-	ErrCategoryNotFound    = errors.New("agent.intent_router: categoria nao encontrada")
-	ErrCategoryHintMissing = errors.New("agent.intent_router: sem hint de categoria")
-	ErrRecurringInvalidDay = errors.New("agent.intent_router: dia da recorrencia invalido")
+	ErrCategoryAmbiguous         = errors.New("agent.intent_router: categoria ambigua")
+	ErrCategoryNeedsConfirmation = errors.New("agent.intent_router: categoria precisa de confirmacao")
+	ErrCategoryNotFound          = errors.New("agent.intent_router: categoria nao encontrada")
+	ErrCategoryHintMissing       = errors.New("agent.intent_router: sem hint de categoria")
+	ErrRecurringInvalidDay       = errors.New("agent.intent_router: dia da recorrencia invalido")
 )
 
 type CategoryAmbiguousError struct {
@@ -78,6 +79,19 @@ func (e *CategoryAmbiguousError) Error() string {
 
 func (e *CategoryAmbiguousError) Unwrap() error {
 	return ErrCategoryAmbiguous
+}
+
+type CategoryNeedsConfirmationError struct {
+	Hint       string
+	Candidates []string
+}
+
+func (e *CategoryNeedsConfirmationError) Error() string {
+	return fmt.Sprintf("%s: hint=%q candidatos=%s", ErrCategoryNeedsConfirmation.Error(), e.Hint, strings.Join(e.Candidates, ", "))
+}
+
+func (e *CategoryNeedsConfirmationError) Unwrap() error {
+	return ErrCategoryNeedsConfirmation
 }
 
 const (
@@ -105,6 +119,21 @@ func formatCategoryAmbiguous(candidates []string) string {
 	}
 	sb.WriteString("\nÉ só me dizer o nome. 🙂")
 	return sb.String()
+}
+
+func formatCategoryNeedsConfirmation(candidates []string) string {
+	top := ""
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed != "" {
+			top = trimmed
+			break
+		}
+	}
+	if top == "" {
+		return "Não tenho certeza da categoria certa pra isso. Me diz qual categoria você quer usar? 🙂"
+	}
+	return fmt.Sprintf("Acho que isso entra em *%s*. Posso registrar assim? Se não for, me diz a categoria certa. 🙂", top)
 }
 
 func formatCategoryNotFound(hint string) string {

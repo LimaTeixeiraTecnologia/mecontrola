@@ -71,7 +71,7 @@ func (s *LogTransactionSuite) incomeIntent(amount int64, source string) intent.I
 func (s *LogTransactionSuite) candidates(path string) *categoriesoutput.DictionarySearchOutput {
 	return &categoriesoutput.DictionarySearchOutput{
 		Candidates: []categoriesoutput.CandidateOutput{
-			{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: path},
+			{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: path, Score: 0.95},
 		},
 	}
 }
@@ -102,6 +102,39 @@ func (s *LogTransactionSuite) TestNoCandidateReturnsNotFound() {
 	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", ""),
+	})
+	s.Require().ErrorIs(err, ErrLogTransactionCategoryNotFound)
+}
+
+func (s *LogTransactionSuite) TestMediumScoreNeedsConfirmation() {
+	resolver := &fakeResolver{out: &categoriesoutput.DictionarySearchOutput{
+		Candidates: []categoriesoutput.CandidateOutput{
+			{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Prazeres > Streaming", Score: 0.65},
+		},
+	}}
+	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+		UserID: uuid.NewString(),
+		Intent: s.expenseIntent(5800, "netflix", ""),
+	})
+	s.Require().ErrorIs(err, ErrLogTransactionCategoryNeedsConfirmation)
+
+	var needsConfirmation *CategoryNeedsConfirmationError
+	s.Require().ErrorAs(err, &needsConfirmation)
+	s.Equal("netflix", needsConfirmation.Hint)
+	s.Equal([]string{"Prazeres > Streaming"}, needsConfirmation.Candidates)
+}
+
+func (s *LogTransactionSuite) TestLowScoreReturnsNotFound() {
+	resolver := &fakeResolver{out: &categoriesoutput.DictionarySearchOutput{
+		Candidates: []categoriesoutput.CandidateOutput{
+			{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Prazeres", Score: 0.40},
+		},
+	}}
+	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+		UserID: uuid.NewString(),
+		Intent: s.expenseIntent(5800, "xpto", ""),
 	})
 	s.Require().ErrorIs(err, ErrLogTransactionCategoryNotFound)
 }
