@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
@@ -47,4 +48,30 @@ func (r *messageRepository) InsertIfAbsent(ctx context.Context, wamid string) (b
 		return false, fmt.Errorf("whatsapp.dedup: rows affected: %w", err)
 	}
 	return rows > 0, nil
+}
+
+func (r *messageRepository) DeleteProcessedBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "whatsapp.dedup.repository.delete_processed_before")
+	defer span.End()
+
+	const q = `
+		DELETE FROM mecontrola.channel_processed_messages
+		 WHERE ctid IN (
+			SELECT ctid
+			  FROM mecontrola.channel_processed_messages
+			 WHERE channel = $1 AND processed_at <= $2
+			 LIMIT $3
+		)`
+
+	result, err := r.conn(ctx).ExecContext(ctx, q, channelWhatsApp, before, batchSize)
+	if err != nil {
+		span.RecordError(err)
+		return 0, fmt.Errorf("whatsapp.dedup: delete_processed_before: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("whatsapp.dedup: delete_processed_before rows affected: %w", err)
+	}
+	return rows, nil
 }

@@ -35,6 +35,9 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
+	deduphandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/jobs/handlers"
+	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
@@ -217,6 +220,10 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		}
 	}
 
+	dedupRepo := deduppostgres.NewMessageRepository(r.o11y, r.db)
+	dedupCleanup := dedup.NewCleanupProcessedMessages(dedupRepo, r.cfg.WhatsAppConfig, r.o11y)
+	dedupHousekeepingJob := deduphandlers.NewDedupHousekeepingJob(dedupCleanup, r.cfg.WhatsAppConfig)
+
 	jobs := make([]worker.Job, 0, 10)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
 		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -226,6 +233,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		outbox.NewReaperJob(reaperUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
 		outbox.NewHousekeepingJob(housekeepUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),
 		identityModule.AuthEventsHousekeepingJob,
+		dedupHousekeepingJob,
 		billingModule.ReconciliationJob,
 		billingModule.KiwifyEventsHousekeeper,
 		billingModule.GraceExpirationJob,

@@ -6,6 +6,7 @@ package mocks
 
 import (
 	"context"
+	"time"
 
 	mock "github.com/stretchr/testify/mock"
 )
@@ -35,6 +36,78 @@ type MessageRepository_Expecter struct {
 
 func (_m *MessageRepository) EXPECT() *MessageRepository_Expecter {
 	return &MessageRepository_Expecter{mock: &_m.Mock}
+}
+
+// DeleteProcessedBefore provides a mock function for the type MessageRepository
+func (_mock *MessageRepository) DeleteProcessedBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
+	ret := _mock.Called(ctx, before, batchSize)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteProcessedBefore")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) (int64, error)); ok {
+		return returnFunc(ctx, before, batchSize)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) int64); ok {
+		r0 = returnFunc(ctx, before, batchSize)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, int) error); ok {
+		r1 = returnFunc(ctx, before, batchSize)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MessageRepository_DeleteProcessedBefore_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteProcessedBefore'
+type MessageRepository_DeleteProcessedBefore_Call struct {
+	*mock.Call
+}
+
+// DeleteProcessedBefore is a helper method to define mock.On call
+//   - ctx context.Context
+//   - before time.Time
+//   - batchSize int
+func (_e *MessageRepository_Expecter) DeleteProcessedBefore(ctx any, before any, batchSize any) *MessageRepository_DeleteProcessedBefore_Call {
+	return &MessageRepository_DeleteProcessedBefore_Call{Call: _e.mock.On("DeleteProcessedBefore", ctx, before, batchSize)}
+}
+
+func (_c *MessageRepository_DeleteProcessedBefore_Call) Run(run func(ctx context.Context, before time.Time, batchSize int)) *MessageRepository_DeleteProcessedBefore_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MessageRepository_DeleteProcessedBefore_Call) Return(deleted int64, err error) *MessageRepository_DeleteProcessedBefore_Call {
+	_c.Call.Return(deleted, err)
+	return _c
+}
+
+func (_c *MessageRepository_DeleteProcessedBefore_Call) RunAndReturn(run func(ctx context.Context, before time.Time, batchSize int) (int64, error)) *MessageRepository_DeleteProcessedBefore_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // InsertIfAbsent provides a mock function for the type MessageRepository
