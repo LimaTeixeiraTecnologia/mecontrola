@@ -28,6 +28,14 @@ func NewObservationRepositoryFactory(o11y observability.Observability) interface
 	return &repositoryFactory{o11y: o11y}
 }
 
+func NewThreadRepositoryFactory(o11y observability.Observability) interfaces.AgentThreadRepositoryFactory {
+	return &repositoryFactory{o11y: o11y}
+}
+
+func NewRunRepositoryFactory(o11y observability.Observability) interfaces.AgentRunRepositoryFactory {
+	return &repositoryFactory{o11y: o11y}
+}
+
 func (f *repositoryFactory) AgentSessionRepository(db database.DBTX) interfaces.AgentSessionRepository {
 	return postgres.NewAgentSessionRepository(f.o11y, db)
 }
@@ -42,4 +50,12 @@ func (f *repositoryFactory) WorkingMemoryRepository(db database.DBTX) interfaces
 
 func (f *repositoryFactory) ObservationRepository(db database.DBTX) interfaces.ObservationRepository {
 	return postgres.NewObservationRepository(f.o11y, db)
+}
+
+func (f *repositoryFactory) AgentThreadRepository(db database.DBTX) interfaces.AgentThreadRepository {
+	return postgres.NewAgentThreadRepository(f.o11y, db)
+}
+
+func (f *repositoryFactory) AgentRunRepository(db database.DBTX) interfaces.AgentRunRepository {
+	return postgres.NewAgentRunRepository(f.o11y, db)
 }

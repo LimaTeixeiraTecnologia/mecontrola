@@ -1,0 +1,137 @@
+# Agent Workflows e Tools — Padrao Canonico
+
+- Rule ID: R-AGENT-WF-001
+- Severidade: hard
+- Escopo: `internal/agent/`
+- Plano de origem: `docs/runs/2026-06-23-evolucao-dailyagent-mastra.md`
+
+## Objetivo
+
+Tornar **Workflow + Tool o padrao canonico e obrigatorio** de roteamento do `internal/agent`,
+substituindo o `switch` de `daily_ledger_agent.go` por um `WorkflowRegistry`. Todo comportamento
+novo entra como `Workflow`/`Tool` reutilizando bindings e usecases existentes — nunca como novo
+`case` de dominio. As regras abaixo herdam e reforcam R-ADAPTER-001 e a precedencia DMMF de
+`.claude/rules/governance.md`.
+
+## R-AGENT-WF-001.1 — Roteamento `Workflow -> Tool -> binding -> usecase` [HARD]
+
+O fluxo canonico de execucao e:
+
+```
+IntentRouter -> WorkflowRegistry.Resolve(kind) -> Workflow.Execute -> Tool.Execute -> binding -> usecase -> domain -> repo
+```
+
+Proibido:
+
+1. Adicionar novo `case` de dominio ao `switch` de
+   `internal/agent/application/.../daily_ledger_agent.go`. Cada intent kind novo DEVE ser atendido
+   por um `Workflow` registrado no `WorkflowRegistry`.
+2. Logica de roteamento por intent kind fora de um `Workflow` (ex: branching sobre `intent.Kind`
+   em handler, consumer, job ou entrypoint para decidir qual usecase chamar).
+3. Chamar binding ou usecase diretamente do entrypoint sem passar por `Workflow -> Tool`.
+
+`daily_ledger_agent.go` deve permanecer fino: orquestra registry, guarda de escrita e formatacao
+compartilhada. Resolucao de kind acontece exclusivamente via `WorkflowRegistry.Resolve(kind)`.
+
+## R-AGENT-WF-001.2 — Tool e adapter fino de responsabilidade unica [HARD]
+
+Cada `Tool` tem **uma unica responsabilidade** e e um adapter fino sobre `binding -> usecase`.
+Herda integralmente R-ADAPTER-001.2.
+
+Proibido em qualquer `Tool` (`internal/agent/application/tools/`) ou `Workflow`
+(`internal/agent/application/workflow/`):
+
+1. Regra ou calculo de negocio (ex: re-normalizar allocations, decidir status de dominio).
+2. Query SQL direta (`QueryContext`, `ExecContext`, `db.Query`, `tx.Exec`, `db.Exec`).
+3. Branching sobre estado de dominio — comparar campos de entidade para decidir comportamento.
+
+Permitido: mapear `intent.Intent` para o DTO/command do usecase, invocar o binding, mapear o
+retorno para `ToolResult` e fazer wrapping de erro (`fmt.Errorf("ctx: %w", err)`).
+
+A lógica de pre-write (authz + replay + policy + decision audit) NAO e duplicada por tool: vive no
+step de guarda reutilizavel (`write_guard.go`) aplicado pelos workflows de escrita.
+
+## R-AGENT-WF-001.3 — `ToolOutcome` e `RunStatus` sao tipos fechados [HARD]
+
+`ToolOutcome` e `RunStatus` DEVEM ser tipos fechados (DMMF state-as-type), nunca strings livres.
+
+- `RunStatus` aceita apenas `running | succeeded | failed`.
+- `ToolOutcome` aceita apenas o conjunto enumerado fechado (ex: `routed`, `clarify`,
+  `usecaseError`, `missingResolver`).
+
+Proibido:
+
+- Representar outcome ou status como `string` solta em assinatura de `Tool`/`Workflow`/`Run`.
+- Construir esses valores a partir de string externa sem smart constructor que rejeite valor
+  invalido.
+
+Persistencia em coluna TEXT e permitida via `String()`; a fronteira de codigo permanece tipada.
+
+## R-AGENT-WF-001.4 — LLM apenas no step de parse [HARD]
+
+O LLM aparece exclusivamente no step de parse a montante (`ParseInbound`). Proibido invocar LLM,
+prompt rendering ou fallback chain dentro de qualquer `Workflow` ou `Tool` de execucao. Workflows e
+tools operam sobre `intent.Intent` ja parseado e deterministico.
+
+## R-AGENT-WF-001.5 — Toda execucao e um Run auditavel [HARD]
+
+Toda execucao de `Workflow`/`Tool` DEVE ser observavel como um `Run` auditavel contendo, no minimo:
+`thread_id`, `run_id`, `workflow`, `tool`, `status` (`RunStatus`), `duration_ms` e `error`
+(quando houver). Escritas referenciam o `decision_id` correspondente do audit trail.
+
+Cardinalidade de metricas (herda R-TXN-004): labels permitidos sao enums fechados
+(`agent_id`, `channel`, `workflow`, `status`, `tool`, `outcome`). Proibido `user_id` ou
+`category_id` como label de metrica.
+
+## Gate de Verificacao
+
+**1. Switch de dominio nao cresce em `daily_ledger_agent.go`:**
+
+```bash
+f=$(find internal/agent -name "daily_ledger_agent.go" ! -name "*_test.go")
+[ -z "$f" ] && { echo "SKIP: daily_ledger_agent.go ausente"; } || {
+  cases=$(grep -cE "^[[:space:]]*case intent\.Kind" "$f" || true)
+  [ "${cases:-0}" -gt 1 ] \
+    && echo "FAIL: switch de dominio cresceu em daily_ledger_agent.go (cases=$cases); use WorkflowRegistry" && exit 1 \
+    || true
+}
+```
+
+**2. Zero comentarios em tools e workflows (herda R-ADAPTER-001.1):**
+
+```bash
+grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+  "^[[:space:]]*//" \
+  internal/agent/application/tools/ \
+  internal/agent/application/workflow/ 2>/dev/null \
+  | grep -Ev "(//go:|//nolint:|// Code generated)" \
+  && echo "FAIL: comentarios proibidos em tools/workflow" && exit 1 \
+  || true
+```
+
+**3. Sem SQL direto em tools/workflows (herda R-ADAPTER-001.2):**
+
+```bash
+grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+  "QueryContext\|ExecContext\|db\.Query\|tx\.Exec\|db\.Exec" \
+  internal/agent/application/tools/ \
+  internal/agent/application/workflow/ 2>/dev/null \
+  && echo "FAIL: SQL direto em tool/workflow" && exit 1 \
+  || true
+```
+
+## Proibido (R-AGENT-WF-001 global)
+
+- Aprovar PR que adicione `case` de dominio ao switch de `daily_ledger_agent.go`.
+- Aprovar PR com regra de negocio, SQL direto ou branching de dominio em `Tool`/`Workflow`.
+- Representar `ToolOutcome`/`RunStatus` como string livre.
+- Invocar LLM fora do step de parse.
+- Flexibilizar estas regras por diferenca de ferramenta, conveniencia ou deadline.
+
+## Referencias
+
+- `.claude/rules/go-adapters.md` (R-ADAPTER-001) — adaptadores finos e zero comentarios
+- `.claude/rules/transactions-workflows.md` (R-TXN-004) — cardinalidade de metricas
+- `.claude/rules/governance.md` — precedencia DMMF (state-as-type prevalece sobre Uber)
+- `domain-modeling.md` em `.agents/skills/go-implementation/references/` — DMMF state-as-type
+- `docs/runs/2026-06-23-evolucao-dailyagent-mastra.md` — plano da iniciativa

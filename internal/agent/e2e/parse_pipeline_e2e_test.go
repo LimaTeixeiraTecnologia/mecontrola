@@ -86,21 +86,21 @@ func TestParsePipeline_RealParser_PersistsExpense_E2E(t *testing.T) {
 	txModule, err := transactions.NewTransactionsModule(cfg, o11y, db, cardModule, catModule, authMW)
 	require.NoError(t, err)
 
-	logTx := usecases.NewLogTransactionFromAgent(
+	logTx := usecases.NewRecordTransactionFromAgent(
 		catModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
 	)
 
-	const canonicalExpenseJSON = `{"kind":"record_expense","amount_cents":5800,"merchant":"ifood"}`
+	const canonicalExpenseJSON = `{"kind":"record_expense","amount_cents":5800,"merchant":"ifood","category_hint":"delivery"}`
 	chain := newMockOpenRouterChain(t, canonicalExpenseJSON, http.StatusOK)
-	parser, err := usecases.NewParseInbound(chain, o11y)
+	parser, err := usecases.NewParseInbound(chain, 2000, o11y)
 	require.NoError(t, err)
 
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:          &parserAdapter{uc: parser},
-		ExpenseLogger:   agentbinding.NewTransactionLoggerAdapter(logTx),
+		ExpenseRecorder: agentbinding.NewTransactionLoggerAdapter(logTx),
 		Fallback:        &StubFallback{},
 		WhatsAppGateway: gateway,
 		Location:        time.UTC,
@@ -158,20 +158,20 @@ func TestParsePipeline_RealParser_ProviderDownFallsBack_E2E(t *testing.T) {
 	txModule, err := transactions.NewTransactionsModule(cfg, o11y, db, cardModule, catModule, authMW)
 	require.NoError(t, err)
 
-	logTx := usecases.NewLogTransactionFromAgent(
+	logTx := usecases.NewRecordTransactionFromAgent(
 		catModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
 	)
 
 	chain := newMockOpenRouterChain(t, "", http.StatusInternalServerError)
-	parser, err := usecases.NewParseInbound(chain, o11y)
+	parser, err := usecases.NewParseInbound(chain, 2000, o11y)
 	require.NoError(t, err)
 
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:          &parserAdapter{uc: parser},
-		ExpenseLogger:   agentbinding.NewTransactionLoggerAdapter(logTx),
+		ExpenseRecorder: agentbinding.NewTransactionLoggerAdapter(logTx),
 		Fallback:        &StubFallback{},
 		WhatsAppGateway: gateway,
 		Location:        time.UTC,

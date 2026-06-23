@@ -113,7 +113,7 @@ func DefaultRegistry() (*Registry, error) {
 		ToolSpec{
 			Name:        "monthly_summary",
 			IntentKind:  intent.KindMonthlySummary,
-			Description: "mostrar o resumo do mês / orçamento.",
+			Description: "mostrar o orçamento DETALHADO do mês, com a quebra completa por categoria (para a visão RESUMIDA da saúde financeira, é how_am_i_doing).",
 		},
 		ToolSpec{
 			Name:        "list_cards",
@@ -129,6 +129,21 @@ func DefaultRegistry() (*Registry, error) {
 			Name:        "count_cards",
 			IntentKind:  intent.KindCountCards,
 			Description: "dizer quantos cartões o usuário tem.",
+		},
+		ToolSpec{
+			Name:        "update_card",
+			IntentKind:  intent.KindUpdateCard,
+			Description: "editar um cartão já cadastrado (apelido, nome, fechamento ou vencimento).",
+		},
+		ToolSpec{
+			Name:        "delete_card",
+			IntentKind:  intent.KindDeleteCard,
+			Description: "apagar um cartão cadastrado.",
+		},
+		ToolSpec{
+			Name:        "edit_category_percentage",
+			IntentKind:  intent.KindEditCategoryPercentage,
+			Description: "ajustar o percentual de uma categoria do orçamento mensal.",
 		},
 		ToolSpec{
 			Name:        "configure_budget",

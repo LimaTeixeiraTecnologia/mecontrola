@@ -110,6 +110,10 @@ func fullConfidence() agentvo.Confidence {
 	return confidence
 }
 
+func strPtr(v string) *string { return &v }
+
+func intPtr(v int) *int { return &v }
+
 type StubParser struct {
 	table     map[string]intent.Intent
 	defaultFn func() intent.Intent

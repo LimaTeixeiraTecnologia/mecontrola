@@ -59,6 +59,7 @@ type BudgetsModule struct {
 	ListAlertsUC                *usecases.ListAlerts
 	GetMonthlySummaryUC         *usecases.GetMonthlySummary
 	UpsertExpenseUC             *usecases.UpsertExpense
+	EditCategoryPercentageUC    *usecases.EditCategoryPercentage
 }
 
 type moduleBuilder struct {
@@ -89,6 +90,7 @@ type moduleUseCases struct {
 	upsertExpense           *usecases.UpsertExpense
 	deleteExpense           *usecases.DeleteExpense
 	getMonthlySummary       *usecases.GetMonthlySummary
+	editCategoryPercentage  *usecases.EditCategoryPercentage
 	listAlerts              *usecases.ListAlerts
 	evaluateAlert           *usecases.EvaluateAlert
 	ingestExternalExpense   *usecases.IngestExternalExpense
@@ -196,6 +198,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		ListAlertsUC:                useCases.listAlerts,
 		GetMonthlySummaryUC:         useCases.getMonthlySummary,
 		UpsertExpenseUC:             useCases.upsertExpense,
+		EditCategoryPercentageUC:    useCases.editCategoryPercentage,
 	}, nil
 }
 
@@ -226,6 +229,7 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 	}
 
 	budgetUoW := uow.NewUnitOfWork(b.db)
+	editCategoryUoW := uow.NewUnitOfWork(b.db)
 	expenseUoW := uow.NewUnitOfWork(b.db)
 	voidUoW := uow.NewUnitOfWork(b.db)
 	listAlertsUoW := uow.NewUnitOfWork(b.db)
@@ -262,6 +266,7 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		upsertExpense:          upsertExpense,
 		deleteExpense:          deleteExpense,
 		getMonthlySummary:      usecases.NewGetMonthlySummary(repositories.factory, monthlySummaryUoW, b.o11y),
+		editCategoryPercentage: usecases.NewEditCategoryPercentage(repositories.factory, b.budgetActivatedPublisher, editCategoryUoW, b.o11y),
 		listAlerts:             usecases.NewListAlerts(repositories.factory, listAlertsUoW, b.o11y),
 		evaluateAlert:          usecases.NewEvaluateAlert(repositories.factory, voidUoW, b.o11y),
 		ingestExternalExpense:  usecases.NewIngestExternalExpense(repositories.factory, upsertExpense, deleteExpense, voidUoW, b.o11y),

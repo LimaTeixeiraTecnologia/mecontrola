@@ -198,3 +198,189 @@ func TestNewCountCards(t *testing.T) {
 	got := intent.NewCountCards()
 	require.Equal(t, intent.KindCountCards, got.Kind())
 }
+
+func TestPhase3bKinds_StringAndParseRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	cases := map[intent.Kind]string{
+		intent.KindUpdateCard:             "update_card",
+		intent.KindDeleteCard:             "delete_card",
+		intent.KindEditCategoryPercentage: "edit_category_percentage",
+	}
+	for k, want := range cases {
+		require.Equal(t, want, k.String())
+		parsed, err := intent.ParseKind(k.String())
+		require.NoError(t, err)
+		require.Equal(t, k, parsed)
+		parsedUpper, err := intent.ParseKind(strings.ToUpper("  " + want + "  "))
+		require.NoError(t, err)
+		require.Equal(t, k, parsedUpper)
+	}
+}
+
+func TestPhase3bKinds_IsWrite(t *testing.T) {
+	t.Parallel()
+
+	kinds := []intent.Kind{
+		intent.KindUpdateCard,
+		intent.KindDeleteCard,
+		intent.KindEditCategoryPercentage,
+	}
+	for _, k := range kinds {
+		require.True(t, k.IsWrite(), "kind %v deve ser escrita", k)
+	}
+}
+
+func strptr(s string) *string { return &s }
+func intptr(v int) *int       { return &v }
+
+func TestNewUpdateCard(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valido com nickname", func(t *testing.T) {
+		t.Parallel()
+		got, err := intent.NewUpdateCard(intent.UpdateCardFields{
+			CardName: "  Roxinho  ",
+			Nickname: strptr("  Itau Black  "),
+		})
+		require.NoError(t, err)
+		require.Equal(t, intent.KindUpdateCard, got.Kind())
+		require.Equal(t, "Roxinho", got.CardName())
+		require.NotNil(t, got.NicknamePtr())
+		require.Equal(t, "Itau Black", *got.NicknamePtr())
+		require.Nil(t, got.NamePtr())
+		require.Nil(t, got.ClosingDayPtr())
+		require.Nil(t, got.DueDayPtr())
+	})
+
+	t.Run("valido com dias", func(t *testing.T) {
+		t.Parallel()
+		got, err := intent.NewUpdateCard(intent.UpdateCardFields{
+			CardName:   "nubank",
+			ClosingDay: intptr(10),
+			DueDay:     intptr(17),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, got.ClosingDayPtr())
+		require.Equal(t, 10, *got.ClosingDayPtr())
+		require.NotNil(t, got.DueDayPtr())
+		require.Equal(t, 17, *got.DueDayPtr())
+	})
+
+	t.Run("card name vazio falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "   ", Nickname: strptr("x")})
+		require.ErrorIs(t, err, intent.ErrCardNameEmpty)
+	})
+
+	t.Run("card name muito longo falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: strings.Repeat("a", 121), Nickname: strptr("x")})
+		require.ErrorIs(t, err, intent.ErrCardNameTooLong)
+	})
+
+	t.Run("sem campos para alterar falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank"})
+		require.ErrorIs(t, err, intent.ErrNoFieldsToUpdate)
+	})
+
+	t.Run("closing day invalido falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", ClosingDay: intptr(0)})
+		require.ErrorIs(t, err, intent.ErrCardDayInvalid)
+	})
+
+	t.Run("due day invalido falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", DueDay: intptr(32)})
+		require.ErrorIs(t, err, intent.ErrCardDayInvalid)
+	})
+
+	t.Run("nickname muito longo falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", Nickname: strptr(strings.Repeat("a", 121))})
+		require.ErrorIs(t, err, intent.ErrCardNicknameTooLong)
+	})
+
+	t.Run("name muito longo falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", Name: strptr(strings.Repeat("a", 121))})
+		require.ErrorIs(t, err, intent.ErrCardNameTooLong)
+	})
+}
+
+func TestNewDeleteCard(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valido", func(t *testing.T) {
+		t.Parallel()
+		got, err := intent.NewDeleteCard("  Nubank  ")
+		require.NoError(t, err)
+		require.Equal(t, intent.KindDeleteCard, got.Kind())
+		require.Equal(t, "Nubank", got.CardName())
+	})
+
+	t.Run("vazio falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewDeleteCard("   ")
+		require.ErrorIs(t, err, intent.ErrCardNameEmpty)
+	})
+
+	t.Run("muito longo falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewDeleteCard(strings.Repeat("a", 121))
+		require.ErrorIs(t, err, intent.ErrCardNameTooLong)
+	})
+}
+
+func TestNewEditCategoryPercentage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valido", func(t *testing.T) {
+		t.Parallel()
+		got, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{
+			CategoryName: "  Lazer  ",
+			Percentage:   30,
+		})
+		require.NoError(t, err)
+		require.Equal(t, intent.KindEditCategoryPercentage, got.Kind())
+		require.Equal(t, "Lazer", got.CategoryName())
+		require.Equal(t, 30, got.Percentage())
+	})
+
+	t.Run("limites validos", func(t *testing.T) {
+		t.Parallel()
+		zero, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{CategoryName: "Casa", Percentage: 0})
+		require.NoError(t, err)
+		require.Equal(t, 0, zero.Percentage())
+
+		full, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{CategoryName: "Casa", Percentage: 100})
+		require.NoError(t, err)
+		require.Equal(t, 100, full.Percentage())
+	})
+
+	t.Run("categoria vazia falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{CategoryName: "  ", Percentage: 10})
+		require.ErrorIs(t, err, intent.ErrCategoryNameEmpty)
+	})
+
+	t.Run("categoria muito longa falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{CategoryName: strings.Repeat("a", 121), Percentage: 10})
+		require.ErrorIs(t, err, intent.ErrCategoryNameTooLong)
+	})
+
+	t.Run("percentual negativo falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{CategoryName: "Casa", Percentage: -1})
+		require.ErrorIs(t, err, intent.ErrPercentageOutOfRange)
+	})
+
+	t.Run("percentual acima de 100 falha", func(t *testing.T) {
+		t.Parallel()
+		_, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{CategoryName: "Casa", Percentage: 101})
+		require.ErrorIs(t, err, intent.ErrPercentageOutOfRange)
+	})
+}

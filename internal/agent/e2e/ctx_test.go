@@ -314,6 +314,158 @@ func (e *agentE2ECtx) latestTransactionAmountAndVersion(userID uuid.UUID) (int64
 	return amountCents, version, nil
 }
 
+func (e *agentE2ECtx) cardNicknameByName(userID uuid.UUID, name string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var nickname string
+	err := e.db.QueryRowContext(
+		ctx,
+		`SELECT nickname
+		   FROM mecontrola.cards
+		  WHERE user_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL
+		  ORDER BY created_at DESC LIMIT 1`,
+		userID, name,
+	).Scan(&nickname)
+	if err != nil {
+		return "", fmt.Errorf("consultar apelido do cartao: %w", err)
+	}
+	return nickname, nil
+}
+
+func (e *agentE2ECtx) cardDueDayByNickname(userID uuid.UUID, nickname string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var dueDay int
+	err := e.db.QueryRowContext(
+		ctx,
+		`SELECT due_day
+		   FROM mecontrola.cards
+		  WHERE user_id = $1 AND lower(nickname) = lower($2) AND deleted_at IS NULL
+		  ORDER BY created_at DESC LIMIT 1`,
+		userID, nickname,
+	).Scan(&dueDay)
+	if err != nil {
+		return 0, fmt.Errorf("consultar vencimento do cartao: %w", err)
+	}
+	return dueDay, nil
+}
+
+func (e *agentE2ECtx) cardExistsByNickname(userID uuid.UUID, nickname string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var total int
+	err := e.db.QueryRowContext(
+		ctx,
+		`SELECT count(*)
+		   FROM mecontrola.cards
+		  WHERE user_id = $1 AND lower(nickname) = lower($2) AND deleted_at IS NULL`,
+		userID, nickname,
+	).Scan(&total)
+	if err != nil {
+		return false, fmt.Errorf("consultar existencia do cartao: %w", err)
+	}
+	return total > 0, nil
+}
+
+func (e *agentE2ECtx) allocationBasisPoints(userID uuid.UUID, competence, rootSlug string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var basisPoints int
+	err := e.db.QueryRowContext(
+		ctx,
+		`SELECT a.basis_points
+		   FROM mecontrola.budgets_allocations a
+		   JOIN mecontrola.budgets b ON b.id = a.budget_id
+		  WHERE b.user_id = $1 AND b.competence = $2 AND a.root_slug = $3`,
+		userID, competence, rootSlug,
+	).Scan(&basisPoints)
+	if err != nil {
+		return 0, fmt.Errorf("consultar alocacao: %w", err)
+	}
+	return basisPoints, nil
+}
+
+func (e *agentE2ECtx) allocationBasisPointsSum(userID uuid.UUID, competence string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var total int
+	err := e.db.QueryRowContext(
+		ctx,
+		`SELECT COALESCE(sum(a.basis_points), 0)
+		   FROM mecontrola.budgets_allocations a
+		   JOIN mecontrola.budgets b ON b.id = a.budget_id
+		  WHERE b.user_id = $1 AND b.competence = $2`,
+		userID, competence,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("somar alocacoes: %w", err)
+	}
+	return total, nil
+}
+
+func (e *agentE2ECtx) seedActiveBudget(userID uuid.UUID, competence string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	now := time.Now().UTC()
+	budgetID := uuid.New()
+	const totalCents = int64(1000000)
+	if _, err := e.db.ExecContext(
+		ctx,
+		`INSERT INTO mecontrola.budgets (id, user_id, competence, total_cents, state, activated_at, auto_draft, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 2, $5, false, $5, $5)
+		 ON CONFLICT (user_id, competence) DO UPDATE
+		    SET total_cents = EXCLUDED.total_cents,
+		        state = 2,
+		        activated_at = EXCLUDED.activated_at,
+		        auto_draft = false,
+		        updated_at = EXCLUDED.updated_at`,
+		budgetID, userID, competence, totalCents, now,
+	); err != nil {
+		return fmt.Errorf("seed budget: %w", err)
+	}
+
+	var resolvedID uuid.UUID
+	if err := e.db.QueryRowContext(
+		ctx,
+		`SELECT id FROM mecontrola.budgets WHERE user_id = $1 AND competence = $2`,
+		userID, competence,
+	).Scan(&resolvedID); err != nil {
+		return fmt.Errorf("resolver budget: %w", err)
+	}
+
+	allocations := []struct {
+		slug        string
+		basisPoints int
+	}{
+		{"expense.custo_fixo", 4000},
+		{"expense.conhecimento", 1000},
+		{"expense.prazeres", 2000},
+		{"expense.metas", 2000},
+		{"expense.liberdade_financeira", 1000},
+	}
+	for _, alloc := range allocations {
+		planned := totalCents * int64(alloc.basisPoints) / 10000
+		if _, err := e.db.ExecContext(
+			ctx,
+			`INSERT INTO mecontrola.budgets_allocations (budget_id, root_slug, basis_points, planned_cents)
+			 VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (budget_id, root_slug) DO UPDATE
+			    SET basis_points = EXCLUDED.basis_points,
+			        planned_cents = EXCLUDED.planned_cents`,
+			resolvedID, alloc.slug, alloc.basisPoints, planned,
+		); err != nil {
+			return fmt.Errorf("seed allocation %s: %w", alloc.slug, err)
+		}
+	}
+	return nil
+}
+
 func (e *agentE2ECtx) latestTransactionDeletedAt(userID uuid.UUID) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

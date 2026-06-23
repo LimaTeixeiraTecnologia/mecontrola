@@ -39,6 +39,7 @@ Se duas regras do mesmo nível conflitarem:
 ## Regras de Modulo
 
 - `transactions-workflows.md` — codifica o gate hard ADR-006 para o modulo `internal/transactions`: `Decide*` puro obrigatorio, validacao so em smart constructors, producers so mapeiam domain event, cardinalidade controlada em metricas. Ver `.claude/rules/transactions-workflows.md`.
+- `agent-workflows-tools.md` — codifica o gate hard `R-AGENT-WF-001` para o modulo `internal/agent`: roteamento canonico `Workflow -> Tool -> binding -> usecase`, proibido novo `case` de dominio no switch de `daily_ledger_agent.go`, Tool fina sem regra/SQL/branching, `ToolOutcome`/`RunStatus` como tipos fechados (DMMF state-as-type), LLM so no step de parse, Run auditavel. Ver `.claude/rules/agent-workflows-tools.md`.
 
 ## Proibido
 - Aprovação sem evidência.

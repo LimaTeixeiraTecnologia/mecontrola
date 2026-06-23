@@ -132,6 +132,18 @@ Regras obrigatorias:
 5. Em novos desenvolvimentos, nao injetar `RepositoryFactory`, `manager.Manager`, `database.DBTX`, clients externos ou services de dominio diretamente em handlers/consumers/jobs quando o use case correspondente puder receber essa responsabilidade.
 6. Em use cases e services, e proibido criar interfaces locais apenas para expor `DBTX(ctx)`; quando a dependencia for somente o handle de banco, injetar `database.DBTX` concreto na struct consumidora.
 
+## Padrao Workflow/Tool do Agent (`internal/agent`)
+
+O modulo `internal/agent` usa `Workflow/Tool` como padrao canonico e obrigatorio de roteamento, codificado em `.claude/rules/agent-workflows-tools.md` (`R-AGENT-WF-001`, hard).
+
+Regras obrigatorias:
+1. Fluxo canonico: `IntentRouter -> WorkflowRegistry.Resolve(kind) -> Workflow -> Tool -> binding -> usecase -> domain -> repo`.
+2. Proibido adicionar novo `case` de dominio ao switch de `daily_ledger_agent.go` ou logica de roteamento por intent kind fora de um `Workflow`. Comportamento novo entra como `Workflow`/`Tool` reutilizando bindings e usecases existentes.
+3. `Tool` e adapter fino de responsabilidade unica (herda R-ADAPTER-001): zero regra de negocio, SQL direto ou branching de dominio. Pre-write (authz+replay+policy+audit) vive no step de guarda reutilizavel, nao duplicado por tool.
+4. `ToolOutcome` e `RunStatus` sao tipos fechados (DMMF state-as-type), nunca strings livres; toda execucao e um `Run` auditavel (`thread_id`, `run_id`, `workflow`, `tool`, `status`, `duration_ms`, `error`).
+5. LLM aparece apenas no step de parse (`ParseInbound`); nunca dentro de `Workflow`/`Tool` de execucao.
+6. Toda alteracao Go no modulo agent exige `go-implementation` (Etapas 1-5 + checklist R0-R7) e DMMF conforme a precedencia em `.claude/rules/governance.md`.
+
 ## Plataforma Compartilhada
 
 - Capacidades tecnicas reutilizaveis por mais de um modulo devem viver em `internal/platform/`.

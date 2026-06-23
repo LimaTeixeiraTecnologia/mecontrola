@@ -299,6 +299,49 @@ func formatCreatedCard(result CardCreatorResult) string {
 	return sb.String()
 }
 
+func formatUpdatedCard(result CardUpdaterResult) string {
+	label := strings.TrimSpace(result.Nickname)
+	if label == "" {
+		label = strings.TrimSpace(result.Name)
+	}
+	if label == "" {
+		label = "cartão"
+	}
+	var sb strings.Builder
+	sb.WriteString("💳 *Cartão atualizado!*\n*")
+	sb.WriteString(label)
+	sb.WriteString("*")
+	if result.LimitCents > 0 {
+		sb.WriteString(" — limite ")
+		sb.WriteString(formatBRL(result.LimitCents))
+	}
+	_, _ = fmt.Fprintf(&sb, "\n📅 Fecha dia %d, vence dia %d.", result.ClosingDay, result.DueDay)
+	return sb.String()
+}
+
+func formatDeletedCard(result CardDeleterResult) string {
+	label := strings.TrimSpace(result.Name)
+	if label == "" {
+		return "🗑️ Cartão apagado com sucesso."
+	}
+	return fmt.Sprintf("🗑️ *Cartão apagado!*\nRemovi o *%s* do seu cadastro.", label)
+}
+
+func formatCategoryPercentageUpdated(categoryName string, percentage int) string {
+	label := strings.TrimSpace(categoryName)
+	if label == "" {
+		label = "a categoria"
+	}
+	return fmt.Sprintf("🎯 *Orçamento ajustado!*\nDefini *%s* com *%d%%* do seu planejamento. As outras categorias foram rebalanceadas pra somar 100%%.", label, percentage)
+}
+
+func formatCardAmbiguous(cardName string) string {
+	if strings.TrimSpace(cardName) == "" {
+		return "💳 Encontrei mais de um cartão parecido. Me diz o nome exato do cartão pra eu não errar? 🙂"
+	}
+	return fmt.Sprintf("💳 Encontrei mais de um cartão parecido com %q. Me diz o nome exato pra eu não errar? 🙂", cardName)
+}
+
 func formatCardCount(total int64) string {
 	switch total {
 	case 0:

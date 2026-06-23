@@ -25,13 +25,14 @@ INTENTS PERMITIDAS (campo "kind"):
    Exemplos: "qual a fatura do nubank?", "quanto tá no cartão Itaú?".
    Campos: card_name (apelido/banco do cartão, obrigatório).
 
-6. "monthly_summary" — usuário pede um resumo mensal.
-   Exemplos: "resumo do mês", "como foi outubro?", "fechamento de 2026-05".
+6. "monthly_summary" — usuário pede o orçamento DETALHADO do mês (quebra completa por categoria / fechamento da competência).
+   Exemplos: "resumo do mês", "como foi outubro?", "fechamento de 2026-05", "detalha meu orçamento", "mostra a quebra por categoria".
    Campos: ref_month (formato "YYYY-MM"; OPCIONAL — só preencha se o usuário citou explicitamente o mês).
 
-7. "how_am_i_doing" — usuário pergunta sobre seu estado financeiro geral.
-   Exemplos: "como estou indo?", "tá bom ou ruim?", "minha saúde financeira tá ok?".
+7. "how_am_i_doing" — usuário pede uma visão RESUMIDA da saúde financeira (estado geral, sem detalhamento por categoria).
+   Exemplos: "como estou indo?", "tá bom ou ruim?", "minha saúde financeira tá ok?", "resumão rápido".
    Campos: nenhum.
+   DISTINÇÃO: pedido por DETALHE/quebra por categoria/fechamento do mês é "monthly_summary"; pedido por visão geral/resumida/saúde financeira é "how_am_i_doing".
 
 8. "configure_budget" — usuário quer (re)configurar o orçamento mensal, definir renda ou planejar gastos por categoria.
    Exemplos: "quero definir meu orçamento", "configurar orçamento mensal", "quero planejar minhas finanças", "vamos montar meu planejamento", "preciso ajustar meu orçamento".
@@ -74,7 +75,19 @@ INTENTS PERMITIDAS (campo "kind"):
     Exemplos: "quantos cartões eu tenho?", "tenho quantos cartões?", "número de cartões".
     Campos: nenhum.
 
-18. "unknown" — qualquer outra coisa (saudação, dúvida fora de escopo, ruído).
+18. "update_card" — usuário quer EDITAR um cartão já cadastrado (apelido, nome, fechamento ou vencimento).
+    Exemplos: "muda o fechamento do nubank pra dia 5", "renomeia o itaú para Itaú Black", "troca o apelido do cartão inter para inter gold".
+    Campos: card_name (apelido/nome ATUAL do cartão a editar, obrigatório), e SOMENTE os campos que mudam: new_nickname, new_name, new_closing_day (1..31), new_due_day (1..31). NÃO envie campos que o usuário não pediu para mudar.
+
+19. "delete_card" — usuário quer APAGAR/remover um cartão cadastrado.
+    Exemplos: "apaga o cartão nubank", "remove o itaú", "exclui meu cartão inter".
+    Campos: card_name (apelido/nome do cartão a apagar, obrigatório).
+
+20. "edit_category_percentage" — usuário quer ajustar o PERCENTUAL de uma categoria do orçamento.
+    Exemplos: "coloca 30% em prazeres", "muda metas para 25%", "quero 40% em custo fixo".
+    Campos: category_name (nome da categoria: Custo Fixo, Conhecimento, Prazeres, Metas ou Liberdade Financeira), percentage (inteiro 0..100).
+
+21. "unknown" — qualquer outra coisa (saudação, dúvida fora de escopo, ruído).
     Campos: raw_text (eco do texto original, obrigatório).
 
 REGRAS DE EXTRAÇÃO:

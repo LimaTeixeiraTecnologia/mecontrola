@@ -62,7 +62,7 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	getContext := onbusecases.NewGetOnboardingContext(factory.OnboardingSessionRepository(db), o11y)
 	saveObjective := onbusecases.NewSaveOnboardingObjective(uow.NewUnitOfWork(db), factory, o11y)
 	saveIncome := onbusecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
-	saveCard := onbusecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
+	saveCard := onbusecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y, nil)
 	saveSplits := onbusecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
 	markFirstTx := onbusecases.NewMarkFirstTransactionRecorded(uow.NewUnitOfWork(db), factory, o11y)
 	complete := onbusecases.NewCompleteOnboardingSession(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
@@ -72,7 +72,7 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	require.NotNil(t, reader)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(setPhase)
 	require.NotNil(t, phaseSetter)
-	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, fakeOnboardingExpenseLogger{})
+	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, getContext, nil, fakeOnboardingExpenseLogger{})
 
 	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil)
 	require.NoError(t, err)

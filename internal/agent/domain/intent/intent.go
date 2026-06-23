@@ -27,6 +27,9 @@ const (
 	KindListCards
 	KindCreateCard
 	KindCountCards
+	KindUpdateCard
+	KindDeleteCard
+	KindEditCategoryPercentage
 )
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
@@ -65,6 +68,12 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "create_card"
 	case KindCountCards:
 		return "count_cards"
+	case KindUpdateCard:
+		return "update_card"
+	case KindDeleteCard:
+		return "delete_card"
+	case KindEditCategoryPercentage:
+		return "edit_category_percentage"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -78,7 +87,10 @@ func (k Kind) IsWrite() bool {
 		KindRecordIncome,
 		KindRecordCardPurchase,
 		KindCreateCard,
-		KindConfigureBudget:
+		KindConfigureBudget,
+		KindUpdateCard,
+		KindDeleteCard,
+		KindEditCategoryPercentage:
 		return true
 	default:
 		return false
@@ -121,6 +133,12 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindCreateCard, nil
 	case "count_cards":
 		return KindCountCards, nil
+	case "update_card":
+		return KindUpdateCard, nil
+	case "delete_card":
+		return KindDeleteCard, nil
+	case "edit_category_percentage":
+		return KindEditCategoryPercentage, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -150,6 +168,9 @@ var (
 	ErrDayOfMonthInvalid    = errors.New("agent.intent: day_of_month must be between 1 and 31")
 	ErrCardNicknameEmpty    = errors.New("agent.intent: card nickname is empty")
 	ErrCardNicknameTooLong  = errors.New("agent.intent: card nickname exceeds maximum length")
+	ErrNoFieldsToUpdate     = errors.New("agent.intent: no fields to update")
+	ErrCardDayInvalid       = errors.New("agent.intent: card day must be between 1 and 31")
+	ErrPercentageOutOfRange = errors.New("agent.intent: percentage must be between 0 and 100")
 )
 
 const (
@@ -164,6 +185,8 @@ const (
 	maxInstallments       = 24
 	minDayOfMonth         = 1
 	maxDayOfMonth         = 31
+	minPercentage         = 0
+	maxPercentage         = 100
 )
 
 const (
@@ -206,6 +229,11 @@ type Intent struct {
 	closingDay    int
 	dueDay        int
 	limitCents    int64
+	nicknamePtr   *string
+	namePtr       *string
+	closingDayPtr *int
+	dueDayPtr     *int
+	percentage    int
 }
 
 func (i Intent) Kind() Kind            { return i.kind }
@@ -227,6 +255,11 @@ func (i Intent) Installments() int     { return i.installments }
 func (i Intent) Direction() string     { return i.direction }
 func (i Intent) Frequency() string     { return i.frequency }
 func (i Intent) DayOfMonth() int       { return i.dayOfMonth }
+func (i Intent) NicknamePtr() *string  { return i.nicknamePtr }
+func (i Intent) NamePtr() *string      { return i.namePtr }
+func (i Intent) ClosingDayPtr() *int   { return i.closingDayPtr }
+func (i Intent) DueDayPtr() *int       { return i.dueDayPtr }
+func (i Intent) Percentage() int       { return i.percentage }
 func (i Intent) IsZero() bool          { return i.kind == 0 }
 
 type RecordExpenseFields struct {
@@ -490,6 +523,95 @@ func NewCreateCard(f CreateCardFields) (Intent, error) {
 
 func NewCountCards() Intent {
 	return Intent{kind: KindCountCards}
+}
+
+type UpdateCardFields struct {
+	CardName   string
+	Nickname   *string
+	Name       *string
+	ClosingDay *int
+	DueDay     *int
+}
+
+func normalizeOptionalName(ptr *string, tooLong error) (*string, error) {
+	if ptr == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*ptr)
+	if len([]rune(trimmed)) > maxCardNameLength {
+		return nil, tooLong
+	}
+	return &trimmed, nil
+}
+
+func validOptionalDay(ptr *int) bool {
+	return ptr == nil || (*ptr >= minDayOfMonth && *ptr <= maxDayOfMonth)
+}
+
+func NewUpdateCard(f UpdateCardFields) (Intent, error) {
+	cardName := strings.TrimSpace(f.CardName)
+	if cardName == "" {
+		return Intent{}, ErrCardNameEmpty
+	}
+	if len([]rune(cardName)) > maxCardNameLength {
+		return Intent{}, ErrCardNameTooLong
+	}
+	if f.Nickname == nil && f.Name == nil && f.ClosingDay == nil && f.DueDay == nil {
+		return Intent{}, ErrNoFieldsToUpdate
+	}
+	nicknamePtr, err := normalizeOptionalName(f.Nickname, ErrCardNicknameTooLong)
+	if err != nil {
+		return Intent{}, err
+	}
+	namePtr, err := normalizeOptionalName(f.Name, ErrCardNameTooLong)
+	if err != nil {
+		return Intent{}, err
+	}
+	if !validOptionalDay(f.ClosingDay) || !validOptionalDay(f.DueDay) {
+		return Intent{}, ErrCardDayInvalid
+	}
+	return Intent{
+		kind:          KindUpdateCard,
+		cardName:      cardName,
+		nicknamePtr:   nicknamePtr,
+		namePtr:       namePtr,
+		closingDayPtr: f.ClosingDay,
+		dueDayPtr:     f.DueDay,
+	}, nil
+}
+
+func NewDeleteCard(cardName string) (Intent, error) {
+	trimmed := strings.TrimSpace(cardName)
+	if trimmed == "" {
+		return Intent{}, ErrCardNameEmpty
+	}
+	if len([]rune(trimmed)) > maxCardNameLength {
+		return Intent{}, ErrCardNameTooLong
+	}
+	return Intent{kind: KindDeleteCard, cardName: trimmed}, nil
+}
+
+type EditCategoryPercentageFields struct {
+	CategoryName string
+	Percentage   int
+}
+
+func NewEditCategoryPercentage(f EditCategoryPercentageFields) (Intent, error) {
+	categoryName := strings.TrimSpace(f.CategoryName)
+	if categoryName == "" {
+		return Intent{}, ErrCategoryNameEmpty
+	}
+	if len([]rune(categoryName)) > maxCategoryNameLength {
+		return Intent{}, ErrCategoryNameTooLong
+	}
+	if f.Percentage < minPercentage || f.Percentage > maxPercentage {
+		return Intent{}, ErrPercentageOutOfRange
+	}
+	return Intent{
+		kind:         KindEditCategoryPercentage,
+		categoryName: categoryName,
+		percentage:   f.Percentage,
+	}, nil
 }
 
 func NewUnknown(rawText string) (Intent, error) {

@@ -247,6 +247,11 @@ type rawIntentDTO struct {
 	ClosingDay    int      `json:"closing_day"`
 	DueDay        int      `json:"due_day"`
 	LimitCents    int64    `json:"limit_cents"`
+	Percentage    int      `json:"percentage"`
+	NewNickname   *string  `json:"new_nickname"`
+	NewName       *string  `json:"new_name"`
+	NewClosingDay *int     `json:"new_closing_day"`
+	NewDueDay     *int     `json:"new_due_day"`
 	Confidence    *float64 `json:"confidence"`
 }
 
@@ -360,6 +365,21 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		})
 	case intent.KindCountCards:
 		return intent.NewCountCards(), nil
+	case intent.KindUpdateCard:
+		return intent.NewUpdateCard(intent.UpdateCardFields{
+			CardName:   dto.CardName,
+			Nickname:   dto.NewNickname,
+			Name:       dto.NewName,
+			ClosingDay: dto.NewClosingDay,
+			DueDay:     dto.NewDueDay,
+		})
+	case intent.KindDeleteCard:
+		return intent.NewDeleteCard(dto.CardName)
+	case intent.KindEditCategoryPercentage:
+		return intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{
+			CategoryName: dto.CategoryName,
+			Percentage:   dto.Percentage,
+		})
 	case intent.KindUnknown:
 		raw := dto.RawText
 		if strings.TrimSpace(raw) == "" {

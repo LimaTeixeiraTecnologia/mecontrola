@@ -187,7 +187,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	txModule, err := transactions.NewTransactionsModule(cfg, o11y, db, cardModule, catModule, authMW)
 	require.NoError(t, err)
 
-	logTx := appusecases.NewLogTransactionFromAgent(
+	logTx := appusecases.NewRecordTransactionFromAgent(
 		catModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
@@ -202,7 +202,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	getContext := onbusecases.NewGetOnboardingContext(sessionRepo, o11y)
 	saveObjective := onbusecases.NewSaveOnboardingObjective(uow.NewUnitOfWork(db), onbfactory, o11y)
 	saveIncome := onbusecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
-	saveCard := onbusecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
+	saveCard := onbusecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y, nil)
 	saveSplits := onbusecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
 	markFirstTx := onbusecases.NewMarkFirstTransactionRecorded(uow.NewUnitOfWork(db), onbfactory, o11y)
 	complete := onbusecases.NewCompleteOnboardingSession(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
@@ -211,7 +211,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	reader := agentonboarding.NewOnboardingStateReader(getContext)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(setPhase)
 	require.NotNil(t, phaseSetter)
-	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, expLogger)
+	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, getContext, nil, expLogger)
 	chain := newScriptedOpenRouterChain(t)
 	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil)
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 		Parser:           NewStubParser(map[string]intent.Intent{}, nil),
 		Fallback:         &StubFallback{},
 		WhatsAppGateway:  gateway,
-		ExpenseLogger:    expLogger,
+		ExpenseRecorder:  expLogger,
 		OnboardingRunner: runner,
 		EventPublisher:   agentevents.NewIntentEventPublisher(publisher, o11y),
 		Location:         time.UTC,

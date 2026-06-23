@@ -115,7 +115,7 @@ func (s *RegistrySuite) TestDefaultRegistry() {
 	reg, err := DefaultRegistry()
 	s.NoError(err)
 	s.NotNil(reg)
-	s.Len(reg.Specs(), 6)
+	s.Len(reg.Specs(), 9)
 
 	kinds := []intent.Kind{
 		intent.KindRecordExpense,
@@ -123,6 +123,9 @@ func (s *RegistrySuite) TestDefaultRegistry() {
 		intent.KindListCards,
 		intent.KindCreateCard,
 		intent.KindCountCards,
+		intent.KindUpdateCard,
+		intent.KindDeleteCard,
+		intent.KindEditCategoryPercentage,
 		intent.KindConfigureBudget,
 	}
 	for _, kind := range kinds {

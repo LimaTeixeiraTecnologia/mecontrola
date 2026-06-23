@@ -46,7 +46,7 @@ func TestAgentRouter_RealLLM_PersistsTransactions_Integration(t *testing.T) {
 	txModule, err := transactions.NewTransactionsModule(cfg, o11y, mgr, cardModule, categoriesModule, authMW)
 	require.NoError(t, err)
 
-	logTx := usecases.NewLogTransactionFromAgent(
+	logTx := usecases.NewRecordTransactionFromAgent(
 		categoriesModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
@@ -55,7 +55,7 @@ func TestAgentRouter_RealLLM_PersistsTransactions_Integration(t *testing.T) {
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:          &parserAdapter{uc: realParser(t)},
-		ExpenseLogger:   agentbinding.NewTransactionLoggerAdapter(logTx),
+		ExpenseRecorder: agentbinding.NewTransactionLoggerAdapter(logTx),
 		Fallback:        &StubFallback{},
 		WhatsAppGateway: gateway,
 		Location:        time.UTC,
@@ -144,7 +144,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 		agentbinding.NewRecurringTemplateCreatorAdapter(txModule.CreateRecurringTemplateUC),
 		o11y,
 	)
-	logTx := usecases.NewLogTransactionFromAgent(
+	logTx := usecases.NewRecordTransactionFromAgent(
 		categoriesModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
@@ -176,7 +176,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:            stubParser,
-		ExpenseLogger:     agentbinding.NewTransactionLoggerAdapter(logTx),
+		ExpenseRecorder:   agentbinding.NewTransactionLoggerAdapter(logTx),
 		CardPurchaseLog:   agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
 		TransactionLister: agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC),
 		LastDeleter:       agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC),

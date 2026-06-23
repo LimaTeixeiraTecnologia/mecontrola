@@ -48,6 +48,13 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - Carregar referências go-implementation conforme Matriz R-ADAPTER-001.3 em `.claude/rules/go-adapters.md`.
 - Ver `.claude/rules/go-adapters.md` para contrato completo e gates de verificação.
 
+**R-AGENT-WF-001 (hard) — Workflow/Tool canônico em `internal/agent`:**
+- `internal/agent` usa `Workflow/Tool` como padrão canônico e obrigatório de roteamento: fluxo `IntentRouter → WorkflowRegistry.Resolve(kind) → Workflow → Tool → binding → usecase`. Proibido adicionar novo `case` de domínio ao switch de `daily_ledger_agent.go` ou lógica de roteamento fora de um Workflow.
+- Tool é adapter fino de responsabilidade única (herda R-ADAPTER-001): zero regra de negócio, SQL ou branching de domínio. LLM apenas no step de parse (`ParseInbound`).
+- `ToolOutcome`/`RunStatus` são tipos fechados (DMMF state-as-type), nunca strings livres; toda execução é um Run auditável.
+- Toda alteração Go no módulo agent exige `go-implementation` (Etapas 1–5 + checklist R0–R7) e DMMF aplicado conforme `.claude/rules/governance.md`.
+- Ver `.claude/rules/agent-workflows-tools.md` para contrato completo e gates de verificação.
+
 ## Outbox
 
 Ver secao "Outbox" em `AGENTS.md` para o contrato completo do `outbox.Publisher` e a regra obrigatoria de idempotencia por `event_id`.

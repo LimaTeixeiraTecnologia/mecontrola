@@ -18,6 +18,8 @@ var ErrBudgetAlreadyActive = errors.New("budgets: orçamento já está ativo")
 
 var ErrBudgetNotDraft = errors.New("budgets: operação permitida apenas em rascunho")
 
+var ErrBudgetNotActive = errors.New("budgets: operação permitida apenas em orçamento ativo")
+
 type BudgetState uint8
 
 const (
@@ -109,6 +111,22 @@ func (b *Budget) SetAllocations(allocs []Allocation) {
 
 func (b *Budget) AddAllocation(a Allocation) {
 	b.allocations = append(b.allocations, a)
+}
+
+func (b *Budget) RebalanceAllocations(allocs []Allocation, now time.Time) error {
+	if b.state != BudgetStateActive {
+		return ErrBudgetNotActive
+	}
+	sum := 0
+	for i := range allocs {
+		sum += allocs[i].BasisPoints()
+	}
+	if sum != 10000 {
+		return fmt.Errorf("budgets: soma=%d: %w", sum, ErrBudgetAllocationSumMustBe10000)
+	}
+	b.allocations = allocs
+	b.updatedAt = now
+	return nil
 }
 
 func (b *Budget) Activate(now time.Time) error {

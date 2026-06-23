@@ -186,6 +186,8 @@ type AgentConfig struct {
 	OnboardingLLMEnabled bool   `mapstructure:"AGENT_ONBOARDING_LLM_ENABLED"`
 	OnboardingMaxTokens  int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
 	OnboardingModel      string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
+
+	RuntimeEnabled bool `mapstructure:"AGENT_RUNTIME_ENABLED"`
 }
 
 type TelegramConfig struct {
@@ -1206,6 +1208,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_ENABLED", true)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")
+	l.v.SetDefault("AGENT_RUNTIME_ENABLED", false)
 }
 
 func (l *configLoader) setTelegramDefaults() {

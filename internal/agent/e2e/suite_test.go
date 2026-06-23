@@ -148,7 +148,7 @@ func buildServer(
 		t.Fatalf("budgets module: %v", err)
 	}
 
-	logTx := usecases.NewLogTransactionFromAgent(
+	logTx := usecases.NewRecordTransactionFromAgent(
 		catModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
@@ -283,27 +283,78 @@ func buildServer(
 	}
 	countCardsIntent := intent.NewCountCards()
 
+	updateCardNicknameIntent, err := intent.NewUpdateCard(intent.UpdateCardFields{
+		CardName: "nubank",
+		Nickname: strPtr("roxinho"),
+	})
+	if err != nil {
+		t.Fatalf("intent update card nickname: %v", err)
+	}
+	updateCardDueDayIntent, err := intent.NewUpdateCard(intent.UpdateCardFields{
+		CardName: "roxinho",
+		DueDay:   intPtr(25),
+	})
+	if err != nil {
+		t.Fatalf("intent update card due day: %v", err)
+	}
+	updateCardNotFoundIntent, err := intent.NewUpdateCard(intent.UpdateCardFields{
+		CardName: "fantasma",
+		Nickname: strPtr("qualquer"),
+	})
+	if err != nil {
+		t.Fatalf("intent update card not found: %v", err)
+	}
+	deleteCardIntent, err := intent.NewDeleteCard("roxinho")
+	if err != nil {
+		t.Fatalf("intent delete card: %v", err)
+	}
+	deleteCardNotFoundIntent, err := intent.NewDeleteCard("fantasma")
+	if err != nil {
+		t.Fatalf("intent delete card not found: %v", err)
+	}
+	editCategoryPercentageIntent, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{
+		CategoryName: "prazeres",
+		Percentage:   30,
+	})
+	if err != nil {
+		t.Fatalf("intent edit category percentage: %v", err)
+	}
+	editCategoryUnknownIntent, err := intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{
+		CategoryName: "viagens",
+		Percentage:   20,
+	})
+	if err != nil {
+		t.Fatalf("intent edit category unknown: %v", err)
+	}
+
 	stubP := NewStubParser(map[string]intent.Intent{
-		"gastei 50 no mercado":           expenseIntent,
-		"recebi salário de 3000":         incomeIntent,
-		"ação não suportada":             unknownIntent,
-		"parcelei 1200 em 6x no nubank":  cardPurchaseIntent,
-		"todo mês recebo 5000 no dia 5":  recurringIntent,
-		"na verdade foi 80":              editIntent,
-		"apaga o último":                 deleteIntent,
-		"lista meus lançamentos":         listTransactionsIntent,
-		"resumo do mês":                  monthlySummaryIntent,
-		"quanto gastei em prazeres?":     queryCategoryIntent,
-		"como está minha meta?":          queryGoalIntent,
-		"qual a fatura do nubank?":       queryCardIntent,
-		"como estou indo?":               howAmIDoingIntent,
-		"quais minhas recorrências?":     listRecurringIntent,
-		"meus cartões":                   listCardsIntent,
-		"comprei 300 no cartão fantasma": cardNotFoundIntent,
-		"cadastra meu cartão inter":      createCardIntent,
-		"cadastra meu cartão c6":         createCardC6Intent,
-		"cadastra meu cartão will":       createCardWillIntent,
-		"quantos cartões eu tenho?":      countCardsIntent,
+		"gastei 50 no mercado":                            expenseIntent,
+		"recebi salário de 3000":                          incomeIntent,
+		"ação não suportada":                              unknownIntent,
+		"parcelei 1200 em 6x no nubank":                   cardPurchaseIntent,
+		"todo mês recebo 5000 no dia 5":                   recurringIntent,
+		"na verdade foi 80":                               editIntent,
+		"apaga o último":                                  deleteIntent,
+		"lista meus lançamentos":                          listTransactionsIntent,
+		"resumo do mês":                                   monthlySummaryIntent,
+		"quanto gastei em prazeres?":                      queryCategoryIntent,
+		"como está minha meta?":                           queryGoalIntent,
+		"qual a fatura do nubank?":                        queryCardIntent,
+		"como estou indo?":                                howAmIDoingIntent,
+		"quais minhas recorrências?":                      listRecurringIntent,
+		"meus cartões":                                    listCardsIntent,
+		"comprei 300 no cartão fantasma":                  cardNotFoundIntent,
+		"cadastra meu cartão inter":                       createCardIntent,
+		"cadastra meu cartão c6":                          createCardC6Intent,
+		"cadastra meu cartão will":                        createCardWillIntent,
+		"quantos cartões eu tenho?":                       countCardsIntent,
+		"muda o apelido do cartão nubank pra roxinho":     updateCardNicknameIntent,
+		"troca o vencimento do cartão roxinho pro dia 25": updateCardDueDayIntent,
+		"muda o apelido do cartão fantasma pra qualquer":  updateCardNotFoundIntent,
+		"apaga o cartão roxinho":                          deleteCardIntent,
+		"apaga o cartão fantasma":                         deleteCardNotFoundIntent,
+		"coloca 30% em prazeres":                          editCategoryPercentageIntent,
+		"coloca 20% em viagens":                           editCategoryUnknownIntent,
 	}, nil)
 
 	publisher := outbox.NewPostgresPublisher(
@@ -312,24 +363,27 @@ func buildServer(
 	)
 
 	intentRouter, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
-		Parser:            stubP,
-		Fallback:          &StubFallback{},
-		WhatsAppGateway:   gateway,
-		TelegramGateway:   telegramGateway,
-		ExpenseLogger:     expLogger,
-		CardPurchaseLog:   agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
-		RecurringCreator:  agentbinding.NewRecurringCreatorAdapter(createRecurring),
-		TransactionLister: agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC),
-		LastEditor:        agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC),
-		LastDeleter:       agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC),
-		MonthlySummary:    budgetsModule.GetMonthlySummaryUC,
-		CardLister:        cardModule.ListCardsUC,
-		CardInvoice:       cardModule.InvoiceForUC,
-		CardCreator:       agentbinding.NewCardCreatorAdapter(cardModule.CreateCardUC),
-		CardCounter:       agentbinding.NewCardCounterAdapter(cardModule.CountCardsUC),
-		RecurringLister:   agentbinding.NewRecurringListerAdapter(txModule.ListRecurringTemplatesUC),
-		EventPublisher:    agentevents.NewIntentEventPublisher(publisher, o11y),
-		Location:          time.UTC,
+		Parser:                   stubP,
+		Fallback:                 &StubFallback{},
+		WhatsAppGateway:          gateway,
+		TelegramGateway:          telegramGateway,
+		ExpenseRecorder:          expLogger,
+		CardPurchaseLog:          agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
+		RecurringCreator:         agentbinding.NewRecurringCreatorAdapter(createRecurring),
+		TransactionLister:        agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC),
+		LastEditor:               agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC),
+		LastDeleter:              agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC),
+		MonthlySummary:           budgetsModule.GetMonthlySummaryUC,
+		CardLister:               cardModule.ListCardsUC,
+		CardInvoice:              cardModule.InvoiceForUC,
+		CardCreator:              agentbinding.NewCardCreatorAdapter(cardModule.CreateCardUC),
+		CardCounter:              agentbinding.NewCardCounterAdapter(cardModule.CountCardsUC),
+		CardUpdater:              agentbinding.NewCardUpdaterAdapter(cardModule.ListCardsUC, cardModule.UpdateCardUC),
+		CardDeleter:              agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC),
+		CategoryPercentageEditor: agentbinding.NewCategoryPercentageEditorAdapter(budgetsModule.EditCategoryPercentageUC),
+		RecurringLister:          agentbinding.NewRecurringListerAdapter(txModule.ListRecurringTemplatesUC),
+		EventPublisher:           agentevents.NewIntentEventPublisher(publisher, o11y),
+		Location:                 time.UTC,
 	})
 	if err != nil {
 		t.Fatalf("intent router: %v", err)

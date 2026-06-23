@@ -13,4 +13,6 @@ var (
 	ErrInputAmountCentsInvalid = errors.New("amount_cents: deve ser maior que zero")
 	ErrInputMonthsOutOfRange   = errors.New("months: deve estar entre 1 e 12")
 	ErrInputExpectedVersion    = errors.New("expected_version: deve ser maior que zero quando fornecido")
+	ErrInputInvalidRootSlug    = errors.New("root_slug: não pode ser vazio")
+	ErrInputPercentageRange    = errors.New("percentage: deve estar entre 0 e 100")
 )

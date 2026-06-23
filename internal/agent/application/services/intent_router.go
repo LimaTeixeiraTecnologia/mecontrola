@@ -69,6 +69,13 @@ var (
 	ErrRecurringInvalidDay       = errors.New("agent.intent_router: dia da recorrencia invalido")
 )
 
+var (
+	ErrAgentCardNotFound                 = errors.New("agent.intent_router: cartao nao encontrado")
+	ErrAgentCardAmbiguous                = errors.New("agent.intent_router: cartao ambiguo")
+	ErrCategoryPercentageUnknownCategory = errors.New("agent.intent_router: categoria de orcamento desconhecida")
+	ErrCategoryPercentageNoBudget        = errors.New("agent.intent_router: orcamento ativo inexistente")
+)
+
 type CategoryAmbiguousError struct {
 	Hint       string
 	Candidates []string
@@ -105,6 +112,7 @@ const (
 	budgetCancelledText     = "Ok, cancelei a configuração do orçamento. Quando quiser, é só chamar de novo. 😊"
 	categoryNoHintText      = "Pra registrar certinho, me diz em qual categoria você quer anotar isso? 🙂"
 	recurringInvalidDayText = "Pra criar uma recorrência, o dia do mês precisa estar entre 1 e 28. Me confirma o dia certo? 🙂"
+	budgetNotActiveText     = "Você ainda não tem um orçamento ativo neste mês pra eu ajustar. Quer configurar um agora? 🙂"
 )
 
 func formatCategoryAmbiguous(candidates []string) string {
@@ -201,6 +209,43 @@ type CardCreatorResult struct {
 
 type CardCounter interface {
 	Execute(ctx context.Context, userID uuid.UUID) (int64, error)
+}
+
+type CardUpdater interface {
+	Execute(ctx context.Context, userID uuid.UUID, in intent.Intent) (CardUpdaterResult, error)
+}
+
+type CardUpdaterResult struct {
+	Nickname   string
+	Name       string
+	ClosingDay int
+	DueDay     int
+	LimitCents int64
+}
+
+type CardDeleter interface {
+	Execute(ctx context.Context, userID uuid.UUID, cardName string) (CardDeleterResult, error)
+}
+
+type CardDeleterResult struct {
+	Name string
+}
+
+type CategoryPercentageEditorInput struct {
+	UserID       uuid.UUID
+	Competence   string
+	CategoryName string
+	Percentage   int
+}
+
+type CategoryPercentageEditorResult struct {
+	Competence string
+	RootSlug   string
+	Percentage int
+}
+
+type CategoryPercentageEditor interface {
+	Execute(ctx context.Context, in CategoryPercentageEditorInput) (CategoryPercentageEditorResult, error)
 }
 
 type Fallback interface {
@@ -407,6 +452,18 @@ type IntentRouter struct {
 	eventPublisher  interfaces.IntentEventPublisher
 	o11y            observability.Observability
 	routedTotal     observability.Counter
+	runtime         *AgentRuntime
+}
+
+func (r *IntentRouter) EnableRuntime(threads ThreadGateway, runs RunGateway) {
+	r.runtime = NewAgentRuntime(r.o11y, r, threads, runs)
+}
+
+func (r *IntentRouter) dispatch(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
+	if r.runtime != nil {
+		return r.runtime.Execute(ctx, principal, channel, peer, text, messageID)
+	}
+	return r.route(ctx, principal, channel, peer, text, messageID)
 }
 
 type IntentRouterDeps struct {
@@ -416,6 +473,9 @@ type IntentRouterDeps struct {
 	CardInvoice                CardInvoiceReader
 	CardCreator                CardCreator
 	CardCounter                CardCounter
+	CardUpdater                CardUpdater
+	CardDeleter                CardDeleter
+	CategoryPercentageEditor   CategoryPercentageEditor
 	ExpenseRecorder            ExpenseRecorder
 	CardPurchaseLog            CardPurchaseLogger
 	TransactionLister          TransactionLister
@@ -526,7 +586,7 @@ func warnMissingToolBindings(o11y observability.Observability, deps IntentRouter
 
 func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
 	startedAt := time.Now().UTC()
-	result := r.route(ctx, principal, ChannelWhatsApp, msg.WhatsAppTo, msg.Text, msg.MessageID)
+	result := r.dispatch(ctx, principal, ChannelWhatsApp, msg.WhatsAppTo, msg.Text, msg.MessageID)
 	defer r.publishEvent(ctx, principal, ChannelWhatsApp, result, startedAt)
 	if result.Reply == "" {
 		return result
@@ -543,7 +603,7 @@ func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, m
 
 func (r *IntentRouter) RouteTelegram(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
 	startedAt := time.Now().UTC()
-	result := r.route(ctx, principal, ChannelTelegram, "", msg.Text, msg.MessageID)
+	result := r.dispatch(ctx, principal, ChannelTelegram, "", msg.Text, msg.MessageID)
 	defer r.publishEvent(ctx, principal, ChannelTelegram, result, startedAt)
 	if result.Reply == "" {
 		return result

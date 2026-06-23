@@ -10,6 +10,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
@@ -29,6 +30,9 @@ type DailyLedgerAgent struct {
 	cardInvoice                CardInvoiceReader
 	cardCreator                CardCreator
 	cardCounter                CardCounter
+	cardUpdater                CardUpdater
+	cardDeleter                CardDeleter
+	categoryPercentageEditor   CategoryPercentageEditor
 	expenseRecorder            ExpenseRecorder
 	cardPurchaseLog            CardPurchaseLogger
 	transactionLister          TransactionLister
@@ -60,6 +64,9 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		cardInvoice:                deps.CardInvoice,
 		cardCreator:                deps.CardCreator,
 		cardCounter:                deps.CardCounter,
+		cardUpdater:                deps.CardUpdater,
+		cardDeleter:                deps.CardDeleter,
+		categoryPercentageEditor:   deps.CategoryPercentageEditor,
 		expenseRecorder:            deps.ExpenseRecorder,
 		cardPurchaseLog:            deps.CardPurchaseLog,
 		transactionLister:          deps.TransactionLister,
@@ -97,7 +104,7 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 	return confidence
 }
 
-func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
+func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
 	if a.pendingExpenseConfirmation != nil {
 		if handled, result := a.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, text); handled {
 			return result
@@ -141,112 +148,68 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return a.dispatchWrite(ctx, principal, channel, messageID, text, parsed)
 	}
 
-	switch kind {
-	case intent.KindRecordExpense:
-		return a.routeLogExpense(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindRecordIncome:
-		return a.routeLogIncome(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindMonthlySummary:
-		return a.routeMonthlySummary(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindQueryCategory:
-		return a.routeQueryCategory(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindQueryGoal:
-		return a.routeQueryGoal(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindQueryCard:
-		return a.routeQueryCard(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindHowAmIDoing:
-		return a.routeHowAmIDoing(ctx, principal.UserID, channel)
-	case intent.KindConfigureBudget:
-		return a.routeConfigureBudget(ctx, principal.UserID, channel, text)
-	case intent.KindRecordCardPurchase:
-		return a.routeLogCardPurchase(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindListTransactions:
-		return a.routeListTransactions(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindDeleteLastTransaction:
-		return a.routeDeleteLastTransaction(ctx, principal.UserID, channel)
-	case intent.KindEditLastTransaction:
-		return a.routeEditLastTransaction(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindCreateRecurring:
-		return a.routeCreateRecurring(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindListRecurring:
-		return a.routeListRecurring(ctx, principal.UserID, channel)
-	case intent.KindListCards:
-		return a.routeListCards(ctx, principal.UserID, channel)
-	case intent.KindCreateCard:
-		return a.routeCreateCard(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindCountCards:
-		return a.routeCountCards(ctx, principal.UserID, channel)
-	case intent.KindUnknown:
-		reply := a.delegateFallback(ctx, principal.UserID, channel, text)
-		a.record(ctx, intent.KindUnknown.String(), channel, OutcomeFallback)
-		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: intent.KindUnknown}
-	default:
-		reply := a.delegateFallback(ctx, principal.UserID, channel, text)
-		a.record(ctx, kind.String(), channel, OutcomeFallback)
-		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: kind}
+	registry, err := a.buildRegistry(text, writeContext{})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.registry_unavailable",
+			observability.String("kind", kind.String()),
+			observability.Error(err),
+		)
+		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
 	}
+	wf, ok := registry.Resolve(kind)
+	if !ok {
+		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
+	}
+	result, execErr := wf.Execute(ctx, tools.ToolInput{UserID: principal.UserID, Channel: channel, Intent: parsed.Intent})
+	if execErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.workflow_execute_failed",
+			observability.String("kind", kind.String()),
+			observability.String("workflow", wf.ID()),
+			observability.Error(execErr),
+		)
+		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
+	}
+	return toRouteResult(result)
+}
+
+func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, channel string, kind intent.Kind, text string) RouteResult {
+	reply := a.delegateFallback(ctx, userID, channel, text)
+	a.record(ctx, kind.String(), channel, OutcomeFallback)
+	return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: kind}
 }
 
 func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
 	kind := parsed.Intent.Kind()
 
-	effectiveUserID := principal.UserID
-	if !a.authorizeWrite(ctx, principal, effectiveUserID, kind, channel) {
-		return RouteResult{Reply: authzDeniedText, Outcome: OutcomeAuthzDenied, Kind: kind}
-	}
-
-	if replay, replayed := a.replayDecision(ctx, principal.UserID, channel, messageID, kind); replayed {
-		return replay
-	}
-
-	if a.policy.Evaluate(kind, parsed.Confidence) == domainservices.PolicyDecisionClarify {
-		a.policyBlockedTotal.Add(ctx, 1, observability.String("kind", kind.String()))
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.policy_blocked",
+	registry, err := a.buildRegistry(trimmed, writeContext{messageID: messageID, parsed: parsed, confidence: parsed.Confidence})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.registry_unavailable",
 			observability.String("kind", kind.String()),
-			observability.String("channel", channel),
+			observability.Error(err),
 		)
-		a.record(ctx, kind.String(), channel, OutcomePolicyBlocked)
-		return RouteResult{Reply: policyLowConfidenceText, Outcome: OutcomePolicyBlocked, Kind: kind}
-	}
-
-	auditCtx := a.beginDecisionAudit(ctx, principal, channel, messageID, kind, parsed)
-	if auditCtx.conflicted {
-		a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind.String()))
-		a.o11y.Logger().Info(ctx, "agent.intent_router.idempotent_conflict_replay",
-			observability.String("kind", kind.String()),
-			observability.String("channel", channel),
-		)
-		a.record(ctx, kind.String(), channel, OutcomeReplay)
-		return RouteResult{Reply: alreadyProcessedText, Outcome: OutcomeReplay, Kind: kind}
-	}
-	if auditCtx.failed {
 		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
 		return RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
 	}
-
-	var result RouteResult
-	switch kind {
-	case intent.KindRecordExpense:
-		result = a.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindRecordIncome:
-		result = a.routeLogIncome(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindRecordCardPurchase:
-		result = a.routeLogCardPurchase(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindCreateCard:
-		result = a.routeCreateCard(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindConfigureBudget:
-		result = a.routeConfigureBudget(ctx, effectiveUserID, channel, trimmed)
-	default:
+	wf, ok := registry.Resolve(kind)
+	if !ok {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.unknown_write_kind",
 			observability.String("kind", kind.String()),
 			observability.String("channel", channel),
 		)
 		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
-		result = RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
+		return RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
 	}
-
-	auditCtx.settle(ctx, result.Outcome == OutcomeRouted)
-	return result
+	result, execErr := wf.Execute(ctx, tools.ToolInput{UserID: principal.UserID, Channel: channel, Intent: parsed.Intent})
+	if execErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.workflow_execute_failed",
+			observability.String("kind", kind.String()),
+			observability.String("workflow", wf.ID()),
+			observability.Error(execErr),
+		)
+		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
+	}
+	return toRouteResult(result)
 }
 
 func (a *DailyLedgerAgent) authorizeWrite(ctx context.Context, principal Principal, effectiveUserID uuid.UUID, kind intent.Kind, channel string) bool {
@@ -829,6 +792,82 @@ func (a *DailyLedgerAgent) routeCountCards(ctx context.Context, userID uuid.UUID
 	}
 	a.record(ctx, intent.KindCountCards.String(), channel, OutcomeRouted)
 	return RouteResult{Reply: formatCardCount(total), Outcome: OutcomeRouted, Kind: intent.KindCountCards}
+}
+
+func (a *DailyLedgerAgent) routeUpdateCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.cardUpdater == nil {
+		a.record(ctx, intent.KindUpdateCard.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindUpdateCard}
+	}
+	result, err := a.cardUpdater.Execute(ctx, userID, in)
+	if err != nil {
+		if clarify, ok := a.cardResolutionClarification(ctx, channel, intent.KindUpdateCard, in.CardName(), err); ok {
+			return clarify
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.update_card_failed", observability.Error(err))
+		a.record(ctx, intent.KindUpdateCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: createCardErrorText(err), Outcome: OutcomeUsecaseError, Kind: intent.KindUpdateCard}
+	}
+	a.record(ctx, intent.KindUpdateCard.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatUpdatedCard(result), Outcome: OutcomeRouted, Kind: intent.KindUpdateCard}
+}
+
+func (a *DailyLedgerAgent) routeDeleteCard(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.cardDeleter == nil {
+		a.record(ctx, intent.KindDeleteCard.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindDeleteCard}
+	}
+	result, err := a.cardDeleter.Execute(ctx, userID, in.CardName())
+	if err != nil {
+		if clarify, ok := a.cardResolutionClarification(ctx, channel, intent.KindDeleteCard, in.CardName(), err); ok {
+			return clarify
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.delete_card_failed", observability.Error(err))
+		a.record(ctx, intent.KindDeleteCard.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindDeleteCard}
+	}
+	a.record(ctx, intent.KindDeleteCard.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatDeletedCard(result), Outcome: OutcomeRouted, Kind: intent.KindDeleteCard}
+}
+
+func (a *DailyLedgerAgent) routeEditCategoryPercentage(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
+	if a.categoryPercentageEditor == nil {
+		a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindEditCategoryPercentage}
+	}
+	result, err := a.categoryPercentageEditor.Execute(ctx, CategoryPercentageEditorInput{
+		UserID:       userID,
+		Competence:   a.currentCompetence(),
+		CategoryName: in.CategoryName(),
+		Percentage:   in.Percentage(),
+	})
+	if err != nil {
+		if errors.Is(err, ErrCategoryPercentageUnknownCategory) {
+			a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeClarify)
+			return RouteResult{Reply: formatCategoryNotFound(in.CategoryName()), Outcome: OutcomeClarify, Kind: intent.KindEditCategoryPercentage}
+		}
+		if errors.Is(err, ErrCategoryPercentageNoBudget) {
+			a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeClarify)
+			return RouteResult{Reply: budgetNotActiveText, Outcome: OutcomeClarify, Kind: intent.KindEditCategoryPercentage}
+		}
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.edit_category_percentage_failed", observability.Error(err))
+		a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindEditCategoryPercentage}
+	}
+	a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatCategoryPercentageUpdated(in.CategoryName(), result.Percentage), Outcome: OutcomeRouted, Kind: intent.KindEditCategoryPercentage}
+}
+
+func (a *DailyLedgerAgent) cardResolutionClarification(ctx context.Context, channel string, kind intent.Kind, cardName string, err error) (RouteResult, bool) {
+	if errors.Is(err, ErrAgentCardAmbiguous) {
+		a.record(ctx, kind.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCardAmbiguous(cardName), Outcome: OutcomeClarify, Kind: kind}, true
+	}
+	if errors.Is(err, ErrAgentCardNotFound) {
+		a.record(ctx, kind.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCardNotFound(cardName), Outcome: OutcomeClarify, Kind: kind}, true
+	}
+	return RouteResult{}, false
 }
 
 func (a *DailyLedgerAgent) currentCompetence() string {

@@ -5,6 +5,7 @@ package e2e_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,12 +16,31 @@ import (
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 )
 
 const realLLMMaxAttempts = 3
+
+func normalizeName(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func parseUntilNewKind(t *testing.T, parser *usecases.ParseInbound, text string, wantKind intent.Kind, accept func(intent.Intent) bool) usecases.ParseInboundOutput {
+	t.Helper()
+	var out usecases.ParseInboundOutput
+	for attempt := 0; attempt < realLLMMaxAttempts; attempt++ {
+		result, err := parser.Execute(context.Background(), usecases.ParseInboundInput{UserID: uuid.New(), Text: text})
+		require.NoError(t, err)
+		out = result
+		if result.Intent.Kind() == wantKind && accept(result.Intent) {
+			return result
+		}
+	}
+	return out
+}
 
 func parseUntil(t *testing.T, parser *usecases.ParseInbound, text string, accept func(usecases.ParseInboundOutput) bool) usecases.ParseInboundOutput {
 	t.Helper()

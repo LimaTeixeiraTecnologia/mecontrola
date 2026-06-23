@@ -110,6 +110,9 @@ type agentModuleBuilder struct {
 	sessionUoW         uow.UnitOfWork
 	decisionRepoFact   interfaces.AgentDecisionRepositoryFactory
 	decisionUoW        uow.UnitOfWork
+	threadRepoFact     interfaces.AgentThreadRepositoryFactory
+	runRepoFact        interfaces.AgentRunRepositoryFactory
+	runtimeUoW         uow.UnitOfWork
 	wmRepo             interfaces.WorkingMemoryRepository
 	obsRepo            interfaces.ObservationRepository
 	outboxPublisher    outbox.Publisher
@@ -188,6 +191,9 @@ func (b *agentModuleBuilder) prepareSessionStore() {
 	b.sessionUoW = uow.NewUnitOfWork(b.sessionDB)
 	b.decisionRepoFact = agentrepo.NewDecisionRepositoryFactory(b.o11y)
 	b.decisionUoW = uow.NewUnitOfWork(b.sessionDB)
+	b.threadRepoFact = agentrepo.NewThreadRepositoryFactory(b.o11y)
+	b.runRepoFact = agentrepo.NewRunRepositoryFactory(b.o11y)
+	b.runtimeUoW = uow.NewUnitOfWork(b.sessionDB)
 	wmFactory := agentrepo.NewWorkingMemoryRepositoryFactory(b.o11y)
 	b.wmRepo = wmFactory.WorkingMemoryRepository(b.sessionDB)
 	obsFactory := agentrepo.NewObservationRepositoryFactory(b.o11y)
@@ -270,7 +276,31 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: intent router: %w", err)
 	}
+	b.attachRuntime(router)
 	return router, nil
+}
+
+func (b *agentModuleBuilder) attachRuntime(router *appservices.IntentRouter) {
+	if !b.cfg.AgentConfig.RuntimeEnabled {
+		b.o11y.Logger().Info(context.Background(), "agent.module.runtime",
+			observability.String("mode", "legacy"),
+			observability.String("reason", "flag_disabled"),
+		)
+		return
+	}
+	if b.threadRepoFact == nil || b.runRepoFact == nil || b.runtimeUoW == nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.runtime",
+			observability.String("mode", "legacy"),
+			observability.String("reason", "session_store_missing"),
+		)
+		return
+	}
+	threads := agentbinding.NewThreadGatewayAdapter(b.threadRepoFact, b.runtimeUoW)
+	runs := agentbinding.NewRunGatewayAdapter(b.runRepoFact, b.runtimeUoW)
+	router.EnableRuntime(threads, runs)
+	b.o11y.Logger().Info(context.Background(), "agent.module.runtime",
+		observability.String("mode", "enabled"),
+	)
 }
 
 func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouterDeps) {
@@ -288,6 +318,15 @@ func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouter
 	}
 	if b.cardModule.CountCardsUC != nil {
 		deps.CardCounter = agentbinding.NewCardCounterAdapter(b.cardModule.CountCardsUC)
+	}
+	if b.cardModule.ListCardsUC != nil && b.cardModule.UpdateCardUC != nil {
+		deps.CardUpdater = agentbinding.NewCardUpdaterAdapter(b.cardModule.ListCardsUC, b.cardModule.UpdateCardUC)
+	}
+	if b.cardModule.ListCardsUC != nil && b.cardModule.SoftDeleteCardUC != nil {
+		deps.CardDeleter = agentbinding.NewCardDeleterAdapter(b.cardModule.ListCardsUC, b.cardModule.SoftDeleteCardUC)
+	}
+	if b.budgetsModule != nil && b.budgetsModule.EditCategoryPercentageUC != nil {
+		deps.CategoryPercentageEditor = agentbinding.NewCategoryPercentageEditorAdapter(b.budgetsModule.EditCategoryPercentageUC)
 	}
 	if b.budgetConfigurator != nil {
 		deps.BudgetConfig = b.budgetConfigurator

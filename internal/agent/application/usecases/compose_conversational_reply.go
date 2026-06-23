@@ -190,22 +190,14 @@ func (uc *ComposeConversationalReply) buildSystemPrompt(ctx context.Context, use
 		obsContext = uc.observationSvc.LoadContext(ctx, userID, channel)
 	}
 
-	personaPrompt, err := prompting.RenderPersonaSystem(prompting.PersonaSystemData{
+	built, err := prompting.BuildContext(prompting.ContextInput{
 		WorkingMemory:      wmContent,
 		ObservationContext: obsContext,
 	})
 	if err != nil {
-		return "", fmt.Errorf("agent.llm.usecase.compose_conversational_reply: render persona: %w", err)
+		return "", fmt.Errorf("agent.llm.usecase.compose_conversational_reply: build context: %w", err)
 	}
-	budgetsPrompt, err := prompting.RenderBudgetsPersona(prompting.BudgetsPersonaData{})
-	if err != nil {
-		return "", fmt.Errorf("agent.llm.usecase.compose_conversational_reply: render budgets: %w", err)
-	}
-	wmPrompt, err := prompting.RenderWorkingMemorySystem(prompting.WorkingMemorySystemData{WorkingMemory: wmContent})
-	if err != nil {
-		return "", fmt.Errorf("agent.llm.usecase.compose_conversational_reply: render wm: %w", err)
-	}
-	return personaPrompt + "\n\n---\n\n" + budgetsPrompt + "\n\n---\n\n" + wmPrompt, nil
+	return built.SystemPrompt, nil
 }
 
 func (uc *ComposeConversationalReply) loadHistory(ctx context.Context, userID uuid.UUID, channel string) ([]interfaces.ConversationMessage, interfaces.AgentSessionRecord, bool) {

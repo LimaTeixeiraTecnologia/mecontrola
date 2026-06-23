@@ -15,6 +15,9 @@ const (
 	toolConfigureBudget   = "configure_budget"
 	toolCreateCard        = "create_card"
 	toolCountCards        = "count_cards"
+	toolUpdateCard        = "update_card"
+	toolDeleteCard        = "delete_card"
+	toolEditCategoryPct   = "edit_category_percentage"
 )
 
 var ErrToolUnsupported = fmt.Errorf("agent.usecase.tool_catalog: tool nao suportada")
@@ -55,7 +58,7 @@ func AgentToolCatalog() []interfaces.ToolSpec {
 		},
 		{
 			Name:        toolMonthlySummary,
-			Description: "Mostra o resumo mensal do orcamento do usuario para uma competencia (mes).",
+			Description: "Mostra o orcamento DETALHADO do mes (competencia), com a quebra completa por categoria; use quando o usuario pedir o detalhamento ou fechamento do mes. Para uma visao RESUMIDA da saude financeira, use how_am_i_doing.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -125,6 +128,71 @@ func AgentToolCatalog() []interfaces.ToolSpec {
 				"additionalProperties": false,
 			},
 		},
+		{
+			Name:        toolUpdateCard,
+			Description: "Edita um cartao ja cadastrado; envie apenas os campos que mudam.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"card_name": map[string]any{
+						"type":        "string",
+						"description": "Apelido ou nome atual do cartao a editar.",
+					},
+					"new_nickname": map[string]any{
+						"type":        "string",
+						"description": "Novo apelido do cartao, quando o usuario pedir para mudar.",
+					},
+					"new_name": map[string]any{
+						"type":        "string",
+						"description": "Novo nome do cartao, quando o usuario pedir para mudar.",
+					},
+					"new_closing_day": map[string]any{
+						"type":        "integer",
+						"description": "Novo dia de fechamento (1 a 31), quando o usuario pedir para mudar.",
+					},
+					"new_due_day": map[string]any{
+						"type":        "integer",
+						"description": "Novo dia de vencimento (1 a 31), quando o usuario pedir para mudar.",
+					},
+				},
+				"required":             []string{"card_name"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        toolDeleteCard,
+			Description: "Apaga um cartao cadastrado do usuario.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"card_name": map[string]any{
+						"type":        "string",
+						"description": "Apelido ou nome do cartao a apagar.",
+					},
+				},
+				"required":             []string{"card_name"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        toolEditCategoryPct,
+			Description: "Ajusta o percentual de uma categoria do orcamento mensal; rebalanceia as demais.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"category_name": map[string]any{
+						"type":        "string",
+						"description": "Categoria: Custo Fixo, Conhecimento, Prazeres, Metas ou Liberdade Financeira.",
+					},
+					"percentage": map[string]any{
+						"type":        "integer",
+						"description": "Novo percentual da categoria (0 a 100).",
+					},
+				},
+				"required":             []string{"category_name", "percentage"},
+				"additionalProperties": false,
+			},
+		},
 	}
 }
 
@@ -148,6 +216,21 @@ func ToolCallToIntent(call interfaces.ToolCall, fallbackText string) (intent.Int
 		})
 	case toolCountCards:
 		return intent.NewCountCards(), nil
+	case toolUpdateCard:
+		return intent.NewUpdateCard(intent.UpdateCardFields{
+			CardName:   stringArg(call.ArgumentsJSON, "card_name"),
+			Nickname:   stringPtrArg(call.ArgumentsJSON, "new_nickname"),
+			Name:       stringPtrArg(call.ArgumentsJSON, "new_name"),
+			ClosingDay: intPtrArg(call.ArgumentsJSON, "new_closing_day"),
+			DueDay:     intPtrArg(call.ArgumentsJSON, "new_due_day"),
+		})
+	case toolDeleteCard:
+		return intent.NewDeleteCard(stringArg(call.ArgumentsJSON, "card_name"))
+	case toolEditCategoryPct:
+		return intent.NewEditCategoryPercentage(intent.EditCategoryPercentageFields{
+			CategoryName: stringArg(call.ArgumentsJSON, "category_name"),
+			Percentage:   int(intArg(call.ArgumentsJSON, "percentage")),
+		})
 	default:
 		return intent.Intent{}, fmt.Errorf("%w: %s", ErrToolUnsupported, call.FunctionName)
 	}
@@ -185,6 +268,32 @@ func stringArg(args map[string]any, key string) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
+}
+
+func stringPtrArg(args map[string]any, key string) *string {
+	if args == nil {
+		return nil
+	}
+	v, ok := args[key].(string)
+	if !ok {
+		return nil
+	}
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func intPtrArg(args map[string]any, key string) *int {
+	if args == nil {
+		return nil
+	}
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	value := int(intArg(args, key))
+	return &value
 }
 
 func intArg(args map[string]any, key string) int64 {
