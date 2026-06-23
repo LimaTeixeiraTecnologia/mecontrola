@@ -16,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
@@ -74,6 +75,16 @@ type recordingPhaseSetter struct{}
 
 func (recordingPhaseSetter) SetPhase(_ context.Context, _ uuid.UUID, _ string) error { return nil }
 
+type noopV2Session struct{}
+
+func (noopV2Session) Load(_ context.Context, _ uuid.UUID, _ string) (onboardingv2draft.Draft, bool, error) {
+	return onboardingv2draft.Draft{}, false, nil
+}
+func (noopV2Session) Save(_ context.Context, _ uuid.UUID, _ string, _ onboardingv2draft.Draft) error {
+	return nil
+}
+func (noopV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+
 func requireRealLLM(t *testing.T) {
 	t.Helper()
 	if os.Getenv("RUN_REAL_LLM") == "" {
@@ -86,7 +97,7 @@ func runRealOnboardingTurn(t *testing.T, snapshot usecases.OnboardingSnapshot, t
 	t.Helper()
 	reader := &recordingReader{snapshot: snapshot}
 	dispatcher := &recordingDispatcher{}
-	uc, err := usecases.NewRunOnboardingTurn(onboardingInterpreter(t), reader, dispatcher, recordingPhaseSetter{}, 512, noop.NewProvider(), nil)
+	uc, err := usecases.NewRunOnboardingTurn(onboardingInterpreter(t), reader, dispatcher, recordingPhaseSetter{}, 512, noop.NewProvider(), nil, noopV2Session{})
 	require.NoError(t, err)
 	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: text})
 	require.NoError(t, err)
@@ -104,7 +115,7 @@ func TestOnboardingRealLLM_ObjectiveToolSelected(t *testing.T) {
 
 func TestOnboardingRealLLM_IncomeToolSelected(t *testing.T) {
 	requireRealLLM(t)
-	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseIncome, Objective: "fazer uma viagem"}, "meu orçamento é 5 mil por mês")
+	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseBudget, Objective: "fazer uma viagem"}, "meu orçamento é 5 mil por mês")
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, usecases.ToolSaveOnboardingIncome, dispatcher.calls[0].FunctionName)
 }
@@ -118,14 +129,14 @@ func TestOnboardingRealLLM_CardToolSelected(t *testing.T) {
 
 func TestOnboardingRealLLM_BudgetSplitsToolSelected(t *testing.T) {
 	requireRealLLM(t)
-	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseSplits, Objective: "viagem", IncomeCents: 500000}, "custo fixo 2000, conhecimento 500, prazeres 750, metas 1000 e liberdade financeira 750")
+	_, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseFinancialPlan, Objective: "viagem", IncomeCents: 500000}, "custo fixo 2000, conhecimento 500, prazeres 750, metas 1000 e liberdade financeira 750")
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, usecases.ToolSaveOnboardingBudgetSplits, dispatcher.calls[0].FunctionName)
 }
 
 func TestOnboardingRealLLM_QuestionStaysText(t *testing.T) {
 	requireRealLLM(t)
-	out, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseIncome, Objective: "viagem"}, "por que vocês precisam saber meu orçamento?")
+	out, dispatcher := runRealOnboardingTurn(t, usecases.OnboardingSnapshot{InProgress: true, Phase: usecases.OnbPhaseBudget, Objective: "viagem"}, "por que vocês precisam saber meu orçamento?")
 	require.Empty(t, dispatcher.calls)
 	require.NotEmpty(t, out.Reply)
 }

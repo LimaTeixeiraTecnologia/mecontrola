@@ -2,42 +2,48 @@ package usecases
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 )
 
 const (
-	OnbPhaseWelcome      = "welcome"
-	OnbPhaseMethodology1 = "methodology_1"
-	OnbPhaseMethodology2 = "methodology_2"
-	OnbPhaseMethodology3 = "methodology_3"
-	OnbPhaseMethodology4 = "methodology_4"
-	OnbPhaseMethodology5 = "methodology_5"
-	OnbPhaseObjective    = "objective"
-	OnbPhaseIncome       = "income"
-	OnbPhaseCards        = "cards"
-	OnbPhaseSplits       = "splits"
-	OnbPhaseSummary      = "summary"
-	OnbPhaseFirstTx      = "first_tx"
+	OnbPhaseObjective     = "objective"
+	OnbPhaseBudget        = "budget"
+	OnbPhaseCards         = "cards"
+	OnbPhaseFinancialPlan = "financial_plan"
+	OnbPhaseFirstTx       = "first_tx"
 )
 
 const (
-	scriptWelcome = "👋 Oi! Eu sou o *MeControla*, seu parceiro pra organizar o dinheiro sem complicação.\n\nEm poucos minutos a gente deixa tudo no controle e você começa a realizar seus objetivos. Vamos começar? 🚀"
+	scriptWelcome = "👋 Oi! Eu sou o *MeControla*, seu parceiro financeiro.\n\n" +
+		"📊 Aqui todo dinheiro é organizado em apenas *5 categorias*:\n\n" +
+		"💰 *Custo Fixo*\nContas que acontecem todos os meses.\n\n" +
+		"🎓 *Conhecimento*\nCursos, livros e tudo que faz você evoluir.\n\n" +
+		"🎉 *Prazeres*\nLazer, diversão e experiências.\n\n" +
+		"🎯 *Metas*\nObjetivos específicos que você deseja realizar.\n\n" +
+		"🏦 *Liberdade Financeira*\nReserva financeira e investimentos.\n\n" +
+		"Pronto 😊\n\n" +
+		"Agora vamos montar seu plano.\n\n" +
+		"🔵 *Etapa 1/4 — Objetivo*\n" +
+		"Qual é o seu objetivo principal? (ex: quitar dívidas, fazer uma viagem, criar uma reserva)"
 
-	scriptMethodology1 = "📊 Antes de tudo, deixa eu te mostrar como a gente organiza o dinheiro por aqui. É simples: tudo vive em *5 categorias* — nada de planilha complicada.\n\nVamos uma por uma:\n\n💰 *Custo Fixo* — contas que vêm todo mês, tipo aluguel, água, luz, telefone.\n\nFaz sentido? 😊"
-	scriptMethodology2 = "🎓 *Conhecimento* — livros, cursos, estudos: tudo que te faz evoluir.\n\nFaz sentido? 😊"
-	scriptMethodology3 = "🎉 *Prazeres* — lazer, jantares, diversão. A vida também é pra aproveitar!\n\nFaz sentido? 😊"
-	scriptMethodology4 = "🎯 *Metas* — objetivos de curto e médio prazo, tipo uma viagem, comprar algo especial ou quitar uma dívida.\n\nFaz sentido? 😊"
-	scriptMethodology5 = "🏦 *Liberdade Financeira* — investimentos e reserva de emergência, pra você dormir tranquilo.\n\nFaz sentido? 😊"
+	scriptBudget = "🔵 *Etapa 2/4 — Orçamento*\n\n" +
+		"Pra montar seu plano, qual é o seu *orçamento mensal*? (quanto você tem por mês)"
 
-	scriptObjective    = "🎯 Show! Agora me conta: qual é o seu *objetivo principal*? O que você quer conquistar organizando o dinheiro? (ex: quitar dívidas, fazer uma viagem, comprar um carro, criar uma reserva)"
-	scriptIncome       = "💰 Pra montar seu plano, qual é o seu *orçamento mensal* aproximado? (o quanto você tem por mês)"
-	scriptCards        = "💳 Você usa *cartão de crédito*? Se sim, me diz o *apelido* e o *dia de vencimento* da fatura. Se não usar, é só dizer. 😊"
-	scriptTransition   = "🚀 Seu plano tá pronto e estruturado! Falta só *um passo* pra você dominar o app.\n\n📝 Bora fazer seu *primeiro lançamento*? Me manda do jeito que você fala no dia a dia, tipo \"gastei 35 no mercado\" ou \"recebi 2500 de salário\"."
-	scriptCardQuestion = "💳 Quer cadastrar um cartão? Me diz o apelido e o dia de vencimento — ou diga que não usa. 😊"
+	scriptCards = "🔵 *Etapa 3/4 — Cartões*\n\n" +
+		"💳 Você usa *cartão de crédito*?\n\n" +
+		"Se usar, me responda assim:\n\n" +
+		"Nubank 13\nInter 5\nItaú 10\n\n" +
+		"(apelido + dia de vencimento)\n\n" +
+		"Se não usar, basta responder: *Não uso*"
+
+	scriptCardQuestion = "💳 Qual é o apelido e o dia de vencimento? (ex: Nubank 13)"
+
+	scriptFirstTx = "🚀 Agora é só começar! Me manda seu *primeiro lançamento* do jeito que você fala:\n\n" +
+		"\"gastei 35 no mercado\" ou \"recebi 2500 de salário\""
 )
 
 var onboardingDefaultSplit = []struct {
@@ -51,37 +57,45 @@ var onboardingDefaultSplit = []struct {
 	{"expense.liberdade_financeira", 1500},
 }
 
-func defaultSplitAmounts(budgetCents int64) []int64 {
-	budget := money.FromCents(budgetCents)
-	amounts := make([]int64, len(onboardingDefaultSplit))
+func buildAutoSplits(incomeCents int64) []onboardingv2draft.SplitEntry {
+	splits := make([]onboardingv2draft.SplitEntry, len(onboardingDefaultSplit))
 	var assigned int64
 	for i, e := range onboardingDefaultSplit {
 		if i == len(onboardingDefaultSplit)-1 {
-			amounts[i] = budgetCents - assigned
+			splits[i] = onboardingv2draft.SplitEntry{RootSlug: e.slug, AmountCents: incomeCents - assigned}
 			continue
 		}
-		amounts[i] = budget.ApplyBasisPoints(e.bp).Cents()
-		assigned += amounts[i]
+		amt := incomeCents * int64(e.bp) / 10000
+		splits[i] = onboardingv2draft.SplitEntry{RootSlug: e.slug, AmountCents: amt}
+		assigned += amt
 	}
-	return amounts
+	return splits
 }
 
-func buildSplitsQuestion(budgetCents int64) string {
-	amounts := defaultSplitAmounts(budgetCents)
-	parts := make([]string, len(onboardingDefaultSplit))
-	for i, e := range onboardingDefaultSplit {
-		parts[i] = fmt.Sprintf("%s %d%% (R$ %s)", onboardingSlugEmoji(e.slug), e.bp/100, formatBRLCents(amounts[i]))
+func buildAutoSplitPreview(splits []onboardingv2draft.SplitEntry) string {
+	var b strings.Builder
+	b.WriteString("📊 Aqui está uma sugestão de distribuição para o seu orçamento:\n\n")
+	for _, s := range splits {
+		fmt.Fprintf(&b, "%s *%s*: R$ %s\n", onboardingSlugEmoji(s.RootSlug), onboardingSlugName(s.RootSlug), formatBRLCents(s.AmountCents))
 	}
-	return "📊 Agora vamos distribuir seu orçamento entre as 5 categorias.\n\nMinha sugestão:\n" +
-		strings.Join(parts, "\n") +
-		"\n\nResponde *sim* pra usar essa distribuição, ou me manda os valores *em reais* do seu jeito (a soma precisa fechar R$ " + formatBRLCents(budgetCents) + ")."
+	return strings.TrimRight(b.String(), "\n")
 }
 
-func defaultSplitToolCall(budgetCents int64) interfaces.ToolCall {
-	amounts := defaultSplitAmounts(budgetCents)
-	allocations := make([]any, len(onboardingDefaultSplit))
-	for i, e := range onboardingDefaultSplit {
-		allocations[i] = map[string]any{"root_slug": e.slug, "amount_cents": amounts[i]}
+func buildFinancialPlanMessage(splits []onboardingv2draft.SplitEntry) string {
+	var b strings.Builder
+	b.WriteString("🔵 *Etapa 4/4 — Plano Financeiro*\n\n")
+	b.WriteString("📋 Aqui está a sua distribuição:\n\n")
+	for _, s := range splits {
+		fmt.Fprintf(&b, "%s *%s*: R$ %s\n", onboardingSlugEmoji(s.RootSlug), onboardingSlugName(s.RootSlug), formatBRLCents(s.AmountCents))
+	}
+	b.WriteString("\nResponde *sim* pra confirmar, ou me diz como quer distribuir.")
+	return b.String()
+}
+
+func buildAutoSplitToolCall(splits []onboardingv2draft.SplitEntry) interfaces.ToolCall {
+	allocations := make([]any, len(splits))
+	for i, s := range splits {
+		allocations[i] = map[string]any{"root_slug": s.RootSlug, "amount_cents": s.AmountCents}
 	}
 	return interfaces.ToolCall{
 		FunctionName:  ToolSaveOnboardingBudgetSplits,
@@ -208,11 +222,11 @@ func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string
 	switch phase {
 	case OnbPhaseObjective:
 		b.WriteString("Etapa: objetivo principal. Chame save_onboarding_objective com o objetivo informado.")
-	case OnbPhaseIncome:
+	case OnbPhaseBudget:
 		b.WriteString("Etapa: orçamento mensal. Converta o valor para centavos (R$ 5.000 = 500000, 5 mil = 500000) e chame save_onboarding_income.")
 	case OnbPhaseCards:
-		b.WriteString("Etapa: cartão de crédito. Use o apelido EXATO que a pessoa escreveu (não abrevie). Só chame save_onboarding_card se a pessoa informar TANTO o apelido QUANTO o dia de vencimento (1 a 31). Se faltar o dia de vencimento, NÃO chame a ferramenta: pergunte em texto o dia de vencimento da fatura. Nunca invente o dia.")
-	case OnbPhaseSplits:
+		b.WriteString("Etapa: cartões de crédito. O usuário pode enviar vários cartões em uma única mensagem, um por linha (ex: 'Nubank 13' ou 'Nubank 13\\nInter 5'). Para CADA cartão que tiver apelido E dia de vencimento, chame save_onboarding_card separadamente usando o apelido EXATO que a pessoa escreveu. Se faltar o dia de vencimento de algum cartão, pergunte em texto — nunca invente o dia.")
+	case OnbPhaseFinancialPlan:
 		b.WriteString("Etapa: distribuição do orçamento EM REAIS por categoria. Converta cada valor para centavos e mapeie os nomes para root_slug: Custo Fixo->expense.custo_fixo, Conhecimento->expense.conhecimento, Prazeres->expense.prazeres, Metas->expense.metas, Liberdade Financeira->expense.liberdade_financeira. Envie as 5 categorias (0 para as não citadas) e chame save_onboarding_budget_splits.")
 	case OnbPhaseFirstTx:
 		b.WriteString("Etapa: primeiro lançamento. Extraia direção (income/outcome), valor em centavos e estabelecimento, e chame record_transaction.")
@@ -230,11 +244,11 @@ func onboardingPhaseTool(phase string) string {
 	switch phase {
 	case OnbPhaseObjective:
 		return ToolSaveOnboardingObjective
-	case OnbPhaseIncome:
+	case OnbPhaseBudget:
 		return ToolSaveOnboardingIncome
 	case OnbPhaseCards:
 		return ToolSaveOnboardingCard
-	case OnbPhaseSplits:
+	case OnbPhaseFinancialPlan:
 		return ToolSaveOnboardingBudgetSplits
 	case OnbPhaseFirstTx:
 		return recordTransactionToolName
@@ -244,30 +258,6 @@ func onboardingPhaseTool(phase string) string {
 }
 
 const recordTransactionToolName = "record_transaction"
-
-func onboardingSummary(snapshot OnboardingSnapshot) string {
-	var b strings.Builder
-	b.WriteString("📋 *Seu plano:*\n")
-	if strings.TrimSpace(snapshot.Objective) != "" {
-		fmt.Fprintf(&b, "🎯 Objetivo: %s\n", snapshot.Objective)
-	}
-	fmt.Fprintf(&b, "💰 Orçamento: R$ %s\n", formatBRLCents(snapshot.IncomeCents))
-	if len(snapshot.Cards) > 0 {
-		cards := make([]string, 0, len(snapshot.Cards))
-		for _, c := range snapshot.Cards {
-			cards = append(cards, c.Name+" (vence dia "+strconv.Itoa(c.DueDay)+")")
-		}
-		fmt.Fprintf(&b, "💳 Cartões: %s\n", strings.Join(cards, ", "))
-	}
-	if len(snapshot.Splits) > 0 {
-		b.WriteString("📊 Distribuição:\n")
-		for _, s := range snapshot.Splits {
-			fmt.Fprintf(&b, "  %s %s: %d%%\n", onboardingSlugEmoji(s.Slug), onboardingSlugName(s.Slug), s.Percent)
-		}
-	}
-	b.WriteString("\nTá tudo certo? 😊")
-	return b.String()
-}
 
 func onboardingSlugName(slug string) string {
 	switch slug {
@@ -305,4 +295,21 @@ func onboardingSlugEmoji(slug string) string {
 
 func formatBRLCents(cents int64) string {
 	return money.FromCents(cents).Amount()
+}
+
+func joinReplies(parts ...string) string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, strings.TrimSpace(p))
+		}
+	}
+	return strings.Join(out, "\n\n")
+}
+
+func outcomeForAdvance(advance bool) string {
+	if advance {
+		return "advance"
+	}
+	return "stay"
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 )
 
 type OnboardingSnapshotCard struct {
@@ -69,11 +70,18 @@ type onboardingSessionReader interface {
 	Upsert(ctx context.Context, record interfaces.AgentSessionRecord) error
 }
 
+type OnboardingV2SessionGateway interface {
+	Load(ctx context.Context, userID uuid.UUID, channel string) (onboardingv2draft.Draft, bool, error)
+	Save(ctx context.Context, userID uuid.UUID, channel string, draft onboardingv2draft.Draft) error
+	Clear(ctx context.Context, userID uuid.UUID, channel string) error
+}
+
 type RunOnboardingTurn struct {
 	interpreter IntentInterpreter
 	reader      OnboardingStateReader
 	dispatcher  OnboardingToolDispatcher
 	phases      OnboardingPhaseSetter
+	v2session   OnboardingV2SessionGateway
 	maxTokens   int
 	o11y        observability.Observability
 	turnsTotal  observability.Counter
@@ -89,6 +97,7 @@ func NewRunOnboardingTurn(
 	maxTokens int,
 	o11y observability.Observability,
 	sessionRepo onboardingSessionReader,
+	v2session OnboardingV2SessionGateway,
 ) (*RunOnboardingTurn, error) {
 	if interpreter == nil {
 		return nil, fmt.Errorf("agent.usecase.run_onboarding_turn: interpreter is nil")
@@ -105,6 +114,9 @@ func NewRunOnboardingTurn(
 	if o11y == nil {
 		return nil, fmt.Errorf("agent.usecase.run_onboarding_turn: observability is nil")
 	}
+	if v2session == nil {
+		return nil, fmt.Errorf("agent.usecase.run_onboarding_turn: v2session gateway is nil")
+	}
 	turnsTotal := o11y.Metrics().Counter(
 		"agent_onboarding_turn_total",
 		"Total de turnos de onboarding conversacional conduzidos pela IA por fase e outcome",
@@ -115,6 +127,7 @@ func NewRunOnboardingTurn(
 		reader:      reader,
 		dispatcher:  dispatcher,
 		phases:      phases,
+		v2session:   v2session,
 		maxTokens:   maxTokens,
 		o11y:        o11y,
 		turnsTotal:  turnsTotal,
@@ -140,140 +153,155 @@ func (uc *RunOnboardingTurn) Execute(ctx context.Context, in RunOnboardingTurnIn
 		return RunOnboardingTurnResult{Handled: false}, nil
 	}
 
-	phase := strings.TrimSpace(snapshot.Phase)
-	if phase == "" {
-		return uc.emit(ctx, in.UserID, OnbPhaseWelcome, scriptWelcome, "welcome")
+	draft, _, err := uc.v2session.Load(ctx, in.UserID, in.Channel)
+	if err != nil {
+		span.RecordError(err)
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: load v2 draft: %w", err)
 	}
 
-	if transition, ok := onboardingScriptedTransitions[phase]; ok {
-		return uc.advanceOnAffirmation(ctx, in.UserID, text, transition.next, transition.nextScript, transition.stayScript)
-	}
-
-	switch phase {
+	switch strings.TrimSpace(snapshot.Phase) {
+	case "":
+		return uc.emitWelcome(ctx, in.UserID)
 	case OnbPhaseObjective:
-		return uc.dataPhase(ctx, in, snapshot, OnbPhaseObjective, OnbPhaseIncome, scriptIncome)
-	case OnbPhaseIncome:
-		return uc.dataPhase(ctx, in, snapshot, OnbPhaseIncome, OnbPhaseCards, scriptCards)
+		return uc.objectivePhase(ctx, in, snapshot, draft)
+	case OnbPhaseBudget:
+		return uc.budgetPhase(ctx, in, snapshot, draft)
 	case OnbPhaseCards:
-		return uc.cardsPhase(ctx, in, snapshot)
-	case OnbPhaseSplits:
-		return uc.splitsPhase(ctx, in, snapshot)
-	case OnbPhaseSummary:
-		return uc.summaryPhase(ctx, in.UserID, text)
+		return uc.cardsPhase(ctx, in, snapshot, draft)
+	case OnbPhaseFinancialPlan:
+		return uc.financialPlanPhase(ctx, in, snapshot, draft)
 	case OnbPhaseFirstTx:
-		return uc.firstTransactionPhase(ctx, in, snapshot)
+		return uc.firstTxPhase(ctx, in, snapshot)
 	default:
-		return uc.emit(ctx, in.UserID, OnbPhaseWelcome, scriptWelcome, "welcome_reset")
+		return uc.emitWelcome(ctx, in.UserID)
 	}
 }
 
-type onboardingScriptedTransition struct {
-	next       string
-	nextScript string
-	stayScript string
-}
-
-var onboardingScriptedTransitions = map[string]onboardingScriptedTransition{
-	OnbPhaseWelcome:      {OnbPhaseMethodology1, scriptMethodology1, scriptWelcome},
-	OnbPhaseMethodology1: {OnbPhaseMethodology2, scriptMethodology2, scriptMethodology1},
-	OnbPhaseMethodology2: {OnbPhaseMethodology3, scriptMethodology3, scriptMethodology2},
-	OnbPhaseMethodology3: {OnbPhaseMethodology4, scriptMethodology4, scriptMethodology3},
-	OnbPhaseMethodology4: {OnbPhaseMethodology5, scriptMethodology5, scriptMethodology4},
-	OnbPhaseMethodology5: {OnbPhaseObjective, scriptObjective, scriptMethodology5},
-}
-
-func (uc *RunOnboardingTurn) emit(ctx context.Context, userID uuid.UUID, phase, reply, outcome string) (RunOnboardingTurnResult, error) {
-	if err := uc.phases.SetPhase(ctx, userID, phase); err != nil {
-		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase %s: %w", phase, err)
+func (uc *RunOnboardingTurn) emitWelcome(ctx context.Context, userID uuid.UUID) (RunOnboardingTurnResult, error) {
+	if err := uc.phases.SetPhase(ctx, userID, OnbPhaseObjective); err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase objective: %w", err)
 	}
-	uc.turnsTotal.Add(ctx, 1, observability.String("phase", phase), observability.String("outcome", outcome))
-	return RunOnboardingTurnResult{Handled: true, Reply: reply}, nil
+	uc.turnsTotal.Add(ctx, 1, observability.String("phase", "welcome"), observability.String("outcome", "emit"))
+	return RunOnboardingTurnResult{Handled: true, Reply: scriptWelcome}, nil
 }
 
-func (uc *RunOnboardingTurn) advanceOnAffirmation(ctx context.Context, userID uuid.UUID, text, nextPhase, nextReply, stayReply string) (RunOnboardingTurnResult, error) {
-	if shouldAdvanceScriptedPhase(text) {
-		return uc.emit(ctx, userID, nextPhase, nextReply, "advance")
-	}
-	uc.turnsTotal.Add(ctx, 1, observability.String("phase", "script"), observability.String("outcome", "reask"))
-	return RunOnboardingTurnResult{Handled: true, Reply: stayReply}, nil
-}
-
-func (uc *RunOnboardingTurn) dataPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, phase, nextPhase, nextReply string) (RunOnboardingTurnResult, error) {
-	out, err := uc.runDataPhase(ctx, in, snapshot, phase)
+func (uc *RunOnboardingTurn) objectivePhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {
+	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseObjective)
 	if err != nil {
 		return RunOnboardingTurnResult{}, err
 	}
 	if !out.Advance {
-		uc.turnsTotal.Add(ctx, 1, observability.String("phase", phase), observability.String("outcome", "stay"))
+		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseObjective), observability.String("outcome", "stay"))
 		return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
 	}
-	if err := uc.phases.SetPhase(ctx, in.UserID, nextPhase); err != nil {
-		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase %s: %w", nextPhase, err)
+	updated := draft.WithStep(onboardingv2draft.StepBudget)
+	if saveErr := uc.v2session.Save(ctx, in.UserID, in.Channel, updated); saveErr != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: save draft objective: %w", saveErr)
 	}
-	uc.turnsTotal.Add(ctx, 1, observability.String("phase", phase), observability.String("outcome", "advance"))
-	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, nextReply)}, nil
+	if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseBudget); err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase budget: %w", err)
+	}
+	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseObjective), observability.String("outcome", "advance"))
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, scriptBudget)}, nil
 }
 
-func (uc *RunOnboardingTurn) cardsPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {
+func (uc *RunOnboardingTurn) budgetPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {
+	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseBudget)
+	if err != nil {
+		return RunOnboardingTurnResult{}, err
+	}
+	if !out.Advance {
+		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseBudget), observability.String("outcome", "stay"))
+		return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
+	}
+	refreshed, err := uc.reader.Load(ctx, in.UserID)
+	if err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: reload after budget: %w", err)
+	}
+	autoSplits := buildAutoSplits(refreshed.IncomeCents)
+	updated := draft.WithIncome(refreshed.IncomeCents).WithAutoSplits(autoSplits).WithStep(onboardingv2draft.StepCards)
+	if saveErr := uc.v2session.Save(ctx, in.UserID, in.Channel, updated); saveErr != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: save draft budget: %w", saveErr)
+	}
+	if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseCards); err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase cards: %w", err)
+	}
+	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseBudget), observability.String("outcome", "advance"))
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, buildAutoSplitPreview(autoSplits), scriptCards)}, nil
+}
+
+func effectiveSplits(draft onboardingv2draft.Draft, snapshot OnboardingSnapshot) []onboardingv2draft.SplitEntry {
+	if splits := draft.Splits(); len(splits) > 0 {
+		return splits
+	}
+	return buildAutoSplits(snapshot.IncomeCents)
+}
+
+func (uc *RunOnboardingTurn) cardsPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {
+	splits := effectiveSplits(draft, snapshot)
 	if matchesOnboardingNegation(in.Text) {
-		return uc.emit(ctx, in.UserID, OnbPhaseSplits, buildSplitsQuestion(snapshot.IncomeCents), "cards_done")
+		if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseFinancialPlan); err != nil {
+			return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase financial_plan: %w", err)
+		}
+		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseCards), observability.String("outcome", "negation"))
+		return RunOnboardingTurnResult{Handled: true, Reply: buildFinancialPlanMessage(splits)}, nil
 	}
 	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseCards)
 	if err != nil {
 		return RunOnboardingTurnResult{}, err
 	}
-	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseCards), observability.String("outcome", "stay"))
-	if strings.TrimSpace(out.Reply) == "" {
-		return RunOnboardingTurnResult{Handled: true, Reply: scriptCardQuestion}, nil
+	if !out.Advance {
+		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseCards), observability.String("outcome", "stay"))
+		if strings.TrimSpace(out.Reply) == "" {
+			return RunOnboardingTurnResult{Handled: true, Reply: scriptCardQuestion}, nil
+		}
+		return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
 	}
-	return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
+	if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseFinancialPlan); err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase financial_plan: %w", err)
+	}
+	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseCards), observability.String("outcome", "advance"))
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, buildFinancialPlanMessage(splits))}, nil
 }
 
-func (uc *RunOnboardingTurn) splitsPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {
-	var out OnboardingToolResult
-	var err error
-	if !onboardingTextHasDigit(in.Text) && shouldAdvanceScriptedPhase(in.Text) && snapshot.IncomeCents > 0 {
-		out, err = uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, defaultSplitToolCall(snapshot.IncomeCents))
-	} else {
-		out, err = uc.runDataPhase(ctx, in, snapshot, OnbPhaseSplits)
+func (uc *RunOnboardingTurn) financialPlanPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {
+	splits := effectiveSplits(draft, snapshot)
+	if !onboardingTextHasDigit(in.Text) && shouldAdvanceScriptedPhase(in.Text) {
+		confirmCall := buildAutoSplitToolCall(splits)
+		out, err := uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, confirmCall)
+		if err != nil {
+			return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: dispatch confirm splits: %w", err)
+		}
+		_ = uc.v2session.Clear(ctx, in.UserID, in.Channel)
+		if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseFirstTx); err != nil {
+			return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase first_tx: %w", err)
+		}
+		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseFinancialPlan), observability.String("outcome", "confirm"))
+		return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, scriptFirstTx)}, nil
 	}
+	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseFinancialPlan)
 	if err != nil {
 		return RunOnboardingTurnResult{}, err
 	}
 	if !out.Advance {
-		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseSplits), observability.String("outcome", "stay"))
+		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseFinancialPlan), observability.String("outcome", "stay"))
 		return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
 	}
-	refreshed, err := uc.reader.Load(ctx, in.UserID)
-	if err != nil {
-		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: reload after splits: %w", err)
+	_ = uc.v2session.Clear(ctx, in.UserID, in.Channel)
+	if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseFirstTx); err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase first_tx: %w", err)
 	}
-	if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseSummary); err != nil {
-		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase summary: %w", err)
-	}
-	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseSplits), observability.String("outcome", "advance"))
-	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, onboardingSummary(refreshed))}, nil
+	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseFinancialPlan), observability.String("outcome", "adjust"))
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, scriptFirstTx)}, nil
 }
 
-func (uc *RunOnboardingTurn) summaryPhase(ctx context.Context, userID uuid.UUID, text string) (RunOnboardingTurnResult, error) {
-	if shouldAdvanceScriptedPhase(text) {
-		return uc.emit(ctx, userID, OnbPhaseFirstTx, scriptTransition, "advance")
-	}
-	if err := uc.phases.SetPhase(ctx, userID, OnbPhaseSplits); err != nil {
-		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase splits: %w", err)
-	}
-	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseSummary), observability.String("outcome", "adjust"))
-	snapshot, err := uc.reader.Load(ctx, userID)
-	if err != nil {
-		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: reload for adjust: %w", err)
-	}
-	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies("Sem problema! Vamos ajustar a distribuição.", buildSplitsQuestion(snapshot.IncomeCents))}, nil
-}
-
-func (uc *RunOnboardingTurn) firstTransactionPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {
+func (uc *RunOnboardingTurn) firstTxPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot) (RunOnboardingTurnResult, error) {
 	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseFirstTx)
 	if err != nil {
 		return RunOnboardingTurnResult{}, err
+	}
+	if out.Terminal {
+		_ = uc.v2session.Clear(ctx, in.UserID, in.Channel)
 	}
 	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseFirstTx), observability.String("outcome", outcomeForAdvance(out.Advance)))
 	return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
@@ -312,7 +340,7 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 	}
 
 	var replies []string
-	advance := false
+	var advance, terminal bool
 	for _, call := range resp.ToolCalls {
 		result, dispatchErr := uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, call)
 		if dispatchErr != nil {
@@ -324,8 +352,11 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 		if result.Advance {
 			advance = true
 		}
+		if result.Terminal {
+			terminal = true
+		}
 	}
-	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance}, nil
+	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance, Terminal: terminal}, nil
 }
 
 func (uc *RunOnboardingTurn) loadOnbHistory(ctx context.Context, userID uuid.UUID, channel string) ([]interfaces.ConversationMessage, interfaces.AgentSessionRecord, bool) {
@@ -369,21 +400,4 @@ func (uc *RunOnboardingTurn) saveOnbTurn(ctx context.Context, userID uuid.UUID, 
 	newRecord.UpdatedAt = time.Now().UTC()
 	newRecord.ExpiresAt = time.Now().UTC().Add(24 * time.Hour)
 	_ = uc.sessionRepo.Upsert(ctx, newRecord)
-}
-
-func joinReplies(parts ...string) string {
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if strings.TrimSpace(p) != "" {
-			out = append(out, strings.TrimSpace(p))
-		}
-	}
-	return strings.Join(out, "\n\n")
-}
-
-func outcomeForAdvance(advance bool) string {
-	if advance {
-		return "advance"
-	}
-	return "stay"
 }

@@ -503,7 +503,8 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		deps.ExpenseRecorder,
 	)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
-	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, b.sessionRepo)
+	v2session := agentbinding.NewOnboardingSessionGateway(b.sessionRepo)
+	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, b.sessionRepo, v2session)
 	if err != nil {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),
