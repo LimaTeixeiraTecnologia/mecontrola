@@ -83,6 +83,37 @@ Cardinalidade de metricas (herda R-TXN-004): labels permitidos sao enums fechado
 (`agent_id`, `channel`, `workflow`, `status`, `tool`, `outcome`). Proibido `user_id` ou
 `category_id` como label de metrica.
 
+## R-AGENT-WF-001.6 — Thread-first: toda execucao resolve Thread [HARD]
+
+Toda chamada a `AgentRuntime.Execute` DEVE resolver um `Thread` via `ThreadGateway.GetOrCreate(userID, channel)` antes de iniciar o `Run`. O par `(user_id, channel)` e a identidade canonica do Thread, espelhando o modelo Mastra: `resourceId = user_id`, `threadId = channel`.
+
+Proibido:
+- Iniciar um `Run` sem `thread_id` valido.
+- Criar logica de routing sem passar pelo `AgentRuntime` (que garante o ciclo Thread→Run).
+- Implementar `ThreadGateway` ou `RunGateway` fora de `internal/agent`.
+
+Este padrao e **exclusivo de `internal/agent`**; outros modulos NAO devem ter Thread, Run ou WorkingMemory proprios.
+
+## R-AGENT-WF-001.7 — Pending step obrigatorio em erro de categoria [HARD]
+
+Quando `categoryClarification` detecta `CategoryAmbiguousError` ou `CategoryNeedsConfirmationError`, DEVE salvar `pendingexpense.Draft` com `AwaitingKind` fechado antes de retornar `OutcomeClarify`. Proibido retornar clarificacao sem salvar o estado de retomada.
+
+Contratos:
+- `AwaitingKind` aceita apenas `category_confirm | category_choice` (tipos fechados — DMMF state-as-type).
+- `TransactionKind` aceita apenas `expense | income | card_purchase`.
+- A retomada (resume) ocorre via `continuePendingExpenseConfirmation`, chamado **antes** de `ParseInbound`.
+- O draft e limpo (`Clear`) imediatamente apos execucao ou cancelamento — nunca fica orphan.
+
+Cobre: `KindRecordExpense`, `KindRecordIncome`, `KindRecordCardPurchase`.
+
+## R-AGENT-WF-001.8 — WorkingMemory no system prompt [HARD]
+
+O `ContextBuilder` (ou equivalente) DEVE incluir o conteudo de `WorkingMemory` do usuario no system prompt quando disponivel. Proibido ignorar a working memory em chamadas de `ParseInbound`.
+
+- `WorkingMemory` e escopo `resource` (por `user_id`), compartilhada entre canais.
+- Formato: markdown estruturado; atualizavel via usecase dedicado.
+- Ausencia de working memory (usuario novo) NAO e erro — system prompt e renderizado sem ela.
+
 ## Gate de Verificacao
 
 **1. Switch de dominio nao cresce em `daily_ledger_agent.go`:**
@@ -109,6 +140,14 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   || true
 ```
 
+**4. Pending step salvo em categoryClarification (R-AGENT-WF-001.7):**
+
+```bash
+grep -n "OutcomeClarify" internal/agent/application/services/daily_ledger_agent.go \
+  | grep -v "savePendingDraft\|buildPendingDraft\|_test\|CategoryNotFound\|CategoryHintMissing" \
+  && echo "WARN: revisar se OutcomeClarify retorna sem salvar Draft" || true
+```
+
 **3. Sem SQL direto em tools/workflows (herda R-ADAPTER-001.2):**
 
 ```bash
@@ -124,8 +163,11 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 
 - Aprovar PR que adicione `case` de dominio ao switch de `daily_ledger_agent.go`.
 - Aprovar PR com regra de negocio, SQL direto ou branching de dominio em `Tool`/`Workflow`.
-- Representar `ToolOutcome`/`RunStatus` como string livre.
+- Representar `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind` como string livre.
 - Invocar LLM fora do step de parse.
+- Retornar `OutcomeClarify` em erro de categoria sem salvar `pendingexpense.Draft` (viola R-AGENT-WF-001.7).
+- Iniciar execucao sem resolver Thread + Run via `AgentRuntime` (viola R-AGENT-WF-001.6).
+- Implementar Thread, Run, WorkingMemory ou PendingStep em modulo diferente de `internal/agent`.
 - Flexibilizar estas regras por diferenca de ferramenta, conveniencia ou deadline.
 
 ## Referencias

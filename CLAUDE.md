@@ -48,12 +48,15 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - Carregar referências go-implementation conforme Matriz R-ADAPTER-001.3 em `.claude/rules/go-adapters.md`.
 - Ver `.claude/rules/go-adapters.md` para contrato completo e gates de verificação.
 
-**R-AGENT-WF-001 (hard) — Workflow/Tool canônico em `internal/agent`:**
-- `internal/agent` usa `Workflow/Tool` como padrão canônico e obrigatório de roteamento: fluxo `IntentRouter → WorkflowRegistry.Resolve(kind) → Workflow → Tool → binding → usecase`. Proibido adicionar novo `case` de domínio ao switch de `daily_ledger_agent.go` ou lógica de roteamento fora de um Workflow.
-- Tool é adapter fino de responsabilidade única (herda R-ADAPTER-001): zero regra de negócio, SQL ou branching de domínio. LLM apenas no step de parse (`ParseInbound`).
-- `ToolOutcome`/`RunStatus` são tipos fechados (DMMF state-as-type), nunca strings livres; toda execução é um Run auditável.
-- Toda alteração Go no módulo agent exige `go-implementation` (Etapas 1–5 + checklist R0–R7) e DMMF aplicado conforme `.claude/rules/governance.md`.
-- Ver `.claude/rules/agent-workflows-tools.md` para contrato completo e gates de verificação.
+**R-AGENT-WF-001 (hard) — Workflow/Tool + Mastra canônico em `internal/agent` — SOMENTE `internal/agent`:**
+- Fluxo: `IntentRouter → WorkflowRegistry.Resolve(kind) → Workflow → Tool → binding → usecase`. Proibido `case` de domínio novo no switch de `daily_ledger_agent.go`.
+- Tool é adapter fino: zero regra de negócio, SQL ou branching. LLM apenas em `ParseInbound`.
+- `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind` são tipos fechados — nunca string livre.
+- Thread → Run: toda execução resolve `Thread(user_id, channel)` e abre/fecha um `Run` auditável.
+- Pending step: erro de categoria DEVE salvar `Draft{AwaitingKind}` antes de retornar `OutcomeClarify`.
+- WorkingMemory: conteúdo pré-carregado no system prompt quando disponível.
+- Esses padrões Mastra são **proibidos** fora de `internal/agent`.
+- Ver `.claude/rules/agent-workflows-tools.md` (R-AGENT-WF-001.1–001.8) para contrato completo.
 
 ## DMMF e Mastra
 
@@ -63,7 +66,7 @@ Ver secoes "DMMF — Domain Modeling Made Functional" e "Padrao Workflow/Tool do
 - **Pending step** (Mastra-inspired): estado de espera salvo como `pendingexpense.Draft{AwaitingKind, TransactionKind, Candidates, ...}` em `agent_sessions`; `continuePendingExpenseConfirmation` intercepta o sinal antes do parse LLM.
 - **Decide* puro `[HARD]`**: sem IO, sem `context.Context`, deterministico; regra de negocio vive exclusivamente aqui.
 - **Anti-padroes proibidos `[HARD]`**: `Result[T,E]` customizado, currying, DSL de pipeline, monades.
-- **Mastra**: Thread = `(user_id, channel)`; sinal = mensagem; resume = check pending antes de `ParseInbound`; Tool = adapter fino, zero regra de negocio, zero LLM.
+- **Mastra `[HARD]` — SOMENTE em `internal/agent`**: Thread = `(user_id, channel)` resolvido a cada execucao; Run aberto e fechado com RunStatus fechado; pending step = `Draft{AwaitingKind}` salvo em erro de categoria; working memory no system prompt; sinal = mensagem; resume antes de ParseInbound. Proibido aplicar esses padroes fora de `internal/agent`.
 
 ## Outbox
 

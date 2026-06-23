@@ -154,7 +154,7 @@ Regras obrigatorias:
 4. `ToolOutcome` e `RunStatus` sao tipos fechados (DMMF state-as-type), nunca strings livres; toda execucao e um `Run` auditavel (`thread_id`, `run_id`, `workflow`, `tool`, `status`, `duration_ms`, `error`).
 5. LLM aparece apenas no step de parse (`ParseInbound`); nunca dentro de `Workflow`/`Tool` de execucao.
 6. Toda alteracao Go no modulo agent exige `go-implementation` (Etapas 1-5 + checklist R0-R7) e DMMF conforme a precedencia em `.claude/rules/governance.md`.
-7. Inspiracao Mastra (https://mastra.ai): Thread = `(user_id, channel)`; pending step = `Draft{AwaitingKind, TransactionKind, Candidates, ...}` salvo em `agent_sessions.pending_action`; working memory = contexto estruturado pre-carregado no system prompt; Tool = adapter fino sem LLM; resume = `continuePendingExpenseConfirmation` intercepta sinal antes de `ParseInbound`.
+7. **Padrao Mastra `[HARD]` — obrigatorio em `internal/agent`, proibido em qualquer outro modulo**: Thread = `(user_id, channel)` resolvido a cada execucao via `ThreadGateway.GetOrCreate`; toda execucao abre e fecha um `Run` com `RunStatus` fechado (`running|succeeded|failed`); pending step = `Draft{AwaitingKind, TransactionKind, Candidates, ...}` salvo quando categoria nao identificavel; working memory pre-carregada no system prompt quando disponivel; sinal = mensagem do usuario; resume = check pending antes de `ParseInbound`. Referencia: R-AGENT-WF-001.6–001.8 em `.claude/rules/agent-workflows-tools.md`.
 
 ## Plataforma Compartilhada
 
