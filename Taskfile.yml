@@ -23,6 +23,8 @@ includes:
     taskfile: ./taskfiles/local.yml
   ngrok:
     taskfile: ./taskfiles/ngrok.yml
+  deploy:
+    taskfile: ./taskfiles/deploy.yml
 silent: true
 
 vars:

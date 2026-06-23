@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Deploy operacional da maquina local direto na VPS, sem GHCR.
+# Encapsula deployment/scripts/deploy-local.sh. Ver secao dedicada no README.
+
+tasks:
+  local:
+    desc: >-
+      Deploy de um comando da maquina local direto na VPS (sem GHCR): build amd64,
+      transferencia via docker save|load, migrate, server+worker, healthcheck com
+      rollback automatico e verificacao. Tag default = short SHA do HEAD; sobrescreva
+      com `task deploy:local -- <tag>`. Overrides por env: VPS_HOST, VPS_USER,
+      VPS_SSH_KEY, IMAGE_NAME, PLATFORM, HEALTH_RETRIES, ALLOW_DIRTY, SKIP_BUILD.
+    cmds:
+      - bash deployment/scripts/deploy-local.sh {{.CLI_ARGS}}

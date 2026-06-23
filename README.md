@@ -515,6 +515,12 @@ Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
 |---|---|
 | `task bench:outbox` | Benchmark do outbox publisher com 5 runs |
 
+### Deploy
+
+| Task | Objetivo |
+|---|---|
+| `task deploy:local` | Deploy da máquina local direto na VPS, sem GHCR (build amd64 + `docker save\|load` + migrate + server/worker + healthcheck/rollback). Aceita `-- <tag>`. Ver [seção dedicada](#deploy-da-máquina-local-direto-na-vps-deploy-localsh) |
+
 ---
 
 ## Sequências comuns
@@ -864,6 +870,13 @@ bash deployment/scripts/deploy-local.sh
 
 # ou com uma tag explícita:
 bash deployment/scripts/deploy-local.sh 1a2b3c4
+```
+
+Atalho via Task (equivalente):
+
+```bash
+task deploy:local              # tag = short SHA do HEAD
+task deploy:local -- 1a2b3c4   # tag explícita
 ```
 
 Saída esperada ao final (resumida):
