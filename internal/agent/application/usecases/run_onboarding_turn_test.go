@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 )
 
@@ -371,6 +372,43 @@ func (s *RunOnboardingTurnSuite) TestWelcomeReplyContainsAllFiveCategories() {
 	}
 	s.Contains(out.Reply, "Pronto 😊")
 	s.False(strings.Contains(out.Reply, "Faz sentido?"))
+}
+
+func (s *RunOnboardingTurnSuite) TestWelcomeSignalInProgressWithPhaseIsIdempotentNoOp() {
+	interp := &fakeTurnInterpreter{}
+	dispatcher := &fakeToolDispatcher{}
+	setter := &fakePhaseSetter{}
+	uc := s.newTurn(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseObjective}), dispatcher, setter, nil)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: services.OnboardingWelcomeSignal})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Equal("", out.Reply)
+	s.False(interp.called)
+	s.Equal(0, dispatcher.calls)
+	s.Empty(setter.phases)
+}
+
+func (s *RunOnboardingTurnSuite) TestWelcomeSignalNotInProgressSwallowed() {
+	interp := &fakeTurnInterpreter{}
+	setter := &fakePhaseSetter{}
+	uc := s.newTurn(interp, newReader(OnboardingSnapshot{InProgress: false}), &fakeToolDispatcher{}, setter, nil)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: services.OnboardingWelcomeSignal})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.False(interp.called)
+	s.Empty(setter.phases)
+}
+
+func (s *RunOnboardingTurnSuite) TestWelcomeSignalEmptyPhaseEmitsWelcome() {
+	interp := &fakeTurnInterpreter{}
+	setter := &fakePhaseSetter{}
+	uc := s.newTurn(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: ""}), &fakeToolDispatcher{}, setter, nil)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: services.OnboardingWelcomeSignal})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Equal(scriptWelcome, out.Reply)
+	s.Equal(OnbPhaseObjective, setter.last())
+	s.False(interp.called)
 }
 
 func (s *RunOnboardingTurnSuite) TestBudgetAutoSplitsSumEqualsIncome() {

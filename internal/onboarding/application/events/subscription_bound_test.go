@@ -35,6 +35,7 @@ func (s *SubscriptionBoundEventSuite) TestPayloadGolden() {
 		SubscriptionID:  "sub-001",
 		TokenHashPrefix: "deadbeef",
 		ActivationPath:  valueobjects.ActivationPathDirect,
+		PeerE164:        "+5511999990000",
 		BoundAt:         boundAt,
 	}
 
@@ -50,6 +51,7 @@ func (s *SubscriptionBoundEventSuite) TestPayloadGolden() {
 		"subscription_id":   "sub-001",
 		"token_hash_prefix": "deadbeef",
 		"activation_path":   "direct",
+		"peer_e164":         "+5511999990000",
 		"bound_at":          "2026-06-12T14:30:45Z",
 	}
 	for k, v := range expected {
@@ -74,6 +76,7 @@ func (s *SubscriptionBoundEventSuite) TestPayloadByteStability() {
 		SubscriptionID:  "sub-001",
 		TokenHashPrefix: "deadbeef",
 		ActivationPath:  valueobjects.ActivationPathDirect,
+		PeerE164:        "+5511999990000",
 		BoundAt:         boundAt,
 	}
 
@@ -84,6 +87,6 @@ func (s *SubscriptionBoundEventSuite) TestPayloadByteStability() {
 	s.Equal(string(a.Payload), string(b.Payload))
 	s.Equal(testUserID, a.AggregateUserID)
 
-	const expectedJSON = `{"event_id":"11111111-1111-1111-1111-111111111111","user_id":"33333333-3333-3333-3333-333333333333","subscription_id":"sub-001","token_hash_prefix":"deadbeef","activation_path":"direct","bound_at":"2026-06-12T14:30:45Z"}`
+	const expectedJSON = `{"event_id":"11111111-1111-1111-1111-111111111111","user_id":"33333333-3333-3333-3333-333333333333","subscription_id":"sub-001","token_hash_prefix":"deadbeef","activation_path":"direct","peer_e164":"+5511999990000","bound_at":"2026-06-12T14:30:45Z"}`
 	s.Equal(expectedJSON, string(a.Payload))
 }

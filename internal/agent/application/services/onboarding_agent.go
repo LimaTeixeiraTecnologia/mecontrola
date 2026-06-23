@@ -10,6 +10,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
+const OnboardingWelcomeSignal = "__onboarding_welcome__"
+
 type OnboardingAgent struct {
 	onboardingRunner OnboardingTurnRunner
 	onboarding       OnboardingContinuation

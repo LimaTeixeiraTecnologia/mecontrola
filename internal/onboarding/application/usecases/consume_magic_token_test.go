@@ -224,6 +224,7 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeActivated, result.Outcome)
+				s.Equal("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", result.UserID)
 			},
 		},
 		{

@@ -92,6 +92,7 @@ const (
 
 type ConsumeResult struct {
 	Outcome ConsumeOutcome
+	UserID  string
 }
 
 func (uc *ConsumeMagicToken) Execute(ctx context.Context, in input.ConsumeMagicTokenInput) (ConsumeResult, error) {
@@ -210,7 +211,7 @@ func (uc *ConsumeMagicToken) mapResult(ctx context.Context, token valueobjects.T
 			uc.paidToConsumed.Record(ctx, time.Since(result.magicToken.PaidAt()).Seconds(),
 				observability.String("activation_path", in.ActivationPath.String()))
 		}
-		return ConsumeResult{Outcome: ConsumeOutcomeActivated}, nil
+		return ConsumeResult{Outcome: ConsumeOutcomeActivated, UserID: result.magicToken.ConsumedByUserID()}, nil
 	}
 
 	switch {

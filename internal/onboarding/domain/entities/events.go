@@ -13,5 +13,6 @@ type SubscriptionBound struct {
 	SubscriptionID  string                      `json:"subscription_id"`
 	TokenHashPrefix string                      `json:"token_hash_prefix"`
 	ActivationPath  valueobjects.ActivationPath `json:"-"`
+	PeerE164        string                      `json:"-"`
 	BoundAt         time.Time                   `json:"bound_at"`
 }

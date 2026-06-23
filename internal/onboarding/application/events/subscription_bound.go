@@ -18,6 +18,7 @@ type subscriptionBoundPayload struct {
 	SubscriptionID  string    `json:"subscription_id"`
 	TokenHashPrefix string    `json:"token_hash_prefix"`
 	ActivationPath  string    `json:"activation_path"`
+	PeerE164        string    `json:"peer_e164"`
 	BoundAt         time.Time `json:"bound_at"`
 }
 
@@ -28,6 +29,7 @@ func NewSubscriptionBoundEvent(evt entities.SubscriptionBound) (outbox.Event, er
 		SubscriptionID:  evt.SubscriptionID,
 		TokenHashPrefix: evt.TokenHashPrefix,
 		ActivationPath:  evt.ActivationPath.String(),
+		PeerE164:        evt.PeerE164,
 		BoundAt:         evt.BoundAt,
 	}
 

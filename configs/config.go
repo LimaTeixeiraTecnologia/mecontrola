@@ -158,6 +158,7 @@ type WhatsAppConfig struct {
 	SystemUnavailable      string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
 	PleaseUseAtivar        string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
 	InvalidCountry         string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
+	OnboardingIntro        string `mapstructure:"WA_MSG_ONBOARDING_INTRO"`
 	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
 
@@ -183,9 +184,8 @@ type AgentConfig struct {
 	CircuitCooldown     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
 	PolicyMinConfidence float64       `mapstructure:"AGENT_POLICY_MIN_CONFIDENCE"`
 
-	OnboardingLLMEnabled bool   `mapstructure:"AGENT_ONBOARDING_LLM_ENABLED"`
-	OnboardingMaxTokens  int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
-	OnboardingModel      string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
+	OnboardingMaxTokens int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
+	OnboardingModel     string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
 }
 
 type TelegramConfig struct {
@@ -503,6 +503,7 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_SYSTEM_UNAVAILABLE_RETRY",
 		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
 		"WA_MSG_INVALID_COUNTRY",
+		"WA_MSG_ONBOARDING_INTRO",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
 		"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE",
@@ -1138,6 +1139,9 @@ func (c *Config) validateOnboarding() []string {
 	}
 
 	var errs []string
+	if strings.TrimSpace(c.AgentConfig.OnboardingModel) == "" {
+		errs = append(errs, "AGENT_ONBOARDING_LLM_MODEL é obrigatório — onboarding sem LLM é proibido")
+	}
 	if o.TokenEncryptionKey == "" {
 		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY é obrigatório quando onboarding está habilitado")
 	}
@@ -1181,6 +1185,7 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
 	l.v.SetDefault("WA_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para ativar sua conta, envie: ATIVAR seguido do seu codigo de ativacao.")
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
+	l.v.SetDefault("WA_MSG_ONBOARDING_INTRO", "Eu sou o assistente do MeControla 🤖. Vou te ajudar a organizar suas financas direto aqui pelo WhatsApp: e so me contar seus gastos e receitas que eu registro tudo pra voce. Vamos comecar uma configuracao rapida.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
 	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE", "@daily")
@@ -1203,7 +1208,6 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_WINDOW", 30*time.Second)
 	l.v.SetDefault("AGENT_LLM_CIRCUIT_COOLDOWN", 60*time.Second)
 	l.v.SetDefault("AGENT_POLICY_MIN_CONFIDENCE", 0.8)
-	l.v.SetDefault("AGENT_ONBOARDING_LLM_ENABLED", true)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")
 	l.v.SetDefault("AGENT_RUNTIME_ENABLED", false)

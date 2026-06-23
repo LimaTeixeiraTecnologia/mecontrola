@@ -848,6 +848,20 @@ func (s *ConfigSuite) TestValidate() {
 			},
 		},
 		{
+			name: "deve retornar erro quando onboarding habilitado sem modelo de LLM",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.AgentConfig.OnboardingModel = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_ONBOARDING_LLM_MODEL")
+			},
+		},
+		{
 			name: "ValidateCORS_deve aceitar development com CORS_ALLOWED_ORIGINS qualquer valor",
 			args: args{
 				build: func() *configs.Config {
@@ -1520,6 +1534,7 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.OnboardingConfig.TokenEncryptionKey = "testencryptionkey1234567890abcde"
 	cfg.AgentConfig.OpenRouterAPIKey = "sk-real-key-for-testing"
 	cfg.AgentConfig.PrimaryModel = "google/gemini-2.5-flash-lite"
+	cfg.AgentConfig.OnboardingModel = "anthropic/claude-haiku-4.5"
 	cfg.AgentConfig.MaxTokens = 256
 	cfg.AgentConfig.MaxInputChars = 2000
 	cfg.AgentConfig.RequestTimeout = 8 * time.Second

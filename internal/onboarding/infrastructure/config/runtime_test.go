@@ -49,6 +49,7 @@ func (s *OnboardingRuntimeConfigSuite) TestNewOnboardingRuntimeConfig() {
 				SystemUnavailable: "su",
 				PleaseUseAtivar:   "pua",
 				InvalidCountry:    "ic",
+				OnboardingIntro:   "intro",
 			},
 			assertOK: func(rc config.OnboardingRuntimeConfig) {
 				s.Require().Len(rc.CheckoutURLs, 2)
@@ -62,7 +63,8 @@ func (s *OnboardingRuntimeConfigSuite) TestNewOnboardingRuntimeConfig() {
 				s.Equal(30*24*time.Hour, rc.MetaRetention)
 				s.Equal("wa", rc.Messages["welcome_activated"])
 				s.Equal("ic", rc.Messages["invalid_country"])
-				s.Len(rc.Messages, 9)
+				s.Equal("intro", rc.Messages["onboarding_intro"])
+				s.Len(rc.Messages, 10)
 			},
 		},
 		{

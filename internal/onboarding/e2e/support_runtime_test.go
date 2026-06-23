@@ -358,6 +358,7 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		consumeToken,
 		fallbackActivation,
 		processOnboardingMessage,
+		startBudgetConfiguration,
 		metaGateway,
 		runtimeCfg.Messages,
 		o11y,

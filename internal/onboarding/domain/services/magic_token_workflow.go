@@ -89,6 +89,7 @@ func (w MagicTokenWorkflow) DecideConsume(
 		SubscriptionID:  consumed.SubscriptionID(),
 		TokenHashPrefix: valueobjects.TokenHashPrefix(consumed.TokenHash()),
 		ActivationPath:  cmd.ActivationPath,
+		PeerE164:        cmd.FromE164,
 		BoundAt:         now,
 	}
 	return ConsumeDecision{Token: consumed, Event: evt}, nil

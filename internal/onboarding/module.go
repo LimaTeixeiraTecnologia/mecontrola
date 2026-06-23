@@ -347,6 +347,7 @@ func newWhatsAppMessageProcessor(
 		useCases.consumeToken,
 		useCases.fallbackActivation,
 		useCases.processOnboardingMessage,
+		useCases.startBudgetConfiguration,
 		deps.whatsAppGateway,
 		deps.runtimeCfg.Messages,
 		o11y,

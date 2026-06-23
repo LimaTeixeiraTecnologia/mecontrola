@@ -149,8 +149,15 @@ func (uc *RunOnboardingTurn) Execute(ctx context.Context, in RunOnboardingTurnIn
 		span.RecordError(err)
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: load context: %w", err)
 	}
+
+	isWelcomeSignal := text == services.OnboardingWelcomeSignal
+
 	if !snapshot.InProgress {
-		return RunOnboardingTurnResult{Handled: false}, nil
+		return RunOnboardingTurnResult{Handled: isWelcomeSignal}, nil
+	}
+
+	if isWelcomeSignal && strings.TrimSpace(snapshot.Phase) != "" {
+		return RunOnboardingTurnResult{Handled: true}, nil
 	}
 
 	draft, _, err := uc.v2session.Load(ctx, in.UserID, in.Channel)

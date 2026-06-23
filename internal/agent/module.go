@@ -215,6 +215,10 @@ func (b *agentModuleBuilder) buildEventHandlers(router *appservices.IntentRouter
 			EventType: agentevents.EventTypeTelegramInbound,
 			Handler:   agentconsumers.NewTelegramInboundConsumer(router, b.o11y),
 		},
+		{
+			EventType: "onboarding.subscription_bound",
+			Handler:   agentconsumers.NewOnboardingBoundConsumer(router, b.o11y),
+		},
 	}
 }
 
@@ -475,13 +479,6 @@ func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterD
 }
 
 func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
-	if !b.cfg.AgentConfig.OnboardingLLMEnabled {
-		b.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
-			observability.String("mode", "deterministic"),
-			observability.String("reason", "flag_disabled"),
-		)
-		return
-	}
 	if reason := b.onboardingLLMUnavailable(deps, llmModule); reason != "" {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),

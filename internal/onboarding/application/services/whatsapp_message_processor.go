@@ -32,6 +32,10 @@ type ProcessOnboardingMessageUseCase interface {
 	Execute(ctx context.Context, in usecases.ProcessOnboardingMessageInput) (usecases.ProcessOnboardingMessageResult, error)
 }
 
+type StartBudgetConfigurationUseCase interface {
+	Execute(ctx context.Context, in usecases.StartBudgetConfigurationInput) (usecases.StartBudgetConfigurationResult, error)
+}
+
 type WhatsAppGateway interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
@@ -40,6 +44,7 @@ type WhatsAppMessageProcessor struct {
 	consumeUseCase     ConsumeMagicTokenUseCase
 	fallbackUseCase    TryFallbackActivationUseCase
 	processUseCase     ProcessOnboardingMessageUseCase
+	startBudgetUseCase StartBudgetConfigurationUseCase
 	waGateway          WhatsAppGateway
 	messages           map[string]string
 	o11y               observability.Observability
@@ -51,17 +56,19 @@ func NewWhatsAppMessageProcessor(
 	consumeUseCase ConsumeMagicTokenUseCase,
 	fallbackUseCase TryFallbackActivationUseCase,
 	processUseCase ProcessOnboardingMessageUseCase,
+	startBudgetUseCase StartBudgetConfigurationUseCase,
 	waGateway WhatsAppGateway,
 	messages map[string]string,
 	o11y observability.Observability,
 ) *WhatsAppMessageProcessor {
 	return &WhatsAppMessageProcessor{
-		consumeUseCase:  consumeUseCase,
-		fallbackUseCase: fallbackUseCase,
-		processUseCase:  processUseCase,
-		waGateway:       waGateway,
-		messages:        messages,
-		o11y:            o11y,
+		consumeUseCase:     consumeUseCase,
+		fallbackUseCase:    fallbackUseCase,
+		processUseCase:     processUseCase,
+		startBudgetUseCase: startBudgetUseCase,
+		waGateway:          waGateway,
+		messages:           messages,
+		o11y:               o11y,
 		inboundMessages: o11y.Metrics().Counter(
 			"meta_inbound_messages_total",
 			"Total de mensagens inbound recebidas do WhatsApp",
@@ -103,7 +110,34 @@ func (p *WhatsAppMessageProcessor) HandleActivation(ctx context.Context, fromE16
 
 	replyKey := consumeOutcomeToMessageKey(result.Outcome)
 	p.sendMessage(ctx, from.String(), p.msg(replyKey))
+
+	if result.Outcome == usecases.ConsumeOutcomeActivated {
+		p.startOnboarding(ctx, from.String(), fromE164, result.UserID)
+	}
 	return nil
+}
+
+func (p *WhatsAppMessageProcessor) startOnboarding(ctx context.Context, toE164, fromE164, userID string) {
+	p.sendMessage(ctx, toE164, p.msg("onboarding_intro"))
+
+	parsedUserID, parseErr := uuid.Parse(userID)
+	if parseErr != nil {
+		slog.WarnContext(ctx, "onboarding.processor.start_budget_invalid_user",
+			"from", payload.MaskMobile(fromE164),
+			"error", parseErr.Error(),
+		)
+		return
+	}
+
+	if _, startErr := p.startBudgetUseCase.Execute(ctx, usecases.StartBudgetConfigurationInput{
+		UserID:  parsedUserID,
+		Channel: entities.OnboardingChannelWhatsApp,
+	}); startErr != nil {
+		slog.WarnContext(ctx, "onboarding.processor.start_budget_failed",
+			"from", payload.MaskMobile(fromE164),
+			"error", startErr.Error(),
+		)
+	}
 }
 
 func (p *WhatsAppMessageProcessor) HandleFallback(ctx context.Context, fromE164 string) error {
