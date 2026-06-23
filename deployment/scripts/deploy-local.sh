@@ -84,7 +84,9 @@ git config --global --add safe.directory "$DP" 2>/dev/null || true
 ( cd "$DP" && git pull --ff-only ) || echo "[vps] AVISO: git pull falhou — seguindo (binário e migrations vêm da imagem)"
 
 echo "[vps] migrate"
-( cd "$DP" && dc run --rm --no-deps migrate ) || { echo "[vps] ERRO: migrations falharam — abortando (containers intactos)"; exit 1; }
+# -T é obrigatório: este script é alimentado via stdin (bash -s); sem -T o `compose run`
+# anexa o stdin e consome o resto do heredoc, pulando up/healthcheck silenciosamente.
+( cd "$DP" && dc run --rm --no-deps -T migrate ) || { echo "[vps] ERRO: migrations falharam — abortando (containers intactos)"; exit 1; }
 
 echo "[vps] up server worker"
 ( cd "$DP" && dc up -d --no-deps server worker ) || { echo "[vps] ERRO: up server/worker falhou"; exit 1; }
@@ -106,6 +108,11 @@ if [ "$ok" != true ]; then
     echo "[vps] sem imagem anterior para rollback — containers permanecem em $TAG"
   fi
   exit 1
+fi
+
+echo "[vps] alinhando IMAGE_TAG no .env (evita rollback silencioso em compose up sem shell var)"
+if grep -q '^IMAGE_TAG=' "$DP/.env"; then
+  sed -i.bak-deploylocal "s/^IMAGE_TAG=.*/IMAGE_TAG=$TAG/" "$DP/.env"
 fi
 
 echo "[vps] === verificação pós-deploy ==="
