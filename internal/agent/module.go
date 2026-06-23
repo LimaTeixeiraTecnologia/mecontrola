@@ -18,6 +18,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
+	agentconsumers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/messaging/database/consumers"
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
@@ -28,6 +29,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
@@ -44,6 +46,16 @@ type whatsAppGateway interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
 
+type inboundPublisher interface {
+	PublishWhatsApp(ctx context.Context, userID uuid.UUID, peer, text, messageID string) error
+	PublishTelegram(ctx context.Context, userID uuid.UUID, chatID int64, text, messageID string) error
+}
+
+type EventHandlerRegistration struct {
+	EventType string
+	Handler   events.Handler
+}
+
 type AgentModule struct {
 	WhatsAppAgentRoute    func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	TelegramAgentRoute    tgdispatcher.AgentRoute
@@ -52,6 +64,7 @@ type AgentModule struct {
 	SessionUnitOfWork     uow.UnitOfWork
 	SessionRepository     interfaces.AgentSessionRepository
 	SessionRepositoryFact interfaces.AgentSessionRepositoryFactory
+	EventHandlers         []EventHandlerRegistration
 }
 
 type AgentModuleOption func(*agentModuleBuilder)
@@ -169,16 +182,38 @@ func (b *agentModuleBuilder) build() (AgentModule, error) {
 		return AgentModule{}, err
 	}
 
+	var pub inboundPublisher
+	if b.outboxPublisher != nil {
+		pub = agentevents.NewInboundEventPublisher(b.outboxPublisher, b.o11y)
+	}
+
 	module := AgentModule{
-		WhatsAppAgentRoute:    b.buildWhatsAppAgentRoute(intentRouter),
-		TelegramAgentRoute:    b.buildTelegramAgentRoute(intentRouter),
+		WhatsAppAgentRoute:    b.buildWhatsAppAgentRoute(pub),
+		TelegramAgentRoute:    b.buildTelegramAgentRoute(pub),
 		ParseInbound:          llmModule.ParseInbound,
 		IntentRouter:          intentRouter,
 		SessionRepository:     b.sessionRepo,
 		SessionRepositoryFact: b.sessionRepoFact,
 		SessionUnitOfWork:     b.sessionUoW,
+		EventHandlers:         b.buildEventHandlers(intentRouter),
 	}
 	return module, nil
+}
+
+func (b *agentModuleBuilder) buildEventHandlers(router *appservices.IntentRouter) []EventHandlerRegistration {
+	if router == nil {
+		return nil
+	}
+	return []EventHandlerRegistration{
+		{
+			EventType: agentevents.EventTypeWhatsAppInbound,
+			Handler:   agentconsumers.NewWhatsAppInboundConsumer(router, b.o11y),
+		},
+		{
+			EventType: agentevents.EventTypeTelegramInbound,
+			Handler:   agentconsumers.NewTelegramInboundConsumer(router, b.o11y),
+		},
+	}
 }
 
 func (b *agentModuleBuilder) prepareSessionStore() {
@@ -525,8 +560,8 @@ func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound
 	return tgGateway
 }
 
-func (b *agentModuleBuilder) buildWhatsAppAgentRoute(router *appservices.IntentRouter) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
-	if router == nil {
+func (b *agentModuleBuilder) buildWhatsAppAgentRoute(pub inboundPublisher) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
+	if pub == nil {
 		return func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 			return wadispatcher.OutcomeAgent
 		}
@@ -538,17 +573,17 @@ func (b *agentModuleBuilder) buildWhatsAppAgentRoute(router *appservices.IntentR
 			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_missing_principal")
 			return wadispatcher.OutcomeAgent
 		}
-		_ = router.RouteWhatsApp(ctx, appservices.Principal{UserID: principal.UserID}, appservices.InboundMessage{
-			Text:       msg.Text,
-			WhatsAppTo: msg.From,
-			MessageID:  msg.WAMID,
-		})
+		if err := pub.PublishWhatsApp(ctx, principal.UserID, msg.From, msg.Text, msg.WAMID); err != nil {
+			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_publish_failed",
+				observability.Error(err),
+			)
+		}
 		return wadispatcher.OutcomeAgent
 	}
 }
 
-func (b *agentModuleBuilder) buildTelegramAgentRoute(router *appservices.IntentRouter) tgdispatcher.AgentRoute {
-	if router == nil {
+func (b *agentModuleBuilder) buildTelegramAgentRoute(pub inboundPublisher) tgdispatcher.AgentRoute {
+	if pub == nil {
 		return nil
 	}
 
@@ -558,11 +593,11 @@ func (b *agentModuleBuilder) buildTelegramAgentRoute(router *appservices.IntentR
 			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_missing_principal")
 			return tgdispatcher.OutcomeAgent
 		}
-		_ = router.RouteTelegram(ctx, appservices.Principal{UserID: principal.UserID}, appservices.InboundMessage{
-			Text:       msg.Text,
-			TelegramTo: msg.ChatID,
-			MessageID:  fmt.Sprintf("%d", msg.MessageID),
-		})
+		if err := pub.PublishTelegram(ctx, principal.UserID, msg.ChatID, msg.Text, fmt.Sprintf("%d", msg.MessageID)); err != nil {
+			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_publish_failed",
+				observability.Error(err),
+			)
+		}
 		return tgdispatcher.OutcomeAgent
 	}
 }
