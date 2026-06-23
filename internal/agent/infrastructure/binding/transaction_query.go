@@ -45,7 +45,7 @@ func (a *CardPurchaseLoggerAdapter) Execute(ctx context.Context, in appservices.
 		Installments:  in.Installments,
 	})
 	if err != nil {
-		return appservices.CardPurchaseLoggerResult{}, err
+		return appservices.CardPurchaseLoggerResult{}, translateCategoryError(err)
 	}
 	return appservices.CardPurchaseLoggerResult{
 		Persisted:    result.Persisted,

@@ -6,12 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
+	categoriesoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
 	transactionsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	transactionsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
 	transactionsusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
@@ -53,6 +56,15 @@ type fakeUpdateTransactionUC struct {
 
 func (f *fakeUpdateTransactionUC) Execute(_ context.Context, _ string, _ transactionsinput.RawUpdateTransaction) (transactionsoutput.Transaction, error) {
 	f.calls++
+	return f.out, f.err
+}
+
+type fakeCardPurchaseLoggerCreatorUC struct {
+	out usecases.CreateCardPurchaseResult
+	err error
+}
+
+func (f *fakeCardPurchaseLoggerCreatorUC) Execute(_ context.Context, _ usecases.CreateCardPurchaseCommand) (usecases.CreateCardPurchaseResult, error) {
 	return f.out, f.err
 }
 
@@ -485,4 +497,93 @@ func (s *TransactionQuerySuite) TestCardPurchaseCreator_WithValidSubcategory() {
 
 	s.Require().NoError(err)
 	s.True(result.CardFound)
+}
+
+func (s *TransactionQuerySuite) buildCardPurchaseIntent(merchant, categoryHint string, amountCents int64) intent.Intent {
+	i, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
+		AmountCents:  amountCents,
+		Merchant:     merchant,
+		CategoryHint: categoryHint,
+		Installments: 2,
+	})
+	s.Require().NoError(err)
+	return i
+}
+
+func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryNotFoundError() {
+	obs := fake.NewProvider()
+	resolver := &fakeCategoryResolver{
+		out: &categoriesoutput.DictionarySearchOutput{
+			Candidates: []categoriesoutput.CandidateOutput{
+				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Lazer > TV e Streaming", Score: 0.1},
+			},
+		},
+	}
+	creator := &fakeCardPurchaseLoggerCreatorUC{}
+
+	uc := usecases.NewRecordCardPurchaseFromAgent(resolver, creator, obs)
+	adapter := NewCardPurchaseLoggerAdapter(uc)
+
+	in := appservices.CardPurchaseLoggerInput{
+		UserID: s.userID.String(),
+		Intent: s.buildCardPurchaseIntent("TV", "", 180000),
+	}
+
+	_, err := adapter.Execute(s.ctx, in)
+	s.Require().Error(err)
+	s.True(errors.Is(err, appservices.ErrCategoryNotFound))
+}
+
+func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryAmbiguousError() {
+	obs := fake.NewProvider()
+	cat1 := uuid.New()
+	cat2 := uuid.New()
+	resolver := &fakeCategoryResolver{
+		out: &categoriesoutput.DictionarySearchOutput{
+			Candidates: []categoriesoutput.CandidateOutput{
+				{CategoryID: cat1, RootCategoryID: cat1, Path: "Lazer > Streaming", Score: 0.9, IsAmbiguous: true},
+				{CategoryID: cat2, RootCategoryID: cat2, Path: "Lazer > TV", Score: 0.85},
+			},
+		},
+	}
+	creator := &fakeCardPurchaseLoggerCreatorUC{}
+
+	uc := usecases.NewRecordCardPurchaseFromAgent(resolver, creator, obs)
+	adapter := NewCardPurchaseLoggerAdapter(uc)
+
+	in := appservices.CardPurchaseLoggerInput{
+		UserID: s.userID.String(),
+		Intent: s.buildCardPurchaseIntent("Netflix", "streaming", 180000),
+	}
+
+	_, err := adapter.Execute(s.ctx, in)
+	s.Require().Error(err)
+	var ambiguous *appservices.CategoryAmbiguousError
+	s.True(errors.As(err, &ambiguous))
+}
+
+func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryNeedsConfirmationError() {
+	obs := fake.NewProvider()
+	cat1 := uuid.New()
+	resolver := &fakeCategoryResolver{
+		out: &categoriesoutput.DictionarySearchOutput{
+			Candidates: []categoriesoutput.CandidateOutput{
+				{CategoryID: cat1, RootCategoryID: cat1, Path: "Lazer > TV e Streaming", Score: 0.75},
+			},
+		},
+	}
+	creator := &fakeCardPurchaseLoggerCreatorUC{}
+
+	uc := usecases.NewRecordCardPurchaseFromAgent(resolver, creator, obs)
+	adapter := NewCardPurchaseLoggerAdapter(uc)
+
+	in := appservices.CardPurchaseLoggerInput{
+		UserID: s.userID.String(),
+		Intent: s.buildCardPurchaseIntent("TV", "", 180000),
+	}
+
+	_, err := adapter.Execute(s.ctx, in)
+	s.Require().Error(err)
+	var needsConfirmation *appservices.CategoryNeedsConfirmationError
+	s.True(errors.As(err, &needsConfirmation))
 }
