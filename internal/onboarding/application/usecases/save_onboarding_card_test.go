@@ -46,6 +46,7 @@ func (s *SaveOnboardingCardSuite) SetupTest() {
 		s.publisher,
 		&onboardingFixedIDGen{id: "99999999-9999-9999-9999-999999999999"},
 		s.obs,
+		nil,
 	)
 }
 

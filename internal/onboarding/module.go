@@ -87,6 +87,15 @@ type onboardingDependencies struct {
 	idGen           id.Generator
 	whatsAppGateway appinterfaces.WhatsAppGateway
 	bindingService  *binding.SubscriptionBindingService
+	cardCreator     usecases.SynchronousCardCreator
+}
+
+type OnboardingModuleOption func(*onboardingDependencies)
+
+func WithOnboardingCardCreator(creator usecases.SynchronousCardCreator) OnboardingModuleOption {
+	return func(d *onboardingDependencies) {
+		d.cardCreator = creator
+	}
 }
 
 type onboardingUseCasesBundle struct {
@@ -136,10 +145,14 @@ func NewOnboardingModule(
 	emailCfg configs.EmailConfig,
 	identityModule identity.IdentityModule,
 	o11y observability.Observability,
+	opts ...OnboardingModuleOption,
 ) (OnboardingModule, error) {
 	deps, err := buildOnboardingDependencies(db, cfg, waCfg, outboxCfg, identityModule, o11y)
 	if err != nil {
 		return OnboardingModule{}, err
+	}
+	for _, opt := range opts {
+		opt(&deps)
 	}
 	useCases, err := buildOnboardingUseCases(db, cfg, waCfg, tgCfg, emailCfg, identityModule, deps, o11y)
 	if err != nil {
@@ -294,7 +307,7 @@ func buildOnboardingUseCases(
 		getOnboardingContext: usecases.NewGetOnboardingContext(onboardingSessionRepo, o11y),
 		saveObjective:        usecases.NewSaveOnboardingObjective(saveObjectiveUoW, deps.factory, o11y),
 		saveIncome:           usecases.NewSaveOnboardingIncome(saveIncomeUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		saveCard:             usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		saveCard:             usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y, deps.cardCreator),
 		saveBudgetSplits:     usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
 		markFirstTransaction: usecases.NewMarkFirstTransactionRecorded(markFirstTxUoW, deps.factory, o11y),
 		completeSession:      usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),

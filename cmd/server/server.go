@@ -20,6 +20,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
+	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -188,6 +189,7 @@ func Run() error {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
 	o11y.Logger().Info(ctx, "card module initialized", observability.Bool("router_present", cardModule.CardRouter != nil))
+	onboardingModule.SaveOnboardingCard.SetCardCreator(agentbinding.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
 
 	channelGateway, err := bootstrap.BuildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
 	if err != nil {

@@ -28,6 +28,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 
+	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
@@ -179,6 +180,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}
+	onboardingModule.SaveOnboardingCard.SetCardCreator(agentbinding.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
 	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.db, cardModule, categoriesModule, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)

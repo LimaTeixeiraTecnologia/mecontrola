@@ -30,7 +30,7 @@ func (s *RegistrySuite) TestNewRegistry() {
 		{
 			name: "deve construir com specs validas",
 			args: args{specs: []ToolSpec{
-				{Name: "a", IntentKind: intent.KindLogExpense, Description: "desc a"},
+				{Name: "a", IntentKind: intent.KindRecordExpense, Description: "desc a"},
 				{Name: "b", IntentKind: intent.KindMonthlySummary, Description: "desc b"},
 			}},
 			expect: func(reg *Registry, err error) {
@@ -43,7 +43,7 @@ func (s *RegistrySuite) TestNewRegistry() {
 			name: "deve preservar ordem de insercao",
 			args: args{specs: []ToolSpec{
 				{Name: "b", IntentKind: intent.KindMonthlySummary, Description: "desc b"},
-				{Name: "a", IntentKind: intent.KindLogExpense, Description: "desc a"},
+				{Name: "a", IntentKind: intent.KindRecordExpense, Description: "desc a"},
 			}},
 			expect: func(reg *Registry, err error) {
 				s.NoError(err)
@@ -62,7 +62,7 @@ func (s *RegistrySuite) TestNewRegistry() {
 		{
 			name: "deve rejeitar name vazio",
 			args: args{specs: []ToolSpec{
-				{Name: "  ", IntentKind: intent.KindLogExpense, Description: "desc"},
+				{Name: "  ", IntentKind: intent.KindRecordExpense, Description: "desc"},
 			}},
 			expect: func(reg *Registry, err error) {
 				s.ErrorIs(err, ErrToolNameEmpty)
@@ -72,7 +72,7 @@ func (s *RegistrySuite) TestNewRegistry() {
 		{
 			name: "deve rejeitar description vazia",
 			args: args{specs: []ToolSpec{
-				{Name: "a", IntentKind: intent.KindLogExpense, Description: "   "},
+				{Name: "a", IntentKind: intent.KindRecordExpense, Description: "   "},
 			}},
 			expect: func(reg *Registry, err error) {
 				s.ErrorIs(err, ErrToolDescriptionEmpty)
@@ -82,7 +82,7 @@ func (s *RegistrySuite) TestNewRegistry() {
 		{
 			name: "deve rejeitar name duplicado",
 			args: args{specs: []ToolSpec{
-				{Name: "a", IntentKind: intent.KindLogExpense, Description: "desc"},
+				{Name: "a", IntentKind: intent.KindRecordExpense, Description: "desc"},
 				{Name: "a", IntentKind: intent.KindMonthlySummary, Description: "desc"},
 			}},
 			expect: func(reg *Registry, err error) {
@@ -93,8 +93,8 @@ func (s *RegistrySuite) TestNewRegistry() {
 		{
 			name: "deve rejeitar intent kind duplicado",
 			args: args{specs: []ToolSpec{
-				{Name: "a", IntentKind: intent.KindLogExpense, Description: "desc"},
-				{Name: "b", IntentKind: intent.KindLogExpense, Description: "desc"},
+				{Name: "a", IntentKind: intent.KindRecordExpense, Description: "desc"},
+				{Name: "b", IntentKind: intent.KindRecordExpense, Description: "desc"},
 			}},
 			expect: func(reg *Registry, err error) {
 				s.ErrorIs(err, ErrDuplicateIntentKind)
@@ -118,7 +118,7 @@ func (s *RegistrySuite) TestDefaultRegistry() {
 	s.Len(reg.Specs(), 6)
 
 	kinds := []intent.Kind{
-		intent.KindLogExpense,
+		intent.KindRecordExpense,
 		intent.KindMonthlySummary,
 		intent.KindListCards,
 		intent.KindCreateCard,

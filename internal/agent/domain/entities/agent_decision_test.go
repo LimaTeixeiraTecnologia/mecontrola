@@ -34,12 +34,12 @@ func baseParams() entities.AgentDecisionParams {
 		UserID:           uuid.New(),
 		Channel:          "whatsapp",
 		MessageID:        "wamid.ABC123",
-		IntentKind:       "log_expense",
+		IntentKind:       "record_expense",
 		PromptSHA256:     validDigest(),
 		LLMModel:         "openai/gpt-4o-mini",
-		RedactedResponse: json.RawMessage(`{"kind":"log_expense"}`),
+		RedactedResponse: json.RawMessage(`{"kind":"record_expense"}`),
 		TraceID:          "0af7651916cd43dd8448eb211c80319c",
-		DecidedAction:    "log_expense",
+		DecidedAction:    "record_expense",
 		CreatedAt:        time.Now().UTC(),
 	}
 }

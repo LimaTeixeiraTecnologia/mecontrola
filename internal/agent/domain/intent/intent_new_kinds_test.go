@@ -13,7 +13,7 @@ func TestNewKinds_StringAndParseRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	kinds := []intent.Kind{
-		intent.KindLogCardPurchase,
+		intent.KindRecordCardPurchase,
 		intent.KindListTransactions,
 		intent.KindDeleteLastTransaction,
 		intent.KindEditLastTransaction,
@@ -29,12 +29,12 @@ func TestNewKinds_StringAndParseRoundTrip(t *testing.T) {
 	}
 }
 
-func TestNewLogCardPurchase(t *testing.T) {
+func TestNewRecordCardPurchase(t *testing.T) {
 	t.Parallel()
 
 	t.Run("valido", func(t *testing.T) {
 		t.Parallel()
-		got, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{
+		got, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
 			AmountCents:  125090,
 			Merchant:     "Magalu",
 			CategoryHint: "Casa",
@@ -42,7 +42,7 @@ func TestNewLogCardPurchase(t *testing.T) {
 			Installments: 12,
 		})
 		require.NoError(t, err)
-		require.Equal(t, intent.KindLogCardPurchase, got.Kind())
+		require.Equal(t, intent.KindRecordCardPurchase, got.Kind())
 		require.Equal(t, int64(125090), got.AmountCents())
 		require.Equal(t, 12, got.Installments())
 		require.Equal(t, "nubank", got.CardHint())
@@ -50,19 +50,19 @@ func TestNewLogCardPurchase(t *testing.T) {
 
 	t.Run("amount nao positivo", func(t *testing.T) {
 		t.Parallel()
-		_, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{AmountCents: 0, Installments: 3})
+		_, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{AmountCents: 0, Installments: 3})
 		require.ErrorIs(t, err, intent.ErrAmountNonPositive)
 	})
 
 	t.Run("parcelas minimas", func(t *testing.T) {
 		t.Parallel()
-		_, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{AmountCents: 100, Installments: 1})
+		_, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{AmountCents: 100, Installments: 1})
 		require.ErrorIs(t, err, intent.ErrInstallmentsTooFew)
 	})
 
 	t.Run("parcelas excessivas", func(t *testing.T) {
 		t.Parallel()
-		_, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{AmountCents: 100, Installments: 25})
+		_, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{AmountCents: 100, Installments: 25})
 		require.ErrorIs(t, err, intent.ErrInstallmentsTooMany)
 	})
 }

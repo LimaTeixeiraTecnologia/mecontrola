@@ -257,7 +257,7 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 		deps.EventPublisher = agentevents.NewIntentEventPublisher(b.outboxPublisher, b.o11y)
 	}
 	b.fillIntentRouterDeps(&deps)
-	b.attachExpenseLogger(&deps)
+	b.attachExpenseRecorder(&deps)
 	b.attachCardPurchaseLogger(&deps)
 	b.attachTransactionQueries(&deps)
 	b.attachRecurring(&deps)
@@ -297,19 +297,19 @@ func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouter
 	}
 }
 
-func (b *agentModuleBuilder) attachExpenseLogger(deps *appservices.IntentRouterDeps) {
+func (b *agentModuleBuilder) attachExpenseRecorder(deps *appservices.IntentRouterDeps) {
 	if b.transactionsModule.CreateTransactionUC == nil {
 		return
 	}
 	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
 		return
 	}
-	logTransaction := usecases.NewLogTransactionFromAgent(
+	logTransaction := usecases.NewRecordTransactionFromAgent(
 		b.categoriesModule.SearchDictionaryUC,
 		agentbinding.NewTransactionCreatorAdapter(b.transactionsModule.CreateTransactionUC),
 		b.o11y,
 	)
-	deps.ExpenseLogger = agentbinding.NewTransactionLoggerAdapter(logTransaction)
+	deps.ExpenseRecorder = agentbinding.NewTransactionLoggerAdapter(logTransaction)
 }
 
 func (b *agentModuleBuilder) attachCardPurchaseLogger(deps *appservices.IntentRouterDeps) {
@@ -322,7 +322,7 @@ func (b *agentModuleBuilder) attachCardPurchaseLogger(deps *appservices.IntentRo
 	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
 		return
 	}
-	logCardPurchase := usecases.NewLogCardPurchaseFromAgent(
+	logCardPurchase := usecases.NewRecordCardPurchaseFromAgent(
 		b.categoriesModule.SearchDictionaryUC,
 		agentbinding.NewCardPurchaseCreatorAdapter(b.cardModule.ListCardsUC, b.transactionsModule.CreateCardPurchaseUC),
 		b.o11y,
@@ -384,6 +384,7 @@ func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentR
 		b.budgetsModule.ActivateBudgetUC,
 	)
 	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(b.sessionRepo, b.sessionUoW)
+	deps.PendingExpenseConfirmation = agentbinding.NewPendingExpenseConfirmationAdapter(b.sessionRepo, b.sessionUoW)
 }
 
 func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterDeps) {
@@ -430,7 +431,7 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		uc.Complete,
 		uc.GetContext,
 		b.wmRepo,
-		deps.ExpenseLogger,
+		deps.ExpenseRecorder,
 	)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
 	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, b.sessionRepo)
@@ -455,7 +456,7 @@ func (b *agentModuleBuilder) onboardingLLMUnavailable(deps *appservices.IntentRo
 	if llmModule == nil || llmModule.OnboardingInterpreter == nil {
 		return "interpreter_missing"
 	}
-	if deps.ExpenseLogger == nil {
+	if deps.ExpenseRecorder == nil {
 		return "expense_logger_missing"
 	}
 	if b.onboardingLLM.GetContext == nil {

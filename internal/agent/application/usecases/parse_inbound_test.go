@@ -71,9 +71,9 @@ func (s *ParseInboundSuite) TestExecuteAllKinds() { //nolint:revive // tabela ex
 		check   func(got intent.Intent)
 	}{
 		{
-			name:    "log_expense",
-			llmJSON: `{"kind":"log_expense","amount_cents":5800,"merchant":"iFood","category_hint":"Alimentação","payment_method":"credit","card_hint":"nubank"}`,
-			want:    intent.KindLogExpense,
+			name:    "record_expense",
+			llmJSON: `{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","category_hint":"Alimentação","payment_method":"credit","card_hint":"nubank"}`,
+			want:    intent.KindRecordExpense,
 			check: func(got intent.Intent) {
 				s.Equal(int64(5800), got.AmountCents())
 				s.Equal("iFood", got.Merchant())
@@ -130,9 +130,9 @@ func (s *ParseInboundSuite) TestExecuteAllKinds() { //nolint:revive // tabela ex
 			want:    intent.KindHowAmIDoing,
 		},
 		{
-			name:    "log_card_purchase",
-			llmJSON: `{"kind":"log_card_purchase","amount_cents":120000,"merchant":"supermercado","card_hint":"nubank","installments":6}`,
-			want:    intent.KindLogCardPurchase,
+			name:    "record_card_purchase",
+			llmJSON: `{"kind":"record_card_purchase","amount_cents":120000,"merchant":"supermercado","card_hint":"nubank","installments":6}`,
+			want:    intent.KindRecordCardPurchase,
 			check: func(got intent.Intent) {
 				s.Equal(int64(120000), got.AmountCents())
 				s.Equal(6, got.Installments())
@@ -241,7 +241,7 @@ func (s *ParseInboundSuite) TestExecuteMissingKindFallback() {
 }
 
 func (s *ParseInboundSuite) TestExecuteDomainInvariantViolationFallback() {
-	uc := s.newSUT(`{"kind":"log_expense","amount_cents":0}`, nil)
+	uc := s.newSUT(`{"kind":"record_expense","amount_cents":0}`, nil)
 	out, err := uc.Execute(s.ctx, ParseInboundInput{
 		UserID: uuid.New(),
 		Text:   "gastei algo",
@@ -251,10 +251,10 @@ func (s *ParseInboundSuite) TestExecuteDomainInvariantViolationFallback() {
 }
 
 func (s *ParseInboundSuite) TestExecuteRecoversInstallmentsFromText() {
-	uc := s.newSUT(`{"kind":"log_card_purchase","amount_cents":120000,"card_hint":"nubank"}`, nil)
+	uc := s.newSUT(`{"kind":"record_card_purchase","amount_cents":120000,"card_hint":"nubank"}`, nil)
 	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "comprei 1200 em 6x no nubank"})
 	s.Require().NoError(err)
-	s.Equal(intent.KindLogCardPurchase, out.Intent.Kind())
+	s.Equal(intent.KindRecordCardPurchase, out.Intent.Kind())
 	s.Equal(6, out.Intent.Installments())
 }
 
@@ -266,17 +266,17 @@ func (s *ParseInboundSuite) TestExecuteRecoversInstallmentsVariants() {
 	}
 	for text, want := range cases {
 		s.Run(text, func() {
-			uc := s.newSUT(`{"kind":"log_card_purchase","amount_cents":90000,"card_hint":"nubank"}`, nil)
+			uc := s.newSUT(`{"kind":"record_card_purchase","amount_cents":90000,"card_hint":"nubank"}`, nil)
 			out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: text})
 			s.Require().NoError(err)
-			s.Equal(intent.KindLogCardPurchase, out.Intent.Kind())
+			s.Equal(intent.KindRecordCardPurchase, out.Intent.Kind())
 			s.Equal(want, out.Intent.Installments())
 		})
 	}
 }
 
 func (s *ParseInboundSuite) TestExecuteCardPurchaseWithoutInstallmentCueFallsBack() {
-	uc := s.newSUT(`{"kind":"log_card_purchase","amount_cents":120000,"card_hint":"nubank"}`, nil)
+	uc := s.newSUT(`{"kind":"record_card_purchase","amount_cents":120000,"card_hint":"nubank"}`, nil)
 	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "comprei algo caro no cartão"})
 	s.Require().NoError(err)
 	s.Equal(intent.KindUnknown, out.Intent.Kind())
@@ -359,7 +359,7 @@ func (s *ParseInboundSuite) decodeFailureReasons(provider *fake.Provider) []stri
 func (s *ParseInboundSuite) TestInvalidJSONRecordsDecodeFailure() {
 	provider := fake.NewProvider()
 	uc, err := NewParseInbound(&fakeInterpreter{
-		resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind": "log_expense", broken`)},
+		resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind": "record_expense", broken`)},
 	}, 2000, provider)
 	s.Require().NoError(err)
 

@@ -153,14 +153,14 @@ func (s *NewKindsRouterSuite) route(in intent.Intent, text string) services.Rout
 }
 
 func (s *NewKindsRouterSuite) buildCardPurchase() intent.Intent {
-	in, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{AmountCents: 120000, Merchant: "Magalu", CardHint: "nubank", Installments: 6})
+	in, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{AmountCents: 120000, Merchant: "Magalu", CardHint: "nubank", Installments: 6})
 	require.NoError(s.T(), err)
 	return in
 }
 
 func (s *NewKindsRouterSuite) TestCardPurchase_MissingResolverIsHonest() {
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
-	s.Equal(intent.KindLogCardPurchase, result.Kind)
+	s.Equal(intent.KindRecordCardPurchase, result.Kind)
 	s.Equal(services.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "registrada")

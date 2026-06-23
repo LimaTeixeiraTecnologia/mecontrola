@@ -63,22 +63,28 @@ func (a *TransactionCreatorAdapter) Execute(ctx context.Context, in usecases.Cre
 }
 
 type TransactionLoggerAdapter struct {
-	uc *usecases.LogTransactionFromAgent
+	uc *usecases.RecordTransactionFromAgent
 }
 
-func NewTransactionLoggerAdapter(uc *usecases.LogTransactionFromAgent) *TransactionLoggerAdapter {
+func NewTransactionLoggerAdapter(uc *usecases.RecordTransactionFromAgent) *TransactionLoggerAdapter {
 	return &TransactionLoggerAdapter{uc: uc}
 }
 
-func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in appservices.ExpenseLoggerInput) (appservices.ExpenseLoggerResult, error) {
-	result, err := a.uc.Execute(ctx, usecases.LogTransactionFromAgentInput{
-		UserID: in.UserID,
-		Intent: in.Intent,
+func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in appservices.ExpenseRecorderInput) (appservices.ExpenseRecorderResult, error) {
+	result, err := a.uc.Execute(ctx, usecases.RecordTransactionFromAgentInput{
+		UserID:        in.UserID,
+		Intent:        in.Intent,
+		ForceCategory: in.ForceCategory,
+		AmountCents:   in.AmountCents,
+		Merchant:      in.Merchant,
+		PaymentMethod: in.PaymentMethod,
+		Direction:     in.Direction,
+		OccurredAt:    in.OccurredAt,
 	})
 	if err != nil {
-		return appservices.ExpenseLoggerResult{}, translateCategoryError(err)
+		return appservices.ExpenseRecorderResult{}, translateCategoryError(err)
 	}
-	return appservices.ExpenseLoggerResult{
+	return appservices.ExpenseRecorderResult{
 		Persisted:    result.Persisted,
 		AmountCents:  result.AmountCents,
 		CategoryPath: result.CategoryPath,

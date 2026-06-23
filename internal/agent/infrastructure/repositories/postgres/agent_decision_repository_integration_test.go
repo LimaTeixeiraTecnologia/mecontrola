@@ -46,12 +46,12 @@ func (s *AgentDecisionRepositorySuite) pending(userID uuid.UUID, messageID strin
 		UserID:           userID,
 		Channel:          "whatsapp",
 		MessageID:        messageID,
-		IntentKind:       "log_expense",
+		IntentKind:       "record_expense",
 		PromptSHA256:     "a3f1e9b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1",
 		LLMModel:         "google/gemini-2.5-flash-lite",
 		RedactedResponse: json.RawMessage(`{"redacted":"Lancei R$ 58,00 no iFood"}`),
 		TraceID:          "trace-123",
-		DecidedAction:    "log_expense",
+		DecidedAction:    "record_expense",
 		CreatedAt:        time.Now().UTC(),
 	})
 	s.Require().NoError(err)

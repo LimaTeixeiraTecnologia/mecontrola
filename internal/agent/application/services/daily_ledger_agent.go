@@ -12,6 +12,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
@@ -22,62 +23,64 @@ import (
 const defaultPolicyMinConfidence = 0.8
 
 type DailyLedgerAgent struct {
-	parser                 IntentParser
-	monthlySummary         MonthlySummaryReader
-	cardLister             CardLister
-	cardInvoice            CardInvoiceReader
-	cardCreator            CardCreator
-	cardCounter            CardCounter
-	expenseLogger          ExpenseLogger
-	cardPurchaseLog        CardPurchaseLogger
-	transactionLister      TransactionLister
-	lastDeleter            LastTransactionDeleter
-	lastEditor             LastTransactionEditor
-	recurringCreator       RecurringCreator
-	recurringLister        RecurringLister
-	budgetConfig           BudgetConfigurator
-	budgetConvo            BudgetConversation
-	budgetCommitter        BudgetConfigCommitter
-	budgetSession          BudgetSessionGateway
-	fallback               Fallback
-	auditor                *decisionAuditor
-	policy                 domainservices.PolicyEvaluator
-	o11y                   observability.Observability
-	routedTotal            observability.Counter
-	authzDeniedTotal       observability.Counter
-	policyBlockedTotal     observability.Counter
-	idempotencyReplayTotal observability.Counter
-	loc                    *time.Location
+	parser                     IntentParser
+	monthlySummary             MonthlySummaryReader
+	cardLister                 CardLister
+	cardInvoice                CardInvoiceReader
+	cardCreator                CardCreator
+	cardCounter                CardCounter
+	expenseRecorder            ExpenseRecorder
+	cardPurchaseLog            CardPurchaseLogger
+	transactionLister          TransactionLister
+	lastDeleter                LastTransactionDeleter
+	lastEditor                 LastTransactionEditor
+	recurringCreator           RecurringCreator
+	recurringLister            RecurringLister
+	budgetConfig               BudgetConfigurator
+	budgetConvo                BudgetConversation
+	budgetCommitter            BudgetConfigCommitter
+	budgetSession              BudgetSessionGateway
+	pendingExpenseConfirmation PendingExpenseConfirmationGateway
+	fallback                   Fallback
+	auditor                    *decisionAuditor
+	policy                     domainservices.PolicyEvaluator
+	o11y                       observability.Observability
+	routedTotal                observability.Counter
+	authzDeniedTotal           observability.Counter
+	policyBlockedTotal         observability.Counter
+	idempotencyReplayTotal     observability.Counter
+	loc                        *time.Location
 }
 
 func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) *DailyLedgerAgent {
 	return &DailyLedgerAgent{
-		parser:                 deps.Parser,
-		monthlySummary:         deps.MonthlySummary,
-		cardLister:             deps.CardLister,
-		cardInvoice:            deps.CardInvoice,
-		cardCreator:            deps.CardCreator,
-		cardCounter:            deps.CardCounter,
-		expenseLogger:          deps.ExpenseLogger,
-		cardPurchaseLog:        deps.CardPurchaseLog,
-		transactionLister:      deps.TransactionLister,
-		lastDeleter:            deps.LastDeleter,
-		lastEditor:             deps.LastEditor,
-		recurringCreator:       deps.RecurringCreator,
-		recurringLister:        deps.RecurringLister,
-		budgetConfig:           deps.BudgetConfig,
-		budgetConvo:            deps.BudgetConvo,
-		budgetCommitter:        deps.BudgetCommitter,
-		budgetSession:          deps.BudgetSession,
-		fallback:               deps.Fallback,
-		auditor:                newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
-		policy:                 domainservices.NewPolicyEvaluator(resolvePolicyThreshold(deps.PolicyMinConfidence)),
-		o11y:                   o11y,
-		routedTotal:            routedTotal,
-		authzDeniedTotal:       authzDeniedTotal,
-		policyBlockedTotal:     policyBlockedTotal,
-		idempotencyReplayTotal: idempotencyReplayTotal,
-		loc:                    loc,
+		parser:                     deps.Parser,
+		monthlySummary:             deps.MonthlySummary,
+		cardLister:                 deps.CardLister,
+		cardInvoice:                deps.CardInvoice,
+		cardCreator:                deps.CardCreator,
+		cardCounter:                deps.CardCounter,
+		expenseRecorder:            deps.ExpenseRecorder,
+		cardPurchaseLog:            deps.CardPurchaseLog,
+		transactionLister:          deps.TransactionLister,
+		lastDeleter:                deps.LastDeleter,
+		lastEditor:                 deps.LastEditor,
+		recurringCreator:           deps.RecurringCreator,
+		recurringLister:            deps.RecurringLister,
+		budgetConfig:               deps.BudgetConfig,
+		budgetConvo:                deps.BudgetConvo,
+		budgetCommitter:            deps.BudgetCommitter,
+		budgetSession:              deps.BudgetSession,
+		pendingExpenseConfirmation: deps.PendingExpenseConfirmation,
+		fallback:                   deps.Fallback,
+		auditor:                    newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
+		policy:                     domainservices.NewPolicyEvaluator(resolvePolicyThreshold(deps.PolicyMinConfidence)),
+		o11y:                       o11y,
+		routedTotal:                routedTotal,
+		authzDeniedTotal:           authzDeniedTotal,
+		policyBlockedTotal:         policyBlockedTotal,
+		idempotencyReplayTotal:     idempotencyReplayTotal,
+		loc:                        loc,
 	}
 }
 
@@ -95,6 +98,12 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 }
 
 func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult { //nolint:revive // dispatch exaustivo por intent kind
+	if a.pendingExpenseConfirmation != nil {
+		if handled, result := a.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, text); handled {
+			return result
+		}
+	}
+
 	if a.budgetSessionEnabled() {
 		if handled, result := a.continuePendingBudgetSession(ctx, principal.UserID, channel, text); handled {
 			return result
@@ -133,9 +142,9 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 	}
 
 	switch kind {
-	case intent.KindLogExpense:
+	case intent.KindRecordExpense:
 		return a.routeLogExpense(ctx, principal.UserID, channel, parsed.Intent)
-	case intent.KindLogIncome:
+	case intent.KindRecordIncome:
 		return a.routeLogIncome(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindMonthlySummary:
 		return a.routeMonthlySummary(ctx, principal.UserID, channel, parsed.Intent)
@@ -149,7 +158,7 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return a.routeHowAmIDoing(ctx, principal.UserID, channel)
 	case intent.KindConfigureBudget:
 		return a.routeConfigureBudget(ctx, principal.UserID, channel, text)
-	case intent.KindLogCardPurchase:
+	case intent.KindRecordCardPurchase:
 		return a.routeLogCardPurchase(ctx, principal.UserID, channel, parsed.Intent)
 	case intent.KindListTransactions:
 		return a.routeListTransactions(ctx, principal.UserID, channel, parsed.Intent)
@@ -217,11 +226,11 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 
 	var result RouteResult
 	switch kind {
-	case intent.KindLogExpense:
+	case intent.KindRecordExpense:
 		result = a.routeLogExpense(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindLogIncome:
+	case intent.KindRecordIncome:
 		result = a.routeLogIncome(ctx, effectiveUserID, channel, parsed.Intent)
-	case intent.KindLogCardPurchase:
+	case intent.KindRecordCardPurchase:
 		result = a.routeLogCardPurchase(ctx, effectiveUserID, channel, parsed.Intent)
 	case intent.KindCreateCard:
 		result = a.routeCreateCard(ctx, effectiveUserID, channel, parsed.Intent)
@@ -296,47 +305,47 @@ func (a *DailyLedgerAgent) beginDecisionAudit(ctx context.Context, principal Pri
 }
 
 func (a *DailyLedgerAgent) routeLogExpense(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if a.expenseLogger == nil {
-		a.record(ctx, intent.KindLogExpense.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogExpense}
+	if a.expenseRecorder == nil {
+		a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindRecordExpense}
 	}
-	result, err := a.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
+	result, err := a.expenseRecorder.Execute(ctx, ExpenseRecorderInput{UserID: userID.String(), Intent: in})
 	if err != nil {
-		if clarify, ok := a.categoryClarification(ctx, channel, intent.KindLogExpense, in, err); ok {
+		if clarify, ok := a.categoryClarification(ctx, userID, channel, intent.KindRecordExpense, in, err); ok {
 			return clarify
 		}
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_expense_failed",
 			observability.Error(err),
 		)
-		a.record(ctx, intent.KindLogExpense.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogExpense}
+		a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindRecordExpense}
 	}
-	a.record(ctx, intent.KindLogExpense.String(), channel, OutcomeRouted)
+	a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeRouted)
 	reply := formatPersistedExpense(result.AmountCents, in.Merchant(), result.CategoryPath)
-	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindLogExpense}
+	return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindRecordExpense}
 }
 
 func (a *DailyLedgerAgent) routeLogIncome(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
-	if a.expenseLogger == nil {
-		a.record(ctx, intent.KindLogIncome.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogIncome}
+	if a.expenseRecorder == nil {
+		a.record(ctx, intent.KindRecordIncome.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindRecordIncome}
 	}
-	result, err := a.expenseLogger.Execute(ctx, ExpenseLoggerInput{UserID: userID.String(), Intent: in})
+	result, err := a.expenseRecorder.Execute(ctx, ExpenseRecorderInput{UserID: userID.String(), Intent: in})
 	if err != nil {
-		if clarify, ok := a.categoryClarification(ctx, channel, intent.KindLogIncome, in, err); ok {
+		if clarify, ok := a.categoryClarification(ctx, userID, channel, intent.KindRecordIncome, in, err); ok {
 			return clarify
 		}
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_income_failed",
 			observability.Error(err),
 		)
-		a.record(ctx, intent.KindLogIncome.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogIncome}
+		a.record(ctx, intent.KindRecordIncome.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindRecordIncome}
 	}
-	a.record(ctx, intent.KindLogIncome.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatPersistedIncome(result.AmountCents, in.Merchant(), result.CategoryPath), Outcome: OutcomeRouted, Kind: intent.KindLogIncome}
+	a.record(ctx, intent.KindRecordIncome.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedIncome(result.AmountCents, in.Merchant(), result.CategoryPath), Outcome: OutcomeRouted, Kind: intent.KindRecordIncome}
 }
 
-func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, channel string, kind intent.Kind, in intent.Intent, err error) (RouteResult, bool) {
+func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, userID uuid.UUID, channel string, kind intent.Kind, in intent.Intent, err error) (RouteResult, bool) {
 	var ambiguous *CategoryAmbiguousError
 	if errors.As(err, &ambiguous) {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.category_ambiguous",
@@ -351,6 +360,15 @@ func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, channel st
 			observability.String("kind", kind.String()),
 			observability.String("channel", channel),
 		)
+		if a.pendingExpenseConfirmation != nil && len(needsConfirmation.Candidates) > 0 {
+			draft := a.buildPendingExpenseDraft(in, kind, needsConfirmation.Candidates[0])
+			if saveErr := a.pendingExpenseConfirmation.Save(ctx, userID, channel, draft); saveErr != nil {
+				a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_save_failed",
+					observability.String("channel", channel),
+					observability.Error(saveErr),
+				)
+			}
+		}
 		a.record(ctx, kind.String(), channel, OutcomeClarify)
 		return RouteResult{Reply: formatCategoryNeedsConfirmation(needsConfirmation.Candidates), Outcome: OutcomeClarify, Kind: kind}, true
 	}
@@ -624,23 +642,23 @@ func (a *DailyLedgerAgent) routeHowAmIDoing(ctx context.Context, userID uuid.UUI
 
 func (a *DailyLedgerAgent) routeLogCardPurchase(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
 	if a.cardPurchaseLog == nil {
-		a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
 	}
 	result, err := a.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{UserID: userID.String(), Intent: in})
 	if err != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_card_purchase_failed",
 			observability.Error(err),
 		)
-		a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindLogCardPurchase}
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: registerFailedText(in.AmountCents(), in.Merchant()), Outcome: OutcomeUsecaseError, Kind: intent.KindRecordCardPurchase}
 	}
 	if !result.CardFound {
-		a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeMissingResolver)
-		return RouteResult{Reply: formatCardPurchaseCardMissing(in.CardHint()), Outcome: OutcomeMissingResolver, Kind: intent.KindLogCardPurchase}
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: formatCardPurchaseCardMissing(in.CardHint()), Outcome: OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
 	}
-	a.record(ctx, intent.KindLogCardPurchase.String(), channel, OutcomeRouted)
-	return RouteResult{Reply: formatPersistedCardPurchase(result), Outcome: OutcomeRouted, Kind: intent.KindLogCardPurchase}
+	a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedCardPurchase(result), Outcome: OutcomeRouted, Kind: intent.KindRecordCardPurchase}
 }
 
 func (a *DailyLedgerAgent) routeListTransactions(ctx context.Context, userID uuid.UUID, channel string, in intent.Intent) RouteResult {
@@ -725,7 +743,7 @@ func (a *DailyLedgerAgent) routeCreateRecurring(ctx context.Context, userID uuid
 	}
 	result, err := a.recurringCreator.Execute(ctx, RecurringCreatorInput{UserID: userID.String(), Intent: in})
 	if err != nil {
-		if clarify, ok := a.categoryClarification(ctx, channel, intent.KindCreateRecurring, in, err); ok {
+		if clarify, ok := a.categoryClarification(ctx, userID, channel, intent.KindCreateRecurring, in, err); ok {
 			return clarify
 		}
 		if errors.Is(err, ErrRecurringInvalidDay) {
@@ -850,4 +868,93 @@ func (a *DailyLedgerAgent) record(ctx context.Context, kind, channel, outcome st
 		observability.String("channel", channel),
 		observability.String("outcome", outcome),
 	)
+}
+
+const (
+	expenseCancelledText  = "Ok, cancelei o lançamento. Quando quiser registrar, é só me dizer. 😊"
+	directionOutcomeConst = "outcome"
+	directionIncomeConst  = "income"
+)
+
+func (a *DailyLedgerAgent) continuePendingExpenseConfirmation(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	draft, found, err := a.pendingExpenseConfirmation.Load(ctx, userID, channel)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_load_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	if !found {
+		return false, RouteResult{}
+	}
+	if matchesExpenseConfirmation(text) {
+		if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
+				observability.String("channel", channel),
+				observability.Error(clearErr),
+			)
+		}
+		categoryID := draft.CategoryID
+		result, err := a.expenseRecorder.Execute(ctx, ExpenseRecorderInput{
+			UserID:        userID.String(),
+			ForceCategory: &categoryID,
+			AmountCents:   draft.AmountCents,
+			Merchant:      draft.Merchant,
+			PaymentMethod: draft.PaymentMethod,
+			Direction:     draft.Direction,
+			OccurredAt:    draft.OccurredAt,
+		})
+		if err != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_execute_failed",
+				observability.String("channel", channel),
+				observability.Error(err),
+			)
+			a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeUsecaseError)
+			return true, RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindRecordExpense}
+		}
+		a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeRouted)
+		return true, RouteResult{
+			Reply:   formatPersistedExpense(result.AmountCents, draft.Merchant, result.CategoryPath),
+			Outcome: OutcomeRouted,
+			Kind:    intent.KindRecordExpense,
+		}
+	}
+	if matchesExpenseCancellation(text) {
+		if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
+				observability.String("channel", channel),
+				observability.Error(clearErr),
+			)
+		}
+		a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeRouted)
+		return true, RouteResult{Reply: expenseCancelledText, Outcome: OutcomeRouted, Kind: intent.KindRecordExpense}
+	}
+	return false, RouteResult{}
+}
+
+func (a *DailyLedgerAgent) buildPendingExpenseDraft(in intent.Intent, kind intent.Kind, categoryPath string) pendingexpense.Draft {
+	direction := directionOutcomeConst
+	if kind == intent.KindRecordIncome {
+		direction = directionIncomeConst
+	}
+	return pendingexpense.Draft{
+		AmountCents:   in.AmountCents(),
+		Merchant:      in.Merchant(),
+		PaymentMethod: in.PaymentMethod(),
+		Direction:     direction,
+		OccurredAt:    "",
+		CategoryID:    categoryPath,
+		CategoryPath:  categoryPath,
+	}
+}
+
+func matchesExpenseConfirmation(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	return t == "sim" || t == "s" || t == "confirma" || t == "confirmado" || t == "pode" || t == "ok" || t == "yes"
+}
+
+func matchesExpenseCancellation(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	return t == "não" || t == "nao" || t == "n" || t == "no" || t == "cancela" || t == "cancelar"
 }

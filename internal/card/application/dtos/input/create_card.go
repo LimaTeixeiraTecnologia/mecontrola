@@ -29,7 +29,7 @@ func (i *CreateCard) Validate() error {
 	if i.DueDay <= 0 {
 		errs = append(errs, ErrCardDueDayInvalid)
 	}
-	if i.LimitCents <= 0 {
+	if i.LimitCents < 0 {
 		errs = append(errs, ErrCardLimitCentsInvalid)
 	}
 	return errors.Join(errs...)

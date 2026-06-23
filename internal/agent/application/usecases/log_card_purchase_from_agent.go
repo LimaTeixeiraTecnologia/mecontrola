@@ -30,7 +30,7 @@ type CreateCardPurchaseResult struct {
 	CardName  string
 }
 
-type LogCardPurchaseFromAgent struct {
+type RecordCardPurchaseFromAgent struct {
 	resolver       CategoryResolver
 	creator        CardPurchaseCreator
 	o11y           observability.Observability
@@ -39,11 +39,11 @@ type LogCardPurchaseFromAgent struct {
 	scoreHistogram observability.Histogram
 }
 
-func NewLogCardPurchaseFromAgent(
+func NewRecordCardPurchaseFromAgent(
 	resolver CategoryResolver,
 	creator CardPurchaseCreator,
 	o11y observability.Observability,
-) *LogCardPurchaseFromAgent {
+) *RecordCardPurchaseFromAgent {
 	persisted := o11y.Metrics().Counter(
 		"agent_log_card_purchase_persisted_total",
 		"Total de compras parceladas persistidas a partir de intent do agente",
@@ -54,7 +54,7 @@ func NewLogCardPurchaseFromAgent(
 		"Total de tentativas de compra parcelada que falharam ao resolver categoria, cartão ou persistir",
 		"1",
 	)
-	return &LogCardPurchaseFromAgent{
+	return &RecordCardPurchaseFromAgent{
 		resolver:       resolver,
 		creator:        creator,
 		o11y:           o11y,
@@ -64,12 +64,12 @@ func NewLogCardPurchaseFromAgent(
 	}
 }
 
-type LogCardPurchaseFromAgentInput struct {
+type RecordCardPurchaseFromAgentInput struct {
 	UserID string
 	Intent intent.Intent
 }
 
-type LogCardPurchaseFromAgentResult struct {
+type RecordCardPurchaseFromAgentResult struct {
 	Persisted    bool
 	CardFound    bool
 	CardName     string
@@ -78,29 +78,29 @@ type LogCardPurchaseFromAgentResult struct {
 	CategoryPath string
 }
 
-func (uc *LogCardPurchaseFromAgent) Execute(ctx context.Context, in LogCardPurchaseFromAgentInput) (LogCardPurchaseFromAgentResult, error) {
+func (uc *RecordCardPurchaseFromAgent) Execute(ctx context.Context, in RecordCardPurchaseFromAgentInput) (RecordCardPurchaseFromAgentResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agent.usecase.log_card_purchase_from_agent")
 	defer span.End()
 
-	if in.Intent.Kind() != intent.KindLogCardPurchase {
-		return LogCardPurchaseFromAgentResult{}, ErrLogTransactionInvalidIntent
+	if in.Intent.Kind() != intent.KindRecordCardPurchase {
+		return RecordCardPurchaseFromAgentResult{}, ErrLogTransactionInvalidIntent
 	}
 	if strings.TrimSpace(in.UserID) == "" {
-		return LogCardPurchaseFromAgentResult{}, errors.New("agent: log card purchase: user id vazio")
+		return RecordCardPurchaseFromAgentResult{}, errors.New("agent: log card purchase: user id vazio")
 	}
 	if in.Intent.AmountCents() <= 0 {
-		return LogCardPurchaseFromAgentResult{}, errors.New("agent: log card purchase: amount invalido")
+		return RecordCardPurchaseFromAgentResult{}, errors.New("agent: log card purchase: amount invalido")
 	}
 
 	hint := resolveHint(in.Intent.CategoryHint(), in.Intent.Merchant())
 	if hint == "" {
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "no_hint"))
-		return LogCardPurchaseFromAgentResult{}, ErrLogTransactionNoCategoryHint
+		return RecordCardPurchaseFromAgentResult{}, ErrLogTransactionNoCategoryHint
 	}
 
 	candidate, path, err := resolveCategoryCandidate(ctx, uc.resolver, uc.resolveBad, uc.scoreHistogram, hint, categoriesvo.KindExpense)
 	if err != nil {
-		return LogCardPurchaseFromAgentResult{}, err
+		return RecordCardPurchaseFromAgentResult{}, err
 	}
 
 	description := strings.TrimSpace(in.Intent.Merchant())
@@ -124,11 +124,11 @@ func (uc *LogCardPurchaseFromAgent) Execute(ctx context.Context, in LogCardPurch
 	})
 	if err != nil {
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "create_failed"))
-		return LogCardPurchaseFromAgentResult{}, err
+		return RecordCardPurchaseFromAgentResult{}, err
 	}
 	if !result.CardFound {
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "card_not_found"))
-		return LogCardPurchaseFromAgentResult{
+		return RecordCardPurchaseFromAgentResult{
 			Persisted:    false,
 			CardFound:    false,
 			AmountCents:  in.Intent.AmountCents(),
@@ -138,7 +138,7 @@ func (uc *LogCardPurchaseFromAgent) Execute(ctx context.Context, in LogCardPurch
 	}
 
 	uc.persisted.Add(ctx, 1)
-	return LogCardPurchaseFromAgentResult{
+	return RecordCardPurchaseFromAgentResult{
 		Persisted:    true,
 		CardFound:    true,
 		CardName:     result.CardName,

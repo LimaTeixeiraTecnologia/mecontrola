@@ -36,12 +36,12 @@ func (s *PolicyEvaluatorSuite) TestEvaluate() {
 	}{
 		{
 			name:   "write abaixo do threshold pede esclarecimento",
-			args:   args{kind: intent.KindLogExpense, confidence: 0.5},
+			args:   args{kind: intent.KindRecordExpense, confidence: 0.5},
 			expect: func(decision PolicyDecision) { s.Equal(PolicyDecisionClarify, decision) },
 		},
 		{
 			name:   "write no threshold prossegue",
-			args:   args{kind: intent.KindLogExpense, confidence: 0.8},
+			args:   args{kind: intent.KindRecordExpense, confidence: 0.8},
 			expect: func(decision PolicyDecision) { s.Equal(PolicyDecisionProceed, decision) },
 		},
 		{

@@ -49,7 +49,7 @@ func (s *LogCardPurchaseSuite) SetupTest() {
 }
 
 func (s *LogCardPurchaseSuite) intent() intent.Intent {
-	in, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{
+	in, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
 		AmountCents: 120000, Merchant: "Magalu", CardHint: "nubank", Installments: 6,
 	})
 	s.Require().NoError(err)
@@ -58,9 +58,9 @@ func (s *LogCardPurchaseSuite) intent() intent.Intent {
 
 func (s *LogCardPurchaseSuite) TestPersistedWhenCardFound() {
 	creator := &fakeCardPurchaseCreator{result: CreateCardPurchaseResult{CardFound: true, CardName: "Nubank"}}
-	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa > Eletro")}, creator, fake.NewProvider())
+	uc := NewRecordCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa > Eletro")}, creator, fake.NewProvider())
 
-	out, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	out, err := uc.Execute(s.ctx, RecordCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().NoError(err)
 	s.True(out.Persisted)
 	s.True(out.CardFound)
@@ -72,9 +72,9 @@ func (s *LogCardPurchaseSuite) TestPersistedWhenCardFound() {
 
 func (s *LogCardPurchaseSuite) TestNotPersistedWhenCardMissing() {
 	creator := &fakeCardPurchaseCreator{result: CreateCardPurchaseResult{CardFound: false}}
-	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, fake.NewProvider())
+	uc := NewRecordCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, fake.NewProvider())
 
-	out, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	out, err := uc.Execute(s.ctx, RecordCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().NoError(err)
 	s.False(out.Persisted)
 	s.False(out.CardFound)
@@ -82,18 +82,18 @@ func (s *LogCardPurchaseSuite) TestNotPersistedWhenCardMissing() {
 
 func (s *LogCardPurchaseSuite) TestCategoryNotFoundFails() {
 	creator := &fakeCardPurchaseCreator{}
-	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: &categoriesoutput.DictionarySearchOutput{}}, creator, fake.NewProvider())
+	uc := NewRecordCardPurchaseFromAgent(&fakeResolver{out: &categoriesoutput.DictionarySearchOutput{}}, creator, fake.NewProvider())
 
-	_, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	_, err := uc.Execute(s.ctx, RecordCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().Error(err)
 	s.False(creator.called)
 }
 
 func (s *LogCardPurchaseSuite) TestCreateErrorPropagates() {
 	creator := &fakeCardPurchaseCreator{err: errors.New("boom")}
-	uc := NewLogCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, fake.NewProvider())
+	uc := NewRecordCardPurchaseFromAgent(&fakeResolver{out: candidatesOutput("Casa")}, creator, fake.NewProvider())
 
-	_, err := uc.Execute(s.ctx, LogCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
+	_, err := uc.Execute(s.ctx, RecordCardPurchaseFromAgentInput{UserID: uuid.NewString(), Intent: s.intent()})
 	s.Require().Error(err)
 }
 

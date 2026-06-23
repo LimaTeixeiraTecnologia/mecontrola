@@ -292,16 +292,16 @@ func resolveConfidence(raw *float64) valueobjects.Confidence {
 
 func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Intent, error) { //nolint:revive // dispatch exaustivo por intent kind
 	switch kind {
-	case intent.KindLogExpense:
-		return intent.NewLogExpense(intent.LogExpenseFields{
+	case intent.KindRecordExpense:
+		return intent.NewRecordExpense(intent.RecordExpenseFields{
 			AmountCents:   dto.AmountCents,
 			Merchant:      dto.Merchant,
 			CategoryHint:  dto.CategoryHint,
 			PaymentMethod: dto.PaymentMethod,
 			CardHint:      dto.CardHint,
 		})
-	case intent.KindLogIncome:
-		return intent.NewLogIncome(intent.LogIncomeFields{
+	case intent.KindRecordIncome:
+		return intent.NewRecordIncome(intent.RecordIncomeFields{
 			AmountCents:   dto.AmountCents,
 			Source:        dto.Merchant,
 			CategoryHint:  dto.CategoryHint,
@@ -319,8 +319,8 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		return intent.NewHowAmIDoing(), nil
 	case intent.KindConfigureBudget:
 		return intent.NewConfigureBudget(), nil
-	case intent.KindLogCardPurchase:
-		return intent.NewLogCardPurchase(intent.LogCardPurchaseFields{
+	case intent.KindRecordCardPurchase:
+		return intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
 			AmountCents:  dto.AmountCents,
 			Merchant:     dto.Merchant,
 			CategoryHint: dto.CategoryHint,

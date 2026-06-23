@@ -38,7 +38,7 @@ type onboardingToolDispatcher struct {
 	complete         *onbusecases.CompleteOnboardingSession
 	contextReader    onboardingContextReader
 	wmWriter         agentinterfaces.WorkingMemoryRepository
-	expenseLogger    appservices.ExpenseLogger
+	expenseRecorder  appservices.ExpenseRecorder
 }
 
 func NewOnboardingToolDispatcher(
@@ -50,7 +50,7 @@ func NewOnboardingToolDispatcher(
 	complete *onbusecases.CompleteOnboardingSession,
 	contextReader onboardingContextReader,
 	wmWriter agentinterfaces.WorkingMemoryRepository,
-	expenseLogger appservices.ExpenseLogger,
+	expenseRecorder appservices.ExpenseRecorder,
 ) appusecases.OnboardingToolDispatcher {
 	return &onboardingToolDispatcher{
 		saveObjective:    saveObjective,
@@ -61,7 +61,7 @@ func NewOnboardingToolDispatcher(
 		complete:         complete,
 		contextReader:    contextReader,
 		wmWriter:         wmWriter,
-		expenseLogger:    expenseLogger,
+		expenseRecorder:  expenseRecorder,
 	}
 }
 
@@ -159,7 +159,7 @@ func (d *onboardingToolDispatcher) dispatchRecordTransaction(ctx context.Context
 	if err != nil {
 		return appusecases.OnboardingToolResult{Reply: "Não entendi o lançamento. Me manda algo como 'gastei 35 no mercado'. 😊"}, nil
 	}
-	result, err := d.expenseLogger.Execute(ctx, appservices.ExpenseLoggerInput{UserID: userID.String(), Intent: parsed})
+	result, err := d.expenseRecorder.Execute(ctx, appservices.ExpenseRecorderInput{UserID: userID.String(), Intent: parsed})
 	if err != nil {
 		return appusecases.OnboardingToolResult{}, err
 	}

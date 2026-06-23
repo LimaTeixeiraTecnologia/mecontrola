@@ -24,9 +24,9 @@ type stubExpenseLogger struct {
 	calls int
 }
 
-func (s *stubExpenseLogger) Execute(_ context.Context, _ ExpenseLoggerInput) (ExpenseLoggerResult, error) {
+func (s *stubExpenseLogger) Execute(_ context.Context, _ ExpenseRecorderInput) (ExpenseRecorderResult, error) {
 	s.calls++
-	return ExpenseLoggerResult{Persisted: true, AmountCents: 5800, CategoryPath: "Prazeres"}, nil
+	return ExpenseRecorderResult{Persisted: true, AmountCents: 5800, CategoryPath: "Prazeres"}, nil
 }
 
 type DailyLedgerWriteSuite struct {
@@ -56,7 +56,7 @@ func (s *DailyLedgerWriteSuite) SetupTest() {
 func (s *DailyLedgerWriteSuite) buildAgent(factory agentinterfaces.AgentDecisionRepositoryFactory, unit *uowmocks.UnitOfWork) *DailyLedgerAgent {
 	counter := func() observability.Counter { return s.obs.Metrics().Counter("agent_test_counter", "", "1") }
 	deps := IntentRouterDeps{
-		ExpenseLogger:       s.expenses,
+		ExpenseRecorder:     s.expenses,
 		PolicyMinConfidence: 0.8,
 		Decision:            DecisionAuditDeps{Factory: factory, UoW: unit},
 	}
@@ -64,7 +64,7 @@ func (s *DailyLedgerWriteSuite) buildAgent(factory agentinterfaces.AgentDecision
 }
 
 func (s *DailyLedgerWriteSuite) writeIntent(confidence float64) ParsedIntent {
-	in, err := intent.NewLogExpense(intent.LogExpenseFields{AmountCents: 5800, Merchant: "iFood", CategoryHint: "Prazeres"})
+	in, err := intent.NewRecordExpense(intent.RecordExpenseFields{AmountCents: 5800, Merchant: "iFood", CategoryHint: "Prazeres"})
 	s.Require().NoError(err)
 	conf, err := valueobjects.NewConfidence(confidence)
 	s.Require().NoError(err)

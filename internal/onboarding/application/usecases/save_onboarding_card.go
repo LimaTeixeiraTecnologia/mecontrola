@@ -31,12 +31,17 @@ type SaveOnboardingCardResult struct {
 	CardCount int
 }
 
+type SynchronousCardCreator interface {
+	Execute(ctx context.Context, userID, nickname string, dueDay int) error
+}
+
 type SaveOnboardingCard struct {
-	uow       uow.UnitOfWork
-	factory   appinterfaces.RepositoryFactory
-	publisher outbox.Publisher
-	idGen     id.Generator
-	o11y      observability.Observability
+	uow         uow.UnitOfWork
+	factory     appinterfaces.RepositoryFactory
+	publisher   outbox.Publisher
+	idGen       id.Generator
+	o11y        observability.Observability
+	cardCreator SynchronousCardCreator
 }
 
 func NewSaveOnboardingCard(
@@ -45,8 +50,13 @@ func NewSaveOnboardingCard(
 	publisher outbox.Publisher,
 	idGen id.Generator,
 	o11y observability.Observability,
+	cardCreator SynchronousCardCreator,
 ) *SaveOnboardingCard {
-	return &SaveOnboardingCard{uow: u, factory: factory, publisher: publisher, idGen: idGen, o11y: o11y}
+	return &SaveOnboardingCard{uow: u, factory: factory, publisher: publisher, idGen: idGen, o11y: o11y, cardCreator: cardCreator}
+}
+
+func (uc *SaveOnboardingCard) SetCardCreator(creator SynchronousCardCreator) {
+	uc.cardCreator = creator
 }
 
 func (uc *SaveOnboardingCard) Execute(ctx context.Context, in SaveOnboardingCardInput) (SaveOnboardingCardResult, error) {
@@ -76,6 +86,12 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in SaveOnboardingCard
 		updated := session.WithAppendedCard(card, now)
 		if upsertErr := repo.Upsert(ctx, updated); upsertErr != nil {
 			return SaveOnboardingCardResult{}, fmt.Errorf("onboarding: save card: upsert session: %w", upsertErr)
+		}
+
+		if uc.cardCreator != nil {
+			if createErr := uc.cardCreator.Execute(ctx, in.UserID.String(), card.Name, card.DueDay); createErr != nil {
+				return SaveOnboardingCardResult{}, fmt.Errorf("onboarding: save card: create card: %w", createErr)
+			}
 		}
 
 		event := entities.CardRegistered{

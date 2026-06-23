@@ -81,7 +81,7 @@ func validInput() decisionRecordInput {
 		UserID:       uuid.New(),
 		Channel:      "whatsapp",
 		MessageID:    "wamid.abc123",
-		IntentKind:   "log_expense",
+		IntentKind:   "record_expense",
 		PromptSHA256: "a3f1e9b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1",
 		LLMModel:     "openai/gpt-4o-mini",
 		DirectReply:  "gasto registrado",

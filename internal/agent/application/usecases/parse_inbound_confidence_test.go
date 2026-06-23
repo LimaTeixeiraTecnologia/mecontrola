@@ -55,7 +55,7 @@ func (s *ParseInboundConfidenceSuite) TestExecute() {
 				interpreter: func() *mocks.IntentInterpreter {
 					s.interpreter.EXPECT().
 						Interpret(mock.Anything, mock.AnythingOfType("interfaces.LLMRequest")).
-						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"log_expense","amount_cents":5800,"merchant":"iFood","confidence":0.42}`)}, nil).
+						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","confidence":0.42}`)}, nil).
 						Once()
 					return s.interpreter
 				}(),
@@ -72,7 +72,7 @@ func (s *ParseInboundConfidenceSuite) TestExecute() {
 				interpreter: func() *mocks.IntentInterpreter {
 					s.interpreter.EXPECT().
 						Interpret(mock.Anything, mock.AnythingOfType("interfaces.LLMRequest")).
-						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"log_expense","amount_cents":5800,"merchant":"iFood"}`)}, nil).
+						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood"}`)}, nil).
 						Once()
 					return s.interpreter
 				}(),
@@ -89,7 +89,7 @@ func (s *ParseInboundConfidenceSuite) TestExecute() {
 				interpreter: func() *mocks.IntentInterpreter {
 					s.interpreter.EXPECT().
 						Interpret(mock.Anything, mock.AnythingOfType("interfaces.LLMRequest")).
-						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"log_expense","amount_cents":5800,"merchant":"iFood","confidence":1.5}`)}, nil).
+						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","confidence":1.5}`)}, nil).
 						Once()
 					return s.interpreter
 				}(),
@@ -106,7 +106,7 @@ func (s *ParseInboundConfidenceSuite) TestExecute() {
 				interpreter: func() *mocks.IntentInterpreter {
 					s.interpreter.EXPECT().
 						Interpret(mock.Anything, mock.AnythingOfType("interfaces.LLMRequest")).
-						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"log_expense","amount_cents":5800,"merchant":"iFood","confidence":-0.3}`)}, nil).
+						Return(interfaces.LLMResponse{RawJSON: []byte(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","confidence":-0.3}`)}, nil).
 						Once()
 					return s.interpreter
 				}(),

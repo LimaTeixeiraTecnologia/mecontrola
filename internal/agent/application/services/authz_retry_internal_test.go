@@ -46,7 +46,7 @@ func TestAuthorizeWrite_AllowsMatchingPrincipal(t *testing.T) {
 	t.Parallel()
 	router := newGuardRouter(t)
 	owner := uuid.New()
-	if !router.authorizeWrite(context.Background(), Principal{UserID: owner}, owner, intent.KindLogExpense, ChannelWhatsApp) {
+	if !router.authorizeWrite(context.Background(), Principal{UserID: owner}, owner, intent.KindRecordExpense, ChannelWhatsApp) {
 		t.Fatal("esperava autorizacao para userID igual ao principal")
 	}
 }
@@ -56,7 +56,7 @@ func TestAuthorizeWrite_DeniesDivergentUserID(t *testing.T) {
 	router := newGuardRouter(t)
 	principal := Principal{UserID: uuid.New()}
 	attacker := uuid.New()
-	if router.authorizeWrite(context.Background(), principal, attacker, intent.KindLogExpense, ChannelWhatsApp) {
+	if router.authorizeWrite(context.Background(), principal, attacker, intent.KindRecordExpense, ChannelWhatsApp) {
 		t.Fatal("esperava negacao quando userID efetivo diverge do principal")
 	}
 }

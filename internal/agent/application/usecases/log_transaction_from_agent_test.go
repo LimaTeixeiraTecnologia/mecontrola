@@ -50,7 +50,7 @@ func (s *LogTransactionSuite) SetupTest() {
 }
 
 func (s *LogTransactionSuite) expenseIntent(amount int64, hint, merchant string) intent.Intent {
-	in, err := intent.NewLogExpense(intent.LogExpenseFields{
+	in, err := intent.NewRecordExpense(intent.RecordExpenseFields{
 		AmountCents:  amount,
 		Merchant:     merchant,
 		CategoryHint: hint,
@@ -60,7 +60,7 @@ func (s *LogTransactionSuite) expenseIntent(amount int64, hint, merchant string)
 }
 
 func (s *LogTransactionSuite) incomeIntent(amount int64, source string) intent.Intent {
-	in, err := intent.NewLogIncome(intent.LogIncomeFields{
+	in, err := intent.NewRecordIncome(intent.RecordIncomeFields{
 		AmountCents: amount,
 		Source:      source,
 	})
@@ -77,10 +77,10 @@ func (s *LogTransactionSuite) candidates(path string) *categoriesoutput.Dictiona
 }
 
 func (s *LogTransactionSuite) TestInvalidKindRejected() {
-	uc := NewLogTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, fake.NewProvider())
+	uc := NewRecordTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, fake.NewProvider())
 	unknown, err := intent.NewUnknown("oi")
 	s.Require().NoError(err)
-	_, err = uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	_, err = uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: unknown,
 	})
@@ -88,8 +88,8 @@ func (s *LogTransactionSuite) TestInvalidKindRejected() {
 }
 
 func (s *LogTransactionSuite) TestExpenseNoHintReturnsError() {
-	uc := NewLogTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(&fakeResolver{}, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "", ""),
 	})
@@ -98,8 +98,8 @@ func (s *LogTransactionSuite) TestExpenseNoHintReturnsError() {
 
 func (s *LogTransactionSuite) TestNoCandidateReturnsNotFound() {
 	resolver := &fakeResolver{out: &categoriesoutput.DictionarySearchOutput{Candidates: nil}}
-	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", ""),
 	})
@@ -112,8 +112,8 @@ func (s *LogTransactionSuite) TestMediumScoreNeedsConfirmation() {
 			{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Prazeres > Streaming", Score: 0.65},
 		},
 	}}
-	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "netflix", ""),
 	})
@@ -131,8 +131,8 @@ func (s *LogTransactionSuite) TestLowScoreReturnsNotFound() {
 			{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Prazeres", Score: 0.40},
 		},
 	}}
-	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "xpto", ""),
 	})
@@ -147,8 +147,8 @@ func (s *LogTransactionSuite) TestAmbiguousReturnsAmbiguous() {
 			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Custo Fixo"},
 		},
 	}}
-	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", ""),
 	})
@@ -165,8 +165,8 @@ func (s *LogTransactionSuite) TestAmbiguousCarriesCandidates() {
 			{CategoryID: uuid.New(), RootCategoryID: rootID, Path: "Metas"},
 		},
 	}}
-	uc := NewLogTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, &fakeCreator{}, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", ""),
 	})
@@ -192,8 +192,8 @@ func (s *LogTransactionSuite) TestCreateFailurePropagates() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres")}
 	boom := errors.New("create exploded")
 	creator := &fakeCreator{err: boom}
-	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
-	_, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, creator, fake.NewProvider())
+	_, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", "iFood"),
 	})
@@ -205,8 +205,8 @@ func (s *LogTransactionSuite) TestCreateFailurePropagates() {
 func (s *LogTransactionSuite) TestExpenseHappyPathCreatesOutcome() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres > Delivery")}
 	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 5800, Direction: "expense"}}
-	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
-	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "ifood", "iFood"),
 	})
@@ -223,8 +223,8 @@ func (s *LogTransactionSuite) TestExpenseHappyPathCreatesOutcome() {
 func (s *LogTransactionSuite) TestIncomeHappyPathCreatesIncome() {
 	resolver := &fakeResolver{out: s.candidates("Salário")}
 	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 1640000, Direction: "income"}}
-	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
-	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.incomeIntent(1640000, "salário"),
 	})
@@ -237,8 +237,8 @@ func (s *LogTransactionSuite) TestIncomeHappyPathCreatesIncome() {
 func (s *LogTransactionSuite) TestIncomeWithoutHintUsesDefault() {
 	resolver := &fakeResolver{out: s.candidates("Salário")}
 	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 300000, Direction: "income"}}
-	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
-	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.incomeIntent(300000, ""),
 	})
@@ -250,8 +250,8 @@ func (s *LogTransactionSuite) TestIncomeWithoutHintUsesDefault() {
 func (s *LogTransactionSuite) TestExpenseFallsBackToMerchantWhenHintEmpty() {
 	resolver := &fakeResolver{out: s.candidates("Prazeres")}
 	creator := &fakeCreator{result: CreateTransactionResult{AmountCents: 5800, Direction: "expense"}}
-	uc := NewLogTransactionFromAgent(resolver, creator, fake.NewProvider())
-	out, err := uc.Execute(s.ctx, LogTransactionFromAgentInput{
+	uc := NewRecordTransactionFromAgent(resolver, creator, fake.NewProvider())
+	out, err := uc.Execute(s.ctx, RecordTransactionFromAgentInput{
 		UserID: uuid.NewString(),
 		Intent: s.expenseIntent(5800, "", "iFood"),
 	})

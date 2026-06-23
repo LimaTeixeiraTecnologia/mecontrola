@@ -107,7 +107,7 @@ func DefaultRegistry() (*Registry, error) {
 	return NewRegistry(
 		ToolSpec{
 			Name:        "record_transaction",
-			IntentKind:  intent.KindLogExpense,
+			IntentKind:  intent.KindRecordExpense,
 			Description: `registrar um gasto ou recebimento (ex: "gastei 58 no iFood", "recebi 5000 de salário").`,
 		},
 		ToolSpec{

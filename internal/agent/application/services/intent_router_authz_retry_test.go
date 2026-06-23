@@ -19,10 +19,10 @@ type capturingExpenseLogger struct {
 	seenUserID string
 	calls      int
 	err        error
-	result     services.ExpenseLoggerResult
+	result     services.ExpenseRecorderResult
 }
 
-func (c *capturingExpenseLogger) Execute(_ context.Context, in services.ExpenseLoggerInput) (services.ExpenseLoggerResult, error) {
+func (c *capturingExpenseLogger) Execute(_ context.Context, in services.ExpenseRecorderInput) (services.ExpenseRecorderResult, error) {
 	c.calls++
 	c.seenUserID = in.UserID
 	return c.result, c.err
@@ -52,7 +52,7 @@ func TestAuthzRetrySuite(t *testing.T) {
 }
 
 func (s *AuthzRetrySuite) buildLogExpense() intent.Intent {
-	expense, err := intent.NewLogExpense(intent.LogExpenseFields{
+	expense, err := intent.NewRecordExpense(intent.RecordExpenseFields{
 		AmountCents:  5800,
 		Merchant:     "iFood",
 		CategoryHint: "Prazeres",
@@ -62,13 +62,13 @@ func (s *AuthzRetrySuite) buildLogExpense() intent.Intent {
 }
 
 func (s *AuthzRetrySuite) TestWrite_UsesPrincipalUserID() {
-	logger := &capturingExpenseLogger{result: services.ExpenseLoggerResult{Persisted: true, AmountCents: 5800}}
+	logger := &capturingExpenseLogger{result: services.ExpenseRecorderResult{Persisted: true, AmountCents: 5800}}
 	parser := &fakeParser{intent: s.buildLogExpense()}
 	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
 		Parser:          parser,
 		Fallback:        &fakeFallback{reply: "fallback"},
 		WhatsAppGateway: &fakeWhatsAppGateway{},
-		ExpenseLogger:   logger,
+		ExpenseRecorder: logger,
 		Location:        time.UTC,
 	})
 	require.NoError(s.T(), err)
@@ -88,7 +88,7 @@ func (s *AuthzRetrySuite) TestWrite_NotRetriedOnTransientError() {
 		Parser:          parser,
 		Fallback:        &fakeFallback{reply: "fallback"},
 		WhatsAppGateway: &fakeWhatsAppGateway{},
-		ExpenseLogger:   logger,
+		ExpenseRecorder: logger,
 		Location:        time.UTC,
 	})
 	require.NoError(s.T(), err)

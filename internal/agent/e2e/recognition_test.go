@@ -26,14 +26,14 @@ func TestParseInbound_RealLLM_RecognitionMatrix(t *testing.T) {
 		wantKind   intent.Kind
 		wantAmount int64
 	}{
-		{"ifood 58 reais", intent.KindLogExpense, 5800},
-		{"gastei 200 no mercado com nubank", intent.KindLogExpense, 20000},
-		{"paguei 1.250,90 parcelado no crédito", intent.KindLogExpense, 125090},
-		{"comprei um tênis por 350", intent.KindLogExpense, 35000},
-		{"uber 23,90 agora", intent.KindLogExpense, 2390},
-		{"recebi meu salário de 16.400", intent.KindLogIncome, 1640000},
-		{"caiu 3500 de freela na conta", intent.KindLogIncome, 350000},
-		{"ganhei 200 de presente", intent.KindLogIncome, 20000},
+		{"ifood 58 reais", intent.KindRecordExpense, 5800},
+		{"gastei 200 no mercado com nubank", intent.KindRecordExpense, 20000},
+		{"paguei 1.250,90 parcelado no crédito", intent.KindRecordExpense, 125090},
+		{"comprei um tênis por 350", intent.KindRecordExpense, 35000},
+		{"uber 23,90 agora", intent.KindRecordExpense, 2390},
+		{"recebi meu salário de 16.400", intent.KindRecordIncome, 1640000},
+		{"caiu 3500 de freela na conta", intent.KindRecordIncome, 350000},
+		{"ganhei 200 de presente", intent.KindRecordIncome, 20000},
 		{"quanto gastei em Prazeres?", intent.KindQueryCategory, 0},
 		{"como tá meu gasto com alimentação?", intent.KindQueryCategory, 0},
 		{"como está minha meta de viagem?", intent.KindQueryGoal, 0},
@@ -72,7 +72,7 @@ func TestParseInbound_RealLLM_RecognitionMatrix(t *testing.T) {
 		} else {
 			misses = append(misses, tc.text+" => esperado "+tc.wantKind.String()+", obtido "+got.String())
 		}
-		if tc.wantKind == intent.KindLogExpense || tc.wantKind == intent.KindLogIncome {
+		if tc.wantKind == intent.KindRecordExpense || tc.wantKind == intent.KindRecordIncome {
 			coreTotal++
 			if kindOK {
 				coreHits++

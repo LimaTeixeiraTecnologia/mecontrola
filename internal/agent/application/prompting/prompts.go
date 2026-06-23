@@ -159,15 +159,15 @@ func ParseIntentJSONSchema() map[string]any {
 			"kind": map[string]any{
 				"type": "string",
 				"enum": []string{
-					"log_expense",
-					"log_income",
+					"record_expense",
+					"record_income",
 					"query_category",
 					"query_goal",
 					"query_card",
 					"monthly_summary",
 					"how_am_i_doing",
 					"configure_budget",
-					"log_card_purchase",
+					"record_card_purchase",
 					"list_transactions",
 					"delete_last_transaction",
 					"edit_last_transaction",

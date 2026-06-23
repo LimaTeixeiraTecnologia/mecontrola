@@ -162,14 +162,14 @@ func recordTransactionIntent(args map[string]any) (intent.Intent, error) {
 		PaymentMethod: stringArg(args, "payment_method"),
 	}
 	if direction == directionIncome {
-		return intent.NewLogIncome(intent.LogIncomeFields{
+		return intent.NewRecordIncome(intent.RecordIncomeFields{
 			AmountCents:   dto.AmountCents,
 			Source:        dto.Merchant,
 			CategoryHint:  dto.CategoryHint,
 			PaymentMethod: dto.PaymentMethod,
 		})
 	}
-	return intent.NewLogExpense(intent.LogExpenseFields{
+	return intent.NewRecordExpense(intent.RecordExpenseFields{
 		AmountCents:   dto.AmountCents,
 		Merchant:      dto.Merchant,
 		CategoryHint:  dto.CategoryHint,

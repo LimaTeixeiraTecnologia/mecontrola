@@ -48,8 +48,8 @@ func (fakeOnboardingOutboxPublisher) Publish(_ context.Context, _ outbox.Event) 
 
 type fakeOnboardingExpenseLogger struct{}
 
-func (fakeOnboardingExpenseLogger) Execute(_ context.Context, _ appservices.ExpenseLoggerInput) (appservices.ExpenseLoggerResult, error) {
-	return appservices.ExpenseLoggerResult{Persisted: true, AmountCents: 3500, CategoryPath: "Custo Fixo"}, nil
+func (fakeOnboardingExpenseLogger) Execute(_ context.Context, _ appservices.ExpenseRecorderInput) (appservices.ExpenseRecorderResult, error) {
+	return appservices.ExpenseRecorderResult{Persisted: true, AmountCents: 3500, CategoryPath: "Custo Fixo"}, nil
 }
 
 func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.IntentInterpreter) *appusecases.RunOnboardingTurn {

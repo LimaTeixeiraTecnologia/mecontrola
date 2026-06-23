@@ -31,14 +31,14 @@ func TestParseInbound_RealLLM_ProductionChain(t *testing.T) {
 		wantKind   intent.Kind
 		wantAmount int64
 	}{
-		{"ifood 58 reais", intent.KindLogExpense, 5800},
-		{"gastei 200 no mercado com nubank", intent.KindLogExpense, 20000},
-		{"recebi meu salário de 16.400", intent.KindLogIncome, 1640000},
+		{"ifood 58 reais", intent.KindRecordExpense, 5800},
+		{"gastei 200 no mercado com nubank", intent.KindRecordExpense, 20000},
+		{"recebi meu salário de 16.400", intent.KindRecordIncome, 1640000},
 		{"qual a fatura do nubank?", intent.KindQueryCard, 0},
 		{"resumo do mês", intent.KindMonthlySummary, 0},
 		{"quais meus cartões?", intent.KindListCards, 0},
-		{"comprei 1200 em 6x no nubank", intent.KindLogCardPurchase, 120000},
-		{"parcelei 600 em 6 vezes no nubank", intent.KindLogCardPurchase, 60000},
+		{"comprei 1200 em 6x no nubank", intent.KindRecordCardPurchase, 120000},
+		{"parcelei 600 em 6 vezes no nubank", intent.KindRecordCardPurchase, 60000},
 		{"todo mês recebo 5000 de salário", intent.KindCreateRecurring, 500000},
 		{"mostra minhas transações", intent.KindListTransactions, 0},
 	}

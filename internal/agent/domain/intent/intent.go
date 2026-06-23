@@ -10,15 +10,15 @@ type Kind int
 
 const (
 	KindUnknown Kind = iota + 1
-	KindLogExpense
+	KindRecordExpense
 	KindQueryCategory
 	KindQueryGoal
 	KindQueryCard
 	KindMonthlySummary
 	KindHowAmIDoing
 	KindConfigureBudget
-	KindLogIncome
-	KindLogCardPurchase
+	KindRecordIncome
+	KindRecordCardPurchase
 	KindListTransactions
 	KindDeleteLastTransaction
 	KindEditLastTransaction
@@ -31,10 +31,10 @@ const (
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
 	switch k {
-	case KindLogExpense:
-		return "log_expense"
-	case KindLogIncome:
-		return "log_income"
+	case KindRecordExpense:
+		return "record_expense"
+	case KindRecordIncome:
+		return "record_income"
 	case KindQueryCategory:
 		return "query_category"
 	case KindQueryGoal:
@@ -47,8 +47,8 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "how_am_i_doing"
 	case KindConfigureBudget:
 		return "configure_budget"
-	case KindLogCardPurchase:
-		return "log_card_purchase"
+	case KindRecordCardPurchase:
+		return "record_card_purchase"
 	case KindListTransactions:
 		return "list_transactions"
 	case KindDeleteLastTransaction:
@@ -74,9 +74,9 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 
 func (k Kind) IsWrite() bool {
 	switch k {
-	case KindLogExpense,
-		KindLogIncome,
-		KindLogCardPurchase,
+	case KindRecordExpense,
+		KindRecordIncome,
+		KindRecordCardPurchase,
 		KindCreateCard,
 		KindConfigureBudget:
 		return true
@@ -87,10 +87,10 @@ func (k Kind) IsWrite() bool {
 
 func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo por intent kind
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "log_expense":
-		return KindLogExpense, nil
-	case "log_income":
-		return KindLogIncome, nil
+	case "record_expense":
+		return KindRecordExpense, nil
+	case "record_income":
+		return KindRecordIncome, nil
 	case "query_category":
 		return KindQueryCategory, nil
 	case "query_goal":
@@ -103,8 +103,8 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindHowAmIDoing, nil
 	case "configure_budget":
 		return KindConfigureBudget, nil
-	case "log_card_purchase":
-		return KindLogCardPurchase, nil
+	case "record_card_purchase":
+		return KindRecordCardPurchase, nil
 	case "list_transactions":
 		return KindListTransactions, nil
 	case "delete_last_transaction":
@@ -229,7 +229,7 @@ func (i Intent) Frequency() string     { return i.frequency }
 func (i Intent) DayOfMonth() int       { return i.dayOfMonth }
 func (i Intent) IsZero() bool          { return i.kind == 0 }
 
-type LogExpenseFields struct {
+type RecordExpenseFields struct {
 	AmountCents   int64
 	Merchant      string
 	CategoryHint  string
@@ -237,7 +237,7 @@ type LogExpenseFields struct {
 	CardHint      string
 }
 
-func NewLogExpense(f LogExpenseFields) (Intent, error) {
+func NewRecordExpense(f RecordExpenseFields) (Intent, error) {
 	if f.AmountCents <= 0 {
 		return Intent{}, ErrAmountNonPositive
 	}
@@ -258,7 +258,7 @@ func NewLogExpense(f LogExpenseFields) (Intent, error) {
 		return Intent{}, err
 	}
 	return Intent{
-		kind:          KindLogExpense,
+		kind:          KindRecordExpense,
 		amountCents:   f.AmountCents,
 		merchant:      merchant,
 		categoryHint:  categoryHint,
@@ -267,14 +267,14 @@ func NewLogExpense(f LogExpenseFields) (Intent, error) {
 	}, nil
 }
 
-type LogIncomeFields struct {
+type RecordIncomeFields struct {
 	AmountCents   int64
 	Source        string
 	CategoryHint  string
 	PaymentMethod string
 }
 
-func NewLogIncome(f LogIncomeFields) (Intent, error) {
+func NewRecordIncome(f RecordIncomeFields) (Intent, error) {
 	if f.AmountCents <= 0 {
 		return Intent{}, ErrAmountNonPositive
 	}
@@ -291,7 +291,7 @@ func NewLogIncome(f LogIncomeFields) (Intent, error) {
 		return Intent{}, err
 	}
 	return Intent{
-		kind:          KindLogIncome,
+		kind:          KindRecordIncome,
 		amountCents:   f.AmountCents,
 		merchant:      source,
 		categoryHint:  categoryHint,
@@ -345,7 +345,7 @@ func NewConfigureBudget() Intent {
 	return Intent{kind: KindConfigureBudget}
 }
 
-type LogCardPurchaseFields struct {
+type RecordCardPurchaseFields struct {
 	AmountCents  int64
 	Merchant     string
 	CategoryHint string
@@ -353,7 +353,7 @@ type LogCardPurchaseFields struct {
 	Installments int
 }
 
-func NewLogCardPurchase(f LogCardPurchaseFields) (Intent, error) {
+func NewRecordCardPurchase(f RecordCardPurchaseFields) (Intent, error) {
 	if f.AmountCents <= 0 {
 		return Intent{}, ErrAmountNonPositive
 	}
@@ -376,7 +376,7 @@ func NewLogCardPurchase(f LogCardPurchaseFields) (Intent, error) {
 		return Intent{}, ErrCardHintTooLong
 	}
 	return Intent{
-		kind:         KindLogCardPurchase,
+		kind:         KindRecordCardPurchase,
 		amountCents:  f.AmountCents,
 		merchant:     merchant,
 		categoryHint: categoryHint,

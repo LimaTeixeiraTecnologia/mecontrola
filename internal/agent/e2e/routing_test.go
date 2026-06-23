@@ -134,7 +134,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, seededCard.ID)
 
-	logCardPurchase := usecases.NewLogCardPurchaseFromAgent(
+	logCardPurchase := usecases.NewRecordCardPurchaseFromAgent(
 		categoriesModule.SearchDictionaryUC,
 		agentbinding.NewCardPurchaseCreatorAdapter(cardModule.ListCardsUC, txModule.CreateCardPurchaseUC),
 		o11y,
@@ -150,11 +150,11 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 		o11y,
 	)
 
-	cardPurchaseIntent, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{AmountCents: 120000, Merchant: "supermercado", CardHint: "nubank", Installments: 6})
+	cardPurchaseIntent, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{AmountCents: 120000, Merchant: "supermercado", CardHint: "nubank", Installments: 6})
 	require.NoError(t, err)
 	recurringIntent, err := intent.NewCreateRecurring(intent.CreateRecurringFields{AmountCents: 500000, Merchant: "salário", Direction: "income", Frequency: "monthly", DayOfMonth: 5})
 	require.NoError(t, err)
-	expenseIntent, err := intent.NewLogExpense(intent.LogExpenseFields{AmountCents: 5800, Merchant: "mercado"})
+	expenseIntent, err := intent.NewRecordExpense(intent.RecordExpenseFields{AmountCents: 5800, Merchant: "mercado"})
 	require.NoError(t, err)
 	listTxIntent, err := intent.NewListTransactions("")
 	require.NoError(t, err)

@@ -155,7 +155,7 @@ func buildServer(
 	)
 	expLogger := agentbinding.NewTransactionLoggerAdapter(logTx)
 
-	logCardPurchase := usecases.NewLogCardPurchaseFromAgent(
+	logCardPurchase := usecases.NewRecordCardPurchaseFromAgent(
 		catModule.SearchDictionaryUC,
 		agentbinding.NewCardPurchaseCreatorAdapter(cardModule.ListCardsUC, txModule.CreateCardPurchaseUC),
 		o11y,
@@ -182,17 +182,17 @@ func buildServer(
 		t.Fatalf("seed card: id vazio")
 	}
 
-	expenseIntent, err := intent.NewLogExpense(intent.LogExpenseFields{AmountCents: 5000, Merchant: "mercado"})
+	expenseIntent, err := intent.NewRecordExpense(intent.RecordExpenseFields{AmountCents: 5000, Merchant: "mercado"})
 	if err != nil {
 		t.Fatalf("intent expense: %v", err)
 	}
-	incomeIntent, err := intent.NewLogIncome(intent.LogIncomeFields{AmountCents: 300000, Source: "salário"})
+	incomeIntent, err := intent.NewRecordIncome(intent.RecordIncomeFields{AmountCents: 300000, Source: "salário"})
 	if err != nil {
 		t.Fatalf("intent income: %v", err)
 	}
 	unknownIntent, _ := intent.NewUnknown("ação não suportada")
 
-	cardPurchaseIntent, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{
+	cardPurchaseIntent, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
 		AmountCents:  120000,
 		Merchant:     "supermercado",
 		CardHint:     "nubank",
@@ -241,7 +241,7 @@ func buildServer(
 	listRecurringIntent := intent.NewListRecurring()
 	listCardsIntent := intent.NewListCards()
 
-	cardNotFoundIntent, err := intent.NewLogCardPurchase(intent.LogCardPurchaseFields{
+	cardNotFoundIntent, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
 		AmountCents:  30000,
 		Merchant:     "loja",
 		CardHint:     "fantasma",

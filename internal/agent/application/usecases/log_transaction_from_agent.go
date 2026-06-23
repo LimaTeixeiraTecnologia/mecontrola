@@ -100,7 +100,7 @@ type CreateTransactionResult struct {
 	Direction   string
 }
 
-type LogTransactionFromAgent struct {
+type RecordTransactionFromAgent struct {
 	resolver       CategoryResolver
 	creator        TransactionCreator
 	o11y           observability.Observability
@@ -109,11 +109,11 @@ type LogTransactionFromAgent struct {
 	scoreHistogram observability.Histogram
 }
 
-func NewLogTransactionFromAgent(
+func NewRecordTransactionFromAgent(
 	resolver CategoryResolver,
 	creator TransactionCreator,
 	o11y observability.Observability,
-) *LogTransactionFromAgent {
+) *RecordTransactionFromAgent {
 	persisted := o11y.Metrics().Counter(
 		"agent_log_transaction_persisted_total",
 		"Total de transações persistidas a partir de intent do agente por direction",
@@ -124,7 +124,7 @@ func NewLogTransactionFromAgent(
 		"Total de tentativas de log de transação que falharam ao resolver categoria ou persistir",
 		"1",
 	)
-	return &LogTransactionFromAgent{
+	return &RecordTransactionFromAgent{
 		resolver:       resolver,
 		creator:        creator,
 		o11y:           o11y,
@@ -134,12 +134,18 @@ func NewLogTransactionFromAgent(
 	}
 }
 
-type LogTransactionFromAgentInput struct {
-	UserID string
-	Intent intent.Intent
+type RecordTransactionFromAgentInput struct {
+	UserID        string
+	Intent        intent.Intent
+	ForceCategory *string
+	AmountCents   int64
+	Merchant      string
+	PaymentMethod string
+	Direction     string
+	OccurredAt    string
 }
 
-type LogTransactionFromAgentResult struct {
+type RecordTransactionFromAgentResult struct {
 	Persisted    bool
 	AmountCents  int64
 	Direction    string
@@ -147,19 +153,24 @@ type LogTransactionFromAgentResult struct {
 	OccurredAt   time.Time
 }
 
-func (uc *LogTransactionFromAgent) Execute(ctx context.Context, in LogTransactionFromAgentInput) (LogTransactionFromAgentResult, error) {
+func (uc *RecordTransactionFromAgent) Execute(ctx context.Context, in RecordTransactionFromAgentInput) (RecordTransactionFromAgentResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agent.usecase.log_transaction_from_agent")
 	defer span.End()
 
+	if strings.TrimSpace(in.UserID) == "" {
+		return RecordTransactionFromAgentResult{}, errors.New("agent: log transaction: user id vazio")
+	}
+
+	if in.ForceCategory != nil && strings.TrimSpace(*in.ForceCategory) != "" {
+		return uc.executeForced(ctx, in)
+	}
+
 	direction, categoryKind, err := directionForKind(in.Intent.Kind())
 	if err != nil {
-		return LogTransactionFromAgentResult{}, err
-	}
-	if strings.TrimSpace(in.UserID) == "" {
-		return LogTransactionFromAgentResult{}, errors.New("agent: log transaction: user id vazio")
+		return RecordTransactionFromAgentResult{}, err
 	}
 	if in.Intent.AmountCents() <= 0 {
-		return LogTransactionFromAgentResult{}, errors.New("agent: log transaction: amount invalido")
+		return RecordTransactionFromAgentResult{}, errors.New("agent: log transaction: amount invalido")
 	}
 
 	hint := strings.TrimSpace(in.Intent.CategoryHint())
@@ -169,14 +180,14 @@ func (uc *LogTransactionFromAgent) Execute(ctx context.Context, in LogTransactio
 	if hint == "" {
 		if direction != directionIncome {
 			uc.resolveBad.Add(ctx, 1, observability.String("reason", "no_hint"))
-			return LogTransactionFromAgentResult{}, ErrLogTransactionNoCategoryHint
+			return RecordTransactionFromAgentResult{}, ErrLogTransactionNoCategoryHint
 		}
 		hint = defaultIncomeHint
 	}
 
 	candidate, path, err := uc.resolve(ctx, hint, categoryKind)
 	if err != nil {
-		return LogTransactionFromAgentResult{}, err
+		return RecordTransactionFromAgentResult{}, err
 	}
 
 	now := time.Now().UTC()
@@ -197,11 +208,11 @@ func (uc *LogTransactionFromAgent) Execute(ctx context.Context, in LogTransactio
 	})
 	if err != nil {
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "create_failed"))
-		return LogTransactionFromAgentResult{}, fmt.Errorf("agent: log transaction: create: %w", err)
+		return RecordTransactionFromAgentResult{}, fmt.Errorf("agent: log transaction: create: %w", err)
 	}
 
 	uc.persisted.Add(ctx, 1, observability.String("direction", direction))
-	return LogTransactionFromAgentResult{
+	return RecordTransactionFromAgentResult{
 		Persisted:    true,
 		AmountCents:  result.AmountCents,
 		Direction:    result.Direction,
@@ -210,7 +221,42 @@ func (uc *LogTransactionFromAgent) Execute(ctx context.Context, in LogTransactio
 	}, nil
 }
 
-func (uc *LogTransactionFromAgent) resolve(ctx context.Context, hint string, kind categoriesvo.Kind) (categoriesoutput.CandidateOutput, string, error) {
+func (uc *RecordTransactionFromAgent) executeForced(ctx context.Context, in RecordTransactionFromAgentInput) (RecordTransactionFromAgentResult, error) {
+	forcedPath := strings.TrimSpace(*in.ForceCategory)
+	description := strings.TrimSpace(in.Merchant)
+	if description == "" {
+		description = forcedPath
+	}
+	direction := strings.TrimSpace(in.Direction)
+	if direction == "" {
+		direction = directionOutcome
+	}
+	paymentMethod := mapPaymentMethod(in.PaymentMethod, direction)
+	now := time.Now().UTC()
+	result, err := uc.creator.Execute(ctx, CreateTransactionCommand{
+		UserID:         in.UserID,
+		Direction:      direction,
+		PaymentMethod:  paymentMethod,
+		Description:    description,
+		RootCategoryID: forcedPath,
+		AmountCents:    in.AmountCents,
+		OccurredAt:     now,
+	})
+	if err != nil {
+		uc.resolveBad.Add(ctx, 1, observability.String("reason", "force_category_create_failed"))
+		return RecordTransactionFromAgentResult{}, fmt.Errorf("agent: log transaction: force category create: %w", err)
+	}
+	uc.persisted.Add(ctx, 1, observability.String("direction", direction))
+	return RecordTransactionFromAgentResult{
+		Persisted:    true,
+		AmountCents:  result.AmountCents,
+		Direction:    result.Direction,
+		CategoryPath: forcedPath,
+		OccurredAt:   now,
+	}, nil
+}
+
+func (uc *RecordTransactionFromAgent) resolve(ctx context.Context, hint string, kind categoriesvo.Kind) (categoriesoutput.CandidateOutput, string, error) {
 	result, err := uc.resolver.Execute(ctx, &categoriesinput.SearchDictionaryInput{Query: hint, Kind: kind})
 	if err != nil {
 		uc.resolveBad.Add(ctx, 1, observability.String("reason", "resolver_failed"))
@@ -242,9 +288,9 @@ func (uc *LogTransactionFromAgent) resolve(ctx context.Context, hint string, kin
 
 func directionForKind(kind intent.Kind) (string, categoriesvo.Kind, error) {
 	switch kind {
-	case intent.KindLogExpense:
+	case intent.KindRecordExpense:
 		return directionOutcome, categoriesvo.KindExpense, nil
-	case intent.KindLogIncome:
+	case intent.KindRecordIncome:
 		return directionIncome, categoriesvo.KindIncome, nil
 	default:
 		return "", 0, ErrLogTransactionInvalidIntent

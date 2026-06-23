@@ -92,7 +92,7 @@ func TestParsePipeline_RealParser_PersistsExpense_E2E(t *testing.T) {
 		o11y,
 	)
 
-	const canonicalExpenseJSON = `{"kind":"log_expense","amount_cents":5800,"merchant":"ifood"}`
+	const canonicalExpenseJSON = `{"kind":"record_expense","amount_cents":5800,"merchant":"ifood"}`
 	chain := newMockOpenRouterChain(t, canonicalExpenseJSON, http.StatusOK)
 	parser, err := usecases.NewParseInbound(chain, o11y)
 	require.NoError(t, err)

@@ -15,6 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -255,6 +256,12 @@ type BudgetSessionGateway interface {
 	Clear(ctx context.Context, userID uuid.UUID, channel string) error
 }
 
+type PendingExpenseConfirmationGateway interface {
+	Load(ctx context.Context, userID uuid.UUID, channel string) (pendingexpense.Draft, bool, error)
+	Save(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) error
+	Clear(ctx context.Context, userID uuid.UUID, channel string) error
+}
+
 type OnboardingConversation struct {
 	Handled bool
 	Reply   string
@@ -273,8 +280,8 @@ type OnboardingTurnRunner interface {
 	Run(ctx context.Context, userID uuid.UUID, channel, text string) (OnboardingTurnResult, error)
 }
 
-type ExpenseLogger interface {
-	Execute(ctx context.Context, in ExpenseLoggerInput) (ExpenseLoggerResult, error)
+type ExpenseRecorder interface {
+	Execute(ctx context.Context, in ExpenseRecorderInput) (ExpenseRecorderResult, error)
 }
 
 type CardPurchaseLogger interface {
@@ -371,12 +378,18 @@ type RecurringLister interface {
 	Execute(ctx context.Context, userID string) ([]RecurringView, error)
 }
 
-type ExpenseLoggerInput struct {
-	UserID string
-	Intent intent.Intent
+type ExpenseRecorderInput struct {
+	UserID        string
+	Intent        intent.Intent
+	ForceCategory *string
+	AmountCents   int64
+	Merchant      string
+	PaymentMethod string
+	Direction     string
+	OccurredAt    string
 }
 
-type ExpenseLoggerResult struct {
+type ExpenseRecorderResult struct {
 	Persisted      bool
 	SubcategoryID  string
 	RootCategoryID string
@@ -397,33 +410,34 @@ type IntentRouter struct {
 }
 
 type IntentRouterDeps struct {
-	Parser              IntentParser
-	MonthlySummary      MonthlySummaryReader
-	CardLister          CardLister
-	CardInvoice         CardInvoiceReader
-	CardCreator         CardCreator
-	CardCounter         CardCounter
-	ExpenseLogger       ExpenseLogger
-	CardPurchaseLog     CardPurchaseLogger
-	TransactionLister   TransactionLister
-	LastDeleter         LastTransactionDeleter
-	LastEditor          LastTransactionEditor
-	RecurringCreator    RecurringCreator
-	RecurringLister     RecurringLister
-	BudgetConfig        BudgetConfigurator
-	BudgetConvo         BudgetConversation
-	BudgetCommitter     BudgetConfigCommitter
-	BudgetSession       BudgetSessionGateway
-	Onboarding          OnboardingContinuation
-	OnboardingRunner    OnboardingTurnRunner
-	Fallback            Fallback
-	WhatsAppGateway     WhatsAppOutbound
-	TelegramGateway     TelegramOutbound
-	EventPublisher      interfaces.IntentEventPublisher
-	Decision            DecisionAuditDeps
-	Redactor            DecisionRedactor
-	Location            *time.Location
-	PolicyMinConfidence float64
+	Parser                     IntentParser
+	MonthlySummary             MonthlySummaryReader
+	CardLister                 CardLister
+	CardInvoice                CardInvoiceReader
+	CardCreator                CardCreator
+	CardCounter                CardCounter
+	ExpenseRecorder            ExpenseRecorder
+	CardPurchaseLog            CardPurchaseLogger
+	TransactionLister          TransactionLister
+	LastDeleter                LastTransactionDeleter
+	LastEditor                 LastTransactionEditor
+	RecurringCreator           RecurringCreator
+	RecurringLister            RecurringLister
+	BudgetConfig               BudgetConfigurator
+	BudgetConvo                BudgetConversation
+	BudgetCommitter            BudgetConfigCommitter
+	BudgetSession              BudgetSessionGateway
+	PendingExpenseConfirmation PendingExpenseConfirmationGateway
+	Onboarding                 OnboardingContinuation
+	OnboardingRunner           OnboardingTurnRunner
+	Fallback                   Fallback
+	WhatsAppGateway            WhatsAppOutbound
+	TelegramGateway            TelegramOutbound
+	EventPublisher             interfaces.IntentEventPublisher
+	Decision                   DecisionAuditDeps
+	Redactor                   DecisionRedactor
+	Location                   *time.Location
+	PolicyMinConfidence        float64
 }
 
 type DecisionRedactor interface {
@@ -489,7 +503,7 @@ func warnMissingToolBindings(o11y observability.Observability, deps IntentRouter
 		return
 	}
 	bindings := map[string]bool{
-		"record_transaction": deps.ExpenseLogger != nil,
+		"record_transaction": deps.ExpenseRecorder != nil,
 		"monthly_summary":    deps.MonthlySummary != nil,
 		"list_cards":         deps.CardLister != nil,
 		"create_card":        deps.CardCreator != nil,

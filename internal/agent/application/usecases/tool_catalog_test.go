@@ -84,7 +84,7 @@ func (s *ToolCatalogSuite) TestRecordTransactionOutcomeMapsToLogExpense() {
 
 	got, err := ToolCallToIntent(call, "gastei 58 no ifood")
 	s.Require().NoError(err)
-	s.Equal(intent.KindLogExpense, got.Kind())
+	s.Equal(intent.KindRecordExpense, got.Kind())
 	s.Equal(int64(5800), got.AmountCents())
 	s.Equal("iFood", got.Merchant())
 }
@@ -101,7 +101,7 @@ func (s *ToolCatalogSuite) TestRecordTransactionIncomeMapsToLogIncome() {
 
 	got, err := ToolCallToIntent(call, "recebi meu salario")
 	s.Require().NoError(err)
-	s.Equal(intent.KindLogIncome, got.Kind())
+	s.Equal(intent.KindRecordIncome, got.Kind())
 	s.Equal(int64(900000), got.AmountCents())
 }
 

@@ -12,7 +12,7 @@ func TestKindString(t *testing.T) {
 	t.Parallel()
 
 	cases := map[intent.Kind]string{
-		intent.KindLogExpense:      "log_expense",
+		intent.KindRecordExpense:   "record_expense",
 		intent.KindQueryCategory:   "query_category",
 		intent.KindQueryGoal:       "query_goal",
 		intent.KindQueryCard:       "query_card",
@@ -40,7 +40,7 @@ func TestParseKind(t *testing.T) {
 	}
 
 	tests := []tc{
-		{in: "log_expense", want: intent.KindLogExpense},
+		{in: "record_expense", want: intent.KindRecordExpense},
 		{in: " QUERY_CATEGORY ", want: intent.KindQueryCategory},
 		{in: "query_goal", want: intent.KindQueryGoal},
 		{in: "query_card", want: intent.KindQueryCard},
@@ -71,12 +71,12 @@ func TestParseKind(t *testing.T) {
 	}
 }
 
-func TestNewLogExpense(t *testing.T) {
+func TestNewRecordExpense(t *testing.T) {
 	t.Parallel()
 
 	type tc struct {
 		name    string
-		fields  intent.LogExpenseFields
+		fields  intent.RecordExpenseFields
 		wantErr error
 		check   func(t *testing.T, got intent.Intent)
 	}
@@ -84,7 +84,7 @@ func TestNewLogExpense(t *testing.T) {
 	tests := []tc{
 		{
 			name: "happy_path_credit",
-			fields: intent.LogExpenseFields{
+			fields: intent.RecordExpenseFields{
 				AmountCents:   5800,
 				Merchant:      "iFood",
 				CategoryHint:  "Alimentação",
@@ -92,7 +92,7 @@ func TestNewLogExpense(t *testing.T) {
 				CardHint:      "nubank",
 			},
 			check: func(t *testing.T, got intent.Intent) {
-				if got.Kind() != intent.KindLogExpense {
+				if got.Kind() != intent.KindRecordExpense {
 					t.Fatalf("kind = %v", got.Kind())
 				}
 				if got.AmountCents() != 5800 {
@@ -108,17 +108,17 @@ func TestNewLogExpense(t *testing.T) {
 		},
 		{
 			name:    "negative_amount",
-			fields:  intent.LogExpenseFields{AmountCents: -1},
+			fields:  intent.RecordExpenseFields{AmountCents: -1},
 			wantErr: intent.ErrAmountNonPositive,
 		},
 		{
 			name:    "zero_amount",
-			fields:  intent.LogExpenseFields{AmountCents: 0},
+			fields:  intent.RecordExpenseFields{AmountCents: 0},
 			wantErr: intent.ErrAmountNonPositive,
 		},
 		{
 			name: "merchant_too_long",
-			fields: intent.LogExpenseFields{
+			fields: intent.RecordExpenseFields{
 				AmountCents: 100,
 				Merchant:    strings.Repeat("a", 200),
 			},
@@ -126,7 +126,7 @@ func TestNewLogExpense(t *testing.T) {
 		},
 		{
 			name: "invalid_payment_method",
-			fields: intent.LogExpenseFields{
+			fields: intent.RecordExpenseFields{
 				AmountCents:   100,
 				PaymentMethod: "bitcoin",
 			},
@@ -134,7 +134,7 @@ func TestNewLogExpense(t *testing.T) {
 		},
 		{
 			name: "empty_payment_method_ok",
-			fields: intent.LogExpenseFields{
+			fields: intent.RecordExpenseFields{
 				AmountCents: 100,
 			},
 			check: func(t *testing.T, got intent.Intent) {
@@ -148,7 +148,7 @@ func TestNewLogExpense(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := intent.NewLogExpense(tc.fields)
+			got, err := intent.NewRecordExpense(tc.fields)
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("err = %v, want %v", err, tc.wantErr)

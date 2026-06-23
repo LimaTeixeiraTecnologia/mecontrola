@@ -79,12 +79,12 @@ func (f *fakeFallback) Reply(_ context.Context, _ uuid.UUID, _, _ string) (strin
 }
 
 type fakeExpenseLogger struct {
-	result services.ExpenseLoggerResult
+	result services.ExpenseRecorderResult
 	err    error
 	calls  int
 }
 
-func (f *fakeExpenseLogger) Execute(_ context.Context, _ services.ExpenseLoggerInput) (services.ExpenseLoggerResult, error) {
+func (f *fakeExpenseLogger) Execute(_ context.Context, _ services.ExpenseRecorderInput) (services.ExpenseRecorderResult, error) {
 	f.calls++
 	return f.result, f.err
 }
@@ -156,7 +156,7 @@ func (s *IntentRouterSuite) newRouter() *services.IntentRouter {
 		Location:        time.UTC,
 	}
 	if s.expenses != nil {
-		deps.ExpenseLogger = s.expenses
+		deps.ExpenseRecorder = s.expenses
 	}
 	router, err := services.NewIntentRouter(noop.NewProvider(), deps)
 	require.NoError(s.T(), err)
@@ -186,7 +186,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_EmptyText() {
 }
 
 func (s *IntentRouterSuite) buildLogExpense() intent.Intent {
-	expense, err := intent.NewLogExpense(intent.LogExpenseFields{
+	expense, err := intent.NewRecordExpense(intent.RecordExpenseFields{
 		AmountCents:  5800,
 		Merchant:     "iFood",
 		CategoryHint: "Prazeres",
@@ -201,14 +201,14 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_MissingResolverIsHonest
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(services.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "Transação realizada")
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_PersistedConfirms() {
-	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
+	s.expenses = &fakeExpenseLogger{result: services.ExpenseRecorderResult{
 		Persisted:    true,
 		AmountCents:  5800,
 		CategoryPath: "Prazeres > Delivery",
@@ -218,7 +218,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_PersistedConfirms() {
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(services.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.expenses.calls)
 	s.Require().Len(s.wa.sent, 1)
@@ -250,7 +250,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_AmbiguousAsksToChoose()
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 na academia", WhatsAppTo: "+5511999"})
 
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(services.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "mais de uma categoria")
@@ -266,7 +266,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_NotFoundAsksToRephrase(
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(services.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Não encontrei a categoria")
@@ -280,7 +280,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_NoHintAsksWhichCategory
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58", WhatsAppTo: "+5511999"})
 
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(services.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "categoria")
@@ -288,19 +288,19 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_NoHintAsksWhichCategory
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_PersistedConfirms() {
-	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
+	s.expenses = &fakeExpenseLogger{result: services.ExpenseRecorderResult{
 		Persisted:    true,
 		AmountCents:  1640000,
 		CategoryPath: "Salário",
 	}}
-	income, err := intent.NewLogIncome(intent.LogIncomeFields{AmountCents: 1640000, Source: "salário"})
+	income, err := intent.NewRecordIncome(intent.RecordIncomeFields{AmountCents: 1640000, Source: "salário"})
 	require.NoError(s.T(), err)
 	s.parser.intent = income
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "recebi salario 16400", WhatsAppTo: "+5511999"})
 
-	s.Equal(intent.KindLogIncome, result.Kind)
+	s.Equal(intent.KindRecordIncome, result.Kind)
 	s.Equal(services.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.expenses.calls)
 	s.Require().Len(s.wa.sent, 1)
@@ -309,7 +309,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_PersistedConfirms() {
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_MissingResolverIsHonest() {
-	income, err := intent.NewLogIncome(intent.LogIncomeFields{AmountCents: 1640000, Source: "salário"})
+	income, err := intent.NewRecordIncome(intent.RecordIncomeFields{AmountCents: 1640000, Source: "salário"})
 	require.NoError(s.T(), err)
 	s.parser.intent = income
 
@@ -759,7 +759,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_MissingResolver() {
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_GatewayFailure_OutcomePreserved() {
-	s.expenses = &fakeExpenseLogger{result: services.ExpenseLoggerResult{
+	s.expenses = &fakeExpenseLogger{result: services.ExpenseRecorderResult{
 		Persisted:    true,
 		AmountCents:  5800,
 		CategoryPath: "Prazeres > Delivery",
@@ -772,7 +772,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_GatewayFailure_OutcomePreserved() 
 		services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
 	s.Equal(services.OutcomeRouted, result.Outcome)
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(1, s.expenses.calls)
 	s.Equal(1, s.wa.calls)
 }
@@ -795,7 +795,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_PolicyBlocked_WriteWithLowConfiden
 		services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
 	s.Equal(services.OutcomePolicyBlocked, result.Outcome)
-	s.Equal(intent.KindLogExpense, result.Kind)
+	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Pode reescrever")
 }

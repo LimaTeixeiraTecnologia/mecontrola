@@ -26,15 +26,15 @@ func withWhatsAppPrincipal(ctx context.Context, userID uuid.UUID) context.Contex
 }
 
 type CardPurchaseLoggerAdapter struct {
-	uc *usecases.LogCardPurchaseFromAgent
+	uc *usecases.RecordCardPurchaseFromAgent
 }
 
-func NewCardPurchaseLoggerAdapter(uc *usecases.LogCardPurchaseFromAgent) *CardPurchaseLoggerAdapter {
+func NewCardPurchaseLoggerAdapter(uc *usecases.RecordCardPurchaseFromAgent) *CardPurchaseLoggerAdapter {
 	return &CardPurchaseLoggerAdapter{uc: uc}
 }
 
 func (a *CardPurchaseLoggerAdapter) Execute(ctx context.Context, in appservices.CardPurchaseLoggerInput) (appservices.CardPurchaseLoggerResult, error) {
-	result, err := a.uc.Execute(ctx, usecases.LogCardPurchaseFromAgentInput{UserID: in.UserID, Intent: in.Intent})
+	result, err := a.uc.Execute(ctx, usecases.RecordCardPurchaseFromAgentInput{UserID: in.UserID, Intent: in.Intent})
 	if err != nil {
 		return appservices.CardPurchaseLoggerResult{}, err
 	}
