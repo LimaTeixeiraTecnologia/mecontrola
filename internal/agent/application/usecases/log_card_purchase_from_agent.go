@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -65,8 +66,14 @@ func NewRecordCardPurchaseFromAgent(
 }
 
 type RecordCardPurchaseFromAgentInput struct {
-	UserID string
-	Intent intent.Intent
+	UserID        string
+	Intent        intent.Intent
+	ForceCategory *string
+	AmountCents   int64
+	Merchant      string
+	PaymentMethod string
+	CardHint      string
+	Installments  int
 }
 
 type RecordCardPurchaseFromAgentResult struct {
@@ -82,11 +89,16 @@ func (uc *RecordCardPurchaseFromAgent) Execute(ctx context.Context, in RecordCar
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agent.usecase.log_card_purchase_from_agent")
 	defer span.End()
 
-	if in.Intent.Kind() != intent.KindRecordCardPurchase {
-		return RecordCardPurchaseFromAgentResult{}, ErrLogTransactionInvalidIntent
-	}
 	if strings.TrimSpace(in.UserID) == "" {
 		return RecordCardPurchaseFromAgentResult{}, errors.New("agent: log card purchase: user id vazio")
+	}
+
+	if in.ForceCategory != nil && strings.TrimSpace(*in.ForceCategory) != "" {
+		return uc.executeForced(ctx, in)
+	}
+
+	if in.Intent.Kind() != intent.KindRecordCardPurchase {
+		return RecordCardPurchaseFromAgentResult{}, ErrLogTransactionInvalidIntent
 	}
 	if in.Intent.AmountCents() <= 0 {
 		return RecordCardPurchaseFromAgentResult{}, errors.New("agent: log card purchase: amount invalido")
@@ -145,5 +157,48 @@ func (uc *RecordCardPurchaseFromAgent) Execute(ctx context.Context, in RecordCar
 		AmountCents:  in.Intent.AmountCents(),
 		Installments: in.Intent.Installments(),
 		CategoryPath: path,
+	}, nil
+}
+
+func (uc *RecordCardPurchaseFromAgent) executeForced(ctx context.Context, in RecordCardPurchaseFromAgentInput) (RecordCardPurchaseFromAgentResult, error) {
+	forcedPath := strings.TrimSpace(*in.ForceCategory)
+	description := strings.TrimSpace(in.Merchant)
+	if description == "" {
+		description = forcedPath
+	}
+	cardHint := strings.TrimSpace(in.CardHint)
+	amountCents := in.AmountCents
+	installments := in.Installments
+
+	result, err := uc.creator.Execute(ctx, CreateCardPurchaseCommand{
+		UserID:         in.UserID,
+		CardHint:       cardHint,
+		Description:    description,
+		RootCategoryID: forcedPath,
+		AmountCents:    amountCents,
+		Installments:   installments,
+	})
+	if err != nil {
+		uc.resolveBad.Add(ctx, 1, observability.String("reason", "force_category_create_failed"))
+		return RecordCardPurchaseFromAgentResult{}, fmt.Errorf("agent: log card purchase: force category: %w", err)
+	}
+	if !result.CardFound {
+		uc.resolveBad.Add(ctx, 1, observability.String("reason", "card_not_found"))
+		return RecordCardPurchaseFromAgentResult{
+			Persisted:    false,
+			CardFound:    false,
+			AmountCents:  amountCents,
+			Installments: installments,
+			CategoryPath: forcedPath,
+		}, nil
+	}
+	uc.persisted.Add(ctx, 1)
+	return RecordCardPurchaseFromAgentResult{
+		Persisted:    true,
+		CardFound:    true,
+		CardName:     result.CardName,
+		AmountCents:  amountCents,
+		Installments: installments,
+		CategoryPath: forcedPath,
 	}, nil
 }

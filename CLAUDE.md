@@ -55,6 +55,16 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - Toda alteração Go no módulo agent exige `go-implementation` (Etapas 1–5 + checklist R0–R7) e DMMF aplicado conforme `.claude/rules/governance.md`.
 - Ver `.claude/rules/agent-workflows-tools.md` para contrato completo e gates de verificação.
 
+## DMMF e Mastra
+
+Ver secoes "DMMF — Domain Modeling Made Functional" e "Padrao Workflow/Tool do Agent" em `AGENTS.md`. Resumo critico para Claude:
+
+- **State-as-type `[HARD]`**: `AwaitingKind`, `TransactionKind`, `RunStatus`, `ToolOutcome` sao tipos fechados com constantes enumeradas; nunca `string` livre em assinatura publica.
+- **Pending step** (Mastra-inspired): estado de espera salvo como `pendingexpense.Draft{AwaitingKind, TransactionKind, Candidates, ...}` em `agent_sessions`; `continuePendingExpenseConfirmation` intercepta o sinal antes do parse LLM.
+- **Decide* puro `[HARD]`**: sem IO, sem `context.Context`, deterministico; regra de negocio vive exclusivamente aqui.
+- **Anti-padroes proibidos `[HARD]`**: `Result[T,E]` customizado, currying, DSL de pipeline, monades.
+- **Mastra**: Thread = `(user_id, channel)`; sinal = mensagem; resume = check pending antes de `ParseInbound`; Tool = adapter fino, zero regra de negocio, zero LLM.
+
 ## Outbox
 
 Ver secao "Outbox" em `AGENTS.md` para o contrato completo do `outbox.Publisher` e a regra obrigatoria de idempotencia por `event_id`.

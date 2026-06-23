@@ -334,8 +334,14 @@ type CardPurchaseLogger interface {
 }
 
 type CardPurchaseLoggerInput struct {
-	UserID string
-	Intent intent.Intent
+	UserID        string
+	Intent        intent.Intent
+	ForceCategory *string
+	AmountCents   int64
+	Merchant      string
+	PaymentMethod string
+	CardHint      string
+	Installments  int
 }
 
 type CardPurchaseLoggerResult struct {

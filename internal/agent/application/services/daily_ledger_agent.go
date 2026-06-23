@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -314,6 +315,10 @@ func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, userID uui
 			observability.String("kind", kind.String()),
 			observability.String("channel", channel),
 		)
+		if a.pendingExpenseConfirmation != nil && len(ambiguous.Candidates) > 0 {
+			draft := a.buildPendingDraft(in, kind, ambiguous.Candidates, pendingexpense.AwaitingCategoryChoice)
+			a.savePendingDraft(ctx, userID, channel, draft)
+		}
 		a.record(ctx, kind.String(), channel, OutcomeClarify)
 		return RouteResult{Reply: formatCategoryAmbiguous(ambiguous.Candidates), Outcome: OutcomeClarify, Kind: kind}, true
 	}
@@ -323,13 +328,8 @@ func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, userID uui
 			observability.String("channel", channel),
 		)
 		if a.pendingExpenseConfirmation != nil && len(needsConfirmation.Candidates) > 0 {
-			draft := a.buildPendingExpenseDraft(in, kind, needsConfirmation.Candidates[0])
-			if saveErr := a.pendingExpenseConfirmation.Save(ctx, userID, channel, draft); saveErr != nil {
-				a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_save_failed",
-					observability.String("channel", channel),
-					observability.Error(saveErr),
-				)
-			}
+			draft := a.buildPendingDraft(in, kind, needsConfirmation.Candidates, pendingexpense.AwaitingCategoryConfirm)
+			a.savePendingDraft(ctx, userID, channel, draft)
 		}
 		a.record(ctx, kind.String(), channel, OutcomeClarify)
 		return RouteResult{Reply: formatCategoryNeedsConfirmation(needsConfirmation.Candidates), Outcome: OutcomeClarify, Kind: kind}, true
@@ -343,6 +343,15 @@ func (a *DailyLedgerAgent) categoryClarification(ctx context.Context, userID uui
 		return RouteResult{Reply: categoryNoHintText, Outcome: OutcomeClarify, Kind: kind}, true
 	}
 	return RouteResult{}, false
+}
+
+func (a *DailyLedgerAgent) savePendingDraft(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) {
+	if saveErr := a.pendingExpenseConfirmation.Save(ctx, userID, channel, draft); saveErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_draft_save_failed",
+			observability.String("channel", channel),
+			observability.Error(saveErr),
+		)
+	}
 }
 
 func resolveCategoryHint(in intent.Intent) string {
@@ -613,6 +622,9 @@ func (a *DailyLedgerAgent) routeLogCardPurchase(ctx context.Context, userID uuid
 	}
 	result, err := a.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{UserID: userID.String(), Intent: in})
 	if err != nil {
+		if clarify, ok := a.categoryClarification(ctx, userID, channel, intent.KindRecordCardPurchase, in, err); ok {
+			return clarify
+		}
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_card_purchase_failed",
 			observability.Error(err),
 		)
@@ -934,65 +946,169 @@ func (a *DailyLedgerAgent) continuePendingExpenseConfirmation(ctx context.Contex
 	if !found {
 		return false, RouteResult{}
 	}
+	if draft.AwaitingKind == pendingexpense.AwaitingCategoryChoice {
+		return a.resolvePendingCategoryChoice(ctx, userID, channel, text, draft)
+	}
+	return a.resolvePendingCategoryConfirm(ctx, userID, channel, text, draft)
+}
+
+func (a *DailyLedgerAgent) resolvePendingCategoryConfirm(ctx context.Context, userID uuid.UUID, channel, text string, draft pendingexpense.Draft) (bool, RouteResult) {
 	if matchesExpenseConfirmation(text) {
-		if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
-			a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
-				observability.String("channel", channel),
-				observability.Error(clearErr),
-			)
-		}
-		categoryID := draft.CategoryID
-		result, err := a.expenseRecorder.Execute(ctx, ExpenseRecorderInput{
-			UserID:        userID.String(),
-			ForceCategory: &categoryID,
-			AmountCents:   draft.AmountCents,
-			Merchant:      draft.Merchant,
-			PaymentMethod: draft.PaymentMethod,
-			Direction:     draft.Direction,
-			OccurredAt:    draft.OccurredAt,
-		})
-		if err != nil {
-			a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_execute_failed",
-				observability.String("channel", channel),
-				observability.Error(err),
-			)
-			a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeUsecaseError)
-			return true, RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindRecordExpense}
-		}
-		a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeRouted)
-		return true, RouteResult{
-			Reply:   formatPersistedExpense(result.AmountCents, draft.Merchant, result.CategoryPath),
-			Outcome: OutcomeRouted,
-			Kind:    intent.KindRecordExpense,
-		}
+		a.clearPendingDraft(ctx, userID, channel)
+		return true, a.executePendingDraft(ctx, userID, channel, draft)
 	}
 	if matchesExpenseCancellation(text) {
-		if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
-			a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
-				observability.String("channel", channel),
-				observability.Error(clearErr),
-			)
-		}
-		a.record(ctx, intent.KindRecordExpense.String(), channel, OutcomeRouted)
-		return true, RouteResult{Reply: expenseCancelledText, Outcome: OutcomeRouted, Kind: intent.KindRecordExpense}
+		a.clearPendingDraft(ctx, userID, channel)
+		kind := resolveIntentKindFromDraft(draft)
+		a.record(ctx, kind.String(), channel, OutcomeRouted)
+		return true, RouteResult{Reply: expenseCancelledText, Outcome: OutcomeRouted, Kind: kind}
 	}
 	return false, RouteResult{}
 }
 
-func (a *DailyLedgerAgent) buildPendingExpenseDraft(in intent.Intent, kind intent.Kind, categoryPath string) pendingexpense.Draft {
+func (a *DailyLedgerAgent) resolvePendingCategoryChoice(ctx context.Context, userID uuid.UUID, channel, text string, draft pendingexpense.Draft) (bool, RouteResult) {
+	matched := matchCandidateByText(text, draft.Candidates)
+	if matched == "" {
+		return false, RouteResult{}
+	}
+	draft.CategoryID = matched
+	draft.CategoryPath = matched
+	a.clearPendingDraft(ctx, userID, channel)
+	return true, a.executePendingDraft(ctx, userID, channel, draft)
+}
+
+func (a *DailyLedgerAgent) executePendingDraft(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) RouteResult {
+	if draft.TransactionKind == pendingexpense.TransactionKindCardPurchase {
+		return a.executePendingCardPurchase(ctx, userID, channel, draft)
+	}
+	return a.executePendingExpense(ctx, userID, channel, draft)
+}
+
+func (a *DailyLedgerAgent) executePendingExpense(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) RouteResult {
+	categoryID := draft.CategoryID
+	result, err := a.expenseRecorder.Execute(ctx, ExpenseRecorderInput{
+		UserID:        userID.String(),
+		ForceCategory: &categoryID,
+		AmountCents:   draft.AmountCents,
+		Merchant:      draft.Merchant,
+		PaymentMethod: draft.PaymentMethod,
+		Direction:     draft.Direction,
+		OccurredAt:    draft.OccurredAt,
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_execute_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		kind := resolveIntentKindFromDraft(draft)
+		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: kind}
+	}
+	kind := resolveIntentKindFromDraft(draft)
+	a.record(ctx, kind.String(), channel, OutcomeRouted)
+	return RouteResult{
+		Reply:   formatPersistedExpense(result.AmountCents, draft.Merchant, result.CategoryPath),
+		Outcome: OutcomeRouted,
+		Kind:    kind,
+	}
+}
+
+func (a *DailyLedgerAgent) executePendingCardPurchase(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) RouteResult {
+	if a.cardPurchaseLog == nil {
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
+	}
+	categoryID := draft.CategoryID
+	result, err := a.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{
+		UserID:        userID.String(),
+		ForceCategory: &categoryID,
+		AmountCents:   draft.AmountCents,
+		Merchant:      draft.Merchant,
+		PaymentMethod: draft.PaymentMethod,
+		CardHint:      draft.CardHint,
+		Installments:  draft.Installments,
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_card_purchase_execute_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeUsecaseError)
+		return RouteResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: intent.KindRecordCardPurchase}
+	}
+	if !result.CardFound {
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeMissingResolver)
+		return RouteResult{Reply: formatCardPurchaseCardMissing(draft.CardHint), Outcome: OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
+	}
+	a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeRouted)
+	return RouteResult{Reply: formatPersistedCardPurchase(result), Outcome: OutcomeRouted, Kind: intent.KindRecordCardPurchase}
+}
+
+func (a *DailyLedgerAgent) clearPendingDraft(ctx context.Context, userID uuid.UUID, channel string) {
+	if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
+			observability.String("channel", channel),
+			observability.Error(clearErr),
+		)
+	}
+}
+
+func (a *DailyLedgerAgent) buildPendingDraft(in intent.Intent, kind intent.Kind, candidates []string, awaitingKind pendingexpense.AwaitingKind) pendingexpense.Draft {
+	txnKind := pendingexpense.TransactionKindExpense
 	direction := directionOutcomeConst
-	if kind == intent.KindRecordIncome {
+	if kind == intent.KindRecordIncome { //nolint:staticcheck // switch proibido por R-AGENT-WF-001: gate rejeita case intent.Kind > 1
+		txnKind = pendingexpense.TransactionKindIncome
 		direction = directionIncomeConst
+	} else if kind == intent.KindRecordCardPurchase {
+		txnKind = pendingexpense.TransactionKindCardPurchase
+	}
+	categoryPath := ""
+	if len(candidates) > 0 {
+		categoryPath = candidates[0]
 	}
 	return pendingexpense.Draft{
-		AmountCents:   in.AmountCents(),
-		Merchant:      in.Merchant(),
-		PaymentMethod: in.PaymentMethod(),
-		Direction:     direction,
-		OccurredAt:    "",
-		CategoryID:    categoryPath,
-		CategoryPath:  categoryPath,
+		AmountCents:     in.AmountCents(),
+		Merchant:        in.Merchant(),
+		PaymentMethod:   in.PaymentMethod(),
+		Direction:       direction,
+		OccurredAt:      "",
+		CategoryID:      categoryPath,
+		CategoryPath:    categoryPath,
+		Candidates:      candidates,
+		AwaitingKind:    awaitingKind,
+		TransactionKind: txnKind,
+		Installments:    in.Installments(),
+		CardHint:        in.CardHint(),
 	}
+}
+
+func resolveIntentKindFromDraft(draft pendingexpense.Draft) intent.Kind {
+	switch draft.TransactionKind {
+	case pendingexpense.TransactionKindIncome:
+		return intent.KindRecordIncome
+	case pendingexpense.TransactionKindCardPurchase:
+		return intent.KindRecordCardPurchase
+	default:
+		return intent.KindRecordExpense
+	}
+}
+
+func matchCandidateByText(text string, candidates []string) string {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return ""
+	}
+	if idx, err := strconv.Atoi(normalized); err == nil && idx >= 1 && idx <= len(candidates) {
+		return candidates[idx-1]
+	}
+	for _, candidate := range candidates {
+		for _, segment := range strings.Split(strings.ToLower(candidate), " > ") {
+			if strings.HasPrefix(strings.TrimSpace(segment), normalized) {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 func matchesExpenseConfirmation(text string) bool {

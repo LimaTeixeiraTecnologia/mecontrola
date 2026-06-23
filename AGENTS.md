@@ -64,6 +64,17 @@ Regras Go que devem ficar sempre em memoria:
 - R7.6: usar `errors.Join` para agregar erros.
 - Goroutines sempre cancelaveis via `context.Context`, sem leak e integradas ao shutdown coordenado.
 
+## DMMF — Domain Modeling Made Functional
+
+Principios obrigatorios inspirados em *Domain Modeling Made Functional* (Scott Wlaschin), adaptados para Go idiomatico. Anti-padroes proibidos `[HARD]`: `Result[T,E]` customizado, currying, DSL de pipeline, monades ou Either.
+
+1. **State-as-type**: status e outcomes sao tipos fechados (`type RunStatus string` + constantes enumeradas); nunca `string` livre em assinatura publica.
+2. **Smart constructors**: VOs e commands expoe apenas construtores que retornam `(T, error)`; campos privados; zero value invalido por construcao.
+3. **Decide* puro**: toda regra de negocio vive em funcoes `Decide*` — sem IO, sem `context.Context`, deterministico; recebe `ids []uuid.UUID` e `now time.Time` como parametros quando necessario.
+4. **Workflow pipeline**: fluxo linear `parse → validate → decide → persist → publish`; cada passo recebe o resultado tipado do anterior; sem branching de dominio fora do `Decide*`.
+5. **Discriminated union via errors.As**: divergencia de fluxo via `errors.As(err, &typed)` ou `errors.Is`; nunca `switch` em campo `string`.
+6. **Pending step tipado** (inspiracao Mastra): estado de espera de input do usuario e modelado como struct com `AwaitingKind` fechado (`category_confirm | category_choice`); nunca flag booleano solta. Thread = `(user_id, channel)`; sinal = mensagem recebida; resume = check de pending intercepta sinal antes do parse LLM.
+
 ## Layout Obrigatorio por Modulo
 
 Novos modulos, features e refatoracoes estruturais em bounded contexts DEVEM usar:
@@ -143,6 +154,7 @@ Regras obrigatorias:
 4. `ToolOutcome` e `RunStatus` sao tipos fechados (DMMF state-as-type), nunca strings livres; toda execucao e um `Run` auditavel (`thread_id`, `run_id`, `workflow`, `tool`, `status`, `duration_ms`, `error`).
 5. LLM aparece apenas no step de parse (`ParseInbound`); nunca dentro de `Workflow`/`Tool` de execucao.
 6. Toda alteracao Go no modulo agent exige `go-implementation` (Etapas 1-5 + checklist R0-R7) e DMMF conforme a precedencia em `.claude/rules/governance.md`.
+7. Inspiracao Mastra (https://mastra.ai): Thread = `(user_id, channel)`; pending step = `Draft{AwaitingKind, TransactionKind, Candidates, ...}` salvo em `agent_sessions.pending_action`; working memory = contexto estruturado pre-carregado no system prompt; Tool = adapter fino sem LLM; resume = `continuePendingExpenseConfirmation` intercepta sinal antes de `ParseInbound`.
 
 ## Plataforma Compartilhada
 
