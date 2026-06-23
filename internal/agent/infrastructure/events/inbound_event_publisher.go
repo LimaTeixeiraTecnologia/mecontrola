@@ -57,7 +57,7 @@ func (p *InboundEventPublisher) publish(ctx context.Context, userID uuid.UUID, c
 		return fmt.Errorf("agent.inbound.events: marshal payload: %w", err)
 	}
 	evt := outbox.Event{
-		ID:              uuid.New().String(),
+		ID:              uuid.NewSHA1(uuid.NameSpaceURL, []byte(eventType+":"+messageID)).String(),
 		Type:            eventType,
 		AggregateType:   _inboundAggregateType,
 		AggregateID:     messageID,

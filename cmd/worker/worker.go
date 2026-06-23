@@ -28,7 +28,9 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
+	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
@@ -191,9 +193,32 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 
+	agentModule, err := agent.NewAgentModule(
+		r.cfg,
+		r.o11y,
+		identityModule,
+		categoriesModule,
+		cardModule,
+		transactionsModule,
+		budgetsModule,
+		onboardingModule.WhatsAppGateway,
+		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
+		agentonboarding.NewOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
+		agent.WithSessionStore(r.db),
+		agent.WithOutboxPublisher(identityModule.OutboxPublisher),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("worker: inicializar modulo agent: %w", err)
+	}
+
 	for _, reg := range identityModule.EventHandlers {
 		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
 			return nil, fmt.Errorf("worker: registrar handler identity %s: %w", reg.EventType, err)
+		}
+	}
+	for _, reg := range agentModule.EventHandlers {
+		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
+			return nil, fmt.Errorf("worker: registrar handler agent %s: %w", reg.EventType, err)
 		}
 	}
 	for _, reg := range billingModule.EventHandlers {
