@@ -60,7 +60,9 @@ func (s *DailyLedgerWriteSuite) buildAgent(factory agentinterfaces.AgentDecision
 		PolicyMinConfidence: 0.8,
 		Decision:            DecisionAuditDeps{Factory: factory, UoW: unit},
 	}
-	return newDailyLedgerAgent(s.obs, counter(), counter(), counter(), counter(), time.UTC, deps)
+	agent, err := newDailyLedgerAgent(s.obs, counter(), counter(), counter(), counter(), time.UTC, deps)
+	s.Require().NoError(err)
+	return agent
 }
 
 func (s *DailyLedgerWriteSuite) writeIntent(confidence float64) ParsedIntent {

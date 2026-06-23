@@ -9,7 +9,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 )
 
 func mustOutcome(raw string) tools.ToolOutcome {
@@ -28,14 +27,8 @@ func toRouteResult(result tools.ToolResult) RouteResult {
 	return RouteResult{Reply: result.Reply, Outcome: result.Outcome.String(), Kind: result.Kind}
 }
 
-type writeContext struct {
-	messageID  string
-	parsed     ParsedIntent
-	confidence valueobjects.Confidence
-}
-
-func (a *DailyLedgerAgent) buildRegistry(text string, wctx writeContext) (*workflow.Registry, error) {
-	guard := a.newWriteGuard(wctx)
+func (a *DailyLedgerAgent) buildRegistry() (*workflow.Registry, error) {
+	guard := a.newWriteGuard()
 
 	listExpenseTool := a.routeTool("record_expense", intent.KindRecordExpense, func(ctx context.Context, in tools.ToolInput) RouteResult {
 		return a.routeLogExpense(ctx, in.UserID, in.Channel, in.Intent)
@@ -78,7 +71,7 @@ func (a *DailyLedgerAgent) buildRegistry(text string, wctx writeContext) (*workf
 		return a.routeQueryCard(ctx, in.UserID, in.Channel, in.Intent)
 	})
 	configureBudgetTool := a.routeTool("configure_budget", intent.KindConfigureBudget, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeConfigureBudget(ctx, in.UserID, in.Channel, text)
+		return a.routeConfigureBudget(ctx, in.UserID, in.Channel, in.Text)
 	})
 	editCategoryPercentTool := a.routeTool("edit_category_percentage", intent.KindEditCategoryPercentage, func(ctx context.Context, in tools.ToolInput) RouteResult {
 		return a.routeEditCategoryPercentage(ctx, in.UserID, in.Channel, in.Intent)
@@ -187,7 +180,7 @@ func (a *DailyLedgerAgent) routeTool(name string, kind intent.Kind, route func(c
 	})
 }
 
-func (a *DailyLedgerAgent) newWriteGuard(wctx writeContext) *workflow.WriteGuard {
+func (a *DailyLedgerAgent) newWriteGuard() *workflow.WriteGuard {
 	return workflow.NewWriteGuard(workflow.GuardSteps{
 		Authorize: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
 			principal := Principal{UserID: in.UserID}
@@ -197,14 +190,14 @@ func (a *DailyLedgerAgent) newWriteGuard(wctx writeContext) *workflow.WriteGuard
 			return tools.ToolResult{Reply: authzDeniedText, Outcome: tools.OutcomeAuthzDenied, Kind: in.Intent.Kind()}, true
 		},
 		Replay: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
-			replay, replayed := a.replayDecision(ctx, in.UserID, in.Channel, wctx.messageID, in.Intent.Kind())
+			replay, replayed := a.replayDecision(ctx, in.UserID, in.Channel, in.MessageID, in.Intent.Kind())
 			if !replayed {
 				return tools.ToolResult{}, false
 			}
 			return toToolResult(replay), true
 		},
 		Policy: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
-			if a.policy.Evaluate(in.Intent.Kind(), wctx.confidence) != domainservices.PolicyDecisionClarify {
+			if a.policy.Evaluate(in.Intent.Kind(), in.Confidence) != domainservices.PolicyDecisionClarify {
 				return tools.ToolResult{}, false
 			}
 			kind := in.Intent.Kind()
@@ -219,7 +212,8 @@ func (a *DailyLedgerAgent) newWriteGuard(wctx writeContext) *workflow.WriteGuard
 		Audit: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, workflow.SettleFunc, bool) {
 			kind := in.Intent.Kind()
 			principal := Principal{UserID: in.UserID}
-			auditCtx := a.beginDecisionAudit(ctx, principal, in.Channel, wctx.messageID, kind, wctx.parsed)
+			parsed, _ := in.Parsed.(ParsedIntent)
+			auditCtx := a.beginDecisionAudit(ctx, principal, in.Channel, in.MessageID, kind, parsed)
 			if auditCtx.conflicted {
 				a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind.String()))
 				a.o11y.Logger().Info(ctx, "agent.intent_router.idempotent_conflict_replay",

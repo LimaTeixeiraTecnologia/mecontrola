@@ -24,20 +24,11 @@ func NewThreadGatewayAdapter(factory appinterfaces.AgentThreadRepositoryFactory,
 func (a *ThreadGatewayAdapter) GetOrCreate(ctx context.Context, userID uuid.UUID, channel string) (entities.Thread, error) {
 	var resolved entities.Thread
 	op := func(ctx context.Context, db database.DBTX) error {
-		repo := a.factory.AgentThreadRepository(db)
-		existing, found, err := repo.GetByUserAndChannel(ctx, userID, channel)
+		candidate, err := entities.NewThread(userID, channel)
 		if err != nil {
 			return err
 		}
-		if found {
-			resolved = existing
-			return nil
-		}
-		created, err := entities.NewThread(userID, channel)
-		if err != nil {
-			return err
-		}
-		persisted, err := repo.Upsert(ctx, created)
+		persisted, err := a.factory.AgentThreadRepository(db).Upsert(ctx, candidate)
 		if err != nil {
 			return err
 		}

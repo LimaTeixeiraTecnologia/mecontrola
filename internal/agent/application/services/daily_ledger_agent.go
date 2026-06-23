@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
@@ -54,10 +55,11 @@ type DailyLedgerAgent struct {
 	policyBlockedTotal         observability.Counter
 	idempotencyReplayTotal     observability.Counter
 	loc                        *time.Location
+	registry                   *workflow.Registry
 }
 
-func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) *DailyLedgerAgent {
-	return &DailyLedgerAgent{
+func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) (*DailyLedgerAgent, error) {
+	agent := &DailyLedgerAgent{
 		parser:                     deps.Parser,
 		monthlySummary:             deps.MonthlySummary,
 		cardLister:                 deps.CardLister,
@@ -89,6 +91,12 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		idempotencyReplayTotal:     idempotencyReplayTotal,
 		loc:                        loc,
 	}
+	registry, err := agent.buildRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("construir workflow registry: %w", err)
+	}
+	agent.registry = registry
+	return agent, nil
 }
 
 func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
@@ -148,19 +156,11 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return a.dispatchWrite(ctx, principal, channel, messageID, text, parsed)
 	}
 
-	registry, err := a.buildRegistry(text, writeContext{})
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.registry_unavailable",
-			observability.String("kind", kind.String()),
-			observability.Error(err),
-		)
-		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
-	}
-	wf, ok := registry.Resolve(kind)
+	wf, ok := a.registry.Resolve(kind)
 	if !ok {
 		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
 	}
-	result, execErr := wf.Execute(ctx, tools.ToolInput{UserID: principal.UserID, Channel: channel, Intent: parsed.Intent})
+	result, execErr := wf.Execute(ctx, tools.ToolInput{UserID: principal.UserID, Channel: channel, Intent: parsed.Intent, Text: text})
 	if execErr != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.workflow_execute_failed",
 			observability.String("kind", kind.String()),
@@ -181,16 +181,7 @@ func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, 
 func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
 	kind := parsed.Intent.Kind()
 
-	registry, err := a.buildRegistry(trimmed, writeContext{messageID: messageID, parsed: parsed, confidence: parsed.Confidence})
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.registry_unavailable",
-			observability.String("kind", kind.String()),
-			observability.Error(err),
-		)
-		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
-		return RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
-	}
-	wf, ok := registry.Resolve(kind)
+	wf, ok := a.registry.Resolve(kind)
 	if !ok {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.unknown_write_kind",
 			observability.String("kind", kind.String()),
@@ -199,7 +190,15 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 		a.record(ctx, kind.String(), channel, OutcomeUsecaseError)
 		return RouteResult{Reply: auditWriteFailedText, Outcome: OutcomeUsecaseError, Kind: kind}
 	}
-	result, execErr := wf.Execute(ctx, tools.ToolInput{UserID: principal.UserID, Channel: channel, Intent: parsed.Intent})
+	result, execErr := wf.Execute(ctx, tools.ToolInput{
+		UserID:     principal.UserID,
+		Channel:    channel,
+		Intent:     parsed.Intent,
+		MessageID:  messageID,
+		Text:       trimmed,
+		Confidence: parsed.Confidence,
+		Parsed:     parsed,
+	})
 	if execErr != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.workflow_execute_failed",
 			observability.String("kind", kind.String()),

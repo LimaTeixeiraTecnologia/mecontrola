@@ -541,7 +541,10 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		"Total de dispatches de escrita servidos por replay idempotente por kind",
 		"1",
 	)
-	daily := newDailyLedgerAgent(o11y, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal, loc, deps)
+	daily, err := newDailyLedgerAgent(o11y, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal, loc, deps)
+	if err != nil {
+		return nil, err
+	}
 	warnMissingToolBindings(o11y, deps)
 	return &IntentRouter{
 		onboarding:      newOnboardingAgent(o11y, routedTotal, deps),

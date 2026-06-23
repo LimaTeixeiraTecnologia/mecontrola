@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 )
 
 type ToolOutcome int
@@ -86,9 +87,13 @@ func ParseOutcome(raw string) (ToolOutcome, error) {
 }
 
 type ToolInput struct {
-	UserID  uuid.UUID
-	Channel string
-	Intent  intent.Intent
+	UserID     uuid.UUID
+	Channel    string
+	Intent     intent.Intent
+	MessageID  string
+	Text       string
+	Confidence valueobjects.Confidence
+	Parsed     any
 }
 
 type ToolResult struct {
