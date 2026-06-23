@@ -1,7 +1,5 @@
 package input
 
-import "errors"
-
 type UpsertUserByWhatsApp struct {
 	WhatsAppNumber string
 	Email          string
@@ -9,12 +7,8 @@ type UpsertUserByWhatsApp struct {
 }
 
 func (i *UpsertUserByWhatsApp) Validate() error {
-	var errs []error
 	if i.WhatsAppNumber == "" {
-		errs = append(errs, ErrWhatsAppNumberRequired)
+		return ErrWhatsAppNumberRequired
 	}
-	if i.DisplayName == "" {
-		errs = append(errs, ErrDisplayNameRequired)
-	}
-	return errors.Join(errs...)
+	return nil
 }
