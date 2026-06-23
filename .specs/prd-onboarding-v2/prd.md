@@ -144,7 +144,9 @@ principal, evitando handoff prematuro ou duplicado.
 - **Por que é importante**: garante 0 falso positivo na conclusão e um handoff inequívoco para o
   agente principal.
 - **Como funciona (alto nível)**: o agente principal só passa a tratar mensagens como fluxo normal
-  após detectar sinal determinístico persistido; nunca por heurística textual.
+  após detectar sinal determinístico persistido; nunca por heurística textual. A WorkingMemory de
+  perfil é sintetizada de forma assíncrona, por um consumidor do evento `OnboardingCompleted`, sem
+  bloquear a conclusão (RF-34).
 
 ### 6. Idempotência e robustez
 
@@ -192,9 +194,18 @@ principal, evitando handoff prematuro ou duplicado.
   `Etapa 1/4 — Objetivo`, `Etapa 2/4 — Orçamento`, `Etapa 3/4 — Cartões`,
   `Etapa 4/4 — Plano Financeiro`). (REGRA 3)
 - RF-12: A coleta de cartões DEVE ser feita em uma única mensagem, no formato apelido + dia de
-  fechamento (`Nubank 13` / `Inter 5` / `Itaú 10`), aceitando também a resposta "Não uso". (REGRA 4)
+  fechamento (`Nubank 13` / `Inter 5` / `Itaú 10`), aceitando também a resposta "Não uso". O número
+  informado representa o **dia de fechamento** da fatura (não o vencimento). (REGRA 4)
 - RF-13: Após receber Objetivo e Orçamento Mensal, o sistema DEVE sugerir automaticamente a
-  distribuição financeira, sem exigir cálculo do usuário. (REGRA 5)
+  distribuição financeira, sem exigir cálculo do usuário. A distribuição DEVE variar conforme o
+  objetivo, via perfis fixos determinísticos: o objetivo é classificado em um perfil durante o parse
+  do LLM e o cálculo dos valores é determinístico (sem LLM no cálculo). Perfis e percentuais (cada
+  linha soma 100): Quitar dívidas = CF 45 / Conh 5 / Praz 10 / Metas 25 / LF 15; Reserva de
+  emergência = 40 / 5 / 10 / 15 / 30; Investir/patrimônio = 40 / 10 / 10 / 10 / 30; Meta específica =
+  40 / 5 / 10 / 30 / 15; Organizar gastos (default) = 40 / 10 / 15 / 20 / 15. (REGRA 5)
+- RF-13a: Quando o objetivo for ambíguo ou não se encaixar em nenhum perfil conhecido, o sistema
+  DEVE usar o perfil default "Organizar gastos" (40 / 10 / 15 / 20 / 15) e seguir o fluxo sem
+  fricção, permitindo ajuste posterior em linguagem natural (RF-15).
 - RF-14: Durante correções, o sistema DEVE preservar o progresso já coletado e recalcular apenas as
   diferenças, NUNCA reiniciar a distribuição do zero. (REGRA 6)
 - RF-15: O sistema DEVE interpretar e aplicar alterações de distribuição/limite expressas em
@@ -212,7 +223,7 @@ principal, evitando handoff prematuro ou duplicado.
   primeira transação registrada, fase) DEVE ser persistido exclusivamente em
   `mecontrola.onboarding_sessions` (coluna `payload`).
 - RF-20: O histórico de turnos do onboarding (`recent_turns`) DEVE ser persistido em
-  `onboarding_sessions.payload`, ser bounded (janela máxima definida para o contexto do turno) e
+  `onboarding_sessions.payload`, ser bounded em uma janela de 3 pares (usuário+assistente) e
   exclusivo do onboarding.
 - RF-21: O onboarding NÃO DEVE ler nem gravar `recent_turns`, `pending_action` ou qualquer estado
   transitório próprio em `mecontrola.agent_sessions`.
@@ -255,6 +266,21 @@ principal, evitando handoff prematuro ou duplicado.
   independentes no módulo do agente, sem compartilhar estado transitório, evitando colisão no mesmo
   canal WhatsApp.
 
+### Handoff, retenção e foco conversacional
+
+- RF-34: A síntese da WorkingMemory do usuário (perfil injetado no system prompt do agente
+  principal) DEVE ocorrer de forma assíncrona, em um consumidor do evento `OnboardingCompleted`,
+  idempotente e com retentativa via outbox. NÃO DEVE rodar inline bloqueando o turno nem condicionar
+  a conclusão do onboarding. A ausência temporária de WorkingMemory NÃO impede o agente principal de
+  operar (degradação graciosa).
+- RF-35: Ao concluir o onboarding (`state=active`), o sistema DEVE limpar `recent_turns` do
+  `payload`, preservando o estado funcional (objetivo, renda, cartões, distribuição,
+  `first_tx_recorded`, `phase`) e `completed_at`. O estado funcional e `completed_at` são retidos
+  para auditoria; o histórico conversacional bounded não é retido após a conclusão.
+- RF-36: Se o usuário enviar mensagem fora do fluxo (off-topic, dúvida, desabafo) durante o
+  onboarding, o sistema DEVE responder de forma breve e empática e retomar a pergunta da etapa atual
+  (com o indicador de progresso), sem sair do onboarding nem abrir conversa livre.
+
 ## Experiência do Usuário
 
 ### Jornada principal (caminho feliz)
@@ -276,12 +302,12 @@ Bot:      [IA] 🔵 Etapa 2/4 — Orçamento
 
 Usuário:  uns 6 mil
 
-Bot:      [IA] Com base no seu objetivo e renda, sugeri esta distribuição:
-                  • Custo Fixo — 55%
-                  • Conhecimento — 10%
+Bot:      [IA] Com base no seu objetivo (reserva de emergência) e renda, sugeri esta distribuição:
+                  • Custo Fixo — 40%
+                  • Conhecimento — 5%
                   • Prazeres — 10%
                   • Metas — 15%
-                  • Liberdade Financeira — 10%
+                  • Liberdade Financeira — 30%
 
                   🔵 Etapa 3/4 — Cartões
                   💳 Você usa cartão de crédito? Me manda todos de uma vez, assim:
@@ -295,8 +321,8 @@ Bot:      [IA] 🔵 Etapa 4/4 — Plano Financeiro
                   • Objetivo: Reserva de emergência
                   • Orçamento: R$ 6.000/mês
                   • Cartões: Nubank (fecha dia 13), Inter (fecha dia 5)
-                  • Distribuição: Custo Fixo 55% · Conhecimento 10% · Prazeres 10% ·
-                    Metas 15% · Liberdade Financeira 10%
+                  • Distribuição: Custo Fixo 40% · Conhecimento 5% · Prazeres 10% ·
+                    Metas 15% · Liberdade Financeira 30%
 
                   Pra fechar, vamos registrar seu primeiro lançamento.
                   Me conta um gasto ou recebimento recente (ex.: "mercado 150").
@@ -332,7 +358,7 @@ Bot:      [IA] 🔵 Etapa 3/4 — Cartões
 
 ```
 Bot:      [IA] ...sugeri esta distribuição:
-                  • Custo Fixo — 55% ...
+                  • Custo Fixo — 40% ...
 
 Usuário:  coloca mais em metas, uns 25%
 
@@ -360,9 +386,13 @@ Bot:      [IA] Ajustei: Metas subiu pra 25% e Custo Fixo desceu pra 45%.
 - **Backend — Go**: implementação nos módulos `internal/onboarding` e `internal/agent`, seguindo o
   padrão Workflow/Tool do agente (Mastra) restrito a `internal/agent`, sem regra de domínio em
   adapters.
-- **Compatibilidade de LLM**: o modelo de onboarding deve ser compatível com o tool-calling
-  necessário para o fluxo (modelos validados no projeto para onboarding); modelos com tool-calling
-  instável não são aceitáveis para este fluxo.
+- **Compatibilidade de LLM (via OpenRouter, modelos já presentes no projeto)**: o onboarding DEVE
+  usar exclusivamente os modelos já integrados via OpenRouter no projeto — Gemini 2.5 Flash Lite,
+  Mistral Small 3.2 24B, Claude Haiku 4.5 e GPT-5 Nano — sem introduzir novos provedores. O modelo
+  primário do onboarding é `anthropic/claude-haiku-4.5` (default atual). A escolha de primário e da
+  cadeia de fallback DEVE respeitar a estabilidade de tool-calling por modelo já observada no
+  projeto (flash-lite e gpt-5-nano têm tool-calling/parse instável em parte dos fluxos), priorizando
+  os modelos comprovadamente estáveis para o tool-calling do onboarding.
 - **Privacidade de dados**: o número de contato (peer) trafega em eventos e logs deve ser mascarado;
   o histórico do onboarding é bounded e não deve reter dados além da janela necessária.
 
@@ -382,9 +412,10 @@ R-AGENT-WF-001):
 - **Pending Step (suspend & resume)**: a retomada do onboarding (RF-30) espelha o suspend/resume de
   workflow do Mastra — o estado é salvo como snapshot persistido (`payload` em
   `onboarding_sessions`) e retomado a partir da fase persistida, sobrevivendo a reinícios.
-- **WorkingMemory**: a síntese de working memory para o agente principal (handoff, RF-26) usa o
-  escopo por `resource` (`user_id`, cross-channel) do Mastra e só deve ser produzida **após** a
-  conclusão inequívoca do onboarding.
+- **WorkingMemory**: a síntese de working memory para o agente principal (handoff, RF-26/RF-34) usa
+  o escopo por `resource` (`user_id`, cross-channel) do Mastra e só deve ser produzida **após** a
+  conclusão inequívoca do onboarding, de forma assíncrona via consumidor de `OnboardingCompleted`
+  (idempotente, com retentativa do outbox), nunca inline bloqueando o turno.
 - **ToolOutcome/RunStatus/AwaitingKind/TransactionKind** permanecem tipos fechados (state-as-type),
   nunca string livre.
 
@@ -445,12 +476,78 @@ A adição de `peer_e164` ao payload de `subscription_bound` pressupõe unmarsha
 consumidor existente. Se o consumidor usar `DisallowUnknownFields`, a adição quebra o consumidor em
 produção. Risco: regressão silenciosa. Mitigação: verificar antes de evoluir o payload.
 
+### LG-09 — Coleta de cartão usa vencimento, não fechamento
+
+O código atual coleta `due_day` (dia de vencimento) — a tool `save_onboarding_card`
+(`internal/agent/application/usecases/onboarding_tool_catalog.go`) exige `nickname` + `due_day` e o
+dispatcher responde "vence dia %d"; o script `scriptCardQuestion` pergunta "dia de vencimento". Isso
+contraria o documento de referência (REGRA 4), que define **dia de fechamento**. Risco de produto:
+ciclo de fatura incorreto (o fechamento é o que determina em qual fatura a compra cai). Mitigação:
+alterar a coleta, o schema da tool, os scripts e o mapeamento de persistência para `closing_day`
+(RF-12). Limite e vencimento não são coletados no onboarding (cartão skeleton, completado depois).
+
+### LG-10 — Distribuição automática não varia por objetivo
+
+`buildAutoSplits(incomeCents)` (`internal/agent/application/usecases/onboarding_scripts.go`) usa um
+template fixo por renda (atual: 40/10/15/20/15) e ignora o objetivo. A decisão de produto (RF-13)
+exige variar por objetivo via perfis fixos determinísticos. Risco: a recomendação financeira não
+reflete o objetivo declarado. Mitigação: introduzir classificação de objetivo em perfil (no parse) e
+um mapeamento determinístico perfil→template, com fallback "Organizar gastos".
+
 ### LG-08 — Colisão de canal entre processador de onboarding e agente
 
 O `whatsapp_message_processor.go` (onboarding) e a infraestrutura de agentes operam sobre o mesmo
 canal WhatsApp e o mesmo `(user_id, channel)`. Risco: dupla resposta ou interferência se ambos
 tratarem a mesma mensagem. Mitigação: prioridade de roteamento que garante exclusividade do
 onboarding enquanto `InProgress=true` (RF-27, RF-33).
+
+## Casos de Borda (Edge Cases)
+
+Comportamento esperado nos cenários de exceção, para um MVP robusto e production-ready. Cada caso
+referencia o requisito funcional que o governa.
+
+- **EB-01 — Saudação dispara antes da sessão existir** (race do outbox, LG-04): o consumidor força
+  retentativa (retorna erro) até a sessão de onboarding existir; quando existir, `emitWelcome()` é
+  enviado normalmente. (RF-05)
+- **EB-02 — Reprocessamento do evento de ativação**: sob retry do outbox, a saudação não é
+  duplicada — `welcome_sent_at` persistido e/ou a decisão por chave estável de evento detectam o
+  replay. (RF-29)
+- **EB-03 — Falha do LLM no meio do fluxo**: o turno cai no fallback FSM sem promover conclusão, sem
+  apagar progresso válido e sem contaminar o agente principal; em falha da saudação proativa, o
+  consumidor loga warn e retorna erro para retry, sem quebrar a ativação já confirmada. (RF-08,
+  RF-32)
+- **EB-04 — Usuário abandona o onboarding**: a sessão permanece `state != active` indefinidamente
+  (sem TTL no MVP); ao retornar, retoma exatamente da fase persistida, com dados preservados. (RF-30)
+- **EB-05 — Mensagem off-topic durante o onboarding**: resposta breve e empática + retomada da etapa
+  atual, sem abrir conversa livre nem sair do onboarding. (RF-36)
+- **EB-06 — Correção de dado já informado**: o sistema recalcula apenas as diferenças (ex.: ajuste de
+  distribuição), preservando o progresso já coletado, sem reiniciar. (RF-14, RF-15)
+- **EB-07 — Usuário sem cartão**: "Não uso" satisfaz o pré-requisito de cartões para conclusão,
+  equivalendo a uma lista vazia. (RF-12, RF-23)
+- **EB-08 — Conclusão sem primeira transação**: a conclusão é recusada (`first transaction required`)
+  e o fluxo permanece na etapa de primeira transação até registrá-la. (RF-23, RF-17)
+- **EB-09 — Mensagem após conclusão**: nova mensagem não reabre o onboarding e é roteada ao agente
+  principal, que reconhece a conclusão apenas por sinal determinístico (`state=active` +
+  `completed_at` ou evento `OnboardingCompleted`). (RF-26, RF-28)
+- **EB-10 — Drift de estado** (`state=active` sem `completed_at`): tratado como inconsistência
+  explícita (registro/observabilidade), nunca como sucesso silencioso. (RF-31)
+- **EB-11 — Falha na síntese de WorkingMemory**: como é assíncrona via consumidor de
+  `OnboardingCompleted` com retry, a falha não bloqueia a conclusão nem o handoff; o agente principal
+  degrada graciosamente sem WorkingMemory até a retentativa persistir. (RF-34)
+- **EB-12 — Mensagens concorrentes no mesmo canal**: enquanto `InProgress=true`, todas as mensagens
+  do usuário são tratadas exclusivamente pelo onboarding; o agente principal não as recebe, evitando
+  dupla resposta. (RF-27, RF-33)
+- **EB-13 — Objetivo ambíguo/desconhecido**: o objetivo que não classifica em nenhum perfil cai no
+  template default "Organizar gastos" (40/10/15/20/15) e o fluxo segue sem fricção; o usuário pode
+  ajustar a distribuição depois em linguagem natural. (RF-13a, RF-15)
+- **EB-14 — Cartão sem dia de fechamento válido**: entrada que não permite extrair apelido + dia de
+  fechamento válido (ex.: dia fora de 1–31) leva a re-pergunta curta da etapa de cartões, sem travar
+  o fluxo nem avançar com dado inválido. (RF-12)
+- **EB-15 — Renda fora dos limites do módulo**: `internal/onboarding` exige renda em
+  R$500..R$1B (`50000..10000000000` cents). Renda abaixo/acima leva a re-pergunta amigável da etapa
+  de orçamento, nunca erro fatal nem avanço com valor inválido. (RF-13, contrato do módulo)
+- **EB-16 — Apelido de cartão acima do limite**: `internal/card` exige nickname 1..32 caracteres; o
+  fluxo valida na fronteira e re-pergunta quando excede, evitando rejeição a jusante. (RF-12)
 
 ## Fora de Escopo
 
@@ -465,23 +562,44 @@ onboarding enquanto `InProgress=true` (RF-27, RF-33).
 - Definição detalhada de prompts, schemas de tool, migrações SQL e wiring — pertencem à
   Especificação Técnica.
 
-## Suposições e Questões em Aberto
+## Decisões Resolvidas
+
+Decisões confirmadas com o dono do produto (2026-06-23), encerrando as questões em aberto da versão
+inicial:
+
+- **DR-01 — Modelos de LLM**: o onboarding usa exclusivamente os modelos já integrados via OpenRouter
+  no projeto — Gemini 2.5 Flash Lite, Mistral Small 3.2 24B, Claude Haiku 4.5 e GPT-5 Nano — sem
+  introduzir novos provedores. Primário: `anthropic/claude-haiku-4.5`; a cadeia de fallback respeita
+  a estabilidade de tool-calling observada por modelo. (Restrições Técnicas)
+- **DR-02 — Síntese de WorkingMemory assíncrona**: produzida por consumidor do evento
+  `OnboardingCompleted`, idempotente e com retry do outbox; nunca inline nem bloqueando a conclusão.
+  (RF-34)
+- **DR-03 — Retenção pós-conclusão**: ao concluir, limpar `recent_turns`; preservar estado funcional
+  e `completed_at` indefinidamente (sem job de TTL no MVP). (RF-35)
+- **DR-04 — Off-topic durante o onboarding**: resposta breve + redirecionamento à etapa atual; sem
+  conversa livre. (RF-36)
+- **DR-05 — Cartão por dia de fechamento**: o onboarding coleta apelido + dia de **fechamento**
+  (alinhado ao doc de referência), exigindo ajuste do código atual que usa vencimento (`due_day`).
+  Limite e vencimento ficam para configuração posterior. (RF-12, LG-09)
+- **DR-06 — Distribuição varia por objetivo (perfis fixos)**: 5 perfis determinísticos
+  (Quitar dívidas, Reserva de emergência, Investir/patrimônio, Meta específica, Organizar gastos);
+  objetivo classificado no parse, cálculo determinístico, fallback = Organizar gastos. (RF-13, LG-10)
+- **DR-07 — Objetivo ambíguo → default**: cair no template "Organizar gastos" (40/10/15/20/15) sem
+  fricção; ajuste posterior em linguagem natural. (RF-13a, EB-13)
+- **DR-08 — Janela de `recent_turns` = 3 pares**: confirmado o tamanho atual do código. (RF-20)
+
+## Suposições
 
 - **Suposição**: as 5 categorias fixas (Custo Fixo, Conhecimento, Prazeres, Metas, Liberdade
   Financeira) são estáveis e não configuráveis pelo usuário no onboarding.
-- **Suposição**: a janela de `recent_turns` do onboarding segue a mesma ordem de grandeza já usada
-  (curta, ~3 pares); o número exato será fixado na techspec.
-- **Suposição**: "cartões coletados" como pré-requisito de conclusão é satisfeito tanto por uma
-  lista de cartões quanto pela resposta "Não uso".
-- **Questão em aberto**: qual o conjunto exato de modelos de LLM homologados para o onboarding V2? O
-  prompt de origem cita "Gemini Flash" e "GPT-5 Nano", porém há registro no projeto de que alguns
-  modelos têm tool-calling instável para este fluxo. A techspec deve fixar a lista homologada e o
-  fallback.
-- **Questão em aberto**: o handoff por evento `OnboardingCompleted` exige síntese de working memory
-  antes de o agente principal operar? A ordem (working memory sintetizada somente após conclusão)
-  precisa ser confirmada na techspec.
-- **Questão em aberto**: política de expiração/retenção do `payload` de onboarding (TTL) — definir se
-  há limpeza após conclusão.
+- **Decisão (DR-09)**: "cartões coletados" é satisfeito por "Não uso" (lista vazia) — a conclusão
+  NÃO exige cartão; o único gate de domínio é a 1ª transação (`HasFirstTransaction`). Confirma o doc
+  (REGRA 4) e o comportamento atual do código.
+- **Decisão (DR-10)**: cap de retry + dead-letter para os consumidores de saudação e WorkingMemory,
+  reusando o suporte do outbox (`attempts`/`max_attempts` + backoff) e emitindo alerta/métrica
+  `outbox_dead_letter_total{event_type}` — evita retry infinito silencioso.
+- **Decisão (DR-11)**: `internal/card` passa a exigir apenas `closing_day` (`due_day` opcional,
+  derivado no card); o onboarding envia só o dia de fechamento. (GAP-V1)
 
 ## Documentos de Origem
 
