@@ -75,7 +75,7 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, getContext, nil, fakeOnboardingExpenseLogger{})
 
-	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil)
+	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil, noopV2Session{})
 	require.NoError(t, err)
 	return turn
 }
@@ -146,131 +146,41 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 	interp := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
 		toolCallResponse("save_onboarding_objective", map[string]any{"objective": "fazer uma viagem"}),
 		toolCallResponse("save_onboarding_income", map[string]any{"income_cents": 500000}),
-		toolCallResponse("save_onboarding_card", map[string]any{"nickname": "nubank", "due_day": 17}),
-		{ToolCalls: []appinterfaces.ToolCall{
-			{ID: "c1", FunctionName: "record_transaction", ArgumentsJSON: map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado", "category_hint": "mercado"}},
-		}},
+		toolCallResponse("record_transaction", map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado", "category_hint": "mercado"}),
 	}}
 	turn := newOnboardingTurnPipeline(t, db, interp)
 
 	welcome := conversationalTurn(t, turn, userID, "oi")
 	require.Contains(t, welcome.Reply, "Eu sou o *MeControla*")
-	requireOnboardingPhase(t, db, userID, "welcome")
-
-	m1 := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, m1.Reply, "Custo Fixo")
-	requireOnboardingPhase(t, db, userID, "methodology_1")
-
-	m2 := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, m2.Reply, "Conhecimento")
-	requireOnboardingPhase(t, db, userID, "methodology_2")
-
-	m3 := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, m3.Reply, "Prazeres")
-	requireOnboardingPhase(t, db, userID, "methodology_3")
-
-	m4 := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, m4.Reply, "Metas")
-	requireOnboardingPhase(t, db, userID, "methodology_4")
-
-	m5 := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, m5.Reply, "Liberdade Financeira")
-	requireOnboardingPhase(t, db, userID, "methodology_5")
-
-	objQuestion := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, objQuestion.Reply, "objetivo principal")
+	require.Contains(t, welcome.Reply, "Custo Fixo")
 	requireOnboardingPhase(t, db, userID, "objective")
 
 	objective := conversationalTurn(t, turn, userID, "quero fazer uma viagem")
-	require.Contains(t, objective.Reply, "🎯 Anotado: seu foco é *fazer uma viagem*.")
-	require.Contains(t, objective.Reply, "orçamento mensal")
-	requireOnboardingPhase(t, db, userID, "income")
+	require.Contains(t, objective.Reply, "Etapa 2/4")
+	requireOnboardingPhase(t, db, userID, "budget")
 	gotObjective, _ := queryOnboardingString(t, db, userID, "payload->>'objective'")
 	require.Equal(t, "fazer uma viagem", gotObjective)
 
-	income := conversationalTurn(t, turn, userID, "ganho 5000")
-	require.Contains(t, income.Reply, "✅ Orçamento de *R$ 5.000,00* registrado!")
-	require.Contains(t, income.Reply, "cartão de crédito")
+	budget := conversationalTurn(t, turn, userID, "ganho 5000")
+	require.Contains(t, budget.Reply, "R$ 2.000,00")
+	require.Contains(t, budget.Reply, "Etapa 3/4")
 	requireOnboardingPhase(t, db, userID, "cards")
 	gotIncome, _ := queryOnboardingInt(t, db, userID, "(payload->>'income_cents')::bigint")
 	require.Equal(t, int64(500000), gotIncome)
 
-	cardOut := conversationalTurn(t, turn, userID, "uso o nubank, vence dia 17")
-	require.Contains(t, cardOut.Reply, "💳 Cartão *nubank* salvo (vence dia 17")
-	requireOnboardingPhase(t, db, userID, "cards")
-	cardCount, _ := queryOnboardingInt(t, db, userID, "jsonb_array_length(payload->'cards')")
-	require.Equal(t, int64(1), cardCount)
+	cards := conversationalTurn(t, turn, userID, "não uso cartão")
+	require.Contains(t, cards.Reply, "Etapa 4/4")
+	requireOnboardingPhase(t, db, userID, "financial_plan")
 
-	splitsQuestion := conversationalTurn(t, turn, userID, "não, só esse")
-	require.Contains(t, splitsQuestion.Reply, "distribuir seu orçamento")
-	requireOnboardingPhase(t, db, userID, "splits")
-
-	splits := conversationalTurn(t, turn, userID, "distribui assim")
-	require.Contains(t, splits.Reply, "✅ *Distribuição salva!*")
-	require.Contains(t, splits.Reply, "💰 Custo Fixo: R$ 2.000,00 (40%)")
-	require.Contains(t, splits.Reply, "🏦 Liberdade Financeira: R$ 750,00 (15%)")
-	require.Contains(t, splits.Reply, "Seu plano:")
-	require.Contains(t, splits.Reply, "Tá tudo certo?")
-	requireOnboardingPhase(t, db, userID, "summary")
+	financialPlan := conversationalTurn(t, turn, userID, "sim")
+	require.Contains(t, financialPlan.Reply, "primeiro lançamento")
+	requireOnboardingPhase(t, db, userID, "first_tx")
 	splitCount, _ := queryOnboardingInt(t, db, userID, "jsonb_array_length(payload->'custom_split')")
 	require.Equal(t, int64(5), splitCount)
 
-	transition := conversationalTurn(t, turn, userID, "tá perfeito")
-	require.Contains(t, transition.Reply, "primeiro lançamento")
-	requireOnboardingPhase(t, db, userID, "first_tx")
-
 	firstTx := conversationalTurn(t, turn, userID, "gastei 35 no mercado")
 	require.Contains(t, firstTx.Reply, "🏆 Boa! Registrei")
-	require.Contains(t, firstTx.Reply, "🎉 *Onboarding concluído!*")
+	require.Contains(t, firstTx.Reply, "Onboarding concluído")
 	finalState, _ := queryOnboardingString(t, db, userID, "state")
 	require.Equal(t, "active", finalState)
-}
-
-func TestOnboardingConversational_MethodologyStrictlyAdvances_E2E(t *testing.T) {
-	db, _ := postgres.NewTestDatabase(t)
-
-	userID := SeedActiveUserWA(t, db, "+5511944443333")
-	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
-
-	turn := newOnboardingTurnPipeline(t, db, &scriptedInterpreter{})
-
-	welcome := conversationalTurn(t, turn, userID, "oi")
-	require.Contains(t, welcome.Reply, "Eu sou o *MeControla*")
-	requireOnboardingPhase(t, db, userID, "welcome")
-
-	progression := []struct {
-		phase   string
-		snippet string
-	}{
-		{"methodology_1", "Custo Fixo"},
-		{"methodology_2", "Conhecimento"},
-		{"methodology_3", "Prazeres"},
-		{"methodology_4", "Metas"},
-		{"methodology_5", "Liberdade Financeira"},
-	}
-	for _, step := range progression {
-		out := conversationalTurn(t, turn, userID, "sim")
-		require.Contains(t, out.Reply, step.snippet)
-		requireOnboardingPhase(t, db, userID, step.phase)
-	}
-}
-
-func TestOnboardingConversational_MethodologyNonAffirmationStays_E2E(t *testing.T) {
-	db, _ := postgres.NewTestDatabase(t)
-
-	userID := SeedActiveUserWA(t, db, "+5511933332222")
-	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
-
-	turn := newOnboardingTurnPipeline(t, db, &scriptedInterpreter{})
-
-	conversationalTurn(t, turn, userID, "oi")
-	requireOnboardingPhase(t, db, userID, "welcome")
-
-	advance := conversationalTurn(t, turn, userID, "sim")
-	require.Contains(t, advance.Reply, "Custo Fixo")
-	requireOnboardingPhase(t, db, userID, "methodology_1")
-
-	stay := conversationalTurn(t, turn, userID, "o que é isso?")
-	require.Contains(t, stay.Reply, "Custo Fixo")
-	requireOnboardingPhase(t, db, userID, "methodology_1")
 }

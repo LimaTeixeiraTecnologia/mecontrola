@@ -15,6 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	agentvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
@@ -200,3 +201,13 @@ func SeedTelegramIdentity(t *testing.T, db database.DBTX, userID uuid.UUID, tele
 		t.Fatalf("e2e.seed: insert telegram user_identity: %v", insertErr)
 	}
 }
+
+type noopV2Session struct{}
+
+func (noopV2Session) Load(_ context.Context, _ uuid.UUID, _ string) (onboardingv2draft.Draft, bool, error) {
+	return onboardingv2draft.Draft{}, false, nil
+}
+func (noopV2Session) Save(_ context.Context, _ uuid.UUID, _ string, _ onboardingv2draft.Draft) error {
+	return nil
+}
+func (noopV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error { return nil }

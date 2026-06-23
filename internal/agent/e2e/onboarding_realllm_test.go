@@ -16,7 +16,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
@@ -74,16 +73,6 @@ func (d *recordingDispatcher) Dispatch(_ context.Context, _ uuid.UUID, _ string,
 type recordingPhaseSetter struct{}
 
 func (recordingPhaseSetter) SetPhase(_ context.Context, _ uuid.UUID, _ string) error { return nil }
-
-type noopV2Session struct{}
-
-func (noopV2Session) Load(_ context.Context, _ uuid.UUID, _ string) (onboardingv2draft.Draft, bool, error) {
-	return onboardingv2draft.Draft{}, false, nil
-}
-func (noopV2Session) Save(_ context.Context, _ uuid.UUID, _ string, _ onboardingv2draft.Draft) error {
-	return nil
-}
-func (noopV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error { return nil }
 
 func requireRealLLM(t *testing.T) {
 	t.Helper()

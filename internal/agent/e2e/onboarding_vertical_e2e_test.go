@@ -123,11 +123,9 @@ func newScriptedOpenRouterChain(t *testing.T) *appservices.FallbackChain {
 	t.Helper()
 	script := &mockOpenRouterScript{
 		script: map[string]scriptedToolCall{
-			"viagem":   {name: "save_onboarding_objective", args: `{"objective":"fazer uma viagem"}`},
-			"5000":     {name: "save_onboarding_income", args: `{"income_cents":500000}`},
-			"nubank":   {name: "save_onboarding_card", args: `{"nickname":"nubank","due_day":17}`},
-			"distribu": {name: "save_onboarding_budget_splits", args: `{"allocations":[{"root_slug":"expense.custo_fixo","amount_cents":200000},{"root_slug":"expense.conhecimento","amount_cents":50000},{"root_slug":"expense.prazeres","amount_cents":75000},{"root_slug":"expense.metas","amount_cents":100000},{"root_slug":"expense.liberdade_financeira","amount_cents":75000}]}`},
-			"mercado":  {name: "record_transaction", args: `{"direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"mercado"}`},
+			"viagem":  {name: "save_onboarding_objective", args: `{"objective":"fazer uma viagem"}`},
+			"5000":    {name: "save_onboarding_income", args: `{"income_cents":500000}`},
+			"mercado": {name: "record_transaction", args: `{"direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"mercado"}`},
 		},
 	}
 	server := httptest.NewServer(http.HandlerFunc(script.handle))
@@ -213,7 +211,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, getContext, nil, expLogger)
 	chain := newScriptedOpenRouterChain(t)
-	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil)
+	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil, noopV2Session{})
 	require.NoError(t, err)
 	runner := agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
 
@@ -277,57 +275,21 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 
 	postOnboarding(t, e, "oi")
 	requireLastReplyContains(t, gateway, "Eu sou o *MeControla*")
-	requireOnboardingPhase(t, db, userID, "welcome")
-
-	progression := []struct {
-		phase   string
-		snippet string
-	}{
-		{"methodology_1", "Custo Fixo"},
-		{"methodology_2", "Conhecimento"},
-		{"methodology_3", "Prazeres"},
-		{"methodology_4", "Metas"},
-		{"methodology_5", "Liberdade Financeira"},
-	}
-	for _, step := range progression {
-		postOnboarding(t, e, "sim")
-		requireLastReplyContains(t, gateway, step.snippet)
-		requireOnboardingPhase(t, db, userID, step.phase)
-	}
-
-	postOnboarding(t, e, "sim")
-	requireLastReplyContains(t, gateway, "objetivo principal")
 	requireOnboardingPhase(t, db, userID, "objective")
 
 	postOnboarding(t, e, "quero fazer uma viagem")
 	require.Equal(t, "fazer uma viagem", onbPayloadString(t, db, userID, "objective"))
-	requireLastReplyContains(t, gateway, "🎯 Anotado: seu foco é *fazer uma viagem*.")
-	requireLastReplyContains(t, gateway, "orçamento mensal")
-	requireOnboardingPhase(t, db, userID, "income")
+	requireOnboardingPhase(t, db, userID, "budget")
 
 	postOnboarding(t, e, "ganho 5000 por mes")
 	require.Equal(t, int64(500000), onbPayloadInt(t, db, userID, "income_cents"))
-	requireLastReplyContains(t, gateway, "✅ Orçamento de *R$ 5.000,00* registrado!")
-	requireLastReplyContains(t, gateway, "cartão de crédito")
 	requireOnboardingPhase(t, db, userID, "cards")
 
-	postOnboarding(t, e, "uso o nubank, vence dia 17")
-	require.Equal(t, 1, onbCardsLen(t, db, userID))
-	requireLastReplyContains(t, gateway, "💳 Cartão *nubank* salvo (vence dia 17")
-	requireOnboardingPhase(t, db, userID, "cards")
+	postOnboarding(t, e, "não uso cartão")
+	requireOnboardingPhase(t, db, userID, "financial_plan")
 
-	postOnboarding(t, e, "não, só esse")
-	requireLastReplyContains(t, gateway, "distribuir seu orçamento")
-	requireOnboardingPhase(t, db, userID, "splits")
-
-	postOnboarding(t, e, "distribui assim")
+	postOnboarding(t, e, "sim")
 	require.Equal(t, 5, onbSplitsLen(t, db, userID))
-	requireLastReplyContains(t, gateway, "✅ *Distribuição salva!*")
-	requireLastReplyContains(t, gateway, "Seu plano:")
-	requireOnboardingPhase(t, db, userID, "summary")
-
-	postOnboarding(t, e, "tá perfeito")
-	requireLastReplyContains(t, gateway, "primeiro lançamento")
 	requireOnboardingPhase(t, db, userID, "first_tx")
 
 	postOnboarding(t, e, "gastei 35 no mercado")
@@ -337,8 +299,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	require.Equal(t, "active", onbState(t, db, userID))
 	last, ok := gateway.LastReply()
 	require.True(t, ok)
-	require.Contains(t, last.Text, "🏆 Boa! Registrei")
-	require.Contains(t, last.Text, "🎉 *Onboarding concluído!*")
+	require.Contains(t, last.Text, "Onboarding concluído")
 }
 
 func postOnboarding(t *testing.T, e *agentE2ECtx, text string) {
