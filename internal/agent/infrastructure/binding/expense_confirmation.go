@@ -2,6 +2,7 @@ package binding
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -14,7 +15,12 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
-const pendingExpensePrefix = "pending_expense:"
+const pendingExpenseType = "pending_expense"
+
+type pendingEnvelope struct {
+	Type string               `json:"_t"`
+	Data pendingexpense.Draft `json:"d"`
+}
 
 type PendingExpenseConfirmationAdapter struct {
 	repo appinterfaces.AgentSessionRepository
@@ -33,32 +39,24 @@ func (a *PendingExpenseConfirmationAdapter) Load(ctx context.Context, userID uui
 		}
 		return pendingexpense.Draft{}, false, fmt.Errorf("agent: pending expense load: %w", err)
 	}
-	raw := record.PendingAction
-	prefix := []byte(pendingExpensePrefix)
-	if len(raw) <= len(prefix) || string(raw[:len(prefix)]) != pendingExpensePrefix {
+	var env pendingEnvelope
+	if err := json.Unmarshal(record.PendingAction, &env); err != nil || env.Type != pendingExpenseType {
 		return pendingexpense.Draft{}, false, nil
 	}
-	payload := raw[len(prefix):]
-	draft, err := pendingexpense.Decode(payload)
-	if err != nil {
-		return pendingexpense.Draft{}, false, fmt.Errorf("agent: pending expense decode: %w", err)
-	}
-	return draft, true, nil
+	return env.Data, true, nil
 }
 
 func (a *PendingExpenseConfirmationAdapter) Save(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) error {
-	encoded, err := pendingexpense.Encode(draft)
+	raw, err := json.Marshal(pendingEnvelope{Type: pendingExpenseType, Data: draft})
 	if err != nil {
 		return fmt.Errorf("agent: pending expense encode: %w", err)
 	}
-	prefix := []byte(pendingExpensePrefix)
-	pending := append(prefix, encoded...)
 	now := time.Now().UTC()
 	record := appinterfaces.AgentSessionRecord{
 		ID:            uuid.New(),
 		UserID:        userID,
 		Channel:       channel,
-		PendingAction: pending,
+		PendingAction: raw,
 		RecentTurns:   []byte("[]"),
 		CreatedAt:     now,
 		UpdatedAt:     now,

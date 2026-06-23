@@ -143,13 +143,13 @@ func (s *ExpenseConfirmationSuite) TestClear_MakesLoadReturnFalse() {
 	s.False(found)
 }
 
-func (s *ExpenseConfirmationSuite) TestLoad_RecordWithoutExpensePrefix_ReturnsFalse() {
+func (s *ExpenseConfirmationSuite) TestLoad_RecordWithoutPendingExpenseType_ReturnsFalse() {
 	repo := newFakeSessionRepo()
 	err := repo.Upsert(s.ctx, appinterfaces.AgentSessionRecord{
 		ID:            uuid.New(),
 		UserID:        s.userID,
 		Channel:       s.channel,
-		PendingAction: []byte(`{"kind":"budget_config"}`),
+		PendingAction: []byte(`{"_t":"budget_config","d":{}}`),
 		RecentTurns:   []byte("[]"),
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
