@@ -167,6 +167,10 @@ func (uc *ComposeConversationalReply) Execute(ctx context.Context, in ComposeCon
 		uc.repliedTotal.Add(ctx, 1, observability.String("outcome", "empty_reply"))
 		return ComposeConversationalOutput{Reply: conversationalRedirectMessage}, nil
 	}
+	if looksLikePseudoCode(reply) {
+		uc.repliedTotal.Add(ctx, 1, observability.String("outcome", "pseudocode_blocked"))
+		return ComposeConversationalOutput{Reply: conversationalRedirectMessage}, nil
+	}
 
 	uc.persistTurns(ctx, in.UserID, in.Channel, trimmed, reply, sessionRecord, sessionFound)
 
@@ -230,6 +234,13 @@ func (uc *ComposeConversationalReply) sanitizeTurns(turns []entities.Conversatio
 		}
 	}
 	return out
+}
+
+func looksLikePseudoCode(s string) bool {
+	return strings.HasPrefix(s, "print(") ||
+		strings.HasPrefix(s, "default_api.") ||
+		strings.Contains(s, "updateWorkingMemory(") ||
+		strings.Contains(s, "register_expense(")
 }
 
 func (uc *ComposeConversationalReply) processWMToolCalls(ctx context.Context, userID uuid.UUID, calls []interfaces.ToolCall) {

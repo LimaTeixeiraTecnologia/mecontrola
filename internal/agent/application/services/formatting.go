@@ -357,10 +357,12 @@ func createCardErrorText(err error) string {
 	switch {
 	case errors.Is(err, carddomain.ErrNicknameConflict):
 		return "💳 Você já tem um cartão com esse apelido. Que tal escolher outro nome?"
-	case errors.Is(err, carddomain.ErrInvalidClosingDay):
+	case errors.Is(err, carddomain.ErrInvalidClosingDay) || (strings.Contains(err.Error(), "closing_day") && !strings.Contains(err.Error(), "due_day")):
 		return "💳 O dia de fechamento precisa estar entre 1 e 31. Me confirma o dia certo?"
-	case errors.Is(err, carddomain.ErrInvalidDueDay):
+	case errors.Is(err, carddomain.ErrInvalidDueDay) || (strings.Contains(err.Error(), "due_day") && !strings.Contains(err.Error(), "closing_day")):
 		return "💳 O dia de vencimento precisa estar entre 1 e 31. Me confirma o dia certo?"
+	case strings.Contains(err.Error(), "closing_day") && strings.Contains(err.Error(), "due_day"):
+		return "💳 Para cadastrar o cartão preciso saber o dia de fechamento e o dia de vencimento da fatura. Me informa os dois?"
 	case errors.Is(err, carddomain.ErrInvalidNickname):
 		return "💳 O apelido do cartão precisa ter entre 1 e 32 caracteres. Pode me passar um nome mais curto?"
 	case errors.Is(err, carddomain.ErrInvalidCardName):
