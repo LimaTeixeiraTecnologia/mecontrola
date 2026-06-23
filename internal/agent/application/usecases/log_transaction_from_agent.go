@@ -273,7 +273,7 @@ func (uc *RecordTransactionFromAgent) resolve(ctx context.Context, hint string, 
 		return categoriesoutput.CandidateOutput{}, "", newCategoryAmbiguousError(hint, result.Candidates)
 	}
 	switch {
-	case top.Score >= categoriesvo.ScoreAutoThreshold:
+	case top.Score >= categoriesvo.ScoreAutoThreshold || isUnequivocalExactMatch(top):
 		recordMatchScore(ctx, uc.scoreHistogram, top.Score, "auto_logged")
 		return top, top.Path, nil
 	case top.Score >= categoriesvo.ScoreConfirmThreshold:

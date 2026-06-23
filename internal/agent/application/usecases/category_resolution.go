@@ -46,7 +46,7 @@ func resolveCategoryCandidate(
 		return categoriesoutput.CandidateOutput{}, "", newCategoryAmbiguousError(hint, result.Candidates)
 	}
 	switch {
-	case top.Score >= categoriesvo.ScoreAutoThreshold:
+	case top.Score >= categoriesvo.ScoreAutoThreshold || isUnequivocalExactMatch(top):
 		recordMatchScore(ctx, scoreHistogram, top.Score, "auto_logged")
 		return top, top.Path, nil
 	case top.Score >= categoriesvo.ScoreConfirmThreshold:
@@ -58,6 +58,11 @@ func resolveCategoryCandidate(
 		resolveBad.Add(ctx, 1, observability.String("reason", "low_score"))
 		return categoriesoutput.CandidateOutput{}, "", ErrLogTransactionCategoryNotFound
 	}
+}
+
+func isUnequivocalExactMatch(candidate categoriesoutput.CandidateOutput) bool {
+	return candidate.MatchQuality == categoriesvo.MatchQualityExact.String() &&
+		candidate.Confidence == categoriesvo.ConfidenceHigh.String()
 }
 
 func recordMatchScore(ctx context.Context, h observability.Histogram, score float64, outcome string) {
