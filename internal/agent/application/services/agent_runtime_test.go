@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
@@ -105,22 +107,22 @@ func (s *AgentRuntimeSuite) TestExecute() {
 	}{
 		{
 			name: "deve retornar resultado identico e persistir run succeeded em routed",
-			args: args{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindCreateCard}},
+			args: args{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}},
 			dependencies: dependencies{
-				router:  &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindCreateCard}},
+				router:  &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}},
 				threads: &stubThreadGateway{thread: s.thread},
 				runs:    &stubRunGateway{},
 			},
 			expect: func(out RouteResult, deps dependencies) {
 				s.Equal("ok", out.Reply)
-				s.Equal(OutcomeRouted, out.Outcome)
+				s.Equal(tools.OutcomeRouted, out.Outcome)
 				s.Equal(intent.KindCreateCard, out.Kind)
 				s.Equal(1, deps.router.calls)
 				s.Require().Len(deps.runs.inserted, 1)
 				s.Require().Len(deps.runs.finished, 1)
 				finished := deps.runs.finished[0]
 				s.Equal(entities.RunStatusSucceeded, finished.Status())
-				s.Equal(OutcomeRouted.String(), finished.Outcome())
+				s.Equal(tools.OutcomeRouted.String(), finished.Outcome())
 				s.Equal(runtimeAgentID, finished.AgentID())
 				s.Equal(workflowCards, finished.Workflow())
 				s.GreaterOrEqual(finished.DurationMs(), int64(0))
@@ -128,55 +130,55 @@ func (s *AgentRuntimeSuite) TestExecute() {
 		},
 		{
 			name: "deve persistir run failed em usecase_error",
-			args: args{result: RouteResult{Reply: "erro", Outcome: OutcomeUsecaseError, Kind: intent.KindRecordIncome}},
+			args: args{result: RouteResult{Reply: "erro", Outcome: tools.OutcomeUsecaseError, Kind: intent.KindRecordIncome}},
 			dependencies: dependencies{
-				router:  &stubRuntimeRouter{result: RouteResult{Reply: "erro", Outcome: OutcomeUsecaseError, Kind: intent.KindRecordIncome}},
+				router:  &stubRuntimeRouter{result: RouteResult{Reply: "erro", Outcome: tools.OutcomeUsecaseError, Kind: intent.KindRecordIncome}},
 				threads: &stubThreadGateway{thread: s.thread},
 				runs:    &stubRunGateway{},
 			},
 			expect: func(out RouteResult, deps dependencies) {
-				s.Equal(OutcomeUsecaseError, out.Outcome)
+				s.Equal(tools.OutcomeUsecaseError, out.Outcome)
 				s.Require().Len(deps.runs.finished, 1)
 				finished := deps.runs.finished[0]
 				s.Equal(entities.RunStatusFailed, finished.Status())
-				s.Equal(OutcomeUsecaseError.String(), finished.ErrText())
+				s.Equal(tools.OutcomeUsecaseError.String(), finished.ErrText())
 				s.Equal(workflowTransactions, finished.Workflow())
 			},
 		},
 		{
 			name: "deve persistir run succeeded em replay",
-			args: args{result: RouteResult{Reply: "replay", Outcome: OutcomeReplay, Kind: intent.KindRecordExpense}},
+			args: args{result: RouteResult{Reply: "replay", Outcome: tools.OutcomeReplay, Kind: intent.KindRecordExpense}},
 			dependencies: dependencies{
-				router:  &stubRuntimeRouter{result: RouteResult{Reply: "replay", Outcome: OutcomeReplay, Kind: intent.KindRecordExpense}},
+				router:  &stubRuntimeRouter{result: RouteResult{Reply: "replay", Outcome: tools.OutcomeReplay, Kind: intent.KindRecordExpense}},
 				threads: &stubThreadGateway{thread: s.thread},
 				runs:    &stubRunGateway{},
 			},
 			expect: func(out RouteResult, deps dependencies) {
-				s.Equal(OutcomeReplay, out.Outcome)
+				s.Equal(tools.OutcomeReplay, out.Outcome)
 				s.Require().Len(deps.runs.finished, 1)
 				s.Equal(entities.RunStatusSucceeded, deps.runs.finished[0].Status())
 			},
 		},
 		{
 			name: "deve degradar sem propagar erro quando insert do run falha",
-			args: args{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindListCards}},
+			args: args{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindListCards}},
 			dependencies: dependencies{
-				router:  &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindListCards}},
+				router:  &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindListCards}},
 				threads: &stubThreadGateway{thread: s.thread},
 				runs:    &stubRunGateway{insertErr: errors.New("boom")},
 			},
 			expect: func(out RouteResult, deps dependencies) {
 				s.Equal("ok", out.Reply)
-				s.Equal(OutcomeRouted, out.Outcome)
+				s.Equal(tools.OutcomeRouted, out.Outcome)
 				s.Empty(deps.runs.inserted)
 				s.Empty(deps.runs.finished)
 			},
 		},
 		{
 			name: "deve degradar sem propagar erro quando thread falha",
-			args: args{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindListCards}},
+			args: args{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindListCards}},
 			dependencies: dependencies{
-				router:  &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindListCards}},
+				router:  &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindListCards}},
 				threads: &stubThreadGateway{err: errors.New("db down")},
 				runs:    &stubRunGateway{},
 			},
@@ -197,7 +199,7 @@ func (s *AgentRuntimeSuite) TestExecute() {
 }
 
 func (s *AgentRuntimeSuite) TestExecuteReusesThreadAcrossMessages() {
-	router := &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: OutcomeRouted, Kind: intent.KindListCards}}
+	router := &stubRuntimeRouter{result: RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindListCards}}
 	threads := &stubThreadGateway{thread: s.thread}
 	runs := &stubRunGateway{}
 

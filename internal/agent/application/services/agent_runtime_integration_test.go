@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
@@ -138,7 +140,7 @@ func (s *AgentRuntimeIntegrationSuite) TestRoutedRunPersisted() {
 	userID := s.insertUser()
 	principal := Principal{UserID: userID}
 
-	expected := RouteResult{Reply: "lançado", Outcome: OutcomeRouted, Kind: intent.KindCreateCard}
+	expected := RouteResult{Reply: "lançado", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}
 	rt, engine := s.newRuntime(expected)
 
 	got := rt.Execute(ctx, principal, "whatsapp", "+5511999999999", "cadastrar cartão nubank", "wamid.routed-1")
@@ -177,7 +179,7 @@ func (s *AgentRuntimeIntegrationSuite) TestRoutedRunPersisted() {
 
 	s.Equal(threadID, runThreadID)
 	s.Equal("succeeded", status)
-	s.Equal(OutcomeRouted, outcome)
+	s.Equal(tools.OutcomeRouted, outcome)
 	s.Equal(workflowCards, workflow)
 	s.Equal(intent.KindCreateCard.String(), toolName)
 	s.Equal(intent.KindCreateCard.String(), intentKind)
@@ -193,12 +195,12 @@ func (s *AgentRuntimeIntegrationSuite) TestThreadReusedAcrossRuns() {
 	userID := s.insertUser()
 	principal := Principal{UserID: userID}
 
-	rt1, _ := s.newRuntime(RouteResult{Outcome: OutcomeRouted, Kind: intent.KindCreateCard})
-	s.Require().Equal(OutcomeRouted,
+	rt1, _ := s.newRuntime(RouteResult{Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard})
+	s.Require().Equal(tools.OutcomeRouted,
 		rt1.Execute(ctx, principal, "whatsapp", "+5511999999999", "cartão 1", "wamid.reuse-1").Outcome)
 
-	rt2, _ := s.newRuntime(RouteResult{Outcome: OutcomeRouted, Kind: intent.KindListCards})
-	s.Require().Equal(OutcomeRouted,
+	rt2, _ := s.newRuntime(RouteResult{Outcome: tools.OutcomeRouted, Kind: intent.KindListCards})
+	s.Require().Equal(tools.OutcomeRouted,
 		rt2.Execute(ctx, principal, "whatsapp", "+5511999999999", "meus cartões", "wamid.reuse-2").Outcome)
 
 	var threadCount int
@@ -227,7 +229,7 @@ func (s *AgentRuntimeIntegrationSuite) TestFailureRunPersisted() {
 	userID := s.insertUser()
 	principal := Principal{UserID: userID}
 
-	expected := RouteResult{Reply: "falhou", Outcome: OutcomeUsecaseError, Kind: intent.KindCreateCard}
+	expected := RouteResult{Reply: "falhou", Outcome: tools.OutcomeUsecaseError, Kind: intent.KindCreateCard}
 	rt, _ := s.newRuntime(expected)
 
 	got := rt.Execute(ctx, principal, "whatsapp", "+5511999999999", "cadastrar cartão", "wamid.failed-1")
@@ -243,14 +245,14 @@ func (s *AgentRuntimeIntegrationSuite) TestFailureRunPersisted() {
 	).Scan(&status, &errText)
 	s.Require().NoError(err)
 	s.Equal("failed", status)
-	s.Equal(OutcomeUsecaseError, errText)
+	s.Equal(tools.OutcomeUsecaseError, errText)
 }
 
 func (s *AgentRuntimeIntegrationSuite) TestRouteResultIdenticalWithUnknownUser() {
 	ctx := context.Background()
 	principal := Principal{UserID: uuid.New()}
 
-	expected := RouteResult{Reply: "ok mesmo sem persistir", Outcome: OutcomeRouted, Kind: intent.KindCreateCard}
+	expected := RouteResult{Reply: "ok mesmo sem persistir", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}
 	rt, engine := s.newRuntime(expected)
 
 	got := rt.Execute(ctx, principal, "whatsapp", "+5511999999999", "qualquer", "wamid.degraded-1")

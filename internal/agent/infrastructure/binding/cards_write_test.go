@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -103,7 +104,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_NotFoundReturnsAgentSentinel() 
 
 	_, err = adapter.Execute(s.ctx, s.userID, in)
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrAgentCardNotFound))
+	s.True(errors.Is(err, tools.ErrAgentCardNotFound))
 	s.Equal(0, updateUC.calls)
 }
 
@@ -121,7 +122,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_AmbiguousReturnsAgentSentinel()
 
 	_, err = adapter.Execute(s.ctx, s.userID, in)
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrAgentCardAmbiguous))
+	s.True(errors.Is(err, tools.ErrAgentCardAmbiguous))
 	s.Equal(0, updateUC.calls)
 }
 
@@ -218,7 +219,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_PropagatesUsecaseError() {
 
 	_, err = adapter.Execute(s.ctx, s.userID, in)
 	s.Require().Error(err)
-	s.False(errors.Is(err, appservices.ErrAgentCardNotFound))
+	s.False(errors.Is(err, tools.ErrAgentCardNotFound))
 }
 
 func (s *CardsWriteBindingSuite) TestCardDeleter_ResolvesByNameAndDeletes() {
@@ -241,7 +242,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_NotFoundReturnsAgentSentinel() 
 
 	_, err := adapter.Execute(s.ctx, s.userID, "inexistente")
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrAgentCardNotFound))
+	s.True(errors.Is(err, tools.ErrAgentCardNotFound))
 	s.Equal(0, deleteUC.calls)
 }
 
@@ -289,7 +290,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_EmptyNameReturnsAgentSentinel()
 
 	_, err := adapter.Execute(s.ctx, s.userID, "   ")
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrAgentCardNotFound))
+	s.True(errors.Is(err, tools.ErrAgentCardNotFound))
 	s.Equal(0, deleteUC.calls)
 }
 
@@ -313,5 +314,5 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_PropagatesUsecaseError() {
 
 	_, err := adapter.Execute(s.ctx, s.userID, "nubank")
 	s.Require().Error(err)
-	s.False(errors.Is(err, appservices.ErrAgentCardNotFound))
+	s.False(errors.Is(err, tools.ErrAgentCardNotFound))
 }

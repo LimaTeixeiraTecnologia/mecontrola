@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	transactionsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
@@ -70,7 +71,7 @@ func NewTransactionLoggerAdapter(uc *usecases.RecordTransactionFromAgent) *Trans
 	return &TransactionLoggerAdapter{uc: uc}
 }
 
-func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in appservices.ExpenseRecorderInput) (appservices.ExpenseRecorderResult, error) {
+func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
 	result, err := a.uc.Execute(ctx, usecases.RecordTransactionFromAgentInput{
 		UserID:        in.UserID,
 		Intent:        in.Intent,
@@ -82,9 +83,9 @@ func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in appservices.E
 		OccurredAt:    in.OccurredAt,
 	})
 	if err != nil {
-		return appservices.ExpenseRecorderResult{}, translateCategoryError(err)
+		return tools.ExpenseRecorderResult{}, translateCategoryError(err)
 	}
-	return appservices.ExpenseRecorderResult{
+	return tools.ExpenseRecorderResult{
 		Persisted:    result.Persisted,
 		AmountCents:  result.AmountCents,
 		CategoryPath: result.CategoryPath,

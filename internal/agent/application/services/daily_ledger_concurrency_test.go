@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
@@ -82,7 +84,7 @@ func (s *SharedAgentConcurrencySuite) TestSharedRegistryHandleIsRaceFree() {
 			principal := Principal{UserID: uuid.New()}
 			channel := fmt.Sprintf("chan-%d", n)
 			result := agent.Handle(s.ctx, principal, channel, "peer", "como estou indo?", fmt.Sprintf("wamid.%d", n))
-			s.Equal(OutcomeRouted, result.Outcome)
+			s.Equal(tools.OutcomeRouted, result.Outcome)
 			s.Equal(intent.KindHowAmIDoing, result.Kind)
 		}(i)
 	}

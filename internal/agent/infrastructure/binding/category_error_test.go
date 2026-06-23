@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/stretchr/testify/suite"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	transactionsvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
@@ -25,7 +26,7 @@ func (s *CategoryErrorSuite) TestTranslateCategoryAmbiguous() {
 
 	translated := translateCategoryError(src)
 
-	var ambiguous *appservices.CategoryAmbiguousError
+	var ambiguous *tools.CategoryAmbiguousError
 	s.Require().ErrorAs(translated, &ambiguous)
 	s.Equal("academia", ambiguous.Hint)
 	s.Equal([]string{"Prazeres", "Custo Fixo"}, ambiguous.Candidates)
@@ -33,12 +34,12 @@ func (s *CategoryErrorSuite) TestTranslateCategoryAmbiguous() {
 
 func (s *CategoryErrorSuite) TestTranslateCategoryNotFound() {
 	translated := translateCategoryError(usecases.ErrLogTransactionCategoryNotFound)
-	s.Require().ErrorIs(translated, appservices.ErrCategoryNotFound)
+	s.Require().ErrorIs(translated, tools.ErrCategoryNotFound)
 }
 
 func (s *CategoryErrorSuite) TestTranslateCategoryHintMissing() {
 	translated := translateCategoryError(usecases.ErrLogTransactionNoCategoryHint)
-	s.Require().ErrorIs(translated, appservices.ErrCategoryHintMissing)
+	s.Require().ErrorIs(translated, tools.ErrCategoryHintMissing)
 }
 
 func (s *CategoryErrorSuite) TestTranslateCategoryPassthrough() {
@@ -50,12 +51,12 @@ func (s *CategoryErrorSuite) TestTranslateCategoryPassthrough() {
 func (s *CategoryErrorSuite) TestTranslateRecurringInvalidDay() {
 	wrapped := fmt.Errorf("agent: recurring creator: criar: %w", transactionsvo.ErrDayOfMonthOutOfRange)
 	translated := translateRecurringError(wrapped)
-	s.Require().ErrorIs(translated, appservices.ErrRecurringInvalidDay)
+	s.Require().ErrorIs(translated, tools.ErrRecurringInvalidDay)
 }
 
 func (s *CategoryErrorSuite) TestTranslateRecurringCategory() {
 	translated := translateRecurringError(usecases.ErrLogTransactionNoCategoryHint)
-	s.Require().ErrorIs(translated, appservices.ErrCategoryHintMissing)
+	s.Require().ErrorIs(translated, tools.ErrCategoryHintMissing)
 }
 
 func (s *CategoryErrorSuite) TestTranslateRecurringPassthrough() {

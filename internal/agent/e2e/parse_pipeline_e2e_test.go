@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -116,7 +118,7 @@ func TestParsePipeline_RealParser_PersistsExpense_E2E(t *testing.T) {
 		WhatsAppTo: waNumber,
 		MessageID:  "wamid.parse.e2e." + uuid.New().String(),
 	})
-	require.Equal(t, appservices.OutcomeRouted, result.Outcome, "gasto deve ser roteado pelo parser real")
+	require.Equal(t, tools.OutcomeRouted, result.Outcome, "gasto deve ser roteado pelo parser real")
 
 	var (
 		total       int
@@ -187,7 +189,7 @@ func TestParsePipeline_RealParser_ProviderDownFallsBack_E2E(t *testing.T) {
 		WhatsAppTo: waNumber,
 		MessageID:  "wamid.parse.fb." + uuid.New().String(),
 	})
-	require.Equal(t, appservices.OutcomeFallback, result.Outcome, "provider em erro deve cair em fallback")
+	require.Equal(t, tools.OutcomeFallback, result.Outcome, "provider em erro deve cair em fallback")
 
 	var total int
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

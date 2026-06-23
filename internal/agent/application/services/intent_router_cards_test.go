@@ -18,14 +18,14 @@ import (
 )
 
 type fakeCardCreator struct {
-	result  services.CardCreatorResult
+	result  tools.CardCreatorResult
 	err     error
 	calls   int
 	gotUser uuid.UUID
 	gotIn   intent.Intent
 }
 
-func (f *fakeCardCreator) Execute(_ context.Context, userID uuid.UUID, in intent.Intent) (services.CardCreatorResult, error) {
+func (f *fakeCardCreator) Execute(_ context.Context, userID uuid.UUID, in intent.Intent) (tools.CardCreatorResult, error) {
 	f.calls++
 	f.gotUser = userID
 	f.gotIn = in
@@ -98,7 +98,7 @@ func (s *CardsRouterSuite) TestCreateCard_MissingResolverIsHonest() {
 }
 
 func (s *CardsRouterSuite) TestCreateCard_PersistedConfirms() {
-	s.creator = &fakeCardCreator{result: services.CardCreatorResult{
+	s.creator = &fakeCardCreator{result: tools.CardCreatorResult{
 		Nickname: "nubank", Name: "Nubank Roxinho", ClosingDay: 10, DueDay: 17, LimitCents: 500000,
 	}}
 	result := s.route(s.buildCreateCard(), "cadastra meu nubank")

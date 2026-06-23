@@ -17,23 +17,23 @@ import (
 )
 
 type fakeCardPurchaseLogger struct {
-	result services.CardPurchaseLoggerResult
+	result tools.CardPurchaseLoggerResult
 	err    error
 	calls  int
 }
 
-func (f *fakeCardPurchaseLogger) Execute(_ context.Context, _ services.CardPurchaseLoggerInput) (services.CardPurchaseLoggerResult, error) {
+func (f *fakeCardPurchaseLogger) Execute(_ context.Context, _ tools.CardPurchaseLoggerInput) (tools.CardPurchaseLoggerResult, error) {
 	f.calls++
 	return f.result, f.err
 }
 
 type fakeTransactionLister struct {
-	result services.TransactionListResult
+	result tools.TransactionListResult
 	err    error
 	calls  int
 }
 
-func (f *fakeTransactionLister) Execute(_ context.Context, in services.TransactionListInput) (services.TransactionListResult, error) {
+func (f *fakeTransactionLister) Execute(_ context.Context, in tools.TransactionListInput) (tools.TransactionListResult, error) {
 	f.calls++
 	out := f.result
 	if out.RefMonth == "" {
@@ -59,36 +59,36 @@ func (f *fakeLastDeleter) Execute(_ context.Context, userID, txID string, versio
 }
 
 type fakeLastEditor struct {
-	result services.EditTransactionResult
+	result tools.EditTransactionResult
 	err    error
 	calls  int
-	gotIn  services.EditTransactionInput
+	gotIn  tools.EditTransactionInput
 }
 
-func (f *fakeLastEditor) Execute(_ context.Context, in services.EditTransactionInput) (services.EditTransactionResult, error) {
+func (f *fakeLastEditor) Execute(_ context.Context, in tools.EditTransactionInput) (tools.EditTransactionResult, error) {
 	f.calls++
 	f.gotIn = in
 	return f.result, f.err
 }
 
 type fakeRecurringCreator struct {
-	result services.RecurringCreatorResult
+	result tools.RecurringCreatorResult
 	err    error
 	calls  int
 }
 
-func (f *fakeRecurringCreator) Execute(_ context.Context, _ services.RecurringCreatorInput) (services.RecurringCreatorResult, error) {
+func (f *fakeRecurringCreator) Execute(_ context.Context, _ tools.RecurringCreatorInput) (tools.RecurringCreatorResult, error) {
 	f.calls++
 	return f.result, f.err
 }
 
 type fakeRecurringLister struct {
-	views []services.RecurringView
+	views []tools.RecurringView
 	err   error
 	calls int
 }
 
-func (f *fakeRecurringLister) Execute(_ context.Context, _ string) ([]services.RecurringView, error) {
+func (f *fakeRecurringLister) Execute(_ context.Context, _ string) ([]tools.RecurringView, error) {
 	f.calls++
 	return f.views, f.err
 }
@@ -168,7 +168,7 @@ func (s *NewKindsRouterSuite) TestCardPurchase_MissingResolverIsHonest() {
 }
 
 func (s *NewKindsRouterSuite) TestCardPurchase_PersistedConfirms() {
-	s.cardPur = &fakeCardPurchaseLogger{result: services.CardPurchaseLoggerResult{
+	s.cardPur = &fakeCardPurchaseLogger{result: tools.CardPurchaseLoggerResult{
 		Persisted: true, CardFound: true, CardName: "Nubank", AmountCents: 120000, Installments: 6, CategoryPath: "Casa > Eletro",
 	}}
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
@@ -182,7 +182,7 @@ func (s *NewKindsRouterSuite) TestCardPurchase_PersistedConfirms() {
 }
 
 func (s *NewKindsRouterSuite) TestCardPurchase_CardNotFoundIsHonest() {
-	s.cardPur = &fakeCardPurchaseLogger{result: services.CardPurchaseLoggerResult{Persisted: false, CardFound: false}}
+	s.cardPur = &fakeCardPurchaseLogger{result: tools.CardPurchaseLoggerResult{Persisted: false, CardFound: false}}
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
 	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
@@ -199,9 +199,9 @@ func (s *NewKindsRouterSuite) TestCardPurchase_UsecaseErrorIsHonest() {
 }
 
 func (s *NewKindsRouterSuite) TestListTransactions_Routed() {
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{
 		RefMonth: "2026-06",
-		Transactions: []services.TransactionView{
+		Transactions: []tools.TransactionView{
 			{ID: uuid.NewString(), Direction: "income", AmountCents: 500000, OccurredAt: time.Now()},
 			{ID: uuid.NewString(), Direction: "outcome", AmountCents: 5800, OccurredAt: time.Now()},
 		},
@@ -224,7 +224,7 @@ func (s *NewKindsRouterSuite) TestListTransactions_MissingResolverIsHonest() {
 }
 
 func (s *NewKindsRouterSuite) TestDeleteLast_NoTransactions() {
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{}}
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{}}
 	s.deleter = &fakeLastDeleter{}
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
 	s.Equal(tools.OutcomeRouted, result.Outcome)
@@ -234,9 +234,9 @@ func (s *NewKindsRouterSuite) TestDeleteLast_NoTransactions() {
 }
 
 func (s *NewKindsRouterSuite) TestDeleteLast_PicksMostRecentAndConfirms() {
-	older := services.TransactionView{ID: uuid.NewString(), AmountCents: 1000, Description: "antigo", OccurredAt: time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC), CreatedAt: time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC), Version: 1}
-	newer := services.TransactionView{ID: uuid.NewString(), AmountCents: 5800, Description: "iFood", OccurredAt: time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC), CreatedAt: time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC), Version: 3}
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{Transactions: []services.TransactionView{older, newer}}}
+	older := tools.TransactionView{ID: uuid.NewString(), AmountCents: 1000, Description: "antigo", OccurredAt: time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC), CreatedAt: time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC), Version: 1}
+	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, Description: "iFood", OccurredAt: time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC), CreatedAt: time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC), Version: 3}
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{older, newer}}}
 	s.deleter = &fakeLastDeleter{}
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
 	s.Equal(tools.OutcomeRouted, result.Outcome)
@@ -250,8 +250,8 @@ func (s *NewKindsRouterSuite) TestDeleteLast_PicksMostRecentAndConfirms() {
 }
 
 func (s *NewKindsRouterSuite) TestDeleteLast_UsecaseErrorIsHonest() {
-	newer := services.TransactionView{ID: uuid.NewString(), AmountCents: 5800, OccurredAt: time.Now(), Version: 3}
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{Transactions: []services.TransactionView{newer}}}
+	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, OccurredAt: time.Now(), Version: 3}
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{newer}}}
 	s.deleter = &fakeLastDeleter{err: errors.New("boom")}
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
 	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
@@ -260,7 +260,7 @@ func (s *NewKindsRouterSuite) TestDeleteLast_UsecaseErrorIsHonest() {
 }
 
 func (s *NewKindsRouterSuite) TestEditLast_NoTransactions() {
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{}}
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{}}
 	s.editor = &fakeLastEditor{}
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
@@ -272,9 +272,9 @@ func (s *NewKindsRouterSuite) TestEditLast_NoTransactions() {
 }
 
 func (s *NewKindsRouterSuite) TestEditLast_PicksMostRecentAndConfirms() {
-	newer := services.TransactionView{ID: uuid.NewString(), AmountCents: 5800, Description: "iFood", OccurredAt: time.Now(), Version: 2}
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{Transactions: []services.TransactionView{newer}}}
-	s.editor = &fakeLastEditor{result: services.EditTransactionResult{Persisted: true, OldAmount: 5800, NewAmount: 8000, Description: "iFood"}}
+	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, Description: "iFood", OccurredAt: time.Now(), Version: 2}
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{newer}}}
+	s.editor = &fakeLastEditor{result: tools.EditTransactionResult{Persisted: true, OldAmount: 5800, NewAmount: 8000, Description: "iFood"}}
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
 	result := s.route(in, "corrige para 80")
@@ -289,8 +289,8 @@ func (s *NewKindsRouterSuite) TestEditLast_PicksMostRecentAndConfirms() {
 }
 
 func (s *NewKindsRouterSuite) TestEditLast_UsecaseErrorIsHonest() {
-	newer := services.TransactionView{ID: uuid.NewString(), AmountCents: 5800, OccurredAt: time.Now(), Version: 2}
-	s.lister = &fakeTransactionLister{result: services.TransactionListResult{Transactions: []services.TransactionView{newer}}}
+	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, OccurredAt: time.Now(), Version: 2}
+	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{newer}}}
 	s.editor = &fakeLastEditor{err: errors.New("boom")}
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
@@ -307,7 +307,7 @@ func (s *NewKindsRouterSuite) buildRecurring() intent.Intent {
 }
 
 func (s *NewKindsRouterSuite) TestCreateRecurring_PersistedConfirms() {
-	s.recCreat = &fakeRecurringCreator{result: services.RecurringCreatorResult{
+	s.recCreat = &fakeRecurringCreator{result: tools.RecurringCreatorResult{
 		Persisted: true, Direction: "income", AmountCents: 500000, Frequency: "monthly", DayOfMonth: 5, Description: "salário",
 	}}
 	result := s.route(s.buildRecurring(), "todo mês recebo 5000 de salário")
@@ -335,7 +335,7 @@ func (s *NewKindsRouterSuite) TestCreateRecurring_UsecaseErrorIsHonest() {
 }
 
 func (s *NewKindsRouterSuite) TestListRecurring_Routed() {
-	s.recList = &fakeRecurringLister{views: []services.RecurringView{
+	s.recList = &fakeRecurringLister{views: []tools.RecurringView{
 		{Direction: "income", AmountCents: 500000, Description: "salário", Frequency: "monthly", DayOfMonth: 5},
 	}}
 	result := s.route(intent.NewListRecurring(), "minhas recorrências")

@@ -3,6 +3,8 @@ package onboarding
 import (
 	"context"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
@@ -14,7 +16,7 @@ type budgetConfiguratorAdapter struct {
 	uc *usecases.StartBudgetConfiguration
 }
 
-func NewBudgetConfiguratorAdapter(uc *usecases.StartBudgetConfiguration) appservices.BudgetConfigurator {
+func NewBudgetConfiguratorAdapter(uc *usecases.StartBudgetConfiguration) tools.BudgetConfigurator {
 	if uc == nil {
 		return nil
 	}

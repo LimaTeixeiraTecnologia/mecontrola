@@ -5,11 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	categoriesoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
@@ -85,7 +86,7 @@ func (s *RecurringBindingSuite) TestRecurringCreator_DelegatesSuccessViaUsecase(
 	})
 	s.Require().NoError(err)
 
-	result, err := adapter.Execute(s.ctx, appservices.RecurringCreatorInput{
+	result, err := adapter.Execute(s.ctx, tools.RecurringCreatorInput{
 		UserID: uuid.NewString(),
 		Intent: recurringIntent,
 	})
@@ -117,12 +118,12 @@ func (s *RecurringBindingSuite) TestRecurringCreator_TranslatesCategoryNotFoundE
 	})
 	s.Require().NoError(err)
 
-	_, err = adapter.Execute(s.ctx, appservices.RecurringCreatorInput{
+	_, err = adapter.Execute(s.ctx, tools.RecurringCreatorInput{
 		UserID: uuid.NewString(),
 		Intent: recurringIntent,
 	})
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrCategoryNotFound))
+	s.True(errors.Is(err, tools.ErrCategoryNotFound))
 }
 
 func (s *RecurringBindingSuite) TestRecurringCreator_PropagatesCreatorError() {
@@ -149,7 +150,7 @@ func (s *RecurringBindingSuite) TestRecurringCreator_PropagatesCreatorError() {
 	})
 	s.Require().NoError(err)
 
-	_, err = adapter.Execute(s.ctx, appservices.RecurringCreatorInput{
+	_, err = adapter.Execute(s.ctx, tools.RecurringCreatorInput{
 		UserID: uuid.NewString(),
 		Intent: recurringIntent,
 	})

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -114,7 +116,7 @@ type agentModuleBuilder struct {
 	transactionsModule transactions.TransactionsModule
 	budgetsModule      *budgets.BudgetsModule
 	whatsAppGateway    whatsAppGateway
-	budgetConfigurator appservices.BudgetConfigurator
+	budgetConfigurator tools.BudgetConfigurator
 	onboarding         appservices.OnboardingContinuation
 	onboardingLLM      *OnboardingLLMUseCases
 	sessionDB          *sqlx.DB
@@ -140,7 +142,7 @@ func NewAgentModule(
 	transactionsModule transactions.TransactionsModule,
 	budgetsModule *budgets.BudgetsModule,
 	whatsAppGateway whatsAppGateway,
-	budgetConfigurator appservices.BudgetConfigurator,
+	budgetConfigurator tools.BudgetConfigurator,
 	onboarding appservices.OnboardingContinuation,
 	opts ...AgentModuleOption,
 ) (AgentModule, error) {
@@ -316,13 +318,6 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 }
 
 func (b *agentModuleBuilder) attachRuntime(router *appservices.IntentRouter) {
-	if !b.cfg.AgentConfig.RuntimeEnabled {
-		b.o11y.Logger().Info(context.Background(), "agent.module.runtime",
-			observability.String("mode", "legacy"),
-			observability.String("reason", "flag_disabled"),
-		)
-		return
-	}
 	if b.threadRepoFact == nil || b.runRepoFact == nil || b.runtimeUoW == nil {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.runtime",
 			observability.String("mode", "legacy"),

@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -25,7 +26,7 @@ func NewCardCreatorAdapter(uc createCardUseCase) *CardCreatorAdapter {
 	return &CardCreatorAdapter{uc: uc}
 }
 
-func (a *CardCreatorAdapter) Execute(ctx context.Context, userID uuid.UUID, in intent.Intent) (appservices.CardCreatorResult, error) {
+func (a *CardCreatorAdapter) Execute(ctx context.Context, userID uuid.UUID, in intent.Intent) (tools.CardCreatorResult, error) {
 	name := strings.TrimSpace(in.CardName())
 	if name == "" {
 		name = strings.TrimSpace(in.CardNickname())
@@ -39,9 +40,9 @@ func (a *CardCreatorAdapter) Execute(ctx context.Context, userID uuid.UUID, in i
 		LimitCents: in.LimitCents(),
 	})
 	if err != nil {
-		return appservices.CardCreatorResult{}, fmt.Errorf("agent: card creator: %w", err)
+		return tools.CardCreatorResult{}, fmt.Errorf("agent: card creator: %w", err)
 	}
-	return appservices.CardCreatorResult{
+	return tools.CardCreatorResult{
 		Nickname:   created.Nickname,
 		Name:       created.Name,
 		ClosingDay: created.ClosingDay,

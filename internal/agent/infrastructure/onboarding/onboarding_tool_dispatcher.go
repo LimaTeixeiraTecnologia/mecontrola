@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
 	agentinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	appusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	agententities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
@@ -38,7 +39,7 @@ type onboardingToolDispatcher struct {
 	complete         *onbusecases.CompleteOnboardingSession
 	contextReader    onboardingContextReader
 	wmWriter         agentinterfaces.WorkingMemoryRepository
-	expenseRecorder  appservices.ExpenseRecorder
+	expenseRecorder  tools.ExpenseRecorder
 }
 
 func NewOnboardingToolDispatcher(
@@ -50,7 +51,7 @@ func NewOnboardingToolDispatcher(
 	complete *onbusecases.CompleteOnboardingSession,
 	contextReader onboardingContextReader,
 	wmWriter agentinterfaces.WorkingMemoryRepository,
-	expenseRecorder appservices.ExpenseRecorder,
+	expenseRecorder tools.ExpenseRecorder,
 ) appusecases.OnboardingToolDispatcher {
 	return &onboardingToolDispatcher{
 		saveObjective:    saveObjective,
@@ -159,7 +160,7 @@ func (d *onboardingToolDispatcher) dispatchRecordTransaction(ctx context.Context
 	if err != nil {
 		return appusecases.OnboardingToolResult{Reply: "Não entendi o lançamento. Me manda algo como 'gastei 35 no mercado'. 😊"}, nil
 	}
-	result, err := d.expenseRecorder.Execute(ctx, appservices.ExpenseRecorderInput{UserID: userID.String(), Intent: parsed})
+	result, err := d.expenseRecorder.Execute(ctx, tools.ExpenseRecorderInput{UserID: userID.String(), Intent: parsed})
 	if err != nil {
 		return appusecases.OnboardingToolResult{}, err
 	}

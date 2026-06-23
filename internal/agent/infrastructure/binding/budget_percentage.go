@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	budgetsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	budgetsinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -25,10 +26,10 @@ func NewCategoryPercentageEditorAdapter(uc editCategoryPercentageUseCase) *Categ
 	return &CategoryPercentageEditorAdapter{uc: uc}
 }
 
-func (a *CategoryPercentageEditorAdapter) Execute(ctx context.Context, in appservices.CategoryPercentageEditorInput) (appservices.CategoryPercentageEditorResult, error) {
+func (a *CategoryPercentageEditorAdapter) Execute(ctx context.Context, in tools.CategoryPercentageEditorInput) (tools.CategoryPercentageEditorResult, error) {
 	slug, ok := resolveRootSlug(in.CategoryName)
 	if !ok {
-		return appservices.CategoryPercentageEditorResult{}, fmt.Errorf("%w: %q", appservices.ErrCategoryPercentageUnknownCategory, in.CategoryName)
+		return tools.CategoryPercentageEditorResult{}, fmt.Errorf("%w: %q", tools.ErrCategoryPercentageUnknownCategory, in.CategoryName)
 	}
 	ctx = withWhatsAppPrincipal(ctx, in.UserID)
 	out, err := a.uc.Execute(ctx, budgetsinput.EditCategoryPercentageInput{
@@ -39,11 +40,11 @@ func (a *CategoryPercentageEditorAdapter) Execute(ctx context.Context, in appser
 	})
 	if err != nil {
 		if errors.Is(err, budgetsinterfaces.ErrBudgetNotFound) || errors.Is(err, budgetsentities.ErrBudgetNotActive) {
-			return appservices.CategoryPercentageEditorResult{}, errors.Join(appservices.ErrCategoryPercentageNoBudget, err)
+			return tools.CategoryPercentageEditorResult{}, errors.Join(tools.ErrCategoryPercentageNoBudget, err)
 		}
-		return appservices.CategoryPercentageEditorResult{}, fmt.Errorf("agent: category percentage editor: %w", err)
+		return tools.CategoryPercentageEditorResult{}, fmt.Errorf("agent: category percentage editor: %w", err)
 	}
-	return appservices.CategoryPercentageEditorResult{
+	return tools.CategoryPercentageEditorResult{
 		Competence: out.Competence,
 		RootSlug:   slug,
 		Percentage: in.Percentage,

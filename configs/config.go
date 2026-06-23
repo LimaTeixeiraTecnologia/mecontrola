@@ -186,8 +186,6 @@ type AgentConfig struct {
 	OnboardingLLMEnabled bool   `mapstructure:"AGENT_ONBOARDING_LLM_ENABLED"`
 	OnboardingMaxTokens  int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
 	OnboardingModel      string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
-
-	RuntimeEnabled bool `mapstructure:"AGENT_RUNTIME_ENABLED"`
 }
 
 type TelegramConfig struct {

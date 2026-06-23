@@ -18,17 +18,17 @@ import (
 )
 
 type fakeBudgetConvo struct {
-	result   services.BudgetConversationResult
+	result   tools.BudgetConversationResult
 	err      error
 	calls    int
 	lastText string
 }
 
-func (f *fakeBudgetConvo) Configure(_ context.Context, text string, draft budgetdraft.Draft) (services.BudgetConversationResult, error) {
+func (f *fakeBudgetConvo) Configure(_ context.Context, text string, draft budgetdraft.Draft) (tools.BudgetConversationResult, error) {
 	f.calls++
 	f.lastText = text
 	if f.err != nil {
-		return services.BudgetConversationResult{}, f.err
+		return tools.BudgetConversationResult{}, f.err
 	}
 	result := f.result
 	if result.Draft.Competence() == "" {
@@ -116,7 +116,7 @@ func (s *BudgetConfigRouterSuite) configureIntent() intent.Intent {
 func (s *BudgetConfigRouterSuite) TestStartIncompleteAsksAndSaves() {
 	partial, err := budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 500000})
 	require.NoError(s.T(), err)
-	s.convo.result = services.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Quais categorias?"}
+	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Quais categorias?"}
 	s.parser.intent = s.configureIntent()
 	s.session.found = false
 
@@ -140,7 +140,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionContinuesWithoutParsing() {
 		TotalCents:  500000,
 		Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
 	})
-	s.convo.result = services.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
+	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
@@ -168,7 +168,7 @@ func (s *BudgetConfigRouterSuite) TestFinalTurnCompletesCommitsAndClears() {
 		},
 	})
 	require.True(s.T(), complete.IsComplete())
-	s.convo.result = services.BudgetConversationResult{Draft: complete, Complete: true}
+	s.convo.result = tools.BudgetConversationResult{Draft: complete, Complete: true}
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
@@ -194,7 +194,7 @@ func (s *BudgetConfigRouterSuite) TestCommitErrorReturnsMessageAndKeepsSession()
 			budgetdraft.SlugLiberdadeFinanceira: 1500,
 		},
 	})
-	s.convo.result = services.BudgetConversationResult{Draft: complete, Complete: true}
+	s.convo.result = tools.BudgetConversationResult{Draft: complete, Complete: true}
 	s.committer.err = errors.New("conflict")
 	s.committer.reply = "Já existe um orçamento neste mês. Quer substituir?"
 
@@ -235,7 +235,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionNonCancelTextStillProcesses(
 		TotalCents:  500000,
 		Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
 	})
-	s.convo.result = services.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
+	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{

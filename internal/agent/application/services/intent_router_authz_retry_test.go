@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -19,10 +21,10 @@ type capturingExpenseLogger struct {
 	seenUserID string
 	calls      int
 	err        error
-	result     services.ExpenseRecorderResult
+	result     tools.ExpenseRecorderResult
 }
 
-func (c *capturingExpenseLogger) Execute(_ context.Context, in services.ExpenseRecorderInput) (services.ExpenseRecorderResult, error) {
+func (c *capturingExpenseLogger) Execute(_ context.Context, in tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
 	c.calls++
 	c.seenUserID = in.UserID
 	return c.result, c.err
@@ -62,7 +64,7 @@ func (s *AuthzRetrySuite) buildLogExpense() intent.Intent {
 }
 
 func (s *AuthzRetrySuite) TestWrite_UsesPrincipalUserID() {
-	logger := &capturingExpenseLogger{result: services.ExpenseRecorderResult{Persisted: true, AmountCents: 5800}}
+	logger := &capturingExpenseLogger{result: tools.ExpenseRecorderResult{Persisted: true, AmountCents: 5800}}
 	parser := &fakeParser{intent: s.buildLogExpense()}
 	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
 		Parser:          parser,
@@ -76,7 +78,7 @@ func (s *AuthzRetrySuite) TestWrite_UsesPrincipalUserID() {
 	owner := uuid.New()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: owner}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(owner.String(), logger.seenUserID)
 	s.Equal(1, logger.calls)
 }
@@ -95,7 +97,7 @@ func (s *AuthzRetrySuite) TestWrite_NotRetriedOnTransientError() {
 
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Equal(1, logger.calls)
 }
 
@@ -124,6 +126,6 @@ func (s *AuthzRetrySuite) TestRead_RetriedOnTransientThenSucceeds() {
 
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "resumo do mês", WhatsAppTo: "+5511999"})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(2, summary.calls)
 }

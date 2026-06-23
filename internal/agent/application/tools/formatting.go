@@ -1,4 +1,4 @@
-package services
+package tools
 
 import (
 	"errors"
@@ -93,7 +93,7 @@ func formatThousands(value int64) string {
 	return out.String()
 }
 
-func formatPersistedExpense(amountCents int64, merchant, categoryPath string) string {
+func FormatPersistedExpense(amountCents int64, merchant, categoryPath string) string {
 	var sb strings.Builder
 	sb.WriteString("💸 *Transação realizada!*\n*")
 	sb.WriteString(formatBRL(amountCents))
@@ -440,7 +440,7 @@ func formatCardPurchaseCardMissing(cardHint string) string {
 	return fmt.Sprintf("💳 Não encontrei um cartão chamado %q no seu cadastro. Quer cadastrá-lo primeiro pra eu registrar a compra parcelada?", cardHint)
 }
 
-func formatPersistedCardPurchase(result CardPurchaseLoggerResult) string {
+func FormatPersistedCardPurchase(result CardPurchaseLoggerResult) string {
 	var sb strings.Builder
 	sb.WriteString("💳 *Compra parcelada registrada!*\n*")
 	sb.WriteString(formatBRL(result.AmountCents))
@@ -457,6 +457,10 @@ func formatPersistedCardPurchase(result CardPurchaseLoggerResult) string {
 	}
 	sb.WriteString("\n✅ Anotei nas suas faturas.")
 	return sb.String()
+}
+
+func FormatCardPurchaseCardMissing(cardHint string) string {
+	return formatCardPurchaseCardMissing(cardHint)
 }
 
 func formatTransactionList(list TransactionListResult) string {
@@ -580,4 +584,59 @@ func formatCategoryPercentageMissing(categoryName string) string {
 		return "Qual percentual você quer definir para essa categoria? (ex: 40%) 🙂"
 	}
 	return fmt.Sprintf("Qual percentual você quer definir para %s? (ex: 40%%) 🙂", name)
+}
+
+func formatCategoryAmbiguous(candidates []string) string {
+	var sb strings.Builder
+	sb.WriteString("Encontrei mais de uma categoria parecida. Qual delas você quer usar?")
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
+		}
+		sb.WriteString("\n• ")
+		sb.WriteString(trimmed)
+	}
+	sb.WriteString("\nÉ só me dizer o nome. 🙂")
+	return sb.String()
+}
+
+func formatCategoryNeedsConfirmation(candidates []string) string {
+	top := ""
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed != "" {
+			top = trimmed
+			break
+		}
+	}
+	if top == "" {
+		return "Não tenho certeza da categoria certa pra isso. Me diz qual categoria você quer usar? 🙂"
+	}
+	return fmt.Sprintf("Acho que isso entra em *%s*. Posso registrar assim? Se não for, me diz a categoria certa. 🙂", top)
+}
+
+func formatCategoryNotFound(hint string) string {
+	trimmed := strings.TrimSpace(hint)
+	if trimmed == "" {
+		return "Não encontrei uma categoria pra isso. Pode reformular ou me dizer a categoria? 🙂"
+	}
+	return fmt.Sprintf("Não encontrei a categoria %q. Pode reformular ou me dizer outra categoria? 🙂", trimmed)
+}
+
+var budgetCancelCues = []string{
+	"cancelar", "cancela", "deixa pra lá", "deixa pra la", "esquece", "parar",
+}
+
+func matchesBudgetCancel(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return false
+	}
+	for _, cue := range budgetCancelCues {
+		if normalized == cue || strings.Contains(normalized, cue) {
+			return true
+		}
+	}
+	return false
 }

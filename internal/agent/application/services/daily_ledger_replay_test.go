@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
@@ -24,9 +26,9 @@ type stubExpenseLogger struct {
 	calls int
 }
 
-func (s *stubExpenseLogger) Execute(_ context.Context, _ ExpenseRecorderInput) (ExpenseRecorderResult, error) {
+func (s *stubExpenseLogger) Execute(_ context.Context, _ tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
 	s.calls++
-	return ExpenseRecorderResult{Persisted: true, AmountCents: 5800, CategoryPath: "Prazeres"}, nil
+	return tools.ExpenseRecorderResult{Persisted: true, AmountCents: 5800, CategoryPath: "Prazeres"}, nil
 }
 
 type DailyLedgerWriteSuite struct {
@@ -119,7 +121,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				}(),
 			},
 			expect: func(result RouteResult, expenseCalls int) {
-				s.Equal(OutcomeReplay, result.Outcome)
+				s.Equal(tools.OutcomeReplay, result.Outcome)
 				s.Equal("Lancei R$ 58,00 no iFood", result.Reply)
 				s.Equal(0, expenseCalls)
 			},
@@ -147,7 +149,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				}(),
 			},
 			expect: func(result RouteResult, expenseCalls int) {
-				s.Equal(OutcomePolicyBlocked, result.Outcome)
+				s.Equal(tools.OutcomePolicyBlocked, result.Outcome)
 				s.Equal(0, expenseCalls)
 			},
 		},
@@ -175,7 +177,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				}(),
 			},
 			expect: func(result RouteResult, expenseCalls int) {
-				s.Equal(OutcomeReplay, result.Outcome)
+				s.Equal(tools.OutcomeReplay, result.Outcome)
 				s.Equal(0, expenseCalls)
 			},
 		},
@@ -204,7 +206,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				}(),
 			},
 			expect: func(result RouteResult, expenseCalls int) {
-				s.Equal(OutcomeRouted, result.Outcome)
+				s.Equal(tools.OutcomeRouted, result.Outcome)
 				s.Equal(1, expenseCalls)
 			},
 		},
@@ -232,7 +234,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				}(),
 			},
 			expect: func(result RouteResult, expenseCalls int) {
-				s.Equal(OutcomeUsecaseError, result.Outcome)
+				s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 				s.Equal(0, expenseCalls)
 			},
 		},
@@ -261,7 +263,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 				}(),
 			},
 			expect: func(result RouteResult, expenseCalls int) {
-				s.Equal(OutcomeRouted, result.Outcome)
+				s.Equal(tools.OutcomeRouted, result.Outcome)
 				s.Equal(1, expenseCalls)
 			},
 		},

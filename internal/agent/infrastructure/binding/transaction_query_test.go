@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -122,7 +123,7 @@ func (s *TransactionQuerySuite) TestTransactionLister_Success() {
 	}
 	adapter := NewTransactionListerAdapter(uc)
 
-	result, err := adapter.Execute(s.ctx, appservices.TransactionListInput{
+	result, err := adapter.Execute(s.ctx, tools.TransactionListInput{
 		UserID:   s.userID.String(),
 		RefMonth: "2026-06",
 	})
@@ -138,7 +139,7 @@ func (s *TransactionQuerySuite) TestTransactionLister_InvalidUserIDReturnsError(
 	uc := &fakeListTransactionsUC{}
 	adapter := NewTransactionListerAdapter(uc)
 
-	_, err := adapter.Execute(s.ctx, appservices.TransactionListInput{
+	_, err := adapter.Execute(s.ctx, tools.TransactionListInput{
 		UserID:   "not-a-uuid",
 		RefMonth: "2026-06",
 	})
@@ -151,7 +152,7 @@ func (s *TransactionQuerySuite) TestTransactionLister_PropagatesUsecaseError() {
 	uc := &fakeListTransactionsUC{err: errors.New("db down")}
 	adapter := NewTransactionListerAdapter(uc)
 
-	_, err := adapter.Execute(s.ctx, appservices.TransactionListInput{
+	_, err := adapter.Execute(s.ctx, tools.TransactionListInput{
 		UserID:   s.userID.String(),
 		RefMonth: "2026-06",
 	})
@@ -166,7 +167,7 @@ func (s *TransactionQuerySuite) TestTransactionLister_EmptyListReturnsSuccess() 
 	}
 	adapter := NewTransactionListerAdapter(uc)
 
-	result, err := adapter.Execute(s.ctx, appservices.TransactionListInput{
+	result, err := adapter.Execute(s.ctx, tools.TransactionListInput{
 		UserID:   s.userID.String(),
 		RefMonth: "2026-06",
 	})
@@ -216,9 +217,9 @@ func (s *TransactionQuerySuite) TestLastTransactionEditor_Success() {
 	updateUC := &fakeUpdateTransactionUC{out: updatedTx}
 	adapter := NewLastTransactionEditorAdapter(getUC, updateUC)
 
-	result, err := adapter.Execute(s.ctx, appservices.EditTransactionInput{
+	result, err := adapter.Execute(s.ctx, tools.EditTransactionInput{
 		UserID: s.userID.String(),
-		Current: appservices.TransactionView{
+		Current: tools.TransactionView{
 			ID:      tx.ID.String(),
 			Version: 1,
 		},
@@ -237,9 +238,9 @@ func (s *TransactionQuerySuite) TestLastTransactionEditor_InvalidUserIDReturnsEr
 	updateUC := &fakeUpdateTransactionUC{}
 	adapter := NewLastTransactionEditorAdapter(getUC, updateUC)
 
-	_, err := adapter.Execute(s.ctx, appservices.EditTransactionInput{
+	_, err := adapter.Execute(s.ctx, tools.EditTransactionInput{
 		UserID: "not-a-uuid",
-		Current: appservices.TransactionView{
+		Current: tools.TransactionView{
 			ID: uuid.NewString(),
 		},
 		NewAmount: 1000,
@@ -255,9 +256,9 @@ func (s *TransactionQuerySuite) TestLastTransactionEditor_GetUsecaseErrorIsWrapp
 	updateUC := &fakeUpdateTransactionUC{}
 	adapter := NewLastTransactionEditorAdapter(getUC, updateUC)
 
-	_, err := adapter.Execute(s.ctx, appservices.EditTransactionInput{
+	_, err := adapter.Execute(s.ctx, tools.EditTransactionInput{
 		UserID: s.userID.String(),
-		Current: appservices.TransactionView{
+		Current: tools.TransactionView{
 			ID: uuid.NewString(),
 		},
 		NewAmount: 1000,
@@ -274,9 +275,9 @@ func (s *TransactionQuerySuite) TestLastTransactionEditor_UpdateUsecaseErrorIsWr
 	updateUC := &fakeUpdateTransactionUC{err: errors.New("update failed")}
 	adapter := NewLastTransactionEditorAdapter(getUC, updateUC)
 
-	_, err := adapter.Execute(s.ctx, appservices.EditTransactionInput{
+	_, err := adapter.Execute(s.ctx, tools.EditTransactionInput{
 		UserID: s.userID.String(),
-		Current: appservices.TransactionView{
+		Current: tools.TransactionView{
 			ID:      tx.ID.String(),
 			Version: 1,
 		},
@@ -524,14 +525,14 @@ func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryNotFoun
 	uc := usecases.NewRecordCardPurchaseFromAgent(resolver, creator, obs)
 	adapter := NewCardPurchaseLoggerAdapter(uc)
 
-	in := appservices.CardPurchaseLoggerInput{
+	in := tools.CardPurchaseLoggerInput{
 		UserID: s.userID.String(),
 		Intent: s.buildCardPurchaseIntent("TV", "", 180000),
 	}
 
 	_, err := adapter.Execute(s.ctx, in)
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrCategoryNotFound))
+	s.True(errors.Is(err, tools.ErrCategoryNotFound))
 }
 
 func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryAmbiguousError() {
@@ -551,14 +552,14 @@ func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryAmbiguo
 	uc := usecases.NewRecordCardPurchaseFromAgent(resolver, creator, obs)
 	adapter := NewCardPurchaseLoggerAdapter(uc)
 
-	in := appservices.CardPurchaseLoggerInput{
+	in := tools.CardPurchaseLoggerInput{
 		UserID: s.userID.String(),
 		Intent: s.buildCardPurchaseIntent("Netflix", "streaming", 180000),
 	}
 
 	_, err := adapter.Execute(s.ctx, in)
 	s.Require().Error(err)
-	var ambiguous *appservices.CategoryAmbiguousError
+	var ambiguous *tools.CategoryAmbiguousError
 	s.True(errors.As(err, &ambiguous))
 }
 
@@ -577,13 +578,13 @@ func (s *TransactionQuerySuite) TestCardPurchaseLogger_TranslatesCategoryNeedsCo
 	uc := usecases.NewRecordCardPurchaseFromAgent(resolver, creator, obs)
 	adapter := NewCardPurchaseLoggerAdapter(uc)
 
-	in := appservices.CardPurchaseLoggerInput{
+	in := tools.CardPurchaseLoggerInput{
 		UserID: s.userID.String(),
 		Intent: s.buildCardPurchaseIntent("TV", "", 180000),
 	}
 
 	_, err := adapter.Execute(s.ctx, in)
 	s.Require().Error(err)
-	var needsConfirmation *appservices.CategoryNeedsConfirmationError
+	var needsConfirmation *tools.CategoryNeedsConfirmationError
 	s.True(errors.As(err, &needsConfirmation))
 }

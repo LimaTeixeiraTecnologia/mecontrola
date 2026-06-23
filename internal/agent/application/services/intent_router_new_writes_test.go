@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -16,39 +18,39 @@ import (
 )
 
 type fakeCardUpdater struct {
-	result services.CardUpdaterResult
+	result tools.CardUpdaterResult
 	err    error
 	calls  int
 	gotIn  intent.Intent
 }
 
-func (f *fakeCardUpdater) Execute(_ context.Context, _ uuid.UUID, in intent.Intent) (services.CardUpdaterResult, error) {
+func (f *fakeCardUpdater) Execute(_ context.Context, _ uuid.UUID, in intent.Intent) (tools.CardUpdaterResult, error) {
 	f.calls++
 	f.gotIn = in
 	return f.result, f.err
 }
 
 type fakeCardDeleter struct {
-	result  services.CardDeleterResult
+	result  tools.CardDeleterResult
 	err     error
 	calls   int
 	gotName string
 }
 
-func (f *fakeCardDeleter) Execute(_ context.Context, _ uuid.UUID, cardName string) (services.CardDeleterResult, error) {
+func (f *fakeCardDeleter) Execute(_ context.Context, _ uuid.UUID, cardName string) (tools.CardDeleterResult, error) {
 	f.calls++
 	f.gotName = cardName
 	return f.result, f.err
 }
 
 type fakeCategoryPercentageEditor struct {
-	result services.CategoryPercentageEditorResult
+	result tools.CategoryPercentageEditorResult
 	err    error
 	calls  int
-	gotIn  services.CategoryPercentageEditorInput
+	gotIn  tools.CategoryPercentageEditorInput
 }
 
-func (f *fakeCategoryPercentageEditor) Execute(_ context.Context, in services.CategoryPercentageEditorInput) (services.CategoryPercentageEditorResult, error) {
+func (f *fakeCategoryPercentageEditor) Execute(_ context.Context, in tools.CategoryPercentageEditorInput) (tools.CategoryPercentageEditorResult, error) {
 	f.calls++
 	f.gotIn = in
 	return f.result, f.err
@@ -125,13 +127,13 @@ func (s *NewWritesRouterSuite) buildEditPercentage() intent.Intent {
 func (s *NewWritesRouterSuite) TestUpdateCard_MissingResolverIsHonest() {
 	result := s.route(s.buildUpdateCard(), "muda o fechamento do nubank pra dia 5")
 	s.Equal(intent.KindUpdateCard, result.Kind)
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 }
 
 func (s *NewWritesRouterSuite) TestUpdateCard_Routed() {
-	s.updater = &fakeCardUpdater{result: services.CardUpdaterResult{Nickname: "nubank", ClosingDay: 5, DueDay: 17}}
+	s.updater = &fakeCardUpdater{result: tools.CardUpdaterResult{Nickname: "nubank", ClosingDay: 5, DueDay: 17}}
 	result := s.route(s.buildUpdateCard(), "muda o fechamento do nubank pra dia 5")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.updater.calls)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Cartão atualizado")
@@ -139,17 +141,17 @@ func (s *NewWritesRouterSuite) TestUpdateCard_Routed() {
 }
 
 func (s *NewWritesRouterSuite) TestUpdateCard_NotFoundClarify() {
-	s.updater = &fakeCardUpdater{err: services.ErrAgentCardNotFound}
+	s.updater = &fakeCardUpdater{err: tools.ErrAgentCardNotFound}
 	result := s.route(s.buildUpdateCard(), "muda o fechamento do premium")
-	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "atualizado")
 }
 
 func (s *NewWritesRouterSuite) TestUpdateCard_AmbiguousClarify() {
-	s.updater = &fakeCardUpdater{err: services.ErrAgentCardAmbiguous}
+	s.updater = &fakeCardUpdater{err: tools.ErrAgentCardAmbiguous}
 	result := s.route(s.buildUpdateCard(), "muda o fechamento do cartao")
-	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "mais de um cartão")
 }
@@ -157,7 +159,7 @@ func (s *NewWritesRouterSuite) TestUpdateCard_AmbiguousClarify() {
 func (s *NewWritesRouterSuite) TestUpdateCard_UsecaseError() {
 	s.updater = &fakeCardUpdater{err: errors.New("boom")}
 	result := s.route(s.buildUpdateCard(), "muda o fechamento do nubank")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "atualizado")
 }
@@ -165,13 +167,13 @@ func (s *NewWritesRouterSuite) TestUpdateCard_UsecaseError() {
 func (s *NewWritesRouterSuite) TestDeleteCard_MissingResolverIsHonest() {
 	result := s.route(s.buildDeleteCard(), "apaga o nubank")
 	s.Equal(intent.KindDeleteCard, result.Kind)
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 }
 
 func (s *NewWritesRouterSuite) TestDeleteCard_Routed() {
-	s.deleter = &fakeCardDeleter{result: services.CardDeleterResult{Name: "nubank"}}
+	s.deleter = &fakeCardDeleter{result: tools.CardDeleterResult{Name: "nubank"}}
 	result := s.route(s.buildDeleteCard(), "apaga o nubank")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.deleter.calls)
 	s.Equal("nubank", s.deleter.gotName)
 	s.Require().Len(s.wa.sent, 1)
@@ -180,27 +182,27 @@ func (s *NewWritesRouterSuite) TestDeleteCard_Routed() {
 }
 
 func (s *NewWritesRouterSuite) TestDeleteCard_NotFoundClarify() {
-	s.deleter = &fakeCardDeleter{err: services.ErrAgentCardNotFound}
+	s.deleter = &fakeCardDeleter{err: tools.ErrAgentCardNotFound}
 	result := s.route(s.buildDeleteCard(), "apaga o premium")
-	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 }
 
 func (s *NewWritesRouterSuite) TestDeleteCard_UsecaseError() {
 	s.deleter = &fakeCardDeleter{err: errors.New("boom")}
 	result := s.route(s.buildDeleteCard(), "apaga o nubank")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 }
 
 func (s *NewWritesRouterSuite) TestEditCategoryPercentage_MissingResolverIsHonest() {
 	result := s.route(s.buildEditPercentage(), "coloca 30% em prazeres")
 	s.Equal(intent.KindEditCategoryPercentage, result.Kind)
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 }
 
 func (s *NewWritesRouterSuite) TestEditCategoryPercentage_Routed() {
-	s.pctEditor = &fakeCategoryPercentageEditor{result: services.CategoryPercentageEditorResult{Competence: "2026-06", RootSlug: "expense.prazeres", Percentage: 30}}
+	s.pctEditor = &fakeCategoryPercentageEditor{result: tools.CategoryPercentageEditorResult{Competence: "2026-06", RootSlug: "expense.prazeres", Percentage: 30}}
 	result := s.route(s.buildEditPercentage(), "coloca 30% em prazeres")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.pctEditor.calls)
 	s.Equal("Prazeres", s.pctEditor.gotIn.CategoryName)
 	s.Equal(30, s.pctEditor.gotIn.Percentage)
@@ -211,15 +213,15 @@ func (s *NewWritesRouterSuite) TestEditCategoryPercentage_Routed() {
 }
 
 func (s *NewWritesRouterSuite) TestEditCategoryPercentage_UnknownCategoryClarify() {
-	s.pctEditor = &fakeCategoryPercentageEditor{err: services.ErrCategoryPercentageUnknownCategory}
+	s.pctEditor = &fakeCategoryPercentageEditor{err: tools.ErrCategoryPercentageUnknownCategory}
 	result := s.route(s.buildEditPercentage(), "coloca 30% em viagens")
-	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 }
 
 func (s *NewWritesRouterSuite) TestEditCategoryPercentage_NoBudgetClarify() {
-	s.pctEditor = &fakeCategoryPercentageEditor{err: services.ErrCategoryPercentageNoBudget}
+	s.pctEditor = &fakeCategoryPercentageEditor{err: tools.ErrCategoryPercentageNoBudget}
 	result := s.route(s.buildEditPercentage(), "coloca 30% em prazeres")
-	s.Equal(services.OutcomeClarify, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "orçamento ativo")
 }
@@ -227,5 +229,5 @@ func (s *NewWritesRouterSuite) TestEditCategoryPercentage_NoBudgetClarify() {
 func (s *NewWritesRouterSuite) TestEditCategoryPercentage_UsecaseError() {
 	s.pctEditor = &fakeCategoryPercentageEditor{err: errors.New("boom")}
 	result := s.route(s.buildEditPercentage(), "coloca 30% em prazeres")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 }

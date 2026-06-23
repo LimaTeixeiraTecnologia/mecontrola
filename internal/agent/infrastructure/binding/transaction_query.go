@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -33,7 +34,7 @@ func NewCardPurchaseLoggerAdapter(uc *usecases.RecordCardPurchaseFromAgent) *Car
 	return &CardPurchaseLoggerAdapter{uc: uc}
 }
 
-func (a *CardPurchaseLoggerAdapter) Execute(ctx context.Context, in appservices.CardPurchaseLoggerInput) (appservices.CardPurchaseLoggerResult, error) {
+func (a *CardPurchaseLoggerAdapter) Execute(ctx context.Context, in tools.CardPurchaseLoggerInput) (tools.CardPurchaseLoggerResult, error) {
 	result, err := a.uc.Execute(ctx, usecases.RecordCardPurchaseFromAgentInput{
 		UserID:        in.UserID,
 		Intent:        in.Intent,
@@ -45,9 +46,9 @@ func (a *CardPurchaseLoggerAdapter) Execute(ctx context.Context, in appservices.
 		Installments:  in.Installments,
 	})
 	if err != nil {
-		return appservices.CardPurchaseLoggerResult{}, translateCategoryError(err)
+		return tools.CardPurchaseLoggerResult{}, translateCategoryError(err)
 	}
-	return appservices.CardPurchaseLoggerResult{
+	return tools.CardPurchaseLoggerResult{
 		Persisted:    result.Persisted,
 		CardFound:    result.CardFound,
 		CardName:     result.CardName,
@@ -142,26 +143,26 @@ func NewTransactionListerAdapter(uc listTransactionsUseCase) *TransactionListerA
 	return &TransactionListerAdapter{uc: uc, limit: 200}
 }
 
-func (a *TransactionListerAdapter) Execute(ctx context.Context, in appservices.TransactionListInput) (appservices.TransactionListResult, error) {
+func (a *TransactionListerAdapter) Execute(ctx context.Context, in tools.TransactionListInput) (tools.TransactionListResult, error) {
 	userID, err := uuid.Parse(strings.TrimSpace(in.UserID))
 	if err != nil {
-		return appservices.TransactionListResult{}, fmt.Errorf("agent: transaction lister: user id: %w", err)
+		return tools.TransactionListResult{}, fmt.Errorf("agent: transaction lister: user id: %w", err)
 	}
 	ctx = withWhatsAppPrincipal(ctx, userID)
 
 	page, err := a.uc.Execute(ctx, in.RefMonth, "", a.limit)
 	if err != nil {
-		return appservices.TransactionListResult{}, fmt.Errorf("agent: transaction lister: %w", err)
+		return tools.TransactionListResult{}, fmt.Errorf("agent: transaction lister: %w", err)
 	}
-	views := make([]appservices.TransactionView, 0, len(page.Transactions))
+	views := make([]tools.TransactionView, 0, len(page.Transactions))
 	for _, t := range page.Transactions {
 		views = append(views, transactionViewFrom(t))
 	}
-	return appservices.TransactionListResult{RefMonth: in.RefMonth, Transactions: views}, nil
+	return tools.TransactionListResult{RefMonth: in.RefMonth, Transactions: views}, nil
 }
 
-func transactionViewFrom(t transactionsoutput.Transaction) appservices.TransactionView {
-	return appservices.TransactionView{
+func transactionViewFrom(t transactionsoutput.Transaction) tools.TransactionView {
+	return tools.TransactionView{
 		ID:          t.ID.String(),
 		Direction:   t.Direction,
 		AmountCents: t.AmountCents,
@@ -213,16 +214,16 @@ func NewLastTransactionEditorAdapter(getUC getTransactionUseCase, updateUC updat
 	return &LastTransactionEditorAdapter{getUC: getUC, updateUC: updateUC}
 }
 
-func (a *LastTransactionEditorAdapter) Execute(ctx context.Context, in appservices.EditTransactionInput) (appservices.EditTransactionResult, error) {
+func (a *LastTransactionEditorAdapter) Execute(ctx context.Context, in tools.EditTransactionInput) (tools.EditTransactionResult, error) {
 	userID, err := uuid.Parse(strings.TrimSpace(in.UserID))
 	if err != nil {
-		return appservices.EditTransactionResult{}, fmt.Errorf("agent: last transaction editor: user id: %w", err)
+		return tools.EditTransactionResult{}, fmt.Errorf("agent: last transaction editor: user id: %w", err)
 	}
 	ctx = withWhatsAppPrincipal(ctx, userID)
 
 	current, err := a.getUC.Execute(ctx, in.Current.ID)
 	if err != nil {
-		return appservices.EditTransactionResult{}, fmt.Errorf("agent: last transaction editor: buscar atual: %w", err)
+		return tools.EditTransactionResult{}, fmt.Errorf("agent: last transaction editor: buscar atual: %w", err)
 	}
 
 	updated, err := a.updateUC.Execute(ctx, current.ID.String(), transactionsinput.RawUpdateTransaction{
@@ -236,10 +237,10 @@ func (a *LastTransactionEditorAdapter) Execute(ctx context.Context, in appservic
 		Version:       current.Version,
 	})
 	if err != nil {
-		return appservices.EditTransactionResult{}, fmt.Errorf("agent: last transaction editor: atualizar: %w", err)
+		return tools.EditTransactionResult{}, fmt.Errorf("agent: last transaction editor: atualizar: %w", err)
 	}
 
-	return appservices.EditTransactionResult{
+	return tools.EditTransactionResult{
 		Persisted:   true,
 		OldAmount:   current.AmountCents,
 		NewAmount:   updated.AmountCents,

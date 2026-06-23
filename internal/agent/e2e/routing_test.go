@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -68,12 +70,12 @@ func TestAgentRouter_RealLLM_PersistsTransactions_Integration(t *testing.T) {
 	expense := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "ifood 58 reais", WhatsAppTo: "+5511900000099", MessageID: "wamid.router.exp.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, expense.Outcome, "gasto deve ser roteado e persistido")
+	require.Equal(t, tools.OutcomeRouted, expense.Outcome, "gasto deve ser roteado e persistido")
 
 	income := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "recebi meu salário de 16.400", WhatsAppTo: "+5511900000099", MessageID: "wamid.router.inc.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, income.Outcome, "salário deve ser roteado e persistido")
+	require.Equal(t, tools.OutcomeRouted, income.Outcome, "salário deve ser roteado e persistido")
 
 	all := gateway.All()
 	require.GreaterOrEqual(t, len(all), 2)
@@ -194,7 +196,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	cardPurchase := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "comprei 1200 em 6x no nubank", WhatsAppTo: "+5511900000099", MessageID: "wamid.cp.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, cardPurchase.Outcome, "compra parcelada deve persistir; reply=%s", cardPurchase.Reply)
+	require.Equal(t, tools.OutcomeRouted, cardPurchase.Outcome, "compra parcelada deve persistir; reply=%s", cardPurchase.Reply)
 	var cpCount int
 	require.NoError(t, db.QueryRowContext(ctx,
 		"SELECT count(*) FROM mecontrola.transactions_card_purchases WHERE user_id = $1", userID,
@@ -204,7 +206,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	recurring := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "todo mês recebo 5000 de salário", WhatsAppTo: "+5511900000099", MessageID: "wamid.rt.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, recurring.Outcome, "recorrência deve persistir; reply=%s", recurring.Reply)
+	require.Equal(t, tools.OutcomeRouted, recurring.Outcome, "recorrência deve persistir; reply=%s", recurring.Reply)
 	var rtCount int
 	require.NoError(t, db.QueryRowContext(ctx,
 		"SELECT count(*) FROM mecontrola.transactions_recurring_templates WHERE user_id = $1", userID,
@@ -214,18 +216,18 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	expense := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "gastei 58 no ifood", WhatsAppTo: "+5511900000099", MessageID: "wamid.exp.2",
 	})
-	require.Equal(t, appservices.OutcomeRouted, expense.Outcome, "gasto deve persistir; reply=%s", expense.Reply)
+	require.Equal(t, tools.OutcomeRouted, expense.Outcome, "gasto deve persistir; reply=%s", expense.Reply)
 
 	listed := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "mostra minhas transações", WhatsAppTo: "+5511900000099", MessageID: "wamid.list.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, listed.Outcome, "listagem deve funcionar; reply=%s", listed.Reply)
+	require.Equal(t, tools.OutcomeRouted, listed.Outcome, "listagem deve funcionar; reply=%s", listed.Reply)
 	require.Contains(t, listed.Reply, "Lançamentos")
 
 	edited := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "na verdade foram 80 reais", WhatsAppTo: "+5511900000099", MessageID: "wamid.edit.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, edited.Outcome, "edição deve funcionar; reply=%s", edited.Reply)
+	require.Equal(t, tools.OutcomeRouted, edited.Outcome, "edição deve funcionar; reply=%s", edited.Reply)
 	require.Contains(t, edited.Reply, "atualizado")
 	var editedCents int64
 	require.NoError(t, db.QueryRowContext(ctx,
@@ -236,7 +238,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	deleted := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "apaga o último lançamento", WhatsAppTo: "+5511900000099", MessageID: "wamid.del.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, deleted.Outcome, "exclusão deve funcionar; reply=%s", deleted.Reply)
+	require.Equal(t, tools.OutcomeRouted, deleted.Outcome, "exclusão deve funcionar; reply=%s", deleted.Reply)
 	require.Contains(t, deleted.Reply, "excluído")
 	var activeCount int
 	require.NoError(t, db.QueryRowContext(ctx,
@@ -247,7 +249,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	listedRecurring := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "quais minhas recorrências?", WhatsAppTo: "+5511900000099", MessageID: "wamid.listrt.1",
 	})
-	require.Equal(t, appservices.OutcomeRouted, listedRecurring.Outcome, "listagem de recorrências deve funcionar; reply=%s", listedRecurring.Reply)
+	require.Equal(t, tools.OutcomeRouted, listedRecurring.Outcome, "listagem de recorrências deve funcionar; reply=%s", listedRecurring.Reply)
 	require.Contains(t, listedRecurring.Reply, "Recorrências")
 
 	t.Logf("[router real new] card_purchase=%d recurring=%d; replies=%v", cpCount, rtCount, gateway.All())

@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	categoriesinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
@@ -180,7 +181,7 @@ func (s *TransactionLogBindingSuite) TestTransactionLogger_DelegatesSuccessViaFo
 	adapter := NewTransactionLoggerAdapter(uc)
 
 	forced := "Despesas > Alimentação"
-	in := appservices.ExpenseRecorderInput{
+	in := tools.ExpenseRecorderInput{
 		UserID:        uuid.NewString(),
 		ForceCategory: &forced,
 		AmountCents:   3000,
@@ -205,7 +206,7 @@ func (s *TransactionLogBindingSuite) TestTransactionLogger_PropagatesCreatorErro
 	adapter := NewTransactionLoggerAdapter(uc)
 
 	forced := "Despesas > Alimentação"
-	in := appservices.ExpenseRecorderInput{
+	in := tools.ExpenseRecorderInput{
 		UserID:        uuid.NewString(),
 		ForceCategory: &forced,
 		AmountCents:   3000,
@@ -238,7 +239,7 @@ func (s *TransactionLogBindingSuite) TestTransactionLogger_TranslatesCategoryNot
 	})
 	s.Require().NoError(err)
 
-	in := appservices.ExpenseRecorderInput{
+	in := tools.ExpenseRecorderInput{
 		UserID:        uuid.NewString(),
 		Intent:        expenseIntent,
 		AmountCents:   1000,
@@ -248,7 +249,7 @@ func (s *TransactionLogBindingSuite) TestTransactionLogger_TranslatesCategoryNot
 
 	_, err = adapter.Execute(s.ctx, in)
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrCategoryNotFound))
+	s.True(errors.Is(err, tools.ErrCategoryNotFound))
 }
 
 func (s *TransactionLogBindingSuite) TestTransactionLogger_TranslatesCategoryAmbiguousError() {
@@ -274,7 +275,7 @@ func (s *TransactionLogBindingSuite) TestTransactionLogger_TranslatesCategoryAmb
 	})
 	s.Require().NoError(err)
 
-	in := appservices.ExpenseRecorderInput{
+	in := tools.ExpenseRecorderInput{
 		UserID:        uuid.NewString(),
 		Intent:        expenseIntent,
 		AmountCents:   1000,
@@ -284,6 +285,6 @@ func (s *TransactionLogBindingSuite) TestTransactionLogger_TranslatesCategoryAmb
 
 	_, err = adapter.Execute(s.ctx, in)
 	s.Require().Error(err)
-	var ambiguous *appservices.CategoryAmbiguousError
+	var ambiguous *tools.CategoryAmbiguousError
 	s.True(errors.As(err, &ambiguous))
 }

@@ -38,22 +38,22 @@ func (a *OnboardingAgent) Handle(ctx context.Context, userID uuid.UUID, channel,
 				observability.Error(err),
 			)
 			if reply, degraded := a.degradeOnboarding(ctx, userID, channel, peer, text, messageID); degraded {
-				a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-				return RouteResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}, true
+				a.record(ctx, intent.KindConfigureBudget.String(), channel, tools.OutcomeRouted)
+				return RouteResult{Reply: reply, Outcome: tools.OutcomeRouted, Kind: intent.KindConfigureBudget}, true
 			}
 			return RouteResult{}, false
 		}
 		if turn.Handled {
-			a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-			return RouteResult{Reply: turn.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}, true
+			a.record(ctx, intent.KindConfigureBudget.String(), channel, tools.OutcomeRouted)
+			return RouteResult{Reply: turn.Reply, Outcome: tools.OutcomeRouted, Kind: intent.KindConfigureBudget}, true
 		}
 		return RouteResult{}, false
 	}
 	if a.onboarding != nil {
 		conversation, err := a.onboarding.Continue(ctx, userID, channel, peer, text, messageID)
 		if err == nil && conversation.Handled {
-			a.record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-			return RouteResult{Reply: conversation.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}, true
+			a.record(ctx, intent.KindConfigureBudget.String(), channel, tools.OutcomeRouted)
+			return RouteResult{Reply: conversation.Reply, Outcome: tools.OutcomeRouted, Kind: intent.KindConfigureBudget}, true
 		}
 	}
 	return RouteResult{}, false

@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -26,19 +27,19 @@ func NewCardUpdaterAdapter(cardLister cardListUseCase, updateUC updateCardUseCas
 	return &CardUpdaterAdapter{cardLister: cardLister, updateUC: updateUC}
 }
 
-func (a *CardUpdaterAdapter) Execute(ctx context.Context, userID uuid.UUID, in intent.Intent) (appservices.CardUpdaterResult, error) {
+func (a *CardUpdaterAdapter) Execute(ctx context.Context, userID uuid.UUID, in intent.Intent) (tools.CardUpdaterResult, error) {
 	ctx = withWhatsAppPrincipal(ctx, userID)
 	cards, err := a.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
 	if err != nil {
-		return appservices.CardUpdaterResult{}, fmt.Errorf("agent: card updater: listar cartões: %w", err)
+		return tools.CardUpdaterResult{}, fmt.Errorf("agent: card updater: listar cartões: %w", err)
 	}
 	resolved, err := resolveCardExact(cards, in.CardName())
 	if err != nil {
-		return appservices.CardUpdaterResult{}, err
+		return tools.CardUpdaterResult{}, err
 	}
 	cardID, err := uuid.Parse(resolved.ID)
 	if err != nil {
-		return appservices.CardUpdaterResult{}, fmt.Errorf("agent: card updater: card id: %w", err)
+		return tools.CardUpdaterResult{}, fmt.Errorf("agent: card updater: card id: %w", err)
 	}
 	updated, err := a.updateUC.Execute(ctx, cardinput.UpdateCard{
 		ID:         cardID,
@@ -49,9 +50,9 @@ func (a *CardUpdaterAdapter) Execute(ctx context.Context, userID uuid.UUID, in i
 		DueDay:     in.DueDayPtr(),
 	})
 	if err != nil {
-		return appservices.CardUpdaterResult{}, fmt.Errorf("agent: card updater: atualizar: %w", err)
+		return tools.CardUpdaterResult{}, fmt.Errorf("agent: card updater: atualizar: %w", err)
 	}
-	return appservices.CardUpdaterResult{
+	return tools.CardUpdaterResult{
 		Nickname:   updated.Nickname,
 		Name:       updated.Name,
 		ClosingDay: updated.ClosingDay,
@@ -73,34 +74,34 @@ func NewCardDeleterAdapter(cardLister cardListUseCase, deleteUC softDeleteCardUs
 	return &CardDeleterAdapter{cardLister: cardLister, deleteUC: deleteUC}
 }
 
-func (a *CardDeleterAdapter) Execute(ctx context.Context, userID uuid.UUID, cardName string) (appservices.CardDeleterResult, error) {
+func (a *CardDeleterAdapter) Execute(ctx context.Context, userID uuid.UUID, cardName string) (tools.CardDeleterResult, error) {
 	ctx = withWhatsAppPrincipal(ctx, userID)
 	cards, err := a.cardLister.Execute(ctx, cardinput.ListCards{UserID: userID, Limit: defaultListCardsLimit})
 	if err != nil {
-		return appservices.CardDeleterResult{}, fmt.Errorf("agent: card deleter: listar cartões: %w", err)
+		return tools.CardDeleterResult{}, fmt.Errorf("agent: card deleter: listar cartões: %w", err)
 	}
 	resolved, err := resolveCardExact(cards, cardName)
 	if err != nil {
-		return appservices.CardDeleterResult{}, err
+		return tools.CardDeleterResult{}, err
 	}
 	cardID, err := uuid.Parse(resolved.ID)
 	if err != nil {
-		return appservices.CardDeleterResult{}, fmt.Errorf("agent: card deleter: card id: %w", err)
+		return tools.CardDeleterResult{}, fmt.Errorf("agent: card deleter: card id: %w", err)
 	}
 	if err := a.deleteUC.Execute(ctx, cardinput.SoftDeleteCard{ID: cardID, UserID: userID}); err != nil {
-		return appservices.CardDeleterResult{}, fmt.Errorf("agent: card deleter: apagar: %w", err)
+		return tools.CardDeleterResult{}, fmt.Errorf("agent: card deleter: apagar: %w", err)
 	}
 	label := strings.TrimSpace(resolved.Nickname)
 	if label == "" {
 		label = strings.TrimSpace(resolved.Name)
 	}
-	return appservices.CardDeleterResult{Name: label}, nil
+	return tools.CardDeleterResult{Name: label}, nil
 }
 
 func resolveCardExact(list cardoutput.CardList, name string) (cardoutput.Card, error) {
 	target := strings.ToLower(strings.TrimSpace(name))
 	if target == "" {
-		return cardoutput.Card{}, appservices.ErrAgentCardNotFound
+		return cardoutput.Card{}, tools.ErrAgentCardNotFound
 	}
 	for _, item := range list.Items {
 		if strings.EqualFold(strings.TrimSpace(item.Name), target) {
@@ -118,10 +119,10 @@ func resolveCardExact(list cardoutput.CardList, name string) (cardoutput.Card, e
 	}
 	switch len(matches) {
 	case 0:
-		return cardoutput.Card{}, appservices.ErrAgentCardNotFound
+		return cardoutput.Card{}, tools.ErrAgentCardNotFound
 	case 1:
 		return matches[0], nil
 	default:
-		return cardoutput.Card{}, appservices.ErrAgentCardAmbiguous
+		return cardoutput.Card{}, tools.ErrAgentCardAmbiguous
 	}
 }

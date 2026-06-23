@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	budgetsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
@@ -34,12 +35,12 @@ func NewBudgetConversationAdapter(uc budgetConversationUseCase) *BudgetConversat
 	return &BudgetConversationAdapter{uc: uc}
 }
 
-func (a *BudgetConversationAdapter) Configure(ctx context.Context, text string, draft budgetdraft.Draft) (appservices.BudgetConversationResult, error) {
+func (a *BudgetConversationAdapter) Configure(ctx context.Context, text string, draft budgetdraft.Draft) (tools.BudgetConversationResult, error) {
 	out, err := a.uc.Execute(ctx, usecases.ConfigureBudgetInput{Text: text, Draft: draft})
 	if err != nil {
-		return appservices.BudgetConversationResult{}, fmt.Errorf("agent: budget conversation: %w", err)
+		return tools.BudgetConversationResult{}, fmt.Errorf("agent: budget conversation: %w", err)
 	}
-	return appservices.BudgetConversationResult{
+	return tools.BudgetConversationResult{
 		Draft:    out.Draft,
 		Complete: out.Complete,
 		Reply:    out.Reply,

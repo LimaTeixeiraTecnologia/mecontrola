@@ -11,10 +11,6 @@ import (
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 )
 
-func toToolResult(result RouteResult) tools.ToolResult {
-	return tools.ToolResult{Reply: result.Reply, Outcome: result.Outcome, Kind: result.Kind}
-}
-
 func toRouteResult(result tools.ToolResult) RouteResult {
 	return RouteResult{Reply: result.Reply, Outcome: result.Outcome, Kind: result.Kind}
 }
@@ -22,115 +18,46 @@ func toRouteResult(result tools.ToolResult) RouteResult {
 func (a *DailyLedgerAgent) buildRegistry() (*workflow.Registry, error) {
 	guard := a.newWriteGuard()
 
-	listExpenseTool := a.routeTool("record_expense", intent.KindRecordExpense, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeLogExpense(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	recordIncomeTool := a.routeTool("record_income", intent.KindRecordIncome, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeLogIncome(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	cardPurchaseTool := a.routeTool("record_card_purchase", intent.KindRecordCardPurchase, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeLogCardPurchase(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	listTransactionsTool := a.routeTool("list_transactions", intent.KindListTransactions, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeListTransactions(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	deleteLastTool := a.routeTool("delete_last_transaction", intent.KindDeleteLastTransaction, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeDeleteLastTransaction(ctx, in.UserID, in.Channel)
-	})
-	editLastTool := a.routeTool("edit_last_transaction", intent.KindEditLastTransaction, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeEditLastTransaction(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	createRecurringTool := a.routeTool("create_recurring", intent.KindCreateRecurring, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeCreateRecurring(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	listRecurringTool := a.routeTool("list_recurring", intent.KindListRecurring, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeListRecurring(ctx, in.UserID, in.Channel)
-	})
-
-	monthlySummaryTool := a.routeTool("monthly_summary", intent.KindMonthlySummary, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeMonthlySummary(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	howAmIDoingTool := a.routeTool("how_am_i_doing", intent.KindHowAmIDoing, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeHowAmIDoing(ctx, in.UserID, in.Channel)
-	})
-	queryCategoryTool := a.routeTool("query_category", intent.KindQueryCategory, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeQueryCategory(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	queryGoalTool := a.routeTool("query_goal", intent.KindQueryGoal, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeQueryGoal(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	queryCardTool := a.routeTool("query_card", intent.KindQueryCard, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeQueryCard(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	configureBudgetTool := a.routeTool("configure_budget", intent.KindConfigureBudget, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeConfigureBudget(ctx, in.UserID, in.Channel, in.Text)
-	})
-	editCategoryPercentTool := a.routeTool("edit_category_percentage", intent.KindEditCategoryPercentage, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeEditCategoryPercentage(ctx, in.UserID, in.Channel, in.Intent)
-	})
-
-	listCardsTool := a.routeTool("list_cards", intent.KindListCards, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeListCards(ctx, in.UserID, in.Channel)
-	})
-	createCardTool := a.routeTool("create_card", intent.KindCreateCard, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeCreateCard(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	countCardsTool := a.routeTool("count_cards", intent.KindCountCards, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeCountCards(ctx, in.UserID, in.Channel)
-	})
-	updateCardTool := a.routeTool("update_card", intent.KindUpdateCard, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeUpdateCard(ctx, in.UserID, in.Channel, in.Intent)
-	})
-	deleteCardTool := a.routeTool("delete_card", intent.KindDeleteCard, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		return a.routeDeleteCard(ctx, in.UserID, in.Channel, in.Intent)
-	})
-
-	conversationalTool := a.routeTool("conversational", intent.KindUnknown, func(ctx context.Context, in tools.ToolInput) RouteResult {
-		reply := a.delegateFallback(ctx, in.UserID, in.Channel, in.Intent.RawText())
-		a.record(ctx, intent.KindUnknown.String(), in.Channel, OutcomeFallback)
-		return RouteResult{Reply: reply, Outcome: OutcomeFallback, Kind: intent.KindUnknown}
-	})
-
 	transactionsWorkflow, err := workflow.NewWorkflow("transactions", guard,
-		workflow.KindTool{Kind: intent.KindRecordExpense, Tool: listExpenseTool},
-		workflow.KindTool{Kind: intent.KindRecordIncome, Tool: recordIncomeTool},
-		workflow.KindTool{Kind: intent.KindRecordCardPurchase, Tool: cardPurchaseTool},
-		workflow.KindTool{Kind: intent.KindListTransactions, Tool: listTransactionsTool},
-		workflow.KindTool{Kind: intent.KindDeleteLastTransaction, Tool: deleteLastTool},
-		workflow.KindTool{Kind: intent.KindEditLastTransaction, Tool: editLastTool},
-		workflow.KindTool{Kind: intent.KindCreateRecurring, Tool: createRecurringTool},
-		workflow.KindTool{Kind: intent.KindListRecurring, Tool: listRecurringTool},
+		workflow.KindTool{Kind: intent.KindRecordExpense, Tool: tools.NewRecordExpense(a.recorder, a.clarification, a.expenseRecorder, a.o11y)},
+		workflow.KindTool{Kind: intent.KindRecordIncome, Tool: tools.NewRecordIncome(a.recorder, a.clarification, a.expenseRecorder, a.o11y)},
+		workflow.KindTool{Kind: intent.KindRecordCardPurchase, Tool: tools.NewRecordCardPurchase(a.recorder, a.clarification, a.cardPurchaseLog, a.o11y)},
+		workflow.KindTool{Kind: intent.KindListTransactions, Tool: tools.NewListTransactions(a.recorder, a.transactionLister, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindDeleteLastTransaction, Tool: tools.NewDeleteLastTransaction(a.recorder, a.transactionLister, a.lastDeleter, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindEditLastTransaction, Tool: tools.NewEditLastTransaction(a.recorder, a.transactionLister, a.lastEditor, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindCreateRecurring, Tool: tools.NewCreateRecurring(a.recorder, a.clarification, a.recurringCreator, a.o11y)},
+		workflow.KindTool{Kind: intent.KindListRecurring, Tool: tools.NewListRecurring(a.recorder, a.recurringLister, a.o11y)},
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	budgetWorkflow, err := workflow.NewWorkflow("budget", guard,
-		workflow.KindTool{Kind: intent.KindMonthlySummary, Tool: monthlySummaryTool},
-		workflow.KindTool{Kind: intent.KindHowAmIDoing, Tool: howAmIDoingTool},
-		workflow.KindTool{Kind: intent.KindQueryCategory, Tool: queryCategoryTool},
-		workflow.KindTool{Kind: intent.KindQueryGoal, Tool: queryGoalTool},
-		workflow.KindTool{Kind: intent.KindQueryCard, Tool: queryCardTool},
-		workflow.KindTool{Kind: intent.KindConfigureBudget, Tool: configureBudgetTool},
-		workflow.KindTool{Kind: intent.KindEditCategoryPercentage, Tool: editCategoryPercentTool},
+		workflow.KindTool{Kind: intent.KindMonthlySummary, Tool: tools.NewMonthlySummary(a.recorder, a.monthlySummary, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindHowAmIDoing, Tool: tools.NewHowAmIDoing(a.recorder, a.monthlySummary, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindQueryCategory, Tool: tools.NewQueryCategory(a.recorder, a.monthlySummary, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindQueryGoal, Tool: tools.NewQueryGoal(a.recorder, a.monthlySummary, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindQueryCard, Tool: tools.NewQueryCard(a.recorder, a.cardLister, a.cardInvoice, a.loc, a.o11y)},
+		workflow.KindTool{Kind: intent.KindConfigureBudget, Tool: tools.NewConfigureBudget(a.recorder, a.budgetRunner, a.budgetConfig, a.o11y)},
+		workflow.KindTool{Kind: intent.KindEditCategoryPercentage, Tool: tools.NewEditCategoryPercentage(a.recorder, a.categoryPercentageEditor, a.loc, a.o11y)},
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	cardsWorkflow, err := workflow.NewWorkflow("cards", guard,
-		workflow.KindTool{Kind: intent.KindListCards, Tool: listCardsTool},
-		workflow.KindTool{Kind: intent.KindCreateCard, Tool: createCardTool},
-		workflow.KindTool{Kind: intent.KindCountCards, Tool: countCardsTool},
-		workflow.KindTool{Kind: intent.KindUpdateCard, Tool: updateCardTool},
-		workflow.KindTool{Kind: intent.KindDeleteCard, Tool: deleteCardTool},
+		workflow.KindTool{Kind: intent.KindListCards, Tool: tools.NewListCards(a.recorder, a.cardLister, a.o11y)},
+		workflow.KindTool{Kind: intent.KindCreateCard, Tool: tools.NewCreateCard(a.recorder, a.cardCreator, a.o11y)},
+		workflow.KindTool{Kind: intent.KindCountCards, Tool: tools.NewCountCards(a.recorder, a.cardCounter, a.o11y)},
+		workflow.KindTool{Kind: intent.KindUpdateCard, Tool: tools.NewUpdateCard(a.recorder, a.clarification, a.cardUpdater, a.o11y)},
+		workflow.KindTool{Kind: intent.KindDeleteCard, Tool: tools.NewDeleteCard(a.recorder, a.clarification, a.cardDeleter, a.o11y)},
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	conversationalWorkflow, err := workflow.NewWorkflow("conversational", nil,
-		workflow.KindTool{Kind: intent.KindUnknown, Tool: conversationalTool},
+		workflow.KindTool{Kind: intent.KindUnknown, Tool: a.conversational},
 	)
 	if err != nil {
 		return nil, err
@@ -165,13 +92,6 @@ func routableKinds() []intent.Kind {
 	}
 }
 
-func (a *DailyLedgerAgent) routeTool(name string, kind intent.Kind, route func(ctx context.Context, in tools.ToolInput) RouteResult) tools.Tool {
-	spec := tools.ToolSpec{Name: name, IntentKind: kind, Description: name}
-	return tools.NewTool(spec, func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, error) {
-		return toToolResult(route(ctx, in)), nil
-	})
-}
-
 func (a *DailyLedgerAgent) newWriteGuard() *workflow.WriteGuard {
 	return workflow.NewWriteGuard(workflow.GuardSteps{
 		Authorize: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
@@ -186,7 +106,7 @@ func (a *DailyLedgerAgent) newWriteGuard() *workflow.WriteGuard {
 			if !replayed {
 				return tools.ToolResult{}, false
 			}
-			return toToolResult(replay), true
+			return tools.ToolResult{Reply: replay.Reply, Outcome: replay.Outcome, Kind: replay.Kind}, true
 		},
 		Policy: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
 			if a.policy.Evaluate(in.Intent.Kind(), in.Confidence) != domainservices.PolicyDecisionClarify {
@@ -198,7 +118,7 @@ func (a *DailyLedgerAgent) newWriteGuard() *workflow.WriteGuard {
 				observability.String("kind", kind.String()),
 				observability.String("channel", in.Channel),
 			)
-			a.record(ctx, kind.String(), in.Channel, OutcomePolicyBlocked)
+			a.record(ctx, kind.String(), in.Channel, tools.OutcomePolicyBlocked)
 			return tools.ToolResult{Reply: policyLowConfidenceText, Outcome: tools.OutcomePolicyBlocked, Kind: kind}, true
 		},
 		Audit: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, workflow.SettleFunc, bool) {
@@ -212,11 +132,11 @@ func (a *DailyLedgerAgent) newWriteGuard() *workflow.WriteGuard {
 					observability.String("kind", kind.String()),
 					observability.String("channel", in.Channel),
 				)
-				a.record(ctx, kind.String(), in.Channel, OutcomeReplay)
+				a.record(ctx, kind.String(), in.Channel, tools.OutcomeReplay)
 				return tools.ToolResult{Reply: alreadyProcessedText, Outcome: tools.OutcomeReplay, Kind: kind}, nil, true
 			}
 			if auditCtx.failed {
-				a.record(ctx, kind.String(), in.Channel, OutcomeUsecaseError)
+				a.record(ctx, kind.String(), in.Channel, tools.OutcomeUsecaseError)
 				return tools.ToolResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}, nil, true
 			}
 			return tools.ToolResult{}, func(ctx context.Context, executed bool) {

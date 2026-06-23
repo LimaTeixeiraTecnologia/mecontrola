@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	budgetsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	budgetsinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -47,7 +48,7 @@ func (s *BudgetPercentageBindingSuite) TestMapsCategoryNameToRootSlug() {
 	uc := &fakeEditCategoryPercentageUC{out: budgetsoutput.BudgetOutput{Competence: "2026-06"}}
 	adapter := NewCategoryPercentageEditorAdapter(uc)
 
-	result, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+	result, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 		UserID:       s.userID,
 		Competence:   "2026-06",
 		CategoryName: "Prazeres",
@@ -81,7 +82,7 @@ func (s *BudgetPercentageBindingSuite) TestMapsAllCanonicalCategoryAliases() {
 			uc := &fakeEditCategoryPercentageUC{out: budgetsoutput.BudgetOutput{Competence: "2026-06"}}
 			adapter := NewCategoryPercentageEditorAdapter(uc)
 
-			result, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+			result, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 				UserID:       s.userID,
 				Competence:   "2026-06",
 				CategoryName: c.name,
@@ -100,7 +101,7 @@ func (s *BudgetPercentageBindingSuite) TestMapsPercentageZeroAndHundred() {
 			uc := &fakeEditCategoryPercentageUC{out: budgetsoutput.BudgetOutput{Competence: "2026-06"}}
 			adapter := NewCategoryPercentageEditorAdapter(uc)
 
-			result, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+			result, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 				UserID:       s.userID,
 				Competence:   "2026-06",
 				CategoryName: "metas",
@@ -117,28 +118,28 @@ func (s *BudgetPercentageBindingSuite) TestNoBudgetWhenBudgetNotActive() {
 	uc := &fakeEditCategoryPercentageUC{err: budgetsentities.ErrBudgetNotActive}
 	adapter := NewCategoryPercentageEditorAdapter(uc)
 
-	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+	_, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 		UserID:       s.userID,
 		Competence:   "2026-06",
 		CategoryName: "prazeres",
 		Percentage:   10,
 	})
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrCategoryPercentageNoBudget))
+	s.True(errors.Is(err, tools.ErrCategoryPercentageNoBudget))
 }
 
 func (s *BudgetPercentageBindingSuite) TestUnknownCategoryReturnsAgentSentinel() {
 	uc := &fakeEditCategoryPercentageUC{}
 	adapter := NewCategoryPercentageEditorAdapter(uc)
 
-	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+	_, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 		UserID:       s.userID,
 		Competence:   "2026-06",
 		CategoryName: "viagens",
 		Percentage:   30,
 	})
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrCategoryPercentageUnknownCategory))
+	s.True(errors.Is(err, tools.ErrCategoryPercentageUnknownCategory))
 	s.Equal(0, uc.calls)
 }
 
@@ -146,26 +147,26 @@ func (s *BudgetPercentageBindingSuite) TestNoBudgetReturnsAgentSentinel() {
 	uc := &fakeEditCategoryPercentageUC{err: budgetsinterfaces.ErrBudgetNotFound}
 	adapter := NewCategoryPercentageEditorAdapter(uc)
 
-	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+	_, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 		UserID:       s.userID,
 		Competence:   "2026-06",
 		CategoryName: "metas",
 		Percentage:   25,
 	})
 	s.Require().Error(err)
-	s.True(errors.Is(err, appservices.ErrCategoryPercentageNoBudget))
+	s.True(errors.Is(err, tools.ErrCategoryPercentageNoBudget))
 }
 
 func (s *BudgetPercentageBindingSuite) TestPropagatesGenericUsecaseError() {
 	uc := &fakeEditCategoryPercentageUC{err: errors.New("boom")}
 	adapter := NewCategoryPercentageEditorAdapter(uc)
 
-	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
+	_, err := adapter.Execute(s.ctx, tools.CategoryPercentageEditorInput{
 		UserID:       s.userID,
 		Competence:   "2026-06",
 		CategoryName: "custo fixo",
 		Percentage:   40,
 	})
 	s.Require().Error(err)
-	s.False(errors.Is(err, appservices.ErrCategoryPercentageNoBudget))
+	s.False(errors.Is(err, tools.ErrCategoryPercentageNoBudget))
 }

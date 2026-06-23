@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -50,12 +52,12 @@ func (f *fakeOnboardingTurnRunner) Run(_ context.Context, _ uuid.UUID, _, _ stri
 }
 
 type fakeConfirmExpenseRecorder struct {
-	result services.ExpenseRecorderResult
+	result tools.ExpenseRecorderResult
 	err    error
 	calls  int
 }
 
-func (f *fakeConfirmExpenseRecorder) Execute(_ context.Context, _ services.ExpenseRecorderInput) (services.ExpenseRecorderResult, error) {
+func (f *fakeConfirmExpenseRecorder) Execute(_ context.Context, _ tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
 	f.calls++
 	return f.result, f.err
 }
@@ -91,7 +93,7 @@ func (s *PendingExpensePrioritySuite) TestPendingExpenseConfirmedBeforeOnboardin
 	}
 	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "onboarding handling sim"}
 	expense := &fakeConfirmExpenseRecorder{
-		result: services.ExpenseRecorderResult{
+		result: tools.ExpenseRecorderResult{
 			Persisted:    true,
 			AmountCents:  13150,
 			CategoryPath: "Custo Fixo > Medicamentos e Farmácia",
@@ -120,7 +122,7 @@ func (s *PendingExpensePrioritySuite) TestPendingExpenseConfirmedBeforeOnboardin
 		services.InboundMessage{Text: "sim", WhatsAppTo: "+5511999"},
 	)
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(1, expense.calls, "expense recorder deve ser chamado")
 	s.Equal(0, onboarding.calls, "onboarding NAO deve ser chamado quando ha pending expense confirmado")
@@ -139,7 +141,7 @@ func (s *PendingExpensePrioritySuite) TestPendingExpenseConfirmedWithLongerText(
 		},
 	}
 	expense := &fakeConfirmExpenseRecorder{
-		result: services.ExpenseRecorderResult{Persisted: true, AmountCents: 13150, CategoryPath: "Custo Fixo > Medicamentos e Farmácia"},
+		result: tools.ExpenseRecorderResult{Persisted: true, AmountCents: 13150, CategoryPath: "Custo Fixo > Medicamentos e Farmácia"},
 	}
 	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "onboarding handling"}
 
@@ -165,7 +167,7 @@ func (s *PendingExpensePrioritySuite) TestPendingExpenseConfirmedWithLongerText(
 		services.InboundMessage{Text: "sim, registrar com essa categoria", WhatsAppTo: "+5511999"},
 	)
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(intent.KindRecordExpense, result.Kind)
 	s.Equal(1, expense.calls, "expense recorder deve ser chamado")
 	s.Equal(0, onboarding.calls, "onboarding NAO deve ser chamado")
@@ -196,7 +198,7 @@ func (s *PendingExpensePrioritySuite) TestNoPendingExpense_OnboardingHandles() {
 		services.InboundMessage{Text: "sim", WhatsAppTo: "+5511999"},
 	)
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, onboarding.calls, "onboarding deve ser chamado quando nao ha pending expense")
 	s.Equal("resposta do onboarding", result.Reply)
 }

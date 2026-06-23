@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/google/uuid"
 
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	transactionsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	transactionsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
@@ -23,12 +24,12 @@ func NewRecurringCreatorAdapter(uc *usecases.CreateRecurringFromAgent) *Recurrin
 	return &RecurringCreatorAdapter{uc: uc}
 }
 
-func (a *RecurringCreatorAdapter) Execute(ctx context.Context, in appservices.RecurringCreatorInput) (appservices.RecurringCreatorResult, error) {
+func (a *RecurringCreatorAdapter) Execute(ctx context.Context, in tools.RecurringCreatorInput) (tools.RecurringCreatorResult, error) {
 	result, err := a.uc.Execute(ctx, usecases.CreateRecurringFromAgentInput{UserID: in.UserID, Intent: in.Intent})
 	if err != nil {
-		return appservices.RecurringCreatorResult{}, translateRecurringError(err)
+		return tools.RecurringCreatorResult{}, translateRecurringError(err)
 	}
-	return appservices.RecurringCreatorResult{
+	return tools.RecurringCreatorResult{
 		Persisted:    result.Persisted,
 		Direction:    result.Direction,
 		AmountCents:  result.AmountCents,
@@ -108,7 +109,7 @@ func NewRecurringListerAdapter(uc listRecurringTemplatesUseCase) *RecurringListe
 	return &RecurringListerAdapter{uc: uc, limit: 200}
 }
 
-func (a *RecurringListerAdapter) Execute(ctx context.Context, userID string) ([]appservices.RecurringView, error) {
+func (a *RecurringListerAdapter) Execute(ctx context.Context, userID string) ([]tools.RecurringView, error) {
 	parsed, err := uuid.Parse(strings.TrimSpace(userID))
 	if err != nil {
 		return nil, fmt.Errorf("agent: recurring lister: user id: %w", err)
@@ -119,9 +120,9 @@ func (a *RecurringListerAdapter) Execute(ctx context.Context, userID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("agent: recurring lister: %w", err)
 	}
-	views := make([]appservices.RecurringView, 0, len(page.Templates))
+	views := make([]tools.RecurringView, 0, len(page.Templates))
 	for _, t := range page.Templates {
-		views = append(views, appservices.RecurringView{
+		views = append(views, tools.RecurringView{
 			Direction:   t.Direction,
 			AmountCents: t.AmountCents,
 			Description: t.Description,

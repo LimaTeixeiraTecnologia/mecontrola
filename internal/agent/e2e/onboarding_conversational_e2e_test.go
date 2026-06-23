@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/require"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	appusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
@@ -48,8 +49,8 @@ func (fakeOnboardingOutboxPublisher) Publish(_ context.Context, _ outbox.Event) 
 
 type fakeOnboardingExpenseLogger struct{}
 
-func (fakeOnboardingExpenseLogger) Execute(_ context.Context, _ appservices.ExpenseRecorderInput) (appservices.ExpenseRecorderResult, error) {
-	return appservices.ExpenseRecorderResult{Persisted: true, AmountCents: 3500, CategoryPath: "Custo Fixo"}, nil
+func (fakeOnboardingExpenseLogger) Execute(_ context.Context, _ tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
+	return tools.ExpenseRecorderResult{Persisted: true, AmountCents: 3500, CategoryPath: "Custo Fixo"}, nil
 }
 
 func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.IntentInterpreter) *appusecases.RunOnboardingTurn {
