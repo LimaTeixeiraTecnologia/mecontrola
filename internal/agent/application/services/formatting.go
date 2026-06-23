@@ -566,3 +566,18 @@ func frequencyLabel(frequency string) string {
 		return frequency
 	}
 }
+
+func formatCardPurchaseAmountMissing(merchant string) string {
+	if strings.TrimSpace(merchant) == "" {
+		return "Qual foi o valor total da compra parcelada? 🙂"
+	}
+	return fmt.Sprintf("Qual foi o valor total da %s? 🙂", strings.TrimSpace(merchant))
+}
+
+func formatCategoryPercentageMissing(categoryName string) string {
+	name := strings.TrimSpace(categoryName)
+	if name == "" {
+		return "Qual percentual você quer definir para essa categoria? (ex: 40%) 🙂"
+	}
+	return fmt.Sprintf("Qual percentual você quer definir para %s? (ex: 40%%) 🙂", name)
+}

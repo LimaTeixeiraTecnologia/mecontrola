@@ -607,6 +607,10 @@ func (a *DailyLedgerAgent) routeLogCardPurchase(ctx context.Context, userID uuid
 		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeMissingResolver)
 		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
 	}
+	if in.AmountCents() == 0 {
+		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCardPurchaseAmountMissing(in.Merchant()), Outcome: OutcomeClarify, Kind: intent.KindRecordCardPurchase}
+	}
 	result, err := a.cardPurchaseLog.Execute(ctx, CardPurchaseLoggerInput{UserID: userID.String(), Intent: in})
 	if err != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.log_card_purchase_failed",
@@ -833,6 +837,10 @@ func (a *DailyLedgerAgent) routeEditCategoryPercentage(ctx context.Context, user
 	if a.categoryPercentageEditor == nil {
 		a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeMissingResolver)
 		return RouteResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: intent.KindEditCategoryPercentage}
+	}
+	if in.Percentage() == 0 {
+		a.record(ctx, intent.KindEditCategoryPercentage.String(), channel, OutcomeClarify)
+		return RouteResult{Reply: formatCategoryPercentageMissing(in.CategoryName()), Outcome: OutcomeClarify, Kind: intent.KindEditCategoryPercentage}
 	}
 	result, err := a.categoryPercentageEditor.Execute(ctx, CategoryPercentageEditorInput{
 		UserID:       userID,
