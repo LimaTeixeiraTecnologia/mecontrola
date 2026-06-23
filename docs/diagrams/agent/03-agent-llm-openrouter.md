@@ -75,7 +75,7 @@ sequenceDiagram
         OR->>CB: RecordFailure()
         Note over OR: agent_llm_provider_errors_total{reason}++<br/>apos 5 falhas em 30s: circuit abre por 60s
         OR-->>FC: error
-        Note over FC: tenta proximo fallback model<br/>openai/gpt-5-nano -> mistralai/... -> claude-haiku-4.5
+        Note over FC: tenta proximo fallback model<br/>mistralai/mistral-small-3.2-24b-instruct
     end
 
     FC-->>-IP: LLMResponse
@@ -290,7 +290,7 @@ AGENT_LLM_HTTP_REFERER=https://mecontrola.app
 AGENT_LLM_X_TITLE=MeControla
 
 AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
-AGENT_LLM_FALLBACK_MODELS=openai/gpt-5-nano,mistralai/mistral-small-3.2-24b-instruct,anthropic/claude-haiku-4.5
+AGENT_LLM_FALLBACK_MODELS=mistralai/mistral-small-3.2-24b-instruct
 
 AGENT_LLM_MAX_TOKENS=256
 AGENT_LLM_PROSE_MAX_TOKENS=200

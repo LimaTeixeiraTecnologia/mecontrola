@@ -6,6 +6,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
@@ -86,14 +87,14 @@ func (rt *AgentRuntime) Execute(ctx context.Context, principal Principal, channe
 			ToolName:   tool,
 			IntentKind: result.Kind.String(),
 		})
-		finished := resolved.Finish(result.Outcome, ok, runErrText(ok, result.Outcome))
+		finished := resolved.Finish(result.Outcome.String(), ok, runErrText(ok, result.Outcome))
 		rt.finishRun(ctx, finished)
 		span.SetAttributes(
 			observability.String("run_id", finished.ID().String()),
 			observability.String("thread_id", finished.ThreadID().String()),
 			observability.String("workflow", workflow),
 			observability.String("tool", tool),
-			observability.String("outcome", result.Outcome),
+			observability.String("outcome", result.Outcome.String()),
 			observability.String("status", finished.Status().String()),
 			observability.Int64("duration_ms", finished.DurationMs()),
 		)
@@ -106,7 +107,7 @@ func (rt *AgentRuntime) Execute(ctx context.Context, principal Principal, channe
 		span.SetAttributes(
 			observability.String("workflow", workflow),
 			observability.String("tool", tool),
-			observability.String("outcome", result.Outcome),
+			observability.String("outcome", result.Outcome.String()),
 			observability.String("status", status.String()),
 		)
 		rt.recordMetrics(ctx, channel, workflow, tool, result.Outcome, status, 0)
@@ -160,7 +161,7 @@ func (rt *AgentRuntime) finishRun(ctx context.Context, run entities.Run) {
 	}
 }
 
-func (rt *AgentRuntime) recordMetrics(ctx context.Context, channel, workflow, tool, outcome string, status entities.RunStatus, durationMs int64) {
+func (rt *AgentRuntime) recordMetrics(ctx context.Context, channel, workflow, tool string, outcome tools.ToolOutcome, status entities.RunStatus, durationMs int64) {
 	rt.runsTotal.Add(ctx, 1,
 		observability.String("agent_id", runtimeAgentID),
 		observability.String("channel", channel),
@@ -177,31 +178,31 @@ func (rt *AgentRuntime) recordMetrics(ctx context.Context, channel, workflow, to
 	if tool != "" {
 		rt.toolInvocations.Add(ctx, 1,
 			observability.String("tool", tool),
-			observability.String("outcome", outcome),
+			observability.String("outcome", outcome.String()),
 		)
 	}
 }
 
-func outcomeSucceeded(outcome string) bool {
+func outcomeSucceeded(outcome tools.ToolOutcome) bool {
 	switch outcome {
-	case OutcomeRouted,
-		OutcomeReplay,
-		OutcomeFallback,
-		OutcomeClarify,
-		OutcomeAuthzDenied,
-		OutcomePolicyBlocked,
-		OutcomeEmptyText:
+	case tools.OutcomeRouted,
+		tools.OutcomeReplay,
+		tools.OutcomeFallback,
+		tools.OutcomeClarify,
+		tools.OutcomeAuthzDenied,
+		tools.OutcomePolicyBlocked,
+		tools.OutcomeEmptyText:
 		return true
 	default:
 		return false
 	}
 }
 
-func runErrText(ok bool, outcome string) string {
+func runErrText(ok bool, outcome tools.ToolOutcome) string {
 	if ok {
 		return ""
 	}
-	return outcome
+	return outcome.String()
 }
 
 func workflowFor(kind intent.Kind) string {
@@ -220,14 +221,14 @@ func workflowFor(kind intent.Kind) string {
 		intent.KindConfigureBudget,
 		intent.KindEditCategoryPercentage,
 		intent.KindQueryCategory,
-		intent.KindQueryGoal:
+		intent.KindQueryGoal,
+		intent.KindQueryCard:
 		return workflowBudget
 	case intent.KindListCards,
 		intent.KindCreateCard,
 		intent.KindCountCards,
 		intent.KindUpdateCard,
-		intent.KindDeleteCard,
-		intent.KindQueryCard:
+		intent.KindDeleteCard:
 		return workflowCards
 	default:
 		return workflowConversational

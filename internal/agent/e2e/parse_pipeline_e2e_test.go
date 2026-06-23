@@ -94,7 +94,7 @@ func TestParsePipeline_RealParser_PersistsExpense_E2E(t *testing.T) {
 
 	const canonicalExpenseJSON = `{"kind":"record_expense","amount_cents":5800,"merchant":"ifood","category_hint":"delivery"}`
 	chain := newMockOpenRouterChain(t, canonicalExpenseJSON, http.StatusOK)
-	parser, err := usecases.NewParseInbound(chain, 2000, o11y)
+	parser, err := usecases.NewParseInbound(chain, nil, 2000, o11y)
 	require.NoError(t, err)
 
 	gateway := &CapturingGateway{}
@@ -165,7 +165,7 @@ func TestParsePipeline_RealParser_ProviderDownFallsBack_E2E(t *testing.T) {
 	)
 
 	chain := newMockOpenRouterChain(t, "", http.StatusInternalServerError)
-	parser, err := usecases.NewParseInbound(chain, 2000, o11y)
+	parser, err := usecases.NewParseInbound(chain, nil, 2000, o11y)
 	require.NoError(t, err)
 
 	gateway := &CapturingGateway{}

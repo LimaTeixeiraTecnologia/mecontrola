@@ -80,7 +80,7 @@ func (c *composite) Execute(ctx context.Context, in tools.ToolInput) (tools.Tool
 		return blocked, nil
 	}
 	result, err := tool.Execute(ctx, in)
-	if settle != nil {
+	if settle != nil && err == nil {
 		settle(ctx, result.Outcome == tools.OutcomeRouted)
 	}
 	return result, err

@@ -41,16 +41,16 @@ func (s *ParseInboundSuite) newSUT(resp string, err error) *ParseInbound {
 	uc, ucErr := NewParseInbound(&fakeInterpreter{
 		resp: interfaces.LLMResponse{RawJSON: []byte(resp)},
 		err:  err,
-	}, 2000, fake.NewProvider())
+	}, nil, 2000, fake.NewProvider())
 	s.Require().NoError(ucErr)
 	return uc
 }
 
 func (s *ParseInboundSuite) TestNewParseInboundNilDeps() {
-	_, err := NewParseInbound(nil, 2000, fake.NewProvider())
+	_, err := NewParseInbound(nil, nil, 2000, fake.NewProvider())
 	s.Require().Error(err)
 
-	_, err = NewParseInbound(&fakeInterpreter{}, 2000, nil)
+	_, err = NewParseInbound(&fakeInterpreter{}, nil, 2000, nil)
 	s.Require().Error(err)
 }
 
@@ -295,7 +295,7 @@ func (s *ParseInboundSuite) TestExecuteProviderErrorFallback() {
 
 func (s *ParseInboundSuite) TestExecuteForwardsJSONSchemaToInterpreter() {
 	fi := &fakeInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind":"how_am_i_doing"}`)}}
-	uc, err := NewParseInbound(fi, 2000, fake.NewProvider())
+	uc, err := NewParseInbound(fi, nil, 2000, fake.NewProvider())
 	s.Require().NoError(err)
 
 	_, err = uc.Execute(s.ctx, ParseInboundInput{
@@ -321,7 +321,7 @@ func (s *ParseInboundSuite) TestExecuteUnsupportedToolCallFallback() {
 	fi := &fakeInterpreter{resp: interfaces.LLMResponse{
 		ToolCalls: []interfaces.ToolCall{{ID: "call_x", FunctionName: "nonexistent_tool"}},
 	}}
-	uc, err := NewParseInbound(fi, 2000, fake.NewProvider())
+	uc, err := NewParseInbound(fi, nil, 2000, fake.NewProvider())
 	s.Require().NoError(err)
 
 	out, err := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "faça algo estranho"})
@@ -360,7 +360,7 @@ func (s *ParseInboundSuite) TestInvalidJSONRecordsDecodeFailure() {
 	provider := fake.NewProvider()
 	uc, err := NewParseInbound(&fakeInterpreter{
 		resp: interfaces.LLMResponse{RawJSON: []byte(`{"kind": "record_expense", broken`)},
-	}, 2000, provider)
+	}, nil, 2000, provider)
 	s.Require().NoError(err)
 
 	out, execErr := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "gastei 58 no ifood"})
@@ -375,7 +375,7 @@ func (s *ParseInboundSuite) TestRefusalProseStaysDirectReply() {
 	const reply = "Desculpe, não posso ajudar com isso."
 	uc, err := NewParseInbound(&fakeInterpreter{
 		resp: interfaces.LLMResponse{RawJSON: []byte(reply)},
-	}, 2000, provider)
+	}, nil, 2000, provider)
 	s.Require().NoError(err)
 
 	out, execErr := uc.Execute(s.ctx, ParseInboundInput{UserID: uuid.New(), Text: "faça algo"})

@@ -28,17 +28,17 @@ const (
 )
 
 const (
-	OutcomeRouted          = "routed"
-	OutcomeFallback        = "fallback"
-	OutcomeParseError      = "parse_error"
-	OutcomeUsecaseError    = "usecase_error"
-	OutcomeMissingResolver = "missing_resolver"
-	OutcomeReplyFailed     = "reply_failed"
-	OutcomeEmptyText       = "empty_text"
-	OutcomeAuthzDenied     = "authz_denied"
-	OutcomeClarify         = "clarify"
-	OutcomePolicyBlocked   = "policy_blocked"
-	OutcomeReplay          = "replay"
+	OutcomeRouted          = tools.OutcomeRouted
+	OutcomeFallback        = tools.OutcomeFallback
+	OutcomeParseError      = tools.OutcomeParseError
+	OutcomeUsecaseError    = tools.OutcomeUsecaseError
+	OutcomeMissingResolver = tools.OutcomeMissingResolver
+	OutcomeReplyFailed     = tools.OutcomeReplyFailed
+	OutcomeEmptyText       = tools.OutcomeEmptyText
+	OutcomeAuthzDenied     = tools.OutcomeAuthzDenied
+	OutcomeClarify         = tools.OutcomeClarify
+	OutcomePolicyBlocked   = tools.OutcomePolicyBlocked
+	OutcomeReplay          = tools.OutcomeReplay
 )
 
 const (
@@ -273,7 +273,7 @@ type InboundMessage struct {
 
 type RouteResult struct {
 	Reply   string
-	Outcome string
+	Outcome tools.ToolOutcome
 	Kind    intent.Kind
 }
 
@@ -634,7 +634,7 @@ func (r *IntentRouter) publishEvent(ctx context.Context, principal Principal, ch
 		EventID:    uuid.New(),
 		UserID:     principal.UserID,
 		Channel:    channel,
-		Outcome:    result.Outcome,
+		Outcome:    result.Outcome.String(),
 		LatencyMS:  time.Since(startedAt).Milliseconds(),
 		OccurredAt: time.Now().UTC(),
 	}
@@ -722,10 +722,10 @@ func isTransientReadError(err error) bool {
 	return false
 }
 
-func (r *IntentRouter) record(ctx context.Context, kind, channel, outcome string) {
+func (r *IntentRouter) record(ctx context.Context, kind, channel string, outcome tools.ToolOutcome) {
 	r.routedTotal.Add(ctx, 1,
 		observability.String("kind", kind),
 		observability.String("channel", channel),
-		observability.String("outcome", outcome),
+		observability.String("outcome", outcome.String()),
 	)
 }

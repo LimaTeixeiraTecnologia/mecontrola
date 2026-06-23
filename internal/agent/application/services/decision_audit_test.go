@@ -7,6 +7,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
@@ -65,7 +66,20 @@ func (r *stubRedactor) Clean(raw string) (string, error) {
 	return raw, nil
 }
 
-func newTestAuditor(repo interfaces.AgentDecisionRepository, redactor DecisionRedactor) *decisionAuditor {
+type DecisionAuditSuite struct {
+	suite.Suite
+	ctx context.Context
+}
+
+func TestDecisionAuditSuite(t *testing.T) {
+	suite.Run(t, new(DecisionAuditSuite))
+}
+
+func (s *DecisionAuditSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *DecisionAuditSuite) newTestAuditor(repo interfaces.AgentDecisionRepository, redactor DecisionRedactor) *decisionAuditor {
 	return newDecisionAuditor(
 		noop.NewProvider(),
 		DecisionAuditDeps{
@@ -76,7 +90,7 @@ func newTestAuditor(repo interfaces.AgentDecisionRepository, redactor DecisionRe
 	)
 }
 
-func validInput() decisionRecordInput {
+func (s *DecisionAuditSuite) validInput() decisionRecordInput {
 	return decisionRecordInput{
 		UserID:       uuid.New(),
 		Channel:      "whatsapp",
@@ -88,85 +102,59 @@ func validInput() decisionRecordInput {
 	}
 }
 
-func TestDecisionAudit_BeginSkipped_WhenLLMModelMissing(t *testing.T) {
-	t.Parallel()
-	a := newTestAuditor(&stubDecisionRepo{}, nil)
-	in := validInput()
+func (s *DecisionAuditSuite) TestBeginSkipped_WhenLLMModelMissing() {
+	a := s.newTestAuditor(&stubDecisionRepo{}, nil)
+	in := s.validInput()
 	in.LLMModel = ""
-	dc := a.begin(context.Background(), in)
-	if dc.recorded {
-		t.Fatal("esperava decisionContext nao gravado quando LLMModel ausente")
-	}
+	dc := a.begin(s.ctx, in)
+	s.False(dc.recorded, "esperava decisionContext nao gravado quando LLMModel ausente")
 }
 
-func TestDecisionAudit_BeginSkipped_WhenMessageIDMissing(t *testing.T) {
-	t.Parallel()
-	a := newTestAuditor(&stubDecisionRepo{}, nil)
-	in := validInput()
+func (s *DecisionAuditSuite) TestBeginSkipped_WhenMessageIDMissing() {
+	a := s.newTestAuditor(&stubDecisionRepo{}, nil)
+	in := s.validInput()
 	in.MessageID = ""
-	dc := a.begin(context.Background(), in)
-	if dc.recorded {
-		t.Fatal("esperava decisionContext nao gravado quando MessageID ausente")
-	}
+	dc := a.begin(s.ctx, in)
+	s.False(dc.recorded, "esperava decisionContext nao gravado quando MessageID ausente")
 }
 
-func TestDecisionAudit_BeginSkipped_WhenPromptSHA256Missing(t *testing.T) {
-	t.Parallel()
-	a := newTestAuditor(&stubDecisionRepo{}, nil)
-	in := validInput()
+func (s *DecisionAuditSuite) TestBeginSkipped_WhenPromptSHA256Missing() {
+	a := s.newTestAuditor(&stubDecisionRepo{}, nil)
+	in := s.validInput()
 	in.PromptSHA256 = ""
-	dc := a.begin(context.Background(), in)
-	if dc.recorded {
-		t.Fatal("esperava decisionContext nao gravado quando PromptSHA256 ausente")
-	}
+	dc := a.begin(s.ctx, in)
+	s.False(dc.recorded, "esperava decisionContext nao gravado quando PromptSHA256 ausente")
 }
 
-func TestDecisionAudit_RedactorFailure_ReturnsEmptyJSON(t *testing.T) {
-	t.Parallel()
+func (s *DecisionAuditSuite) TestRedactorFailure_ReturnsEmptyJSON() {
 	redactor := &stubRedactor{err: errors.New("sanitizer: empty after normalization")}
-	a := newTestAuditor(&stubDecisionRepo{}, redactor)
-	result := a.redactResponse(context.Background(), "texto com pii", nil)
-	if string(result) != "{}" {
-		t.Fatalf("esperava '{}' quando redactor falha, obteve: %s", string(result))
-	}
+	a := s.newTestAuditor(&stubDecisionRepo{}, redactor)
+	result := a.redactResponse(s.ctx, "texto com pii", nil)
+	s.Equal("{}", string(result), "esperava '{}' quando redactor falha")
 }
 
-func TestDecisionAudit_Begin_Recorded_WhenValid(t *testing.T) {
-	t.Parallel()
-	a := newTestAuditor(&stubDecisionRepo{}, &stubRedactor{})
-	dc := a.begin(context.Background(), validInput())
-	if !dc.recorded {
-		t.Fatal("esperava decisionContext gravado com input valido")
-	}
-	if dc.auditor == nil {
-		t.Fatal("esperava auditor nao nil no decisionContext")
-	}
+func (s *DecisionAuditSuite) TestBegin_Recorded_WhenValid() {
+	a := s.newTestAuditor(&stubDecisionRepo{}, &stubRedactor{})
+	dc := a.begin(s.ctx, s.validInput())
+	s.True(dc.recorded, "esperava decisionContext gravado com input valido")
+	s.NotNil(dc.auditor, "esperava auditor nao nil no decisionContext")
 }
 
-func TestDecisionAudit_Begin_NotRecorded_WhenInsertFails(t *testing.T) {
-	t.Parallel()
+func (s *DecisionAuditSuite) TestBegin_NotRecorded_WhenInsertFails() {
 	repo := &stubDecisionRepo{insertErr: errors.New("db: connection refused")}
-	a := newTestAuditor(repo, &stubRedactor{})
-	dc := a.begin(context.Background(), validInput())
-	if dc.recorded {
-		t.Fatal("esperava decisionContext nao gravado quando Insert falha")
-	}
-	if !dc.failed {
-		t.Fatal("esperava decisionContext failed quando Insert falha com erro nao-conflito")
-	}
+	a := s.newTestAuditor(repo, &stubRedactor{})
+	dc := a.begin(s.ctx, s.validInput())
+	s.False(dc.recorded, "esperava decisionContext nao gravado quando Insert falha")
+	s.True(dc.failed, "esperava decisionContext failed quando Insert falha com erro nao-conflito")
 }
 
-func TestDecisionAudit_Settle_NoopWhenNotRecorded(t *testing.T) {
-	t.Parallel()
+func (s *DecisionAuditSuite) TestSettle_NoopWhenNotRecorded() {
 	dc := decisionContext{}
-	dc.settle(context.Background(), true)
+	dc.settle(s.ctx, true)
 }
 
-func TestDecisionAudit_DisabledAuditor_BeginReturnsEmpty(t *testing.T) {
-	t.Parallel()
+func (s *DecisionAuditSuite) TestDisabledAuditor_BeginReturnsEmpty() {
 	a := newDecisionAuditor(noop.NewProvider(), DecisionAuditDeps{}, nil)
-	dc := a.begin(context.Background(), validInput())
-	if dc.recorded {
-		t.Fatal("auditor desabilitado nao deve gravar")
-	}
+	dc := a.begin(s.ctx, s.validInput())
+	s.False(dc.recorded, "auditor desabilitado nao deve gravar")
 }

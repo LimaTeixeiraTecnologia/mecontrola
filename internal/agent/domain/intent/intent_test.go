@@ -1,218 +1,191 @@
-package intent_test
+package intent
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestKindString(t *testing.T) {
-	t.Parallel()
+type IntentSuite struct {
+	suite.Suite
+	ctx context.Context
+}
 
-	cases := map[intent.Kind]string{
-		intent.KindRecordExpense:   "record_expense",
-		intent.KindQueryCategory:   "query_category",
-		intent.KindQueryGoal:       "query_goal",
-		intent.KindQueryCard:       "query_card",
-		intent.KindMonthlySummary:  "monthly_summary",
-		intent.KindHowAmIDoing:     "how_am_i_doing",
-		intent.KindConfigureBudget: "configure_budget",
-		intent.KindListCards:       "list_cards",
-		intent.KindUnknown:         "unknown",
+func TestIntentSuite(t *testing.T) {
+	suite.Run(t, new(IntentSuite))
+}
+
+func (s *IntentSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *IntentSuite) TestKindString() {
+	cases := map[Kind]string{
+		KindRecordExpense:   "record_expense",
+		KindQueryCategory:   "query_category",
+		KindQueryGoal:       "query_goal",
+		KindQueryCard:       "query_card",
+		KindMonthlySummary:  "monthly_summary",
+		KindHowAmIDoing:     "how_am_i_doing",
+		KindConfigureBudget: "configure_budget",
+		KindListCards:       "list_cards",
+		KindUnknown:         "unknown",
 	}
 
 	for k, want := range cases {
-		if got := k.String(); got != want {
-			t.Fatalf("Kind(%d).String() = %q, want %q", k, got, want)
-		}
+		got := k.String()
+		s.Equal(want, got, "Kind(%d).String()", k)
 	}
 }
 
-func TestParseKind(t *testing.T) {
-	t.Parallel()
-
+func (s *IntentSuite) TestParseKind() {
 	type tc struct {
 		in      string
-		want    intent.Kind
+		want    Kind
 		wantErr error
 	}
 
 	tests := []tc{
-		{in: "record_expense", want: intent.KindRecordExpense},
-		{in: " QUERY_CATEGORY ", want: intent.KindQueryCategory},
-		{in: "query_goal", want: intent.KindQueryGoal},
-		{in: "query_card", want: intent.KindQueryCard},
-		{in: "monthly_summary", want: intent.KindMonthlySummary},
-		{in: "how_am_i_doing", want: intent.KindHowAmIDoing},
-		{in: "configure_budget", want: intent.KindConfigureBudget},
-		{in: " CONFIGURE_BUDGET ", want: intent.KindConfigureBudget},
-		{in: "list_cards", want: intent.KindListCards},
-		{in: "unknown", want: intent.KindUnknown},
-		{in: "", want: intent.KindUnknown},
-		{in: "bogus", wantErr: intent.ErrKindUnknown},
+		{in: "record_expense", want: KindRecordExpense},
+		{in: " QUERY_CATEGORY ", want: KindQueryCategory},
+		{in: "query_goal", want: KindQueryGoal},
+		{in: "query_card", want: KindQueryCard},
+		{in: "monthly_summary", want: KindMonthlySummary},
+		{in: "how_am_i_doing", want: KindHowAmIDoing},
+		{in: "configure_budget", want: KindConfigureBudget},
+		{in: " CONFIGURE_BUDGET ", want: KindConfigureBudget},
+		{in: "list_cards", want: KindListCards},
+		{in: "unknown", want: KindUnknown},
+		{in: "", want: KindUnknown},
+		{in: "bogus", wantErr: ErrKindUnknown},
 	}
 
 	for _, tc := range tests {
-		got, err := intent.ParseKind(tc.in)
+		got, err := ParseKind(tc.in)
 		if tc.wantErr != nil {
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("ParseKind(%q) err = %v, want %v", tc.in, err, tc.wantErr)
-			}
+			s.True(errors.Is(err, tc.wantErr), "ParseKind(%q) err = %v, want %v", tc.in, err, tc.wantErr)
 			continue
 		}
-		if err != nil {
-			t.Fatalf("ParseKind(%q) unexpected err: %v", tc.in, err)
-		}
-		if got != tc.want {
-			t.Fatalf("ParseKind(%q) = %v, want %v", tc.in, got, tc.want)
-		}
+		s.NoError(err, "ParseKind(%q) unexpected err", tc.in)
+		s.Equal(tc.want, got, "ParseKind(%q)", tc.in)
 	}
 }
 
-func TestNewRecordExpense(t *testing.T) {
-	t.Parallel()
-
+func (s *IntentSuite) TestNewRecordExpense() {
 	type tc struct {
 		name    string
-		fields  intent.RecordExpenseFields
+		fields  RecordExpenseFields
 		wantErr error
-		check   func(t *testing.T, got intent.Intent)
+		check   func(got Intent)
 	}
 
 	tests := []tc{
 		{
 			name: "happy_path_credit",
-			fields: intent.RecordExpenseFields{
+			fields: RecordExpenseFields{
 				AmountCents:   5800,
 				Merchant:      "iFood",
 				CategoryHint:  "Alimentação",
 				PaymentMethod: "CREDIT",
 				CardHint:      "nubank",
 			},
-			check: func(t *testing.T, got intent.Intent) {
-				if got.Kind() != intent.KindRecordExpense {
-					t.Fatalf("kind = %v", got.Kind())
-				}
-				if got.AmountCents() != 5800 {
-					t.Fatalf("amount = %d", got.AmountCents())
-				}
-				if got.PaymentMethod() != "credit" {
-					t.Fatalf("payment_method = %q", got.PaymentMethod())
-				}
-				if got.Merchant() != "iFood" {
-					t.Fatalf("merchant = %q", got.Merchant())
-				}
+			check: func(got Intent) {
+				s.Equal(KindRecordExpense, got.Kind())
+				s.Equal(int64(5800), got.AmountCents())
+				s.Equal("credit", got.PaymentMethod())
+				s.Equal("iFood", got.Merchant())
 			},
 		},
 		{
 			name:    "negative_amount",
-			fields:  intent.RecordExpenseFields{AmountCents: -1},
-			wantErr: intent.ErrAmountNonPositive,
+			fields:  RecordExpenseFields{AmountCents: -1},
+			wantErr: ErrAmountNonPositive,
 		},
 		{
 			name:    "zero_amount",
-			fields:  intent.RecordExpenseFields{AmountCents: 0},
-			wantErr: intent.ErrAmountNonPositive,
+			fields:  RecordExpenseFields{AmountCents: 0},
+			wantErr: ErrAmountNonPositive,
 		},
 		{
 			name: "merchant_too_long",
-			fields: intent.RecordExpenseFields{
+			fields: RecordExpenseFields{
 				AmountCents: 100,
 				Merchant:    strings.Repeat("a", 200),
 			},
-			wantErr: intent.ErrMerchantTooLong,
+			wantErr: ErrMerchantTooLong,
 		},
 		{
 			name: "invalid_payment_method",
-			fields: intent.RecordExpenseFields{
+			fields: RecordExpenseFields{
 				AmountCents:   100,
 				PaymentMethod: "bitcoin",
 			},
-			wantErr: intent.ErrPaymentMethodInvalid,
+			wantErr: ErrPaymentMethodInvalid,
 		},
 		{
 			name: "empty_payment_method_ok",
-			fields: intent.RecordExpenseFields{
+			fields: RecordExpenseFields{
 				AmountCents: 100,
 			},
-			check: func(t *testing.T, got intent.Intent) {
-				if got.PaymentMethod() != "" {
-					t.Fatalf("payment_method = %q", got.PaymentMethod())
-				}
+			check: func(got Intent) {
+				s.Equal("", got.PaymentMethod())
 			},
 		},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := intent.NewRecordExpense(tc.fields)
+		s.Run(tc.name, func() {
+			got, err := NewRecordExpense(tc.fields)
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("err = %v, want %v", err, tc.wantErr)
-				}
+				s.True(errors.Is(err, tc.wantErr), "err = %v, want %v", err, tc.wantErr)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected err: %v", err)
-			}
+			s.NoError(err)
 			if tc.check != nil {
-				tc.check(t, got)
+				tc.check(got)
 			}
 		})
 	}
 }
 
-func TestNewQueryCategory(t *testing.T) {
-	t.Parallel()
+func (s *IntentSuite) TestNewQueryCategory() {
+	_, err := NewQueryCategory("")
+	s.True(errors.Is(err, ErrCategoryNameEmpty), "empty: err = %v", err)
 
-	if _, err := intent.NewQueryCategory(""); !errors.Is(err, intent.ErrCategoryNameEmpty) {
-		t.Fatalf("empty: err = %v", err)
-	}
-	got, err := intent.NewQueryCategory("  Prazeres  ")
-	if err != nil {
-		t.Fatalf("unexpected: %v", err)
-	}
-	if got.Kind() != intent.KindQueryCategory || got.CategoryName() != "Prazeres" {
-		t.Fatalf("got = %+v", got)
-	}
+	got, err := NewQueryCategory("  Prazeres  ")
+	s.NoError(err)
+	s.Equal(KindQueryCategory, got.Kind())
+	s.Equal("Prazeres", got.CategoryName())
 }
 
-func TestNewQueryGoal(t *testing.T) {
-	t.Parallel()
+func (s *IntentSuite) TestNewQueryGoal() {
+	empty, err := NewQueryGoal("   ")
+	s.NoError(err)
+	s.Equal(KindQueryGoal, empty.Kind())
+	s.Equal("", empty.GoalName())
 
-	if empty, err := intent.NewQueryGoal("   "); err != nil || empty.Kind() != intent.KindQueryGoal || empty.GoalName() != "" {
-		t.Fatalf("empty deve ser válido sem nome: got=%+v err=%v", empty, err)
-	}
-	got, err := intent.NewQueryGoal("Viagem Europa")
-	if err != nil {
-		t.Fatalf("unexpected: %v", err)
-	}
-	if got.Kind() != intent.KindQueryGoal || got.GoalName() != "Viagem Europa" {
-		t.Fatalf("got = %+v", got)
-	}
+	got, err := NewQueryGoal("Viagem Europa")
+	s.NoError(err)
+	s.Equal(KindQueryGoal, got.Kind())
+	s.Equal("Viagem Europa", got.GoalName())
 }
 
-func TestNewQueryCard(t *testing.T) {
-	t.Parallel()
+func (s *IntentSuite) TestNewQueryCard() {
+	empty, err := NewQueryCard("")
+	s.NoError(err)
+	s.Equal(KindQueryCard, empty.Kind())
+	s.Equal("", empty.CardName())
 
-	if empty, err := intent.NewQueryCard(""); err != nil || empty.Kind() != intent.KindQueryCard || empty.CardName() != "" {
-		t.Fatalf("empty deve ser válido sem nome: got=%+v err=%v", empty, err)
-	}
-	got, err := intent.NewQueryCard("Nubank")
-	if err != nil {
-		t.Fatalf("unexpected: %v", err)
-	}
-	if got.Kind() != intent.KindQueryCard || got.CardName() != "Nubank" {
-		t.Fatalf("got = %+v", got)
-	}
+	got, err := NewQueryCard("Nubank")
+	s.NoError(err)
+	s.Equal(KindQueryCard, got.Kind())
+	s.Equal("Nubank", got.CardName())
 }
 
-func TestNewMonthlySummary(t *testing.T) {
-	t.Parallel()
-
+func (s *IntentSuite) TestNewMonthlySummary() {
 	cases := []struct {
 		in      string
 		wantRef string
@@ -221,68 +194,44 @@ func TestNewMonthlySummary(t *testing.T) {
 		{in: "", wantRef: ""},
 		{in: "  ", wantRef: ""},
 		{in: "2026-06", wantRef: "2026-06"},
-		{in: "2026-13", wantErr: intent.ErrRefMonthInvalid},
-		{in: "2026/06", wantErr: intent.ErrRefMonthInvalid},
-		{in: "26-06", wantErr: intent.ErrRefMonthInvalid},
+		{in: "2026-13", wantErr: ErrRefMonthInvalid},
+		{in: "2026/06", wantErr: ErrRefMonthInvalid},
+		{in: "26-06", wantErr: ErrRefMonthInvalid},
 	}
 	for _, tc := range cases {
-		got, err := intent.NewMonthlySummary(tc.in)
+		got, err := NewMonthlySummary(tc.in)
 		if tc.wantErr != nil {
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("in=%q err=%v want=%v", tc.in, err, tc.wantErr)
-			}
+			s.True(errors.Is(err, tc.wantErr), "in=%q err=%v want=%v", tc.in, err, tc.wantErr)
 			continue
 		}
-		if err != nil {
-			t.Fatalf("in=%q unexpected: %v", tc.in, err)
-		}
-		if got.Kind() != intent.KindMonthlySummary {
-			t.Fatalf("in=%q kind=%v", tc.in, got.Kind())
-		}
-		if got.RefMonth() != tc.wantRef {
-			t.Fatalf("in=%q ref=%q want=%q", tc.in, got.RefMonth(), tc.wantRef)
-		}
+		s.NoError(err, "in=%q unexpected", tc.in)
+		s.Equal(KindMonthlySummary, got.Kind(), "in=%q kind", tc.in)
+		s.Equal(tc.wantRef, got.RefMonth(), "in=%q ref", tc.in)
 	}
 }
 
-func TestNewHowAmIDoing(t *testing.T) {
-	t.Parallel()
-	got := intent.NewHowAmIDoing()
-	if got.Kind() != intent.KindHowAmIDoing {
-		t.Fatalf("kind = %v", got.Kind())
-	}
+func (s *IntentSuite) TestNewHowAmIDoing() {
+	got := NewHowAmIDoing()
+	s.Equal(KindHowAmIDoing, got.Kind())
 }
 
-func TestNewConfigureBudget(t *testing.T) {
-	t.Parallel()
-	got := intent.NewConfigureBudget()
-	if got.Kind() != intent.KindConfigureBudget {
-		t.Fatalf("kind = %v", got.Kind())
-	}
-	if got.IsZero() {
-		t.Fatalf("intent should not be zero")
-	}
+func (s *IntentSuite) TestNewConfigureBudget() {
+	got := NewConfigureBudget()
+	s.Equal(KindConfigureBudget, got.Kind())
+	s.False(got.IsZero())
 }
 
-func TestNewListCards(t *testing.T) {
-	t.Parallel()
-	got := intent.NewListCards()
-	if got.Kind() != intent.KindListCards {
-		t.Fatalf("NewListCards().Kind() = %v, want KindListCards", got.Kind())
-	}
+func (s *IntentSuite) TestNewListCards() {
+	got := NewListCards()
+	s.Equal(KindListCards, got.Kind())
 }
 
-func TestNewUnknown(t *testing.T) {
-	t.Parallel()
+func (s *IntentSuite) TestNewUnknown() {
+	_, err := NewUnknown("")
+	s.True(errors.Is(err, ErrRawTextEmpty), "empty: err = %v", err)
 
-	if _, err := intent.NewUnknown(""); !errors.Is(err, intent.ErrRawTextEmpty) {
-		t.Fatalf("empty: err = %v", err)
-	}
-	got, err := intent.NewUnknown("  oi tudo bem  ")
-	if err != nil {
-		t.Fatalf("unexpected: %v", err)
-	}
-	if got.Kind() != intent.KindUnknown || got.RawText() != "oi tudo bem" {
-		t.Fatalf("got = %+v", got)
-	}
+	got, err := NewUnknown("  oi tudo bem  ")
+	s.NoError(err)
+	s.Equal(KindUnknown, got.Kind())
+	s.Equal("oi tudo bem", got.RawText())
 }

@@ -34,6 +34,24 @@ Validado via `RUN_REAL_LLM` (recognition matrix 100%):
 Antes de trocar primário/fallback, rodar o guard:
 `RUN_REAL_LLM=1 LLM_TEST_MODEL=<modelo> go test -tags=integration ./internal/agent/e2e/ -run TestParseInbound_RealLLM_ProductionChain`.
 
+Default versionado: `AGENT_LLM_FALLBACK_MODELS=mistralai/mistral-small-3.2-24b-instruct`
+(`configs/config.go`). Haiku permanece apenas em `AGENT_ONBOARDING_LLM_MODEL` (onboarding usa
+tool-calling, que funciona). haiku e gpt-5-nano retornam `kind=unknown` para os intents estruturados
+(card edit/delete, edit de percentual) — incompatibilidade arquitetural com `response_format json_schema`,
+não conveniência; por isso são `t.Skip` na matriz `RealLLM_NewKinds`.
+
+## Matriz de novos kinds (update_card / delete_card / edit_category_percentage)
+
+Guard real-LLM dedicado: `TestParseInbound_RealLLM_NewKinds_MatrixAllModels`
+(`internal/agent/e2e/new_kinds_matrix_realllm_test.go`).
+
+`RUN_REAL_LLM=1 go test -tags integration -run RealLLM_NewKinds ./internal/agent/e2e/...`
+
+Critério de aprovação por frase: ≥2/3 acertos; classificação de `kind` 100%. Asserção dura para o
+primário (gemini) e para o fallback (mistral). A distinção apelido (`new_nickname`) vs nome
+(`new_name`) e fechamento (`new_closing_day`) vs vencimento (`new_due_day`) está fixada por few-shot
+explícito em `parse_intent.system.tmpl`; ao editar esse template, rodar a matriz antes de mergear.
+
 ## Métricas
 
 - `agent_intent_parsed_total{kind,outcome}` — outcome `ok` vs `fallback_*`/`provider_error`.

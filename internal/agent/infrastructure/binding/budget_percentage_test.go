@@ -1,4 +1,4 @@
-package binding_test
+package binding
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	budgetsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	budgetsinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
@@ -46,7 +45,7 @@ func (s *BudgetPercentageBindingSuite) SetupTest() {
 
 func (s *BudgetPercentageBindingSuite) TestMapsCategoryNameToRootSlug() {
 	uc := &fakeEditCategoryPercentageUC{out: budgetsoutput.BudgetOutput{Competence: "2026-06"}}
-	adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+	adapter := NewCategoryPercentageEditorAdapter(uc)
 
 	result, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 		UserID:       s.userID,
@@ -80,7 +79,7 @@ func (s *BudgetPercentageBindingSuite) TestMapsAllCanonicalCategoryAliases() {
 	for _, c := range cases {
 		s.Run(c.name, func() {
 			uc := &fakeEditCategoryPercentageUC{out: budgetsoutput.BudgetOutput{Competence: "2026-06"}}
-			adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+			adapter := NewCategoryPercentageEditorAdapter(uc)
 
 			result, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 				UserID:       s.userID,
@@ -99,7 +98,7 @@ func (s *BudgetPercentageBindingSuite) TestMapsPercentageZeroAndHundred() {
 	for _, pct := range []int{0, 100} {
 		s.Run("percentage", func() {
 			uc := &fakeEditCategoryPercentageUC{out: budgetsoutput.BudgetOutput{Competence: "2026-06"}}
-			adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+			adapter := NewCategoryPercentageEditorAdapter(uc)
 
 			result, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 				UserID:       s.userID,
@@ -116,7 +115,7 @@ func (s *BudgetPercentageBindingSuite) TestMapsPercentageZeroAndHundred() {
 
 func (s *BudgetPercentageBindingSuite) TestNoBudgetWhenBudgetNotActive() {
 	uc := &fakeEditCategoryPercentageUC{err: budgetsentities.ErrBudgetNotActive}
-	adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+	adapter := NewCategoryPercentageEditorAdapter(uc)
 
 	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 		UserID:       s.userID,
@@ -130,7 +129,7 @@ func (s *BudgetPercentageBindingSuite) TestNoBudgetWhenBudgetNotActive() {
 
 func (s *BudgetPercentageBindingSuite) TestUnknownCategoryReturnsAgentSentinel() {
 	uc := &fakeEditCategoryPercentageUC{}
-	adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+	adapter := NewCategoryPercentageEditorAdapter(uc)
 
 	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 		UserID:       s.userID,
@@ -145,7 +144,7 @@ func (s *BudgetPercentageBindingSuite) TestUnknownCategoryReturnsAgentSentinel()
 
 func (s *BudgetPercentageBindingSuite) TestNoBudgetReturnsAgentSentinel() {
 	uc := &fakeEditCategoryPercentageUC{err: budgetsinterfaces.ErrBudgetNotFound}
-	adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+	adapter := NewCategoryPercentageEditorAdapter(uc)
 
 	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 		UserID:       s.userID,
@@ -159,7 +158,7 @@ func (s *BudgetPercentageBindingSuite) TestNoBudgetReturnsAgentSentinel() {
 
 func (s *BudgetPercentageBindingSuite) TestPropagatesGenericUsecaseError() {
 	uc := &fakeEditCategoryPercentageUC{err: errors.New("boom")}
-	adapter := binding.NewCategoryPercentageEditorAdapter(uc)
+	adapter := NewCategoryPercentageEditorAdapter(uc)
 
 	_, err := adapter.Execute(s.ctx, appservices.CategoryPercentageEditorInput{
 		UserID:       s.userID,

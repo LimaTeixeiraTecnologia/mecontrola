@@ -8,6 +8,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
@@ -28,55 +29,55 @@ type stubWhatsApp struct{}
 
 func (stubWhatsApp) SendTextMessage(context.Context, string, string) error { return nil }
 
-func newGuardRouter(t *testing.T) *IntentRouter {
-	t.Helper()
-	router, err := NewIntentRouter(noop.NewProvider(), IntentRouterDeps{
-		Parser:          stubParser{},
-		Fallback:        stubFallback{},
-		WhatsAppGateway: stubWhatsApp{},
-		Location:        time.UTC,
-	})
-	if err != nil {
-		t.Fatalf("NewIntentRouter: %v", err)
-	}
-	return router
-}
-
-func TestAuthorizeWrite_AllowsMatchingPrincipal(t *testing.T) {
-	t.Parallel()
-	router := newGuardRouter(t)
-	owner := uuid.New()
-	if !router.authorizeWrite(context.Background(), Principal{UserID: owner}, owner, intent.KindRecordExpense, ChannelWhatsApp) {
-		t.Fatal("esperava autorizacao para userID igual ao principal")
-	}
-}
-
-func TestAuthorizeWrite_DeniesDivergentUserID(t *testing.T) {
-	t.Parallel()
-	router := newGuardRouter(t)
-	principal := Principal{UserID: uuid.New()}
-	attacker := uuid.New()
-	if router.authorizeWrite(context.Background(), principal, attacker, intent.KindRecordExpense, ChannelWhatsApp) {
-		t.Fatal("esperava negacao quando userID efetivo diverge do principal")
-	}
-}
-
-func TestAuthorizeWrite_DeniesNilUserID(t *testing.T) {
-	t.Parallel()
-	router := newGuardRouter(t)
-	if router.authorizeWrite(context.Background(), Principal{UserID: uuid.Nil}, uuid.Nil, intent.KindCreateCard, ChannelWhatsApp) {
-		t.Fatal("esperava negacao para userID nulo")
-	}
-}
-
 type fakeTimeoutError struct{}
 
 func (fakeTimeoutError) Error() string   { return "i/o timeout" }
 func (fakeTimeoutError) Timeout() bool   { return true }
 func (fakeTimeoutError) Temporary() bool { return true }
 
-func TestIsTransientReadError(t *testing.T) {
-	t.Parallel()
+type AuthzRetrySuite struct {
+	suite.Suite
+	ctx context.Context
+}
+
+func TestAuthzRetrySuite(t *testing.T) {
+	suite.Run(t, new(AuthzRetrySuite))
+}
+
+func (s *AuthzRetrySuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *AuthzRetrySuite) newGuardRouter() *IntentRouter {
+	router, err := NewIntentRouter(noop.NewProvider(), IntentRouterDeps{
+		Parser:          stubParser{},
+		Fallback:        stubFallback{},
+		WhatsAppGateway: stubWhatsApp{},
+		Location:        time.UTC,
+	})
+	s.Require().NoError(err, "NewIntentRouter")
+	return router
+}
+
+func (s *AuthzRetrySuite) TestAuthorizeWrite_AllowsMatchingPrincipal() {
+	router := s.newGuardRouter()
+	owner := uuid.New()
+	s.True(router.authorizeWrite(s.ctx, Principal{UserID: owner}, owner, intent.KindRecordExpense, ChannelWhatsApp), "esperava autorizacao para userID igual ao principal")
+}
+
+func (s *AuthzRetrySuite) TestAuthorizeWrite_DeniesDivergentUserID() {
+	router := s.newGuardRouter()
+	principal := Principal{UserID: uuid.New()}
+	attacker := uuid.New()
+	s.False(router.authorizeWrite(s.ctx, principal, attacker, intent.KindRecordExpense, ChannelWhatsApp), "esperava negacao quando userID efetivo diverge do principal")
+}
+
+func (s *AuthzRetrySuite) TestAuthorizeWrite_DeniesNilUserID() {
+	router := s.newGuardRouter()
+	s.False(router.authorizeWrite(s.ctx, Principal{UserID: uuid.Nil}, uuid.Nil, intent.KindCreateCard, ChannelWhatsApp), "esperava negacao para userID nulo")
+}
+
+func (s *AuthzRetrySuite) TestIsTransientReadError() {
 	cases := []struct {
 		name string
 		err  error
@@ -90,80 +91,55 @@ func TestIsTransientReadError(t *testing.T) {
 		{name: "domain", err: errors.New("amount_cents invalido"), want: false},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := isTransientReadError(tc.err); got != tc.want {
-				t.Fatalf("isTransientReadError(%v) = %v, want %v", tc.err, got, tc.want)
-			}
+		s.Run(tc.name, func() {
+			s.Equal(tc.want, isTransientReadError(tc.err), "isTransientReadError(%v)", tc.err)
 		})
 	}
 }
 
-func TestWithReadRetry_RetriesTransientThenSucceeds(t *testing.T) {
-	t.Parallel()
+func (s *AuthzRetrySuite) TestWithReadRetry_RetriesTransientThenSucceeds() {
 	calls := 0
-	out, err := withReadRetry(context.Background(), func(context.Context) (int, error) {
+	out, err := withReadRetry(s.ctx, func(context.Context) (int, error) {
 		calls++
 		if calls < 2 {
 			return 0, context.DeadlineExceeded
 		}
 		return 42, nil
 	})
-	if err != nil {
-		t.Fatalf("esperava sucesso, recebeu erro: %v", err)
-	}
-	if out != 42 {
-		t.Fatalf("esperava 42, recebeu %d", out)
-	}
-	if calls != 2 {
-		t.Fatalf("esperava 2 chamadas, recebeu %d", calls)
-	}
+	s.Require().NoError(err, "esperava sucesso")
+	s.Equal(42, out)
+	s.Equal(2, calls, "esperava 2 chamadas")
 }
 
-func TestWithReadRetry_DoesNotRetryDomainError(t *testing.T) {
-	t.Parallel()
+func (s *AuthzRetrySuite) TestWithReadRetry_DoesNotRetryDomainError() {
 	calls := 0
 	domainErr := errors.New("categoria invalida")
-	_, err := withReadRetry(context.Background(), func(context.Context) (int, error) {
+	_, err := withReadRetry(s.ctx, func(context.Context) (int, error) {
 		calls++
 		return 0, domainErr
 	})
-	if !errors.Is(err, domainErr) {
-		t.Fatalf("esperava erro de dominio, recebeu %v", err)
-	}
-	if calls != 1 {
-		t.Fatalf("esperava 1 chamada para erro de dominio, recebeu %d", calls)
-	}
+	s.ErrorIs(err, domainErr)
+	s.Equal(1, calls, "esperava 1 chamada para erro de dominio")
 }
 
-func TestWithReadRetry_StopsOnCanceledContext(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+func (s *AuthzRetrySuite) TestWithReadRetry_StopsOnCanceledContext() {
+	ctx, cancel := context.WithCancel(s.ctx)
 	cancel()
 	calls := 0
 	_, err := withReadRetry(ctx, func(context.Context) (int, error) {
 		calls++
 		return 0, context.DeadlineExceeded
 	})
-	if err == nil {
-		t.Fatal("esperava erro apos cancelamento")
-	}
-	if calls != 1 {
-		t.Fatalf("esperava 1 chamada quando ctx cancelado durante backoff, recebeu %d", calls)
-	}
+	s.Error(err, "esperava erro apos cancelamento")
+	s.Equal(1, calls, "esperava 1 chamada quando ctx cancelado durante backoff")
 }
 
-func TestWithReadRetry_ExhaustsAttempts(t *testing.T) {
-	t.Parallel()
+func (s *AuthzRetrySuite) TestWithReadRetry_ExhaustsAttempts() {
 	calls := 0
-	_, err := withReadRetry(context.Background(), func(context.Context) (int, error) {
+	_, err := withReadRetry(s.ctx, func(context.Context) (int, error) {
 		calls++
 		return 0, context.DeadlineExceeded
 	})
-	if err == nil {
-		t.Fatal("esperava erro apos esgotar tentativas")
-	}
-	if calls != maxReadRetryAttempts {
-		t.Fatalf("esperava %d tentativas, recebeu %d", maxReadRetryAttempts, calls)
-	}
+	s.Error(err, "esperava erro apos esgotar tentativas")
+	s.Equal(maxReadRetryAttempts, calls, "esperava %d tentativas", maxReadRetryAttempts)
 }

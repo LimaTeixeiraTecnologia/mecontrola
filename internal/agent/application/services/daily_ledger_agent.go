@@ -900,11 +900,11 @@ func (a *DailyLedgerAgent) delegateFallback(ctx context.Context, userID uuid.UUI
 	return reply
 }
 
-func (a *DailyLedgerAgent) record(ctx context.Context, kind, channel, outcome string) {
+func (a *DailyLedgerAgent) record(ctx context.Context, kind, channel string, outcome tools.ToolOutcome) {
 	a.routedTotal.Add(ctx, 1,
 		observability.String("kind", kind),
 		observability.String("channel", channel),
-		observability.String("outcome", outcome),
+		observability.String("outcome", outcome.String()),
 	)
 }
 

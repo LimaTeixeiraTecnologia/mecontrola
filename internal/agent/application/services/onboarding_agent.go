@@ -6,6 +6,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
@@ -69,10 +70,10 @@ func (a *OnboardingAgent) degradeOnboarding(ctx context.Context, userID uuid.UUI
 	return conversation.Reply, true
 }
 
-func (a *OnboardingAgent) record(ctx context.Context, kind, channel, outcome string) {
+func (a *OnboardingAgent) record(ctx context.Context, kind, channel string, outcome tools.ToolOutcome) {
 	a.routedTotal.Add(ctx, 1,
 		observability.String("kind", kind),
 		observability.String("channel", channel),
-		observability.String("outcome", outcome),
+		observability.String("outcome", outcome.String()),
 	)
 }

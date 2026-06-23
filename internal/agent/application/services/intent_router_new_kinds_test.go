@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
@@ -161,7 +162,7 @@ func (s *NewKindsRouterSuite) buildCardPurchase() intent.Intent {
 func (s *NewKindsRouterSuite) TestCardPurchase_MissingResolverIsHonest() {
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
 	s.Equal(intent.KindRecordCardPurchase, result.Kind)
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "registrada")
 }
@@ -171,7 +172,7 @@ func (s *NewKindsRouterSuite) TestCardPurchase_PersistedConfirms() {
 		Persisted: true, CardFound: true, CardName: "Nubank", AmountCents: 120000, Installments: 6, CategoryPath: "Casa > Eletro",
 	}}
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.cardPur.calls)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Compra parcelada registrada")
@@ -183,7 +184,7 @@ func (s *NewKindsRouterSuite) TestCardPurchase_PersistedConfirms() {
 func (s *NewKindsRouterSuite) TestCardPurchase_CardNotFoundIsHonest() {
 	s.cardPur = &fakeCardPurchaseLogger{result: services.CardPurchaseLoggerResult{Persisted: false, CardFound: false}}
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "registrada")
 	s.Contains(s.wa.sent[0].Text, "nubank")
@@ -192,7 +193,7 @@ func (s *NewKindsRouterSuite) TestCardPurchase_CardNotFoundIsHonest() {
 func (s *NewKindsRouterSuite) TestCardPurchase_UsecaseErrorIsHonest() {
 	s.cardPur = &fakeCardPurchaseLogger{err: errors.New("boom")}
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "registrada")
 }
@@ -208,7 +209,7 @@ func (s *NewKindsRouterSuite) TestListTransactions_Routed() {
 	in, err := intent.NewListTransactions("2026-06")
 	require.NoError(s.T(), err)
 	result := s.route(in, "meus lançamentos de junho")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Lançamentos de 2026-06")
 	s.Contains(s.wa.sent[0].Text, "R$ 5.000,00")
@@ -219,14 +220,14 @@ func (s *NewKindsRouterSuite) TestListTransactions_MissingResolverIsHonest() {
 	in, err := intent.NewListTransactions("")
 	require.NoError(s.T(), err)
 	result := s.route(in, "meus lançamentos")
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 }
 
 func (s *NewKindsRouterSuite) TestDeleteLast_NoTransactions() {
 	s.lister = &fakeTransactionLister{result: services.TransactionListResult{}}
 	s.deleter = &fakeLastDeleter{}
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(0, s.deleter.calls)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "excluído")
@@ -238,7 +239,7 @@ func (s *NewKindsRouterSuite) TestDeleteLast_PicksMostRecentAndConfirms() {
 	s.lister = &fakeTransactionLister{result: services.TransactionListResult{Transactions: []services.TransactionView{older, newer}}}
 	s.deleter = &fakeLastDeleter{}
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.deleter.calls)
 	s.Equal(newer.ID, s.deleter.gotID)
 	s.Equal(int64(3), s.deleter.gotVer)
@@ -253,7 +254,7 @@ func (s *NewKindsRouterSuite) TestDeleteLast_UsecaseErrorIsHonest() {
 	s.lister = &fakeTransactionLister{result: services.TransactionListResult{Transactions: []services.TransactionView{newer}}}
 	s.deleter = &fakeLastDeleter{err: errors.New("boom")}
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "excluído")
 }
@@ -264,7 +265,7 @@ func (s *NewKindsRouterSuite) TestEditLast_NoTransactions() {
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
 	result := s.route(in, "na verdade foram 80")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(0, s.editor.calls)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "atualizado")
@@ -277,7 +278,7 @@ func (s *NewKindsRouterSuite) TestEditLast_PicksMostRecentAndConfirms() {
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
 	result := s.route(in, "corrige para 80")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.editor.calls)
 	s.Equal(newer.ID, s.editor.gotIn.Current.ID)
 	s.Equal(int64(8000), s.editor.gotIn.NewAmount)
@@ -294,7 +295,7 @@ func (s *NewKindsRouterSuite) TestEditLast_UsecaseErrorIsHonest() {
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
 	result := s.route(in, "corrige para 80")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "atualizado")
 }
@@ -310,7 +311,7 @@ func (s *NewKindsRouterSuite) TestCreateRecurring_PersistedConfirms() {
 		Persisted: true, Direction: "income", AmountCents: 500000, Frequency: "monthly", DayOfMonth: 5, Description: "salário",
 	}}
 	result := s.route(s.buildRecurring(), "todo mês recebo 5000 de salário")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.recCreat.calls)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Recorrência criada")
@@ -320,7 +321,7 @@ func (s *NewKindsRouterSuite) TestCreateRecurring_PersistedConfirms() {
 
 func (s *NewKindsRouterSuite) TestCreateRecurring_MissingResolverIsHonest() {
 	result := s.route(s.buildRecurring(), "todo mês recebo 5000 de salário")
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "criada")
 }
@@ -328,7 +329,7 @@ func (s *NewKindsRouterSuite) TestCreateRecurring_MissingResolverIsHonest() {
 func (s *NewKindsRouterSuite) TestCreateRecurring_UsecaseErrorIsHonest() {
 	s.recCreat = &fakeRecurringCreator{err: errors.New("boom")}
 	result := s.route(s.buildRecurring(), "todo mês recebo 5000 de salário")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "criada")
 }
@@ -338,7 +339,7 @@ func (s *NewKindsRouterSuite) TestListRecurring_Routed() {
 		{Direction: "income", AmountCents: 500000, Description: "salário", Frequency: "monthly", DayOfMonth: 5},
 	}}
 	result := s.route(intent.NewListRecurring(), "minhas recorrências")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Recorrências")
 	s.Contains(s.wa.sent[0].Text, "R$ 5.000,00")
@@ -348,7 +349,7 @@ func (s *NewKindsRouterSuite) TestListRecurring_Routed() {
 func (s *NewKindsRouterSuite) TestListRecurring_Empty() {
 	s.recList = &fakeRecurringLister{views: nil}
 	result := s.route(intent.NewListRecurring(), "minhas recorrências")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "ainda não tem")
 }

@@ -86,6 +86,9 @@ func (k Kind) IsWrite() bool {
 	case KindRecordExpense,
 		KindRecordIncome,
 		KindRecordCardPurchase,
+		KindDeleteLastTransaction,
+		KindEditLastTransaction,
+		KindCreateRecurring,
 		KindCreateCard,
 		KindConfigureBudget,
 		KindUpdateCard,
@@ -538,6 +541,9 @@ func normalizeOptionalName(ptr *string, tooLong error) (*string, error) {
 		return nil, nil
 	}
 	trimmed := strings.TrimSpace(*ptr)
+	if trimmed == "" {
+		return nil, nil
+	}
 	if len([]rune(trimmed)) > maxCardNameLength {
 		return nil, tooLong
 	}

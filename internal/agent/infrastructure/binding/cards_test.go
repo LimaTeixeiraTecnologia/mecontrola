@@ -1,4 +1,4 @@
-package binding_test
+package binding
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 )
@@ -50,7 +49,7 @@ func TestCardsBindingSuite(t *testing.T) {
 
 func (s *CardsBindingSuite) TestCardCreator_MapsIntentToInput() {
 	uc := &fakeCreateCardUC{out: cardoutput.Card{Nickname: "nubank", Name: "Nubank Roxinho", ClosingDay: 10, DueDay: 17, LimitCents: 500000}}
-	adapter := binding.NewCardCreatorAdapter(uc)
+	adapter := NewCardCreatorAdapter(uc)
 	userID := uuid.New()
 	in, err := intent.NewCreateCard(intent.CreateCardFields{Nickname: "nubank", Name: "Nubank Roxinho", ClosingDay: 10, DueDay: 17, LimitCents: 500000})
 	s.Require().NoError(err)
@@ -67,7 +66,7 @@ func (s *CardsBindingSuite) TestCardCreator_MapsIntentToInput() {
 
 func (s *CardsBindingSuite) TestCardCreator_NameDefaultsToNickname() {
 	uc := &fakeCreateCardUC{out: cardoutput.Card{Nickname: "nubank"}}
-	adapter := binding.NewCardCreatorAdapter(uc)
+	adapter := NewCardCreatorAdapter(uc)
 	in, err := intent.NewCreateCard(intent.CreateCardFields{Nickname: "nubank"})
 	s.Require().NoError(err)
 
@@ -78,7 +77,7 @@ func (s *CardsBindingSuite) TestCardCreator_NameDefaultsToNickname() {
 
 func (s *CardsBindingSuite) TestCardCreator_PropagatesError() {
 	uc := &fakeCreateCardUC{err: errors.New("boom")}
-	adapter := binding.NewCardCreatorAdapter(uc)
+	adapter := NewCardCreatorAdapter(uc)
 	in, err := intent.NewCreateCard(intent.CreateCardFields{Nickname: "nubank"})
 	s.Require().NoError(err)
 
@@ -88,7 +87,7 @@ func (s *CardsBindingSuite) TestCardCreator_PropagatesError() {
 
 func (s *CardsBindingSuite) TestCardCounter_ReturnsTotal() {
 	uc := &fakeCountCardsUC{out: cardoutput.CardCount{Total: 4}}
-	adapter := binding.NewCardCounterAdapter(uc)
+	adapter := NewCardCounterAdapter(uc)
 	userID := uuid.New()
 
 	total, err := adapter.Execute(context.Background(), userID)
@@ -99,7 +98,7 @@ func (s *CardsBindingSuite) TestCardCounter_ReturnsTotal() {
 
 func (s *CardsBindingSuite) TestCardCounter_PropagatesError() {
 	uc := &fakeCountCardsUC{err: errors.New("boom")}
-	adapter := binding.NewCardCounterAdapter(uc)
+	adapter := NewCardCounterAdapter(uc)
 
 	_, err := adapter.Execute(context.Background(), uuid.New())
 	s.Require().Error(err)

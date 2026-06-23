@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 )
@@ -91,7 +92,7 @@ func (s *CardsRouterSuite) buildCreateCard() intent.Intent {
 func (s *CardsRouterSuite) TestCreateCard_MissingResolverIsHonest() {
 	result := s.route(s.buildCreateCard(), "cadastra meu nubank")
 	s.Equal(intent.KindCreateCard, result.Kind)
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "cadastrado")
 }
@@ -101,7 +102,7 @@ func (s *CardsRouterSuite) TestCreateCard_PersistedConfirms() {
 		Nickname: "nubank", Name: "Nubank Roxinho", ClosingDay: 10, DueDay: 17, LimitCents: 500000,
 	}}
 	result := s.route(s.buildCreateCard(), "cadastra meu nubank")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.creator.calls)
 	s.Equal("nubank", s.creator.gotIn.CardNickname())
 	s.Require().Len(s.wa.sent, 1)
@@ -114,7 +115,7 @@ func (s *CardsRouterSuite) TestCreateCard_PersistedConfirms() {
 func (s *CardsRouterSuite) TestCreateCard_NicknameConflictFriendlyMessage() {
 	s.creator = &fakeCardCreator{err: carddomain.ErrNicknameConflict}
 	result := s.route(s.buildCreateCard(), "cadastra meu nubank")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "já tem um cartão com esse apelido")
 	s.NotContains(s.wa.sent[0].Text, "cadastrado!")
@@ -123,7 +124,7 @@ func (s *CardsRouterSuite) TestCreateCard_NicknameConflictFriendlyMessage() {
 func (s *CardsRouterSuite) TestCreateCard_InvalidClosingDayFriendlyMessage() {
 	s.creator = &fakeCardCreator{err: carddomain.ErrInvalidClosingDay}
 	result := s.route(s.buildCreateCard(), "cadastra meu nubank")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "fechamento precisa estar entre 1 e 31")
 }
@@ -131,7 +132,7 @@ func (s *CardsRouterSuite) TestCreateCard_InvalidClosingDayFriendlyMessage() {
 func (s *CardsRouterSuite) TestCreateCard_GenericErrorFallback() {
 	s.creator = &fakeCardCreator{err: errors.New("boom")}
 	result := s.route(s.buildCreateCard(), "cadastra meu nubank")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "Não consegui cadastrar o cartão")
 }
@@ -139,13 +140,13 @@ func (s *CardsRouterSuite) TestCreateCard_GenericErrorFallback() {
 func (s *CardsRouterSuite) TestCountCards_MissingResolverIsHonest() {
 	result := s.route(intent.NewCountCards(), "quantos cartoes eu tenho")
 	s.Equal(intent.KindCountCards, result.Kind)
-	s.Equal(services.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 }
 
 func (s *CardsRouterSuite) TestCountCards_Zero() {
 	s.counter = &fakeCardCounter{total: 0}
 	result := s.route(intent.NewCountCards(), "quantos cartoes eu tenho")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, s.counter.calls)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "ainda não tem cartões")
@@ -154,7 +155,7 @@ func (s *CardsRouterSuite) TestCountCards_Zero() {
 func (s *CardsRouterSuite) TestCountCards_Singular() {
 	s.counter = &fakeCardCounter{total: 1}
 	result := s.route(intent.NewCountCards(), "quantos cartoes eu tenho")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "1 cartão")
 }
@@ -162,7 +163,7 @@ func (s *CardsRouterSuite) TestCountCards_Singular() {
 func (s *CardsRouterSuite) TestCountCards_Plural() {
 	s.counter = &fakeCardCounter{total: 3}
 	result := s.route(intent.NewCountCards(), "quantos cartoes eu tenho")
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.Contains(s.wa.sent[0].Text, "3 cartões")
 }
@@ -170,7 +171,7 @@ func (s *CardsRouterSuite) TestCountCards_Plural() {
 func (s *CardsRouterSuite) TestCountCards_UsecaseErrorIsHonest() {
 	s.counter = &fakeCardCounter{err: errors.New("boom")}
 	result := s.route(intent.NewCountCards(), "quantos cartoes eu tenho")
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 }
 

@@ -120,7 +120,7 @@ func (s *AgentRuntimeSuite) TestExecute() {
 				s.Require().Len(deps.runs.finished, 1)
 				finished := deps.runs.finished[0]
 				s.Equal(entities.RunStatusSucceeded, finished.Status())
-				s.Equal(OutcomeRouted, finished.Outcome())
+				s.Equal(OutcomeRouted.String(), finished.Outcome())
 				s.Equal(runtimeAgentID, finished.AgentID())
 				s.Equal(workflowCards, finished.Workflow())
 				s.GreaterOrEqual(finished.DurationMs(), int64(0))
@@ -139,7 +139,7 @@ func (s *AgentRuntimeSuite) TestExecute() {
 				s.Require().Len(deps.runs.finished, 1)
 				finished := deps.runs.finished[0]
 				s.Equal(entities.RunStatusFailed, finished.Status())
-				s.Equal(OutcomeUsecaseError, finished.ErrText())
+				s.Equal(OutcomeUsecaseError.String(), finished.ErrText())
 				s.Equal(workflowTransactions, finished.Workflow())
 			},
 		},

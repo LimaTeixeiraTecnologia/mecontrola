@@ -103,10 +103,10 @@ func resolveCardExact(list cardoutput.CardList, name string) (cardoutput.Card, e
 		return cardoutput.Card{}, appservices.ErrAgentCardNotFound
 	}
 	for _, item := range list.Items {
-		if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+		if strings.EqualFold(strings.TrimSpace(item.Name), target) {
 			return item, nil
 		}
-		if strings.EqualFold(strings.TrimSpace(item.Nickname), name) {
+		if strings.EqualFold(strings.TrimSpace(item.Nickname), target) {
 			return item, nil
 		}
 	}

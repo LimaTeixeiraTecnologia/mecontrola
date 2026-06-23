@@ -1,10 +1,20 @@
 package services
 
-import "testing"
+import (
+	"testing"
 
-func TestMatchesBudgetCancel(t *testing.T) {
-	t.Parallel()
+	"github.com/stretchr/testify/suite"
+)
 
+type BudgetCancelSuite struct {
+	suite.Suite
+}
+
+func TestBudgetCancelSuite(t *testing.T) {
+	suite.Run(t, new(BudgetCancelSuite))
+}
+
+func (s *BudgetCancelSuite) TestMatchesBudgetCancel() {
 	cases := []struct {
 		name string
 		text string
@@ -24,11 +34,8 @@ func TestMatchesBudgetCancel(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := matchesBudgetCancel(tc.text); got != tc.want {
-				t.Fatalf("matchesBudgetCancel(%q) = %v, want %v", tc.text, got, tc.want)
-			}
+		s.Run(tc.name, func() {
+			s.Equal(tc.want, matchesBudgetCancel(tc.text), "matchesBudgetCancel(%q)", tc.text)
 		})
 	}
 }

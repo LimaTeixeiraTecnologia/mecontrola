@@ -1,0 +1,228 @@
+{
+  "uid": "mecontrola-agent-runtime",
+  "title": "MeControla — Agent Runtime",
+  "tags": ["mecontrola", "otel", "agent"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "Prometheus", "value": "prometheus" },
+        "hide": 0
+      },
+      {
+        "name": "job",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(agent_runs_total, job)",
+        "current": { "text": "mecontrola-api", "value": "mecontrola-api" },
+        "includeAll": false,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Run rate (runs/s)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "decimals": 2 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Success rate (%)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 90 }, { "color": "green", "value": 99 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "100 * sum(rate(agent_runs_total{job=\"$job\", status=\"succeeded\"}[$__rate_interval])) / clamp_min(sum(rate(agent_runs_total{job=\"$job\"}[$__rate_interval])), 1)" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Error rate (%)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "100 * sum(rate(agent_runs_total{job=\"$job\", status=\"failed\"}[$__rate_interval])) / clamp_min(sum(rate(agent_runs_total{job=\"$job\"}[$__rate_interval])), 1)" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Run latency p95 (s)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s", "decimals": 3,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(agent_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Run throughput by workflow / status (runs/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{workflow}} / {{status}}", "expr": "sum by (workflow, status) (rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Run latency p50 / p95 / p99 (s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "p50", "expr": "histogram_quantile(0.50, sum by (le) (rate(agent_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" },
+        { "refId": "B", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(agent_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" },
+        { "refId": "C", "legendFormat": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(agent_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Runs by channel (runs/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" }, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{channel}}", "expr": "sum by (channel) (rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Run latency p95 by workflow (s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{workflow}}", "expr": "histogram_quantile(0.95, sum by (le, workflow) (rate(agent_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Tool invocations by tool / outcome (ops/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{tool}} / {{outcome}}", "expr": "sum by (tool, outcome) (rate(agent_tool_invocations_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Top tools (ops/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "decimals": 3 }, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        { "refId": "A", "format": "table", "instant": true, "expr": "topk(15, sum by (tool, outcome) (rate(agent_tool_invocations_total{job=\"$job\"}[$__rate_interval])))" }
+      ],
+      "transformations": [ { "id": "labelsToFields", "options": {} } ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Intent routed by outcome (ops/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{outcome}}", "expr": "sum by (outcome) (rate(agent_intent_routed_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Intent routed by kind (ops/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{kind}}", "expr": "sum by (kind) (rate(agent_intent_routed_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Write guard events — authz denied / policy blocks / idempotency replay (ops/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "authz denied", "expr": "sum(rate(agent_authz_denied_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "policy blocks", "expr": "sum(rate(agent_policy_blocks_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "C", "legendFormat": "idempotency replay", "expr": "sum(rate(agent_idempotency_replay_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Write guard events by kind (ops/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "authz denied · {{kind}}", "expr": "sum by (kind) (rate(agent_authz_denied_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "policy block · {{kind}}", "expr": "sum by (kind) (rate(agent_policy_blocks_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "C", "legendFormat": "replay · {{kind}}", "expr": "sum by (kind) (rate(agent_idempotency_replay_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    }
+  ]
+}

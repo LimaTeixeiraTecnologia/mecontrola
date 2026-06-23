@@ -120,7 +120,7 @@ func (s *ParseInboundConfidenceSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			uc, err := NewParseInbound(scenario.dependencies.interpreter, 2000, s.obs)
+			uc, err := NewParseInbound(scenario.dependencies.interpreter, nil, 2000, s.obs)
 			s.Require().NoError(err)
 			output, execErr := uc.Execute(s.ctx, scenario.args.input)
 			scenario.expect(output, execErr)

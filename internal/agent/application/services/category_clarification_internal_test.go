@@ -3,10 +3,18 @@ package services
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestFormatCategoryNeedsConfirmation(t *testing.T) {
+type CategoryClarificationSuite struct {
+	suite.Suite
+}
+
+func TestCategoryClarificationSuite(t *testing.T) {
+	suite.Run(t, new(CategoryClarificationSuite))
+}
+
+func (s *CategoryClarificationSuite) TestFormatCategoryNeedsConfirmation() {
 	cases := []struct {
 		name       string
 		candidates []string
@@ -17,8 +25,8 @@ func TestFormatCategoryNeedsConfirmation(t *testing.T) {
 		{name: "sem candidatos pede a categoria", candidates: nil, wantSubstr: "Me diz qual categoria"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Contains(t, formatCategoryNeedsConfirmation(tc.candidates), tc.wantSubstr)
+		s.Run(tc.name, func() {
+			s.Contains(formatCategoryNeedsConfirmation(tc.candidates), tc.wantSubstr)
 		})
 	}
 }

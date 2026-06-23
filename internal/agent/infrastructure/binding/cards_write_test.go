@@ -1,4 +1,4 @@
-package binding_test
+package binding
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 )
@@ -75,7 +74,7 @@ func (s *CardsWriteBindingSuite) cardList() cardoutput.CardList {
 func (s *CardsWriteBindingSuite) TestCardUpdater_ResolvesByNameAndMapsPointers() {
 	lister := &fakeListCardsUC{out: s.cardList()}
 	updateUC := &fakeUpdateCardUC{out: cardoutput.Card{Nickname: "nubank", Name: "Nubank Roxinho", ClosingDay: 5, DueDay: 17, LimitCents: 500000}}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	day := 5
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", ClosingDay: &day})
@@ -96,7 +95,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_ResolvesByNameAndMapsPointers()
 func (s *CardsWriteBindingSuite) TestCardUpdater_NotFoundReturnsAgentSentinel() {
 	lister := &fakeListCardsUC{out: cardoutput.CardList{}}
 	updateUC := &fakeUpdateCardUC{}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	name := "premium"
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "inexistente", Nickname: &name})
@@ -114,7 +113,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_AmbiguousReturnsAgentSentinel()
 		{ID: uuid.NewString(), Name: "Cartao Itau Gold", Nickname: "itau gold"},
 	}}}
 	updateUC := &fakeUpdateCardUC{}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	name := "novo"
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "itau", Nickname: &name})
@@ -129,7 +128,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_AmbiguousReturnsAgentSentinel()
 func (s *CardsWriteBindingSuite) TestCardUpdater_ListerErrorIsWrapped() {
 	lister := &fakeListCardsUC{err: errors.New("db down")}
 	updateUC := &fakeUpdateCardUC{}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	name := "novo"
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", Nickname: &name})
@@ -146,7 +145,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_InvalidCardIDIsWrapped() {
 		{ID: "not-a-uuid", Name: "Nubank Roxinho", Nickname: "nubank"},
 	}}}
 	updateUC := &fakeUpdateCardUC{}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	name := "novo"
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", Nickname: &name})
@@ -161,7 +160,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_InvalidCardIDIsWrapped() {
 func (s *CardsWriteBindingSuite) TestCardUpdater_RenamesAndChangesDays() {
 	lister := &fakeListCardsUC{out: s.cardList()}
 	updateUC := &fakeUpdateCardUC{out: cardoutput.Card{Nickname: "nu", Name: "Nubank Ultravioleta", ClosingDay: 8, DueDay: 15}}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	newName := "Nubank Ultravioleta"
 	newNick := "nu"
@@ -196,7 +195,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_ResolvesByPartialContainsSingle
 		{ID: s.cardID, Name: "Nubank Roxinho", Nickname: "principal"},
 	}}}
 	updateUC := &fakeUpdateCardUC{out: cardoutput.Card{Name: "Nubank Roxinho"}}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	due := 20
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "roxinho", DueDay: &due})
@@ -211,7 +210,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_ResolvesByPartialContainsSingle
 func (s *CardsWriteBindingSuite) TestCardUpdater_PropagatesUsecaseError() {
 	lister := &fakeListCardsUC{out: s.cardList()}
 	updateUC := &fakeUpdateCardUC{err: errors.New("boom")}
-	adapter := binding.NewCardUpdaterAdapter(lister, updateUC)
+	adapter := NewCardUpdaterAdapter(lister, updateUC)
 
 	name := "novo"
 	in, err := intent.NewUpdateCard(intent.UpdateCardFields{CardName: "nubank", Nickname: &name})
@@ -225,7 +224,7 @@ func (s *CardsWriteBindingSuite) TestCardUpdater_PropagatesUsecaseError() {
 func (s *CardsWriteBindingSuite) TestCardDeleter_ResolvesByNameAndDeletes() {
 	lister := &fakeListCardsUC{out: s.cardList()}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	result, err := adapter.Execute(s.ctx, s.userID, "nubank")
 	s.Require().NoError(err)
@@ -238,7 +237,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_ResolvesByNameAndDeletes() {
 func (s *CardsWriteBindingSuite) TestCardDeleter_NotFoundReturnsAgentSentinel() {
 	lister := &fakeListCardsUC{out: cardoutput.CardList{}}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	_, err := adapter.Execute(s.ctx, s.userID, "inexistente")
 	s.Require().Error(err)
@@ -249,7 +248,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_NotFoundReturnsAgentSentinel() 
 func (s *CardsWriteBindingSuite) TestCardDeleter_ListerErrorIsWrapped() {
 	lister := &fakeListCardsUC{err: errors.New("db down")}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	_, err := adapter.Execute(s.ctx, s.userID, "nubank")
 	s.Require().Error(err)
@@ -262,7 +261,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_InvalidCardIDIsWrapped() {
 		{ID: "not-a-uuid", Name: "Nubank Roxinho", Nickname: "nubank"},
 	}}}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	_, err := adapter.Execute(s.ctx, s.userID, "nubank")
 	s.Require().Error(err)
@@ -275,7 +274,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_LabelFallsBackToNameWhenNicknam
 		{ID: s.cardID, Name: "Nubank Roxinho", Nickname: "   "},
 	}}}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	result, err := adapter.Execute(s.ctx, s.userID, "Nubank Roxinho")
 	s.Require().NoError(err)
@@ -286,7 +285,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_LabelFallsBackToNameWhenNicknam
 func (s *CardsWriteBindingSuite) TestCardDeleter_EmptyNameReturnsAgentSentinel() {
 	lister := &fakeListCardsUC{out: s.cardList()}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	_, err := adapter.Execute(s.ctx, s.userID, "   ")
 	s.Require().Error(err)
@@ -299,7 +298,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_ResolvesByPartialContainsSingle
 		{ID: s.cardID, Name: "Nubank Roxinho", Nickname: "principal"},
 	}}}
 	deleteUC := &fakeSoftDeleteCardUC{}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	result, err := adapter.Execute(s.ctx, s.userID, "roxinho")
 	s.Require().NoError(err)
@@ -310,7 +309,7 @@ func (s *CardsWriteBindingSuite) TestCardDeleter_ResolvesByPartialContainsSingle
 func (s *CardsWriteBindingSuite) TestCardDeleter_PropagatesUsecaseError() {
 	lister := &fakeListCardsUC{out: s.cardList()}
 	deleteUC := &fakeSoftDeleteCardUC{err: errors.New("boom")}
-	adapter := binding.NewCardDeleterAdapter(lister, deleteUC)
+	adapter := NewCardDeleterAdapter(lister, deleteUC)
 
 	_, err := adapter.Execute(s.ctx, s.userID, "nubank")
 	s.Require().Error(err)

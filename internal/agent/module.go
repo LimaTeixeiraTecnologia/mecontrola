@@ -652,6 +652,11 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		return nil, fmt.Errorf("agent.llm: fallback chain: %w", err)
 	}
 
+	retryChain, err := buildRetryChain(makeProvider, newBreaker, fallbackSlugs, o11y)
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm: retry chain: %w", err)
+	}
+
 	var onboardingInterpreter usecases.IntentInterpreter
 	if strings.TrimSpace(cfg.OnboardingModel) != "" {
 		onbSlug, onbErr := valueobjects.NewModelSlug(cfg.OnboardingModel)
@@ -664,7 +669,7 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		}
 	}
 
-	parseInbound, err := usecases.NewParseInbound(chain, cfg.MaxInputChars, o11y)
+	parseInbound, err := usecases.NewParseInbound(chain, retryChain, cfg.MaxInputChars, o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
 	}
@@ -680,6 +685,18 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		Interpreter:           chain,
 		OnboardingInterpreter: onboardingInterpreter,
 	}, nil
+}
+
+func buildRetryChain(
+	makeProvider func(valueobjects.ModelSlug) interfaces.LLMProvider,
+	newBreaker func() *appservices.CircuitBreaker,
+	fallbacks []valueobjects.ModelSlug,
+	o11y observability.Observability,
+) (usecases.IntentInterpreter, error) {
+	if len(fallbacks) == 0 {
+		return nil, nil
+	}
+	return buildLLMChain(makeProvider, newBreaker, fallbacks[0], fallbacks[1:], o11y)
 }
 
 func buildLLMChain(

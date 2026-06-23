@@ -41,15 +41,17 @@ type ParseInboundOutput struct {
 
 type ParseInbound struct {
 	interpreter         IntentInterpreter
+	retry               IntentInterpreter
 	sanitizer           *sanitize.Sanitizer
 	o11y                observability.Observability
 	parsedTotal         observability.Counter
 	decodeFailedTotal   observability.Counter
+	retryTotal          observability.Counter
 	confidenceHistogram observability.Histogram
 	schema              *interfaces.JSONSchemaSpec
 }
 
-func NewParseInbound(interpreter IntentInterpreter, maxInputChars int, o11y observability.Observability) (*ParseInbound, error) {
+func NewParseInbound(interpreter IntentInterpreter, retry IntentInterpreter, maxInputChars int, o11y observability.Observability) (*ParseInbound, error) {
 	if interpreter == nil {
 		return nil, fmt.Errorf("agent.usecase.parse_inbound: interpreter is nil")
 	}
@@ -70,6 +72,11 @@ func NewParseInbound(interpreter IntentInterpreter, maxInputChars int, o11y obse
 		"Total de falhas de decode do JSON de intent retornado pelo provider LLM por motivo",
 		"1",
 	)
+	retryTotal := o11y.Metrics().Counter(
+		"agent_parse_retry_total",
+		"Total de re-tentativas do parser via fallback quando o primário retorna unknown, por outcome",
+		"1",
+	)
 	confidenceHistogram := o11y.Metrics().HistogramWithBuckets(
 		"agent_intent_confidence_histogram",
 		"Distribuição da confiança reportada pelo parser de intent por kind",
@@ -78,10 +85,12 @@ func NewParseInbound(interpreter IntentInterpreter, maxInputChars int, o11y obse
 	)
 	return &ParseInbound{
 		interpreter:         interpreter,
+		retry:               retry,
 		sanitizer:           sanitizer,
 		o11y:                o11y,
 		parsedTotal:         parsedTotal,
 		decodeFailedTotal:   decodeFailedTotal,
+		retryTotal:          retryTotal,
 		confidenceHistogram: confidenceHistogram,
 		schema: &interfaces.JSONSchemaSpec{
 			Name:   "mecontrola_parse_intent",
@@ -100,6 +109,12 @@ const (
 	outcomeFallbackMissing = "fallback_missing_kind"
 	outcomeFallbackDomain  = "fallback_domain_invariant"
 	outcomeProviderError   = "provider_error"
+)
+
+const (
+	retryOutcomeRecovered     = "recovered"
+	retryOutcomeStillUnknown  = "still_unknown"
+	retryOutcomeSkippedNotCmd = "skipped_not_command"
 )
 
 func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (ParseInboundOutput, error) {
@@ -125,11 +140,13 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		return ParseInboundOutput{}, fmt.Errorf("agent.usecase.parse_inbound: render user: %w", err)
 	}
 
-	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
+	req := interfaces.LLMRequest{
 		SystemPrompt: system,
 		UserMessage:  user,
 		JSONSchema:   uc.schema,
-	})
+	}
+
+	resp, err := uc.interpreter.Interpret(ctx, req)
 	if err != nil {
 		span.RecordError(err)
 		uc.recordOutcome(ctx, intent.KindUnknown, outcomeProviderError)
@@ -137,10 +154,40 @@ func (uc *ParseInbound) Execute(ctx context.Context, input ParseInboundInput) (P
 		if fbErr != nil {
 			return ParseInboundOutput{}, errors.Join(fmt.Errorf("agent.usecase.parse_inbound: provider: %w", err), fbErr)
 		}
-		return ParseInboundOutput{Intent: fallback, PromptSHA256: promptDigest}, nil
+		out := ParseInboundOutput{Intent: fallback, PromptSHA256: promptDigest}
+		return uc.maybeRetry(ctx, out, req, trimmed, promptDigest), nil
 	}
 
-	return uc.fromContent(ctx, resp, trimmed, promptDigest)
+	out, err := uc.fromContent(ctx, resp, trimmed, promptDigest)
+	if err != nil {
+		return out, err
+	}
+	return uc.maybeRetry(ctx, out, req, trimmed, promptDigest), nil
+}
+
+func (uc *ParseInbound) maybeRetry(ctx context.Context, out ParseInboundOutput, req interfaces.LLMRequest, trimmed, promptDigest string) ParseInboundOutput {
+	if out.Intent.Kind() != intent.KindUnknown || uc.retry == nil {
+		return out
+	}
+	if !looksLikeCommand(trimmed) {
+		uc.retryTotal.Add(ctx, 1, observability.String("outcome", retryOutcomeSkippedNotCmd))
+		return out
+	}
+
+	resp, err := uc.retry.Interpret(ctx, req)
+	if err != nil {
+		uc.retryTotal.Add(ctx, 1, observability.String("outcome", retryOutcomeStillUnknown))
+		return out
+	}
+
+	retried, err := uc.fromContent(ctx, resp, trimmed, promptDigest)
+	if err != nil || retried.Intent.Kind() == intent.KindUnknown {
+		uc.retryTotal.Add(ctx, 1, observability.String("outcome", retryOutcomeStillUnknown))
+		return out
+	}
+
+	uc.retryTotal.Add(ctx, 1, observability.String("outcome", retryOutcomeRecovered))
+	return retried
 }
 
 func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed, promptDigest string) (ParseInboundOutput, error) {
@@ -370,8 +417,8 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 			CardName:   dto.CardName,
 			Nickname:   dto.NewNickname,
 			Name:       dto.NewName,
-			ClosingDay: dto.NewClosingDay,
-			DueDay:     dto.NewDueDay,
+			ClosingDay: nilIfZeroDay(dto.NewClosingDay),
+			DueDay:     nilIfZeroDay(dto.NewDueDay),
 		})
 	case intent.KindDeleteCard:
 		return intent.NewDeleteCard(dto.CardName)
@@ -389,6 +436,33 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 	default:
 		return intent.Intent{}, fmt.Errorf("agent.usecase.parse_inbound: unsupported kind %v", kind)
 	}
+}
+
+func nilIfZeroDay(day *int) *int {
+	if day != nil && *day == 0 {
+		return nil
+	}
+	return day
+}
+
+var commandCues = []string{
+	"gastei", "gasto", "comprei", "paguei", "recebi", "salário", "salario",
+	"cartão", "cartao", "apaga", "apagar", "remove", "remover", "deleta", "deletar",
+	"exclui", "excluir", "renomeia", "renomear", "apelido", "vencimento", "vence",
+	"fechamento", "fechar", "fatura", "limite",
+	"orçamento", "orcamento", "percentual", "%", "por cento", "categoria",
+	"lançar", "lancar", "lança", "lanca", "registra", "registrar",
+	"edita", "editar", "altera", "alterar", "muda", "mudar", "troca", "trocar",
+}
+
+func looksLikeCommand(text string) bool {
+	haystack := strings.ToLower(text)
+	for _, cue := range commandCues {
+		if strings.Contains(haystack, cue) {
+			return true
+		}
+	}
+	return false
 }
 
 var recurringIncomeCues = []string{

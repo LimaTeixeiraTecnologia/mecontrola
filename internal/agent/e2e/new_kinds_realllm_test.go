@@ -53,32 +53,46 @@ func TestParseInbound_RealLLM_NewKinds_ProductionModel(t *testing.T) {
 	parser := productionParser(t)
 
 	t.Run("update_card", func(t *testing.T) {
+		const (
+			fieldNickname = "nickname"
+			fieldName     = "name"
+			fieldDueDay   = "due_day"
+		)
 		cases := []struct {
-			text         string
-			wantNickname string
-			wantDueDay   int
+			text       string
+			field      string
+			wantString string
+			wantDay    int
 		}{
-			{"muda o apelido do meu cartão Nubank pra Roxinho", "roxinho", 0},
-			{"renomeia o cartão Nubank para Roxinho", "roxinho", 0},
-			{"troca o vencimento do cartão Itaú pro dia 10", "", 10},
-			{"o cartão Itaú agora vence no dia 10", "", 10},
+			{"muda o apelido do meu cartão Nubank pra Roxinho", fieldNickname, "roxinho", 0},
+			{"renomeia o cartão Nubank para Cartão Principal", fieldName, "cartão principal", 0},
+			{"troca o vencimento do cartão Itaú pro dia 10", fieldDueDay, "", 10},
+			{"o cartão Itaú agora vence no dia 10", fieldDueDay, "", 10},
 		}
 		for _, tc := range cases {
 			out := parseUntilNewKind(t, parser, tc.text, intent.KindUpdateCard, func(i intent.Intent) bool {
-				if tc.wantNickname != "" {
-					return i.NicknamePtr() != nil && normalizeName(*i.NicknamePtr()) == tc.wantNickname
+				switch tc.field {
+				case fieldNickname:
+					return i.NicknamePtr() != nil && normalizeName(*i.NicknamePtr()) == tc.wantString
+				case fieldName:
+					return i.NamePtr() != nil && normalizeName(*i.NamePtr()) == tc.wantString
+				default:
+					return i.DueDayPtr() != nil && *i.DueDayPtr() == tc.wantDay
 				}
-				return i.DueDayPtr() != nil && *i.DueDayPtr() == tc.wantDueDay
 			})
 			require.Equalf(t, intent.KindUpdateCard, out.Intent.Kind(), "frase %q: kind divergente (got=%s)", tc.text, out.Intent.Kind().String())
-			if tc.wantNickname != "" {
+			switch tc.field {
+			case fieldNickname:
 				require.NotNilf(t, out.Intent.NicknamePtr(), "frase %q: new_nickname ausente", tc.text)
-				require.Equalf(t, tc.wantNickname, normalizeName(*out.Intent.NicknamePtr()), "frase %q: novo apelido divergente", tc.text)
-			} else {
+				require.Equalf(t, tc.wantString, normalizeName(*out.Intent.NicknamePtr()), "frase %q: novo apelido divergente", tc.text)
+			case fieldName:
+				require.NotNilf(t, out.Intent.NamePtr(), "frase %q: new_name ausente", tc.text)
+				require.Equalf(t, tc.wantString, normalizeName(*out.Intent.NamePtr()), "frase %q: novo nome divergente", tc.text)
+			default:
 				require.NotNilf(t, out.Intent.DueDayPtr(), "frase %q: new_due_day ausente", tc.text)
-				require.Equalf(t, tc.wantDueDay, *out.Intent.DueDayPtr(), "frase %q: novo vencimento divergente", tc.text)
+				require.Equalf(t, tc.wantDay, *out.Intent.DueDayPtr(), "frase %q: novo vencimento divergente", tc.text)
 			}
-			t.Logf("[update_card OK] %q -> card=%q nickname=%s dueDay=%s", tc.text, out.Intent.CardName(), derefString(out.Intent.NicknamePtr()), derefInt(out.Intent.DueDayPtr()))
+			t.Logf("[update_card OK] %q -> card=%q nickname=%s name=%s dueDay=%s", tc.text, out.Intent.CardName(), derefString(out.Intent.NicknamePtr()), derefString(out.Intent.NamePtr()), derefInt(out.Intent.DueDayPtr()))
 		}
 	})
 

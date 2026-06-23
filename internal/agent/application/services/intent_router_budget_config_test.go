@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
@@ -124,7 +125,7 @@ func (s *BudgetConfigRouterSuite) TestStartIncompleteAsksAndSaves() {
 		Text: "quero configurar meu orçamento, ganho 5 mil", WhatsAppTo: "+5511999",
 	})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(intent.KindConfigureBudget, result.Kind)
 	s.Equal("Quais categorias?", result.Reply)
 	s.Equal(1, s.convo.calls)
@@ -146,7 +147,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionContinuesWithoutParsing() {
 		Text: "custos fixos 35%", WhatsAppTo: "+5511999",
 	})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal("Faltam categorias", result.Reply)
 	s.Equal("custos fixos 35%", s.convo.lastText)
 	s.Equal(1, s.convo.calls)
@@ -174,7 +175,7 @@ func (s *BudgetConfigRouterSuite) TestFinalTurnCompletesCommitsAndClears() {
 		Text: "resto liberdade financeira 15%", WhatsAppTo: "+5511999",
 	})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal("✅ orçamento ativado", result.Reply)
 	s.Equal(1, s.committer.calls)
 	s.Equal(1, s.session.cleared)
@@ -202,7 +203,7 @@ func (s *BudgetConfigRouterSuite) TestCommitErrorReturnsMessageAndKeepsSession()
 		Text: "fecha", WhatsAppTo: "+5511999",
 	})
 
-	s.Equal(services.OutcomeUsecaseError, result.Outcome)
+	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Equal("Já existe um orçamento neste mês. Quer substituir?", result.Reply)
 	s.Equal(1, s.committer.calls)
 	s.Equal(0, s.session.cleared)
@@ -218,7 +219,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionCancelClearsAndConfirms() {
 		Text: "cancelar", WhatsAppTo: "+5511999",
 	})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(intent.KindConfigureBudget, result.Kind)
 	s.Contains(result.Reply, "cancelei a configuração do orçamento")
 	s.Equal(1, s.session.cleared)
@@ -241,7 +242,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionNonCancelTextStillProcesses(
 		Text: "custos fixos 35%", WhatsAppTo: "+5511999",
 	})
 
-	s.Equal(services.OutcomeRouted, result.Outcome)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal("Faltam categorias", result.Reply)
 	s.Equal(1, s.convo.calls)
 	s.Equal(0, s.session.cleared)

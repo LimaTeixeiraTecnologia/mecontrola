@@ -11,20 +11,12 @@ import (
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 )
 
-func mustOutcome(raw string) tools.ToolOutcome {
-	outcome, err := tools.ParseOutcome(raw)
-	if err != nil {
-		return tools.OutcomeUsecaseError
-	}
-	return outcome
-}
-
 func toToolResult(result RouteResult) tools.ToolResult {
-	return tools.ToolResult{Reply: result.Reply, Outcome: mustOutcome(result.Outcome), Kind: result.Kind}
+	return tools.ToolResult{Reply: result.Reply, Outcome: result.Outcome, Kind: result.Kind}
 }
 
 func toRouteResult(result tools.ToolResult) RouteResult {
-	return RouteResult{Reply: result.Reply, Outcome: result.Outcome.String(), Kind: result.Kind}
+	return RouteResult{Reply: result.Reply, Outcome: result.Outcome, Kind: result.Kind}
 }
 
 func (a *DailyLedgerAgent) buildRegistry() (*workflow.Registry, error) {
