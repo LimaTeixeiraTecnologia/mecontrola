@@ -79,7 +79,7 @@ func (r *CandidateResolver) ResolveScored(entries []ScoredEntry, categories map[
 			Confidence:     winner.Entry.Confidence,
 			Quality:        winner.Quality,
 			Score:          valueobjects.NewMatchScore(winner.Entry.SignalType, winner.Entry.Confidence, winner.Quality),
-			IsAmbiguous:    winner.Entry.IsAmbiguous,
+			IsAmbiguous:    winner.Entry.IsAmbiguous || winner.Quality == valueobjects.MatchQualityFuzzy,
 			MatchReason:    r.buildMatchReason(winner.Entry),
 		}
 		candidates = append(candidates, candidate)

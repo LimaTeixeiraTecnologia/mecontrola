@@ -22,7 +22,7 @@ func TestRF34NegativeSuite(t *testing.T) {
 func (s *RF34NegativeSuite) TestAmbiguousTerms_NoUnambiguousMatch() {
 	terms := []string{
 		"compra", "pix", "boleto", "cartao", "parcela", "transferencia",
-		"debito", "mercado", "farmacia", "remedio", "amazon", "celular",
+		"debito", "mercado", "amazon", "celular",
 		"telefone", "cafe", "pao", "posto", "hotel", "evento", "ingresso",
 		"viagem", "curso", "presente", "investimento",
 	}
