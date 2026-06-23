@@ -669,6 +669,12 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return RouteResult{Reply: fallbackMissingText, Outcome: OutcomeEmptyText, Kind: intent.KindUnknown}
 	}
 
+	if r.daily.pendingExpenseConfirmation != nil {
+		if handled, result := r.daily.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, trimmed); handled {
+			return result
+		}
+	}
+
 	if result, ok := r.onboarding.Handle(ctx, principal.UserID, channel, peer, trimmed, messageID); ok {
 		return result
 	}

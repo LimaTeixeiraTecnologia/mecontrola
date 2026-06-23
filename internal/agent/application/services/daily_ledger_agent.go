@@ -989,7 +989,12 @@ func (a *DailyLedgerAgent) buildPendingExpenseDraft(in intent.Intent, kind inten
 
 func matchesExpenseConfirmation(text string) bool {
 	t := strings.ToLower(strings.TrimSpace(text))
-	return t == "sim" || t == "s" || t == "confirma" || t == "confirmado" || t == "pode" || t == "ok" || t == "yes"
+	for _, word := range []string{"sim", "s", "confirma", "confirmado", "pode", "ok", "yes"} {
+		if t == word || strings.HasPrefix(t, word+",") || strings.HasPrefix(t, word+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesExpenseCancellation(text string) bool {
