@@ -1,128 +1,85 @@
 ---
 name: mastra
-version: 2.0.0
-description: "Comprehensive Mastra framework guide for building agents, workflows, tools, memory, workspaces, and storage with current APIs. Use for documentation lookup, API verification, TypeScript setup, common errors, migrations, and `mastra api` CLI tasks: inspect or call resources on local, Mastra platform, or remote servers."
-license: Apache-2.0
-metadata:
-  author: Mastra
-  repository: https://github.com/mastra-ai/skills
+version: 3.0.0
+category: agent
+prerequisites: [agent-governance, go-implementation]
+description: "Base canônica para construir e estender agentes, workflows e tools no módulo Go internal/agent do mecontrola. Conceitos Mastra (Agent, Workflow, Tool, Thread, Run, WorkingMemory, Pending Step) mapeados ao código real e às regras R-AGENT-WF-001 e go-implementation. Use sempre que adicionar/alterar um agente, workflow, tool, outcome, kind ou o ciclo Thread→Run no internal/agent."
 ---
 
-# Mastra Framework Guide
+# Mastra no mundo Go — base do internal/agent
 
-Build AI applications with Mastra. This skill teaches you how to find current documentation and build agents and workflows.
+Este skill traz os conceitos do framework [Mastra](https://github.com/mastra-ai/mastra) (Agent,
+Workflow, Tool, Thread, Run, WorkingMemory, Pending Step) para o módulo Go `internal/agent` do
+mecontrola, mapeados ao **código real** e às regras hard `R-AGENT-WF-001`.
 
-## Critical: Do not trust internal knowledge
+O código Go do `internal/agent` já é 100% aderente ao modelo Mastra. Este skill **não** reintroduz
+TypeScript: ele é o guia operacional para evoluir o módulo preservando o padrão.
 
-Everything you know about Mastra is likely outdated or wrong. Never rely on memory. Always verify against current documentation.
+## Princípio inegociável: verifique no código, não na memória
 
-Your training data contains obsolete APIs, deprecated patterns, and incorrect usage. Mastra evolves rapidly - APIs change between versions, constructor signatures shift, and patterns get refactored.
+Antes de escrever qualquer código, confirme o estado atual no repositório. As assinaturas, enums e
+seams abaixo podem evoluir — sempre abra o arquivo citado e valide antes de copiar.
 
-## Prerequisites
+## Fluxo canônico (R-AGENT-WF-001.1)
 
-Before writing any Mastra code, check if packages are installed:
-
-```bash
-ls node_modules/@mastra/
+```
+IntentRouter
+  -> AgentRuntime.Execute            (Thread-first → Run auditável)
+  -> WorkflowRegistry.Resolve(kind)
+  -> Workflow.Execute                (composite; aplica WriteGuard se kind.IsWrite())
+  -> Tool.Execute                    (adapter fino)
+  -> binding -> usecase -> domain -> repo
 ```
 
-- If packages exist: Use embedded docs first (most reliable)
-- If no packages: Install first or use remote docs
+Regra-mãe: **todo comportamento novo entra como Workflow/Tool reutilizando bindings e usecases —
+nunca como novo `case intent.Kind` no switch**. O `daily_ledger_agent.go` permanece fino.
 
-## Resources
+## Mapa Mastra → Go (onde mora cada conceito)
 
-### References
+| Mastra            | Go (mecontrola)                              | Arquivo |
+| ----------------- | -------------------------------------------- | ------- |
+| Agent             | `DailyLedgerAgent` + `AgentRuntime`          | `internal/agent/application/services/{daily_ledger_agent,agent_runtime}.go` |
+| Workflow          | `workflow.Workflow` / `composite`            | `internal/agent/application/workflow/{workflow,composite,registry}.go` |
+| Tool              | `tools.Tool` (adapter fino)                  | `internal/agent/application/tools/tool.go` |
+| Thread            | `entities.Thread` + `ThreadGateway`          | `internal/agent/domain/entities/thread.go`, `application/services/agent_runtime.go` |
+| Run               | `entities.Run` + `RunGateway`                | `internal/agent/domain/entities/run.go` |
+| WorkingMemory     | `entities.WorkingMemory` + `ContextBuilder`  | `internal/agent/domain/entities/working_memory.go`, `application/prompting/context_builder.go` |
+| Pending Step      | `pendingexpense.Draft` + resume              | `internal/agent/domain/pendingexpense/draft.go` |
+| Model router (TS) | OpenRouter + FallbackChain (env-driven)      | `internal/agent/infrastructure/providers/openrouter/`, `application/services/fallback_chain.go` |
 
-| User Question                       | First Check                                                      | How To                                         |
-| ----------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
-| Create/install Mastra project     | [`references/create-mastra.md`](references/create-mastra.md)     | Setup guide with CLI and manual steps          |
-| Choose Agent/Workflow/Tool/Memory/Storage | [`references/core-concepts.md`](references/core-concepts.md) | Core concepts and when to use each primitive |
-| How do I use Agent/Workflow/Tool? | [`references/embedded-docs.md`](references/embedded-docs.md)     | Look up in `node_modules/@mastra/*/dist/docs/` |
-| How do I use X? (no packages)     | [`references/remote-docs.md`](references/remote-docs.md)         | Fetch from `https://mastra.ai/llms.txt`        |
-| Choose or validate a model        | [`references/model-selection.md`](references/model-selection.md) | Model format and provider registry lookup      |
-| I'm getting an error...           | [`references/common-errors.md`](references/common-errors.md)     | Common errors and solutions                    |
-| Upgrade from v0.x to v1.x         | [`references/migration-guide.md`](references/migration-guide.md) | Version upgrade workflows                      |
-| Inspect/call server resources via CLI | [`references/mastra-api.md`](references/mastra-api.md)       | `mastra api` CLI for local, Mastra platform, or remote servers |
+## Onde colar código novo: o seam
 
-### Scripts
+A função `buildRegistry()` em
+`internal/agent/application/services/agent_workflows.go` é **o único ponto** onde workflows e tools
+são montados. Toda extensão passa por ela. Ver `references/add-workflow-tool.md`.
 
-- `scripts/provider-registry.mjs`: Look up current providers and models available in the model router. Always run this before using a model to verify provider keys and model names.
+## Referências (carregue só o necessário — economia de contexto)
 
-## Priority order for writing code
+| Pergunta / tarefa                                   | Referência |
+| --------------------------------------------------- | ---------- |
+| Quero entender os primitivos e onde cada um mora    | [`references/core-concepts.md`](references/core-concepts.md) |
+| Quero adicionar um novo workflow/tool (read ou write) | [`references/add-workflow-tool.md`](references/add-workflow-tool.md) |
+| Preciso de novo `ToolOutcome`/`Kind`/`RunStatus`    | [`references/state-as-type.md`](references/state-as-type.md) |
+| Estou mexendo em authz/replay/policy/audit de escrita | [`references/write-guard.md`](references/write-guard.md) |
+| Estou no ciclo Thread→Run, métricas ou gateways     | [`references/thread-run-runtime.md`](references/thread-run-runtime.md) |
+| Preciso salvar/retomar estado de clarificação       | [`references/pending-step.md`](references/pending-step.md) |
+| Vou tocar LLM / system prompt / working memory      | [`references/parse-llm-boundary.md`](references/parse-llm-boundary.md) |
+| Vou validar a mudança antes do merge                | [`references/rules-checklist.md`](references/rules-checklist.md) |
 
-Never write code without checking current docs first.
+Matriz determinística de carregamento por tarefa: [`references/INDEX.yaml`](references/INDEX.yaml).
 
-1. Embedded docs first (if packages installed)
+## Contrato hard e precedência
 
-   Look up current docs in `node_modules` for a package. This matches the exact installed version and is the most reliable source of truth. See [`references/embedded-docs.md`](references/embedded-docs.md).
+- Regra hard do módulo: `.claude/rules/agent-workflows-tools.md` (R-AGENT-WF-001.1–001.8).
+- Adaptadores finos e zero comentários em Go: `.claude/rules/go-adapters.md` (R-ADAPTER-001).
+- DMMF state-as-type prevalece sobre estilo genérico: `.claude/rules/governance.md`.
+- Implementação Go: skill `go-implementation` é **obrigatória** antes de qualquer edição `.go`
+  (Etapas 1–5 + checklist R0–R7).
 
-2. Source code second (if packages installed)
+## Passo a passo (sempre)
 
-   If embedded docs don't cover the question, inspect the installed source and type definitions. This is the source of truth when docs are missing or unclear. See [`references/embedded-docs.md`](references/embedded-docs.md).
-
-3. Remote docs third (if packages not installed)
-
-   Use the latest published docs when packages are not installed or when exploring new features. Remote docs may be ahead of the user's installed version. See [`references/remote-docs.md`](references/remote-docs.md).
-
-## Core concepts
-
-Use [`references/core-concepts.md`](references/core-concepts.md) when choosing between agents, workflows, tools, memory, and storage.
-
-- Agent: Use for open-ended tasks that make decisions and use tools.
-- Workflow: Use for defined multi-step processes.
-
-## Mastra Studio
-
-Studio is the interactive UI for building, testing, and managing agents, workflows, and tools. Use Studio when advising a human to inspect or debug visually.
-
-Inside a Mastra project, run:
-
-```bash
-npm run dev
-```
-
-Then open `http://localhost:4111` in a browser to show Mastra Studio to your human user.
-
-## Mastra API CLI
-
-Use `mastra api` to inspect or call resources on local dev servers, Mastra platform deployments, or remote Mastra endpoints. It is useful for agent-readable state, execution, traces, logs, scores, threads, and workflow operations. See [`references/mastra-api.md`](references/mastra-api.md) for usage patterns.
-
-## Critical requirements
-
-### TypeScript config
-
-Mastra requires ES2022 modules. CommonJS will fail. See [`references/create-mastra.md`](references/create-mastra.md) for setup and [`references/common-errors.md`](references/common-errors.md) for troubleshooting.
-
-### Model format
-
-Always use `"provider/model-name"` when defining models using Mastra's model router.
-
-When the user asks to use a model or provider, always run `scripts/provider-registry.mjs` first to verify the provider key and model name are valid. Do not guess model names from memory as they change frequently. See [`references/model-selection.md`](references/model-selection.md).
-
-## When you see errors
-
-Type errors often mean your knowledge is outdated.
-
-Common signs of outdated knowledge:
-
-- `Property X does not exist on type Y`
-- `Cannot find module`
-- `Type mismatch` errors
-- Constructor parameter errors
-
-What to do:
-
-1. Check [`references/common-errors.md`](references/common-errors.md)
-2. Verify current API in embedded docs
-3. Don't assume the error is a user mistake - it might be your outdated knowledge
-
-## Development workflow
-
-Always verify before writing code:
-
-1. Check whether Mastra packages are installed
-2. Look up current API
-   - If installed: Use embedded docs [`references/embedded-docs.md`](references/embedded-docs.md)
-   - If not: Use remote docs [`references/remote-docs.md`](references/remote-docs.md)
-3. Write code based on current docs
-4. Test with the project scripts or Studio when available
+1. Carregar `go-implementation` (e `agent-governance` se a mudança for transversal).
+2. Ler `references/core-concepts.md` para situar o conceito Mastra no código Go.
+3. Carregar a referência da tarefa via `INDEX.yaml` (máx. 4 simultâneas).
+4. Implementar no seam (`buildRegistry`), mantendo Tool fina (sem regra/SQL/branching de domínio).
+5. Validar com `references/rules-checklist.md` e reportar evidência.

@@ -70,8 +70,20 @@ Persistencia em coluna TEXT e permitida via `String()`; a fronteira de codigo pe
 ## R-AGENT-WF-001.4 — LLM apenas no step de parse [HARD]
 
 O LLM aparece exclusivamente no step de parse a montante (`ParseInbound`). Proibido invocar LLM,
-prompt rendering ou fallback chain dentro de qualquer `Workflow` ou `Tool` de execucao. Workflows e
-tools operam sobre `intent.Intent` ja parseado e deterministico.
+prompt rendering ou fallback chain dentro de qualquer `Workflow` ou `Tool` de execucao **de dominio**
+(escrita ou leitura). Workflows e tools de dominio operam sobre `intent.Intent` ja parseado e
+deterministico.
+
+Excecoes sancionadas (unicas call-sites de LLM fora de `ParseInbound`):
+
+1. **Conversational fallback** (`KindUnknown`): a geracao de resposta livre via fallback chain
+   (`delegateFallback` -> `fallback.Reply`) e o escape-hatch conversacional; nenhuma execucao de
+   dominio depende dele.
+2. **Onboarding**: chain de LLM dedicado, com modelo proprio por decisao de projeto, separado do
+   chain principal.
+
+Fora dessas duas excecoes, manter a proibicao integral. Qualquer nova necessidade de LLM no meio da
+execucao deve pertencer ao parse ou ser uma variante conversacional/onboarding explicita.
 
 ## R-AGENT-WF-001.5 — Toda execucao e um Run auditavel [HARD]
 
