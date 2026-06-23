@@ -179,7 +179,7 @@ func (s *AgentRuntimeIntegrationSuite) TestRoutedRunPersisted() {
 
 	s.Equal(threadID, runThreadID)
 	s.Equal("succeeded", status)
-	s.Equal(tools.OutcomeRouted, outcome)
+	s.Equal(tools.OutcomeRouted.String(), outcome)
 	s.Equal(workflowCards, workflow)
 	s.Equal(intent.KindCreateCard.String(), toolName)
 	s.Equal(intent.KindCreateCard.String(), intentKind)
@@ -245,7 +245,7 @@ func (s *AgentRuntimeIntegrationSuite) TestFailureRunPersisted() {
 	).Scan(&status, &errText)
 	s.Require().NoError(err)
 	s.Equal("failed", status)
-	s.Equal(tools.OutcomeUsecaseError, errText)
+	s.Equal(tools.OutcomeUsecaseError.String(), errText)
 }
 
 func (s *AgentRuntimeIntegrationSuite) TestRouteResultIdenticalWithUnknownUser() {
