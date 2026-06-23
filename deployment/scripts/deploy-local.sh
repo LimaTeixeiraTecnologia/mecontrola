@@ -84,9 +84,10 @@ git config --global --add safe.directory "$DP" 2>/dev/null || true
 ( cd "$DP" && git pull --ff-only ) || echo "[vps] AVISO: git pull falhou — seguindo (binário e migrations vêm da imagem)"
 
 echo "[vps] migrate"
-# -T é obrigatório: este script é alimentado via stdin (bash -s); sem -T o `compose run`
-# anexa o stdin e consome o resto do heredoc, pulando up/healthcheck silenciosamente.
-( cd "$DP" && dc run --rm --no-deps -T migrate ) || { echo "[vps] ERRO: migrations falharam — abortando (containers intactos)"; exit 1; }
+# </dev/null é obrigatório: este script chega via stdin (bash -s). `compose run` anexa o
+# stdin do chamador e consumiria o resto do heredoc (pulando up/healthcheck em silêncio).
+# Redirecionar de /dev/null isola o stdin do migrate e preserva o heredoc para o bash.
+( cd "$DP" && dc run --rm --no-deps -T migrate </dev/null ) || { echo "[vps] ERRO: migrations falharam — abortando (containers intactos)"; exit 1; }
 
 echo "[vps] up server worker"
 ( cd "$DP" && dc up -d --no-deps server worker ) || { echo "[vps] ERRO: up server/worker falhou"; exit 1; }
