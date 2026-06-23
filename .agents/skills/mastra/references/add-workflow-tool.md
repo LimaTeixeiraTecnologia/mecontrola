@@ -14,23 +14,45 @@ Carregue `go-implementation` antes de tocar qualquer `.go`.
 e atualizar `String()`, `ParseKind()` e — se for escrita — `IsWrite()`. Kind é tipo fechado: sem
 string livre. Ver `state-as-type.md`.
 
-### 2. Escrever o handler fino `routeXxx`
+### 2. Implementar a Tool como struct fina sob `application/tools/`
 
-Método de `*DailyLedgerAgent` que apenas mapeia `intent.Intent` → DTO/command, chama o
-**binding → usecase** e devolve `RouteResult{Reply, Outcome, Kind}`. Sem regra de negócio, sem SQL,
-sem branching de domínio. Padrão existente, p.ex. `routeLogExpense`, `routeListCards`.
+Criar uma struct em `internal/agent/application/tools/` (agrupada por categoria — p.ex.
+`transactions_tools.go`, `budget_tools.go`, `cards_tools.go`) que implementa `tools.Tool`
+(`Name() / Descriptor() / Execute`). O `Execute` apenas mapeia `intent.Intent` → DTO/command, chama o
+**binding → usecase**, mapeia o retorno para `tools.ToolResult{Reply, Outcome, Kind}` e delega
+clarificação ao `ClarificationResolver`. Sem regra de negócio, sem SQL, sem branching de domínio.
 
-### 3. Embrulhar como Tool via `routeTool`
-
-Dentro de `buildRegistry()`:
+Os contratos de binding consumidos (interfaces + structs Input/Result) vivem em `tools/contracts.go`
+— interface no consumidor (R6.3); o pacote `tools` é a fonte única, sem aliases em `services`.
+Métrica via `Recorder` injetado (`tools/recorder.go`). Padrão existente: `RecordExpenseTool`,
+`ListCardsTool`.
 
 ```go
-fooTool := a.routeTool("foo", intent.KindFoo, func(ctx context.Context, in tools.ToolInput) RouteResult {
-    return a.routeFoo(ctx, in.UserID, in.Channel, in.Intent)
-})
+type FooTool struct {
+    foo  FooBinding
+    rec  *Recorder
+    o11y observability.Observability
+}
+
+func NewFooTool(foo FooBinding, rec *Recorder, o11y observability.Observability) *FooTool {
+    return &FooTool{foo: foo, rec: rec, o11y: o11y}
+}
+
+func (t *FooTool) Name() string         { return "foo" }
+func (t *FooTool) Descriptor() ToolSpec { return ToolSpec{Name: "foo", IntentKind: intent.KindFoo} }
+
+func (t *FooTool) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
+    // mapear in.Intent → input, chamar t.foo (binding → usecase), mapear → ToolResult
+}
 ```
 
-`routeTool(name, kind, route)` já cria o `tools.ToolSpec` e adapta `RouteResult` ↔ `tools.ToolResult`.
+### 3. Instanciar a Tool no `buildRegistry()`
+
+Dentro de `buildRegistry()` em `agent_workflows.go`, instanciar a struct (não mais closure `routeTool`):
+
+```go
+fooTool := tools.NewFooTool(a.fooBinding, a.recorder, a.o11y)
+```
 
 ### 4. Vincular a um Workflow
 
@@ -57,12 +79,14 @@ chamada final `workflow.NewRegistry(routableKinds(), ..., fooWorkflow)`.
 
 ### 6. Wiring (se novas dependências)
 
-Se o handler precisar de um binding/usecase ainda não injetado, adicione o campo ao
-`DailyLedgerAgent` e fie em `internal/agent/module.go` (DI manual, sem framework, sem `init()`).
+Se a Tool precisar de um binding/usecase ainda não injetado: declarar a interface do binding em
+`tools/contracts.go`, adicionar o campo ao `DailyLedgerAgent`, passá-lo ao construtor `NewFooTool`
+em `buildRegistry()` e fiar a implementação em `internal/agent/module.go` (DI manual, sem framework,
+sem `init()`).
 
 ## Checklist de fronteira (R-AGENT-WF-001.2 / R-ADAPTER-001)
 
-- [ ] Tool/handler sem regra de negócio, SQL (`QueryContext`/`ExecContext`/...) ou branching de domínio.
+- [ ] Tool (struct sob `application/tools/`) sem regra de negócio, SQL (`QueryContext`/`ExecContext`/...) ou branching de domínio.
 - [ ] Zero comentários em `.go` (exceto `//go:`, `//nolint:`, `// Code generated`).
 - [ ] `Outcome` é `ToolOutcome` fechado; `Kind` é `intent.Kind` fechado.
 - [ ] Escrita passa pelo `guard`; leitura não duplica authz/policy.
