@@ -11,7 +11,6 @@ import (
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 type fakeSessionRepo struct {
@@ -187,25 +186,24 @@ func (s *ExpenseConfirmationSuite) TestClear_RepoError_PropagatesWrapped() {
 	s.Contains(err.Error(), "pending expense clear")
 }
 
-type fakeUoW struct {
-	called bool
-}
-
-func (f *fakeUoW) DBTX() database.DBTX {
-	return nil
-}
-
-func (f *fakeUoW) Do(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
-	f.called = true
-	return fn(ctx, nil)
-}
-
-func (s *ExpenseConfirmationSuite) TestSave_WithUnitOfWork_CallsDo() {
+func (s *ExpenseConfirmationSuite) TestSave_PreservesExistingRecentTurns() {
 	repo := newFakeSessionRepo()
-	uow := &fakeUoW{}
-	adapter := NewPendingExpenseConfirmationAdapter(repo, uow)
+	turns := []byte(`[{"role":"user","content":"oi"}]`)
+	_ = repo.Upsert(s.ctx, appinterfaces.AgentSessionRecord{
+		ID:            uuid.New(),
+		UserID:        s.userID,
+		Channel:       s.channel,
+		PendingAction: []byte("{}"),
+		RecentTurns:   turns,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		ExpiresAt:     time.Now().Add(time.Hour),
+	})
 
+	adapter := NewPendingExpenseConfirmationAdapter(repo, nil)
 	err := adapter.Save(s.ctx, s.userID, s.channel, s.buildDraft())
 	s.Require().NoError(err)
-	s.True(uow.called)
+
+	saved := repo.records[repo.key(s.userID, s.channel)]
+	s.JSONEq(string(turns), string(saved.RecentTurns))
 }

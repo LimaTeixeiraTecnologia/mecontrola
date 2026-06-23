@@ -11,7 +11,6 @@ import (
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 )
 
@@ -52,26 +51,22 @@ func (a *PendingExpenseConfirmationAdapter) Save(ctx context.Context, userID uui
 		return fmt.Errorf("agent: pending expense encode: %w", err)
 	}
 	now := time.Now().UTC()
+	existing, getErr := a.repo.GetByUserAndChannel(ctx, userID, channel)
+	recentTurns := []byte("[]")
+	if getErr == nil {
+		recentTurns = existing.RecentTurns
+	}
 	record := appinterfaces.AgentSessionRecord{
 		ID:            uuid.New(),
 		UserID:        userID,
 		Channel:       channel,
 		PendingAction: raw,
-		RecentTurns:   []byte("[]"),
+		RecentTurns:   recentTurns,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 		ExpiresAt:     now.Add(sessionTTL),
 	}
-	persist := func(ctx context.Context, db database.DBTX) error {
-		return a.repo.Upsert(ctx, record)
-	}
-	if a.unit == nil {
-		if err := persist(ctx, nil); err != nil {
-			return fmt.Errorf("agent: pending expense save: %w", err)
-		}
-		return nil
-	}
-	if err := a.unit.Do(ctx, persist); err != nil {
+	if err := a.repo.Upsert(ctx, record); err != nil {
 		return fmt.Errorf("agent: pending expense save: %w", err)
 	}
 	return nil
@@ -79,26 +74,22 @@ func (a *PendingExpenseConfirmationAdapter) Save(ctx context.Context, userID uui
 
 func (a *PendingExpenseConfirmationAdapter) Clear(ctx context.Context, userID uuid.UUID, channel string) error {
 	now := time.Now().UTC()
+	existing, getErr := a.repo.GetByUserAndChannel(ctx, userID, channel)
+	recentTurns := []byte("[]")
+	if getErr == nil {
+		recentTurns = existing.RecentTurns
+	}
 	record := appinterfaces.AgentSessionRecord{
 		ID:            uuid.New(),
 		UserID:        userID,
 		Channel:       channel,
 		PendingAction: []byte("{}"),
-		RecentTurns:   []byte("[]"),
+		RecentTurns:   recentTurns,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-		ExpiresAt:     now.Add(-time.Minute),
+		ExpiresAt:     now.Add(24 * time.Hour),
 	}
-	persist := func(ctx context.Context, db database.DBTX) error {
-		return a.repo.Upsert(ctx, record)
-	}
-	if a.unit == nil {
-		if err := persist(ctx, nil); err != nil {
-			return fmt.Errorf("agent: pending expense clear: %w", err)
-		}
-		return nil
-	}
-	if err := a.unit.Do(ctx, persist); err != nil {
+	if err := a.repo.Upsert(ctx, record); err != nil {
 		return fmt.Errorf("agent: pending expense clear: %w", err)
 	}
 	return nil
