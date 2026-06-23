@@ -23,6 +23,7 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp e Te
 - [Sequências comuns](#sequências-comuns)
 - [Reprodução E2E local — Telegram + Kiwify simulado](#reprodução-e2e-local--telegram--kiwify-simulado)
 - [CI/CD](#cicd)
+- [Deploy da máquina local direto na VPS (deploy-local.sh)](#deploy-da-máquina-local-direto-na-vps-deploy-localsh)
 - [Contribuição](#contribuição)
 - [Governance](#governance)
 
@@ -827,6 +828,86 @@ Manual (workflow_dispatch com image_tag):
 ### Dependabot (`.github/workflows/auto-merge.yml`)
 
 Dependabot atualiza semanalmente (gomod, github-actions, docker). PRs de minor/patch são aprovados e mergeados automaticamente via squash. PRs de major ficam abertos para revisão manual.
+
+---
+
+## Deploy da máquina local direto na VPS (`deploy-local.sh`)
+
+Deploy de um único comando, **da sua máquina direto para a VPS, sem depender do GHCR nem da CI/CD**. Use quando a pipeline estiver indisponível ou quando precisar subir uma correção rápida gerando tudo localmente.
+
+O script `deployment/scripts/deploy-local.sh` faz, em sequência:
+
+1. **Build** da imagem `linux/amd64` localmente (arquitetura da VPS — a imagem não precisa casar com o Mac/arm64).
+2. **Transferência** da imagem para a VPS via `docker save | ssh docker load` (sem `docker push`/GHCR).
+3. **Sync** do repositório no host (`git pull --ff-only`, best-effort) + captura da imagem anterior para rollback.
+4. **Migrations** (`compose run --rm migrate`) — aplicadas **antes** do app subir.
+5. **server + worker** recriados com a nova tag + **healthcheck** com **rollback automático** para a imagem anterior se falhar.
+6. **Alinhamento** do `IMAGE_TAG` no `.env` da VPS + **verificação pós-deploy** (`schema_migrations`, imagens em execução, HEAD do host).
+
+### Pré-requisitos
+
+| Requisito | Detalhe |
+|---|---|
+| Docker local | daemon ativo (build + `docker save`) |
+| Acesso SSH por chave à VPS | sem senha (`BatchMode`); a chave padrão ou `VPS_SSH_KEY` |
+| Árvore git limpa | a tag = short SHA do commit; suja é bloqueada (use `ALLOW_DIRTY=true` para burlar) |
+| `.env` na VPS | já presente em `VPS_DEPLOY_PATH/.env` (o script não cria nem altera segredos, só o `IMAGE_TAG`) |
+
+### Passo a passo
+
+```bash
+# 1. (recomendado) commit + push para manter a VPS em sync via git pull
+git add -A && git commit -m "fix: ..." && git push
+
+# 2. deploy — tag default = short SHA do HEAD
+bash deployment/scripts/deploy-local.sh
+
+# ou com uma tag explícita:
+bash deployment/scripts/deploy-local.sh 1a2b3c4
+```
+
+Saída esperada ao final (resumida):
+
+```
+[..] 1/5 build ghcr.io/limateixeiratecnologia/mecontrola:<tag>
+[..] 2/5 transferindo imagem para a VPS (docker save | ssh docker load)
+[..] 3/5 migrate + 4/5 server/worker + healthcheck (no host)
+[vps] migrate
+[vps] up server worker
+[vps] healthy após 10s
+[vps] === verificação pós-deploy ===
+[vps] schema_migrations (version dirty): 16|f
+[vps] mecontrola-server-1 ...:<tag> Up 5 seconds (healthy)
+[vps] mecontrola-worker-1 ...:<tag> Up 5 seconds (healthy)
+[vps] HEAD host: <tag>
+[..] 5/5 deploy concluído — <tag> em produção e saudável
+```
+
+### Variáveis de override
+
+Todas opcionais; defaults entre parênteses.
+
+| Variável | Default | Uso |
+|---|---|---|
+| `IMAGE_TAG` | short SHA do `HEAD` | tag da imagem (também aceita como `$1`) |
+| `VPS_HOST` | `187.77.45.48` | host da VPS |
+| `VPS_USER` | `root` | usuário SSH |
+| `VPS_DEPLOY_PATH` | `/opt/mecontrola` | raiz do deploy na VPS |
+| `VPS_SSH_KEY` | (chave padrão) | caminho de uma chave SSH específica |
+| `IMAGE_NAME` | `ghcr.io/limateixeiratecnologia/mecontrola` | nome base da imagem |
+| `PLATFORM` | `linux/amd64` | plataforma alvo do build |
+| `HEALTH_RETRIES` / `HEALTH_INTERVAL` | `24` / `5` | tentativas e intervalo (s) do healthcheck |
+| `ALLOW_DIRTY` | `false` | permite build com árvore git suja |
+| `SKIP_BUILD` | `false` | pula o build e reusa a imagem local existente |
+
+```bash
+# exemplo: deploy para outra VPS, reaproveitando a imagem já buildada
+VPS_HOST=10.0.0.9 SKIP_BUILD=true bash deployment/scripts/deploy-local.sh
+```
+
+> **Segurança:** o script aborta antes de tocar a VPS se a árvore git estiver suja (a tag não refletiria o commit) ou se o SSH falhar. Em falha de healthcheck, faz rollback automático para a imagem anterior. As migrations rodam **antes** do app; se falharem, o deploy aborta e os containers atuais permanecem intactos.
+
+> **Quando usar a CI/CD em vez disto:** o caminho padrão de produção é a pipeline (build assinado por cosign + SBOM + scan Trivy). O `deploy-local.sh` é um atalho operacional para a VPS — ele **não** assina a imagem nem gera SBOM. Veja [CI/CD](#cicd) e o runbook `docs/runbooks/deploy-producao.md`.
 
 ---
 
