@@ -1513,6 +1513,7 @@ func (s *ConfigSuite) newBaseConfig() *configs.Config {
 			WebhookRateLimitPerMin: 600,
 			WebhookRateLimitBurst:  120,
 		},
+		WorkflowKernelConfig: s.newValidWorkflowKernelConfig(),
 	}
 }
 
@@ -1609,15 +1610,7 @@ func (s *ConfigSuite) TestValidateWorkflowKernel() {
 			},
 			expect: func(err error) { s.NoError(err) },
 		},
-		{
-			name: "deve aceitar config com zero values (skip validation)",
-			args: args{
-				build: func() *configs.Config {
-					return s.newBaseConfig()
-				},
-			},
-			expect: func(err error) { s.NoError(err) },
-		},
+
 		{
 			name: "deve rejeitar MaxAttempts menor que 1",
 			args: args{
@@ -1719,7 +1712,7 @@ func (s *ConfigSuite) TestValidateWorkflowKernel() {
 			},
 		},
 		{
-			name: "deve aceitar HousekeepingSchedule vazio",
+			name: "deve rejeitar HousekeepingSchedule vazio",
 			args: args{
 				build: func() *configs.Config {
 					cfg := s.newBaseConfig()
@@ -1728,7 +1721,9 @@ func (s *ConfigSuite) TestValidateWorkflowKernel() {
 					return cfg
 				},
 			},
-			expect: func(err error) { s.NoError(err) },
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE inválido")
+			},
 		},
 	}
 

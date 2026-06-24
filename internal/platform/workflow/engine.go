@@ -11,9 +11,10 @@ import (
 )
 
 type Definition[S any] struct {
-	ID      string
-	Root    Step[S]
-	Durable bool
+	ID          string
+	Root        Step[S]
+	Durable     bool
+	MaxAttempts int
 }
 
 type RunResult[S any] struct {
@@ -74,6 +75,11 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 	runStart := time.Now()
 	runID := uuid.New()
 
+	maxAttempts := def.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
 	snap := Snapshot{
 		RunID:          runID,
 		Workflow:       def.ID,
@@ -81,7 +87,7 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 		Status:         RunStatusRunning,
 		Cursor:         0,
 		Attempts:       0,
-		MaxAttempts:    1,
+		MaxAttempts:    maxAttempts,
 		Version:        1,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
@@ -94,6 +100,14 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 			return RunResult[S]{}, fmt.Errorf("workflow.engine.start: encode initial state: %w", err)
 		}
 		snap.State = stateBytes
+
+		if existing, found, loadErr := e.store.Load(ctx, def.ID, key); loadErr != nil {
+			span.RecordError(loadErr)
+			return RunResult[S]{}, fmt.Errorf("workflow.engine.start: check active run: %w", loadErr)
+		} else if found && (existing.Status == RunStatusRunning || existing.Status == RunStatusSuspended) {
+			span.SetAttributes(observability.String("outcome", "active_run_exists"))
+			return RunResult[S]{}, ErrRunAlreadyExists
+		}
 
 		if err := e.store.Insert(ctx, snap); err != nil {
 			span.RecordError(err)
@@ -126,7 +140,7 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 	if result.Status == RunStatusSuspended && result.Suspend != nil {
 		e.metrics.suspendTotal.Add(ctx, 1,
 			observability.String("workflow", def.ID),
-			observability.String("reason", result.Suspend.Reason.String()),
+			observability.String("outcome", result.Suspend.Reason.String()),
 		)
 	}
 
@@ -181,6 +195,10 @@ func (e *engine[S]) Resume(ctx context.Context, def Definition[S], key string, r
 	result, err := e.execute(ctx, def, snap, current, snap.Cursor)
 	if err != nil {
 		span.RecordError(err)
+		e.metrics.resumeTotal.Add(ctx, 1,
+			observability.String("workflow", def.ID),
+			observability.String("status", RunStatusFailed.String()),
+		)
 		e.metrics.runsTotal.Add(ctx, 1,
 			observability.String("workflow", def.ID),
 			observability.String("status", RunStatusFailed.String()),
@@ -194,7 +212,7 @@ func (e *engine[S]) Resume(ctx context.Context, def Definition[S], key string, r
 	span.SetAttributes(observability.String("status", result.Status.String()))
 	e.metrics.resumeTotal.Add(ctx, 1,
 		observability.String("workflow", def.ID),
-		observability.String("result", result.Status.String()),
+		observability.String("status", result.Status.String()),
 	)
 	e.metrics.runsTotal.Add(ctx, 1,
 		observability.String("workflow", def.ID),
@@ -227,8 +245,12 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 				now := time.Now().UTC()
 				snap.EndedAt = &now
 				snap.UpdatedAt = now
+				stateBytes, encErr := e.codec.Encode(current)
+				if encErr == nil {
+					snap.State = stateBytes
+				}
 				if snapErr := e.saveSnap(ctx, def, snap); snapErr != nil {
-					e.o11y.Logger().Error(ctx, "workflow.engine: save snap on step error failed", observability.Error(snapErr))
+					return e.resolveConflictOrFail(ctx, def, snap, snapErr)
 				}
 			}
 			return RunResult[S]{RunID: snap.RunID, Status: RunStatusFailed, State: current}, stepErr
@@ -250,7 +272,7 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 				snap.State = stateBytes
 				snap.UpdatedAt = time.Now().UTC()
 				if saveErr := e.saveSnap(ctx, def, snap); saveErr != nil {
-					return RunResult[S]{}, saveErr
+					return e.resolveConflictOrFail(ctx, def, snap, saveErr)
 				}
 			}
 			return RunResult[S]{RunID: snap.RunID, Status: RunStatusSuspended, State: current, Suspend: out.Suspend}, nil
@@ -264,8 +286,12 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 				now := time.Now().UTC()
 				snap.EndedAt = &now
 				snap.UpdatedAt = now
+				stateBytes, encErr := e.codec.Encode(current)
+				if encErr == nil {
+					snap.State = stateBytes
+				}
 				if snapErr := e.saveSnap(ctx, def, snap); snapErr != nil {
-					e.o11y.Logger().Error(ctx, "workflow.engine: save snap on step failed status failed", observability.Error(snapErr))
+					return e.resolveConflictOrFail(ctx, def, snap, snapErr)
 				}
 			}
 			return RunResult[S]{RunID: snap.RunID, Status: RunStatusFailed, State: current}, fmt.Errorf("workflow.engine: step %s failed", step.ID())
@@ -278,11 +304,12 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 		snap.EndedAt = &now
 		snap.UpdatedAt = now
 		stateBytes, encErr := e.codec.Encode(current)
-		if encErr == nil {
-			snap.State = stateBytes
+		if encErr != nil {
+			return RunResult[S]{}, fmt.Errorf("workflow.engine: encode succeeded state: %w", encErr)
 		}
+		snap.State = stateBytes
 		if snapErr := e.saveSnap(ctx, def, snap); snapErr != nil {
-			e.o11y.Logger().Error(ctx, "workflow.engine: save snap on succeeded failed", observability.Error(snapErr))
+			return e.resolveConflictOrFail(ctx, def, snap, snapErr)
 		}
 	}
 
@@ -292,54 +319,75 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 func (e *engine[S]) executeStep(ctx context.Context, def Definition[S], snap Snapshot, step Step[S], state S, idx int) (RunResult[S], error) {
 	out, err := e.runStep(ctx, def, snap, step, state, idx)
 	if err != nil {
-		snap.Status = RunStatusFailed
-		snap.LastError = err.Error()
-		snap.Attempts++
-		if def.Durable {
-			now := time.Now().UTC()
-			snap.EndedAt = &now
-			snap.UpdatedAt = now
-			if snapErr := e.saveSnap(ctx, def, snap); snapErr != nil {
-				e.o11y.Logger().Error(ctx, "workflow.engine: save snap on step error failed", observability.Error(snapErr))
-			}
-		}
-		return RunResult[S]{RunID: snap.RunID, Status: RunStatusFailed, State: state}, err
+		return e.finalizeFailed(ctx, def, snap, state, err)
 	}
 
 	if out.Status == StepStatusSuspended {
-		snap.Status = RunStatusSuspended
-		snap.Cursor = idx
-		if out.Suspend != nil {
-			snap.SuspendReason = out.Suspend.Reason
-		}
-		if def.Durable {
-			stateBytes, encErr := e.codec.Encode(out.State)
-			if encErr != nil {
-				return RunResult[S]{}, fmt.Errorf("workflow.engine: encode suspended state: %w", encErr)
-			}
-			snap.State = stateBytes
-			snap.UpdatedAt = time.Now().UTC()
-			if saveErr := e.saveSnap(ctx, def, snap); saveErr != nil {
-				return RunResult[S]{}, saveErr
-			}
-		}
-		return RunResult[S]{RunID: snap.RunID, Status: RunStatusSuspended, State: out.State, Suspend: out.Suspend}, nil
+		return e.finalizeSuspended(ctx, def, snap, idx, out)
 	}
 
+	return e.finalizeSucceeded(ctx, def, snap, out)
+}
+
+func (e *engine[S]) finalizeFailed(ctx context.Context, def Definition[S], snap Snapshot, state S, runErr error) (RunResult[S], error) {
+	snap.Status = RunStatusFailed
+	snap.LastError = runErr.Error()
+	snap.Attempts++
+	if def.Durable {
+		snap = e.encodeAndStampFailed(snap, state)
+		if snapErr := e.saveSnap(ctx, def, snap); snapErr != nil {
+			return e.resolveConflictOrFail(ctx, def, snap, snapErr)
+		}
+	}
+	return RunResult[S]{RunID: snap.RunID, Status: RunStatusFailed, State: state}, runErr
+}
+
+func (e *engine[S]) encodeAndStampFailed(snap Snapshot, state S) Snapshot {
+	now := time.Now().UTC()
+	snap.EndedAt = &now
+	snap.UpdatedAt = now
+	stateBytes, encErr := e.codec.Encode(state)
+	if encErr == nil {
+		snap.State = stateBytes
+	}
+	return snap
+}
+
+func (e *engine[S]) finalizeSuspended(ctx context.Context, def Definition[S], snap Snapshot, idx int, out StepOutput[S]) (RunResult[S], error) {
+	snap.Status = RunStatusSuspended
+	snap.Cursor = idx
+	if out.Suspend != nil {
+		snap.SuspendReason = out.Suspend.Reason
+	}
+	if def.Durable {
+		stateBytes, encErr := e.codec.Encode(out.State)
+		if encErr != nil {
+			return RunResult[S]{}, fmt.Errorf("workflow.engine: encode suspended state: %w", encErr)
+		}
+		snap.State = stateBytes
+		snap.UpdatedAt = time.Now().UTC()
+		if saveErr := e.saveSnap(ctx, def, snap); saveErr != nil {
+			return e.resolveConflictOrFail(ctx, def, snap, saveErr)
+		}
+	}
+	return RunResult[S]{RunID: snap.RunID, Status: RunStatusSuspended, State: out.State, Suspend: out.Suspend}, nil
+}
+
+func (e *engine[S]) finalizeSucceeded(ctx context.Context, def Definition[S], snap Snapshot, out StepOutput[S]) (RunResult[S], error) {
 	snap.Status = RunStatusSucceeded
 	if def.Durable {
 		now := time.Now().UTC()
 		snap.EndedAt = &now
 		snap.UpdatedAt = now
 		stateBytes, encErr := e.codec.Encode(out.State)
-		if encErr == nil {
-			snap.State = stateBytes
+		if encErr != nil {
+			return RunResult[S]{}, fmt.Errorf("workflow.engine: encode succeeded state: %w", encErr)
 		}
+		snap.State = stateBytes
 		if snapErr := e.saveSnap(ctx, def, snap); snapErr != nil {
-			e.o11y.Logger().Error(ctx, "workflow.engine: save snap on succeeded failed", observability.Error(snapErr))
+			return e.resolveConflictOrFail(ctx, def, snap, snapErr)
 		}
 	}
-
 	return RunResult[S]{RunID: snap.RunID, Status: RunStatusSucceeded, State: out.State}, nil
 }
 
@@ -397,7 +445,9 @@ func (e *engine[S]) runStep(ctx context.Context, def Definition[S], snap Snapsho
 			StartedAt:  stepStart.UTC(),
 			EndedAt:    &now,
 		}
-		_ = e.store.AppendStep(ctx, rec)
+		if appendErr := e.store.AppendStep(ctx, rec); appendErr != nil {
+			return StepOutput[S]{}, fmt.Errorf("workflow.engine: append step record: %w", appendErr)
+		}
 	}
 
 	return out, err
@@ -413,4 +463,22 @@ func (e *engine[S]) saveSnap(ctx context.Context, def Definition[S], snap Snapsh
 		)
 	}
 	return err
+}
+
+func (e *engine[S]) resolveConflictOrFail(ctx context.Context, def Definition[S], snap Snapshot, saveErr error) (RunResult[S], error) {
+	if !errors.Is(saveErr, ErrVersionConflict) {
+		return RunResult[S]{}, fmt.Errorf("workflow.engine: save snapshot: %w", saveErr)
+	}
+	latest, found, loadErr := e.store.Load(ctx, def.ID, snap.CorrelationKey)
+	if loadErr != nil {
+		return RunResult[S]{}, fmt.Errorf("workflow.engine: version conflict, reload failed: %w", loadErr)
+	}
+	if !found {
+		return RunResult[S]{}, fmt.Errorf("workflow.engine: version conflict and run not found: %w", saveErr)
+	}
+	state, decodeErr := e.codec.Decode(latest.State)
+	if decodeErr != nil {
+		return RunResult[S]{}, fmt.Errorf("workflow.engine: version conflict, decode failed: %w", decodeErr)
+	}
+	return RunResult[S]{RunID: latest.RunID, Status: latest.Status, State: state}, ErrRunConflict
 }

@@ -87,13 +87,17 @@ func ParseOutcome(raw string) (ToolOutcome, error) {
 }
 
 type ToolInput struct {
-	UserID     uuid.UUID
-	Channel    string
-	Intent     intent.Intent
-	MessageID  string
-	Text       string
-	Confidence valueobjects.Confidence
-	Parsed     any
+	UserID       uuid.UUID
+	Channel      string
+	Intent       intent.Intent
+	MessageID    string
+	Text         string
+	Confidence   valueobjects.Confidence
+	Parsed       any
+	LLMModel     string
+	PromptSHA256 string
+	DirectReply  string
+	RawResponse  string
 }
 
 type ToolResult struct {

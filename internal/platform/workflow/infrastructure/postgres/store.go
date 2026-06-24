@@ -207,6 +207,14 @@ func (s *postgresStore) AppendStep(ctx context.Context, rec workflow.StepRecord)
 		INSERT INTO mecontrola.workflow_steps
 		       (id, run_id, step_id, seq, status, attempt, duration_ms, error, started_at, ended_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (run_id, seq, attempt)
+		DO UPDATE SET
+		       step_id     = EXCLUDED.step_id,
+		       status      = EXCLUDED.status,
+		       duration_ms = EXCLUDED.duration_ms,
+		       error       = EXCLUDED.error,
+		       started_at  = EXCLUDED.started_at,
+		       ended_at    = EXCLUDED.ended_at
 	`
 
 	_, err := s.conn(ctx).ExecContext(ctx, query,
@@ -238,7 +246,7 @@ func (s *postgresStore) DeleteCompleted(ctx context.Context, retention time.Dura
 		     SELECT id
 		       FROM mecontrola.workflow_runs
 		      WHERE status IN ('succeeded','failed')
-		        AND updated_at < $1
+		        AND ended_at < $1
 		      LIMIT $2
 		 )
 	`

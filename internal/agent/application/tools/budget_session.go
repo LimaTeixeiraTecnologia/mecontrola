@@ -12,7 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
-type BudgetCommitGateFunc func(ctx context.Context, userID uuid.UUID, channel string, draft budgetdraft.Draft) (gated bool, result ToolResult)
+type BudgetCommitGateFunc func(ctx context.Context, userID uuid.UUID, channel, messageID string, draft budgetdraft.Draft) (gated bool, result ToolResult)
 
 type BudgetSessionRunner struct {
 	recorder   *Recorder
@@ -36,11 +36,11 @@ func (r *BudgetSessionRunner) Enabled() bool {
 	return r != nil && r.session != nil && r.convo != nil && r.committer != nil
 }
 
-func (r *BudgetSessionRunner) Start(ctx context.Context, userID uuid.UUID, channel, text string) ToolResult {
-	return r.advance(ctx, userID, channel, text, budgetdraft.New(currentCompetence(r.loc)))
+func (r *BudgetSessionRunner) Start(ctx context.Context, userID uuid.UUID, channel, text, messageID string) ToolResult {
+	return r.advance(ctx, userID, channel, text, messageID, budgetdraft.New(currentCompetence(r.loc)))
 }
 
-func (r *BudgetSessionRunner) Continue(ctx context.Context, userID uuid.UUID, channel, text string) (bool, ToolResult) {
+func (r *BudgetSessionRunner) Continue(ctx context.Context, userID uuid.UUID, channel, text, messageID string) (bool, ToolResult) {
 	draft, found, err := r.session.Load(ctx, userID, channel)
 	if err != nil {
 		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_load_failed",
@@ -62,10 +62,10 @@ func (r *BudgetSessionRunner) Continue(ctx context.Context, userID uuid.UUID, ch
 		r.recorder.Record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
 		return true, ToolResult{Reply: budgetCancelledText, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
 	}
-	return true, r.advance(ctx, userID, channel, text, draft)
+	return true, r.advance(ctx, userID, channel, text, messageID, draft)
 }
 
-func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, channel, text string, draft budgetdraft.Draft) ToolResult {
+func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, channel, text, messageID string, draft budgetdraft.Draft) ToolResult {
 	result, err := r.convo.Configure(ctx, text, draft)
 	if err != nil {
 		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_configure_failed",
@@ -90,7 +90,7 @@ func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, cha
 	}
 
 	if r.commitGate != nil {
-		if gated, gateResult := r.commitGate(ctx, userID, channel, result.Draft); gated {
+		if gated, gateResult := r.commitGate(ctx, userID, channel, messageID, result.Draft); gated {
 			return gateResult
 		}
 	}

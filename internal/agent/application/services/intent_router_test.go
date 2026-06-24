@@ -24,10 +24,13 @@ import (
 )
 
 type fakeParser struct {
-	intent      intent.Intent
-	directReply string
-	confidence  float64
-	err         error
+	intent       intent.Intent
+	directReply  string
+	confidence   float64
+	llmModel     string
+	promptSHA256 string
+	rawResponse  []byte
+	err          error
 }
 
 func (f *fakeParser) Parse(_ context.Context, _ uuid.UUID, _ string) (services.ParsedIntent, error) {
@@ -39,7 +42,14 @@ func (f *fakeParser) Parse(_ context.Context, _ uuid.UUID, _ string) (services.P
 	if confErr != nil {
 		return services.ParsedIntent{}, confErr
 	}
-	return services.ParsedIntent{Intent: f.intent, Confidence: confidence, DirectReply: f.directReply}, f.err
+	return services.ParsedIntent{
+		Intent:       f.intent,
+		Confidence:   confidence,
+		DirectReply:  f.directReply,
+		LLMModel:     f.llmModel,
+		PromptSHA256: f.promptSHA256,
+		Raw:          f.rawResponse,
+	}, f.err
 }
 
 type fakeMonthlySummary struct {

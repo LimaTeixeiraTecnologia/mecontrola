@@ -110,19 +110,24 @@ func TestBranch_RoutesCorrectly(t *testing.T) {
 	)
 
 	scenarios := []struct {
-		name     string
-		input    branchState
-		expected int
-		status   StepStatus
+		name      string
+		input     branchState
+		expected  int
+		status    StepStatus
+		wantError bool
 	}{
-		{"add branch", branchState{key: "add", value: 5}, 15, StepStatusCompleted},
-		{"mul branch", branchState{key: "mul", value: 5}, 50, StepStatusCompleted},
-		{"missing route", branchState{key: "missing", value: 5}, 5, StepStatusSkipped},
+		{"add branch", branchState{key: "add", value: 5}, 15, StepStatusCompleted, false},
+		{"mul branch", branchState{key: "mul", value: 5}, 50, StepStatusCompleted, false},
+		{"missing route", branchState{key: "missing", value: 5}, 5, StepStatusSkipped, true},
 	}
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
 			out, err := branch.Execute(context.Background(), s.input)
+			if s.wantError {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			assert.Equal(t, s.status, out.Status)
 			assert.Equal(t, s.expected, out.State.value)

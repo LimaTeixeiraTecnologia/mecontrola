@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -154,7 +155,7 @@ func (s *DestructiveConfirmSuite) TestDefinition_PrepareTarget_MissingResolver_S
 }
 
 func (s *DestructiveConfirmSuite) TestDefinition_OperationKindMapping() {
-	for _, kind := range []confirmation.OperationKind{
+	for i, kind := range []confirmation.OperationKind{
 		confirmation.OperationDeleteLast,
 		confirmation.OperationEditLast,
 		confirmation.OperationDeleteCard,
@@ -171,7 +172,7 @@ func (s *DestructiveConfirmSuite) TestDefinition_OperationKindMapping() {
 			def := NewDestructiveConfirmDefinition(deps)
 			state := baseConfirmInitialState()
 			state.OperationKind = kind
-			result, err := s.obs.Start(s.ctx, def, "user-1:whatsapp", state)
+			result, err := s.obs.Start(s.ctx, def, fmt.Sprintf("user-%d:whatsapp", i), state)
 			s.NoError(err)
 			s.Equal(platform.RunStatusSuspended, result.Status)
 			s.NotNil(result.Suspend)

@@ -369,6 +369,114 @@ func (s *HITLRoutingSuite) TestDestructiveKind_Expired_FallThrough() {
 	s.NotEqual(tools.OutcomeClarify, result2.Outcome, "após expiração, mensagem deve cair no parse (fall-through), não ficar presa no HITL")
 }
 
+func (s *HITLRoutingSuite) TestDestructiveKind_EditLast_PassesNewAmount() {
+	obs := fake.NewProvider()
+	store := newE2EStore()
+
+	var capturedState confirmation.ConfirmState
+	confirmDef := agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
+		Authorize: func(_ context.Context, _ confirmation.ConfirmState) bool { return true },
+		Replay:    func(_ context.Context, _ confirmation.ConfirmState) (string, bool) { return "", false },
+		Policy:    func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, _ confirmation.ConfirmState) steps.ConfirmAuditBeginResult {
+			return steps.ConfirmAuditBeginResult{}
+		},
+		OnSettle: nil,
+		Targets: map[confirmation.OperationKind]steps.TargetResolver{
+			confirmation.OperationEditLast: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+				capturedState = st
+				st.PromptText = "confirme?"
+				return st, nil
+			},
+		},
+		Executors:      map[confirmation.OperationKind]steps.DestructiveExecutor{},
+		TTL:            10 * time.Minute,
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha",
+	})
+
+	editIntent, err := intent.NewEditLastTransaction(7777)
+	s.Require().NoError(err)
+
+	deps := services.IntentRouterDeps{
+		Parser:                     &fakeParser{intent: editIntent},
+		Fallback:                   &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:            s.wa,
+		Location:                   time.UTC,
+		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Kernel: &services.KernelDeps{
+			ConfirmEngine: platform.NewEngine[confirmation.ConfirmState](store, obs),
+			ConfirmDef:    confirmDef,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	router.RouteWhatsApp(
+		s.ctx,
+		services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "editar último para 77,77", WhatsAppTo: "+5511999"},
+	)
+
+	s.Equal(confirmation.OperationEditLast, capturedState.OperationKind)
+	s.Equal(int64(7777), capturedState.NewAmountCents)
+}
+
+func (s *HITLRoutingSuite) TestDestructiveKind_DeleteCard_PassesCardName() {
+	obs := fake.NewProvider()
+	store := newE2EStore()
+
+	var capturedState confirmation.ConfirmState
+	confirmDef := agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
+		Authorize: func(_ context.Context, _ confirmation.ConfirmState) bool { return true },
+		Replay:    func(_ context.Context, _ confirmation.ConfirmState) (string, bool) { return "", false },
+		Policy:    func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, _ confirmation.ConfirmState) steps.ConfirmAuditBeginResult {
+			return steps.ConfirmAuditBeginResult{}
+		},
+		OnSettle: nil,
+		Targets: map[confirmation.OperationKind]steps.TargetResolver{
+			confirmation.OperationDeleteCard: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+				capturedState = st
+				st.PromptText = "confirme?"
+				return st, nil
+			},
+		},
+		Executors:      map[confirmation.OperationKind]steps.DestructiveExecutor{},
+		TTL:            10 * time.Minute,
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha",
+	})
+
+	deleteCardIntent, err := intent.NewDeleteCard("Nubank")
+	s.Require().NoError(err)
+
+	deps := services.IntentRouterDeps{
+		Parser:                     &fakeParser{intent: deleteCardIntent},
+		Fallback:                   &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:            s.wa,
+		Location:                   time.UTC,
+		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Kernel: &services.KernelDeps{
+			ConfirmEngine: platform.NewEngine[confirmation.ConfirmState](store, obs),
+			ConfirmDef:    confirmDef,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	router.RouteWhatsApp(
+		s.ctx,
+		services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "apagar cartão Nubank", WhatsAppTo: "+5511999"},
+	)
+
+	s.Equal(confirmation.OperationDeleteCard, capturedState.OperationKind)
+	s.Equal("Nubank", capturedState.CardName)
+}
+
 func (s *HITLRoutingSuite) TestDestructiveKind_AmbiguousRepromptCycle() {
 	obs := fake.NewProvider()
 	store := newE2EStore()

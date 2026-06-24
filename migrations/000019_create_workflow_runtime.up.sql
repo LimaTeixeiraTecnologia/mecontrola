@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS mecontrola.workflow_steps (
     started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at    TIMESTAMPTZ,
     CONSTRAINT workflow_steps_pkey PRIMARY KEY (id),
+    CONSTRAINT workflow_steps_run_seq_attempt_uidx
+        UNIQUE (run_id, seq, attempt),
     CONSTRAINT workflow_steps_run_fkey
         FOREIGN KEY (run_id) REFERENCES mecontrola.workflow_runs (id) ON DELETE CASCADE,
     CONSTRAINT workflow_steps_status_check

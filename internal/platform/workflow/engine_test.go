@@ -394,11 +394,32 @@ func (s *EngineTestSuite) TestVersionConflict_TriggersMetric() {
 	s.store.SetSaveError(ErrVersionConflict)
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
-	_, _ = eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 0})
+	_, err := eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 0})
 
+	s.ErrorIs(err, ErrRunConflict)
 	fakeMetrics := s.obs.Metrics().(*fake.FakeMetrics)
 	conflictCounter := fakeMetrics.GetCounter("workflow_version_conflict_total")
 	s.NotNil(conflictCounter)
+}
+
+func (s *EngineTestSuite) TestSaveSnap_GenericError_Propagated() {
+	def := Definition[engineTestState]{
+		ID:      "save_error_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 1)),
+		Durable: true,
+	}
+
+	s.store.SetSaveError(errors.New("disk full"))
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	_, err := eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 0})
+
+	s.Error(err)
+	s.ErrorContains(err, "save snapshot")
+
+	snap, found, _ := s.store.Load(s.ctx, "save_error_workflow", "user:ch")
+	s.True(found)
+	s.Equal(RunStatusRunning, snap.Status)
 }
 
 type FakeStore struct {

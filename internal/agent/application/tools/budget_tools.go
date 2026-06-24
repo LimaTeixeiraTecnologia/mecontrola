@@ -251,7 +251,7 @@ func (t *ConfigureBudget) Descriptor() ToolSpec {
 func (t *ConfigureBudget) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
 	kind := intent.KindConfigureBudget
 	if t.session.Enabled() {
-		return t.session.Start(ctx, in.UserID, in.Channel, in.Text), nil
+		return t.session.Start(ctx, in.UserID, in.Channel, in.Text, in.MessageID), nil
 	}
 	if t.config == nil {
 		t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeMissingResolver)

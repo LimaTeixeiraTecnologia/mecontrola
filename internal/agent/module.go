@@ -494,38 +494,44 @@ func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentR
 }
 
 func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
-	if !b.cfg.WorkflowKernelConfig.TransactionsWriteEnabled {
-		return
-	}
 	if b.sessionDB == nil || b.wfStoreFactory == nil {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.kernel_disabled",
 			observability.String("reason", "session_store_or_factory_missing"),
 		)
 		return
 	}
-	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.kernel_disabled",
-			observability.String("reason", "categories_module_missing"),
-		)
-		return
-	}
 	store := b.wfStoreFactory.Store(b.sessionDB)
-	engine := platform.NewEngine[steps.ExpenseState](store, b.o11y)
 	settleReg := appservices.NewSettleRegistry()
-	resolver := agentbinding.NewKernelCategoryResolver(b.categoriesModule.SearchDictionaryUC)
-	persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
+	retryPolicy := platform.RetryPolicy{
+		MaxAttempts: b.cfg.WorkflowKernelConfig.MaxAttempts,
+		BaseBackoff: b.cfg.WorkflowKernelConfig.RetryBaseBackoff,
+		MaxBackoff:  b.cfg.WorkflowKernelConfig.RetryMaxBackoff,
+	}
 
 	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, b.o11y)
 	confirmDef := b.buildConfirmDefinition(deps, settleReg)
 
-	deps.Kernel = &appservices.KernelDeps{
-		Engine:           engine,
-		SettleReg:        settleReg,
-		CategoryResolver: resolver,
-		PersistFn:        persistFn,
-		ConfirmEngine:    confirmEngine,
-		ConfirmDef:       confirmDef,
+	kernelDeps := &appservices.KernelDeps{
+		SettleReg:     settleReg,
+		ConfirmEngine: confirmEngine,
+		ConfirmDef:    confirmDef,
+		RetryPolicy:   retryPolicy,
+		MaxAttempts:   b.cfg.WorkflowKernelConfig.MaxAttempts,
 	}
+
+	if b.cfg.WorkflowKernelConfig.TransactionsWriteEnabled && b.categoriesModule != nil && b.categoriesModule.SearchDictionaryUC != nil {
+		engine := platform.NewEngine[steps.ExpenseState](store, b.o11y)
+		resolver := agentbinding.NewKernelCategoryResolver(b.categoriesModule.SearchDictionaryUC)
+		persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
+		kernelDeps.Engine = engine
+		kernelDeps.CategoryResolver = resolver
+		kernelDeps.PersistFn = persistFn
+		b.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
+			observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
+		)
+	}
+
+	deps.Kernel = kernelDeps
 	wfUoW := uow.NewUnitOfWork(b.sessionDB)
 	hkJob, hkErr := platform.NewHousekeepingJob(wfUoW, b.wfStoreFactory, b.cfg.WorkflowKernelConfig, b.o11y.Logger())
 	if hkErr != nil {
@@ -533,46 +539,56 @@ func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
 		return
 	}
 	b.wfHousekeepingJob = hkJob
-	b.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
-		observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
+	b.o11y.Logger().Info(context.Background(), "agent.module.confirm_kernel_enabled",
+		observability.String("workflow", agentwf.DestructiveConfirmWorkflowID),
 	)
 }
 
-func (b *agentModuleBuilder) buildConfirmDefinition(deps *appservices.IntentRouterDeps, _ *appservices.SettleRegistry) platform.Definition[confirmation.ConfirmState] {
+func (b *agentModuleBuilder) buildConfirmDefinition(deps *appservices.IntentRouterDeps, settleReg *appservices.SettleRegistry) platform.Definition[confirmation.ConfirmState] {
 	lister := deps.TransactionLister
 	targets := map[confirmation.OperationKind]steps.TargetResolver{
 		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterResolver(lister),
 		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorResolver(lister),
-		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterResolver(),
+		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterResolver(deps.CardLister),
 		confirmation.OperationBudgetCommit: agentbinding.NewBudgetCommitResolver(),
 	}
 	executors := map[confirmation.OperationKind]steps.DestructiveExecutor{
-		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterExecutor(deps.LastDeleter, lister),
-		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorExecutor(deps.LastEditor, lister),
+		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterExecutor(deps.LastDeleter),
+		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorExecutor(deps.LastEditor),
 		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterExecutorFn(deps.CardDeleter),
 		confirmation.OperationBudgetCommit: agentbinding.NewBudgetCommitExecutor(deps.BudgetCommitter),
 	}
 	return agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
 		Authorize: func(ctx context.Context, state confirmation.ConfirmState) bool {
+			principal, ok := auth.FromContext(ctx)
+			if !ok {
+				return false
+			}
 			uid, err := uuid.Parse(state.UserID)
 			if err != nil {
 				return false
 			}
-			principal := appservices.Principal{UserID: uid}
-			return b.o11y != nil && principal.UserID != uuid.Nil
+			return uid != uuid.Nil && principal.UserID == uid
 		},
-		Replay: func(_ context.Context, _ confirmation.ConfirmState) (string, bool) { return "", false },
-		Policy: func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
-		AuditBegin: func(_ context.Context, _ confirmation.ConfirmState) steps.ConfirmAuditBeginResult {
-			return steps.ConfirmAuditBeginResult{}
+		Replay:     appservices.NewConfirmReplayFunc(b.o11y, deps.Decision, deps.Redactor),
+		Policy:     func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: appservices.NewConfirmAuditBeginFunc(b.o11y, deps.Decision, deps.Redactor),
+		OnSettle: func(id uuid.UUID, fn steps.ConfirmAuditSettleFunc) {
+			settleReg.Register(id, func(ctx context.Context, executed bool) { fn(ctx, executed) })
 		},
-		OnSettle:       nil,
 		Targets:        targets,
 		Executors:      executors,
 		TTL:            10 * time.Minute,
 		DenyReply:      "Não consegui concluir essa ação agora. Tente de novo em instantes 🙏",
 		ReplayReply:    "Essa mensagem já foi processada ✅",
 		AuditFailReply: "Não foi possível processar sua mensagem agora. Pode tentar de novo em instantes? 🙏",
+		RetryPolicy: platform.RetryPolicy{
+			MaxAttempts: b.cfg.WorkflowKernelConfig.MaxAttempts,
+			BaseBackoff: b.cfg.WorkflowKernelConfig.RetryBaseBackoff,
+			MaxBackoff:  b.cfg.WorkflowKernelConfig.RetryMaxBackoff,
+		},
+		MaxAttempts:   b.cfg.WorkflowKernelConfig.MaxAttempts,
+		Observability: b.o11y,
 	})
 }
 

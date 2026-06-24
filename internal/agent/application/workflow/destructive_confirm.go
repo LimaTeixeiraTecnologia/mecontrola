@@ -3,6 +3,8 @@ package workflow
 import (
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -22,6 +24,9 @@ type DestructiveConfirmDeps struct {
 	DenyReply      string
 	ReplayReply    string
 	AuditFailReply string
+	RetryPolicy    platform.RetryPolicy
+	MaxAttempts    int
+	Observability  observability.Observability
 }
 
 func NewDestructiveConfirmDefinition(deps DestructiveConfirmDeps) platform.Definition[confirmation.ConfirmState] {
@@ -29,16 +34,20 @@ func NewDestructiveConfirmDefinition(deps DestructiveConfirmDeps) platform.Defin
 		steps.NewConfirmAuthorize(deps.Authorize, deps.DenyReply),
 		steps.NewConfirmReplay(deps.Replay),
 		steps.NewConfirmPolicy(deps.Policy),
-		steps.NewConfirmAuditBegin(deps.AuditBegin, deps.OnSettle, deps.ReplayReply, deps.AuditFailReply),
-		steps.NewPrepareTarget(steps.PrepareTargetDeps{Targets: deps.Targets}),
-		steps.NewConfirmGate(deps.TTL),
-		steps.NewExecuteDestructive(steps.ExecuteDestructiveDeps{Executors: deps.Executors}),
+		platform.Retry(steps.NewConfirmAuditBegin(deps.AuditBegin, deps.OnSettle, deps.ReplayReply, deps.AuditFailReply), deps.RetryPolicy),
+		platform.Retry(steps.NewPrepareTarget(steps.PrepareTargetDeps{Targets: deps.Targets}), deps.RetryPolicy),
+		steps.NewConfirmGateWithObservability(deps.TTL, deps.Observability),
+		platform.Retry(steps.NewExecuteDestructive(steps.ExecuteDestructiveDeps{Executors: deps.Executors}), deps.RetryPolicy),
 		steps.NewConfirmFormat(formatDestructiveReply),
 	)
+	if deps.MaxAttempts <= 0 {
+		deps.MaxAttempts = 1
+	}
 	return platform.Definition[confirmation.ConfirmState]{
-		ID:      DestructiveConfirmWorkflowID,
-		Root:    root,
-		Durable: true,
+		ID:          DestructiveConfirmWorkflowID,
+		Root:        root,
+		Durable:     true,
+		MaxAttempts: deps.MaxAttempts,
 	}
 }
 

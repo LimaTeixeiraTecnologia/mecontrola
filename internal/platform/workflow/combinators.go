@@ -54,7 +54,7 @@ func (b *branchStep[S]) Execute(ctx context.Context, state S) (StepOutput[S], er
 	key := b.decide(state)
 	step, ok := b.routes[key]
 	if !ok {
-		return StepOutput[S]{State: state, Status: StepStatusSkipped}, nil
+		return StepOutput[S]{State: state}, fmt.Errorf("branch %s: no route for key %q", b.id, key)
 	}
 	out, err := step.Execute(ctx, state)
 	if err != nil {
@@ -79,41 +79,80 @@ func (p *parallelStep[S]) Execute(ctx context.Context, state S) (StepOutput[S], 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	type result struct {
-		state S
-		err   error
+	results := make([]StepOutput[S], len(p.steps))
+	errs := make([]error, len(p.steps))
+	p.runWorkers(ctx, cancel, state, results, errs)
+
+	if joined := joinErrors(errs); len(joined) > 0 {
+		return StepOutput[S]{State: state}, errors.Join(joined...)
 	}
 
-	results := make([]result, len(p.steps))
-	var wg sync.WaitGroup
-
-	for i, step := range p.steps {
-		wg.Add(1)
-		go func(idx int, s Step[S]) {
-			defer wg.Done()
-			out, err := s.Execute(ctx, state)
-			results[idx] = result{state: out.State, err: err}
-		}(i, step)
+	states, suspended, failed := collectParallelResults(results)
+	if suspended != nil {
+		return StepOutput[S]{State: suspended.State, Status: StepStatusSuspended, Suspend: suspended.Suspend}, nil
 	}
-
-	wg.Wait()
-
-	var errs []error
-	var states []S
-	for _, r := range results {
-		if r.err != nil {
-			errs = append(errs, r.err)
-			continue
-		}
-		states = append(states, r.state)
-	}
-
-	if len(errs) > 0 {
-		return StepOutput[S]{State: state}, errors.Join(errs...)
+	if failed != nil {
+		return StepOutput[S]{State: failed.State, Status: StepStatusFailed}, nil
 	}
 
 	merged := p.merge(state, states)
 	return StepOutput[S]{State: merged, Status: StepStatusCompleted}, nil
+}
+
+func (p *parallelStep[S]) runWorkers(ctx context.Context, cancel context.CancelFunc, state S, results []StepOutput[S], errs []error) {
+	var wg sync.WaitGroup
+	var once sync.Once
+	for i, step := range p.steps {
+		wg.Add(1)
+		go func(idx int, s Step[S]) {
+			defer wg.Done()
+			p.runWorker(ctx, cancel, &once, state, s, idx, results, errs)
+		}(i, step)
+	}
+	wg.Wait()
+}
+
+func (p *parallelStep[S]) runWorker(ctx context.Context, cancel context.CancelFunc, once *sync.Once, state S, s Step[S], idx int, results []StepOutput[S], errs []error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			once.Do(cancel)
+			errs[idx] = fmt.Errorf("panic in step %s: %v", s.ID(), rec)
+		}
+	}()
+	out, err := s.Execute(ctx, state)
+	if err != nil {
+		once.Do(cancel)
+		errs[idx] = err
+		return
+	}
+	if out.Status == StepStatusSuspended || out.Status == StepStatusFailed {
+		once.Do(cancel)
+	}
+	results[idx] = out
+}
+
+func joinErrors(errs []error) []error {
+	var joined []error
+	for _, err := range errs {
+		if err != nil {
+			joined = append(joined, err)
+		}
+	}
+	return joined
+}
+
+func collectParallelResults[S any](results []StepOutput[S]) (states []S, suspended *StepOutput[S], failed *StepOutput[S]) {
+	for i := range results {
+		r := results[i]
+		if r.Status == StepStatusSuspended && suspended == nil {
+			suspended = &results[i]
+		}
+		if r.Status == StepStatusFailed && failed == nil {
+			failed = &results[i]
+		}
+		states = append(states, r.State)
+	}
+	return states, suspended, failed
 }
 
 type RetryPolicy struct {
@@ -130,6 +169,15 @@ type retryStep[S any] struct {
 }
 
 func Retry[S any](step Step[S], policy RetryPolicy) Step[S] {
+	if policy.MaxAttempts <= 0 {
+		policy.MaxAttempts = 1
+	}
+	if policy.BaseBackoff <= 0 {
+		policy.BaseBackoff = time.Millisecond
+	}
+	if policy.MaxBackoff <= 0 || policy.MaxBackoff < policy.BaseBackoff {
+		policy.MaxBackoff = policy.BaseBackoff
+	}
 	return &retryStep[S]{
 		step:   step,
 		policy: policy,

@@ -134,6 +134,7 @@ func (s *confirmAuditBeginStep) Execute(ctx context.Context, state confirmation.
 	if result.Settle != nil && s.onSettle != nil {
 		s.onSettle(result.DecisionID, result.Settle)
 	}
+	state.DecisionID = result.DecisionID.String()
 	return platform.StepOutput[confirmation.ConfirmState]{State: state, Status: platform.StepStatusCompleted}, nil
 }
 

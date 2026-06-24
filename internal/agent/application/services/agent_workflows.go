@@ -12,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -99,8 +100,11 @@ func routableKinds() []intent.Kind {
 func (a *DailyLedgerAgent) buildKernelDefinition(k *KernelDeps) platform.Definition[steps.ExpenseState] {
 	return agentwf.NewTransactionsWriteDefinition(agentwf.TransactionsWriteDeps{
 		Authorize: func(ctx context.Context, state steps.ExpenseState) bool {
-			principal := Principal{UserID: state.UserID}
-			return a.authorizeWrite(ctx, principal, state.UserID, state.Kind, state.Channel)
+			principal, ok := auth.FromContext(ctx)
+			if !ok {
+				return false
+			}
+			return a.authorizeWrite(ctx, Principal{UserID: principal.UserID}, state.UserID, state.Kind, state.Channel)
 		},
 		Replay: func(ctx context.Context, state steps.ExpenseState) (string, bool) {
 			result, found := a.replayDecision(ctx, state.UserID, state.Channel, state.MessageID, state.Kind)
@@ -125,9 +129,16 @@ func (a *DailyLedgerAgent) buildKernelDefinition(k *KernelDeps) platform.Definit
 			a.record(ctx, state.Kind.String(), state.Channel, tools.OutcomePolicyBlocked)
 			return true, policyLowConfidenceText
 		},
+		RetryPolicy: k.RetryPolicy,
+		MaxAttempts: k.MaxAttempts,
 		AuditBegin: func(ctx context.Context, state steps.ExpenseState) steps.AuditBeginResult {
 			principal := Principal{UserID: state.UserID}
-			parsed := ParsedIntent{}
+			parsed := ParsedIntent{
+				LLMModel:     state.LLMModel,
+				PromptSHA256: state.PromptSHA256,
+				DirectReply:  state.DirectReply,
+				Raw:          []byte(state.RawResponse),
+			}
 			auditCtx := a.beginDecisionAudit(ctx, principal, state.Channel, state.MessageID, state.Kind, parsed)
 			if auditCtx.conflicted {
 				a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", state.Kind.String()))

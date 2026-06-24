@@ -37,6 +37,10 @@ type ExpenseState struct {
 	Reply        string
 	DecisionID   uuid.UUID
 	ShortCircuit bool
+	LLMModel     string
+	PromptSHA256 string
+	DirectReply  string
+	RawResponse  string
 }
 
 func (s ExpenseState) IsDone() bool {

@@ -36,6 +36,9 @@ func NewHousekeepingJob(
 	if cfg.HousekeepingBatchSize <= 0 {
 		return nil, errors.New("workflow: housekeeping: batch_size must be > 0")
 	}
+	if cfg.HousekeepingSchedule == "" {
+		return nil, errors.New("workflow: housekeeping: schedule must not be empty")
+	}
 	return &HousekeepingJob{
 		uow:     unitOfWork,
 		factory: factory,

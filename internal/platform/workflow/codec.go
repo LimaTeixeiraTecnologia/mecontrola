@@ -59,6 +59,12 @@ func mergeMaps(base, patch map[string]any) map[string]any {
 			result[k] = mergeMaps(baseVal, patchVal)
 			continue
 		}
+		_, baseIsArray := result[k].([]any)
+		_, patchIsArray := v.([]any)
+		if baseIsArray || patchIsArray {
+			result[k] = v
+			continue
+		}
 		result[k] = v
 	}
 	return result

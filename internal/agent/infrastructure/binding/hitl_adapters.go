@@ -9,8 +9,8 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
+	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 )
 
 func parseHITLUserID(raw string) (uuid.UUID, error) {
@@ -30,6 +30,8 @@ func NewLastTransactionDeleterResolver(lister tools.TransactionLister) steps.Tar
 			return state, nil
 		}
 		last := result.Transactions[0]
+		state.TargetTransactionID = last.ID
+		state.TargetTransactionVersion = last.Version
 		state.PromptText = fmt.Sprintf(
 			"Você deseja apagar o último lançamento: *%s* de R$ %.2f? Responda *sim* para confirmar ou *não* para cancelar.",
 			last.Description,
@@ -39,20 +41,12 @@ func NewLastTransactionDeleterResolver(lister tools.TransactionLister) steps.Tar
 	}
 }
 
-func NewLastTransactionDeleterExecutor(deleter tools.LastTransactionDeleter, lister tools.TransactionLister) steps.DestructiveExecutor {
+func NewLastTransactionDeleterExecutor(deleter tools.LastTransactionDeleter) steps.DestructiveExecutor {
 	return func(ctx context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
-		result, err := lister.Execute(ctx, tools.TransactionListInput{UserID: state.UserID, RefMonth: ""})
-		if err != nil {
-			return state, fmt.Errorf("hitl: delete_last executor: list: %w", err)
+		if state.TargetTransactionID == "" {
+			return state, fmt.Errorf("hitl: delete_last executor: no target transaction captured")
 		}
-		if len(result.Transactions) == 0 {
-			state.ShortCircuit = true
-			state.Reply = "Não há lançamentos para apagar."
-			state.Outcome = int(tools.OutcomeRouted)
-			return state, nil
-		}
-		last := result.Transactions[0]
-		if err := deleter.Execute(ctx, state.UserID, last.ID, last.Version); err != nil {
+		if err := deleter.Execute(ctx, state.UserID, state.TargetTransactionID, state.TargetTransactionVersion); err != nil {
 			return state, fmt.Errorf("hitl: delete_last executor: delete: %w", err)
 		}
 		state.Outcome = int(tools.OutcomeRouted)
@@ -73,6 +67,8 @@ func NewLastTransactionEditorResolver(lister tools.TransactionLister) steps.Targ
 			return state, nil
 		}
 		last := result.Transactions[0]
+		state.TargetTransactionID = last.ID
+		state.TargetTransactionVersion = last.Version
 		state.PromptText = fmt.Sprintf(
 			"Você deseja atualizar o último lançamento: *%s* de R$ %.2f? Responda *sim* para confirmar ou *não* para cancelar.",
 			last.Description,
@@ -82,22 +78,15 @@ func NewLastTransactionEditorResolver(lister tools.TransactionLister) steps.Targ
 	}
 }
 
-func NewLastTransactionEditorExecutor(editor tools.LastTransactionEditor, lister tools.TransactionLister) steps.DestructiveExecutor {
+func NewLastTransactionEditorExecutor(editor tools.LastTransactionEditor) steps.DestructiveExecutor {
 	return func(ctx context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
-		result, err := lister.Execute(ctx, tools.TransactionListInput{UserID: state.UserID, RefMonth: ""})
-		if err != nil {
-			return state, fmt.Errorf("hitl: edit_last executor: list: %w", err)
+		if state.TargetTransactionID == "" {
+			return state, fmt.Errorf("hitl: edit_last executor: no target transaction captured")
 		}
-		if len(result.Transactions) == 0 {
-			state.ShortCircuit = true
-			state.Reply = "Não há lançamentos para editar."
-			state.Outcome = int(tools.OutcomeRouted)
-			return state, nil
-		}
-		last := result.Transactions[0]
 		_, execErr := editor.Execute(ctx, tools.EditTransactionInput{
-			UserID:  state.UserID,
-			Current: tools.TransactionView{ID: last.ID, Version: last.Version},
+			UserID:    state.UserID,
+			Current:   tools.TransactionView{ID: state.TargetTransactionID, Version: state.TargetTransactionVersion},
+			NewAmount: state.NewAmountCents,
 		})
 		if execErr != nil {
 			return state, fmt.Errorf("hitl: edit_last executor: edit: %w", execErr)
@@ -107,9 +96,31 @@ func NewLastTransactionEditorExecutor(editor tools.LastTransactionEditor, lister
 	}
 }
 
-func NewCardDeleterResolver() steps.TargetResolver {
-	return func(_ context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
-		state.PromptText = "Você deseja remover o cartão? Responda *sim* para confirmar ou *não* para cancelar."
+func NewCardDeleterResolver(lister tools.CardLister) steps.TargetResolver {
+	return func(ctx context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+		uid, err := parseHITLUserID(state.UserID)
+		if err != nil {
+			return state, fmt.Errorf("hitl: delete_card resolver: user_id: %w", err)
+		}
+		cards, err := lister.Execute(ctx, cardinput.ListCards{UserID: uid, Limit: defaultListCardsLimit})
+		if err != nil {
+			return state, fmt.Errorf("hitl: delete_card resolver: list: %w", err)
+		}
+		resolved, err := resolveCardExact(cards, state.CardName)
+		if err != nil {
+			state.ShortCircuit = true
+			state.Reply = fmt.Sprintf("Não encontrei o cartão '%s'.", state.CardName)
+			state.Outcome = int(tools.OutcomeRouted)
+			return state, nil
+		}
+		label := strings.TrimSpace(resolved.Nickname)
+		if label == "" {
+			label = strings.TrimSpace(resolved.Name)
+		}
+		state.PromptText = fmt.Sprintf(
+			"Você deseja remover o cartão *%s*? Responda *sim* para confirmar ou *não* para cancelar.",
+			label,
+		)
 		return state, nil
 	}
 }
@@ -120,7 +131,7 @@ func NewCardDeleterExecutorFn(deleter tools.CardDeleter) steps.DestructiveExecut
 		if err != nil {
 			return state, fmt.Errorf("hitl: delete_card executor: user_id: %w", err)
 		}
-		_, execErr := deleter.Execute(ctx, uid, "")
+		_, execErr := deleter.Execute(ctx, uid, state.CardName)
 		if execErr != nil {
 			return state, fmt.Errorf("hitl: delete_card executor: %w", execErr)
 		}
@@ -131,9 +142,32 @@ func NewCardDeleterExecutorFn(deleter tools.CardDeleter) steps.DestructiveExecut
 
 func NewBudgetCommitResolver() steps.TargetResolver {
 	return func(_ context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
-		state.PromptText = "Você deseja confirmar a configuração do orçamento? Responda *sim* para confirmar ou *não* para cancelar."
+		draft, err := state.BudgetDraft()
+		if err != nil {
+			state.ShortCircuit = true
+			state.Reply = "Não consegui carregar o rascunho do orçamento. Tente configurar novamente."
+			state.Outcome = int(tools.OutcomeRouted)
+			return state, nil
+		}
+		state.PromptText = fmt.Sprintf(
+			"Você deseja ativar o orçamento de *R$ %.2f* (%s) com as alocações abaixo? Responda *sim* para confirmar ou *não* para cancelar.\n\n%s",
+			float64(draft.TotalCents())/100,
+			draft.Competence(),
+			formatBudgetAllocations(draft.Allocations()),
+		)
 		return state, nil
 	}
+}
+
+func formatBudgetAllocations(allocations map[string]int) string {
+	if len(allocations) == 0 {
+		return "_sem alocações_"
+	}
+	var parts []string
+	for slug, cents := range allocations {
+		parts = append(parts, fmt.Sprintf("• %s: R$ %.2f", slug, float64(cents)/100))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func NewBudgetCommitExecutor(committer tools.BudgetConfigCommitter) steps.DestructiveExecutor {
@@ -142,7 +176,11 @@ func NewBudgetCommitExecutor(committer tools.BudgetConfigCommitter) steps.Destru
 		if err != nil {
 			return state, fmt.Errorf("hitl: budget_commit executor: user_id: %w", err)
 		}
-		reply, execErr := committer.Commit(ctx, uid, budgetdraft.Draft{})
+		draft, draftErr := state.BudgetDraft()
+		if draftErr != nil {
+			return state, fmt.Errorf("hitl: budget_commit executor: draft: %w", draftErr)
+		}
+		reply, execErr := committer.Commit(ctx, uid, draft)
 		if execErr != nil {
 			return state, fmt.Errorf("hitl: budget_commit executor: %w", execErr)
 		}

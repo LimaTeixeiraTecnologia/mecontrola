@@ -212,6 +212,74 @@ func (s *KernelE2ESuite) TestE2E_KernelFlagOn_AutoLog_ReplyIdenticalToLegacy() {
 	}
 }
 
+func (s *KernelE2ESuite) TestE2E_KernelFlagOn_AuditFieldsPropagateToAuditBegin() {
+	var captured steps.ExpenseState
+	resolver := func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+		st.CategoryID = "prazeres-delivery"
+		st.CategoryPath = "Prazeres > Delivery"
+		return st, nil
+	}
+	persist := func(_ context.Context, _ steps.ExpenseState) (steps.PersistResult, error) {
+		return steps.PersistResult{AmountCents: 5800, CategoryPath: "Prazeres > Delivery"}, nil
+	}
+
+	obs := fake.NewProvider()
+	store := newE2EStore()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+	settleReg := services.NewSettleRegistry()
+
+	parser := &fakeParser{
+		intent:       mustBuildExpenseIntent2(5800, "iFood", "Prazeres"),
+		llmModel:     "google/gemini-test",
+		promptSHA256: "sha256-audit",
+		rawResponse:  []byte(`{"kind":"record_expense"}`),
+	}
+	deps := services.IntentRouterDeps{
+		Parser:                     parser,
+		Fallback:                   &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:            s.wa,
+		Location:                   time.UTC,
+		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Kernel: &services.KernelDeps{
+			Engine:           engine,
+			SettleReg:        settleReg,
+			CategoryResolver: resolver,
+			PersistFn:        persist,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	customDef := agentwf.NewTransactionsWriteDefinition(agentwf.TransactionsWriteDeps{
+		Authorize: func(_ context.Context, _ steps.ExpenseState) bool { return true },
+		Replay:    func(_ context.Context, _ steps.ExpenseState) (string, bool) { return "", false },
+		Policy:    func(_ context.Context, _ steps.ExpenseState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, st steps.ExpenseState) steps.AuditBeginResult {
+			captured = st
+			return steps.AuditBeginResult{Settle: func(_ context.Context, _ bool) {}}
+		},
+		OnSettle:       nil,
+		Resolver:       resolver,
+		Persist:        persist,
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha",
+	})
+	router.EnableKernel(engine, customDef, settleReg)
+
+	principal := services.Principal{UserID: uuid.New()}
+	result := router.RouteWhatsApp(s.ctx, principal, services.InboundMessage{
+		Text:       "gastei 58 no iFood",
+		WhatsAppTo: "+5511999",
+		MessageID:  "msg-audit-1",
+	})
+
+	s.Equal(tools.OutcomeRouted, result.Outcome)
+	s.Equal("google/gemini-test", captured.LLMModel)
+	s.Equal("sha256-audit", captured.PromptSHA256)
+	s.Equal(`{"kind":"record_expense"}`, captured.RawResponse)
+}
+
 func (s *KernelE2ESuite) TestE2E_KernelFlagOn_AmbiguousChoiceCycle() { //nolint:revive // test: scenario requires >40 statements to cover full suspend→resume cycle end-to-end
 	candidates := []string{"Prazeres > Academia", "Custo Fixo > Academia"}
 

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 )
 
 type ConfirmationSuite struct {
@@ -178,4 +180,51 @@ func (s *ConfirmationSuite) TestConfirmStateMergePatchCompatible() {
 	s.Equal(AwaitingConfirm, merged.AwaitingApproval)
 	s.Equal("msg-001", merged.MessageID)
 	s.Equal("nao", merged.ResumeText)
+}
+
+func (s *ConfirmationSuite) TestConfirmState_BudgetDraftRoundTrip() {
+	draft, err := budgetdraft.Restore(500000, map[string]int{
+		budgetdraft.SlugCustoFixo:           3000,
+		budgetdraft.SlugConhecimento:        2000,
+		budgetdraft.SlugPrazeres:            2000,
+		budgetdraft.SlugMetas:               1500,
+		budgetdraft.SlugLiberdadeFinanceira: 1500,
+	}, "2026-06")
+	s.Require().NoError(err)
+
+	state := ConfirmState{}
+	s.NoError(state.SetBudgetDraft(draft))
+	s.NotEmpty(state.BudgetDraftJSON)
+
+	restored, err := state.BudgetDraft()
+	s.NoError(err)
+	s.Equal(draft.TotalCents(), restored.TotalCents())
+	s.Equal(draft.Competence(), restored.Competence())
+	s.Equal(draft.Allocations(), restored.Allocations())
+}
+
+func (s *ConfirmationSuite) TestConfirmState_BudgetDraftEmpty() {
+	state := ConfirmState{}
+	restored, err := state.BudgetDraft()
+	s.NoError(err)
+	s.Equal(int64(0), restored.TotalCents())
+	s.Empty(restored.Competence())
+	s.Empty(restored.Allocations())
+}
+
+func (s *ConfirmationSuite) TestConfirmState_FieldsRoundTrip() {
+	original := ConfirmState{
+		OperationKind:  OperationEditLast,
+		NewAmountCents: 12345,
+		CardName:       "Nubank",
+	}
+
+	data, err := json.Marshal(original)
+	s.NoError(err)
+
+	var restored ConfirmState
+	s.NoError(json.Unmarshal(data, &restored))
+
+	s.Equal(int64(12345), restored.NewAmountCents)
+	s.Equal("Nubank", restored.CardName)
 }

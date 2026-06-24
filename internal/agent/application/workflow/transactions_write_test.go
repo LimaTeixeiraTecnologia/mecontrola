@@ -271,10 +271,14 @@ func (s *TransactionsWriteSuite) TestDefinition_DefinitionID() {
 func (s *TransactionsWriteSuite) TestExpenseStateFromToolInput() {
 	kind := intent.KindRecordExpense
 	in := tools.ToolInput{
-		UserID:    uuid.New(),
-		Channel:   "telegram",
-		MessageID: "msg-42",
-		Intent:    mustBuildExpenseIntent(5000, "Mercado"),
+		UserID:       uuid.New(),
+		Channel:      "telegram",
+		MessageID:    "msg-42",
+		Intent:       mustBuildExpenseIntent(5000, "Mercado"),
+		LLMModel:     "google/gemini-2.5-flash-lite",
+		PromptSHA256: "abc123",
+		DirectReply:  "direto",
+		RawResponse:  "{\"raw\":\"data\"}",
 	}
 	state := ExpenseStateFromToolInput(in)
 	s.Equal(in.UserID, state.UserID)
@@ -284,6 +288,10 @@ func (s *TransactionsWriteSuite) TestExpenseStateFromToolInput() {
 	s.Equal("Mercado", state.Merchant)
 	s.Equal("outcome", state.Direction)
 	s.Equal(pendingexpense.TransactionKindExpense, state.TransactionKind)
+	s.Equal(in.LLMModel, state.LLMModel)
+	s.Equal(in.PromptSHA256, state.PromptSHA256)
+	s.Equal(in.DirectReply, state.DirectReply)
+	s.Equal(in.RawResponse, state.RawResponse)
 }
 
 func (s *TransactionsWriteSuite) TestExpenseStateToToolResult() {

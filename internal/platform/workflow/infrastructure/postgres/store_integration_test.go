@@ -22,7 +22,7 @@ type StoreIntegrationSuite struct {
 	suite.Suite
 	ctx     context.Context
 	db      *sqlx.DB
-	factory wfpostgres.StoreFactory
+	factory workflow.StoreFactory
 }
 
 func TestStoreIntegrationSuite(t *testing.T) {

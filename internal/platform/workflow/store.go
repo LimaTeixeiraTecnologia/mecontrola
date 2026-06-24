@@ -8,7 +8,11 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrVersionConflict = errors.New("workflow: version conflict")
+var (
+	ErrVersionConflict  = errors.New("workflow: version conflict")
+	ErrRunConflict      = errors.New("workflow: run conflict")
+	ErrRunAlreadyExists = errors.New("workflow: active run already exists")
+)
 
 type Snapshot struct {
 	RunID          uuid.UUID

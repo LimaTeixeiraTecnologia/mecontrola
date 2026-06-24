@@ -103,6 +103,13 @@ func (r *IntentRouter) EnableRuntime(threads ThreadGateway, runs RunGateway) {
 	r.runtime = NewAgentRuntime(r.o11y, r, threads, runs)
 }
 
+func (r *IntentRouter) EnableKernel(engine platform.Engine[steps.ExpenseState], def platform.Definition[steps.ExpenseState], reg *SettleRegistry) {
+	if r.daily == nil {
+		return
+	}
+	r.daily.EnableKernel(engine, def, reg)
+}
+
 func (r *IntentRouter) dispatch(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
 	if r.runtime != nil {
 		return r.runtime.Execute(ctx, principal, channel, peer, text, messageID)
@@ -117,6 +124,8 @@ type KernelDeps struct {
 	PersistFn        steps.PersistFunc
 	ConfirmEngine    platform.Engine[confirmation.ConfirmState]
 	ConfirmDef       platform.Definition[confirmation.ConfirmState]
+	RetryPolicy      platform.RetryPolicy
+	MaxAttempts      int
 }
 
 type IntentRouterDeps struct {

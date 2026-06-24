@@ -152,3 +152,19 @@ func TestCodec_MergePatch_InvalidPatch_ReturnsError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow: codec: merge patch")
 }
+
+func TestCodec_MergePatch_ArrayReplacesPerRFC7386(t *testing.T) {
+	codec := NewCodec[codecState]()
+	base := codecState{Name: "base", Value: 1, Tags: []string{"a", "b"}}
+	baseBytes, err := codec.Encode(base)
+	require.NoError(t, err)
+
+	patch := []byte(`{"tags":["c"]}`)
+	merged, err := codec.MergePatch(baseBytes, patch)
+	require.NoError(t, err)
+
+	result, err := codec.Decode(merged)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"c"}, result.Tags)
+	assert.Equal(t, "base", result.Name)
+}

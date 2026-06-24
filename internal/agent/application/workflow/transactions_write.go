@@ -21,6 +21,8 @@ type TransactionsWriteDeps struct {
 	DenyReply      string
 	ReplayReply    string
 	AuditFailReply string
+	RetryPolicy    platform.RetryPolicy
+	MaxAttempts    int
 }
 
 func NewTransactionsWriteDefinition(deps TransactionsWriteDeps) platform.Definition[steps.ExpenseState] {
@@ -28,15 +30,19 @@ func NewTransactionsWriteDefinition(deps TransactionsWriteDeps) platform.Definit
 		steps.NewAuthorize(deps.Authorize, deps.DenyReply),
 		steps.NewReplay(deps.Replay),
 		steps.NewPolicy(deps.Policy),
-		steps.NewAuditBegin(deps.AuditBegin, deps.OnSettle, deps.ReplayReply, deps.AuditFailReply),
-		steps.NewResolveCategory(deps.Resolver),
-		steps.NewPersist(deps.Persist),
+		platform.Retry(steps.NewAuditBegin(deps.AuditBegin, deps.OnSettle, deps.ReplayReply, deps.AuditFailReply), deps.RetryPolicy),
+		platform.Retry(steps.NewResolveCategory(deps.Resolver), deps.RetryPolicy),
+		platform.Retry(steps.NewPersist(deps.Persist), deps.RetryPolicy),
 		steps.NewFormat(formatExpenseReply),
 	)
+	if deps.MaxAttempts <= 0 {
+		deps.MaxAttempts = 1
+	}
 	return platform.Definition[steps.ExpenseState]{
-		ID:      TransactionsWriteWorkflowID,
-		Root:    root,
-		Durable: true,
+		ID:          TransactionsWriteWorkflowID,
+		Root:        root,
+		Durable:     true,
+		MaxAttempts: deps.MaxAttempts,
 	}
 }
 
@@ -81,6 +87,10 @@ func ExpenseStateFromToolInput(in tools.ToolInput) steps.ExpenseState {
 		Direction:       resolveDirection(kind),
 		Installments:    in.Intent.Installments(),
 		CardHint:        in.Intent.CardHint(),
+		LLMModel:        in.LLMModel,
+		PromptSHA256:    in.PromptSHA256,
+		DirectReply:     in.DirectReply,
+		RawResponse:     in.RawResponse,
 	}
 }
 

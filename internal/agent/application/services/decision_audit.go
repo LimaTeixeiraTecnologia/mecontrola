@@ -103,7 +103,17 @@ func (a *decisionAuditor) begin(ctx context.Context, in decisionRecordInput) dec
 		)
 		return decisionContext{}
 	}
+	return a.beginInternal(ctx, in)
+}
 
+func (a *decisionAuditor) beginHuman(ctx context.Context, in decisionRecordInput) decisionContext {
+	if !a.enabled() || in.MessageID == "" {
+		return decisionContext{}
+	}
+	return a.beginInternal(ctx, in)
+}
+
+func (a *decisionAuditor) beginInternal(ctx context.Context, in decisionRecordInput) decisionContext {
 	params := entities.AgentDecisionParams{
 		ID:               uuid.New(),
 		UserID:           in.UserID,

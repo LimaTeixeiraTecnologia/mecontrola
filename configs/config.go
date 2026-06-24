@@ -1261,9 +1261,6 @@ func (l *configLoader) setTelegramDefaults() {
 
 func (c *Config) validateWorkflowKernel() []string {
 	wk := c.WorkflowKernelConfig
-	if wk.MaxAttempts == 0 && wk.HousekeepingRetentionDays == 0 && wk.HousekeepingBatchSize == 0 {
-		return nil
-	}
 
 	var errs []string
 
@@ -1309,13 +1306,13 @@ func (c *Config) validateWorkflowKernel() []string {
 		))
 	}
 
-	if wk.HousekeepingSchedule != "" {
-		if _, err := cron.ParseStandard(wk.HousekeepingSchedule); err != nil {
-			errs = append(errs, fmt.Sprintf(
-				"WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE inválido %q: %v",
-				wk.HousekeepingSchedule, err,
-			))
-		}
+	if wk.HousekeepingSchedule == "" {
+		errs = append(errs, "WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE inválido: não pode ser vazio")
+	} else if _, err := cron.ParseStandard(wk.HousekeepingSchedule); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE inválido %q: %v",
+			wk.HousekeepingSchedule, err,
+		))
 	}
 
 	return errs

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -181,19 +183,19 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 	return confidence
 }
 
-func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUID, channel, text, messageID string) (bool, RouteResult) {
 	if a.pendingExpenseConfirmation != nil || a.kernelEnabled {
 		if handled, result := a.continuePendingExpenseConfirmation(ctx, userID, channel, text); handled {
 			return true, result
 		}
 	}
 	if a.confirmEngine != (platform.Engine[confirmation.ConfirmState])(nil) {
-		if handled, result := a.continuePendingApproval(ctx, userID, channel, text); handled {
+		if handled, result := a.continuePendingApproval(ctx, userID, channel, text, messageID); handled {
 			return true, result
 		}
 	}
 	if a.budgetRunner.Enabled() {
-		if handled, result := a.budgetRunner.Continue(ctx, userID, channel, text); handled {
+		if handled, result := a.budgetRunner.Continue(ctx, userID, channel, text, messageID); handled {
 			return true, toRouteResult(result)
 		}
 	}
@@ -201,7 +203,7 @@ func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUI
 }
 
 func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
-	if handled, result := a.tryResumeInbound(ctx, principal.UserID, channel, text); handled {
+	if handled, result := a.tryResumeInbound(ctx, principal.UserID, channel, text, messageID); handled {
 		return result
 	}
 
@@ -262,7 +264,7 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 	kind := parsed.Intent.Kind()
 
 	if a.confirmEngine != (platform.Engine[confirmation.ConfirmState])(nil) && isDestructiveKind(kind) {
-		return a.dispatchWriteDestructive(ctx, principal, channel, messageID, kind)
+		return a.dispatchWriteDestructive(ctx, principal, channel, messageID, parsed)
 	}
 
 	if a.kernelEnabled && a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
@@ -300,19 +302,29 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 }
 
 func (a *DailyLedgerAgent) dispatchWriteKernel(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent, kind intent.Kind) RouteResult {
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: principal.UserID, Source: auth.SourceWhatsApp})
 	in := tools.ToolInput{
-		UserID:     principal.UserID,
-		Channel:    channel,
-		Intent:     parsed.Intent,
-		MessageID:  messageID,
-		Text:       trimmed,
-		Confidence: parsed.Confidence,
-		Parsed:     parsed,
+		UserID:       principal.UserID,
+		Channel:      channel,
+		Intent:       parsed.Intent,
+		MessageID:    messageID,
+		Text:         trimmed,
+		Confidence:   parsed.Confidence,
+		Parsed:       parsed,
+		LLMModel:     parsed.LLMModel,
+		PromptSHA256: parsed.PromptSHA256,
+		DirectReply:  parsed.DirectReply,
+		RawResponse:  string(parsed.Raw),
 	}
 	initial := workflow.ExpenseStateFromToolInput(in)
 	correlationKey := fmt.Sprintf("%s:%s", principal.UserID.String(), channel)
 	result, err := a.kernelEngine.Start(ctx, a.kernelDef, correlationKey, initial)
 	if err != nil {
+		if errors.Is(err, platform.ErrRunConflict) {
+			a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind.String()))
+			a.record(ctx, kind.String(), channel, tools.OutcomeReplay)
+			return RouteResult{Reply: alreadyProcessedText, Outcome: tools.OutcomeReplay, Kind: kind}
+		}
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.kernel_start_failed",
 			observability.String("kind", kind.String()),
 			observability.String("channel", channel),
@@ -435,6 +447,7 @@ func (a *DailyLedgerAgent) continuePendingExpenseConfirmation(ctx context.Contex
 }
 
 func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
 	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
 	resumeDelta := struct {
 		ResumeText string `json:"ResumeText"`
@@ -449,11 +462,16 @@ func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.
 	}
 	result, err := a.kernelEngine.Resume(ctx, a.kernelDef, correlationKey, resumeBytes)
 	if err != nil {
+		if errors.Is(err, platform.ErrRunConflict) {
+			a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", intent.KindRecordExpense.String()))
+			a.record(ctx, intent.KindRecordExpense.String(), channel, tools.OutcomeReplay)
+			return true, RouteResult{Reply: alreadyProcessedText, Outcome: tools.OutcomeReplay, Kind: intent.KindRecordExpense}
+		}
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.kernel_resume_failed",
 			observability.String("channel", channel),
 			observability.Error(err),
 		)
-		return false, RouteResult{}
+		return true, RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: intent.KindRecordExpense}
 	}
 	if result.Status == platform.RunStatusRunning || result.RunID == uuid.Nil {
 		return a.continuePendingExpenseConfirmationLegacy(ctx, userID, channel, text)
@@ -593,13 +611,21 @@ func (a *DailyLedgerAgent) wireBudgetCommitGate() {
 	}
 	engine := a.confirmEngine
 	def := a.confirmDef
-	a.budgetRunner.WithCommitGate(func(ctx context.Context, userID uuid.UUID, channel string, draft budgetdraft.Draft) (bool, tools.ToolResult) {
+	a.budgetRunner.WithCommitGate(func(ctx context.Context, userID uuid.UUID, channel, messageID string, draft budgetdraft.Draft) (bool, tools.ToolResult) {
 		correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
 		initial := confirmation.ConfirmState{
 			OperationKind: confirmation.OperationBudgetCommit,
 			UserID:        userID.String(),
 			Channel:       channel,
+			MessageID:     messageID,
 			PromptText:    promptTextForOperation(confirmation.OperationBudgetCommit),
+		}
+		if err := initial.SetBudgetDraft(draft); err != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_commit_draft_encode_failed",
+				observability.String("channel", channel),
+				observability.Error(err),
+			)
+			return true, tools.ToolResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
 		}
 		result, err := engine.Start(ctx, def, correlationKey, initial)
 		if err != nil {
@@ -633,48 +659,86 @@ func resolveOperationKind(k intent.Kind) (confirmation.OperationKind, bool) {
 	return op, ok
 }
 
-func (a *DailyLedgerAgent) dispatchWriteDestructive(ctx context.Context, principal Principal, channel, messageID string, kind intent.Kind) RouteResult {
+func (a *DailyLedgerAgent) dispatchWriteDestructive(ctx context.Context, principal Principal, channel, messageID string, parsed ParsedIntent) RouteResult {
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: principal.UserID, Source: auth.SourceWhatsApp})
+	kind := parsed.Intent.Kind()
 	opKind, ok := resolveOperationKind(kind)
 	if !ok {
 		a.record(ctx, kind.String(), channel, tools.OutcomeMissingResolver)
 		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeMissingResolver, Kind: kind}
 	}
 	correlationKey := fmt.Sprintf("%s:%s", principal.UserID.String(), channel)
+	initial := initialConfirmState(principal.UserID, channel, messageID, parsed, opKind)
+	result, err := a.confirmEngine.Start(ctx, a.confirmDef, correlationKey, initial)
+	if err != nil {
+		return a.handleConfirmStartError(ctx, channel, kind, err)
+	}
+	if result.Status == platform.RunStatusSuspended {
+		return a.handleConfirmSuspended(ctx, channel, kind, result)
+	}
+	return a.finalizeConfirmStart(ctx, principal, channel, kind, opKind, result.State)
+}
+
+func (a *DailyLedgerAgent) handleConfirmStartError(ctx context.Context, channel string, kind intent.Kind, err error) RouteResult {
+	if errors.Is(err, platform.ErrRunConflict) {
+		a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind.String()))
+		a.record(ctx, kind.String(), channel, tools.OutcomeReplay)
+		return RouteResult{Reply: alreadyProcessedText, Outcome: tools.OutcomeReplay, Kind: kind}
+	}
+	a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_engine_start_failed",
+		observability.String("kind", kind.String()),
+		observability.String("channel", channel),
+		observability.Error(err),
+	)
+	a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+	return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+}
+
+func (a *DailyLedgerAgent) handleConfirmSuspended(ctx context.Context, channel string, kind intent.Kind, result platform.RunResult[confirmation.ConfirmState]) RouteResult {
+	if result.Suspend != nil {
+		a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
+		return RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
+	}
+	a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+	return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+}
+
+func (a *DailyLedgerAgent) finalizeConfirmStart(ctx context.Context, principal Principal, channel string, kind intent.Kind, opKind confirmation.OperationKind, state confirmation.ConfirmState) RouteResult {
+	if state.Outcome == int(tools.OutcomeUsecaseError) {
+		decisionID, _ := uuid.Parse(state.DecisionID)
+		a.callSettle(ctx, decisionID, false)
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	outcome := tools.ToolOutcome(state.Outcome)
+	if outcome == 0 {
+		outcome = tools.OutcomeRouted
+	}
+	executed := outcome == tools.OutcomeRouted && !state.ShortCircuit && !state.Expired
+	decisionID, _ := uuid.Parse(state.DecisionID)
+	a.callSettle(ctx, decisionID, executed)
+	if opKind == confirmation.OperationBudgetCommit {
+		a.clearBudgetSession(ctx, principal.UserID, channel)
+	}
+	a.record(ctx, kind.String(), channel, outcome)
+	return RouteResult{Reply: state.Reply, Outcome: outcome, Kind: kind}
+}
+
+func initialConfirmState(userID uuid.UUID, channel, messageID string, parsed ParsedIntent, opKind confirmation.OperationKind) confirmation.ConfirmState {
 	initial := confirmation.ConfirmState{
 		OperationKind: opKind,
-		UserID:        principal.UserID.String(),
+		UserID:        userID.String(),
 		Channel:       channel,
 		MessageID:     messageID,
 		PromptText:    promptTextForOperation(opKind),
 	}
-	result, err := a.confirmEngine.Start(ctx, a.confirmDef, correlationKey, initial)
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_engine_start_failed",
-			observability.String("kind", kind.String()),
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	if opKind == confirmation.OperationEditLast {
+		initial.NewAmountCents = parsed.Intent.AmountCents()
 	}
-	if result.Status == platform.RunStatusSuspended {
-		if result.Suspend != nil {
-			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
-			return RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
-		}
-		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	if opKind == confirmation.OperationDeleteCard {
+		initial.CardName = parsed.Intent.CardName()
 	}
-	if result.Status == platform.RunStatusFailed {
-		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
-	}
-	outcome := tools.ToolOutcome(result.State.Outcome)
-	if outcome == 0 {
-		outcome = tools.OutcomeRouted
-	}
-	a.record(ctx, kind.String(), channel, outcome)
-	return RouteResult{Reply: result.State.Reply, Outcome: outcome, Kind: kind}
+	return initial
 }
 
 func promptTextForOperation(op confirmation.OperationKind) string {
@@ -692,24 +756,24 @@ func promptTextForOperation(op confirmation.OperationKind) string {
 	}
 }
 
-func (a *DailyLedgerAgent) continuePendingApproval(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
-	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
-	resumeDelta := struct {
-		ResumeText string `json:"resume_text"`
-	}{ResumeText: text}
-	resumeBytes, err := json.Marshal(resumeDelta)
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_resume_encode_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
+func (a *DailyLedgerAgent) continuePendingApproval(ctx context.Context, userID uuid.UUID, channel, text, messageID string) (bool, RouteResult) {
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
+	resumeBytes, ok := a.encodeConfirmResume(ctx, channel, text, messageID)
+	if !ok {
 		return false, RouteResult{}
 	}
+	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
 	result, err := a.confirmEngine.Resume(ctx, a.confirmDef, correlationKey, resumeBytes)
 	if err != nil {
-		return false, RouteResult{}
+		return a.handleConfirmResumeError(ctx, channel, err)
 	}
 	if result.Status == platform.RunStatusRunning || result.RunID == uuid.Nil {
+		return false, RouteResult{}
+	}
+	if result.State.UserID != userID.String() {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_resume_user_mismatch",
+			observability.String("channel", channel),
+		)
 		return false, RouteResult{}
 	}
 	opKind := result.State.OperationKind
@@ -722,18 +786,65 @@ func (a *DailyLedgerAgent) continuePendingApproval(ctx context.Context, userID u
 		return false, RouteResult{}
 	}
 	if result.State.Expired {
+		decisionID, _ := uuid.Parse(result.State.DecisionID)
+		a.callSettle(ctx, decisionID, false)
+		if opKind == confirmation.OperationBudgetCommit {
+			a.clearBudgetSession(ctx, userID, channel)
+		}
 		return false, RouteResult{}
 	}
-	if result.Status == platform.RunStatusFailed {
+	return a.finalizeConfirmResult(ctx, userID, channel, kind, opKind, result.State)
+}
+
+func (a *DailyLedgerAgent) encodeConfirmResume(ctx context.Context, channel, text, messageID string) ([]byte, bool) {
+	resumeDelta := struct {
+		ResumeText      string `json:"resume_text"`
+		ResumeMessageID string `json:"resume_message_id"`
+	}{ResumeText: text, ResumeMessageID: messageID}
+	resumeBytes, err := json.Marshal(resumeDelta)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_resume_encode_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return nil, false
+	}
+	return resumeBytes, true
+}
+
+func (a *DailyLedgerAgent) handleConfirmResumeError(ctx context.Context, channel string, err error) (bool, RouteResult) {
+	if errors.Is(err, platform.ErrRunConflict) {
+		kind := intent.KindUnknown.String()
+		a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", kind))
+		a.record(ctx, kind, channel, tools.OutcomeReplay)
+		return true, RouteResult{Reply: alreadyProcessedText, Outcome: tools.OutcomeReplay, Kind: intent.KindUnknown}
+	}
+	a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_resume_failed",
+		observability.String("channel", channel),
+		observability.Error(err),
+	)
+	return false, RouteResult{}
+}
+
+func (a *DailyLedgerAgent) finalizeConfirmResult(ctx context.Context, userID uuid.UUID, channel string, kind intent.Kind, opKind confirmation.OperationKind, state confirmation.ConfirmState) (bool, RouteResult) {
+	if state.Outcome == int(tools.OutcomeUsecaseError) {
+		decisionID, _ := uuid.Parse(state.DecisionID)
+		a.callSettle(ctx, decisionID, false)
 		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
 		return true, RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: kind}
 	}
-	outcome := tools.ToolOutcome(result.State.Outcome)
+	outcome := tools.ToolOutcome(state.Outcome)
 	if outcome == 0 {
 		outcome = tools.OutcomeRouted
 	}
+	executed := outcome == tools.OutcomeRouted && !state.ShortCircuit && !state.Expired
+	decisionID, _ := uuid.Parse(state.DecisionID)
+	a.callSettle(ctx, decisionID, executed)
+	if opKind == confirmation.OperationBudgetCommit {
+		a.clearBudgetSession(ctx, userID, channel)
+	}
 	a.record(ctx, kind.String(), channel, outcome)
-	return true, RouteResult{Reply: result.State.Reply, Outcome: outcome, Kind: kind}
+	return true, RouteResult{Reply: state.Reply, Outcome: outcome, Kind: kind}
 }
 
 func resolveIntentKindFromOperation(op confirmation.OperationKind) intent.Kind {
@@ -754,6 +865,18 @@ func resolveIntentKindFromOperation(op confirmation.OperationKind) intent.Kind {
 func (a *DailyLedgerAgent) clearPendingDraft(ctx context.Context, userID uuid.UUID, channel string) {
 	if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
+			observability.String("channel", channel),
+			observability.Error(clearErr),
+		)
+	}
+}
+
+func (a *DailyLedgerAgent) clearBudgetSession(ctx context.Context, userID uuid.UUID, channel string) {
+	if a.budgetSession == nil {
+		return
+	}
+	if clearErr := a.budgetSession.Clear(ctx, userID, channel); clearErr != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
 			observability.String("channel", channel),
 			observability.Error(clearErr),
 		)
