@@ -1,0 +1,10 @@
+status: done
+report_path: .specs/prd-workflow-kernel/8_execution_report.md
+summary: >
+  Task 8.0 concluída. Feature flag WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED wired em
+  module.go via attachKernel; dispatchWrite delega para dispatchWriteKernel quando flag ON;
+  continuePendingExpenseConfirmation bifurca kernel vs legacy; buildKernelDefinition
+  constrói Definition[ExpenseState] com closures reais do DailyLedgerAgent; HousekeepingJob
+  registrado condicionalmente em worker.go. Build limpo, zero comentários, zero FAIL em
+  go test ./...
+timestamp: "2026-06-24T00:00:00Z"
