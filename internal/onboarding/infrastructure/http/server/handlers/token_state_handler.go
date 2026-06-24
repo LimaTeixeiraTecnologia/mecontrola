@@ -41,6 +41,8 @@ type tokenStateResponse struct {
 	WaMeURL          string `json:"wa_me_url,omitempty"`
 	TelegramDeepLink string `json:"telegram_deep_link,omitempty"`
 	BotNumberDisplay string `json:"bot_number_display,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	SupportURL       string `json:"support_url,omitempty"`
 }
 
 type TokenStateHandler struct {
@@ -82,7 +84,13 @@ func (h *TokenStateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if !result.Output.ReadyToActivate {
 		h.invalidAccess(string(result.Reason))
 		time.Sleep(cryptoJitter(tokenStateJitterMinMs, tokenStateJitterMaxMs))
-		responses.JSON(w, http.StatusOK, tokenStateResponse{ReadyToActivate: false})
+		responses.JSON(w, http.StatusOK, tokenStateResponse{
+			ReadyToActivate:  false,
+			Reason:           string(result.Reason),
+			WaMeURL:          result.Output.WaMeURL,
+			BotNumberDisplay: result.Output.BotNumberDisplay,
+			SupportURL:       result.Output.SupportURL,
+		})
 		return
 	}
 
@@ -91,5 +99,6 @@ func (h *TokenStateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		WaMeURL:          result.Output.WaMeURL,
 		TelegramDeepLink: result.Output.TelegramDeepLink,
 		BotNumberDisplay: result.Output.BotNumberDisplay,
+		SupportURL:       result.Output.SupportURL,
 	})
 }

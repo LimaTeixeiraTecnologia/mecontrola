@@ -57,10 +57,12 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.get_token_state")
 	defer span.End()
 
+	support := fmt.Sprintf("https://wa.me/%s", sanitizeE164(uc.botNumber))
+
 	token, err := valueobjects.TokenFromClear(clearToken)
 	if err != nil {
 		return GetTokenStateResult{
-			Output: output.GetTokenStateOutput{ReadyToActivate: false},
+			Output: output.GetTokenStateOutput{ReadyToActivate: false, Reason: string(TokenStateReasonNotFound), SupportURL: support},
 			Reason: TokenStateReasonNotFound,
 		}, nil
 	}
@@ -69,7 +71,7 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 	if err != nil {
 		if errors.Is(err, domain.ErrTokenNotFound) {
 			return GetTokenStateResult{
-				Output: output.GetTokenStateOutput{ReadyToActivate: false},
+				Output: output.GetTokenStateOutput{ReadyToActivate: false, Reason: string(TokenStateReasonNotFound), SupportURL: support},
 				Reason: TokenStateReasonNotFound,
 			}, nil
 		}
@@ -90,15 +92,22 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 				WaMeURL:          waMe,
 				TelegramDeepLink: tgLink,
 				BotNumberDisplay: uc.botNumberDisplay,
+				SupportURL:       support,
 			},
 		}, nil
 	}
 
 	reason := reasonFromStatus(magicToken.Status(), magicToken.IsExpiredAt(now))
-	return GetTokenStateResult{
-		Output: output.GetTokenStateOutput{ReadyToActivate: false},
-		Reason: reason,
-	}, nil
+	out := output.GetTokenStateOutput{
+		ReadyToActivate: false,
+		Reason:          string(reason),
+		SupportURL:      support,
+	}
+	if reason == TokenStateReasonConsumed {
+		out.WaMeURL = fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), clearToken)
+		out.BotNumberDisplay = uc.botNumberDisplay
+	}
+	return GetTokenStateResult{Output: out, Reason: reason}, nil
 }
 
 func reasonFromStatus(status valueobjects.TokenStatus, expired bool) TokenStateReason {
@@ -115,11 +124,4 @@ func reasonFromStatus(status valueobjects.TokenStatus, expired bool) TokenStateR
 	default:
 		return TokenStateReasonNotFound
 	}
-}
-
-func sanitizeE164(e164 string) string {
-	if len(e164) > 0 && e164[0] == '+' {
-		return e164[1:]
-	}
-	return e164
 }

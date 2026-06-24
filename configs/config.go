@@ -37,7 +37,6 @@ type EmailConfig struct {
 	FromAddress   string        `mapstructure:"EMAIL_FROM_ADDRESS"`
 	FromName      string        `mapstructure:"EMAIL_FROM_NAME"`
 	ReplyTo       string        `mapstructure:"EMAIL_REPLY_TO"`
-	ActivateURL   string        `mapstructure:"EMAIL_ACTIVATE_URL"`
 	SMTPHost      string        `mapstructure:"SMTP_HOST"`
 	SMTPPort      int           `mapstructure:"SMTP_PORT"`
 	SMTPUsername  string        `mapstructure:"SMTP_USERNAME"`
@@ -55,7 +54,6 @@ func (e EmailConfig) Safe() map[string]any {
 		"from_address":       e.FromAddress,
 		"from_name":          e.FromName,
 		"reply_to":           e.ReplyTo,
-		"activate_url":       e.ActivateURL,
 		"smtp_host":          e.SMTPHost,
 		"smtp_port":          e.SMTPPort,
 		"smtp_username_set":  e.SMTPUsername != "",
@@ -591,7 +589,6 @@ func (l *configLoader) setEmailDefaults() {
 	l.v.SetDefault("EMAIL_FROM_ADDRESS", "noreply@mecontrola.local")
 	l.v.SetDefault("EMAIL_FROM_NAME", "MeControla")
 	l.v.SetDefault("EMAIL_REPLY_TO", "")
-	l.v.SetDefault("EMAIL_ACTIVATE_URL", "http://localhost:4321/activate")
 	l.v.SetDefault("SMTP_HOST", "mailpit")
 	l.v.SetDefault("SMTP_PORT", 1025)
 	l.v.SetDefault("SMTP_USERNAME", "")

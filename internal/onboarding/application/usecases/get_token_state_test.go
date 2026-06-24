@@ -57,6 +57,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.True(result.Output.ReadyToActivate)
 				s.NotEmpty(result.Output.WaMeURL)
 				s.NotEmpty(result.Output.BotNumberDisplay)
+				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
 		{
@@ -72,6 +73,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.False(result.Output.ReadyToActivate)
 				s.Empty(result.Output.WaMeURL)
 				s.Equal(TokenStateReasonPending, result.Reason)
+				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
 		{
@@ -88,6 +90,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.False(result.Output.ReadyToActivate)
 				s.Empty(result.Output.WaMeURL)
 				s.Equal(TokenStateReasonExpired, result.Reason)
+				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
 		{
@@ -101,6 +104,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.NoError(err)
 				s.False(result.Output.ReadyToActivate)
 				s.Equal(TokenStateReasonNotFound, result.Reason)
+				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
 		{
@@ -116,6 +120,42 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.NoError(err)
 				s.True(result.Output.ReadyToActivate)
 				s.Contains(result.Output.WaMeURL, result.Output.WaMeURL)
+			},
+		},
+		{
+			name: "deve retornar Reason consumed e WaMeURL quando token consumido",
+			dependencies: func() dependencies {
+				tok, _ := valueobjects.NewToken()
+				mt, _ := entities.NewMagicToken("id-5", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
+				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC())
+				consumed, _ := paid.MarkConsumed("u-001", "+5511999999999", valueobjects.ActivationPathDirect, time.Now().UTC())
+				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(consumed, nil).Once()
+				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+			}(),
+			expect: func(result GetTokenStateResult, err error) {
+				s.NoError(err)
+				s.False(result.Output.ReadyToActivate)
+				s.Equal(TokenStateReasonConsumed, result.Reason)
+				s.Equal("consumed", result.Output.Reason)
+				s.NotEmpty(result.Output.WaMeURL)
+				s.NotEmpty(result.Output.BotNumberDisplay)
+				s.NotEmpty(result.Output.SupportURL)
+			},
+		},
+		{
+			name: "deve preencher SupportURL no estado consumed com wa.me do bot sem texto",
+			dependencies: func() dependencies {
+				tok, _ := valueobjects.NewToken()
+				mt, _ := entities.NewMagicToken("id-6", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
+				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC())
+				consumed, _ := paid.MarkConsumed("u-001", "+5511999999999", valueobjects.ActivationPathDirect, time.Now().UTC())
+				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(consumed, nil).Once()
+				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+			}(),
+			expect: func(result GetTokenStateResult, err error) {
+				s.NoError(err)
+				s.Equal("https://wa.me/5511999999999", result.Output.SupportURL)
+				s.Contains(result.Output.WaMeURL, "wa.me/5511999999999?text=ATIVAR%20")
 			},
 		},
 	}

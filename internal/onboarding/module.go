@@ -293,7 +293,7 @@ func buildOnboardingUseCases(
 		sendActivationEmail: usecases.NewSendActivationEmail(
 			emailSender,
 			activationTemplate,
-			emailCfg.ActivateURL,
+			waCfg.BotNumberE164,
 			emailCfg.FromAddress,
 			emailCfg.FromName,
 			emailCfg.ReplyTo,

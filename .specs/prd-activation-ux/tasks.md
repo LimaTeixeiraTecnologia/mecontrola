@@ -1,5 +1,5 @@
 <!-- spec-hash-prd: 8097e774290bb9f84f64e0f08a0adcfbac263aafe5d7065c531cc3b84d808e72 -->
-<!-- spec-hash-techspec: bc2371e6bf94e8cb89f192caf09d010773ca2477e175290967c741dff22454e6 -->
+<!-- spec-hash-techspec: 354f004c778b0a624fcb108135124b12259948cc0a176eea1aedfb5b1475700b -->
 # Resumo das Tarefas de Implementação — Ativação UX
 
 ## Metadados
@@ -23,9 +23,9 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Backend: estender API de estado do token com reason e support_url | pending | — | Com 2.0 | semantic-commit |
-| 2.0 | Backend: UX do email de ativação — WaMeURL, SupportURL e template | pending | — | Com 1.0 | semantic-commit |
-| 3.0 | Frontend: página bridge canonical e activate.js reason-aware | pending | 1.0 | Não | semantic-commit |
+| 1.0 | Backend: estender API de estado do token com reason e support_url | done | — | Com 2.0 | semantic-commit |
+| 2.0 | Backend: UX do email de ativação — WaMeURL, SupportURL e template | done | — | Com 1.0 | semantic-commit |
+| 3.0 | Frontend: página bridge canonical e activate.js reason-aware | done | 1.0 | Não | semantic-commit |
 
 ## Dependências Críticas
 

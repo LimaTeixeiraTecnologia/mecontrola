@@ -5,4 +5,6 @@ type GetTokenStateOutput struct {
 	WaMeURL          string
 	TelegramDeepLink string
 	BotNumberDisplay string
+	Reason           string
+	SupportURL       string
 }

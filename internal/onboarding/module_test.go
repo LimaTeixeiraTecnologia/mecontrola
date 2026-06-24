@@ -49,7 +49,6 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 			Provider:    "smtp",
 			FromAddress: "noreply@example.com",
 			FromName:    "MeControla",
-			ActivateURL: "http://localhost:4321/activate",
 			SMTPHost:    "localhost",
 			SMTPPort:    1025,
 			SMTPTimeout: 5 * time.Second,

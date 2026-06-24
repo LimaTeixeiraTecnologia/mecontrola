@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -14,7 +13,8 @@ import (
 )
 
 type ActivationTemplateInput struct {
-	ActivateURL    string
+	WaMeURL        string
+	SupportURL     string
 	ExpiresInHours int
 }
 
@@ -25,7 +25,7 @@ type ActivationTemplate interface {
 type SendActivationEmail struct {
 	sender        appinterfaces.EmailSender
 	template      ActivationTemplate
-	activateURL   string
+	botNumber     string
 	fromAddress   string
 	fromName      string
 	replyTo       string
@@ -38,7 +38,7 @@ type SendActivationEmail struct {
 func NewSendActivationEmail(
 	sender appinterfaces.EmailSender,
 	template ActivationTemplate,
-	activateURL string,
+	botNumber string,
 	fromAddress string,
 	fromName string,
 	replyTo string,
@@ -53,7 +53,7 @@ func NewSendActivationEmail(
 	return &SendActivationEmail{
 		sender:        sender,
 		template:      template,
-		activateURL:   activateURL,
+		botNumber:     botNumber,
 		fromAddress:   fromAddress,
 		fromName:      fromName,
 		replyTo:       replyTo,
@@ -84,14 +84,16 @@ func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEma
 		return errors.New("onboarding: send activation email: token vazio")
 	}
 
-	activate := buildActivateURL(uc.activateURL, in.ClearToken)
+	waMe := fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), in.ClearToken)
+	support := fmt.Sprintf("https://wa.me/%s", sanitizeE164(uc.botNumber))
 	expiresHours := int(uc.tokenTTL / time.Hour)
 	if expiresHours <= 0 {
 		expiresHours = 24
 	}
 
 	html, text, err := uc.template.Render(ActivationTemplateInput{
-		ActivateURL:    activate,
+		WaMeURL:        waMe,
+		SupportURL:     support,
 		ExpiresInHours: expiresHours,
 	})
 	if err != nil {
@@ -113,18 +115,4 @@ func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEma
 
 	uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "sent"))
 	return nil
-}
-
-func buildActivateURL(base string, clearToken string) string {
-	if strings.TrimSpace(base) == "" {
-		return clearToken
-	}
-	parsed, err := url.Parse(base)
-	if err != nil {
-		return base
-	}
-	q := parsed.Query()
-	q.Set("token", clearToken)
-	parsed.RawQuery = q.Encode()
-	return parsed.String()
 }

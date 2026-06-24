@@ -52,6 +52,7 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 						ReadyToActivate:  true,
 						WaMeURL:          "https://wa.me/5511999999999?text=ATIVAR%20tok123",
 						BotNumberDisplay: "+55 11 9XXXX-XXXX",
+						SupportURL:       "https://wa.me/5511999999999",
 					},
 				}, nil).Once()
 			},
@@ -63,6 +64,7 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 				s.Equal(true, response["ready_to_activate"])
 				s.NotEmpty(response["wa_me_url"])
 				s.NotEmpty(response["bot_number_display"])
+				s.NotEmpty(response["support_url"])
 			},
 		},
 		{
@@ -70,7 +72,7 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 			args: args{token: "bad-token"},
 			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
 				useCase.EXPECT().Execute(mock.Anything, "bad-token").Return(usecases.GetTokenStateResult{
-					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Output: output.GetTokenStateOutput{ReadyToActivate: false, Reason: "not_found", SupportURL: "https://wa.me/5511999999999"},
 					Reason: usecases.TokenStateReasonNotFound,
 				}, nil).Once()
 			},
@@ -81,6 +83,8 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 				s.Equal(false, response["ready_to_activate"])
 				s.Nil(response["wa_me_url"])
 				s.Nil(response["bot_number_display"])
+				s.Equal("not_found", response["reason"])
+				s.NotEmpty(response["support_url"])
 			},
 		},
 		{
@@ -88,12 +92,17 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 			args: args{token: "tok-pending"},
 			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
 				useCase.EXPECT().Execute(mock.Anything, "tok-pending").Return(usecases.GetTokenStateResult{
-					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Output: output.GetTokenStateOutput{ReadyToActivate: false, Reason: "pending", SupportURL: "https://wa.me/5511999999999"},
 					Reason: usecases.TokenStateReasonPending,
 				}, nil).Once()
 			},
 			expect: func(recorder *httptest.ResponseRecorder) {
 				s.Equal(http.StatusOK, recorder.Code)
+				var response map[string]any
+				s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&response))
+				s.Equal("pending", response["reason"])
+				s.NotEmpty(response["support_url"])
+				s.Nil(response["wa_me_url"])
 			},
 		},
 		{
@@ -101,25 +110,42 @@ func (s *TokenStateHandlerSuite) TestHandle() {
 			args: args{token: "tok-expired"},
 			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
 				useCase.EXPECT().Execute(mock.Anything, "tok-expired").Return(usecases.GetTokenStateResult{
-					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Output: output.GetTokenStateOutput{ReadyToActivate: false, Reason: "expired", SupportURL: "https://wa.me/5511999999999"},
 					Reason: usecases.TokenStateReasonExpired,
 				}, nil).Once()
 			},
 			expect: func(recorder *httptest.ResponseRecorder) {
 				s.Equal(http.StatusOK, recorder.Code)
+				var response map[string]any
+				s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&response))
+				s.Equal("expired", response["reason"])
+				s.NotEmpty(response["support_url"])
+				s.Nil(response["wa_me_url"])
 			},
 		},
 		{
-			name: "deve responder ok para estado consumido",
+			name: "deve responder ok para estado consumido com wa_me_url e support_url",
 			args: args{token: "tok-consumed"},
 			setup: func(useCase *handlersmocks.GetTokenStateUseCase) {
 				useCase.EXPECT().Execute(mock.Anything, "tok-consumed").Return(usecases.GetTokenStateResult{
-					Output: output.GetTokenStateOutput{ReadyToActivate: false},
+					Output: output.GetTokenStateOutput{
+						ReadyToActivate:  false,
+						Reason:           "consumed",
+						WaMeURL:          "https://wa.me/5511999999999?text=ATIVAR%20tok-consumed",
+						BotNumberDisplay: "+55 11 9XXXX-XXXX",
+						SupportURL:       "https://wa.me/5511999999999",
+					},
 					Reason: usecases.TokenStateReasonConsumed,
 				}, nil).Once()
 			},
 			expect: func(recorder *httptest.ResponseRecorder) {
 				s.Equal(http.StatusOK, recorder.Code)
+				var response map[string]any
+				s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&response))
+				s.Equal(false, response["ready_to_activate"])
+				s.Equal("consumed", response["reason"])
+				s.NotEmpty(response["wa_me_url"])
+				s.NotEmpty(response["support_url"])
 			},
 		},
 		{
