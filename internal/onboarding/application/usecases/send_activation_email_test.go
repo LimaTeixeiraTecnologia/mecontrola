@@ -174,7 +174,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 			},
 		},
 		{
-			name: "send falha: retorna erro com wrapping send",
+			name: "send falha: retorna erro com wrapping send e incrementa contador send_failed",
 			args: args{input: SendActivationEmailInput{
 				ClearToken:    "ABC123",
 				CustomerEmail: "user@example.com",
@@ -192,6 +192,19 @@ func (s *SendActivationEmailSuite) TestExecute() {
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.Error(err)
 				s.Contains(err.Error(), "send")
+				fakeMetrics, ok := s.obs.Metrics().(*fake.FakeMetrics)
+				s.Require().True(ok)
+				counter := fakeMetrics.GetCounter("onboarding_activation_email_dispatched_total")
+				s.NotNil(counter)
+				found := false
+				for _, v := range counter.GetValues() {
+					for _, f := range v.Fields {
+						if f.Key == "result" && f.StringValue() == "send_failed" {
+							found = true
+						}
+					}
+				}
+				s.True(found, "esperado incremento do contador com result=send_failed")
 			},
 		},
 	}

@@ -73,6 +73,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.False(result.Output.ReadyToActivate)
 				s.Empty(result.Output.WaMeURL)
 				s.Equal(TokenStateReasonPending, result.Reason)
+				s.Equal("pending", result.Output.Reason)
 				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
@@ -90,6 +91,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.False(result.Output.ReadyToActivate)
 				s.Empty(result.Output.WaMeURL)
 				s.Equal(TokenStateReasonExpired, result.Reason)
+				s.Equal("expired", result.Output.Reason)
 				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
@@ -104,6 +106,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 				s.NoError(err)
 				s.False(result.Output.ReadyToActivate)
 				s.Equal(TokenStateReasonNotFound, result.Reason)
+				s.Equal("not_found", result.Output.Reason)
 				s.NotEmpty(result.Output.SupportURL)
 			},
 		},
@@ -119,7 +122,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
 				s.True(result.Output.ReadyToActivate)
-				s.Contains(result.Output.WaMeURL, result.Output.WaMeURL)
+				s.Contains(result.Output.WaMeURL, "?text=ATIVAR%20")
 			},
 		},
 		{

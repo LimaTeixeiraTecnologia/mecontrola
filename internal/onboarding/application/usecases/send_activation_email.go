@@ -69,8 +69,6 @@ type SendActivationEmailInput struct {
 	CustomerEmail string
 }
 
-var ErrSendActivationEmailNoEmail = errors.New("onboarding: send activation email: email vazio")
-
 func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEmailInput) error {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.send_activation_email")
 	defer span.End()
