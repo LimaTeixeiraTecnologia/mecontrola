@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	agentwf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
@@ -512,11 +514,17 @@ func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
 	settleReg := appservices.NewSettleRegistry()
 	resolver := agentbinding.NewKernelCategoryResolver(b.categoriesModule.SearchDictionaryUC)
 	persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
+
+	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, b.o11y)
+	confirmDef := b.buildConfirmDefinition(deps, settleReg)
+
 	deps.Kernel = &appservices.KernelDeps{
 		Engine:           engine,
 		SettleReg:        settleReg,
 		CategoryResolver: resolver,
 		PersistFn:        persistFn,
+		ConfirmEngine:    confirmEngine,
+		ConfirmDef:       confirmDef,
 	}
 	wfUoW := uow.NewUnitOfWork(b.sessionDB)
 	hkJob, hkErr := platform.NewHousekeepingJob(wfUoW, b.wfStoreFactory, b.cfg.WorkflowKernelConfig, b.o11y.Logger())
@@ -528,6 +536,44 @@ func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
 	b.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
 		observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
 	)
+}
+
+func (b *agentModuleBuilder) buildConfirmDefinition(deps *appservices.IntentRouterDeps, _ *appservices.SettleRegistry) platform.Definition[confirmation.ConfirmState] {
+	lister := deps.TransactionLister
+	targets := map[confirmation.OperationKind]steps.TargetResolver{
+		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterResolver(lister),
+		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorResolver(lister),
+		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterResolver(),
+		confirmation.OperationBudgetCommit: agentbinding.NewBudgetCommitResolver(),
+	}
+	executors := map[confirmation.OperationKind]steps.DestructiveExecutor{
+		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterExecutor(deps.LastDeleter, lister),
+		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorExecutor(deps.LastEditor, lister),
+		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterExecutorFn(deps.CardDeleter),
+		confirmation.OperationBudgetCommit: agentbinding.NewBudgetCommitExecutor(deps.BudgetCommitter),
+	}
+	return agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
+		Authorize: func(ctx context.Context, state confirmation.ConfirmState) bool {
+			uid, err := uuid.Parse(state.UserID)
+			if err != nil {
+				return false
+			}
+			principal := appservices.Principal{UserID: uid}
+			return b.o11y != nil && principal.UserID != uuid.Nil
+		},
+		Replay: func(_ context.Context, _ confirmation.ConfirmState) (string, bool) { return "", false },
+		Policy: func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, _ confirmation.ConfirmState) steps.ConfirmAuditBeginResult {
+			return steps.ConfirmAuditBeginResult{}
+		},
+		OnSettle:       nil,
+		Targets:        targets,
+		Executors:      executors,
+		TTL:            10 * time.Minute,
+		DenyReply:      "Não consegui concluir essa ação agora. Tente de novo em instantes 🙏",
+		ReplayReply:    "Essa mensagem já foi processada ✅",
+		AuditFailReply: "Não foi possível processar sua mensagem agora. Pode tentar de novo em instantes? 🙏",
+	})
 }
 
 func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterDeps) {

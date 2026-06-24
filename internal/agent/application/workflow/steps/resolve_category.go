@@ -37,8 +37,7 @@ func (s *resolveCategoryStep) Execute(ctx context.Context, state ExpenseState) (
 		return platform.StepOutput[ExpenseState]{State: resolved, Status: platform.StepStatusCompleted}, nil
 	}
 
-	var ambiguous *tools.CategoryAmbiguousError
-	if errors.As(err, &ambiguous) {
+	if ambiguous, ok := errors.AsType[*tools.CategoryAmbiguousError](err); ok {
 		state.Candidates = ambiguous.Candidates
 		state.AwaitingKind = pendingexpense.AwaitingCategoryChoice
 		if len(ambiguous.Candidates) > 0 {
@@ -57,8 +56,7 @@ func (s *resolveCategoryStep) Execute(ctx context.Context, state ExpenseState) (
 		}, nil
 	}
 
-	var needsConfirmation *tools.CategoryNeedsConfirmationError
-	if errors.As(err, &needsConfirmation) {
+	if needsConfirmation, ok := errors.AsType[*tools.CategoryNeedsConfirmationError](err); ok {
 		state.Candidates = needsConfirmation.Candidates
 		state.AwaitingKind = pendingexpense.AwaitingCategoryConfirm
 		if len(needsConfirmation.Candidates) > 0 {
@@ -94,7 +92,7 @@ func (s *resolveCategoryStep) Execute(ctx context.Context, state ExpenseState) (
 	return platform.StepOutput[ExpenseState]{State: state, Status: platform.StepStatusFailed}, err
 }
 
-func (s *resolveCategoryStep) resume(ctx context.Context, state ExpenseState) (platform.StepOutput[ExpenseState], error) {
+func (s *resolveCategoryStep) resume(_ context.Context, state ExpenseState) (platform.StepOutput[ExpenseState], error) {
 	resumeText := strings.TrimSpace(state.ResumeText)
 
 	if matchesExpenseCancellation(resumeText) {
@@ -151,7 +149,7 @@ func matchCandidateByText(text string, candidates []string) string {
 		return candidates[idx-1]
 	}
 	for _, candidate := range candidates {
-		for _, segment := range strings.Split(strings.ToLower(candidate), " > ") {
+		for segment := range strings.SplitSeq(strings.ToLower(candidate), " > ") {
 			if strings.HasPrefix(strings.TrimSpace(segment), normalized) {
 				return candidate
 			}

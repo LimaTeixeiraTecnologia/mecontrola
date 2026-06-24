@@ -12,17 +12,24 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
+type BudgetCommitGateFunc func(ctx context.Context, userID uuid.UUID, channel string, draft budgetdraft.Draft) (gated bool, result ToolResult)
+
 type BudgetSessionRunner struct {
-	recorder  *Recorder
-	session   BudgetSessionGateway
-	convo     BudgetConversation
-	committer BudgetConfigCommitter
-	loc       *time.Location
-	o11y      observability.Observability
+	recorder   *Recorder
+	session    BudgetSessionGateway
+	convo      BudgetConversation
+	committer  BudgetConfigCommitter
+	commitGate BudgetCommitGateFunc
+	loc        *time.Location
+	o11y       observability.Observability
 }
 
 func NewBudgetSessionRunner(recorder *Recorder, session BudgetSessionGateway, convo BudgetConversation, committer BudgetConfigCommitter, loc *time.Location, o11y observability.Observability) *BudgetSessionRunner {
 	return &BudgetSessionRunner{recorder: recorder, session: session, convo: convo, committer: committer, loc: loc, o11y: o11y}
+}
+
+func (r *BudgetSessionRunner) WithCommitGate(gate BudgetCommitGateFunc) {
+	r.commitGate = gate
 }
 
 func (r *BudgetSessionRunner) Enabled() bool {
@@ -80,6 +87,12 @@ func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, cha
 		}
 		r.recorder.Record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
 		return ToolResult{Reply: result.Reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+	}
+
+	if r.commitGate != nil {
+		if gated, gateResult := r.commitGate(ctx, userID, channel, result.Draft); gated {
+			return gateResult
+		}
 	}
 
 	reply, commitErr := r.committer.Commit(ctx, userID, result.Draft)

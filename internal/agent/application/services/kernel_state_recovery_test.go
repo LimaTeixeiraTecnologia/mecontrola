@@ -86,13 +86,7 @@ func (s *StateRecoverySuite) TestResumeStatePreservesAmbiguousData() { //nolint:
 	s.Equal(candidates, storedState.Candidates)
 	s.Equal(int64(5800), storedState.AmountCents)
 
-	minimalResumeState := steps.ExpenseState{
-		UserID:     userID,
-		Channel:    channel,
-		ResumeText: "1",
-	}
-	resumeBytes, encErr := platform.NewCodec[steps.ExpenseState]().Encode(minimalResumeState)
-	s.Require().NoError(encErr)
+	resumeBytes := []byte(`{"ResumeText":"1"}`)
 
 	result2, resumeErr := engine.Resume(s.ctx, def, userID.String()+":"+channel, resumeBytes)
 

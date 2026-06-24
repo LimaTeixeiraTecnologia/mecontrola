@@ -15,6 +15,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
@@ -106,6 +108,8 @@ type DailyLedgerAgent struct {
 	kernelEngine               platform.Engine[steps.ExpenseState]
 	kernelDef                  platform.Definition[steps.ExpenseState]
 	settleReg                  *SettleRegistry
+	confirmEngine              platform.Engine[confirmation.ConfirmState]
+	confirmDef                 platform.Definition[confirmation.ConfirmState]
 }
 
 func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) (*DailyLedgerAgent, error) {
@@ -151,6 +155,11 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		agent.settleReg = deps.Kernel.SettleReg
 		agent.kernelDef = agent.buildKernelDefinition(deps.Kernel)
 	}
+	if deps.Kernel != nil && deps.Kernel.ConfirmEngine != nil {
+		agent.confirmEngine = deps.Kernel.ConfirmEngine
+		agent.confirmDef = deps.Kernel.ConfirmDef
+		agent.wireBudgetCommitGate()
+	}
 	registry, err := agent.buildRegistry()
 	if err != nil {
 		return nil, fmt.Errorf("construir workflow registry: %w", err)
@@ -172,17 +181,28 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 	return confidence
 }
 
-func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
+func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
 	if a.pendingExpenseConfirmation != nil || a.kernelEnabled {
-		if handled, result := a.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, text); handled {
-			return result
+		if handled, result := a.continuePendingExpenseConfirmation(ctx, userID, channel, text); handled {
+			return true, result
 		}
 	}
-
-	if a.budgetRunner.Enabled() {
-		if handled, result := a.budgetRunner.Continue(ctx, principal.UserID, channel, text); handled {
-			return toRouteResult(result)
+	if a.confirmEngine != (platform.Engine[confirmation.ConfirmState])(nil) {
+		if handled, result := a.continuePendingApproval(ctx, userID, channel, text); handled {
+			return true, result
 		}
+	}
+	if a.budgetRunner.Enabled() {
+		if handled, result := a.budgetRunner.Continue(ctx, userID, channel, text); handled {
+			return true, toRouteResult(result)
+		}
+	}
+	return false, RouteResult{}
+}
+
+func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
+	if handled, result := a.tryResumeInbound(ctx, principal.UserID, channel, text); handled {
+		return result
 	}
 
 	parsed, err := a.parser.Parse(ctx, principal.UserID, text)
@@ -240,6 +260,10 @@ func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, 
 
 func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
 	kind := parsed.Intent.Kind()
+
+	if a.confirmEngine != (platform.Engine[confirmation.ConfirmState])(nil) && isDestructiveKind(kind) {
+		return a.dispatchWriteDestructive(ctx, principal, channel, messageID, kind)
+	}
 
 	if a.kernelEnabled && a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
 		return a.dispatchWriteKernel(ctx, principal, channel, messageID, trimmed, parsed, kind)
@@ -412,12 +436,10 @@ func (a *DailyLedgerAgent) continuePendingExpenseConfirmation(ctx context.Contex
 
 func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
 	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
-	resumeState := steps.ExpenseState{
-		UserID:     userID,
-		Channel:    channel,
-		ResumeText: text,
-	}
-	resumeBytes, err := json.Marshal(resumeState)
+	resumeDelta := struct {
+		ResumeText string `json:"ResumeText"`
+	}{ResumeText: text}
+	resumeBytes, err := json.Marshal(resumeDelta)
 	if err != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.kernel_resume_encode_failed",
 			observability.String("channel", channel),
@@ -565,6 +587,170 @@ func (a *DailyLedgerAgent) executePendingCardPurchase(ctx context.Context, userI
 	return RouteResult{Reply: tools.FormatPersistedCardPurchase(result), Outcome: tools.OutcomeRouted, Kind: intent.KindRecordCardPurchase}
 }
 
+func (a *DailyLedgerAgent) wireBudgetCommitGate() {
+	if a.budgetRunner == nil {
+		return
+	}
+	engine := a.confirmEngine
+	def := a.confirmDef
+	a.budgetRunner.WithCommitGate(func(ctx context.Context, userID uuid.UUID, channel string, draft budgetdraft.Draft) (bool, tools.ToolResult) {
+		correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
+		initial := confirmation.ConfirmState{
+			OperationKind: confirmation.OperationBudgetCommit,
+			UserID:        userID.String(),
+			Channel:       channel,
+			PromptText:    promptTextForOperation(confirmation.OperationBudgetCommit),
+		}
+		result, err := engine.Start(ctx, def, correlationKey, initial)
+		if err != nil {
+			a.o11y.Logger().Warn(ctx, "agent.intent_router.budget_commit_gate_failed",
+				observability.String("channel", channel),
+				observability.Error(err),
+			)
+			return true, tools.ToolResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: intent.KindConfigureBudget}
+		}
+		if result.Status == platform.RunStatusSuspended && result.Suspend != nil {
+			a.record(ctx, intent.KindConfigureBudget.String(), channel, tools.OutcomeClarify)
+			return true, tools.ToolResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: intent.KindConfigureBudget}
+		}
+		return false, tools.ToolResult{}
+	})
+}
+
+var intentToOperationKind = map[intent.Kind]confirmation.OperationKind{
+	intent.KindDeleteLastTransaction: confirmation.OperationDeleteLast,
+	intent.KindEditLastTransaction:   confirmation.OperationEditLast,
+	intent.KindDeleteCard:            confirmation.OperationDeleteCard,
+}
+
+func isDestructiveKind(k intent.Kind) bool {
+	_, ok := intentToOperationKind[k]
+	return ok
+}
+
+func resolveOperationKind(k intent.Kind) (confirmation.OperationKind, bool) {
+	op, ok := intentToOperationKind[k]
+	return op, ok
+}
+
+func (a *DailyLedgerAgent) dispatchWriteDestructive(ctx context.Context, principal Principal, channel, messageID string, kind intent.Kind) RouteResult {
+	opKind, ok := resolveOperationKind(kind)
+	if !ok {
+		a.record(ctx, kind.String(), channel, tools.OutcomeMissingResolver)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeMissingResolver, Kind: kind}
+	}
+	correlationKey := fmt.Sprintf("%s:%s", principal.UserID.String(), channel)
+	initial := confirmation.ConfirmState{
+		OperationKind: opKind,
+		UserID:        principal.UserID.String(),
+		Channel:       channel,
+		MessageID:     messageID,
+		PromptText:    promptTextForOperation(opKind),
+	}
+	result, err := a.confirmEngine.Start(ctx, a.confirmDef, correlationKey, initial)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_engine_start_failed",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	if result.Status == platform.RunStatusSuspended {
+		if result.Suspend != nil {
+			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
+			return RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
+		}
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	if result.Status == platform.RunStatusFailed {
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	outcome := tools.ToolOutcome(result.State.Outcome)
+	if outcome == 0 {
+		outcome = tools.OutcomeRouted
+	}
+	a.record(ctx, kind.String(), channel, outcome)
+	return RouteResult{Reply: result.State.Reply, Outcome: outcome, Kind: kind}
+}
+
+func promptTextForOperation(op confirmation.OperationKind) string {
+	switch op {
+	case confirmation.OperationDeleteLast:
+		return "Tem certeza que quer apagar o último lançamento? Responda *sim* para confirmar ou *não* para cancelar."
+	case confirmation.OperationEditLast:
+		return "Tem certeza que quer editar o último lançamento? Responda *sim* para confirmar ou *não* para cancelar."
+	case confirmation.OperationDeleteCard:
+		return "Tem certeza que quer remover este cartão? Responda *sim* para confirmar ou *não* para cancelar."
+	case confirmation.OperationBudgetCommit:
+		return "Orçamento completo! Quer ativar as configurações? Responda *sim* para confirmar ou *não* para cancelar."
+	default:
+		return "Confirma a operação? Responda *sim* para confirmar ou *não* para cancelar."
+	}
+}
+
+func (a *DailyLedgerAgent) continuePendingApproval(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
+	resumeDelta := struct {
+		ResumeText string `json:"resume_text"`
+	}{ResumeText: text}
+	resumeBytes, err := json.Marshal(resumeDelta)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.confirm_resume_encode_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	result, err := a.confirmEngine.Resume(ctx, a.confirmDef, correlationKey, resumeBytes)
+	if err != nil {
+		return false, RouteResult{}
+	}
+	if result.Status == platform.RunStatusRunning || result.RunID == uuid.Nil {
+		return false, RouteResult{}
+	}
+	opKind := result.State.OperationKind
+	kind := resolveIntentKindFromOperation(opKind)
+	if result.Status == platform.RunStatusSuspended {
+		if result.Suspend != nil {
+			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
+			return true, RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
+		}
+		return false, RouteResult{}
+	}
+	if result.State.Expired {
+		return false, RouteResult{}
+	}
+	if result.Status == platform.RunStatusFailed {
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return true, RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	outcome := tools.ToolOutcome(result.State.Outcome)
+	if outcome == 0 {
+		outcome = tools.OutcomeRouted
+	}
+	a.record(ctx, kind.String(), channel, outcome)
+	return true, RouteResult{Reply: result.State.Reply, Outcome: outcome, Kind: kind}
+}
+
+func resolveIntentKindFromOperation(op confirmation.OperationKind) intent.Kind {
+	switch op {
+	case confirmation.OperationDeleteLast:
+		return intent.KindDeleteLastTransaction
+	case confirmation.OperationEditLast:
+		return intent.KindEditLastTransaction
+	case confirmation.OperationDeleteCard:
+		return intent.KindDeleteCard
+	case confirmation.OperationBudgetCommit:
+		return intent.KindConfigureBudget
+	default:
+		return intent.KindUnknown
+	}
+}
+
 func (a *DailyLedgerAgent) clearPendingDraft(ctx context.Context, userID uuid.UUID, channel string) {
 	if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
@@ -594,7 +780,7 @@ func matchCandidateByText(text string, candidates []string) string {
 		return candidates[idx-1]
 	}
 	for _, candidate := range candidates {
-		for _, segment := range strings.Split(strings.ToLower(candidate), " > ") {
+		for segment := range strings.SplitSeq(strings.ToLower(candidate), " > ") {
 			if strings.HasPrefix(strings.TrimSpace(segment), normalized) {
 				return candidate
 			}

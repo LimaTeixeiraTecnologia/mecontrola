@@ -165,16 +165,17 @@ func (e *engine[S]) Resume(ctx context.Context, def Definition[S], key string, r
 	}
 
 	if len(resume) > 0 {
-		resumeState, decErr := e.codec.Decode(resume)
-		if decErr != nil {
-			span.RecordError(decErr)
-			return RunResult[S]{}, fmt.Errorf("workflow.engine.resume: decode resume payload: %w", decErr)
+		mergedBytes, mErr := e.codec.MergePatch(snap.State, resume)
+		if mErr != nil {
+			span.RecordError(mErr)
+			return RunResult[S]{}, fmt.Errorf("workflow.engine.resume: merge resume: %w", mErr)
 		}
-		if applier, ok := any(current).(ResumeApplier[S]); ok {
-			current = applier.ApplyResume(resumeState)
-		} else {
-			current = resumeState
+		merged, dErr := e.codec.Decode(mergedBytes)
+		if dErr != nil {
+			span.RecordError(dErr)
+			return RunResult[S]{}, fmt.Errorf("workflow.engine.resume: decode merged: %w", dErr)
 		}
+		current = merged
 	}
 
 	result, err := e.execute(ctx, def, snap, current, snap.Cursor)

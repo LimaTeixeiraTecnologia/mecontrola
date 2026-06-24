@@ -16,6 +16,12 @@ type engineTestState struct {
 	Value int `json:"value"`
 }
 
+type richEngineState struct {
+	UserID     string `json:"user_id"`
+	Amount     int    `json:"amount"`
+	ResumeText string `json:"resume_text"`
+}
+
 type EngineTestSuite struct {
 	suite.Suite
 	ctx   context.Context
@@ -308,6 +314,74 @@ func (s *EngineTestSuite) TestCursorResume_SkipsCompletedSteps() {
 	_, _ = eng.Resume(s.ctx, def, "user:ch", nil)
 
 	s.Equal(startCalls+1, callCount)
+}
+
+func (s *EngineTestSuite) TestResume_MergePatch_OriginalFieldsSurvive() {
+	suspendOnce := 0
+	suspendStep := NewStepFunc("suspend_rich", func(_ context.Context, st richEngineState) (StepOutput[richEngineState], error) {
+		suspendOnce++
+		if suspendOnce == 1 {
+			return StepOutput[richEngineState]{
+				State:   st,
+				Status:  StepStatusSuspended,
+				Suspend: &Suspension{Reason: SuspendAwaitingInput, Prompt: "confirm?"},
+			}, nil
+		}
+		return StepOutput[richEngineState]{State: st, Status: StepStatusCompleted}, nil
+	})
+
+	def := Definition[richEngineState]{
+		ID:      "rich_suspend_workflow",
+		Root:    Sequence[richEngineState]("root", suspendStep),
+		Durable: true,
+	}
+
+	richStore := NewFakeStore()
+	eng := NewEngine[richEngineState](richStore, s.obs)
+
+	initial := richEngineState{UserID: "user-123", Amount: 9900, ResumeText: ""}
+	startResult, err := eng.Start(s.ctx, def, "user:ch", initial)
+	s.NoError(err)
+	s.Equal(RunStatusSuspended, startResult.Status)
+
+	resumePayload := []byte(`{"resume_text":"sim"}`)
+	resumeResult, err := eng.Resume(s.ctx, def, "user:ch", resumePayload)
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, resumeResult.Status)
+	s.Equal("user-123", resumeResult.State.UserID)
+	s.Equal(9900, resumeResult.State.Amount)
+	s.Equal("sim", resumeResult.State.ResumeText)
+}
+
+func (s *EngineTestSuite) TestResume_EmptyPayload_IsNoOp() {
+	callCount := 0
+	suspendStep := NewStepFunc("suspend_noop", func(_ context.Context, st engineTestState) (StepOutput[engineTestState], error) {
+		callCount++
+		if callCount == 1 {
+			return StepOutput[engineTestState]{
+				State:   st,
+				Status:  StepStatusSuspended,
+				Suspend: &Suspension{Reason: SuspendAwaitingInput},
+			}, nil
+		}
+		return StepOutput[engineTestState]{State: engineTestState{Value: st.Value + 5}, Status: StepStatusCompleted}, nil
+	})
+
+	def := Definition[engineTestState]{
+		ID:      "noop_resume_workflow",
+		Root:    Sequence[engineTestState]("root", suspendStep),
+		Durable: true,
+	}
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	_, err := eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 42})
+	s.NoError(err)
+
+	result, err := eng.Resume(s.ctx, def, "user:ch", nil)
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, result.Status)
+	s.Equal(47, result.State.Value)
 }
 
 func (s *EngineTestSuite) TestVersionConflict_TriggersMetric() {

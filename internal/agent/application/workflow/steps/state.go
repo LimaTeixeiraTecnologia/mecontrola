@@ -43,16 +43,6 @@ func (s ExpenseState) IsDone() bool {
 	return s.ShortCircuit
 }
 
-func (s ExpenseState) ApplyResume(resume ExpenseState) ExpenseState {
-	if resume.ResumeText != "" {
-		s.ResumeText = resume.ResumeText
-	}
-	if resume.ForceCategory != nil {
-		s.ForceCategory = resume.ForceCategory
-	}
-	return s
-}
-
 func (s ExpenseState) ToDraft() pendingexpense.Draft {
 	return pendingexpense.Draft{
 		AmountCents:     s.AmountCents,

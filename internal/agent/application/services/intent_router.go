@@ -12,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -114,6 +115,8 @@ type KernelDeps struct {
 	SettleReg        *SettleRegistry
 	CategoryResolver steps.CategoryResolverFunc
 	PersistFn        steps.PersistFunc
+	ConfirmEngine    platform.Engine[confirmation.ConfirmState]
+	ConfirmDef       platform.Definition[confirmation.ConfirmState]
 }
 
 type IntentRouterDeps struct {

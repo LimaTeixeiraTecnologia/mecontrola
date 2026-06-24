@@ -24,7 +24,7 @@ type TransactionsWriteDeps struct {
 }
 
 func NewTransactionsWriteDefinition(deps TransactionsWriteDeps) platform.Definition[steps.ExpenseState] {
-	root := platform.Sequence[steps.ExpenseState]("transactions_write_seq",
+	root := platform.Sequence("transactions_write_seq",
 		steps.NewAuthorize(deps.Authorize, deps.DenyReply),
 		steps.NewReplay(deps.Replay),
 		steps.NewPolicy(deps.Policy),

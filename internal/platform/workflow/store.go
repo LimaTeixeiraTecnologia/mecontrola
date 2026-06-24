@@ -47,7 +47,3 @@ type Store interface {
 	AppendStep(ctx context.Context, rec StepRecord) error
 	DeleteCompleted(ctx context.Context, retention time.Duration, limit int) (int64, error)
 }
-
-type ResumeApplier[S any] interface {
-	ApplyResume(resume S) S
-}

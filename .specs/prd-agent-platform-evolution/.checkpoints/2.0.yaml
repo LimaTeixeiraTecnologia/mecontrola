@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agent-platform-evolution/2.0_execution_report.md
+summary: "MergePatch implementado em Codec[S] e Engine.Resume atualizado; todos os gates R-WF-KERNEL-001 e testes verdes"
+timestamp: "2026-06-24T00:00:00Z"
