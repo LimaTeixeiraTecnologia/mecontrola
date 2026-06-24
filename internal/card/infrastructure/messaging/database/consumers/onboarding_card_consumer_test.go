@@ -71,7 +71,23 @@ func (s *onboardingCardConsumerSuite) TestHappyPath_CallsExecuteWithCorrectField
 	s.Equal("Nubank", creator.capturedInput.Nickname)
 	s.Equal(int64(500000), creator.capturedInput.LimitCents)
 	s.Equal(10, creator.capturedInput.ClosingDay)
-	s.Equal(15, creator.capturedInput.DueDay)
+	s.Require().NotNil(creator.capturedInput.DueDay)
+	s.Equal(15, *creator.capturedInput.DueDay)
+}
+
+func (s *onboardingCardConsumerSuite) TestOptionalDueDay_ZeroMapsToNil() {
+	userID := uuid.New()
+	env := s.buildEnvelope(userID, "Nubank", 500000, 10, 0)
+
+	creator := &stubCardCreator{}
+	consumer := consumers.NewOnboardingCardConsumer(creator, noop.NewProvider())
+
+	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
+	s.Require().NoError(err)
+
+	s.True(creator.called)
+	s.Equal(10, creator.capturedInput.ClosingDay)
+	s.Nil(creator.capturedInput.DueDay)
 }
 
 func (s *onboardingCardConsumerSuite) TestUsecaseError_IsPropagated() {

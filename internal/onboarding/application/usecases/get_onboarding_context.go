@@ -18,8 +18,8 @@ type GetOnboardingContextInput struct {
 }
 
 type OnboardingCardView struct {
-	Name   string
-	DueDay int
+	Name       string
+	ClosingDay int
 }
 
 type OnboardingAllocationView struct {
@@ -36,6 +36,7 @@ type GetOnboardingContextResult struct {
 	CustomSplit     []OnboardingAllocationView
 	FirstTxRecorded bool
 	Phase           string
+	WelcomeSent     bool
 }
 
 type GetOnboardingContext struct {
@@ -66,7 +67,7 @@ func (uc *GetOnboardingContext) Execute(ctx context.Context, in GetOnboardingCon
 	payload := session.Payload()
 	cards := make([]OnboardingCardView, 0, len(payload.Cards))
 	for _, c := range payload.Cards {
-		cards = append(cards, OnboardingCardView{Name: c.Name, DueDay: c.DueDay})
+		cards = append(cards, OnboardingCardView{Name: c.Name, ClosingDay: c.ClosingDay})
 	}
 	splits := make([]OnboardingAllocationView, 0, len(payload.CustomSplit))
 	for _, a := range payload.CustomSplit {
@@ -81,5 +82,6 @@ func (uc *GetOnboardingContext) Execute(ctx context.Context, in GetOnboardingCon
 		CustomSplit:     splits,
 		FirstTxRecorded: payload.FirstTxRecorded,
 		Phase:           payload.Phase,
+		WelcomeSent:     payload.WelcomeSentAt != nil,
 	}, nil
 }

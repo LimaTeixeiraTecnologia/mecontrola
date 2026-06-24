@@ -84,14 +84,18 @@ func WithOutboxPublisher(pub outbox.Publisher) AgentModuleOption {
 }
 
 type OnboardingLLMUseCases struct {
-	GetContext       *onbusecases.GetOnboardingContext
-	SaveObjective    *onbusecases.SaveOnboardingObjective
-	SaveIncome       *onbusecases.SaveOnboardingIncome
-	SaveCard         *onbusecases.SaveOnboardingCard
-	SaveBudgetSplits *onbusecases.SaveOnboardingBudgetSplits
-	MarkFirstTx      *onbusecases.MarkFirstTransactionRecorded
-	Complete         *onbusecases.CompleteOnboardingSession
-	SetPhase         *onbusecases.SetOnboardingPhase
+	GetContext         *onbusecases.GetOnboardingContext
+	SaveObjective      *onbusecases.SaveOnboardingObjective
+	SaveIncome         *onbusecases.SaveOnboardingIncome
+	SaveCard           *onbusecases.SaveOnboardingCard
+	SaveBudgetSplits   *onbusecases.SaveOnboardingBudgetSplits
+	MarkFirstTx        *onbusecases.MarkFirstTransactionRecorded
+	Complete           *onbusecases.CompleteOnboardingSession
+	SetPhase           *onbusecases.SetOnboardingPhase
+	AppendTurn         *onbusecases.AppendOnboardingTurn
+	LoadTurns          *onbusecases.LoadOnboardingTurns
+	MarkWelcomeSent    *onbusecases.MarkWelcomeSent
+	SuggestBudgetSplit *onbusecases.SuggestBudgetSplit
 }
 
 func WithOnboardingLLM(uc OnboardingLLMUseCases) AgentModuleOption {
@@ -206,7 +210,7 @@ func (b *agentModuleBuilder) buildEventHandlers(router *appservices.IntentRouter
 	if router == nil {
 		return nil
 	}
-	return []EventHandlerRegistration{
+	handlers := []EventHandlerRegistration{
 		{
 			EventType: agentevents.EventTypeWhatsAppInbound,
 			Handler:   agentconsumers.NewWhatsAppInboundConsumer(router, b.o11y),
@@ -217,9 +221,31 @@ func (b *agentModuleBuilder) buildEventHandlers(router *appservices.IntentRouter
 		},
 		{
 			EventType: "onboarding.subscription_bound",
-			Handler:   agentconsumers.NewOnboardingBoundConsumer(router, b.o11y),
+			Handler:   b.buildOnboardingBoundConsumer(router),
 		},
 	}
+	if b.onboardingLLM != nil && b.onboardingLLM.GetContext != nil && b.wmRepo != nil {
+		handlers = append(handlers, EventHandlerRegistration{
+			EventType: "onboarding.completed",
+			Handler:   agentconsumers.NewOnboardingCompletedConsumer(b.onboardingLLM.GetContext, b.wmRepo, b.o11y),
+		})
+	}
+	return handlers
+}
+
+func (b *agentModuleBuilder) buildOnboardingBoundConsumer(router *appservices.IntentRouter) *agentconsumers.OnboardingBoundConsumer {
+	opts := make([]agentconsumers.OnboardingBoundConsumerOption, 0)
+	if b.decisionRepoFact != nil && b.decisionUoW != nil {
+		store := agentconsumers.NewGreetingDecisionStore(b.decisionRepoFact, b.decisionUoW)
+		opts = append(opts, agentconsumers.WithGreetingDecisionStore(store))
+	}
+	if b.onboardingLLM != nil && b.onboardingLLM.GetContext != nil {
+		opts = append(opts, agentconsumers.WithOnboardingStateChecker(agentonboarding.NewOnboardingStateReader(b.onboardingLLM.GetContext)))
+	}
+	if b.onboardingLLM != nil && b.onboardingLLM.MarkWelcomeSent != nil {
+		opts = append(opts, agentconsumers.WithGreetingWelcomeMarker(agentonboarding.NewGreetingWelcomeMarker(b.onboardingLLM.MarkWelcomeSent)))
+	}
+	return agentconsumers.NewOnboardingBoundConsumer(router, b.o11y, opts...)
 }
 
 func (b *agentModuleBuilder) prepareSessionStore() {
@@ -495,13 +521,20 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		uc.SaveBudgetSplits,
 		uc.MarkFirstTx,
 		uc.Complete,
-		uc.GetContext,
-		b.wmRepo,
 		deps.ExpenseRecorder,
 	)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
 	v2session := agentbinding.NewOnboardingSessionGateway(b.sessionRepo)
-	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, b.sessionRepo, v2session)
+
+	var historyGateway usecases.OnboardingHistoryGatewayIface
+	if uc.AppendTurn != nil && uc.LoadTurns != nil && uc.MarkWelcomeSent != nil {
+		historyGateway = agentonboarding.NewOnboardingHistoryGateway(uc.AppendTurn, uc.LoadTurns, uc.MarkWelcomeSent)
+	}
+	var splitSuggester usecases.BudgetSplitSuggesterIface
+	if uc.SuggestBudgetSplit != nil {
+		splitSuggester = agentonboarding.NewBudgetSplitSuggester(uc.SuggestBudgetSplit)
+	}
+	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, historyGateway, splitSuggester, v2session)
 	if err != nil {
 		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),

@@ -24,7 +24,7 @@ type createCardRequest struct {
 	Name       string `json:"name"`
 	Nickname   string `json:"nickname"`
 	ClosingDay int    `json:"closing_day"`
-	DueDay     int    `json:"due_day"`
+	DueDay     *int   `json:"due_day,omitempty"`
 	LimitCents int64  `json:"limit_cents,omitempty"`
 }
 

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 
@@ -15,16 +14,12 @@ import (
 
 	agentinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	appusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
-	agententities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
+	onbinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	onbentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	onbvalueobjects "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 )
-
-type onboardingContextReader interface {
-	Execute(ctx context.Context, in onbusecases.GetOnboardingContextInput) (onbusecases.GetOnboardingContextResult, error)
-}
 
 const recordTransactionTool = "record_transaction"
 
@@ -37,8 +32,6 @@ type onboardingToolDispatcher struct {
 	saveBudgetSplits *onbusecases.SaveOnboardingBudgetSplits
 	markFirstTx      *onbusecases.MarkFirstTransactionRecorded
 	complete         *onbusecases.CompleteOnboardingSession
-	contextReader    onboardingContextReader
-	wmWriter         agentinterfaces.WorkingMemoryRepository
 	expenseRecorder  tools.ExpenseRecorder
 }
 
@@ -49,8 +42,6 @@ func NewOnboardingToolDispatcher(
 	saveBudgetSplits *onbusecases.SaveOnboardingBudgetSplits,
 	markFirstTx *onbusecases.MarkFirstTransactionRecorded,
 	complete *onbusecases.CompleteOnboardingSession,
-	contextReader onboardingContextReader,
-	wmWriter agentinterfaces.WorkingMemoryRepository,
 	expenseRecorder tools.ExpenseRecorder,
 ) appusecases.OnboardingToolDispatcher {
 	return &onboardingToolDispatcher{
@@ -60,8 +51,6 @@ func NewOnboardingToolDispatcher(
 		saveBudgetSplits: saveBudgetSplits,
 		markFirstTx:      markFirstTx,
 		complete:         complete,
-		contextReader:    contextReader,
-		wmWriter:         wmWriter,
 		expenseRecorder:  expenseRecorder,
 	}
 }
@@ -97,8 +86,9 @@ func (d *onboardingToolDispatcher) dispatchObjective(ctx context.Context, userID
 		return appusecases.OnboardingToolResult{}, err
 	}
 	return appusecases.OnboardingToolResult{
-		Reply:   fmt.Sprintf("🎯 Anotado: seu foco é *%s*. Vou usar isso pra te manter motivado!", out.Objective),
-		Advance: true,
+		Reply:            fmt.Sprintf("🎯 Anotado: seu foco é *%s*. Vou usar isso pra te manter motivado!", out.Objective),
+		Advance:          true,
+		ObjectiveProfile: stringArg(call.ArgumentsJSON, "objective_profile"),
 	}, nil
 }
 
@@ -120,19 +110,19 @@ func (d *onboardingToolDispatcher) dispatchIncome(ctx context.Context, userID uu
 }
 
 func (d *onboardingToolDispatcher) dispatchCard(ctx context.Context, userID uuid.UUID, call agentinterfaces.ToolCall) (appusecases.OnboardingToolResult, error) {
-	out, err := d.saveCard.Execute(ctx, onbusecases.SaveOnboardingCardInput{
-		UserID:   userID,
-		Nickname: stringArg(call.ArgumentsJSON, "nickname"),
-		DueDay:   int(intArg(call.ArgumentsJSON, "due_day")),
+	out, err := d.saveCard.Execute(ctx, onbinput.SaveOnboardingCardInput{
+		UserID:     userID,
+		Nickname:   stringArg(call.ArgumentsJSON, "nickname"),
+		ClosingDay: int(intArg(call.ArgumentsJSON, "closing_day")),
 	})
 	if err != nil {
-		if errors.Is(err, onbentities.ErrOnboardingCardNicknameRequired) || errors.Is(err, onbvalueobjects.ErrCardDueDayOutOfRange) {
-			return appusecases.OnboardingToolResult{Reply: "Pra cadastrar o cartão preciso do apelido e do dia de vencimento (1 a 31). Pode me passar? 💳"}, nil
+		if errors.Is(err, onbentities.ErrOnboardingCardNicknameRequired) || errors.Is(err, onbvalueobjects.ErrCardClosingDayOutOfRange) {
+			return appusecases.OnboardingToolResult{Reply: "Pra cadastrar o cartão preciso do apelido e do dia de fechamento (1 a 31). Pode me passar? 💳"}, nil
 		}
 		return appusecases.OnboardingToolResult{}, err
 	}
 	return appusecases.OnboardingToolResult{
-		Reply:   fmt.Sprintf("💳 Cartão *%s* salvo (vence dia %d 📅). Quer adicionar outro? Se não usa cartão, é só dizer.", out.Name, out.DueDay),
+		Reply:   fmt.Sprintf("💳 Cartão *%s* salvo (fecha dia %d 📅). Quer adicionar outro? Se não usa cartão, é só dizer.", out.Name, out.ClosingDay),
 		Advance: true,
 	}, nil
 }
@@ -184,11 +174,6 @@ func (d *onboardingToolDispatcher) dispatchRecordTransaction(ctx context.Context
 		return appusecases.OnboardingToolResult{}, completeErr
 	}
 	if completion.Completed {
-		if d.contextReader != nil {
-			if snapshot, snapshotErr := d.contextReader.Execute(ctx, onbusecases.GetOnboardingContextInput{UserID: userID}); snapshotErr == nil && snapshot.Found {
-				d.synthesizeAndStoreWM(ctx, userID, snapshot)
-			}
-		}
 		return appusecases.OnboardingToolResult{Reply: reply + "\n\n" + onboardingCompletedReply, Advance: true, Terminal: true}, nil
 	}
 	return appusecases.OnboardingToolResult{Reply: reply, Advance: true, Terminal: completion.AlreadyActive}, nil
@@ -204,11 +189,6 @@ func (d *onboardingToolDispatcher) dispatchComplete(ctx context.Context, userID 
 	}
 	if out.AlreadyActive {
 		return appusecases.OnboardingToolResult{Terminal: true}, nil
-	}
-	if d.contextReader != nil {
-		if snapshot, snapshotErr := d.contextReader.Execute(ctx, onbusecases.GetOnboardingContextInput{UserID: userID}); snapshotErr == nil && snapshot.Found {
-			d.synthesizeAndStoreWM(ctx, userID, snapshot)
-		}
 	}
 	return appusecases.OnboardingToolResult{
 		Reply:    onboardingCompletedReply,
@@ -347,37 +327,4 @@ func numberToInt64(value any) int64 {
 
 func formatReaisCents(cents int64) string {
 	return money.FromCents(cents).Amount()
-}
-
-func (d *onboardingToolDispatcher) synthesizeAndStoreWM(ctx context.Context, userID uuid.UUID, snapshot onbusecases.GetOnboardingContextResult) {
-	if d.wmWriter == nil {
-		return
-	}
-	wm, found, err := d.wmWriter.Get(ctx, userID)
-	if err != nil {
-		return
-	}
-	if found && wm.Content != "" {
-		return
-	}
-	if !found {
-		wm = agententities.NewWorkingMemory(userID)
-	}
-	wm.Update(buildWMFromSnapshot(snapshot), time.Now().UTC())
-	_ = d.wmWriter.Upsert(ctx, wm)
-}
-
-func buildWMFromSnapshot(s onbusecases.GetOnboardingContextResult) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# Perfil Financeiro do Usuário\n")
-	fmt.Fprintf(&sb, "- **Objetivo financeiro principal**: %s\n", s.Objective)
-	fmt.Fprintf(&sb, "- **Renda mensal estimada**: R$ %s\n", formatReaisCents(s.IncomeCents))
-	if len(s.Cards) > 0 {
-		names := make([]string, 0, len(s.Cards))
-		for _, c := range s.Cards {
-			names = append(names, c.Name)
-		}
-		fmt.Fprintf(&sb, "- **Cartões cadastrados**: %s\n", strings.Join(names, ", "))
-	}
-	return sb.String()
 }

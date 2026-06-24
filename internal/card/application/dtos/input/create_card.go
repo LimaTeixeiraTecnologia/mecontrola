@@ -11,7 +11,7 @@ type CreateCard struct {
 	Name       string
 	Nickname   string
 	ClosingDay int
-	DueDay     int
+	DueDay     *int
 	LimitCents int64
 }
 
@@ -23,10 +23,10 @@ func (i *CreateCard) Validate() error {
 	if i.Name == "" {
 		errs = append(errs, ErrCardNameRequired)
 	}
-	if i.ClosingDay <= 0 {
+	if i.ClosingDay < 1 || i.ClosingDay > 31 {
 		errs = append(errs, ErrCardClosingDayInvalid)
 	}
-	if i.DueDay <= 0 {
+	if i.DueDay != nil && (*i.DueDay < 1 || *i.DueDay > 31) {
 		errs = append(errs, ErrCardDueDayInvalid)
 	}
 	if i.LimitCents < 0 {

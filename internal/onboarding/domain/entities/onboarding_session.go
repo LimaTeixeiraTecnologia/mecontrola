@@ -53,32 +53,38 @@ type OnboardingCardDraft struct {
 	DueDay     int
 }
 
-func NewOnboardingCardDraft(nickname string, dueDay int) (OnboardingCardDraft, error) {
+func NewOnboardingCardDraft(nickname string, closingDay int) (OnboardingCardDraft, error) {
 	name := strings.TrimSpace(nickname)
 	if name == "" {
 		return OnboardingCardDraft{}, ErrOnboardingCardNicknameRequired
 	}
-	due, err := valueobjects.NewCardDueDay(dueDay)
+	closing, err := valueobjects.NewCardClosingDay(closingDay)
 	if err != nil {
 		return OnboardingCardDraft{}, err
 	}
-	closing := due.Value() - 7
-	if closing < 1 {
-		closing += 30
-	}
-	return OnboardingCardDraft{Name: name, DueDay: due.Value(), ClosingDay: closing}, nil
+	return OnboardingCardDraft{Name: name, ClosingDay: closing.Value()}, nil
+}
+
+type OnboardingTurn struct {
+	Role       string
+	Text       string
+	OccurredAt time.Time
 }
 
 type OnboardingSessionPayload struct {
-	IncomeCents     int64
-	Cards           []OnboardingCardDraft
-	PendingCard     OnboardingCardDraft
-	HasPending      bool
-	Split           []OnboardingCardSplitEntry
-	Objective       string
-	CustomSplit     []OnboardingBudgetAllocationEntry
-	FirstTxRecorded bool
-	Phase           string
+	IncomeCents      int64
+	Cards            []OnboardingCardDraft
+	PendingCard      OnboardingCardDraft
+	HasPending       bool
+	Split            []OnboardingCardSplitEntry
+	Objective        string
+	CustomSplit      []OnboardingBudgetAllocationEntry
+	FirstTxRecorded  bool
+	Phase            string
+	RecentTurns      []OnboardingTurn
+	WelcomeSentAt    *time.Time
+	CompletedAt      *time.Time
+	ObjectiveProfile string
 }
 
 type OnboardingCardSplitEntry struct {
@@ -205,4 +211,36 @@ func (s OnboardingSession) IsReadyToComplete() bool {
 		strings.TrimSpace(s.payload.Objective) != "" &&
 		s.payload.IncomeCents > 0 &&
 		len(s.payload.CustomSplit) == 5
+}
+
+const maxRecentTurnPairs = 3
+
+func (s OnboardingSession) WithAppendedTurn(role, text string, now time.Time) OnboardingSession {
+	turn := OnboardingTurn{Role: role, Text: text, OccurredAt: now}
+	turns := append(append([]OnboardingTurn(nil), s.payload.RecentTurns...), turn)
+	maxEntries := maxRecentTurnPairs * 2
+	if len(turns) > maxEntries {
+		turns = turns[len(turns)-maxEntries:]
+	}
+	s.payload.RecentTurns = turns
+	s.updatedAt = now
+	return s
+}
+
+func (s OnboardingSession) WithWelcomeSent(now time.Time) OnboardingSession {
+	if s.payload.WelcomeSentAt != nil {
+		return s
+	}
+	t := now
+	s.payload.WelcomeSentAt = &t
+	s.updatedAt = now
+	return s
+}
+
+func (s OnboardingSession) WithCompletion(now time.Time) OnboardingSession {
+	t := now
+	s.payload.CompletedAt = &t
+	s.payload.RecentTurns = nil
+	s.updatedAt = now
+	return s
 }

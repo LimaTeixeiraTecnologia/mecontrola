@@ -70,9 +70,10 @@ type InboundMessage struct {
 }
 
 type RouteResult struct {
-	Reply   string
-	Outcome tools.ToolOutcome
-	Kind    intent.Kind
+	Reply     string
+	Outcome   tools.ToolOutcome
+	Kind      intent.Kind
+	Delivered bool
 }
 
 type OnboardingConversation struct {
@@ -249,7 +250,9 @@ func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, m
 			observability.Error(err),
 		)
 		r.record(ctx, result.Kind.String(), ChannelWhatsApp, tools.OutcomeReplyFailed)
+		return result
 	}
+	result.Delivered = true
 	return result
 }
 
@@ -271,7 +274,9 @@ func (r *IntentRouter) RouteTelegram(ctx context.Context, principal Principal, m
 			observability.Error(err),
 		)
 		r.record(ctx, result.Kind.String(), ChannelTelegram, tools.OutcomeReplyFailed)
+		return result
 	}
+	result.Delivered = true
 	return result
 }
 

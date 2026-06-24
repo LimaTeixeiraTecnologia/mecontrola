@@ -45,12 +45,13 @@ func (s *CreateCardSuite) SetupTest() {
 }
 
 func (s *CreateCardSuite) makeInput() input.CreateCard {
+	dueDay := 22
 	return input.CreateCard{
 		UserID:     uuid.New(),
 		Name:       "Nubank",
 		Nickname:   "Nu",
 		ClosingDay: 15,
-		DueDay:     22,
+		DueDay:     &dueDay,
 		LimitCents: 500000,
 	}
 }
@@ -67,7 +68,7 @@ func (s *CreateCardSuite) TestExecute_HappyPath() {
 	s.Equal(in.Name, out.Name)
 	s.Equal(in.Nickname, out.Nickname)
 	s.Equal(in.ClosingDay, out.ClosingDay)
-	s.Equal(in.DueDay, out.DueDay)
+	s.Equal(*in.DueDay, out.DueDay)
 }
 
 func (s *CreateCardSuite) TestExecute_WithIdempotency() {
@@ -123,6 +124,64 @@ func (s *CreateCardSuite) TestExecute_InvalidClosingDay() {
 
 	s.Require().Error(err)
 	s.Require().ErrorIs(err, input.ErrCardClosingDayInvalid)
+}
+
+func (s *CreateCardSuite) TestExecute_DerivesDueDayWhenNil() {
+	type args struct {
+		closingDay int
+	}
+
+	scenarios := []struct {
+		name           string
+		args           args
+		expectedDueDay int
+	}{
+		{
+			name:           "closing_day 10 deriva due_day 17",
+			args:           args{closingDay: 10},
+			expectedDueDay: 17,
+		},
+		{
+			name:           "closing_day 24 deriva due_day 31",
+			args:           args{closingDay: 24},
+			expectedDueDay: 31,
+		},
+		{
+			name:           "closing_day 25 deriva due_day 2 com wrap",
+			args:           args{closingDay: 25},
+			expectedDueDay: 2,
+		},
+		{
+			name:           "closing_day 31 deriva due_day 8 com wrap",
+			args:           args{closingDay: 31},
+			expectedDueDay: 8,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			factoryMock := ifacemocks.NewRepositoryFactory(s.T())
+			repoMock := ifacemocks.NewCardRepository(s.T())
+			factoryMock.EXPECT().CardRepository(mock.Anything).Return(repoMock).Once()
+			repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
+
+			in := input.CreateCard{
+				UserID:     uuid.New(),
+				Name:       "Nubank",
+				Nickname:   "Nu",
+				ClosingDay: scenario.args.closingDay,
+				DueDay:     nil,
+				LimitCents: 500000,
+			}
+
+			sut := NewCreateCard(s.uowMock, factoryMock, s.idemMock, s.obs)
+			out, err := sut.Execute(s.ctx, in)
+
+			s.Require().NoError(err)
+			s.Equal(scenario.args.closingDay, out.ClosingDay)
+			s.Equal(scenario.expectedDueDay, out.DueDay)
+		})
+	}
 }
 
 func (s *CreateCardSuite) TestExecute_NicknameConflict() {

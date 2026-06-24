@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -232,6 +233,28 @@ func (s *DispatcherSuite) TestRun() {
 			scenario.expect(err)
 		})
 	}
+}
+
+func (s *DispatcherSuite) TestRunDeadLetterMetric() {
+	row := s.makeRow(2, 3)
+	handlerErr := errors.New("handler failed")
+
+	storage := outboxmocks.NewStorage(s.T())
+	factory := outboxmocks.NewOutboxRepositoryFactory(s.T())
+	registry := outboxmocks.NewRegistry(s.T())
+	handler := eventsmocks.NewHandler(s.T())
+
+	handler.EXPECT().Handle(mock.Anything, mock.Anything).Return(handlerErr).Once()
+	registry.EXPECT().HandlersOf("test.event").Return([]events.Handler{handler}).Once()
+	factory.EXPECT().OutboxRepository(mock.Anything).Return(storage).Times(2)
+	storage.EXPECT().ClaimBatch(mock.Anything, mock.AnythingOfType("string"), 3).Return([]outbox.Row{row}, nil).Once()
+	storage.EXPECT().MarkFailed(mock.Anything, row.ID, handlerErr.Error()).Return(nil).Once()
+
+	sut := outbox.NewObservableDispatcherJob(&unitOfWorkRows{}, factory, registry, s.cfg, fake.NewProvider(), rand.New(rand.NewSource(42)))
+
+	err := sut.Run(context.Background())
+
+	s.NoError(err)
 }
 
 func (s *DispatcherSuite) TestCalcBackoff() {

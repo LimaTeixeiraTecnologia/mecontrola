@@ -31,7 +31,7 @@ func (r *onboardingStateReader) Load(ctx context.Context, userID uuid.UUID) (app
 
 	cards := make([]appusecases.OnboardingSnapshotCard, 0, len(out.Cards))
 	for _, c := range out.Cards {
-		cards = append(cards, appusecases.OnboardingSnapshotCard{Name: c.Name, DueDay: c.DueDay})
+		cards = append(cards, appusecases.OnboardingSnapshotCard{Name: c.Name, ClosingDay: c.ClosingDay})
 	}
 	splits := make([]appusecases.OnboardingSnapshotSplit, 0, len(out.CustomSplit))
 	for _, s := range out.CustomSplit {
@@ -51,5 +51,6 @@ func (r *onboardingStateReader) Load(ctx context.Context, userID uuid.UUID) (app
 		Cards:           cards,
 		Splits:          splits,
 		FirstTxRecorded: out.FirstTxRecorded,
+		WelcomeSent:     out.WelcomeSent,
 	}, nil
 }

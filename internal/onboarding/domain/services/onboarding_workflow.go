@@ -217,7 +217,6 @@ func finalizeCard(
 		Name:       card.Name,
 		LimitCents: card.LimitCents,
 		ClosingDay: card.ClosingDay,
-		DueDay:     card.DueDay,
 		OccurredAt: now,
 	}
 	return DecisionOutcome{

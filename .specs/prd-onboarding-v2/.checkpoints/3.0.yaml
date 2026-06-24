@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-v2/3.0_execution_report.md
+summary: "Repository estendido com recent_turns/welcome_sent_at/completed_at/objective_profile no payload JSON e detecção de drift state=active sem completed_at"
+timestamp: 2026-06-23T12:00:00Z

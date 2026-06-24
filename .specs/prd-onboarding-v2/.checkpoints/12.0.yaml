@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-v2/12.0_execution_report.md
+summary: "Todos os gates de fronteira (buildAutoSplits, SQL, comentários, OnboardingLLMEnabled) passam vazios; go build e go test (50+ pacotes) passam; contratos PRD (income, objetivo, splits, basis points, competência, closing_day, nickname) validados"
+timestamp: "2026-06-24T00:55:37Z"

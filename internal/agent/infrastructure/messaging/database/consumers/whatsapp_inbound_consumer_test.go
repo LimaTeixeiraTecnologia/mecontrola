@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	platformevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
@@ -19,13 +20,17 @@ type stubWhatsAppRouter struct {
 	called    bool
 	principal appservices.Principal
 	msg       appservices.InboundMessage
+	result    *appservices.RouteResult
 }
 
 func (s *stubWhatsAppRouter) RouteWhatsApp(_ context.Context, p appservices.Principal, m appservices.InboundMessage) appservices.RouteResult {
 	s.called = true
 	s.principal = p
 	s.msg = m
-	return appservices.RouteResult{}
+	if s.result != nil {
+		return *s.result
+	}
+	return appservices.RouteResult{Reply: "ok", Outcome: tools.OutcomeRouted, Delivered: true}
 }
 
 type stubEvent struct {

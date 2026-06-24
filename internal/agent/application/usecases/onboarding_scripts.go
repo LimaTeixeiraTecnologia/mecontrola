@@ -19,7 +19,7 @@ const (
 
 const (
 	scriptWelcome = "👋 Oi! Eu sou o *MeControla*, seu parceiro financeiro.\n\n" +
-		"📊 Aqui todo dinheiro é organizado em apenas *5 categorias*:\n\n" +
+		"📊 Aqui no MeControla todo dinheiro é organizado em apenas *5 categorias*:\n\n" +
 		"💰 *Custo Fixo*\nContas que acontecem todos os meses.\n\n" +
 		"🎓 *Conhecimento*\nCursos, livros e tudo que faz você evoluir.\n\n" +
 		"🎉 *Prazeres*\nLazer, diversão e experiências.\n\n" +
@@ -36,41 +36,15 @@ const (
 	scriptCards = "🔵 *Etapa 3/4 — Cartões*\n\n" +
 		"💳 Você usa *cartão de crédito*?\n\n" +
 		"Se usar, me responda assim:\n\n" +
-		"Nubank 13\nInter 5\nItaú 10\n\n" +
-		"(apelido + dia de vencimento)\n\n" +
+		"Nubank 13 / Inter 5 / Itaú 10\n\n" +
+		"(apelido + dia de fechamento)\n\n" +
 		"Se não usar, basta responder: *Não uso*"
 
-	scriptCardQuestion = "💳 Qual é o apelido e o dia de vencimento? (ex: Nubank 13)"
+	scriptCardQuestion = "💳 Qual é o apelido e o dia de fechamento? (ex: Nubank 13)"
 
 	scriptFirstTx = "🚀 Agora é só começar! Me manda seu *primeiro lançamento* do jeito que você fala:\n\n" +
 		"\"gastei 35 no mercado\" ou \"recebi 2500 de salário\""
 )
-
-var onboardingDefaultSplit = []struct {
-	slug string
-	bp   int
-}{
-	{"expense.custo_fixo", 4000},
-	{"expense.conhecimento", 1000},
-	{"expense.prazeres", 1500},
-	{"expense.metas", 2000},
-	{"expense.liberdade_financeira", 1500},
-}
-
-func buildAutoSplits(incomeCents int64) []onboardingv2draft.SplitEntry {
-	splits := make([]onboardingv2draft.SplitEntry, len(onboardingDefaultSplit))
-	var assigned int64
-	for i, e := range onboardingDefaultSplit {
-		if i == len(onboardingDefaultSplit)-1 {
-			splits[i] = onboardingv2draft.SplitEntry{RootSlug: e.slug, AmountCents: incomeCents - assigned}
-			continue
-		}
-		amt := incomeCents * int64(e.bp) / 10000
-		splits[i] = onboardingv2draft.SplitEntry{RootSlug: e.slug, AmountCents: amt}
-		assigned += amt
-	}
-	return splits
-}
 
 func buildAutoSplitPreview(splits []onboardingv2draft.SplitEntry) string {
 	var b strings.Builder
@@ -81,10 +55,23 @@ func buildAutoSplitPreview(splits []onboardingv2draft.SplitEntry) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func buildFinancialPlanMessage(splits []onboardingv2draft.SplitEntry) string {
+func buildFinancialPlanMessage(snapshot OnboardingSnapshot, splits []onboardingv2draft.SplitEntry) string {
 	var b strings.Builder
 	b.WriteString("🔵 *Etapa 4/4 — Plano Financeiro*\n\n")
-	b.WriteString("📋 Aqui está a sua distribuição:\n\n")
+	if snapshot.Objective != "" {
+		fmt.Fprintf(&b, "🎯 *Objetivo*: %s\n", snapshot.Objective)
+	}
+	if snapshot.IncomeCents > 0 {
+		fmt.Fprintf(&b, "💰 *Orçamento*: R$ %s/mês\n", formatBRLCents(snapshot.IncomeCents))
+	}
+	if len(snapshot.Cards) > 0 {
+		cardParts := make([]string, 0, len(snapshot.Cards))
+		for _, c := range snapshot.Cards {
+			cardParts = append(cardParts, fmt.Sprintf("%s (fecha dia %d)", c.Name, c.ClosingDay))
+		}
+		fmt.Fprintf(&b, "💳 *Cartões*: %s\n", strings.Join(cardParts, ", "))
+	}
+	b.WriteString("\n📋 *Distribuição Final*:\n\n")
 	for _, s := range splits {
 		fmt.Fprintf(&b, "%s *%s*: R$ %s\n", onboardingSlugEmoji(s.RootSlug), onboardingSlugName(s.RootSlug), formatBRLCents(s.AmountCents))
 	}
@@ -218,14 +205,15 @@ func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string
 	var b strings.Builder
 	b.WriteString("Você é o MeControla, assistente de onboarding financeiro via WhatsApp. Tom acolhedor e curto.\n")
 	b.WriteString("Formatação WhatsApp: para negrito use UM asterisco (*assim*), NUNCA dois (**assim**). Não use Markdown.\n")
-	b.WriteString("A pessoa está na etapa atual descrita abaixo. Se a mensagem dela contiver o dado pedido, CHAME a ferramenta disponível com os valores corretos. Se for uma dúvida ou conversa, responda em TEXTO curto e gentil (sem ferramenta) e não invente dados.\n\n")
+	b.WriteString("A pessoa está na etapa atual descrita abaixo. Se a mensagem dela contiver o dado pedido, CHAME a ferramenta disponível com os valores corretos. Se for uma dúvida ou conversa, responda em TEXTO curto e gentil (sem ferramenta) e não invente dados.\n")
+	fmt.Fprintf(&b, "Quando for uma dúvida ou conversa (sem chamar ferramenta), SEMPRE retome a etapa atual: responda breve e gentil e termine repetindo o cabeçalho exato \"%s\" seguido de refazer a pergunta da etapa.\n\n", onboardingPhaseHeader(phase))
 	switch phase {
 	case OnbPhaseObjective:
 		b.WriteString("Etapa: objetivo principal. Chame save_onboarding_objective com o objetivo informado.")
 	case OnbPhaseBudget:
 		b.WriteString("Etapa: orçamento mensal. Converta o valor para centavos (R$ 5.000 = 500000, 5 mil = 500000) e chame save_onboarding_income.")
 	case OnbPhaseCards:
-		b.WriteString("Etapa: cartões de crédito. O usuário pode enviar vários cartões em uma única mensagem, um por linha (ex: 'Nubank 13' ou 'Nubank 13\\nInter 5'). Para CADA cartão que tiver apelido E dia de vencimento, chame save_onboarding_card separadamente usando o apelido EXATO que a pessoa escreveu. Se faltar o dia de vencimento de algum cartão, pergunte em texto — nunca invente o dia.")
+		b.WriteString("Etapa: cartões de crédito. O usuário pode enviar vários cartões em uma única mensagem (ex: 'Nubank 13 / Inter 5' ou um por linha). Para CADA cartão que tiver apelido E dia de fechamento, chame save_onboarding_card separadamente usando o apelido EXATO que a pessoa escreveu. Se faltar o dia de fechamento de algum cartão, pergunte em texto — nunca invente o dia.")
 	case OnbPhaseFinancialPlan:
 		b.WriteString("Etapa: distribuição do orçamento EM REAIS por categoria. Converta cada valor para centavos e mapeie os nomes para root_slug: Custo Fixo->expense.custo_fixo, Conhecimento->expense.conhecimento, Prazeres->expense.prazeres, Metas->expense.metas, Liberdade Financeira->expense.liberdade_financeira. Envie as 5 categorias (0 para as não citadas) e chame save_onboarding_budget_splits.")
 	case OnbPhaseFirstTx:
@@ -238,6 +226,30 @@ func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string
 		fmt.Fprintf(&b, " orçamento_centavos=%d", snapshot.IncomeCents)
 	}
 	return b.String()
+}
+
+const (
+	onbHeaderObjective     = "🔵 Etapa 1/4 — Objetivo"
+	onbHeaderBudget        = "🔵 Etapa 2/4 — Orçamento"
+	onbHeaderCards         = "🔵 Etapa 3/4 — Cartões"
+	onbHeaderFinancialPlan = "🔵 Etapa 4/4 — Plano Financeiro"
+)
+
+func onboardingPhaseHeader(phase string) string {
+	switch phase {
+	case OnbPhaseObjective:
+		return onbHeaderObjective
+	case OnbPhaseBudget:
+		return onbHeaderBudget
+	case OnbPhaseCards:
+		return onbHeaderCards
+	case OnbPhaseFinancialPlan:
+		return onbHeaderFinancialPlan
+	case OnbPhaseFirstTx:
+		return onbHeaderFinancialPlan
+	default:
+		return onbHeaderObjective
+	}
 }
 
 func onboardingPhaseTool(phase string) string {

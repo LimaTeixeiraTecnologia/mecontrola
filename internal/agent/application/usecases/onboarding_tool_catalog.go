@@ -33,6 +33,11 @@ func OnboardingToolCatalog() []interfaces.ToolSpec {
 						"description": "Objetivo principal em linguagem natural.",
 						"maxLength":   280,
 					},
+					"objective_profile": map[string]any{
+						"type":        "string",
+						"description": "Perfil de objetivo identificado pelo LLM (opcional).",
+						"enum":        []string{"payoff_debt", "emergency_fund", "invest", "specific_goal", "organize_spending"},
+					},
 				},
 				"required":             []string{"objective"},
 				"additionalProperties": false,
@@ -56,23 +61,23 @@ func OnboardingToolCatalog() []interfaces.ToolSpec {
 		},
 		{
 			Name:        ToolSaveOnboardingCard,
-			Description: "Cadastra um cartao de credito no onboarding pedindo apenas apelido e dia de vencimento da fatura.",
+			Description: "Cadastra um cartao de credito no onboarding pedindo apenas apelido e dia de fechamento da fatura.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"nickname": map[string]any{
 						"type":        "string",
 						"description": "Apelido do cartao (ex: nubank, itau roxinho).",
-						"maxLength":   120,
+						"maxLength":   32,
 					},
-					"due_day": map[string]any{
+					"closing_day": map[string]any{
 						"type":        "integer",
-						"description": "Dia do mes em que a fatura vence (1 a 31).",
+						"description": "Dia do mes em que a fatura fecha (1 a 31).",
 						"minimum":     1,
 						"maximum":     31,
 					},
 				},
-				"required":             []string{"nickname", "due_day"},
+				"required":             []string{"nickname", "closing_day"},
 				"additionalProperties": false,
 			},
 		},

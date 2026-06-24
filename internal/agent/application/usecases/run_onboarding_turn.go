@@ -4,20 +4,20 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
+	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	onbentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )
 
 type OnboardingSnapshotCard struct {
-	Name   string
-	DueDay int
+	Name       string
+	ClosingDay int
 }
 
 type OnboardingSnapshotSplit struct {
@@ -34,6 +34,7 @@ type OnboardingSnapshot struct {
 	Cards           []OnboardingSnapshotCard
 	Splits          []OnboardingSnapshotSplit
 	FirstTxRecorded bool
+	WelcomeSent     bool
 }
 
 type OnboardingStateReader interface {
@@ -41,9 +42,10 @@ type OnboardingStateReader interface {
 }
 
 type OnboardingToolResult struct {
-	Reply    string
-	Advance  bool
-	Terminal bool
+	Reply            string
+	Advance          bool
+	Terminal         bool
+	ObjectiveProfile string
 }
 
 type OnboardingToolDispatcher interface {
@@ -65,28 +67,33 @@ type RunOnboardingTurnResult struct {
 	Reply   string
 }
 
-type onboardingSessionReader interface {
-	GetByUserAndChannel(ctx context.Context, userID uuid.UUID, channel string) (interfaces.AgentSessionRecord, error)
-	Upsert(ctx context.Context, record interfaces.AgentSessionRecord) error
-}
-
 type OnboardingV2SessionGateway interface {
 	Load(ctx context.Context, userID uuid.UUID, channel string) (onboardingv2draft.Draft, bool, error)
 	Save(ctx context.Context, userID uuid.UUID, channel string, draft onboardingv2draft.Draft) error
 	Clear(ctx context.Context, userID uuid.UUID, channel string) error
 }
 
+type OnboardingHistoryGatewayIface interface {
+	LoadTurns(ctx context.Context, userID uuid.UUID) ([]onbentities.OnboardingTurn, error)
+	AppendTurn(ctx context.Context, userID uuid.UUID, userMsg, assistantReply string) error
+	MarkWelcomeSent(ctx context.Context, userID uuid.UUID) (alreadySent bool, err error)
+}
+
+type BudgetSplitSuggesterIface interface {
+	Suggest(ctx context.Context, userID uuid.UUID, objectiveProfile, objective string, incomeCents int64) ([]onbusecases.SuggestBudgetSplitView, error)
+}
+
 type RunOnboardingTurn struct {
-	interpreter IntentInterpreter
-	reader      OnboardingStateReader
-	dispatcher  OnboardingToolDispatcher
-	phases      OnboardingPhaseSetter
-	v2session   OnboardingV2SessionGateway
-	maxTokens   int
-	o11y        observability.Observability
-	turnsTotal  observability.Counter
-	turnHistory services.TurnHistory
-	sessionRepo onboardingSessionReader
+	interpreter    IntentInterpreter
+	reader         OnboardingStateReader
+	dispatcher     OnboardingToolDispatcher
+	phases         OnboardingPhaseSetter
+	v2session      OnboardingV2SessionGateway
+	historyGateway OnboardingHistoryGatewayIface
+	splitSuggester BudgetSplitSuggesterIface
+	maxTokens      int
+	o11y           observability.Observability
+	turnsTotal     observability.Counter
 }
 
 func NewRunOnboardingTurn(
@@ -96,7 +103,8 @@ func NewRunOnboardingTurn(
 	phases OnboardingPhaseSetter,
 	maxTokens int,
 	o11y observability.Observability,
-	sessionRepo onboardingSessionReader,
+	historyGateway OnboardingHistoryGatewayIface,
+	splitSuggester BudgetSplitSuggesterIface,
 	v2session OnboardingV2SessionGateway,
 ) (*RunOnboardingTurn, error) {
 	if interpreter == nil {
@@ -123,15 +131,16 @@ func NewRunOnboardingTurn(
 		"1",
 	)
 	return &RunOnboardingTurn{
-		interpreter: interpreter,
-		reader:      reader,
-		dispatcher:  dispatcher,
-		phases:      phases,
-		v2session:   v2session,
-		maxTokens:   maxTokens,
-		o11y:        o11y,
-		turnsTotal:  turnsTotal,
-		sessionRepo: sessionRepo,
+		interpreter:    interpreter,
+		reader:         reader,
+		dispatcher:     dispatcher,
+		phases:         phases,
+		v2session:      v2session,
+		historyGateway: historyGateway,
+		splitSuggester: splitSuggester,
+		maxTokens:      maxTokens,
+		o11y:           o11y,
+		turnsTotal:     turnsTotal,
 	}, nil
 }
 
@@ -185,6 +194,16 @@ func (uc *RunOnboardingTurn) Execute(ctx context.Context, in RunOnboardingTurnIn
 }
 
 func (uc *RunOnboardingTurn) emitWelcome(ctx context.Context, userID uuid.UUID) (RunOnboardingTurnResult, error) {
+	if uc.historyGateway != nil {
+		alreadySent, err := uc.historyGateway.MarkWelcomeSent(ctx, userID)
+		if err != nil {
+			return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: mark welcome sent: %w", err)
+		}
+		if alreadySent {
+			uc.turnsTotal.Add(ctx, 1, observability.String("phase", "welcome"), observability.String("outcome", "dedup"))
+			return RunOnboardingTurnResult{Handled: true}, nil
+		}
+	}
 	if err := uc.phases.SetPhase(ctx, userID, OnbPhaseObjective); err != nil {
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase objective: %w", err)
 	}
@@ -202,6 +221,9 @@ func (uc *RunOnboardingTurn) objectivePhase(ctx context.Context, in RunOnboardin
 		return RunOnboardingTurnResult{Handled: true, Reply: out.Reply}, nil
 	}
 	updated := draft.WithStep(onboardingv2draft.StepBudget)
+	if out.ObjectiveProfile != "" {
+		updated = updated.WithObjectiveProfile(out.ObjectiveProfile)
+	}
 	if saveErr := uc.v2session.Save(ctx, in.UserID, in.Channel, updated); saveErr != nil {
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: save draft objective: %w", saveErr)
 	}
@@ -225,8 +247,11 @@ func (uc *RunOnboardingTurn) budgetPhase(ctx context.Context, in RunOnboardingTu
 	if err != nil {
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: reload after budget: %w", err)
 	}
-	autoSplits := buildAutoSplits(refreshed.IncomeCents)
-	updated := draft.WithIncome(refreshed.IncomeCents).WithAutoSplits(autoSplits).WithStep(onboardingv2draft.StepCards)
+	splits, previewMsg, splitErr := uc.buildSplitPreview(ctx, in.UserID, draft.ObjectiveProfile(), refreshed.Objective, refreshed.IncomeCents)
+	if splitErr != nil {
+		return RunOnboardingTurnResult{}, splitErr
+	}
+	updated := draft.WithIncome(refreshed.IncomeCents).WithAutoSplits(splits).WithStep(onboardingv2draft.StepCards)
 	if saveErr := uc.v2session.Save(ctx, in.UserID, in.Channel, updated); saveErr != nil {
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: save draft budget: %w", saveErr)
 	}
@@ -234,24 +259,36 @@ func (uc *RunOnboardingTurn) budgetPhase(ctx context.Context, in RunOnboardingTu
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase cards: %w", err)
 	}
 	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseBudget), observability.String("outcome", "advance"))
-	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, buildAutoSplitPreview(autoSplits), scriptCards)}, nil
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, previewMsg, scriptCards)}, nil
 }
 
-func effectiveSplits(draft onboardingv2draft.Draft, snapshot OnboardingSnapshot) []onboardingv2draft.SplitEntry {
-	if splits := draft.Splits(); len(splits) > 0 {
-		return splits
+func (uc *RunOnboardingTurn) buildSplitPreview(ctx context.Context, userID uuid.UUID, objectiveProfile, objective string, incomeCents int64) ([]onboardingv2draft.SplitEntry, string, error) {
+	if uc.splitSuggester == nil || incomeCents <= 0 {
+		return nil, "", nil
 	}
-	return buildAutoSplits(snapshot.IncomeCents)
+	views, err := uc.splitSuggester.Suggest(ctx, userID, objectiveProfile, objective, incomeCents)
+	if err != nil {
+		return nil, "", fmt.Errorf("agent.usecase.run_onboarding_turn: suggest split: %w", err)
+	}
+	entries := make([]onboardingv2draft.SplitEntry, len(views))
+	for i, v := range views {
+		entries[i] = onboardingv2draft.SplitEntry{RootSlug: v.RootSlug, AmountCents: v.PlannedCents}
+	}
+	return entries, buildAutoSplitPreview(entries), nil
+}
+
+func effectiveSplits(draft onboardingv2draft.Draft) []onboardingv2draft.SplitEntry {
+	return draft.Splits()
 }
 
 func (uc *RunOnboardingTurn) cardsPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {
-	splits := effectiveSplits(draft, snapshot)
+	splits := effectiveSplits(draft)
 	if matchesOnboardingNegation(in.Text) {
 		if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseFinancialPlan); err != nil {
 			return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase financial_plan: %w", err)
 		}
 		uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseCards), observability.String("outcome", "negation"))
-		return RunOnboardingTurnResult{Handled: true, Reply: buildFinancialPlanMessage(splits)}, nil
+		return RunOnboardingTurnResult{Handled: true, Reply: buildFinancialPlanMessage(snapshot, splits)}, nil
 	}
 	out, err := uc.runDataPhase(ctx, in, snapshot, OnbPhaseCards)
 	if err != nil {
@@ -267,12 +304,16 @@ func (uc *RunOnboardingTurn) cardsPhase(ctx context.Context, in RunOnboardingTur
 	if err := uc.phases.SetPhase(ctx, in.UserID, OnbPhaseFinancialPlan); err != nil {
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase financial_plan: %w", err)
 	}
+	refreshed, err := uc.reader.Load(ctx, in.UserID)
+	if err != nil {
+		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: reload after cards: %w", err)
+	}
 	uc.turnsTotal.Add(ctx, 1, observability.String("phase", OnbPhaseCards), observability.String("outcome", "advance"))
-	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, buildFinancialPlanMessage(splits))}, nil
+	return RunOnboardingTurnResult{Handled: true, Reply: joinReplies(out.Reply, buildFinancialPlanMessage(refreshed, splits))}, nil
 }
 
 func (uc *RunOnboardingTurn) financialPlanPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {
-	splits := effectiveSplits(draft, snapshot)
+	splits := effectiveSplits(draft)
 	if !onboardingTextHasDigit(in.Text) && shouldAdvanceScriptedPhase(in.Text) {
 		confirmCall := buildAutoSplitToolCall(splits)
 		out, err := uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, confirmCall)
@@ -321,7 +362,7 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: tool not found for phase %s", phase)
 	}
 
-	llmMessages, sessionRecord, sessionFound := uc.loadOnbHistory(ctx, in.UserID, in.Channel)
+	llmMessages := uc.loadHistory(ctx, in.UserID)
 
 	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
 		SystemPrompt: onboardingDataPhasePrompt(phase, snapshot),
@@ -340,7 +381,7 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 	if assistantReply == "" && len(resp.ToolCalls) > 0 {
 		assistantReply = "[tool_call]"
 	}
-	uc.saveOnbTurn(ctx, in.UserID, in.Channel, strings.TrimSpace(in.Text), assistantReply, sessionRecord, sessionFound)
+	uc.appendHistory(ctx, in.UserID, strings.TrimSpace(in.Text), assistantReply)
 
 	if len(resp.ToolCalls) == 0 {
 		return OnboardingToolResult{Reply: sanitizeWhatsAppText(string(resp.RawJSON)), Advance: false}, nil
@@ -348,6 +389,7 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 
 	var replies []string
 	var advance, terminal bool
+	var objectiveProfile string
 	for _, call := range resp.ToolCalls {
 		result, dispatchErr := uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, call)
 		if dispatchErr != nil {
@@ -362,49 +404,31 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 		if result.Terminal {
 			terminal = true
 		}
-	}
-	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance, Terminal: terminal}, nil
-}
-
-func (uc *RunOnboardingTurn) loadOnbHistory(ctx context.Context, userID uuid.UUID, channel string) ([]interfaces.ConversationMessage, interfaces.AgentSessionRecord, bool) {
-	if uc.sessionRepo == nil || userID == uuid.Nil {
-		return nil, interfaces.AgentSessionRecord{}, false
-	}
-	rec, err := uc.sessionRepo.GetByUserAndChannel(ctx, userID, channel)
-	if err != nil {
-		return nil, interfaces.AgentSessionRecord{}, false
-	}
-	turns, deErr := uc.turnHistory.Deserialize(rec.RecentTurns)
-	if deErr != nil || len(turns) == 0 {
-		return nil, rec, true
-	}
-	return uc.turnHistory.ToLLMMessages(turns), rec, true
-}
-
-func (uc *RunOnboardingTurn) saveOnbTurn(ctx context.Context, userID uuid.UUID, channel, userMsg, assistantReply string, sessionRecord interfaces.AgentSessionRecord, sessionFound bool) {
-	if uc.sessionRepo == nil || userID == uuid.Nil {
-		return
-	}
-	var existingTurns []entities.ConversationMessage
-	if sessionFound {
-		existingTurns, _ = uc.turnHistory.Deserialize(sessionRecord.RecentTurns)
-	}
-	updatedTurns := uc.turnHistory.Append(existingTurns, userMsg, assistantReply, time.Now().UTC(), 3)
-	serialized, serErr := uc.turnHistory.Serialize(updatedTurns)
-	if serErr != nil {
-		return
-	}
-	newRecord := sessionRecord
-	if !sessionFound {
-		newRecord = interfaces.AgentSessionRecord{
-			ID:            uuid.New(),
-			UserID:        userID,
-			Channel:       channel,
-			PendingAction: []byte("{}"),
+		if result.ObjectiveProfile != "" {
+			objectiveProfile = result.ObjectiveProfile
 		}
 	}
-	newRecord.RecentTurns = serialized
-	newRecord.UpdatedAt = time.Now().UTC()
-	newRecord.ExpiresAt = time.Now().UTC().Add(24 * time.Hour)
-	_ = uc.sessionRepo.Upsert(ctx, newRecord)
+	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance, Terminal: terminal, ObjectiveProfile: objectiveProfile}, nil
+}
+
+func (uc *RunOnboardingTurn) loadHistory(ctx context.Context, userID uuid.UUID) []interfaces.ConversationMessage {
+	if uc.historyGateway == nil || userID == uuid.Nil {
+		return nil
+	}
+	turns, err := uc.historyGateway.LoadTurns(ctx, userID)
+	if err != nil || len(turns) == 0 {
+		return nil
+	}
+	msgs := make([]interfaces.ConversationMessage, 0, len(turns))
+	for _, t := range turns {
+		msgs = append(msgs, interfaces.ConversationMessage{Role: t.Role, Content: t.Text})
+	}
+	return msgs
+}
+
+func (uc *RunOnboardingTurn) appendHistory(ctx context.Context, userID uuid.UUID, userMsg, assistantReply string) {
+	if uc.historyGateway == nil || userID == uuid.Nil {
+		return
+	}
+	_ = uc.historyGateway.AppendTurn(ctx, userID, userMsg, assistantReply)
 }

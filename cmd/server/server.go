@@ -24,6 +24,8 @@ import (
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	onboardingbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
+	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
@@ -243,6 +245,13 @@ func Run() error {
 			MarkFirstTx:      onboardingModule.MarkFirstTransactionRecorded,
 			Complete:         onboardingModule.CompleteOnboardingSession,
 			SetPhase:         onboardingModule.SetOnboardingPhase,
+			AppendTurn:       onboardingModule.AppendOnboardingTurn,
+			LoadTurns:        onboardingModule.LoadOnboardingTurns,
+			MarkWelcomeSent:  onboardingModule.MarkWelcomeSent,
+			SuggestBudgetSplit: onbusecases.NewSuggestBudgetSplit(
+				onboardingbinding.NewBudgetAllocatorBinding(budgetsModule.SuggestAllocationUC),
+				o11y,
+			),
 		}),
 	)
 	if err != nil {

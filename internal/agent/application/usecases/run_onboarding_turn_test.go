@@ -14,6 +14,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
+	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	onbentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )
 
 type fakeTurnInterpreter struct {
@@ -109,6 +111,67 @@ func (f *fakeV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
 
+type fakeHistoryGateway struct {
+	turns       []onbentities.OnboardingTurn
+	loadErr     error
+	appendErr   error
+	appendCalls int
+	alreadySent bool
+	markErr     error
+	markCalls   int
+}
+
+func (g *fakeHistoryGateway) LoadTurns(_ context.Context, _ uuid.UUID) ([]onbentities.OnboardingTurn, error) {
+	return g.turns, g.loadErr
+}
+
+func (g *fakeHistoryGateway) AppendTurn(_ context.Context, _ uuid.UUID, _, _ string) error {
+	g.appendCalls++
+	return g.appendErr
+}
+
+func (g *fakeHistoryGateway) MarkWelcomeSent(_ context.Context, _ uuid.UUID) (bool, error) {
+	g.markCalls++
+	return g.alreadySent, g.markErr
+}
+
+type fakeSplitSuggester struct {
+	views  []onbusecases.SuggestBudgetSplitView
+	err    error
+	called bool
+}
+
+func (s *fakeSplitSuggester) Suggest(_ context.Context, _ uuid.UUID, _, _ string, _ int64) ([]onbusecases.SuggestBudgetSplitView, error) {
+	s.called = true
+	return s.views, s.err
+}
+
+var testDefaultSplit = []struct {
+	slug string
+	bp   int
+}{
+	{"expense.custo_fixo", 4000},
+	{"expense.conhecimento", 1000},
+	{"expense.prazeres", 1500},
+	{"expense.metas", 2000},
+	{"expense.liberdade_financeira", 1500},
+}
+
+func testBuildAutoSplits(incomeCents int64) []onboardingv2draft.SplitEntry {
+	splits := make([]onboardingv2draft.SplitEntry, len(testDefaultSplit))
+	var assigned int64
+	for i, e := range testDefaultSplit {
+		if i == len(testDefaultSplit)-1 {
+			splits[i] = onboardingv2draft.SplitEntry{RootSlug: e.slug, AmountCents: incomeCents - assigned}
+			continue
+		}
+		amt := incomeCents * int64(e.bp) / 10000
+		splits[i] = onboardingv2draft.SplitEntry{RootSlug: e.slug, AmountCents: amt}
+		assigned += amt
+	}
+	return splits
+}
+
 type RunOnboardingTurnSuite struct {
 	suite.Suite
 	ctx context.Context
@@ -123,10 +186,14 @@ func (s *RunOnboardingTurnSuite) SetupTest() {
 }
 
 func (s *RunOnboardingTurnSuite) newTurn(interp IntentInterpreter, reader OnboardingStateReader, dispatcher OnboardingToolDispatcher, phases OnboardingPhaseSetter, v2 OnboardingV2SessionGateway) *RunOnboardingTurn {
+	return s.newTurnFull(interp, reader, dispatcher, phases, nil, nil, v2)
+}
+
+func (s *RunOnboardingTurnSuite) newTurnFull(interp IntentInterpreter, reader OnboardingStateReader, dispatcher OnboardingToolDispatcher, phases OnboardingPhaseSetter, history OnboardingHistoryGatewayIface, splitter BudgetSplitSuggesterIface, v2 OnboardingV2SessionGateway) *RunOnboardingTurn {
 	if v2 == nil {
 		v2 = &fakeV2Session{}
 	}
-	uc, err := NewRunOnboardingTurn(interp, reader, dispatcher, phases, 512, fake.NewProvider(), nil, v2)
+	uc, err := NewRunOnboardingTurn(interp, reader, dispatcher, phases, 512, fake.NewProvider(), history, splitter, v2)
 	s.Require().NoError(err)
 	return uc
 }
@@ -166,6 +233,29 @@ func (s *RunOnboardingTurnSuite) TestWelcomeOnEmptyPhase() {
 	s.False(interp.called)
 }
 
+func (s *RunOnboardingTurnSuite) TestEmitWelcomeIdempotentWhenAlreadySent() {
+	history := &fakeHistoryGateway{alreadySent: true}
+	setter := &fakePhaseSetter{}
+	uc := s.newTurnFull(&fakeTurnInterpreter{}, newReader(OnboardingSnapshot{InProgress: true, Phase: ""}), &fakeToolDispatcher{}, setter, history, nil, nil)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Equal("", out.Reply)
+	s.Equal(1, history.markCalls)
+	s.Empty(setter.phases)
+}
+
+func (s *RunOnboardingTurnSuite) TestEmitWelcomeSetsPhaseWhenNotSent() {
+	history := &fakeHistoryGateway{alreadySent: false}
+	setter := &fakePhaseSetter{}
+	uc := s.newTurnFull(&fakeTurnInterpreter{}, newReader(OnboardingSnapshot{InProgress: true, Phase: ""}), &fakeToolDispatcher{}, setter, history, nil, nil)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "oi"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Contains(out.Reply, "Eu sou o *MeControla*")
+	s.Equal(OnbPhaseObjective, setter.last())
+}
+
 func (s *RunOnboardingTurnSuite) TestObjectiveAdvancesToBudget() {
 	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingObjective}}}}
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
@@ -194,7 +284,7 @@ func (s *RunOnboardingTurnSuite) TestObjectiveStayOnNoToolCall() {
 	s.Empty(setter.phases)
 }
 
-func (s *RunOnboardingTurnSuite) TestBudgetAutoGeneratesSplits() {
+func (s *RunOnboardingTurnSuite) TestBudgetAutoGeneratesSplitsViaSuggester() {
 	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingIncome}}}}
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingIncome: {Reply: "💰 Orçamento salvo!", Advance: true},
@@ -202,9 +292,16 @@ func (s *RunOnboardingTurnSuite) TestBudgetAutoGeneratesSplits() {
 	setter := &fakePhaseSetter{}
 	v2 := &fakeV2Session{}
 	snapAfter := OnboardingSnapshot{InProgress: true, Phase: OnbPhaseBudget, IncomeCents: 500000}
-	uc := s.newTurn(interp,
+	suggester := &fakeSplitSuggester{views: []onbusecases.SuggestBudgetSplitView{
+		{RootSlug: "expense.custo_fixo", PlannedCents: 200000},
+		{RootSlug: "expense.conhecimento", PlannedCents: 50000},
+		{RootSlug: "expense.prazeres", PlannedCents: 75000},
+		{RootSlug: "expense.metas", PlannedCents: 100000},
+		{RootSlug: "expense.liberdade_financeira", PlannedCents: 75000},
+	}}
+	uc := s.newTurnFull(interp,
 		newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseBudget}, snapAfter),
-		dispatcher, setter, v2)
+		dispatcher, setter, nil, suggester, v2)
 	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "ganho 5000"})
 	s.Require().NoError(err)
 	s.True(out.Handled)
@@ -215,16 +312,31 @@ func (s *RunOnboardingTurnSuite) TestBudgetAutoGeneratesSplits() {
 	s.NotNil(v2.saved)
 	s.True(v2.saved.HasAutoSplits())
 	s.Len(v2.saved.Splits(), 5)
-	var total int64
-	for _, sp := range v2.saved.Splits() {
-		total += sp.AmountCents
-	}
-	s.Equal(int64(500000), total)
+	s.True(suggester.called)
+}
+
+func (s *RunOnboardingTurnSuite) TestBudgetWithNoSuggesterProducesNoAutoSplits() {
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingIncome}}}}
+	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
+		ToolSaveOnboardingIncome: {Reply: "💰 Orçamento salvo!", Advance: true},
+	}}
+	setter := &fakePhaseSetter{}
+	v2 := &fakeV2Session{}
+	snapAfter := OnboardingSnapshot{InProgress: true, Phase: OnbPhaseBudget, IncomeCents: 500000}
+	uc := s.newTurnFull(interp,
+		newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseBudget}, snapAfter),
+		dispatcher, setter, nil, nil, v2)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "ganho 5000"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Equal(OnbPhaseCards, setter.last())
+	s.NotNil(v2.saved)
+	s.Len(v2.saved.Splits(), 0)
 }
 
 func (s *RunOnboardingTurnSuite) TestCardsNegationSkipsToFinancialPlan() {
 	setter := &fakePhaseSetter{}
-	autoSplits := buildAutoSplits(500000)
+	autoSplits := testBuildAutoSplits(500000)
 	draft := onboardingv2draft.New().WithAutoSplits(autoSplits)
 	v2 := &fakeV2Session{draft: draft, found: true}
 	uc := s.newTurn(&fakeTurnInterpreter{}, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseCards}), &fakeToolDispatcher{}, setter, v2)
@@ -245,7 +357,7 @@ func (s *RunOnboardingTurnSuite) TestCardsMultiCardSingleTurn() {
 		ToolSaveOnboardingCard: {Reply: "💳 Cartão salvo!", Advance: true},
 	}}
 	setter := &fakePhaseSetter{}
-	autoSplits := buildAutoSplits(500000)
+	autoSplits := testBuildAutoSplits(500000)
 	draft := onboardingv2draft.New().WithAutoSplits(autoSplits)
 	v2 := &fakeV2Session{draft: draft, found: true}
 	uc := s.newTurn(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseCards}), dispatcher, setter, v2)
@@ -257,12 +369,34 @@ func (s *RunOnboardingTurnSuite) TestCardsMultiCardSingleTurn() {
 	s.Contains(out.Reply, "Etapa 4/4")
 }
 
+func (s *RunOnboardingTurnSuite) TestCardsAdvanceSummaryIncludesJustAddedCard() {
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{
+		{FunctionName: ToolSaveOnboardingCard},
+	}}}
+	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
+		ToolSaveOnboardingCard: {Reply: "💳 Cartão salvo!", Advance: true},
+	}}
+	setter := &fakePhaseSetter{}
+	autoSplits := testBuildAutoSplits(500000)
+	draft := onboardingv2draft.New().WithAutoSplits(autoSplits)
+	v2 := &fakeV2Session{draft: draft, found: true}
+	snapBefore := OnboardingSnapshot{InProgress: true, Phase: OnbPhaseCards, IncomeCents: 500000}
+	snapAfter := OnboardingSnapshot{InProgress: true, Phase: OnbPhaseCards, IncomeCents: 500000, Cards: []OnboardingSnapshotCard{{Name: "Nubank", ClosingDay: 13}}}
+	uc := s.newTurn(interp, newReader(snapBefore, snapAfter), dispatcher, setter, v2)
+	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "Nubank 13"})
+	s.Require().NoError(err)
+	s.True(out.Handled)
+	s.Equal(OnbPhaseFinancialPlan, setter.last())
+	s.Contains(out.Reply, "Etapa 4/4")
+	s.Contains(out.Reply, "Nubank")
+}
+
 func (s *RunOnboardingTurnSuite) TestFinancialPlanConfirmUsesAutoSplits() {
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingBudgetSplits: {Reply: "✅ Plano salvo!", Advance: true},
 	}}
 	setter := &fakePhaseSetter{}
-	autoSplits := buildAutoSplits(500000)
+	autoSplits := testBuildAutoSplits(500000)
 	draft := onboardingv2draft.New().WithAutoSplits(autoSplits)
 	v2 := &fakeV2Session{draft: draft, found: true}
 	uc := s.newTurn(&fakeTurnInterpreter{}, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseFinancialPlan, IncomeCents: 500000}), dispatcher, setter, v2)
@@ -281,7 +415,7 @@ func (s *RunOnboardingTurnSuite) TestFinancialPlanAdjustPreservesAutoFlag() {
 		ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição ajustada!", Advance: true},
 	}}
 	setter := &fakePhaseSetter{}
-	autoSplits := buildAutoSplits(500000)
+	autoSplits := testBuildAutoSplits(500000)
 	draft := onboardingv2draft.New().WithAutoSplits(autoSplits)
 	v2 := &fakeV2Session{draft: draft, found: true}
 	uc := s.newTurn(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseFinancialPlan, IncomeCents: 500000}), dispatcher, setter, v2)
@@ -336,6 +470,70 @@ func (s *RunOnboardingTurnSuite) TestInterpretErrorAtDataPhase() {
 	s.Require().Error(err)
 }
 
+func (s *RunOnboardingTurnSuite) TestLLMErrorDoesNotPersistPhaseTransition() {
+	interp := &fakeTurnInterpreter{err: errors.New("llm unavailable")}
+	setter := &fakePhaseSetter{}
+	v2 := &fakeV2Session{}
+
+	scenarios := []struct {
+		name  string
+		phase string
+	}{
+		{"objective phase", OnbPhaseObjective},
+		{"budget phase", OnbPhaseBudget},
+		{"cards phase", OnbPhaseCards},
+		{"financial_plan phase", OnbPhaseFinancialPlan},
+		{"first_tx phase", OnbPhaseFirstTx},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			setter.phases = nil
+			v2.saved = nil
+			v2.cleared = false
+
+			var snap OnboardingSnapshot
+			if scenario.phase == OnbPhaseBudget {
+				snap = OnboardingSnapshot{InProgress: true, Phase: scenario.phase, IncomeCents: 500000}
+			} else {
+				snap = OnboardingSnapshot{InProgress: true, Phase: scenario.phase}
+			}
+
+			uc := s.newTurnFull(interp, newReader(snap, snap), &fakeToolDispatcher{}, setter, nil, nil, v2)
+			var text string
+			switch scenario.phase {
+			case OnbPhaseCards:
+				text = "nubank 10"
+			case OnbPhaseFinancialPlan:
+				text = "quero ajustar 3000 no custo fixo"
+			default:
+				text = "texto de teste"
+			}
+			_, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: text})
+
+			s.Require().Error(err)
+			s.Empty(setter.phases, "nenhuma transicao de fase deve ser persistida em erro de LLM")
+			s.Nil(v2.saved, "nenhum draft deve ser salvo em erro de LLM")
+			s.False(v2.cleared, "draft nao deve ser limpo em erro de LLM")
+		})
+	}
+}
+
+func (s *RunOnboardingTurnSuite) TestLLMErrorDoesNotCallCompleteOnboardingSession() {
+	interp := &fakeTurnInterpreter{err: errors.New("llm down")}
+	setter := &fakePhaseSetter{}
+	v2 := &fakeV2Session{}
+	dispatcher := &fakeToolDispatcher{}
+
+	uc := s.newTurnFull(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseFirstTx}), dispatcher, setter, nil, nil, v2)
+	_, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "gastei 50"})
+
+	s.Require().Error(err)
+	s.Zero(dispatcher.calls, "dispatcher nao deve ser chamado em erro de LLM")
+	s.Empty(setter.phases)
+	s.False(v2.cleared)
+}
+
 func (s *RunOnboardingTurnSuite) TestObjectiveSanitizesDoubleAsterisk() {
 	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("Seu **objetivo** foi anotado!")}}
 	setter := &fakePhaseSetter{}
@@ -358,7 +556,7 @@ func (s *RunOnboardingTurnSuite) TestCardsNegationVariants() {
 }
 
 func (s *RunOnboardingTurnSuite) TestNewRunOnboardingTurnNilV2SessionReturnsError() {
-	_, err := NewRunOnboardingTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshots: []OnboardingSnapshot{{}}}, &fakeToolDispatcher{}, &fakePhaseSetter{}, 512, fake.NewProvider(), nil, nil)
+	_, err := NewRunOnboardingTurn(&fakeTurnInterpreter{}, &fakeStateReader{snapshots: []OnboardingSnapshot{{}}}, &fakeToolDispatcher{}, &fakePhaseSetter{}, 512, fake.NewProvider(), nil, nil, nil)
 	s.Require().Error(err)
 	s.Contains(err.Error(), "v2session")
 }
@@ -411,12 +609,11 @@ func (s *RunOnboardingTurnSuite) TestWelcomeSignalEmptyPhaseEmitsWelcome() {
 	s.False(interp.called)
 }
 
-func (s *RunOnboardingTurnSuite) TestBudgetAutoSplitsSumEqualsIncome() {
-	income := int64(300000)
-	splits := buildAutoSplits(income)
-	var total int64
-	for _, sp := range splits {
-		total += sp.AmountCents
-	}
-	s.Equal(income, total)
+func (s *RunOnboardingTurnSuite) TestHistoryGatewayAppendCalledAfterPhase() {
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("Que objetivo legal!")}}
+	history := &fakeHistoryGateway{}
+	uc := s.newTurnFull(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseObjective}), &fakeToolDispatcher{results: map[string]OnboardingToolResult{}}, &fakePhaseSetter{}, history, nil, nil)
+	_, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "quitar dividas"})
+	s.Require().NoError(err)
+	s.Equal(1, history.appendCalls)
 }

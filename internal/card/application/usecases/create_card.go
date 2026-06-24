@@ -72,7 +72,13 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		return output.Card{}, err
 	}
 
-	cycle, err := valueobjects.NewBillingCycle(in.ClosingDay, in.DueDay)
+	dueDay := in.ClosingDay + 7
+	if in.DueDay != nil {
+		dueDay = *in.DueDay
+	} else if dueDay > 31 {
+		dueDay -= 30
+	}
+	cycle, err := valueobjects.NewBillingCycle(in.ClosingDay, dueDay)
 	if err != nil {
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		return output.Card{}, err

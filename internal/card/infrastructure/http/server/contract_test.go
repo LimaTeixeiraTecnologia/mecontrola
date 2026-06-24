@@ -176,7 +176,7 @@ func (s *ContractSuite) TestContract_PostCards_201() {
 		Return(idempotency.Record{}, idempotency.ErrNotFound).Once()
 
 	s.createUC.On("Execute", mock.Anything, mock.MatchedBy(func(in input.CreateCard) bool {
-		return in.Name == "Nubank" && in.Nickname == "Nu" && in.ClosingDay == 15 && in.DueDay == 22
+		return in.Name == "Nubank" && in.Nickname == "Nu" && in.ClosingDay == 15 && in.DueDay != nil && *in.DueDay == 22
 	})).Return(contractCard(), nil).Once()
 
 	body := `{"name":"Nubank","nickname":"Nu","closing_day":15,"due_day":22}`

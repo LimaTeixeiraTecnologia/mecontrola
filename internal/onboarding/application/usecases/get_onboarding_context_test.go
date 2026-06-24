@@ -43,7 +43,7 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 		Objective:       "quitar dividas",
 		FirstTxRecorded: true,
 		Cards: []entities.OnboardingCardDraft{
-			{Name: "nubank", DueDay: 17},
+			{Name: "nubank", ClosingDay: 17},
 		},
 		CustomSplit: []entities.OnboardingBudgetAllocationEntry{
 			{Kind: "fixed_cost", BasisPoints: 4000},
@@ -71,7 +71,7 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 	require.True(s.T(), result.FirstTxRecorded)
 	require.Len(s.T(), result.Cards, 1)
 	require.Equal(s.T(), "nubank", result.Cards[0].Name)
-	require.Equal(s.T(), 17, result.Cards[0].DueDay)
+	require.Equal(s.T(), 17, result.Cards[0].ClosingDay)
 	require.Len(s.T(), result.CustomSplit, 5)
 	require.Equal(s.T(), "fixed_cost", result.CustomSplit[0].Kind)
 	require.Equal(s.T(), 4000, result.CustomSplit[0].BasisPoints)

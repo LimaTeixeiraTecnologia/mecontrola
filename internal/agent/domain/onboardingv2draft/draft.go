@@ -60,6 +60,7 @@ type SplitEntry struct {
 type Draft struct {
 	step               OnboardingV2Step
 	objective          string
+	objectiveProfile   string
 	incomeCents        int64
 	cards              []CardEntry
 	splits             []SplitEntry
@@ -70,6 +71,7 @@ type draftJSON struct {
 	Kind               string       `json:"kind"`
 	Step               uint8        `json:"step"`
 	Objective          string       `json:"objective,omitempty"`
+	ObjectiveProfile   string       `json:"objective_profile,omitempty"`
 	IncomeCents        int64        `json:"income_cents,omitempty"`
 	Cards              []CardEntry  `json:"cards,omitempty"`
 	Splits             []SplitEntry `json:"splits,omitempty"`
@@ -85,6 +87,7 @@ func Encode(d Draft) ([]byte, error) {
 		Kind:               PendingActionKind,
 		Step:               uint8(d.step),
 		Objective:          d.objective,
+		ObjectiveProfile:   d.objectiveProfile,
 		IncomeCents:        d.incomeCents,
 		Cards:              d.cards,
 		Splits:             d.splits,
@@ -107,6 +110,7 @@ func Restore(raw []byte) (Draft, error) {
 	return Draft{
 		step:               step,
 		objective:          j.Objective,
+		objectiveProfile:   j.ObjectiveProfile,
 		incomeCents:        j.IncomeCents,
 		cards:              j.Cards,
 		splits:             j.Splits,
@@ -124,12 +128,13 @@ func IsDraftPending(raw []byte) bool {
 	return j.Kind == PendingActionKind
 }
 
-func (d Draft) Step() OnboardingV2Step { return d.step }
-func (d Draft) Objective() string      { return d.objective }
-func (d Draft) IncomeCents() int64     { return d.incomeCents }
-func (d Draft) Cards() []CardEntry     { return d.cards }
-func (d Draft) Splits() []SplitEntry   { return d.splits }
-func (d Draft) HasAutoSplits() bool    { return d.autoSplitGenerated }
+func (d Draft) Step() OnboardingV2Step   { return d.step }
+func (d Draft) Objective() string        { return d.objective }
+func (d Draft) ObjectiveProfile() string { return d.objectiveProfile }
+func (d Draft) IncomeCents() int64       { return d.incomeCents }
+func (d Draft) Cards() []CardEntry       { return d.cards }
+func (d Draft) Splits() []SplitEntry     { return d.splits }
+func (d Draft) HasAutoSplits() bool      { return d.autoSplitGenerated }
 
 func (d Draft) WithStep(s OnboardingV2Step) Draft {
 	d.step = s
@@ -138,6 +143,11 @@ func (d Draft) WithStep(s OnboardingV2Step) Draft {
 
 func (d Draft) WithObjective(obj string) Draft {
 	d.objective = obj
+	return d
+}
+
+func (d Draft) WithObjectiveProfile(profile string) Draft {
+	d.objectiveProfile = profile
 	return d
 }
 

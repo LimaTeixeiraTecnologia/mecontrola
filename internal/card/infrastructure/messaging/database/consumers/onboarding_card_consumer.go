@@ -67,12 +67,17 @@ func (c *OnboardingCardConsumer) Handle(ctx context.Context, event platformevent
 		return fmt.Errorf("card.consumer.onboarding_card: user_id inválido: %w", err)
 	}
 
+	var dueDay *int
+	if p.DueDay > 0 {
+		d := p.DueDay
+		dueDay = &d
+	}
 	if _, execErr := c.createCard.Execute(ctx, input.CreateCard{
 		UserID:     userID,
 		Name:       p.Name,
 		Nickname:   p.Name,
 		ClosingDay: p.ClosingDay,
-		DueDay:     p.DueDay,
+		DueDay:     dueDay,
 		LimitCents: p.LimitCents,
 	}); execErr != nil {
 		return fmt.Errorf("card.consumer.onboarding_card: criar cartão: %w", execErr)

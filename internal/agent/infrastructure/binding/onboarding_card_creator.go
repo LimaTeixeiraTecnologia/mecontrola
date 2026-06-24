@@ -22,7 +22,7 @@ func NewOnboardingCardCreatorAdapter(uc onboardingCardCreatorUseCase) *Onboardin
 	return &OnboardingCardCreatorAdapter{uc: uc}
 }
 
-func (a *OnboardingCardCreatorAdapter) Execute(ctx context.Context, userID, nickname string, dueDay int) error {
+func (a *OnboardingCardCreatorAdapter) Execute(ctx context.Context, userID, nickname string, closingDay int) error {
 	if a.uc == nil {
 		return nil
 	}
@@ -30,16 +30,11 @@ func (a *OnboardingCardCreatorAdapter) Execute(ctx context.Context, userID, nick
 	if err != nil {
 		return fmt.Errorf("agent: onboarding card creator: user id: %w", err)
 	}
-	closingDay := dueDay - 7
-	if closingDay < 1 {
-		closingDay += 30
-	}
 	_, err = a.uc.Execute(ctx, cardinput.CreateCard{
 		UserID:     uid,
 		Name:       nickname,
 		Nickname:   nickname,
 		ClosingDay: closingDay,
-		DueDay:     dueDay,
 		LimitCents: 0,
 	})
 	if err != nil {

@@ -12,19 +12,19 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | [onboarding] ObjectiveProfile VO + SplitTemplate (basis points) | pending | — | Com 2.0, 4.0 | — |
-| 2.0 | [onboarding] Payload isolado: OnboardingTurn + campos + métodos With* | pending | — | Com 1.0, 4.0 | — |
-| 3.0 | [onboarding] Repository: JSON dos novos campos + drift no Find | pending | 2.0 | — | — |
-| 4.0 | [budgets] SuggestAllocation (encapsula AllocationDistributor) + binding | pending | — | Com 1.0, 2.0 | — |
-| 5.0 | [onboarding] SuggestBudgetSplit (resolve perfil → delega cents a budgets) + binding | pending | 1.0, 4.0 | Com 6.0, 7.0 | — |
-| 6.0 | [onboarding] Lifecycle: turnos + MarkWelcomeSent + CompleteOnboardingSession + binding | pending | 2.0, 3.0 | Com 5.0, 7.0 | — |
-| 7.0 | [onboarding] SaveOnboardingCard por closing_day (via SynchronousCardCreator) | pending | 2.0, 13.0 | Com 5.0, 6.0 | — |
-| 8.0 | [agent] RunOnboardingTurn refatorado + adapters de binding | pending | 5.0, 6.0 | — | mastra |
-| 9.0 | [agent] Tools + scripts: closing_day, enum objective_profile, copy literal | pending | 7.0, 8.0 | — | mastra |
-| 10.0 | [agent] OnboardingCompletedConsumer (WM assíncrona) + wiring | pending | 6.0 | Com 11.0 | mastra |
-| 11.0 | [agent] Hardening da saudação (GAP-1: erro→retry + idempotência) | pending | 6.0, 8.0 | Com 10.0 | mastra |
-| 12.0 | [ambos] Validação integração + E2E + gates de fronteira/conformidade | pending | 9.0, 10.0, 11.0 | — | mastra |
-| 13.0 | [card] Contrato closing_day-only (due_day opcional + derivado no card) | pending | — | Com 1.0, 2.0, 4.0 | — |
+| 1.0 | [onboarding] ObjectiveProfile VO + SplitTemplate (basis points) | done | — | Com 2.0, 4.0 | — |
+| 2.0 | [onboarding] Payload isolado: OnboardingTurn + campos + métodos With* | done | — | Com 1.0, 4.0 | — |
+| 3.0 | [onboarding] Repository: JSON dos novos campos + drift no Find | done | 2.0 | — | — |
+| 4.0 | [budgets] SuggestAllocation (encapsula AllocationDistributor) + binding | done | — | Com 1.0, 2.0 | — |
+| 5.0 | [onboarding] SuggestBudgetSplit (resolve perfil → delega cents a budgets) + binding | done | 1.0, 4.0 | Com 6.0, 7.0 | — |
+| 6.0 | [onboarding] Lifecycle: turnos + MarkWelcomeSent + CompleteOnboardingSession + binding | done | 2.0, 3.0 | Com 5.0, 7.0 | — |
+| 7.0 | [onboarding] SaveOnboardingCard por closing_day (via SynchronousCardCreator) | done | 2.0, 13.0 | Com 5.0, 6.0 | — |
+| 8.0 | [agent] RunOnboardingTurn refatorado + adapters de binding | done | 5.0, 6.0 | — | mastra |
+| 9.0 | [agent] Tools + scripts: closing_day, enum objective_profile, copy literal | done | 7.0, 8.0 | — | mastra |
+| 10.0 | [agent] OnboardingCompletedConsumer (WM assíncrona) + wiring | done | 6.0 | Com 11.0 | mastra |
+| 11.0 | [agent] Hardening da saudação (GAP-1: erro→retry + idempotência) | done | 6.0, 8.0 | Com 10.0 | mastra |
+| 12.0 | [ambos] Validação integração + E2E + gates de fronteira/conformidade | done | 9.0, 10.0, 11.0 | — | mastra |
+| 13.0 | [card] Contrato closing_day-only (due_day opcional + derivado no card) | done | — | Com 1.0, 2.0, 4.0 | — |
 
 ## Dependências Críticas
 - **3.0 → 2.0**: mapeamento JSON depende dos campos do domínio.

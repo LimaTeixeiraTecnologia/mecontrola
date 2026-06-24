@@ -2,6 +2,7 @@ package entities_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -39,22 +40,22 @@ func fullAllocation(t *testing.T) valueobjects.BudgetAllocation {
 
 func TestNewOnboardingCardDraft_HappyPath(t *testing.T) {
 	t.Parallel()
-	got, err := entities.NewOnboardingCardDraft("  nubank ", 17)
+	got, err := entities.NewOnboardingCardDraft("  nubank ", 10)
 	require.NoError(t, err)
 	require.Equal(t, "nubank", got.Name)
-	require.Equal(t, 17, got.DueDay)
 	require.Equal(t, 10, got.ClosingDay)
+	require.Equal(t, 0, got.DueDay)
 	require.Equal(t, int64(0), got.LimitCents)
 }
 
 func TestNewOnboardingCardDraft_EmptyNickname(t *testing.T) {
 	t.Parallel()
-	_, err := entities.NewOnboardingCardDraft("  ", 17)
+	_, err := entities.NewOnboardingCardDraft("  ", 10)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, entities.ErrOnboardingCardNicknameRequired))
 }
 
-func TestNewOnboardingCardDraft_InvalidDueDay(t *testing.T) {
+func TestNewOnboardingCardDraft_InvalidClosingDay(t *testing.T) {
 	t.Parallel()
 	_, err := entities.NewOnboardingCardDraft("nubank", 40)
 	require.Error(t, err)
@@ -78,14 +79,14 @@ func TestWithIncome(t *testing.T) {
 
 func TestWithAppendedCard_Dedupes(t *testing.T) {
 	t.Parallel()
-	card, err := entities.NewOnboardingCardDraft("nubank", 17)
+	card, err := entities.NewOnboardingCardDraft("nubank", 10)
 	require.NoError(t, err)
 	session := newSession(t).WithAppendedCard(card, time.Now().UTC())
-	again, err := entities.NewOnboardingCardDraft("NuBank", 20)
+	again, err := entities.NewOnboardingCardDraft("NuBank", 15)
 	require.NoError(t, err)
 	session = session.WithAppendedCard(again, time.Now().UTC())
 	require.Len(t, session.Payload().Cards, 1)
-	require.Equal(t, 20, session.Payload().Cards[0].DueDay)
+	require.Equal(t, 15, session.Payload().Cards[0].ClosingDay)
 }
 
 func TestWithCustomSplit(t *testing.T) {
@@ -111,4 +112,42 @@ func TestIsReadyToComplete(t *testing.T) {
 	session = session.WithFirstTransactionRecorded(time.Now().UTC())
 	require.True(t, session.HasFirstTransaction())
 	require.True(t, session.IsReadyToComplete())
+}
+
+func TestWithAppendedTurn_BoundThreePairs(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	roles := []string{"user", "assistant", "user", "assistant", "user", "assistant", "user"}
+	session := newSession(t)
+	for i, role := range roles {
+		session = session.WithAppendedTurn(role, fmt.Sprintf("msg%d", i), now)
+	}
+	require.Len(t, session.Payload().RecentTurns, 6)
+	require.Equal(t, "assistant", session.Payload().RecentTurns[0].Role)
+	require.Equal(t, "msg1", session.Payload().RecentTurns[0].Text)
+	require.Equal(t, "user", session.Payload().RecentTurns[5].Role)
+	require.Equal(t, "msg6", session.Payload().RecentTurns[5].Text)
+}
+
+func TestWithWelcomeSent_Idempotent(t *testing.T) {
+	t.Parallel()
+	now1 := time.Now().UTC()
+	now2 := now1.Add(time.Hour)
+	session := newSession(t).WithWelcomeSent(now1)
+	require.NotNil(t, session.Payload().WelcomeSentAt)
+	require.Equal(t, now1, *session.Payload().WelcomeSentAt)
+	session = session.WithWelcomeSent(now2)
+	require.Equal(t, now1, *session.Payload().WelcomeSentAt)
+}
+
+func TestWithCompletion_ClearsRecentTurns(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	session := newSession(t).
+		WithAppendedTurn("user", "oi", now).
+		WithAppendedTurn("assistant", "olá", now)
+	require.Len(t, session.Payload().RecentTurns, 2)
+	session = session.WithCompletion(now)
+	require.Empty(t, session.Payload().RecentTurns)
+	require.NotNil(t, session.Payload().CompletedAt)
 }

@@ -60,6 +60,7 @@ type BudgetsModule struct {
 	GetMonthlySummaryUC         *usecases.GetMonthlySummary
 	UpsertExpenseUC             *usecases.UpsertExpense
 	EditCategoryPercentageUC    *usecases.EditCategoryPercentage
+	SuggestAllocationUC         *usecases.SuggestAllocation
 }
 
 type moduleBuilder struct {
@@ -199,6 +200,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		GetMonthlySummaryUC:         useCases.getMonthlySummary,
 		UpsertExpenseUC:             useCases.upsertExpense,
 		EditCategoryPercentageUC:    useCases.editCategoryPercentage,
+		SuggestAllocationUC:         usecases.NewSuggestAllocation(),
 	}, nil
 }
 

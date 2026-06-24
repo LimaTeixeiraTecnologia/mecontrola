@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-v2/7.0_execution_report.md
+summary: SaveOnboardingCard refatorado para closing_day; DTO com Validate(); evento sem due_day; testes passando
+timestamp: 2026-06-23T21:00:00Z

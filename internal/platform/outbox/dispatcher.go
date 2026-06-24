@@ -16,14 +16,15 @@ import (
 )
 
 type DispatcherJob struct {
-	uow        uow.UnitOfWork
-	factory    OutboxRepositoryFactory
-	registry   Registry
-	cfg        configs.OutboxConfig
-	logger     observability.Logger
-	mu         sync.Mutex
-	rng        *rand.Rand
-	instanceID string
+	uow             uow.UnitOfWork
+	factory         OutboxRepositoryFactory
+	registry        Registry
+	cfg             configs.OutboxConfig
+	logger          observability.Logger
+	deadLetterTotal observability.Counter
+	mu              sync.Mutex
+	rng             *rand.Rand
+	instanceID      string
 }
 
 func NewDispatcherJob(
@@ -43,6 +44,23 @@ func NewDispatcherJob(
 		rng:        rng,
 		instanceID: newInstanceID(),
 	}
+}
+
+func NewObservableDispatcherJob(
+	unitOfWork uow.UnitOfWork,
+	factory OutboxRepositoryFactory,
+	registry Registry,
+	cfg configs.OutboxConfig,
+	o11y observability.Observability,
+	rng *rand.Rand,
+) *DispatcherJob {
+	job := NewDispatcherJob(unitOfWork, factory, registry, cfg, o11y.Logger(), rng)
+	job.deadLetterTotal = o11y.Metrics().Counter(
+		"outbox_dead_letter_total",
+		"Total de eventos do outbox movidos para dead-letter por esgotamento de retries",
+		"1",
+	)
+	return job
 }
 
 func (d *DispatcherJob) Name() string           { return "outbox-dispatcher" }
@@ -137,6 +155,9 @@ func (d *DispatcherJob) mark(ctx context.Context, storage OutboxRepository, row 
 	if nextAttempts >= row.MaxAttempts {
 		if err := storage.MarkFailed(ctx, row.ID, handlerErr.Error()); err != nil {
 			return fmt.Errorf("outbox: mark failed: %w", err)
+		}
+		if d.deadLetterTotal != nil {
+			d.deadLetterTotal.Add(ctx, 1, observability.String("event_type", row.Type))
 		}
 		return nil
 	}

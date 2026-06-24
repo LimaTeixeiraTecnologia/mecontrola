@@ -20,24 +20,39 @@ import (
 )
 
 type onboardingSessionRepository struct {
-	o11y observability.Observability
-	db   database.DBTX
+	o11y         observability.Observability
+	db           database.DBTX
+	driftCounter observability.Counter
 }
 
 func NewOnboardingSessionRepository(o11y observability.Observability, db database.DBTX) appinterfaces.OnboardingSessionRepository {
-	return &onboardingSessionRepository{o11y: o11y, db: db}
+	return &onboardingSessionRepository{
+		o11y:         o11y,
+		db:           db,
+		driftCounter: o11y.Metrics().Counter("onboarding_state_drift_total", "Sessoes com estado active sem completed_at", "1"),
+	}
+}
+
+type onboardingTurnJSON struct {
+	Role       string    `json:"role"`
+	Text       string    `json:"text"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 type onboardingSessionPayloadJSON struct {
-	IncomeCents     int64                           `json:"income_cents"`
-	Cards           []onboardingCardDraftJSON       `json:"cards"`
-	PendingCard     onboardingCardDraftJSON         `json:"pending_card"`
-	HasPending      bool                            `json:"has_pending"`
-	Split           []onboardingSplitEntryJSON      `json:"split"`
-	Objective       string                          `json:"objective,omitempty"`
-	CustomSplit     []onboardingAllocationEntryJSON `json:"custom_split,omitempty"`
-	FirstTxRecorded bool                            `json:"first_tx_recorded,omitempty"`
-	Phase           string                          `json:"phase,omitempty"`
+	IncomeCents      int64                           `json:"income_cents"`
+	Cards            []onboardingCardDraftJSON       `json:"cards"`
+	PendingCard      onboardingCardDraftJSON         `json:"pending_card"`
+	HasPending       bool                            `json:"has_pending"`
+	Split            []onboardingSplitEntryJSON      `json:"split"`
+	Objective        string                          `json:"objective,omitempty"`
+	CustomSplit      []onboardingAllocationEntryJSON `json:"custom_split,omitempty"`
+	FirstTxRecorded  bool                            `json:"first_tx_recorded,omitempty"`
+	Phase            string                          `json:"phase,omitempty"`
+	RecentTurns      []onboardingTurnJSON            `json:"recent_turns,omitempty"`
+	WelcomeSentAt    *time.Time                      `json:"welcome_sent_at,omitempty"`
+	CompletedAt      *time.Time                      `json:"completed_at,omitempty"`
+	ObjectiveProfile string                          `json:"objective_profile,omitempty"`
 }
 
 type onboardingCardDraftJSON struct {
@@ -98,16 +113,27 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 		}
 	}
 
+	if parsedState == valueobjects.OnboardingStateActive && pj.CompletedAt == nil {
+		r.driftCounter.Add(ctx, 1)
+		r.o11y.Logger().Warn(ctx, "onboarding.repository.state_drift",
+			observability.String("session_id", uid.String()),
+		)
+	}
+
 	domainPayload := entities.OnboardingSessionPayload{
-		IncomeCents:     pj.IncomeCents,
-		Cards:           fromCardsJSON(pj.Cards),
-		PendingCard:     fromCardJSON(pj.PendingCard),
-		HasPending:      pj.HasPending,
-		Split:           fromSplitJSON(pj.Split),
-		Objective:       pj.Objective,
-		CustomSplit:     fromAllocationJSON(pj.CustomSplit),
-		FirstTxRecorded: pj.FirstTxRecorded,
-		Phase:           pj.Phase,
+		IncomeCents:      pj.IncomeCents,
+		Cards:            fromCardsJSON(pj.Cards),
+		PendingCard:      fromCardJSON(pj.PendingCard),
+		HasPending:       pj.HasPending,
+		Split:            fromSplitJSON(pj.Split),
+		Objective:        pj.Objective,
+		CustomSplit:      fromAllocationJSON(pj.CustomSplit),
+		FirstTxRecorded:  pj.FirstTxRecorded,
+		Phase:            pj.Phase,
+		RecentTurns:      fromTurnsJSON(pj.RecentTurns),
+		WelcomeSentAt:    pj.WelcomeSentAt,
+		CompletedAt:      pj.CompletedAt,
+		ObjectiveProfile: pj.ObjectiveProfile,
 	}
 
 	return entities.HydrateOnboardingSession(uid, parsedChannel, parsedState, domainPayload, updatedAt), nil
@@ -127,16 +153,21 @@ func (r *onboardingSessionRepository) Upsert(ctx context.Context, session entiti
 		       updated_at = EXCLUDED.updated_at
 	`
 
+	p := session.Payload()
 	pj := onboardingSessionPayloadJSON{
-		IncomeCents:     session.Payload().IncomeCents,
-		Cards:           toCardsJSON(session.Payload().Cards),
-		PendingCard:     toCardJSON(session.Payload().PendingCard),
-		HasPending:      session.Payload().HasPending,
-		Split:           toSplitJSON(session.Payload().Split),
-		Objective:       session.Payload().Objective,
-		CustomSplit:     toAllocationJSON(session.Payload().CustomSplit),
-		FirstTxRecorded: session.Payload().FirstTxRecorded,
-		Phase:           session.Payload().Phase,
+		IncomeCents:      p.IncomeCents,
+		Cards:            toCardsJSON(p.Cards),
+		PendingCard:      toCardJSON(p.PendingCard),
+		HasPending:       p.HasPending,
+		Split:            toSplitJSON(p.Split),
+		Objective:        p.Objective,
+		CustomSplit:      toAllocationJSON(p.CustomSplit),
+		FirstTxRecorded:  p.FirstTxRecorded,
+		Phase:            p.Phase,
+		RecentTurns:      toTurnsJSON(p.RecentTurns),
+		WelcomeSentAt:    p.WelcomeSentAt,
+		CompletedAt:      p.CompletedAt,
+		ObjectiveProfile: p.ObjectiveProfile,
 	}
 	raw, err := json.Marshal(pj)
 	if err != nil {
@@ -242,6 +273,28 @@ func fromAllocationJSON(in []onboardingAllocationEntryJSON) []entities.Onboardin
 	out := make([]entities.OnboardingBudgetAllocationEntry, 0, len(in))
 	for _, e := range in {
 		out = append(out, entities.OnboardingBudgetAllocationEntry{Kind: e.Kind, BasisPoints: e.BasisPoints})
+	}
+	return out
+}
+
+func toTurnsJSON(in []entities.OnboardingTurn) []onboardingTurnJSON {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]onboardingTurnJSON, 0, len(in))
+	for _, t := range in {
+		out = append(out, onboardingTurnJSON{Role: t.Role, Text: t.Text, OccurredAt: t.OccurredAt})
+	}
+	return out
+}
+
+func fromTurnsJSON(in []onboardingTurnJSON) []entities.OnboardingTurn {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]entities.OnboardingTurn, 0, len(in))
+	for _, t := range in {
+		out = append(out, entities.OnboardingTurn{Role: t.Role, Text: t.Text, OccurredAt: t.OccurredAt})
 	}
 	return out
 }

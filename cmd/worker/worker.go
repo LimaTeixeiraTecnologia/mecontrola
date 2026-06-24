@@ -254,7 +254,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	jobs := make([]worker.Job, 0, 10)
 	if r.cfg.OutboxConfig.DispatcherEnabled {
 		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-		jobs = append(jobs, outbox.NewDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, r.cfg.OutboxConfig, r.o11y.Logger(), rng))
+		jobs = append(jobs, outbox.NewObservableDispatcherJob(dispatcherUoW, outboxFactory, eventsDispatcher, r.cfg.OutboxConfig, r.o11y, rng))
 	}
 	jobs = append(jobs,
 		outbox.NewReaperJob(reaperUoW, outboxFactory, r.cfg.OutboxConfig, r.o11y.Logger()),

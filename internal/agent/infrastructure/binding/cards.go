@@ -31,12 +31,16 @@ func (a *CardCreatorAdapter) Execute(ctx context.Context, userID uuid.UUID, in i
 	if name == "" {
 		name = strings.TrimSpace(in.CardNickname())
 	}
+	var dueDay *int
+	if d := in.DueDay(); d > 0 {
+		dueDay = &d
+	}
 	created, err := a.uc.Execute(ctx, cardinput.CreateCard{
 		UserID:     userID,
 		Name:       name,
 		Nickname:   in.CardNickname(),
 		ClosingDay: in.ClosingDay(),
-		DueDay:     in.DueDay(),
+		DueDay:     dueDay,
 		LimitCents: in.LimitCents(),
 	})
 	if err != nil {

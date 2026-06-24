@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -108,4 +109,63 @@ func (s *CompleteOnboardingSessionSuite) TestSessionNotFound() {
 
 	_, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
 	require.ErrorIs(s.T(), err, appinterfaces.ErrOnboardingSessionNotFound)
+}
+
+func (s *CompleteOnboardingSessionSuite) TestUpsertFailure() {
+	session := entities.HydrateOnboardingSession(
+		s.userID,
+		entities.OnboardingChannelWhatsApp,
+		valueobjects.OnboardingStateAwaitingFirstTransaction,
+		entities.OnboardingSessionPayload{FirstTxRecorded: true},
+		time.Now().UTC(),
+	)
+	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
+	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.Anything).Return(errors.New("db error")).Once()
+
+	_, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
+	require.ErrorContains(s.T(), err, "db error")
+	s.publisher.AssertNotCalled(s.T(), "Publish", mock.Anything, mock.Anything)
+}
+
+func (s *CompleteOnboardingSessionSuite) TestPublishFailure() {
+	session := entities.HydrateOnboardingSession(
+		s.userID,
+		entities.OnboardingChannelWhatsApp,
+		valueobjects.OnboardingStateAwaitingFirstTransaction,
+		entities.OnboardingSessionPayload{FirstTxRecorded: true},
+		time.Now().UTC(),
+	)
+	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
+	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.Anything).Return(nil).Once()
+	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("publish error")).Once()
+
+	_, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
+	require.ErrorContains(s.T(), err, "publish error")
+}
+
+func (s *CompleteOnboardingSessionSuite) TestHappyPath_CompletedAtSetAndTurnsCleared() {
+	now := time.Now().UTC()
+	turns := []entities.OnboardingTurn{
+		{Role: "user", Text: "msg1", OccurredAt: now},
+		{Role: "assistant", Text: "reply1", OccurredAt: now},
+	}
+	session := entities.HydrateOnboardingSession(
+		s.userID,
+		entities.OnboardingChannelWhatsApp,
+		valueobjects.OnboardingStateAwaitingFirstTransaction,
+		entities.OnboardingSessionPayload{FirstTxRecorded: true, RecentTurns: turns},
+		now,
+	)
+	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
+	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
+		p := sess.Payload()
+		return sess.State() == valueobjects.OnboardingStateActive &&
+			p.CompletedAt != nil &&
+			len(p.RecentTurns) == 0
+	})).Return(nil).Once()
+	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+
+	result, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
+	require.NoError(s.T(), err)
+	require.True(s.T(), result.Completed)
 }

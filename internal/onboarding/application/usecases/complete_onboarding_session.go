@@ -75,7 +75,8 @@ func (uc *CompleteOnboardingSession) Execute(ctx context.Context, in CompleteOnb
 		}
 
 		now := time.Now().UTC()
-		updated := session.With(valueobjects.OnboardingStateActive, session.Payload(), now)
+		completed := session.WithCompletion(now)
+		updated := completed.With(valueobjects.OnboardingStateActive, completed.Payload(), now)
 		if upsertErr := repo.Upsert(ctx, updated); upsertErr != nil {
 			return CompleteOnboardingSessionResult{}, fmt.Errorf("onboarding: complete session: upsert session: %w", upsertErr)
 		}

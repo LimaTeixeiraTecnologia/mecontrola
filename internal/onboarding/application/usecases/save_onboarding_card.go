@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
@@ -15,24 +13,19 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )
 
-type SaveOnboardingCardInput struct {
-	UserID   uuid.UUID
-	Nickname string
-	DueDay   int
-}
-
 type SaveOnboardingCardResult struct {
-	Name      string
-	DueDay    int
-	CardCount int
+	Name       string
+	ClosingDay int
+	CardCount  int
 }
 
 type SynchronousCardCreator interface {
-	Execute(ctx context.Context, userID, nickname string, dueDay int) error
+	Execute(ctx context.Context, userID, nickname string, closingDay int) error
 }
 
 type SaveOnboardingCard struct {
@@ -59,15 +52,15 @@ func (uc *SaveOnboardingCard) SetCardCreator(creator SynchronousCardCreator) {
 	uc.cardCreator = creator
 }
 
-func (uc *SaveOnboardingCard) Execute(ctx context.Context, in SaveOnboardingCardInput) (SaveOnboardingCardResult, error) {
+func (uc *SaveOnboardingCard) Execute(ctx context.Context, in input.SaveOnboardingCardInput) (SaveOnboardingCardResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "onboarding.usecase.save_card")
 	defer span.End()
 
-	if in.UserID == uuid.Nil {
-		return SaveOnboardingCardResult{}, fmt.Errorf("onboarding: save card: user id required")
+	if err := in.Validate(); err != nil {
+		return SaveOnboardingCardResult{}, err
 	}
 
-	card, err := entities.NewOnboardingCardDraft(in.Nickname, in.DueDay)
+	card, err := entities.NewOnboardingCardDraft(in.Nickname, in.ClosingDay)
 	if err != nil {
 		return SaveOnboardingCardResult{}, err
 	}
@@ -89,7 +82,7 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in SaveOnboardingCard
 		}
 
 		if uc.cardCreator != nil {
-			if createErr := uc.cardCreator.Execute(ctx, in.UserID.String(), card.Name, card.DueDay); createErr != nil {
+			if createErr := uc.cardCreator.Execute(ctx, in.UserID.String(), card.Name, card.ClosingDay); createErr != nil {
 				return SaveOnboardingCardResult{}, fmt.Errorf("onboarding: save card: create card: %w", createErr)
 			}
 		}
@@ -101,7 +94,6 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in SaveOnboardingCard
 			Name:       card.Name,
 			LimitCents: card.LimitCents,
 			ClosingDay: card.ClosingDay,
-			DueDay:     card.DueDay,
 			OccurredAt: now,
 		}
 		envelope, buildErr := buildOutboxEvent(in.UserID, event, now)
@@ -112,9 +104,9 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in SaveOnboardingCard
 			return SaveOnboardingCardResult{}, fmt.Errorf("onboarding: save card: publish event: %w", pubErr)
 		}
 		return SaveOnboardingCardResult{
-			Name:      card.Name,
-			DueDay:    card.DueDay,
-			CardCount: len(updated.Payload().Cards),
+			Name:       card.Name,
+			ClosingDay: card.ClosingDay,
+			CardCount:  len(updated.Payload().Cards),
 		}, nil
 	})
 }
