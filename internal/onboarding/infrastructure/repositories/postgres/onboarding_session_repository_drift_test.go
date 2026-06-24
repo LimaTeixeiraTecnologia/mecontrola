@@ -14,8 +14,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
-
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type OnboardingSessionDriftSuite struct {
@@ -107,7 +105,8 @@ func (s *OnboardingSessionDriftSuite) TestFind_DriftDetected_ActiveWithoutComple
 
 	got, findErr := repo.Find(context.Background(), userID)
 	s.Require().NoError(findErr)
-	s.Equal(valueobjects.OnboardingStateActive, got.State())
+	s.False(got.IsActive())
+	s.Nil(got.Payload().CompletedAt)
 
 	metrics := obs.Metrics().(*fake.FakeMetrics)
 	counter := metrics.GetCounter("onboarding_state_drift_total")

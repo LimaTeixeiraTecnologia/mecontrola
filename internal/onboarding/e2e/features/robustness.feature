@@ -8,7 +8,7 @@ Funcionalidade: Robustez de onboarding
     E deve existir 1 evento(s) outbox do tipo "onboarding.subscription_bound"
     Quando o dispatcher processa o evento onboarding.subscription_bound
     Então o token atual deve estar consumido pelo usuário corrente
-    E deve existir uma sessão de onboarding em estado "awaiting_income"
+    E deve existir uma sessão de onboarding em estado "in_progress"
 
   Cenário: Reutilização de token consumido cria sinal de suporte
     Dado existe um token já consumido por outro usuário
@@ -50,16 +50,6 @@ Funcionalidade: Robustez de onboarding
     Quando o job de outreach é executado
     Então deve ter sido enviado 0 template(s) de outreach
     E o token atual deve ter outreach_sent_at nulo
-
-  Cenário: Conversa de onboarding publica evento de renda
-    Dado existe um token pago com assinatura e dados do cliente
-    Quando o processor de WhatsApp recebe um comando de ativação com o token atual
-    E o dispatcher processa o evento onboarding.subscription_bound
-    Então deve existir uma sessão de onboarding em estado "awaiting_income"
-    Quando o usuário informa renda "3500" via WhatsApp
-    Então a última mensagem WhatsApp enviada deve ser "Otimo! Quer cadastrar um cartao de credito agora? Responda sim ou nao."
-    E deve existir 1 evento(s) outbox do tipo "onboarding.income_registered"
-    E deve existir uma sessão de onboarding em estado "awaiting_card_decision"
 
   Cenário: excesso de requisições simultâneas ao checkout retorna 429
     Dado que o ambiente de teste para onboarding está pronto

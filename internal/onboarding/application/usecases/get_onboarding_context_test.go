@@ -15,7 +15,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type GetOnboardingContextSuite struct {
@@ -56,7 +55,6 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		payload,
 		time.Now().UTC(),
 	)
@@ -65,7 +63,7 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 	result, err := s.uc.Execute(context.Background(), GetOnboardingContextInput{UserID: s.userID})
 	require.NoError(s.T(), err)
 	require.True(s.T(), result.Found)
-	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingFirstTransaction, result.State)
+	require.Nil(s.T(), result.CompletedAt)
 	require.Equal(s.T(), int64(500000), result.IncomeCents)
 	require.Equal(s.T(), "quitar dividas", result.Objective)
 	require.True(s.T(), result.FirstTxRecorded)

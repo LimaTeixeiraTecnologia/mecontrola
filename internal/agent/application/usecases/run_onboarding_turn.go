@@ -27,7 +27,6 @@ type OnboardingSnapshotSplit struct {
 
 type OnboardingSnapshot struct {
 	InProgress      bool
-	State           string
 	Phase           string
 	IncomeCents     int64
 	Objective       string
@@ -208,7 +207,24 @@ func (uc *RunOnboardingTurn) emitWelcome(ctx context.Context, userID uuid.UUID) 
 		return RunOnboardingTurnResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: set phase objective: %w", err)
 	}
 	uc.turnsTotal.Add(ctx, 1, observability.String("phase", "welcome"), observability.String("outcome", "emit"))
-	return RunOnboardingTurnResult{Handled: true, Reply: scriptWelcome}, nil
+	return RunOnboardingTurnResult{Handled: true, Reply: uc.welcomeMessage(ctx)}, nil
+}
+
+func (uc *RunOnboardingTurn) welcomeMessage(ctx context.Context) string {
+	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
+		SystemPrompt: onboardingWelcomeSystemPrompt,
+		UserMessage:  onboardingWelcomeCue,
+		FreeText:     true,
+		MaxTokens:    uc.maxTokens,
+	})
+	if err != nil {
+		return scriptWelcome
+	}
+	reply := sanitizeWhatsAppText(string(resp.RawJSON))
+	if reply == "" {
+		return scriptWelcome
+	}
+	return reply
 }
 
 func (uc *RunOnboardingTurn) objectivePhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, draft onboardingv2draft.Draft) (RunOnboardingTurnResult, error) {

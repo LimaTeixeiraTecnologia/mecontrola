@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
-	"github.com/google/uuid"
 
 	onboardingapp "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 )
@@ -26,7 +25,6 @@ func registerRobustnessSteps(sc *godog.ScenarioContext, w *onboardingWorld) {
 	sc.Step(`^o dispatcher do outbox é executado com handler que falha$`, w.whenOutboxDispatcherRunsWithFailingHandler)
 	sc.Step(`^o gateway de outreach responde erro 4xx$`, w.givenOutreachGatewayReturns4xx)
 	sc.Step(`^o gateway de outreach responde erro 5xx$`, w.givenOutreachGatewayReturns5xx)
-	sc.Step(`^o usuário informa renda "([^"]*)" via WhatsApp$`, w.whenUserSendsIncomeMessageViaWhatsApp)
 	sc.Step(`^a última mensagem WhatsApp enviada deve ser "([^"]*)"$`, w.thenLatestWhatsAppMessageShouldBe)
 	sc.Step(`^o token atual deve permanecer com status "([^"]*)"$`, w.thenCurrentTokenStatusShouldBe)
 	sc.Step(`^o token atual deve ter outreach_sent_at preenchido$`, w.thenCurrentTokenShouldHaveOutreachSentAt)
@@ -126,15 +124,6 @@ func (w *onboardingWorld) givenOutreachGatewayReturns4xx() error {
 func (w *onboardingWorld) givenOutreachGatewayReturns5xx() error {
 	w.runtime.outreachGateway.templateErr = fmt.Errorf("gateway 5xx")
 	return nil
-}
-
-func (w *onboardingWorld) whenUserSendsIncomeMessageViaWhatsApp(income string) error {
-	if w.currentUserID == uuid.Nil {
-		return fmt.Errorf("current user id ausente")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return w.runtime.deps.whatsAppProcessor.ProcessConversation(ctx, w.currentUserID, "+5511999994444", income, "msg-income-1")
 }
 
 func (w *onboardingWorld) thenLatestWhatsAppMessageShouldBe(expected string) error {

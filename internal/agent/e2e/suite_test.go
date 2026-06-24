@@ -172,7 +172,7 @@ func buildServer(
 		Name:       "Nubank",
 		Nickname:   "nubank",
 		ClosingDay: 10,
-		DueDay:     17,
+		DueDay:     intPtr(17),
 		LimitCents: 500000,
 	})
 	if cardErr != nil {

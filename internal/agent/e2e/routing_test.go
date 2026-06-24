@@ -130,7 +130,7 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 		Name:       "Nubank",
 		Nickname:   "nubank",
 		ClosingDay: 10,
-		DueDay:     17,
+		DueDay:     intPtr(17),
 		LimitCents: 500000,
 	})
 	require.NoError(t, err)

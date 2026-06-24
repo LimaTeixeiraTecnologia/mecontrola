@@ -70,7 +70,6 @@ func newWhatsAppProcessor(
 	return services.NewWhatsAppMessageProcessor(
 		consume,
 		nil,
-		nil,
 		startBudget,
 		gateway,
 		whatsAppMessages(),
@@ -84,19 +83,16 @@ func TestWhatsAppMessageProcessor_HandleActivation_ActivatedStartsOnboarding(t *
 		Outcome: usecases.ConsumeOutcomeActivated,
 		UserID:  userID.String(),
 	}}
-	startBudget := &stubStartBudgetConfiguration{resp: usecases.StartBudgetConfigurationResult{
-		Reply: "sentinel_start_reply_should_not_be_sent",
-	}}
+	startBudget := &stubStartBudgetConfiguration{}
 	gateway := &recordingWhatsAppGateway{}
 	sut := newWhatsAppProcessor(consume, startBudget, gateway)
 
 	err := sut.HandleActivation(context.Background(), "+5511999999999", "tok")
 
 	require.NoError(t, err)
-	require.Len(t, gateway.sent, 2)
+	require.Len(t, gateway.sent, 1)
 	assert.Equal(t, "sentinel_welcome_activated", gateway.sent[0])
-	assert.Equal(t, "sentinel_onboarding_intro", gateway.sent[1])
-	assert.NotContains(t, gateway.sent, "sentinel_start_reply_should_not_be_sent")
+	assert.NotContains(t, gateway.sent, "sentinel_onboarding_intro")
 
 	assert.True(t, startBudget.called)
 	assert.Equal(t, userID, startBudget.gotIn.UserID)
@@ -144,8 +140,8 @@ func TestWhatsAppMessageProcessor_HandleActivation_StartBudgetErrorStillSucceeds
 	err := sut.HandleActivation(context.Background(), "+5511999999999", "tok")
 
 	require.NoError(t, err)
-	require.Len(t, gateway.sent, 2)
+	require.Len(t, gateway.sent, 1)
 	assert.Equal(t, "sentinel_welcome_activated", gateway.sent[0])
-	assert.Equal(t, "sentinel_onboarding_intro", gateway.sent[1])
+	assert.NotContains(t, gateway.sent, "sentinel_onboarding_intro")
 	assert.True(t, startBudget.called)
 }

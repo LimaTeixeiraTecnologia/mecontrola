@@ -121,7 +121,6 @@ type onboardingUseCasesBundle struct {
 	handlePaidWithoutToken   *usecases.HandlePaidWithoutToken
 	cleanupTables            *usecases.CleanupOnboardingTables
 	startBudgetConfiguration *usecases.StartBudgetConfiguration
-	processOnboardingMessage *usecases.ProcessOnboardingMessage
 	activateTelegram         *usecases.ActivateTelegramByToken
 	getOnboardingContext     *usecases.GetOnboardingContext
 	saveObjective            *usecases.SaveOnboardingObjective
@@ -268,7 +267,6 @@ func buildOnboardingUseCases(
 	}
 	checkoutUoW := uow.NewUnitOfWork(db)
 	consumeUoW := uow.NewUnitOfWork(db)
-	processUoW := uow.NewUnitOfWork(db)
 	startBudgetUoW := uow.NewUnitOfWork(db)
 	activateTelegramUoW := uow.NewUnitOfWork(db)
 	saveObjectiveUoW := uow.NewUnitOfWork(db)
@@ -306,14 +304,6 @@ func buildOnboardingUseCases(
 		handlePaidWithoutToken:   usecases.NewHandlePaidWithoutToken(supportSignalRepo, deps.idGen, o11y),
 		cleanupTables:            usecases.NewCleanupOnboardingTables(cleanupRepo, deps.runtimeCfg.MetaRetention, o11y),
 		startBudgetConfiguration: usecases.NewStartBudgetConfiguration(startBudgetUoW, deps.factory, o11y),
-		processOnboardingMessage: usecases.NewProcessOnboardingMessage(
-			processUoW,
-			deps.factory,
-			domainservices.NewOnboardingWorkflow(),
-			deps.publisher,
-			deps.idGen,
-			o11y,
-		),
 		activateTelegram: usecases.NewActivateTelegramByToken(
 			deps.factory,
 			identityModule.RepositoryFactory,
@@ -376,7 +366,6 @@ func newWhatsAppMessageProcessor(
 	return services.NewWhatsAppMessageProcessor(
 		useCases.consumeToken,
 		useCases.fallbackActivation,
-		useCases.processOnboardingMessage,
 		useCases.startBudgetConfiguration,
 		deps.whatsAppGateway,
 		deps.runtimeCfg.Messages,
@@ -391,7 +380,6 @@ func newTelegramMessageProcessor(
 ) *services.TelegramMessageProcessor {
 	return services.NewTelegramMessageProcessor(
 		useCases.activateTelegram,
-		useCases.processOnboardingMessage,
 		buildTelegramMessages(tgCfg),
 		o11y,
 	)

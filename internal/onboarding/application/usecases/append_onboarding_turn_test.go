@@ -15,7 +15,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type AppendOnboardingTurnSuite struct {
@@ -66,7 +65,6 @@ func (s *AppendOnboardingTurnSuite) TestAppendTurnSuccessful() {
 					session := entities.HydrateOnboardingSession(
 						s.userID,
 						entities.OnboardingChannelWhatsApp,
-						valueobjects.OnboardingStateAwaitingToken,
 						entities.OnboardingSessionPayload{},
 						time.Now().UTC(),
 					)
@@ -130,7 +128,6 @@ func (s *AppendOnboardingTurnSuite) TestAppendTurnSuccessful() {
 					session := entities.HydrateOnboardingSession(
 						s.userID,
 						entities.OnboardingChannelWhatsApp,
-						valueobjects.OnboardingStateAwaitingToken,
 						entities.OnboardingSessionPayload{RecentTurns: existingTurns},
 						time.Now().UTC(),
 					)
@@ -157,7 +154,6 @@ func (s *AppendOnboardingTurnSuite) TestAppendTurnSuccessful() {
 					session := entities.HydrateOnboardingSession(
 						s.userID,
 						entities.OnboardingChannelWhatsApp,
-						valueobjects.OnboardingStateAwaitingToken,
 						entities.OnboardingSessionPayload{},
 						time.Now().UTC(),
 					)

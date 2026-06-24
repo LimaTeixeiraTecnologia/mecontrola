@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type GetOnboardingContextInput struct {
@@ -29,7 +29,6 @@ type OnboardingAllocationView struct {
 
 type GetOnboardingContextResult struct {
 	Found           bool
-	State           valueobjects.OnboardingState
 	IncomeCents     int64
 	Objective       string
 	Cards           []OnboardingCardView
@@ -37,6 +36,7 @@ type GetOnboardingContextResult struct {
 	FirstTxRecorded bool
 	Phase           string
 	WelcomeSent     bool
+	CompletedAt     *time.Time
 }
 
 type GetOnboardingContext struct {
@@ -75,7 +75,6 @@ func (uc *GetOnboardingContext) Execute(ctx context.Context, in GetOnboardingCon
 	}
 	return GetOnboardingContextResult{
 		Found:           true,
-		State:           session.State(),
 		IncomeCents:     payload.IncomeCents,
 		Objective:       payload.Objective,
 		Cards:           cards,
@@ -83,5 +82,6 @@ func (uc *GetOnboardingContext) Execute(ctx context.Context, in GetOnboardingCon
 		FirstTxRecorded: payload.FirstTxRecorded,
 		Phase:           payload.Phase,
 		WelcomeSent:     payload.WelcomeSentAt != nil,
+		CompletedAt:     payload.CompletedAt,
 	}, nil
 }

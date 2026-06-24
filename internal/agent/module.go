@@ -121,7 +121,6 @@ type agentModuleBuilder struct {
 	budgetsModule      *budgets.BudgetsModule
 	whatsAppGateway    whatsAppGateway
 	budgetConfigurator tools.BudgetConfigurator
-	onboarding         appservices.OnboardingContinuation
 	onboardingLLM      *OnboardingLLMUseCases
 	sessionDB          *sqlx.DB
 	sessionRepo        interfaces.AgentSessionRepository
@@ -147,7 +146,6 @@ func NewAgentModule(
 	budgetsModule *budgets.BudgetsModule,
 	whatsAppGateway whatsAppGateway,
 	budgetConfigurator tools.BudgetConfigurator,
-	onboarding appservices.OnboardingContinuation,
 	opts ...AgentModuleOption,
 ) (AgentModule, error) {
 	builder := &agentModuleBuilder{
@@ -160,7 +158,6 @@ func NewAgentModule(
 		budgetsModule:      budgetsModule,
 		whatsAppGateway:    whatsAppGateway,
 		budgetConfigurator: budgetConfigurator,
-		onboarding:         onboarding,
 	}
 	for _, opt := range opts {
 		opt(builder)
@@ -390,9 +387,6 @@ func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouter
 	}
 	if b.budgetConfigurator != nil {
 		deps.BudgetConfig = b.budgetConfigurator
-	}
-	if b.onboarding != nil {
-		deps.Onboarding = b.onboarding
 	}
 }
 

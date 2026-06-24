@@ -77,7 +77,6 @@ type onboardingDependencies struct {
 	sendActivationEmail       *usecases.SendActivationEmail
 	consumeToken              *usecases.ConsumeMagicToken
 	fallbackActivation        *usecases.TryFallbackActivation
-	processOnboardingMessage  *usecases.ProcessOnboardingMessage
 	startBudgetConfiguration  *usecases.StartBudgetConfiguration
 	activateTelegram          *usecases.ActivateTelegramByToken
 	sendOutreach              *usecases.SendOutreach
@@ -306,14 +305,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		bindingService,
 		o11y,
 	)
-	processOnboardingMessage := usecases.NewProcessOnboardingMessage(
-		uow.NewUnitOfWork(db),
-		factory,
-		onboardingservices.NewOnboardingWorkflow(),
-		publisher,
-		idGen,
-		o11y,
-	)
 	startBudgetConfiguration := usecases.NewStartBudgetConfiguration(
 		uow.NewUnitOfWork(db),
 		factory,
@@ -357,7 +348,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 	whatsAppProcessor := appservices.NewWhatsAppMessageProcessor(
 		consumeToken,
 		fallbackActivation,
-		processOnboardingMessage,
 		startBudgetConfiguration,
 		metaGateway,
 		runtimeCfg.Messages,
@@ -365,7 +355,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 	)
 	telegramProcessor := appservices.NewTelegramMessageProcessor(
 		activateTelegram,
-		processOnboardingMessage,
 		map[string]string{
 			"welcome_activated":               "telegram-welcome",
 			"already_active":                  "telegram-already-active",
@@ -400,7 +389,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		sendActivationEmail:       sendActivationEmail,
 		consumeToken:              consumeToken,
 		fallbackActivation:        fallbackActivation,
-		processOnboardingMessage:  processOnboardingMessage,
 		startBudgetConfiguration:  startBudgetConfiguration,
 		activateTelegram:          activateTelegram,
 		sendOutreach:              sendOutreach,

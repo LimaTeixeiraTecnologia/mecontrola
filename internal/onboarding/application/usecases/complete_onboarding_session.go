@@ -17,7 +17,6 @@ import (
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 var ErrOnboardingFirstTransactionRequired = errors.New("onboarding: first transaction required before completion")
@@ -76,8 +75,7 @@ func (uc *CompleteOnboardingSession) Execute(ctx context.Context, in CompleteOnb
 
 		now := time.Now().UTC()
 		completed := session.WithCompletion(now)
-		updated := completed.With(valueobjects.OnboardingStateActive, completed.Payload(), now)
-		if upsertErr := repo.Upsert(ctx, updated); upsertErr != nil {
+		if upsertErr := repo.Upsert(ctx, completed); upsertErr != nil {
 			return CompleteOnboardingSessionResult{}, fmt.Errorf("onboarding: complete session: upsert session: %w", upsertErr)
 		}
 

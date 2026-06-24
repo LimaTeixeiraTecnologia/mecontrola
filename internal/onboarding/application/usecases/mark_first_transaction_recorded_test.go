@@ -15,7 +15,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type MarkFirstTransactionRecordedSuite struct {
@@ -50,11 +49,11 @@ func (s *MarkFirstTransactionRecordedSuite) TestNotFoundReturnsNotMarked() {
 }
 
 func (s *MarkFirstTransactionRecordedSuite) TestActiveSessionNotMarked() {
+	completedAt := time.Now().UTC()
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateActive,
-		entities.OnboardingSessionPayload{},
+		entities.OnboardingSessionPayload{CompletedAt: &completedAt},
 		time.Now().UTC(),
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
@@ -69,7 +68,6 @@ func (s *MarkFirstTransactionRecordedSuite) TestAlreadyRecordedMarkedNoUpsert() 
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: true},
 		time.Now().UTC(),
 	)
@@ -85,7 +83,6 @@ func (s *MarkFirstTransactionRecordedSuite) TestFreshSessionMarksAndUpserts() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: false},
 		time.Now().UTC(),
 	)

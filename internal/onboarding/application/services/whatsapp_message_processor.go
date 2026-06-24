@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -11,9 +10,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
-	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
@@ -28,10 +25,6 @@ type TryFallbackActivationUseCase interface {
 	Execute(ctx context.Context, fromE164 string) (usecases.FallbackResult, error)
 }
 
-type ProcessOnboardingMessageUseCase interface {
-	Execute(ctx context.Context, in usecases.ProcessOnboardingMessageInput) (usecases.ProcessOnboardingMessageResult, error)
-}
-
 type StartBudgetConfigurationUseCase interface {
 	Execute(ctx context.Context, in usecases.StartBudgetConfigurationInput) (usecases.StartBudgetConfigurationResult, error)
 }
@@ -43,7 +36,6 @@ type WhatsAppGateway interface {
 type WhatsAppMessageProcessor struct {
 	consumeUseCase     ConsumeMagicTokenUseCase
 	fallbackUseCase    TryFallbackActivationUseCase
-	processUseCase     ProcessOnboardingMessageUseCase
 	startBudgetUseCase StartBudgetConfigurationUseCase
 	waGateway          WhatsAppGateway
 	messages           map[string]string
@@ -55,7 +47,6 @@ type WhatsAppMessageProcessor struct {
 func NewWhatsAppMessageProcessor(
 	consumeUseCase ConsumeMagicTokenUseCase,
 	fallbackUseCase TryFallbackActivationUseCase,
-	processUseCase ProcessOnboardingMessageUseCase,
 	startBudgetUseCase StartBudgetConfigurationUseCase,
 	waGateway WhatsAppGateway,
 	messages map[string]string,
@@ -64,7 +55,6 @@ func NewWhatsAppMessageProcessor(
 	return &WhatsAppMessageProcessor{
 		consumeUseCase:     consumeUseCase,
 		fallbackUseCase:    fallbackUseCase,
-		processUseCase:     processUseCase,
 		startBudgetUseCase: startBudgetUseCase,
 		waGateway:          waGateway,
 		messages:           messages,
@@ -117,9 +107,7 @@ func (p *WhatsAppMessageProcessor) HandleActivation(ctx context.Context, fromE16
 	return nil
 }
 
-func (p *WhatsAppMessageProcessor) startOnboarding(ctx context.Context, toE164, fromE164, userID string) {
-	p.sendMessage(ctx, toE164, p.msg("onboarding_intro"))
-
+func (p *WhatsAppMessageProcessor) startOnboarding(ctx context.Context, _, fromE164, userID string) {
 	parsedUserID, parseErr := uuid.Parse(userID)
 	if parseErr != nil {
 		slog.WarnContext(ctx, "onboarding.processor.start_budget_invalid_user",
@@ -185,36 +173,6 @@ func (p *WhatsAppMessageProcessor) msg(key string) string {
 		return v
 	}
 	return key
-}
-
-func (p *WhatsAppMessageProcessor) ProcessConversation(ctx context.Context, userID uuid.UUID, fromE164, text, messageID string) error {
-	if p.processUseCase == nil {
-		return application.ErrOnboardingAlreadyActive
-	}
-	result, err := p.processUseCase.Execute(ctx, usecases.ProcessOnboardingMessageInput{
-		UserID:    userID,
-		Channel:   entities.OnboardingChannelWhatsApp,
-		MessageID: messageID,
-		Text:      text,
-	})
-	if err != nil {
-		if errors.Is(err, appinterfaces.ErrOnboardingSessionNotFound) {
-			return appinterfaces.ErrOnboardingSessionNotFound
-		}
-		slog.WarnContext(ctx, "onboarding.processor.conversation_failed",
-			"user_id", userID.String(),
-			"from", payload.MaskMobile(fromE164),
-			"error", err.Error(),
-		)
-		return fmt.Errorf("onboarding.processor: process conversation: %w", err)
-	}
-	if result.Outcome == usecases.ProcessOnboardingOutcomeNoOp {
-		return application.ErrOnboardingAlreadyActive
-	}
-	if result.Reply != "" && fromE164 != "" {
-		p.sendMessage(ctx, fromE164, result.Reply)
-	}
-	return nil
 }
 
 func consumeOutcomeToMessageKey(outcome usecases.ConsumeOutcome) string {

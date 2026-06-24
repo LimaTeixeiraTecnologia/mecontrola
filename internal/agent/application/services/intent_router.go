@@ -76,15 +76,6 @@ type RouteResult struct {
 	Delivered bool
 }
 
-type OnboardingConversation struct {
-	Handled bool
-	Reply   string
-}
-
-type OnboardingContinuation interface {
-	Continue(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID string) (OnboardingConversation, error)
-}
-
 type OnboardingTurnResult struct {
 	Handled bool
 	Reply   string
@@ -138,7 +129,6 @@ type IntentRouterDeps struct {
 	BudgetCommitter            tools.BudgetConfigCommitter
 	BudgetSession              tools.BudgetSessionGateway
 	PendingExpenseConfirmation tools.PendingExpenseConfirmationGateway
-	Onboarding                 OnboardingContinuation
 	OnboardingRunner           OnboardingTurnRunner
 	Fallback                   tools.Fallback
 	WhatsAppGateway            WhatsAppOutbound

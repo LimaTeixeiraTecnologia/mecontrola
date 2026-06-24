@@ -203,7 +203,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
 		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
-		agentonboarding.NewOnboardingContinuationAdapter(onboardingModule.WhatsAppMessageProcessor, onboardingModule.TelegramMessageProcessor),
 		agent.WithSessionStore(r.db),
 		agent.WithOutboxPublisher(identityModule.OutboxPublisher),
 	)

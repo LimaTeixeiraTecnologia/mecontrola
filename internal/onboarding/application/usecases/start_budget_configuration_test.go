@@ -17,7 +17,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type unitOfWorkStartBudget struct{}
@@ -61,13 +60,13 @@ func (s *StartBudgetConfigurationSuite) TestUserIDRequired() {
 	require.ErrorIs(s.T(), err, ErrStartBudgetUserIDRequired)
 }
 
-func (s *StartBudgetConfigurationSuite) TestSessionNotFoundCreatesAwaitingIncome() {
+func (s *StartBudgetConfigurationSuite) TestSessionNotFoundCreatesSession() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
 		return sess.UserID() == s.userID &&
 			sess.Channel() == entities.OnboardingChannelTelegram &&
-			sess.State() == valueobjects.OnboardingStateAwaitingIncome
+			!sess.IsActive()
 	})).Return(nil).Once()
 
 	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
@@ -76,22 +75,19 @@ func (s *StartBudgetConfigurationSuite) TestSessionNotFoundCreatesAwaitingIncome
 	})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StartBudgetOutcomeStarted, result.Outcome)
-	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingIncome, result.NewState)
-	require.Contains(s.T(), result.Reply, "renda mensal")
 }
 
-func (s *StartBudgetConfigurationSuite) TestActiveSessionResetsToAwaitingIncome() {
+func (s *StartBudgetConfigurationSuite) TestActiveSessionResets() {
+	completedAt := time.Now().UTC()
 	existing := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelTelegram,
-		valueobjects.OnboardingStateActive,
-		entities.OnboardingSessionPayload{IncomeCents: 500000},
+		entities.OnboardingSessionPayload{IncomeCents: 500000, CompletedAt: &completedAt},
 		time.Now().UTC(),
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(existing, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
-		return sess.State() == valueobjects.OnboardingStateAwaitingIncome &&
-			sess.Payload().IncomeCents == 0
+		return !sess.IsActive() && sess.Payload().IncomeCents == 0
 	})).Return(nil).Once()
 
 	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
@@ -100,14 +96,12 @@ func (s *StartBudgetConfigurationSuite) TestActiveSessionResetsToAwaitingIncome(
 	})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StartBudgetOutcomeReset, result.Outcome)
-	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingIncome, result.NewState)
 }
 
-func (s *StartBudgetConfigurationSuite) TestNonTerminalSessionReturnsResume() {
+func (s *StartBudgetConfigurationSuite) TestInProgressSessionReturnsResume() {
 	existing := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelTelegram,
-		valueobjects.OnboardingStateAwaitingCardDecision,
 		entities.OnboardingSessionPayload{IncomeCents: 500000},
 		time.Now().UTC(),
 	)
@@ -119,7 +113,4 @@ func (s *StartBudgetConfigurationSuite) TestNonTerminalSessionReturnsResume() {
 	})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StartBudgetOutcomeResume, result.Outcome)
-	require.Equal(s.T(), valueobjects.OnboardingStateAwaitingCardDecision, result.NewState)
-	require.Contains(s.T(), result.Reply, "configurando seu orçamento")
-	require.Contains(s.T(), result.Reply, "cartao")
 }

@@ -86,7 +86,7 @@ func runRealOnboardingTurn(t *testing.T, snapshot usecases.OnboardingSnapshot, t
 	t.Helper()
 	reader := &recordingReader{snapshot: snapshot}
 	dispatcher := &recordingDispatcher{}
-	uc, err := usecases.NewRunOnboardingTurn(onboardingInterpreter(t), reader, dispatcher, recordingPhaseSetter{}, 512, noop.NewProvider(), nil, noopV2Session{})
+	uc, err := usecases.NewRunOnboardingTurn(onboardingInterpreter(t), reader, dispatcher, recordingPhaseSetter{}, 512, noop.NewProvider(), nil, nil, noopV2Session{})
 	require.NoError(t, err)
 	out, err := uc.Execute(context.Background(), usecases.RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: text})
 	require.NoError(t, err)

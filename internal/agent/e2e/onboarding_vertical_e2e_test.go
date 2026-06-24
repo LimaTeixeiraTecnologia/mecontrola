@@ -36,7 +36,6 @@ import (
 	identityrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	onbentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	onbvalueobjects "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	onbrepositories "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
@@ -209,9 +208,9 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	reader := agentonboarding.NewOnboardingStateReader(getContext)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(setPhase)
 	require.NotNil(t, phaseSetter)
-	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, getContext, nil, expLogger)
+	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, expLogger)
 	chain := newScriptedOpenRouterChain(t)
-	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil, noopV2Session{})
+	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil, nil, noopV2Session{})
 	require.NoError(t, err)
 	runner := agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
 
@@ -264,7 +263,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	userID := SeedActiveUserWA(t, db, waNumber)
-	session, sErr := onbentities.NewOnboardingSession(userID, onbentities.OnboardingChannelWhatsApp, onbvalueobjects.OnboardingStateAwaitingIncome, time.Now().UTC())
+	session, sErr := onbentities.NewOnboardingSession(userID, onbentities.OnboardingChannelWhatsApp, time.Now().UTC())
 	require.NoError(t, sErr)
 	require.NoError(t, sessionRepo.Upsert(ctx, session))
 

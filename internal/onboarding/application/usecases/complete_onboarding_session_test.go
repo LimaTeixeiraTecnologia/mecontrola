@@ -16,7 +16,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
@@ -51,11 +50,11 @@ func (s *CompleteOnboardingSessionSuite) SetupTest() {
 }
 
 func (s *CompleteOnboardingSessionSuite) TestActiveSessionAlreadyActive() {
+	completedAt := time.Now().UTC()
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateActive,
-		entities.OnboardingSessionPayload{FirstTxRecorded: true},
+		entities.OnboardingSessionPayload{FirstTxRecorded: true, CompletedAt: &completedAt},
 		time.Now().UTC(),
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
@@ -72,7 +71,6 @@ func (s *CompleteOnboardingSessionSuite) TestMissingFirstTransactionRejected() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: false},
 		time.Now().UTC(),
 	)
@@ -87,13 +85,12 @@ func (s *CompleteOnboardingSessionSuite) TestHappyPath() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: true},
 		time.Now().UTC(),
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
-		return sess.State() == valueobjects.OnboardingStateActive
+		return sess.IsActive()
 	})).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -115,7 +112,6 @@ func (s *CompleteOnboardingSessionSuite) TestUpsertFailure() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: true},
 		time.Now().UTC(),
 	)
@@ -131,7 +127,6 @@ func (s *CompleteOnboardingSessionSuite) TestPublishFailure() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: true},
 		time.Now().UTC(),
 	)
@@ -152,14 +147,13 @@ func (s *CompleteOnboardingSessionSuite) TestHappyPath_CompletedAtSetAndTurnsCle
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingFirstTransaction,
 		entities.OnboardingSessionPayload{FirstTxRecorded: true, RecentTurns: turns},
 		now,
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
 		p := sess.Payload()
-		return sess.State() == valueobjects.OnboardingStateActive &&
+		return sess.IsActive() &&
 			p.CompletedAt != nil &&
 			len(p.RecentTurns) == 0
 	})).Return(nil).Once()

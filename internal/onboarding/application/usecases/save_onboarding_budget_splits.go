@@ -98,8 +98,7 @@ func (uc *SaveOnboardingBudgetSplits) Execute(ctx context.Context, in SaveOnboar
 
 		now := time.Now().UTC()
 		withSplit := session.WithCustomSplit(allocation, now)
-		updated := withSplit.With(valueobjects.OnboardingStateAwaitingFirstTransaction, withSplit.Payload(), now)
-		if upsertErr := repo.Upsert(ctx, updated); upsertErr != nil {
+		if upsertErr := repo.Upsert(ctx, withSplit); upsertErr != nil {
 			return SaveOnboardingBudgetSplitsResult{}, fmt.Errorf("onboarding: save splits: upsert session: %w", upsertErr)
 		}
 

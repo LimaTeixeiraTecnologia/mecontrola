@@ -14,7 +14,6 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type LoadOnboardingTurnsSuite struct {
@@ -64,7 +63,6 @@ func (s *LoadOnboardingTurnsSuite) TestLoadTurns() {
 					session := entities.HydrateOnboardingSession(
 						s.userID,
 						entities.OnboardingChannelWhatsApp,
-						valueobjects.OnboardingStateAwaitingToken,
 						entities.OnboardingSessionPayload{RecentTurns: turns},
 						now,
 					)
@@ -87,7 +85,6 @@ func (s *LoadOnboardingTurnsSuite) TestLoadTurns() {
 					session := entities.HydrateOnboardingSession(
 						s.userID,
 						entities.OnboardingChannelWhatsApp,
-						valueobjects.OnboardingStateAwaitingToken,
 						entities.OnboardingSessionPayload{},
 						now,
 					)

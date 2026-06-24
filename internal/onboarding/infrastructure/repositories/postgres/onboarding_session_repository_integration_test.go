@@ -51,36 +51,35 @@ func (s *OnboardingSessionRepositorySuite) TestUpsertFindAndMarkActive() {
 	_, err = repo.Find(ctx, userID)
 	s.Require().ErrorIs(err, appinterfaces.ErrOnboardingSessionNotFound)
 
-	initial := entities.HydrateOnboardingSession(
+	initial, err := entities.NewOnboardingSession(
 		userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingIncome,
-		entities.OnboardingSessionPayload{},
 		time.Now().UTC(),
 	)
+	s.Require().NoError(err)
 	s.Require().NoError(repo.Upsert(ctx, initial))
 
 	got, err := repo.Find(ctx, userID)
 	s.Require().NoError(err)
 	s.Equal(userID, got.UserID())
 	s.Equal(entities.OnboardingChannelWhatsApp, got.Channel())
-	s.Equal(valueobjects.OnboardingStateAwaitingIncome, got.State())
+	s.False(got.IsActive())
 
-	updated := initial.With(
-		valueobjects.OnboardingStateAwaitingCardDecision,
-		entities.OnboardingSessionPayload{IncomeCents: 350000},
-		time.Now().UTC(),
-	)
+	income, err := valueobjects.NewMonthlyIncome(350000)
+	s.Require().NoError(err)
+	updated := initial.WithIncome(income, time.Now().UTC())
 	s.Require().NoError(repo.Upsert(ctx, updated))
 
 	got2, err := repo.Find(ctx, userID)
 	s.Require().NoError(err)
-	s.Equal(valueobjects.OnboardingStateAwaitingCardDecision, got2.State())
+	s.False(got2.IsActive())
 	s.Equal(int64(350000), got2.Payload().IncomeCents)
 
-	s.Require().NoError(repo.MarkActive(ctx, userID))
+	completed := updated.WithCompletion(time.Now().UTC())
+	s.Require().NoError(repo.Upsert(ctx, completed))
 
 	got3, err := repo.Find(ctx, userID)
 	s.Require().NoError(err)
-	s.Equal(valueobjects.OnboardingStateActive, got3.State())
+	s.True(got3.IsActive())
+	s.NotNil(got3.Payload().CompletedAt)
 }

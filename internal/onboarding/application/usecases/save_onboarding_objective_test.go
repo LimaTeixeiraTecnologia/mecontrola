@@ -44,7 +44,6 @@ func (s *SaveOnboardingObjectiveSuite) TestHappyPath() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingIncome,
 		entities.OnboardingSessionPayload{},
 		time.Now().UTC(),
 	)

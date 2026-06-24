@@ -18,7 +18,6 @@ func newSession(t *testing.T) entities.OnboardingSession {
 	session, err := entities.NewOnboardingSession(
 		uuid.New(),
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingIncome,
 		time.Now().UTC(),
 	)
 	require.NoError(t, err)

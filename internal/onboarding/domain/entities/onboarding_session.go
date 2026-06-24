@@ -100,7 +100,6 @@ type OnboardingBudgetAllocationEntry struct {
 type OnboardingSession struct {
 	userID    uuid.UUID
 	channel   OnboardingChannel
-	state     valueobjects.OnboardingState
 	payload   OnboardingSessionPayload
 	updatedAt time.Time
 }
@@ -108,7 +107,6 @@ type OnboardingSession struct {
 func NewOnboardingSession(
 	userID uuid.UUID,
 	channel OnboardingChannel,
-	state valueobjects.OnboardingState,
 	updatedAt time.Time,
 ) (OnboardingSession, error) {
 	if userID == uuid.Nil {
@@ -120,7 +118,6 @@ func NewOnboardingSession(
 	return OnboardingSession{
 		userID:    userID,
 		channel:   channel,
-		state:     state,
 		updatedAt: updatedAt,
 	}, nil
 }
@@ -128,32 +125,22 @@ func NewOnboardingSession(
 func HydrateOnboardingSession(
 	userID uuid.UUID,
 	channel OnboardingChannel,
-	state valueobjects.OnboardingState,
 	payload OnboardingSessionPayload,
 	updatedAt time.Time,
 ) OnboardingSession {
 	return OnboardingSession{
 		userID:    userID,
 		channel:   channel,
-		state:     state,
 		payload:   payload,
 		updatedAt: updatedAt,
 	}
 }
 
-func (s OnboardingSession) UserID() uuid.UUID                   { return s.userID }
-func (s OnboardingSession) Channel() OnboardingChannel          { return s.channel }
-func (s OnboardingSession) State() valueobjects.OnboardingState { return s.state }
-func (s OnboardingSession) Payload() OnboardingSessionPayload   { return s.payload }
-func (s OnboardingSession) UpdatedAt() time.Time                { return s.updatedAt }
-func (s OnboardingSession) IsActive() bool                      { return s.state.IsTerminal() }
-
-func (s OnboardingSession) With(state valueobjects.OnboardingState, payload OnboardingSessionPayload, updatedAt time.Time) OnboardingSession {
-	s.state = state
-	s.payload = payload
-	s.updatedAt = updatedAt
-	return s
-}
+func (s OnboardingSession) UserID() uuid.UUID                 { return s.userID }
+func (s OnboardingSession) Channel() OnboardingChannel        { return s.channel }
+func (s OnboardingSession) Payload() OnboardingSessionPayload { return s.payload }
+func (s OnboardingSession) UpdatedAt() time.Time              { return s.updatedAt }
+func (s OnboardingSession) IsActive() bool                    { return s.payload.CompletedAt != nil }
 
 func (s OnboardingSession) WithObjective(objective valueobjects.FinancialObjective, updatedAt time.Time) OnboardingSession {
 	s.payload.Objective = objective.String()

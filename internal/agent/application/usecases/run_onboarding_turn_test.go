@@ -230,7 +230,7 @@ func (s *RunOnboardingTurnSuite) TestWelcomeOnEmptyPhase() {
 	s.Contains(out.Reply, "Liberdade Financeira")
 	s.Contains(out.Reply, "Etapa 1/4")
 	s.Equal(OnbPhaseObjective, setter.last())
-	s.False(interp.called)
+	s.True(interp.called)
 }
 
 func (s *RunOnboardingTurnSuite) TestEmitWelcomeIdempotentWhenAlreadySent() {
@@ -606,7 +606,7 @@ func (s *RunOnboardingTurnSuite) TestWelcomeSignalEmptyPhaseEmitsWelcome() {
 	s.True(out.Handled)
 	s.Equal(scriptWelcome, out.Reply)
 	s.Equal(OnbPhaseObjective, setter.last())
-	s.False(interp.called)
+	s.True(interp.called)
 }
 
 func (s *RunOnboardingTurnSuite) TestHistoryGatewayAppendCalledAfterPhase() {

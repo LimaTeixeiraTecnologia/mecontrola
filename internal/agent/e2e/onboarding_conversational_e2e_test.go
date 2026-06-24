@@ -18,7 +18,6 @@ import (
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	onbentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
-	onbvalueobjects "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
@@ -73,18 +72,18 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	require.NotNil(t, reader)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(setPhase)
 	require.NotNil(t, phaseSetter)
-	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, getContext, nil, fakeOnboardingExpenseLogger{})
+	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, fakeOnboardingExpenseLogger{})
 
-	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil, noopV2Session{})
+	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil, nil, noopV2Session{})
 	require.NoError(t, err)
 	return turn
 }
 
-func seedOnboardingSession(t *testing.T, db *sqlx.DB, userID uuid.UUID, state onbvalueobjects.OnboardingState) {
+func seedOnboardingSession(t *testing.T, db *sqlx.DB, userID uuid.UUID) {
 	t.Helper()
 	o11y := noop.NewProvider()
 	repo := repositories.NewRepositoryFactory(o11y).OnboardingSessionRepository(db)
-	session, err := onbentities.NewOnboardingSession(userID, onbentities.OnboardingChannelWhatsApp, state, time.Now().UTC())
+	session, err := onbentities.NewOnboardingSession(userID, onbentities.OnboardingChannelWhatsApp, time.Now().UTC())
 	require.NoError(t, err)
 	require.NoError(t, repo.Upsert(context.Background(), session))
 }
@@ -141,7 +140,7 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 	db, _ := postgres.NewTestDatabase(t)
 
 	userID := SeedActiveUserWA(t, db, "+5511955554444")
-	seedOnboardingSession(t, db, userID, onbvalueobjects.OnboardingStateAwaitingIncome)
+	seedOnboardingSession(t, db, userID)
 
 	interp := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
 		toolCallResponse("save_onboarding_objective", map[string]any{"objective": "fazer uma viagem"}),

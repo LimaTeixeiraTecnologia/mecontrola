@@ -101,10 +101,6 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 	if err != nil {
 		return entities.OnboardingSession{}, fmt.Errorf("onboarding: session_repository.find: %w", err)
 	}
-	parsedState, err := valueobjects.ParseOnboardingState(state)
-	if err != nil {
-		return entities.OnboardingSession{}, fmt.Errorf("onboarding: session_repository.find: %w", err)
-	}
 
 	var pj onboardingSessionPayloadJSON
 	if len(payload) > 0 {
@@ -113,7 +109,7 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 		}
 	}
 
-	if parsedState == valueobjects.OnboardingStateActive && pj.CompletedAt == nil {
+	if state == valueobjects.OnboardingStateActive && pj.CompletedAt == nil {
 		r.driftCounter.Add(ctx, 1)
 		r.o11y.Logger().Warn(ctx, "onboarding.repository.state_drift",
 			observability.String("session_id", uid.String()),
@@ -136,7 +132,7 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 		ObjectiveProfile: pj.ObjectiveProfile,
 	}
 
-	return entities.HydrateOnboardingSession(uid, parsedChannel, parsedState, domainPayload, updatedAt), nil
+	return entities.HydrateOnboardingSession(uid, parsedChannel, domainPayload, updatedAt), nil
 }
 
 func (r *onboardingSessionRepository) Upsert(ctx context.Context, session entities.OnboardingSession) error {
@@ -174,10 +170,15 @@ func (r *onboardingSessionRepository) Upsert(ctx context.Context, session entiti
 		return fmt.Errorf("onboarding: session_repository.upsert: marshal payload: %w", err)
 	}
 
+	stateColumn := valueobjects.OnboardingStateInProgress
+	if session.IsActive() {
+		stateColumn = valueobjects.OnboardingStateActive
+	}
+
 	_, err = r.db.ExecContext(ctx, query,
 		session.UserID(),
 		session.Channel().String(),
-		session.State().String(),
+		stateColumn,
 		raw,
 		session.UpdatedAt(),
 	)

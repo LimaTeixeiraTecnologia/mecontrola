@@ -110,7 +110,7 @@ func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, cha
 
 func budgetDefaultStartReply(reply string) string {
 	if strings.TrimSpace(reply) == "" {
-		return "Beleza! Qual a sua renda mensal? Pode me dizer o valor."
+		return "Beleza! Vamos montar seu plano. Qual é o seu objetivo financeiro principal?"
 	}
 	return reply
 }

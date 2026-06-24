@@ -53,7 +53,6 @@ func (s *SaveOnboardingBudgetSplitsSuite) seedSession() entities.OnboardingSessi
 	return entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		valueobjects.OnboardingStateAwaitingSplitConfirm,
 		entities.OnboardingSessionPayload{IncomeCents: 500000},
 		time.Now().UTC(),
 	)
@@ -62,7 +61,7 @@ func (s *SaveOnboardingBudgetSplitsSuite) seedSession() entities.OnboardingSessi
 func (s *SaveOnboardingBudgetSplitsSuite) TestHappyPath() {
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(s.seedSession(), nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
-		return sess.State() == valueobjects.OnboardingStateAwaitingFirstTransaction &&
+		return !sess.IsActive() &&
 			len(sess.Payload().CustomSplit) == 5
 	})).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()

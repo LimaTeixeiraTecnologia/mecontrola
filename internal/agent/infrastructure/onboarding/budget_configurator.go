@@ -25,14 +25,13 @@ func NewBudgetConfiguratorAdapter(uc *usecases.StartBudgetConfiguration) tools.B
 
 func (a *budgetConfiguratorAdapter) Start(ctx context.Context, userID uuid.UUID, channel string) (string, error) {
 	parsed := mapAgentChannelToOnboarding(channel)
-	result, err := a.uc.Execute(ctx, usecases.StartBudgetConfigurationInput{
+	if _, err := a.uc.Execute(ctx, usecases.StartBudgetConfigurationInput{
 		UserID:  userID,
 		Channel: parsed,
-	})
-	if err != nil {
+	}); err != nil {
 		return "", err
 	}
-	return result.Reply, nil
+	return "", nil
 }
 
 func mapAgentChannelToOnboarding(channel string) entities.OnboardingChannel {
