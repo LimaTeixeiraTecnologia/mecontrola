@@ -13,23 +13,24 @@ import (
 )
 
 type Config struct {
-	AppConfig          AppConfig           `mapstructure:",squash"`
-	HTTPConfig         HTTPConfig          `mapstructure:",squash"`
-	DBConfig           DBConfig            `mapstructure:",squash"`
-	O11yConfig         O11yConfig          `mapstructure:",squash"`
-	OutboxConfig       OutboxConfig        `mapstructure:",squash"`
-	KiwifyConfig       KiwifyConfig        `mapstructure:",squash"`
-	BillingConfig      BillingConfig       `mapstructure:",squash"`
-	OnboardingConfig   OnboardingConfig    `mapstructure:",squash"`
-	WhatsAppConfig     WhatsAppConfig      `mapstructure:",squash"`
-	TelegramConfig     TelegramConfig      `mapstructure:",squash"`
-	AgentConfig        AgentConfig         `mapstructure:",squash"`
-	IdentityConfig     IdentityConfig      `mapstructure:",squash"`
-	BudgetsConfig      BudgetsConfig       `mapstructure:",squash"`
-	CardConfig         CardConfig          `mapstructure:",squash"`
-	TransactionsConfig TransactionsConfig  `mapstructure:",squash"`
-	AuthRateLimit      AuthRateLimitConfig `mapstructure:",squash"`
-	EmailConfig        EmailConfig         `mapstructure:",squash"`
+	AppConfig            AppConfig            `mapstructure:",squash"`
+	HTTPConfig           HTTPConfig           `mapstructure:",squash"`
+	DBConfig             DBConfig             `mapstructure:",squash"`
+	O11yConfig           O11yConfig           `mapstructure:",squash"`
+	OutboxConfig         OutboxConfig         `mapstructure:",squash"`
+	KiwifyConfig         KiwifyConfig         `mapstructure:",squash"`
+	BillingConfig        BillingConfig        `mapstructure:",squash"`
+	OnboardingConfig     OnboardingConfig     `mapstructure:",squash"`
+	WhatsAppConfig       WhatsAppConfig       `mapstructure:",squash"`
+	TelegramConfig       TelegramConfig       `mapstructure:",squash"`
+	AgentConfig          AgentConfig          `mapstructure:",squash"`
+	IdentityConfig       IdentityConfig       `mapstructure:",squash"`
+	BudgetsConfig        BudgetsConfig        `mapstructure:",squash"`
+	CardConfig           CardConfig           `mapstructure:",squash"`
+	TransactionsConfig   TransactionsConfig   `mapstructure:",squash"`
+	AuthRateLimit        AuthRateLimitConfig  `mapstructure:",squash"`
+	EmailConfig          EmailConfig          `mapstructure:",squash"`
+	WorkflowKernelConfig WorkflowKernelConfig `mapstructure:",squash"`
 }
 
 type EmailConfig struct {
@@ -363,6 +364,16 @@ type OutboxConfig struct {
 	ReaperStuckAfter          time.Duration `mapstructure:"OUTBOX_REAPER_STUCK_AFTER"`
 }
 
+type WorkflowKernelConfig struct {
+	TransactionsWriteEnabled  bool          `mapstructure:"WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED"`
+	MaxAttempts               int           `mapstructure:"WORKFLOW_KERNEL_MAX_ATTEMPTS"`
+	RetryBaseBackoff          time.Duration `mapstructure:"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF"`
+	RetryMaxBackoff           time.Duration `mapstructure:"WORKFLOW_KERNEL_RETRY_MAX_BACKOFF"`
+	HousekeepingRetentionDays int           `mapstructure:"WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS"`
+	HousekeepingSchedule      string        `mapstructure:"WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE"`
+	HousekeepingBatchSize     int           `mapstructure:"WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE"`
+}
+
 type configLoader struct {
 	v    *viper.Viper
 	path string
@@ -397,6 +408,7 @@ func (l *configLoader) load() (*Config, error) {
 	l.setIdentityDefaults()
 	l.setEmailDefaults()
 	l.setAuthRateLimitDefaults()
+	l.setWorkflowKernelDefaults()
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -534,6 +546,13 @@ func (l *configLoader) envKeys() []string {
 		"IDENTITY_GATEWAY_AUTH_WINDOW",
 		"AUTH_RATE_LIMIT_PER_USER_PER_MIN",
 		"AUTH_RATE_LIMIT_PER_USER_BURST",
+		"WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED",
+		"WORKFLOW_KERNEL_MAX_ATTEMPTS",
+		"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF",
+		"WORKFLOW_KERNEL_RETRY_MAX_BACKOFF",
+		"WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS",
+		"WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE",
+		"WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE",
 	}
 }
 
@@ -628,6 +647,16 @@ func (l *configLoader) setAuthRateLimitDefaults() {
 	l.v.SetDefault("AUTH_RATE_LIMIT_PER_USER_BURST", 60)
 }
 
+func (l *configLoader) setWorkflowKernelDefaults() {
+	l.v.SetDefault("WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED", false)
+	l.v.SetDefault("WORKFLOW_KERNEL_MAX_ATTEMPTS", 3)
+	l.v.SetDefault("WORKFLOW_KERNEL_RETRY_BASE_BACKOFF", 200*time.Millisecond)
+	l.v.SetDefault("WORKFLOW_KERNEL_RETRY_MAX_BACKOFF", 5*time.Second)
+	l.v.SetDefault("WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS", 30)
+	l.v.SetDefault("WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE", "@daily")
+	l.v.SetDefault("WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE", 500)
+}
+
 func (l *configLoader) setBillingDefaults() {
 	l.v.SetDefault("BILLING_ENTITLEMENT_CACHE_CAPACITY", 50000)
 	l.v.SetDefault("BILLING_ENTITLEMENT_CACHE_TTL", 5*time.Minute)
@@ -690,6 +719,7 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validateIdentity()...)
 	errs = append(errs, c.validateRateLimits()...)
 	errs = append(errs, c.KiwifyConfig.validateProductIDs()...)
+	errs = append(errs, c.validateWorkflowKernel()...)
 
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
@@ -1227,6 +1257,68 @@ func (l *configLoader) setTelegramDefaults() {
 	l.v.SetDefault("TELEGRAM_MSG_CODE_INVALID_CHECK_AGAIN", "Codigo invalido. Verifique se digitou ATIVAR seguido do codigo correto.")
 	l.v.SetDefault("TELEGRAM_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
 	l.v.SetDefault("TELEGRAM_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para vincular seu Telegram, envie ATIVAR seguido do codigo recebido por e-mail.")
+}
+
+func (c *Config) validateWorkflowKernel() []string {
+	wk := c.WorkflowKernelConfig
+	if wk.MaxAttempts == 0 && wk.HousekeepingRetentionDays == 0 && wk.HousekeepingBatchSize == 0 {
+		return nil
+	}
+
+	var errs []string
+
+	if wk.MaxAttempts < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_MAX_ATTEMPTS inválido %d: deve ser maior que zero",
+			wk.MaxAttempts,
+		))
+	}
+
+	if wk.RetryBaseBackoff <= 0 {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF inválido %s: deve ser maior que zero",
+			wk.RetryBaseBackoff,
+		))
+	}
+
+	if wk.RetryMaxBackoff <= 0 {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_RETRY_MAX_BACKOFF inválido %s: deve ser maior que zero",
+			wk.RetryMaxBackoff,
+		))
+	}
+
+	if wk.RetryBaseBackoff > 0 && wk.RetryMaxBackoff > 0 && wk.RetryBaseBackoff > wk.RetryMaxBackoff {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF (%s) não pode ser maior que WORKFLOW_KERNEL_RETRY_MAX_BACKOFF (%s)",
+			wk.RetryBaseBackoff, wk.RetryMaxBackoff,
+		))
+	}
+
+	if wk.HousekeepingRetentionDays < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS inválido %d: deve ser maior que zero",
+			wk.HousekeepingRetentionDays,
+		))
+	}
+
+	if wk.HousekeepingBatchSize < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE inválido %d: deve ser maior que zero",
+			wk.HousekeepingBatchSize,
+		))
+	}
+
+	if wk.HousekeepingSchedule != "" {
+		if _, err := cron.ParseStandard(wk.HousekeepingSchedule); err != nil {
+			errs = append(errs, fmt.Sprintf(
+				"WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE inválido %q: %v",
+				wk.HousekeepingSchedule, err,
+			))
+		}
+	}
+
+	return errs
 }
 
 func validateKiwifyHTTP(k KiwifyConfig) []string {

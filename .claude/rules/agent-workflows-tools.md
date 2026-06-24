@@ -106,6 +106,28 @@ Proibido:
 
 Este padrao e **exclusivo de `internal/agent`**; outros modulos NAO devem ter Thread, Run ou WorkingMemory proprios.
 
+### Addendum R-AGENT-WF-001.6-A — Distincao kernel-mecanismo vs agent-semantico [HARD]
+
+Adicionado em 2026-06-24 (ADR-004) para coexistir com `R-WF-KERNEL-001`.
+
+O kernel generico em `internal/platform/workflow` oferece `Run` como **mecanismo de execucao
+duravel** — um `Snapshot` + `StepRecord` com `RunStatus` fechado, identificado por `correlationKey`
+opaca. Esse mecanismo e **distinto** do `Run auditavel semantico` do agent:
+
+| Conceito | Kernel (`internal/platform/workflow`) | Agent (`internal/agent`) |
+|----------|--------------------------------------|--------------------------|
+| Run | mecanismo generico; `correlationKey` opaca | Run semantico; vinculado a `thread_id`/`run_id` auditavel |
+| Status | `RunStatus` fechado (kernel) | `RunStatus` fechado (agent) — tipos distintos, nao compartilhados |
+| Suspend/Resume | `Snapshot` duravel; retomada por `Engine.Resume` | `pendingexpense.Draft` como estado do run suspenso do kernel |
+| Thread | ausente no kernel | `(user_id, channel)` resolvido via `ThreadGateway` |
+| WorkingMemory | ausente no kernel | `resource`-scoped, no system prompt |
+
+O `internal/agent` PODE consumir `Engine[S]` do kernel para seus workflows de escrita, passando
+sua estrutura de estado propria como `S`. A semantica Thread/WorkingMemory/PendingStep permanece
+exclusiva do agent — o kernel nao conhece esses conceitos. Essa distincao nao reabre brecha: a
+proibicao de Thread, Run semantico e WorkingMemory **fora de `internal/agent`** se mantem; o
+kernel oferece apenas o mecanismo anonimo.
+
 ## R-AGENT-WF-001.7 — Pending step obrigatorio em erro de categoria [HARD]
 
 Quando `categoryClarification` detecta `CategoryAmbiguousError` ou `CategoryNeedsConfirmationError`, DEVE salvar `pendingexpense.Draft` com `AwaitingKind` fechado antes de retornar `OutcomeClarify`. Proibido retornar clarificacao sem salvar o estado de retomada.
@@ -125,6 +147,16 @@ O `ContextBuilder` (ou equivalente) DEVE incluir o conteudo de `WorkingMemory` d
 - `WorkingMemory` e escopo `resource` (por `user_id`), compartilhada entre canais.
 - Formato: markdown estruturado; atualizavel via usecase dedicado.
 - Ausencia de working memory (usuario novo) NAO e erro — system prompt e renderizado sem ela.
+
+### Addendum R-AGENT-WF-001.8-A — WorkingMemory e exclusiva do agent [HARD]
+
+Adicionado em 2026-06-24 (ADR-004) para coexistir com `R-WF-KERNEL-001`.
+
+`WorkingMemory` e um conceito semantico exclusivo de `internal/agent`. O kernel generico
+(`internal/platform/workflow`) NAO tem WorkingMemory, system prompt ou qualquer mecanismo de
+contexto conversacional. Quando o agent consome o kernel via `Engine[S]`, o estado `S` passado
+ao kernel pode conter dados derivados de WorkingMemory, mas a logica de construcao e injecao
+desse contexto e responsabilidade exclusiva do agent, nunca do kernel.
 
 ## Gate de Verificacao
 

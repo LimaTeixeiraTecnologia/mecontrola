@@ -1576,3 +1576,167 @@ func (s *ConfigSuite) writeEnvFile(path, content string) {
 	err := os.WriteFile(path+"/.env", []byte(content), 0o600)
 	s.Require().NoError(err)
 }
+
+func (s *ConfigSuite) newValidWorkflowKernelConfig() configs.WorkflowKernelConfig {
+	return configs.WorkflowKernelConfig{
+		MaxAttempts:               3,
+		RetryBaseBackoff:          200 * time.Millisecond,
+		RetryMaxBackoff:           5 * time.Second,
+		HousekeepingRetentionDays: 30,
+		HousekeepingSchedule:      "@daily",
+		HousekeepingBatchSize:     500,
+	}
+}
+
+func (s *ConfigSuite) TestValidateWorkflowKernel() {
+	type args struct {
+		build func() *configs.Config
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(err error)
+	}{
+		{
+			name: "deve aceitar config valida com defaults",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					return cfg
+				},
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve aceitar config com zero values (skip validation)",
+			args: args{
+				build: func() *configs.Config {
+					return s.newBaseConfig()
+				},
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name: "deve rejeitar MaxAttempts menor que 1",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.MaxAttempts = 0
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_MAX_ATTEMPTS inválido")
+			},
+		},
+		{
+			name: "deve rejeitar RetryBaseBackoff zero",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.RetryBaseBackoff = 0
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_RETRY_BASE_BACKOFF inválido")
+			},
+		},
+		{
+			name: "deve rejeitar RetryMaxBackoff zero",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.RetryMaxBackoff = 0
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_RETRY_MAX_BACKOFF inválido")
+			},
+		},
+		{
+			name: "deve rejeitar base maior que max backoff",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.RetryBaseBackoff = 10 * time.Second
+					cfg.WorkflowKernelConfig.RetryMaxBackoff = 1 * time.Second
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_RETRY_BASE_BACKOFF")
+				s.assertConfigError(err, "não pode ser maior que WORKFLOW_KERNEL_RETRY_MAX_BACKOFF")
+			},
+		},
+		{
+			name: "deve rejeitar HousekeepingRetentionDays menor que 1",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.HousekeepingRetentionDays = 0
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS inválido")
+			},
+		},
+		{
+			name: "deve rejeitar HousekeepingBatchSize menor que 1",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.HousekeepingBatchSize = 0
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE inválido")
+			},
+		},
+		{
+			name: "deve rejeitar HousekeepingSchedule invalido",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.HousekeepingSchedule = "nao-e-cron"
+					return cfg
+				},
+			},
+			expect: func(err error) {
+				s.assertConfigError(err, "WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE inválido")
+			},
+		},
+		{
+			name: "deve aceitar HousekeepingSchedule vazio",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.WorkflowKernelConfig = s.newValidWorkflowKernelConfig()
+					cfg.WorkflowKernelConfig.HousekeepingSchedule = ""
+					return cfg
+				},
+			},
+			expect: func(err error) { s.NoError(err) },
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			cfg := scenario.args.build()
+			err := cfg.Validate()
+			scenario.expect(err)
+		})
+	}
+}

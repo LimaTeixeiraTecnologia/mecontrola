@@ -39,7 +39,8 @@ Se duas regras do mesmo nível conflitarem:
 ## Regras de Modulo
 
 - `transactions-workflows.md` — codifica o gate hard ADR-006 para o modulo `internal/transactions`: `Decide*` puro obrigatorio, validacao so em smart constructors, producers so mapeiam domain event, cardinalidade controlada em metricas. Ver `.claude/rules/transactions-workflows.md`.
-- `agent-workflows-tools.md` — codifica o gate hard `R-AGENT-WF-001` para o modulo `internal/agent`: roteamento canonico `Workflow -> Tool -> binding -> usecase`, proibido novo `case` de dominio no switch de `daily_ledger_agent.go`, Tool fina sem regra/SQL/branching, `ToolOutcome`/`RunStatus` como tipos fechados (DMMF state-as-type), LLM so no step de parse, Run auditavel. Ver `.claude/rules/agent-workflows-tools.md`.
+- `agent-workflows-tools.md` — codifica o gate hard `R-AGENT-WF-001` para o modulo `internal/agent`: roteamento canonico `Workflow -> Tool -> binding -> usecase`, proibido novo `case` de dominio no switch de `daily_ledger_agent.go`, Tool fina sem regra/SQL/branching, `ToolOutcome`/`RunStatus` como tipos fechados (DMMF state-as-type), LLM so no step de parse, Run auditavel. Addendum `.6-A`/`.8-A` distingue mecanismo kernel de semantica agent. Ver `.claude/rules/agent-workflows-tools.md`.
+- `workflow-kernel.md` — codifica o gate hard `R-WF-KERNEL-001` para `internal/platform/workflow`: kernel generico sem import de dominio, sem regra/SQL/branching de dominio fora do adapter postgres, estados como tipos fechados (`RunStatus`/`StepStatus`/`SuspendReason`), cardinalidade controlada (sem `user_id`/`correlation_key`/`category_id`), LLM proibido. Gate bloqueante (ADR-004): redigido antes de qualquer codigo do kernel. Ver `.claude/rules/workflow-kernel.md`.
 
 ## Proibido
 - Aprovação sem evidência.

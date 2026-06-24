@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -12,13 +14,40 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 const defaultPolicyMinConfidence = 0.8
+
+type SettleRegistry struct {
+	mu      sync.Mutex
+	entries map[uuid.UUID]steps.AuditSettleFunc
+}
+
+func NewSettleRegistry() *SettleRegistry {
+	return &SettleRegistry{entries: make(map[uuid.UUID]steps.AuditSettleFunc)}
+}
+
+func (r *SettleRegistry) Register(id uuid.UUID, fn steps.AuditSettleFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries[id] = fn
+}
+
+func (r *SettleRegistry) pop(id uuid.UUID) (steps.AuditSettleFunc, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fn, ok := r.entries[id]
+	if ok {
+		delete(r.entries, id)
+	}
+	return fn, ok
+}
 
 type DailyLedgerAgent struct {
 	parser                     IntentParser
@@ -51,11 +80,15 @@ type DailyLedgerAgent struct {
 	policyBlockedTotal         observability.Counter
 	idempotencyReplayTotal     observability.Counter
 	loc                        *time.Location
-	registry                   *workflow.Registry
+	registry                   *workflow.IntentRegistry
 	recorder                   *tools.Recorder
 	clarification              *tools.ClarificationResolver
 	budgetRunner               *tools.BudgetSessionRunner
 	conversational             *tools.Conversational
+	kernelEnabled              bool
+	kernelEngine               platform.Engine[steps.ExpenseState]
+	kernelDef                  platform.Definition[steps.ExpenseState]
+	settleReg                  *SettleRegistry
 }
 
 func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) (*DailyLedgerAgent, error) {
@@ -95,6 +128,12 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 	agent.clarification = tools.NewClarificationResolver(deps.PendingExpenseConfirmation, agent.recorder, o11y)
 	agent.budgetRunner = tools.NewBudgetSessionRunner(agent.recorder, deps.BudgetSession, deps.BudgetConvo, deps.BudgetCommitter, loc, o11y)
 	agent.conversational = tools.NewConversational(agent.recorder, deps.Fallback, o11y)
+	if deps.Kernel != nil && deps.Kernel.Engine != nil {
+		agent.kernelEnabled = true
+		agent.kernelEngine = deps.Kernel.Engine
+		agent.settleReg = deps.Kernel.SettleReg
+		agent.kernelDef = agent.buildKernelDefinition(deps.Kernel)
+	}
 	registry, err := agent.buildRegistry()
 	if err != nil {
 		return nil, fmt.Errorf("construir workflow registry: %w", err)
@@ -117,7 +156,7 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 }
 
 func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
-	if a.pendingExpenseConfirmation != nil {
+	if a.pendingExpenseConfirmation != nil || a.kernelEnabled {
 		if handled, result := a.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, text); handled {
 			return result
 		}
@@ -185,6 +224,10 @@ func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, 
 func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
 	kind := parsed.Intent.Kind()
 
+	if a.kernelEnabled && a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
+		return a.dispatchWriteKernel(ctx, principal, channel, messageID, trimmed, parsed, kind)
+	}
+
 	wf, ok := a.registry.Resolve(kind)
 	if !ok {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.unknown_write_kind",
@@ -213,6 +256,63 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
 	}
 	return toRouteResult(result)
+}
+
+func (a *DailyLedgerAgent) dispatchWriteKernel(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent, kind intent.Kind) RouteResult {
+	in := tools.ToolInput{
+		UserID:     principal.UserID,
+		Channel:    channel,
+		Intent:     parsed.Intent,
+		MessageID:  messageID,
+		Text:       trimmed,
+		Confidence: parsed.Confidence,
+		Parsed:     parsed,
+	}
+	initial := workflow.ExpenseStateFromToolInput(in)
+	correlationKey := fmt.Sprintf("%s:%s", principal.UserID.String(), channel)
+	result, err := a.kernelEngine.Start(ctx, a.kernelDef, correlationKey, initial)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.kernel_start_failed",
+			observability.String("kind", kind.String()),
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	if result.Status == platform.RunStatusSuspended {
+		if result.Suspend != nil {
+			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
+			return RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
+		}
+	}
+	if result.Status == platform.RunStatusFailed {
+		a.callSettle(ctx, result.State.DecisionID, false)
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	a.callSettle(ctx, result.State.DecisionID, result.State.Outcome == tools.OutcomeRouted)
+	toolResult := workflow.ExpenseStateToToolResult(result.State)
+	a.record(ctx, kind.String(), channel, toolResult.Outcome)
+	return RouteResult{Reply: toolResult.Reply, Outcome: toolResult.Outcome, Kind: toolResult.Kind}
+}
+
+func (a *DailyLedgerAgent) callSettle(ctx context.Context, decisionID uuid.UUID, executed bool) {
+	if a.settleReg == nil || decisionID == uuid.Nil {
+		return
+	}
+	fn, ok := a.settleReg.pop(decisionID)
+	if !ok {
+		return
+	}
+	fn(ctx, executed)
+}
+
+func (a *DailyLedgerAgent) EnableKernel(engine platform.Engine[steps.ExpenseState], def platform.Definition[steps.ExpenseState], reg *SettleRegistry) {
+	a.kernelEnabled = true
+	a.kernelEngine = engine
+	a.kernelDef = def
+	a.settleReg = reg
 }
 
 func (a *DailyLedgerAgent) authorizeWrite(ctx context.Context, principal Principal, effectiveUserID uuid.UUID, kind intent.Kind, channel string) bool {
@@ -285,6 +385,58 @@ func (a *DailyLedgerAgent) record(ctx context.Context, kind, channel string, out
 const expenseCancelledText = "Ok, cancelei o lançamento. Quando quiser registrar, é só me dizer. 😊"
 
 func (a *DailyLedgerAgent) continuePendingExpenseConfirmation(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	if a.kernelEnabled && a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
+		return a.continuePendingExpenseConfirmationKernel(ctx, userID, channel, text)
+	}
+	return a.continuePendingExpenseConfirmationLegacy(ctx, userID, channel, text)
+}
+
+func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
+	resumeState := steps.ExpenseState{
+		UserID:     userID,
+		Channel:    channel,
+		ResumeText: text,
+	}
+	resumeBytes, err := json.Marshal(resumeState)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.kernel_resume_encode_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	result, err := a.kernelEngine.Resume(ctx, a.kernelDef, correlationKey, resumeBytes)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.kernel_resume_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	if result.Status == platform.RunStatusRunning || result.RunID == uuid.Nil {
+		return a.continuePendingExpenseConfirmationLegacy(ctx, userID, channel, text)
+	}
+	kind := resolveIntentKindFromDraft(result.State.ToDraft())
+	if result.Status == platform.RunStatusSuspended {
+		if result.Suspend != nil {
+			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
+			return true, RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
+		}
+		return false, RouteResult{}
+	}
+	if result.Status == platform.RunStatusFailed {
+		a.callSettle(ctx, result.State.DecisionID, false)
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return true, RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+	}
+	a.callSettle(ctx, result.State.DecisionID, result.State.Outcome == tools.OutcomeRouted)
+	toolResult := workflow.ExpenseStateToToolResult(result.State)
+	a.record(ctx, kind.String(), channel, toolResult.Outcome)
+	return true, RouteResult{Reply: toolResult.Reply, Outcome: toolResult.Outcome, Kind: toolResult.Kind}
+}
+
+func (a *DailyLedgerAgent) continuePendingExpenseConfirmationLegacy(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
 	draft, found, err := a.pendingExpenseConfirmation.Load(ctx, userID, channel)
 	if err != nil {
 		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_load_failed",

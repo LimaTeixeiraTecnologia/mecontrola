@@ -17,6 +17,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	agentwf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
@@ -39,6 +41,9 @@ import (
 	tgpayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/payload"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	wfpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
@@ -59,14 +64,15 @@ type EventHandlerRegistration struct {
 }
 
 type AgentModule struct {
-	WhatsAppAgentRoute    func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
-	TelegramAgentRoute    tgdispatcher.AgentRoute
-	ParseInbound          *usecases.ParseInbound
-	IntentRouter          *appservices.IntentRouter
-	SessionUnitOfWork     uow.UnitOfWork
-	SessionRepository     interfaces.AgentSessionRepository
-	SessionRepositoryFact interfaces.AgentSessionRepositoryFactory
-	EventHandlers         []EventHandlerRegistration
+	WhatsAppAgentRoute            func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
+	TelegramAgentRoute            tgdispatcher.AgentRoute
+	ParseInbound                  *usecases.ParseInbound
+	IntentRouter                  *appservices.IntentRouter
+	SessionUnitOfWork             uow.UnitOfWork
+	SessionRepository             interfaces.AgentSessionRepository
+	SessionRepositoryFact         interfaces.AgentSessionRepositoryFactory
+	EventHandlers                 []EventHandlerRegistration
+	WorkflowKernelHousekeepingJob worker.Job
 }
 
 type AgentModuleOption func(*agentModuleBuilder)
@@ -134,6 +140,8 @@ type agentModuleBuilder struct {
 	wmRepo             interfaces.WorkingMemoryRepository
 	obsRepo            interfaces.ObservationRepository
 	outboxPublisher    outbox.Publisher
+	wfStoreFactory     platform.StoreFactory
+	wfHousekeepingJob  worker.Job
 }
 
 func NewAgentModule(
@@ -191,14 +199,15 @@ func (b *agentModuleBuilder) build() (AgentModule, error) {
 	}
 
 	module := AgentModule{
-		WhatsAppAgentRoute:    b.buildWhatsAppAgentRoute(pub),
-		TelegramAgentRoute:    b.buildTelegramAgentRoute(pub),
-		ParseInbound:          llmModule.ParseInbound,
-		IntentRouter:          intentRouter,
-		SessionRepository:     b.sessionRepo,
-		SessionRepositoryFact: b.sessionRepoFact,
-		SessionUnitOfWork:     b.sessionUoW,
-		EventHandlers:         b.buildEventHandlers(intentRouter),
+		WhatsAppAgentRoute:            b.buildWhatsAppAgentRoute(pub),
+		TelegramAgentRoute:            b.buildTelegramAgentRoute(pub),
+		ParseInbound:                  llmModule.ParseInbound,
+		IntentRouter:                  intentRouter,
+		SessionRepository:             b.sessionRepo,
+		SessionRepositoryFact:         b.sessionRepoFact,
+		SessionUnitOfWork:             b.sessionUoW,
+		EventHandlers:                 b.buildEventHandlers(intentRouter),
+		WorkflowKernelHousekeepingJob: b.wfHousekeepingJob,
 	}
 	return module, nil
 }
@@ -262,6 +271,9 @@ func (b *agentModuleBuilder) prepareSessionStore() {
 	b.wmRepo = wmFactory.WorkingMemoryRepository(b.sessionDB)
 	obsFactory := agentrepo.NewObservationRepositoryFactory(b.o11y)
 	b.obsRepo = obsFactory.ObservationRepository(b.sessionDB)
+	b.wfStoreFactory = wfpostgres.NewStoreFactory(b.o11y)
+	wfUoW := uow.NewUnitOfWork(b.sessionDB)
+	b.wfHousekeepingJob = platform.NewHousekeepingJob(wfUoW, b.wfStoreFactory, b.cfg.WorkflowKernelConfig, b.o11y.Logger())
 }
 
 func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
@@ -334,6 +346,7 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	b.attachBudgetConfigSession(&deps, llmModule)
 	b.attachOnboardingLLM(&deps, llmModule)
 	b.attachDecisionAudit(&deps)
+	b.attachKernel(&deps)
 	deps.TelegramGateway = b.buildTelegramGateway()
 
 	router, err := appservices.NewIntentRouter(b.o11y, deps)
@@ -478,6 +491,38 @@ func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentR
 	)
 	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(b.sessionRepo, b.sessionUoW)
 	deps.PendingExpenseConfirmation = agentbinding.NewPendingExpenseConfirmationAdapter(b.sessionRepo, b.sessionUoW)
+}
+
+func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
+	if !b.cfg.WorkflowKernelConfig.TransactionsWriteEnabled {
+		return
+	}
+	if b.sessionDB == nil || b.wfStoreFactory == nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.kernel_disabled",
+			observability.String("reason", "session_store_or_factory_missing"),
+		)
+		return
+	}
+	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
+		b.o11y.Logger().Warn(context.Background(), "agent.module.kernel_disabled",
+			observability.String("reason", "categories_module_missing"),
+		)
+		return
+	}
+	store := b.wfStoreFactory.Store(b.sessionDB)
+	engine := platform.NewEngine[steps.ExpenseState](store, b.o11y)
+	settleReg := appservices.NewSettleRegistry()
+	resolver := agentbinding.NewKernelCategoryResolver(b.categoriesModule.SearchDictionaryUC)
+	persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
+	deps.Kernel = &appservices.KernelDeps{
+		Engine:           engine,
+		SettleReg:        settleReg,
+		CategoryResolver: resolver,
+		PersistFn:        persistFn,
+	}
+	b.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
+		observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
+	)
 }
 
 func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterDeps) {

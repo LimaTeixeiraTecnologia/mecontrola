@@ -29,7 +29,7 @@ type composite struct {
 	order  []intent.Kind
 }
 
-func NewWorkflow(id string, guard *WriteGuard, bindings ...KindTool) (Workflow, error) {
+func NewIntentWorkflow(id string, guard *WriteGuard, bindings ...KindTool) (IntentWorkflow, error) {
 	if id == "" {
 		return nil, ErrWorkflowIDEmpty
 	}

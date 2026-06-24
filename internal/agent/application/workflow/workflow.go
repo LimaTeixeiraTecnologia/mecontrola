@@ -7,7 +7,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
-type Workflow interface {
+type IntentWorkflow interface {
 	ID() string
 	Handles(kind intent.Kind) bool
 	Execute(ctx context.Context, in tools.ToolInput) (tools.ToolResult, error)

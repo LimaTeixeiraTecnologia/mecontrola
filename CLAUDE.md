@@ -55,8 +55,17 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - Thread → Run: toda execução resolve `Thread(user_id, channel)` e abre/fecha um `Run` auditável.
 - Pending step: erro de categoria DEVE salvar `Draft{AwaitingKind}` antes de retornar `OutcomeClarify`.
 - WorkingMemory: conteúdo pré-carregado no system prompt quando disponível.
-- Esses padrões Mastra são **proibidos** fora de `internal/agent`.
-- Ver `.claude/rules/agent-workflows-tools.md` (R-AGENT-WF-001.1–001.8) para contrato completo.
+- Esses padrões Mastra são **proibidos** fora de `internal/agent`; o agent PODE consumir o kernel genérico.
+- Ver `.claude/rules/agent-workflows-tools.md` (R-AGENT-WF-001.1–001.8 + addendum .6-A/.8-A) para contrato completo.
+
+**R-WF-KERNEL-001 (hard) — Kernel genérico de workflow em `internal/platform/workflow`:**
+- Proibido import de pacote de domínio (`intent`, `agent`, `transactions`, `billing`, `identity`).
+- Proibido regra de negócio, branching de domínio e LLM no kernel.
+- SQL apenas no adapter Postgres (`infrastructure/postgres/`).
+- Estados (`RunStatus`/`StepStatus`/`SuspendReason`) são tipos fechados — nunca string livre.
+- Métricas com cardinalidade controlada: sem `user_id`/`correlation_key`/`category_id` como label.
+- Gate bloqueante: regra redigida antes de qualquer código do kernel (ADR-004).
+- Ver `.claude/rules/workflow-kernel.md` para contrato completo e gates de verificação.
 
 ## DMMF e Mastra
 

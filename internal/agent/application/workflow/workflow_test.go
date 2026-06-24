@@ -42,7 +42,7 @@ func (s *CompositeWorkflowSuite) SetupTest() {
 
 func (s *CompositeWorkflowSuite) TestReadKindRunsToolWithoutGuard() {
 	calls := 0
-	wf, err := NewWorkflow("budget", nil,
+	wf, err := NewIntentWorkflow("budget", nil,
 		KindTool{Kind: intent.KindHowAmIDoing, Tool: stubTool("how", intent.KindHowAmIDoing, tools.ToolResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindHowAmIDoing}, &calls)},
 	)
 	s.Require().NoError(err)
@@ -60,7 +60,7 @@ func (s *CompositeWorkflowSuite) TestWriteKindShortCircuitsAndSkipsTool() {
 			return tools.ToolResult{Reply: "denied", Outcome: tools.OutcomeAuthzDenied, Kind: in.Intent.Kind()}, true
 		},
 	})
-	wf, err := NewWorkflow("transactions", guard,
+	wf, err := NewIntentWorkflow("transactions", guard,
 		KindTool{Kind: intent.KindRecordExpense, Tool: stubTool("expense", intent.KindRecordExpense, tools.ToolResult{Outcome: tools.OutcomeRouted}, &calls)},
 	)
 	s.Require().NoError(err)
@@ -82,7 +82,7 @@ func (s *CompositeWorkflowSuite) TestWriteKindProceedsAndSettlesExecuted() {
 			}, false
 		},
 	})
-	wf, err := NewWorkflow("transactions", guard,
+	wf, err := NewIntentWorkflow("transactions", guard,
 		KindTool{Kind: intent.KindRecordExpense, Tool: stubTool("expense", intent.KindRecordExpense, tools.ToolResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindRecordExpense}, &calls)},
 	)
 	s.Require().NoError(err)
@@ -95,7 +95,7 @@ func (s *CompositeWorkflowSuite) TestWriteKindProceedsAndSettlesExecuted() {
 }
 
 func (s *CompositeWorkflowSuite) TestExecuteKindNotHandled() {
-	wf, err := NewWorkflow("cards", nil,
+	wf, err := NewIntentWorkflow("cards", nil,
 		KindTool{Kind: intent.KindListCards, Tool: stubTool("list", intent.KindListCards, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 	)
 	s.Require().NoError(err)
@@ -105,13 +105,13 @@ func (s *CompositeWorkflowSuite) TestExecuteKindNotHandled() {
 }
 
 func (s *CompositeWorkflowSuite) TestConstructorRejectsEmptyAndNil() {
-	_, err := NewWorkflow("", nil, KindTool{Kind: intent.KindListCards, Tool: stubTool("x", intent.KindListCards, tools.ToolResult{}, nil)})
+	_, err := NewIntentWorkflow("", nil, KindTool{Kind: intent.KindListCards, Tool: stubTool("x", intent.KindListCards, tools.ToolResult{}, nil)})
 	s.ErrorIs(err, ErrWorkflowIDEmpty)
 
-	_, err = NewWorkflow("cards", nil)
+	_, err = NewIntentWorkflow("cards", nil)
 	s.ErrorIs(err, ErrNoTools)
 
-	_, err = NewWorkflow("cards", nil, KindTool{Kind: intent.KindListCards, Tool: nil})
+	_, err = NewIntentWorkflow("cards", nil, KindTool{Kind: intent.KindListCards, Tool: nil})
 	s.ErrorIs(err, ErrToolForKindNil)
 }
 
@@ -123,13 +123,13 @@ func TestRegistrySuite(t *testing.T) {
 	suite.Run(t, new(RegistrySuite))
 }
 
-func (s *RegistrySuite) buildWorkflows() (Workflow, Workflow) {
-	cards, err := NewWorkflow("cards", nil,
+func (s *RegistrySuite) buildWorkflows() (IntentWorkflow, IntentWorkflow) {
+	cards, err := NewIntentWorkflow("cards", nil,
 		KindTool{Kind: intent.KindListCards, Tool: stubTool("list", intent.KindListCards, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 		KindTool{Kind: intent.KindCountCards, Tool: stubTool("count", intent.KindCountCards, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 	)
 	s.Require().NoError(err)
-	budget, err := NewWorkflow("budget", nil,
+	budget, err := NewIntentWorkflow("budget", nil,
 		KindTool{Kind: intent.KindHowAmIDoing, Tool: stubTool("how", intent.KindHowAmIDoing, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 	)
 	s.Require().NoError(err)
@@ -138,7 +138,7 @@ func (s *RegistrySuite) buildWorkflows() (Workflow, Workflow) {
 
 func (s *RegistrySuite) TestResolveByKind() {
 	cards, budget := s.buildWorkflows()
-	registry, err := NewRegistry([]intent.Kind{intent.KindListCards, intent.KindCountCards, intent.KindHowAmIDoing}, cards, budget)
+	registry, err := NewIntentRegistry([]intent.Kind{intent.KindListCards, intent.KindCountCards, intent.KindHowAmIDoing}, cards, budget)
 	s.Require().NoError(err)
 
 	wf, ok := registry.Resolve(intent.KindListCards)
@@ -154,13 +154,13 @@ func (s *RegistrySuite) TestResolveByKind() {
 }
 
 func (s *RegistrySuite) TestEmptyRegistry() {
-	_, err := NewRegistry(nil)
+	_, err := NewIntentRegistry(nil)
 	s.ErrorIs(err, ErrEmptyRegistry)
 }
 
 func (s *RegistrySuite) TestDuplicateID() {
 	cards, _ := s.buildWorkflows()
-	_, err := NewRegistry([]intent.Kind{intent.KindListCards}, cards, cards)
+	_, err := NewIntentRegistry([]intent.Kind{intent.KindListCards}, cards, cards)
 	s.ErrorIs(err, ErrDuplicateWorkflow)
 }
 

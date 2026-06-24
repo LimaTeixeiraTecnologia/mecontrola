@@ -45,17 +45,17 @@ func (s *SharedRegistryConcurrencySuite) passthroughGuard() *WriteGuard {
 	})
 }
 
-func (s *SharedRegistryConcurrencySuite) sharedRegistry(writeCalls, readCalls *atomic.Int64) *Registry {
-	transactions, err := NewWorkflow("transactions", s.passthroughGuard(), KindTool{Kind: intent.KindRecordExpense, Tool: s.echoTool("expense", intent.KindRecordExpense, writeCalls)})
+func (s *SharedRegistryConcurrencySuite) sharedRegistry(writeCalls, readCalls *atomic.Int64) *IntentRegistry {
+	transactions, err := NewIntentWorkflow("transactions", s.passthroughGuard(), KindTool{Kind: intent.KindRecordExpense, Tool: s.echoTool("expense", intent.KindRecordExpense, writeCalls)})
 	s.Require().NoError(err)
-	cards, err := NewWorkflow("cards", nil, KindTool{Kind: intent.KindListCards, Tool: s.echoTool("list_cards", intent.KindListCards, readCalls)})
+	cards, err := NewIntentWorkflow("cards", nil, KindTool{Kind: intent.KindListCards, Tool: s.echoTool("list_cards", intent.KindListCards, readCalls)})
 	s.Require().NoError(err)
-	registry, err := NewRegistry([]intent.Kind{intent.KindRecordExpense, intent.KindListCards}, transactions, cards)
+	registry, err := NewIntentRegistry([]intent.Kind{intent.KindRecordExpense, intent.KindListCards}, transactions, cards)
 	s.Require().NoError(err)
 	return registry
 }
 
-func (s *SharedRegistryConcurrencySuite) execute(registry *Registry, kind intent.Kind, in intent.Intent, userID uuid.UUID, channel, text, messageID string) {
+func (s *SharedRegistryConcurrencySuite) execute(registry *IntentRegistry, kind intent.Kind, in intent.Intent, userID uuid.UUID, channel, text, messageID string) {
 	wf, ok := registry.Resolve(kind)
 	s.Require().True(ok)
 	result, execErr := wf.Execute(s.ctx, tools.ToolInput{UserID: userID, Channel: channel, Intent: in, Text: text, MessageID: messageID})

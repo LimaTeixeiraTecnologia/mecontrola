@@ -12,15 +12,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Gate de governança (R-WF-KERNEL-001 + addendum R-AGENT-WF-001) | pending | — | — | — |
-| 2.0 | Kernel puro: Step, combinadores e codec | pending | 1.0 | Com 6.0 | — |
-| 3.0 | Engine + porta Store + fake (suspend/resume, retry, observabilidade) | pending | 2.0 | — | — |
-| 4.0 | Adapter Postgres + migração 000019 (CAS + índice parcial) | pending | 3.0 | — | — |
-| 5.0 | Housekeeping job + configuração de ambiente | pending | 4.0 | — | — |
-| 6.0 | Rename Workflow → IntentWorkflow no agent | pending | 1.0 | Com 2.0 | mastra |
-| 7.0 | Passos do agent + Definition transactions_write | pending | 3.0, 6.0 | — | mastra |
-| 8.0 | Integração sob feature flag + wiring + resume-before-parse | pending | 5.0, 7.0 | — | mastra |
-| 9.0 | Paridade/não regressão + validação de gates | pending | 8.0 | — | mastra |
+| 1.0 | Gate de governança (R-WF-KERNEL-001 + addendum R-AGENT-WF-001) | done | — | — | — |
+| 2.0 | Kernel puro: Step, combinadores e codec | done | 1.0 | Com 6.0 | — |
+| 3.0 | Engine + porta Store + fake (suspend/resume, retry, observabilidade) | done | 2.0 | — | — |
+| 4.0 | Adapter Postgres + migração 000019 (CAS + índice parcial) | done | 3.0 | — | — |
+| 5.0 | Housekeeping job + configuração de ambiente | done | 4.0 | — | — |
+| 6.0 | Rename Workflow → IntentWorkflow no agent | done | 1.0 | Com 2.0 | mastra |
+| 7.0 | Passos do agent + Definition transactions_write | done | 3.0, 6.0 | — | mastra |
+| 8.0 | Integração sob feature flag + wiring + resume-before-parse | done | 5.0, 7.0 | — | mastra |
+| 9.0 | Paridade/não regressão + validação de gates | done | 8.0 | — | mastra |
 
 ## Dependências Críticas
 - **1.0 é gate bloqueante (RF-29):** governança redigida antes de qualquer código do kernel; todas as demais dependem dela.

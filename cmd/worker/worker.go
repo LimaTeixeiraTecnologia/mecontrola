@@ -282,6 +282,9 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if transactionsModule.MonthlySummaryReconcilerJob != nil {
 		jobs = append(jobs, transactionsModule.MonthlySummaryReconcilerJob)
 	}
+	if agentModule.WorkflowKernelHousekeepingJob != nil {
+		jobs = append(jobs, agentModule.WorkflowKernelHousekeepingJob)
+	}
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	return worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger), nil

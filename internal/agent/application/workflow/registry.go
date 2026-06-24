@@ -14,19 +14,19 @@ var (
 	ErrDuplicateKindOwner = errors.New("agent.application.workflow: intent kind handled by more than one workflow")
 )
 
-type Registry struct {
-	workflows []Workflow
-	byKind    map[intent.Kind]Workflow
-	byID      map[string]Workflow
+type IntentRegistry struct {
+	workflows []IntentWorkflow
+	byKind    map[intent.Kind]IntentWorkflow
+	byID      map[string]IntentWorkflow
 }
 
-func NewRegistry(kinds []intent.Kind, workflows ...Workflow) (*Registry, error) {
+func NewIntentRegistry(kinds []intent.Kind, workflows ...IntentWorkflow) (*IntentRegistry, error) {
 	if len(workflows) == 0 {
 		return nil, ErrEmptyRegistry
 	}
-	byID := make(map[string]Workflow, len(workflows))
-	byKind := make(map[intent.Kind]Workflow, len(kinds))
-	ordered := make([]Workflow, 0, len(workflows))
+	byID := make(map[string]IntentWorkflow, len(workflows))
+	byKind := make(map[intent.Kind]IntentWorkflow, len(kinds))
+	ordered := make([]IntentWorkflow, 0, len(workflows))
 	var errs []error
 	for _, wf := range workflows {
 		if wf == nil {
@@ -54,10 +54,10 @@ func NewRegistry(kinds []intent.Kind, workflows ...Workflow) (*Registry, error) 
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	return &Registry{workflows: ordered, byKind: byKind, byID: byID}, nil
+	return &IntentRegistry{workflows: ordered, byKind: byKind, byID: byID}, nil
 }
 
-func resolveOwner(workflows []Workflow, kind intent.Kind) (Workflow, bool) {
+func resolveOwner(workflows []IntentWorkflow, kind intent.Kind) (IntentWorkflow, bool) {
 	for _, wf := range workflows {
 		if wf.Handles(kind) {
 			return wf, true
@@ -66,13 +66,13 @@ func resolveOwner(workflows []Workflow, kind intent.Kind) (Workflow, bool) {
 	return nil, false
 }
 
-func (r *Registry) Resolve(kind intent.Kind) (Workflow, bool) {
+func (r *IntentRegistry) Resolve(kind intent.Kind) (IntentWorkflow, bool) {
 	wf, ok := r.byKind[kind]
 	return wf, ok
 }
 
-func (r *Registry) Workflows() []Workflow {
-	out := make([]Workflow, len(r.workflows))
+func (r *IntentRegistry) Workflows() []IntentWorkflow {
+	out := make([]IntentWorkflow, len(r.workflows))
 	copy(out, r.workflows)
 	return out
 }

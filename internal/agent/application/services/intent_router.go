@@ -11,8 +11,10 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 const (
@@ -107,6 +109,13 @@ func (r *IntentRouter) dispatch(ctx context.Context, principal Principal, channe
 	return r.route(ctx, principal, channel, peer, text, messageID)
 }
 
+type KernelDeps struct {
+	Engine           platform.Engine[steps.ExpenseState]
+	SettleReg        *SettleRegistry
+	CategoryResolver steps.CategoryResolverFunc
+	PersistFn        steps.PersistFunc
+}
+
 type IntentRouterDeps struct {
 	Parser                     IntentParser
 	MonthlySummary             tools.MonthlySummaryReader
@@ -138,6 +147,7 @@ type IntentRouterDeps struct {
 	Redactor                   DecisionRedactor
 	Location                   *time.Location
 	PolicyMinConfidence        float64
+	Kernel                     *KernelDeps
 }
 
 type DecisionRedactor interface {
@@ -313,7 +323,7 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return RouteResult{Reply: fallbackMissingText, Outcome: tools.OutcomeEmptyText, Kind: intent.KindUnknown}
 	}
 
-	if r.daily.pendingExpenseConfirmation != nil {
+	if r.daily.pendingExpenseConfirmation != nil || r.daily.kernelEnabled {
 		if handled, result := r.daily.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, trimmed); handled {
 			return result
 		}

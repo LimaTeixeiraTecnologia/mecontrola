@@ -640,3 +640,23 @@ func matchesBudgetCancel(text string) bool {
 	}
 	return false
 }
+
+func FormatPersistedIncome(amountCents int64, source, categoryPath string) string {
+	return formatPersistedIncome(amountCents, source, categoryPath)
+}
+
+func FormatCategoryAmbiguous(candidates []string) string {
+	return formatCategoryAmbiguous(candidates)
+}
+
+func FormatCategoryNeedsConfirmation(candidates []string) string {
+	return formatCategoryNeedsConfirmation(candidates)
+}
+
+func FormatCategoryNotFound(hint string) string {
+	return formatCategoryNotFound(hint)
+}
+
+func CategoryNoHintText() string {
+	return categoryNoHintText
+}

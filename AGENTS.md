@@ -154,7 +154,20 @@ Regras obrigatorias:
 4. `ToolOutcome` e `RunStatus` sao tipos fechados (DMMF state-as-type), nunca strings livres; toda execucao e um `Run` auditavel (`thread_id`, `run_id`, `workflow`, `tool`, `status`, `duration_ms`, `error`).
 5. LLM aparece apenas no step de parse (`ParseInbound`); nunca dentro de `Workflow`/`Tool` de execucao.
 6. Toda alteracao Go no modulo agent exige `go-implementation` (Etapas 1-5 + checklist R0-R7) e DMMF conforme a precedencia em `.claude/rules/governance.md`.
-7. **Padrao Mastra `[HARD]` — obrigatorio em `internal/agent`, proibido em qualquer outro modulo**: Thread = `(user_id, channel)` resolvido a cada execucao via `ThreadGateway.GetOrCreate`; toda execucao abre e fecha um `Run` com `RunStatus` fechado (`running|succeeded|failed`); pending step = `Draft{AwaitingKind, TransactionKind, Candidates, ...}` salvo quando categoria nao identificavel; working memory pre-carregada no system prompt quando disponivel; sinal = mensagem do usuario; resume = check pending antes de `ParseInbound`. Referencia: R-AGENT-WF-001.6–001.8 em `.claude/rules/agent-workflows-tools.md`.
+7. **Padrao Mastra `[HARD]` — obrigatorio em `internal/agent`, proibido em qualquer outro modulo**: Thread = `(user_id, channel)` resolvido a cada execucao via `ThreadGateway.GetOrCreate`; toda execucao abre e fecha um `Run` com `RunStatus` fechado (`running|succeeded|failed`); pending step = `Draft{AwaitingKind, TransactionKind, Candidates, ...}` salvo quando categoria nao identificavel; working memory pre-carregada no system prompt quando disponivel; sinal = mensagem do usuario; resume = check pending antes de `ParseInbound`. Referencia: R-AGENT-WF-001.6–001.8 e addendum `.6-A`/`.8-A` em `.claude/rules/agent-workflows-tools.md`. O agent PODE consumir o kernel generico (`Engine[S]` de `internal/platform/workflow`) mantendo sua semantica propria.
+
+## Kernel Generico de Workflow (`internal/platform/workflow`)
+
+O kernel de workflow em `internal/platform/workflow` e um mecanismo generico de orquestacao de passos (`Step[S]`, `Engine[S]`, combinadores, suspend/resume, retry), codificado em `.claude/rules/workflow-kernel.md` (`R-WF-KERNEL-001`, hard). Gate bloqueante (ADR-004): regra redigida antes de qualquer codigo do kernel.
+
+Regras obrigatorias:
+1. Proibido import de pacote de dominio: `internal/agent`, `internal/transactions`, `internal/billing`, `internal/identity` ou qualquer tipo semantico (`intent`, `pendingexpense`, `category`).
+2. O kernel opera sobre estado generico `S any` e `correlationKey string` opaca — sem `user_id`, `channel` ou `intent.Kind` em assinaturas publicas.
+3. Estados (`RunStatus`/`StepStatus`/`SuspendReason`) sao tipos fechados — nunca string livre.
+4. SQL apenas no adapter Postgres (`infrastructure/postgres/`); zero regra de negocio, branching de dominio ou LLM no kernel.
+5. Metricas com cardinalidade controlada: labels permitidos sao `workflow`, `step`, `status`, `outcome`; proibido `user_id`, `correlation_key`, `category_id`.
+6. Zero comentarios em Go de producao (herda R-ADAPTER-001.1).
+7. O `internal/agent` e o primeiro consumidor: instancia `Engine[ExpenseState]` para o write de transactions, mantendo Thread/WorkingMemory/PendingStep como responsabilidade exclusiva do agent.
 
 ## Plataforma Compartilhada
 
