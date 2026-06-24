@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,13 +29,19 @@ func NewHousekeepingJob(
 	factory StoreFactory,
 	cfg configs.WorkflowKernelConfig,
 	logger observability.Logger,
-) *HousekeepingJob {
+) (*HousekeepingJob, error) {
+	if cfg.HousekeepingRetentionDays <= 0 {
+		return nil, errors.New("workflow: housekeeping: retention_days must be > 0")
+	}
+	if cfg.HousekeepingBatchSize <= 0 {
+		return nil, errors.New("workflow: housekeeping: batch_size must be > 0")
+	}
 	return &HousekeepingJob{
 		uow:     unitOfWork,
 		factory: factory,
 		cfg:     cfg,
 		logger:  logger,
-	}
+	}, nil
 }
 
 func (h *HousekeepingJob) Name() string           { return "workflow-kernel-housekeeping" }

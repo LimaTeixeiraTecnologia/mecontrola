@@ -140,6 +140,96 @@ Contratos:
 
 Cobre: `KindRecordExpense`, `KindRecordIncome`, `KindRecordCardPurchase`.
 
+### Addendum R-AGENT-WF-001.7-A — Estado de espera `AwaitingApproval` para gates HITL [HARD]
+
+Adicionado em 2026-06-24 (ADR-003 + ADR-002) para cobrir o gate Human-in-the-Loop de operacoes
+destrutivas/sensiveis.
+
+**Escopo:** operacoes `deletar ultimo lancamento`, `editar ultimo lancamento`, `deletar cartao` e
+`commitar reconfiguracao de budget` (RF-08..RF-13, prd-agent-platform-evolution).
+
+**Estado de espera como tipo fechado (DMMF state-as-type):**
+
+`AwaitingApproval` DEVE ser tipo fechado com constantes enumeradas (`AwaitingNone`, `AwaitingConfirm`)
+e metodos `String()`/`IsValid()`/`Parse*`. Proibido representar esse estado como `string` solta em
+qualquer assinatura publica do workflow de confirmacao ou de `ConfirmState`.
+
+`OperationKind` DEVE ser tipo fechado com constantes enumeradas (`OperationDeleteLast`,
+`OperationEditLast`, `OperationDeleteCard`, `OperationBudgetCommit`) e metodos equivalentes.
+Proibido discriminar operacoes por `string` livre — usar mapa `map[OperationKind]...` em vez de
+`switch` de dominio (R-AGENT-WF-001.1).
+
+**Persistencia obrigatoria antes de retornar confirmacao (ADR-003):**
+
+O passo `confirm_gate` DEVE persistir `ConfirmState` (com `Awaiting = AwaitingConfirm`) no snapshot
+do kernel via `Engine.Start` ou transicao de suspend **antes** de retornar ao usuario a pergunta de
+confirmacao. Proibido retornar pergunta de confirmacao sem estado duravel gravado.
+
+O snapshot do kernel e a **fonte unica de verdade** no resume (nao side-store separado); o payload
+de resume e um delta JSON merge-patch (ADR-001) — ex.: `{"ResumeText":"sim"}` — aplicado sobre o
+`Snapshot.State` completo.
+
+**Resume antes do `ParseInbound` (espelhando o padrao de categoria):**
+
+`continuePendingApproval` DEVE ser chamado **antes** de `ParseInbound` na cadeia de resolucao de
+inbound. Ordem deterministica: `continuePendingExpenseConfirmation` → `continuePendingApproval` →
+`ParseInbound`. Proibido inverter a ordem ou chamar `ParseInbound` antes de tentar o resume.
+
+**Semantica estrita + re-prompt unico + TTL (ADR-003):**
+
+- Confirmacao explicita (`sim`/`confirmar`/`ok`/`pode`) → executa a operacao, completa o run.
+- Cancelamento explicito (`nao`/`cancelar`) → descarta sem efeito, completa o run.
+- Resposta ambigua 1a vez → re-pergunta uma vez (`RepromptCount` 0→1), re-suspende.
+- Resposta ambigua 2a vez → cancela sem efeito, completa o run.
+- TTL expirado (avaliado no resume: `now - SuspendedAt > TTL`) → cancela sem efeito, completa o
+  run, devolve `handled=false` (texto do usuario segue para `ParseInbound`).
+- Replay de `messageID` ja processado → `OutcomeReplay` via passo `replay` (sem segunda mutacao).
+
+**Limpeza deterministica obrigatoria:**
+
+Apos efetivar/cancelar/expirar, o run DEVE completar (`RunStatusSucceeded` ou `RunStatusFailed`);
+nunca permanecer `RunStatusSuspended`. O housekeeping do kernel purga runs concluidos. Proibido
+draft orphan ou run suspenso indefinidamente.
+
+**Proibicoes especificas:**
+
+- Proibido efetivar operacao destrutiva/sensivel sem confirmacao humana explicita (viola RF-08).
+- Proibido retornar pergunta de confirmacao sem persistir `ConfirmState` com `AwaitingConfirm`.
+- Proibido invocar LLM no `confirm_gate` ou em qualquer passo do workflow de confirmacao (R-AGENT-WF-001.4).
+- Proibido crescer `case intent.Kind` no switch de `daily_ledger_agent.go` para roteamento HITL —
+  usar registry por kind (R-AGENT-WF-001.1 / ADR-002).
+- Proibido representar `AwaitingApproval` ou `OperationKind` como `string` livre.
+- Proibido side-store separado para o estado do gate HITL — snapshot do kernel e fonte unica (ADR-001).
+
+Gate de verificacao — sem `AwaitingApproval` como string solta (deve retornar vazio antes de merge):
+
+```bash
+grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+  "AwaitingApproval\s*=\s*\"[^\"]*\"\|OperationKind\s*=\s*\"[^\"]*\"" \
+  internal/agent/ \
+  && echo "FAIL: AwaitingApproval ou OperationKind como string solta" && exit 1 \
+  || true
+```
+
+Gate de verificacao — resume de aprovacao antes do parse (deve retornar `continuePendingApproval`
+listado antes de `ParseInbound` na chamada inbound):
+
+```bash
+f=$(find internal/agent -name "daily_ledger_agent.go" ! -name "*_test.go")
+[ -z "$f" ] && { echo "SKIP: daily_ledger_agent.go ausente"; } || {
+  grep -n "continuePendingApproval\|ParseInbound" "$f" \
+    | grep -v "_test" \
+    | awk -F: '{print NR, $0}' \
+    | grep -q "continuePendingApproval" \
+    && echo "OK: continuePendingApproval presente" \
+    || echo "WARN: continuePendingApproval ausente — verificar se gate HITL foi implementado"
+}
+```
+
+Referencias: ADR-001 (merge-patch no kernel), ADR-002 (HITL sempre-on, registry),
+ADR-003 (contrato de confirmacao), ADR-004 (gate de budget no ponto de commit) —
+todos em `.specs/prd-agent-platform-evolution/`.
+
 ## R-AGENT-WF-001.8 — WorkingMemory no system prompt [HARD]
 
 O `ContextBuilder` (ou equivalente) DEVE incluir o conteudo de `WorkingMemory` do usuario no system prompt quando disponivel. Proibido ignorar a working memory em chamadas de `ParseInbound`.
@@ -207,9 +297,11 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 
 - Aprovar PR que adicione `case` de dominio ao switch de `daily_ledger_agent.go`.
 - Aprovar PR com regra de negocio, SQL direto ou branching de dominio em `Tool`/`Workflow`.
-- Representar `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind` como string livre.
+- Representar `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind`/`AwaitingApproval`/`OperationKind` como string livre.
 - Invocar LLM fora do step de parse.
 - Retornar `OutcomeClarify` em erro de categoria sem salvar `pendingexpense.Draft` (viola R-AGENT-WF-001.7).
+- Efetivar operacao destrutiva/sensivel sem confirmacao humana explicita (viola Addendum R-AGENT-WF-001.7-A).
+- Retornar pergunta de confirmacao HITL sem persistir `ConfirmState` com `AwaitingConfirm` (viola Addendum R-AGENT-WF-001.7-A).
 - Iniciar execucao sem resolver Thread + Run via `AgentRuntime` (viola R-AGENT-WF-001.6).
 - Implementar Thread, Run, WorkingMemory ou PendingStep em modulo diferente de `internal/agent`.
 - Flexibilizar estas regras por diferenca de ferramenta, conveniencia ou deadline.
@@ -221,3 +313,7 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 - `.claude/rules/governance.md` — precedencia DMMF (state-as-type prevalece sobre Uber)
 - `domain-modeling.md` em `.agents/skills/go-implementation/references/` — DMMF state-as-type
 - `docs/runs/2026-06-23-evolucao-dailyagent-mastra.md` — plano da iniciativa
+- ADR-001: `.specs/prd-agent-platform-evolution/adr-001-kernel-resume-merge-patch.md` — merge-patch no resume do kernel
+- ADR-002: `.specs/prd-agent-platform-evolution/adr-002-hitl-always-on-kernel.md` — HITL sempre-on, registry, OperationKind
+- ADR-003: `.specs/prd-agent-platform-evolution/adr-003-confirmation-contract.md` — AwaitingApproval, semântica estrita, TTL
+- ADR-004: `.specs/prd-agent-platform-evolution/adr-004-budget-gate-at-commit.md` — gate de budget no ponto de commit

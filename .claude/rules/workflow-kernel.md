@@ -139,6 +139,51 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   || true
 ```
 
+## R-WF-KERNEL-001.7 — Contrato de resume via JSON merge-patch [HARD]
+
+Adicionado em 2026-06-24 (ADR-001, `.specs/prd-agent-platform-evolution/adr-001-kernel-resume-merge-patch.md`).
+
+`Engine.Resume` DEVE aplicar o payload de resume como **delta JSON merge-patch (RFC 7386)** sobre
+`Snapshot.State`, nunca substituir o estado inteiro pelo payload. Isso garante que o estado suspenso
+rico seja preservado quando o consumidor passa apenas um subconjunto dos campos no resume
+(ex.: `{"ResumeText":"sim"}`).
+
+Contratos obrigatorios:
+
+- `Codec[S].MergePatch(base, patch []byte) ([]byte, error)` — operacao generica sobre JSON puro,
+  sem conhecimento de dominio; chave com valor `null` remove a chave (semantica RFC 7386).
+- Resume vazio (`len(resume) == 0`) e **no-op** — mantém compatibilidade com chamadas existentes.
+- O `Snapshot.State` e a **fonte unica de verdade** no resume; consumidores NAO devem manter
+  side-store de draft para recuperar estado suspenso — o snapshot do kernel e suficiente.
+- O merge opera sobre `map[string]any` (round-trip JSON); sem tipo de dominio exposto no kernel.
+
+Proibido:
+
+- Substituir `Snapshot.State` inteiro pelo payload de resume (regressao ao defeito latente).
+- Expor no `MergePatch` qualquer tipo semantico de dominio (`AwaitingApproval`, `OperationKind`,
+  `ConfirmState`) — a operacao e generica e opera sobre bytes JSON.
+- Incluir logica de dominio (branching sobre campos do estado) no `MergePatch` ou no bloco de resume
+  do `Engine` (preserva R-WF-KERNEL-001.2).
+
+Gate de verificacao — substituicao de estado inteiro no resume (deve retornar vazio antes de merge):
+
+```bash
+grep -n "current = rs\|current = decoded\|current = resumed" \
+  internal/platform/workflow/engine.go \
+  && echo "FAIL: resume substitui estado inteiro — usar MergePatch" && exit 1 \
+  || true
+```
+
+Gate de verificacao — MergePatch sem tipo de dominio (deve retornar vazio antes de merge):
+
+```bash
+grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+  "AwaitingApproval\|OperationKind\|ConfirmState\|AwaitingKind\|pendingexpense" \
+  internal/platform/workflow/ \
+  && echo "FAIL: tipo de dominio em MergePatch ou engine do kernel" && exit 1 \
+  || true
+```
+
 ## Permitido (consumo pelo agent e demais modulos)
 
 O `internal/agent` e qualquer outro modulo podem **consumir** o kernel:
@@ -160,10 +205,13 @@ no caso do agent) sem delegar essa responsabilidade ao kernel.
 
 ## Referencias
 
-- ADR-004: `.specs/prd-workflow-kernel/adr-004-governance-gate.md`
+- ADR-004 (prd-workflow-kernel): `.specs/prd-workflow-kernel/adr-004-governance-gate.md`
+- ADR-001 (prd-agent-platform-evolution): `.specs/prd-agent-platform-evolution/adr-001-kernel-resume-merge-patch.md` — merge-patch no resume
 - R-AGENT-WF-001: `.claude/rules/agent-workflows-tools.md` — semantica exclusiva do agent
 - R-ADAPTER-001: `.claude/rules/go-adapters.md` — zero comentarios e adaptadores finos
 - R-TXN-004: `.claude/rules/transactions-workflows.md` — cardinalidade de metricas
 - `governance.md`: `.claude/rules/governance.md` — precedencia DMMF state-as-type
 - PRD: `.specs/prd-workflow-kernel/prd.md` (RF-01, RF-14, RF-15, RF-27)
 - Techspec: `.specs/prd-workflow-kernel/techspec.md`
+- PRD (evolucao): `.specs/prd-agent-platform-evolution/prd.md` (RF-21..RF-27)
+- Techspec (evolucao): `.specs/prd-agent-platform-evolution/techspec.md`

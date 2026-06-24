@@ -24,29 +24,46 @@ import (
 
 const defaultPolicyMinConfidence = 0.8
 
+const settleRegistryTTL = 30 * 24 * time.Hour
+
+type settleEntry struct {
+	fn        steps.AuditSettleFunc
+	expiresAt time.Time
+}
+
 type SettleRegistry struct {
 	mu      sync.Mutex
-	entries map[uuid.UUID]steps.AuditSettleFunc
+	entries map[uuid.UUID]settleEntry
 }
 
 func NewSettleRegistry() *SettleRegistry {
-	return &SettleRegistry{entries: make(map[uuid.UUID]steps.AuditSettleFunc)}
+	return &SettleRegistry{entries: make(map[uuid.UUID]settleEntry)}
 }
 
 func (r *SettleRegistry) Register(id uuid.UUID, fn steps.AuditSettleFunc) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.entries[id] = fn
+	now := time.Now()
+	for k, e := range r.entries {
+		if now.After(e.expiresAt) {
+			delete(r.entries, k)
+		}
+	}
+	r.entries[id] = settleEntry{fn: fn, expiresAt: now.Add(settleRegistryTTL)}
 }
 
 func (r *SettleRegistry) pop(id uuid.UUID) (steps.AuditSettleFunc, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	fn, ok := r.entries[id]
-	if ok {
-		delete(r.entries, id)
+	e, ok := r.entries[id]
+	if !ok {
+		return nil, false
 	}
-	return fn, ok
+	delete(r.entries, id)
+	if time.Now().After(e.expiresAt) {
+		return nil, false
+	}
+	return e.fn, true
 }
 
 type DailyLedgerAgent struct {
@@ -285,6 +302,8 @@ func (a *DailyLedgerAgent) dispatchWriteKernel(ctx context.Context, principal Pr
 			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
 			return RouteResult{Reply: result.Suspend.Prompt, Outcome: tools.OutcomeClarify, Kind: kind}
 		}
+		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
 	}
 	if result.Status == platform.RunStatusFailed {
 		a.callSettle(ctx, result.State.DecisionID, false)

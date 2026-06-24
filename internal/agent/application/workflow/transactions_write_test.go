@@ -266,7 +266,6 @@ func (s *TransactionsWriteSuite) TestDefinition_DefinitionID() {
 	})
 	s.Equal(TransactionsWriteWorkflowID, def.ID)
 	s.True(def.Durable)
-	s.Greater(def.MaxAttempts, 0)
 }
 
 func (s *TransactionsWriteSuite) TestExpenseStateFromToolInput() {

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,10 +11,9 @@ import (
 )
 
 type Definition[S any] struct {
-	ID          string
-	Root        Step[S]
-	Durable     bool
-	MaxAttempts int
+	ID      string
+	Root    Step[S]
+	Durable bool
 }
 
 type RunResult[S any] struct {
@@ -74,11 +74,6 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 	runStart := time.Now()
 	runID := uuid.New()
 
-	maxAttempts := def.MaxAttempts
-	if maxAttempts <= 0 {
-		maxAttempts = 1
-	}
-
 	snap := Snapshot{
 		RunID:          runID,
 		Workflow:       def.ID,
@@ -86,7 +81,7 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 		Status:         RunStatusRunning,
 		Cursor:         0,
 		Attempts:       0,
-		MaxAttempts:    maxAttempts,
+		MaxAttempts:    1,
 		Version:        1,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
@@ -171,12 +166,14 @@ func (e *engine[S]) Resume(ctx context.Context, def Definition[S], key string, r
 
 	if len(resume) > 0 {
 		resumeState, decErr := e.codec.Decode(resume)
-		if decErr == nil {
-			if applier, ok := any(current).(ResumeApplier[S]); ok {
-				current = applier.ApplyResume(resumeState)
-			} else {
-				current = resumeState
-			}
+		if decErr != nil {
+			span.RecordError(decErr)
+			return RunResult[S]{}, fmt.Errorf("workflow.engine.resume: decode resume payload: %w", decErr)
+		}
+		if applier, ok := any(current).(ResumeApplier[S]); ok {
+			current = applier.ApplyResume(resumeState)
+		} else {
+			current = resumeState
 		}
 	}
 
@@ -296,6 +293,7 @@ func (e *engine[S]) executeStep(ctx context.Context, def Definition[S], snap Sna
 	if err != nil {
 		snap.Status = RunStatusFailed
 		snap.LastError = err.Error()
+		snap.Attempts++
 		if def.Durable {
 			now := time.Now().UTC()
 			snap.EndedAt = &now
@@ -408,7 +406,7 @@ func (e *engine[S]) saveSnap(ctx context.Context, def Definition[S], snap Snapsh
 	expectedVersion := snap.Version
 	snap.Version++
 	err := e.store.Save(ctx, snap, expectedVersion)
-	if err != nil {
+	if errors.Is(err, ErrVersionConflict) {
 		e.metrics.versionConflict.Add(ctx, 1,
 			observability.String("workflow", def.ID),
 		)

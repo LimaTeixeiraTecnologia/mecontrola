@@ -34,10 +34,9 @@ func NewTransactionsWriteDefinition(deps TransactionsWriteDeps) platform.Definit
 		steps.NewFormat(formatExpenseReply),
 	)
 	return platform.Definition[steps.ExpenseState]{
-		ID:          TransactionsWriteWorkflowID,
-		Root:        root,
-		Durable:     true,
-		MaxAttempts: 3,
+		ID:      TransactionsWriteWorkflowID,
+		Root:    root,
+		Durable: true,
 	}
 }
 

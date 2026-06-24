@@ -154,6 +154,9 @@ func (s *ParitySuite) runLegacy(b parityBehaviors) parityResult { //nolint:reviv
 				if errors.Is(err, tools.ErrCategoryNotFound) {
 					return tools.ToolResult{Outcome: tools.OutcomeClarify, Kind: kind}, nil
 				}
+				if errors.Is(err, tools.ErrCategoryHintMissing) {
+					return tools.ToolResult{Outcome: tools.OutcomeClarify, Kind: kind}, nil
+				}
 				return tools.ToolResult{Outcome: tools.OutcomeUsecaseError, Kind: kind}, err
 			}
 			st = resolved
@@ -540,31 +543,20 @@ func (s *ParitySuite) TestParity_AuditFailMapsToUsecaseError() {
 
 func (s *ParitySuite) TestParity_MissingResolver() {
 	b := parityBehaviors{
-		authorize:    func() steps.AuthorizeFunc { return alwaysAuthorize }(),
-		replay:       func() steps.ReplayFunc { return noReplayFn }(),
-		policy:       func() steps.PolicyFunc { return allowPolicyFn }(),
-		auditBegin:   func() steps.AuditBeginFunc { return successAuditFn }(),
-		resolver:     nil,
+		authorize:  func() steps.AuthorizeFunc { return alwaysAuthorize }(),
+		replay:     func() steps.ReplayFunc { return noReplayFn }(),
+		policy:     func() steps.PolicyFunc { return allowPolicyFn }(),
+		auditBegin: func() steps.AuditBeginFunc { return successAuditFn }(),
+		resolver: func() steps.CategoryResolverFunc {
+			return func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+				return st, tools.ErrCategoryHintMissing
+			}
+		}(),
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-
-	eng := s.newKernelEngine()
-	def := NewTransactionsWriteDefinition(TransactionsWriteDeps{
-		Authorize:  b.authorize,
-		Replay:     b.replay,
-		Policy:     b.policy,
-		AuditBegin: b.auditBegin,
-		OnSettle:   nil,
-		Resolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
-			return st, tools.ErrCategoryHintMissing
-		},
-		Persist:        b.persist,
-		DenyReply:      "negado",
-		ReplayReply:    "replay",
-		AuditFailReply: "falha auditoria",
-	})
-	result, err := eng.Start(s.ctx, def, "user-missing:whatsapp", b.initialState)
-	s.NoError(err)
-	s.Equal(tools.OutcomeClarify, result.State.Outcome, "missing_resolver: expected clarify")
+	legacy := s.runLegacy(b)
+	kernel := s.runKernel(b)
+	s.Equal(legacy.Outcome, kernel.Outcome, "missing_resolver: Outcome divergence")
+	s.Equal(tools.OutcomeClarify, kernel.Outcome)
 }

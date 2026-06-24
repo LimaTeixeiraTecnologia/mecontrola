@@ -7,15 +7,11 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
-type StoreFactory interface {
-	Store(db database.DBTX) workflow.Store
-}
-
 type storeFactory struct {
 	o11y observability.Observability
 }
 
-func NewStoreFactory(o11y observability.Observability) StoreFactory {
+func NewStoreFactory(o11y observability.Observability) workflow.StoreFactory {
 	return &storeFactory{o11y: o11y}
 }
 

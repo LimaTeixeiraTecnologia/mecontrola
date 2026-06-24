@@ -2,7 +2,6 @@ package services_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
@@ -92,7 +91,8 @@ func (s *StateRecoverySuite) TestResumeStatePreservesAmbiguousData() { //nolint:
 		Channel:    channel,
 		ResumeText: "1",
 	}
-	resumeBytes, _ := json.Marshal(minimalResumeState)
+	resumeBytes, encErr := platform.NewCodec[steps.ExpenseState]().Encode(minimalResumeState)
+	s.Require().NoError(encErr)
 
 	result2, resumeErr := engine.Resume(s.ctx, def, userID.String()+":"+channel, resumeBytes)
 

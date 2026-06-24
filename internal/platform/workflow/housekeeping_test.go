@@ -137,15 +137,73 @@ func (s *HousekeepingJobSuite) TestRun() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			sut := NewHousekeepingJob(&unitOfWorkVoid{}, scenario.dependencies.factory, s.cfg, noopLogger{})
+			sut, newErr := NewHousekeepingJob(&unitOfWorkVoid{}, scenario.dependencies.factory, s.cfg, noopLogger{})
+			s.Require().NoError(newErr)
 			err := sut.Run(scenario.args.ctx)
 			scenario.expect(err)
 		})
 	}
 }
 
+func (s *HousekeepingJobSuite) TestNewHousekeepingJob_InvalidConfig() {
+	type args struct {
+		cfg configs.WorkflowKernelConfig
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(job *HousekeepingJob, err error)
+	}{
+		{
+			name: "deve rejeitar retention_days zero",
+			args: args{cfg: configs.WorkflowKernelConfig{
+				HousekeepingRetentionDays: 0,
+				HousekeepingBatchSize:     100,
+				HousekeepingSchedule:      "@daily",
+			}},
+			expect: func(job *HousekeepingJob, err error) {
+				s.Error(err)
+				s.Nil(job)
+			},
+		},
+		{
+			name: "deve rejeitar retention_days negativo",
+			args: args{cfg: configs.WorkflowKernelConfig{
+				HousekeepingRetentionDays: -1,
+				HousekeepingBatchSize:     100,
+				HousekeepingSchedule:      "@daily",
+			}},
+			expect: func(job *HousekeepingJob, err error) {
+				s.Error(err)
+				s.Nil(job)
+			},
+		},
+		{
+			name: "deve rejeitar batch_size zero",
+			args: args{cfg: configs.WorkflowKernelConfig{
+				HousekeepingRetentionDays: 30,
+				HousekeepingBatchSize:     0,
+				HousekeepingSchedule:      "@daily",
+			}},
+			expect: func(job *HousekeepingJob, err error) {
+				s.Error(err)
+				s.Nil(job)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			job, err := NewHousekeepingJob(&unitOfWorkVoid{}, &fakeStoreFactory{store: &fakeHousekeepingStore{}}, scenario.args.cfg, noopLogger{})
+			scenario.expect(job, err)
+		})
+	}
+}
+
 func (s *HousekeepingJobSuite) TestMetadata() {
-	sut := NewHousekeepingJob(&unitOfWorkVoid{}, &fakeStoreFactory{store: &fakeHousekeepingStore{}}, s.cfg, noopLogger{})
+	sut, err := NewHousekeepingJob(&unitOfWorkVoid{}, &fakeStoreFactory{store: &fakeHousekeepingStore{}}, s.cfg, noopLogger{})
+	s.Require().NoError(err)
 	s.Equal("workflow-kernel-housekeeping", sut.Name())
 	s.Equal("@daily", sut.Schedule())
 	s.Equal(5*time.Minute, sut.Timeout())

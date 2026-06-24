@@ -63,10 +63,9 @@ func makeFailStatusEngineStep(id string) Step[engineTestState] {
 
 func (s *EngineTestSuite) TestStart_AutoComplete_Durable() {
 	def := Definition[engineTestState]{
-		ID:          "test_workflow",
-		Root:        Sequence[engineTestState]("root", makeEngineStep("a", 1), makeEngineStep("b", 10)),
-		Durable:     true,
-		MaxAttempts: 3,
+		ID:      "test_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 1), makeEngineStep("b", 10)),
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -85,10 +84,9 @@ func (s *EngineTestSuite) TestStart_AutoComplete_Durable() {
 
 func (s *EngineTestSuite) TestStart_AutoComplete_NotDurable() {
 	def := Definition[engineTestState]{
-		ID:          "read_workflow",
-		Root:        Sequence[engineTestState]("root", makeEngineStep("a", 5)),
-		Durable:     false,
-		MaxAttempts: 1,
+		ID:      "read_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 5)),
+		Durable: false,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -110,8 +108,7 @@ func (s *EngineTestSuite) TestStart_Suspend_Durable() {
 			makeSuspendEngineStep("suspend"),
 			makeEngineStep("c", 100),
 		),
-		Durable:     true,
-		MaxAttempts: 3,
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -150,8 +147,7 @@ func (s *EngineTestSuite) TestResume_AfterSuspend() {
 			resumableStep,
 			makeEngineStep("c", 100),
 		),
-		Durable:     true,
-		MaxAttempts: 3,
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -172,10 +168,9 @@ func (s *EngineTestSuite) TestResume_AfterSuspend() {
 
 func (s *EngineTestSuite) TestResume_NotFound_ReturnsEmpty() {
 	def := Definition[engineTestState]{
-		ID:          "missing_workflow",
-		Root:        Sequence[engineTestState]("root", makeEngineStep("a", 1)),
-		Durable:     true,
-		MaxAttempts: 1,
+		ID:      "missing_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 1)),
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -187,10 +182,9 @@ func (s *EngineTestSuite) TestResume_NotFound_ReturnsEmpty() {
 
 func (s *EngineTestSuite) TestResume_NotDurable_ReturnsEmpty() {
 	def := Definition[engineTestState]{
-		ID:          "nd_workflow",
-		Root:        Sequence[engineTestState]("root", makeEngineStep("a", 1)),
-		Durable:     false,
-		MaxAttempts: 1,
+		ID:      "nd_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 1)),
+		Durable: false,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -208,8 +202,7 @@ func (s *EngineTestSuite) TestStart_TerminalFailure_OnStepError() {
 			makeErrorEngineStep("boom", errors.New("infra error")),
 			makeEngineStep("c", 100),
 		),
-		Durable:     true,
-		MaxAttempts: 3,
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -232,8 +225,7 @@ func (s *EngineTestSuite) TestStart_TerminalFailure_OnStepStatusFailed() {
 			makeFailStatusEngineStep("guard"),
 			makeEngineStep("c", 100),
 		),
-		Durable:     true,
-		MaxAttempts: 3,
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -250,8 +242,7 @@ func (s *EngineTestSuite) TestStart_ShortCircuit_Durable_StoreHasStepRecords() {
 			makeEngineStep("a", 1),
 			makeEngineStep("b", 10),
 		),
-		Durable:     true,
-		MaxAttempts: 1,
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -264,10 +255,9 @@ func (s *EngineTestSuite) TestStart_ShortCircuit_Durable_StoreHasStepRecords() {
 
 func (s *EngineTestSuite) TestMetrics_EmittedOnStart() {
 	def := Definition[engineTestState]{
-		ID:          "metrics_workflow",
-		Root:        Sequence[engineTestState]("root", makeEngineStep("a", 1)),
-		Durable:     false,
-		MaxAttempts: 1,
+		ID:      "metrics_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 1)),
+		Durable: false,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -307,8 +297,7 @@ func (s *EngineTestSuite) TestCursorResume_SkipsCompletedSteps() {
 			resumableStep,
 			countingStep,
 		),
-		Durable:     true,
-		MaxAttempts: 1,
+		Durable: true,
 	}
 
 	eng := NewEngine[engineTestState](s.store, s.obs)
@@ -323,10 +312,9 @@ func (s *EngineTestSuite) TestCursorResume_SkipsCompletedSteps() {
 
 func (s *EngineTestSuite) TestVersionConflict_TriggersMetric() {
 	def := Definition[engineTestState]{
-		ID:          "conflict_workflow",
-		Root:        Sequence[engineTestState]("root", makeEngineStep("a", 1)),
-		Durable:     true,
-		MaxAttempts: 1,
+		ID:      "conflict_workflow",
+		Root:    Sequence[engineTestState]("root", makeEngineStep("a", 1)),
+		Durable: true,
 	}
 
 	s.store.SetSaveError(ErrVersionConflict)

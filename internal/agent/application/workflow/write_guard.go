@@ -48,6 +48,9 @@ func (g *WriteGuard) Apply(ctx context.Context, in tools.ToolInput) (GuardDecisi
 	}
 	if g.steps.Audit != nil {
 		if blocked, settle, stop := g.steps.Audit(ctx, in); stop {
+			if settle != nil {
+				settle(ctx, false)
+			}
 			return GuardShortCircuit, blocked, nil
 		} else if settle != nil {
 			return GuardProceed, tools.ToolResult{}, settle

@@ -272,8 +272,6 @@ func (b *agentModuleBuilder) prepareSessionStore() {
 	obsFactory := agentrepo.NewObservationRepositoryFactory(b.o11y)
 	b.obsRepo = obsFactory.ObservationRepository(b.sessionDB)
 	b.wfStoreFactory = wfpostgres.NewStoreFactory(b.o11y)
-	wfUoW := uow.NewUnitOfWork(b.sessionDB)
-	b.wfHousekeepingJob = platform.NewHousekeepingJob(wfUoW, b.wfStoreFactory, b.cfg.WorkflowKernelConfig, b.o11y.Logger())
 }
 
 func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
@@ -520,6 +518,13 @@ func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
 		CategoryResolver: resolver,
 		PersistFn:        persistFn,
 	}
+	wfUoW := uow.NewUnitOfWork(b.sessionDB)
+	hkJob, hkErr := platform.NewHousekeepingJob(wfUoW, b.wfStoreFactory, b.cfg.WorkflowKernelConfig, b.o11y.Logger())
+	if hkErr != nil {
+		b.o11y.Logger().Error(context.Background(), "agent.module: invalid housekeeping config", observability.Error(hkErr))
+		return
+	}
+	b.wfHousekeepingJob = hkJob
 	b.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
 		observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
 	)
