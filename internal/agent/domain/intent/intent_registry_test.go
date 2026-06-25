@@ -1,12 +1,9 @@
 package intent
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/prompting"
 )
 
 type KindRegistrySuite struct {
@@ -18,8 +15,8 @@ func TestKindRegistrySuite(t *testing.T) {
 }
 
 func allKinds() []Kind {
-	kinds := make([]Kind, 0, int(KindQueryIncomeSummary))
-	for k := KindUnknown; k <= KindQueryIncomeSummary; k++ {
+	kinds := make([]Kind, 0, int(KindBudgetRecurrence))
+	for k := KindUnknown; k <= KindBudgetRecurrence; k++ {
 		kinds = append(kinds, k)
 	}
 	return kinds
@@ -51,7 +48,7 @@ func kindBuilders() map[Kind]func() (Intent, error) {
 			return NewHowAmIDoing(), nil
 		},
 		KindConfigureBudget: func() (Intent, error) {
-			return NewConfigureBudget(), nil
+			return NewConfigureBudget(ConfigureBudgetFields{})
 		},
 		KindRecordIncome: func() (Intent, error) {
 			return NewRecordIncome(RecordIncomeFields{AmountCents: 100, PaymentMethod: "pix"})
@@ -95,38 +92,9 @@ func kindBuilders() map[Kind]func() (Intent, error) {
 		KindQueryIncomeSummary: func() (Intent, error) {
 			return NewQueryIncomeSummary("")
 		},
-	}
-}
-
-func schemaKindSlugs() ([]string, error) {
-	schema := prompting.ParseIntentJSONSchema()
-	props, ok := schema["properties"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("schema: campo 'properties' ausente ou tipo inesperado")
-	}
-	kindProp, ok := props["kind"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("schema: campo 'kind' ausente ou tipo inesperado")
-	}
-	rawEnum, ok := kindProp["enum"]
-	if !ok {
-		return nil, fmt.Errorf("schema: campo 'kind.enum' ausente")
-	}
-	switch v := rawEnum.(type) {
-	case []string:
-		return v, nil
-	case []any:
-		slugs := make([]string, 0, len(v))
-		for i, item := range v {
-			s, ok := item.(string)
-			if !ok {
-				return nil, fmt.Errorf("schema: enum[%d] não é string: %T", i, item)
-			}
-			slugs = append(slugs, s)
-		}
-		return slugs, nil
-	default:
-		return nil, fmt.Errorf("schema: 'kind.enum' tipo inesperado: %T", rawEnum)
+		KindBudgetRecurrence: func() (Intent, error) {
+			return NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "2026-06", Months: 3})
+		},
 	}
 }
 
@@ -146,34 +114,6 @@ func (s *KindRegistrySuite) TestSlugNotDefaultForNonUnknown() {
 		}
 		slug := k.String()
 		s.NotEqual("unknown", slug, "kind=%d caiu no default 'unknown'", k)
-	}
-}
-
-func (s *KindRegistrySuite) TestParityKindToSchema() {
-	slugs, err := schemaKindSlugs()
-	s.Require().NoError(err, "falha ao extrair enum do schema JSON")
-
-	schemaSet := make(map[string]struct{}, len(slugs))
-	for _, sl := range slugs {
-		schemaSet[sl] = struct{}{}
-	}
-
-	for _, k := range allKinds() {
-		slug := k.String()
-		_, exists := schemaSet[slug]
-		s.True(exists, "kind %d (%q) não está presente no enum de ParseIntentJSONSchema", k, slug)
-	}
-}
-
-func (s *KindRegistrySuite) TestParitySchemaToKind() {
-	slugs, err := schemaKindSlugs()
-	s.Require().NoError(err, "falha ao extrair enum do schema JSON")
-
-	for _, slug := range slugs {
-		k, err := ParseKind(slug)
-		s.NoError(err, "slug %q do schema não é reconhecido por ParseKind", slug)
-		s.NotEqual(Kind(0), k, "slug %q resultou em Kind zero", slug)
-		s.Equal(slug, k.String(), "String() diverge do slug original: kind=%d got=%q want=%q", k, k.String(), slug)
 	}
 }
 

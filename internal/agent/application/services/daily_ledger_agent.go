@@ -86,7 +86,7 @@ type DailyLedgerAgent struct {
 	lastEditor               tools.LastTransactionEditor
 	recurringCreator         tools.RecurringCreator
 	recurringLister          tools.RecurringLister
-	budgetConfig             tools.BudgetConfigurator
+	budgetRecurrenceCreator  tools.BudgetRecurrenceCreator
 	budgetConvo              tools.BudgetConversation
 	budgetCommitter          tools.BudgetConfigCommitter
 	budgetSession            tools.BudgetSessionGateway
@@ -104,12 +104,12 @@ type DailyLedgerAgent struct {
 	clarification            *tools.ClarificationResolver
 	budgetRunner             *tools.BudgetSessionRunner
 	conversational           *tools.Conversational
-	kernelEnabled            bool
 	kernelEngine             platform.Engine[steps.ExpenseState]
 	kernelDef                platform.Definition[steps.ExpenseState]
 	settleReg                *SettleRegistry
 	confirmEngine            platform.Engine[confirmation.ConfirmState]
 	confirmDef               platform.Definition[confirmation.ConfirmState]
+	planExecutor             *workflow.PlanExecutor
 }
 
 func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) (*DailyLedgerAgent, error) {
@@ -131,7 +131,7 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		lastEditor:               deps.LastEditor,
 		recurringCreator:         deps.RecurringCreator,
 		recurringLister:          deps.RecurringLister,
-		budgetConfig:             deps.BudgetConfig,
+		budgetRecurrenceCreator:  deps.BudgetRecurrenceCreator,
 		budgetConvo:              deps.BudgetConvo,
 		budgetCommitter:          deps.BudgetCommitter,
 		budgetSession:            deps.BudgetSession,
@@ -150,7 +150,6 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 	agent.budgetRunner = tools.NewBudgetSessionRunner(agent.recorder, deps.BudgetSession, deps.BudgetConvo, deps.BudgetCommitter, loc, o11y)
 	agent.conversational = tools.NewConversational(agent.recorder, deps.Fallback, o11y)
 	if deps.Kernel != nil && deps.Kernel.Engine != nil {
-		agent.kernelEnabled = true
 		agent.kernelEngine = deps.Kernel.Engine
 		agent.settleReg = deps.Kernel.SettleReg
 		agent.kernelDef = agent.buildKernelDefinition(deps.Kernel)
@@ -159,6 +158,14 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		agent.confirmEngine = deps.Kernel.ConfirmEngine
 		agent.confirmDef = deps.Kernel.ConfirmDef
 		agent.wireBudgetCommitGate()
+	}
+	agent.planExecutor = deps.PlanExecutor
+	if agent.planExecutor == nil && deps.Kernel != nil && deps.Kernel.PlanEngine != nil {
+		planExecutor, err := workflow.NewPlanExecutor(deps.Kernel.PlanEngine, agent.executePlanStep, o11y)
+		if err != nil {
+			return nil, fmt.Errorf("construir plan executor: %w", err)
+		}
+		agent.planExecutor = planExecutor
 	}
 	registry, err := agent.buildRegistry()
 	if err != nil {
@@ -182,8 +189,13 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 }
 
 func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUID, channel, text, messageID string) (bool, RouteResult) {
-	if a.kernelEnabled {
+	if a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
 		if handled, result := a.continuePendingExpenseConfirmation(ctx, userID, channel, text); handled {
+			return true, result
+		}
+	}
+	if a.planExecutor != nil {
+		if handled, result := a.continuePendingPlan(ctx, userID, channel, text); handled {
 			return true, result
 		}
 	}
@@ -193,8 +205,10 @@ func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUI
 		}
 	}
 	if a.budgetRunner.Enabled() {
-		if handled, result := a.budgetRunner.Continue(ctx, userID, channel, text, messageID); handled {
-			return true, toRouteResult(result)
+		if _, active := a.budgetRunner.Active(ctx, userID, channel); active {
+			if handled, result := a.budgetRunner.Cancel(ctx, userID, channel, text); handled {
+				return true, toRouteResult(result)
+			}
 		}
 	}
 	return false, RouteResult{}
@@ -232,6 +246,20 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return RouteResult{Reply: parsed.DirectReply, Outcome: tools.OutcomeRouted, Kind: intent.KindUnknown}
 	}
 
+	if a.budgetRunner.Enabled() {
+		if draft, active := a.budgetRunner.Active(ctx, principal.UserID, channel); active {
+			change := budgetdraft.Change{
+				TotalCents:  parsed.Intent.BudgetTotalCents(),
+				Allocations: parsed.Intent.BudgetAllocations(),
+			}
+			return toRouteResult(a.budgetRunner.Resume(ctx, principal.UserID, channel, messageID, change, draft))
+		}
+	}
+
+	if a.planExecutor != nil && !parsed.Plan.IsSingle() {
+		return a.dispatchPlan(ctx, principal, channel, messageID, text, parsed)
+	}
+
 	if kind.IsWrite() {
 		return a.dispatchWrite(ctx, principal, channel, messageID, text, parsed)
 	}
@@ -250,6 +278,55 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
 	}
 	return toRouteResult(result)
+}
+
+func (a *DailyLedgerAgent) dispatchPlan(ctx context.Context, principal Principal, channel, messageID, text string, parsed ParsedIntent) RouteResult {
+	steps := make([]workflow.PlanStepItem, len(parsed.Plan.Steps))
+	for i, s := range parsed.Plan.Steps {
+		steps[i] = workflow.PlanStepItem{
+			Intent:     s.Intent,
+			Confidence: s.Confidence,
+			Index:      s.Index,
+		}
+	}
+	result, err := a.planExecutor.Execute(ctx, workflow.PlanInput{
+		UserID:       principal.UserID,
+		Channel:      channel,
+		MessageID:    messageID,
+		Text:         text,
+		LLMModel:     parsed.LLMModel,
+		PromptSHA256: parsed.PromptSHA256,
+		DirectReply:  parsed.DirectReply,
+		RawResponse:  string(parsed.Raw),
+		Plan:         workflow.PlanSteps{Steps: steps},
+	})
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.plan_execute_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		reply := a.delegateFallback(ctx, principal.UserID, channel, text)
+		a.record(ctx, parsed.Intent.Kind().String(), channel, tools.OutcomeFallback)
+		return RouteResult{Reply: reply, Outcome: tools.OutcomeFallback, Kind: parsed.Intent.Kind()}
+	}
+	a.record(ctx, parsed.Intent.Kind().String(), channel, result.Outcome)
+	return RouteResult{Reply: result.Reply, Outcome: result.Outcome, Kind: parsed.Intent.Kind()}
+}
+
+func (a *DailyLedgerAgent) continuePendingPlan(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
+	result, handled, err := a.planExecutor.Resume(ctx, userID, channel, text)
+	if err != nil {
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.plan_resume_failed",
+			observability.String("channel", channel),
+			observability.Error(err),
+		)
+		return false, RouteResult{}
+	}
+	if !handled {
+		return false, RouteResult{}
+	}
+	a.record(ctx, intent.KindUnknown.String(), channel, result.Outcome)
+	return true, RouteResult{Reply: result.Reply, Outcome: result.Outcome, Kind: intent.KindUnknown}
 }
 
 func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, channel string, kind intent.Kind, text string) RouteResult {
@@ -272,36 +349,29 @@ func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principa
 		return a.dispatchWriteDestructive(ctx, principal, channel, messageID, parsed)
 	}
 
-	if a.kernelEnabled {
+	if kind.IsKernelWrite() {
+		if a.kernelEngine == (platform.Engine[steps.ExpenseState])(nil) {
+			a.o11y.Logger().Error(ctx, "agent.intent_router.kernel_engine_missing_for_write",
+				observability.String("kind", kind.String()),
+			)
+			a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+			return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+		}
 		return a.dispatchWriteKernel(ctx, principal, channel, messageID, trimmed, parsed, kind)
 	}
 
 	wf, ok := a.registry.Resolve(kind)
 	if !ok {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.unknown_write_kind",
-			observability.String("kind", kind.String()),
-			observability.String("channel", channel),
-		)
-		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+		return a.routeFallback(ctx, principal.UserID, channel, kind, trimmed)
 	}
-	result, execErr := wf.Execute(ctx, tools.ToolInput{
-		UserID:     principal.UserID,
-		Channel:    channel,
-		Intent:     parsed.Intent,
-		MessageID:  messageID,
-		Text:       trimmed,
-		Confidence: parsed.Confidence,
-		Parsed:     parsed,
-	})
+	result, execErr := wf.Execute(ctx, tools.ToolInput{UserID: principal.UserID, Channel: channel, Intent: parsed.Intent, Text: trimmed})
 	if execErr != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.workflow_execute_failed",
+		a.o11y.Logger().Warn(ctx, "agent.intent_router.write_workflow_execute_failed",
 			observability.String("kind", kind.String()),
 			observability.String("workflow", wf.ID()),
 			observability.Error(execErr),
 		)
-		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+		return a.routeFallback(ctx, principal.UserID, channel, kind, trimmed)
 	}
 	return toRouteResult(result)
 }
@@ -312,6 +382,7 @@ func (a *DailyLedgerAgent) dispatchWriteKernel(ctx context.Context, principal Pr
 		UserID:       principal.UserID,
 		Channel:      channel,
 		Intent:       parsed.Intent,
+		StepIndex:    parsed.StepIndex,
 		MessageID:    messageID,
 		Text:         trimmed,
 		Confidence:   parsed.Confidence,
@@ -368,13 +439,6 @@ func (a *DailyLedgerAgent) callSettle(ctx context.Context, decisionID uuid.UUID,
 	fn(ctx, executed)
 }
 
-func (a *DailyLedgerAgent) EnableKernel(engine platform.Engine[steps.ExpenseState], def platform.Definition[steps.ExpenseState], reg *SettleRegistry) {
-	a.kernelEnabled = true
-	a.kernelEngine = engine
-	a.kernelDef = def
-	a.settleReg = reg
-}
-
 func (a *DailyLedgerAgent) authorizeWrite(ctx context.Context, principal Principal, effectiveUserID uuid.UUID, kind intent.Kind, channel string) bool {
 	if effectiveUserID == principal.UserID && effectiveUserID != uuid.Nil {
 		return true
@@ -388,11 +452,11 @@ func (a *DailyLedgerAgent) authorizeWrite(ctx context.Context, principal Princip
 	return false
 }
 
-func (a *DailyLedgerAgent) replayDecision(ctx context.Context, userID uuid.UUID, channel, messageID string, kind intent.Kind) (RouteResult, bool) {
+func (a *DailyLedgerAgent) replayDecision(ctx context.Context, userID uuid.UUID, channel, messageID string, stepIndex int, kind intent.Kind) (RouteResult, bool) {
 	if a.auditor == nil || strings.TrimSpace(messageID) == "" {
 		return RouteResult{}, false
 	}
-	priorReply, found := a.auditor.lookup(ctx, userID, channel, messageID)
+	priorReply, found := a.auditor.lookup(ctx, userID, channel, messageID, stepIndex)
 	if !found {
 		return RouteResult{}, false
 	}
@@ -427,6 +491,52 @@ func (a *DailyLedgerAgent) beginDecisionAudit(ctx context.Context, principal Pri
 		TraceID:      traceID,
 		DirectReply:  parsed.DirectReply,
 		RawResponse:  parsed.Raw,
+		StepIndex:    parsed.StepIndex,
+	})
+}
+
+func (a *DailyLedgerAgent) executePlanStep(ctx context.Context, in workflow.PlanDispatchInput) (tools.ToolResult, error) {
+	confidence, err := valueobjects.NewConfidence(min(max(in.Confidence, 0), 1))
+	if err != nil {
+		confidence, _ = valueobjects.NewConfidence(defaultPolicyMinConfidence)
+	}
+	parsed := ParsedIntent{
+		Intent:       in.Intent,
+		Confidence:   confidence,
+		Raw:          []byte(in.RawResponse),
+		DirectReply:  in.DirectReply,
+		LLMModel:     in.LLMModel,
+		PromptSHA256: in.PromptSHA256,
+		StepIndex:    in.StepIndex,
+	}
+	principal := Principal{UserID: in.UserID}
+	if in.Resuming && isDestructiveKind(in.Intent.Kind()) {
+		handled, result := a.continuePendingApproval(ctx, in.UserID, in.Channel, in.ResumeText, in.MessageID)
+		if !handled {
+			return tools.ToolResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: in.Intent.Kind()}, nil
+		}
+		return toRouteToolResult(result), nil
+	}
+	if in.Intent.Kind().IsWrite() {
+		return toRouteToolResult(a.dispatchWrite(ctx, principal, in.Channel, in.MessageID, in.Text, parsed)), nil
+	}
+	wf, ok := a.registry.Resolve(in.Intent.Kind())
+	if !ok {
+		return tools.ToolResult{Reply: a.delegateFallback(ctx, in.UserID, in.Channel, in.Text), Outcome: tools.OutcomeFallback, Kind: in.Intent.Kind()}, nil
+	}
+	return wf.Execute(ctx, tools.ToolInput{
+		UserID:       in.UserID,
+		Channel:      in.Channel,
+		Intent:       in.Intent,
+		StepIndex:    in.StepIndex,
+		MessageID:    in.MessageID,
+		Text:         in.Text,
+		Confidence:   confidence,
+		Parsed:       parsed,
+		LLMModel:     in.LLMModel,
+		PromptSHA256: in.PromptSHA256,
+		DirectReply:  in.DirectReply,
+		RawResponse:  in.RawResponse,
 	})
 }
 
@@ -530,9 +640,11 @@ func (a *DailyLedgerAgent) wireBudgetCommitGate() {
 }
 
 var intentToOperationKind = map[intent.Kind]confirmation.OperationKind{
-	intent.KindDeleteLastTransaction: confirmation.OperationDeleteLast,
-	intent.KindEditLastTransaction:   confirmation.OperationEditLast,
-	intent.KindDeleteCard:            confirmation.OperationDeleteCard,
+	intent.KindDeleteLastTransaction:  confirmation.OperationDeleteLast,
+	intent.KindEditLastTransaction:    confirmation.OperationEditLast,
+	intent.KindDeleteCard:             confirmation.OperationDeleteCard,
+	intent.KindDeleteTransactionByRef: confirmation.OperationDeleteByRef,
+	intent.KindEditTransactionByRef:   confirmation.OperationEditByRef,
 }
 
 func isDestructiveKind(k intent.Kind) bool {
@@ -616,6 +728,7 @@ func initialConfirmState(userID uuid.UUID, channel, messageID string, parsed Par
 		UserID:        userID.String(),
 		Channel:       channel,
 		MessageID:     messageID,
+		StepIndex:     parsed.StepIndex,
 		PromptText:    promptTextForOperation(opKind),
 	}
 	if opKind == confirmation.OperationEditLast {
@@ -624,7 +737,18 @@ func initialConfirmState(userID uuid.UUID, channel, messageID string, parsed Par
 	if opKind == confirmation.OperationDeleteCard {
 		initial.CardName = parsed.Intent.CardName()
 	}
+	if opKind == confirmation.OperationDeleteByRef {
+		initial.SearchQuery = parsed.Intent.SearchQuery()
+	}
+	if opKind == confirmation.OperationEditByRef {
+		initial.SearchQuery = parsed.Intent.SearchQuery()
+		initial.NewAmountCents = parsed.Intent.AmountCents()
+	}
 	return initial
+}
+
+func toRouteToolResult(result RouteResult) tools.ToolResult {
+	return tools.ToolResult{Reply: result.Reply, Outcome: result.Outcome, Kind: result.Kind}
 }
 
 func promptTextForOperation(op confirmation.OperationKind) string {
@@ -637,6 +761,10 @@ func promptTextForOperation(op confirmation.OperationKind) string {
 		return "Tem certeza que quer remover este cartão? Responda *sim* para confirmar ou *não* para cancelar."
 	case confirmation.OperationBudgetCommit:
 		return "Orçamento completo! Quer ativar as configurações? Responda *sim* para confirmar ou *não* para cancelar."
+	case confirmation.OperationDeleteByRef:
+		return "Tem certeza que quer apagar esse lançamento? Responda *sim* para confirmar ou *não* para cancelar."
+	case confirmation.OperationEditByRef:
+		return "Tem certeza que quer editar esse lançamento? Responda *sim* para confirmar ou *não* para cancelar."
 	default:
 		return "Confirma a operação? Responda *sim* para confirmar ou *não* para cancelar."
 	}
@@ -743,6 +871,10 @@ func resolveIntentKindFromOperation(op confirmation.OperationKind) intent.Kind {
 		return intent.KindDeleteCard
 	case confirmation.OperationBudgetCommit:
 		return intent.KindConfigureBudget
+	case confirmation.OperationDeleteByRef:
+		return intent.KindDeleteTransactionByRef
+	case confirmation.OperationEditByRef:
+		return intent.KindEditTransactionByRef
 	default:
 		return intent.KindUnknown
 	}

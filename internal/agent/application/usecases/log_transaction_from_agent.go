@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	categoriesinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	categoriesoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
 	categoriesvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
@@ -25,8 +26,9 @@ var (
 )
 
 type CategoryAmbiguousError struct {
-	Hint       string
-	Candidates []string
+	Hint          string
+	Candidates    []string
+	CandidateRefs []pendingexpense.CandidateRef
 }
 
 func (e *CategoryAmbiguousError) Error() string {
@@ -38,8 +40,9 @@ func (e *CategoryAmbiguousError) Unwrap() error {
 }
 
 type CategoryNeedsConfirmationError struct {
-	Hint       string
-	Candidates []string
+	Hint          string
+	Candidates    []string
+	CandidateRefs []pendingexpense.CandidateRef
 }
 
 func (e *CategoryNeedsConfirmationError) Error() string {
@@ -50,24 +53,36 @@ func (e *CategoryNeedsConfirmationError) Unwrap() error {
 	return ErrLogTransactionCategoryNeedsConfirmation
 }
 
-func candidatePaths(candidates []categoriesoutput.CandidateOutput) []string {
+func candidatePathsAndRefs(candidates []categoriesoutput.CandidateOutput) ([]string, []pendingexpense.CandidateRef) {
 	limit := min(len(candidates), 3)
 	paths := make([]string, 0, limit)
+	refs := make([]pendingexpense.CandidateRef, 0, limit)
 	for _, candidate := range candidates[:limit] {
 		path := strings.TrimSpace(candidate.Path)
-		if path != "" {
-			paths = append(paths, path)
+		if path == "" {
+			continue
 		}
+		paths = append(paths, path)
+		sub := ""
+		if subID := candidateSubcategoryUUID(candidate); subID != nil {
+			sub = subID.String()
+		}
+		refs = append(refs, pendingexpense.CandidateRef{
+			RootCategoryID: candidate.RootCategoryID.String(),
+			SubcategoryID:  sub,
+		})
 	}
-	return paths
+	return paths, refs
 }
 
 func newCategoryAmbiguousError(hint string, candidates []categoriesoutput.CandidateOutput) *CategoryAmbiguousError {
-	return &CategoryAmbiguousError{Hint: strings.TrimSpace(hint), Candidates: candidatePaths(candidates)}
+	paths, refs := candidatePathsAndRefs(candidates)
+	return &CategoryAmbiguousError{Hint: strings.TrimSpace(hint), Candidates: paths, CandidateRefs: refs}
 }
 
 func newCategoryNeedsConfirmationError(hint string, candidates []categoriesoutput.CandidateOutput) *CategoryNeedsConfirmationError {
-	return &CategoryNeedsConfirmationError{Hint: strings.TrimSpace(hint), Candidates: candidatePaths(candidates)}
+	paths, refs := candidatePathsAndRefs(candidates)
+	return &CategoryNeedsConfirmationError{Hint: strings.TrimSpace(hint), Candidates: paths, CandidateRefs: refs}
 }
 
 const (
@@ -135,14 +150,15 @@ func NewRecordTransactionFromAgent(
 }
 
 type RecordTransactionFromAgentInput struct {
-	UserID        string
-	Intent        intent.Intent
-	ForceCategory *string
-	AmountCents   int64
-	Merchant      string
-	PaymentMethod string
-	Direction     string
-	OccurredAt    string
+	UserID           string
+	Intent           intent.Intent
+	ForceCategory    *string
+	ForceSubcategory *string
+	AmountCents      int64
+	Merchant         string
+	PaymentMethod    string
+	Direction        string
+	OccurredAt       string
 }
 
 type RecordTransactionFromAgentResult struct {
@@ -239,6 +255,7 @@ func (uc *RecordTransactionFromAgent) executeForced(ctx context.Context, in Reco
 		PaymentMethod:  paymentMethod,
 		Description:    description,
 		RootCategoryID: forcedPath,
+		SubcategoryID:  forcedSubcategory(in.ForceSubcategory),
 		AmountCents:    in.AmountCents,
 		OccurredAt:     now,
 	})
@@ -323,4 +340,11 @@ func subcategoryID(candidate categoriesoutput.CandidateOutput) string {
 		return ""
 	}
 	return candidate.CategoryID.String()
+}
+
+func forcedSubcategory(sub *string) string {
+	if sub == nil {
+		return ""
+	}
+	return strings.TrimSpace(*sub)
 }

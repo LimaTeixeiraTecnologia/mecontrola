@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-refatoracao-agent-canonico/1.0_execution_report.md
+summary: Gate de fronteira de dados criado, verde no estado atual, vermelho em injeção negativa, wired em CI e Taskfile.
+timestamp: "2026-06-25T00:00:00Z"

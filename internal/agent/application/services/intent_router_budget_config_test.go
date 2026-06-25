@@ -18,15 +18,15 @@ import (
 )
 
 type fakeBudgetConvo struct {
-	result   tools.BudgetConversationResult
-	err      error
-	calls    int
-	lastText string
+	result     tools.BudgetConversationResult
+	err        error
+	calls      int
+	lastChange budgetdraft.Change
 }
 
-func (f *fakeBudgetConvo) Configure(_ context.Context, text string, draft budgetdraft.Draft) (tools.BudgetConversationResult, error) {
+func (f *fakeBudgetConvo) Configure(_ context.Context, change budgetdraft.Change, draft budgetdraft.Draft) (tools.BudgetConversationResult, error) {
 	f.calls++
-	f.lastText = text
+	f.lastChange = change
 	if f.err != nil {
 		return tools.BudgetConversationResult{}, f.err
 	}
@@ -109,15 +109,20 @@ func (s *BudgetConfigRouterSuite) newRouter() *services.IntentRouter {
 	return router
 }
 
-func (s *BudgetConfigRouterSuite) configureIntent() intent.Intent {
-	return intent.NewConfigureBudget()
+func (s *BudgetConfigRouterSuite) configureIntent(totalCents int64, allocations map[string]int) intent.Intent {
+	in, err := intent.NewConfigureBudget(intent.ConfigureBudgetFields{
+		TotalCents:  totalCents,
+		Allocations: allocations,
+	})
+	require.NoError(s.T(), err)
+	return in
 }
 
 func (s *BudgetConfigRouterSuite) TestStartIncompleteAsksAndSaves() {
 	partial, err := budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 500000})
 	require.NoError(s.T(), err)
 	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Quais categorias?"}
-	s.parser.intent = s.configureIntent()
+	s.parser.intent = s.configureIntent(500000, nil)
 	s.session.found = false
 
 	router := s.newRouter()
@@ -133,7 +138,7 @@ func (s *BudgetConfigRouterSuite) TestStartIncompleteAsksAndSaves() {
 	s.Equal(0, s.committer.calls)
 }
 
-func (s *BudgetConfigRouterSuite) TestPendingSessionContinuesWithoutParsing() {
+func (s *BudgetConfigRouterSuite) TestPendingSessionContinuesViaParsedChange() {
 	s.session.found = true
 	s.session.draft, _ = budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 500000})
 	partial, _ := budgetdraft.New("2026-06").Merge(budgetdraft.Change{
@@ -141,6 +146,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionContinuesWithoutParsing() {
 		Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
 	})
 	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
+	s.parser.intent = s.configureIntent(0, map[string]int{budgetdraft.SlugCustoFixo: 3500})
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
@@ -149,7 +155,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionContinuesWithoutParsing() {
 
 	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal("Faltam categorias", result.Reply)
-	s.Equal("custos fixos 35%", s.convo.lastText)
+	s.Equal(3500, s.convo.lastChange.Allocations[budgetdraft.SlugCustoFixo])
 	s.Equal(1, s.convo.calls)
 	s.Equal(1, s.session.saved)
 }
@@ -169,6 +175,7 @@ func (s *BudgetConfigRouterSuite) TestFinalTurnCompletesCommitsAndClears() {
 	})
 	require.True(s.T(), complete.IsComplete())
 	s.convo.result = tools.BudgetConversationResult{Draft: complete, Complete: true}
+	s.parser.intent = s.configureIntent(0, map[string]int{budgetdraft.SlugLiberdadeFinanceira: 1500})
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
@@ -197,6 +204,7 @@ func (s *BudgetConfigRouterSuite) TestCommitErrorReturnsMessageAndKeepsSession()
 	s.convo.result = tools.BudgetConversationResult{Draft: complete, Complete: true}
 	s.committer.err = errors.New("conflict")
 	s.committer.reply = "Já existe um orçamento neste mês. Quer substituir?"
+	s.parser.intent = s.configureIntent(0, nil)
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
@@ -236,6 +244,7 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionNonCancelTextStillProcesses(
 		Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
 	})
 	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
+	s.parser.intent = s.configureIntent(0, map[string]int{budgetdraft.SlugCustoFixo: 3500})
 
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{

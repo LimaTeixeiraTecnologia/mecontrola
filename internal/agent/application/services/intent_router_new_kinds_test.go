@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type fakeCardPurchaseLogger struct {
@@ -118,15 +121,65 @@ func (s *NewKindsRouterSuite) SetupTest() {
 	s.recList = nil
 }
 
+func newKernelWithCardPurchaseLogger(logger tools.CardPurchaseLogger) *services.KernelDeps {
+	obs := fake.NewProvider()
+	store := newRouterTestStore()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+	return &services.KernelDeps{
+		Engine:    engine,
+		SettleReg: services.NewSettleRegistry(),
+		CategoryResolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+			if logger == nil {
+				return st, tools.ErrCategoryHintMissing
+			}
+			st.CategoryID = "test-category"
+			st.CategoryPath = "Test"
+			return st, nil
+		},
+		PersistFn: func(ctx context.Context, st steps.ExpenseState) (steps.PersistResult, error) {
+			if logger == nil {
+				return steps.PersistResult{}, errors.New("card purchase logger not configured")
+			}
+			result, err := logger.Execute(ctx, tools.CardPurchaseLoggerInput{
+				UserID:        st.UserID.String(),
+				AmountCents:   st.AmountCents,
+				Merchant:      st.Merchant,
+				PaymentMethod: st.PaymentMethod,
+				CardHint:      st.CardHint,
+				Installments:  st.Installments,
+			})
+			if err != nil {
+				return steps.PersistResult{}, err
+			}
+			if !result.CardFound {
+				return steps.PersistResult{
+					ShortCircuit:    true,
+					ShortCircuitOut: tools.OutcomeMissingResolver,
+					ShortCircuitMsg: tools.FormatCardPurchaseCardMissing(st.CardHint),
+				}, nil
+			}
+			return steps.PersistResult{
+				AmountCents:  result.AmountCents,
+				CategoryPath: result.CategoryPath,
+				CardFound:    result.CardFound,
+				CardName:     result.CardName,
+			}, nil
+		},
+	}
+}
+
 func (s *NewKindsRouterSuite) newRouter() *services.IntentRouter {
+	var cardPurLogger tools.CardPurchaseLogger
+	if s.cardPur != nil {
+		cardPurLogger = s.cardPur
+	}
 	deps := services.IntentRouterDeps{
 		Parser:          s.parser,
 		Fallback:        s.fallback,
 		WhatsAppGateway: s.wa,
 		Location:        time.UTC,
-	}
-	if s.cardPur != nil {
-		deps.CardPurchaseLog = s.cardPur
+		Kernel:          newKernelWithCardPurchaseLogger(cardPurLogger),
+		CardPurchaseLog: cardPurLogger,
 	}
 	if s.lister != nil {
 		deps.TransactionLister = s.lister
@@ -162,7 +215,7 @@ func (s *NewKindsRouterSuite) buildCardPurchase() intent.Intent {
 func (s *NewKindsRouterSuite) TestCardPurchase_MissingResolverIsHonest() {
 	result := s.route(s.buildCardPurchase(), "parcelei 1200 em 6x no nubank")
 	s.Equal(intent.KindRecordCardPurchase, result.Kind)
-	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "registrada")
 }

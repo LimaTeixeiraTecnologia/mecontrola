@@ -39,7 +39,6 @@ type getTokenStateUseCase interface {
 type tokenStateResponse struct {
 	ReadyToActivate  bool   `json:"ready_to_activate"`
 	WaMeURL          string `json:"wa_me_url,omitempty"`
-	TelegramDeepLink string `json:"telegram_deep_link,omitempty"`
 	BotNumberDisplay string `json:"bot_number_display,omitempty"`
 	Reason           string `json:"reason,omitempty"`
 	SupportURL       string `json:"support_url,omitempty"`
@@ -97,7 +96,6 @@ func (h *TokenStateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	responses.JSON(w, http.StatusOK, tokenStateResponse{
 		ReadyToActivate:  true,
 		WaMeURL:          result.Output.WaMeURL,
-		TelegramDeepLink: result.Output.TelegramDeepLink,
 		BotNumberDisplay: result.Output.BotNumberDisplay,
 		SupportURL:       result.Output.SupportURL,
 	})

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
@@ -23,7 +22,6 @@ type UpdateRecurringTemplate struct {
 	factory           interfaces.RepositoryFactory
 	uow               uow.UnitOfWork
 	categoryValidator interfaces.CategoryValidator
-	publisher         interfaces.RecurringTemplateEventPublisher
 	o11y              observability.Observability
 }
 
@@ -31,14 +29,12 @@ func NewUpdateRecurringTemplate(
 	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork,
 	categoryValidator interfaces.CategoryValidator,
-	publisher interfaces.RecurringTemplateEventPublisher,
 	o11y observability.Observability,
 ) *UpdateRecurringTemplate {
 	return &UpdateRecurringTemplate{
 		factory:           factory,
 		uow:               u,
 		categoryValidator: categoryValidator,
-		publisher:         publisher,
 		o11y:              o11y,
 	}
 }
@@ -101,7 +97,6 @@ func (uc *UpdateRecurringTemplate) Execute(ctx context.Context, templateID strin
 		return output.RecurringTemplate{}, fmt.Errorf("transactions/update_recurring_template: validar categoria: %w", catErr)
 	}
 
-	eventID := uuid.New()
 	now := time.Now().UTC()
 
 	t, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.RecurringTemplate, error) {
@@ -124,15 +119,6 @@ func (uc *UpdateRecurringTemplate) Execute(ctx context.Context, templateID strin
 			return entities.RecurringTemplate{}, fmt.Errorf("transactions/update_recurring_template: atualizar: %w", updateErr)
 		}
 
-		evt := entities.RecurringTemplateUpdated{
-			EventID:     eventID,
-			AggregateID: cmd.TemplateID,
-			UserID:      cmd.UserID.UUID(),
-			OccurredAt:  now,
-		}
-		if publishErr := uc.publisher.PublishUpdated(ctx, db, evt); publishErr != nil {
-			return entities.RecurringTemplate{}, fmt.Errorf("transactions/update_recurring_template: publicar evento: %w", publishErr)
-		}
 		return *current, nil
 	})
 	if execErr != nil {

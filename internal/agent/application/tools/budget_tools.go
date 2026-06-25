@@ -8,6 +8,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
@@ -234,12 +235,11 @@ func (t *QueryCard) Execute(ctx context.Context, in ToolInput) (ToolResult, erro
 type ConfigureBudget struct {
 	recorder *Recorder
 	session  *BudgetSessionRunner
-	config   BudgetConfigurator
 	o11y     observability.Observability
 }
 
-func NewConfigureBudget(recorder *Recorder, session *BudgetSessionRunner, config BudgetConfigurator, o11y observability.Observability) *ConfigureBudget {
-	return &ConfigureBudget{recorder: recorder, session: session, config: config, o11y: o11y}
+func NewConfigureBudget(recorder *Recorder, session *BudgetSessionRunner, o11y observability.Observability) *ConfigureBudget {
+	return &ConfigureBudget{recorder: recorder, session: session, o11y: o11y}
 }
 
 func (t *ConfigureBudget) Name() string { return "configure_budget" }
@@ -250,24 +250,18 @@ func (t *ConfigureBudget) Descriptor() ToolSpec {
 
 func (t *ConfigureBudget) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
 	kind := intent.KindConfigureBudget
-	if t.session.Enabled() {
-		return t.session.Start(ctx, in.UserID, in.Channel, in.Text, in.MessageID), nil
-	}
-	if t.config == nil {
+	if !t.session.Enabled() {
+		t.o11y.Logger().Warn(ctx, "agent.intent_router.configure_budget_session_unavailable",
+			observability.String("channel", in.Channel),
+		)
 		t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeMissingResolver)
 		return ToolResult{Reply: fallbackParseError, Outcome: OutcomeMissingResolver, Kind: kind}, nil
 	}
-	reply, err := t.config.Start(ctx, in.UserID, in.Channel)
-	if err != nil {
-		t.o11y.Logger().Warn(ctx, "agent.intent_router.configure_budget_failed",
-			observability.String("channel", in.Channel),
-			observability.Error(err),
-		)
-		t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeUsecaseError)
-		return ToolResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: kind}, nil
+	change := budgetdraft.Change{
+		TotalCents:  in.Intent.BudgetTotalCents(),
+		Allocations: in.Intent.BudgetAllocations(),
 	}
-	t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeRouted)
-	return ToolResult{Reply: budgetDefaultStartReply(reply), Outcome: OutcomeRouted, Kind: kind}, nil
+	return t.session.Start(ctx, in.UserID, in.Channel, in.MessageID, change), nil
 }
 
 type EditCategoryPercentage struct {
@@ -318,4 +312,52 @@ func (t *EditCategoryPercentage) Execute(ctx context.Context, in ToolInput) (Too
 	}
 	t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeRouted)
 	return ToolResult{Reply: formatCategoryPercentageUpdated(in.Intent.CategoryName(), result.Percentage), Outcome: OutcomeRouted, Kind: kind}, nil
+}
+
+type BudgetRecurrenceCreatorTool struct {
+	recorder *Recorder
+	creator  BudgetRecurrenceCreator
+	loc      *time.Location
+	o11y     observability.Observability
+}
+
+func NewBudgetRecurrenceCreatorTool(recorder *Recorder, creator BudgetRecurrenceCreator, loc *time.Location, o11y observability.Observability) *BudgetRecurrenceCreatorTool {
+	return &BudgetRecurrenceCreatorTool{recorder: recorder, creator: creator, loc: loc, o11y: o11y}
+}
+
+func (t *BudgetRecurrenceCreatorTool) Name() string { return "budget_recurrence" }
+
+func (t *BudgetRecurrenceCreatorTool) Descriptor() ToolSpec {
+	return ToolSpec{Name: "budget_recurrence", IntentKind: intent.KindBudgetRecurrence, Description: "budget_recurrence"}
+}
+
+func (t *BudgetRecurrenceCreatorTool) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
+	kind := intent.KindBudgetRecurrence
+	if t.creator == nil {
+		t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeMissingResolver)
+		return ToolResult{Reply: registerUnavailableText, Outcome: OutcomeMissingResolver, Kind: kind}, nil
+	}
+	sourceCompetence := in.Intent.SourceCompetence()
+	if sourceCompetence == "" {
+		sourceCompetence = currentCompetence(t.loc)
+	}
+	months := in.Intent.Months()
+	if months <= 0 {
+		months = 1
+	}
+	result, err := t.creator.Execute(ctx, BudgetRecurrenceCreatorInput{
+		UserID:           in.UserID,
+		SourceCompetence: sourceCompetence,
+		Months:           months,
+	})
+	if err != nil {
+		t.o11y.Logger().Warn(ctx, "agent.intent_router.budget_recurrence_failed",
+			observability.String("source_competence", sourceCompetence),
+			observability.Error(err),
+		)
+		t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeUsecaseError)
+		return ToolResult{Reply: fallbackUsecaseError, Outcome: OutcomeUsecaseError, Kind: kind}, nil
+	}
+	t.recorder.Record(ctx, kind.String(), in.Channel, OutcomeRouted)
+	return ToolResult{Reply: formatBudgetRecurrenceCreated(result), Outcome: OutcomeRouted, Kind: kind}, nil
 }

@@ -6,44 +6,28 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 )
 
-func realInterpreter(t *testing.T) usecases.IntentInterpreter {
+func budgetRealParser(t *testing.T) *usecases.ParseInbound {
 	t.Helper()
-	baseURL := os.Getenv("OPENROUTER_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://openrouter.ai"
+	slug, err := valueobjects.NewModelSlug("google/gemini-2.5-flash-lite")
+	require.NoError(t, err)
+	return realParserForModel(t, slug)
+}
+
+func parsedBudgetChange(out usecases.ParseInboundOutput) budgetdraft.Change {
+	return budgetdraft.Change{
+		TotalCents:  out.Intent.BudgetTotalCents(),
+		Allocations: out.Intent.BudgetAllocations(),
 	}
-	client, err := httpclient.NewClient(noop.NewProvider(),
-		httpclient.WithBaseURL(baseURL),
-		httpclient.WithTarget("openrouter_real_budget"),
-		httpclient.WithTimeout(30*time.Second),
-	)
-	require.NoError(t, err)
-	provider := openrouter.NewProvider(client, openrouter.ProviderConfig{
-		Slug:        valueobjects.ModelSlugGeminiFlashLite(),
-		APIKey:      os.Getenv("OPENROUTER_API_KEY"),
-		HTTPReferer: "https://mecontrola.app",
-		XTitle:      "MeControla",
-		MaxTokens:   512,
-		Temperature: 0,
-	}, noop.NewProvider())
-	breaker := services.NewCircuitBreaker(services.CircuitBreakerConfig{MaxFailures: 5, FailureWindow: 30 * time.Second, OpenDuration: 60 * time.Second})
-	chain, err := services.NewFallbackChain([]appinterfaces.LLMProvider{provider}, breaker, noop.NewProvider())
-	require.NoError(t, err)
-	return chain
 }
 
 func TestConfigureBudget_RealLLM_ExtractsAllocations(t *testing.T) {
@@ -52,21 +36,25 @@ func TestConfigureBudget_RealLLM_ExtractsAllocations(t *testing.T) {
 	}
 	require.NotEmpty(t, os.Getenv("OPENROUTER_API_KEY"), "OPENROUTER_API_KEY ausente")
 
-	uc, err := usecases.NewConfigureBudgetConversation(realInterpreter(t), noop.NewProvider())
-	require.NoError(t, err)
+	parser := budgetRealParser(t)
 
-	var out usecases.ConfigureBudgetOutput
+	var complete bool
 	for attempt := 0; attempt < 3; attempt++ {
-		out, err = uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
-			Text:  "quero um orçamento de 10 mil reais: custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20%, liberdade financeira 20%",
-			Draft: budgetdraft.Draft{},
+		out, execErr := parser.Execute(context.Background(), usecases.ParseInboundInput{
+			UserID: uuid.New(),
+			Text:   "quero um orçamento de 10 mil reais: custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20%, liberdade financeira 20%",
 		})
-		require.NoError(t, err)
-		if out.Complete {
+		require.NoError(t, execErr)
+		require.Equal(t, intent.KindConfigureBudget, out.Intent.Kind(), "parse deve classificar como configure_budget")
+
+		merged, mergeErr := budgetdraft.New("2026-06").Merge(parsedBudgetChange(out))
+		require.NoError(t, mergeErr)
+		if merged.IsComplete() {
+			complete = true
 			break
 		}
 	}
-	require.True(t, out.Complete, "orçamento com renda + 5 percentuais somando 100%% deve ficar completo em 3 tentativas; reply=%q", out.Reply)
+	require.True(t, complete, "parse com renda + 5 percentuais somando 100%% deve extrair alocações completas em 3 tentativas")
 }
 
 func TestConfigureBudget_RealLLM_MultiTurnAccumulates(t *testing.T) {
@@ -75,29 +63,34 @@ func TestConfigureBudget_RealLLM_MultiTurnAccumulates(t *testing.T) {
 	}
 	require.NotEmpty(t, os.Getenv("OPENROUTER_API_KEY"), "OPENROUTER_API_KEY ausente")
 
-	uc, err := usecases.NewConfigureBudgetConversation(realInterpreter(t), noop.NewProvider())
-	require.NoError(t, err)
+	parser := budgetRealParser(t)
 
-	var (
-		first  usecases.ConfigureBudgetOutput
-		second usecases.ConfigureBudgetOutput
-	)
+	var complete bool
 	for attempt := 0; attempt < 3; attempt++ {
-		first, err = uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
-			Text:  "quero configurar um orçamento de 10 mil reais",
-			Draft: budgetdraft.Draft{},
+		firstOut, execErr := parser.Execute(context.Background(), usecases.ParseInboundInput{
+			UserID: uuid.New(),
+			Text:   "quero configurar um orçamento de 10 mil reais",
 		})
-		require.NoError(t, err)
-		require.False(t, first.Complete, "só com a renda o orçamento não pode estar completo")
+		require.NoError(t, execErr)
+		require.Equal(t, intent.KindConfigureBudget, firstOut.Intent.Kind())
 
-		second, err = uc.Execute(context.Background(), usecases.ConfigureBudgetInput{
-			Text:  "custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20% e liberdade financeira 20%",
-			Draft: first.Draft,
+		draft, mergeErr := budgetdraft.New("2026-06").Merge(parsedBudgetChange(firstOut))
+		require.NoError(t, mergeErr)
+		require.False(t, draft.IsComplete(), "só com a renda o orçamento não pode estar completo")
+
+		secondOut, execErr := parser.Execute(context.Background(), usecases.ParseInboundInput{
+			UserID: uuid.New(),
+			Text:   "custos fixos 35%, conhecimento 10%, prazeres 15%, metas 20% e liberdade financeira 20%",
 		})
-		require.NoError(t, err)
-		if second.Complete {
+		require.NoError(t, execErr)
+		require.Equal(t, intent.KindConfigureBudget, secondOut.Intent.Kind())
+
+		merged, mergeErr := draft.Merge(parsedBudgetChange(secondOut))
+		require.NoError(t, mergeErr)
+		if merged.IsComplete() {
+			complete = true
 			break
 		}
 	}
-	require.True(t, second.Complete, "após renda + percentuais somando 100%% deve completar em 3 tentativas; reply=%q", second.Reply)
+	require.True(t, complete, "após renda + percentuais somando 100%% o merge determinístico deve completar em 3 tentativas")
 }

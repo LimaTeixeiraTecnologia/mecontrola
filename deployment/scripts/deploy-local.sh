@@ -83,6 +83,9 @@ echo "[vps] rollback target: ${PREV:-<nenhuma>}"
 git config --global --add safe.directory "$DP" 2>/dev/null || true
 ( cd "$DP" && git pull --ff-only ) || echo "[vps] AVISO: git pull falhou — seguindo (binário e migrations vêm da imagem)"
 
+echo "[vps] pre-check migration 000020"
+( cd "$DP" && bash scripts/migrations/pre-deploy-000020.sh ) || { echo "[vps] ERRO: pre-check da migration 000020 falhou — abortando"; exit 1; }
+
 echo "[vps] migrate"
 # </dev/null é obrigatório: este script chega via stdin (bash -s). `compose run` anexa o
 # stdin do chamador e consumiria o resto do heredoc (pulando up/healthcheck em silêncio).

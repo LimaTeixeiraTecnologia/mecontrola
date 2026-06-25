@@ -73,14 +73,15 @@ func NewTransactionLoggerAdapter(uc *usecases.RecordTransactionFromAgent) *Trans
 
 func (a *TransactionLoggerAdapter) Execute(ctx context.Context, in tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
 	result, err := a.uc.Execute(ctx, usecases.RecordTransactionFromAgentInput{
-		UserID:        in.UserID,
-		Intent:        in.Intent,
-		ForceCategory: in.ForceCategory,
-		AmountCents:   in.AmountCents,
-		Merchant:      in.Merchant,
-		PaymentMethod: in.PaymentMethod,
-		Direction:     in.Direction,
-		OccurredAt:    in.OccurredAt,
+		UserID:           in.UserID,
+		Intent:           in.Intent,
+		ForceCategory:    in.ForceCategory,
+		ForceSubcategory: in.ForceSubcategory,
+		AmountCents:      in.AmountCents,
+		Merchant:         in.Merchant,
+		PaymentMethod:    in.PaymentMethod,
+		Direction:        in.Direction,
+		OccurredAt:       in.OccurredAt,
 	})
 	if err != nil {
 		return tools.ExpenseRecorderResult{}, translateCategoryError(err)

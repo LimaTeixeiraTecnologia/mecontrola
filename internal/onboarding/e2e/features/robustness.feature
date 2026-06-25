@@ -17,13 +17,6 @@ Funcionalidade: Robustez de onboarding
     E deve existir um support signal do tipo "token_reuse_attempt"
     E o token atual deve permanecer com status "CONSUMED"
 
-  Cenário: Ativação direta no Telegram bloqueada por falta de dados
-    Dado existe um token pago sem dados suficientes para ativação direta no Telegram
-    Quando o processor do Telegram recebe uma ativação sem dados suficientes
-    Então o processor retorna a mensagem "telegram-requires-whatsapp"
-    E deve existir 0 evento(s) outbox do tipo "onboarding.subscription_bound"
-    E o token atual deve permanecer com status "PAID"
-
   Cenário: Evento sem handlers vai para failed
     Quando o evento "billing.subscription.activated_without_token" é enfileirado na outbox de integração
     E o dispatcher do outbox é executado sem handlers registrados

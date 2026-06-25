@@ -123,7 +123,7 @@ func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
 	s.assertColumnPresent("mecontrola.auth_events", "client_ip")
 	s.assertColumnPresent("mecontrola.cards", "limit_cents")
 	s.assertColumnPresent("mecontrola.cards", "version")
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "telegram_external_id")
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
 
 	invalidSourceErr := execSQL(s.db, s.ctx, `
 		INSERT INTO mecontrola.auth_events (id, kind, source, occurred_at)
@@ -166,16 +166,86 @@ func (s *MigrationSuite) TestChannelDedupAndUserIdentitiesConstraints() {
 
 	insertIdentityErr := execSQL(s.db, s.ctx, `
 		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
-		VALUES ($1, $2, 'telegram', 'external-1', now(), now())
+		VALUES ($1, $2, 'whatsapp', 'external-1', now(), now())
 	`, uuid.NewString(), userID)
 	s.Require().NoError(insertIdentityErr)
 
 	dupIdentityErr := execSQL(s.db, s.ctx, `
 		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
-		VALUES ($1, $2, 'telegram', 'external-1', now(), now())
+		VALUES ($1, $2, 'whatsapp', 'external-1', now(), now())
 	`, uuid.NewString(), userID)
 	s.Require().Error(dupIdentityErr)
 	s.Contains(dupIdentityErr.Error(), "user_identities_channel_external_active_uniq_idx")
+
+	telegramIdentityErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
+		VALUES ($1, $2, 'telegram', 'tg-1', now(), now())
+	`, uuid.NewString(), userID)
+	s.Require().Error(telegramIdentityErr)
+	s.Contains(telegramIdentityErr.Error(), "user_identities_channel_check")
+}
+
+func (s *MigrationSuite) TestMigration000020DropTelegramUpDown() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
+
+	telegramMsgErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
+		VALUES ('telegram', 'tg-msg-1', now())
+	`)
+	s.Require().Error(telegramMsgErr)
+	s.Contains(telegramMsgErr.Error(), "channel_processed_messages_channel_check")
+
+	userID := "eeeeeeee-1111-1111-1111-eeeeeeeeeeee"
+	insertUserErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511988880011', 'ACTIVE', now(), now())
+		ON CONFLICT (id) DO NOTHING
+	`, userID)
+	s.Require().NoError(insertUserErr)
+
+	telegramIdentityErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
+		VALUES ($1, $2, 'telegram', 'tg-ext-1', now(), now())
+	`, uuid.NewString(), userID)
+	s.Require().Error(telegramIdentityErr)
+	s.Contains(telegramIdentityErr.Error(), "user_identities_channel_check")
+
+	telegramSessionErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.onboarding_sessions (user_id, channel, state, payload, updated_at)
+		VALUES ($1, 'telegram', 'started', '{}', now())
+	`, userID)
+	s.Require().Error(telegramSessionErr)
+	s.Contains(telegramSessionErr.Error(), "onboarding_sessions_channel_chk")
+
+	s.downToVersion(migrator, 19)
+
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "telegram_external_id")
+
+	telegramMsgOkErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
+		VALUES ('telegram', 'tg-msg-2', now())
+	`)
+	s.Require().NoError(telegramMsgOkErr)
+
+	telegramIdentityOkErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
+		VALUES ($1, $2, 'telegram', 'tg-ext-2', now(), now())
+	`, uuid.NewString(), userID)
+	s.Require().NoError(telegramIdentityOkErr)
+
+	cleanErr := execSQL(s.db, s.ctx, `
+		DELETE FROM mecontrola.user_identities WHERE channel = 'telegram';
+		DELETE FROM mecontrola.channel_processed_messages WHERE channel = 'telegram';
+		DELETE FROM mecontrola.onboarding_sessions WHERE channel = 'telegram';
+	`)
+	s.Require().NoError(cleanErr)
+
+	s.applyBaseline(migrator)
+
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
 }
 
 func (s *MigrationSuite) TestIdempotencyKeysConstraints() {
@@ -471,6 +541,20 @@ func (s *MigrationSuite) assertColumnPresent(table, column string) {
 	`, parts[0], parts[1], column).Scan(&count)
 	s.Require().NoError(err)
 	s.Equal(int64(1), count)
+}
+
+func (s *MigrationSuite) assertColumnMissing(table, column string) {
+	parts := splitTableName(table)
+	var count int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = $2
+		  AND column_name = $3
+	`, parts[0], parts[1], column).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(0), count)
 }
 
 func (s *MigrationSuite) assertUnaccentAvailable() {

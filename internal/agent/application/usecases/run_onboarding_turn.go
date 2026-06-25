@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -372,10 +373,9 @@ func (uc *RunOnboardingTurn) firstTxPhase(ctx context.Context, in RunOnboardingT
 }
 
 func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingTurnInput, snapshot OnboardingSnapshot, phase string) (OnboardingToolResult, error) {
-	toolName := onboardingPhaseTool(phase)
-	tool, ok := onboardingToolByName(toolName)
+	schema, ok := onboardingPhaseSchema(phase)
 	if !ok {
-		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: tool not found for phase %s", phase)
+		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: schema not found for phase %s", phase)
 	}
 
 	llmMessages := uc.loadHistory(ctx, in.UserID)
@@ -384,47 +384,108 @@ func (uc *RunOnboardingTurn) runDataPhase(ctx context.Context, in RunOnboardingT
 		SystemPrompt: onboardingDataPhasePrompt(phase, snapshot),
 		UserMessage:  strings.TrimSpace(in.Text),
 		Messages:     llmMessages,
-		Tools:        []interfaces.ToolSpec{tool},
-		ToolChoice:   "auto",
-		FreeText:     true,
+		JSONSchema:   schema,
 		MaxTokens:    uc.maxTokens,
 	})
 	if err != nil {
 		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: interpret %s: %w", phase, err)
 	}
 
-	assistantReply := sanitizeWhatsAppText(string(resp.RawJSON))
-	if assistantReply == "" && len(resp.ToolCalls) > 0 {
-		assistantReply = "[tool_call]"
-	}
-	uc.appendHistory(ctx, in.UserID, strings.TrimSpace(in.Text), assistantReply)
-
-	if len(resp.ToolCalls) == 0 {
-		return OnboardingToolResult{Reply: sanitizeWhatsAppText(string(resp.RawJSON)), Advance: false}, nil
+	structured, decodeErr := decodeOnboardingStructured(resp.RawJSON)
+	if decodeErr != nil {
+		uc.appendHistory(ctx, in.UserID, strings.TrimSpace(in.Text), "")
+		return OnboardingToolResult{Reply: onboardingPhaseRetryReply(phase), Advance: false}, nil
 	}
 
+	if structured["action"] == "clarify" {
+		reply := sanitizeWhatsAppText(stringFromMap(structured, "reply"))
+		uc.appendHistory(ctx, in.UserID, strings.TrimSpace(in.Text), reply)
+		return OnboardingToolResult{Reply: reply, Advance: false}, nil
+	}
+
+	actionName, _ := structured["action"].(string)
+	uc.appendHistory(ctx, in.UserID, strings.TrimSpace(in.Text), "[structured_action:"+actionName+"]")
+
+	if phase == OnbPhaseCards {
+		return uc.dispatchCardActions(ctx, in.UserID, in.Channel, actionName, structured)
+	}
+
+	call := interfaces.ToolCall{
+		FunctionName:  actionName,
+		ArgumentsJSON: structured,
+	}
+	result, dispatchErr := uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, call)
+	if dispatchErr != nil {
+		return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: dispatch %s: %w", actionName, dispatchErr)
+	}
+	return result, nil
+}
+
+func (uc *RunOnboardingTurn) dispatchCardActions(ctx context.Context, userID uuid.UUID, channel, actionName string, structured map[string]any) (OnboardingToolResult, error) {
+	rawCards, _ := structured["cards"].([]any)
+	if len(rawCards) == 0 {
+		return OnboardingToolResult{Reply: onboardingPhaseRetryReply(OnbPhaseCards), Advance: false}, nil
+	}
 	var replies []string
-	var advance, terminal bool
-	var objectiveProfile string
-	for _, call := range resp.ToolCalls {
-		result, dispatchErr := uc.dispatcher.Dispatch(ctx, in.UserID, in.Channel, call)
-		if dispatchErr != nil {
-			return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: dispatch %s: %w", call.FunctionName, dispatchErr)
+	var advance bool
+	for _, raw := range rawCards {
+		cardMap, ok := raw.(map[string]any)
+		if !ok {
+			continue
 		}
-		if reply := strings.TrimSpace(result.Reply); reply != "" {
-			replies = append(replies, reply)
+		call := interfaces.ToolCall{
+			FunctionName:  actionName,
+			ArgumentsJSON: cardMap,
+		}
+		result, dispatchErr := uc.dispatcher.Dispatch(ctx, userID, channel, call)
+		if dispatchErr != nil {
+			return OnboardingToolResult{}, fmt.Errorf("agent.usecase.run_onboarding_turn: dispatch card: %w", dispatchErr)
+		}
+		if r := strings.TrimSpace(result.Reply); r != "" {
+			replies = append(replies, r)
 		}
 		if result.Advance {
 			advance = true
 		}
-		if result.Terminal {
-			terminal = true
-		}
-		if result.ObjectiveProfile != "" {
-			objectiveProfile = result.ObjectiveProfile
-		}
 	}
-	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance, Terminal: terminal, ObjectiveProfile: objectiveProfile}, nil
+	return OnboardingToolResult{Reply: strings.Join(replies, "\n\n"), Advance: advance}, nil
+}
+
+func decodeOnboardingStructured(raw []byte) (map[string]any, error) {
+	cleaned := stripFences(raw)
+	if len(cleaned) == 0 {
+		return nil, fmt.Errorf("agent.usecase.run_onboarding_turn: empty structured response")
+	}
+	var out map[string]any
+	if err := json.Unmarshal(cleaned, &out); err != nil {
+		return nil, fmt.Errorf("agent.usecase.run_onboarding_turn: unmarshal structured: %w", err)
+	}
+	return out, nil
+}
+
+func stringFromMap(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, _ := m[key].(string)
+	return v
+}
+
+func onboardingPhaseRetryReply(phase string) string {
+	switch phase {
+	case OnbPhaseObjective:
+		return "Não entendi seu objetivo. Pode me contar de novo com poucas palavras? 😊"
+	case OnbPhaseBudget:
+		return "Não entendi o valor. Quanto você recebe por mês? Me diga só o número. 💰"
+	case OnbPhaseCards:
+		return "Não entendi. Me diz o apelido do cartão e o dia de fechamento (ex: Nubank 15). 💳"
+	case OnbPhaseFinancialPlan:
+		return "Não entendi a distribuição. Me diz quanto quer pra cada categoria. 📊"
+	case OnbPhaseFirstTx:
+		return "Não entendi o lançamento. Me manda algo como 'gastei 35 no mercado'. 😊"
+	default:
+		return "Não entendi. Pode repetir? 😊"
+	}
 }
 
 func (uc *RunOnboardingTurn) loadHistory(ctx context.Context, userID uuid.UUID) []interfaces.ConversationMessage {

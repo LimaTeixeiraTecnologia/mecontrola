@@ -302,16 +302,17 @@ func (s *HITLRoutingSuite) TestNonDestructiveKind_NoGate() {
 		result: tools.ExpenseRecorderResult{Persisted: true, AmountCents: 2000, CategoryPath: "Alimentação"},
 	}
 
+	kernel := newKernelWithExpenseRecorder(expenseLogger, nil)
+	kernel.ConfirmEngine = confirmEngine
+	kernel.ConfirmDef = confirmDef
+
 	deps := services.IntentRouterDeps{
 		Parser:          &fakeParser{intent: expenseIntent},
 		Fallback:        &fakeFallback{reply: "fallback"},
 		WhatsAppGateway: s.wa,
 		Location:        time.UTC,
 		ExpenseRecorder: expenseLogger,
-		Kernel: &services.KernelDeps{
-			ConfirmEngine: confirmEngine,
-			ConfirmDef:    confirmDef,
-		},
+		Kernel:          kernel,
 	}
 	router, err := services.NewIntentRouter(obs, deps)
 	s.Require().NoError(err)
@@ -323,7 +324,7 @@ func (s *HITLRoutingSuite) TestNonDestructiveKind_NoGate() {
 	)
 
 	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(1, expenseLogger.calls, "expense recorder deve ser chamado diretamente sem gate")
+	s.Equal(1, expenseLogger.calls, "expense recorder deve ser chamado via kernel sem gate destrutivo")
 }
 
 func (s *HITLRoutingSuite) TestDestructiveKind_Expired_FallThrough() {
@@ -514,7 +515,7 @@ func (s *HITLRoutingSuite) TestHITLResumeWinsWithPassiveOnboardingRunner() {
 		services.InboundMessage{Text: "sim", WhatsAppTo: peer})
 	s.Equal(tools.OutcomeRouted, second.Outcome, "onboarding passivo não pode engolir o resume do gate HITL")
 	s.Contains(second.Reply, "apagado")
-	s.Equal(2, onboarding.calls, "onboarding runner é consultado mas não intercepta usuário pós-onboarding")
+	s.Equal(1, onboarding.calls, "resume do HITL intercepta antes do onboarding; onboarding só é consultado na 1ª mensagem")
 }
 
 func (s *HITLRoutingSuite) TestActiveOnboardingTakesPriorityOverDestructiveGate() {

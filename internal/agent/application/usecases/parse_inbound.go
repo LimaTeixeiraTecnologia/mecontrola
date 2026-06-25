@@ -37,6 +37,7 @@ type ParseInboundOutput struct {
 	DirectReply  string
 	LLMModel     string
 	PromptSHA256 string
+	Plan         intent.IntentPlan
 }
 
 type ParseInbound struct {
@@ -94,7 +95,7 @@ func NewParseInbound(interpreter IntentInterpreter, retry IntentInterpreter, max
 		confidenceHistogram: confidenceHistogram,
 		schema: &interfaces.JSONSchemaSpec{
 			Name:   "mecontrola_parse_intent",
-			Strict: false,
+			Strict: true,
 			Schema: prompting.ParseIntentJSONSchema(),
 		},
 	}, nil
@@ -192,11 +193,11 @@ func (uc *ParseInbound) maybeRetry(ctx context.Context, out ParseInboundOutput, 
 
 func (uc *ParseInbound) fromContent(ctx context.Context, resp interfaces.LLMResponse, trimmed, promptDigest string) (ParseInboundOutput, error) {
 	llmModel := resp.Provider.String()
-	parsed, confidence, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
+	parsed, confidence, plan, parseErr := decodeAndBuild(resp.RawJSON, trimmed)
 	if parseErr == nil {
 		uc.recordOutcome(ctx, parsed.Kind(), outcomeOK)
 		uc.confidenceHistogram.Record(ctx, confidence.Value(), observability.String("kind", parsed.Kind().String()))
-		return ParseInboundOutput{Intent: parsed, Confidence: confidence, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest}, nil
+		return ParseInboundOutput{Intent: parsed, Confidence: confidence, Raw: resp.RawJSON, LLMModel: llmModel, PromptSHA256: promptDigest, Plan: plan}, nil
 	}
 
 	directReply := strings.TrimSpace(string(resp.RawJSON))
@@ -274,66 +275,112 @@ type parseInboundError struct {
 func (e *parseInboundError) Error() string { return e.Err.Error() }
 func (e *parseInboundError) Unwrap() error { return e.Err }
 
-type rawIntentDTO struct {
-	Kind          string   `json:"kind"`
-	AmountCents   int64    `json:"amount_cents"`
-	Merchant      string   `json:"merchant"`
-	CategoryHint  string   `json:"category_hint"`
-	PaymentMethod string   `json:"payment_method"`
-	CardHint      string   `json:"card_hint"`
-	CategoryName  string   `json:"category_name"`
-	GoalName      string   `json:"goal_name"`
-	CardName      string   `json:"card_name"`
-	CardNickname  string   `json:"nickname"`
-	RefMonth      string   `json:"ref_month"`
-	RawText       string   `json:"raw_text"`
-	Installments  int      `json:"installments"`
-	Direction     string   `json:"direction"`
-	Frequency     string   `json:"frequency"`
-	DayOfMonth    int      `json:"day_of_month"`
-	ClosingDay    int      `json:"closing_day"`
-	DueDay        int      `json:"due_day"`
-	LimitCents    int64    `json:"limit_cents"`
-	Percentage    int      `json:"percentage"`
-	NewNickname   *string  `json:"new_nickname"`
-	NewName       *string  `json:"new_name"`
-	NewClosingDay *int     `json:"new_closing_day"`
-	NewDueDay     *int     `json:"new_due_day"`
-	Confidence    *float64 `json:"confidence"`
+type budgetAllocationDTO struct {
+	RootSlug    string `json:"root_slug"`
+	BasisPoints int    `json:"basis_points"`
 }
 
-func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, valueobjects.Confidence, *parseInboundError) {
+type rawIntentDTO struct {
+	Kind             string                `json:"kind"`
+	AmountCents      int64                 `json:"amount_cents"`
+	Merchant         string                `json:"merchant"`
+	CategoryHint     string                `json:"category_hint"`
+	PaymentMethod    string                `json:"payment_method"`
+	CardHint         string                `json:"card_hint"`
+	CategoryName     string                `json:"category_name"`
+	GoalName         string                `json:"goal_name"`
+	CardName         string                `json:"card_name"`
+	CardNickname     string                `json:"nickname"`
+	RefMonth         string                `json:"ref_month"`
+	RawText          string                `json:"raw_text"`
+	Installments     int                   `json:"installments"`
+	Direction        string                `json:"direction"`
+	Frequency        string                `json:"frequency"`
+	DayOfMonth       int                   `json:"day_of_month"`
+	ClosingDay       int                   `json:"closing_day"`
+	DueDay           int                   `json:"due_day"`
+	LimitCents       int64                 `json:"limit_cents"`
+	Percentage       int                   `json:"percentage"`
+	NewNickname      string                `json:"new_nickname"`
+	NewName          string                `json:"new_name"`
+	NewClosingDay    int                   `json:"new_closing_day"`
+	NewDueDay        int                   `json:"new_due_day"`
+	Months           int                   `json:"months"`
+	SourceCompetence string                `json:"source_competence"`
+	SearchQuery      string                `json:"search_query"`
+	BudgetTotalCents int64                 `json:"budget_total_cents"`
+	BudgetAllocs     []budgetAllocationDTO `json:"budget_allocations"`
+	Confidence       *float64              `json:"confidence"`
+	Plan             []rawIntentDTO        `json:"plan,omitempty"`
+}
+
+func decodeAndBuild(raw []byte, fallbackText string) (intent.Intent, valueobjects.Confidence, intent.IntentPlan, *parseInboundError) {
 	cleaned := stripFences(raw)
 	if len(cleaned) == 0 {
-		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: empty payload")}
+		return intent.Intent{}, valueobjects.Confidence{}, intent.IntentPlan{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: empty payload")}
 	}
 
 	var dto rawIntentDTO
 	if err := json.Unmarshal(cleaned, &dto); err != nil {
-		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: unmarshal: %w", err)}
+		return intent.Intent{}, valueobjects.Confidence{}, intent.IntentPlan{}, &parseInboundError{Outcome: outcomeFallbackInvalid, Err: fmt.Errorf("agent.usecase.parse_inbound: unmarshal: %w", err)}
 	}
 
 	if strings.TrimSpace(dto.Kind) == "" {
-		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: fmt.Errorf("agent.usecase.parse_inbound: missing kind")}
+		return intent.Intent{}, valueobjects.Confidence{}, intent.IntentPlan{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: fmt.Errorf("agent.usecase.parse_inbound: missing kind")}
 	}
 
 	kind, err := intent.ParseKind(dto.Kind)
 	if err != nil {
-		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: err}
+		return intent.Intent{}, valueobjects.Confidence{}, intent.IntentPlan{}, &parseInboundError{Outcome: outcomeFallbackMissing, Err: err}
 	}
 
 	built, err := build(kind, dto, fallbackText)
 	if err != nil {
-		return intent.Intent{}, valueobjects.Confidence{}, &parseInboundError{Outcome: outcomeFallbackDomain, Err: err}
+		return intent.Intent{}, valueobjects.Confidence{}, intent.IntentPlan{}, &parseInboundError{Outcome: outcomeFallbackDomain, Err: err}
 	}
-	return built, resolveConfidence(dto.Confidence), nil
+
+	confidence := resolveConfidence(dto.Confidence)
+	plan := buildPlanFromDTO(dto, built, confidence.Value(), fallbackText)
+	return built, confidence, plan, nil
+}
+
+func buildPlanFromDTO(dto rawIntentDTO, primary intent.Intent, primaryConfidence float64, fallbackText string) intent.IntentPlan {
+	if len(dto.Plan) > 0 {
+		steps := make([]intent.IntentStep, 0, len(dto.Plan))
+		for i, p := range dto.Plan {
+			k, err := intent.ParseKind(p.Kind)
+			if err != nil {
+				continue
+			}
+			in, err := build(k, p, fallbackText)
+			if err != nil {
+				continue
+			}
+			conf := primaryConfidence
+			if p.Confidence != nil {
+				conf = *p.Confidence
+			}
+			steps = append(steps, intent.IntentStep{Intent: in, Confidence: conf, Index: i})
+		}
+		if len(steps) > 0 {
+			plan, err := intent.NewIntentPlan(steps)
+			if err == nil {
+				return plan
+			}
+		}
+	}
+	plan, _ := intent.NewIntentPlan([]intent.IntentStep{
+		{Intent: primary, Confidence: primaryConfidence, Index: 0},
+	})
+	return plan
 }
 
 func resolveConfidence(raw *float64) valueobjects.Confidence {
 	value := defaultConfidence
 	if raw != nil {
-		value = min(max(*raw, 0), 1)
+		value = *raw
 	}
+	value = min(max(value, 0), 1)
 	confidence, err := valueobjects.NewConfidence(value)
 	if err != nil {
 		neutral, _ := valueobjects.NewConfidence(defaultConfidence)
@@ -370,7 +417,18 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 	case intent.KindHowAmIDoing:
 		return intent.NewHowAmIDoing(), nil
 	case intent.KindConfigureBudget:
-		return intent.NewConfigureBudget(), nil
+		allocations := make(map[string]int, len(dto.BudgetAllocs))
+		for _, item := range dto.BudgetAllocs {
+			slug := strings.TrimSpace(item.RootSlug)
+			if slug == "" || item.BasisPoints <= 0 {
+				continue
+			}
+			allocations[slug] = item.BasisPoints
+		}
+		return intent.NewConfigureBudget(intent.ConfigureBudgetFields{
+			TotalCents:  dto.BudgetTotalCents,
+			Allocations: allocations,
+		})
 	case intent.KindRecordCardPurchase:
 		return intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{
 			AmountCents:  dto.AmountCents,
@@ -385,6 +443,10 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		return intent.NewDeleteLastTransaction(), nil
 	case intent.KindEditLastTransaction:
 		return intent.NewEditLastTransaction(dto.AmountCents)
+	case intent.KindDeleteTransactionByRef:
+		return intent.NewDeleteTransactionByRef(dto.SearchQuery)
+	case intent.KindEditTransactionByRef:
+		return intent.NewEditTransactionByRef(dto.SearchQuery, dto.AmountCents)
 	case intent.KindCreateRecurring:
 		dayOfMonth := dto.DayOfMonth
 		if dayOfMonth <= 0 {
@@ -415,10 +477,10 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 	case intent.KindUpdateCard:
 		return intent.NewUpdateCard(intent.UpdateCardFields{
 			CardName:   dto.CardName,
-			Nickname:   dto.NewNickname,
-			Name:       dto.NewName,
-			ClosingDay: nilIfZeroDay(dto.NewClosingDay),
-			DueDay:     nilIfZeroDay(dto.NewDueDay),
+			Nickname:   nilIfEmptyStr(dto.NewNickname),
+			Name:       nilIfEmptyStr(dto.NewName),
+			ClosingDay: nilIfZeroDay(&dto.NewClosingDay),
+			DueDay:     nilIfZeroDay(&dto.NewDueDay),
 		})
 	case intent.KindDeleteCard:
 		return intent.NewDeleteCard(dto.CardName)
@@ -429,6 +491,15 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		})
 	case intent.KindQueryIncomeSummary:
 		return intent.NewQueryIncomeSummary(dto.RefMonth)
+	case intent.KindBudgetRecurrence:
+		months := dto.Months
+		if months <= 0 {
+			months = 1
+		}
+		return intent.NewBudgetRecurrence(intent.BudgetRecurrenceFields{
+			SourceCompetence: dto.SourceCompetence,
+			Months:           months,
+		})
 	case intent.KindUnknown:
 		raw := dto.RawText
 		if strings.TrimSpace(raw) == "" {
@@ -441,10 +512,18 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 }
 
 func nilIfZeroDay(day *int) *int {
-	if day != nil && *day == 0 {
+	if day == nil || *day == 0 {
 		return nil
 	}
 	return day
+}
+
+func nilIfEmptyStr(s string) *string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 var commandCues = []string{

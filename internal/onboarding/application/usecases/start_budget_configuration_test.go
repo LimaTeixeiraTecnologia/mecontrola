@@ -55,7 +55,7 @@ func (s *StartBudgetConfigurationSuite) SetupTest() {
 
 func (s *StartBudgetConfigurationSuite) TestUserIDRequired() {
 	_, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
-		Channel: entities.OnboardingChannelTelegram,
+		Channel: entities.OnboardingChannelWhatsApp,
 	})
 	require.ErrorIs(s.T(), err, ErrStartBudgetUserIDRequired)
 }
@@ -65,13 +65,13 @@ func (s *StartBudgetConfigurationSuite) TestSessionNotFoundCreatesSession() {
 		Return(entities.OnboardingSession{}, appinterfaces.ErrOnboardingSessionNotFound).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
 		return sess.UserID() == s.userID &&
-			sess.Channel() == entities.OnboardingChannelTelegram &&
+			sess.Channel() == entities.OnboardingChannelWhatsApp &&
 			!sess.IsActive()
 	})).Return(nil).Once()
 
 	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		UserID:  s.userID,
-		Channel: entities.OnboardingChannelTelegram,
+		Channel: entities.OnboardingChannelWhatsApp,
 	})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StartBudgetOutcomeStarted, result.Outcome)
@@ -81,7 +81,7 @@ func (s *StartBudgetConfigurationSuite) TestActiveSessionResets() {
 	completedAt := time.Now().UTC()
 	existing := entities.HydrateOnboardingSession(
 		s.userID,
-		entities.OnboardingChannelTelegram,
+		entities.OnboardingChannelWhatsApp,
 		entities.OnboardingSessionPayload{IncomeCents: 500000, CompletedAt: &completedAt},
 		time.Now().UTC(),
 	)
@@ -92,7 +92,7 @@ func (s *StartBudgetConfigurationSuite) TestActiveSessionResets() {
 
 	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		UserID:  s.userID,
-		Channel: entities.OnboardingChannelTelegram,
+		Channel: entities.OnboardingChannelWhatsApp,
 	})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StartBudgetOutcomeReset, result.Outcome)
@@ -101,7 +101,7 @@ func (s *StartBudgetConfigurationSuite) TestActiveSessionResets() {
 func (s *StartBudgetConfigurationSuite) TestInProgressSessionReturnsResume() {
 	existing := entities.HydrateOnboardingSession(
 		s.userID,
-		entities.OnboardingChannelTelegram,
+		entities.OnboardingChannelWhatsApp,
 		entities.OnboardingSessionPayload{IncomeCents: 500000},
 		time.Now().UTC(),
 	)
@@ -109,7 +109,7 @@ func (s *StartBudgetConfigurationSuite) TestInProgressSessionReturnsResume() {
 
 	result, err := s.uc.Execute(context.Background(), StartBudgetConfigurationInput{
 		UserID:  s.userID,
-		Channel: entities.OnboardingChannelTelegram,
+		Channel: entities.OnboardingChannelWhatsApp,
 	})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StartBudgetOutcomeResume, result.Outcome)

@@ -19,7 +19,8 @@
 9. [Verificações pós-deploy](#10-verificações-pós-deploy)
 10. [Troubleshooting](#11-troubleshooting)
 11. [Comandos úteis](#12-comandos-úteis)
-12. [Checklist rápido](#13-checklist-rápido)
+12. [Verificação pré-deploy — migration 000020](#13-verificação-pré-deploy-obrigatória--migration-000020)
+13. [Checklist rápido](#14-checklist-rápido)
 
 ---
 
@@ -848,7 +849,39 @@ docker exec mecontrola-worker-1 /app/mecontrola --help
 
 ---
 
-## 13. Checklist rápido
+## 13. Verificação pré-deploy obrigatória — migration 000020
+
+Antes de aplicar a migration `000020_drop_telegram_channel` em produção, execute o script de
+verificação fail-fast. Esse passo é um **pré-requisito bloqueante**: se existirem dados Telegram,
+a migration falhará no `ADD CONSTRAINT` e o deploy deve ser abortado.
+
+```bash
+# VPS — antes de rodar o container migrate
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_USER=mecontrola
+export DB_PASSWORD=<SENHA>
+export DB_NAME=mecontrola_db
+
+bash scripts/migrations/pre-deploy-000020.sh
+```
+
+Saída esperada (deploy seguro):
+
+```text
+[pre-deploy-000020] Verificando premissa: zero usuarios Telegram em producao
+[pre-deploy-000020] user_identities com channel=telegram: 0
+[pre-deploy-000020] onboarding_sessions com channel=telegram: 0
+[pre-deploy-000020] OK: count(*) telegram = 0 em user_identities e onboarding_sessions.
+[pre-deploy-000020] Premissa confirmada. Seguro aplicar migration 000020.
+```
+
+Se o script retornar exit code 1, **NÃO prosseguir**. Escalar para o time — a premissa de zero
+usuários Telegram foi violada e a situação precisa ser investigada antes da remoção.
+
+---
+
+## 14. Checklist rápido
 
 Use este checklist antes de considerar um deploy concluído:
 

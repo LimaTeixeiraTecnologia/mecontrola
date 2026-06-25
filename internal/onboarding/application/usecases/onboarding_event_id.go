@@ -39,8 +39,6 @@ func buildOutboxEvent(userID uuid.UUID, evt entities.OnboardingDomainEvent, now 
 
 func extractEventID(evt entities.OnboardingDomainEvent) uuid.UUID {
 	switch e := evt.(type) {
-	case entities.IncomeRegistered:
-		return e.EventID
 	case entities.CardRegistered:
 		return e.EventID
 	case entities.SplitsCalculated:

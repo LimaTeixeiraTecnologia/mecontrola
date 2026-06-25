@@ -48,8 +48,8 @@ func (s *LinkChannelToUserSuite) buildExisting(userID uuid.UUID, channel valueob
 }
 
 func (s *LinkChannelToUserSuite) TestExecute_FreshLink_Inserts() {
-	channel := valueobjects.ChannelTelegram()
-	externalID, err := valueobjects.NewExternalID(channel, "12345")
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, "+5511987654321")
 	s.Require().NoError(err)
 
 	s.factoryMock.EXPECT().UserIdentityRepository(mock.Anything).Return(s.repoMock).Once()
@@ -59,8 +59,8 @@ func (s *LinkChannelToUserSuite) TestExecute_FreshLink_Inserts() {
 	sut := NewLinkChannelToUser(s.uowMock, s.factoryMock, s.obs)
 	res, execErr := sut.Execute(s.ctx, input.LinkChannelToUser{
 		UserID:     uuid.New(),
-		Channel:    "telegram",
-		ExternalID: "12345",
+		Channel:    "whatsapp",
+		ExternalID: "+5511987654321",
 	})
 
 	s.Require().NoError(execErr)
@@ -69,8 +69,8 @@ func (s *LinkChannelToUserSuite) TestExecute_FreshLink_Inserts() {
 }
 
 func (s *LinkChannelToUserSuite) TestExecute_AlreadyLinkedSameUser_Idempotent() {
-	channel := valueobjects.ChannelTelegram()
-	externalID, err := valueobjects.NewExternalID(channel, "12345")
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, "+5511987654321")
 	s.Require().NoError(err)
 
 	userID := uuid.New()
@@ -82,8 +82,8 @@ func (s *LinkChannelToUserSuite) TestExecute_AlreadyLinkedSameUser_Idempotent() 
 	sut := NewLinkChannelToUser(s.uowMock, s.factoryMock, s.obs)
 	res, execErr := sut.Execute(s.ctx, input.LinkChannelToUser{
 		UserID:     userID,
-		Channel:    "telegram",
-		ExternalID: "12345",
+		Channel:    "whatsapp",
+		ExternalID: "+5511987654321",
 	})
 
 	s.Require().NoError(execErr)
@@ -92,8 +92,8 @@ func (s *LinkChannelToUserSuite) TestExecute_AlreadyLinkedSameUser_Idempotent() 
 }
 
 func (s *LinkChannelToUserSuite) TestExecute_AlreadyLinkedOtherUser_ReturnsSecurityError() {
-	channel := valueobjects.ChannelTelegram()
-	externalID, err := valueobjects.NewExternalID(channel, "12345")
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, "+5511987654321")
 	s.Require().NoError(err)
 
 	otherUserID := uuid.New()
@@ -105,8 +105,8 @@ func (s *LinkChannelToUserSuite) TestExecute_AlreadyLinkedOtherUser_ReturnsSecur
 	sut := NewLinkChannelToUser(s.uowMock, s.factoryMock, s.obs)
 	_, execErr := sut.Execute(s.ctx, input.LinkChannelToUser{
 		UserID:     uuid.New(),
-		Channel:    "telegram",
-		ExternalID: "12345",
+		Channel:    "whatsapp",
+		ExternalID: "+5511987654321",
 	})
 
 	s.Require().Error(execErr)
@@ -114,8 +114,8 @@ func (s *LinkChannelToUserSuite) TestExecute_AlreadyLinkedOtherUser_ReturnsSecur
 }
 
 func (s *LinkChannelToUserSuite) TestExecute_RaceConflict_SameUser_ReturnsIdempotent() {
-	channel := valueobjects.ChannelTelegram()
-	externalID, err := valueobjects.NewExternalID(channel, "12345")
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, "+5511987654321")
 	s.Require().NoError(err)
 
 	userID := uuid.New()
@@ -129,8 +129,8 @@ func (s *LinkChannelToUserSuite) TestExecute_RaceConflict_SameUser_ReturnsIdempo
 	sut := NewLinkChannelToUser(s.uowMock, s.factoryMock, s.obs)
 	res, execErr := sut.Execute(s.ctx, input.LinkChannelToUser{
 		UserID:     userID,
-		Channel:    "telegram",
-		ExternalID: "12345",
+		Channel:    "whatsapp",
+		ExternalID: "+5511987654321",
 	})
 
 	s.Require().NoError(execErr, "race resolvido com mesmo userID deve ser idempotente")
@@ -138,8 +138,8 @@ func (s *LinkChannelToUserSuite) TestExecute_RaceConflict_SameUser_ReturnsIdempo
 }
 
 func (s *LinkChannelToUserSuite) TestExecute_RaceConflict_OtherUser_ReturnsSecurityError() {
-	channel := valueobjects.ChannelTelegram()
-	externalID, err := valueobjects.NewExternalID(channel, "12345")
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, "+5511987654321")
 	s.Require().NoError(err)
 
 	otherUserID := uuid.New()
@@ -153,8 +153,8 @@ func (s *LinkChannelToUserSuite) TestExecute_RaceConflict_OtherUser_ReturnsSecur
 	sut := NewLinkChannelToUser(s.uowMock, s.factoryMock, s.obs)
 	_, execErr := sut.Execute(s.ctx, input.LinkChannelToUser{
 		UserID:     uuid.New(),
-		Channel:    "telegram",
-		ExternalID: "12345",
+		Channel:    "whatsapp",
+		ExternalID: "+5511987654321",
 	})
 
 	s.Require().Error(execErr)
@@ -176,8 +176,8 @@ func (s *LinkChannelToUserSuite) TestExecute_NilUserID_Rejects() {
 	sut := NewLinkChannelToUser(s.uowMock, s.factoryMock, s.obs)
 	_, execErr := sut.Execute(s.ctx, input.LinkChannelToUser{
 		UserID:     uuid.Nil,
-		Channel:    "telegram",
-		ExternalID: "12345",
+		Channel:    "whatsapp",
+		ExternalID: "+5511987654321",
 	})
 
 	s.Require().Error(execErr)

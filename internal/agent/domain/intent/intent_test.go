@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 )
 
 type IntentSuite struct {
@@ -216,9 +218,29 @@ func (s *IntentSuite) TestNewHowAmIDoing() {
 }
 
 func (s *IntentSuite) TestNewConfigureBudget() {
-	got := NewConfigureBudget()
+	got, err := NewConfigureBudget(ConfigureBudgetFields{
+		TotalCents:  1000000,
+		Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
+	})
+	s.Require().NoError(err)
 	s.Equal(KindConfigureBudget, got.Kind())
 	s.False(got.IsZero())
+	s.Equal(int64(1000000), got.BudgetTotalCents())
+	s.Equal(3500, got.BudgetAllocations()[budgetdraft.SlugCustoFixo])
+}
+
+func (s *IntentSuite) TestNewConfigureBudgetRejectsInvalidSlug() {
+	_, err := NewConfigureBudget(ConfigureBudgetFields{
+		Allocations: map[string]int{"expense.invalido": 3000},
+	})
+	s.Require().ErrorIs(err, ErrBudgetSlugNotAllowed)
+}
+
+func (s *IntentSuite) TestNewConfigureBudgetRejectsBasisPointsRange() {
+	_, err := NewConfigureBudget(ConfigureBudgetFields{
+		Allocations: map[string]int{budgetdraft.SlugMetas: 20000},
+	})
+	s.Require().ErrorIs(err, ErrBudgetBasisPointsRange)
 }
 
 func (s *IntentSuite) TestNewListCards() {

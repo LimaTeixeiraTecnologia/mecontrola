@@ -18,7 +18,6 @@ type MagicTokenRepository interface {
 	UpdateMarkConsumed(ctx context.Context, token entities.MagicToken) error
 	UpdateMarkOutreachSent(ctx context.Context, tokenID string, sentAt time.Time) error
 	UpdateMarkOutreachReset(ctx context.Context, tokenID string) error
-	UpdateTelegramExternalID(ctx context.Context, tokenID, externalID string) error
 	BulkExpire(ctx context.Context, now time.Time, limit int) ([]entities.MagicToken, error)
 	CountPaidUnconsumed(ctx context.Context) (int64, error)
 }

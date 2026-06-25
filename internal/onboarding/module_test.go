@@ -43,7 +43,6 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 			PleaseUseAtivar:      "ativar",
 			InvalidCountry:       "country",
 		},
-		configs.TelegramConfig{},
 		configs.OutboxConfig{},
 		configs.EmailConfig{
 			Provider:    "smtp",

@@ -14,7 +14,6 @@ import (
 func registerActivationProcessorSteps(sc *godog.ScenarioContext, w *onboardingWorld) {
 	sc.Step(`^existe um token pago com assinatura e dados do cliente$`, w.givenPaidTokenWithSubscriptionExists)
 	sc.Step(`^o processor de WhatsApp recebe um comando de ativação com o token atual$`, w.whenWhatsAppProcessorHandlesActivation)
-	sc.Step(`^o processor do Telegram recebe um comando de ativação com o token atual$`, w.whenTelegramProcessorHandlesActivation)
 	sc.Step(`^o dispatcher processa o evento onboarding\.subscription_bound$`, w.whenSubscriptionBoundEventIsDispatched)
 	sc.Step(`^deve existir uma sessão de onboarding em estado "([^"]*)"$`, w.thenOnboardingSessionStateShouldBe)
 	sc.Step(`^o token atual deve estar consumido pelo usuário corrente$`, w.thenCurrentTokenShouldBeConsumedByCurrentUser)
@@ -40,17 +39,6 @@ func (w *onboardingWorld) whenWhatsAppProcessorHandlesActivation() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return w.runtime.deps.whatsAppProcessor.HandleActivation(ctx, "+5511999994444", w.currentTokenClear)
-}
-
-func (w *onboardingWorld) whenTelegramProcessorHandlesActivation() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	reply, err := w.runtime.deps.telegramProcessor.HandleActivation(ctx, w.currentTelegramID, w.currentTokenClear)
-	if err != nil {
-		return err
-	}
-	w.lastReply = reply
-	return nil
 }
 
 func (w *onboardingWorld) whenSubscriptionBoundEventIsDispatched() error {

@@ -29,7 +29,7 @@ func NewConfirmReplayFunc(o11y observability.Observability, deps DecisionAuditDe
 		if err != nil {
 			return "", false
 		}
-		reply, found := auditor.lookup(ctx, uid, state.Channel, state.ResumeMessageID)
+		reply, found := auditor.lookup(ctx, uid, state.Channel, state.ResumeMessageID, state.StepIndex)
 		if !found {
 			return "", false
 		}
@@ -68,6 +68,7 @@ func NewConfirmAuditBeginFunc(o11y observability.Observability, deps DecisionAud
 			TraceID:      traceID,
 			DirectReply:  "",
 			RawResponse:  nil,
+			StepIndex:    state.StepIndex,
 		})
 		settle := steps.ConfirmAuditSettleFunc(nil)
 		if dctx.recorded {

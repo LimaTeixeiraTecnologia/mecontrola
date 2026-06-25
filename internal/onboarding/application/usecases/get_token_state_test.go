@@ -165,7 +165,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			uc := NewGetTokenState(scenario.dependencies.tokenRepo, "+5511999999999", "+55 11 9XXXX-XXXX", "mecontrola_bot", s.obs)
+			uc := NewGetTokenState(scenario.dependencies.tokenRepo, "+5511999999999", "+55 11 9XXXX-XXXX", s.obs)
 			result, err := uc.Execute(s.ctx, scenario.dependencies.tokenClear)
 			scenario.expect(result, err)
 		})

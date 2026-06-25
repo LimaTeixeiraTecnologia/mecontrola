@@ -104,8 +104,6 @@ components:
         wa_me_url:
           type: string
           format: uri
-        telegram_deep_link:
-          type: string
         bot_number_display:
           type: string
     ErrorEnvelope:

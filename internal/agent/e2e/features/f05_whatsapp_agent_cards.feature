@@ -9,7 +9,6 @@ Funcionalidade: Gestão de cartões do agente financeiro via WhatsApp
     E o gateway respondeu ao usuário
     E a resposta do gateway contém "Cartão cadastrado"
     E o número de transações do usuário permaneceu igual
-    E o evento "agent.intent.executed.v1" deve estar no outbox do usuário
 
   Cenário: Cadastrar cartão é idempotente por WAMID
     Dado que o usuário está ativo

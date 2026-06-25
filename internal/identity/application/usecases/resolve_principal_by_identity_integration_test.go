@@ -51,7 +51,7 @@ func (s *ResolvePrincipalByIdentityIntegrationSuite) newSUT() *usecases.ResolveP
 	return usecases.NewResolvePrincipalByIdentity(u, factory, s.o11y)
 }
 
-func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithTelegramIdentity(waNumber, telegramID string) entities.User {
+func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithWhatsAppIdentity(waNumber, externalNumber string) entities.User {
 	s.T().Helper()
 	factory := repositories.NewRepositoryFactory(s.o11y)
 	repo := factory.UserRepository(s.db)
@@ -63,8 +63,8 @@ func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithTelegramIdentit
 
 	userUID := uuid.MustParse(user.ID())
 	identityRepo := factory.UserIdentityRepository(s.db)
-	ch := valueobjects.ChannelTelegram()
-	extID, err := valueobjects.NewExternalID(ch, telegramID)
+	ch := valueobjects.ChannelWhatsApp()
+	extID, err := valueobjects.NewExternalID(ch, externalNumber)
 	s.Require().NoError(err)
 	identityID, err := uuid.NewV7()
 	s.Require().NoError(err)
@@ -74,7 +74,7 @@ func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithTelegramIdentit
 	return user
 }
 
-func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithUnlinkedTelegramIdentity(waNumber, telegramID string) {
+func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithUnlinkedWhatsAppIdentity(waNumber, externalNumber string) {
 	s.T().Helper()
 	factory := repositories.NewRepositoryFactory(s.o11y)
 	repo := factory.UserRepository(s.db)
@@ -86,8 +86,8 @@ func (s *ResolvePrincipalByIdentityIntegrationSuite) seedUserWithUnlinkedTelegra
 
 	userUID := uuid.MustParse(user.ID())
 	identityRepo := factory.UserIdentityRepository(s.db)
-	ch := valueobjects.ChannelTelegram()
-	extID, err := valueobjects.NewExternalID(ch, telegramID)
+	ch := valueobjects.ChannelWhatsApp()
+	extID, err := valueobjects.NewExternalID(ch, externalNumber)
 	s.Require().NoError(err)
 	identityID, err := uuid.NewV7()
 	s.Require().NoError(err)
@@ -121,24 +121,24 @@ func (s *ResolvePrincipalByIdentityIntegrationSuite) TestResolvePrincipalByIdent
 		expect func(auth.Principal, error)
 	}{
 		{
-			name: "canal telegram ativo: retorna Principal com UserID correto",
+			name: "canal whatsapp ativo: retorna Principal com UserID correto",
 			setup: func() args {
-				const telegramID = "123456789"
-				user := s.seedUserWithTelegramIdentity("+5511900000011", telegramID)
+				const externalNumber = "+5511900000011"
+				user := s.seedUserWithWhatsAppIdentity("+5511900000010", externalNumber)
 				s.NotEmpty(user.ID())
-				return args{channel: "telegram", externalID: telegramID}
+				return args{channel: "whatsapp", externalID: externalNumber}
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().NoError(err)
 				s.False(p.IsZero())
-				s.Equal(auth.SourceTelegram, p.Source)
-				s.Equal(1, s.countActiveIdentitiesByChannelAndExtID("telegram", "123456789"))
+				s.Equal(auth.SourceWhatsApp, p.Source)
+				s.Equal(1, s.countActiveIdentitiesByChannelAndExtID("whatsapp", "+5511900000011"))
 			},
 		},
 		{
-			name: "canal desconhecido sem registro: retorna ErrUnknownUser",
+			name: "canal sem registro: retorna ErrUnknownUser",
 			setup: func() args {
-				return args{channel: "telegram", externalID: "999999999"}
+				return args{channel: "whatsapp", externalID: "+5519999999999"}
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().ErrorIs(err, application.ErrUnknownUser)
@@ -148,9 +148,9 @@ func (s *ResolvePrincipalByIdentityIntegrationSuite) TestResolvePrincipalByIdent
 		{
 			name: "canal existe mas unlinked_at IS NOT NULL: retorna ErrUnknownUser",
 			setup: func() args {
-				const telegramID = "555555555"
-				s.seedUserWithUnlinkedTelegramIdentity("+5511900000022", telegramID)
-				return args{channel: "telegram", externalID: telegramID}
+				const externalNumber = "+5511900000022"
+				s.seedUserWithUnlinkedWhatsAppIdentity("+5511900000021", externalNumber)
+				return args{channel: "whatsapp", externalID: externalNumber}
 			},
 			expect: func(p auth.Principal, err error) {
 				s.Require().ErrorIs(err, application.ErrUnknownUser)

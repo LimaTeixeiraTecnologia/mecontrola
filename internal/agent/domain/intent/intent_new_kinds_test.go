@@ -346,3 +346,46 @@ func (s *IntentNewKindsSuite) TestNewEditCategoryPercentage() {
 		s.ErrorIs(err, ErrPercentageOutOfRange)
 	})
 }
+
+func (s *IntentNewKindsSuite) TestNewBudgetRecurrence() {
+	s.Run("valido com 3 meses", func() {
+		got, err := NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "2026-06", Months: 3})
+		s.NoError(err)
+		s.Equal(KindBudgetRecurrence, got.Kind())
+		s.Equal("2026-06", got.SourceCompetence())
+		s.Equal(3, got.Months())
+	})
+
+	s.Run("valido com 1 mês", func() {
+		got, err := NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "2026-01", Months: 1})
+		s.NoError(err)
+		s.Equal(KindBudgetRecurrence, got.Kind())
+	})
+
+	s.Run("competência vazia falha", func() {
+		_, err := NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "", Months: 1})
+		s.ErrorIs(err, ErrBudgetRecurrenceCompetence)
+	})
+
+	s.Run("competência inválida falha", func() {
+		_, err := NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "2026/06", Months: 1})
+		s.ErrorIs(err, ErrBudgetRecurrenceCompetence)
+	})
+
+	s.Run("meses zero falha", func() {
+		_, err := NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "2026-06", Months: 0})
+		s.ErrorIs(err, ErrBudgetRecurrenceMonths)
+	})
+
+	s.Run("meses acima de 12 falha", func() {
+		_, err := NewBudgetRecurrence(BudgetRecurrenceFields{SourceCompetence: "2026-06", Months: 13})
+		s.ErrorIs(err, ErrBudgetRecurrenceMonths)
+	})
+
+	s.Run("kind string e parse round-trip", func() {
+		s.Equal("budget_recurrence", KindBudgetRecurrence.String())
+		k, err := ParseKind("budget_recurrence")
+		s.NoError(err)
+		s.Equal(KindBudgetRecurrence, k)
+	})
+}

@@ -69,7 +69,7 @@ func (uc *StartBudgetConfiguration) Execute(ctx context.Context, in StartBudgetC
 		return StartBudgetConfigurationResult{}, ErrStartBudgetUserIDRequired
 	}
 	channel := in.Channel
-	if channel != entities.OnboardingChannelWhatsApp && channel != entities.OnboardingChannelTelegram {
+	if channel != entities.OnboardingChannelWhatsApp {
 		channel = entities.OnboardingChannelWhatsApp
 	}
 

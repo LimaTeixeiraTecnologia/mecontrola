@@ -98,6 +98,24 @@ origem das mensagens repetidas.
 - `AGENT_LLM_CIRCUIT_FAILURES|WINDOW|COOLDOWN` — circuit breaker.
 - `AGENT_LLM_REQUEST_TIMEOUT`.
 
+## Gate de Fronteira de Dados (RF-20 — ADR-001)
+
+O script `scripts/ci/agent-data-boundary.sh` (recipe Taskfile: `task ci:agent-boundary`) falha o
+build em violação das seguintes regras:
+
+| Check | Regra | O que detecta |
+|-------|-------|---------------|
+| 1 | R-ADAPTER-001 | SQL direto em `internal/agent/application/` ou `infrastructure/binding/` |
+| 2 | R-ADAPTER-001 | Import de `*/infrastructure/repositories` de outro BC em `internal/agent` |
+| 3 | R-ADAPTER-001.1 | Comentários proibidos em Go de produção (`internal/`, `configs/`, `cmd/`) |
+| 4 | R-ADAPTER-001.2 | SQL direto em handlers/consumers/producers/jobs de qualquer módulo |
+| 5 | R-WF-KERNEL-001 | Import de pacote de domínio em `internal/platform/workflow/` |
+| 6 | R-WF-KERNEL-001.4 / R-AGENT-WF-001.5 | Labels de alta cardinalidade (`user_id`, `correlation_key`, `category_id`) em métricas do kernel |
+| 7 | R-AGENT-WF-001.3 / R-WF-KERNEL-001.3 | Estados (`RunStatus`, `StepStatus`, `SuspendReason`, `AwaitingApproval`, `OperationKind`) como string solta |
+
+O gate roda em todo push via `.github/workflows/ci-cd.yml` (job `agent-data-boundary`), bloqueia o
+`build-image` e `notify` em caso de falha. Para rodar localmente: `task ci:agent-boundary`.
+
 ## Notas
 
 - Lançamentos do agent são para relatório (sem dinheiro real); não há gate de confirmação. A

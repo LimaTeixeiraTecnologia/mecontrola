@@ -66,14 +66,15 @@ func NewRecordCardPurchaseFromAgent(
 }
 
 type RecordCardPurchaseFromAgentInput struct {
-	UserID        string
-	Intent        intent.Intent
-	ForceCategory *string
-	AmountCents   int64
-	Merchant      string
-	PaymentMethod string
-	CardHint      string
-	Installments  int
+	UserID           string
+	Intent           intent.Intent
+	ForceCategory    *string
+	ForceSubcategory *string
+	AmountCents      int64
+	Merchant         string
+	PaymentMethod    string
+	CardHint         string
+	Installments     int
 }
 
 type RecordCardPurchaseFromAgentResult struct {
@@ -175,6 +176,7 @@ func (uc *RecordCardPurchaseFromAgent) executeForced(ctx context.Context, in Rec
 		CardHint:       cardHint,
 		Description:    description,
 		RootCategoryID: forcedPath,
+		SubcategoryID:  forcedSubcategory(in.ForceSubcategory),
 		AmountCents:    amountCents,
 		Installments:   installments,
 	})

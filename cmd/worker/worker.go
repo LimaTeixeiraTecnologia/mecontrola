@@ -30,7 +30,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
-	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
@@ -161,7 +160,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		r.db,
 		r.cfg.OnboardingConfig,
 		r.cfg.WhatsAppConfig,
-		r.cfg.TelegramConfig,
 		r.cfg.OutboxConfig,
 		r.cfg.EmailConfig,
 		identityModule,
@@ -202,7 +200,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		transactionsModule,
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
-		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
 		agent.AgentModuleDeps{
 			SessionStore:    r.db,
 			OutboxPublisher: identityModule.OutboxPublisher,

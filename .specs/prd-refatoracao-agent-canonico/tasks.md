@@ -12,15 +12,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Gate de fronteira de dados + gates de governança | pending | — | — | mastra |
-| 2.0 | Eliminação do canal Telegram (código + config) | pending | 1.0 | Não | mastra |
-| 3.0 | Migration 000020 drop Telegram (schema) + verificação pré-deploy | pending | 2.0 | Não | — |
-| 4.0 | Kernel caminho único: remover legacy + fallback morto | pending | 2.0 | Não | mastra |
-| 5.0 | Limpeza de eventos órfãos cross-module | pending | 4.0 | Não | mastra |
-| 6.0 | Structured Output Strict=true + roteamento por classe + onboarding json_schema | pending | 5.0 | Não | mastra |
-| 7.0 | Editar/apagar por referência + desambiguação (search + HITL) | pending | 6.0 | Não | mastra |
-| 8.0 | Plano multi-tool 1..N + idempotência por passo (migration 000021) | pending | 7.0 | Não | mastra |
-| 9.0 | Operação diária via portas (recorrência, % categoria, consultas, casos especiais) | pending | 8.0 | Não | mastra |
+| 1.0 | Gate de fronteira de dados + gates de governança | done | — | — | mastra |
+| 2.0 | Eliminação do canal Telegram (código + config) | done | 1.0 | Não | mastra |
+| 3.0 | Migration 000020 drop Telegram (schema) + verificação pré-deploy | done | 2.0 | Não | — |
+| 4.0 | Kernel caminho único: remover legacy + fallback morto | done | 2.0 | Não | mastra |
+| 5.0 | Limpeza de eventos órfãos cross-module | done | 4.0 | Não | mastra |
+| 6.0 | Structured Output Strict=true + roteamento por classe + onboarding json_schema | done | 5.0 | Não | mastra |
+| 7.0 | Editar/apagar por referência + desambiguação (search + HITL) | done | 6.0 | Não | mastra |
+| 8.0 | Plano multi-tool 1..N + idempotência por passo (migration 000021) | done | 7.0 | Não | mastra |
+| 9.0 | Operação diária via portas (recorrência, % categoria, consultas, casos especiais) | done | 8.0 | Não | mastra |
 
 ## Dependências Críticas
 - **1.0 → tudo:** o gate de fronteira de dados é a blindagem; deve estar verde antes de qualquer refatoração do agent.

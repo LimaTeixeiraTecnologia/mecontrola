@@ -35,8 +35,8 @@ func (r *agentDecisionRepository) Insert(ctx context.Context, decision entities.
 	const query = `
 		INSERT INTO mecontrola.agent_decisions
 		       (id, user_id, channel, message_id, intent_kind, prompt_sha256, llm_model,
-		        redacted_response, trace_id, decided_action, resulting_event_id, status, created_at, settled_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		        redacted_response, trace_id, decided_action, resulting_event_id, status, created_at, settled_at, step_index)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	eventID, hasEvent := decision.ResultingEventID()
@@ -57,6 +57,7 @@ func (r *agentDecisionRepository) Insert(ctx context.Context, decision entities.
 		decision.Status().String(),
 		decision.CreatedAt().UTC(),
 		nullableTime(settledAt, hasSettled),
+		decision.StepIndex(),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -69,18 +70,18 @@ func (r *agentDecisionRepository) Insert(ctx context.Context, decision entities.
 	return nil
 }
 
-func (r *agentDecisionRepository) FindByMessage(ctx context.Context, userID uuid.UUID, channel, messageID string) (interfaces.AgentDecisionSnapshot, bool, error) {
+func (r *agentDecisionRepository) FindByMessage(ctx context.Context, userID uuid.UUID, channel, messageID string, stepIndex int) (interfaces.AgentDecisionSnapshot, bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.decision.repository.pg.find_by_message")
 	defer span.End()
 
 	const query = `
 		SELECT status, redacted_response
 		  FROM mecontrola.agent_decisions
-		 WHERE user_id = $1 AND channel = $2 AND message_id = $3
+		 WHERE user_id = $1 AND channel = $2 AND message_id = $3 AND step_index = $4
 	`
 
 	var snapshot interfaces.AgentDecisionSnapshot
-	err := r.db.QueryRowContext(ctx, query, userID, channel, messageID).Scan(&snapshot.Status, &snapshot.RedactedResponse)
+	err := r.db.QueryRowContext(ctx, query, userID, channel, messageID, stepIndex).Scan(&snapshot.Status, &snapshot.RedactedResponse)
 	if errors.Is(err, sql.ErrNoRows) {
 		return interfaces.AgentDecisionSnapshot{}, false, nil
 	}

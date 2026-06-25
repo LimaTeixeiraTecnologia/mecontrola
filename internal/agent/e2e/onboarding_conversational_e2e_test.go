@@ -4,6 +4,7 @@ package e2e_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ type scriptedInterpreter struct {
 }
 
 func (s *scriptedInterpreter) Interpret(_ context.Context, req appinterfaces.LLMRequest) (appinterfaces.LLMResponse, error) {
-	if req.FreeText && len(req.Tools) == 0 {
+	if req.JSONSchema == nil {
 		return appinterfaces.LLMResponse{}, nil
 	}
 	if len(s.queue) == 0 {
@@ -66,7 +67,7 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 
 	getContext := onbusecases.NewGetOnboardingContext(factory.OnboardingSessionRepository(db), o11y)
 	saveObjective := onbusecases.NewSaveOnboardingObjective(uow.NewUnitOfWork(db), factory, o11y)
-	saveIncome := onbusecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
+	saveIncome := onbusecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), factory, o11y)
 	saveCard := onbusecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y, nil)
 	saveSplits := onbusecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
 	markFirstTx := onbusecases.NewMarkFirstTransactionRecorded(uow.NewUnitOfWork(db), factory, o11y)
@@ -95,10 +96,13 @@ func seedOnboardingSession(t *testing.T, db *sqlx.DB, userID uuid.UUID) {
 	require.NoError(t, repo.Upsert(context.Background(), session))
 }
 
-func toolCallResponse(name string, args map[string]any) appinterfaces.LLMResponse {
-	return appinterfaces.LLMResponse{
-		ToolCalls: []appinterfaces.ToolCall{{ID: "c1", FunctionName: name, ArgumentsJSON: args}},
+func structuredResponse(action string, fields map[string]any) appinterfaces.LLMResponse {
+	payload := map[string]any{"action": action, "reply": ""}
+	for k, v := range fields {
+		payload[k] = v
 	}
+	raw, _ := json.Marshal(payload)
+	return appinterfaces.LLMResponse{RawJSON: raw}
 }
 
 func queryOnboardingString(t *testing.T, db *sqlx.DB, userID uuid.UUID, expr string) (string, bool) {
@@ -150,9 +154,9 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 	seedOnboardingSession(t, db, userID)
 
 	interp := &scriptedInterpreter{queue: []appinterfaces.LLMResponse{
-		toolCallResponse("save_onboarding_objective", map[string]any{"objective": "fazer uma viagem"}),
-		toolCallResponse("save_onboarding_income", map[string]any{"income_cents": 500000}),
-		toolCallResponse("record_transaction", map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado", "category_hint": "mercado"}),
+		structuredResponse("save_onboarding_objective", map[string]any{"objective": "fazer uma viagem", "objective_profile": "specific_goal"}),
+		structuredResponse("save_onboarding_income", map[string]any{"income_cents": 500000}),
+		structuredResponse("record_transaction", map[string]any{"direction": "outcome", "amount_cents": 3500, "merchant": "mercado", "category_hint": "mercado"}),
 	}}
 	turn := newOnboardingTurnPipeline(t, db, interp)
 

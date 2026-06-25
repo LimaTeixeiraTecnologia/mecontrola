@@ -21,19 +21,17 @@ import (
 )
 
 type EditCategoryPercentage struct {
-	factory   interfaces.RepositoryFactory
-	publisher interfaces.BudgetActivatedPublisher
-	uow       uow.UnitOfWork
-	o11y      observability.Observability
+	factory interfaces.RepositoryFactory
+	uow     uow.UnitOfWork
+	o11y    observability.Observability
 }
 
 func NewEditCategoryPercentage(
 	factory interfaces.RepositoryFactory,
-	publisher interfaces.BudgetActivatedPublisher,
 	u uow.UnitOfWork,
 	o11y observability.Observability,
 ) *EditCategoryPercentage {
-	return &EditCategoryPercentage{factory: factory, publisher: publisher, uow: u, o11y: o11y}
+	return &EditCategoryPercentage{factory: factory, uow: u, o11y: o11y}
 }
 
 func (uc *EditCategoryPercentage) Execute(ctx context.Context, in input.EditCategoryPercentageInput) (output.BudgetOutput, error) {
@@ -114,14 +112,6 @@ func (uc *EditCategoryPercentage) persist(ctx context.Context, tx database.DBTX,
 			return entities.Budget{}, interfaces.ErrBudgetConflict
 		}
 		return entities.Budget{}, fmt.Errorf("budgets.usecase.edit_category_percentage: salvar rebalanceamento: %w", saveErr)
-	}
-
-	occurredAt := budget.UpdatedAt()
-	if budget.ActivatedAt() != nil {
-		occurredAt = budget.ActivatedAt().UTC()
-	}
-	if publishErr := uc.publisher.Publish(ctx, tx, budget, occurredAt); publishErr != nil {
-		return entities.Budget{}, fmt.Errorf("budgets.usecase.edit_category_percentage: publicar budget_activated: %w", publishErr)
 	}
 
 	return budget, nil

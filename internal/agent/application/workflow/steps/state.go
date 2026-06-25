@@ -12,6 +12,7 @@ type ExpenseState struct {
 	UserID          uuid.UUID
 	Channel         string
 	MessageID       string
+	StepIndex       int
 	Confidence      float64
 	Kind            intent.Kind
 	TransactionKind pendingexpense.TransactionKind
@@ -23,8 +24,10 @@ type ExpenseState struct {
 	Direction     string
 	OccurredAt    string
 	CategoryID    string
+	SubcategoryID string
 	CategoryPath  string
 	Candidates    []string
+	CandidateRefs []pendingexpense.CandidateRef
 	AwaitingKind  pendingexpense.AwaitingKind
 	Installments  int
 	CardHint      string
@@ -55,8 +58,10 @@ func (s ExpenseState) ToDraft() pendingexpense.Draft {
 		Direction:       s.Direction,
 		OccurredAt:      s.OccurredAt,
 		CategoryID:      s.CategoryID,
+		SubcategoryID:   s.SubcategoryID,
 		CategoryPath:    s.CategoryPath,
 		Candidates:      s.Candidates,
+		CandidateRefs:   s.CandidateRefs,
 		AwaitingKind:    s.AwaitingKind,
 		TransactionKind: s.TransactionKind,
 		Installments:    s.Installments,
@@ -77,8 +82,10 @@ func StateFromDraft(draft pendingexpense.Draft, userID uuid.UUID, channel, messa
 		Direction:       draft.Direction,
 		OccurredAt:      draft.OccurredAt,
 		CategoryID:      draft.CategoryID,
+		SubcategoryID:   draft.SubcategoryID,
 		CategoryPath:    draft.CategoryPath,
 		Candidates:      draft.Candidates,
+		CandidateRefs:   draft.CandidateRefs,
 		AwaitingKind:    draft.AwaitingKind,
 		Installments:    draft.Installments,
 		CardHint:        draft.CardHint,

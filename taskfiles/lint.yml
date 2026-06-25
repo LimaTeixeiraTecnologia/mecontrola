@@ -14,6 +14,7 @@ tasks:
       - task: auth-bypass
       - task: outbox-user-id
       - task: outbox-user-id:test
+      - task: deadcode
 
   fix:
     desc: Aplica correcoes automaticas do linter.
@@ -102,3 +103,13 @@ tasks:
       Garante zero falso positivo e zero falso negativo no gate.
     cmds:
       - bash deployment/scripts/lint-outbox-user-id-test.sh
+
+  deadcode:
+    desc: |
+      Gate RF-40: codigo morto em internal/agent bloqueia o build. Instala deadcode
+      se ausente, roda `deadcode ./cmd/...` e falha quando reporta funcao inalcancavel
+      em internal/agent fora da allowlist (deadcode-agent-allowlist.txt). Cada simbolo
+      preservado e justificado por simetria de API, satisfacao de interface via registry
+      ou feature HITL. Qualquer NOVO codigo morto em internal/agent falha o CI.
+    cmds:
+      - bash deployment/scripts/lint-deadcode.sh

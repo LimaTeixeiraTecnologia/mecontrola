@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 )
 
 var (
@@ -22,8 +24,9 @@ var (
 )
 
 type CategoryAmbiguousError struct {
-	Hint       string
-	Candidates []string
+	Hint          string
+	Candidates    []string
+	CandidateRefs []pendingexpense.CandidateRef
 }
 
 func (e *CategoryAmbiguousError) Error() string {
@@ -35,8 +38,9 @@ func (e *CategoryAmbiguousError) Unwrap() error {
 }
 
 type CategoryNeedsConfirmationError struct {
-	Hint       string
-	Candidates []string
+	Hint          string
+	Candidates    []string
+	CandidateRefs []pendingexpense.CandidateRef
 }
 
 func (e *CategoryNeedsConfirmationError) Error() string {

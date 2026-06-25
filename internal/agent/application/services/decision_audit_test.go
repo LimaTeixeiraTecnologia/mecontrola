@@ -30,7 +30,7 @@ func (r *stubDecisionRepo) UpdateSettlement(_ context.Context, _ entities.AgentD
 	return nil
 }
 
-func (r *stubDecisionRepo) FindByMessage(_ context.Context, _ uuid.UUID, _, _ string) (interfaces.AgentDecisionSnapshot, bool, error) {
+func (r *stubDecisionRepo) FindByMessage(_ context.Context, _ uuid.UUID, _, _ string, _ int) (interfaces.AgentDecisionSnapshot, bool, error) {
 	r.findCalls++
 	return r.snapshot, r.found, r.findErr
 }

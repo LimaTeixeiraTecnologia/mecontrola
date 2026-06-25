@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
@@ -20,5 +21,6 @@ type TransactionRepository interface {
 	SoftDelete(ctx context.Context, id uuid.UUID, userID uuid.UUID, expectedVersion int64, now time.Time) error
 	GetByID(ctx context.Context, id, userID uuid.UUID) (*entities.Transaction, error)
 	ListByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth, cursor Cursor, limit int) ([]*entities.Transaction, Cursor, error)
+	SearchByDescription(ctx context.Context, userID uuid.UUID, q valueobjects.SearchQuery, refMonth option.Option[valueobjects.RefMonth], limit int) ([]*entities.Transaction, error)
 	SumByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (incomeCents, outcomeCents int64, err error)
 }

@@ -231,27 +231,14 @@ func (s *KernelE2ESuite) TestE2E_KernelFlagOn_AuditFieldsPropagateToAuditBegin()
 			SettleReg:        settleReg,
 			CategoryResolver: resolver,
 			PersistFn:        persist,
+			AuditBeginFn: func(_ context.Context, st steps.ExpenseState) steps.AuditBeginResult {
+				captured = st
+				return steps.AuditBeginResult{Settle: func(_ context.Context, _ bool) {}}
+			},
 		},
 	}
 	router, err := services.NewIntentRouter(obs, deps)
 	s.Require().NoError(err)
-
-	customDef := agentwf.NewTransactionsWriteDefinition(agentwf.TransactionsWriteDeps{
-		Authorize: func(_ context.Context, _ steps.ExpenseState) bool { return true },
-		Replay:    func(_ context.Context, _ steps.ExpenseState) (string, bool) { return "", false },
-		Policy:    func(_ context.Context, _ steps.ExpenseState) (bool, string) { return false, "" },
-		AuditBegin: func(_ context.Context, st steps.ExpenseState) steps.AuditBeginResult {
-			captured = st
-			return steps.AuditBeginResult{Settle: func(_ context.Context, _ bool) {}}
-		},
-		OnSettle:       nil,
-		Resolver:       resolver,
-		Persist:        persist,
-		DenyReply:      "negado",
-		ReplayReply:    "replay",
-		AuditFailReply: "falha",
-	})
-	router.EnableKernel(engine, customDef, settleReg)
 
 	principal := services.Principal{UserID: uuid.New()}
 	result := router.RouteWhatsApp(s.ctx, principal, services.InboundMessage{

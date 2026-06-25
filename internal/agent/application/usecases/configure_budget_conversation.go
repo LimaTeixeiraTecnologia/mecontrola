@@ -2,23 +2,20 @@ package usecases
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/prompting"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 )
 
 var ErrConfigureBudgetEmptyText = errors.New("agent.usecase.configure_budget: text is empty")
 
 type ConfigureBudgetInput struct {
-	Text  string
-	Draft budgetdraft.Draft
+	Draft  budgetdraft.Draft
+	Change budgetdraft.Change
 }
 
 type ConfigureBudgetOutput struct {
@@ -28,17 +25,12 @@ type ConfigureBudgetOutput struct {
 }
 
 type ConfigureBudgetConversation struct {
-	interpreter   IntentInterpreter
 	o11y          observability.Observability
 	turnsTotal    observability.Counter
 	mergeFailures observability.Counter
-	schema        *interfaces.JSONSchemaSpec
 }
 
-func NewConfigureBudgetConversation(interpreter IntentInterpreter, o11y observability.Observability) (*ConfigureBudgetConversation, error) {
-	if interpreter == nil {
-		return nil, fmt.Errorf("agent.usecase.configure_budget: interpreter is nil")
-	}
+func NewConfigureBudgetConversation(o11y observability.Observability) (*ConfigureBudgetConversation, error) {
 	if o11y == nil {
 		return nil, fmt.Errorf("agent.usecase.configure_budget: observability is nil")
 	}
@@ -52,17 +44,10 @@ func NewConfigureBudgetConversation(interpreter IntentInterpreter, o11y observab
 		"Total de falhas ao mesclar dados extraídos no rascunho de orçamento por motivo",
 		"1",
 	)
-	schema := &interfaces.JSONSchemaSpec{
-		Name:   "mecontrola_budget_config",
-		Strict: true,
-		Schema: prompting.BudgetConfigJSONSchema(),
-	}
 	return &ConfigureBudgetConversation{
-		interpreter:   interpreter,
 		o11y:          o11y,
 		turnsTotal:    turnsTotal,
 		mergeFailures: mergeFailures,
-		schema:        schema,
 	}, nil
 }
 
@@ -70,39 +55,7 @@ func (uc *ConfigureBudgetConversation) Execute(ctx context.Context, input Config
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agent.usecase.configure_budget")
 	defer span.End()
 
-	trimmed := strings.TrimSpace(input.Text)
-	if trimmed == "" {
-		return ConfigureBudgetOutput{}, ErrConfigureBudgetEmptyText
-	}
-
-	system, err := prompting.RenderBudgetConfigSystem()
-	if err != nil {
-		return ConfigureBudgetOutput{}, fmt.Errorf("agent.usecase.configure_budget: render system: %w", err)
-	}
-
-	resp, err := uc.interpreter.Interpret(ctx, interfaces.LLMRequest{
-		SystemPrompt: system,
-		UserMessage:  trimmed,
-		JSONSchema:   uc.schema,
-	})
-	if err != nil {
-		span.RecordError(err)
-		uc.turnsTotal.Add(ctx, 1, observability.String("outcome", "provider_error"))
-		return ConfigureBudgetOutput{}, fmt.Errorf("agent.usecase.configure_budget: provider: %w", err)
-	}
-
-	change, decodeErr := decodeBudgetChange(resp.RawJSON)
-	if decodeErr != nil {
-		span.RecordError(decodeErr)
-		uc.mergeFailures.Add(ctx, 1, observability.String("reason", "decode"))
-		uc.turnsTotal.Add(ctx, 1, observability.String("outcome", "decode_error"))
-		return ConfigureBudgetOutput{
-			Draft: input.Draft,
-			Reply: budgetConfigClarifyText(input.Draft),
-		}, nil
-	}
-
-	merged, mergeErr := input.Draft.Merge(change)
+	merged, mergeErr := input.Draft.Merge(input.Change)
 	if mergeErr != nil {
 		span.RecordError(mergeErr)
 		uc.mergeFailures.Add(ctx, 1, observability.String("reason", "merge"))
@@ -120,36 +73,6 @@ func (uc *ConfigureBudgetConversation) Execute(ctx context.Context, input Config
 
 	uc.turnsTotal.Add(ctx, 1, observability.String("outcome", "incomplete"))
 	return ConfigureBudgetOutput{Draft: merged, Reply: budgetConfigClarifyText(merged)}, nil
-}
-
-type budgetChangeDTO struct {
-	TotalCents  int64                 `json:"total_cents"`
-	Allocations []budgetAllocationDTO `json:"allocations"`
-}
-
-type budgetAllocationDTO struct {
-	RootSlug    string `json:"root_slug"`
-	BasisPoints int    `json:"basis_points"`
-}
-
-func decodeBudgetChange(raw []byte) (budgetdraft.Change, error) {
-	cleaned := stripFences(raw)
-	if len(cleaned) == 0 {
-		return budgetdraft.Change{}, fmt.Errorf("agent.usecase.configure_budget: empty payload")
-	}
-	var dto budgetChangeDTO
-	if err := json.Unmarshal(cleaned, &dto); err != nil {
-		return budgetdraft.Change{}, fmt.Errorf("agent.usecase.configure_budget: unmarshal: %w", err)
-	}
-	allocations := make(map[string]int, len(dto.Allocations))
-	for _, item := range dto.Allocations {
-		slug := strings.TrimSpace(item.RootSlug)
-		if slug == "" || item.BasisPoints <= 0 {
-			continue
-		}
-		allocations[slug] = item.BasisPoints
-	}
-	return budgetdraft.Change{TotalCents: dto.TotalCents, Allocations: allocations}, nil
 }
 
 func budgetConfigClarifyText(draft budgetdraft.Draft) string {

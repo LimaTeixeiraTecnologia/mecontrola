@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
@@ -22,7 +21,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
-	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	budgetsconsumers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/messaging/database/consumers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
@@ -34,11 +32,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	tgdedup "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dedup/postgres"
-	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
-	tghandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/handlers"
-	tgpayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/payload"
-	tgsignature "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/signature"
 	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wahandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/handlers"
@@ -56,10 +49,6 @@ func TestE2E(t *testing.T) {
 	secret := "test-secret-e2e-2026"
 	waNumber := "+5511988887777"
 	waFrom := "5511988887777"
-	telegramSecret := "test-telegram-secret-e2e-2026"
-	telegramBotID := int64(987654321)
-	telegramChatID := int64(555000111)
-	telegramUserID := int64(555000111)
 
 	cfg, err := configs.LoadConfig("../../..")
 	if err != nil {
@@ -79,11 +68,9 @@ func TestE2E(t *testing.T) {
 	})
 
 	userID := SeedActiveUserWA(t, db, waNumber)
-	SeedTelegramIdentity(t, db, userID, telegramUserID)
 	gateway := &CapturingGateway{}
-	telegramGateway := &CapturingTelegramGateway{}
 
-	router, downstream := buildServer(t, ctx, cfg, db, o11y, gateway, telegramGateway, limiter, secret, telegramSecret, telegramBotID, userID)
+	router, downstream := buildServer(t, ctx, cfg, db, o11y, gateway, limiter, secret, userID)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 
@@ -92,11 +79,9 @@ func TestE2E(t *testing.T) {
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
 			sc.Before(func(c context.Context, _ *godog.Scenario) (context.Context, error) {
 				gateway.Reset()
-				telegramGateway.Reset()
 				return c, nil
 			})
-			registerSteps(sc, newAgentE2ECtx(t, server, db, gateway, downstream.recompute, downstream.budgets, downstream.budgetsDeleted, downstream.budgetsCardPurchase, secret, waNumber, waFrom, userID).
-				withTelegram(telegramGateway, telegramSecret, telegramChatID, telegramUserID))
+			registerSteps(sc, newAgentE2ECtx(t, server, db, gateway, downstream.recompute, downstream.budgets, downstream.budgetsDeleted, downstream.budgetsCardPurchase, secret, waNumber, waFrom, userID))
 		},
 		Options: &godog.Options{
 			Format:   "pretty",
@@ -124,11 +109,8 @@ func buildServer(
 	db *sqlx.DB,
 	o11y *fake.Provider,
 	gateway *CapturingGateway,
-	telegramGateway *CapturingTelegramGateway,
 	limiter *ratelimit.Limiter,
 	secret string,
-	telegramSecret string,
-	telegramBotID int64,
 	userID uuid.UUID,
 ) (http.Handler, e2eDownstream) {
 	t.Helper()
@@ -216,6 +198,19 @@ func buildServer(
 		t.Fatalf("intent edit: %v", err)
 	}
 	deleteIntent := intent.NewDeleteLastTransaction()
+
+	deleteUberByRefIntent, err := intent.NewDeleteTransactionByRef("Uber")
+	if err != nil {
+		t.Fatalf("intent delete uber by ref: %v", err)
+	}
+	deleteMercadoByRefIntent, err := intent.NewDeleteTransactionByRef("mercado")
+	if err != nil {
+		t.Fatalf("intent delete mercado by ref: %v", err)
+	}
+	editUberByRefIntent, err := intent.NewEditTransactionByRef("Uber", 4200)
+	if err != nil {
+		t.Fatalf("intent edit uber by ref: %v", err)
+	}
 
 	listTransactionsIntent, err := intent.NewListTransactions("")
 	if err != nil {
@@ -335,6 +330,9 @@ func buildServer(
 		"todo mês recebo 5000 no dia 5":                   recurringIntent,
 		"na verdade foi 80":                               editIntent,
 		"apaga o último":                                  deleteIntent,
+		"apaga o uber":                                    deleteUberByRefIntent,
+		"apaga o mercado":                                 deleteMercadoByRefIntent,
+		"o uber foi 42 e não 35":                          editUberByRefIntent,
 		"lista meus lançamentos":                          listTransactionsIntent,
 		"resumo do mês":                                   monthlySummaryIntent,
 		"quanto gastei em prazeres?":                      queryCategoryIntent,
@@ -363,19 +361,28 @@ func buildServer(
 	)
 
 	transactionLister := agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC)
+	transactionSearcher := agentbinding.NewTransactionSearcherAdapter(txModule.SearchTransactionsUC)
 	lastEditor := agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC)
 	lastDeleter := agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC)
 	cardDeleter := agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC)
 
+	kernelCategoryResolver := agentbinding.NewKernelCategoryResolver(catModule.SearchDictionaryUC)
+	kernelPersistFn := agentbinding.NewKernelPersistFunc(
+		expLogger,
+		agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
+	)
 	kernelDeps, _, err := buildConfirmKernelDeps(
 		o11y,
 		db,
 		cfg,
 		transactionLister,
+		transactionSearcher,
 		lastEditor,
 		lastDeleter,
 		cardModule.ListCardsUC,
 		cardDeleter,
+		kernelCategoryResolver,
+		kernelPersistFn,
 	)
 	if err != nil {
 		t.Fatalf("confirm kernel deps: %v", err)
@@ -385,11 +392,11 @@ func buildServer(
 		Parser:                   stubP,
 		Fallback:                 &StubFallback{},
 		WhatsAppGateway:          gateway,
-		TelegramGateway:          telegramGateway,
 		ExpenseRecorder:          expLogger,
 		CardPurchaseLog:          agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
 		RecurringCreator:         agentbinding.NewRecurringCreatorAdapter(createRecurring),
 		TransactionLister:        transactionLister,
+		TransactionSearcher:      transactionSearcher,
 		LastEditor:               lastEditor,
 		LastDeleter:              lastDeleter,
 		MonthlySummary:           budgetsModule.GetMonthlySummaryUC,
@@ -401,7 +408,6 @@ func buildServer(
 		CardDeleter:              cardDeleter,
 		CategoryPercentageEditor: agentbinding.NewCategoryPercentageEditorAdapter(budgetsModule.EditCategoryPercentageUC),
 		RecurringLister:          agentbinding.NewRecurringListerAdapter(txModule.ListRecurringTemplatesUC),
-		EventPublisher:           agentevents.NewIntentEventPublisher(publisher, o11y),
 		Location:                 time.UTC,
 		Kernel:                   kernelDeps,
 	})
@@ -444,45 +450,11 @@ func buildServer(
 	verifyHandler := wahandlers.NewVerifyHandler(cfg.WhatsAppConfig.VerifyToken)
 	inboundHandler := wahandlers.NewInboundHandler(disp, o11y)
 
-	tgResolveUoW := uow.NewUnitOfWork(db)
-	tgResolveUC := identityuc.NewResolvePrincipalByIdentity(tgResolveUoW, factory, o11y)
-	tgDedupRepo := tgdedup.NewUpdateRepository(o11y, db)
-
-	tgAgentRoute := func(c context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
-		principal, ok := identityauth.FromContext(c)
-		if !ok {
-			return tgdispatcher.OutcomeAgent
-		}
-		_ = intentRouter.RouteTelegram(c, appservices.Principal{UserID: principal.UserID}, appservices.InboundMessage{
-			Text:       msg.Text,
-			TelegramTo: msg.ChatID,
-			MessageID:  strconv.FormatInt(msg.MessageID, 10),
-		})
-		return tgdispatcher.OutcomeAgent
-	}
-	tgOnboardingRoute := func(_ context.Context, _ tgpayload.Message) tgdispatcher.RouteOutcome {
-		return tgdispatcher.OutcomeFallback
-	}
-
-	tgDisp := tgdispatcher.New(
-		telegramBotID,
-		tgDedupRepo,
-		tgResolveUC,
-		limiter,
-		publisher,
-		tgOnboardingRoute,
-		tgAgentRoute,
-		o11y,
-	)
-	tgInboundHandler := tghandlers.NewInboundHandler(tgDisp, o11y)
-
 	r := chi.NewRouter()
 	r.Route("/api/v1/whatsapp", func(sub chi.Router) {
 		sub.Get("/verify", verifyHandler.Handle)
 		sub.With(wasignature.Compose(secret, "", nil)).Post("/inbound", inboundHandler.Handle)
 	})
-	r.With(tgsignature.SecretToken(telegramSecret, "")).
-		Post("/api/v1/channels/telegram/webhook", tgInboundHandler.Handle)
 	budgetsCardPurchase := budgetsconsumers.NewCardPurchaseCreatedConsumer(budgetsModule.UpsertExpenseUC, o11y)
 
 	return r, e2eDownstream{

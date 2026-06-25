@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -19,7 +18,6 @@ type GetTokenState struct {
 	repo             appinterfaces.MagicTokenRepository
 	botNumber        string
 	botNumberDisplay string
-	telegramBot      string
 	o11y             observability.Observability
 }
 
@@ -27,14 +25,12 @@ func NewGetTokenState(
 	repo appinterfaces.MagicTokenRepository,
 	botNumber string,
 	botNumberDisplay string,
-	telegramBot string,
 	o11y observability.Observability,
 ) *GetTokenState {
 	return &GetTokenState{
 		repo:             repo,
 		botNumber:        botNumber,
 		botNumberDisplay: botNumberDisplay,
-		telegramBot:      telegramBot,
 		o11y:             o11y,
 	}
 }
@@ -82,15 +78,10 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 
 	if magicToken.Status() == valueobjects.TokenStatusPaid && !magicToken.IsExpiredAt(now) {
 		waMe := fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), clearToken)
-		var tgLink string
-		if uc.telegramBot != "" {
-			tgLink = fmt.Sprintf("https://t.me/%s?start=ATIVAR_%s", strings.TrimPrefix(uc.telegramBot, "@"), clearToken)
-		}
 		return GetTokenStateResult{
 			Output: output.GetTokenStateOutput{
 				ReadyToActivate:  true,
 				WaMeURL:          waMe,
-				TelegramDeepLink: tgLink,
 				BotNumberDisplay: uc.botNumberDisplay,
 				SupportURL:       support,
 			},

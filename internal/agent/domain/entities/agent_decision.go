@@ -39,6 +39,7 @@ type AgentDecisionParams struct {
 	TraceID          string
 	DecidedAction    string
 	CreatedAt        time.Time
+	StepIndex        int
 }
 
 type AgentDecision struct {
@@ -56,6 +57,7 @@ type AgentDecision struct {
 	resultingEventID uuid.UUID
 	createdAt        time.Time
 	settledAt        time.Time
+	stepIndex        int
 }
 
 func NewPendingDecision(params AgentDecisionParams) (AgentDecision, error) {
@@ -114,6 +116,7 @@ func newDecision(params AgentDecisionParams, status valueobjects.DecisionStatus)
 		decidedAction:    decidedAction,
 		status:           status,
 		createdAt:        createdAt.UTC(),
+		stepIndex:        params.StepIndex,
 	}, nil
 }
 
@@ -165,6 +168,7 @@ func (d AgentDecision) TraceID() string                     { return d.traceID }
 func (d AgentDecision) DecidedAction() string               { return d.decidedAction }
 func (d AgentDecision) Status() valueobjects.DecisionStatus { return d.status }
 func (d AgentDecision) CreatedAt() time.Time                { return d.createdAt }
+func (d AgentDecision) StepIndex() int                      { return d.stepIndex }
 
 func (d AgentDecision) ResultingEventID() (uuid.UUID, bool) {
 	if d.resultingEventID == uuid.Nil {

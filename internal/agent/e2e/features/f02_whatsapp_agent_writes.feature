@@ -11,12 +11,11 @@ Funcionalidade: Escritas determinísticas do agente financeiro via WhatsApp
     Então o resumo mensal do usuário reflete a despesa
     E o orçamento do usuário registrou 6 parcelas da compra
 
-  Cenário: Recorrência de receita persiste e emite evento
+  Cenário: Recorrência de receita persiste o template
     Dado que o usuário está ativo
     Quando o usuário envia "todo mês recebo 5000 no dia 5" via webhook
     Então a resposta HTTP deve ter status 200
     E deve existir 1 recorrência de 500000 no dia 5
-    E o evento "transactions.recurring_template.created.v1" deve estar no outbox do usuário
 
   Cenário: Edição da última transação atualiza valor e versão
     Dado que o usuário está ativo

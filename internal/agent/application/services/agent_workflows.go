@@ -40,8 +40,9 @@ func (a *DailyLedgerAgent) buildRegistry() (*agentwf.IntentRegistry, error) {
 		agentwf.KindTool{Kind: intent.KindQueryCategory, Tool: tools.NewQueryCategory(a.recorder, a.monthlySummary, a.loc, a.o11y)},
 		agentwf.KindTool{Kind: intent.KindQueryGoal, Tool: tools.NewQueryGoal(a.recorder, a.monthlySummary, a.loc, a.o11y)},
 		agentwf.KindTool{Kind: intent.KindQueryCard, Tool: tools.NewQueryCard(a.recorder, a.cardLister, a.cardInvoice, a.loc, a.o11y)},
-		agentwf.KindTool{Kind: intent.KindConfigureBudget, Tool: tools.NewConfigureBudget(a.recorder, a.budgetRunner, a.budgetConfig, a.o11y)},
+		agentwf.KindTool{Kind: intent.KindConfigureBudget, Tool: tools.NewConfigureBudget(a.recorder, a.budgetRunner, a.o11y)},
 		agentwf.KindTool{Kind: intent.KindEditCategoryPercentage, Tool: tools.NewEditCategoryPercentage(a.recorder, a.categoryPercentageEditor, a.loc, a.o11y)},
+		agentwf.KindTool{Kind: intent.KindBudgetRecurrence, Tool: tools.NewBudgetRecurrenceCreatorTool(a.recorder, a.budgetRecurrenceCreator, a.loc, a.o11y)},
 	)
 	if err != nil {
 		return nil, err
@@ -82,6 +83,7 @@ func routableKinds() []intent.Kind {
 		intent.KindQueryCard,
 		intent.KindConfigureBudget,
 		intent.KindEditCategoryPercentage,
+		intent.KindBudgetRecurrence,
 		intent.KindListCards,
 		intent.KindCreateCard,
 		intent.KindCountCards,
@@ -92,6 +94,10 @@ func routableKinds() []intent.Kind {
 }
 
 func (a *DailyLedgerAgent) buildKernelDefinition(k *KernelDeps) platform.Definition[steps.ExpenseState] {
+	auditBegin := a.defaultAuditBeginFn()
+	if k.AuditBeginFn != nil {
+		auditBegin = k.AuditBeginFn
+	}
 	return agentwf.NewTransactionsWriteDefinition(agentwf.TransactionsWriteDeps{
 		Authorize: func(ctx context.Context, state steps.ExpenseState) bool {
 			principal, ok := auth.FromContext(ctx)
@@ -101,7 +107,7 @@ func (a *DailyLedgerAgent) buildKernelDefinition(k *KernelDeps) platform.Definit
 			return a.authorizeWrite(ctx, Principal{UserID: principal.UserID}, state.UserID, state.Kind, state.Channel)
 		},
 		Replay: func(ctx context.Context, state steps.ExpenseState) (string, bool) {
-			result, found := a.replayDecision(ctx, state.UserID, state.Channel, state.MessageID, state.Kind)
+			result, found := a.replayDecision(ctx, state.UserID, state.Channel, state.MessageID, state.StepIndex, state.Kind)
 			if !found {
 				return "", false
 			}
@@ -125,35 +131,7 @@ func (a *DailyLedgerAgent) buildKernelDefinition(k *KernelDeps) platform.Definit
 		},
 		RetryPolicy: k.RetryPolicy,
 		MaxAttempts: k.MaxAttempts,
-		AuditBegin: func(ctx context.Context, state steps.ExpenseState) steps.AuditBeginResult {
-			principal := Principal{UserID: state.UserID}
-			parsed := ParsedIntent{
-				LLMModel:     state.LLMModel,
-				PromptSHA256: state.PromptSHA256,
-				DirectReply:  state.DirectReply,
-				Raw:          []byte(state.RawResponse),
-			}
-			auditCtx := a.beginDecisionAudit(ctx, principal, state.Channel, state.MessageID, state.Kind, parsed)
-			if auditCtx.conflicted {
-				a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", state.Kind.String()))
-				a.o11y.Logger().Info(ctx, "agent.intent_router.idempotent_conflict_replay",
-					observability.String("kind", state.Kind.String()),
-					observability.String("channel", state.Channel),
-				)
-				a.record(ctx, state.Kind.String(), state.Channel, tools.OutcomeReplay)
-				return steps.AuditBeginResult{Conflicted: true}
-			}
-			if auditCtx.failed {
-				a.record(ctx, state.Kind.String(), state.Channel, tools.OutcomeUsecaseError)
-				return steps.AuditBeginResult{Failed: true}
-			}
-			return steps.AuditBeginResult{
-				DecisionID: auditCtx.pending.ID(),
-				Settle: func(ctx context.Context, executed bool) {
-					auditCtx.settle(ctx, executed)
-				},
-			}
-		},
+		AuditBegin:  auditBegin,
 		OnSettle: func(id uuid.UUID, fn steps.AuditSettleFunc) {
 			if a.settleReg != nil {
 				a.settleReg.Register(id, fn)
@@ -165,4 +143,37 @@ func (a *DailyLedgerAgent) buildKernelDefinition(k *KernelDeps) platform.Definit
 		ReplayReply:    alreadyProcessedText,
 		AuditFailReply: auditWriteFailedText,
 	})
+}
+
+func (a *DailyLedgerAgent) defaultAuditBeginFn() steps.AuditBeginFunc {
+	return func(ctx context.Context, state steps.ExpenseState) steps.AuditBeginResult {
+		principal := Principal{UserID: state.UserID}
+		parsed := ParsedIntent{
+			LLMModel:     state.LLMModel,
+			PromptSHA256: state.PromptSHA256,
+			DirectReply:  state.DirectReply,
+			Raw:          []byte(state.RawResponse),
+		}
+		parsed.StepIndex = state.StepIndex
+		auditCtx := a.beginDecisionAudit(ctx, principal, state.Channel, state.MessageID, state.Kind, parsed)
+		if auditCtx.conflicted {
+			a.idempotencyReplayTotal.Add(ctx, 1, observability.String("kind", state.Kind.String()))
+			a.o11y.Logger().Info(ctx, "agent.intent_router.idempotent_conflict_replay",
+				observability.String("kind", state.Kind.String()),
+				observability.String("channel", state.Channel),
+			)
+			a.record(ctx, state.Kind.String(), state.Channel, tools.OutcomeReplay)
+			return steps.AuditBeginResult{Conflicted: true}
+		}
+		if auditCtx.failed {
+			a.record(ctx, state.Kind.String(), state.Channel, tools.OutcomeUsecaseError)
+			return steps.AuditBeginResult{Failed: true}
+		}
+		return steps.AuditBeginResult{
+			DecisionID: auditCtx.pending.ID(),
+			Settle: func(ctx context.Context, executed bool) {
+				auditCtx.settle(ctx, executed)
+			},
+		}
+	}
 }

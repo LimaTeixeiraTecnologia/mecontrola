@@ -76,29 +76,10 @@ func (s *AdaptersSuite) TestWhatsAppSenderPropagatesError() {
 	s.Require().Error(err)
 }
 
-func (s *AdaptersSuite) TestTelegramSenderRejectsInvalidExternalID() {
-	sender := adapters.NewTelegramSender(nil)
-	err := sender.SendText(context.Background(), "not-a-number", "ola")
-	s.Require().Error(err)
-}
-
-func (s *AdaptersSuite) TestTelegramSenderRejectsNilGateway() {
-	sender := adapters.NewTelegramSender(nil)
-	err := sender.SendText(context.Background(), "12345", "ola")
-	s.Require().Error(err)
-}
-
 func (s *AdaptersSuite) TestWhatsAppAsChannelSendersExposesBoth() {
 	fake := &fakeWhatsApp{}
 	sender := adapters.NewWhatsAppSender(fake)
 	cs := sender.AsChannelSenders()
 	s.Require().NotNil(cs.Text)
 	s.Require().NotNil(cs.Template)
-}
-
-func (s *AdaptersSuite) TestTelegramAsChannelSendersExposesOnlyText() {
-	sender := adapters.NewTelegramSender(nil)
-	cs := sender.AsChannelSenders()
-	s.Require().NotNil(cs.Text)
-	s.Require().Nil(cs.Template)
 }

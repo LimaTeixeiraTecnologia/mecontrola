@@ -348,8 +348,12 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
    (kernel sempre-on; deps ausentes = **falha de boot**, nunca fallback silencioso) → remover
    `EnableKernel`, `kernelEnabled`, `continuePendingExpenseConfirmationLegacy`, `parity_test`
    (migrando casos de resume p/ suite kernel-only), fallback morto de budget.
-4. **Eventos órfãos** (ADR-007): remover por publisher confirmado (intent.rejected/executed,
-   budget_activated, recurring_template ×3) com guarda por constante.
+4. **Eventos órfãos** (ADR-007): remover por par confirmado, com guarda por constante. **Lista
+   corrigida 2026-06-25:** producer-sem-consumer — `agent.intent.rejected`, `agent.intent.executed`,
+   `budgets.budget_activated`, `transactions.recurring_template.{created,updated,deleted}`,
+   `onboarding.income_registered`; consumer-sem-producer — `external.expense.v1` (remover consumer +
+   `IngestExternalExpense` usecase + command + strategy + registro `budgets/module.go:153` + testes).
+   **NÃO remover** `transactions.card_purchase.deleted` (tem consumer recompute — `module.go:321`).
 5. **Structured Output Strict=true + classes de modelo** (ADR-002/003): schema `required` completo,
    `ClassRouter`, config por classe, guard real-LLM, **migração do onboarding tool-calling → json_schema**.
 6. **Busca por referência + desambiguação** (ADR-008): VO+repo+usecase no transactions → binding →
@@ -362,7 +366,10 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 ### Dependências Técnicas
 
 - Templates de mensagem da Meta NÃO são necessários neste MVP (alertas fora de escopo).
-- `deadcode`/`staticcheck` instalados para gate de resíduo (ADR-006/007).
+- `deadcode`/`staticcheck` instalados para gate de resíduo (ADR-006/007). **Errata 2026-06-25:**
+  apenas `staticcheck` está instalado (`~/go/bin/staticcheck`); `deadcode` **não está** — instalar
+  (`go install golang.org/x/tools/cmd/deadcode@latest`) é pré-requisito da Task 4.0/5.0 antes de
+  afirmar inacessibilidade (RF-40) ou ausência de uso (RF-41/42).
 - Modelos OpenRouter elegíveis a Strict=true definidos antes de §5 (guard real-LLM).
 
 ## Monitoramento e Observabilidade
@@ -412,12 +419,19 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   PRÉ-1..PRÉ-4 verdes (ADR-006).
 - **Optimistic-lock stale** no edit/delete by-ref: mapear `ErrTransactionVersionConflict` para
   mensagem amigável.
-- **Bug latente**: `NewLastTransactionEditorExecutor` não preenche `NewAmount` (edit-last grava 0) —
-  corrigir junto no escopo by-ref.
+- ~~**Bug latente**: `NewLastTransactionEditorExecutor` não preenche `NewAmount` (edit-last grava 0)~~
+  **Errata 2026-06-25: FALSO POSITIVO — já corrigido.** `NewLastTransactionEditorExecutor`
+  (`infrastructure/binding/hitl_adapters.go:89`) passa `state.NewAmountCents`, e o upstream popula via
+  `daily_ledger_agent.go:622` (`initial.NewAmountCents = parsed.Intent.AmountCents()`). Não há grava-0.
+  O risco residual real e a manter é o **optimistic-lock stale** (mapear `ErrTransactionVersionConflict`
+  de `transactions/application/usecases/errors.go:11` para mensagem amigável).
 - **ILIKE sem índice**: aceitável no MVP com `LIMIT` + filtro `user_id`; evoluir p/ `pg_trgm` se preciso
   (encapsulado no repo).
-- **Falso positivo em evento órfão**: guarda por constante (não por nome de arquivo); manter
-  `splits_calculated`/`card_registered`/`external.expense` (têm par).
+- **Falso positivo em evento órfão**: guarda por constante (não por nome de arquivo). **Errata
+  2026-06-25:** manter `splits_calculated`/`card_registered`/`onboarding.completed`/
+  **`transactions.card_purchase.deleted`** (este último tem consumer `recomputeConsumer` em
+  `transactions/module.go:321` — NÃO remover). **`external.expense.v1` NÃO tem par** (consumer-only,
+  zero producer) — entra na remoção, ao contrário do que esta linha dizia originalmente.
 
 ### Conformidade com Padrões
 
@@ -445,3 +459,42 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   `infrastructure/repositories/postgres/agent_decision_repository.go`.
 - CI: `scripts/ci/agent-data-boundary.sh`.
 - Eliminação Telegram (deletar): `internal/platform/telegram/**`, consumer telegram do agent, onboarding-Telegram, `internal/platform/notification/adapters/telegram.go`, `internal/identity/infrastructure/http/server/telegram_router.go`, `cmd/server/telegram_wiring.go` — lista exaustiva no ADR-005.
+
+## Errata de Verificação contra o Código (2026-06-25)
+
+Auditoria de "0 falso positivo" do PRD/techspec contra o código real (5 clusters verificados por
+file:line). Resumo das divergências encontradas e corrigidas acima:
+
+| # | Afirmação original | Verificação no código | Correção |
+|---|--------------------|----------------------|----------|
+| 1 | RF-39: remover `continuePendingExpenseConfirmationLegacy` | **Não existe** símbolo `*Legacy` em `internal/agent` de produção; nem `PendingExpenseConfirmationGateway` | Removido do escopo; demais alvos (`kernelEnabled`, `EnableKernel`, `parity_test`, `TransactionsWriteEnabled`) confirmados existentes |
+| 2 | RF-41: remover `transactions.card_purchase.deleted` | **Tem consumer** `recomputeConsumer` (`transactions/module.go:321`) | **MANTER** — removê-lo quebra recompute do resumo mensal |
+| 3 | Riscos: `external.expense.v1` "tem par" (manter) | Consumer-only: `ExternalExpenseConsumer`+`IngestExternalExpense` em budgets, **zero producer** | Reclassificado para **órfão** (remover pipeline) |
+| 4 | RF-41: lista não inclui `onboarding.income_registered` | Producer-only (`save_onboarding_income`), **zero consumer**; renda flui por `splits_calculated` | **Adicionado** à remoção |
+| 5 | Riscos: "Bug latente NewAmount grava 0" | `hitl_adapters.go:89` passa `NewAmountCents`; upstream popula em `daily_ledger_agent.go:622` | **Falso positivo** — já corrigido; manter só risco de optimistic-lock |
+| 6 | RF-40: branch morto de budget config a remover | Não localizado em `wireBudgetCommitGate`/`budget_session`/`budget_tools` (todos alcançáveis); `deadcode` **não instalado** | Gated em `deadcode`; se nada apontar, RF-40 já satisfeito |
+| 7 | Dependências: "deadcode/staticcheck instalados" | Só `staticcheck` em `~/go/bin`; `deadcode` ausente | Instalar `deadcode` é pré-requisito |
+| 8 | RF-10: exceções de LLM = parse + onboarding + conversacional | `ConfigureBudgetConversation` (`module.go:466`) era 4º call-site de LLM | **CONCLUÍDO 2026-06-25 (MIGRADO)**: extração de orçamento (`budget_total_cents` + `budget_allocations`) movida para o `ParseInbound` sancionado (schema estruturado Strict=true, mapeamento PT-BR→slug no system prompt); `ConfigureBudgetConversation.Execute` agora é merge determinístico de `budgetdraft.Change` sem LLM; multi-turn re-parseia via a única chamada de parse e mescla no draft durável; `RenderBudgetConfigSystem`/`BudgetConfigJSONSchema` removidos (mortos). Gate RF-10 do orçamento: zero referências a LLM em `configure_budget_conversation.go`/`budget_session.go`/`budget_tools.go`/`binding/budget_config.go`. Reais-LLM `TestConfigureBudget_RealLLM_ExtractsAllocations`/`_MultiTurnAccumulates` adaptados p/ `ParseInbound` e passando (gemini-flash-lite); `TestParseInbound_RealLLM_ProductionChain` segue verde com o schema estendido. HITL de commit preservado |
+
+**Decisões fechadas 2026-06-25** (rodada de múltipla escolha, todas no caminho recomendado, sem
+flexibilização): (a) `external.expense.v1` → **remover pipeline** (consumer+usecase+command+strategy+
+registro+testes); (b) RF-40 → **instalar `deadcode` + gate** (`deadcode ./...` na Task 4; se nada
+apontar, RF-40 satisfeito com evidência); (c) `ConfigureBudgetConversation` → **migrar p/ parse
+estruturado** (não sancionar exceção); (d) modelo de onboarding sob Strict=true → **guard real-LLM
+decide** (mantém haiku se passar, troca se quebrar). **Nenhuma questão em aberto.**
+
+**Confirmações sem divergência (techspec correto):** Telegram footprint completo existe (todos os
+paths do ADR-005); migrations 000020/000021 livres (maior atual = 000019); `telegram_external_id`
+em `000001_initial_baseline` na `onboarding_tokens` + índice parcial; 3 CHECK constraints
+(`channel_processed_messages_channel_check`, `user_identities_channel_check`,
+`onboarding_sessions_channel_chk`); `step_index` ausente + índice único de `agent_decisions`
+em `(user_id, channel, message_id)`; `parse_inbound.go:97` `Strict:false`; `ParseIntentJSONSchema`
+required só `[kind, confidence]`, `additionalProperties:false`, 24 properties; onboarding usa
+tool-calling (`Tools`+`ToolChoice:"auto"`) com `claude-haiku-4.5`; `ClassRouter`/`LLMClass` ausentes;
+`KindDeleteTransactionByRef`/`KindEditTransactionByRef` ausentes; `IsWrite()` com 11 writes;
+`SearchByDescription`/`SearchTransactions` ausentes; 17/17 usecases-porta existentes
+(transactions: Create/Update/Delete/CreateCardPurchase/GetMonthlySummary/ListTransactions/
+CreateRecurringTemplate; budgets: EditCategoryPercentage/CreateRecurrence/CreateBudget/ActivateBudget;
+card: Create/List/Update/SoftDelete/Count); `ConfirmState` com `AwaitingApproval`(None/Confirm) e
+`OperationKind`(4) — sem `AwaitingSelect`/`*ByRef`/`TargetCandidate`; `destructive_confirm` com 8
+steps (authorize→replay→policy→audit_begin→prepare_target→confirm_gate→execute_destructive→format).

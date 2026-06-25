@@ -32,18 +32,13 @@ type agentE2ECtx struct {
 	budgetsConsumer     *budgetsconsumers.TransactionCreatedConsumer
 	budgetsDelConsumer  *budgetsconsumers.TransactionDeletedConsumer
 	budgetsCardConsumer *budgetsconsumers.CardPurchaseCreatedConsumer
-	telegramGateway     *CapturingTelegramGateway
 	secret              string
-	telegramSecret      string
 	waNumber            string
 	waFrom              string
-	telegramChatID      int64
-	telegramUserID      int64
 	userID              uuid.UUID
 	secondID            uuid.UUID
 	lastStatus          int
 	lastWAMID           string
-	lastTelegramUpdate  int64
 	lastRefMonth        string
 	beforeUser          int
 	beforeOther         int

@@ -24,7 +24,7 @@ type AgentDecisionSnapshot struct {
 type AgentDecisionRepository interface {
 	Insert(ctx context.Context, decision entities.AgentDecision) error
 	UpdateSettlement(ctx context.Context, decision entities.AgentDecision) error
-	FindByMessage(ctx context.Context, userID uuid.UUID, channel, messageID string) (AgentDecisionSnapshot, bool, error)
+	FindByMessage(ctx context.Context, userID uuid.UUID, channel, messageID string, stepIndex int) (AgentDecisionSnapshot, bool, error)
 }
 
 type AgentDecisionRepositoryFactory interface {

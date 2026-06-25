@@ -985,12 +985,28 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.T().Setenv("META_VERIFY_TOKEN", "real-verify-token-for-testing")
 				s.T().Setenv("ONBOARDING_TOKEN_ENCRYPTION_KEY", "testencryptionkey1234567890abcde")
 				s.T().Setenv("OPENROUTER_API_KEY", "sk-real-key-for-testing")
+				s.T().Setenv("AGENT_LLM_PARSE_PRIMARY_MODEL", "openai/gpt-5.4")
+				s.T().Setenv("AGENT_LLM_PARSE_FALLBACK_MODELS", "openai/gpt-5.4-mini")
+				s.T().Setenv("AGENT_LLM_PARSE_MAX_TOKENS", "777")
+				s.T().Setenv("AGENT_LLM_ONBOARDING_PRIMARY_MODEL", "anthropic/claude-sonnet-4.5")
+				s.T().Setenv("AGENT_LLM_ONBOARDING_FALLBACK_MODELS", "anthropic/claude-haiku-4.5")
+				s.T().Setenv("AGENT_LLM_CONV_PRIMARY_MODEL", "openai/gpt-5.4-mini")
+				s.T().Setenv("AGENT_LLM_CONV_FALLBACK_MODELS", "openai/gpt-5.4")
+				s.T().Setenv("AGENT_LLM_CONV_MAX_TOKENS", "333")
 			},
 			expect: func(cfg *configs.Config, err error) {
 				s.Require().NoError(err)
 				s.Require().NotNil(cfg)
 				s.Equal("production", cfg.AppConfig.Environment)
 				s.Equal("db.fly.internal", cfg.DBConfig.Host)
+				s.Equal("openai/gpt-5.4", cfg.AgentConfig.ParsePrimaryModel)
+				s.Equal("openai/gpt-5.4-mini", cfg.AgentConfig.ParseFallbackModels)
+				s.Equal(777, cfg.AgentConfig.ParseMaxTokens)
+				s.Equal("anthropic/claude-sonnet-4.5", cfg.AgentConfig.OnboardingPrimaryModel)
+				s.Equal("anthropic/claude-haiku-4.5", cfg.AgentConfig.OnboardingFallbackModels)
+				s.Equal("openai/gpt-5.4-mini", cfg.AgentConfig.ConvPrimaryModel)
+				s.Equal("openai/gpt-5.4", cfg.AgentConfig.ConvFallbackModels)
+				s.Equal(333, cfg.AgentConfig.ConvMaxTokens)
 			},
 		},
 		{

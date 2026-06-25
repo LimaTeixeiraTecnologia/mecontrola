@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 )
 
 type Kind int
@@ -31,6 +33,9 @@ const (
 	KindDeleteCard
 	KindEditCategoryPercentage
 	KindQueryIncomeSummary
+	KindBudgetRecurrence
+	KindDeleteTransactionByRef
+	KindEditTransactionByRef
 )
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
@@ -77,6 +82,12 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "edit_category_percentage"
 	case KindQueryIncomeSummary:
 		return "query_income_summary"
+	case KindBudgetRecurrence:
+		return "budget_recurrence"
+	case KindDeleteTransactionByRef:
+		return "delete_transaction_by_ref"
+	case KindEditTransactionByRef:
+		return "edit_transaction_by_ref"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -96,7 +107,21 @@ func (k Kind) IsWrite() bool {
 		KindConfigureBudget,
 		KindUpdateCard,
 		KindDeleteCard,
-		KindEditCategoryPercentage:
+		KindEditCategoryPercentage,
+		KindBudgetRecurrence,
+		KindDeleteTransactionByRef,
+		KindEditTransactionByRef:
+		return true
+	default:
+		return false
+	}
+}
+
+func (k Kind) IsKernelWrite() bool {
+	switch k {
+	case KindRecordExpense,
+		KindRecordIncome,
+		KindRecordCardPurchase:
 		return true
 	default:
 		return false
@@ -147,6 +172,12 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindEditCategoryPercentage, nil
 	case "query_income_summary":
 		return KindQueryIncomeSummary, nil
+	case "budget_recurrence":
+		return KindBudgetRecurrence, nil
+	case "delete_transaction_by_ref":
+		return KindDeleteTransactionByRef, nil
+	case "edit_transaction_by_ref":
+		return KindEditTransactionByRef, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -155,30 +186,36 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 }
 
 var (
-	ErrKindUnknown          = errors.New("agent.intent: kind not allowed")
-	ErrAmountNonPositive    = errors.New("agent.intent: amount_cents must be positive")
-	ErrCategoryNameEmpty    = errors.New("agent.intent: category_name is empty")
-	ErrCategoryNameTooLong  = errors.New("agent.intent: category_name exceeds maximum length")
-	ErrGoalNameEmpty        = errors.New("agent.intent: goal_name is empty")
-	ErrGoalNameTooLong      = errors.New("agent.intent: goal_name exceeds maximum length")
-	ErrCardNameEmpty        = errors.New("agent.intent: card_name is empty")
-	ErrCardNameTooLong      = errors.New("agent.intent: card_name exceeds maximum length")
-	ErrRawTextEmpty         = errors.New("agent.intent: raw_text is empty")
-	ErrRefMonthInvalid      = errors.New("agent.intent: ref_month must be in YYYY-MM format")
-	ErrMerchantTooLong      = errors.New("agent.intent: merchant exceeds maximum length")
-	ErrCategoryHintTooLong  = errors.New("agent.intent: category_hint exceeds maximum length")
-	ErrPaymentMethodInvalid = errors.New("agent.intent: payment_method not allowed")
-	ErrCardHintTooLong      = errors.New("agent.intent: card_hint exceeds maximum length")
-	ErrInstallmentsTooFew   = errors.New("agent.intent: installments must be at least 2")
-	ErrInstallmentsTooMany  = errors.New("agent.intent: installments exceed maximum allowed")
-	ErrDirectionInvalid     = errors.New("agent.intent: direction must be income or outcome")
-	ErrFrequencyInvalid     = errors.New("agent.intent: frequency must be monthly or yearly")
-	ErrDayOfMonthInvalid    = errors.New("agent.intent: day_of_month must be between 1 and 31")
-	ErrCardNicknameEmpty    = errors.New("agent.intent: card nickname is empty")
-	ErrCardNicknameTooLong  = errors.New("agent.intent: card nickname exceeds maximum length")
-	ErrNoFieldsToUpdate     = errors.New("agent.intent: no fields to update")
-	ErrCardDayInvalid       = errors.New("agent.intent: card day must be between 1 and 31")
-	ErrPercentageOutOfRange = errors.New("agent.intent: percentage must be between 0 and 100")
+	ErrKindUnknown                = errors.New("agent.intent: kind not allowed")
+	ErrAmountNonPositive          = errors.New("agent.intent: amount_cents must be positive")
+	ErrCategoryNameEmpty          = errors.New("agent.intent: category_name is empty")
+	ErrCategoryNameTooLong        = errors.New("agent.intent: category_name exceeds maximum length")
+	ErrGoalNameEmpty              = errors.New("agent.intent: goal_name is empty")
+	ErrGoalNameTooLong            = errors.New("agent.intent: goal_name exceeds maximum length")
+	ErrCardNameEmpty              = errors.New("agent.intent: card_name is empty")
+	ErrCardNameTooLong            = errors.New("agent.intent: card_name exceeds maximum length")
+	ErrRawTextEmpty               = errors.New("agent.intent: raw_text is empty")
+	ErrRefMonthInvalid            = errors.New("agent.intent: ref_month must be in YYYY-MM format")
+	ErrMerchantTooLong            = errors.New("agent.intent: merchant exceeds maximum length")
+	ErrCategoryHintTooLong        = errors.New("agent.intent: category_hint exceeds maximum length")
+	ErrPaymentMethodInvalid       = errors.New("agent.intent: payment_method not allowed")
+	ErrCardHintTooLong            = errors.New("agent.intent: card_hint exceeds maximum length")
+	ErrInstallmentsTooFew         = errors.New("agent.intent: installments must be at least 2")
+	ErrInstallmentsTooMany        = errors.New("agent.intent: installments exceed maximum allowed")
+	ErrDirectionInvalid           = errors.New("agent.intent: direction must be income or outcome")
+	ErrFrequencyInvalid           = errors.New("agent.intent: frequency must be monthly or yearly")
+	ErrDayOfMonthInvalid          = errors.New("agent.intent: day_of_month must be between 1 and 31")
+	ErrCardNicknameEmpty          = errors.New("agent.intent: card nickname is empty")
+	ErrCardNicknameTooLong        = errors.New("agent.intent: card nickname exceeds maximum length")
+	ErrNoFieldsToUpdate           = errors.New("agent.intent: no fields to update")
+	ErrCardDayInvalid             = errors.New("agent.intent: card day must be between 1 and 31")
+	ErrPercentageOutOfRange       = errors.New("agent.intent: percentage must be between 0 and 100")
+	ErrBudgetRecurrenceMonths     = errors.New("agent.intent: months must be between 1 and 12")
+	ErrBudgetRecurrenceCompetence = errors.New("agent.intent: source_competence must be in YYYY-MM format")
+	ErrSearchQueryTooShort        = errors.New("agent.intent: search_query must have at least 2 characters")
+	ErrBudgetTotalNegative        = errors.New("agent.intent: budget total_cents must not be negative")
+	ErrBudgetSlugNotAllowed       = errors.New("agent.intent: budget allocation slug not allowed")
+	ErrBudgetBasisPointsRange     = errors.New("agent.intent: budget basis points must be between 1 and 10000")
 )
 
 const (
@@ -195,6 +232,7 @@ const (
 	maxDayOfMonth         = 31
 	minPercentage         = 0
 	maxPercentage         = 100
+	minSearchQueryLength  = 2
 )
 
 const (
@@ -218,57 +256,74 @@ const (
 )
 
 type Intent struct {
-	kind          Kind
-	amountCents   int64
-	merchant      string
-	categoryHint  string
-	paymentMethod string
-	cardHint      string
-	categoryName  string
-	goalName      string
-	cardName      string
-	cardNickname  string
-	refMonth      string
-	rawText       string
-	installments  int
-	direction     string
-	frequency     string
-	dayOfMonth    int
-	closingDay    int
-	dueDay        int
-	limitCents    int64
-	nicknamePtr   *string
-	namePtr       *string
-	closingDayPtr *int
-	dueDayPtr     *int
-	percentage    int
+	kind             Kind
+	amountCents      int64
+	merchant         string
+	categoryHint     string
+	paymentMethod    string
+	cardHint         string
+	categoryName     string
+	goalName         string
+	cardName         string
+	cardNickname     string
+	refMonth         string
+	rawText          string
+	installments     int
+	direction        string
+	frequency        string
+	dayOfMonth       int
+	closingDay       int
+	dueDay           int
+	limitCents       int64
+	nicknamePtr      *string
+	namePtr          *string
+	closingDayPtr    *int
+	dueDayPtr        *int
+	percentage       int
+	months           int
+	sourceCompetence string
+	searchQuery      string
+	budgetTotalCents int64
+	budgetAllocs     map[string]int
 }
 
-func (i Intent) Kind() Kind            { return i.kind }
-func (i Intent) AmountCents() int64    { return i.amountCents }
-func (i Intent) Merchant() string      { return i.merchant }
-func (i Intent) CategoryHint() string  { return i.categoryHint }
-func (i Intent) PaymentMethod() string { return i.paymentMethod }
-func (i Intent) CardHint() string      { return i.cardHint }
-func (i Intent) CategoryName() string  { return i.categoryName }
-func (i Intent) GoalName() string      { return i.goalName }
-func (i Intent) CardName() string      { return i.cardName }
-func (i Intent) CardNickname() string  { return i.cardNickname }
-func (i Intent) ClosingDay() int       { return i.closingDay }
-func (i Intent) DueDay() int           { return i.dueDay }
-func (i Intent) LimitCents() int64     { return i.limitCents }
-func (i Intent) RefMonth() string      { return i.refMonth }
-func (i Intent) RawText() string       { return i.rawText }
-func (i Intent) Installments() int     { return i.installments }
-func (i Intent) Direction() string     { return i.direction }
-func (i Intent) Frequency() string     { return i.frequency }
-func (i Intent) DayOfMonth() int       { return i.dayOfMonth }
-func (i Intent) NicknamePtr() *string  { return i.nicknamePtr }
-func (i Intent) NamePtr() *string      { return i.namePtr }
-func (i Intent) ClosingDayPtr() *int   { return i.closingDayPtr }
-func (i Intent) DueDayPtr() *int       { return i.dueDayPtr }
-func (i Intent) Percentage() int       { return i.percentage }
-func (i Intent) IsZero() bool          { return i.kind == 0 }
+func (i Intent) Kind() Kind               { return i.kind }
+func (i Intent) AmountCents() int64       { return i.amountCents }
+func (i Intent) Merchant() string         { return i.merchant }
+func (i Intent) CategoryHint() string     { return i.categoryHint }
+func (i Intent) PaymentMethod() string    { return i.paymentMethod }
+func (i Intent) CardHint() string         { return i.cardHint }
+func (i Intent) CategoryName() string     { return i.categoryName }
+func (i Intent) GoalName() string         { return i.goalName }
+func (i Intent) CardName() string         { return i.cardName }
+func (i Intent) CardNickname() string     { return i.cardNickname }
+func (i Intent) ClosingDay() int          { return i.closingDay }
+func (i Intent) DueDay() int              { return i.dueDay }
+func (i Intent) LimitCents() int64        { return i.limitCents }
+func (i Intent) RefMonth() string         { return i.refMonth }
+func (i Intent) RawText() string          { return i.rawText }
+func (i Intent) Installments() int        { return i.installments }
+func (i Intent) Direction() string        { return i.direction }
+func (i Intent) Frequency() string        { return i.frequency }
+func (i Intent) DayOfMonth() int          { return i.dayOfMonth }
+func (i Intent) NicknamePtr() *string     { return i.nicknamePtr }
+func (i Intent) NamePtr() *string         { return i.namePtr }
+func (i Intent) ClosingDayPtr() *int      { return i.closingDayPtr }
+func (i Intent) DueDayPtr() *int          { return i.dueDayPtr }
+func (i Intent) Percentage() int          { return i.percentage }
+func (i Intent) Months() int              { return i.months }
+func (i Intent) SourceCompetence() string { return i.sourceCompetence }
+func (i Intent) SearchQuery() string      { return i.searchQuery }
+func (i Intent) BudgetTotalCents() int64  { return i.budgetTotalCents }
+func (i Intent) IsZero() bool             { return i.kind == 0 }
+
+func (i Intent) BudgetAllocations() map[string]int {
+	clone := make(map[string]int, len(i.budgetAllocs))
+	for slug, bp := range i.budgetAllocs {
+		clone[slug] = bp
+	}
+	return clone
+}
 
 type RecordExpenseFields struct {
 	AmountCents   int64
@@ -382,8 +437,35 @@ func NewHowAmIDoing() Intent {
 	return Intent{kind: KindHowAmIDoing}
 }
 
-func NewConfigureBudget() Intent {
-	return Intent{kind: KindConfigureBudget}
+const (
+	budgetMinBasisPoints = 1
+	budgetMaxBasisPoints = 10000
+)
+
+type ConfigureBudgetFields struct {
+	TotalCents  int64
+	Allocations map[string]int
+}
+
+func NewConfigureBudget(f ConfigureBudgetFields) (Intent, error) {
+	if f.TotalCents < 0 {
+		return Intent{}, ErrBudgetTotalNegative
+	}
+	allocations := make(map[string]int, len(f.Allocations))
+	for slug, bp := range f.Allocations {
+		clean := strings.TrimSpace(slug)
+		if clean == "" {
+			continue
+		}
+		if !budgetdraft.IsAllowedSlug(clean) {
+			return Intent{}, fmt.Errorf("%w: %q", ErrBudgetSlugNotAllowed, clean)
+		}
+		if bp < budgetMinBasisPoints || bp > budgetMaxBasisPoints {
+			return Intent{}, fmt.Errorf("%w: %q=%d", ErrBudgetBasisPointsRange, clean, bp)
+		}
+		allocations[clean] = bp
+	}
+	return Intent{kind: KindConfigureBudget, budgetTotalCents: f.TotalCents, budgetAllocs: allocations}, nil
 }
 
 type RecordCardPurchaseFields struct {
@@ -446,6 +528,31 @@ func NewEditLastTransaction(amountCents int64) (Intent, error) {
 		return Intent{}, ErrAmountNonPositive
 	}
 	return Intent{kind: KindEditLastTransaction, amountCents: amountCents}, nil
+}
+
+func NewDeleteTransactionByRef(searchQuery string) (Intent, error) {
+	trimmed := strings.TrimSpace(searchQuery)
+	if len([]rune(trimmed)) < minSearchQueryLength {
+		return Intent{}, ErrSearchQueryTooShort
+	}
+	if len([]rune(trimmed)) > maxMerchantLength {
+		return Intent{}, ErrMerchantTooLong
+	}
+	return Intent{kind: KindDeleteTransactionByRef, searchQuery: trimmed}, nil
+}
+
+func NewEditTransactionByRef(searchQuery string, amountCents int64) (Intent, error) {
+	trimmed := strings.TrimSpace(searchQuery)
+	if len([]rune(trimmed)) < minSearchQueryLength {
+		return Intent{}, ErrSearchQueryTooShort
+	}
+	if len([]rune(trimmed)) > maxMerchantLength {
+		return Intent{}, ErrMerchantTooLong
+	}
+	if amountCents <= 0 {
+		return Intent{}, ErrAmountNonPositive
+	}
+	return Intent{kind: KindEditTransactionByRef, searchQuery: trimmed, amountCents: amountCents}, nil
 }
 
 type CreateRecurringFields struct {
@@ -634,6 +741,27 @@ func NewQueryIncomeSummary(refMonth string) (Intent, error) {
 		return Intent{}, ErrRefMonthInvalid
 	}
 	return Intent{kind: KindQueryIncomeSummary, refMonth: trimmed}, nil
+}
+
+const (
+	minBudgetRecurrenceMonths = 1
+	maxBudgetRecurrenceMonths = 12
+)
+
+type BudgetRecurrenceFields struct {
+	SourceCompetence string
+	Months           int
+}
+
+func NewBudgetRecurrence(f BudgetRecurrenceFields) (Intent, error) {
+	trimmed := strings.TrimSpace(f.SourceCompetence)
+	if !isYearMonth(trimmed) {
+		return Intent{}, ErrBudgetRecurrenceCompetence
+	}
+	if f.Months < minBudgetRecurrenceMonths || f.Months > maxBudgetRecurrenceMonths {
+		return Intent{}, ErrBudgetRecurrenceMonths
+	}
+	return Intent{kind: KindBudgetRecurrence, sourceCompetence: trimmed, months: f.Months}, nil
 }
 
 func NewUnknown(rawText string) (Intent, error) {

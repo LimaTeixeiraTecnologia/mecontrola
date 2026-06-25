@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,22 +18,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 )
 
-func containsString(haystack, needle string) bool {
-	return strings.Contains(haystack, needle)
-}
-
 func buildPaidToken(mobile string) entities.MagicToken {
 	t, _ := entities.NewMagicToken("tok-id", []byte("hash"), "plan-id-1", time.Now().Add(7*24*time.Hour))
 	t, _ = t.WithActivationTokenCiphertext("cipher-token")
 	t, _ = t.MarkPaid("sub-001", mobile, "test@example.com", "sale-001", time.Now().Add(-3*time.Hour))
-	return t
-}
-
-func buildPaidTokenTelegramOnly(telegramID string) entities.MagicToken {
-	t, _ := entities.NewMagicToken("tok-id-tg", []byte("hash-tg"), "plan-id-1", time.Now().Add(7*24*time.Hour))
-	t, _ = t.WithActivationTokenCiphertext("cipher-token")
-	t, _ = t.MarkPaid("sub-002", "", "tg@example.com", "sale-002", time.Now().Add(-3*time.Hour))
-	t, _ = t.LinkTelegramExternalID(telegramID)
 	return t
 }
 
@@ -176,57 +163,6 @@ func (s *SendOutreachSuite) TestExecute() {
 			},
 			expect: func(err error) {
 				s.Error(err)
-			},
-		},
-		{
-			name: "deve enviar texto telegram quando token tem telegram_external_id e nao tem whatsapp",
-			dependencies: dependencies{
-				tokenRepo: func() *mocks.MagicTokenRepository {
-					telegramID := "987654321"
-					token := buildPaidTokenTelegramOnly(telegramID)
-					s.tokenRepo.EXPECT().FindPaidForOutreach(mock.Anything, mock.Anything, mock.Anything).Return([]entities.MagicToken{token}, nil).Once()
-					s.tokenRepo.EXPECT().UpdateMarkOutreachSent(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-					return s.tokenRepo
-				}(),
-				gateway: func() *mocks.OutreachChannelGateway {
-					telegramID := "987654321"
-					s.gateway.EXPECT().SendText(mock.Anything, "telegram", telegramID, mock.MatchedBy(func(text string) bool {
-						return text != "" && containsString(text, "clear-token")
-					})).Return(nil).Once()
-					return s.gateway
-				}(),
-				cipher: func() *mocks.TokenCipher {
-					s.cipher.EXPECT().Decrypt(mock.Anything, "cipher-token").Return("clear-token", nil).Once()
-					return s.cipher
-				}(),
-			},
-			expect: func(err error) {
-				s.NoError(err)
-			},
-		},
-		{
-			name: "deve resetar outreach_sent_at quando gateway telegram falha",
-			dependencies: dependencies{
-				tokenRepo: func() *mocks.MagicTokenRepository {
-					telegramID := "111222333"
-					token := buildPaidTokenTelegramOnly(telegramID)
-					s.tokenRepo.EXPECT().FindPaidForOutreach(mock.Anything, mock.Anything, mock.Anything).Return([]entities.MagicToken{token}, nil).Once()
-					s.tokenRepo.EXPECT().UpdateMarkOutreachSent(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-					s.tokenRepo.EXPECT().UpdateMarkOutreachReset(mock.Anything, mock.Anything).Return(nil).Once()
-					return s.tokenRepo
-				}(),
-				gateway: func() *mocks.OutreachChannelGateway {
-					telegramID := "111222333"
-					s.gateway.EXPECT().SendText(mock.Anything, "telegram", telegramID, mock.Anything).Return(errors.New("telegram api 500")).Once()
-					return s.gateway
-				}(),
-				cipher: func() *mocks.TokenCipher {
-					s.cipher.EXPECT().Decrypt(mock.Anything, "cipher-token").Return("clear-token", nil).Once()
-					return s.cipher
-				}(),
-			},
-			expect: func(err error) {
-				s.NoError(err)
 			},
 		},
 		{

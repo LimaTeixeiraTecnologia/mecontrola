@@ -27,7 +27,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
-	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
 	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
@@ -133,9 +132,9 @@ func newScriptedOpenRouterChain(t *testing.T) *appservices.FallbackChain {
 	script := &mockOpenRouterScript{
 		script: map[string]scriptedResponse{
 			"inicie o onboarding": {content: "👋 Oi! Eu sou o *MeControla*, seu parceiro financeiro."},
-			"viagem":              {toolName: "save_onboarding_objective", toolArgs: `{"objective":"fazer uma viagem"}`},
-			"5000":                {toolName: "save_onboarding_income", toolArgs: `{"income_cents":500000}`},
-			"mercado":             {toolName: "record_transaction", toolArgs: `{"direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"mercado"}`},
+			"viagem":              {content: `{"action":"save_onboarding_objective","objective":"fazer uma viagem","objective_profile":"specific_goal","reply":""}`},
+			"5000":                {content: `{"action":"save_onboarding_income","income_cents":500000,"reply":""}`},
+			"mercado":             {content: `{"action":"record_transaction","direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"mercado","reply":""}`},
 		},
 	}
 	server := httptest.NewServer(http.HandlerFunc(script.handle))
@@ -209,7 +208,7 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 
 	getContext := onbusecases.NewGetOnboardingContext(sessionRepo, o11y)
 	saveObjective := onbusecases.NewSaveOnboardingObjective(uow.NewUnitOfWork(db), onbfactory, o11y)
-	saveIncome := onbusecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
+	saveIncome := onbusecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), onbfactory, o11y)
 	saveCard := onbusecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y, nil)
 	saveSplits := onbusecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), onbfactory, fakePublisher, idGen, o11y)
 	markFirstTx := onbusecases.NewMarkFirstTransactionRecorded(uow.NewUnitOfWork(db), onbfactory, o11y)
@@ -240,7 +239,6 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 		WhatsAppGateway:  gateway,
 		ExpenseRecorder:  expLogger,
 		OnboardingRunner: runner,
-		EventPublisher:   agentevents.NewIntentEventPublisher(publisher, o11y),
 		Location:         time.UTC,
 	})
 	require.NoError(t, err)

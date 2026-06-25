@@ -12,12 +12,9 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 type SaveOnboardingIncomeInput struct {
@@ -30,21 +27,17 @@ type SaveOnboardingIncomeResult struct {
 }
 
 type SaveOnboardingIncome struct {
-	uow       uow.UnitOfWork
-	factory   appinterfaces.RepositoryFactory
-	publisher outbox.Publisher
-	idGen     id.Generator
-	o11y      observability.Observability
+	uow     uow.UnitOfWork
+	factory appinterfaces.RepositoryFactory
+	o11y    observability.Observability
 }
 
 func NewSaveOnboardingIncome(
 	u uow.UnitOfWork,
 	factory appinterfaces.RepositoryFactory,
-	publisher outbox.Publisher,
-	idGen id.Generator,
 	o11y observability.Observability,
 ) *SaveOnboardingIncome {
-	return &SaveOnboardingIncome{uow: u, factory: factory, publisher: publisher, idGen: idGen, o11y: o11y}
+	return &SaveOnboardingIncome{uow: u, factory: factory, o11y: o11y}
 }
 
 func (uc *SaveOnboardingIncome) Execute(ctx context.Context, in SaveOnboardingIncomeInput) (SaveOnboardingIncomeResult, error) {
@@ -74,21 +67,6 @@ func (uc *SaveOnboardingIncome) Execute(ctx context.Context, in SaveOnboardingIn
 		updated := session.WithIncome(income, now)
 		if upsertErr := repo.Upsert(ctx, updated); upsertErr != nil {
 			return SaveOnboardingIncomeResult{}, fmt.Errorf("onboarding: save income: upsert session: %w", upsertErr)
-		}
-
-		event := entities.IncomeRegistered{
-			EventID:     newEventID(uc.idGen),
-			UserID:      in.UserID,
-			Channel:     session.Channel().String(),
-			IncomeCents: income.Cents(),
-			OccurredAt:  now,
-		}
-		envelope, buildErr := buildOutboxEvent(in.UserID, event, now)
-		if buildErr != nil {
-			return SaveOnboardingIncomeResult{}, fmt.Errorf("onboarding: save income: build event: %w", buildErr)
-		}
-		if pubErr := uc.publisher.Publish(ctx, envelope); pubErr != nil {
-			return SaveOnboardingIncomeResult{}, fmt.Errorf("onboarding: save income: publish event: %w", pubErr)
 		}
 		return SaveOnboardingIncomeResult{IncomeCents: income.Cents()}, nil
 	})

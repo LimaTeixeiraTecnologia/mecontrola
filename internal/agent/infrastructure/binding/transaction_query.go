@@ -36,14 +36,15 @@ func NewCardPurchaseLoggerAdapter(uc *usecases.RecordCardPurchaseFromAgent) *Car
 
 func (a *CardPurchaseLoggerAdapter) Execute(ctx context.Context, in tools.CardPurchaseLoggerInput) (tools.CardPurchaseLoggerResult, error) {
 	result, err := a.uc.Execute(ctx, usecases.RecordCardPurchaseFromAgentInput{
-		UserID:        in.UserID,
-		Intent:        in.Intent,
-		ForceCategory: in.ForceCategory,
-		AmountCents:   in.AmountCents,
-		Merchant:      in.Merchant,
-		PaymentMethod: in.PaymentMethod,
-		CardHint:      in.CardHint,
-		Installments:  in.Installments,
+		UserID:           in.UserID,
+		Intent:           in.Intent,
+		ForceCategory:    in.ForceCategory,
+		ForceSubcategory: in.ForceSubcategory,
+		AmountCents:      in.AmountCents,
+		Merchant:         in.Merchant,
+		PaymentMethod:    in.PaymentMethod,
+		CardHint:         in.CardHint,
+		Installments:     in.Installments,
 	})
 	if err != nil {
 		return tools.CardPurchaseLoggerResult{}, translateCategoryError(err)

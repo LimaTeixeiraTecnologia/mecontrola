@@ -43,6 +43,7 @@ type TransactionsModule struct {
 	MonthlySummaryReconcilerJob     *jobhandlers.MonthlySummaryReconcilerJob
 	EventHandlers                   []EventHandlerRegistration
 	ListTransactionsUC              *usecases.ListTransactions
+	SearchTransactionsUC            *usecases.SearchTransactions
 	CreateTransactionUC             *usecases.CreateTransaction
 	UpdateTransactionUC             *usecases.UpdateTransaction
 	DeleteTransactionUC             *usecases.DeleteTransaction
@@ -105,7 +106,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 
 	txPublisher := producers.NewTransactionEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
 	cpPublisher := producers.NewCardPurchaseEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
-	rtPublisher := producers.NewRecurringTemplateEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
 
 	txWorkflow := services.TransactionWorkflow{}
 	cpWorkflow := services.NewCardPurchaseWorkflow()
@@ -141,6 +141,12 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		b.o11y,
 	)
 	listTx := usecases.NewListTransactions(
+		factory,
+		uow.NewUnitOfWork(b.db),
+		b.o11y,
+	)
+
+	searchTx := usecases.NewSearchTransactions(
 		factory,
 		uow.NewUnitOfWork(b.db),
 		b.o11y,
@@ -194,20 +200,17 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		factory,
 		uow.NewUnitOfWork(b.db),
 		categoriesCache,
-		rtPublisher,
 		b.o11y,
 	)
 	updateRT := usecases.NewUpdateRecurringTemplate(
 		factory,
 		uow.NewUnitOfWork(b.db),
 		categoriesCache,
-		rtPublisher,
 		b.o11y,
 	)
 	deleteRT := usecases.NewDeleteRecurringTemplate(
 		factory,
 		uow.NewUnitOfWork(b.db),
-		rtPublisher,
 		b.o11y,
 	)
 	getRT := usecases.NewGetRecurringTemplate(
@@ -304,6 +307,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		RecurringMaterializerJob:        recurringJob,
 		MonthlySummaryReconcilerJob:     reconcilerJob,
 		ListTransactionsUC:              listTx,
+		SearchTransactionsUC:            searchTx,
 		CreateTransactionUC:             createTx,
 		UpdateTransactionUC:             updateTx,
 		DeleteTransactionUC:             deleteTx,

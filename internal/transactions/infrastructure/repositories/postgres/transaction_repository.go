@@ -22,6 +22,9 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
+const defaultSearchLimit = 10
+const maxSearchLimit = 10
+
 type transactionRepository struct {
 	db   database.DBTX
 	o11y observability.Observability
@@ -246,6 +249,61 @@ func (r *transactionRepository) ListByMonth(ctx context.Context, userID uuid.UUI
 	}
 
 	return txs, nextCursor, nil
+}
+
+func (r *transactionRepository) SearchByDescription(ctx context.Context, userID uuid.UUID, q valueobjects.SearchQuery, refMonth option.Option[valueobjects.RefMonth], limit int) ([]*entities.Transaction, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.search_by_description")
+	defer span.End()
+
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+
+	var query string
+	var args []any
+	if rm, ok := refMonth.Get(); ok {
+		query = `
+			SELECT id, user_id, direction, payment_method, amount_cents, description,
+			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+			  FROM mecontrola.transactions
+			 WHERE user_id = $1 AND deleted_at IS NULL
+			   AND ref_month = $2
+			   AND description ILIKE '%' || $3 || '%'
+			 ORDER BY created_at DESC
+			 LIMIT $4
+		`
+		args = []any{userID, rm.String(), q.String(), limit}
+	} else {
+		query = `
+			SELECT id, user_id, direction, payment_method, amount_cents, description,
+			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+			  FROM mecontrola.transactions
+			 WHERE user_id = $1 AND deleted_at IS NULL
+			   AND description ILIKE '%' || $2 || '%'
+			 ORDER BY created_at DESC
+			 LIMIT $3
+		`
+		args = []any{userID, q.String(), limit}
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("transactions/repository: buscar por descrição: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	txs, err := r.scanRows(rows)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+	return txs, nil
 }
 
 func (r *transactionRepository) SumByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error) {

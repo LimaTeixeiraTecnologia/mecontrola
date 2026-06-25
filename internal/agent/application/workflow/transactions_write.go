@@ -77,6 +77,7 @@ func ExpenseStateFromToolInput(in tools.ToolInput) steps.ExpenseState {
 		UserID:          in.UserID,
 		Channel:         in.Channel,
 		MessageID:       in.MessageID,
+		StepIndex:       in.StepIndex,
 		Confidence:      in.Confidence.Value(),
 		Kind:            kind,
 		TransactionKind: resolveTransactionKind(kind),

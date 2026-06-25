@@ -37,7 +37,7 @@ func NewGreetingDecisionStore(factory agentinterfaces.AgentDecisionRepositoryFac
 func (s *GreetingDecisionStore) FindByMessageID(ctx context.Context, userID uuid.UUID, channel, messageID string) (bool, error) {
 	var found bool
 	err := s.uow.Do(ctx, func(ctx context.Context, db database.DBTX) error {
-		_, ok, findErr := s.factory.AgentDecisionRepository(db).FindByMessage(ctx, userID, channel, messageID)
+		_, ok, findErr := s.factory.AgentDecisionRepository(db).FindByMessage(ctx, userID, channel, messageID, 0)
 		if findErr != nil {
 			return findErr
 		}

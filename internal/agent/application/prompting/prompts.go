@@ -101,114 +101,142 @@ func RenderWorkingMemorySystem(data WorkingMemorySystemData) (string, error) {
 	return buf.String(), nil
 }
 
-const budgetConfigSystemPrompt = `Você é um assistente financeiro que ajuda o usuário a configurar o orçamento mensal.
-Extraia da mensagem do usuário a renda mensal total e as alocações por categoria.
-Mapeie os nomes falados em PT-BR para os slugs canônicos:
-- "custos fixos", "custo fixo", "contas fixas" -> expense.custo_fixo
-- "conhecimento", "educação", "estudos" -> expense.conhecimento
-- "prazeres", "lazer", "diversão" -> expense.prazeres
-- "metas", "objetivos" -> expense.metas
-- "liberdade financeira", "investimentos", "reserva" -> expense.liberdade_financeira
-Converta valores monetários para centavos inteiros (R$ 1.000,00 -> 100000).
-Converta percentuais para basis points (35% -> 3500).
-Inclua somente os campos mencionados na mensagem. Não invente categorias nem valores.`
-
-func RenderBudgetConfigSystem() (string, error) {
-	if strings.TrimSpace(budgetConfigSystemPrompt) == "" {
-		return "", fmt.Errorf("agent.application.prompting: budget config system prompt is empty")
-	}
-	return budgetConfigSystemPrompt, nil
-}
-
-func BudgetConfigJSONSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"total_cents": map[string]any{"type": "integer", "minimum": 0},
-			"allocations": map[string]any{
-				"type": "array",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"root_slug": map[string]any{
-							"type": "string",
-							"enum": []string{
-								"expense.custo_fixo",
-								"expense.conhecimento",
-								"expense.prazeres",
-								"expense.metas",
-								"expense.liberdade_financeira",
-							},
-						},
-						"basis_points": map[string]any{"type": "integer", "minimum": 0, "maximum": 10000},
-					},
-					"required":             []string{"root_slug", "basis_points"},
-					"additionalProperties": false,
-				},
-			},
-		},
-		"required":             []string{"allocations"},
-		"additionalProperties": false,
-	}
-}
-
 func ParseIntentJSONSchema() map[string]any {
 	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"kind": map[string]any{
-				"type": "string",
-				"enum": []string{
-					"record_expense",
-					"record_income",
-					"query_category",
-					"query_goal",
-					"query_card",
-					"monthly_summary",
-					"how_am_i_doing",
-					"configure_budget",
-					"record_card_purchase",
-					"list_transactions",
-					"delete_last_transaction",
-					"edit_last_transaction",
-					"create_recurring",
-					"list_recurring",
-					"list_cards",
-					"create_card",
-					"count_cards",
-					"update_card",
-					"delete_card",
-					"edit_category_percentage",
-					"query_income_summary",
-					"unknown",
-				},
-			},
-			"amount_cents":    map[string]any{"type": "integer", "minimum": 0},
-			"merchant":        map[string]any{"type": "string", "maxLength": 120},
-			"category_hint":   map[string]any{"type": "string", "maxLength": 80},
-			"payment_method":  map[string]any{"type": "string", "enum": []string{"", "pix", "credit", "debit", "cash", "transfer", "boleto", "unknown"}},
-			"card_hint":       map[string]any{"type": "string", "maxLength": 80},
-			"category_name":   map[string]any{"type": "string", "maxLength": 120},
-			"goal_name":       map[string]any{"type": "string", "maxLength": 120},
-			"card_name":       map[string]any{"type": "string", "maxLength": 120},
-			"nickname":        map[string]any{"type": "string", "maxLength": 120},
-			"ref_month":       map[string]any{"type": "string", "maxLength": 7},
-			"raw_text":        map[string]any{"type": "string", "maxLength": 4096},
-			"installments":    map[string]any{"type": "integer", "minimum": 0, "maximum": 24},
-			"direction":       map[string]any{"type": "string", "enum": []string{"", "income", "outcome"}},
-			"frequency":       map[string]any{"type": "string", "enum": []string{"", "monthly", "yearly"}},
-			"day_of_month":    map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
-			"closing_day":     map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
-			"due_day":         map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
-			"limit_cents":     map[string]any{"type": "integer", "minimum": 0},
-			"percentage":      map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
-			"new_nickname":    map[string]any{"type": "string", "maxLength": 120},
-			"new_name":        map[string]any{"type": "string", "maxLength": 120},
-			"new_closing_day": map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
-			"new_due_day":     map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
-			"confidence":      map[string]any{"type": "number", "minimum": 0, "maximum": 1},
-		},
-		"required":             []string{"kind", "confidence"},
+		"type":                 "object",
+		"properties":           parseIntentSchemaProperties(true),
+		"required":             append(parseIntentSchemaRequired(), "plan"),
 		"additionalProperties": false,
+	}
+}
+
+func parseIntentSchemaProperties(withPlan bool) map[string]any {
+	properties := map[string]any{
+		"kind": map[string]any{
+			"type": "string",
+			"enum": []string{
+				"record_expense",
+				"record_income",
+				"query_category",
+				"query_goal",
+				"query_card",
+				"monthly_summary",
+				"how_am_i_doing",
+				"configure_budget",
+				"record_card_purchase",
+				"list_transactions",
+				"delete_last_transaction",
+				"edit_last_transaction",
+				"create_recurring",
+				"list_recurring",
+				"list_cards",
+				"create_card",
+				"count_cards",
+				"update_card",
+				"delete_card",
+				"edit_category_percentage",
+				"query_income_summary",
+				"budget_recurrence",
+				"delete_transaction_by_ref",
+				"edit_transaction_by_ref",
+				"unknown",
+			},
+		},
+		"amount_cents":       map[string]any{"type": "integer", "minimum": 0},
+		"merchant":           map[string]any{"type": "string", "maxLength": 120},
+		"category_hint":      map[string]any{"type": "string", "maxLength": 80},
+		"payment_method":     map[string]any{"type": "string", "enum": []string{"", "pix", "credit", "debit", "cash", "transfer", "boleto", "unknown"}},
+		"card_hint":          map[string]any{"type": "string", "maxLength": 80},
+		"category_name":      map[string]any{"type": "string", "maxLength": 120},
+		"goal_name":          map[string]any{"type": "string", "maxLength": 120},
+		"card_name":          map[string]any{"type": "string", "maxLength": 120},
+		"nickname":           map[string]any{"type": "string", "maxLength": 120},
+		"ref_month":          map[string]any{"type": "string", "maxLength": 7},
+		"raw_text":           map[string]any{"type": "string", "maxLength": 4096},
+		"installments":       map[string]any{"type": "integer", "minimum": 0, "maximum": 24},
+		"direction":          map[string]any{"type": "string", "enum": []string{"", "income", "outcome"}},
+		"frequency":          map[string]any{"type": "string", "enum": []string{"", "monthly", "yearly"}},
+		"day_of_month":       map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
+		"closing_day":        map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
+		"due_day":            map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
+		"limit_cents":        map[string]any{"type": "integer", "minimum": 0},
+		"percentage":         map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		"new_nickname":       map[string]any{"type": "string", "maxLength": 120},
+		"new_name":           map[string]any{"type": "string", "maxLength": 120},
+		"new_closing_day":    map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
+		"new_due_day":        map[string]any{"type": "integer", "minimum": 0, "maximum": 31},
+		"months":             map[string]any{"type": "integer", "minimum": 0, "maximum": 12},
+		"source_competence":  map[string]any{"type": "string", "maxLength": 7},
+		"search_query":       map[string]any{"type": "string", "maxLength": 120},
+		"budget_total_cents": map[string]any{"type": "integer", "minimum": 0},
+		"budget_allocations": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"root_slug": map[string]any{
+						"type": "string",
+						"enum": []string{
+							"expense.custo_fixo",
+							"expense.conhecimento",
+							"expense.prazeres",
+							"expense.metas",
+							"expense.liberdade_financeira",
+						},
+					},
+					"basis_points": map[string]any{"type": "integer"},
+				},
+				"required":             []string{"root_slug", "basis_points"},
+				"additionalProperties": false,
+			},
+		},
+		"confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+	}
+	if withPlan {
+		properties["plan"] = map[string]any{
+			"type": []string{"array", "null"},
+			"items": map[string]any{
+				"type":                 "object",
+				"properties":           parseIntentSchemaProperties(false),
+				"required":             parseIntentSchemaRequired(),
+				"additionalProperties": false,
+			},
+		}
+	}
+	return properties
+}
+
+func parseIntentSchemaRequired() []string {
+	return []string{
+		"kind",
+		"amount_cents",
+		"merchant",
+		"category_hint",
+		"payment_method",
+		"card_hint",
+		"category_name",
+		"goal_name",
+		"card_name",
+		"nickname",
+		"ref_month",
+		"raw_text",
+		"installments",
+		"direction",
+		"frequency",
+		"day_of_month",
+		"closing_day",
+		"due_day",
+		"limit_cents",
+		"percentage",
+		"new_nickname",
+		"new_name",
+		"new_closing_day",
+		"new_due_day",
+		"months",
+		"source_competence",
+		"search_query",
+		"budget_total_cents",
+		"budget_allocations",
+		"confidence",
 	}
 }

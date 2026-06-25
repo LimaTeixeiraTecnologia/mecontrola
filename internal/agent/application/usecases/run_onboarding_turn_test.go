@@ -257,7 +257,7 @@ func (s *RunOnboardingTurnSuite) TestEmitWelcomeSetsPhaseWhenNotSent() {
 }
 
 func (s *RunOnboardingTurnSuite) TestObjectiveAdvancesToBudget() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingObjective}}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"save_onboarding_objective","objective":"quitar dividas","objective_profile":"payoff_debt","reply":""}`)}}
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingObjective: {Reply: "🎯 Objetivo anotado!", Advance: true},
 	}}
@@ -285,7 +285,8 @@ func (s *RunOnboardingTurnSuite) TestObjectiveStayOnNoToolCall() {
 }
 
 func (s *RunOnboardingTurnSuite) TestBudgetAutoGeneratesSplitsViaSuggester() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingIncome}}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"save_onboarding_income","income_cents":500000,"reply":""}`)}}
+
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingIncome: {Reply: "💰 Orçamento salvo!", Advance: true},
 	}}
@@ -316,7 +317,8 @@ func (s *RunOnboardingTurnSuite) TestBudgetAutoGeneratesSplitsViaSuggester() {
 }
 
 func (s *RunOnboardingTurnSuite) TestBudgetWithNoSuggesterProducesNoAutoSplits() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingIncome}}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"save_onboarding_income","income_cents":500000,"reply":""}`)}}
+
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingIncome: {Reply: "💰 Orçamento salvo!", Advance: true},
 	}}
@@ -349,10 +351,8 @@ func (s *RunOnboardingTurnSuite) TestCardsNegationSkipsToFinancialPlan() {
 }
 
 func (s *RunOnboardingTurnSuite) TestCardsMultiCardSingleTurn() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{
-		{FunctionName: ToolSaveOnboardingCard},
-		{FunctionName: ToolSaveOnboardingCard},
-	}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"save_onboarding_card","cards":[{"nickname":"Nubank","closing_day":13},{"nickname":"Inter","closing_day":5}],"reply":""}`)}}
+
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingCard: {Reply: "💳 Cartão salvo!", Advance: true},
 	}}
@@ -370,9 +370,8 @@ func (s *RunOnboardingTurnSuite) TestCardsMultiCardSingleTurn() {
 }
 
 func (s *RunOnboardingTurnSuite) TestCardsAdvanceSummaryIncludesJustAddedCard() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{
-		{FunctionName: ToolSaveOnboardingCard},
-	}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"save_onboarding_card","cards":[{"nickname":"Nubank","closing_day":13}],"reply":""}`)}}
+
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingCard: {Reply: "💳 Cartão salvo!", Advance: true},
 	}}
@@ -410,7 +409,8 @@ func (s *RunOnboardingTurnSuite) TestFinancialPlanConfirmUsesAutoSplits() {
 }
 
 func (s *RunOnboardingTurnSuite) TestFinancialPlanAdjustPreservesAutoFlag() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: ToolSaveOnboardingBudgetSplits}}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"save_onboarding_budget_splits","allocations":[{"root_slug":"expense.custo_fixo","amount_cents":300000},{"root_slug":"expense.metas","amount_cents":200000}],"reply":""}`)}}
+
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingBudgetSplits: {Reply: "✅ Distribuição ajustada!", Advance: true},
 	}}
@@ -429,7 +429,8 @@ func (s *RunOnboardingTurnSuite) TestFinancialPlanAdjustPreservesAutoFlag() {
 }
 
 func (s *RunOnboardingTurnSuite) TestFirstTxClearsDraft() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{ToolCalls: []interfaces.ToolCall{{FunctionName: "record_transaction"}}}}
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"action":"record_transaction","direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"","reply":""}`)}}
+
 	dispatcher := &fakeToolDispatcher{results: map[string]OnboardingToolResult{
 		"record_transaction": {Reply: "🏆 Boa!\n\n🎉 *Onboarding concluído!*", Advance: true, Terminal: true},
 	}}
@@ -534,14 +535,15 @@ func (s *RunOnboardingTurnSuite) TestLLMErrorDoesNotCallCompleteOnboardingSessio
 	s.False(v2.cleared)
 }
 
-func (s *RunOnboardingTurnSuite) TestObjectiveSanitizesDoubleAsterisk() {
-	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("Seu **objetivo** foi anotado!")}}
+func (s *RunOnboardingTurnSuite) TestObjectiveFallbackOnInvalidJSON() {
+	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte("nao e json valido")}}
 	setter := &fakePhaseSetter{}
 	uc := s.newTurn(interp, newReader(OnboardingSnapshot{InProgress: true, Phase: OnbPhaseObjective}), &fakeToolDispatcher{results: map[string]OnboardingToolResult{}}, setter, nil)
 	out, err := uc.Execute(s.ctx, RunOnboardingTurnInput{UserID: uuid.New(), Channel: "whatsapp", Text: "quero comprar um carro"})
 	s.Require().NoError(err)
-	s.NotContains(out.Reply, "**")
-	s.Contains(out.Reply, "*objetivo*")
+	s.True(out.Handled)
+	s.NotEmpty(out.Reply)
+	s.Empty(setter.phases)
 }
 
 func (s *RunOnboardingTurnSuite) TestCardsNegationVariants() {

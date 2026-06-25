@@ -176,12 +176,18 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	}, nil)
 
 	lister := agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC)
+	searcher := agentbinding.NewTransactionSearcherAdapter(txModule.SearchTransactionsUC)
 	lastEditor := agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC)
 	lastDeleter := agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC)
 	cardLister := cardModule.ListCardsUC
 	cardDeleter := agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC)
 
-	kernelDeps, _, err := buildConfirmKernelDeps(o11y, mgr, cfg, lister, lastEditor, lastDeleter, cardLister, cardDeleter)
+	kernelCategoryResolver := agentbinding.NewKernelCategoryResolver(categoriesModule.SearchDictionaryUC)
+	kernelPersistFn := agentbinding.NewKernelPersistFunc(
+		agentbinding.NewTransactionLoggerAdapter(logTx),
+		agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
+	)
+	kernelDeps, _, err := buildConfirmKernelDeps(o11y, mgr, cfg, lister, searcher, lastEditor, lastDeleter, cardLister, cardDeleter, kernelCategoryResolver, kernelPersistFn)
 	require.NoError(t, err)
 
 	gateway := &CapturingGateway{}

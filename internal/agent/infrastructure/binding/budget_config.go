@@ -35,8 +35,8 @@ func NewBudgetConversationAdapter(uc budgetConversationUseCase) *BudgetConversat
 	return &BudgetConversationAdapter{uc: uc}
 }
 
-func (a *BudgetConversationAdapter) Configure(ctx context.Context, text string, draft budgetdraft.Draft) (tools.BudgetConversationResult, error) {
-	out, err := a.uc.Execute(ctx, usecases.ConfigureBudgetInput{Text: text, Draft: draft})
+func (a *BudgetConversationAdapter) Configure(ctx context.Context, change budgetdraft.Change, draft budgetdraft.Draft) (tools.BudgetConversationResult, error) {
+	out, err := a.uc.Execute(ctx, usecases.ConfigureBudgetInput{Change: change, Draft: draft})
 	if err != nil {
 		return tools.BudgetConversationResult{}, fmt.Errorf("agent: budget conversation: %w", err)
 	}

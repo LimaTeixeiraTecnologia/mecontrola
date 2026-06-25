@@ -32,3 +32,6 @@ vendor/
 # Binarios temporarios
 *.tmp
 .claude/worktrees/
+
+# Go compiled test binaries
+*.test

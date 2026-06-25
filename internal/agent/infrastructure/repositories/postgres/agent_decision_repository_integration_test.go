@@ -40,7 +40,7 @@ func (s *AgentDecisionRepositorySuite) repo() interfaces.AgentDecisionRepository
 	return s.factory.AgentDecisionRepository(s.db)
 }
 
-func (s *AgentDecisionRepositorySuite) pending(userID uuid.UUID, messageID string) entities.AgentDecision {
+func (s *AgentDecisionRepositorySuite) pending(userID uuid.UUID, messageID string, stepIndex int) entities.AgentDecision {
 	decision, err := entities.NewPendingDecision(entities.AgentDecisionParams{
 		ID:               uuid.New(),
 		UserID:           userID,
@@ -53,6 +53,7 @@ func (s *AgentDecisionRepositorySuite) pending(userID uuid.UUID, messageID strin
 		TraceID:          "trace-123",
 		DecidedAction:    "record_expense",
 		CreatedAt:        time.Now().UTC(),
+		StepIndex:        stepIndex,
 	})
 	s.Require().NoError(err)
 	return decision
@@ -62,11 +63,11 @@ func (s *AgentDecisionRepositorySuite) TestInsertFindAndSettle() {
 	ctx := context.Background()
 	userID := insertTestUser(s.T(), s.db)
 	repo := s.repo()
-	decision := s.pending(userID, "wamid.find-1")
+	decision := s.pending(userID, "wamid.find-1", 0)
 
 	s.Require().NoError(repo.Insert(ctx, decision))
 
-	snapshot, found, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.find-1")
+	snapshot, found, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.find-1", 0)
 	s.Require().NoError(err)
 	s.True(found)
 	s.Equal("pending", snapshot.Status)
@@ -76,7 +77,7 @@ func (s *AgentDecisionRepositorySuite) TestInsertFindAndSettle() {
 	s.Require().NoError(err)
 	s.Require().NoError(repo.UpdateSettlement(ctx, settled))
 
-	after, found, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.find-1")
+	after, found, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.find-1", 0)
 	s.Require().NoError(err)
 	s.True(found)
 	s.Equal("executed", after.Status)
@@ -86,7 +87,7 @@ func (s *AgentDecisionRepositorySuite) TestFindByMessageNotFound() {
 	ctx := context.Background()
 	userID := insertTestUser(s.T(), s.db)
 
-	_, found, err := s.repo().FindByMessage(ctx, userID, "whatsapp", "wamid.absent")
+	_, found, err := s.repo().FindByMessage(ctx, userID, "whatsapp", "wamid.absent", 0)
 	s.Require().NoError(err)
 	s.False(found)
 }
@@ -96,9 +97,53 @@ func (s *AgentDecisionRepositorySuite) TestDuplicateMessageReturnsConflict() {
 	userID := insertTestUser(s.T(), s.db)
 	repo := s.repo()
 
-	s.Require().NoError(repo.Insert(ctx, s.pending(userID, "wamid.dup")))
+	s.Require().NoError(repo.Insert(ctx, s.pending(userID, "wamid.dup", 0)))
 
-	err := repo.Insert(ctx, s.pending(userID, "wamid.dup"))
+	err := repo.Insert(ctx, s.pending(userID, "wamid.dup", 0))
+	s.Require().Error(err)
+	s.ErrorIs(err, interfaces.ErrAgentDecisionConflict)
+}
+
+func (s *AgentDecisionRepositorySuite) TestSameMessageDifferentStepIndexCoexist() {
+	ctx := context.Background()
+	userID := insertTestUser(s.T(), s.db)
+	repo := s.repo()
+
+	dec0 := s.pending(userID, "wamid.plan", 0)
+	s.Require().NoError(repo.Insert(ctx, dec0))
+	s.Require().NoError(repo.Insert(ctx, s.pending(userID, "wamid.plan", 1)))
+
+	step0, found0, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.plan", 0)
+	s.Require().NoError(err)
+	s.True(found0)
+	s.Equal("pending", step0.Status)
+
+	step1, found1, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.plan", 1)
+	s.Require().NoError(err)
+	s.True(found1)
+	s.Equal("pending", step1.Status)
+
+	settled, err := dec0.Execute(uuid.New(), time.Now().UTC())
+	s.Require().NoError(err)
+	s.Require().NoError(repo.UpdateSettlement(ctx, settled))
+
+	after0, _, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.plan", 0)
+	s.Require().NoError(err)
+	s.Equal("executed", after0.Status)
+
+	after1, _, err := repo.FindByMessage(ctx, userID, "whatsapp", "wamid.plan", 1)
+	s.Require().NoError(err)
+	s.Equal("pending", after1.Status)
+}
+
+func (s *AgentDecisionRepositorySuite) TestSameMessageSameStepIndexConflicts() {
+	ctx := context.Background()
+	userID := insertTestUser(s.T(), s.db)
+	repo := s.repo()
+
+	s.Require().NoError(repo.Insert(ctx, s.pending(userID, "wamid.plan-dup", 2)))
+
+	err := repo.Insert(ctx, s.pending(userID, "wamid.plan-dup", 2))
 	s.Require().Error(err)
 	s.ErrorIs(err, interfaces.ErrAgentDecisionConflict)
 }
@@ -106,7 +151,7 @@ func (s *AgentDecisionRepositorySuite) TestDuplicateMessageReturnsConflict() {
 func (s *AgentDecisionRepositorySuite) TestUpdateSettlementNotFound() {
 	ctx := context.Background()
 	userID := insertTestUser(s.T(), s.db)
-	decision := s.pending(userID, "wamid.never-inserted")
+	decision := s.pending(userID, "wamid.never-inserted", 0)
 
 	settled, err := decision.Execute(uuid.New(), time.Now().UTC())
 	s.Require().NoError(err)

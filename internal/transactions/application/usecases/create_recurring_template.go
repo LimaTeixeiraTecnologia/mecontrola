@@ -23,7 +23,6 @@ type CreateRecurringTemplate struct {
 	factory           interfaces.RepositoryFactory
 	uow               uow.UnitOfWork
 	categoryValidator interfaces.CategoryValidator
-	publisher         interfaces.RecurringTemplateEventPublisher
 	o11y              observability.Observability
 }
 
@@ -31,14 +30,12 @@ func NewCreateRecurringTemplate(
 	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork,
 	categoryValidator interfaces.CategoryValidator,
-	publisher interfaces.RecurringTemplateEventPublisher,
 	o11y observability.Observability,
 ) *CreateRecurringTemplate {
 	return &CreateRecurringTemplate{
 		factory:           factory,
 		uow:               u,
 		categoryValidator: categoryValidator,
-		publisher:         publisher,
 		o11y:              o11y,
 	}
 }
@@ -100,7 +97,6 @@ func (uc *CreateRecurringTemplate) Execute(ctx context.Context, raw input.RawCre
 	}
 
 	templateID := uuid.New()
-	eventID := uuid.New()
 	now := time.Now().UTC()
 
 	template := entities.NewRecurringTemplate(
@@ -126,15 +122,6 @@ func (uc *CreateRecurringTemplate) Execute(ctx context.Context, raw input.RawCre
 		repo := uc.factory.RecurringTemplateRepository(db)
 		if createErr := repo.Create(ctx, &template); createErr != nil {
 			return entities.RecurringTemplate{}, fmt.Errorf("transactions/create_recurring_template: persistir: %w", createErr)
-		}
-		evt := entities.RecurringTemplateCreated{
-			EventID:     eventID,
-			AggregateID: templateID,
-			UserID:      cmd.UserID.UUID(),
-			OccurredAt:  now,
-		}
-		if publishErr := uc.publisher.PublishCreated(ctx, db, evt); publishErr != nil {
-			return entities.RecurringTemplate{}, fmt.Errorf("transactions/create_recurring_template: publicar evento: %w", publishErr)
 		}
 		return template, nil
 	})

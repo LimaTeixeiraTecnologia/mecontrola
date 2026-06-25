@@ -5,7 +5,6 @@ package e2e_test
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -80,38 +79,6 @@ func (g *CapturingGateway) Reset() {
 	g.replies = nil
 }
 
-type TelegramReply struct {
-	ChatID int64
-	Text   string
-}
-
-type CapturingTelegramGateway struct {
-	mu      sync.Mutex
-	replies []TelegramReply
-}
-
-func (g *CapturingTelegramGateway) SendTextMessage(_ context.Context, chatID int64, text string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.replies = append(g.replies, TelegramReply{ChatID: chatID, Text: text})
-	return nil
-}
-
-func (g *CapturingTelegramGateway) LastReply() (TelegramReply, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if len(g.replies) == 0 {
-		return TelegramReply{}, false
-	}
-	return g.replies[len(g.replies)-1], true
-}
-
-func (g *CapturingTelegramGateway) Reset() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.replies = nil
-}
-
 type parserAdapter struct{ uc *usecases.ParseInbound }
 
 func (a *parserAdapter) Parse(ctx context.Context, userID uuid.UUID, text string) (appservices.ParsedIntent, error) {
@@ -119,7 +86,7 @@ func (a *parserAdapter) Parse(ctx context.Context, userID uuid.UUID, text string
 	if err != nil {
 		return appservices.ParsedIntent{}, err
 	}
-	return appservices.ParsedIntent{Intent: out.Intent, Confidence: out.Confidence, Raw: out.Raw}, nil
+	return appservices.ParsedIntent{Intent: out.Intent, Confidence: out.Confidence, Raw: out.Raw, Plan: out.Plan}, nil
 }
 
 func fullConfidence() agentvo.Confidence {
@@ -142,13 +109,21 @@ func NewStubParser(table map[string]intent.Intent, defaultFn func() intent.Inten
 
 func (s *StubParser) Parse(_ context.Context, _ uuid.UUID, text string) (appservices.ParsedIntent, error) {
 	if in, ok := s.table[text]; ok {
-		return appservices.ParsedIntent{Intent: in, Confidence: fullConfidence()}, nil
+		return stubParsed(in), nil
 	}
 	if s.defaultFn != nil {
-		return appservices.ParsedIntent{Intent: s.defaultFn(), Confidence: fullConfidence()}, nil
+		return stubParsed(s.defaultFn()), nil
 	}
 	unknown, _ := intent.NewUnknown(text)
-	return appservices.ParsedIntent{Intent: unknown, Confidence: fullConfidence()}, nil
+	return stubParsed(unknown), nil
+}
+
+func stubParsed(in intent.Intent) appservices.ParsedIntent {
+	confidence := fullConfidence()
+	plan, _ := intent.NewIntentPlan([]intent.IntentStep{
+		{Intent: in, Confidence: confidence.Value(), Index: 0},
+	})
+	return appservices.ParsedIntent{Intent: in, Confidence: confidence, Plan: plan}
 }
 
 type StubFallback struct {
@@ -194,30 +169,6 @@ func SeedActiveUserWA(t *testing.T, db database.DBTX, waNumber string) uuid.UUID
 	return userID
 }
 
-func SeedTelegramIdentity(t *testing.T, db database.DBTX, userID uuid.UUID, telegramUserID int64) {
-	t.Helper()
-	ctx := context.Background()
-	o11y := noop.NewProvider()
-	factory := identityrepos.NewRepositoryFactory(o11y)
-
-	channel := identityvo.ChannelTelegram()
-	externalID, err := identityvo.NewExternalID(channel, strconv.FormatInt(telegramUserID, 10))
-	if err != nil {
-		t.Fatalf("e2e.seed: telegram external_id %d: %v", telegramUserID, err)
-	}
-	identityID, err := uuid.NewV7()
-	if err != nil {
-		t.Fatalf("e2e.seed: telegram identity id: %v", err)
-	}
-	identity, err := entities.NewUserIdentity(identityID, userID, channel, externalID, time.Now().UTC())
-	if err != nil {
-		t.Fatalf("e2e.seed: build telegram user_identity: %v", err)
-	}
-	if insertErr := factory.UserIdentityRepository(db).Insert(ctx, identity); insertErr != nil {
-		t.Fatalf("e2e.seed: insert telegram user_identity: %v", insertErr)
-	}
-}
-
 type noopV2Session struct{}
 
 func (noopV2Session) Load(_ context.Context, _ uuid.UUID, _ string) (onboardingv2draft.Draft, bool, error) {
@@ -245,10 +196,13 @@ func buildConfirmKernelDeps(
 	db *sqlx.DB,
 	cfg *configs.Config,
 	lister tools.TransactionLister,
+	searcher tools.TransactionSearcher,
 	lastEditor tools.LastTransactionEditor,
 	lastDeleter tools.LastTransactionDeleter,
 	cardLister tools.CardLister,
 	cardDeleter tools.CardDeleter,
+	categoryResolver steps.CategoryResolverFunc,
+	persistFn steps.PersistFunc,
 ) (*appservices.KernelDeps, *appservices.SettleRegistry, error) {
 	decisionRepoFact := agentrepo.NewDecisionRepositoryFactory(o11y)
 	decisionUoW := uow.NewUnitOfWork(db)
@@ -263,6 +217,8 @@ func buildConfirmKernelDeps(
 	}
 
 	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, o11y)
+	expenseEngine := platform.NewEngine[steps.ExpenseState](store, o11y)
+	planEngine := platform.NewEngine[agentwf.PlanState](store, o11y)
 
 	redactor, err := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
 	if err != nil {
@@ -271,14 +227,18 @@ func buildConfirmKernelDeps(
 	decisionDeps := appservices.DecisionAuditDeps{Factory: decisionRepoFact, UoW: decisionUoW}
 
 	targets := map[confirmation.OperationKind]steps.TargetResolver{
-		confirmation.OperationDeleteLast: agentbinding.NewLastTransactionDeleterResolver(lister),
-		confirmation.OperationEditLast:   agentbinding.NewLastTransactionEditorResolver(lister),
-		confirmation.OperationDeleteCard: agentbinding.NewCardDeleterResolver(cardLister),
+		confirmation.OperationDeleteLast:  agentbinding.NewLastTransactionDeleterResolver(lister),
+		confirmation.OperationEditLast:    agentbinding.NewLastTransactionEditorResolver(lister),
+		confirmation.OperationDeleteCard:  agentbinding.NewCardDeleterResolver(cardLister),
+		confirmation.OperationDeleteByRef: agentbinding.NewDeleteByRefResolver(),
+		confirmation.OperationEditByRef:   agentbinding.NewEditByRefResolver(),
 	}
 	executors := map[confirmation.OperationKind]steps.DestructiveExecutor{
-		confirmation.OperationDeleteLast: agentbinding.NewLastTransactionDeleterExecutor(lastDeleter),
-		confirmation.OperationEditLast:   agentbinding.NewLastTransactionEditorExecutor(lastEditor),
-		confirmation.OperationDeleteCard: agentbinding.NewCardDeleterExecutorFn(cardDeleter),
+		confirmation.OperationDeleteLast:  agentbinding.NewLastTransactionDeleterExecutor(lastDeleter),
+		confirmation.OperationEditLast:    agentbinding.NewLastTransactionEditorExecutor(lastEditor),
+		confirmation.OperationDeleteCard:  agentbinding.NewCardDeleterExecutorFn(cardDeleter),
+		confirmation.OperationDeleteByRef: agentbinding.NewDeleteByRefExecutor(lastDeleter),
+		confirmation.OperationEditByRef:   agentbinding.NewEditByRefExecutor(lastEditor),
 	}
 
 	confirmDef := agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
@@ -299,6 +259,7 @@ func buildConfirmKernelDeps(
 		OnSettle: func(id uuid.UUID, fn steps.ConfirmAuditSettleFunc) {
 			settleReg.Register(id, func(ctx context.Context, executed bool) { fn(ctx, executed) })
 		},
+		Searcher:       searcher,
 		Targets:        targets,
 		Executors:      executors,
 		TTL:            10 * time.Minute,
@@ -311,10 +272,14 @@ func buildConfirmKernelDeps(
 	})
 
 	return &appservices.KernelDeps{
-		SettleReg:     settleReg,
-		ConfirmEngine: confirmEngine,
-		ConfirmDef:    confirmDef,
-		RetryPolicy:   retryPolicy,
-		MaxAttempts:   cfg.WorkflowKernelConfig.MaxAttempts,
+		Engine:           expenseEngine,
+		PlanEngine:       planEngine,
+		CategoryResolver: categoryResolver,
+		PersistFn:        persistFn,
+		SettleReg:        settleReg,
+		ConfirmEngine:    confirmEngine,
+		ConfirmDef:       confirmDef,
+		RetryPolicy:      retryPolicy,
+		MaxAttempts:      cfg.WorkflowKernelConfig.MaxAttempts,
 	}, settleReg, nil
 }

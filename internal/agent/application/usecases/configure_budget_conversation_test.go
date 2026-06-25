@@ -2,13 +2,11 @@ package usecases
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 )
 
@@ -25,32 +23,24 @@ func (s *ConfigureBudgetConversationSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
-func (s *ConfigureBudgetConversationSuite) newSUT(resp string, err error) *ConfigureBudgetConversation {
-	uc, ucErr := NewConfigureBudgetConversation(&fakeInterpreter{
-		resp: interfaces.LLMResponse{RawJSON: []byte(resp)},
-		err:  err,
-	}, fake.NewProvider())
+func (s *ConfigureBudgetConversationSuite) newSUT() *ConfigureBudgetConversation {
+	uc, ucErr := NewConfigureBudgetConversation(fake.NewProvider())
 	s.Require().NoError(ucErr)
 	return uc
 }
 
 func (s *ConfigureBudgetConversationSuite) TestNewNilDeps() {
-	_, err := NewConfigureBudgetConversation(nil, fake.NewProvider())
+	_, err := NewConfigureBudgetConversation(nil)
 	s.Require().Error(err)
-	_, err = NewConfigureBudgetConversation(&fakeInterpreter{}, nil)
-	s.Require().Error(err)
-}
-
-func (s *ConfigureBudgetConversationSuite) TestEmptyText() {
-	uc := s.newSUT(`{}`, nil)
-	_, err := uc.Execute(s.ctx, ConfigureBudgetInput{Text: "   "})
-	s.Require().ErrorIs(err, ErrConfigureBudgetEmptyText)
 }
 
 func (s *ConfigureBudgetConversationSuite) TestPartialTurnAsksWhatIsMissing() {
-	uc := s.newSUT(`{"total_cents":500000,"allocations":[{"root_slug":"expense.custo_fixo","basis_points":3500}]}`, nil)
+	uc := s.newSUT()
 	out, err := uc.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "ganho 5 mil e custos fixos 35%",
+		Change: budgetdraft.Change{
+			TotalCents:  500000,
+			Allocations: map[string]int{budgetdraft.SlugCustoFixo: 3500},
+		},
 		Draft: budgetdraft.New("2026-06"),
 	})
 	s.Require().NoError(err)
@@ -61,9 +51,11 @@ func (s *ConfigureBudgetConversationSuite) TestPartialTurnAsksWhatIsMissing() {
 }
 
 func (s *ConfigureBudgetConversationSuite) TestAsksForIncomeWhenTotalMissing() {
-	uc := s.newSUT(`{"allocations":[{"root_slug":"expense.metas","basis_points":2000}]}`, nil)
+	uc := s.newSUT()
 	out, err := uc.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "metas 20%",
+		Change: budgetdraft.Change{
+			Allocations: map[string]int{budgetdraft.SlugMetas: 2000},
+		},
 		Draft: budgetdraft.New("2026-06"),
 	})
 	s.Require().NoError(err)
@@ -72,16 +64,18 @@ func (s *ConfigureBudgetConversationSuite) TestAsksForIncomeWhenTotalMissing() {
 }
 
 func (s *ConfigureBudgetConversationSuite) TestCompleteWhenSumIs10000() {
-	resp := `{"total_cents":800000,"allocations":[
-		{"root_slug":"expense.custo_fixo","basis_points":3500},
-		{"root_slug":"expense.conhecimento","basis_points":1000},
-		{"root_slug":"expense.prazeres","basis_points":2000},
-		{"root_slug":"expense.metas","basis_points":2000},
-		{"root_slug":"expense.liberdade_financeira","basis_points":1500}
-	]}`
-	uc := s.newSUT(resp, nil)
+	uc := s.newSUT()
 	out, err := uc.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "renda 8 mil, fixo 35, conhecimento 10, prazeres 20, metas 20, liberdade 15",
+		Change: budgetdraft.Change{
+			TotalCents: 800000,
+			Allocations: map[string]int{
+				budgetdraft.SlugCustoFixo:           3500,
+				budgetdraft.SlugConhecimento:        1000,
+				budgetdraft.SlugPrazeres:            2000,
+				budgetdraft.SlugMetas:               2000,
+				budgetdraft.SlugLiberdadeFinanceira: 1500,
+			},
+		},
 		Draft: budgetdraft.New("2026-06"),
 	})
 	s.Require().NoError(err)
@@ -92,17 +86,26 @@ func (s *ConfigureBudgetConversationSuite) TestCompleteWhenSumIs10000() {
 }
 
 func (s *ConfigureBudgetConversationSuite) TestMergeOverMultipleTurns() {
-	first := s.newSUT(`{"total_cents":500000,"allocations":[{"root_slug":"expense.custo_fixo","basis_points":5000}]}`, nil)
-	out1, err := first.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "renda 5 mil, fixo 50%",
+	uc := s.newSUT()
+	out1, err := uc.Execute(s.ctx, ConfigureBudgetInput{
+		Change: budgetdraft.Change{
+			TotalCents:  500000,
+			Allocations: map[string]int{budgetdraft.SlugCustoFixo: 5000},
+		},
 		Draft: budgetdraft.New("2026-06"),
 	})
 	s.Require().NoError(err)
 	s.False(out1.Complete)
 
-	second := s.newSUT(`{"allocations":[{"root_slug":"expense.metas","basis_points":5000}]}`, nil)
-	out2, err := second.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "metas 50%",
+	out2, err := uc.Execute(s.ctx, ConfigureBudgetInput{
+		Change: budgetdraft.Change{
+			Allocations: map[string]int{
+				budgetdraft.SlugConhecimento:        1000,
+				budgetdraft.SlugPrazeres:            1000,
+				budgetdraft.SlugMetas:               1000,
+				budgetdraft.SlugLiberdadeFinanceira: 2000,
+			},
+		},
 		Draft: out1.Draft,
 	})
 	s.Require().NoError(err)
@@ -110,20 +113,11 @@ func (s *ConfigureBudgetConversationSuite) TestMergeOverMultipleTurns() {
 	s.Equal(int64(500000), out2.Draft.TotalCents())
 }
 
-func (s *ConfigureBudgetConversationSuite) TestProviderErrorReturnsError() {
-	uc := s.newSUT(`{}`, errors.New("boom"))
-	_, err := uc.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "renda 5 mil",
-		Draft: budgetdraft.New("2026-06"),
-	})
-	s.Require().Error(err)
-}
-
-func (s *ConfigureBudgetConversationSuite) TestInvalidJSONKeepsDraftAndAsks() {
-	uc := s.newSUT(`not json`, nil)
+func (s *ConfigureBudgetConversationSuite) TestEmptyChangeKeepsDraftAndAsks() {
+	uc := s.newSUT()
 	out, err := uc.Execute(s.ctx, ConfigureBudgetInput{
-		Text:  "blá blá",
-		Draft: budgetdraft.New("2026-06"),
+		Change: budgetdraft.Change{},
+		Draft:  budgetdraft.New("2026-06"),
 	})
 	s.Require().NoError(err)
 	s.False(out.Complete)
@@ -131,12 +125,17 @@ func (s *ConfigureBudgetConversationSuite) TestInvalidJSONKeepsDraftAndAsks() {
 	s.Equal(int64(0), out.Draft.TotalCents())
 }
 
-func (s *ConfigureBudgetConversationSuite) TestForwardsJSONSchema() {
-	fi := &fakeInterpreter{resp: interfaces.LLMResponse{RawJSON: []byte(`{"allocations":[]}`)}}
-	uc, err := NewConfigureBudgetConversation(fi, fake.NewProvider())
+func (s *ConfigureBudgetConversationSuite) TestInvalidSlugKeepsDraftAndAsks() {
+	uc := s.newSUT()
+	out, err := uc.Execute(s.ctx, ConfigureBudgetInput{
+		Change: budgetdraft.Change{
+			TotalCents:  500000,
+			Allocations: map[string]int{"expense.invalido": 3000},
+		},
+		Draft: budgetdraft.New("2026-06"),
+	})
 	s.Require().NoError(err)
-	_, err = uc.Execute(s.ctx, ConfigureBudgetInput{Text: "oi", Draft: budgetdraft.New("2026-06")})
-	s.Require().NoError(err)
-	s.Require().NotNil(fi.lastRequest.JSONSchema)
-	s.Equal("mecontrola_budget_config", fi.lastRequest.JSONSchema.Name)
+	s.False(out.Complete)
+	s.NotEmpty(out.Reply)
+	s.Equal(int64(0), out.Draft.TotalCents())
 }

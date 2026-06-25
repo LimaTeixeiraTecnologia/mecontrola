@@ -56,6 +56,10 @@ func resolveCardByName(list cardoutput.CardList, name string) (cardoutput.Card, 
 	return cardoutput.Card{}, false
 }
 
+func FormatBRL(cents int64) string {
+	return formatBRL(cents)
+}
+
 func formatBRL(cents int64) string {
 	negative := cents < 0
 	if negative {
@@ -659,6 +663,13 @@ func FormatCategoryNotFound(hint string) string {
 
 func CategoryNoHintText() string {
 	return categoryNoHintText
+}
+
+func formatBudgetRecurrenceCreated(result BudgetRecurrenceCreatorResult) string {
+	if result.MonthsCreated == 1 {
+		return fmt.Sprintf("🔁 *Orçamento replicado!*\nUsando o planejamento de *%s* para o próximo mês. Tudo certo por aqui! 🎯", result.SourceCompetence)
+	}
+	return fmt.Sprintf("🔁 *Orçamento replicado!*\nUsando o planejamento de *%s* para os próximos *%d meses*. Tudo certo por aqui! 🎯", result.SourceCompetence, result.MonthsCreated)
 }
 
 func formatIncomeSummary(result IncomeSummaryResult) string {

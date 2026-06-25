@@ -8,10 +8,13 @@ import (
 )
 
 type PersistResult struct {
-	AmountCents  int64
-	CategoryPath string
-	CardFound    bool
-	CardName     string
+	AmountCents     int64
+	CategoryPath    string
+	CardFound       bool
+	CardName        string
+	ShortCircuit    bool
+	ShortCircuitOut tools.ToolOutcome
+	ShortCircuitMsg string
 }
 
 type PersistFunc func(ctx context.Context, state ExpenseState) (PersistResult, error)
@@ -33,6 +36,12 @@ func (s *persistStep) Execute(ctx context.Context, state ExpenseState) (platform
 	result, err := s.persist(ctx, state)
 	if err != nil {
 		return platform.StepOutput[ExpenseState]{State: state, Status: platform.StepStatusFailed}, err
+	}
+	if result.ShortCircuit {
+		state.Outcome = result.ShortCircuitOut
+		state.Reply = result.ShortCircuitMsg
+		state.ShortCircuit = true
+		return platform.StepOutput[ExpenseState]{State: state, Status: platform.StepStatusCompleted}, nil
 	}
 	state.AmountCents = result.AmountCents
 	state.CategoryPath = result.CategoryPath

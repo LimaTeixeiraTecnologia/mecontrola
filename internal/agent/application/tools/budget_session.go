@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -36,37 +35,42 @@ func (r *BudgetSessionRunner) Enabled() bool {
 	return r != nil && r.session != nil && r.convo != nil && r.committer != nil
 }
 
-func (r *BudgetSessionRunner) Start(ctx context.Context, userID uuid.UUID, channel, text, messageID string) ToolResult {
-	return r.advance(ctx, userID, channel, text, messageID, budgetdraft.New(currentCompetence(r.loc)))
+func (r *BudgetSessionRunner) Start(ctx context.Context, userID uuid.UUID, channel, messageID string, change budgetdraft.Change) ToolResult {
+	return r.advance(ctx, userID, channel, messageID, change, budgetdraft.New(currentCompetence(r.loc)))
 }
 
-func (r *BudgetSessionRunner) Continue(ctx context.Context, userID uuid.UUID, channel, text, messageID string) (bool, ToolResult) {
+func (r *BudgetSessionRunner) Active(ctx context.Context, userID uuid.UUID, channel string) (budgetdraft.Draft, bool) {
 	draft, found, err := r.session.Load(ctx, userID, channel)
 	if err != nil {
 		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_load_failed",
 			observability.String("channel", channel),
 			observability.Error(err),
 		)
-		return false, ToolResult{}
+		return budgetdraft.Draft{}, false
 	}
-	if !found {
-		return false, ToolResult{}
-	}
-	if matchesBudgetCancel(text) {
-		if clearErr := r.session.Clear(ctx, userID, channel); clearErr != nil {
-			r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
-				observability.String("channel", channel),
-				observability.Error(clearErr),
-			)
-		}
-		r.recorder.Record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
-		return true, ToolResult{Reply: budgetCancelledText, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-	}
-	return true, r.advance(ctx, userID, channel, text, messageID, draft)
+	return draft, found
 }
 
-func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, channel, text, messageID string, draft budgetdraft.Draft) ToolResult {
-	result, err := r.convo.Configure(ctx, text, draft)
+func (r *BudgetSessionRunner) Cancel(ctx context.Context, userID uuid.UUID, channel, text string) (bool, ToolResult) {
+	if !matchesBudgetCancel(text) {
+		return false, ToolResult{}
+	}
+	if clearErr := r.session.Clear(ctx, userID, channel); clearErr != nil {
+		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_clear_failed",
+			observability.String("channel", channel),
+			observability.Error(clearErr),
+		)
+	}
+	r.recorder.Record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
+	return true, ToolResult{Reply: budgetCancelledText, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
+}
+
+func (r *BudgetSessionRunner) Resume(ctx context.Context, userID uuid.UUID, channel, messageID string, change budgetdraft.Change, draft budgetdraft.Draft) ToolResult {
+	return r.advance(ctx, userID, channel, messageID, change, draft)
+}
+
+func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, channel, messageID string, change budgetdraft.Change, draft budgetdraft.Draft) ToolResult {
+	result, err := r.convo.Configure(ctx, change, draft)
 	if err != nil {
 		r.o11y.Logger().Warn(ctx, "agent.intent_router.budget_session_configure_failed",
 			observability.String("channel", channel),
@@ -119,11 +123,4 @@ func (r *BudgetSessionRunner) advance(ctx context.Context, userID uuid.UUID, cha
 	}
 	r.recorder.Record(ctx, intent.KindConfigureBudget.String(), channel, OutcomeRouted)
 	return ToolResult{Reply: reply, Outcome: OutcomeRouted, Kind: intent.KindConfigureBudget}
-}
-
-func budgetDefaultStartReply(reply string) string {
-	if strings.TrimSpace(reply) == "" {
-		return "Beleza! Vamos montar seu plano. Qual é o seu objetivo financeiro principal?"
-	}
-	return reply
 }

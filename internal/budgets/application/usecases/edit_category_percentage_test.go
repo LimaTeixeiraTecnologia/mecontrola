@@ -22,13 +22,12 @@ import (
 
 type EditCategoryPercentageSuite struct {
 	suite.Suite
-	ctx       context.Context
-	obs       observability.Observability
-	factory   *mockInterfaces.RepositoryFactory
-	repo      *mockInterfaces.BudgetRepository
-	publisher *fakeBudgetActivatedPublisher
-	uow       *uowMocks.UnitOfWorkBudget
-	useCase   *EditCategoryPercentage
+	ctx     context.Context
+	obs     observability.Observability
+	factory *mockInterfaces.RepositoryFactory
+	repo    *mockInterfaces.BudgetRepository
+	uow     *uowMocks.UnitOfWorkBudget
+	useCase *EditCategoryPercentage
 }
 
 func TestEditCategoryPercentageSuite(t *testing.T) {
@@ -40,10 +39,9 @@ func (s *EditCategoryPercentageSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewBudgetRepository(s.T())
-	s.publisher = &fakeBudgetActivatedPublisher{}
 	s.factory.EXPECT().BudgetRepository(mock.Anything).Return(s.repo).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkBudget(s.T())
-	s.useCase = NewEditCategoryPercentage(s.factory, s.publisher, s.uow, s.obs)
+	s.useCase = NewEditCategoryPercentage(s.factory, s.uow, s.obs)
 }
 
 func activeBudgetWithAllocations(userID uuid.UUID, comp valueobjects.Competence, total int64) entities.Budget {
@@ -96,7 +94,6 @@ func (s *EditCategoryPercentageSuite) TestExecute_Success() {
 		sum += a.BasisPoints
 	}
 	s.Equal(10000, sum)
-	s.Equal(1, s.publisher.calls)
 }
 
 func (s *EditCategoryPercentageSuite) TestExecute_InvalidUserID() {
@@ -108,7 +105,6 @@ func (s *EditCategoryPercentageSuite) TestExecute_InvalidUserID() {
 	})
 
 	s.Error(err)
-	s.Equal(0, s.publisher.calls)
 }
 
 func (s *EditCategoryPercentageSuite) TestExecute_PercentageOutOfRange() {
@@ -120,7 +116,6 @@ func (s *EditCategoryPercentageSuite) TestExecute_PercentageOutOfRange() {
 	})
 
 	s.ErrorIs(err, input.ErrInputPercentageRange)
-	s.Equal(0, s.publisher.calls)
 }
 
 func (s *EditCategoryPercentageSuite) TestExecute_BudgetNotFound() {
@@ -140,7 +135,6 @@ func (s *EditCategoryPercentageSuite) TestExecute_BudgetNotFound() {
 	})
 
 	s.ErrorIs(err, interfaces.ErrBudgetNotFound)
-	s.Equal(0, s.publisher.calls)
 }
 
 func (s *EditCategoryPercentageSuite) TestExecute_BudgetNotActive() {
@@ -166,7 +160,6 @@ func (s *EditCategoryPercentageSuite) TestExecute_BudgetNotActive() {
 	})
 
 	s.ErrorIs(err, entities.ErrBudgetNotActive)
-	s.Equal(0, s.publisher.calls)
 }
 
 func (s *EditCategoryPercentageSuite) TestExecute_RepositoryError() {
@@ -192,5 +185,4 @@ func (s *EditCategoryPercentageSuite) TestExecute_RepositoryError() {
 	})
 
 	s.Error(err)
-	s.Equal(0, s.publisher.calls)
 }

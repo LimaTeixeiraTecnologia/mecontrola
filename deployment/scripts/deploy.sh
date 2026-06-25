@@ -99,6 +99,12 @@ done
 log "Configurando alertas Telegram (idempotente; le .env e pula se ALERT_TELEGRAM_* vazios)"
 run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/telemetry/grafana/setup-alerting-telegram.sh" || log "AVISO: setup de alertas Telegram falhou — seguindo deploy"
 
+log "Validando premissa da migration 000020"
+run_cmd "cd ${VPS_DEPLOY_PATH} && bash scripts/migrations/pre-deploy-000020.sh" || {
+  log "ERRO: pre-check da migration 000020 falhou — abortando deploy"
+  exit 1
+}
+
 log "Executando migrações"
 run_cmd "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} run --rm --no-deps migrate" || {
   log "ERRO: migrações falharam — abortando deploy"

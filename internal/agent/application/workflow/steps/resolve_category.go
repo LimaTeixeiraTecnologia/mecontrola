@@ -39,9 +39,9 @@ func (s *resolveCategoryStep) Execute(ctx context.Context, state ExpenseState) (
 
 	if ambiguous, ok := errors.AsType[*tools.CategoryAmbiguousError](err); ok {
 		state.Candidates = ambiguous.Candidates
+		state.CandidateRefs = ambiguous.CandidateRefs
 		state.AwaitingKind = pendingexpense.AwaitingCategoryChoice
 		if len(ambiguous.Candidates) > 0 {
-			state.CategoryID = ambiguous.Candidates[0]
 			state.CategoryPath = ambiguous.Candidates[0]
 		}
 		state.Outcome = tools.OutcomeClarify
@@ -58,9 +58,9 @@ func (s *resolveCategoryStep) Execute(ctx context.Context, state ExpenseState) (
 
 	if needsConfirmation, ok := errors.AsType[*tools.CategoryNeedsConfirmationError](err); ok {
 		state.Candidates = needsConfirmation.Candidates
+		state.CandidateRefs = needsConfirmation.CandidateRefs
 		state.AwaitingKind = pendingexpense.AwaitingCategoryConfirm
 		if len(needsConfirmation.Candidates) > 0 {
-			state.CategoryID = needsConfirmation.Candidates[0]
 			state.CategoryPath = needsConfirmation.Candidates[0]
 		}
 		state.Outcome = tools.OutcomeClarify
@@ -104,23 +104,19 @@ func (s *resolveCategoryStep) resume(_ context.Context, state ExpenseState) (pla
 	}
 
 	if state.AwaitingKind == pendingexpense.AwaitingCategoryChoice {
-		matched := matchCandidateByText(resumeText, state.Candidates)
-		if matched == "" {
+		idx := matchCandidateIndex(resumeText, state.Candidates)
+		if idx < 0 {
 			return platform.StepOutput[ExpenseState]{State: state, Status: platform.StepStatusSuspended,
 				Suspend: &platform.Suspension{Reason: platform.SuspendAwaitingInput, Prompt: state.Reply},
 			}, nil
 		}
-		state.CategoryID = matched
-		state.CategoryPath = matched
-		fc := matched
-		state.ForceCategory = &fc
+		applyCandidateChoice(&state, idx)
 		state.AwaitingKind = ""
 		return platform.StepOutput[ExpenseState]{State: state, Status: platform.StepStatusCompleted}, nil
 	}
 
 	if matchesExpenseConfirmation(resumeText) {
-		fc := state.CategoryID
-		state.ForceCategory = &fc
+		applyCandidateChoice(&state, 0)
 		state.AwaitingKind = ""
 		return platform.StepOutput[ExpenseState]{State: state, Status: platform.StepStatusCompleted}, nil
 	}
@@ -140,22 +136,38 @@ func resolveCategoryHint(state ExpenseState) string {
 	return hint
 }
 
-func matchCandidateByText(text string, candidates []string) string {
+func matchCandidateIndex(text string, candidates []string) int {
 	normalized := strings.ToLower(strings.TrimSpace(text))
 	if normalized == "" {
-		return ""
+		return -1
 	}
 	if idx, err := strconv.Atoi(normalized); err == nil && idx >= 1 && idx <= len(candidates) {
-		return candidates[idx-1]
+		return idx - 1
 	}
-	for _, candidate := range candidates {
+	for position, candidate := range candidates {
 		for segment := range strings.SplitSeq(strings.ToLower(candidate), " > ") {
 			if strings.HasPrefix(strings.TrimSpace(segment), normalized) {
-				return candidate
+				return position
 			}
 		}
 	}
-	return ""
+	return -1
+}
+
+func applyCandidateChoice(state *ExpenseState, idx int) {
+	if idx >= 0 && idx < len(state.Candidates) {
+		state.CategoryPath = state.Candidates[idx]
+	}
+	root := ""
+	sub := ""
+	if idx >= 0 && idx < len(state.CandidateRefs) {
+		root = strings.TrimSpace(state.CandidateRefs[idx].RootCategoryID)
+		sub = strings.TrimSpace(state.CandidateRefs[idx].SubcategoryID)
+	}
+	state.CategoryID = root
+	state.SubcategoryID = sub
+	fc := root
+	state.ForceCategory = &fc
 }
 
 func matchesExpenseConfirmation(text string) bool {

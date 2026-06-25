@@ -20,128 +20,6 @@ func TestOnboardingToolsSuite(t *testing.T) {
 	suite.Run(t, new(OnboardingToolsSuite))
 }
 
-func (s *OnboardingToolsSuite) TestCardToolHasClosingDayNotDueDay() {
-	catalog := OnboardingToolCatalog()
-	var cardTool *interfaces.ToolSpec
-	for i := range catalog {
-		if catalog[i].Name == ToolSaveOnboardingCard {
-			cardTool = &catalog[i]
-			break
-		}
-	}
-	s.Require().NotNil(cardTool, "save_onboarding_card deve estar no catalogo")
-
-	props, ok := cardTool.Parameters["properties"].(map[string]any)
-	s.Require().True(ok)
-
-	_, hasDueDay := props["due_day"]
-	s.False(hasDueDay, "due_day nao deve existir no schema da tool")
-
-	_, hasClosingDay := props["closing_day"]
-	s.True(hasClosingDay, "closing_day deve existir no schema da tool")
-}
-
-func (s *OnboardingToolsSuite) TestCardToolRequiresClosingDay() {
-	catalog := OnboardingToolCatalog()
-	var cardTool *interfaces.ToolSpec
-	for i := range catalog {
-		if catalog[i].Name == ToolSaveOnboardingCard {
-			cardTool = &catalog[i]
-			break
-		}
-	}
-	s.Require().NotNil(cardTool)
-
-	required, ok := cardTool.Parameters["required"].([]string)
-	s.Require().True(ok)
-
-	hasNickname := false
-	hasClosingDay := false
-	for _, r := range required {
-		if r == "nickname" {
-			hasNickname = true
-		}
-		if r == "closing_day" {
-			hasClosingDay = true
-		}
-	}
-	s.True(hasNickname, "nickname deve ser required")
-	s.True(hasClosingDay, "closing_day deve ser required")
-}
-
-func (s *OnboardingToolsSuite) TestCardToolNicknameMaxLength32() {
-	catalog := OnboardingToolCatalog()
-	var cardTool *interfaces.ToolSpec
-	for i := range catalog {
-		if catalog[i].Name == ToolSaveOnboardingCard {
-			cardTool = &catalog[i]
-			break
-		}
-	}
-	s.Require().NotNil(cardTool)
-
-	props, ok := cardTool.Parameters["properties"].(map[string]any)
-	s.Require().True(ok)
-
-	nicknameProp, ok := props["nickname"].(map[string]any)
-	s.Require().True(ok)
-
-	maxLen, ok := nicknameProp["maxLength"].(int)
-	s.Require().True(ok)
-	s.Equal(32, maxLen, "nickname maxLength deve ser 32 (contrato internal/card GAP-V2)")
-}
-
-func (s *OnboardingToolsSuite) TestObjectiveToolHasObjectiveProfileEnum() {
-	catalog := OnboardingToolCatalog()
-	var objTool *interfaces.ToolSpec
-	for i := range catalog {
-		if catalog[i].Name == ToolSaveOnboardingObjective {
-			objTool = &catalog[i]
-			break
-		}
-	}
-	s.Require().NotNil(objTool, "save_onboarding_objective deve estar no catalogo")
-
-	props, ok := objTool.Parameters["properties"].(map[string]any)
-	s.Require().True(ok)
-
-	profileProp, hasProfile := props["objective_profile"]
-	s.True(hasProfile, "objective_profile deve existir no schema")
-
-	profileMap, ok := profileProp.(map[string]any)
-	s.Require().True(ok)
-
-	enum, hasEnum := profileMap["enum"]
-	s.True(hasEnum, "objective_profile deve ter enum")
-
-	enumSlice, ok := enum.([]string)
-	s.Require().True(ok)
-	s.Contains(enumSlice, "payoff_debt")
-	s.Contains(enumSlice, "emergency_fund")
-	s.Contains(enumSlice, "invest")
-	s.Contains(enumSlice, "specific_goal")
-	s.Contains(enumSlice, "organize_spending")
-}
-
-func (s *OnboardingToolsSuite) TestObjectiveToolDoesNotRequireObjectiveProfile() {
-	catalog := OnboardingToolCatalog()
-	var objTool *interfaces.ToolSpec
-	for i := range catalog {
-		if catalog[i].Name == ToolSaveOnboardingObjective {
-			objTool = &catalog[i]
-			break
-		}
-	}
-	s.Require().NotNil(objTool)
-
-	required, ok := objTool.Parameters["required"].([]string)
-	s.Require().True(ok)
-
-	for _, r := range required {
-		s.NotEqual("objective_profile", r, "objective_profile nao deve ser required")
-	}
-}
-
 func (s *OnboardingToolsSuite) TestScriptCardsHasFechamentoNotVencimento() {
 	s.NotContains(scriptCards, "vencimento", "scriptCards nao deve mencionar vencimento")
 	s.Contains(scriptCards, "fechamento", "scriptCards deve mencionar fechamento")
@@ -185,10 +63,7 @@ func (s *OnboardingToolsSuite) TestObjectiveProfileStoredInDraftAndPassedToSugge
 	}
 
 	interp := &fakeTurnInterpreter{resp: interfaces.LLMResponse{
-		ToolCalls: []interfaces.ToolCall{{
-			FunctionName:  ToolSaveOnboardingObjective,
-			ArgumentsJSON: map[string]any{"objective": "quitar dividas", "objective_profile": "payoff_debt"},
-		}},
+		RawJSON: []byte(`{"action":"save_onboarding_objective","objective":"quitar dividas","objective_profile":"payoff_debt","reply":""}`),
 	}}
 	dispatcher := &fakeToolDispatcherWithProfile{results: map[string]OnboardingToolResult{
 		ToolSaveOnboardingObjective: {Reply: "Objetivo anotado!", Advance: true, ObjectiveProfile: "payoff_debt"},

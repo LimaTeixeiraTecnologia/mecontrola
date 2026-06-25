@@ -12,7 +12,6 @@ type PrincipalSource string
 
 const (
 	SourceWhatsApp PrincipalSource = "whatsapp"
-	SourceTelegram PrincipalSource = "telegram"
 	SourceHeader   PrincipalSource = "header"
 )
 
@@ -43,8 +42,6 @@ var ErrSourceFromChannelUnknown = errors.New("identity: unknown channel for prin
 
 func SourceFromChannel(channel string) (PrincipalSource, error) {
 	switch channel {
-	case string(SourceTelegram):
-		return SourceTelegram, nil
 	case string(SourceWhatsApp):
 		return SourceWhatsApp, nil
 	default:

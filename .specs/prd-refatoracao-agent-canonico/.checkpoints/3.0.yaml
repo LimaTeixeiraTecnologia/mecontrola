@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-refatoracao-agent-canonico/3.0_execution_report.md
+summary: "Migration 000020 drop Telegram criada (up/down reversível), script pré-deploy fail-fast e testes de integração 11/11 verdes"
+timestamp: "2026-06-25T10:15:00Z"

@@ -207,6 +207,24 @@ func (s *ParseInboundSuite) TestExecuteAllKinds() { //nolint:revive // tabela ex
 				s.Empty(got.RefMonth())
 			},
 		},
+		{
+			name:    "budget_recurrence_with_source_and_months",
+			llmJSON: `{"kind":"budget_recurrence","source_competence":"2026-06","months":3}`,
+			want:    intent.KindBudgetRecurrence,
+			check: func(got intent.Intent) {
+				s.Equal("2026-06", got.SourceCompetence())
+				s.Equal(3, got.Months())
+				s.True(got.Kind().IsWrite())
+			},
+		},
+		{
+			name:    "budget_recurrence_months_zero_defaults_to_1",
+			llmJSON: `{"kind":"budget_recurrence","source_competence":"2026-06","months":0}`,
+			want:    intent.KindBudgetRecurrence,
+			check: func(got intent.Intent) {
+				s.Equal(1, got.Months())
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -322,7 +340,56 @@ func (s *ParseInboundSuite) TestExecuteForwardsJSONSchemaToInterpreter() {
 	s.Require().NoError(err)
 	s.Require().NotNil(fi.lastRequest.JSONSchema)
 	s.Equal("mecontrola_parse_intent", fi.lastRequest.JSONSchema.Name)
+	s.True(fi.lastRequest.JSONSchema.Strict)
+	props, ok := fi.lastRequest.JSONSchema.Schema["properties"].(map[string]any)
+	s.Require().True(ok)
+	planSchema, ok := props["plan"].(map[string]any)
+	s.Require().True(ok)
+	items, ok := planSchema["items"].(map[string]any)
+	s.Require().True(ok)
+	s.False(fi.lastRequest.JSONSchema.Schema["additionalProperties"].(bool))
+	s.False(items["additionalProperties"].(bool))
 	s.Empty(fi.lastRequest.Tools)
+}
+
+func (s *ParseInboundSuite) TestExecuteAcceptsPlanPayload() {
+	uc := s.newSUT(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","category_hint":"Alimentação","payment_method":"credit","card_hint":"nubank","category_name":"","goal_name":"","card_name":"","nickname":"","ref_month":"","raw_text":"","installments":0,"direction":"","frequency":"","day_of_month":0,"closing_day":0,"due_day":0,"limit_cents":0,"percentage":0,"new_nickname":"","new_name":"","new_closing_day":0,"new_due_day":0,"months":0,"source_competence":"","confidence":0.91,"plan":[{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","category_hint":"Alimentação","payment_method":"credit","card_hint":"nubank","category_name":"","goal_name":"","card_name":"","nickname":"","ref_month":"","raw_text":"","installments":0,"direction":"","frequency":"","day_of_month":0,"closing_day":0,"due_day":0,"limit_cents":0,"percentage":0,"new_nickname":"","new_name":"","new_closing_day":0,"new_due_day":0,"months":0,"source_competence":"","confidence":0.91},{"kind":"budget_recurrence","amount_cents":0,"merchant":"","category_hint":"","payment_method":"","card_hint":"","category_name":"","goal_name":"","card_name":"","nickname":"","ref_month":"","raw_text":"","installments":0,"direction":"","frequency":"","day_of_month":0,"closing_day":0,"due_day":0,"limit_cents":0,"percentage":0,"new_nickname":"","new_name":"","new_closing_day":0,"new_due_day":0,"months":3,"source_competence":"2026-06","confidence":0}]}`, nil)
+
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
+		UserID: uuid.New(),
+		Text:   "gastei no ifood e replica meu orçamento pelos próximos meses",
+	})
+	s.Require().NoError(err)
+	s.Equal(intent.KindRecordExpense, out.Intent.Kind())
+	s.Equal(2, out.Plan.Len())
+	s.Equal(intent.KindRecordExpense, out.Plan.Steps[0].Intent.Kind())
+	s.Equal(intent.KindBudgetRecurrence, out.Plan.Steps[1].Intent.Kind())
+	s.Equal("2026-06", out.Plan.Steps[1].Intent.SourceCompetence())
+	s.Equal(3, out.Plan.Steps[1].Intent.Months())
+	s.InDelta(0, out.Plan.Steps[1].Confidence, 0.001)
+}
+
+func (s *ParseInboundSuite) TestExecutePreservesExplicitZeroConfidence() {
+	uc := s.newSUT(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","confidence":0}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
+		UserID: uuid.New(),
+		Text:   "gastei 58 no ifood",
+	})
+	s.Require().NoError(err)
+	s.Equal(intent.KindRecordExpense, out.Intent.Kind())
+	s.InDelta(0, out.Confidence.Value(), 0.001)
+}
+
+func (s *ParseInboundSuite) TestExecutePlanPreservesExplicitZeroStepConfidence() {
+	uc := s.newSUT(`{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","confidence":0.91,"plan":[{"kind":"record_expense","amount_cents":5800,"merchant":"iFood","confidence":0},{"kind":"query_goal","goal_name":"Viagem","confidence":0.35}]}`, nil)
+	out, err := uc.Execute(s.ctx, ParseInboundInput{
+		UserID: uuid.New(),
+		Text:   "gastei 58 e consulta minha meta viagem",
+	})
+	s.Require().NoError(err)
+	s.Equal(2, out.Plan.Len())
+	s.InDelta(0, out.Plan.Steps[0].Confidence, 0.001)
+	s.InDelta(0.35, out.Plan.Steps[1].Confidence, 0.001)
 }
 
 func (s *ParseInboundSuite) TestExecuteNoToolCallPropagatesDirectReply() {

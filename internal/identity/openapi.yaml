@@ -5,12 +5,10 @@ info:
   description: |
     Endpoints HTTP do bounded context de identidade.
     O endpoint de upsert usa autenticação gateway-to-gateway via headers assinados.
-    O webhook Telegram só é registrado quando `TELEGRAM_ENABLED=true`.
 servers:
   - url: /
 tags:
   - name: Identity
-  - name: Channels
 paths:
   /api/v1/identity/users:
     post:
@@ -42,37 +40,6 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/channels/telegram/webhook:
-    post:
-      operationId: receiveTelegramWebhook
-      tags: [Channels]
-      summary: Receber update do Telegram
-      description: |
-        Registrado apenas quando `TELEGRAM_ENABLED=true`.
-        O path efetivo default é `/api/v1/channels/telegram/webhook` quando `TELEGRAM_WEBHOOK_PATH` não é sobrescrito.
-      parameters:
-        - $ref: '#/components/parameters/TelegramSecretToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TelegramUpdate'
-      responses:
-        '200':
-          description: Update processado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericObject'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '413':
-          description: Payload acima do limite aceito pelo middleware
-        '429':
-          description: Rate limit do webhook atingido
-        '500':
-          $ref: '#/components/responses/InternalError'
 components:
   parameters:
     XUserID:
@@ -95,12 +62,6 @@ components:
       schema:
         type: string
         description: Timestamp UTC aceito pelo middleware de gateway auth.
-    TelegramSecretToken:
-      name: X-Telegram-Bot-Api-Secret-Token
-      in: header
-      required: true
-      schema:
-        type: string
   responses:
     BadRequest:
       description: Requisição inválida
@@ -163,10 +124,6 @@ components:
         updated_at:
           type: string
           format: date-time
-    TelegramUpdate:
-      type: object
-      additionalProperties: true
-      description: Payload raw do Telegram Update.
     GenericObject:
       type: object
       additionalProperties: true

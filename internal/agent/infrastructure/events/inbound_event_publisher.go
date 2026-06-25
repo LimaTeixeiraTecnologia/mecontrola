@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -15,7 +14,6 @@ import (
 
 const (
 	EventTypeWhatsAppInbound = "agent.whatsapp.inbound.v1"
-	EventTypeTelegramInbound = "agent.telegram.inbound.v1"
 	_inboundAggregateType    = "agent_inbound"
 )
 
@@ -38,10 +36,6 @@ type inboundPayload struct {
 
 func (p *InboundEventPublisher) PublishWhatsApp(ctx context.Context, userID uuid.UUID, peer, text, messageID string) error {
 	return p.publish(ctx, userID, "whatsapp", peer, text, messageID, EventTypeWhatsAppInbound)
-}
-
-func (p *InboundEventPublisher) PublishTelegram(ctx context.Context, userID uuid.UUID, chatID int64, text, messageID string) error {
-	return p.publish(ctx, userID, "telegram", strconv.FormatInt(chatID, 10), text, messageID, EventTypeTelegramInbound)
 }
 
 func (p *InboundEventPublisher) publish(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID, eventType string) error {

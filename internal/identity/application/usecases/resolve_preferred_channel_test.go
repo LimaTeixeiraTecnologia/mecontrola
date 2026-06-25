@@ -56,11 +56,10 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 		expectErr    bool
 	}{
 		{
-			name: "prefere whatsapp quando ambos presentes",
+			name: "retorna whatsapp quando vinculado",
 			dependencies: dependencies{
 				repoMock: func() *mocks.UserIdentityRepository {
 					identities := []entities.UserIdentity{
-						hydrateIdentity(s, userID, "telegram", "100", now.Add(-time.Hour), time.Time{}),
 						hydrateIdentity(s, userID, "whatsapp", "+5511999990000", now.Add(-2*time.Hour), time.Time{}),
 					}
 					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
@@ -72,35 +71,17 @@ func (s *ResolvePreferredChannelSuite) TestExecute() {
 			expectOK:  true,
 		},
 		{
-			name: "retorna telegram quando whatsapp ausente",
-			dependencies: dependencies{
-				repoMock: func() *mocks.UserIdentityRepository {
-					identities := []entities.UserIdentity{
-						hydrateIdentity(s, userID, "telegram", "100", now.Add(-time.Hour), time.Time{}),
-					}
-					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
-					return s.repoMock
-				}(),
-			},
-			expectCh:  "telegram",
-			expectExt: "100",
-			expectOK:  true,
-		},
-		{
 			name: "ignora identidade unlinked",
 			dependencies: dependencies{
 				repoMock: func() *mocks.UserIdentityRepository {
 					identities := []entities.UserIdentity{
 						hydrateIdentity(s, userID, "whatsapp", "+5511999990001", now.Add(-2*time.Hour), now.Add(-time.Hour)),
-						hydrateIdentity(s, userID, "telegram", "200", now.Add(-time.Hour), time.Time{}),
 					}
 					s.repoMock.EXPECT().ListByUser(mock.Anything, userID).Return(identities, nil).Once()
 					return s.repoMock
 				}(),
 			},
-			expectCh:  "telegram",
-			expectExt: "200",
-			expectOK:  true,
+			expectOK: false,
 		},
 		{
 			name: "retorna ok=false quando sem identidades",

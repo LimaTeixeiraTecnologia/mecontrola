@@ -41,8 +41,8 @@ func (_m *AgentDecisionRepository) EXPECT() *AgentDecisionRepository_Expecter {
 }
 
 // FindByMessage provides a mock function for the type AgentDecisionRepository
-func (_mock *AgentDecisionRepository) FindByMessage(ctx context.Context, userID uuid.UUID, channel string, messageID string) (interfaces.AgentDecisionSnapshot, bool, error) {
-	ret := _mock.Called(ctx, userID, channel, messageID)
+func (_mock *AgentDecisionRepository) FindByMessage(ctx context.Context, userID uuid.UUID, channel string, messageID string, stepIndex int) (interfaces.AgentDecisionSnapshot, bool, error) {
+	ret := _mock.Called(ctx, userID, channel, messageID, stepIndex)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FindByMessage")
@@ -51,21 +51,21 @@ func (_mock *AgentDecisionRepository) FindByMessage(ctx context.Context, userID 
 	var r0 interfaces.AgentDecisionSnapshot
 	var r1 bool
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string) (interfaces.AgentDecisionSnapshot, bool, error)); ok {
-		return returnFunc(ctx, userID, channel, messageID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string, int) (interfaces.AgentDecisionSnapshot, bool, error)); ok {
+		return returnFunc(ctx, userID, channel, messageID, stepIndex)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string) interfaces.AgentDecisionSnapshot); ok {
-		r0 = returnFunc(ctx, userID, channel, messageID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string, int) interfaces.AgentDecisionSnapshot); ok {
+		r0 = returnFunc(ctx, userID, channel, messageID, stepIndex)
 	} else {
 		r0 = ret.Get(0).(interfaces.AgentDecisionSnapshot)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string, string) bool); ok {
-		r1 = returnFunc(ctx, userID, channel, messageID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string, string, int) bool); ok {
+		r1 = returnFunc(ctx, userID, channel, messageID, stepIndex)
 	} else {
 		r1 = ret.Get(1).(bool)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, uuid.UUID, string, string) error); ok {
-		r2 = returnFunc(ctx, userID, channel, messageID)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, uuid.UUID, string, string, int) error); ok {
+		r2 = returnFunc(ctx, userID, channel, messageID, stepIndex)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -82,11 +82,12 @@ type AgentDecisionRepository_FindByMessage_Call struct {
 //   - userID uuid.UUID
 //   - channel string
 //   - messageID string
-func (_e *AgentDecisionRepository_Expecter) FindByMessage(ctx any, userID any, channel any, messageID any) *AgentDecisionRepository_FindByMessage_Call {
-	return &AgentDecisionRepository_FindByMessage_Call{Call: _e.mock.On("FindByMessage", ctx, userID, channel, messageID)}
+//   - stepIndex int
+func (_e *AgentDecisionRepository_Expecter) FindByMessage(ctx any, userID any, channel any, messageID any, stepIndex any) *AgentDecisionRepository_FindByMessage_Call {
+	return &AgentDecisionRepository_FindByMessage_Call{Call: _e.mock.On("FindByMessage", ctx, userID, channel, messageID, stepIndex)}
 }
 
-func (_c *AgentDecisionRepository_FindByMessage_Call) Run(run func(ctx context.Context, userID uuid.UUID, channel string, messageID string)) *AgentDecisionRepository_FindByMessage_Call {
+func (_c *AgentDecisionRepository_FindByMessage_Call) Run(run func(ctx context.Context, userID uuid.UUID, channel string, messageID string, stepIndex int)) *AgentDecisionRepository_FindByMessage_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -104,11 +105,16 @@ func (_c *AgentDecisionRepository_FindByMessage_Call) Run(run func(ctx context.C
 		if args[3] != nil {
 			arg3 = args[3].(string)
 		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -119,7 +125,7 @@ func (_c *AgentDecisionRepository_FindByMessage_Call) Return(agentDecisionSnapsh
 	return _c
 }
 
-func (_c *AgentDecisionRepository_FindByMessage_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, channel string, messageID string) (interfaces.AgentDecisionSnapshot, bool, error)) *AgentDecisionRepository_FindByMessage_Call {
+func (_c *AgentDecisionRepository_FindByMessage_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, channel string, messageID string, stepIndex int) (interfaces.AgentDecisionSnapshot, bool, error)) *AgentDecisionRepository_FindByMessage_Call {
 	_c.Call.Return(run)
 	return _c
 }

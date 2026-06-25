@@ -9,8 +9,8 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
@@ -18,10 +18,7 @@ import (
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
-const (
-	ChannelWhatsApp = "whatsapp"
-	ChannelTelegram = "telegram"
-)
+const ChannelWhatsApp = "whatsapp"
 
 const authzDeniedText = "Não consegui concluir essa ação agora. Tente de novo em instantes 🙏"
 
@@ -47,6 +44,8 @@ type ParsedIntent struct {
 	DirectReply  string
 	LLMModel     string
 	PromptSHA256 string
+	Plan         intent.IntentPlan
+	StepIndex    int
 }
 
 type IntentParser interface {
@@ -57,10 +56,6 @@ type WhatsAppOutbound interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
 
-type TelegramOutbound interface {
-	SendTextMessage(ctx context.Context, chatID int64, text string) error
-}
-
 type Principal struct {
 	UserID uuid.UUID
 }
@@ -68,7 +63,6 @@ type Principal struct {
 type InboundMessage struct {
 	Text       string
 	WhatsAppTo string
-	TelegramTo int64
 	MessageID  string
 }
 
@@ -92,8 +86,6 @@ type IntentRouter struct {
 	onboarding      *OnboardingAgent
 	daily           *DailyLedgerAgent
 	whatsAppGateway WhatsAppOutbound
-	telegramGateway TelegramOutbound
-	eventPublisher  interfaces.IntentEventPublisher
 	o11y            observability.Observability
 	routedTotal     observability.Counter
 	runtime         *AgentRuntime
@@ -101,13 +93,6 @@ type IntentRouter struct {
 
 func (r *IntentRouter) EnableRuntime(threads ThreadGateway, runs RunGateway) {
 	r.runtime = NewAgentRuntime(r.o11y, r, threads, runs)
-}
-
-func (r *IntentRouter) EnableKernel(engine platform.Engine[steps.ExpenseState], def platform.Definition[steps.ExpenseState], reg *SettleRegistry) {
-	if r.daily == nil {
-		return
-	}
-	r.daily.EnableKernel(engine, def, reg)
 }
 
 func (r *IntentRouter) dispatch(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
@@ -122,8 +107,10 @@ type KernelDeps struct {
 	SettleReg        *SettleRegistry
 	CategoryResolver steps.CategoryResolverFunc
 	PersistFn        steps.PersistFunc
+	AuditBeginFn     steps.AuditBeginFunc
 	ConfirmEngine    platform.Engine[confirmation.ConfirmState]
 	ConfirmDef       platform.Definition[confirmation.ConfirmState]
+	PlanEngine       platform.Engine[workflow.PlanState]
 	RetryPolicy      platform.RetryPolicy
 	MaxAttempts      int
 }
@@ -141,25 +128,25 @@ type IntentRouterDeps struct {
 	ExpenseRecorder          tools.ExpenseRecorder
 	CardPurchaseLog          tools.CardPurchaseLogger
 	TransactionLister        tools.TransactionLister
+	TransactionSearcher      tools.TransactionSearcher
 	IncomeSummaryReader      tools.IncomeSummaryReader
 	LastDeleter              tools.LastTransactionDeleter
 	LastEditor               tools.LastTransactionEditor
 	RecurringCreator         tools.RecurringCreator
 	RecurringLister          tools.RecurringLister
-	BudgetConfig             tools.BudgetConfigurator
+	BudgetRecurrenceCreator  tools.BudgetRecurrenceCreator
 	BudgetConvo              tools.BudgetConversation
 	BudgetCommitter          tools.BudgetConfigCommitter
 	BudgetSession            tools.BudgetSessionGateway
 	OnboardingRunner         OnboardingTurnRunner
 	Fallback                 tools.Fallback
 	WhatsAppGateway          WhatsAppOutbound
-	TelegramGateway          TelegramOutbound
-	EventPublisher           interfaces.IntentEventPublisher
 	Decision                 DecisionAuditDeps
 	Redactor                 DecisionRedactor
 	Location                 *time.Location
 	PolicyMinConfidence      float64
 	Kernel                   *KernelDeps
+	PlanExecutor             *workflow.PlanExecutor
 }
 
 type DecisionRedactor interface {
@@ -212,8 +199,6 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		onboarding:      newOnboardingAgent(o11y, routedTotal, deps),
 		daily:           daily,
 		whatsAppGateway: deps.WhatsAppGateway,
-		telegramGateway: deps.TelegramGateway,
-		eventPublisher:  deps.EventPublisher,
 		o11y:            o11y,
 		routedTotal:     routedTotal,
 	}, nil
@@ -238,8 +223,9 @@ func buildToolBindingEntries(deps IntentRouterDeps) []toolBinding {
 		{name: "query_category", kind: intent.KindQueryCategory, present: deps.MonthlySummary != nil},
 		{name: "query_goal", kind: intent.KindQueryGoal, present: deps.MonthlySummary != nil},
 		{name: "query_card", kind: intent.KindQueryCard, present: deps.CardLister != nil},
-		{name: "configure_budget", kind: intent.KindConfigureBudget, present: deps.BudgetConfig != nil},
+		{name: "configure_budget", kind: intent.KindConfigureBudget, present: deps.BudgetSession != nil},
 		{name: "edit_category_percentage", kind: intent.KindEditCategoryPercentage, present: deps.CategoryPercentageEditor != nil},
+		{name: "budget_recurrence", kind: intent.KindBudgetRecurrence, present: deps.BudgetRecurrenceCreator != nil},
 		{name: "list_cards", kind: intent.KindListCards, present: deps.CardLister != nil},
 		{name: "create_card", kind: intent.KindCreateCard, present: deps.CardCreator != nil},
 		{name: "count_cards", kind: intent.KindCountCards, present: deps.CardCounter != nil},
@@ -269,9 +255,7 @@ func warnMissingToolBindings(o11y observability.Observability, deps IntentRouter
 }
 
 func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
-	startedAt := time.Now().UTC()
 	result := r.dispatch(ctx, principal, ChannelWhatsApp, msg.WhatsAppTo, msg.Text, msg.MessageID)
-	defer r.publishEvent(ctx, principal, ChannelWhatsApp, result, startedAt)
 	if result.Reply == "" {
 		return result
 	}
@@ -287,63 +271,6 @@ func (r *IntentRouter) RouteWhatsApp(ctx context.Context, principal Principal, m
 	return result
 }
 
-func (r *IntentRouter) RouteTelegram(ctx context.Context, principal Principal, msg InboundMessage) RouteResult {
-	startedAt := time.Now().UTC()
-	result := r.dispatch(ctx, principal, ChannelTelegram, "", msg.Text, msg.MessageID)
-	defer r.publishEvent(ctx, principal, ChannelTelegram, result, startedAt)
-	if result.Reply == "" {
-		return result
-	}
-	if r.telegramGateway == nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.telegram_gateway_missing")
-		r.record(ctx, result.Kind.String(), ChannelTelegram, tools.OutcomeReplyFailed)
-		return result
-	}
-	if err := r.telegramGateway.SendTextMessage(ctx, msg.TelegramTo, result.Reply); err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.telegram_send_failed",
-			observability.String("kind", result.Kind.String()),
-			observability.Error(err),
-		)
-		r.record(ctx, result.Kind.String(), ChannelTelegram, tools.OutcomeReplyFailed)
-		return result
-	}
-	result.Delivered = true
-	return result
-}
-
-func (r *IntentRouter) publishEvent(ctx context.Context, principal Principal, channel string, result RouteResult, startedAt time.Time) {
-	if r.eventPublisher == nil {
-		return
-	}
-	ev := interfaces.IntentEvent{
-		EventID:    uuid.New(),
-		UserID:     principal.UserID,
-		Channel:    channel,
-		Outcome:    result.Outcome.String(),
-		LatencyMS:  time.Since(startedAt).Milliseconds(),
-		OccurredAt: time.Now().UTC(),
-	}
-	if span := r.o11y.Tracer().SpanFromContext(ctx); span != nil {
-		ev.TraceID = span.TraceID()
-	}
-	if result.Outcome == tools.OutcomeRouted && result.Kind != intent.KindUnknown {
-		ev.Module = result.Kind.String()
-	}
-	var pubErr error
-	if result.Outcome == tools.OutcomeRouted {
-		pubErr = r.eventPublisher.PublishExecuted(ctx, ev)
-	} else {
-		pubErr = r.eventPublisher.PublishRejected(ctx, ev)
-	}
-	if pubErr != nil {
-		r.o11y.Logger().Warn(ctx, "agent.intent_router.publish_failed",
-			observability.String("event_id", ev.EventID.String()),
-			observability.String("channel", channel),
-			observability.Error(pubErr),
-		)
-	}
-}
-
 func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.intent_router.route")
 	defer span.End()
@@ -354,10 +281,8 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return RouteResult{Reply: fallbackMissingText, Outcome: tools.OutcomeEmptyText, Kind: intent.KindUnknown}
 	}
 
-	if r.daily.kernelEnabled {
-		if handled, result := r.daily.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, trimmed); handled {
-			return result
-		}
+	if handled, result := r.daily.tryResumeInbound(ctx, principal.UserID, channel, trimmed, messageID); handled {
+		return result
 	}
 
 	if result, ok := r.onboarding.Handle(ctx, principal.UserID, channel, peer, trimmed, messageID); ok {

@@ -19,17 +19,12 @@ var (
 
 type OnboardingChannel uint8
 
-const (
-	OnboardingChannelWhatsApp OnboardingChannel = iota + 1
-	OnboardingChannelTelegram
-)
+const OnboardingChannelWhatsApp OnboardingChannel = iota + 1
 
 func (c OnboardingChannel) String() string {
 	switch c {
 	case OnboardingChannelWhatsApp:
 		return "whatsapp"
-	case OnboardingChannelTelegram:
-		return "telegram"
 	default:
 		return "unknown"
 	}
@@ -39,8 +34,6 @@ func ParseOnboardingChannel(raw string) (OnboardingChannel, error) {
 	switch raw {
 	case "whatsapp":
 		return OnboardingChannelWhatsApp, nil
-	case "telegram":
-		return OnboardingChannelTelegram, nil
 	default:
 		return 0, fmt.Errorf("onboarding: %q: invalid channel", raw)
 	}
@@ -112,7 +105,7 @@ func NewOnboardingSession(
 	if userID == uuid.Nil {
 		return OnboardingSession{}, ErrOnboardingSessionUserIDRequired
 	}
-	if channel != OnboardingChannelWhatsApp && channel != OnboardingChannelTelegram {
+	if channel != OnboardingChannelWhatsApp {
 		return OnboardingSession{}, ErrOnboardingSessionChannelRequired
 	}
 	return OnboardingSession{

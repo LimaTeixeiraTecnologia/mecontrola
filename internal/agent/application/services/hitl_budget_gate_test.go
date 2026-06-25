@@ -215,5 +215,18 @@ func (s *HITLBudgetGateSuite) TestBudgetCommit_WhenCancelled_PreservesBudget() {
 }
 
 func mustBuildConfigureBudgetIntent() intent.Intent {
-	return intent.NewConfigureBudget()
+	in, err := intent.NewConfigureBudget(intent.ConfigureBudgetFields{
+		TotalCents: 800000,
+		Allocations: map[string]int{
+			budgetdraft.SlugCustoFixo:           3500,
+			budgetdraft.SlugConhecimento:        1000,
+			budgetdraft.SlugPrazeres:            2000,
+			budgetdraft.SlugMetas:               2000,
+			budgetdraft.SlugLiberdadeFinanceira: 1500,
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return in
 }

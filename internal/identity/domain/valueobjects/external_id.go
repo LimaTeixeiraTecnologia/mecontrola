@@ -3,8 +3,6 @@ package valueobjects
 import (
 	"errors"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -13,8 +11,6 @@ var ErrExternalIDEmpty = errors.New("identity: external_id is empty")
 var ErrExternalIDInvalid = errors.New("identity: external_id is invalid for channel")
 
 var ErrExternalIDChannelRequired = errors.New("identity: channel is required to validate external_id")
-
-var telegramExternalIDPattern = regexp.MustCompile(`^[1-9][0-9]{0,18}$`)
 
 type ExternalID struct {
 	channel Channel
@@ -67,14 +63,6 @@ func normalizeExternalID(channel Channel, raw string) (string, error) {
 			return "", fmt.Errorf("identity: external_id whatsapp: %w", err)
 		}
 		return wa.String(), nil
-	case channel.IsTelegram():
-		if !telegramExternalIDPattern.MatchString(trimmed) {
-			return "", fmt.Errorf("identity: external_id telegram %q: %w", raw, ErrExternalIDInvalid)
-		}
-		if _, err := strconv.ParseInt(trimmed, 10, 64); err != nil {
-			return "", fmt.Errorf("identity: external_id telegram %q overflow: %w", raw, ErrExternalIDInvalid)
-		}
-		return trimmed, nil
 	default:
 		return "", fmt.Errorf("identity: %q: %w", channel.String(), ErrChannelUnknown)
 	}

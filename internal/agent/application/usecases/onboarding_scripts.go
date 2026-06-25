@@ -201,15 +201,6 @@ func matchesCues(normalized string, cues []string) bool {
 	return false
 }
 
-func onboardingToolByName(name string) (interfaces.ToolSpec, bool) {
-	for _, tool := range OnboardingToolCatalog() {
-		if tool.Name == name {
-			return tool, true
-		}
-	}
-	return interfaces.ToolSpec{}, false
-}
-
 func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string {
 	var b strings.Builder
 	b.WriteString("Você é o MeControla, assistente de onboarding financeiro via WhatsApp. Tom acolhedor e curto.\n")
@@ -218,7 +209,7 @@ func onboardingDataPhasePrompt(phase string, snapshot OnboardingSnapshot) string
 	fmt.Fprintf(&b, "Quando for uma dúvida ou conversa (sem chamar ferramenta), SEMPRE retome a etapa atual: responda breve e gentil e termine repetindo o cabeçalho exato \"%s\" seguido de refazer a pergunta da etapa.\n\n", onboardingPhaseHeader(phase))
 	switch phase {
 	case OnbPhaseObjective:
-		b.WriteString("Etapa: objetivo principal. Chame save_onboarding_objective com o objetivo informado.")
+		b.WriteString("Etapa: objetivo principal. SEMPRE chame save_onboarding_objective com o texto do objetivo EXATAMENTE como a pessoa escreveu (ex.: 'fazer uma viagem', 'quitar dívidas', 'criar uma reserva'). Qualquer objetivo informado já é válido e suficiente — NUNCA peça para a pessoa detalhar, escolher entre opções ou explicar melhor; apenas salve o que ela disse.")
 	case OnbPhaseBudget:
 		b.WriteString("Etapa: orçamento mensal. Converta o valor para centavos (R$ 5.000 = 500000, 5 mil = 500000) e chame save_onboarding_income.")
 	case OnbPhaseCards:
@@ -260,25 +251,6 @@ func onboardingPhaseHeader(phase string) string {
 		return onbHeaderObjective
 	}
 }
-
-func onboardingPhaseTool(phase string) string {
-	switch phase {
-	case OnbPhaseObjective:
-		return ToolSaveOnboardingObjective
-	case OnbPhaseBudget:
-		return ToolSaveOnboardingIncome
-	case OnbPhaseCards:
-		return ToolSaveOnboardingCard
-	case OnbPhaseFinancialPlan:
-		return ToolSaveOnboardingBudgetSplits
-	case OnbPhaseFirstTx:
-		return recordTransactionToolName
-	default:
-		return ""
-	}
-}
-
-const recordTransactionToolName = "record_transaction"
 
 func onboardingSlugName(slug string) string {
 	switch slug {

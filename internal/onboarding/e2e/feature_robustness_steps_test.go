@@ -17,10 +17,8 @@ import (
 func registerRobustnessSteps(sc *godog.ScenarioContext, w *onboardingWorld) {
 	sc.Step(`^existe um token pago elegível para fallback por WhatsApp$`, w.givenPaidTokenEligibleForWhatsAppFallbackExists)
 	sc.Step(`^existe um token já consumido por outro usuário$`, w.givenTokenAlreadyConsumedByAnotherUserExists)
-	sc.Step(`^existe um token pago sem dados suficientes para ativação direta no Telegram$`, w.givenPaidTokenWithoutDirectTelegramDataExists)
 	sc.Step(`^o processor de WhatsApp recebe uma tentativa de fallback do número atual$`, w.whenWhatsAppProcessorHandlesFallback)
 	sc.Step(`^o processor de WhatsApp recebe uma tentativa de ativação com reutilização do token$`, w.whenWhatsAppProcessorHandlesTokenReuseAttempt)
-	sc.Step(`^o processor do Telegram recebe uma ativação sem dados suficientes$`, w.whenTelegramProcessorHandlesBlockedActivation)
 	sc.Step(`^o dispatcher do outbox é executado sem handlers registrados$`, w.whenOutboxDispatcherRunsWithoutHandlers)
 	sc.Step(`^o dispatcher do outbox é executado com handler que falha$`, w.whenOutboxDispatcherRunsWithFailingHandler)
 	sc.Step(`^o gateway de outreach responde erro 4xx$`, w.givenOutreachGatewayReturns4xx)
@@ -69,17 +67,6 @@ func (w *onboardingWorld) givenTokenAlreadyConsumedByAnotherUserExists() error {
 	})
 }
 
-func (w *onboardingWorld) givenPaidTokenWithoutDirectTelegramDataExists() error {
-	subID, err := w.seedBillingSubscription("", "")
-	if err != nil {
-		return err
-	}
-	return w.seedMagicToken(newDeterministicToken('t'), "PAID", tokenSeedOptions{
-		subscriptionID: subID,
-		paidAt:         time.Now().UTC(),
-	})
-}
-
 func (w *onboardingWorld) whenWhatsAppProcessorHandlesFallback() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -90,17 +77,6 @@ func (w *onboardingWorld) whenWhatsAppProcessorHandlesTokenReuseAttempt() error 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return w.runtime.deps.whatsAppProcessor.HandleActivation(ctx, "+5511999990000", w.currentTokenClear)
-}
-
-func (w *onboardingWorld) whenTelegramProcessorHandlesBlockedActivation() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	reply, err := w.runtime.deps.telegramProcessor.HandleActivation(ctx, w.currentTelegramID, w.currentTokenClear)
-	if err != nil {
-		return err
-	}
-	w.lastReply = reply
-	return nil
 }
 
 func (w *onboardingWorld) whenOutboxDispatcherRunsWithoutHandlers() error {

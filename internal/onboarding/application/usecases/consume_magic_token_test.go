@@ -42,7 +42,7 @@ func buildConsumePaidToken(fromE164, email string) entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(7*24*time.Hour), time.Now().UTC().Add(-2*time.Hour),
 		time.Now().UTC().Add(-1*time.Hour), time.Time{}, time.Time{},
 		"cipher-token", "sub-001", fromE164, email, "sale-001",
-		"", "", 0, "",
+		"", "", valueobjects.ActivationPath(0),
 	)
 }
 
@@ -53,7 +53,7 @@ func buildConsumedToken(consumedByE164 string) entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(7*24*time.Hour), time.Now().UTC().Add(-3*time.Hour),
 		time.Now().UTC().Add(-2*time.Hour), time.Now().UTC().Add(-1*time.Hour), time.Time{},
 		"cipher-token", "sub-001", consumedByE164, "user@test.com", "sale-001",
-		"user-id-1", consumedByE164, valueobjects.ActivationPathDirect, "",
+		"user-id-1", consumedByE164, valueobjects.ActivationPathDirect,
 	)
 }
 
@@ -64,7 +64,7 @@ func buildPendingToken() entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(7*24*time.Hour), time.Now().UTC(),
 		time.Time{}, time.Time{}, time.Time{},
 		"cipher-token", "", "", "", "",
-		"", "", 0, "",
+		"", "", valueobjects.ActivationPath(0),
 	)
 }
 
@@ -75,7 +75,7 @@ func buildExpiredToken() entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(-24*time.Hour), time.Now().UTC().Add(-8*24*time.Hour),
 		time.Time{}, time.Time{}, time.Time{},
 		"cipher-token", "", "", "", "",
-		"", "", 0, "",
+		"", "", valueobjects.ActivationPath(0),
 	)
 }
 

@@ -22,7 +22,6 @@ type DeleteRecurringTemplateSuite struct {
 	templateID uuid.UUID
 	factory    *mockInterfaces.RepositoryFactory
 	repo       *mockInterfaces.RecurringTemplateRepository
-	publisher  *mockInterfaces.RecurringTemplateEventPublisher
 	uow        *uowMocks.UnitOfWorkVoid
 	useCase    *DeleteRecurringTemplate
 }
@@ -38,16 +37,14 @@ func (s *DeleteRecurringTemplateSuite) SetupTest() {
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewRecurringTemplateRepository(s.T())
 	s.factory.EXPECT().RecurringTemplateRepository(mock.Anything).Return(s.repo).Maybe()
-	s.publisher = mockInterfaces.NewRecurringTemplateEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 	s.useCase = NewDeleteRecurringTemplate(
-		s.factory, s.uow, s.publisher, fake.NewProvider(),
+		s.factory, s.uow, fake.NewProvider(),
 	)
 }
 
 func (s *DeleteRecurringTemplateSuite) TestExecute_Success() {
 	s.repo.EXPECT().SoftDelete(mock.Anything, s.templateID, s.userID, int64(1), mock.Anything).Return(nil).Once()
-	s.publisher.EXPECT().PublishDeleted(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	err := s.useCase.Execute(s.ctx, s.templateID.String(), 1)
 	s.Require().NoError(err)

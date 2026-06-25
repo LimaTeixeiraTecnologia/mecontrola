@@ -71,7 +71,7 @@ func (s *DecisionAuditLookupSuite) TestLookup() {
 			args: args{messageID: "wamid.miss"},
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
-					s.repo.EXPECT().FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), "whatsapp", "wamid.miss").
+					s.repo.EXPECT().FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), "whatsapp", "wamid.miss", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).Once()
 					return s.repo
 				}(),
@@ -88,7 +88,7 @@ func (s *DecisionAuditLookupSuite) TestLookup() {
 			args: args{messageID: "wamid.hit"},
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
-					s.repo.EXPECT().FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), "whatsapp", "wamid.hit").
+					s.repo.EXPECT().FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), "whatsapp", "wamid.hit", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{Status: "executed", RedactedResponse: []byte(`{"redacted":"Lancei R$ 58,00 no iFood"}`)}, true, nil).Once()
 					return s.repo
 				}(),
@@ -105,7 +105,7 @@ func (s *DecisionAuditLookupSuite) TestLookup() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			auditor := newDecisionAuditor(s.obs, DecisionAuditDeps{Factory: scenario.dependencies.factory, UoW: scenario.dependencies.uow}, nil)
-			reply, found := auditor.lookup(s.ctx, uuid.New(), "whatsapp", scenario.args.messageID)
+			reply, found := auditor.lookup(s.ctx, uuid.New(), "whatsapp", scenario.args.messageID, 0)
 			scenario.expect(reply, found)
 		})
 	}
@@ -113,7 +113,7 @@ func (s *DecisionAuditLookupSuite) TestLookup() {
 
 func (s *DecisionAuditLookupSuite) TestLookupDisabledReturnsFalse() {
 	auditor := newDecisionAuditor(s.obs, DecisionAuditDeps{}, nil)
-	reply, found := auditor.lookup(s.ctx, uuid.New(), "whatsapp", "wamid.x")
+	reply, found := auditor.lookup(s.ctx, uuid.New(), "whatsapp", "wamid.x", 0)
 	s.False(found)
 	s.Empty(reply)
 }

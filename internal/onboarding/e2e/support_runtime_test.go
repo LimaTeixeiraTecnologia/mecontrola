@@ -47,14 +47,13 @@ import (
 )
 
 const (
-	e2ePlanIDMonthly       = "monthly"
-	e2eOrderPrefix         = "e2e-order-"
-	e2eCheckoutOrigin      = "https://app.mecontrola.test"
-	e2eActivateBaseURL     = "https://app.mecontrola.test/activate"
-	e2eTokenCipherKey      = "12345678901234567890123456789012"
-	e2eBotNumberE164       = "+5511999991111"
-	e2eBotNumberDisplay    = "+55 11 99999-1111"
-	e2eTelegramBotUsername = "mecontrola_test_bot"
+	e2ePlanIDMonthly    = "monthly"
+	e2eOrderPrefix      = "e2e-order-"
+	e2eCheckoutOrigin   = "https://app.mecontrola.test"
+	e2eActivateBaseURL  = "https://app.mecontrola.test/activate"
+	e2eTokenCipherKey   = "12345678901234567890123456789012"
+	e2eBotNumberE164    = "+5511999991111"
+	e2eBotNumberDisplay = "+55 11 99999-1111"
 )
 
 type onboardingDependencies struct {
@@ -78,13 +77,11 @@ type onboardingDependencies struct {
 	consumeToken              *usecases.ConsumeMagicToken
 	fallbackActivation        *usecases.TryFallbackActivation
 	startBudgetConfiguration  *usecases.StartBudgetConfiguration
-	activateTelegram          *usecases.ActivateTelegramByToken
 	sendOutreach              *usecases.SendOutreach
 	expireTokens              *usecases.ExpireTokens
 	cleanupTables             *usecases.CleanupOnboardingTables
 	publicRouter              *onboardingserver.PublicRouter
 	whatsAppProcessor         *appservices.WhatsAppMessageProcessor
-	telegramProcessor         *appservices.TelegramMessageProcessor
 	subscriptionConsumer      events.Handler
 	activationEmailConsumer   events.Handler
 	paidWithoutTokenConsumer  events.Handler
@@ -161,26 +158,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 			GatewaySharedSecretCurrent:     "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
 			GatewaySharedSecretNext:        "",
 			GatewayAuthWindow:              time.Minute,
-		},
-		TelegramConfig: configs.TelegramConfig{
-			Enabled:                true,
-			BotUsername:            e2eTelegramBotUsername,
-			BotToken:               "telegram-token",
-			BotID:                  123456,
-			APIBaseURL:             "https://telegram.invalid",
-			OutboundTimeout:        time.Second,
-			WelcomeActivated:       "telegram-welcome",
-			AlreadyActive:          "telegram-already-active",
-			RequiresWhatsApp:       "telegram-requires-whatsapp",
-			CodeAlreadyUsed:        "telegram-code-used",
-			PaymentProcessing:      "telegram-processing",
-			CodeExpired:            "telegram-expired",
-			CodeInvalid:            "telegram-invalid",
-			SystemUnavailable:      "telegram-unavailable",
-			PleaseUseAtivar:        "telegram-use-ativar",
-			OnboardingFallback:     "telegram-fallback",
-			WebhookRateLimitPerMin: 60,
-			WebhookRateLimitBurst:  20,
 		},
 	}
 
@@ -269,7 +246,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		factory.MagicTokenRepository(db),
 		e2eBotNumberE164,
 		e2eBotNumberDisplay,
-		e2eTelegramBotUsername,
 		o11y,
 	)
 	markTokenPaid := usecases.NewMarkTokenPaid(
@@ -310,15 +286,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		factory,
 		o11y,
 	)
-	activateTelegram := usecases.NewActivateTelegramByToken(
-		factory,
-		identityModule.RepositoryFactory,
-		uow.NewUnitOfWork(db),
-		onboardingservices.NewDirectTelegramActivationWorkflow(),
-		bindingService,
-		true,
-		o11y,
-	)
 	sendOutreach := usecases.NewSendOutreach(
 		factory.MagicTokenRepository(db),
 		outreachGateway,
@@ -353,22 +320,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		runtimeCfg.Messages,
 		o11y,
 	)
-	telegramProcessor := appservices.NewTelegramMessageProcessor(
-		activateTelegram,
-		map[string]string{
-			"welcome_activated":               "telegram-welcome",
-			"already_active":                  "telegram-already-active",
-			"requires_whatsapp_activation":    "telegram-requires-whatsapp",
-			"code_already_used_other_account": "telegram-code-used",
-			"payment_still_processing_retry":  "telegram-processing",
-			"code_expired_contact_support":    "telegram-expired",
-			"code_invalid_check_again":        "telegram-invalid",
-			"system_unavailable_retry":        "telegram-unavailable",
-			"please_use_ativar_command":       "telegram-use-ativar",
-		},
-		o11y,
-	)
-
 	return &onboardingDependencies{
 		db:                        db,
 		o11y:                      o11y,
@@ -390,13 +341,11 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		consumeToken:              consumeToken,
 		fallbackActivation:        fallbackActivation,
 		startBudgetConfiguration:  startBudgetConfiguration,
-		activateTelegram:          activateTelegram,
 		sendOutreach:              sendOutreach,
 		expireTokens:              expireTokens,
 		cleanupTables:             cleanupTables,
 		publicRouter:              publicRouter,
 		whatsAppProcessor:         whatsAppProcessor,
-		telegramProcessor:         telegramProcessor,
 		subscriptionConsumer:      consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y),
 		activationEmailConsumer:   consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
 		paidWithoutTokenConsumer:  consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),

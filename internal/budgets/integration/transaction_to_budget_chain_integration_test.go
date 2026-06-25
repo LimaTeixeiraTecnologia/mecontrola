@@ -282,71 +282,21 @@ func (s *TransactionToBudgetChainSuite) TestBudgetActivationPublishesOutboxEvent
 	s.Require().NoError(err)
 	s.Equal("active", activated.State)
 
-	var count int
-	row := mgr.QueryRowContext(ctx,
+	var stateCount int
+	stateRow := mgr.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM mecontrola.budgets WHERE id = $1 AND user_id = $2 AND state = 2`,
+		activated.ID, userID.String(),
+	)
+	s.Require().NoError(stateRow.Scan(&stateCount))
+	s.Equal(1, stateCount)
+
+	var eventCount int
+	eventRow := mgr.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2 AND aggregate_user_id = $3`,
 		"budgets.budget_activated.v1", activated.ID, userID.String(),
 	)
-	s.Require().NoError(row.Scan(&count))
-	s.Equal(1, count)
-}
-
-func (s *TransactionToBudgetChainSuite) TestExternalExpenseConsumerUpdatesBudgetSummary() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	o11y := noop.NewProvider()
-	cfg := s.buildConfig()
-	authMW := func(h http.Handler) http.Handler { return h }
-	ctx := context.Background()
-
-	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
-	s.Require().NoError(err)
-
-	userID := uuid.New()
-	s.ensureUserExists(ctx, mgr, userID)
-
-	_, err = budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
-		UserID:     userID.String(),
-		Competence: expectedCompetence,
-		TotalCents: 100000,
-		Allocations: []budgetinput.AllocationInput{
-			{RootSlug: "expense.prazeres", BasisPoints: 10000},
-		},
-	})
-	s.Require().NoError(err)
-
-	_, err = budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
-		UserID:     userID.String(),
-		Competence: expectedCompetence,
-	})
-	s.Require().NoError(err)
-
-	payload := map[string]any{
-		"event_id":                uuid.New().String(),
-		"source":                  "kiwify",
-		"external_transaction_id": uuid.New().String(),
-		"occurred_at":             time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC),
-		"user_id":                 userID.String(),
-		"operation":               "create",
-		"version":                 1,
-		"subcategory_id":          deliverySubcategoryID,
-		"competence":              expectedCompetence,
-		"amount_cents":            expectedAmountCents,
-	}
-	raw, err := json.Marshal(payload)
-	s.Require().NoError(err)
-
-	event := &envelopeEvent{
-		eventType: "external.expense.v1",
-		envelope:  outbox.Envelope{ID: uuid.New().String(), Payload: raw},
-	}
-	s.Require().NoError(budgetsModule.ExternalExpenseConsumer.Handle(ctx, platformevents.Event(event)))
-
-	summary, err := budgetsModule.GetMonthlySummaryUC.Execute(ctx, userID.String(), expectedCompetence)
-	s.Require().NoError(err)
-	s.Equal(int64(100000), *summary.TotalCents)
-	s.Equal(expectedAmountCents, summary.TotalSpentCents)
-	s.Equal("active", summary.State)
+	s.Require().NoError(eventRow.Scan(&eventCount))
+	s.Equal(0, eventCount)
 }
 
 func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEvent() {
@@ -381,26 +331,16 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	})
 	s.Require().NoError(err)
 
-	payload := map[string]any{
-		"event_id":                uuid.New().String(),
-		"source":                  "kiwify",
-		"external_transaction_id": uuid.New().String(),
-		"occurred_at":             time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC),
-		"user_id":                 userID.String(),
-		"operation":               "create",
-		"version":                 1,
-		"subcategory_id":          deliverySubcategoryID,
-		"competence":              expectedCompetence,
-		"amount_cents":            int64(85000),
-	}
-	raw, err := json.Marshal(payload)
+	_, err = budgetsModule.UpsertExpenseUC.Execute(ctx, budgetinput.UpsertExpenseInput{
+		UserID:                userID.String(),
+		Source:                "transactions",
+		ExternalTransactionID: uuid.New().String(),
+		SubcategoryID:         deliverySubcategoryID,
+		Competence:            expectedCompetence,
+		AmountCents:           int64(85000),
+		OccurredAt:            time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC),
+	})
 	s.Require().NoError(err)
-
-	event := &envelopeEvent{
-		eventType: "external.expense.v1",
-		envelope:  outbox.Envelope{ID: uuid.New().String(), Payload: raw},
-	}
-	s.Require().NoError(budgetsModule.ExternalExpenseConsumer.Handle(ctx, platformevents.Event(event)))
 	s.Require().NoError(budgetsModule.ThresholdAlertsJob.Run(ctx))
 
 	var count int

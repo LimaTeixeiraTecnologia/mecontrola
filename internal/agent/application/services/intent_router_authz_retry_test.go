@@ -72,6 +72,7 @@ func (s *AuthzRetrySuite) TestWrite_UsesPrincipalUserID() {
 		WhatsAppGateway: &fakeWhatsAppGateway{},
 		ExpenseRecorder: logger,
 		Location:        time.UTC,
+		Kernel:          newKernelWithExpenseRecorder(logger, nil),
 	})
 	require.NoError(s.T(), err)
 
@@ -92,6 +93,7 @@ func (s *AuthzRetrySuite) TestWrite_NotRetriedOnTransientError() {
 		WhatsAppGateway: &fakeWhatsAppGateway{},
 		ExpenseRecorder: logger,
 		Location:        time.UTC,
+		Kernel:          newKernelWithExpenseRecorder(logger, nil),
 	})
 	require.NoError(s.T(), err)
 

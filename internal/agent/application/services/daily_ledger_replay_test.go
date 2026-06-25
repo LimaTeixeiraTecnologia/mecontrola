@@ -170,7 +170,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
 					s.repo.EXPECT().
-						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.dup").
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.dup", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{Status: "executed", RedactedResponse: []byte(`{"redacted":"Lancei R$ 58,00 no iFood"}`)}, true, nil).
 						Once()
 					return s.repo
@@ -198,7 +198,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
 					s.repo.EXPECT().
-						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.low").
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.low", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).
 						Once()
 					return s.repo
@@ -225,7 +225,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
 					s.repo.EXPECT().
-						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.race").
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.race", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).Once()
 					s.repo.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).
 						Return(agentinterfaces.ErrAgentDecisionConflict).Once()
@@ -253,7 +253,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
 					s.repo.EXPECT().
-						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.new").
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.new", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).
 						Once()
 					s.repo.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).Return(nil).Once()
@@ -282,7 +282,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
 					s.repo.EXPECT().
-						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.fail").
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.fail", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).Once()
 					s.repo.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).
 						Return(errors.New("db timeout")).Once()
@@ -310,7 +310,7 @@ func (s *DailyLedgerWriteSuite) TestDispatchWrite() {
 			dependencies: dependencies{
 				repo: func() *interfacesmocks.AgentDecisionRepository {
 					s.repo.EXPECT().
-						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.settle").
+						FindByMessage(mock.Anything, mock.AnythingOfType("uuid.UUID"), ChannelWhatsApp, "wamid.settle", 0).
 						Return(agentinterfaces.AgentDecisionSnapshot{}, false, nil).Once()
 					s.repo.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).Return(nil).Once()
 					s.repo.EXPECT().UpdateSettlement(mock.Anything, mock.AnythingOfType("entities.AgentDecision")).

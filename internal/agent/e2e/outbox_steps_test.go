@@ -12,13 +12,10 @@ import (
 )
 
 const (
-	transactionCreatedType       = "transactions.transaction.created.v1"
-	transactionUpdatedType       = "transactions.transaction.updated.v1"
-	transactionDeletedType       = "transactions.transaction.deleted.v1"
-	cardPurchaseCreatedType      = "transactions.card_purchase.created.v1"
-	recurringTemplateCreatedType = "transactions.recurring_template.created.v1"
-	agentIntentExecutedType      = "agent.intent.executed.v1"
-	agentIntentRejectedType      = "agent.intent.rejected.v1"
+	transactionCreatedType  = "transactions.transaction.created.v1"
+	transactionUpdatedType  = "transactions.transaction.updated.v1"
+	transactionDeletedType  = "transactions.transaction.deleted.v1"
+	cardPurchaseCreatedType = "transactions.card_purchase.created.v1"
 )
 
 type envelopeEvent struct {
@@ -63,10 +60,6 @@ func expectedAggregateType(eventType string) string {
 		return "transactions.transaction"
 	case cardPurchaseCreatedType:
 		return "transactions.card_purchase"
-	case recurringTemplateCreatedType:
-		return "transactions.recurring_template"
-	case agentIntentExecutedType, agentIntentRejectedType:
-		return "agent_session"
 	default:
 		return ""
 	}

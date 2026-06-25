@@ -22,7 +22,6 @@ type Config struct {
 	BillingConfig        BillingConfig        `mapstructure:",squash"`
 	OnboardingConfig     OnboardingConfig     `mapstructure:",squash"`
 	WhatsAppConfig       WhatsAppConfig       `mapstructure:",squash"`
-	TelegramConfig       TelegramConfig       `mapstructure:",squash"`
 	AgentConfig          AgentConfig          `mapstructure:",squash"`
 	IdentityConfig       IdentityConfig       `mapstructure:",squash"`
 	BudgetsConfig        BudgetsConfig        `mapstructure:",squash"`
@@ -136,7 +135,6 @@ type OnboardingConfig struct {
 	TokenExpirationSchedule string `mapstructure:"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE"`
 	MaxTokenLookupAttempts  int    `mapstructure:"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS"`
 	TokenEncryptionKey      string `mapstructure:"ONBOARDING_TOKEN_ENCRYPTION_KEY"`
-	TelegramDirectEnabled   bool   `mapstructure:"ONBOARDING_TELEGRAM_DIRECT_ENABLED"`
 }
 
 type WhatsAppConfig struct {
@@ -185,30 +183,15 @@ type AgentConfig struct {
 
 	OnboardingMaxTokens int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
 	OnboardingModel     string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
-}
 
-type TelegramConfig struct {
-	Enabled                bool          `mapstructure:"TELEGRAM_ENABLED"`
-	BotToken               string        `mapstructure:"TELEGRAM_BOT_TOKEN"`
-	BotID                  int64         `mapstructure:"TELEGRAM_BOT_ID"`
-	BotUsername            string        `mapstructure:"TELEGRAM_BOT_USERNAME"`
-	APIBaseURL             string        `mapstructure:"TELEGRAM_API_BASE_URL"`
-	SecretToken            string        `mapstructure:"TELEGRAM_SECRET_TOKEN"`
-	SecretTokenNext        string        `mapstructure:"TELEGRAM_SECRET_TOKEN_NEXT"`
-	WebhookPath            string        `mapstructure:"TELEGRAM_WEBHOOK_PATH"`
-	WebhookRateLimitPerMin int           `mapstructure:"TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN"`
-	WebhookRateLimitBurst  int           `mapstructure:"TELEGRAM_WEBHOOK_RATE_LIMIT_BURST"`
-	OutboundTimeout        time.Duration `mapstructure:"TELEGRAM_OUTBOUND_TIMEOUT"`
-	OnboardingFallback     string        `mapstructure:"TELEGRAM_MSG_ONBOARDING_FALLBACK"`
-	WelcomeActivated       string        `mapstructure:"TELEGRAM_MSG_WELCOME_ACTIVATED"`
-	AlreadyActive          string        `mapstructure:"TELEGRAM_MSG_ALREADY_ACTIVE"`
-	RequiresWhatsApp       string        `mapstructure:"TELEGRAM_MSG_REQUIRES_WHATSAPP_ACTIVATION"`
-	CodeAlreadyUsed        string        `mapstructure:"TELEGRAM_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
-	PaymentProcessing      string        `mapstructure:"TELEGRAM_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
-	CodeExpired            string        `mapstructure:"TELEGRAM_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
-	CodeInvalid            string        `mapstructure:"TELEGRAM_MSG_CODE_INVALID_CHECK_AGAIN"`
-	SystemUnavailable      string        `mapstructure:"TELEGRAM_MSG_SYSTEM_UNAVAILABLE_RETRY"`
-	PleaseUseAtivar        string        `mapstructure:"TELEGRAM_MSG_PLEASE_USE_ATIVAR_COMMAND"`
+	ParsePrimaryModel        string `mapstructure:"AGENT_LLM_PARSE_PRIMARY_MODEL"`
+	ParseFallbackModels      string `mapstructure:"AGENT_LLM_PARSE_FALLBACK_MODELS"`
+	ParseMaxTokens           int    `mapstructure:"AGENT_LLM_PARSE_MAX_TOKENS"`
+	OnboardingPrimaryModel   string `mapstructure:"AGENT_LLM_ONBOARDING_PRIMARY_MODEL"`
+	OnboardingFallbackModels string `mapstructure:"AGENT_LLM_ONBOARDING_FALLBACK_MODELS"`
+	ConvPrimaryModel         string `mapstructure:"AGENT_LLM_CONV_PRIMARY_MODEL"`
+	ConvFallbackModels       string `mapstructure:"AGENT_LLM_CONV_FALLBACK_MODELS"`
+	ConvMaxTokens            int    `mapstructure:"AGENT_LLM_CONV_MAX_TOKENS"`
 }
 
 type KiwifyConfig struct {
@@ -365,7 +348,6 @@ type OutboxConfig struct {
 }
 
 type WorkflowKernelConfig struct {
-	TransactionsWriteEnabled  bool          `mapstructure:"WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED"`
 	MaxAttempts               int           `mapstructure:"WORKFLOW_KERNEL_MAX_ATTEMPTS"`
 	RetryBaseBackoff          time.Duration `mapstructure:"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF"`
 	RetryMaxBackoff           time.Duration `mapstructure:"WORKFLOW_KERNEL_RETRY_MAX_BACKOFF"`
@@ -402,7 +384,6 @@ func (l *configLoader) load() (*Config, error) {
 	l.setCardDefaults()
 	l.setOnboardingDefaults()
 	l.setWhatsAppDefaults()
-	l.setTelegramDefaults()
 	l.setAgentDefaults()
 	l.setTransactionsDefaults()
 	l.setIdentityDefaults()
@@ -495,7 +476,6 @@ func (l *configLoader) envKeys() []string {
 		"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE",
 		"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS",
 		"ONBOARDING_TOKEN_ENCRYPTION_KEY",
-		"ONBOARDING_TELEGRAM_DIRECT_ENABLED",
 		"META_PHONE_NUMBER_ID",
 		"META_ACCESS_TOKEN",
 		"META_APP_SECRET",
@@ -541,12 +521,19 @@ func (l *configLoader) envKeys() []string {
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS",
 		"TRANSACTIONS_BRAZIL_TIMEZONE",
 		"OPENROUTER_API_KEY",
+		"AGENT_LLM_PARSE_PRIMARY_MODEL",
+		"AGENT_LLM_PARSE_FALLBACK_MODELS",
+		"AGENT_LLM_PARSE_MAX_TOKENS",
+		"AGENT_LLM_ONBOARDING_PRIMARY_MODEL",
+		"AGENT_LLM_ONBOARDING_FALLBACK_MODELS",
+		"AGENT_LLM_CONV_PRIMARY_MODEL",
+		"AGENT_LLM_CONV_FALLBACK_MODELS",
+		"AGENT_LLM_CONV_MAX_TOKENS",
 		"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT",
 		"IDENTITY_GATEWAY_SHARED_SECRET_NEXT",
 		"IDENTITY_GATEWAY_AUTH_WINDOW",
 		"AUTH_RATE_LIMIT_PER_USER_PER_MIN",
 		"AUTH_RATE_LIMIT_PER_USER_BURST",
-		"WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED",
 		"WORKFLOW_KERNEL_MAX_ATTEMPTS",
 		"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF",
 		"WORKFLOW_KERNEL_RETRY_MAX_BACKOFF",
@@ -648,7 +635,6 @@ func (l *configLoader) setAuthRateLimitDefaults() {
 }
 
 func (l *configLoader) setWorkflowKernelDefaults() {
-	l.v.SetDefault("WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED", true)
 	l.v.SetDefault("WORKFLOW_KERNEL_MAX_ATTEMPTS", 3)
 	l.v.SetDefault("WORKFLOW_KERNEL_RETRY_BASE_BACKOFF", 200*time.Millisecond)
 	l.v.SetDefault("WORKFLOW_KERNEL_RETRY_MAX_BACKOFF", 5*time.Second)
@@ -864,31 +850,7 @@ func (c *Config) validateProduction() []string {
 	errs = append(errs, c.validateProductionIdentity()...)
 	errs = append(errs, c.validateProductionCORS()...)
 	errs = append(errs, c.validateProductionWhatsApp()...)
-	errs = append(errs, c.validateProductionTelegram()...)
 	errs = append(errs, c.validateProductionAgent()...)
-	return errs
-}
-
-func (c *Config) validateProductionTelegram() []string {
-	if !c.TelegramConfig.Enabled {
-		return nil
-	}
-	var errs []string
-	if strings.TrimSpace(c.TelegramConfig.BotToken) == "" {
-		errs = append(errs, "TELEGRAM_BOT_TOKEN obrigatorio quando TELEGRAM_ENABLED=true em production")
-	}
-	if c.TelegramConfig.BotID <= 0 {
-		errs = append(errs, "TELEGRAM_BOT_ID deve ser > 0 quando TELEGRAM_ENABLED=true em production")
-	}
-	if strings.TrimSpace(c.TelegramConfig.SecretToken) == "" {
-		errs = append(errs, "TELEGRAM_SECRET_TOKEN obrigatorio quando TELEGRAM_ENABLED=true em production")
-	}
-	if strings.TrimSpace(c.TelegramConfig.APIBaseURL) == "" {
-		errs = append(errs, "TELEGRAM_API_BASE_URL obrigatorio quando TELEGRAM_ENABLED=true em production")
-	}
-	if c.TelegramConfig.OutboundTimeout <= 0 || c.TelegramConfig.OutboundTimeout > 30*time.Second {
-		errs = append(errs, "TELEGRAM_OUTBOUND_TIMEOUT deve estar no intervalo (0..30s] em production")
-	}
 	return errs
 }
 
@@ -1197,7 +1159,6 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_META_CLEANUP_SCHEDULE", "30 3 * * *")
 	l.v.SetDefault("ONBOARDING_TOKEN_EXPIRATION_SCHEDULE", "0 3 * * *")
 	l.v.SetDefault("ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS", 5)
-	l.v.SetDefault("ONBOARDING_TELEGRAM_DIRECT_ENABLED", false)
 }
 
 func (l *configLoader) setWhatsAppDefaults() {
@@ -1226,7 +1187,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
 	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
 	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "mistralai/mistral-small-3.2-24b-instruct")
-	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 256)
+	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 768)
 	l.v.SetDefault("AGENT_LLM_MAX_INPUT_CHARS", 2000)
 	l.v.SetDefault("AGENT_LLM_PROSE_MAX_TOKENS", 200)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
@@ -1238,25 +1199,14 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")
 	l.v.SetDefault("AGENT_RUNTIME_ENABLED", false)
-}
-
-func (l *configLoader) setTelegramDefaults() {
-	l.v.SetDefault("TELEGRAM_ENABLED", false)
-	l.v.SetDefault("TELEGRAM_API_BASE_URL", "https://api.telegram.org")
-	l.v.SetDefault("TELEGRAM_WEBHOOK_PATH", "/api/v1/channels/telegram/webhook")
-	l.v.SetDefault("TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
-	l.v.SetDefault("TELEGRAM_WEBHOOK_RATE_LIMIT_BURST", 100)
-	l.v.SetDefault("TELEGRAM_OUTBOUND_TIMEOUT", 10*time.Second)
-	l.v.SetDefault("TELEGRAM_MSG_ONBOARDING_FALLBACK", "Para ativar sua conta, abra o link enviado por e-mail e siga as instrucoes.")
-	l.v.SetDefault("TELEGRAM_MSG_WELCOME_ACTIVATED", "Sua conta foi vinculada ao Telegram com sucesso! Pode comecar a mandar suas mensagens financeiras por aqui.")
-	l.v.SetDefault("TELEGRAM_MSG_ALREADY_ACTIVE", "Seu Telegram ja esta vinculado a sua conta MeControla.")
-	l.v.SetDefault("TELEGRAM_MSG_REQUIRES_WHATSAPP_ACTIVATION", "Antes de usar o Telegram, ative sua conta no WhatsApp com o codigo recebido.")
-	l.v.SetDefault("TELEGRAM_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT", "Este codigo ja foi utilizado por outra conta. Se voce nao reconhece, entre em contato com o suporte.")
-	l.v.SetDefault("TELEGRAM_MSG_PAYMENT_STILL_PROCESSING_RETRY", "Seu pagamento ainda esta sendo processado. Tente novamente em alguns minutos.")
-	l.v.SetDefault("TELEGRAM_MSG_CODE_EXPIRED_CONTACT_SUPPORT", "Este codigo expirou. Entre em contato com o suporte.")
-	l.v.SetDefault("TELEGRAM_MSG_CODE_INVALID_CHECK_AGAIN", "Codigo invalido. Verifique se digitou ATIVAR seguido do codigo correto.")
-	l.v.SetDefault("TELEGRAM_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
-	l.v.SetDefault("TELEGRAM_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para vincular seu Telegram, envie ATIVAR seguido do codigo recebido por e-mail.")
+	l.v.SetDefault("AGENT_LLM_PARSE_PRIMARY_MODEL", "")
+	l.v.SetDefault("AGENT_LLM_PARSE_FALLBACK_MODELS", "")
+	l.v.SetDefault("AGENT_LLM_PARSE_MAX_TOKENS", 0)
+	l.v.SetDefault("AGENT_LLM_ONBOARDING_PRIMARY_MODEL", "")
+	l.v.SetDefault("AGENT_LLM_ONBOARDING_FALLBACK_MODELS", "")
+	l.v.SetDefault("AGENT_LLM_CONV_PRIMARY_MODEL", "")
+	l.v.SetDefault("AGENT_LLM_CONV_FALLBACK_MODELS", "")
+	l.v.SetDefault("AGENT_LLM_CONV_MAX_TOKENS", 0)
 }
 
 func (c *Config) validateWorkflowKernel() []string {

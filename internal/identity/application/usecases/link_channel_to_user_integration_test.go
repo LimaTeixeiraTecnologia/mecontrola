@@ -90,7 +90,7 @@ func (s *LinkChannelToUserIntegrationSuite) TestLinkChannelToUser() {
 			name: "vincular canal novo ao usuario: linha com unlinked_at IS NULL",
 			setup: func() args {
 				userID := s.seedUser("+5511900000031")
-				return args{userID: userID, channel: "telegram", externalID: "111111111"}
+				return args{userID: userID, channel: "whatsapp", externalID: "+5511111111111"}
 			},
 			expect: func(res usecases.LinkChannelResult, err error, a args) {
 				s.Require().NoError(err)
@@ -103,7 +103,7 @@ func (s *LinkChannelToUserIntegrationSuite) TestLinkChannelToUser() {
 			name: "vincular mesmo canal+externalID ao mesmo usuario: AlreadyLinked=true COUNT permanece 1",
 			setup: func() args {
 				userID := s.seedUser("+5511900000032")
-				return args{userID: userID, channel: "telegram", externalID: "222222222"}
+				return args{userID: userID, channel: "whatsapp", externalID: "+5511222222222"}
 			},
 			expect: func(res usecases.LinkChannelResult, err error, a args) {
 				s.Require().NoError(err)
@@ -129,12 +129,12 @@ func (s *LinkChannelToUserIntegrationSuite) TestLinkChannelToUser() {
 				sut := s.newSUT()
 				_, err := sut.Execute(s.ctx, input.LinkChannelToUser{
 					UserID:     userIDA,
-					Channel:    "telegram",
-					ExternalID: "333333333",
+					Channel:    "whatsapp",
+					ExternalID: "+5511333333333",
 				})
 				s.Require().NoError(err)
 
-				return args{userID: userIDB, channel: "telegram", externalID: "333333333"}
+				return args{userID: userIDB, channel: "whatsapp", externalID: "+5511333333333"}
 			},
 			expect: func(res usecases.LinkChannelResult, err error, a args) {
 				s.Require().Error(err)

@@ -40,7 +40,7 @@ func (a *decisionAuditor) enabled() bool {
 	return a != nil && a.factory != nil && a.uow != nil
 }
 
-func (a *decisionAuditor) lookup(ctx context.Context, userID uuid.UUID, channel, messageID string) (string, bool) {
+func (a *decisionAuditor) lookup(ctx context.Context, userID uuid.UUID, channel, messageID string, stepIndex int) (string, bool) {
 	if !a.enabled() {
 		return "", false
 	}
@@ -49,7 +49,7 @@ func (a *decisionAuditor) lookup(ctx context.Context, userID uuid.UUID, channel,
 		found    bool
 	)
 	err := a.uow.Do(ctx, func(ctx context.Context, db database.DBTX) error {
-		result, ok, findErr := a.factory.AgentDecisionRepository(db).FindByMessage(ctx, userID, channel, messageID)
+		result, ok, findErr := a.factory.AgentDecisionRepository(db).FindByMessage(ctx, userID, channel, messageID, stepIndex)
 		if findErr != nil {
 			return findErr
 		}
@@ -126,6 +126,7 @@ func (a *decisionAuditor) beginInternal(ctx context.Context, in decisionRecordIn
 		TraceID:          in.TraceID,
 		DecidedAction:    in.IntentKind,
 		CreatedAt:        time.Now().UTC(),
+		StepIndex:        in.StepIndex,
 	}
 	decision, err := entities.NewPendingDecision(params)
 	if err != nil {
@@ -219,4 +220,5 @@ type decisionRecordInput struct {
 	TraceID      string
 	DirectReply  string
 	RawResponse  []byte
+	StepIndex    int
 }

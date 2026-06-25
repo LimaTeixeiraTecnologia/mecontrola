@@ -30,7 +30,7 @@ func registerSteps(sc *godog.ScenarioContext, e *agentE2ECtx) {
 	registerWriteSteps(sc, e)
 	registerReadSteps(sc, e)
 	registerCardsSteps(sc, e)
-	registerTelegramSteps(sc, e)
+	registerByRefSteps(sc, e)
 }
 
 func (e *agentE2ECtx) givenUserIsActive() error {

@@ -317,20 +317,3 @@ func (s *MagicTokenRepositorySuite) TestCountPaidUnconsumed() {
 	s.Require().NoError(err)
 	s.Equal(int64(2), count2)
 }
-
-func (s *MagicTokenRepositorySuite) TestUpdateTelegramExternalID() {
-	ctx := context.Background()
-	repo := postgres.NewMagicTokenRepository(noop.NewProvider(), s.db)
-
-	token := s.newToken("plan-tg", time.Now().UTC().Add(24*time.Hour))
-	s.insertToken(ctx, repo, token)
-
-	externalID := "tg-ext-12345"
-	s.Require().NoError(repo.UpdateTelegramExternalID(ctx, token.ID(), externalID))
-
-	var telegramID sql.NullString
-	err := s.queryRow(ctx, `SELECT telegram_external_id FROM mecontrola.onboarding_tokens WHERE id = $1`, token.ID()).Scan(&telegramID)
-	s.Require().NoError(err)
-	s.True(telegramID.Valid)
-	s.Equal(externalID, telegramID.String)
-}

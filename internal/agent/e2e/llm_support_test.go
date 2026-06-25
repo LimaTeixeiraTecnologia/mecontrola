@@ -85,13 +85,52 @@ func realParserForModel(t *testing.T, slug valueobjects.ModelSlug) *usecases.Par
 		APIKey:      os.Getenv("OPENROUTER_API_KEY"),
 		HTTPReferer: "https://mecontrola.app",
 		XTitle:      "MeControla",
-		MaxTokens:   256,
+		MaxTokens:   768,
 		Temperature: 0,
 	}, noop.NewProvider())
 	breaker := services.NewCircuitBreaker(services.CircuitBreakerConfig{MaxFailures: 5, FailureWindow: 30 * time.Second, OpenDuration: 60 * time.Second})
 	chain, err := services.NewFallbackChain([]appservices.LLMProvider{provider}, breaker, noop.NewProvider())
 	require.NoError(t, err)
 	parser, err := usecases.NewParseInbound(chain, nil, 2000, noop.NewProvider())
+	require.NoError(t, err)
+	return parser
+}
+
+func realProviderForSlug(t *testing.T, slug valueobjects.ModelSlug) appservices.LLMProvider {
+	t.Helper()
+	baseURL := os.Getenv("OPENROUTER_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://openrouter.ai"
+	}
+	client, err := httpclient.NewClient(noop.NewProvider(),
+		httpclient.WithBaseURL(baseURL),
+		httpclient.WithTarget("openrouter_real"),
+		httpclient.WithTimeout(30*time.Second),
+	)
+	require.NoError(t, err)
+	return openrouter.NewProvider(client, openrouter.ProviderConfig{
+		Slug:        slug,
+		APIKey:      os.Getenv("OPENROUTER_API_KEY"),
+		HTTPReferer: "https://mecontrola.app",
+		XTitle:      "MeControla",
+		MaxTokens:   768,
+		Temperature: 0,
+	}, noop.NewProvider())
+}
+
+func realParserRobust(t *testing.T) *usecases.ParseInbound {
+	t.Helper()
+	mistralSlug, err := valueobjects.NewModelSlug("mistralai/mistral-small-3.2-24b-instruct")
+	require.NoError(t, err)
+	primary := realProviderForSlug(t, valueobjects.ModelSlugGeminiFlashLite())
+	fallback := realProviderForSlug(t, mistralSlug)
+	breakerPrimary := services.NewCircuitBreaker(services.CircuitBreakerConfig{MaxFailures: 5, FailureWindow: 30 * time.Second, OpenDuration: 60 * time.Second})
+	breakerRetry := services.NewCircuitBreaker(services.CircuitBreakerConfig{MaxFailures: 5, FailureWindow: 30 * time.Second, OpenDuration: 60 * time.Second})
+	primaryChain, err := services.NewFallbackChain([]appservices.LLMProvider{primary, fallback}, breakerPrimary, noop.NewProvider())
+	require.NoError(t, err)
+	retryChain, err := services.NewFallbackChain([]appservices.LLMProvider{fallback, primary}, breakerRetry, noop.NewProvider())
+	require.NoError(t, err)
+	parser, err := usecases.NewParseInbound(primaryChain, retryChain, 2000, noop.NewProvider())
 	require.NoError(t, err)
 	return parser
 }

@@ -93,19 +93,46 @@ func TestParsePipeline_RealParser_PersistsExpense_E2E(t *testing.T) {
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
 	)
+	logCardPurchase := usecases.NewRecordCardPurchaseFromAgent(
+		catModule.SearchDictionaryUC,
+		agentbinding.NewCardPurchaseCreatorAdapter(cardModule.ListCardsUC, txModule.CreateCardPurchaseUC),
+		o11y,
+	)
+	expLogger := agentbinding.NewTransactionLoggerAdapter(logTx)
 
 	const canonicalExpenseJSON = `{"kind":"record_expense","amount_cents":5800,"merchant":"ifood","category_hint":"delivery"}`
 	chain := newMockOpenRouterChain(t, canonicalExpenseJSON, http.StatusOK)
 	parser, err := usecases.NewParseInbound(chain, nil, 2000, o11y)
 	require.NoError(t, err)
 
+	transactionLister := agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC)
+	transactionSearcher := agentbinding.NewTransactionSearcherAdapter(txModule.SearchTransactionsUC)
+	lastEditor := agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC)
+	lastDeleter := agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC)
+	cardDeleter := agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC)
+	kernelDeps, _, err := buildConfirmKernelDeps(
+		o11y,
+		db,
+		cfg,
+		transactionLister,
+		transactionSearcher,
+		lastEditor,
+		lastDeleter,
+		cardModule.ListCardsUC,
+		cardDeleter,
+		agentbinding.NewKernelCategoryResolver(catModule.SearchDictionaryUC),
+		agentbinding.NewKernelPersistFunc(expLogger, agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase)),
+	)
+	require.NoError(t, err)
+
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:          &parserAdapter{uc: parser},
-		ExpenseRecorder: agentbinding.NewTransactionLoggerAdapter(logTx),
+		ExpenseRecorder: expLogger,
 		Fallback:        &StubFallback{},
 		WhatsAppGateway: gateway,
 		Location:        time.UTC,
+		Kernel:          kernelDeps,
 	})
 	require.NoError(t, err)
 

@@ -17,6 +17,11 @@ const (
 	TransactionKindCardPurchase TransactionKind = "card_purchase"
 )
 
+type CandidateRef struct {
+	RootCategoryID string
+	SubcategoryID  string
+}
+
 type Draft struct {
 	AmountCents     int64
 	Merchant        string
@@ -24,8 +29,10 @@ type Draft struct {
 	Direction       string
 	OccurredAt      string
 	CategoryID      string
+	SubcategoryID   string
 	CategoryPath    string
 	Candidates      []string
+	CandidateRefs   []CandidateRef
 	AwaitingKind    AwaitingKind
 	TransactionKind TransactionKind
 	Installments    int

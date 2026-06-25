@@ -31,8 +31,11 @@ consumer** (`EventHandlerRegistration`/handlers de módulo), excluindo testes/e2
 
 **[MANTER]** (têm par produtor+consumidor — guarda anti-falso-positivo):
 - `transactions.card_purchase.deleted.v1` (consumido pelo recompute mensal).
-- `onboarding.splits_calculated`, `onboarding.card_registered` (consumidos por budgets/card).
-- `external.expense.v1` (produtor externo legítimo; consumer de ingestão ativo).
+- `onboarding.splits_calculated`, `onboarding.card_registered`, `onboarding.completed` (consumidos por budgets/card/agent).
+
+**[REMOVER]** (corrigido pela Errata 2026-06-25 #3 — supera a linha `[MANTER]` original):
+- `external.expense.v1` — consumer-sem-producer (zero producer registrado); pipeline inteiro de ingestão removido (`IngestExternalExpense`, `ExternalExpenseConsumer`, `IngestExternalExpenseCommand`, `ExternalExpenseStrategy`).
+- `onboarding.income_registered` — producer-sem-consumer (zero consumer registrado); renda flui via `onboarding.splits_calculated`. Publish removido de `save_onboarding_income.go`; entidade `IncomeRegistered` removida.
 
 **[REMOVER com Telegram]** (ADR-005): `agent.telegram.inbound.v1` (par publisher+consumer).
 

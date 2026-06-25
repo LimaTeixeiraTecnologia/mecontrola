@@ -127,8 +127,7 @@ func TestLoadSpecs_ValidatePaths(t *testing.T) {
 
 	expected := map[string]map[string][]string{
 		"identity": {
-			"/api/v1/identity/users":            {http.MethodPost},
-			"/api/v1/channels/telegram/webhook": {http.MethodPost},
+			"/api/v1/identity/users": {http.MethodPost},
 		},
 		"billing": {
 			"/api/v1/billing/webhooks/kiwify": {http.MethodPost},

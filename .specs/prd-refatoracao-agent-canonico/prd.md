@@ -293,18 +293,40 @@ Este PRD define uma **refatoração completa e production-ready** com quatro eix
 ### F. Eliminação, limpeza e governança (transversal)
 
 - RF-39: O **kernel** DEVE ser o caminho único de execução: remover flag/branch/método e teste de
-  paridade *legacy* (`kernelEnabled`, `EnableKernel`, `continuePendingExpenseConfirmationLegacy`,
-  `parity_test`), migrando previamente qualquer caso ainda atendido pelo *legacy*.
+  paridade *legacy* (`kernelEnabled`, `EnableKernel`, `parity_test`, `WorkflowKernelConfig.TransactionsWriteEnabled`
+  — kernel sempre-on, deps ausentes = falha de boot), migrando previamente qualquer caso ainda
+  atendido pelo *legacy*. **Errata 2026-06-25 (verificado contra o código):** `continuePendingExpenseConfirmationLegacy`
+  **não existe mais** no código (já removido; não há símbolo `*Legacy` em `internal/agent` de produção,
+  nem `PendingExpenseConfirmationGateway`) — não é alvo de remoção. Os demais alvos (`kernelEnabled`
+  em `daily_ledger_agent.go:107/153/372`, `EnableKernel` em `daily_ledger_agent.go:371` + `intent_router.go`,
+  `parity_test.go` em `application/workflow/`, `TransactionsWriteEnabled` em `configs/config.go:368` +
+  `module.go:504`) **existem** e permanecem alvos válidos.
 - RF-40: O **fallback determinístico inalcançável** de configuração de orçamento (branch morto) DEVE
-  ser removido após confirmação de inacessibilidade.
+  ser removido após confirmação de inacessibilidade. **Errata 2026-06-25:** o branch morto **não foi
+  localizado** por inspeção manual em `wireBudgetCommitGate`/`budget_session.go`/`budget_tools.go`
+  (todos os caminhos são alcançáveis). A confirmação de inacessibilidade DEVE ser feita por
+  `deadcode` (atualmente **não instalado** — só `staticcheck` está em `~/go/bin`). Se `deadcode` não
+  apontar branch morto, RF-40 é considerado **já satisfeito** (sem remoção). Achado correlato a
+  reconciliar com RF-10: `ConfigureBudgetConversation` (`module.go:466`, via `llmModule.Interpreter`)
+  é um **call-site de LLM** de configuração de orçamento fora das exceções sancionadas (parse,
+  onboarding, conversacional `KindUnknown`). **Decidido 2026-06-25: MIGRAR para parse estruturado**
+  (Structured Output `Strict=true` + execução determinística); LLM permanece exclusivo do parse, sem
+  nova exceção a RF-10. Escopo entra na Task 6/9.
 - RF-41: **Eventos órfãos DEVEM ser removidos neste PRD, inclusive cross-module** (agent +
-  transactions + budgets): candidatos confirmados — `agent.intent.rejected`,
-  `budgets.budget_activated`, `transactions.recurring_template.{created,updated,deleted}` e
-  `transactions.card_purchase.deleted`. A remoção DEVE ser precedida de **guarda anti-falso-positivo**:
-  confirmar ausência de par pela **constante de event-type** (não apenas pelo nome do arquivo
-  `producer/consumer`), pois eventos são publicados via constante da entidade — qualquer evento com
-  par (ex.: `onboarding.splits_calculated`, consumido por `budgets`) é **mantido**. Toda remoção
-  cross-module respeita as regras do módulo dono.
+  transactions + budgets + onboarding). **Lista corrigida em 2026-06-25 (verificado por constante de
+  event-type, não por nome de arquivo):** órfãos reais a remover — `agent.intent.rejected`,
+  `agent.intent.executed`, `budgets.budget_activated`,
+  `transactions.recurring_template.{created,updated,deleted}` (producer-sem-consumer) e
+  `onboarding.income_registered` (producer-sem-consumer; renda flui por `onboarding.splits_calculated`)
+  e `external.expense.v1` (**consumer-sem-producer**: existe `ExternalExpenseConsumer`+`IngestExternalExpense`
+  em budgets mas **zero producer** — remover pipeline inteiro, recomendação confirmada). A remoção DEVE
+  ser precedida de **guarda anti-falso-positivo**: confirmar ausência de par pela **constante de
+  event-type** (não apenas pelo nome do arquivo `producer/consumer`). **Falsos positivos corrigidos
+  (MANTER — têm par):** `transactions.card_purchase.deleted` (consumido por `recomputeConsumer` em
+  `transactions/module.go:321` — REMOVÊ-LO QUEBRARIA o recompute do resumo mensal),
+  `onboarding.splits_calculated` (consumido por budgets), `onboarding.card_registered` (consumido por
+  card), `onboarding.completed` (consumido por agent). Toda remoção cross-module respeita as regras do
+  módulo dono.
 - RF-42: **Tabelas e colunas** que não serão mais usadas DEVEM ser removidas via migration reversível;
   nenhuma tabela do agent atualmente em uso (sessions, decisions, working_memory, observations,
   threads, runs) DEVE ser removida sem evidência de não-uso.
@@ -437,10 +459,15 @@ contrato HITL). As suposições anteriores foram **verificadas e convertidas em 
 - **Portas de entrada (VERIFICADO)**: 100% das operações do MVP têm usecase existente (lista na seção
   "Decisões Resolvidas"). Não é mais suposição. Lacuna pontual de porta (se surgir na techspec) vira
   sub-tarefa **no módulo dono**, **nunca** SQL direto no agent.
-- **Eventos órfãos (VERIFICADO)**: confirmados por contagem producer×consumer e por constante de
-  event-type; os reais (agent/transactions/budgets) entram na limpeza; falsos positivos
-  (`onboarding.splits_calculated`, consumido por budgets) são mantidos. Guarda anti-falso-positivo é
-  requisito (RF-41).
+- **Eventos órfãos (RE-VERIFICADO 2026-06-25 por constante de event-type)**: órfãos reais
+  (producer-sem-consumer) — `agent.intent.rejected`, `agent.intent.executed`,
+  `budgets.budget_activated`, `transactions.recurring_template.{created,updated,deleted}`,
+  `onboarding.income_registered`; órfão consumer-sem-producer — `external.expense.v1` (remover
+  pipeline). **Falsos positivos do PRD original corrigidos**: `transactions.card_purchase.deleted`
+  **tem consumer** (recompute) e DEVE ser mantido (a lista anterior pedia removê-lo — erro);
+  `external.expense.v1` foi descrito como "tem par" mas é consumer-only (erro). Mantidos por terem par:
+  `onboarding.splits_calculated`, `onboarding.card_registered`, `onboarding.completed`,
+  `transactions.card_purchase.deleted`. Guarda anti-falso-positivo é requisito (RF-41).
 - **Interpretação registrada (sem divergência prática)**: `Strict=true` aplica-se às saídas
   estruturadas (parse/plano/onboarding); a resposta conversacional de `KindUnknown` é texto livre e
   não é validada por schema (não há estrutura a validar).

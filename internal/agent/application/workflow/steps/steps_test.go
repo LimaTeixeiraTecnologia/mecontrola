@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
@@ -401,11 +402,21 @@ func (s *StepsSuite) TestResolveCategory_Auto() {
 }
 
 func (s *StepsSuite) TestResolveCategory_Resume() {
+	refsFor := func(candidates []string) []pendingexpense.CandidateRef {
+		refs := make([]pendingexpense.CandidateRef, 0, len(candidates))
+		for range candidates {
+			refs = append(refs, pendingexpense.CandidateRef{
+				RootCategoryID: uuid.New().String(),
+				SubcategoryID:  uuid.New().String(),
+			})
+		}
+		return refs
+	}
 	suspendedState := func(awaitingKind pendingexpense.AwaitingKind, candidates []string) ExpenseState {
 		st := baseState()
 		st.AwaitingKind = awaitingKind
 		st.Candidates = candidates
-		st.CategoryID = candidates[0]
+		st.CandidateRefs = refsFor(candidates)
 		st.Reply = "escolha"
 		return st
 	}
@@ -432,9 +443,13 @@ func (s *StepsSuite) TestResolveCategory_Resume() {
 			expect: func(out platform.StepOutput[ExpenseState], err error) {
 				s.NoError(err)
 				s.Equal(platform.StepStatusCompleted, out.Status)
-				s.Equal("Alimentação", out.State.CategoryID)
+				s.Equal("Alimentação", out.State.CategoryPath)
 				s.Equal(pendingexpense.AwaitingKind(""), out.State.AwaitingKind)
-				s.NotNil(out.State.ForceCategory)
+				s.Require().NotNil(out.State.ForceCategory)
+				s.Equal(out.State.CategoryID, *out.State.ForceCategory)
+				_, parseErr := uuid.Parse(*out.State.ForceCategory)
+				s.NoError(parseErr, "ForceCategory deve ser um UUID resolvido, não um display path")
+				s.NotEmpty(out.State.SubcategoryID)
 			},
 		},
 		{
@@ -450,7 +465,9 @@ func (s *StepsSuite) TestResolveCategory_Resume() {
 				s.NoError(err)
 				s.Equal(platform.StepStatusCompleted, out.Status)
 				s.Equal(pendingexpense.AwaitingKind(""), out.State.AwaitingKind)
-				s.NotNil(out.State.ForceCategory)
+				s.Require().NotNil(out.State.ForceCategory)
+				_, parseErr := uuid.Parse(*out.State.ForceCategory)
+				s.NoError(parseErr, "ForceCategory deve ser um UUID resolvido, não um display path")
 			},
 		},
 		{

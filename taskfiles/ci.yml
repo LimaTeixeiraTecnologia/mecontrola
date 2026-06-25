@@ -20,3 +20,8 @@ tasks:
     cmds:
       - task: :lint:run
       - task: :test:unit
+
+  agent-boundary:
+    desc: Gate de fronteira de dados do internal/agent (RF-20, R-ADAPTER-001, R-AGENT-WF-001, R-WF-KERNEL-001).
+    cmds:
+      - bash scripts/ci/agent-data-boundary.sh

@@ -13,28 +13,24 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type DeleteRecurringTemplate struct {
-	factory   interfaces.RepositoryFactory
-	uow       uow.UnitOfWork
-	publisher interfaces.RecurringTemplateEventPublisher
-	o11y      observability.Observability
+	factory interfaces.RepositoryFactory
+	uow     uow.UnitOfWork
+	o11y    observability.Observability
 }
 
 func NewDeleteRecurringTemplate(
 	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork,
-	publisher interfaces.RecurringTemplateEventPublisher,
 	o11y observability.Observability,
 ) *DeleteRecurringTemplate {
 	return &DeleteRecurringTemplate{
-		factory:   factory,
-		uow:       u,
-		publisher: publisher,
-		o11y:      o11y,
+		factory: factory,
+		uow:     u,
+		o11y:    o11y,
 	}
 }
 
@@ -54,7 +50,6 @@ func (uc *DeleteRecurringTemplate) Execute(ctx context.Context, templateID strin
 
 	userID := valueobjects.UserIDFromUUID(principal.UserID)
 	now := time.Now().UTC()
-	eventID := uuid.New()
 
 	_, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (struct{}, error) {
 		repo := uc.factory.RecurringTemplateRepository(db)
@@ -63,15 +58,6 @@ func (uc *DeleteRecurringTemplate) Execute(ctx context.Context, templateID strin
 			return struct{}{}, fmt.Errorf("transactions/delete_recurring_template: soft-delete: %w", softDelErr)
 		}
 
-		evt := entities.RecurringTemplateDeleted{
-			EventID:     eventID,
-			AggregateID: parsedID,
-			UserID:      userID.UUID(),
-			OccurredAt:  now,
-		}
-		if publishErr := uc.publisher.PublishDeleted(ctx, db, evt); publishErr != nil {
-			return struct{}{}, fmt.Errorf("transactions/delete_recurring_template: publicar evento: %w", publishErr)
-		}
 		return struct{}{}, nil
 	})
 	if execErr != nil {

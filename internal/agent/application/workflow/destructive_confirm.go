@@ -1,10 +1,12 @@
 package workflow
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -18,6 +20,7 @@ type DestructiveConfirmDeps struct {
 	Policy         steps.ConfirmPolicyFunc
 	AuditBegin     steps.ConfirmAuditBeginFunc
 	OnSettle       steps.ConfirmOnSettleRegistered
+	Searcher       tools.TransactionSearcher
 	Targets        map[confirmation.OperationKind]steps.TargetResolver
 	Executors      map[confirmation.OperationKind]steps.DestructiveExecutor
 	TTL            time.Duration
@@ -35,6 +38,8 @@ func NewDestructiveConfirmDefinition(deps DestructiveConfirmDeps) platform.Defin
 		steps.NewConfirmReplay(deps.Replay),
 		steps.NewConfirmPolicy(deps.Policy),
 		platform.Retry(steps.NewConfirmAuditBegin(deps.AuditBegin, deps.OnSettle, deps.ReplayReply, deps.AuditFailReply), deps.RetryPolicy),
+		platform.Retry(steps.NewResolveCandidates(steps.ResolveCandidatesDeps{Searcher: deps.Searcher}), deps.RetryPolicy),
+		steps.NewSelectTargetWithObservability(deps.Observability),
 		platform.Retry(steps.NewPrepareTarget(steps.PrepareTargetDeps{Targets: deps.Targets}), deps.RetryPolicy),
 		steps.NewConfirmGateWithObservability(deps.TTL, deps.Observability),
 		platform.Retry(steps.NewExecuteDestructive(steps.ExecuteDestructiveDeps{Executors: deps.Executors}), deps.RetryPolicy),
@@ -61,6 +66,10 @@ func formatDestructiveReply(state confirmation.ConfirmState) string {
 		return "✅ Cartão removido com sucesso."
 	case confirmation.OperationBudgetCommit:
 		return "✅ Orçamento configurado e ativado com sucesso."
+	case confirmation.OperationDeleteByRef:
+		return fmt.Sprintf("🗑️ *Lançamento excluído!*\n%s — %s", tools.FormatBRL(state.TargetAmountCents), state.TargetDescription)
+	case confirmation.OperationEditByRef:
+		return fmt.Sprintf("✏️ *Lançamento atualizado!*\nDe %s para *%s* — %s", tools.FormatBRL(state.TargetAmountCents), tools.FormatBRL(state.NewAmountCents), state.TargetDescription)
 	default:
 		return "✅ Operação concluída com sucesso."
 	}

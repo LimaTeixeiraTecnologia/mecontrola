@@ -24,9 +24,8 @@ func (s *stubIncomeSummaryReader) Execute(_ context.Context, _ IncomeSummaryInpu
 
 type QueryIncomeSummarySuite struct {
 	suite.Suite
-	ctx  context.Context
-	loc  *time.Location
-	tool *QueryIncomeSummary
+	ctx context.Context
+	loc *time.Location
 }
 
 func TestQueryIncomeSummarySuite(t *testing.T) {

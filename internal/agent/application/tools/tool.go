@@ -90,6 +90,7 @@ type ToolInput struct {
 	UserID       uuid.UUID
 	Channel      string
 	Intent       intent.Intent
+	StepIndex    int
 	MessageID    string
 	Text         string
 	Confidence   valueobjects.Confidence

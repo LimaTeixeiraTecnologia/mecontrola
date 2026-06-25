@@ -8,7 +8,6 @@ Funcionalidade: Fluxo WhatsApp do agente financeiro
     E o número de transações do usuário aumentou em 1
     E o gateway respondeu ao usuário
     E o evento "transactions.transaction.created.v1" deve estar no outbox do usuário
-    E o evento "agent.intent.executed.v1" deve estar no outbox do usuário
 
   Cenário: Consumo do evento de transação atualiza o resumo mensal
     Dado que o usuário está ativo
@@ -34,7 +33,6 @@ Funcionalidade: Fluxo WhatsApp do agente financeiro
     E o gateway respondeu ao usuário
     E a resposta do gateway não contém "registrei"
     E a resposta do gateway não contém "anotei"
-    E o evento "agent.intent.rejected.v1" deve estar no outbox do usuário
 
   Cenário: Isolamento entre usuários
     Dado que o usuário está ativo

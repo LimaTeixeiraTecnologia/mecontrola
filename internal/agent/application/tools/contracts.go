@@ -78,12 +78,23 @@ type CategoryPercentageEditor interface {
 	Execute(ctx context.Context, in CategoryPercentageEditorInput) (CategoryPercentageEditorResult, error)
 }
 
-type Fallback interface {
-	Reply(ctx context.Context, userID uuid.UUID, channel, text string) (string, error)
+type BudgetRecurrenceCreatorInput struct {
+	UserID           uuid.UUID
+	SourceCompetence string
+	Months           int
 }
 
-type BudgetConfigurator interface {
-	Start(ctx context.Context, userID uuid.UUID, channel string) (string, error)
+type BudgetRecurrenceCreatorResult struct {
+	SourceCompetence string
+	MonthsCreated    int
+}
+
+type BudgetRecurrenceCreator interface {
+	Execute(ctx context.Context, in BudgetRecurrenceCreatorInput) (BudgetRecurrenceCreatorResult, error)
+}
+
+type Fallback interface {
+	Reply(ctx context.Context, userID uuid.UUID, channel, text string) (string, error)
 }
 
 type BudgetConversationResult struct {
@@ -93,7 +104,7 @@ type BudgetConversationResult struct {
 }
 
 type BudgetConversation interface {
-	Configure(ctx context.Context, text string, draft budgetdraft.Draft) (BudgetConversationResult, error)
+	Configure(ctx context.Context, change budgetdraft.Change, draft budgetdraft.Draft) (BudgetConversationResult, error)
 }
 
 type BudgetConfigCommitter interface {
@@ -111,14 +122,15 @@ type ExpenseRecorder interface {
 }
 
 type ExpenseRecorderInput struct {
-	UserID        string
-	Intent        intent.Intent
-	ForceCategory *string
-	AmountCents   int64
-	Merchant      string
-	PaymentMethod string
-	Direction     string
-	OccurredAt    string
+	UserID           string
+	Intent           intent.Intent
+	ForceCategory    *string
+	ForceSubcategory *string
+	AmountCents      int64
+	Merchant         string
+	PaymentMethod    string
+	Direction        string
+	OccurredAt       string
 }
 
 type ExpenseRecorderResult struct {
@@ -136,14 +148,15 @@ type CardPurchaseLogger interface {
 }
 
 type CardPurchaseLoggerInput struct {
-	UserID        string
-	Intent        intent.Intent
-	ForceCategory *string
-	AmountCents   int64
-	Merchant      string
-	PaymentMethod string
-	CardHint      string
-	Installments  int
+	UserID           string
+	Intent           intent.Intent
+	ForceCategory    *string
+	ForceSubcategory *string
+	AmountCents      int64
+	Merchant         string
+	PaymentMethod    string
+	CardHint         string
+	Installments     int
 }
 
 type CardPurchaseLoggerResult struct {
@@ -177,6 +190,21 @@ type TransactionListInput struct {
 type TransactionListResult struct {
 	RefMonth     string
 	Transactions []TransactionView
+}
+
+type TransactionSearcher interface {
+	Execute(ctx context.Context, in TransactionSearchInput) (TransactionSearchResult, error)
+}
+
+type TransactionSearchInput struct {
+	UserID   string
+	Query    string
+	RefMonth string
+	Limit    int
+}
+
+type TransactionSearchResult struct {
+	Candidates []TransactionView
 }
 
 type LastTransactionDeleter interface {

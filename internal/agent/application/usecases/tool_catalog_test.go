@@ -17,25 +17,6 @@ func TestToolCatalog(t *testing.T) {
 	suite.Run(t, new(ToolCatalogSuite))
 }
 
-func (s *ToolCatalogSuite) TestCatalogExposesMVPTools() {
-	catalog := AgentToolCatalog()
-
-	names := make(map[string]bool, len(catalog))
-	for _, tool := range catalog {
-		s.NotEmpty(tool.Name)
-		s.NotEmpty(tool.Description)
-		s.NotNil(tool.Parameters)
-		names[tool.Name] = true
-	}
-
-	s.True(names["record_transaction"])
-	s.True(names["monthly_summary"])
-	s.True(names["list_cards"])
-	s.True(names["configure_budget"])
-	s.True(names["create_card"])
-	s.True(names["count_cards"])
-}
-
 func (s *ToolCatalogSuite) TestCreateCardMapsToKind() {
 	call := interfaces.ToolCall{
 		FunctionName: "create_card",

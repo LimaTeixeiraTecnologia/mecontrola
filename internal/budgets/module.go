@@ -44,7 +44,6 @@ type BudgetsModule struct {
 	RetentionPurge              *budgetsjobs.RetentionPurge
 	ThresholdAlertsJob          *budgetsjobs.ThresholdAlertsJob
 	ExpenseCommittedConsumer    *consumers.ExpenseCommittedConsumer
-	ExternalExpenseConsumer     *consumers.ExternalExpenseConsumer
 	ThresholdAlertNotifier      *consumers.ThresholdAlertNotifier
 	OnboardingBudgetConsumer    *consumers.OnboardingBudgetConsumer
 	TransactionCreatedConsumer  *consumers.TransactionCreatedConsumer
@@ -64,16 +63,15 @@ type BudgetsModule struct {
 }
 
 type moduleBuilder struct {
-	cfg                      *configs.Config
-	o11y                     observability.Observability
-	db                       *sqlx.DB
-	categoriesModule         *categories.CategoriesModule
-	publisher                *producers.ExpenseCommittedPublisher
-	budgetActivatedPublisher *producers.BudgetActivatedPublisher
-	thresholdAlertPublisher  *producers.ThresholdAlertPublisher
-	gatewayAuth              func(http.Handler) http.Handler
-	channelGateway           notification.ChannelGateway
-	channelResolver          appinterfaces.UserChannelResolver
+	cfg                     *configs.Config
+	o11y                    observability.Observability
+	db                      *sqlx.DB
+	categoriesModule        *categories.CategoriesModule
+	publisher               *producers.ExpenseCommittedPublisher
+	thresholdAlertPublisher *producers.ThresholdAlertPublisher
+	gatewayAuth             func(http.Handler) http.Handler
+	channelGateway          notification.ChannelGateway
+	channelResolver         appinterfaces.UserChannelResolver
 }
 
 type moduleRepositories struct {
@@ -94,7 +92,6 @@ type moduleUseCases struct {
 	editCategoryPercentage  *usecases.EditCategoryPercentage
 	listAlerts              *usecases.ListAlerts
 	evaluateAlert           *usecases.EvaluateAlert
-	ingestExternalExpense   *usecases.IngestExternalExpense
 	evaluateThresholdAlerts *usecases.EvaluateThresholdAlerts
 }
 
@@ -110,16 +107,15 @@ func NewBudgetsModule(
 	outboxFactory := outbox.NewRepositoryFactory(o11y)
 	idGen := id.NewUUIDGenerator()
 	builder := moduleBuilder{
-		cfg:                      cfg,
-		o11y:                     o11y,
-		db:                       db,
-		categoriesModule:         categoriesModule,
-		publisher:                producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
-		budgetActivatedPublisher: producers.NewBudgetActivatedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
-		thresholdAlertPublisher:  producers.NewThresholdAlertPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
-		gatewayAuth:              gatewayAuth,
-		channelGateway:           channelGateway,
-		channelResolver:          channelResolver,
+		cfg:                     cfg,
+		o11y:                    o11y,
+		db:                      db,
+		categoriesModule:        categoriesModule,
+		publisher:               producers.NewExpenseCommittedPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		thresholdAlertPublisher: producers.NewThresholdAlertPublisher(outboxFactory, cfg.OutboxConfig, idGen, o11y),
+		gatewayAuth:             gatewayAuth,
+		channelGateway:          channelGateway,
+		channelResolver:         channelResolver,
 	}
 	return builder.Build()
 }
@@ -136,7 +132,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	}
 
 	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
-	externalExpenseConsumer := consumers.NewExternalExpenseConsumer(useCases.ingestExternalExpense, b.o11y)
 	onboardingBudgetConsumer := consumers.NewOnboardingBudgetConsumer(useCases.createBudget, useCases.activateBudget, b.o11y)
 	transactionCreatedConsumer := consumers.NewTransactionCreatedConsumer(useCases.upsertExpense, b.o11y)
 	transactionDeletedConsumer := consumers.NewTransactionDeletedConsumer(useCases.deleteExpense, b.o11y)
@@ -150,7 +145,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	jobEnabled := mode == configs.ThresholdAlertsModeJob || mode == configs.ThresholdAlertsModeBoth
 
 	eventHandlers := []BudgetsEventHandlerRegistration{
-		{EventType: "external.expense.v1", Handler: externalExpenseConsumer},
 		{EventType: "onboarding.splits_calculated", Handler: onboardingBudgetConsumer},
 		{EventType: "transactions.transaction.created.v1", Handler: transactionCreatedConsumer},
 		{EventType: "transactions.transaction.deleted.v1", Handler: transactionDeletedConsumer},
@@ -184,7 +178,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		RetentionPurge:              budgetsjobs.NewRetentionPurge(useCases.purgeRetention, b.cfg.BudgetsConfig),
 		ThresholdAlertsJob:          thresholdAlertsJob,
 		ExpenseCommittedConsumer:    expenseCommittedConsumer,
-		ExternalExpenseConsumer:     externalExpenseConsumer,
 		ThresholdAlertNotifier:      thresholdAlertNotifier,
 		OnboardingBudgetConsumer:    onboardingBudgetConsumer,
 		TransactionCreatedConsumer:  transactionCreatedConsumer,
@@ -262,16 +255,15 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		runPendingEventsReaper: usecases.NewRunPendingEventsReaper(repositories.factory, applyPending, voidUoW, b.o11y),
 		purgeRetention:         usecases.NewPurgeRetention(repositories.factory, voidUoW, b.retentionBatchSize(), b.o11y),
 		createBudget:           usecases.NewCreateBudget(repositories.factory, budgetUoW, b.o11y),
-		activateBudget:         usecases.NewActivateBudget(repositories.factory, b.budgetActivatedPublisher, budgetUoW, b.o11y),
+		activateBudget:         usecases.NewActivateBudget(repositories.factory, budgetUoW, b.o11y),
 		deleteDraftBudget:      usecases.NewDeleteDraftBudget(repositories.factory, voidUoW, b.o11y),
 		createRecurrence:       usecases.NewCreateRecurrence(repositories.factory, voidUoW, b.o11y),
 		upsertExpense:          upsertExpense,
 		deleteExpense:          deleteExpense,
 		getMonthlySummary:      usecases.NewGetMonthlySummary(repositories.factory, monthlySummaryUoW, b.o11y),
-		editCategoryPercentage: usecases.NewEditCategoryPercentage(repositories.factory, b.budgetActivatedPublisher, editCategoryUoW, b.o11y),
+		editCategoryPercentage: usecases.NewEditCategoryPercentage(repositories.factory, editCategoryUoW, b.o11y),
 		listAlerts:             usecases.NewListAlerts(repositories.factory, listAlertsUoW, b.o11y),
 		evaluateAlert:          usecases.NewEvaluateAlert(repositories.factory, voidUoW, b.o11y),
-		ingestExternalExpense:  usecases.NewIngestExternalExpense(repositories.factory, upsertExpense, deleteExpense, voidUoW, b.o11y),
 		evaluateThresholdAlerts: usecases.NewEvaluateThresholdAlerts(
 			repositories.factory,
 			b.thresholdAlertPublisher,

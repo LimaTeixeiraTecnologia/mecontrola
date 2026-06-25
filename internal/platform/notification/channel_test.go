@@ -41,16 +41,6 @@ func (s *MultiChannelGatewaySuite) TestSendText() {
 			dispatched: notification.ChannelWhatsApp,
 		},
 		{
-			name:       "deve despachar telegram",
-			channel:    notification.ChannelTelegram,
-			externalID: "123456",
-			text:       "ola",
-			senders: map[string]notification.ChannelSenders{
-				notification.ChannelTelegram: {Text: func(_ context.Context, _, _ string) error { return nil }},
-			},
-			dispatched: notification.ChannelTelegram,
-		},
-		{
 			name:       "deve falhar com canal desconhecido",
 			channel:    "sms",
 			externalID: "+5511",
@@ -80,11 +70,11 @@ func (s *MultiChannelGatewaySuite) TestSendText() {
 		},
 		{
 			name:       "deve propagar erro do sender",
-			channel:    notification.ChannelTelegram,
-			externalID: "123",
+			channel:    notification.ChannelWhatsApp,
+			externalID: "+5511999990001",
 			text:       "x",
 			senders: map[string]notification.ChannelSenders{
-				notification.ChannelTelegram: {Text: func(_ context.Context, _, _ string) error { return errBoom }},
+				notification.ChannelWhatsApp: {Text: func(_ context.Context, _, _ string) error { return errBoom }},
 			},
 			expectErr: errBoom,
 		},
@@ -143,12 +133,12 @@ func (s *MultiChannelGatewaySuite) TestSendActivationTemplate() {
 		},
 		{
 			name:         "deve falhar quando canal nao suporta template",
-			channel:      notification.ChannelTelegram,
-			externalID:   "123",
+			channel:      notification.ChannelWhatsApp,
+			externalID:   "+5511999990002",
 			templateName: "activation",
 			token:        "tok",
 			senders: map[string]notification.ChannelSenders{
-				notification.ChannelTelegram: {Text: func(_ context.Context, _, _ string) error { return nil }},
+				notification.ChannelWhatsApp: {Text: func(_ context.Context, _, _ string) error { return nil }},
 			},
 			expectErr: notification.ErrTemplateUnsupported,
 		},

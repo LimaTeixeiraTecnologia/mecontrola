@@ -23,7 +23,7 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsHasNoDuplicates() {
 		s.False(seen[k], "kind duplicado: %v", k)
 		seen[k] = true
 	}
-	s.Len(kinds, 19)
+	s.Len(kinds, 20)
 }
 
 func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
@@ -47,6 +47,7 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
 		intent.KindQueryCard,
 		intent.KindConfigureBudget,
 		intent.KindEditCategoryPercentage,
+		intent.KindBudgetRecurrence,
 		intent.KindListCards,
 		intent.KindCreateCard,
 		intent.KindCountCards,

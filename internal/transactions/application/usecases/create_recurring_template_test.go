@@ -20,14 +20,13 @@ import (
 
 type CreateRecurringTemplateSuite struct {
 	suite.Suite
-	ctx       context.Context
-	userID    uuid.UUID
-	factory   *mockInterfaces.RepositoryFactory
-	repo      *mockInterfaces.RecurringTemplateRepository
-	catVal    *mockInterfaces.CategoryValidator
-	publisher *mockInterfaces.RecurringTemplateEventPublisher
-	uow       *uowMocks.UnitOfWorkRecurringTemplate
-	useCase   *CreateRecurringTemplate
+	ctx     context.Context
+	userID  uuid.UUID
+	factory *mockInterfaces.RepositoryFactory
+	repo    *mockInterfaces.RecurringTemplateRepository
+	catVal  *mockInterfaces.CategoryValidator
+	uow     *uowMocks.UnitOfWorkRecurringTemplate
+	useCase *CreateRecurringTemplate
 }
 
 func TestCreateRecurringTemplateSuite(t *testing.T) {
@@ -41,10 +40,9 @@ func (s *CreateRecurringTemplateSuite) SetupTest() {
 	s.repo = mockInterfaces.NewRecurringTemplateRepository(s.T())
 	s.factory.EXPECT().RecurringTemplateRepository(mock.Anything).Return(s.repo).Maybe()
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
-	s.publisher = mockInterfaces.NewRecurringTemplateEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkRecurringTemplate(s.T())
 	s.useCase = NewCreateRecurringTemplate(
-		s.factory, s.uow, s.catVal, s.publisher, fake.NewProvider(),
+		s.factory, s.uow, s.catVal, fake.NewProvider(),
 	)
 }
 
@@ -53,7 +51,6 @@ func (s *CreateRecurringTemplateSuite) TestExecute_Success() {
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Receita"}
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(nil).Once()
-	s.publisher.EXPECT().PublishCreated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, input.RawCreateRecurringTemplate{
 		Direction:     "income",

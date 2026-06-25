@@ -31,8 +31,8 @@ func TestNewUserIdentity_Success(t *testing.T) {
 	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	id := uuid.New()
 	userID := uuid.New()
-	channel := mustChannel(t, "telegram")
-	externalID := mustExternalID(t, channel, "987654321")
+	channel := mustChannel(t, "whatsapp")
+	externalID := mustExternalID(t, channel, "+5511987654321")
 
 	identity, err := entities.NewUserIdentity(id, userID, channel, externalID, now)
 	require.NoError(t, err)
@@ -50,9 +50,7 @@ func TestNewUserIdentity_Success(t *testing.T) {
 func TestNewUserIdentity_Errors(t *testing.T) {
 	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	wa := mustChannel(t, "whatsapp")
-	tg := mustChannel(t, "telegram")
 	waExt := mustExternalID(t, wa, "+5511987654321")
-	tgExt := mustExternalID(t, tg, "12345")
 	validID := uuid.New()
 	validUser := uuid.New()
 
@@ -68,7 +66,6 @@ func TestNewUserIdentity_Errors(t *testing.T) {
 		{name: "nil user id", id: validID, userID: uuid.Nil, channel: wa, externalID: waExt, wantErr: entities.ErrUserIdentityUserIDRequired},
 		{name: "zero channel", id: validID, userID: validUser, channel: valueobjects.Channel{}, externalID: waExt, wantErr: entities.ErrUserIdentityChannelRequired},
 		{name: "zero external id", id: validID, userID: validUser, channel: wa, externalID: valueobjects.ExternalID{}, wantErr: entities.ErrUserIdentityExternalIDRequired},
-		{name: "channel external mismatch", id: validID, userID: validUser, channel: wa, externalID: tgExt},
 	}
 
 	for _, tc := range cases {
@@ -99,7 +96,7 @@ func TestHydrateUserIdentity_Unlinked(t *testing.T) {
 	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	unlinkedAt := now.Add(time.Hour)
 
-	identity, err := entities.HydrateUserIdentity(uuid.New(), uuid.New(), "telegram", "555", now, now, unlinkedAt)
+	identity, err := entities.HydrateUserIdentity(uuid.New(), uuid.New(), "whatsapp", "+5511999990001", now, now, unlinkedAt)
 	require.NoError(t, err)
 
 	assert.False(t, identity.IsActive())
@@ -110,8 +107,8 @@ func TestUserIdentity_Unlink(t *testing.T) {
 	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	id := uuid.New()
 	userID := uuid.New()
-	channel := mustChannel(t, "telegram")
-	externalID := mustExternalID(t, channel, "555")
+	channel := mustChannel(t, "whatsapp")
+	externalID := mustExternalID(t, channel, "+5511999990002")
 
 	identity, err := entities.NewUserIdentity(id, userID, channel, externalID, now)
 	require.NoError(t, err)

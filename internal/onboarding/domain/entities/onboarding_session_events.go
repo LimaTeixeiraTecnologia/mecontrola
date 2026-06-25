@@ -10,16 +10,6 @@ type OnboardingDomainEvent interface {
 	EventType() string
 }
 
-type IncomeRegistered struct {
-	EventID     uuid.UUID
-	UserID      uuid.UUID
-	Channel     string
-	IncomeCents int64
-	OccurredAt  time.Time
-}
-
-func (IncomeRegistered) EventType() string { return "onboarding.income_registered" }
-
 type CardRegistered struct {
 	EventID    uuid.UUID
 	UserID     uuid.UUID

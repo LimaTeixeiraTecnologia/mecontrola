@@ -71,26 +71,26 @@ func (s *MatchHelpersSuite) TestMatchesExpenseCancellation() {
 	}
 }
 
-func (s *MatchHelpersSuite) TestMatchCandidateByText() {
+func (s *MatchHelpersSuite) TestMatchCandidateIndex() {
 	candidates := []string{"Alimentação > Supermercado", "Transporte > Combustível", "Prazeres > Academia"}
 	type tc struct {
 		text string
-		want string
+		want int
 	}
 	cases := []tc{
-		{text: "1", want: "Alimentação > Supermercado"},
-		{text: "2", want: "Transporte > Combustível"},
-		{text: "3", want: "Prazeres > Academia"},
-		{text: "alimen", want: "Alimentação > Supermercado"},
-		{text: "transporte", want: "Transporte > Combustível"},
-		{text: "prazeres", want: "Prazeres > Academia"},
-		{text: "", want: ""},
-		{text: "inexistente", want: ""},
-		{text: "4", want: ""},
+		{text: "1", want: 0},
+		{text: "2", want: 1},
+		{text: "3", want: 2},
+		{text: "alimen", want: 0},
+		{text: "transporte", want: 1},
+		{text: "prazeres", want: 2},
+		{text: "", want: -1},
+		{text: "inexistente", want: -1},
+		{text: "4", want: -1},
 	}
 	for _, tc := range cases {
 		s.Run(tc.text, func() {
-			s.Equal(tc.want, matchCandidateByText(tc.text, candidates))
+			s.Equal(tc.want, matchCandidateIndex(tc.text, candidates))
 		})
 	}
 }

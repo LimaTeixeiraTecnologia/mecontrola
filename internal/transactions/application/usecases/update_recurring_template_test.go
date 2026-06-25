@@ -29,7 +29,6 @@ type UpdateRecurringTemplateSuite struct {
 	factory    *mockInterfaces.RepositoryFactory
 	repo       *mockInterfaces.RecurringTemplateRepository
 	catVal     *mockInterfaces.CategoryValidator
-	publisher  *mockInterfaces.RecurringTemplateEventPublisher
 	uow        *uowMocks.UnitOfWorkRecurringTemplate
 	useCase    *UpdateRecurringTemplate
 }
@@ -46,10 +45,9 @@ func (s *UpdateRecurringTemplateSuite) SetupTest() {
 	s.repo = mockInterfaces.NewRecurringTemplateRepository(s.T())
 	s.factory.EXPECT().RecurringTemplateRepository(mock.Anything).Return(s.repo).Maybe()
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
-	s.publisher = mockInterfaces.NewRecurringTemplateEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkRecurringTemplate(s.T())
 	s.useCase = NewUpdateRecurringTemplate(
-		s.factory, s.uow, s.catVal, s.publisher, fake.NewProvider(),
+		s.factory, s.uow, s.catVal, fake.NewProvider(),
 	)
 }
 
@@ -85,7 +83,6 @@ func (s *UpdateRecurringTemplateSuite) TestExecute_Success() {
 	s.repo.EXPECT().GetByID(mock.Anything, s.templateID, s.userID).Return(existing, nil).Once()
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
 	s.repo.EXPECT().UpdateWithVersion(mock.Anything, mock.Anything, mock.AnythingOfType("int64")).Return(nil).Once()
-	s.publisher.EXPECT().PublishUpdated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, s.templateID.String(), input.RawUpdateRecurringTemplate{
 		Direction:     "income",

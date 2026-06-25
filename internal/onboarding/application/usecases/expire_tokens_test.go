@@ -26,7 +26,7 @@ func makePaidToken(tokenID string, paidAt time.Time, externalSaleID string) enti
 		"plan-1", time.Now().UTC().Add(-time.Hour), time.Now().UTC().Add(-8*24*time.Hour),
 		paidAt, time.Time{}, time.Time{},
 		"cipher-token", "sub-001", "+5511999999999", "user@example.com", externalSaleID,
-		"", "", valueobjects.ActivationPath(0), "",
+		"", "", valueobjects.ActivationPath(0),
 	)
 	expired, _ := base.MarkExpired()
 	return expired
@@ -39,7 +39,7 @@ func makePendingToken(tokenID string) entities.MagicToken {
 		"plan-1", time.Now().UTC().Add(-time.Hour), time.Now().UTC().Add(-8*24*time.Hour),
 		time.Time{}, time.Time{}, time.Time{},
 		"cipher-token", "", "", "", "",
-		"", "", valueobjects.ActivationPath(0), "",
+		"", "", valueobjects.ActivationPath(0),
 	)
 	expired, _ := base.MarkExpired()
 	return expired

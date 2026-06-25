@@ -30,7 +30,7 @@ func TestIdentityResolutionWorkflow_DecideResolve(t *testing.T) {
 	now := time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC)
 
 	t.Run("resolved when active and matches", func(t *testing.T) {
-		identity, channel, externalID := buildIdentity(t, "telegram", "12345")
+		identity, channel, externalID := buildIdentity(t, "whatsapp", "+5511987654321")
 		decision := sut.DecideResolve(identity, true, channel, externalID, eventID, now)
 
 		assert.Equal(t, services.IdentityResolutionResolved, decision.Kind)
@@ -41,7 +41,7 @@ func TestIdentityResolutionWorkflow_DecideResolve(t *testing.T) {
 	})
 
 	t.Run("unknown when not found", func(t *testing.T) {
-		_, channel, externalID := buildIdentity(t, "whatsapp", "+5511987654321")
+		_, channel, externalID := buildIdentity(t, "whatsapp", "+5511999990000")
 		decision := sut.DecideResolve(entities.UserIdentity{}, false, channel, externalID, eventID, now)
 
 		assert.Equal(t, services.IdentityResolutionUnknown, decision.Kind)
@@ -49,27 +49,13 @@ func TestIdentityResolutionWorkflow_DecideResolve(t *testing.T) {
 	})
 
 	t.Run("unlinked when identity present but inactive", func(t *testing.T) {
-		identity, channel, externalID := buildIdentity(t, "telegram", "99999")
+		identity, channel, externalID := buildIdentity(t, "whatsapp", "+5511999990001")
 		require.NoError(t, identity.Unlink(now.Add(-time.Hour)))
 
 		decision := sut.DecideResolve(identity, true, channel, externalID, eventID, now)
 
 		assert.Equal(t, services.IdentityResolutionUnlinked, decision.Kind)
 		assert.Equal(t, identity.UserID(), decision.UserID)
-	})
-
-	t.Run("mismatch when stored channel differs", func(t *testing.T) {
-		identity, _, externalID := buildIdentity(t, "telegram", "12345")
-		whatsapp, err := valueobjects.NewChannel("whatsapp")
-		require.NoError(t, err)
-		waExt, err := valueobjects.NewExternalID(whatsapp, "+5511987654321")
-		require.NoError(t, err)
-
-		decision := sut.DecideResolve(identity, true, whatsapp, waExt, eventID, now)
-
-		assert.Equal(t, services.IdentityResolutionMismatch, decision.Kind)
-		assert.Equal(t, identity.UserID(), decision.UserID)
-		_ = externalID
 	})
 }
 

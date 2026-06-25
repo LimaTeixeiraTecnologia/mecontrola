@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
-
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -38,9 +36,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	tgdispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/dispatcher"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
-	tgpayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/payload"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
@@ -57,7 +52,6 @@ type whatsAppGateway interface {
 
 type inboundPublisher interface {
 	PublishWhatsApp(ctx context.Context, userID uuid.UUID, peer, text, messageID string) error
-	PublishTelegram(ctx context.Context, userID uuid.UUID, chatID int64, text, messageID string) error
 }
 
 type EventHandlerRegistration struct {
@@ -67,7 +61,6 @@ type EventHandlerRegistration struct {
 
 type AgentModule struct {
 	WhatsAppAgentRoute            func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
-	TelegramAgentRoute            tgdispatcher.AgentRoute
 	ParseInbound                  *usecases.ParseInbound
 	IntentRouter                  *appservices.IntentRouter
 	SessionUnitOfWork             uow.UnitOfWork
@@ -103,6 +96,9 @@ type llmRuntime struct {
 	Conversational        *usecases.ComposeConversationalReply
 	Interpreter           usecases.IntentInterpreter
 	OnboardingInterpreter usecases.IntentInterpreter
+	ConvInterpreter       usecases.IntentInterpreter
+	ConvMaxTokens         int
+	Router                *appservices.ClassRouter
 }
 
 type agentModuleWiring struct {
@@ -114,7 +110,6 @@ type agentModuleWiring struct {
 	transactionsModule transactions.TransactionsModule
 	budgetsModule      *budgets.BudgetsModule
 	whatsAppGateway    whatsAppGateway
-	budgetConfigurator tools.BudgetConfigurator
 	onboardingLLM      *OnboardingLLMUseCases
 	sessionDB          *sqlx.DB
 	sessionRepo        interfaces.AgentSessionRepository
@@ -141,7 +136,6 @@ func NewAgentModule(
 	transactionsModule transactions.TransactionsModule,
 	budgetsModule *budgets.BudgetsModule,
 	whatsAppGateway whatsAppGateway,
-	budgetConfigurator tools.BudgetConfigurator,
 	deps AgentModuleDeps,
 ) (AgentModule, error) {
 	if cfg == nil {
@@ -160,7 +154,6 @@ func NewAgentModule(
 		transactionsModule: transactionsModule,
 		budgetsModule:      budgetsModule,
 		whatsAppGateway:    whatsAppGateway,
-		budgetConfigurator: budgetConfigurator,
 		sessionDB:          deps.SessionStore,
 		outboxPublisher:    deps.OutboxPublisher,
 		onboardingLLM:      deps.OnboardingLLM,
@@ -185,7 +178,6 @@ func NewAgentModule(
 
 	module := AgentModule{
 		WhatsAppAgentRoute:            buildWhatsAppAgentRoute(w, pub),
-		TelegramAgentRoute:            buildTelegramAgentRoute(w, pub),
 		ParseInbound:                  llmModule.ParseInbound,
 		IntentRouter:                  intentRouter,
 		SessionRepository:             w.sessionRepo,
@@ -205,10 +197,6 @@ func buildEventHandlers(w *agentModuleWiring, router *appservices.IntentRouter) 
 		{
 			EventType: agentevents.EventTypeWhatsAppInbound,
 			Handler:   agentconsumers.NewWhatsAppInboundConsumer(router, w.o11y),
-		},
-		{
-			EventType: agentevents.EventTypeTelegramInbound,
-			Handler:   agentconsumers.NewTelegramInboundConsumer(router, w.o11y),
 		},
 		{
 			EventType: "onboarding.subscription_bound",
@@ -284,16 +272,7 @@ func buildLLMModule(w *agentModuleWiring) (*llmRuntime, error) {
 	if w.sessionRepo != nil && w.wmRepo != nil && w.obsRepo != nil {
 		redactor, redactErr := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
 		if redactErr == nil {
-			obsSvc := appservices.NewObservationMemory(llmModule.Interpreter, w.obsRepo, w.o11y, 6, 3)
-			conv, convErr := usecases.NewComposeConversationalReply(
-				llmModule.Interpreter,
-				w.cfg.AgentConfig.ProseMaxTokens,
-				w.o11y,
-				w.sessionRepo,
-				w.wmRepo,
-				obsSvc,
-				redactor,
-			)
+			conv, convErr := rebuildConversationalReply(w, llmModule, redactor)
 			if convErr == nil {
 				llmModule.Conversational = conv
 			} else {
@@ -304,6 +283,34 @@ func buildLLMModule(w *agentModuleWiring) (*llmRuntime, error) {
 		}
 	}
 	return llmModule, nil
+}
+
+func rebuildConversationalReply(
+	w *agentModuleWiring,
+	llmModule *llmRuntime,
+	redactor *sanitize.Sanitizer,
+) (*usecases.ComposeConversationalReply, error) {
+	if llmModule == nil {
+		return nil, fmt.Errorf("agent.module: llm runtime is nil")
+	}
+	convInterpreter := llmModule.ConvInterpreter
+	if convInterpreter == nil {
+		convInterpreter = llmModule.Interpreter
+	}
+	convMaxTokens := llmModule.ConvMaxTokens
+	if convMaxTokens <= 0 {
+		convMaxTokens = w.cfg.AgentConfig.ProseMaxTokens
+	}
+	obsSvc := appservices.NewObservationMemory(llmModule.Interpreter, w.obsRepo, w.o11y, 6, 3)
+	return usecases.NewComposeConversationalReply(
+		convInterpreter,
+		convMaxTokens,
+		w.o11y,
+		w.sessionRepo,
+		w.wmRepo,
+		obsSvc,
+		redactor,
+	)
 }
 
 func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservices.IntentRouter, error) {
@@ -318,22 +325,17 @@ func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservice
 		WhatsAppGateway:     w.whatsAppGateway,
 		PolicyMinConfidence: w.cfg.AgentConfig.PolicyMinConfidence,
 	}
-	if w.outboxPublisher != nil {
-		deps.EventPublisher = agentevents.NewIntentEventPublisher(w.outboxPublisher, w.o11y)
-	}
 	fillIntentRouterDeps(w, &deps)
 	attachExpenseRecorder(w, &deps)
 	attachCardPurchaseLogger(w, &deps)
 	attachTransactionQueries(w, &deps)
 	attachRecurring(w, &deps)
-	attachBudgetConfigSession(w, &deps, llmModule)
+	attachBudgetConfigSession(w, &deps)
 	attachOnboardingLLM(w, &deps, llmModule)
 	attachDecisionAudit(w, &deps)
 	if err := attachKernel(w, &deps); err != nil {
 		return nil, fmt.Errorf("agent.module: kernel wiring: %w", err)
 	}
-	deps.TelegramGateway = buildTelegramGateway(w)
-
 	router, err := appservices.NewIntentRouter(w.o11y, deps)
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: intent router: %w", err)
@@ -383,8 +385,8 @@ func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDe
 	if w.budgetsModule != nil && w.budgetsModule.EditCategoryPercentageUC != nil {
 		deps.CategoryPercentageEditor = agentbinding.NewCategoryPercentageEditorAdapter(w.budgetsModule.EditCategoryPercentageUC)
 	}
-	if w.budgetConfigurator != nil {
-		deps.BudgetConfig = w.budgetConfigurator
+	if w.budgetsModule != nil && w.budgetsModule.CreateRecurrenceUC != nil {
+		deps.BudgetRecurrenceCreator = agentbinding.NewBudgetRecurrenceCreatorAdapter(w.budgetsModule.CreateRecurrenceUC)
 	}
 }
 
@@ -427,6 +429,9 @@ func attachTransactionQueries(w *agentModuleWiring, deps *appservices.IntentRout
 	}
 	deps.TransactionLister = agentbinding.NewTransactionListerAdapter(w.transactionsModule.ListTransactionsUC)
 	deps.IncomeSummaryReader = agentbinding.NewIncomeSummaryReaderAdapter(w.transactionsModule.ListTransactionsUC)
+	if w.transactionsModule.SearchTransactionsUC != nil {
+		deps.TransactionSearcher = agentbinding.NewTransactionSearcherAdapter(w.transactionsModule.SearchTransactionsUC)
+	}
 	if w.transactionsModule.DeleteTransactionUC != nil {
 		deps.LastDeleter = agentbinding.NewLastTransactionDeleterAdapter(w.transactionsModule.DeleteTransactionUC)
 	}
@@ -453,17 +458,14 @@ func attachRecurring(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	}
 }
 
-func attachBudgetConfigSession(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
+func attachBudgetConfigSession(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	if w.sessionRepo == nil || w.sessionUoW == nil {
-		return
-	}
-	if llmModule == nil || llmModule.Interpreter == nil {
 		return
 	}
 	if w.budgetsModule == nil || w.budgetsModule.CreateBudgetUC == nil || w.budgetsModule.ActivateBudgetUC == nil {
 		return
 	}
-	conversationUC, err := usecases.NewConfigureBudgetConversation(llmModule.Interpreter, w.o11y)
+	conversationUC, err := usecases.NewConfigureBudgetConversation(w.o11y)
 	if err != nil {
 		w.o11y.Logger().Warn(context.Background(), "agent.module.budget_config_session_failed",
 			observability.Error(err),
@@ -501,17 +503,20 @@ func attachKernel(w *agentModuleWiring, deps *appservices.IntentRouterDeps) erro
 		MaxAttempts:   w.cfg.WorkflowKernelConfig.MaxAttempts,
 	}
 
-	if w.cfg.WorkflowKernelConfig.TransactionsWriteEnabled && w.categoriesModule != nil && w.categoriesModule.SearchDictionaryUC != nil {
-		engine := platform.NewEngine[steps.ExpenseState](store, w.o11y)
-		resolver := agentbinding.NewKernelCategoryResolver(w.categoriesModule.SearchDictionaryUC)
-		persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
-		kernelDeps.Engine = engine
-		kernelDeps.CategoryResolver = resolver
-		kernelDeps.PersistFn = persistFn
-		w.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
-			observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
-		)
+	if w.categoriesModule == nil || w.categoriesModule.SearchDictionaryUC == nil {
+		return errors.New("categories_module_missing: kernel requires categoriesModule.SearchDictionaryUC")
 	}
+	engine := platform.NewEngine[steps.ExpenseState](store, w.o11y)
+	planEngine := platform.NewEngine[agentwf.PlanState](store, w.o11y)
+	resolver := agentbinding.NewKernelCategoryResolver(w.categoriesModule.SearchDictionaryUC)
+	persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
+	kernelDeps.Engine = engine
+	kernelDeps.PlanEngine = planEngine
+	kernelDeps.CategoryResolver = resolver
+	kernelDeps.PersistFn = persistFn
+	w.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
+		observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
+	)
 
 	deps.Kernel = kernelDeps
 	wfUoW := uow.NewUnitOfWork(w.sessionDB)
@@ -533,12 +538,16 @@ func buildConfirmDefinition(w *agentModuleWiring, deps *appservices.IntentRouter
 		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorResolver(lister),
 		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterResolver(deps.CardLister),
 		confirmation.OperationBudgetCommit: agentbinding.NewBudgetCommitResolver(),
+		confirmation.OperationDeleteByRef:  agentbinding.NewDeleteByRefResolver(),
+		confirmation.OperationEditByRef:    agentbinding.NewEditByRefResolver(),
 	}
 	executors := map[confirmation.OperationKind]steps.DestructiveExecutor{
 		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterExecutor(deps.LastDeleter),
 		confirmation.OperationEditLast:     agentbinding.NewLastTransactionEditorExecutor(deps.LastEditor),
 		confirmation.OperationDeleteCard:   agentbinding.NewCardDeleterExecutorFn(deps.CardDeleter),
 		confirmation.OperationBudgetCommit: agentbinding.NewBudgetCommitExecutor(deps.BudgetCommitter),
+		confirmation.OperationDeleteByRef:  agentbinding.NewDeleteByRefExecutor(deps.LastDeleter),
+		confirmation.OperationEditByRef:    agentbinding.NewEditByRefExecutor(deps.LastEditor),
 	}
 	return agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
 		Authorize: func(ctx context.Context, state confirmation.ConfirmState) bool {
@@ -558,6 +567,7 @@ func buildConfirmDefinition(w *agentModuleWiring, deps *appservices.IntentRouter
 		OnSettle: func(id uuid.UUID, fn steps.ConfirmAuditSettleFunc) {
 			settleReg.Register(id, func(ctx context.Context, executed bool) { fn(ctx, executed) })
 		},
+		Searcher:       deps.TransactionSearcher,
 		Targets:        targets,
 		Executors:      executors,
 		TTL:            10 * time.Minute,
@@ -656,24 +666,6 @@ func onboardingLLMUnavailable(w *agentModuleWiring, deps *appservices.IntentRout
 	return ""
 }
 
-func buildTelegramGateway(w *agentModuleWiring) appservices.TelegramOutbound {
-	if !w.cfg.TelegramConfig.Enabled {
-		return nil
-	}
-	tgGateway, err := outbound.NewSharedGateway(w.o11y, outbound.FactoryConfig{
-		APIBaseURL: w.cfg.TelegramConfig.APIBaseURL,
-		BotToken:   w.cfg.TelegramConfig.BotToken,
-		Timeout:    w.cfg.TelegramConfig.OutboundTimeout,
-	})
-	if err != nil {
-		w.o11y.Logger().Warn(context.Background(), "agent.module.telegram_agent_gateway_failed",
-			observability.Error(err),
-		)
-		return nil
-	}
-	return tgGateway
-}
-
 func buildWhatsAppAgentRoute(w *agentModuleWiring, pub inboundPublisher) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 	if pub == nil {
 		return func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
@@ -696,26 +688,6 @@ func buildWhatsAppAgentRoute(w *agentModuleWiring, pub inboundPublisher) func(ct
 	}
 }
 
-func buildTelegramAgentRoute(w *agentModuleWiring, pub inboundPublisher) tgdispatcher.AgentRoute {
-	if pub == nil {
-		return nil
-	}
-
-	return func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
-		principal, ok := auth.FromContext(ctx)
-		if !ok {
-			w.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_missing_principal")
-			return tgdispatcher.OutcomeAgent
-		}
-		if err := pub.PublishTelegram(ctx, principal.UserID, msg.ChatID, msg.Text, fmt.Sprintf("%d", msg.MessageID)); err != nil {
-			w.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_publish_failed",
-				observability.Error(err),
-			)
-		}
-		return tgdispatcher.OutcomeAgent
-	}
-}
-
 type intentParserAdapter struct {
 	uc *usecases.ParseInbound
 }
@@ -732,6 +704,7 @@ func (a *intentParserAdapter) Parse(ctx context.Context, userID uuid.UUID, text 
 		DirectReply:  out.DirectReply,
 		LLMModel:     out.LLMModel,
 		PromptSHA256: out.PromptSHA256,
+		Plan:         out.Plan,
 	}, nil
 }
 
@@ -750,7 +723,7 @@ func (a *fallbackAdapter) Reply(ctx context.Context, userID uuid.UUID, channel, 
 	return out.Reply, nil
 }
 
-func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*llmRuntime, error) {
+func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*llmRuntime, error) { //nolint:revive // wiring de runtime LLM por classe
 	if strings.TrimSpace(cfg.OpenRouterAPIKey) == "" {
 		return nil, ErrAPIKeyRequired
 	}
@@ -764,17 +737,21 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		return nil, fmt.Errorf("agent.llm: http client: %w", err)
 	}
 
-	makeProvider := func(slug valueobjects.ModelSlug) interfaces.LLMProvider {
-		return openrouter.NewProvider(client, openrouter.ProviderConfig{
-			Slug:           slug,
-			APIKey:         cfg.OpenRouterAPIKey,
-			HTTPReferer:    cfg.HTTPReferer,
-			XTitle:         cfg.XTitle,
-			MaxTokens:      cfg.MaxTokens,
-			Temperature:    cfg.Temperature,
-			RequestTimeout: cfg.RequestTimeout,
-		}, o11y)
+	makeProviderWithTokens := func(maxTokens int) func(valueobjects.ModelSlug) interfaces.LLMProvider {
+		return func(slug valueobjects.ModelSlug) interfaces.LLMProvider {
+			return openrouter.NewProvider(client, openrouter.ProviderConfig{
+				Slug:           slug,
+				APIKey:         cfg.OpenRouterAPIKey,
+				HTTPReferer:    cfg.HTTPReferer,
+				XTitle:         cfg.XTitle,
+				MaxTokens:      maxTokens,
+				Temperature:    cfg.Temperature,
+				RequestTimeout: cfg.RequestTimeout,
+			}, o11y)
+		}
 	}
+	makeProvider := makeProviderWithTokens(cfg.MaxTokens)
+	makeParseProvider := makeProviderWithTokens(resolveParseMaxTokens(cfg.ParseMaxTokens, cfg.MaxTokens))
 	newBreaker := func() *appservices.CircuitBreaker {
 		return appservices.NewCircuitBreaker(appservices.CircuitBreakerConfig{
 			MaxFailures:   cfg.CircuitFailures,
@@ -796,44 +773,100 @@ func newLLMRuntime(cfg configs.AgentConfig, o11y observability.Observability) (*
 		fallbackSlugs = append(fallbackSlugs, slug)
 	}
 
-	chain, err := buildLLMChain(makeProvider, newBreaker, primary, fallbackSlugs, o11y)
+	parseChain, err := buildClassChain(makeParseProvider, newBreaker, cfg.ParsePrimaryModel, cfg.ParseFallbackModels, fallbackSlugs, primary, o11y)
 	if err != nil {
-		return nil, fmt.Errorf("agent.llm: fallback chain: %w", err)
+		return nil, fmt.Errorf("agent.llm: parse chain: %w", err)
 	}
 
-	retryChain, err := buildRetryChain(makeProvider, newBreaker, fallbackSlugs, o11y)
+	retryChain, err := buildRetryChain(makeParseProvider, newBreaker, fallbackSlugs, o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: retry chain: %w", err)
 	}
 
-	var onboardingInterpreter usecases.IntentInterpreter
-	if strings.TrimSpace(cfg.OnboardingModel) != "" {
-		onbSlug, onbErr := valueobjects.NewModelSlug(cfg.OnboardingModel)
-		if onbErr != nil {
-			return nil, fmt.Errorf("agent.llm: onboarding model %q: %w", cfg.OnboardingModel, onbErr)
-		}
-		onboardingInterpreter, err = buildLLMChain(makeProvider, newBreaker, onbSlug, fallbackSlugs, o11y)
-		if err != nil {
-			return nil, fmt.Errorf("agent.llm: onboarding chain: %w", err)
-		}
+	onbPrimary := cfg.OnboardingPrimaryModel
+	if strings.TrimSpace(onbPrimary) == "" {
+		onbPrimary = cfg.OnboardingModel
+	}
+	onbFallbacks := cfg.OnboardingFallbackModels
+	if strings.TrimSpace(onbFallbacks) == "" {
+		onbFallbacks = cfg.FallbackModels
+	}
+	onboardingChain, onbErr := buildClassChain(makeProvider, newBreaker, onbPrimary, onbFallbacks, fallbackSlugs, primary, o11y)
+	if onbErr != nil {
+		return nil, fmt.Errorf("agent.llm: onboarding chain: %w", onbErr)
 	}
 
-	parseInbound, err := usecases.NewParseInbound(chain, retryChain, cfg.MaxInputChars, o11y)
+	convPrimary := cfg.ConvPrimaryModel
+	if strings.TrimSpace(convPrimary) == "" {
+		convPrimary = cfg.PrimaryModel
+	}
+	convFallbacks := cfg.ConvFallbackModels
+	if strings.TrimSpace(convFallbacks) == "" {
+		convFallbacks = cfg.FallbackModels
+	}
+	convChain, convErr := buildClassChain(makeProvider, newBreaker, convPrimary, convFallbacks, fallbackSlugs, primary, o11y)
+	if convErr != nil {
+		return nil, fmt.Errorf("agent.llm: conversational chain: %w", convErr)
+	}
+
+	parseInbound, err := usecases.NewParseInbound(parseChain, retryChain, cfg.MaxInputChars, o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: parse inbound: %w", err)
 	}
 
-	conversational, err := usecases.NewComposeConversationalReply(chain, cfg.ProseMaxTokens, o11y, nil, nil, nil, nil)
+	convMaxTokens := cfg.ConvMaxTokens
+	if convMaxTokens <= 0 {
+		convMaxTokens = cfg.ProseMaxTokens
+	}
+	conversational, err := usecases.NewComposeConversationalReply(convChain, convMaxTokens, o11y, nil, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("agent.llm: conversational reply: %w", err)
 	}
 
+	router := appservices.NewClassRouter(map[appservices.LLMClass]appservices.ClassInterpreter{
+		appservices.LLMClassParse:          appservices.NewClassMetricInterpreter(parseChain, appservices.LLMClassParse, o11y),
+		appservices.LLMClassOnboarding:     appservices.NewClassMetricInterpreter(onboardingChain, appservices.LLMClassOnboarding, o11y),
+		appservices.LLMClassConversational: appservices.NewClassMetricInterpreter(convChain, appservices.LLMClassConversational, o11y),
+	})
+
 	return &llmRuntime{
 		ParseInbound:          parseInbound,
 		Conversational:        conversational,
-		Interpreter:           chain,
-		OnboardingInterpreter: onboardingInterpreter,
+		Interpreter:           parseChain,
+		OnboardingInterpreter: onboardingChain,
+		ConvInterpreter:       convChain,
+		ConvMaxTokens:         convMaxTokens,
+		Router:                router,
 	}, nil
+}
+
+func buildClassChain(
+	makeProvider func(valueobjects.ModelSlug) interfaces.LLMProvider,
+	newBreaker func() *appservices.CircuitBreaker,
+	classPrimary, classFallbacks string,
+	globalFallbackSlugs []valueobjects.ModelSlug,
+	globalPrimarySlug valueobjects.ModelSlug,
+	o11y observability.Observability,
+) (usecases.IntentInterpreter, error) {
+	if strings.TrimSpace(classPrimary) == "" {
+		return buildLLMChain(makeProvider, newBreaker, globalPrimarySlug, globalFallbackSlugs, o11y)
+	}
+	slug, err := valueobjects.NewModelSlug(classPrimary)
+	if err != nil {
+		return nil, fmt.Errorf("agent.llm: class primary model %q: %w", classPrimary, err)
+	}
+	var fallbacks []valueobjects.ModelSlug
+	for _, raw := range parseFallbackList(classFallbacks) {
+		fs, fsErr := valueobjects.NewModelSlug(raw)
+		if fsErr != nil {
+			return nil, fmt.Errorf("agent.llm: class fallback model %q: %w", raw, fsErr)
+		}
+		fallbacks = append(fallbacks, fs)
+	}
+	if len(fallbacks) == 0 {
+		fallbacks = globalFallbackSlugs
+	}
+	return buildLLMChain(makeProvider, newBreaker, slug, fallbacks, o11y)
 }
 
 func buildRetryChain(
@@ -868,6 +901,13 @@ func buildLLMChain(
 		return nil, err
 	}
 	return chain, nil
+}
+
+func resolveParseMaxTokens(parse, global int) int {
+	if parse > 0 {
+		return parse
+	}
+	return global
 }
 
 func parseFallbackList(raw string) []string {

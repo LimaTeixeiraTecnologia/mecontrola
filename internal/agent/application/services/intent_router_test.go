@@ -14,7 +14,6 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -122,21 +121,6 @@ func (f *fakeWhatsAppGateway) SendTextMessage(_ context.Context, to, text string
 	return f.err
 }
 
-type fakeTelegramGateway struct {
-	sent []sentTelegram
-	err  error
-}
-
-type sentTelegram struct {
-	ChatID int64
-	Text   string
-}
-
-func (f *fakeTelegramGateway) SendTextMessage(_ context.Context, chatID int64, text string) error {
-	f.sent = append(f.sent, sentTelegram{ChatID: chatID, Text: text})
-	return f.err
-}
-
 type routerTestStore struct {
 	mu   sync.Mutex
 	runs map[string]platform.Snapshot
@@ -192,10 +176,46 @@ func newMinimalKernel() *services.KernelDeps {
 	}
 }
 
+func newKernelWithExpenseRecorder(recorder tools.ExpenseRecorder, categoryErr error) *services.KernelDeps {
+	obs := fake.NewProvider()
+	store := newRouterTestStore()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+	return &services.KernelDeps{
+		Engine:    engine,
+		SettleReg: services.NewSettleRegistry(),
+		CategoryResolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+			if recorder == nil {
+				return st, tools.ErrCategoryHintMissing
+			}
+			if categoryErr != nil {
+				return st, categoryErr
+			}
+			st.CategoryID = "test-category"
+			st.CategoryPath = "Test"
+			return st, nil
+		},
+		PersistFn: func(ctx context.Context, st steps.ExpenseState) (steps.PersistResult, error) {
+			if recorder == nil {
+				return steps.PersistResult{}, errors.New("recorder not configured")
+			}
+			result, err := recorder.Execute(ctx, tools.ExpenseRecorderInput{
+				UserID:        st.UserID.String(),
+				AmountCents:   st.AmountCents,
+				Merchant:      st.Merchant,
+				PaymentMethod: st.PaymentMethod,
+				Direction:     st.Direction,
+			})
+			if err != nil {
+				return steps.PersistResult{}, err
+			}
+			return steps.PersistResult{AmountCents: result.AmountCents, CategoryPath: result.CategoryPath}, nil
+		},
+	}
+}
+
 type IntentRouterSuite struct {
 	suite.Suite
 	wa       *fakeWhatsAppGateway
-	tg       *fakeTelegramGateway
 	fallback *fakeFallback
 	parser   *fakeParser
 	summary  *fakeMonthlySummary
@@ -206,7 +226,6 @@ type IntentRouterSuite struct {
 
 func (s *IntentRouterSuite) SetupTest() {
 	s.wa = &fakeWhatsAppGateway{}
-	s.tg = &fakeTelegramGateway{}
 	s.fallback = &fakeFallback{reply: "fallback livre"}
 	s.parser = &fakeParser{}
 	s.summary = &fakeMonthlySummary{}
@@ -215,7 +234,21 @@ func (s *IntentRouterSuite) SetupTest() {
 	s.expenses = nil
 }
 
+func (s *IntentRouterSuite) categoryErrFromExpenses() error {
+	if s.expenses == nil {
+		return nil
+	}
+	if isCategoryError(s.expenses.err) {
+		return s.expenses.err
+	}
+	return nil
+}
+
 func (s *IntentRouterSuite) newRouter() *services.IntentRouter {
+	var expenseRec tools.ExpenseRecorder
+	if s.expenses != nil {
+		expenseRec = s.expenses
+	}
 	deps := services.IntentRouterDeps{
 		Parser:          s.parser,
 		MonthlySummary:  s.summary,
@@ -223,15 +256,28 @@ func (s *IntentRouterSuite) newRouter() *services.IntentRouter {
 		CardInvoice:     s.invoice,
 		Fallback:        s.fallback,
 		WhatsAppGateway: s.wa,
-		TelegramGateway: s.tg,
 		Location:        time.UTC,
-	}
-	if s.expenses != nil {
-		deps.ExpenseRecorder = s.expenses
+		Kernel:          newKernelWithExpenseRecorder(expenseRec, s.categoryErrFromExpenses()),
+		ExpenseRecorder: expenseRec,
 	}
 	router, err := services.NewIntentRouter(noop.NewProvider(), deps)
 	require.NoError(s.T(), err)
 	return router
+}
+
+func isCategoryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, tools.ErrCategoryNotFound) || errors.Is(err, tools.ErrCategoryHintMissing) {
+		return true
+	}
+	var ambiguous *tools.CategoryAmbiguousError
+	if errors.As(err, &ambiguous) {
+		return true
+	}
+	var needsConfirmation *tools.CategoryNeedsConfirmationError
+	return errors.As(err, &needsConfirmation)
 }
 
 func (s *IntentRouterSuite) TestNew_NilDeps() {
@@ -273,8 +319,9 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_MissingResolverIsHonest
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "gastei 58 no iFood", WhatsAppTo: "+5511999"})
 
 	s.Equal(intent.KindRecordExpense, result.Kind)
-	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "categoria")
 	s.NotContains(s.wa.sent[0].Text, "Transação realizada")
 }
 
@@ -308,7 +355,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_FailureIsHonest() {
 	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
 	s.NotContains(s.wa.sent[0].Text, "Transação realizada")
-	s.Contains(s.wa.sent[0].Text, "Não consegui registrar")
+	s.Contains(s.wa.sent[0].Text, "Pode tentar de novo")
 }
 
 func (s *IntentRouterSuite) TestRouteWhatsApp_LogExpense_AmbiguousAsksToChoose() {
@@ -387,8 +434,9 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_LogIncome_MissingResolverIsHonest(
 	router := s.newRouter()
 	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "recebi salario 16400", WhatsAppTo: "+5511999"})
 
-	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
+	s.Equal(tools.OutcomeClarify, result.Outcome)
 	s.Require().Len(s.wa.sent, 1)
+	s.Contains(s.wa.sent[0].Text, "categoria")
 	s.NotContains(s.wa.sent[0].Text, "registrado")
 }
 
@@ -454,7 +502,6 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_QueryGoal_MissingResolver_NoSummar
 		Parser:          s.parser,
 		Fallback:        s.fallback,
 		WhatsAppGateway: s.wa,
-		TelegramGateway: s.tg,
 		Location:        time.UTC,
 	})
 	require.NoError(s.T(), err)
@@ -747,38 +794,6 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_FallbackFailure_UsesDefaultReply()
 	s.Contains(s.wa.sent[0].Text, "Não entendi direito")
 }
 
-func (s *IntentRouterSuite) TestRouteTelegram_Success() {
-	parsed, err := intent.NewMonthlySummary("2026-06")
-	require.NoError(s.T(), err)
-	s.parser.intent = parsed
-	s.summary.out = budgetsoutput.MonthlySummaryOutput{Competence: "2026-06", TotalSpentCents: 10000}
-
-	router := s.newRouter()
-	result := router.RouteTelegram(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "resumo", TelegramTo: 42})
-
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Require().Len(s.tg.sent, 1)
-	s.Equal(int64(42), s.tg.sent[0].ChatID)
-}
-
-func (s *IntentRouterSuite) TestRouteTelegram_NoGateway() {
-	router, err := services.NewIntentRouter(noop.NewProvider(), services.IntentRouterDeps{
-		Parser:          s.parser,
-		Fallback:        s.fallback,
-		WhatsAppGateway: s.wa,
-		MonthlySummary:  s.summary,
-		Location:        time.UTC,
-	})
-	require.NoError(s.T(), err)
-
-	parsed, _ := intent.NewMonthlySummary("")
-	s.parser.intent = parsed
-
-	result := router.RouteTelegram(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{Text: "resumo", TelegramTo: 1})
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	assert.Empty(s.T(), s.tg.sent)
-}
-
 func (s *IntentRouterSuite) TestRouteWhatsApp_ListCards_Empty() {
 	s.parser.intent = intent.NewListCards()
 	s.cards.out = cardoutput.CardList{}
@@ -856,7 +871,6 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_PolicyBlocked_WriteWithLowConfiden
 		Parser:              s.parser,
 		Fallback:            s.fallback,
 		WhatsAppGateway:     s.wa,
-		TelegramGateway:     s.tg,
 		Location:            time.UTC,
 		PolicyMinConfidence: 0.8,
 		Kernel:              newMinimalKernel(),

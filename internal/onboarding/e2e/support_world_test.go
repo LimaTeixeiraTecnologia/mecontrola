@@ -34,16 +34,14 @@ type onboardingWorld struct {
 	currentTokenID        string
 	currentSubscriptionID string
 	currentUserID         uuid.UUID
-	currentTelegramID     int64
 	lastStatusCodes       []int
 }
 
 func newOnboardingWorld(t *testing.T, runtime *onboardingRuntime) *onboardingWorld {
 	t.Helper()
 	world := &onboardingWorld{
-		t:                 t,
-		runtime:           runtime,
-		currentTelegramID: 99887766,
+		t:       t,
+		runtime: runtime,
 	}
 	if err := world.reset(); err != nil {
 		t.Fatalf("reset world: %v", err)
@@ -87,7 +85,6 @@ func (w *onboardingWorld) reset() error {
 	w.currentTokenID = ""
 	w.currentSubscriptionID = ""
 	w.currentUserID = uuid.Nil
-	w.currentTelegramID = 99887766
 	w.lastStatusCodes = nil
 	return nil
 }
@@ -190,9 +187,9 @@ func (w *onboardingWorld) seedMagicToken(clearToken string, status string, opts 
 
 	_, err = w.runtime.deps.db.ExecContext(ctx, `
 		INSERT INTO mecontrola.onboarding_tokens
-			(id, token_hash, activation_token_ciphertext, status, plan_id, expires_at, created_at, paid_at, consumed_at, outreach_sent_at, subscription_id, customer_mobile_e164, customer_email, external_sale_id, consumed_by_user_id, consumed_by_mobile_e164, activation_path, telegram_external_id)
+			(id, token_hash, activation_token_ciphertext, status, plan_id, expires_at, created_at, paid_at, consumed_at, outreach_sent_at, subscription_id, customer_mobile_e164, customer_email, external_sale_id, consumed_by_user_id, consumed_by_mobile_e164, activation_path)
 		VALUES
-			($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`,
 		tokenID,
 		token.Hash(),
@@ -210,7 +207,6 @@ func (w *onboardingWorld) seedMagicToken(clearToken string, status string, opts 
 		nullIfEmpty(opts.consumedByUserID),
 		nullIfEmpty(opts.consumedByMobile),
 		nullIfEmpty(opts.activationPath),
-		nullIfEmpty(opts.telegramExternalID),
 	)
 	if err != nil {
 		return err
@@ -231,38 +227,36 @@ func (w *onboardingWorld) tokenRow() (map[string]any, error) {
 	}
 
 	row := w.runtime.deps.db.QueryRowContext(ctx, `
-		SELECT id::text, status, plan_id, customer_mobile_e164, customer_email, external_sale_id, subscription_id::text, consumed_by_user_id::text, activation_path, telegram_external_id
+		SELECT id::text, status, plan_id, customer_mobile_e164, customer_email, external_sale_id, subscription_id::text, consumed_by_user_id::text, activation_path
 		  FROM mecontrola.onboarding_tokens
 		 WHERE token_hash = $1
 	`, token.Hash())
 
 	var (
-		id                 string
-		status             string
-		planID             string
-		customerMobile     sql.NullString
-		customerEmail      sql.NullString
-		externalSaleID     sql.NullString
-		subscriptionID     sql.NullString
-		consumedByUserID   sql.NullString
-		activationPath     sql.NullString
-		telegramExternalID sql.NullString
+		id               string
+		status           string
+		planID           string
+		customerMobile   sql.NullString
+		customerEmail    sql.NullString
+		externalSaleID   sql.NullString
+		subscriptionID   sql.NullString
+		consumedByUserID sql.NullString
+		activationPath   sql.NullString
 	)
-	if err := row.Scan(&id, &status, &planID, &customerMobile, &customerEmail, &externalSaleID, &subscriptionID, &consumedByUserID, &activationPath, &telegramExternalID); err != nil {
+	if err := row.Scan(&id, &status, &planID, &customerMobile, &customerEmail, &externalSaleID, &subscriptionID, &consumedByUserID, &activationPath); err != nil {
 		return nil, err
 	}
 
 	return map[string]any{
-		"id":                   id,
-		"status":               status,
-		"plan_id":              planID,
-		"customer_mobile":      customerMobile.String,
-		"customer_email":       customerEmail.String,
-		"external_sale_id":     externalSaleID.String,
-		"subscription_id":      subscriptionID.String,
-		"consumed_by_user_id":  consumedByUserID.String,
-		"activation_path":      activationPath.String,
-		"telegram_external_id": telegramExternalID.String,
+		"id":                  id,
+		"status":              status,
+		"plan_id":             planID,
+		"customer_mobile":     customerMobile.String,
+		"customer_email":      customerEmail.String,
+		"external_sale_id":    externalSaleID.String,
+		"subscription_id":     subscriptionID.String,
+		"consumed_by_user_id": consumedByUserID.String,
+		"activation_path":     activationPath.String,
 	}, nil
 }
 
@@ -329,16 +323,12 @@ func (w *onboardingWorld) runDispatcher(registry outbox.Registry) error {
 	return newDispatcherJob(w.runtime.deps.db, w.runtime.deps.outboxCfg, registry, w.runtime.deps.o11y).Run(ctx)
 }
 
-func (w *onboardingWorld) startBudgetSessionForCurrentUser(channel string) error {
+func (w *onboardingWorld) startBudgetSessionForCurrentUser(_ string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	parsedChannel := onboardingentities.OnboardingChannelWhatsApp
-	if channel == "telegram" {
-		parsedChannel = onboardingentities.OnboardingChannelTelegram
-	}
 	_, err := w.runtime.deps.startBudgetConfiguration.Execute(ctx, usecases.StartBudgetConfigurationInput{
 		UserID:  w.currentUserID,
-		Channel: parsedChannel,
+		Channel: onboardingentities.OnboardingChannelWhatsApp,
 	})
 	return err
 }
@@ -395,18 +385,17 @@ func (w *onboardingWorld) ensureCurrentUserByWhatsApp(mobileE164, email string) 
 }
 
 type tokenSeedOptions struct {
-	subscriptionID     string
-	customerMobile     string
-	customerEmail      string
-	externalSaleID     string
-	consumedByUserID   string
-	consumedByMobile   string
-	activationPath     string
-	telegramExternalID string
-	paidAt             any
-	consumedAt         any
-	outreachSentAt     any
-	expired            bool
+	subscriptionID   string
+	customerMobile   string
+	customerEmail    string
+	externalSaleID   string
+	consumedByUserID string
+	consumedByMobile string
+	activationPath   string
+	paidAt           any
+	consumedAt       any
+	outreachSentAt   any
+	expired          bool
 }
 
 func parseClearToken(clearToken string) (clearTokenValue, error) {

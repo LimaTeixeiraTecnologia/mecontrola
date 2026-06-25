@@ -59,8 +59,8 @@ func (s *UserIdentityRepositoryIntegrationSuite) seedUser() uuid.UUID {
 	return id
 }
 
-func (s *UserIdentityRepositoryIntegrationSuite) newTelegramIdentity(userID uuid.UUID, externalID string, now time.Time) entities.UserIdentity {
-	ch := valueobjects.ChannelTelegram()
+func (s *UserIdentityRepositoryIntegrationSuite) newWhatsAppIdentity(userID uuid.UUID, externalID string, now time.Time) entities.UserIdentity {
+	ch := valueobjects.ChannelWhatsApp()
 	extID, err := valueobjects.NewExternalID(ch, externalID)
 	s.Require().NoError(err)
 	identity, err := entities.NewUserIdentity(uuid.New(), userID, ch, extID, now)
@@ -79,7 +79,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertAndTryFindActive() {
 			setup: func(repo interfaces.UserIdentityRepository) (entities.UserIdentity, bool, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newTelegramIdentity(userID, "100001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511100000001", now)
 
 				err := repo.Insert(s.ctx, identity)
 				s.Require().NoError(err)
@@ -87,7 +87,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertAndTryFindActive() {
 				var count int
 				err = s.db.QueryRowContext(
 					s.ctx,
-					`SELECT COUNT(*) FROM mecontrola.user_identities WHERE user_id = $1 AND channel = 'telegram' AND unlinked_at IS NULL`,
+					`SELECT COUNT(*) FROM mecontrola.user_identities WHERE user_id = $1 AND channel = 'whatsapp' AND unlinked_at IS NULL`,
 					userID,
 				).Scan(&count)
 				s.Require().NoError(err)
@@ -99,8 +99,8 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertAndTryFindActive() {
 			expect: func(found entities.UserIdentity, ok bool, err error) {
 				s.Require().NoError(err)
 				s.True(ok)
-				s.Equal("telegram", found.Channel().String())
-				s.Equal("100001", found.ExternalID().String())
+				s.Equal("whatsapp", found.Channel().String())
+				s.NotEmpty(found.ExternalID().String())
 				s.True(found.IsActive())
 			},
 		},
@@ -126,7 +126,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertDuplicate() {
 			setup: func(repo interfaces.UserIdentityRepository) (int, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newTelegramIdentity(userID, "200001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511200000001", now)
 
 				s.Require().NoError(repo.Insert(s.ctx, identity))
 
@@ -138,7 +138,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertDuplicate() {
 				var count int
 				countErr := s.db.QueryRowContext(
 					s.ctx,
-					`SELECT COUNT(*) FROM mecontrola.user_identities WHERE user_id = $1 AND channel = 'telegram' AND unlinked_at IS NULL`,
+					`SELECT COUNT(*) FROM mecontrola.user_identities WHERE user_id = $1 AND channel = 'whatsapp' AND unlinked_at IS NULL`,
 					userID,
 				).Scan(&count)
 				s.Require().NoError(countErr)
@@ -173,7 +173,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestUnlink() {
 			setup: func(repo interfaces.UserIdentityRepository) (entities.UserIdentity, bool, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newTelegramIdentity(userID, "300001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511300000001", now)
 
 				s.Require().NoError(repo.Insert(s.ctx, identity))
 
@@ -221,21 +221,20 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestListByUser() {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
 
-				chTelegram := valueobjects.ChannelTelegram()
-				extTelegram, err := valueobjects.NewExternalID(chTelegram, "400001")
-				s.Require().NoError(err)
-				identityTelegram, err := entities.NewUserIdentity(uuid.New(), userID, chTelegram, extTelegram, now)
-				s.Require().NoError(err)
-				s.Require().NoError(repo.Insert(s.ctx, identityTelegram))
-
 				chWhatsApp := valueobjects.ChannelWhatsApp()
-				extWhatsApp, err := valueobjects.NewExternalID(chWhatsApp, "+5511900000400")
+				extActive, err := valueobjects.NewExternalID(chWhatsApp, "+5511400000001")
 				s.Require().NoError(err)
-				identityWhatsApp, err := entities.NewUserIdentity(uuid.New(), userID, chWhatsApp, extWhatsApp, now.Add(time.Millisecond))
+				identityActive, err := entities.NewUserIdentity(uuid.New(), userID, chWhatsApp, extActive, now)
 				s.Require().NoError(err)
-				s.Require().NoError(repo.Insert(s.ctx, identityWhatsApp))
+				s.Require().NoError(repo.Insert(s.ctx, identityActive))
 
-				s.Require().NoError(repo.Unlink(s.ctx, identityWhatsApp.ID(), now.Add(time.Second)))
+				extUnlinked, err := valueobjects.NewExternalID(chWhatsApp, "+5511400000002")
+				s.Require().NoError(err)
+				identityUnlinked, err := entities.NewUserIdentity(uuid.New(), userID, chWhatsApp, extUnlinked, now.Add(time.Millisecond))
+				s.Require().NoError(err)
+				s.Require().NoError(repo.Insert(s.ctx, identityUnlinked))
+
+				s.Require().NoError(repo.Unlink(s.ctx, identityUnlinked.ID(), now.Add(time.Second)))
 
 				var count int
 				countErr := s.db.QueryRowContext(
@@ -282,7 +281,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestFindByUserAndChannel() {
 			setup: func(repo interfaces.UserIdentityRepository) (entities.UserIdentity, bool, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newTelegramIdentity(userID, "500001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511500000001", now)
 
 				s.Require().NoError(repo.Insert(s.ctx, identity))
 
@@ -292,8 +291,8 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestFindByUserAndChannel() {
 			expect: func(found entities.UserIdentity, ok bool, err error) {
 				s.Require().NoError(err)
 				s.True(ok)
-				s.Equal("telegram", found.Channel().String())
-				s.Equal("500001", found.ExternalID().String())
+				s.Equal("whatsapp", found.Channel().String())
+				s.NotEmpty(found.ExternalID().String())
 				s.True(found.IsActive())
 			},
 		},

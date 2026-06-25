@@ -37,7 +37,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
-	tgoutbound "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/telegram/outbound"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 )
 
@@ -50,7 +49,6 @@ type OnboardingModule struct {
 	PublicRouter                 *onboardingserver.PublicRouter
 	WhatsAppGateway              appinterfaces.WhatsAppGateway
 	WhatsAppMessageProcessor     *services.WhatsAppMessageProcessor
-	TelegramMessageProcessor     *services.TelegramMessageProcessor
 	SubscriptionConsumer         events.Handler
 	PaidWithoutTokenConsumer     events.Handler
 	OutreachJob                  worker.Job
@@ -121,7 +119,6 @@ type onboardingUseCasesBundle struct {
 	handlePaidWithoutToken   *usecases.HandlePaidWithoutToken
 	cleanupTables            *usecases.CleanupOnboardingTables
 	startBudgetConfiguration *usecases.StartBudgetConfiguration
-	activateTelegram         *usecases.ActivateTelegramByToken
 	getOnboardingContext     *usecases.GetOnboardingContext
 	saveObjective            *usecases.SaveOnboardingObjective
 	saveIncome               *usecases.SaveOnboardingIncome
@@ -136,25 +133,10 @@ type onboardingUseCasesBundle struct {
 	suggestBudgetSplit       *usecases.SuggestBudgetSplit
 }
 
-func buildTelegramMessages(tgCfg configs.TelegramConfig) map[string]string {
-	return map[string]string{
-		"welcome_activated":               tgCfg.WelcomeActivated,
-		"already_active":                  tgCfg.AlreadyActive,
-		"requires_whatsapp_activation":    tgCfg.RequiresWhatsApp,
-		"code_already_used_other_account": tgCfg.CodeAlreadyUsed,
-		"payment_still_processing_retry":  tgCfg.PaymentProcessing,
-		"code_expired_contact_support":    tgCfg.CodeExpired,
-		"code_invalid_check_again":        tgCfg.CodeInvalid,
-		"system_unavailable_retry":        tgCfg.SystemUnavailable,
-		"please_use_ativar_command":       tgCfg.PleaseUseAtivar,
-	}
-}
-
 func NewOnboardingModule(
 	db *sqlx.DB,
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
-	tgCfg configs.TelegramConfig,
 	outboxCfg configs.OutboxConfig,
 	emailCfg configs.EmailConfig,
 	identityModule identity.IdentityModule,
@@ -168,7 +150,7 @@ func NewOnboardingModule(
 	for _, opt := range opts {
 		opt(&deps)
 	}
-	useCases, err := buildOnboardingUseCases(db, cfg, waCfg, tgCfg, emailCfg, identityModule, deps, o11y)
+	useCases, err := buildOnboardingUseCases(db, cfg, waCfg, emailCfg, identityModule, deps, o11y)
 	if err != nil {
 		return OnboardingModule{}, err
 	}
@@ -182,7 +164,6 @@ func NewOnboardingModule(
 		PublicRouter:                 newPublicRouter(cfg, deps.runtimeCfg, useCases.createCheckout, useCases.getTokenState, o11y),
 		WhatsAppGateway:              deps.whatsAppGateway,
 		WhatsAppMessageProcessor:     newWhatsAppMessageProcessor(useCases, deps, o11y),
-		TelegramMessageProcessor:     newTelegramMessageProcessor(useCases, tgCfg, o11y),
 		SubscriptionConsumer:         subscriptionConsumer,
 		PaidWithoutTokenConsumer:     paidWithoutTokenConsumer,
 		OutreachJob:                  onboardingjobs.NewOutreachJob(useCases.sendOutreach, cfg.OutreachEnabled),
@@ -247,7 +228,6 @@ func buildOnboardingUseCases(
 	db *sqlx.DB,
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
-	tgCfg configs.TelegramConfig,
 	emailCfg configs.EmailConfig,
 	identityModule identity.IdentityModule,
 	deps onboardingDependencies,
@@ -257,10 +237,7 @@ func buildOnboardingUseCases(
 	if err != nil {
 		return onboardingUseCasesBundle{}, err
 	}
-	channelGateway, err := buildNotificationChannelGateway(tgCfg, deps.whatsAppGateway, o11y)
-	if err != nil {
-		return onboardingUseCasesBundle{}, err
-	}
+	channelGateway := buildNotificationChannelGateway(deps.whatsAppGateway)
 	emailSender, err := onboardingemail.NewSenderFactory(emailCfg, o11y).Build()
 	if err != nil {
 		return onboardingUseCasesBundle{}, fmt.Errorf("onboarding: build email sender: %w", err)
@@ -268,7 +245,6 @@ func buildOnboardingUseCases(
 	checkoutUoW := uow.NewUnitOfWork(db)
 	consumeUoW := uow.NewUnitOfWork(db)
 	startBudgetUoW := uow.NewUnitOfWork(db)
-	activateTelegramUoW := uow.NewUnitOfWork(db)
 	saveObjectiveUoW := uow.NewUnitOfWork(db)
 	saveIncomeUoW := uow.NewUnitOfWork(db)
 	saveCardUoW := uow.NewUnitOfWork(db)
@@ -283,12 +259,13 @@ func buildOnboardingUseCases(
 	magicTokenRepo := deps.factory.MagicTokenRepository(db)
 	supportSignalRepo := deps.factory.SupportSignalRepository(db)
 	cleanupRepo := deps.factory.OnboardingCleanupRepository(db)
+	_ = identityModule
 	return onboardingUseCasesBundle{
 		createCheckout:     usecases.NewCreateCheckoutSession(checkoutUoW, deps.factory, urlBuilder, tokenCipher, deps.idGen, deps.runtimeCfg.TokenTTL, o11y),
 		markTokenPaid:      usecases.NewMarkTokenPaid(magicTokenRepo, magicTokenWorkflow, o11y),
 		consumeToken:       usecases.NewConsumeMagicToken(consumeUoW, deps.factory, deps.bindingService, deps.idGen, o11y),
 		fallbackActivation: usecases.NewTryFallbackActivation(consumeUoW, deps.factory, deps.bindingService, o11y),
-		getTokenState:      usecases.NewGetTokenState(magicTokenRepo, waCfg.BotNumberE164, waCfg.BotNumberDisplay, tgCfg.BotUsername, o11y),
+		getTokenState:      usecases.NewGetTokenState(magicTokenRepo, waCfg.BotNumberE164, waCfg.BotNumberDisplay, o11y),
 		sendOutreach:       usecases.NewSendOutreach(magicTokenRepo, channelGateway, tokenCipher, deps.idGen, waCfg.OutreachTemplateName, deps.runtimeCfg.OutreachGap, o11y),
 		sendActivationEmail: usecases.NewSendActivationEmail(
 			emailSender,
@@ -304,27 +281,18 @@ func buildOnboardingUseCases(
 		handlePaidWithoutToken:   usecases.NewHandlePaidWithoutToken(supportSignalRepo, deps.idGen, o11y),
 		cleanupTables:            usecases.NewCleanupOnboardingTables(cleanupRepo, deps.runtimeCfg.MetaRetention, o11y),
 		startBudgetConfiguration: usecases.NewStartBudgetConfiguration(startBudgetUoW, deps.factory, o11y),
-		activateTelegram: usecases.NewActivateTelegramByToken(
-			deps.factory,
-			identityModule.RepositoryFactory,
-			activateTelegramUoW,
-			domainservices.NewDirectTelegramActivationWorkflow(),
-			deps.bindingService,
-			cfg.TelegramDirectEnabled,
-			o11y,
-		),
-		getOnboardingContext: usecases.NewGetOnboardingContext(onboardingSessionRepo, o11y),
-		saveObjective:        usecases.NewSaveOnboardingObjective(saveObjectiveUoW, deps.factory, o11y),
-		saveIncome:           usecases.NewSaveOnboardingIncome(saveIncomeUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		saveCard:             usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y, deps.cardCreator),
-		saveBudgetSplits:     usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		markFirstTransaction: usecases.NewMarkFirstTransactionRecorded(markFirstTxUoW, deps.factory, o11y),
-		completeSession:      usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		setPhase:             usecases.NewSetOnboardingPhase(setPhaseUoW, deps.factory, o11y),
-		appendTurn:           usecases.NewAppendOnboardingTurn(uow.NewUnitOfWork(db), deps.factory, o11y),
-		loadTurns:            usecases.NewLoadOnboardingTurns(onboardingSessionRepo, o11y),
-		markWelcomeSent:      usecases.NewMarkWelcomeSent(uow.NewUnitOfWork(db), deps.factory, o11y),
-		suggestBudgetSplit:   buildSuggestBudgetSplit(deps.budgetAllocator, o11y),
+		getOnboardingContext:     usecases.NewGetOnboardingContext(onboardingSessionRepo, o11y),
+		saveObjective:            usecases.NewSaveOnboardingObjective(saveObjectiveUoW, deps.factory, o11y),
+		saveIncome:               usecases.NewSaveOnboardingIncome(saveIncomeUoW, deps.factory, o11y),
+		saveCard:                 usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y, deps.cardCreator),
+		saveBudgetSplits:         usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		markFirstTransaction:     usecases.NewMarkFirstTransactionRecorded(markFirstTxUoW, deps.factory, o11y),
+		completeSession:          usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),
+		setPhase:                 usecases.NewSetOnboardingPhase(setPhaseUoW, deps.factory, o11y),
+		appendTurn:               usecases.NewAppendOnboardingTurn(uow.NewUnitOfWork(db), deps.factory, o11y),
+		loadTurns:                usecases.NewLoadOnboardingTurns(onboardingSessionRepo, o11y),
+		markWelcomeSent:          usecases.NewMarkWelcomeSent(uow.NewUnitOfWork(db), deps.factory, o11y),
+		suggestBudgetSplit:       buildSuggestBudgetSplit(deps.budgetAllocator, o11y),
 	}, nil
 }
 
@@ -336,26 +304,13 @@ func buildSuggestBudgetSplit(allocator usecases.BudgetAllocator, o11y observabil
 }
 
 func buildNotificationChannelGateway(
-	tgCfg configs.TelegramConfig,
 	whatsAppGateway appinterfaces.WhatsAppGateway,
-	o11y observability.Observability,
-) (appinterfaces.OutreachChannelGateway, error) {
+) appinterfaces.OutreachChannelGateway {
 	whatsAppSender := adapters.NewWhatsAppSender(whatsAppGateway)
 	channelSenders := map[string]notification.ChannelSenders{
 		notification.ChannelWhatsApp: whatsAppSender.AsChannelSenders(),
 	}
-	if tgCfg.Enabled {
-		telegramGateway, err := tgoutbound.NewSharedGateway(o11y, tgoutbound.FactoryConfig{
-			APIBaseURL: tgCfg.APIBaseURL,
-			BotToken:   tgCfg.BotToken,
-			Timeout:    tgCfg.OutboundTimeout,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("onboarding: criar telegram outbound gateway: %w", err)
-		}
-		channelSenders[notification.ChannelTelegram] = adapters.NewTelegramSender(telegramGateway).AsChannelSenders()
-	}
-	return notification.NewMultiChannelGateway(channelSenders), nil
+	return notification.NewMultiChannelGateway(channelSenders)
 }
 
 func newWhatsAppMessageProcessor(
@@ -369,18 +324,6 @@ func newWhatsAppMessageProcessor(
 		useCases.startBudgetConfiguration,
 		deps.whatsAppGateway,
 		deps.runtimeCfg.Messages,
-		o11y,
-	)
-}
-
-func newTelegramMessageProcessor(
-	useCases onboardingUseCasesBundle,
-	tgCfg configs.TelegramConfig,
-	o11y observability.Observability,
-) *services.TelegramMessageProcessor {
-	return services.NewTelegramMessageProcessor(
-		useCases.activateTelegram,
-		buildTelegramMessages(tgCfg),
 		o11y,
 	)
 }

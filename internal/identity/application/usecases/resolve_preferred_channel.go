@@ -48,33 +48,21 @@ func (uc *ResolvePreferredChannel) Execute(ctx context.Context, userID uuid.UUID
 func pickPreferred(identities []entities.UserIdentity) (entities.UserIdentity, bool) {
 	var (
 		whatsapp entities.UserIdentity
-		telegram entities.UserIdentity
 		hasWa    bool
-		hasTg    bool
 	)
 	for _, identity := range identities {
 		if !identity.UnlinkedAt().IsZero() {
 			continue
 		}
-		channel := identity.Channel()
-		switch {
-		case channel.IsWhatsApp():
+		if identity.Channel().IsWhatsApp() {
 			if !hasWa || identity.VerifiedAt().After(whatsapp.VerifiedAt()) {
 				whatsapp = identity
 				hasWa = true
-			}
-		case channel.IsTelegram():
-			if !hasTg || identity.VerifiedAt().After(telegram.VerifiedAt()) {
-				telegram = identity
-				hasTg = true
 			}
 		}
 	}
 	if hasWa {
 		return whatsapp, true
-	}
-	if hasTg {
-		return telegram, true
 	}
 	return entities.UserIdentity{}, false
 }

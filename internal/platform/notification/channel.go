@@ -7,10 +7,7 @@ import (
 	"maps"
 )
 
-const (
-	ChannelWhatsApp = "whatsapp"
-	ChannelTelegram = "telegram"
-)
+const ChannelWhatsApp = "whatsapp"
 
 var (
 	ErrUnknownChannel      = errors.New("notification: canal desconhecido")

@@ -2,6 +2,7 @@ package binding
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
+	transactionsinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 )
 
 func parseHITLUserID(raw string) (uuid.UUID, error) {
@@ -94,6 +96,85 @@ func NewLastTransactionEditorExecutor(editor tools.LastTransactionEditor) steps.
 		state.Outcome = int(tools.OutcomeRouted)
 		return state, nil
 	}
+}
+
+func NewDeleteByRefResolver() steps.TargetResolver {
+	return func(_ context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+		if state.TargetTransactionID == "" {
+			return state, fmt.Errorf("hitl: delete_by_ref resolver: no target selected")
+		}
+		state.PromptText = fmt.Sprintf(
+			"Você deseja apagar o lançamento: *%s* de %s? Responda *sim* para confirmar ou *não* para cancelar.",
+			state.TargetDescription,
+			tools.FormatBRL(state.TargetAmountCents),
+		)
+		return state, nil
+	}
+}
+
+func NewDeleteByRefExecutor(deleter tools.LastTransactionDeleter) steps.DestructiveExecutor {
+	return func(ctx context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+		if state.TargetTransactionID == "" {
+			return state, fmt.Errorf("hitl: delete_by_ref executor: no target transaction captured")
+		}
+		if err := deleter.Execute(ctx, state.UserID, state.TargetTransactionID, state.TargetTransactionVersion); err != nil {
+			if reply, ok := versionConflictReply(err); ok {
+				state.ShortCircuit = true
+				state.Reply = reply
+				state.Outcome = int(tools.OutcomeRouted)
+				return state, nil
+			}
+			return state, fmt.Errorf("hitl: delete_by_ref executor: delete: %w", err)
+		}
+		state.Outcome = int(tools.OutcomeRouted)
+		return state, nil
+	}
+}
+
+func NewEditByRefResolver() steps.TargetResolver {
+	return func(_ context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+		if state.TargetTransactionID == "" {
+			return state, fmt.Errorf("hitl: edit_by_ref resolver: no target selected")
+		}
+		state.PromptText = fmt.Sprintf(
+			"Você deseja atualizar *%s* de %s para *%s*? Responda *sim* para confirmar ou *não* para cancelar.",
+			state.TargetDescription,
+			tools.FormatBRL(state.TargetAmountCents),
+			tools.FormatBRL(state.NewAmountCents),
+		)
+		return state, nil
+	}
+}
+
+func NewEditByRefExecutor(editor tools.LastTransactionEditor) steps.DestructiveExecutor {
+	return func(ctx context.Context, state confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+		if state.TargetTransactionID == "" {
+			return state, fmt.Errorf("hitl: edit_by_ref executor: no target transaction captured")
+		}
+		_, execErr := editor.Execute(ctx, tools.EditTransactionInput{
+			UserID:    state.UserID,
+			Current:   tools.TransactionView{ID: state.TargetTransactionID, Version: state.TargetTransactionVersion},
+			NewAmount: state.NewAmountCents,
+		})
+		if execErr != nil {
+			if reply, ok := versionConflictReply(execErr); ok {
+				state.ShortCircuit = true
+				state.Reply = reply
+				state.Outcome = int(tools.OutcomeRouted)
+				return state, nil
+			}
+			return state, fmt.Errorf("hitl: edit_by_ref executor: edit: %w", execErr)
+		}
+		state.Outcome = int(tools.OutcomeRouted)
+		return state, nil
+	}
+}
+
+func versionConflictReply(err error) (string, bool) {
+	if errors.Is(err, transactionsinterfaces.ErrTransactionVersionConflict) {
+		return "Esse lançamento mudou desde que você buscou. Tente de novo, por favor. 🙏", true
+	}
+	return "", false
 }
 
 func NewCardDeleterResolver(lister tools.CardLister) steps.TargetResolver {

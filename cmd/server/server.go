@@ -21,7 +21,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
-	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	onboardingbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
@@ -174,7 +173,6 @@ func Run() error {
 		db,
 		cfg.OnboardingConfig,
 		cfg.WhatsAppConfig,
-		cfg.TelegramConfig,
 		cfg.OutboxConfig,
 		cfg.EmailConfig,
 		identityModule,
@@ -232,7 +230,6 @@ func Run() error {
 		transactionsModule,
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
-		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
 		agent.AgentModuleDeps{
 			SessionStore:    db,
 			OutboxPublisher: identityModule.OutboxPublisher,
@@ -263,18 +260,6 @@ func Run() error {
 	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule, agentModule)
 	srv.RegisterRouters(waWebhookRouter)
 	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
-
-	tgRouter, tgErr := composeTelegramWebhookRouter(cfg, o11y, db, identityModule, onboardingModule, agentModule)
-	if tgErr != nil {
-		return fmt.Errorf("run: compor telegram webhook router: %w", tgErr)
-	}
-	if tgRouter != nil {
-		srv.RegisterRouters(tgRouter)
-		o11y.Logger().Info(ctx, "telegram webhook router wired",
-			observability.String("path", cfg.TelegramConfig.WebhookPath),
-			observability.Int64("bot_id", cfg.TelegramConfig.BotID),
-		)
-	}
 
 	srv.RegisterRouters(health.NewReadinessRouter(ctx))
 
