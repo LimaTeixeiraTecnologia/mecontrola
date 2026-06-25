@@ -1,3 +1,0 @@
-status: done
-report_path: .specs/prd-activation-ux/2.0_execution_report.md
-summary: Email CTA substituído por deep link wa.me — WaMeURL+SupportURL implementados, ActivateURL removido de configs, 6 testes passando

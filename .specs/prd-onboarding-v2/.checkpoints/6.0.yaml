@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-v2/6.0_execution_report.md
-summary: "Lifecycle usecases (AppendOnboardingTurn, LoadOnboardingTurns, MarkWelcomeSent, CompleteOnboardingSession) verificados e expostos em OnboardingModule; teste TestHappyPath_CompletedAtSetAndTurnsCleared adicionado para provar completed_at + recent_turns cleared"
-timestamp: 2026-06-23T12:30:00Z

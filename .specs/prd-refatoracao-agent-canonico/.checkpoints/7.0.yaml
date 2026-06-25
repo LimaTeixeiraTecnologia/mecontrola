@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-refatoracao-agent-canonico/7.0_execution_report.md
-summary: "Implementado editar/apagar por referência com busca ILIKE, desambiguação via HITL (AwaitingSelect), steps resolve_candidates/select_target, tipos fechados OperationDeleteByRef/EditByRef/AwaitingSelect, binding TransactionSearcherAdapter e executors by-ref com mapeamento ErrTransactionVersionConflict"
-timestamp: 2026-06-25T00:00:00Z

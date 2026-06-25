@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-activation-ux/3.0_execution_report.md
-summary: "70/70 testes Playwright passam (14 cenários × 5 viewports); /ativar canonical, /activate redirect, reason-aware errors, countdown e consumed state implementados"
-timestamp: "2026-06-24T10:15:00Z"

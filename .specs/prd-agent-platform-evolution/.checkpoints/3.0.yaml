@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-agent-platform-evolution/3.0_execution_report.md
-summary: Tipos fechados OperationKind e AwaitingApproval + ConfirmState com round-trip JSON criados em internal/agent/domain/confirmation/; 9 testes PASS
-timestamp: 2026-06-24T00:00:00Z

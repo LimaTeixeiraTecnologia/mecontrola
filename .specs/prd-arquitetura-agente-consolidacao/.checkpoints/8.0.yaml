@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-arquitetura-agente-consolidacao/8.0_execution_report.md
-summary: KindQueryIncomeSummary implementado end-to-end — kind, schema, parse, tool fina, binding, registro e injeção; 22 kinds no teste exaustivo; build e suites verdes.
-timestamp: 2026-06-24T00:00:00Z

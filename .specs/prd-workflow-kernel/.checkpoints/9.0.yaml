@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-workflow-kernel/9.0_execution_report.md
-summary: "Suíte de paridade (11 cenários), E2E (3 cenários) e gates R-* todos verdes; flag permanece OFF."
-timestamp: "2026-06-24T00:00:00Z"

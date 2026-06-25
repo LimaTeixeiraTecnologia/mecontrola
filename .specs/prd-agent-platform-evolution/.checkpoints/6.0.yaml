@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-agent-platform-evolution/6.0_execution_report.md
-summary: "Roteamento HITL wired: 3 kinds destrutivos via confirmEngine, continuePendingApproval antes do parse, gate de budget no commit via WithCommitGate"
-timestamp: 2026-06-24T00:00:00Z

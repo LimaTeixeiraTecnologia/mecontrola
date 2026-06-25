@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-arquitetura-agente-consolidacao/5.0_execution_report.md
-summary: RenderSystemPrompt e DefaultRegistry removidos; warnMissingToolBindings agora itera buildToolBindingEntries cobrindo todos os 17 kinds não-conversacionais; teste de paridade adicionado
-timestamp: 2026-06-24T00:00:00Z

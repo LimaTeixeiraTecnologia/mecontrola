@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-arquitetura-agente-consolidacao/6.0_execution_report.md
-summary: AgentModuleOption e With* removidos; AgentModuleDeps explícita adicionada; todos os call-sites e e2e atualizados; build e testes verdes
-timestamp: 2026-06-24T00:00:00Z

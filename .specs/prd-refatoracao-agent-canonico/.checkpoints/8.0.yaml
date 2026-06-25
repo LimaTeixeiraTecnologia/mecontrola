@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-refatoracao-agent-canonico/8.0_execution_report.md
-summary: "Task 8.0 implementada: IntentPlan/PlanExecutor (tipos fechados DMMF), migration 000021 (step_index), ParseInboundOutput.Plan, dispatchPlan em DailyLedgerAgent; 11 testes novos passando, zero regressões."
-timestamp: "2026-06-25T00:00:00Z"

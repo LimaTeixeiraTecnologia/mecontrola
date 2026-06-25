@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-v2/2.0_execution_report.md
-summary: "OnboardingTurn + campos WelcomeSentAt/CompletedAt/ObjectiveProfile/RecentTurns + métodos With* puros implementados e testados (15 testes pass)"
-timestamp: 2026-06-23T00:00:00Z

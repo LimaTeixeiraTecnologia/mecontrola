@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-arquitetura-agente-consolidacao/2.0_execution_report.md
-summary: Consolidado pending step no snapshot do kernel; removidos legacy path, PendingExpenseConfirmationGateway e helpers duplicados
-timestamp: 2026-06-24T00:00:00Z

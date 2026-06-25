@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-arquitetura-agente-consolidacao/1.0_execution_report.md
-summary: "kernel como caminho padrão: TransactionsWriteEnabled=true, attachKernel retorna erro, dispatchWrite sem ramo legacy para destrutivos, testes atualizados"
-timestamp: "2026-06-24T00:00:00Z"

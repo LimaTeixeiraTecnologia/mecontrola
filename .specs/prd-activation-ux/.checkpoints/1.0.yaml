@@ -1,3 +1,0 @@
-status: done
-report_path: .specs/prd-activation-ux/1.0_execution_report.md
-summary: API de estado do token estendida com reason e support_url em todos os estados; consumed inclui wa_me_url e bot_number_display; todos os testes passam

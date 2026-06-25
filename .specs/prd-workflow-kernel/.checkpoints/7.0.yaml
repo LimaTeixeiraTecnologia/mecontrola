@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-workflow-kernel/7.0_execution_report.md
-summary: "Passos e Definition transactions_write implementados; WriteGuard 1:1, suspend/resume, testes passing, gates verdes"
-timestamp: "2026-06-24T13:36:50Z"

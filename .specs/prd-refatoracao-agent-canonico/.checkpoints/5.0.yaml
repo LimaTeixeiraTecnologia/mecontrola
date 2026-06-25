@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-refatoracao-agent-canonico/5.0_execution_report.md
-summary: "Remove eventos órfãos agent.intent.*, budgets.budget_activated.v1 e transactions.recurring_template.* sem consumer; mantém external.expense.v1, onboarding.splits_calculated, onboarding.card_registered e transactions.card_purchase.deleted.v1"
-timestamp: 2026-06-25T00:00:00Z
