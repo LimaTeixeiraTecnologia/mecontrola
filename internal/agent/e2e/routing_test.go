@@ -175,19 +175,29 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 		"quais minhas recorrências?":      listRecurringIntent,
 	}, nil)
 
+	lister := agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC)
+	lastEditor := agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC)
+	lastDeleter := agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC)
+	cardLister := cardModule.ListCardsUC
+	cardDeleter := agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC)
+
+	kernelDeps, _, err := buildConfirmKernelDeps(o11y, mgr, cfg, lister, lastEditor, lastDeleter, cardLister, cardDeleter)
+	require.NoError(t, err)
+
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:            stubParser,
 		ExpenseRecorder:   agentbinding.NewTransactionLoggerAdapter(logTx),
 		CardPurchaseLog:   agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
-		TransactionLister: agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC),
-		LastDeleter:       agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC),
-		LastEditor:        agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC),
+		TransactionLister: lister,
+		LastDeleter:       lastDeleter,
+		LastEditor:        lastEditor,
 		RecurringCreator:  agentbinding.NewRecurringCreatorAdapter(createRecurring),
 		RecurringLister:   agentbinding.NewRecurringListerAdapter(txModule.ListRecurringTemplatesUC),
 		Fallback:          &StubFallback{},
 		WhatsAppGateway:   gateway,
 		Location:          time.UTC,
+		Kernel:            kernelDeps,
 	})
 	require.NoError(t, err)
 
@@ -227,8 +237,14 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	edited := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "na verdade foram 80 reais", WhatsAppTo: "+5511900000099", MessageID: "wamid.edit.1",
 	})
-	require.Equal(t, tools.OutcomeRouted, edited.Outcome, "edição deve funcionar; reply=%s", edited.Reply)
-	require.Contains(t, edited.Reply, "atualizado")
+	require.Equal(t, tools.OutcomeClarify, edited.Outcome, "edição deve pedir confirmação; reply=%s", edited.Reply)
+	require.Contains(t, edited.Reply, "atualizar")
+
+	editConfirm := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
+		Text: "sim", WhatsAppTo: "+5511900000099", MessageID: "wamid.edit.2",
+	})
+	require.Equal(t, tools.OutcomeRouted, editConfirm.Outcome, "confirmação de edição deve executar; reply=%s", editConfirm.Reply)
+	require.Contains(t, editConfirm.Reply, "atualizado")
 	var editedCents int64
 	require.NoError(t, db.QueryRowContext(ctx,
 		"SELECT amount_cents FROM mecontrola.transactions WHERE user_id = $1 AND deleted_at IS NULL ORDER BY occurred_at DESC, created_at DESC LIMIT 1", userID,
@@ -238,8 +254,14 @@ func TestAgentRouter_NewCapabilities_Integration(t *testing.T) {
 	deleted := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
 		Text: "apaga o último lançamento", WhatsAppTo: "+5511900000099", MessageID: "wamid.del.1",
 	})
-	require.Equal(t, tools.OutcomeRouted, deleted.Outcome, "exclusão deve funcionar; reply=%s", deleted.Reply)
-	require.Contains(t, deleted.Reply, "excluído")
+	require.Equal(t, tools.OutcomeClarify, deleted.Outcome, "exclusão deve pedir confirmação; reply=%s", deleted.Reply)
+	require.Contains(t, deleted.Reply, "apagar")
+
+	deleteConfirm := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
+		Text: "sim", WhatsAppTo: "+5511900000099", MessageID: "wamid.del.2",
+	})
+	require.Equal(t, tools.OutcomeRouted, deleteConfirm.Outcome, "confirmação de exclusão deve executar; reply=%s", deleteConfirm.Reply)
+	require.Contains(t, deleteConfirm.Reply, "apagado")
 	var activeCount int
 	require.NoError(t, db.QueryRowContext(ctx,
 		"SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1 AND deleted_at IS NULL", userID,

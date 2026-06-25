@@ -48,6 +48,18 @@ func buildDestructiveConfirmDefWithTTL(ttl time.Duration) platform.Definition[co
 	})
 }
 
+type stubOnboardingRunner struct {
+	handled bool
+	reply   string
+	err     error
+	calls   int
+}
+
+func (r *stubOnboardingRunner) Run(_ context.Context, _ uuid.UUID, _, _ string) (services.OnboardingTurnResult, error) {
+	r.calls++
+	return services.OnboardingTurnResult{Handled: r.handled, Reply: r.reply}, r.err
+}
+
 type HITLRoutingSuite struct {
 	suite.Suite
 	ctx context.Context
@@ -132,11 +144,10 @@ func (s *HITLRoutingSuite) buildRouter(intentVal intent.Intent, confirmDef platf
 	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, obs)
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: intentVal},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: intentVal},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -208,11 +219,10 @@ func (s *HITLRoutingSuite) TestDestructiveKind_SecondMessage_Confirm_Executes() 
 	peer := "+5511999"
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: intent.NewDeleteLastTransaction()},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: intent.NewDeleteLastTransaction()},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -247,11 +257,10 @@ func (s *HITLRoutingSuite) TestDestructiveKind_SecondMessage_Cancel_DoesNotExecu
 	peer := "+5511999"
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: intent.NewDeleteLastTransaction()},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: intent.NewDeleteLastTransaction()},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -294,12 +303,11 @@ func (s *HITLRoutingSuite) TestNonDestructiveKind_NoGate() {
 	}
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: expenseIntent},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
-		ExpenseRecorder:            expenseLogger,
+		Parser:          &fakeParser{intent: expenseIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		ExpenseRecorder: expenseLogger,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -331,12 +339,11 @@ func (s *HITLRoutingSuite) TestDestructiveKind_Expired_FallThrough() {
 	}
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: deleteIntent},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
-		ExpenseRecorder:            expenseLogger,
+		Parser:          &fakeParser{intent: deleteIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		ExpenseRecorder: expenseLogger,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -400,11 +407,10 @@ func (s *HITLRoutingSuite) TestDestructiveKind_EditLast_PassesNewAmount() {
 	s.Require().NoError(err)
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: editIntent},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: editIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: platform.NewEngine[confirmation.ConfirmState](store, obs),
 			ConfirmDef:    confirmDef,
@@ -454,11 +460,10 @@ func (s *HITLRoutingSuite) TestDestructiveKind_DeleteCard_PassesCardName() {
 	s.Require().NoError(err)
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: deleteCardIntent},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: deleteCardIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: platform.NewEngine[confirmation.ConfirmState](store, obs),
 			ConfirmDef:    confirmDef,
@@ -477,6 +482,71 @@ func (s *HITLRoutingSuite) TestDestructiveKind_DeleteCard_PassesCardName() {
 	s.Equal("Nubank", capturedState.CardName)
 }
 
+func (s *HITLRoutingSuite) TestHITLResumeWinsWithPassiveOnboardingRunner() {
+	obs := fake.NewProvider()
+	store := newE2EStore()
+	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, obs)
+	confirmDef := buildDestructiveConfirmDef(nil, true)
+	onboarding := &stubOnboardingRunner{handled: false}
+
+	userID := uuid.New()
+	peer := "+5511999"
+
+	deps := services.IntentRouterDeps{
+		Parser:           &fakeParser{intent: intent.NewDeleteLastTransaction()},
+		OnboardingRunner: onboarding,
+		Fallback:         &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:  s.wa,
+		Location:         time.UTC,
+		Kernel: &services.KernelDeps{
+			ConfirmEngine: confirmEngine,
+			ConfirmDef:    confirmDef,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	first := router.RouteWhatsApp(s.ctx, services.Principal{UserID: userID},
+		services.InboundMessage{Text: "apagar último lançamento", WhatsAppTo: peer})
+	s.Equal(tools.OutcomeClarify, first.Outcome)
+
+	second := router.RouteWhatsApp(s.ctx, services.Principal{UserID: userID},
+		services.InboundMessage{Text: "sim", WhatsAppTo: peer})
+	s.Equal(tools.OutcomeRouted, second.Outcome, "onboarding passivo não pode engolir o resume do gate HITL")
+	s.Contains(second.Reply, "apagado")
+	s.Equal(2, onboarding.calls, "onboarding runner é consultado mas não intercepta usuário pós-onboarding")
+}
+
+func (s *HITLRoutingSuite) TestActiveOnboardingTakesPriorityOverDestructiveGate() {
+	obs := fake.NewProvider()
+	store := newE2EStore()
+	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, obs)
+	confirmDef := buildDestructiveConfirmDef(nil, true)
+	onboarding := &stubOnboardingRunner{handled: true, reply: "vamos terminar seu cadastro primeiro"}
+
+	deps := services.IntentRouterDeps{
+		Parser:           &fakeParser{intent: intent.NewDeleteLastTransaction()},
+		OnboardingRunner: onboarding,
+		Fallback:         &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:  s.wa,
+		Location:         time.UTC,
+		Kernel: &services.KernelDeps{
+			ConfirmEngine: confirmEngine,
+			ConfirmDef:    confirmDef,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	result := router.RouteWhatsApp(s.ctx, services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "apagar último lançamento", WhatsAppTo: "+5511999"})
+
+	s.Equal(tools.OutcomeRouted, result.Outcome)
+	s.Equal(intent.KindConfigureBudget, result.Kind, "onboarding ativo deve responder antes de qualquer gate destrutivo")
+	s.Equal("vamos terminar seu cadastro primeiro", result.Reply)
+	s.Equal(1, onboarding.calls)
+}
+
 func (s *HITLRoutingSuite) TestDestructiveKind_AmbiguousRepromptCycle() {
 	obs := fake.NewProvider()
 	store := newE2EStore()
@@ -486,11 +556,10 @@ func (s *HITLRoutingSuite) TestDestructiveKind_AmbiguousRepromptCycle() {
 	deleteIntent := intent.NewDeleteLastTransaction()
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: deleteIntent},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: deleteIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,

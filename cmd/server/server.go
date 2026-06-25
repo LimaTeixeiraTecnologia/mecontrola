@@ -233,25 +233,27 @@ func Run() error {
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
 		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
-		agent.WithSessionStore(db),
-		agent.WithOutboxPublisher(identityModule.OutboxPublisher),
-		agent.WithOnboardingLLM(agent.OnboardingLLMUseCases{
-			GetContext:       onboardingModule.GetOnboardingContext,
-			SaveObjective:    onboardingModule.SaveOnboardingObjective,
-			SaveIncome:       onboardingModule.SaveOnboardingIncome,
-			SaveCard:         onboardingModule.SaveOnboardingCard,
-			SaveBudgetSplits: onboardingModule.SaveOnboardingBudgetSplits,
-			MarkFirstTx:      onboardingModule.MarkFirstTransactionRecorded,
-			Complete:         onboardingModule.CompleteOnboardingSession,
-			SetPhase:         onboardingModule.SetOnboardingPhase,
-			AppendTurn:       onboardingModule.AppendOnboardingTurn,
-			LoadTurns:        onboardingModule.LoadOnboardingTurns,
-			MarkWelcomeSent:  onboardingModule.MarkWelcomeSent,
-			SuggestBudgetSplit: onbusecases.NewSuggestBudgetSplit(
-				onboardingbinding.NewBudgetAllocatorBinding(budgetsModule.SuggestAllocationUC),
-				o11y,
-			),
-		}),
+		agent.AgentModuleDeps{
+			SessionStore:    db,
+			OutboxPublisher: identityModule.OutboxPublisher,
+			OnboardingLLM: &agent.OnboardingLLMUseCases{
+				GetContext:       onboardingModule.GetOnboardingContext,
+				SaveObjective:    onboardingModule.SaveOnboardingObjective,
+				SaveIncome:       onboardingModule.SaveOnboardingIncome,
+				SaveCard:         onboardingModule.SaveOnboardingCard,
+				SaveBudgetSplits: onboardingModule.SaveOnboardingBudgetSplits,
+				MarkFirstTx:      onboardingModule.MarkFirstTransactionRecorded,
+				Complete:         onboardingModule.CompleteOnboardingSession,
+				SetPhase:         onboardingModule.SetOnboardingPhase,
+				AppendTurn:       onboardingModule.AppendOnboardingTurn,
+				LoadTurns:        onboardingModule.LoadOnboardingTurns,
+				MarkWelcomeSent:  onboardingModule.MarkWelcomeSent,
+				SuggestBudgetSplit: onbusecases.NewSuggestBudgetSplit(
+					onboardingbinding.NewBudgetAllocatorBinding(budgetsModule.SuggestAllocationUC),
+					o11y,
+				),
+			},
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agent: %w", err)

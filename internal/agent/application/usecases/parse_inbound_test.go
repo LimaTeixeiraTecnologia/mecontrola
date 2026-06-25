@@ -190,6 +190,23 @@ func (s *ParseInboundSuite) TestExecuteAllKinds() { //nolint:revive // tabela ex
 			llmJSON: `{"kind":"list_cards"}`,
 			want:    intent.KindListCards,
 		},
+		{
+			name:    "query_income_summary_with_ref_month",
+			llmJSON: `{"kind":"query_income_summary","ref_month":"2026-06"}`,
+			want:    intent.KindQueryIncomeSummary,
+			check: func(got intent.Intent) {
+				s.Equal("2026-06", got.RefMonth())
+				s.False(got.Kind().IsWrite())
+			},
+		},
+		{
+			name:    "query_income_summary_no_ref_month",
+			llmJSON: `{"kind":"query_income_summary"}`,
+			want:    intent.KindQueryIncomeSummary,
+			check: func(got intent.Intent) {
+				s.Empty(got.RefMonth())
+			},
+		},
 	}
 
 	for _, tc := range cases {

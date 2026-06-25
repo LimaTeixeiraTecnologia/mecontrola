@@ -203,8 +203,10 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		budgetsModule,
 		onboardingModule.WhatsAppGateway,
 		agentonboarding.NewBudgetConfiguratorAdapter(onboardingModule.StartBudgetConfiguration),
-		agent.WithSessionStore(r.db),
-		agent.WithOutboxPublisher(identityModule.OutboxPublisher),
+		agent.AgentModuleDeps{
+			SessionStore:    r.db,
+			OutboxPublisher: identityModule.OutboxPublisher,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo agent: %w", err)

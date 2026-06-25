@@ -25,6 +25,11 @@ Funcionalidade: Escritas determinísticas do agente financeiro via WhatsApp
     E o número de transações do usuário aumentou em 1
     Quando o usuário envia "na verdade foi 80" via webhook
     Então a resposta HTTP deve ter status 200
+    E o gateway respondeu ao usuário
+    E a resposta do gateway contém "Você deseja atualizar"
+    Quando o usuário envia "sim" via webhook
+    Então a resposta HTTP deve ter status 200
+    E o gateway respondeu ao usuário
     E o valor da última transação do usuário deve ser 8000
     E a versão da última transação do usuário deve ser pelo menos 1
     E o evento "transactions.transaction.updated.v1" deve estar no outbox do usuário
@@ -38,6 +43,11 @@ Funcionalidade: Escritas determinísticas do agente financeiro via WhatsApp
     E o número de transações do usuário aumentou em 1
     Quando o usuário envia "apaga o último" via webhook
     Então a resposta HTTP deve ter status 200
+    E o gateway respondeu ao usuário
+    E a resposta do gateway contém "Você deseja apagar"
+    Quando o usuário envia "sim" via webhook
+    Então a resposta HTTP deve ter status 200
+    E o gateway respondeu ao usuário
     E a última transação do usuário deve estar excluída
     E o número de transações ativas do usuário diminuiu em 1
     E o evento "transactions.transaction.deleted.v1" deve estar no outbox do usuário

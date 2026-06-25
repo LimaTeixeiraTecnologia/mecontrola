@@ -24,12 +24,11 @@ type KindTool struct {
 
 type composite struct {
 	id     string
-	guard  *WriteGuard
 	byKind map[intent.Kind]tools.Tool
 	order  []intent.Kind
 }
 
-func NewIntentWorkflow(id string, guard *WriteGuard, bindings ...KindTool) (IntentWorkflow, error) {
+func NewIntentWorkflow(id string, bindings ...KindTool) (IntentWorkflow, error) {
 	if id == "" {
 		return nil, ErrWorkflowIDEmpty
 	}
@@ -54,7 +53,7 @@ func NewIntentWorkflow(id string, guard *WriteGuard, bindings ...KindTool) (Inte
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	return &composite{id: id, guard: guard, byKind: byKind, order: order}, nil
+	return &composite{id: id, byKind: byKind, order: order}, nil
 }
 
 func (c *composite) ID() string {
@@ -72,16 +71,5 @@ func (c *composite) Execute(ctx context.Context, in tools.ToolInput) (tools.Tool
 	if !ok {
 		return tools.ToolResult{Kind: kind, Outcome: tools.OutcomeUsecaseError}, fmt.Errorf("workflow=%q kind=%q: %w", c.id, kind.String(), ErrKindNotHandled)
 	}
-	if !kind.IsWrite() || c.guard == nil {
-		return tool.Execute(ctx, in)
-	}
-	decision, blocked, settle := c.guard.Apply(ctx, in)
-	if decision == GuardShortCircuit {
-		return blocked, nil
-	}
-	result, err := tool.Execute(ctx, in)
-	if settle != nil && err == nil {
-		settle(ctx, result.Outcome == tools.OutcomeRouted)
-	}
-	return result, err
+	return tool.Execute(ctx, in)
 }

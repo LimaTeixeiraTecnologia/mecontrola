@@ -427,6 +427,8 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 			CategoryName: dto.CategoryName,
 			Percentage:   dto.Percentage,
 		})
+	case intent.KindQueryIncomeSummary:
+		return intent.NewQueryIncomeSummary(dto.RefMonth)
 	case intent.KindUnknown:
 		raw := dto.RawText
 		if strings.TrimSpace(raw) == "" {

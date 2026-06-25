@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
@@ -20,6 +22,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	uowmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow/mocks"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type stubExpenseLogger struct {
@@ -29,6 +32,43 @@ type stubExpenseLogger struct {
 func (s *stubExpenseLogger) Execute(_ context.Context, _ tools.ExpenseRecorderInput) (tools.ExpenseRecorderResult, error) {
 	s.calls++
 	return tools.ExpenseRecorderResult{Persisted: true, AmountCents: 5800, CategoryPath: "Prazeres"}, nil
+}
+
+type replayTestStore struct {
+	mu   sync.Mutex
+	runs map[string]platform.Snapshot
+}
+
+func newReplayTestStore() *replayTestStore {
+	return &replayTestStore{runs: make(map[string]platform.Snapshot)}
+}
+
+func (s *replayTestStore) key(wf, k string) string { return wf + ":" + k }
+
+func (s *replayTestStore) Insert(_ context.Context, snap platform.Snapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runs[s.key(snap.Workflow, snap.CorrelationKey)] = snap
+	return nil
+}
+
+func (s *replayTestStore) Load(_ context.Context, wf, k string) (platform.Snapshot, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap, ok := s.runs[s.key(wf, k)]
+	return snap, ok, nil
+}
+
+func (s *replayTestStore) Save(_ context.Context, snap platform.Snapshot, _ int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runs[s.key(snap.Workflow, snap.CorrelationKey)] = snap
+	return nil
+}
+
+func (s *replayTestStore) AppendStep(_ context.Context, _ platform.StepRecord) error { return nil }
+func (s *replayTestStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (int64, error) {
+	return 0, nil
 }
 
 type DailyLedgerWriteSuite struct {
@@ -57,10 +97,36 @@ func (s *DailyLedgerWriteSuite) SetupTest() {
 
 func (s *DailyLedgerWriteSuite) buildAgent(factory agentinterfaces.AgentDecisionRepositoryFactory, unit *uowmocks.UnitOfWork) *DailyLedgerAgent {
 	counter := func() observability.Counter { return s.obs.Metrics().Counter("agent_test_counter", "", "1") }
+	store := newReplayTestStore()
+	engine := platform.NewEngine[steps.ExpenseState](store, s.obs)
+	settleReg := NewSettleRegistry()
+	expenses := s.expenses
 	deps := IntentRouterDeps{
-		ExpenseRecorder:     s.expenses,
+		ExpenseRecorder:     expenses,
 		PolicyMinConfidence: 0.8,
 		Decision:            DecisionAuditDeps{Factory: factory, UoW: unit},
+		Kernel: &KernelDeps{
+			Engine:    engine,
+			SettleReg: settleReg,
+			CategoryResolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+				st.CategoryID = "prazeres"
+				st.CategoryPath = "Prazeres"
+				return st, nil
+			},
+			PersistFn: func(ctx context.Context, st steps.ExpenseState) (steps.PersistResult, error) {
+				res, err := expenses.Execute(ctx, tools.ExpenseRecorderInput{
+					UserID:        st.UserID.String(),
+					AmountCents:   st.AmountCents,
+					Merchant:      st.Merchant,
+					PaymentMethod: st.PaymentMethod,
+					Direction:     st.Direction,
+				})
+				if err != nil {
+					return steps.PersistResult{}, err
+				}
+				return steps.PersistResult{AmountCents: res.AmountCents, CategoryPath: res.CategoryPath}, nil
+			},
+		},
 	}
 	agent, err := newDailyLedgerAgent(s.obs, counter(), counter(), counter(), counter(), time.UTC, deps)
 	s.Require().NoError(err)

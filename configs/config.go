@@ -648,7 +648,7 @@ func (l *configLoader) setAuthRateLimitDefaults() {
 }
 
 func (l *configLoader) setWorkflowKernelDefaults() {
-	l.v.SetDefault("WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED", false)
+	l.v.SetDefault("WORKFLOW_KERNEL_TRANSACTIONS_WRITE_ENABLED", true)
 	l.v.SetDefault("WORKFLOW_KERNEL_MAX_ATTEMPTS", 3)
 	l.v.SetDefault("WORKFLOW_KERNEL_RETRY_BASE_BACKOFF", 200*time.Millisecond)
 	l.v.SetDefault("WORKFLOW_KERNEL_RETRY_MAX_BACKOFF", 5*time.Second)

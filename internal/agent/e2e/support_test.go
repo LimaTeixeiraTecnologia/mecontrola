@@ -4,24 +4,40 @@ package e2e_test
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
+	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	agentwf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	agentvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
+	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
+	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
+	identityauth "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 	identityrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
+	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	wfpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
 )
 
 type Reply struct {
@@ -98,12 +114,12 @@ func (g *CapturingTelegramGateway) Reset() {
 
 type parserAdapter struct{ uc *usecases.ParseInbound }
 
-func (a *parserAdapter) Parse(ctx context.Context, userID uuid.UUID, text string) (services.ParsedIntent, error) {
+func (a *parserAdapter) Parse(ctx context.Context, userID uuid.UUID, text string) (appservices.ParsedIntent, error) {
 	out, err := a.uc.Execute(ctx, usecases.ParseInboundInput{UserID: userID, Text: text})
 	if err != nil {
-		return services.ParsedIntent{}, err
+		return appservices.ParsedIntent{}, err
 	}
-	return services.ParsedIntent{Intent: out.Intent, Confidence: out.Confidence, Raw: out.Raw}, nil
+	return appservices.ParsedIntent{Intent: out.Intent, Confidence: out.Confidence, Raw: out.Raw}, nil
 }
 
 func fullConfidence() agentvo.Confidence {
@@ -124,15 +140,15 @@ func NewStubParser(table map[string]intent.Intent, defaultFn func() intent.Inten
 	return &StubParser{table: table, defaultFn: defaultFn}
 }
 
-func (s *StubParser) Parse(_ context.Context, _ uuid.UUID, text string) (services.ParsedIntent, error) {
+func (s *StubParser) Parse(_ context.Context, _ uuid.UUID, text string) (appservices.ParsedIntent, error) {
 	if in, ok := s.table[text]; ok {
-		return services.ParsedIntent{Intent: in, Confidence: fullConfidence()}, nil
+		return appservices.ParsedIntent{Intent: in, Confidence: fullConfidence()}, nil
 	}
 	if s.defaultFn != nil {
-		return services.ParsedIntent{Intent: s.defaultFn(), Confidence: fullConfidence()}, nil
+		return appservices.ParsedIntent{Intent: s.defaultFn(), Confidence: fullConfidence()}, nil
 	}
 	unknown, _ := intent.NewUnknown(text)
-	return services.ParsedIntent{Intent: unknown, Confidence: fullConfidence()}, nil
+	return appservices.ParsedIntent{Intent: unknown, Confidence: fullConfidence()}, nil
 }
 
 type StubFallback struct {
@@ -211,3 +227,94 @@ func (noopV2Session) Save(_ context.Context, _ uuid.UUID, _ string, _ onboarding
 	return nil
 }
 func (noopV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error { return nil }
+
+type fakeSplitSuggester struct{}
+
+func (fakeSplitSuggester) Suggest(_ context.Context, _ uuid.UUID, _, _ string, incomeCents int64) ([]onbusecases.SuggestBudgetSplitView, error) {
+	return []onbusecases.SuggestBudgetSplitView{
+		{RootSlug: "expense.custo_fixo", BasisPoints: 3500, PlannedCents: incomeCents * 35 / 100},
+		{RootSlug: "expense.conhecimento", BasisPoints: 1000, PlannedCents: incomeCents * 10 / 100},
+		{RootSlug: "expense.prazeres", BasisPoints: 2000, PlannedCents: incomeCents * 20 / 100},
+		{RootSlug: "expense.metas", BasisPoints: 1500, PlannedCents: incomeCents * 15 / 100},
+		{RootSlug: "expense.liberdade_financeira", BasisPoints: 2000, PlannedCents: incomeCents * 20 / 100},
+	}, nil
+}
+
+func buildConfirmKernelDeps(
+	o11y observability.Observability,
+	db *sqlx.DB,
+	cfg *configs.Config,
+	lister tools.TransactionLister,
+	lastEditor tools.LastTransactionEditor,
+	lastDeleter tools.LastTransactionDeleter,
+	cardLister tools.CardLister,
+	cardDeleter tools.CardDeleter,
+) (*appservices.KernelDeps, *appservices.SettleRegistry, error) {
+	decisionRepoFact := agentrepo.NewDecisionRepositoryFactory(o11y)
+	decisionUoW := uow.NewUnitOfWork(db)
+	wfStoreFactory := wfpostgres.NewStoreFactory(o11y)
+	store := wfStoreFactory.Store(db)
+	settleReg := appservices.NewSettleRegistry()
+
+	retryPolicy := platform.RetryPolicy{
+		MaxAttempts: cfg.WorkflowKernelConfig.MaxAttempts,
+		BaseBackoff: cfg.WorkflowKernelConfig.RetryBaseBackoff,
+		MaxBackoff:  cfg.WorkflowKernelConfig.RetryMaxBackoff,
+	}
+
+	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, o11y)
+
+	redactor, err := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("sanitizer: %w", err)
+	}
+	decisionDeps := appservices.DecisionAuditDeps{Factory: decisionRepoFact, UoW: decisionUoW}
+
+	targets := map[confirmation.OperationKind]steps.TargetResolver{
+		confirmation.OperationDeleteLast: agentbinding.NewLastTransactionDeleterResolver(lister),
+		confirmation.OperationEditLast:   agentbinding.NewLastTransactionEditorResolver(lister),
+		confirmation.OperationDeleteCard: agentbinding.NewCardDeleterResolver(cardLister),
+	}
+	executors := map[confirmation.OperationKind]steps.DestructiveExecutor{
+		confirmation.OperationDeleteLast: agentbinding.NewLastTransactionDeleterExecutor(lastDeleter),
+		confirmation.OperationEditLast:   agentbinding.NewLastTransactionEditorExecutor(lastEditor),
+		confirmation.OperationDeleteCard: agentbinding.NewCardDeleterExecutorFn(cardDeleter),
+	}
+
+	confirmDef := agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
+		Authorize: func(ctx context.Context, state confirmation.ConfirmState) bool {
+			principal, ok := identityauth.FromContext(ctx)
+			if !ok {
+				return false
+			}
+			uid, err := uuid.Parse(state.UserID)
+			if err != nil {
+				return false
+			}
+			return uid != uuid.Nil && principal.UserID == uid
+		},
+		Replay:     appservices.NewConfirmReplayFunc(o11y, decisionDeps, redactor),
+		Policy:     func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: appservices.NewConfirmAuditBeginFunc(o11y, decisionDeps, redactor),
+		OnSettle: func(id uuid.UUID, fn steps.ConfirmAuditSettleFunc) {
+			settleReg.Register(id, func(ctx context.Context, executed bool) { fn(ctx, executed) })
+		},
+		Targets:        targets,
+		Executors:      executors,
+		TTL:            10 * time.Minute,
+		DenyReply:      "Não consegui concluir essa ação agora. Tente de novo em instantes 🙏",
+		ReplayReply:    "Essa mensagem já foi processada ✅",
+		AuditFailReply: "Não foi possível processar sua mensagem agora. Pode tentar de novo em instantes? 🙏",
+		RetryPolicy:    retryPolicy,
+		MaxAttempts:    cfg.WorkflowKernelConfig.MaxAttempts,
+		Observability:  o11y,
+	})
+
+	return &appservices.KernelDeps{
+		SettleReg:     settleReg,
+		ConfirmEngine: confirmEngine,
+		ConfirmDef:    confirmDef,
+		RetryPolicy:   retryPolicy,
+		MaxAttempts:   cfg.WorkflowKernelConfig.MaxAttempts,
+	}, settleReg, nil
+}

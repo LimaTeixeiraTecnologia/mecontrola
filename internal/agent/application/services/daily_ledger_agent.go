@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -71,84 +69,84 @@ func (r *SettleRegistry) pop(id uuid.UUID) (steps.AuditSettleFunc, bool) {
 }
 
 type DailyLedgerAgent struct {
-	parser                     IntentParser
-	monthlySummary             tools.MonthlySummaryReader
-	cardLister                 tools.CardLister
-	cardInvoice                tools.CardInvoiceReader
-	cardCreator                tools.CardCreator
-	cardCounter                tools.CardCounter
-	cardUpdater                tools.CardUpdater
-	cardDeleter                tools.CardDeleter
-	categoryPercentageEditor   tools.CategoryPercentageEditor
-	expenseRecorder            tools.ExpenseRecorder
-	cardPurchaseLog            tools.CardPurchaseLogger
-	transactionLister          tools.TransactionLister
-	lastDeleter                tools.LastTransactionDeleter
-	lastEditor                 tools.LastTransactionEditor
-	recurringCreator           tools.RecurringCreator
-	recurringLister            tools.RecurringLister
-	budgetConfig               tools.BudgetConfigurator
-	budgetConvo                tools.BudgetConversation
-	budgetCommitter            tools.BudgetConfigCommitter
-	budgetSession              tools.BudgetSessionGateway
-	pendingExpenseConfirmation tools.PendingExpenseConfirmationGateway
-	fallback                   tools.Fallback
-	auditor                    *decisionAuditor
-	policy                     domainservices.PolicyEvaluator
-	o11y                       observability.Observability
-	routedTotal                observability.Counter
-	authzDeniedTotal           observability.Counter
-	policyBlockedTotal         observability.Counter
-	idempotencyReplayTotal     observability.Counter
-	loc                        *time.Location
-	registry                   *workflow.IntentRegistry
-	recorder                   *tools.Recorder
-	clarification              *tools.ClarificationResolver
-	budgetRunner               *tools.BudgetSessionRunner
-	conversational             *tools.Conversational
-	kernelEnabled              bool
-	kernelEngine               platform.Engine[steps.ExpenseState]
-	kernelDef                  platform.Definition[steps.ExpenseState]
-	settleReg                  *SettleRegistry
-	confirmEngine              platform.Engine[confirmation.ConfirmState]
-	confirmDef                 platform.Definition[confirmation.ConfirmState]
+	parser                   IntentParser
+	monthlySummary           tools.MonthlySummaryReader
+	cardLister               tools.CardLister
+	cardInvoice              tools.CardInvoiceReader
+	cardCreator              tools.CardCreator
+	cardCounter              tools.CardCounter
+	cardUpdater              tools.CardUpdater
+	cardDeleter              tools.CardDeleter
+	categoryPercentageEditor tools.CategoryPercentageEditor
+	expenseRecorder          tools.ExpenseRecorder
+	cardPurchaseLog          tools.CardPurchaseLogger
+	transactionLister        tools.TransactionLister
+	incomeSummaryReader      tools.IncomeSummaryReader
+	lastDeleter              tools.LastTransactionDeleter
+	lastEditor               tools.LastTransactionEditor
+	recurringCreator         tools.RecurringCreator
+	recurringLister          tools.RecurringLister
+	budgetConfig             tools.BudgetConfigurator
+	budgetConvo              tools.BudgetConversation
+	budgetCommitter          tools.BudgetConfigCommitter
+	budgetSession            tools.BudgetSessionGateway
+	fallback                 tools.Fallback
+	auditor                  *decisionAuditor
+	policy                   domainservices.PolicyEvaluator
+	o11y                     observability.Observability
+	routedTotal              observability.Counter
+	authzDeniedTotal         observability.Counter
+	policyBlockedTotal       observability.Counter
+	idempotencyReplayTotal   observability.Counter
+	loc                      *time.Location
+	registry                 *workflow.IntentRegistry
+	recorder                 *tools.Recorder
+	clarification            *tools.ClarificationResolver
+	budgetRunner             *tools.BudgetSessionRunner
+	conversational           *tools.Conversational
+	kernelEnabled            bool
+	kernelEngine             platform.Engine[steps.ExpenseState]
+	kernelDef                platform.Definition[steps.ExpenseState]
+	settleReg                *SettleRegistry
+	confirmEngine            platform.Engine[confirmation.ConfirmState]
+	confirmDef               platform.Definition[confirmation.ConfirmState]
 }
 
 func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) (*DailyLedgerAgent, error) {
 	agent := &DailyLedgerAgent{
-		parser:                     deps.Parser,
-		monthlySummary:             deps.MonthlySummary,
-		cardLister:                 deps.CardLister,
-		cardInvoice:                deps.CardInvoice,
-		cardCreator:                deps.CardCreator,
-		cardCounter:                deps.CardCounter,
-		cardUpdater:                deps.CardUpdater,
-		cardDeleter:                deps.CardDeleter,
-		categoryPercentageEditor:   deps.CategoryPercentageEditor,
-		expenseRecorder:            deps.ExpenseRecorder,
-		cardPurchaseLog:            deps.CardPurchaseLog,
-		transactionLister:          deps.TransactionLister,
-		lastDeleter:                deps.LastDeleter,
-		lastEditor:                 deps.LastEditor,
-		recurringCreator:           deps.RecurringCreator,
-		recurringLister:            deps.RecurringLister,
-		budgetConfig:               deps.BudgetConfig,
-		budgetConvo:                deps.BudgetConvo,
-		budgetCommitter:            deps.BudgetCommitter,
-		budgetSession:              deps.BudgetSession,
-		pendingExpenseConfirmation: deps.PendingExpenseConfirmation,
-		fallback:                   deps.Fallback,
-		auditor:                    newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
-		policy:                     domainservices.NewPolicyEvaluator(resolvePolicyThreshold(deps.PolicyMinConfidence)),
-		o11y:                       o11y,
-		routedTotal:                routedTotal,
-		authzDeniedTotal:           authzDeniedTotal,
-		policyBlockedTotal:         policyBlockedTotal,
-		idempotencyReplayTotal:     idempotencyReplayTotal,
-		loc:                        loc,
+		parser:                   deps.Parser,
+		monthlySummary:           deps.MonthlySummary,
+		cardLister:               deps.CardLister,
+		cardInvoice:              deps.CardInvoice,
+		cardCreator:              deps.CardCreator,
+		cardCounter:              deps.CardCounter,
+		cardUpdater:              deps.CardUpdater,
+		cardDeleter:              deps.CardDeleter,
+		categoryPercentageEditor: deps.CategoryPercentageEditor,
+		expenseRecorder:          deps.ExpenseRecorder,
+		cardPurchaseLog:          deps.CardPurchaseLog,
+		transactionLister:        deps.TransactionLister,
+		incomeSummaryReader:      deps.IncomeSummaryReader,
+		lastDeleter:              deps.LastDeleter,
+		lastEditor:               deps.LastEditor,
+		recurringCreator:         deps.RecurringCreator,
+		recurringLister:          deps.RecurringLister,
+		budgetConfig:             deps.BudgetConfig,
+		budgetConvo:              deps.BudgetConvo,
+		budgetCommitter:          deps.BudgetCommitter,
+		budgetSession:            deps.BudgetSession,
+		fallback:                 deps.Fallback,
+		auditor:                  newDecisionAuditor(o11y, deps.Decision, deps.Redactor),
+		policy:                   domainservices.NewPolicyEvaluator(resolvePolicyThreshold(deps.PolicyMinConfidence)),
+		o11y:                     o11y,
+		routedTotal:              routedTotal,
+		authzDeniedTotal:         authzDeniedTotal,
+		policyBlockedTotal:       policyBlockedTotal,
+		idempotencyReplayTotal:   idempotencyReplayTotal,
+		loc:                      loc,
 	}
 	agent.recorder = tools.NewRecorder(routedTotal)
-	agent.clarification = tools.NewClarificationResolver(deps.PendingExpenseConfirmation, agent.recorder, o11y)
+	agent.clarification = tools.NewClarificationResolver(agent.recorder, o11y)
 	agent.budgetRunner = tools.NewBudgetSessionRunner(agent.recorder, deps.BudgetSession, deps.BudgetConvo, deps.BudgetCommitter, loc, o11y)
 	agent.conversational = tools.NewConversational(agent.recorder, deps.Fallback, o11y)
 	if deps.Kernel != nil && deps.Kernel.Engine != nil {
@@ -184,7 +182,7 @@ func resolvePolicyThreshold(raw float64) valueobjects.Confidence {
 }
 
 func (a *DailyLedgerAgent) tryResumeInbound(ctx context.Context, userID uuid.UUID, channel, text, messageID string) (bool, RouteResult) {
-	if a.pendingExpenseConfirmation != nil || a.kernelEnabled {
+	if a.kernelEnabled {
 		if handled, result := a.continuePendingExpenseConfirmation(ctx, userID, channel, text); handled {
 			return true, result
 		}
@@ -263,11 +261,18 @@ func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, 
 func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
 	kind := parsed.Intent.Kind()
 
-	if a.confirmEngine != (platform.Engine[confirmation.ConfirmState])(nil) && isDestructiveKind(kind) {
+	if isDestructiveKind(kind) {
+		if a.confirmEngine == (platform.Engine[confirmation.ConfirmState])(nil) {
+			a.o11y.Logger().Error(ctx, "agent.intent_router.confirm_engine_missing_for_destructive",
+				observability.String("kind", kind.String()),
+			)
+			a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
+			return RouteResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: kind}
+		}
 		return a.dispatchWriteDestructive(ctx, principal, channel, messageID, parsed)
 	}
 
-	if a.kernelEnabled && a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
+	if a.kernelEnabled {
 		return a.dispatchWriteKernel(ctx, principal, channel, messageID, trimmed, parsed, kind)
 	}
 
@@ -437,16 +442,7 @@ func (a *DailyLedgerAgent) record(ctx context.Context, kind, channel string, out
 	)
 }
 
-const expenseCancelledText = "Ok, cancelei o lançamento. Quando quiser registrar, é só me dizer. 😊"
-
 func (a *DailyLedgerAgent) continuePendingExpenseConfirmation(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
-	if a.kernelEnabled && a.kernelEngine != (platform.Engine[steps.ExpenseState])(nil) {
-		return a.continuePendingExpenseConfirmationKernel(ctx, userID, channel, text)
-	}
-	return a.continuePendingExpenseConfirmationLegacy(ctx, userID, channel, text)
-}
-
-func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
 	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
 	correlationKey := fmt.Sprintf("%s:%s", userID.String(), channel)
 	resumeDelta := struct {
@@ -474,9 +470,9 @@ func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.
 		return true, RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: intent.KindRecordExpense}
 	}
 	if result.Status == platform.RunStatusRunning || result.RunID == uuid.Nil {
-		return a.continuePendingExpenseConfirmationLegacy(ctx, userID, channel, text)
+		return false, RouteResult{}
 	}
-	kind := resolveIntentKindFromDraft(result.State.ToDraft())
+	kind := result.State.Kind
 	if result.Status == platform.RunStatusSuspended {
 		if result.Suspend != nil {
 			a.record(ctx, kind.String(), channel, tools.OutcomeClarify)
@@ -493,116 +489,6 @@ func (a *DailyLedgerAgent) continuePendingExpenseConfirmationKernel(ctx context.
 	toolResult := workflow.ExpenseStateToToolResult(result.State)
 	a.record(ctx, kind.String(), channel, toolResult.Outcome)
 	return true, RouteResult{Reply: toolResult.Reply, Outcome: toolResult.Outcome, Kind: toolResult.Kind}
-}
-
-func (a *DailyLedgerAgent) continuePendingExpenseConfirmationLegacy(ctx context.Context, userID uuid.UUID, channel, text string) (bool, RouteResult) {
-	draft, found, err := a.pendingExpenseConfirmation.Load(ctx, userID, channel)
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_load_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		return false, RouteResult{}
-	}
-	if !found {
-		return false, RouteResult{}
-	}
-	if draft.AwaitingKind == pendingexpense.AwaitingCategoryChoice {
-		return a.resolvePendingCategoryChoice(ctx, userID, channel, text, draft)
-	}
-	return a.resolvePendingCategoryConfirm(ctx, userID, channel, text, draft)
-}
-
-func (a *DailyLedgerAgent) resolvePendingCategoryConfirm(ctx context.Context, userID uuid.UUID, channel, text string, draft pendingexpense.Draft) (bool, RouteResult) {
-	if matchesExpenseConfirmation(text) {
-		a.clearPendingDraft(ctx, userID, channel)
-		return true, a.executePendingDraft(ctx, userID, channel, draft)
-	}
-	if matchesExpenseCancellation(text) {
-		a.clearPendingDraft(ctx, userID, channel)
-		kind := resolveIntentKindFromDraft(draft)
-		a.record(ctx, kind.String(), channel, tools.OutcomeRouted)
-		return true, RouteResult{Reply: expenseCancelledText, Outcome: tools.OutcomeRouted, Kind: kind}
-	}
-	return false, RouteResult{}
-}
-
-func (a *DailyLedgerAgent) resolvePendingCategoryChoice(ctx context.Context, userID uuid.UUID, channel, text string, draft pendingexpense.Draft) (bool, RouteResult) {
-	matched := matchCandidateByText(text, draft.Candidates)
-	if matched == "" {
-		return false, RouteResult{}
-	}
-	draft.CategoryID = matched
-	draft.CategoryPath = matched
-	a.clearPendingDraft(ctx, userID, channel)
-	return true, a.executePendingDraft(ctx, userID, channel, draft)
-}
-
-func (a *DailyLedgerAgent) executePendingDraft(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) RouteResult {
-	if draft.TransactionKind == pendingexpense.TransactionKindCardPurchase {
-		return a.executePendingCardPurchase(ctx, userID, channel, draft)
-	}
-	return a.executePendingExpense(ctx, userID, channel, draft)
-}
-
-func (a *DailyLedgerAgent) executePendingExpense(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) RouteResult {
-	categoryID := draft.CategoryID
-	result, err := a.expenseRecorder.Execute(ctx, tools.ExpenseRecorderInput{
-		UserID:        userID.String(),
-		ForceCategory: &categoryID,
-		AmountCents:   draft.AmountCents,
-		Merchant:      draft.Merchant,
-		PaymentMethod: draft.PaymentMethod,
-		Direction:     draft.Direction,
-		OccurredAt:    draft.OccurredAt,
-	})
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_execute_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		kind := resolveIntentKindFromDraft(draft)
-		a.record(ctx, kind.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: kind}
-	}
-	kind := resolveIntentKindFromDraft(draft)
-	a.record(ctx, kind.String(), channel, tools.OutcomeRouted)
-	return RouteResult{
-		Reply:   tools.FormatPersistedExpense(result.AmountCents, draft.Merchant, result.CategoryPath),
-		Outcome: tools.OutcomeRouted,
-		Kind:    kind,
-	}
-}
-
-func (a *DailyLedgerAgent) executePendingCardPurchase(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) RouteResult {
-	if a.cardPurchaseLog == nil {
-		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, tools.OutcomeMissingResolver)
-		return RouteResult{Reply: tools.RegisterUnavailableText, Outcome: tools.OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
-	}
-	categoryID := draft.CategoryID
-	result, err := a.cardPurchaseLog.Execute(ctx, tools.CardPurchaseLoggerInput{
-		UserID:        userID.String(),
-		ForceCategory: &categoryID,
-		AmountCents:   draft.AmountCents,
-		Merchant:      draft.Merchant,
-		PaymentMethod: draft.PaymentMethod,
-		CardHint:      draft.CardHint,
-		Installments:  draft.Installments,
-	})
-	if err != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_card_purchase_execute_failed",
-			observability.String("channel", channel),
-			observability.Error(err),
-		)
-		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, tools.OutcomeUsecaseError)
-		return RouteResult{Reply: tools.FallbackUsecaseError, Outcome: tools.OutcomeUsecaseError, Kind: intent.KindRecordCardPurchase}
-	}
-	if !result.CardFound {
-		a.record(ctx, intent.KindRecordCardPurchase.String(), channel, tools.OutcomeMissingResolver)
-		return RouteResult{Reply: tools.FormatCardPurchaseCardMissing(draft.CardHint), Outcome: tools.OutcomeMissingResolver, Kind: intent.KindRecordCardPurchase}
-	}
-	a.record(ctx, intent.KindRecordCardPurchase.String(), channel, tools.OutcomeRouted)
-	return RouteResult{Reply: tools.FormatPersistedCardPurchase(result), Outcome: tools.OutcomeRouted, Kind: intent.KindRecordCardPurchase}
 }
 
 func (a *DailyLedgerAgent) wireBudgetCommitGate() {
@@ -862,15 +748,6 @@ func resolveIntentKindFromOperation(op confirmation.OperationKind) intent.Kind {
 	}
 }
 
-func (a *DailyLedgerAgent) clearPendingDraft(ctx context.Context, userID uuid.UUID, channel string) {
-	if clearErr := a.pendingExpenseConfirmation.Clear(ctx, userID, channel); clearErr != nil {
-		a.o11y.Logger().Warn(ctx, "agent.intent_router.pending_expense_clear_failed",
-			observability.String("channel", channel),
-			observability.Error(clearErr),
-		)
-	}
-}
-
 func (a *DailyLedgerAgent) clearBudgetSession(ctx context.Context, userID uuid.UUID, channel string) {
 	if a.budgetSession == nil {
 		return
@@ -881,48 +758,4 @@ func (a *DailyLedgerAgent) clearBudgetSession(ctx context.Context, userID uuid.U
 			observability.Error(clearErr),
 		)
 	}
-}
-
-func resolveIntentKindFromDraft(draft pendingexpense.Draft) intent.Kind {
-	switch draft.TransactionKind {
-	case pendingexpense.TransactionKindIncome:
-		return intent.KindRecordIncome
-	case pendingexpense.TransactionKindCardPurchase:
-		return intent.KindRecordCardPurchase
-	default:
-		return intent.KindRecordExpense
-	}
-}
-
-func matchCandidateByText(text string, candidates []string) string {
-	normalized := strings.ToLower(strings.TrimSpace(text))
-	if normalized == "" {
-		return ""
-	}
-	if idx, err := strconv.Atoi(normalized); err == nil && idx >= 1 && idx <= len(candidates) {
-		return candidates[idx-1]
-	}
-	for _, candidate := range candidates {
-		for segment := range strings.SplitSeq(strings.ToLower(candidate), " > ") {
-			if strings.HasPrefix(strings.TrimSpace(segment), normalized) {
-				return candidate
-			}
-		}
-	}
-	return ""
-}
-
-func matchesExpenseConfirmation(text string) bool {
-	t := strings.ToLower(strings.TrimSpace(text))
-	for _, word := range []string{"sim", "s", "confirma", "confirmado", "pode", "ok", "yes"} {
-		if t == word || strings.HasPrefix(t, word+",") || strings.HasPrefix(t, word+" ") {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesExpenseCancellation(text string) bool {
-	t := strings.ToLower(strings.TrimSpace(text))
-	return t == "não" || t == "nao" || t == "n" || t == "no" || t == "cancela" || t == "cancelar"
 }

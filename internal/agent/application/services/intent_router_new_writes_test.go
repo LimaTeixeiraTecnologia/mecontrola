@@ -164,32 +164,9 @@ func (s *NewWritesRouterSuite) TestUpdateCard_UsecaseError() {
 	s.NotContains(s.wa.sent[0].Text, "atualizado")
 }
 
-func (s *NewWritesRouterSuite) TestDeleteCard_MissingResolverIsHonest() {
+func (s *NewWritesRouterSuite) TestDeleteCard_WithoutConfirmEngine_ReturnsUsecaseError() {
 	result := s.route(s.buildDeleteCard(), "apaga o nubank")
 	s.Equal(intent.KindDeleteCard, result.Kind)
-	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
-}
-
-func (s *NewWritesRouterSuite) TestDeleteCard_Routed() {
-	s.deleter = &fakeCardDeleter{result: tools.CardDeleterResult{Name: "nubank"}}
-	result := s.route(s.buildDeleteCard(), "apaga o nubank")
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(1, s.deleter.calls)
-	s.Equal("nubank", s.deleter.gotName)
-	s.Require().Len(s.wa.sent, 1)
-	s.Contains(s.wa.sent[0].Text, "Cartão apagado")
-	s.Contains(s.wa.sent[0].Text, "nubank")
-}
-
-func (s *NewWritesRouterSuite) TestDeleteCard_NotFoundClarify() {
-	s.deleter = &fakeCardDeleter{err: tools.ErrAgentCardNotFound}
-	result := s.route(s.buildDeleteCard(), "apaga o premium")
-	s.Equal(tools.OutcomeClarify, result.Outcome)
-}
-
-func (s *NewWritesRouterSuite) TestDeleteCard_UsecaseError() {
-	s.deleter = &fakeCardDeleter{err: errors.New("boom")}
-	result := s.route(s.buildDeleteCard(), "apaga o nubank")
 	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
 }
 

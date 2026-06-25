@@ -30,6 +30,7 @@ const (
 	KindUpdateCard
 	KindDeleteCard
 	KindEditCategoryPercentage
+	KindQueryIncomeSummary
 )
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
@@ -74,6 +75,8 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "delete_card"
 	case KindEditCategoryPercentage:
 		return "edit_category_percentage"
+	case KindQueryIncomeSummary:
+		return "query_income_summary"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -142,6 +145,8 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindDeleteCard, nil
 	case "edit_category_percentage":
 		return KindEditCategoryPercentage, nil
+	case "query_income_summary":
+		return KindQueryIncomeSummary, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -618,6 +623,17 @@ func NewEditCategoryPercentage(f EditCategoryPercentageFields) (Intent, error) {
 		categoryName: categoryName,
 		percentage:   f.Percentage,
 	}, nil
+}
+
+func NewQueryIncomeSummary(refMonth string) (Intent, error) {
+	trimmed := strings.TrimSpace(refMonth)
+	if trimmed == "" {
+		return Intent{kind: KindQueryIncomeSummary}, nil
+	}
+	if !isYearMonth(trimmed) {
+		return Intent{}, ErrRefMonthInvalid
+	}
+	return Intent{kind: KindQueryIncomeSummary, refMonth: trimmed}, nil
 }
 
 func NewUnknown(rawText string) (Intent, error) {

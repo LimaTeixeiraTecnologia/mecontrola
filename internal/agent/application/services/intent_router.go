@@ -129,37 +129,37 @@ type KernelDeps struct {
 }
 
 type IntentRouterDeps struct {
-	Parser                     IntentParser
-	MonthlySummary             tools.MonthlySummaryReader
-	CardLister                 tools.CardLister
-	CardInvoice                tools.CardInvoiceReader
-	CardCreator                tools.CardCreator
-	CardCounter                tools.CardCounter
-	CardUpdater                tools.CardUpdater
-	CardDeleter                tools.CardDeleter
-	CategoryPercentageEditor   tools.CategoryPercentageEditor
-	ExpenseRecorder            tools.ExpenseRecorder
-	CardPurchaseLog            tools.CardPurchaseLogger
-	TransactionLister          tools.TransactionLister
-	LastDeleter                tools.LastTransactionDeleter
-	LastEditor                 tools.LastTransactionEditor
-	RecurringCreator           tools.RecurringCreator
-	RecurringLister            tools.RecurringLister
-	BudgetConfig               tools.BudgetConfigurator
-	BudgetConvo                tools.BudgetConversation
-	BudgetCommitter            tools.BudgetConfigCommitter
-	BudgetSession              tools.BudgetSessionGateway
-	PendingExpenseConfirmation tools.PendingExpenseConfirmationGateway
-	OnboardingRunner           OnboardingTurnRunner
-	Fallback                   tools.Fallback
-	WhatsAppGateway            WhatsAppOutbound
-	TelegramGateway            TelegramOutbound
-	EventPublisher             interfaces.IntentEventPublisher
-	Decision                   DecisionAuditDeps
-	Redactor                   DecisionRedactor
-	Location                   *time.Location
-	PolicyMinConfidence        float64
-	Kernel                     *KernelDeps
+	Parser                   IntentParser
+	MonthlySummary           tools.MonthlySummaryReader
+	CardLister               tools.CardLister
+	CardInvoice              tools.CardInvoiceReader
+	CardCreator              tools.CardCreator
+	CardCounter              tools.CardCounter
+	CardUpdater              tools.CardUpdater
+	CardDeleter              tools.CardDeleter
+	CategoryPercentageEditor tools.CategoryPercentageEditor
+	ExpenseRecorder          tools.ExpenseRecorder
+	CardPurchaseLog          tools.CardPurchaseLogger
+	TransactionLister        tools.TransactionLister
+	IncomeSummaryReader      tools.IncomeSummaryReader
+	LastDeleter              tools.LastTransactionDeleter
+	LastEditor               tools.LastTransactionEditor
+	RecurringCreator         tools.RecurringCreator
+	RecurringLister          tools.RecurringLister
+	BudgetConfig             tools.BudgetConfigurator
+	BudgetConvo              tools.BudgetConversation
+	BudgetCommitter          tools.BudgetConfigCommitter
+	BudgetSession            tools.BudgetSessionGateway
+	OnboardingRunner         OnboardingTurnRunner
+	Fallback                 tools.Fallback
+	WhatsAppGateway          WhatsAppOutbound
+	TelegramGateway          TelegramOutbound
+	EventPublisher           interfaces.IntentEventPublisher
+	Decision                 DecisionAuditDeps
+	Redactor                 DecisionRedactor
+	Location                 *time.Location
+	PolicyMinConfidence      float64
+	Kernel                   *KernelDeps
 }
 
 type DecisionRedactor interface {
@@ -219,31 +219,50 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 	}, nil
 }
 
+type toolBinding struct {
+	name    string
+	kind    intent.Kind
+	present bool
+}
+
+func buildToolBindingEntries(deps IntentRouterDeps) []toolBinding {
+	return []toolBinding{
+		{name: "record_transaction", kind: intent.KindRecordExpense, present: deps.ExpenseRecorder != nil},
+		{name: "record_income", kind: intent.KindRecordIncome, present: deps.ExpenseRecorder != nil},
+		{name: "record_card_purchase", kind: intent.KindRecordCardPurchase, present: deps.CardPurchaseLog != nil},
+		{name: "list_transactions", kind: intent.KindListTransactions, present: deps.TransactionLister != nil},
+		{name: "create_recurring", kind: intent.KindCreateRecurring, present: deps.RecurringCreator != nil},
+		{name: "list_recurring", kind: intent.KindListRecurring, present: deps.RecurringLister != nil},
+		{name: "monthly_summary", kind: intent.KindMonthlySummary, present: deps.MonthlySummary != nil},
+		{name: "how_am_i_doing", kind: intent.KindHowAmIDoing, present: deps.MonthlySummary != nil},
+		{name: "query_category", kind: intent.KindQueryCategory, present: deps.MonthlySummary != nil},
+		{name: "query_goal", kind: intent.KindQueryGoal, present: deps.MonthlySummary != nil},
+		{name: "query_card", kind: intent.KindQueryCard, present: deps.CardLister != nil},
+		{name: "configure_budget", kind: intent.KindConfigureBudget, present: deps.BudgetConfig != nil},
+		{name: "edit_category_percentage", kind: intent.KindEditCategoryPercentage, present: deps.CategoryPercentageEditor != nil},
+		{name: "list_cards", kind: intent.KindListCards, present: deps.CardLister != nil},
+		{name: "create_card", kind: intent.KindCreateCard, present: deps.CardCreator != nil},
+		{name: "count_cards", kind: intent.KindCountCards, present: deps.CardCounter != nil},
+		{name: "update_card", kind: intent.KindUpdateCard, present: deps.CardUpdater != nil},
+		{name: "query_income_summary", kind: intent.KindQueryIncomeSummary, present: deps.IncomeSummaryReader != nil},
+	}
+}
+
+func warnMissingToolBindingsKinds() []intent.Kind {
+	entries := buildToolBindingEntries(IntentRouterDeps{})
+	kinds := make([]intent.Kind, 0, len(entries))
+	for _, e := range entries {
+		kinds = append(kinds, e.kind)
+	}
+	return kinds
+}
+
 func warnMissingToolBindings(o11y observability.Observability, deps IntentRouterDeps) {
-	registry, err := tools.DefaultRegistry()
-	if err != nil {
-		o11y.Logger().Warn(context.Background(), "agent.intent_router.tool_registry_unavailable",
-			observability.Error(err),
-		)
-		return
-	}
-	bindings := map[string]bool{
-		"record_transaction": deps.ExpenseRecorder != nil,
-		"monthly_summary":    deps.MonthlySummary != nil,
-		"list_cards":         deps.CardLister != nil,
-		"create_card":        deps.CardCreator != nil,
-		"count_cards":        deps.CardCounter != nil,
-		"configure_budget":   deps.BudgetConfig != nil,
-	}
-	for _, spec := range registry.Specs() {
-		present, tracked := bindings[spec.Name]
-		if !tracked {
-			continue
-		}
-		if !present {
+	for _, e := range buildToolBindingEntries(deps) {
+		if !e.present {
 			o11y.Logger().Warn(context.Background(), "agent.intent_router.tool_binding_ausente",
-				observability.String("tool", spec.Name),
-				observability.String("kind", spec.IntentKind.String()),
+				observability.String("tool", e.name),
+				observability.String("kind", e.kind.String()),
 			)
 		}
 	}
@@ -335,7 +354,7 @@ func (r *IntentRouter) route(ctx context.Context, principal Principal, channel, 
 		return RouteResult{Reply: fallbackMissingText, Outcome: tools.OutcomeEmptyText, Kind: intent.KindUnknown}
 	}
 
-	if r.daily.pendingExpenseConfirmation != nil || r.daily.kernelEnabled {
+	if r.daily.kernelEnabled {
 		if handled, result := r.daily.continuePendingExpenseConfirmation(ctx, principal.UserID, channel, trimmed); handled {
 			return result
 		}

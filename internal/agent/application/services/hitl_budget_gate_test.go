@@ -84,14 +84,13 @@ func (s *HITLBudgetGateSuite) TestBudgetCommit_WhenComplete_SuspendsForHITL() {
 	peer := "+5511999"
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: mustBuildConfigureBudgetIntent()},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
-		BudgetConvo:                convo,
-		BudgetCommitter:            committer,
-		BudgetSession:              session,
+		Parser:          &fakeParser{intent: mustBuildConfigureBudgetIntent()},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		BudgetConvo:     convo,
+		BudgetCommitter: committer,
+		BudgetSession:   session,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -131,14 +130,13 @@ func (s *HITLBudgetGateSuite) TestBudgetCommit_WhenConfirmed_Activates() {
 	peer := "+5511999"
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: mustBuildConfigureBudgetIntent()},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
-		BudgetConvo:                convo,
-		BudgetCommitter:            committer,
-		BudgetSession:              session,
+		Parser:          &fakeParser{intent: mustBuildConfigureBudgetIntent()},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		BudgetConvo:     convo,
+		BudgetCommitter: committer,
+		BudgetSession:   session,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -184,14 +182,13 @@ func (s *HITLBudgetGateSuite) TestBudgetCommit_WhenCancelled_PreservesBudget() {
 	peer := "+5511999"
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: mustBuildConfigureBudgetIntent()},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
-		BudgetConvo:                convo,
-		BudgetCommitter:            committer,
-		BudgetSession:              session,
+		Parser:          &fakeParser{intent: mustBuildConfigureBudgetIntent()},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		BudgetConvo:     convo,
+		BudgetCommitter: committer,
+		BudgetSession:   session,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,

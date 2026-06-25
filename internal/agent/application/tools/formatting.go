@@ -660,3 +660,18 @@ func FormatCategoryNotFound(hint string) string {
 func CategoryNoHintText() string {
 	return categoryNoHintText
 }
+
+func formatIncomeSummary(result IncomeSummaryResult) string {
+	if result.TotalCents == 0 {
+		return fmt.Sprintf("📭 Nenhuma entrada registrada em %s.", result.RefMonth)
+	}
+	var sb strings.Builder
+	_, _ = fmt.Fprintf(&sb, "💰 *Entradas de %s*\nTotal: *%s*", result.RefMonth, formatBRL(result.TotalCents))
+	if len(result.Sources) > 0 {
+		sb.WriteString("\n\nDetalhamento:")
+		for _, s := range result.Sources {
+			_, _ = fmt.Fprintf(&sb, "\n• %s: %s", s.Description, formatBRL(s.AmountCents))
+		}
+	}
+	return sb.String()
+}

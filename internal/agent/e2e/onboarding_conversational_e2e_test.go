@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
+	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/jmoiron/sqlx"
@@ -31,7 +33,10 @@ type scriptedInterpreter struct {
 	queue []appinterfaces.LLMResponse
 }
 
-func (s *scriptedInterpreter) Interpret(_ context.Context, _ appinterfaces.LLMRequest) (appinterfaces.LLMResponse, error) {
+func (s *scriptedInterpreter) Interpret(_ context.Context, req appinterfaces.LLMRequest) (appinterfaces.LLMResponse, error) {
+	if req.FreeText && len(req.Tools) == 0 {
+		return appinterfaces.LLMResponse{}, nil
+	}
 	if len(s.queue) == 0 {
 		return appinterfaces.LLMResponse{}, nil
 	}
@@ -74,7 +79,9 @@ func newOnboardingTurnPipeline(t *testing.T, db *sqlx.DB, interp appusecases.Int
 	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, fakeOnboardingExpenseLogger{})
 
-	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil, nil, noopV2Session{})
+	agentSessionRepo := agentrepo.NewRepositoryFactory(o11y).AgentSessionRepository(db)
+	v2session := agentbinding.NewOnboardingSessionGateway(agentSessionRepo)
+	turn, err := appusecases.NewRunOnboardingTurn(interp, reader, dispatcher, phaseSetter, 512, o11y, nil, fakeSplitSuggester{}, v2session)
 	require.NoError(t, err)
 	return turn
 }
@@ -161,7 +168,7 @@ func TestOnboardingConversational_Journey_E2E(t *testing.T) {
 	require.Equal(t, "fazer uma viagem", gotObjective)
 
 	budget := conversationalTurn(t, turn, userID, "ganho 5000")
-	require.Contains(t, budget.Reply, "R$ 2.000,00")
+	require.Contains(t, budget.Reply, "R$ 1.750,00")
 	require.Contains(t, budget.Reply, "Etapa 3/4")
 	requireOnboardingPhase(t, db, userID, "cards")
 	gotIncome, _ := queryOnboardingInt(t, db, userID, "(payload->>'income_cents')::bigint")

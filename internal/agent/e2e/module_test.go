@@ -37,6 +37,7 @@ func TestNewAgentModule_RequiresOpenRouterConfig(t *testing.T) {
 		nil,
 		&stubWhatsAppGateway{},
 		nil,
+		agent.AgentModuleDeps{},
 	)
 
 	assert.Error(t, err)
@@ -54,6 +55,7 @@ func TestNewAgentModule_RequiresWhatsAppGateway(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		agent.AgentModuleDeps{},
 	)
 
 	assert.Error(t, err)
@@ -77,6 +79,7 @@ func TestNewAgentModule_FailsWhenTransactionsDisabled(t *testing.T) {
 		&budgets.BudgetsModule{ListAlertsUC: new(budgetuc.ListAlerts)},
 		&stubWhatsAppGateway{},
 		nil,
+		agent.AgentModuleDeps{},
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "transactions")

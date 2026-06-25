@@ -34,21 +34,10 @@ func (s *SharedRegistryConcurrencySuite) echoTool(name string, kind intent.Kind,
 	})
 }
 
-func (s *SharedRegistryConcurrencySuite) passthroughGuard() *WriteGuard {
-	return NewWriteGuard(GuardSteps{
-		Authorize: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Replay:    func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Policy:    func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Audit: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, SettleFunc, bool) {
-			return tools.ToolResult{}, func(_ context.Context, _ bool) {}, false
-		},
-	})
-}
-
 func (s *SharedRegistryConcurrencySuite) sharedRegistry(writeCalls, readCalls *atomic.Int64) *IntentRegistry {
-	transactions, err := NewIntentWorkflow("transactions", s.passthroughGuard(), KindTool{Kind: intent.KindRecordExpense, Tool: s.echoTool("expense", intent.KindRecordExpense, writeCalls)})
+	transactions, err := NewIntentWorkflow("transactions", KindTool{Kind: intent.KindRecordExpense, Tool: s.echoTool("expense", intent.KindRecordExpense, writeCalls)})
 	s.Require().NoError(err)
-	cards, err := NewIntentWorkflow("cards", nil, KindTool{Kind: intent.KindListCards, Tool: s.echoTool("list_cards", intent.KindListCards, readCalls)})
+	cards, err := NewIntentWorkflow("cards", KindTool{Kind: intent.KindListCards, Tool: s.echoTool("list_cards", intent.KindListCards, readCalls)})
 	s.Require().NoError(err)
 	registry, err := NewIntentRegistry([]intent.Kind{intent.KindRecordExpense, intent.KindListCards}, transactions, cards)
 	s.Require().NoError(err)

@@ -34,7 +34,11 @@ Funcionalidade: Edições conversacionais do agente financeiro via WhatsApp
     Quando o usuário envia "apaga o cartão roxinho" via webhook
     Então a resposta HTTP deve ter status 200
     E o gateway respondeu ao usuário
-    E a resposta do gateway contém "Cartão apagado"
+    E a resposta do gateway contém "Você deseja remover"
+    Quando o usuário envia "sim" via webhook
+    Então a resposta HTTP deve ter status 200
+    E o gateway respondeu ao usuário
+    E a resposta do gateway contém "Cartão removido"
     E o cartão "roxinho" não aparece mais na listagem
     E o número de transações do usuário permaneceu igual
 

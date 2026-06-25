@@ -5,6 +5,7 @@ package e2e_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,7 @@ import (
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
+	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	identityauth "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -51,14 +53,15 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
-type scriptedToolCall struct {
-	name string
-	args string
+type scriptedResponse struct {
+	toolName string
+	toolArgs string
+	content  string
 }
 
 type mockOpenRouterScript struct {
 	mu     sync.Mutex
-	script map[string]scriptedToolCall
+	script map[string]scriptedResponse
 }
 
 func (m *mockOpenRouterScript) handle(w http.ResponseWriter, r *http.Request) {
@@ -81,25 +84,32 @@ func (m *mockOpenRouterScript) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	lower := strings.ToLower(lastUser)
+	fmt.Printf("[MOCK] lastUser=%q lower=%q\n", lastUser, lower)
 
 	w.Header().Set("Content-Type", "application/json")
 
-	for substr, call := range m.script {
+	for substr, resp := range m.script {
 		if strings.Contains(lower, substr) {
+			message := map[string]any{"role": "assistant"}
+			finishReason := "stop"
+			if resp.toolName != "" {
+				finishReason = "tool_calls"
+				message["tool_calls"] = []map[string]any{{
+					"id":   "c1",
+					"type": "function",
+					"function": map[string]any{
+						"name":      resp.toolName,
+						"arguments": resp.toolArgs,
+					},
+				}}
+			}
+			if resp.content != "" {
+				message["content"] = resp.content
+			}
 			body := map[string]any{
 				"choices": []map[string]any{{
-					"message": map[string]any{
-						"role": "assistant",
-						"tool_calls": []map[string]any{{
-							"id":   "c1",
-							"type": "function",
-							"function": map[string]any{
-								"name":      call.name,
-								"arguments": call.args,
-							},
-						}},
-					},
-					"finish_reason": "tool_calls",
+					"message":       message,
+					"finish_reason": finishReason,
 				}},
 				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5},
 			}
@@ -121,10 +131,11 @@ func (m *mockOpenRouterScript) handle(w http.ResponseWriter, r *http.Request) {
 func newScriptedOpenRouterChain(t *testing.T) *appservices.FallbackChain {
 	t.Helper()
 	script := &mockOpenRouterScript{
-		script: map[string]scriptedToolCall{
-			"viagem":  {name: "save_onboarding_objective", args: `{"objective":"fazer uma viagem"}`},
-			"5000":    {name: "save_onboarding_income", args: `{"income_cents":500000}`},
-			"mercado": {name: "record_transaction", args: `{"direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"mercado"}`},
+		script: map[string]scriptedResponse{
+			"inicie o onboarding": {content: "👋 Oi! Eu sou o *MeControla*, seu parceiro financeiro."},
+			"viagem":              {toolName: "save_onboarding_objective", toolArgs: `{"objective":"fazer uma viagem"}`},
+			"5000":                {toolName: "save_onboarding_income", toolArgs: `{"income_cents":500000}`},
+			"mercado":             {toolName: "record_transaction", toolArgs: `{"direction":"outcome","amount_cents":3500,"merchant":"mercado","category_hint":"mercado"}`},
 		},
 	}
 	server := httptest.NewServer(http.HandlerFunc(script.handle))
@@ -210,7 +221,9 @@ func TestOnboardingVertical_E2E(t *testing.T) {
 	require.NotNil(t, phaseSetter)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(saveObjective, saveIncome, saveCard, saveSplits, markFirstTx, complete, expLogger)
 	chain := newScriptedOpenRouterChain(t)
-	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil, nil, noopV2Session{})
+	agentSessionRepo := agentrepo.NewRepositoryFactory(o11y).AgentSessionRepository(db)
+	v2session := agentbinding.NewOnboardingSessionGateway(agentSessionRepo)
+	runTurn, err := appusecases.NewRunOnboardingTurn(chain, reader, dispatcher, phaseSetter, 512, o11y, nil, fakeSplitSuggester{}, v2session)
 	require.NoError(t, err)
 	runner := agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
 

@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +24,7 @@ import (
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type fakeParser struct {
@@ -131,6 +135,61 @@ type sentTelegram struct {
 func (f *fakeTelegramGateway) SendTextMessage(_ context.Context, chatID int64, text string) error {
 	f.sent = append(f.sent, sentTelegram{ChatID: chatID, Text: text})
 	return f.err
+}
+
+type routerTestStore struct {
+	mu   sync.Mutex
+	runs map[string]platform.Snapshot
+}
+
+func newRouterTestStore() *routerTestStore {
+	return &routerTestStore{runs: make(map[string]platform.Snapshot)}
+}
+
+func (s *routerTestStore) key(wf, k string) string { return wf + ":" + k }
+
+func (s *routerTestStore) Insert(_ context.Context, snap platform.Snapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runs[s.key(snap.Workflow, snap.CorrelationKey)] = snap
+	return nil
+}
+
+func (s *routerTestStore) Load(_ context.Context, wf, k string) (platform.Snapshot, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap, ok := s.runs[s.key(wf, k)]
+	return snap, ok, nil
+}
+
+func (s *routerTestStore) Save(_ context.Context, snap platform.Snapshot, _ int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runs[s.key(snap.Workflow, snap.CorrelationKey)] = snap
+	return nil
+}
+
+func (s *routerTestStore) AppendStep(_ context.Context, _ platform.StepRecord) error { return nil }
+func (s *routerTestStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (int64, error) {
+	return 0, nil
+}
+
+func newMinimalKernel() *services.KernelDeps {
+	obs := fake.NewProvider()
+	store := newRouterTestStore()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+	return &services.KernelDeps{
+		Engine:    engine,
+		SettleReg: services.NewSettleRegistry(),
+		CategoryResolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+			st.CategoryID = "test-category"
+			st.CategoryPath = "Test"
+			return st, nil
+		},
+		PersistFn: func(_ context.Context, _ steps.ExpenseState) (steps.PersistResult, error) {
+			return steps.PersistResult{AmountCents: 5800, CategoryPath: "Test"}, nil
+		},
+	}
 }
 
 type IntentRouterSuite struct {
@@ -800,6 +859,7 @@ func (s *IntentRouterSuite) TestRouteWhatsApp_PolicyBlocked_WriteWithLowConfiden
 		TelegramGateway:     s.tg,
 		Location:            time.UTC,
 		PolicyMinConfidence: 0.8,
+		Kernel:              newMinimalKernel(),
 	})
 	s.Require().NoError(err)
 

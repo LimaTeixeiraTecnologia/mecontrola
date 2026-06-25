@@ -23,7 +23,7 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsHasNoDuplicates() {
 		s.False(seen[k], "kind duplicado: %v", k)
 		seen[k] = true
 	}
-	s.Len(kinds, 21)
+	s.Len(kinds, 19)
 }
 
 func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
@@ -38,8 +38,6 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
 		intent.KindRecordIncome,
 		intent.KindRecordCardPurchase,
 		intent.KindListTransactions,
-		intent.KindDeleteLastTransaction,
-		intent.KindEditLastTransaction,
 		intent.KindCreateRecurring,
 		intent.KindListRecurring,
 		intent.KindMonthlySummary,
@@ -53,11 +51,28 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
 		intent.KindCreateCard,
 		intent.KindCountCards,
 		intent.KindUpdateCard,
-		intent.KindDeleteCard,
+		intent.KindQueryIncomeSummary,
 		intent.KindUnknown,
 	}
 	for _, k := range expected {
 		s.True(set[k], "kind ausente: %v", k)
+	}
+}
+
+func (s *AgentWorkflowsSuite) TestDestructiveKindsNotInRoutableKinds() {
+	kinds := routableKinds()
+	set := make(map[intent.Kind]bool, len(kinds))
+	for _, k := range kinds {
+		set[k] = true
+	}
+
+	destructive := []intent.Kind{
+		intent.KindDeleteLastTransaction,
+		intent.KindEditLastTransaction,
+		intent.KindDeleteCard,
+	}
+	for _, k := range destructive {
+		s.False(set[k], "kind destrutivo nao deve estar no registry: %v", k)
 	}
 }
 
@@ -88,8 +103,22 @@ func (s *AgentWorkflowsSuite) TestBuildRegistryResolvesAllRoutableKinds() {
 	}
 }
 
-func (s *AgentWorkflowsSuite) TestNewWriteGuardIsNotNil() {
-	a := &DailyLedgerAgent{}
-	guard := a.newWriteGuard()
-	s.NotNil(guard)
+func (s *AgentWorkflowsSuite) TestWarnBindingsCoversAllNonConversationalKinds() {
+	routable := routableKinds()
+	nonConversational := make([]intent.Kind, 0, len(routable))
+	for _, k := range routable {
+		if k != intent.KindUnknown {
+			nonConversational = append(nonConversational, k)
+		}
+	}
+
+	trackedKinds := warnMissingToolBindingsKinds()
+	set := make(map[intent.Kind]bool, len(trackedKinds))
+	for _, k := range trackedKinds {
+		set[k] = true
+	}
+
+	for _, k := range nonConversational {
+		s.True(set[k], "warnMissingToolBindings nao cobre kind roteavel: %v", k)
+	}
 }

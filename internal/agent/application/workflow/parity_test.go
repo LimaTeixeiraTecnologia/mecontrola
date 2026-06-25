@@ -98,95 +98,6 @@ func (s *ParitySuite) newKernelEngine() platform.Engine[steps.ExpenseState] {
 	return platform.NewEngine[steps.ExpenseState](newParityStore(), s.obs)
 }
 
-func (s *ParitySuite) runLegacy(b parityBehaviors) parityResult { //nolint:revive,cyclop // test: parity helper must replicate full WriteGuard+Tool path — complexity is intentional
-	guard := NewWriteGuard(GuardSteps{
-		Authorize: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
-			if b.authorize != nil && !b.authorize(ctx, b.initialState) {
-				return tools.ToolResult{Reply: "negado", Outcome: tools.OutcomeAuthzDenied, Kind: in.Intent.Kind()}, true
-			}
-			return tools.ToolResult{}, false
-		},
-		Replay: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
-			if b.replay != nil {
-				if reply, found := b.replay(ctx, b.initialState); found {
-					return tools.ToolResult{Reply: reply, Outcome: tools.OutcomeReplay, Kind: in.Intent.Kind()}, true
-				}
-			}
-			return tools.ToolResult{}, false
-		},
-		Policy: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
-			if b.policy != nil {
-				if blocked, reply := b.policy(ctx, b.initialState); blocked {
-					return tools.ToolResult{Reply: reply, Outcome: tools.OutcomePolicyBlocked, Kind: in.Intent.Kind()}, true
-				}
-			}
-			return tools.ToolResult{}, false
-		},
-		Audit: func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, SettleFunc, bool) {
-			if b.auditBegin != nil {
-				res := b.auditBegin(ctx, b.initialState)
-				if res.Conflicted {
-					return tools.ToolResult{Reply: "replay", Outcome: tools.OutcomeReplay, Kind: in.Intent.Kind()}, nil, true
-				}
-				if res.Failed {
-					return tools.ToolResult{Reply: "falha auditoria", Outcome: tools.OutcomeUsecaseError, Kind: in.Intent.Kind()}, nil, true
-				}
-				return tools.ToolResult{}, func(_ context.Context, _ bool) {}, false
-			}
-			return tools.ToolResult{}, func(_ context.Context, _ bool) {}, false
-		},
-	})
-
-	kind := b.initialState.Kind
-	tool := tools.NewTool(tools.ToolSpec{Name: "expense_recorder", IntentKind: kind, Description: "expense"}, func(ctx context.Context, in tools.ToolInput) (tools.ToolResult, error) {
-		st := b.initialState
-		if b.resolver != nil {
-			resolved, err := b.resolver(ctx, st)
-			if err != nil {
-				var ambiguous *tools.CategoryAmbiguousError
-				if errors.As(err, &ambiguous) {
-					return tools.ToolResult{Reply: tools.FormatCategoryAmbiguous(ambiguous.Candidates), Outcome: tools.OutcomeClarify, Kind: kind}, nil
-				}
-				var needsConfirm *tools.CategoryNeedsConfirmationError
-				if errors.As(err, &needsConfirm) {
-					return tools.ToolResult{Reply: tools.FormatCategoryNeedsConfirmation(needsConfirm.Candidates), Outcome: tools.OutcomeClarify, Kind: kind}, nil
-				}
-				if errors.Is(err, tools.ErrCategoryNotFound) {
-					return tools.ToolResult{Outcome: tools.OutcomeClarify, Kind: kind}, nil
-				}
-				if errors.Is(err, tools.ErrCategoryHintMissing) {
-					return tools.ToolResult{Outcome: tools.OutcomeClarify, Kind: kind}, nil
-				}
-				return tools.ToolResult{Outcome: tools.OutcomeUsecaseError, Kind: kind}, err
-			}
-			st = resolved
-		}
-		if b.persist != nil {
-			res, err := b.persist(ctx, st)
-			if err != nil {
-				return tools.ToolResult{Outcome: tools.OutcomeUsecaseError, Kind: kind}, err
-			}
-			_ = res
-		}
-		return tools.ToolResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: kind}, nil
-	})
-
-	wf, err := NewIntentWorkflow("transactions", guard, KindTool{Kind: kind, Tool: tool})
-	s.Require().NoError(err)
-
-	in := tools.ToolInput{
-		UserID:    b.initialState.UserID,
-		Channel:   b.initialState.Channel,
-		Intent:    mustBuildIntentForKind(s, kind, b.initialState),
-		MessageID: b.initialState.MessageID,
-	}
-	result, execErr := wf.Execute(s.ctx, in)
-	if execErr != nil {
-		return parityResult{Outcome: tools.OutcomeUsecaseError, Kind: kind}
-	}
-	return parityResult{Outcome: result.Outcome, Kind: result.Kind}
-}
-
 func (s *ParitySuite) runKernel(b parityBehaviors) parityResult {
 	eng := s.newKernelEngine()
 	def := NewTransactionsWriteDefinition(TransactionsWriteDeps{
@@ -260,23 +171,6 @@ func (s *ParitySuite) runKernelResume(b parityBehaviors) parityResult {
 	return parityResult{Outcome: resumeResult.State.Outcome, Kind: resumeResult.State.Kind}
 }
 
-func mustBuildIntentForKind(s *ParitySuite, kind intent.Kind, state steps.ExpenseState) intent.Intent {
-	switch kind {
-	case intent.KindRecordIncome:
-		in, err := intent.NewRecordIncome(intent.RecordIncomeFields{AmountCents: state.AmountCents, Source: state.Merchant})
-		s.Require().NoError(err)
-		return in
-	case intent.KindRecordCardPurchase:
-		in, err := intent.NewRecordCardPurchase(intent.RecordCardPurchaseFields{AmountCents: state.AmountCents, Installments: 1})
-		s.Require().NoError(err)
-		return in
-	default:
-		in, err := intent.NewRecordExpense(intent.RecordExpenseFields{AmountCents: state.AmountCents, Merchant: state.Merchant})
-		s.Require().NoError(err)
-		return in
-	}
-}
-
 func baseParityState() steps.ExpenseState {
 	return steps.ExpenseState{
 		UserID:          uuid.New(),
@@ -317,10 +211,7 @@ func (s *ParitySuite) TestParity_AutoLog() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "auto_log: Outcome divergence")
-	s.Equal(legacy.Kind, kernel.Kind, "auto_log: Kind divergence")
 	s.Equal(tools.OutcomeRouted, kernel.Outcome)
 }
 
@@ -336,10 +227,7 @@ func (s *ParitySuite) TestParity_AuthzDenied() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "authz_denied: Outcome divergence")
-	s.Equal(legacy.Kind, kernel.Kind, "authz_denied: Kind divergence")
 	s.Equal(tools.OutcomeAuthzDenied, kernel.Outcome)
 }
 
@@ -357,10 +245,7 @@ func (s *ParitySuite) TestParity_Replay() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "replay: Outcome divergence")
-	s.Equal(legacy.Kind, kernel.Kind, "replay: Kind divergence")
 	s.Equal(tools.OutcomeReplay, kernel.Outcome)
 }
 
@@ -378,10 +263,7 @@ func (s *ParitySuite) TestParity_PolicyBlocked() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "policy_blocked: Outcome divergence")
-	s.Equal(legacy.Kind, kernel.Kind, "policy_blocked: Kind divergence")
 	s.Equal(tools.OutcomePolicyBlocked, kernel.Outcome)
 }
 
@@ -408,9 +290,7 @@ func (s *ParitySuite) TestParity_AmbiguousChoiceResume() {
 		correlationKey: "user-ambig:whatsapp",
 	}
 
-	legacyClarify := s.runLegacy(b)
 	kernelClarify := s.runKernel(b)
-	s.Equal(legacyClarify.Outcome, kernelClarify.Outcome, "ambiguous initial: Outcome divergence")
 	s.Equal(tools.OutcomeClarify, kernelClarify.Outcome, "ambiguous initial: expected clarify")
 
 	kernelResume := s.runKernelResume(b)
@@ -440,9 +320,7 @@ func (s *ParitySuite) TestParity_NeedsConfirmResume() {
 		correlationKey: "user-confirm:whatsapp",
 	}
 
-	legacyClarify := s.runLegacy(b)
 	kernelClarify := s.runKernel(b)
-	s.Equal(legacyClarify.Outcome, kernelClarify.Outcome, "needs_confirm initial: Outcome divergence")
 	s.Equal(tools.OutcomeClarify, kernelClarify.Outcome, "needs_confirm initial: expected clarify")
 
 	kernelResume := s.runKernelResume(b)
@@ -472,9 +350,7 @@ func (s *ParitySuite) TestParity_NeedsConfirmCancel() {
 		correlationKey: "user-cancel:whatsapp",
 	}
 
-	legacyClarify := s.runLegacy(b)
 	kernelClarify := s.runKernel(b)
-	s.Equal(legacyClarify.Outcome, kernelClarify.Outcome, "cancel initial: Outcome divergence")
 	s.Equal(tools.OutcomeClarify, kernelClarify.Outcome, "cancel initial: expected clarify")
 
 	kernelResume := s.runKernelResume(b)
@@ -495,9 +371,7 @@ func (s *ParitySuite) TestParity_UsecaseError() {
 		}(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "usecase_error: Outcome divergence")
 	s.Equal(tools.OutcomeUsecaseError, kernel.Outcome)
 }
 
@@ -515,9 +389,7 @@ func (s *ParitySuite) TestParity_AuditConflictMapsToReplay() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "audit_conflict: Outcome divergence")
 	s.Equal(tools.OutcomeReplay, kernel.Outcome)
 }
 
@@ -535,10 +407,60 @@ func (s *ParitySuite) TestParity_AuditFailMapsToUsecaseError() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "audit_fail: Outcome divergence")
 	s.Equal(tools.OutcomeUsecaseError, kernel.Outcome)
+}
+
+func (s *ParitySuite) TestParity_ResumeMinimalDeltaPreservesRichState() {
+	candidates := []string{"Alimentação > Restaurante", "Alimentação > Mercado"}
+	def := NewTransactionsWriteDefinition(TransactionsWriteDeps{
+		Authorize:  alwaysAuthorize,
+		Replay:     noReplayFn,
+		Policy:     allowPolicyFn,
+		AuditBegin: successAuditFn,
+		OnSettle:   nil,
+		Resolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+			if st.ForceCategory == nil && st.AwaitingKind == "" {
+				return st, &tools.CategoryAmbiguousError{Hint: st.CategoryHint, Candidates: candidates}
+			}
+			st.CategoryID = candidates[1]
+			st.CategoryPath = candidates[1]
+			return st, nil
+		},
+		Persist:        successPersistFn,
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha auditoria",
+	})
+
+	store := newParityStore()
+	eng := platform.NewEngine[steps.ExpenseState](store, s.obs)
+	key := "user-mergepatch:whatsapp"
+	initial := baseParityState()
+	initial.AmountCents = 8000
+	initial.Merchant = "Mercado"
+
+	startResult, err := eng.Start(s.ctx, def, key, initial)
+	s.Require().NoError(err)
+	s.Require().Equal(platform.RunStatusSuspended, startResult.Status, "estado ambíguo deve suspender")
+
+	snap, found, loadErr := store.Load(s.ctx, def.ID, key)
+	s.Require().NoError(loadErr)
+	s.Require().True(found, "snapshot deve existir após suspender")
+	suspended, decErr := platform.NewCodec[steps.ExpenseState]().Decode(snap.State)
+	s.Require().NoError(decErr)
+	s.Require().Equal(int64(8000), suspended.AmountCents, "snapshot suspenso deve guardar o estado rico")
+	s.Require().NotEmpty(suspended.Candidates, "snapshot suspenso deve guardar os candidates")
+
+	resumeDelta := []byte(`{"ResumeText":"2"}`)
+	resumeResult, err := eng.Resume(s.ctx, def, key, resumeDelta)
+	s.Require().NoError(err)
+	s.Equal(tools.OutcomeRouted, resumeResult.State.Outcome, "delta mínimo deve retomar e rotear (prova de merge-patch, não substituição)")
+	s.Equal(int64(8000), resumeResult.State.AmountCents, "merge-patch deve preservar AmountCents do snapshot")
+	s.Equal("Mercado", resumeResult.State.Merchant, "merge-patch deve preservar Merchant do snapshot")
+	s.Require().NotNil(resumeResult.State.ForceCategory, "escolha deve resolver via Candidates preservados no snapshot")
+	s.Equal(candidates[1], *resumeResult.State.ForceCategory, "escolha 2 deve casar o candidate preservado pelo merge-patch")
+	s.Equal("2", resumeResult.State.ResumeText, "delta deve ter aplicado ResumeText")
 }
 
 func (s *ParitySuite) TestParity_MissingResolver() {
@@ -555,8 +477,6 @@ func (s *ParitySuite) TestParity_MissingResolver() {
 		persist:      func() steps.PersistFunc { return successPersistFn }(),
 		initialState: baseParityState(),
 	}
-	legacy := s.runLegacy(b)
 	kernel := s.runKernel(b)
-	s.Equal(legacy.Outcome, kernel.Outcome, "missing_resolver: Outcome divergence")
 	s.Equal(tools.OutcomeClarify, kernel.Outcome)
 }

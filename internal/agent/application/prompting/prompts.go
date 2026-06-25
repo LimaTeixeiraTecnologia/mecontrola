@@ -179,6 +179,7 @@ func ParseIntentJSONSchema() map[string]any {
 					"update_card",
 					"delete_card",
 					"edit_category_percentage",
+					"query_income_summary",
 					"unknown",
 				},
 			},

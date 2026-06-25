@@ -223,81 +223,18 @@ func (s *NewKindsRouterSuite) TestListTransactions_MissingResolverIsHonest() {
 	s.Equal(tools.OutcomeMissingResolver, result.Outcome)
 }
 
-func (s *NewKindsRouterSuite) TestDeleteLast_NoTransactions() {
-	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{}}
-	s.deleter = &fakeLastDeleter{}
+func (s *NewKindsRouterSuite) TestDeleteLast_WithoutConfirmEngine_ReturnsUsecaseError() {
 	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(0, s.deleter.calls)
-	s.Require().Len(s.wa.sent, 1)
-	s.NotContains(s.wa.sent[0].Text, "excluído")
-}
-
-func (s *NewKindsRouterSuite) TestDeleteLast_PicksMostRecentAndConfirms() {
-	older := tools.TransactionView{ID: uuid.NewString(), AmountCents: 1000, Description: "antigo", OccurredAt: time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC), CreatedAt: time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC), Version: 1}
-	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, Description: "iFood", OccurredAt: time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC), CreatedAt: time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC), Version: 3}
-	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{older, newer}}}
-	s.deleter = &fakeLastDeleter{}
-	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(1, s.deleter.calls)
-	s.Equal(newer.ID, s.deleter.gotID)
-	s.Equal(int64(3), s.deleter.gotVer)
-	s.Require().Len(s.wa.sent, 1)
-	s.Contains(s.wa.sent[0].Text, "excluído")
-	s.Contains(s.wa.sent[0].Text, "R$ 58,00")
-	s.Contains(s.wa.sent[0].Text, "iFood")
-}
-
-func (s *NewKindsRouterSuite) TestDeleteLast_UsecaseErrorIsHonest() {
-	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, OccurredAt: time.Now(), Version: 3}
-	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{newer}}}
-	s.deleter = &fakeLastDeleter{err: errors.New("boom")}
-	result := s.route(intent.NewDeleteLastTransaction(), "apaga o último")
+	s.Equal(intent.KindDeleteLastTransaction, result.Kind)
 	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
-	s.Require().Len(s.wa.sent, 1)
-	s.NotContains(s.wa.sent[0].Text, "excluído")
 }
 
-func (s *NewKindsRouterSuite) TestEditLast_NoTransactions() {
-	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{}}
-	s.editor = &fakeLastEditor{}
-	in, err := intent.NewEditLastTransaction(8000)
-	require.NoError(s.T(), err)
-	result := s.route(in, "na verdade foram 80")
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(0, s.editor.calls)
-	s.Require().Len(s.wa.sent, 1)
-	s.NotContains(s.wa.sent[0].Text, "atualizado")
-}
-
-func (s *NewKindsRouterSuite) TestEditLast_PicksMostRecentAndConfirms() {
-	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, Description: "iFood", OccurredAt: time.Now(), Version: 2}
-	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{newer}}}
-	s.editor = &fakeLastEditor{result: tools.EditTransactionResult{Persisted: true, OldAmount: 5800, NewAmount: 8000, Description: "iFood"}}
+func (s *NewKindsRouterSuite) TestEditLast_WithoutConfirmEngine_ReturnsUsecaseError() {
 	in, err := intent.NewEditLastTransaction(8000)
 	require.NoError(s.T(), err)
 	result := s.route(in, "corrige para 80")
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(1, s.editor.calls)
-	s.Equal(newer.ID, s.editor.gotIn.Current.ID)
-	s.Equal(int64(8000), s.editor.gotIn.NewAmount)
-	s.Require().Len(s.wa.sent, 1)
-	s.Contains(s.wa.sent[0].Text, "atualizado")
-	s.Contains(s.wa.sent[0].Text, "R$ 58,00")
-	s.Contains(s.wa.sent[0].Text, "R$ 80,00")
-}
-
-func (s *NewKindsRouterSuite) TestEditLast_UsecaseErrorIsHonest() {
-	newer := tools.TransactionView{ID: uuid.NewString(), AmountCents: 5800, OccurredAt: time.Now(), Version: 2}
-	s.lister = &fakeTransactionLister{result: tools.TransactionListResult{Transactions: []tools.TransactionView{newer}}}
-	s.editor = &fakeLastEditor{err: errors.New("boom")}
-	in, err := intent.NewEditLastTransaction(8000)
-	require.NoError(s.T(), err)
-	result := s.route(in, "corrige para 80")
+	s.Equal(intent.KindEditLastTransaction, result.Kind)
 	s.Equal(tools.OutcomeUsecaseError, result.Outcome)
-	s.Require().Len(s.wa.sent, 1)
-	s.NotContains(s.wa.sent[0].Text, "atualizado")
 }
 
 func (s *NewKindsRouterSuite) buildRecurring() intent.Intent {

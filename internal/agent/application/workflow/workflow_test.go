@@ -40,9 +40,9 @@ func (s *CompositeWorkflowSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
-func (s *CompositeWorkflowSuite) TestReadKindRunsToolWithoutGuard() {
+func (s *CompositeWorkflowSuite) TestReadKindRunsTool() {
 	calls := 0
-	wf, err := NewIntentWorkflow("budget", nil,
+	wf, err := NewIntentWorkflow("budget",
 		KindTool{Kind: intent.KindHowAmIDoing, Tool: stubTool("how", intent.KindHowAmIDoing, tools.ToolResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindHowAmIDoing}, &calls)},
 	)
 	s.Require().NoError(err)
@@ -53,36 +53,9 @@ func (s *CompositeWorkflowSuite) TestReadKindRunsToolWithoutGuard() {
 	s.Equal(1, calls)
 }
 
-func (s *CompositeWorkflowSuite) TestWriteKindShortCircuitsAndSkipsTool() {
+func (s *CompositeWorkflowSuite) TestWriteKindRunsTool() {
 	calls := 0
-	guard := NewWriteGuard(GuardSteps{
-		Authorize: func(_ context.Context, in tools.ToolInput) (tools.ToolResult, bool) {
-			return tools.ToolResult{Reply: "denied", Outcome: tools.OutcomeAuthzDenied, Kind: in.Intent.Kind()}, true
-		},
-	})
-	wf, err := NewIntentWorkflow("transactions", guard,
-		KindTool{Kind: intent.KindRecordExpense, Tool: stubTool("expense", intent.KindRecordExpense, tools.ToolResult{Outcome: tools.OutcomeRouted}, &calls)},
-	)
-	s.Require().NoError(err)
-	result, execErr := wf.Execute(s.ctx, tools.ToolInput{UserID: uuid.New(), Channel: "whatsapp", Intent: writeIntent(&s.Suite)})
-	s.NoError(execErr)
-	s.Equal(tools.OutcomeAuthzDenied, result.Outcome)
-	s.Equal(0, calls)
-}
-
-func (s *CompositeWorkflowSuite) TestWriteKindProceedsAndSettlesExecuted() {
-	calls := 0
-	settled := false
-	settledExecuted := false
-	guard := NewWriteGuard(GuardSteps{
-		Audit: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, SettleFunc, bool) {
-			return tools.ToolResult{}, func(_ context.Context, executed bool) {
-				settled = true
-				settledExecuted = executed
-			}, false
-		},
-	})
-	wf, err := NewIntentWorkflow("transactions", guard,
+	wf, err := NewIntentWorkflow("transactions",
 		KindTool{Kind: intent.KindRecordExpense, Tool: stubTool("expense", intent.KindRecordExpense, tools.ToolResult{Reply: "ok", Outcome: tools.OutcomeRouted, Kind: intent.KindRecordExpense}, &calls)},
 	)
 	s.Require().NoError(err)
@@ -90,12 +63,10 @@ func (s *CompositeWorkflowSuite) TestWriteKindProceedsAndSettlesExecuted() {
 	s.NoError(execErr)
 	s.Equal(tools.OutcomeRouted, result.Outcome)
 	s.Equal(1, calls)
-	s.True(settled)
-	s.True(settledExecuted)
 }
 
 func (s *CompositeWorkflowSuite) TestExecuteKindNotHandled() {
-	wf, err := NewIntentWorkflow("cards", nil,
+	wf, err := NewIntentWorkflow("cards",
 		KindTool{Kind: intent.KindListCards, Tool: stubTool("list", intent.KindListCards, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 	)
 	s.Require().NoError(err)
@@ -105,13 +76,13 @@ func (s *CompositeWorkflowSuite) TestExecuteKindNotHandled() {
 }
 
 func (s *CompositeWorkflowSuite) TestConstructorRejectsEmptyAndNil() {
-	_, err := NewIntentWorkflow("", nil, KindTool{Kind: intent.KindListCards, Tool: stubTool("x", intent.KindListCards, tools.ToolResult{}, nil)})
+	_, err := NewIntentWorkflow("", KindTool{Kind: intent.KindListCards, Tool: stubTool("x", intent.KindListCards, tools.ToolResult{}, nil)})
 	s.ErrorIs(err, ErrWorkflowIDEmpty)
 
-	_, err = NewIntentWorkflow("cards", nil)
+	_, err = NewIntentWorkflow("cards")
 	s.ErrorIs(err, ErrNoTools)
 
-	_, err = NewIntentWorkflow("cards", nil, KindTool{Kind: intent.KindListCards, Tool: nil})
+	_, err = NewIntentWorkflow("cards", KindTool{Kind: intent.KindListCards, Tool: nil})
 	s.ErrorIs(err, ErrToolForKindNil)
 }
 
@@ -124,12 +95,12 @@ func TestRegistrySuite(t *testing.T) {
 }
 
 func (s *RegistrySuite) buildWorkflows() (IntentWorkflow, IntentWorkflow) {
-	cards, err := NewIntentWorkflow("cards", nil,
+	cards, err := NewIntentWorkflow("cards",
 		KindTool{Kind: intent.KindListCards, Tool: stubTool("list", intent.KindListCards, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 		KindTool{Kind: intent.KindCountCards, Tool: stubTool("count", intent.KindCountCards, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 	)
 	s.Require().NoError(err)
-	budget, err := NewIntentWorkflow("budget", nil,
+	budget, err := NewIntentWorkflow("budget",
 		KindTool{Kind: intent.KindHowAmIDoing, Tool: stubTool("how", intent.KindHowAmIDoing, tools.ToolResult{Outcome: tools.OutcomeRouted}, nil)},
 	)
 	s.Require().NoError(err)
@@ -162,44 +133,4 @@ func (s *RegistrySuite) TestDuplicateID() {
 	cards, _ := s.buildWorkflows()
 	_, err := NewIntentRegistry([]intent.Kind{intent.KindListCards}, cards, cards)
 	s.ErrorIs(err, ErrDuplicateWorkflow)
-}
-
-type WriteGuardSuite struct {
-	suite.Suite
-	ctx context.Context
-}
-
-func TestWriteGuardSuite(t *testing.T) {
-	suite.Run(t, new(WriteGuardSuite))
-}
-
-func (s *WriteGuardSuite) SetupTest() {
-	s.ctx = context.Background()
-}
-
-func (s *WriteGuardSuite) TestProceedWhenAllPass() {
-	guard := NewWriteGuard(GuardSteps{
-		Authorize: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Replay:    func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Policy:    func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Audit: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, SettleFunc, bool) {
-			return tools.ToolResult{}, func(_ context.Context, _ bool) {}, false
-		},
-	})
-	decision, _, settle := guard.Apply(s.ctx, tools.ToolInput{Intent: writeIntent(&s.Suite)})
-	s.Equal(GuardProceed, decision)
-	s.NotNil(settle)
-}
-
-func (s *WriteGuardSuite) TestReplayShortCircuits() {
-	guard := NewWriteGuard(GuardSteps{
-		Authorize: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) { return tools.ToolResult{}, false },
-		Replay: func(_ context.Context, _ tools.ToolInput) (tools.ToolResult, bool) {
-			return tools.ToolResult{Outcome: tools.OutcomeReplay}, true
-		},
-	})
-	decision, blocked, settle := guard.Apply(s.ctx, tools.ToolInput{Intent: writeIntent(&s.Suite)})
-	s.Equal(GuardShortCircuit, decision)
-	s.Equal(tools.OutcomeReplay, blocked.Outcome)
-	s.Nil(settle)
 }

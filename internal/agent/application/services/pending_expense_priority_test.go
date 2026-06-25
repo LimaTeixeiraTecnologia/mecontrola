@@ -5,40 +5,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
-
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
+	agentwf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
+	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
-
-type fakePendingExpenseGateway struct {
-	draft   pendingexpense.Draft
-	found   bool
-	err     error
-	saved   int
-	cleared int
-}
-
-func (f *fakePendingExpenseGateway) Load(_ context.Context, _ uuid.UUID, _ string) (pendingexpense.Draft, bool, error) {
-	return f.draft, f.found, f.err
-}
-
-func (f *fakePendingExpenseGateway) Save(_ context.Context, _ uuid.UUID, _ string, _ pendingexpense.Draft) error {
-	f.saved++
-	return nil
-}
-
-func (f *fakePendingExpenseGateway) Clear(_ context.Context, _ uuid.UUID, _ string) error {
-	f.cleared++
-	return nil
-}
 
 type fakeOnboardingTurnRunner struct {
 	handled bool
@@ -79,118 +59,141 @@ func (s *PendingExpensePrioritySuite) SetupTest() {
 	s.parser = &fakeParser{}
 }
 
-func (s *PendingExpensePrioritySuite) TestPendingExpenseConfirmedBeforeOnboarding() {
-	pending := &fakePendingExpenseGateway{
-		found: true,
-		draft: pendingexpense.Draft{
-			AmountCents:   13150,
-			Merchant:      "farmácia",
-			PaymentMethod: "pix",
-			Direction:     "outcome",
-			CategoryID:    "expense.custo_fixo.medicamentos",
-			CategoryPath:  "Custo Fixo > Medicamentos e Farmácia",
-		},
-	}
-	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "onboarding handling sim"}
-	expense := &fakeConfirmExpenseRecorder{
-		result: tools.ExpenseRecorderResult{
-			Persisted:    true,
-			AmountCents:  13150,
-			CategoryPath: "Custo Fixo > Medicamentos e Farmácia",
-		},
-	}
+func (s *PendingExpensePrioritySuite) buildRouterWithKernelAndOnboarding(
+	store platform.Store,
+	resolver steps.CategoryResolverFunc,
+	persistFn steps.PersistFunc,
+	onboarding *fakeOnboardingTurnRunner,
+	expense tools.ExpenseRecorder,
+) *services.IntentRouter {
+	obs := fake.NewProvider()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+	settleReg := services.NewSettleRegistry()
 
 	confidence, err := valueobjects.NewConfidence(1.0)
 	require.NoError(s.T(), err)
-	s.parser = &fakeParser{intent: intent.Intent{}, confidence: confidence.Value()}
+	s.parser = &fakeParser{intent: mustBuildExpenseIntent2(13150, "farmácia", "medicamentos"), confidence: confidence.Value()}
 
 	deps := services.IntentRouterDeps{
-		Parser:                     s.parser,
-		Fallback:                   s.fallback,
-		WhatsAppGateway:            s.wa,
-		PendingExpenseConfirmation: pending,
-		OnboardingRunner:           onboarding,
-		ExpenseRecorder:            expense,
-		Location:                   time.UTC,
-	}
-	router, err := services.NewIntentRouter(noop.NewProvider(), deps)
-	require.NoError(s.T(), err)
-
-	result := router.RouteWhatsApp(
-		context.Background(),
-		services.Principal{UserID: uuid.New()},
-		services.InboundMessage{Text: "sim", WhatsAppTo: "+5511999"},
-	)
-
-	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(intent.KindRecordExpense, result.Kind)
-	s.Equal(1, expense.calls, "expense recorder deve ser chamado")
-	s.Equal(0, onboarding.calls, "onboarding NAO deve ser chamado quando ha pending expense confirmado")
-}
-
-func (s *PendingExpensePrioritySuite) TestPendingExpenseConfirmedWithLongerText() {
-	pending := &fakePendingExpenseGateway{
-		found: true,
-		draft: pendingexpense.Draft{
-			AmountCents:   13150,
-			Merchant:      "farmácia",
-			PaymentMethod: "pix",
-			Direction:     "outcome",
-			CategoryID:    "expense.custo_fixo.medicamentos",
-			CategoryPath:  "Custo Fixo > Medicamentos e Farmácia",
+		Parser:           s.parser,
+		Fallback:         s.fallback,
+		WhatsAppGateway:  s.wa,
+		OnboardingRunner: onboarding,
+		ExpenseRecorder:  expense,
+		Location:         time.UTC,
+		Kernel: &services.KernelDeps{
+			Engine:           engine,
+			SettleReg:        settleReg,
+			CategoryResolver: resolver,
+			PersistFn:        persistFn,
 		},
 	}
+	router, err := services.NewIntentRouter(obs, deps)
+	require.NoError(s.T(), err)
+	return router
+}
+
+func (s *PendingExpensePrioritySuite) TestKernelResumePriorBeforeOnboarding() {
+	store := newE2EStore()
+	obs := fake.NewProvider()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+
+	candidates := []string{"Custo Fixo > Medicamentos", "Saúde > Farmácia"}
+	resolver := func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) {
+		if st.ForceCategory == nil && st.AwaitingKind == "" {
+			return st, &tools.CategoryAmbiguousError{Hint: "medicamentos", Candidates: candidates}
+		}
+		cat := candidates[0]
+		if st.ForceCategory != nil {
+			cat = *st.ForceCategory
+		}
+		st.CategoryID = cat
+		st.CategoryPath = cat
+		return st, nil
+	}
 	expense := &fakeConfirmExpenseRecorder{
-		result: tools.ExpenseRecorderResult{Persisted: true, AmountCents: 13150, CategoryPath: "Custo Fixo > Medicamentos e Farmácia"},
+		result: tools.ExpenseRecorderResult{Persisted: true, AmountCents: 13150, CategoryPath: candidates[0]},
 	}
-	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "onboarding handling"}
+	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "onboarding reply"}
 
-	confidence, err := valueobjects.NewConfidence(1.0)
-	require.NoError(s.T(), err)
-	s.parser = &fakeParser{intent: intent.Intent{}, confidence: confidence.Value()}
+	def := agentwf.NewTransactionsWriteDefinition(agentwf.TransactionsWriteDeps{
+		Authorize: func(_ context.Context, _ steps.ExpenseState) bool { return true },
+		Replay:    func(_ context.Context, _ steps.ExpenseState) (string, bool) { return "", false },
+		Policy:    func(_ context.Context, _ steps.ExpenseState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, _ steps.ExpenseState) steps.AuditBeginResult {
+			return steps.AuditBeginResult{Settle: func(_ context.Context, _ bool) {}}
+		},
+		OnSettle: nil,
+		Resolver: resolver,
+		Persist: func(_ context.Context, st steps.ExpenseState) (steps.PersistResult, error) {
+			return steps.PersistResult{AmountCents: 13150, CategoryPath: candidates[0]}, nil
+		},
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha",
+	})
 
-	deps := services.IntentRouterDeps{
-		Parser:                     s.parser,
-		Fallback:                   s.fallback,
-		WhatsAppGateway:            s.wa,
-		PendingExpenseConfirmation: pending,
-		OnboardingRunner:           onboarding,
-		ExpenseRecorder:            expense,
-		Location:                   time.UTC,
+	userID := uuid.New()
+	correlationKey := userID.String() + ":whatsapp"
+	initial := steps.ExpenseState{
+		UserID:          userID,
+		Channel:         "whatsapp",
+		AmountCents:     13150,
+		Merchant:        "farmácia",
+		PaymentMethod:   "pix",
+		Direction:       "outcome",
+		TransactionKind: pendingexpense.TransactionKindExpense,
+		Kind:            intent.KindRecordExpense,
 	}
-	router, err := services.NewIntentRouter(noop.NewProvider(), deps)
+	result1, err := engine.Start(context.Background(), def, correlationKey, initial)
 	require.NoError(s.T(), err)
+	require.Equal(s.T(), platform.RunStatusSuspended, result1.Status)
+
+	router := s.buildRouterWithKernelAndOnboarding(store, resolver, func(_ context.Context, _ steps.ExpenseState) (steps.PersistResult, error) {
+		return steps.PersistResult{AmountCents: 13150, CategoryPath: candidates[0]}, nil
+	}, onboarding, expense)
 
 	result := router.RouteWhatsApp(
 		context.Background(),
-		services.Principal{UserID: uuid.New()},
-		services.InboundMessage{Text: "sim, registrar com essa categoria", WhatsAppTo: "+5511999"},
+		services.Principal{UserID: userID},
+		services.InboundMessage{Text: "1", WhatsAppTo: "+5511999"},
 	)
 
 	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(intent.KindRecordExpense, result.Kind)
-	s.Equal(1, expense.calls, "expense recorder deve ser chamado")
-	s.Equal(0, onboarding.calls, "onboarding NAO deve ser chamado")
+	s.Equal(0, onboarding.calls, "onboarding NAO deve ser chamado quando ha kernel run suspenso")
 }
 
-func (s *PendingExpensePrioritySuite) TestNoPendingExpense_OnboardingHandles() {
-	pending := &fakePendingExpenseGateway{found: false}
+func (s *PendingExpensePrioritySuite) TestNoPendingKernelRun_OnboardingHandles() {
+	store := newE2EStore()
 	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "resposta do onboarding"}
+	expense := &fakeConfirmExpenseRecorder{}
 
 	confidence, err := valueobjects.NewConfidence(1.0)
 	require.NoError(s.T(), err)
 	s.parser = &fakeParser{intent: intent.Intent{}, confidence: confidence.Value()}
 
+	obs := fake.NewProvider()
+	engine := platform.NewEngine[steps.ExpenseState](store, obs)
+	settleReg := services.NewSettleRegistry()
+
 	deps := services.IntentRouterDeps{
-		Parser:                     s.parser,
-		Fallback:                   s.fallback,
-		WhatsAppGateway:            s.wa,
-		PendingExpenseConfirmation: pending,
-		OnboardingRunner:           onboarding,
-		Location:                   time.UTC,
+		Parser:           s.parser,
+		Fallback:         s.fallback,
+		WhatsAppGateway:  s.wa,
+		OnboardingRunner: onboarding,
+		ExpenseRecorder:  expense,
+		Location:         time.UTC,
+		Kernel: &services.KernelDeps{
+			Engine:           engine,
+			SettleReg:        settleReg,
+			CategoryResolver: func(_ context.Context, st steps.ExpenseState) (steps.ExpenseState, error) { return st, nil },
+			PersistFn: func(_ context.Context, _ steps.ExpenseState) (steps.PersistResult, error) {
+				return steps.PersistResult{}, nil
+			},
+		},
 	}
-	router, err := services.NewIntentRouter(noop.NewProvider(), deps)
-	require.NoError(s.T(), err)
+	router, routerErr := services.NewIntentRouter(obs, deps)
+	require.NoError(s.T(), routerErr)
 
 	result := router.RouteWhatsApp(
 		context.Background(),
@@ -199,6 +202,6 @@ func (s *PendingExpensePrioritySuite) TestNoPendingExpense_OnboardingHandles() {
 	)
 
 	s.Equal(tools.OutcomeRouted, result.Outcome)
-	s.Equal(1, onboarding.calls, "onboarding deve ser chamado quando nao ha pending expense")
+	s.Equal(1, onboarding.calls, "onboarding deve ser chamado quando nao ha kernel run suspenso")
 	s.Equal("resposta do onboarding", result.Reply)
 }

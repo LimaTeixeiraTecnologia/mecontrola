@@ -77,20 +77,6 @@ type AgentModule struct {
 	WorkflowKernelHousekeepingJob worker.Job
 }
 
-type AgentModuleOption func(*agentModuleBuilder)
-
-func WithSessionStore(db *sqlx.DB) AgentModuleOption {
-	return func(b *agentModuleBuilder) {
-		b.sessionDB = db
-	}
-}
-
-func WithOutboxPublisher(pub outbox.Publisher) AgentModuleOption {
-	return func(b *agentModuleBuilder) {
-		b.outboxPublisher = pub
-	}
-}
-
 type OnboardingLLMUseCases struct {
 	GetContext         *onbusecases.GetOnboardingContext
 	SaveObjective      *onbusecases.SaveOnboardingObjective
@@ -106,10 +92,10 @@ type OnboardingLLMUseCases struct {
 	SuggestBudgetSplit *onbusecases.SuggestBudgetSplit
 }
 
-func WithOnboardingLLM(uc OnboardingLLMUseCases) AgentModuleOption {
-	return func(b *agentModuleBuilder) {
-		b.onboardingLLM = &uc
-	}
+type AgentModuleDeps struct {
+	SessionStore    *sqlx.DB
+	OutboxPublisher outbox.Publisher
+	OnboardingLLM   *OnboardingLLMUseCases
 }
 
 type llmRuntime struct {
@@ -119,7 +105,7 @@ type llmRuntime struct {
 	OnboardingInterpreter usecases.IntentInterpreter
 }
 
-type agentModuleBuilder struct {
+type agentModuleWiring struct {
 	cfg                *configs.Config
 	o11y               observability.Observability
 	identityModule     identity.IdentityModule
@@ -156,9 +142,16 @@ func NewAgentModule(
 	budgetsModule *budgets.BudgetsModule,
 	whatsAppGateway whatsAppGateway,
 	budgetConfigurator tools.BudgetConfigurator,
-	opts ...AgentModuleOption,
+	deps AgentModuleDeps,
 ) (AgentModule, error) {
-	builder := &agentModuleBuilder{
+	if cfg == nil {
+		return AgentModule{}, fmt.Errorf("agent.module: config is nil")
+	}
+	if whatsAppGateway == nil {
+		return AgentModule{}, fmt.Errorf("agent.module: whatsapp gateway is nil")
+	}
+
+	w := &agentModuleWiring{
 		cfg:                cfg,
 		o11y:               o11y,
 		identityModule:     identityModule,
@@ -168,162 +161,152 @@ func NewAgentModule(
 		budgetsModule:      budgetsModule,
 		whatsAppGateway:    whatsAppGateway,
 		budgetConfigurator: budgetConfigurator,
-	}
-	for _, opt := range opts {
-		opt(builder)
-	}
-	return builder.build()
-}
-
-func (b *agentModuleBuilder) build() (AgentModule, error) {
-	if b.cfg == nil {
-		return AgentModule{}, fmt.Errorf("agent.module: config is nil")
-	}
-	if b.whatsAppGateway == nil {
-		return AgentModule{}, fmt.Errorf("agent.module: whatsapp gateway is nil")
+		sessionDB:          deps.SessionStore,
+		outboxPublisher:    deps.OutboxPublisher,
+		onboardingLLM:      deps.OnboardingLLM,
 	}
 
-	b.prepareSessionStore()
+	prepareSessionStore(w)
 
-	llmModule, err := b.buildLLMModule()
+	llmModule, err := buildLLMModule(w)
 	if err != nil {
 		return AgentModule{}, err
 	}
 
-	intentRouter, err := b.buildIntentRouter(llmModule)
+	intentRouter, err := buildIntentRouter(w, llmModule)
 	if err != nil {
 		return AgentModule{}, err
 	}
 
 	var pub inboundPublisher
-	if b.outboxPublisher != nil {
-		pub = agentevents.NewInboundEventPublisher(b.outboxPublisher, b.o11y)
+	if w.outboxPublisher != nil {
+		pub = agentevents.NewInboundEventPublisher(w.outboxPublisher, w.o11y)
 	}
 
 	module := AgentModule{
-		WhatsAppAgentRoute:            b.buildWhatsAppAgentRoute(pub),
-		TelegramAgentRoute:            b.buildTelegramAgentRoute(pub),
+		WhatsAppAgentRoute:            buildWhatsAppAgentRoute(w, pub),
+		TelegramAgentRoute:            buildTelegramAgentRoute(w, pub),
 		ParseInbound:                  llmModule.ParseInbound,
 		IntentRouter:                  intentRouter,
-		SessionRepository:             b.sessionRepo,
-		SessionRepositoryFact:         b.sessionRepoFact,
-		SessionUnitOfWork:             b.sessionUoW,
-		EventHandlers:                 b.buildEventHandlers(intentRouter),
-		WorkflowKernelHousekeepingJob: b.wfHousekeepingJob,
+		SessionRepository:             w.sessionRepo,
+		SessionRepositoryFact:         w.sessionRepoFact,
+		SessionUnitOfWork:             w.sessionUoW,
+		EventHandlers:                 buildEventHandlers(w, intentRouter),
+		WorkflowKernelHousekeepingJob: w.wfHousekeepingJob,
 	}
 	return module, nil
 }
 
-func (b *agentModuleBuilder) buildEventHandlers(router *appservices.IntentRouter) []EventHandlerRegistration {
+func buildEventHandlers(w *agentModuleWiring, router *appservices.IntentRouter) []EventHandlerRegistration {
 	if router == nil {
 		return nil
 	}
 	handlers := []EventHandlerRegistration{
 		{
 			EventType: agentevents.EventTypeWhatsAppInbound,
-			Handler:   agentconsumers.NewWhatsAppInboundConsumer(router, b.o11y),
+			Handler:   agentconsumers.NewWhatsAppInboundConsumer(router, w.o11y),
 		},
 		{
 			EventType: agentevents.EventTypeTelegramInbound,
-			Handler:   agentconsumers.NewTelegramInboundConsumer(router, b.o11y),
+			Handler:   agentconsumers.NewTelegramInboundConsumer(router, w.o11y),
 		},
 		{
 			EventType: "onboarding.subscription_bound",
-			Handler:   b.buildOnboardingBoundConsumer(router),
+			Handler:   buildOnboardingBoundConsumer(w, router),
 		},
 	}
-	if b.onboardingLLM != nil && b.onboardingLLM.GetContext != nil && b.wmRepo != nil {
+	if w.onboardingLLM != nil && w.onboardingLLM.GetContext != nil && w.wmRepo != nil {
 		handlers = append(handlers, EventHandlerRegistration{
 			EventType: "onboarding.completed",
-			Handler:   agentconsumers.NewOnboardingCompletedConsumer(b.onboardingLLM.GetContext, b.wmRepo, b.o11y),
+			Handler:   agentconsumers.NewOnboardingCompletedConsumer(w.onboardingLLM.GetContext, w.wmRepo, w.o11y),
 		})
 	}
 	return handlers
 }
 
-func (b *agentModuleBuilder) buildOnboardingBoundConsumer(router *appservices.IntentRouter) *agentconsumers.OnboardingBoundConsumer {
+func buildOnboardingBoundConsumer(w *agentModuleWiring, router *appservices.IntentRouter) *agentconsumers.OnboardingBoundConsumer {
 	opts := make([]agentconsumers.OnboardingBoundConsumerOption, 0)
-	if b.decisionRepoFact != nil && b.decisionUoW != nil {
-		store := agentconsumers.NewGreetingDecisionStore(b.decisionRepoFact, b.decisionUoW)
+	if w.decisionRepoFact != nil && w.decisionUoW != nil {
+		store := agentconsumers.NewGreetingDecisionStore(w.decisionRepoFact, w.decisionUoW)
 		opts = append(opts, agentconsumers.WithGreetingDecisionStore(store))
 	}
-	if b.onboardingLLM != nil && b.onboardingLLM.GetContext != nil {
-		opts = append(opts, agentconsumers.WithOnboardingStateChecker(agentonboarding.NewOnboardingStateReader(b.onboardingLLM.GetContext)))
+	if w.onboardingLLM != nil && w.onboardingLLM.GetContext != nil {
+		opts = append(opts, agentconsumers.WithOnboardingStateChecker(agentonboarding.NewOnboardingStateReader(w.onboardingLLM.GetContext)))
 	}
-	if b.onboardingLLM != nil && b.onboardingLLM.MarkWelcomeSent != nil {
-		opts = append(opts, agentconsumers.WithGreetingWelcomeMarker(agentonboarding.NewGreetingWelcomeMarker(b.onboardingLLM.MarkWelcomeSent)))
+	if w.onboardingLLM != nil && w.onboardingLLM.MarkWelcomeSent != nil {
+		opts = append(opts, agentconsumers.WithGreetingWelcomeMarker(agentonboarding.NewGreetingWelcomeMarker(w.onboardingLLM.MarkWelcomeSent)))
 	}
-	return agentconsumers.NewOnboardingBoundConsumer(router, b.o11y, opts...)
+	return agentconsumers.NewOnboardingBoundConsumer(router, w.o11y, opts...)
 }
 
-func (b *agentModuleBuilder) prepareSessionStore() {
-	if b.sessionDB == nil {
+func prepareSessionStore(w *agentModuleWiring) {
+	if w.sessionDB == nil {
 		return
 	}
-	factory := agentrepo.NewRepositoryFactory(b.o11y)
-	b.sessionRepoFact = factory
-	b.sessionRepo = factory.AgentSessionRepository(b.sessionDB)
-	b.sessionUoW = uow.NewUnitOfWork(b.sessionDB)
-	b.decisionRepoFact = agentrepo.NewDecisionRepositoryFactory(b.o11y)
-	b.decisionUoW = uow.NewUnitOfWork(b.sessionDB)
-	b.threadRepoFact = agentrepo.NewThreadRepositoryFactory(b.o11y)
-	b.runRepoFact = agentrepo.NewRunRepositoryFactory(b.o11y)
-	b.runtimeUoW = uow.NewUnitOfWork(b.sessionDB)
-	wmFactory := agentrepo.NewWorkingMemoryRepositoryFactory(b.o11y)
-	b.wmRepo = wmFactory.WorkingMemoryRepository(b.sessionDB)
-	obsFactory := agentrepo.NewObservationRepositoryFactory(b.o11y)
-	b.obsRepo = obsFactory.ObservationRepository(b.sessionDB)
-	b.wfStoreFactory = wfpostgres.NewStoreFactory(b.o11y)
+	factory := agentrepo.NewRepositoryFactory(w.o11y)
+	w.sessionRepoFact = factory
+	w.sessionRepo = factory.AgentSessionRepository(w.sessionDB)
+	w.sessionUoW = uow.NewUnitOfWork(w.sessionDB)
+	w.decisionRepoFact = agentrepo.NewDecisionRepositoryFactory(w.o11y)
+	w.decisionUoW = uow.NewUnitOfWork(w.sessionDB)
+	w.threadRepoFact = agentrepo.NewThreadRepositoryFactory(w.o11y)
+	w.runRepoFact = agentrepo.NewRunRepositoryFactory(w.o11y)
+	w.runtimeUoW = uow.NewUnitOfWork(w.sessionDB)
+	wmFactory := agentrepo.NewWorkingMemoryRepositoryFactory(w.o11y)
+	w.wmRepo = wmFactory.WorkingMemoryRepository(w.sessionDB)
+	obsFactory := agentrepo.NewObservationRepositoryFactory(w.o11y)
+	w.obsRepo = obsFactory.ObservationRepository(w.sessionDB)
+	w.wfStoreFactory = wfpostgres.NewStoreFactory(w.o11y)
 }
 
-func (b *agentModuleBuilder) buildLLMModule() (*llmRuntime, error) {
-	if b.categoriesModule == nil || b.categoriesModule.ListCategoriesUC == nil {
+func buildLLMModule(w *agentModuleWiring) (*llmRuntime, error) {
+	if w.categoriesModule == nil || w.categoriesModule.ListCategoriesUC == nil {
 		return nil, fmt.Errorf("agent.module: categories module is incomplete")
 	}
-	if b.cardModule.ListCardsUC == nil {
+	if w.cardModule.ListCardsUC == nil {
 		return nil, fmt.Errorf("agent.module: card list use case is nil")
 	}
-	if b.cardModule.CreateCardUC == nil {
+	if w.cardModule.CreateCardUC == nil {
 		return nil, fmt.Errorf("agent.module: card create use case is nil")
 	}
 
-	if b.budgetsModule == nil || b.budgetsModule.ListAlertsUC == nil {
+	if w.budgetsModule == nil || w.budgetsModule.ListAlertsUC == nil {
 		return nil, fmt.Errorf("agent.module: budgets module is incomplete")
 	}
-	if b.transactionsModule.ListTransactionsUC == nil || b.transactionsModule.CreateTransactionUC == nil {
+	if w.transactionsModule.ListTransactionsUC == nil || w.transactionsModule.CreateTransactionUC == nil {
 		return nil, fmt.Errorf("agent.module: transactions desabilitado; defina TRANSACTIONS_ENABLED=true")
 	}
 
-	llmModule, err := newLLMRuntime(b.cfg.AgentConfig, b.o11y)
+	llmModule, err := newLLMRuntime(w.cfg.AgentConfig, w.o11y)
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: %w", err)
 	}
-	if b.sessionRepo != nil && b.wmRepo != nil && b.obsRepo != nil {
+	if w.sessionRepo != nil && w.wmRepo != nil && w.obsRepo != nil {
 		redactor, redactErr := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
 		if redactErr == nil {
-			obsSvc := appservices.NewObservationMemory(llmModule.Interpreter, b.obsRepo, b.o11y, 6, 3)
+			obsSvc := appservices.NewObservationMemory(llmModule.Interpreter, w.obsRepo, w.o11y, 6, 3)
 			conv, convErr := usecases.NewComposeConversationalReply(
 				llmModule.Interpreter,
-				b.cfg.AgentConfig.ProseMaxTokens,
-				b.o11y,
-				b.sessionRepo,
-				b.wmRepo,
+				w.cfg.AgentConfig.ProseMaxTokens,
+				w.o11y,
+				w.sessionRepo,
+				w.wmRepo,
 				obsSvc,
 				redactor,
 			)
 			if convErr == nil {
 				llmModule.Conversational = conv
 			} else {
-				b.o11y.Logger().Warn(context.Background(), "agent.module.conversational_rebuild_failed", observability.Error(convErr))
+				w.o11y.Logger().Warn(context.Background(), "agent.module.conversational_rebuild_failed", observability.Error(convErr))
 			}
 		} else {
-			b.o11y.Logger().Warn(context.Background(), "agent.module.sanitizer_create_failed", observability.Error(redactErr))
+			w.o11y.Logger().Warn(context.Background(), "agent.module.sanitizer_create_failed", observability.Error(redactErr))
 		}
 	}
 	return llmModule, nil
 }
 
-func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservices.IntentRouter, error) {
+func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservices.IntentRouter, error) {
 	useLLM := llmModule != nil && llmModule.ParseInbound != nil
 	if !useLLM {
 		return nil, nil
@@ -332,219 +315,218 @@ func (b *agentModuleBuilder) buildIntentRouter(llmModule *llmRuntime) (*appservi
 	deps := appservices.IntentRouterDeps{
 		Parser:              &intentParserAdapter{uc: llmModule.ParseInbound},
 		Fallback:            &fallbackAdapter{runtime: llmModule},
-		WhatsAppGateway:     b.whatsAppGateway,
-		PolicyMinConfidence: b.cfg.AgentConfig.PolicyMinConfidence,
+		WhatsAppGateway:     w.whatsAppGateway,
+		PolicyMinConfidence: w.cfg.AgentConfig.PolicyMinConfidence,
 	}
-	if b.outboxPublisher != nil {
-		deps.EventPublisher = agentevents.NewIntentEventPublisher(b.outboxPublisher, b.o11y)
+	if w.outboxPublisher != nil {
+		deps.EventPublisher = agentevents.NewIntentEventPublisher(w.outboxPublisher, w.o11y)
 	}
-	b.fillIntentRouterDeps(&deps)
-	b.attachExpenseRecorder(&deps)
-	b.attachCardPurchaseLogger(&deps)
-	b.attachTransactionQueries(&deps)
-	b.attachRecurring(&deps)
-	b.attachBudgetConfigSession(&deps, llmModule)
-	b.attachOnboardingLLM(&deps, llmModule)
-	b.attachDecisionAudit(&deps)
-	b.attachKernel(&deps)
-	deps.TelegramGateway = b.buildTelegramGateway()
+	fillIntentRouterDeps(w, &deps)
+	attachExpenseRecorder(w, &deps)
+	attachCardPurchaseLogger(w, &deps)
+	attachTransactionQueries(w, &deps)
+	attachRecurring(w, &deps)
+	attachBudgetConfigSession(w, &deps, llmModule)
+	attachOnboardingLLM(w, &deps, llmModule)
+	attachDecisionAudit(w, &deps)
+	if err := attachKernel(w, &deps); err != nil {
+		return nil, fmt.Errorf("agent.module: kernel wiring: %w", err)
+	}
+	deps.TelegramGateway = buildTelegramGateway(w)
 
-	router, err := appservices.NewIntentRouter(b.o11y, deps)
+	router, err := appservices.NewIntentRouter(w.o11y, deps)
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: intent router: %w", err)
 	}
-	b.attachRuntime(router)
+	attachRuntime(w, router)
 	return router, nil
 }
 
-func (b *agentModuleBuilder) attachRuntime(router *appservices.IntentRouter) {
-	if b.threadRepoFact == nil || b.runRepoFact == nil || b.runtimeUoW == nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.runtime",
+func attachRuntime(w *agentModuleWiring, router *appservices.IntentRouter) {
+	if w.threadRepoFact == nil || w.runRepoFact == nil || w.runtimeUoW == nil {
+		w.o11y.Logger().Warn(context.Background(), "agent.module.runtime",
 			observability.String("mode", "legacy"),
 			observability.String("reason", "session_store_missing"),
 		)
 		return
 	}
-	threads := agentbinding.NewThreadGatewayAdapter(b.threadRepoFact, b.runtimeUoW)
-	runs := agentbinding.NewRunGatewayAdapter(b.runRepoFact, b.runtimeUoW)
+	threads := agentbinding.NewThreadGatewayAdapter(w.threadRepoFact, w.runtimeUoW)
+	runs := agentbinding.NewRunGatewayAdapter(w.runRepoFact, w.runtimeUoW)
 	router.EnableRuntime(threads, runs)
-	b.o11y.Logger().Info(context.Background(), "agent.module.runtime",
+	w.o11y.Logger().Info(context.Background(), "agent.module.runtime",
 		observability.String("mode", "enabled"),
 	)
 }
 
-func (b *agentModuleBuilder) fillIntentRouterDeps(deps *appservices.IntentRouterDeps) {
-	if b.budgetsModule != nil && b.budgetsModule.GetMonthlySummaryUC != nil {
-		deps.MonthlySummary = b.budgetsModule.GetMonthlySummaryUC
+func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
+	if w.budgetsModule != nil && w.budgetsModule.GetMonthlySummaryUC != nil {
+		deps.MonthlySummary = w.budgetsModule.GetMonthlySummaryUC
 	}
-	if b.cardModule.ListCardsUC != nil {
-		deps.CardLister = b.cardModule.ListCardsUC
+	if w.cardModule.ListCardsUC != nil {
+		deps.CardLister = w.cardModule.ListCardsUC
 	}
-	if b.cardModule.InvoiceForUC != nil {
-		deps.CardInvoice = b.cardModule.InvoiceForUC
+	if w.cardModule.InvoiceForUC != nil {
+		deps.CardInvoice = w.cardModule.InvoiceForUC
 	}
-	if b.cardModule.CreateCardUC != nil {
-		deps.CardCreator = agentbinding.NewCardCreatorAdapter(b.cardModule.CreateCardUC)
+	if w.cardModule.CreateCardUC != nil {
+		deps.CardCreator = agentbinding.NewCardCreatorAdapter(w.cardModule.CreateCardUC)
 	}
-	if b.cardModule.CountCardsUC != nil {
-		deps.CardCounter = agentbinding.NewCardCounterAdapter(b.cardModule.CountCardsUC)
+	if w.cardModule.CountCardsUC != nil {
+		deps.CardCounter = agentbinding.NewCardCounterAdapter(w.cardModule.CountCardsUC)
 	}
-	if b.cardModule.ListCardsUC != nil && b.cardModule.UpdateCardUC != nil {
-		deps.CardUpdater = agentbinding.NewCardUpdaterAdapter(b.cardModule.ListCardsUC, b.cardModule.UpdateCardUC)
+	if w.cardModule.ListCardsUC != nil && w.cardModule.UpdateCardUC != nil {
+		deps.CardUpdater = agentbinding.NewCardUpdaterAdapter(w.cardModule.ListCardsUC, w.cardModule.UpdateCardUC)
 	}
-	if b.cardModule.ListCardsUC != nil && b.cardModule.SoftDeleteCardUC != nil {
-		deps.CardDeleter = agentbinding.NewCardDeleterAdapter(b.cardModule.ListCardsUC, b.cardModule.SoftDeleteCardUC)
+	if w.cardModule.ListCardsUC != nil && w.cardModule.SoftDeleteCardUC != nil {
+		deps.CardDeleter = agentbinding.NewCardDeleterAdapter(w.cardModule.ListCardsUC, w.cardModule.SoftDeleteCardUC)
 	}
-	if b.budgetsModule != nil && b.budgetsModule.EditCategoryPercentageUC != nil {
-		deps.CategoryPercentageEditor = agentbinding.NewCategoryPercentageEditorAdapter(b.budgetsModule.EditCategoryPercentageUC)
+	if w.budgetsModule != nil && w.budgetsModule.EditCategoryPercentageUC != nil {
+		deps.CategoryPercentageEditor = agentbinding.NewCategoryPercentageEditorAdapter(w.budgetsModule.EditCategoryPercentageUC)
 	}
-	if b.budgetConfigurator != nil {
-		deps.BudgetConfig = b.budgetConfigurator
+	if w.budgetConfigurator != nil {
+		deps.BudgetConfig = w.budgetConfigurator
 	}
 }
 
-func (b *agentModuleBuilder) attachExpenseRecorder(deps *appservices.IntentRouterDeps) {
-	if b.transactionsModule.CreateTransactionUC == nil {
+func attachExpenseRecorder(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
+	if w.transactionsModule.CreateTransactionUC == nil {
 		return
 	}
-	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
+	if w.categoriesModule == nil || w.categoriesModule.SearchDictionaryUC == nil {
 		return
 	}
 	logTransaction := usecases.NewRecordTransactionFromAgent(
-		b.categoriesModule.SearchDictionaryUC,
-		agentbinding.NewTransactionCreatorAdapter(b.transactionsModule.CreateTransactionUC),
-		b.o11y,
+		w.categoriesModule.SearchDictionaryUC,
+		agentbinding.NewTransactionCreatorAdapter(w.transactionsModule.CreateTransactionUC),
+		w.o11y,
 	)
 	deps.ExpenseRecorder = agentbinding.NewTransactionLoggerAdapter(logTransaction)
 }
 
-func (b *agentModuleBuilder) attachCardPurchaseLogger(deps *appservices.IntentRouterDeps) {
-	if b.transactionsModule.CreateCardPurchaseUC == nil {
+func attachCardPurchaseLogger(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
+	if w.transactionsModule.CreateCardPurchaseUC == nil {
 		return
 	}
-	if b.cardModule.ListCardsUC == nil {
+	if w.cardModule.ListCardsUC == nil {
 		return
 	}
-	if b.categoriesModule == nil || b.categoriesModule.SearchDictionaryUC == nil {
+	if w.categoriesModule == nil || w.categoriesModule.SearchDictionaryUC == nil {
 		return
 	}
 	logCardPurchase := usecases.NewRecordCardPurchaseFromAgent(
-		b.categoriesModule.SearchDictionaryUC,
-		agentbinding.NewCardPurchaseCreatorAdapter(b.cardModule.ListCardsUC, b.transactionsModule.CreateCardPurchaseUC),
-		b.o11y,
+		w.categoriesModule.SearchDictionaryUC,
+		agentbinding.NewCardPurchaseCreatorAdapter(w.cardModule.ListCardsUC, w.transactionsModule.CreateCardPurchaseUC),
+		w.o11y,
 	)
 	deps.CardPurchaseLog = agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase)
 }
 
-func (b *agentModuleBuilder) attachTransactionQueries(deps *appservices.IntentRouterDeps) {
-	if b.transactionsModule.ListTransactionsUC == nil {
+func attachTransactionQueries(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
+	if w.transactionsModule.ListTransactionsUC == nil {
 		return
 	}
-	deps.TransactionLister = agentbinding.NewTransactionListerAdapter(b.transactionsModule.ListTransactionsUC)
-	if b.transactionsModule.DeleteTransactionUC != nil {
-		deps.LastDeleter = agentbinding.NewLastTransactionDeleterAdapter(b.transactionsModule.DeleteTransactionUC)
+	deps.TransactionLister = agentbinding.NewTransactionListerAdapter(w.transactionsModule.ListTransactionsUC)
+	deps.IncomeSummaryReader = agentbinding.NewIncomeSummaryReaderAdapter(w.transactionsModule.ListTransactionsUC)
+	if w.transactionsModule.DeleteTransactionUC != nil {
+		deps.LastDeleter = agentbinding.NewLastTransactionDeleterAdapter(w.transactionsModule.DeleteTransactionUC)
 	}
-	if b.transactionsModule.GetTransactionUC != nil && b.transactionsModule.UpdateTransactionUC != nil {
+	if w.transactionsModule.GetTransactionUC != nil && w.transactionsModule.UpdateTransactionUC != nil {
 		deps.LastEditor = agentbinding.NewLastTransactionEditorAdapter(
-			b.transactionsModule.GetTransactionUC,
-			b.transactionsModule.UpdateTransactionUC,
+			w.transactionsModule.GetTransactionUC,
+			w.transactionsModule.UpdateTransactionUC,
 		)
 	}
 }
 
-func (b *agentModuleBuilder) attachRecurring(deps *appservices.IntentRouterDeps) {
-	if b.transactionsModule.CreateRecurringTemplateUC != nil &&
-		b.categoriesModule != nil && b.categoriesModule.SearchDictionaryUC != nil {
+func attachRecurring(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
+	if w.transactionsModule.CreateRecurringTemplateUC != nil &&
+		w.categoriesModule != nil && w.categoriesModule.SearchDictionaryUC != nil {
 		createRecurring := usecases.NewCreateRecurringFromAgent(
-			b.categoriesModule.SearchDictionaryUC,
-			agentbinding.NewRecurringTemplateCreatorAdapter(b.transactionsModule.CreateRecurringTemplateUC),
-			b.o11y,
+			w.categoriesModule.SearchDictionaryUC,
+			agentbinding.NewRecurringTemplateCreatorAdapter(w.transactionsModule.CreateRecurringTemplateUC),
+			w.o11y,
 		)
 		deps.RecurringCreator = agentbinding.NewRecurringCreatorAdapter(createRecurring)
 	}
-	if b.transactionsModule.ListRecurringTemplatesUC != nil {
-		deps.RecurringLister = agentbinding.NewRecurringListerAdapter(b.transactionsModule.ListRecurringTemplatesUC)
+	if w.transactionsModule.ListRecurringTemplatesUC != nil {
+		deps.RecurringLister = agentbinding.NewRecurringListerAdapter(w.transactionsModule.ListRecurringTemplatesUC)
 	}
 }
 
-func (b *agentModuleBuilder) attachBudgetConfigSession(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
-	if b.sessionRepo == nil || b.sessionUoW == nil {
+func attachBudgetConfigSession(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
+	if w.sessionRepo == nil || w.sessionUoW == nil {
 		return
 	}
 	if llmModule == nil || llmModule.Interpreter == nil {
 		return
 	}
-	if b.budgetsModule == nil || b.budgetsModule.CreateBudgetUC == nil || b.budgetsModule.ActivateBudgetUC == nil {
+	if w.budgetsModule == nil || w.budgetsModule.CreateBudgetUC == nil || w.budgetsModule.ActivateBudgetUC == nil {
 		return
 	}
-	conversationUC, err := usecases.NewConfigureBudgetConversation(llmModule.Interpreter, b.o11y)
+	conversationUC, err := usecases.NewConfigureBudgetConversation(llmModule.Interpreter, w.o11y)
 	if err != nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.budget_config_session_failed",
+		w.o11y.Logger().Warn(context.Background(), "agent.module.budget_config_session_failed",
 			observability.Error(err),
 		)
 		return
 	}
 	deps.BudgetConvo = agentbinding.NewBudgetConversationAdapter(conversationUC)
 	deps.BudgetCommitter = agentbinding.NewBudgetConfigCommitterAdapter(
-		b.budgetsModule.CreateBudgetUC,
-		b.budgetsModule.ActivateBudgetUC,
+		w.budgetsModule.CreateBudgetUC,
+		w.budgetsModule.ActivateBudgetUC,
 	)
-	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(b.sessionRepo, b.sessionUoW)
-	deps.PendingExpenseConfirmation = agentbinding.NewPendingExpenseConfirmationAdapter(b.sessionRepo, b.sessionUoW)
+	deps.BudgetSession = agentbinding.NewBudgetSessionGatewayAdapter(w.sessionRepo, w.sessionUoW)
 }
 
-func (b *agentModuleBuilder) attachKernel(deps *appservices.IntentRouterDeps) {
-	if b.sessionDB == nil || b.wfStoreFactory == nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.kernel_disabled",
-			observability.String("reason", "session_store_or_factory_missing"),
-		)
-		return
+func attachKernel(w *agentModuleWiring, deps *appservices.IntentRouterDeps) error {
+	if w.sessionDB == nil || w.wfStoreFactory == nil {
+		return errors.New("session_store_or_factory_missing: kernel requires sessionDB and wfStoreFactory")
 	}
-	store := b.wfStoreFactory.Store(b.sessionDB)
+	store := w.wfStoreFactory.Store(w.sessionDB)
 	settleReg := appservices.NewSettleRegistry()
 	retryPolicy := platform.RetryPolicy{
-		MaxAttempts: b.cfg.WorkflowKernelConfig.MaxAttempts,
-		BaseBackoff: b.cfg.WorkflowKernelConfig.RetryBaseBackoff,
-		MaxBackoff:  b.cfg.WorkflowKernelConfig.RetryMaxBackoff,
+		MaxAttempts: w.cfg.WorkflowKernelConfig.MaxAttempts,
+		BaseBackoff: w.cfg.WorkflowKernelConfig.RetryBaseBackoff,
+		MaxBackoff:  w.cfg.WorkflowKernelConfig.RetryMaxBackoff,
 	}
 
-	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, b.o11y)
-	confirmDef := b.buildConfirmDefinition(deps, settleReg)
+	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, w.o11y)
+	confirmDef := buildConfirmDefinition(w, deps, settleReg)
 
 	kernelDeps := &appservices.KernelDeps{
 		SettleReg:     settleReg,
 		ConfirmEngine: confirmEngine,
 		ConfirmDef:    confirmDef,
 		RetryPolicy:   retryPolicy,
-		MaxAttempts:   b.cfg.WorkflowKernelConfig.MaxAttempts,
+		MaxAttempts:   w.cfg.WorkflowKernelConfig.MaxAttempts,
 	}
 
-	if b.cfg.WorkflowKernelConfig.TransactionsWriteEnabled && b.categoriesModule != nil && b.categoriesModule.SearchDictionaryUC != nil {
-		engine := platform.NewEngine[steps.ExpenseState](store, b.o11y)
-		resolver := agentbinding.NewKernelCategoryResolver(b.categoriesModule.SearchDictionaryUC)
+	if w.cfg.WorkflowKernelConfig.TransactionsWriteEnabled && w.categoriesModule != nil && w.categoriesModule.SearchDictionaryUC != nil {
+		engine := platform.NewEngine[steps.ExpenseState](store, w.o11y)
+		resolver := agentbinding.NewKernelCategoryResolver(w.categoriesModule.SearchDictionaryUC)
 		persistFn := agentbinding.NewKernelPersistFunc(deps.ExpenseRecorder, deps.CardPurchaseLog)
 		kernelDeps.Engine = engine
 		kernelDeps.CategoryResolver = resolver
 		kernelDeps.PersistFn = persistFn
-		b.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
+		w.o11y.Logger().Info(context.Background(), "agent.module.kernel_enabled",
 			observability.String("workflow", agentwf.TransactionsWriteWorkflowID),
 		)
 	}
 
 	deps.Kernel = kernelDeps
-	wfUoW := uow.NewUnitOfWork(b.sessionDB)
-	hkJob, hkErr := platform.NewHousekeepingJob(wfUoW, b.wfStoreFactory, b.cfg.WorkflowKernelConfig, b.o11y.Logger())
+	wfUoW := uow.NewUnitOfWork(w.sessionDB)
+	hkJob, hkErr := platform.NewHousekeepingJob(wfUoW, w.wfStoreFactory, w.cfg.WorkflowKernelConfig, w.o11y.Logger())
 	if hkErr != nil {
-		b.o11y.Logger().Error(context.Background(), "agent.module: invalid housekeeping config", observability.Error(hkErr))
-		return
+		return fmt.Errorf("invalid housekeeping config: %w", hkErr)
 	}
-	b.wfHousekeepingJob = hkJob
-	b.o11y.Logger().Info(context.Background(), "agent.module.confirm_kernel_enabled",
+	w.wfHousekeepingJob = hkJob
+	w.o11y.Logger().Info(context.Background(), "agent.module.confirm_kernel_enabled",
 		observability.String("workflow", agentwf.DestructiveConfirmWorkflowID),
 	)
+	return nil
 }
 
-func (b *agentModuleBuilder) buildConfirmDefinition(deps *appservices.IntentRouterDeps, settleReg *appservices.SettleRegistry) platform.Definition[confirmation.ConfirmState] {
+func buildConfirmDefinition(w *agentModuleWiring, deps *appservices.IntentRouterDeps, settleReg *appservices.SettleRegistry) platform.Definition[confirmation.ConfirmState] {
 	lister := deps.TransactionLister
 	targets := map[confirmation.OperationKind]steps.TargetResolver{
 		confirmation.OperationDeleteLast:   agentbinding.NewLastTransactionDeleterResolver(lister),
@@ -570,9 +552,9 @@ func (b *agentModuleBuilder) buildConfirmDefinition(deps *appservices.IntentRout
 			}
 			return uid != uuid.Nil && principal.UserID == uid
 		},
-		Replay:     appservices.NewConfirmReplayFunc(b.o11y, deps.Decision, deps.Redactor),
+		Replay:     appservices.NewConfirmReplayFunc(w.o11y, deps.Decision, deps.Redactor),
 		Policy:     func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
-		AuditBegin: appservices.NewConfirmAuditBeginFunc(b.o11y, deps.Decision, deps.Redactor),
+		AuditBegin: appservices.NewConfirmAuditBeginFunc(w.o11y, deps.Decision, deps.Redactor),
 		OnSettle: func(id uuid.UUID, fn steps.ConfirmAuditSettleFunc) {
 			settleReg.Register(id, func(ctx context.Context, executed bool) { fn(ctx, executed) })
 		},
@@ -583,26 +565,26 @@ func (b *agentModuleBuilder) buildConfirmDefinition(deps *appservices.IntentRout
 		ReplayReply:    "Essa mensagem já foi processada ✅",
 		AuditFailReply: "Não foi possível processar sua mensagem agora. Pode tentar de novo em instantes? 🙏",
 		RetryPolicy: platform.RetryPolicy{
-			MaxAttempts: b.cfg.WorkflowKernelConfig.MaxAttempts,
-			BaseBackoff: b.cfg.WorkflowKernelConfig.RetryBaseBackoff,
-			MaxBackoff:  b.cfg.WorkflowKernelConfig.RetryMaxBackoff,
+			MaxAttempts: w.cfg.WorkflowKernelConfig.MaxAttempts,
+			BaseBackoff: w.cfg.WorkflowKernelConfig.RetryBaseBackoff,
+			MaxBackoff:  w.cfg.WorkflowKernelConfig.RetryMaxBackoff,
 		},
-		MaxAttempts:   b.cfg.WorkflowKernelConfig.MaxAttempts,
-		Observability: b.o11y,
+		MaxAttempts:   w.cfg.WorkflowKernelConfig.MaxAttempts,
+		Observability: w.o11y,
 	})
 }
 
-func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterDeps) {
-	if b.decisionRepoFact == nil || b.decisionUoW == nil {
+func attachDecisionAudit(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
+	if w.decisionRepoFact == nil || w.decisionUoW == nil {
 		return
 	}
 	deps.Decision = appservices.DecisionAuditDeps{
-		Factory: b.decisionRepoFact,
-		UoW:     b.decisionUoW,
+		Factory: w.decisionRepoFact,
+		UoW:     w.decisionUoW,
 	}
 	redactor, err := sanitize.NewSanitizer(sanitize.DefaultMaxRunes)
 	if err != nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.decision_audit_redactor_failed",
+		w.o11y.Logger().Warn(context.Background(), "agent.module.decision_audit_redactor_failed",
 			observability.Error(err),
 		)
 		return
@@ -610,15 +592,15 @@ func (b *agentModuleBuilder) attachDecisionAudit(deps *appservices.IntentRouterD
 	deps.Redactor = redactor
 }
 
-func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
-	if reason := b.onboardingLLMUnavailable(deps, llmModule); reason != "" {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
+func attachOnboardingLLM(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
+	if reason := onboardingLLMUnavailable(w, deps, llmModule); reason != "" {
+		w.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),
 			observability.String("reason", reason),
 		)
 		return
 	}
-	uc := b.onboardingLLM
+	uc := w.onboardingLLM
 	reader := agentonboarding.NewOnboardingStateReader(uc.GetContext)
 	dispatcher := agentonboarding.NewOnboardingToolDispatcher(
 		uc.SaveObjective,
@@ -630,7 +612,7 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		deps.ExpenseRecorder,
 	)
 	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
-	v2session := agentbinding.NewOnboardingSessionGateway(b.sessionRepo)
+	v2session := agentbinding.NewOnboardingSessionGateway(w.sessionRepo)
 
 	var historyGateway usecases.OnboardingHistoryGatewayIface
 	if uc.AppendTurn != nil && uc.LoadTurns != nil && uc.MarkWelcomeSent != nil {
@@ -640,9 +622,9 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 	if uc.SuggestBudgetSplit != nil {
 		splitSuggester = agentonboarding.NewBudgetSplitSuggester(uc.SuggestBudgetSplit)
 	}
-	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, b.cfg.AgentConfig.OnboardingMaxTokens, b.o11y, historyGateway, splitSuggester, v2session)
+	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, w.cfg.AgentConfig.OnboardingMaxTokens, w.o11y, historyGateway, splitSuggester, v2session)
 	if err != nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
+		w.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),
 			observability.String("reason", "run_turn_build_failed"),
 			observability.Error(err),
@@ -650,13 +632,13 @@ func (b *agentModuleBuilder) attachOnboardingLLM(deps *appservices.IntentRouterD
 		return
 	}
 	deps.OnboardingRunner = agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
-	b.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
+	w.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
 		observability.String("mode", "llm"),
 	)
 }
 
-func (b *agentModuleBuilder) onboardingLLMUnavailable(deps *appservices.IntentRouterDeps, llmModule *llmRuntime) string {
-	if b.onboardingLLM == nil {
+func onboardingLLMUnavailable(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) string {
+	if w.onboardingLLM == nil {
 		return "usecases_missing"
 	}
 	if llmModule == nil || llmModule.OnboardingInterpreter == nil {
@@ -665,26 +647,26 @@ func (b *agentModuleBuilder) onboardingLLMUnavailable(deps *appservices.IntentRo
 	if deps.ExpenseRecorder == nil {
 		return "expense_logger_missing"
 	}
-	if b.onboardingLLM.GetContext == nil {
+	if w.onboardingLLM.GetContext == nil {
 		return "context_reader_missing"
 	}
-	if b.onboardingLLM.SetPhase == nil {
+	if w.onboardingLLM.SetPhase == nil {
 		return "phase_setter_missing"
 	}
 	return ""
 }
 
-func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound {
-	if !b.cfg.TelegramConfig.Enabled {
+func buildTelegramGateway(w *agentModuleWiring) appservices.TelegramOutbound {
+	if !w.cfg.TelegramConfig.Enabled {
 		return nil
 	}
-	tgGateway, err := outbound.NewSharedGateway(b.o11y, outbound.FactoryConfig{
-		APIBaseURL: b.cfg.TelegramConfig.APIBaseURL,
-		BotToken:   b.cfg.TelegramConfig.BotToken,
-		Timeout:    b.cfg.TelegramConfig.OutboundTimeout,
+	tgGateway, err := outbound.NewSharedGateway(w.o11y, outbound.FactoryConfig{
+		APIBaseURL: w.cfg.TelegramConfig.APIBaseURL,
+		BotToken:   w.cfg.TelegramConfig.BotToken,
+		Timeout:    w.cfg.TelegramConfig.OutboundTimeout,
 	})
 	if err != nil {
-		b.o11y.Logger().Warn(context.Background(), "agent.module.telegram_agent_gateway_failed",
+		w.o11y.Logger().Warn(context.Background(), "agent.module.telegram_agent_gateway_failed",
 			observability.Error(err),
 		)
 		return nil
@@ -692,7 +674,7 @@ func (b *agentModuleBuilder) buildTelegramGateway() appservices.TelegramOutbound
 	return tgGateway
 }
 
-func (b *agentModuleBuilder) buildWhatsAppAgentRoute(pub inboundPublisher) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
+func buildWhatsAppAgentRoute(w *agentModuleWiring, pub inboundPublisher) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 	if pub == nil {
 		return func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 			return wadispatcher.OutcomeAgent
@@ -702,11 +684,11 @@ func (b *agentModuleBuilder) buildWhatsAppAgentRoute(pub inboundPublisher) func(
 	return func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 		principal, ok := auth.FromContext(ctx)
 		if !ok {
-			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_missing_principal")
+			w.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_missing_principal")
 			return wadispatcher.OutcomeAgent
 		}
 		if err := pub.PublishWhatsApp(ctx, principal.UserID, msg.From, msg.Text, msg.WAMID); err != nil {
-			b.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_publish_failed",
+			w.o11y.Logger().Warn(ctx, "whatsapp.dispatcher.agent_route_publish_failed",
 				observability.Error(err),
 			)
 		}
@@ -714,7 +696,7 @@ func (b *agentModuleBuilder) buildWhatsAppAgentRoute(pub inboundPublisher) func(
 	}
 }
 
-func (b *agentModuleBuilder) buildTelegramAgentRoute(pub inboundPublisher) tgdispatcher.AgentRoute {
+func buildTelegramAgentRoute(w *agentModuleWiring, pub inboundPublisher) tgdispatcher.AgentRoute {
 	if pub == nil {
 		return nil
 	}
@@ -722,11 +704,11 @@ func (b *agentModuleBuilder) buildTelegramAgentRoute(pub inboundPublisher) tgdis
 	return func(ctx context.Context, msg tgpayload.Message) tgdispatcher.RouteOutcome {
 		principal, ok := auth.FromContext(ctx)
 		if !ok {
-			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_missing_principal")
+			w.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_missing_principal")
 			return tgdispatcher.OutcomeAgent
 		}
 		if err := pub.PublishTelegram(ctx, principal.UserID, msg.ChatID, msg.Text, fmt.Sprintf("%d", msg.MessageID)); err != nil {
-			b.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_publish_failed",
+			w.o11y.Logger().Warn(ctx, "telegram.dispatcher.agent_route_publish_failed",
 				observability.Error(err),
 			)
 		}

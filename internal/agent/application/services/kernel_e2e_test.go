@@ -57,18 +57,6 @@ func (s *e2eStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (i
 	return 0, nil
 }
 
-type fakeNoPendingExpenseGateway struct{}
-
-func (f *fakeNoPendingExpenseGateway) Load(_ context.Context, _ uuid.UUID, _ string) (pendingexpense.Draft, bool, error) {
-	return pendingexpense.Draft{}, false, nil
-}
-func (f *fakeNoPendingExpenseGateway) Save(_ context.Context, _ uuid.UUID, _ string, _ pendingexpense.Draft) error {
-	return nil
-}
-func (f *fakeNoPendingExpenseGateway) Clear(_ context.Context, _ uuid.UUID, _ string) error {
-	return nil
-}
-
 type KernelE2ESuite struct {
 	suite.Suite
 	ctx context.Context
@@ -94,11 +82,10 @@ func (s *KernelE2ESuite) buildRouter(
 	settleReg := services.NewSettleRegistry()
 
 	deps := services.IntentRouterDeps{
-		Parser:                     &fakeParser{intent: mustBuildExpenseIntent2(5800, "iFood", "Prazeres")},
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          &fakeParser{intent: mustBuildExpenseIntent2(5800, "iFood", "Prazeres")},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			Engine:           engine,
 			SettleReg:        settleReg,
@@ -235,11 +222,10 @@ func (s *KernelE2ESuite) TestE2E_KernelFlagOn_AuditFieldsPropagateToAuditBegin()
 		rawResponse:  []byte(`{"kind":"record_expense"}`),
 	}
 	deps := services.IntentRouterDeps{
-		Parser:                     parser,
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          parser,
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			Engine:           engine,
 			SettleReg:        settleReg,
@@ -311,11 +297,10 @@ func (s *KernelE2ESuite) TestE2E_KernelFlagOn_AmbiguousChoiceCycle() { //nolint:
 
 	parser := &fakeParser{intent: mustBuildExpenseIntent2(5800, "academia", "academia")}
 	deps := services.IntentRouterDeps{
-		Parser:                     parser,
-		Fallback:                   &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:            s.wa,
-		Location:                   time.UTC,
-		PendingExpenseConfirmation: &fakeNoPendingExpenseGateway{},
+		Parser:          parser,
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
 		Kernel: &services.KernelDeps{
 			Engine:           engine,
 			SettleReg:        settleReg,

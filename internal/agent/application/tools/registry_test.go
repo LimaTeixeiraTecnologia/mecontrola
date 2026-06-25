@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -111,58 +110,17 @@ func (s *RegistrySuite) TestNewRegistry() {
 	}
 }
 
-func (s *RegistrySuite) TestDefaultRegistry() {
-	reg, err := DefaultRegistry()
+func (s *RegistrySuite) TestSpecByIntent() {
+	reg, err := NewRegistry(
+		ToolSpec{Name: "a", IntentKind: intent.KindRecordExpense, Description: "desc a"},
+		ToolSpec{Name: "b", IntentKind: intent.KindMonthlySummary, Description: "desc b"},
+	)
 	s.NoError(err)
-	s.NotNil(reg)
-	s.Len(reg.Specs(), 9)
 
-	kinds := []intent.Kind{
-		intent.KindRecordExpense,
-		intent.KindMonthlySummary,
-		intent.KindListCards,
-		intent.KindCreateCard,
-		intent.KindCountCards,
-		intent.KindUpdateCard,
-		intent.KindDeleteCard,
-		intent.KindEditCategoryPercentage,
-		intent.KindConfigureBudget,
-	}
-	for _, kind := range kinds {
-		spec, ok := reg.SpecByIntent(kind)
-		s.True(ok, "intent kind %q deve resolver para uma tool", kind.String())
-		s.NotEmpty(spec.Name)
-		s.NotEmpty(spec.Description)
-	}
-}
+	spec, ok := reg.SpecByIntent(intent.KindRecordExpense)
+	s.True(ok)
+	s.Equal("a", spec.Name)
 
-func (s *RegistrySuite) TestSpecByIntentNotFound() {
-	reg, err := DefaultRegistry()
-	s.NoError(err)
-	_, ok := reg.SpecByIntent(intent.KindUnknown)
+	_, ok = reg.SpecByIntent(intent.KindUnknown)
 	s.False(ok)
-}
-
-func (s *RegistrySuite) TestRenderSystemPrompt() {
-	reg, err := DefaultRegistry()
-	s.NoError(err)
-
-	prompt, err := reg.RenderSystemPrompt()
-	s.NoError(err)
-	s.NotEmpty(prompt)
-
-	for _, name := range []string{
-		"record_transaction",
-		"monthly_summary",
-		"list_cards",
-		"create_card",
-		"count_cards",
-		"configure_budget",
-	} {
-		s.True(strings.Contains(prompt, name), "prompt deve conter %q", name)
-	}
-
-	again, err := reg.RenderSystemPrompt()
-	s.NoError(err)
-	s.Equal(prompt, again)
 }

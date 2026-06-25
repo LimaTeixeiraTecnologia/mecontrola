@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
@@ -52,7 +52,7 @@ import (
 func TestE2E(t *testing.T) {
 	db, _ := postgres.NewTestDatabase(t)
 
-	o11y := noop.NewProvider()
+	o11y := fake.NewProvider()
 	secret := "test-secret-e2e-2026"
 	waNumber := "+5511988887777"
 	waFrom := "5511988887777"
@@ -122,7 +122,7 @@ func buildServer(
 	ctx context.Context,
 	cfg *configs.Config,
 	db *sqlx.DB,
-	o11y *noop.Provider,
+	o11y *fake.Provider,
 	gateway *CapturingGateway,
 	telegramGateway *CapturingTelegramGateway,
 	limiter *ratelimit.Limiter,
@@ -362,6 +362,25 @@ func buildServer(
 		configs.OutboxConfig{RetryMaxAttempts: 3},
 	)
 
+	transactionLister := agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC)
+	lastEditor := agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC)
+	lastDeleter := agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC)
+	cardDeleter := agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC)
+
+	kernelDeps, _, err := buildConfirmKernelDeps(
+		o11y,
+		db,
+		cfg,
+		transactionLister,
+		lastEditor,
+		lastDeleter,
+		cardModule.ListCardsUC,
+		cardDeleter,
+	)
+	if err != nil {
+		t.Fatalf("confirm kernel deps: %v", err)
+	}
+
 	intentRouter, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
 		Parser:                   stubP,
 		Fallback:                 &StubFallback{},
@@ -370,20 +389,21 @@ func buildServer(
 		ExpenseRecorder:          expLogger,
 		CardPurchaseLog:          agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
 		RecurringCreator:         agentbinding.NewRecurringCreatorAdapter(createRecurring),
-		TransactionLister:        agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC),
-		LastEditor:               agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC),
-		LastDeleter:              agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC),
+		TransactionLister:        transactionLister,
+		LastEditor:               lastEditor,
+		LastDeleter:              lastDeleter,
 		MonthlySummary:           budgetsModule.GetMonthlySummaryUC,
 		CardLister:               cardModule.ListCardsUC,
 		CardInvoice:              cardModule.InvoiceForUC,
 		CardCreator:              agentbinding.NewCardCreatorAdapter(cardModule.CreateCardUC),
 		CardCounter:              agentbinding.NewCardCounterAdapter(cardModule.CountCardsUC),
 		CardUpdater:              agentbinding.NewCardUpdaterAdapter(cardModule.ListCardsUC, cardModule.UpdateCardUC),
-		CardDeleter:              agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC),
+		CardDeleter:              cardDeleter,
 		CategoryPercentageEditor: agentbinding.NewCategoryPercentageEditorAdapter(budgetsModule.EditCategoryPercentageUC),
 		RecurringLister:          agentbinding.NewRecurringListerAdapter(txModule.ListRecurringTemplatesUC),
 		EventPublisher:           agentevents.NewIntentEventPublisher(publisher, o11y),
 		Location:                 time.UTC,
+		Kernel:                   kernelDeps,
 	})
 	if err != nil {
 		t.Fatalf("intent router: %v", err)

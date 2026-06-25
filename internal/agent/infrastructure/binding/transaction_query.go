@@ -150,7 +150,12 @@ func (a *TransactionListerAdapter) Execute(ctx context.Context, in tools.Transac
 	}
 	ctx = withWhatsAppPrincipal(ctx, userID)
 
-	page, err := a.uc.Execute(ctx, in.RefMonth, "", a.limit)
+	refMonth := in.RefMonth
+	if refMonth == "" {
+		refMonth = time.Now().UTC().Format("2006-01")
+	}
+
+	page, err := a.uc.Execute(ctx, refMonth, "", a.limit)
 	if err != nil {
 		return tools.TransactionListResult{}, fmt.Errorf("agent: transaction lister: %w", err)
 	}
@@ -158,7 +163,7 @@ func (a *TransactionListerAdapter) Execute(ctx context.Context, in tools.Transac
 	for _, t := range page.Transactions {
 		views = append(views, transactionViewFrom(t))
 	}
-	return tools.TransactionListResult{RefMonth: in.RefMonth, Transactions: views}, nil
+	return tools.TransactionListResult{RefMonth: refMonth, Transactions: views}, nil
 }
 
 func transactionViewFrom(t transactionsoutput.Transaction) tools.TransactionView {

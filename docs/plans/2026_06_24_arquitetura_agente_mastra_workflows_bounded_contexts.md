@@ -480,7 +480,7 @@ A arquitetura aprovada (Opção A) já é majoritariamente aderente. No entanto,
 
 ## Onboarding Completo — Fluxo, Use Cases e Tabelas Persistidas
 
-O onboarding do MeControla é uma **jornada conversacional de 8 etapas** (`docs/oficial/2026_06_24_mecontrola_oficial.md`, Capítulo 08). Sob a arquitetura aprovada (Opção A), ele é executado pelo mesmo `DailyLedgerAgent`, via workflow/tools de onboarding, que delegam para os use cases do bounded context `internal/onboarding`.
+O onboarding do MeControla é uma **jornada conversacional** (`docs/oficial/2026_06_24_mecontrola_oficial.md`, Capítulo 08) implementada pelo `OnboardingAgent` em `internal/agent`, que delega para `RunOnboardingTurn` e, por sua vez, para os use cases do bounded context `internal/onboarding`. A experiência conversacional é conduzida por LLM, com scripts de fallback. Sob a arquitetura aprovada (Opção A), o agente único (`DailyLedgerAgent`) é o ponto de entrada; o onboarding é uma especialização interna, não um agente separado.
 
 ### Visão geral do fluxo
 
@@ -493,168 +493,258 @@ Usuario inicia contato (token/identidade)
 └─────────────────────────────────────────────┘
         │
         ▼
-Workflow/Tool de onboarding ──► use cases de internal/onboarding
+OnboardingAgent/RunOnboardingTurn
         │
-        ▼
-OnboardingSession persistida em mecontrola.onboarding_sessions
+        ├──► LLM interpreta a mensagem e pode chamar tools
         │
-        ▼
-Eventos de dominio publicados via mecontrola.outbox_events
+        ├──► Tools dispatcham para use cases de internal/onboarding
         │
-        ▼
-Bounded contexts (budgets, card) consomem eventos e escrevem
-em suas proprias tabelas
+        ├──► OnboardingSession persistida em mecontrola.onboarding_sessions
+        │
+        ├──► Draft v2 (sugestoes, passo) em mecontrola.agent_sessions.pending_action
+        │
+        └──► Eventos de dominio publicados via mecontrola.outbox_events
+                │
+                ▼
+        Bounded contexts (budgets, card) consomem eventos e escrevem
+        em suas proprias tabelas
 ```
 
-**Regra de fronteira:** o módulo `internal/onboarding` (e o agente) só escreve em suas próprias tabelas (`mecontrola.onboarding_sessions`, `mecontrola.outbox_events`). Tabelas de outros bounded contexts (`mecontrola.cards`, `mecontrola.budgets`, `mecontrola.budgets_allocations`, `mecontrola.transactions`) são de responsabilidade exclusiva dos respectivos domínios, que reagem aos eventos de domínio publicados pelo onboarding.
+**Regras de fronteira:**
+- `internal/onboarding` escreve apenas em `mecontrola.onboarding_sessions` e publica eventos em `mecontrola.outbox_events`.
+- `internal/agent` escreve em `mecontrola.agent_sessions` (`pending_action`, `recent_turns`), `mecontrola.agent_threads` e `mecontrola.agent_runs`.
+- `mecontrola.cards`, `mecontrola.budgets`, `mecontrola.budgets_allocations` e `mecontrola.transactions` são de responsabilidade exclusiva dos respectivos bounded contexts.
+
+### Fases do onboarding (código real)
+
+As fases são strings definidas em `internal/agent/application/usecases/onboarding_scripts.go`:
+
+| Fase | Valor | Significado |
+|------|-------|-------------|
+| Boas-vindas | `""` (vazia) | Emite mensagem de boas-vindas, marca `welcome_sent_at` e avança para `objective`. |
+| Objetivo | `objective` | Captura o objetivo financeiro via `save_onboarding_objective`. |
+| Orçamento | `budget` | Captura a renda/orçamento via `save_onboarding_income`; sugere splits automáticos. |
+| Cartões | `cards` | Cadastra cartões via `save_onboarding_card`; aceita múltiplos cartões por mensagem. |
+| Plano Financeiro | `financial_plan` | Apresenta resumo + distribuição; chama `save_onboarding_budget_splits` de uma vez com as 5 categorias. |
+| Primeiro Lançamento | `first_tx` | Captura a primeira movimentação via `record_transaction`; marca e completa o onboarding. |
 
 ### Etapas da jornada
 
-#### ETAPA 1 — Boas-vindas
+#### FASE 1 — Boas-vindas (`""`)
 
-**Objetivo:** criar conexão, apresentar o produto e iniciar o compromisso.
+**Objetivo:** criar conexão, apresentar o produto, as 5 categorias e iniciar o compromisso.
 
 **Ação do sistema:**
 - Identifica ou cria o usuário (`internal/identity`).
-- Cria a sessão de onboarding (`mecontrola.onboarding_sessions`) com `state='in_progress'`, `payload.phase='welcome'`, `recent_turns` e `welcome_sent_at`.
-- Envia a mensagem oficial de boas-vindas.
+- Cria a sessão de onboarding (`mecontrola.onboarding_sessions`) com `state='in_progress'`, `phase=''` e `welcome_sent_at`.
+- Cria a `Thread` e o primeiro `Run`.
+- Gera a mensagem de boas-vindas por LLM (com `scriptWelcome` como fallback); a mensagem já apresenta as 5 categorias.
+- Seta `phase='objective'`.
 
-**Use cases acionados:**
-- `MarkWelcomeSent`
-- `SetOnboardingPhase`
-- `AppendOnboardingTurn`
-- `LoadTurns`
+**Use cases:**
+- Identificação/criação do usuário (`internal/identity`).
+- `ThreadGateway.GetOrCreate` (`internal/agent`).
+- `MarkWelcomeSent` (`internal/onboarding`).
+- `SetOnboardingPhase` (`internal/onboarding`).
+- `AppendOnboardingTurn` (`internal/onboarding`) — histórico de turnos.
 
 **Tabelas persistidas pelo onboarding:**
 - `mecontrola.onboarding_tokens` — token de ativação consumido (se fluxo de venda).
-- `mecontrola.onboarding_sessions` — estado da jornada (`payload`, `phase`, `recent_turns`, `welcome_sent_at`).
+- `mecontrola.onboarding_sessions` — `state='in_progress'`, `phase=''`, `welcome_sent_at`.
 
 **Tabelas persistidas por outros bounded contexts:**
 - `mecontrola.users` — criada/identificada por `internal/identity`.
 - `mecontrola.identity_entitlements` — vinculada por `internal/identity`.
 - `mecontrola.agent_threads` + `mecontrola.agent_runs` — criadas por `internal/agent`.
 
-#### ETAPA 2 — Definição do Objetivo
+**Resposta (fallback real do código):**
+```
+👋 Oi! Eu sou o *MeControla*, seu parceiro financeiro.
+
+📊 Aqui no MeControla todo dinheiro é organizado em apenas *5 categorias*:
+
+💰 *Custo Fixo*
+Contas que acontecem todos os meses.
+
+🎓 *Conhecimento*
+Cursos, livros e tudo que faz você evoluir.
+
+🎉 *Prazeres*
+Lazer, diversão e experiências.
+
+🎯 *Metas*
+Objetivos específicos que você deseja realizar.
+
+🏦 *Liberdade Financeira*
+Reserva financeira e investimentos.
+
+Pronto 😊
+
+Agora vamos montar seu plano.
+
+🔵 *Etapa 1/4 — Objetivo*
+Qual é o seu objetivo principal? (ex: quitar dívidas, fazer uma viagem, criar uma reserva)
+```
+
+#### FASE 2 — Objetivo (`objective`)
 
 **Objetivo:** entender o motivo pelo qual o usuário deseja organizar as finanças.
 
 **Exemplo:** `Quero quitar minhas dívidas.`
 
-**Use cases acionados:**
+**Use cases:**
 - `SaveOnboardingObjective`
-- `SetOnboardingPhase`
-- `AppendOnboardingTurn`
-
-**Tabelas persistidas:**
-- `mecontrola.onboarding_sessions` — `payload.objective`, `payload.objective_profile`, `phase`.
-
-#### ETAPA 3 — Definição do Orçamento (Renda)
-
-**Objetivo:** capturar o valor disponível para planejamento mensal.
-
-**Exemplo:** `4000`
-
-**Use cases acionados:**
-- `SaveOnboardingIncome`
-- `SetOnboardingPhase`
+- `SetOnboardingPhase(phase='budget')`
 - `AppendOnboardingTurn`
 
 **Tabelas persistidas pelo onboarding:**
-- `mecontrola.onboarding_sessions` — `payload.income_cents`, `phase`.
+- `mecontrola.onboarding_sessions` — `payload.objective`, `payload.objective_profile`, `phase='budget'`.
+- `mecontrola.agent_sessions.pending_action` — draft v2 com `objective_profile` e step.
+
+#### FASE 3 — Orçamento (`budget`)
+
+**Objetivo:** capturar o valor disponível para planejamento mensal e sugerir uma distribuição inicial.
+
+**Exemplo:** `4000`
+
+**Ação do sistema:**
+- Salva a renda.
+- Publica `IncomeRegistered`.
+- Chama `SuggestBudgetSplit` para montar splits automáticos baseados no objetivo/orçamento.
+- Persiste o draft v2 com os splits sugeridos.
+- Avança para `cards`.
+
+**Use cases:**
+- `SaveOnboardingIncome`
+- `SuggestBudgetSplit`
+- `SetOnboardingPhase(phase='cards')`
+- `AppendOnboardingTurn`
+
+**Tabelas persistidas pelo onboarding:**
+- `mecontrola.onboarding_sessions` — `payload.income_cents`, `phase='cards'`.
 - `mecontrola.outbox_events` — evento `IncomeRegistered`.
+- `mecontrola.agent_sessions.pending_action` — draft v2 com `income`, `auto_splits`, `step=cards`.
 
 **Tabelas atualizadas pelo bounded context `budgets`:**
 - `mecontrola.budgets` / `mecontrola.budgets_allocations` — ao consumir `IncomeRegistered`.
 
-#### ETAPA 4 — Cadastro de Cartões
+**Resposta (fallback real):**
+```
+🔵 *Etapa 2/4 — Orçamento*
+
+Pra montar seu plano, qual é o seu *orçamento mensal*? (quanto você tem por mês)
+```
+
+#### FASE 4 — Cartões (`cards`)
 
 **Objetivo:** registrar os cartões de crédito usados pelo usuário.
 
-**Regra oficial:** solicitar apenas **apelido** e **dia de vencimento**. Nunca solicitar limite, banco, bandeira ou dados sensíveis.
+**Regra oficial:** solicitar apenas **apelido** e **dia de fechamento**. Nunca solicitar limite, banco, bandeira ou dados sensíveis.
 
-**Exemplo:** `Nubank dia 13`
+**Exemplo:** `Nubank 13`
 
-**Use cases acionados:**
-- `SaveOnboardingCard` (persiste rascunho na sessão e publica evento)
-- `SetOnboardingPhase`
+**Ação do sistema:**
+- Aceita um ou mais cartões por mensagem.
+- Para cada cartão, chama `save_onboarding_card`.
+- Publica `CardRegistered` por cartão.
+- Se o usuário negar (`não`, `não uso`, etc.), avança direto para `financial_plan`.
+
+**Use cases:**
+- `SaveOnboardingCard`
+- `SetOnboardingPhase(phase='financial_plan')`
 - `AppendOnboardingTurn`
 
 **Tabelas persistidas pelo onboarding:**
-- `mecontrola.onboarding_sessions` — `payload.cards[]` (apelido, dia de fechamento/vencimento).
-- `mecontrola.outbox_events` — evento `CardRegistered`.
+- `mecontrola.onboarding_sessions` — `payload.cards[]` (apelido, dia de fechamento).
+- `mecontrola.outbox_events` — evento(s) `CardRegistered`.
+- `mecontrola.agent_sessions.pending_action` — draft v2 atualizado.
 
 **Tabelas atualizadas pelo bounded context `card`:**
 - `mecontrola.cards` — ao consumir `CardRegistered`.
 
-> **Nota de fronteira:** se hoje o use case `SaveOnboardingCard` recebe um `SynchronousCardCreator`, essa interface deve ser declarada pelo `internal/onboarding` e implementada por um adapter fino no `internal/card`. O módulo onboarding **nunca** executa SQL ou regras de negócio do domínio `card`.
+> **Nota de fronteira:** se hoje o use case `SaveOnboardingCard` recebe um `SynchronousCardCreator`, essa interface é declarada pelo `internal/onboarding` e implementada por um adapter fino no `internal/card`. O módulo onboarding **nunca** executa SQL ou regras de negócio do domínio `card`.
 
-#### ETAPA 5 — Apresentação das Categorias
+**Resposta (fallback real):**
+```
+🔵 *Etapa 3/4 — Cartões*
 
-**Objetivo:** ensinar a metodologia de 5 categorias do MeControla (Custo Fixo, Conhecimento, Prazeres, Metas, Liberdade Financeira).
+💳 Você usa *cartão de crédito*?
 
-**Use cases acionados:**
-- `SetOnboardingPhase`
-- `AppendOnboardingTurn`
-- `LoadTurns`
-- Consulta ao dicionário/categorias (`internal/categories`) — somente leitura.
+Se usar, me responda assim:
 
-**Tabelas persistidas pelo onboarding:**
-- `mecontrola.onboarding_sessions` — `phase`, `recent_turns`.
+Nubank 13 / Inter 5 / Itaú 10
 
-**Tabelas consultadas (somente leitura):**
-- `mecontrola.categories` / `mecontrola.category_dictionary` — pertencem a `internal/categories`.
+(apelido + dia de fechamento)
 
-#### ETAPA 6 — Definição dos Valores das Categorias (Splits)
+Se não usar, basta responder: *Não uso*
+```
 
-**Objetivo:** capturar quanto o usuário deseja alocar em cada categoria. O usuário informa valores monetários; o sistema calcula percentuais automaticamente.
+#### FASE 5 — Plano Financeiro (`financial_plan`)
 
-**Use cases acionados:**
-- `SuggestBudgetSplit` (sugestão inicial, opcional)
+**Objetivo:** apresentar o resumo consolidado (objetivo, orçamento, cartões, distribuição) e capturar a confirmação/ajuste dos splits.
+
+**Ação do sistema:**
+- Monta a mensagem de resumo com `buildFinancialPlanMessage(snapshot, splits)`.
+- Se o usuário responder "sim" (sem dígitos), chama `save_onboarding_budget_splits` com os splits sugeridos automaticamente.
+- Se o usuário informar novos valores, o LLM mapeia as 5 categorias para `root_slug` e chama `save_onboarding_budget_splits` com todas as alocações de uma vez.
+- Publica `SplitsCalculated`.
+- Limpa o draft v2 e avança para `first_tx`.
+
+**Use cases:**
 - `SaveOnboardingBudgetSplits`
-- `SetOnboardingPhase`
+- `SetOnboardingPhase(phase='first_tx')`
 - `AppendOnboardingTurn`
 
 **Tabelas persistidas pelo onboarding:**
-- `mecontrola.onboarding_sessions` — `payload.custom_split[]` (`kind`, `basis_points`).
+- `mecontrola.onboarding_sessions` — `payload.custom_split[]`, `phase='first_tx'`.
 - `mecontrola.outbox_events` — evento `SplitsCalculated`.
+- `mecontrola.agent_sessions.pending_action` — limpo (`{}`).
 
 **Tabelas atualizadas pelo bounded context `budgets`:**
 - `mecontrola.budgets` / `mecontrola.budgets_allocations` — ao consumir `SplitsCalculated`.
 
-#### ETAPA 7 — Resumo Final
+**Resposta (template real):**
+```
+🔵 *Etapa 4/4 — Plano Financeiro*
 
-**Objetivo:** apresentar o planejamento consolidado (objetivo, orçamento, distribuição) e confirmar com o usuário.
+🎯 *Objetivo*: Quitar dívidas
+💰 *Orçamento*: R$ 4.000/mês
+💳 *Cartões*: Nubank (fecha dia 13)
 
-**Use cases acionados:**
-- `GetOnboardingContext` (monta a visão completa da sessão)
-- `AppendOnboardingTurn`
-- `LoadTurns`
+📋 *Distribuição Final*:
+
+💰 *Custo Fixo*: R$ 2.000
+🎓 *Conhecimento*: R$ 300
+🎉 *Prazeres*: R$ 500
+🎯 *Metas*: R$ 700
+🏦 *Liberdade Financeira*: R$ 500
+
+Responde *sim* pra confirmar, ou me diz como quer distribuir.
+```
+
+#### FASE 6 — Primeiro Lançamento (`first_tx`)
+
+**Objetivo:** capturar a primeira movimentação e concluir o onboarding.
+
+**Regra técnica:** `CompleteOnboardingSession` só completa a sessão se `FirstTxRecorded` estiver `true`.
+
+**Ação do sistema:**
+- O LLM extrai direção, valor e estabelecimento e chama `record_transaction`.
+- A tool `record_transaction` é delegada ao `ExpenseRecorder` do bounded context `transactions`.
+- Em seguida, chama `MarkFirstTransactionRecorded`.
+- Por fim, chama `CompleteOnboardingSession`, que publica `OnboardingCompleted`.
+
+**Use cases:**
+- `RecordTransaction` / `RecordExpense` (`internal/transactions`, via `tools.ExpenseRecorder`).
+- `MarkFirstTransactionRecorded` (`internal/onboarding`).
+- `CompleteOnboardingSession` (`internal/onboarding`).
 
 **Tabelas persistidas pelo onboarding:**
-- `mecontrola.onboarding_sessions` — `recent_turns`, `phase`.
-
-**Tabelas atualizadas pelo bounded context `budgets`:**
-- `mecontrola.budgets` + `mecontrola.budgets_allocations` — criados/atualizados pelos handlers dos eventos `IncomeRegistered` e `SplitsCalculated`.
-
-#### ETAPA 8 — Conclusão
-
-**Objetivo:** finalizar o onboarding e liberar o uso pleno do agente.
-
-**Regra técnica:** o use case `CompleteOnboardingSession` só completa a sessão se `FirstTxRecorded` estiver `true`. Portanto, a conclusão ocorre **após o usuário registrar sua primeira movimentação** (despesa ou receita).
-
-**Use cases acionados:**
-- Registro da primeira transação — executado pelo bounded context `transactions` via workflow/tool de transações do agente.
-- `MarkFirstTransactionRecorded` — chamado pelo onboarding após o evento/transação confirmada.
-- `CompleteOnboardingSession`
-- `SetOnboardingPhase`
-- `AppendOnboardingTurn`
-
-**Tabelas persistidas pelo onboarding:**
-- `mecontrola.onboarding_sessions` — `payload.completed_at`, `state='active'`, `recent_turns` limpo.
+- `mecontrola.onboarding_sessions` — `payload.first_tx_recorded=true`, `payload.completed_at`, `state='active'`, `recent_turns` limpo.
 - `mecontrola.outbox_events` — evento `OnboardingCompleted`.
 
 **Tabelas atualizadas pelo bounded context `transactions`:**
-- `mecontrola.transactions` — primeira movimentação registrada pelo próprio domínio de transações.
+- `mecontrola.transactions` — primeira movimentação registrada.
 
 ### Tabelas envolvidas no onboarding (resumo)
 
@@ -664,9 +754,10 @@ em suas proprias tabelas
 | `mecontrola.identity_entitlements` | `internal/identity` | Vinculação do plano/assinatura. |
 | `mecontrola.onboarding_tokens` | `internal/onboarding` | Consumo do token de ativação. |
 | `mecontrola.onboarding_sessions` | `internal/onboarding` | Toda etapa da jornada. |
-| `mecontrola.outbox_events` | `internal/platform/outbox` | Publicação dos eventos de domínio (publisher usado por todos os módulos). |
+| `mecontrola.outbox_events` | `internal/platform/outbox` | Publicação dos eventos de domínio. |
 | `mecontrola.agent_threads` | `internal/agent` | Criação da thread do usuário. |
 | `mecontrola.agent_runs` | `internal/agent` | Cada execução de run. |
+| `mecontrola.agent_sessions` | `internal/agent` | `pending_action` (draft v2 de splits/sugestões) e `recent_turns`. |
 | `mecontrola.cards` | `internal/card` | Consumo do evento `CardRegistered`. |
 | `mecontrola.budgets` | `internal/budgets` | Consumo dos eventos `IncomeRegistered` / `SplitsCalculated`. |
 | `mecontrola.budgets_allocations` | `internal/budgets` | Consumo do evento `SplitsCalculated`. |
@@ -698,18 +789,23 @@ type OnboardingSessionPayload struct {
 }
 ```
 
+### Draft v2 em `mecontrola.agent_sessions.pending_action`
+
+O `RunOnboardingTurn` mantém um draft temporário (`internal/agent/domain/onboardingv2draft.Draft`) para sugestões automáticas de splits e passo atual. Ele é serializado e salvo em `mecontrola.agent_sessions.pending_action` pelo `OnboardingSessionGateway` (`internal/agent/infrastructure/binding/onboarding_session_gateway.go`). Ao final da fase `financial_plan`, o draft é limpo (`{}`).
+
 ### Regras arquiteturais aplicadas ao onboarding
 
 - **Cada bounded context é dono das suas tabelas:** `internal/onboarding` escreve apenas em `mecontrola.onboarding_sessions` e publica eventos via `mecontrola.outbox_events`. Tabelas de `card`, `budgets` e `transactions` são atualizadas exclusivamente pelos seus próprios bounded contexts, consumindo eventos de domínio.
 - **Sem acesso cruzado a repositórios:** o agente e o onboarding não acessam repositórios, SQL ou regras de negócio de outros domínios. A integração ocorre via bindings sobre use cases ou via eventos de domínio no outbox.
-- **Tool fina:** a tool de onboarding no `internal/agent` apenas adapta a mensagem para o input do use case e formata a resposta; toda regra de negócio vive em `internal/onboarding` (`R-AGENT-WF-001.2`).
+- **Tool fina:** as tools de onboarding no `internal/agent` apenas adaptam a mensagem para o input do use case e formatam a resposta; toda regra de negócio vive em `internal/onboarding` (`R-AGENT-WF-001.2`).
+- **LLM no onboarding:** a interpretação conversacional e a escolha de tools são feitas por LLM (`RunOnboardingTurn.interpreter`). Os scripts fixos são fallbacks, não o comportamento principal.
 - **State-as-type:** `OnboardingChannel`, `FinancialObjective`, `MonthlyIncome` e `BudgetAllocation` usam smart constructors (`R5.8`, DMMF).
 - **Eventos de domínio:** `IncomeRegistered`, `CardRegistered`, `SplitsCalculated`, `OnboardingCompleted` são publicados via outbox para os bounded contexts reagirem.
-- **0 gap / 0 falso positivo:** cada etapa tem uma tool/use case correspondente; ausência de informação é resolvida com perguntas sequenciais (uma por vez) e reconfirmação no resumo.
+- **0 gap / 0 falso positivo:** cada fase tem uma tool/use case correspondente; ausência de informação é resolvida com perguntas sequenciais e reconfirmação no plano financeiro.
 
 ## Exemplo de Conversa Real — Onboarding Passo a Passo
 
-Cenário: usuário `+55 11 91234-5678` inicia contato pelo WhatsApp após comprar um token de ativação. Abaixo, cada mensagem da conversa é mapeada para os use cases executados e as tabelas afetadas.
+Cenário: usuário `+55 11 91234-5678` inicia contato pelo WhatsApp após comprar um token de ativação. Abaixo, cada mensagem da conversa é mapeada para os use cases executados e as tabelas afetadas, de acordo com o código real.
 
 > **Legenda:** `(O)` = escrita pelo `internal/onboarding`, `(I)` = escrita pelo `internal/identity`, `(A)` = escrita pelo `internal/agent`, `(P)` = escrita pelo `internal/platform/outbox`, `(C)` = escrita pelo `internal/card`, `(B)` = escrita pelo `internal/budgets`, `(T)` = escrita pelo `internal/transactions`.
 
@@ -723,6 +819,7 @@ Cenário: usuário `+55 11 91234-5678` inicia contato pelo WhatsApp após compra
 - `internal/identity` identifica ou cria o usuário a partir do número do WhatsApp.
 - `internal/agent` cria a `Thread` e abre o primeiro `Run`.
 - `internal/onboarding` cria a sessão de onboarding em `in_progress`.
+- `RunOnboardingTurn` detecta `phase=''`, emite boas-vindas via LLM (fallback `scriptWelcome`) e seta `phase='objective'`.
 
 **Use cases:**
 - Identificação/criação do usuário (`internal/identity`).
@@ -733,126 +830,134 @@ Cenário: usuário `+55 11 91234-5678` inicia contato pelo WhatsApp após compra
 - `(I) mecontrola.users` — novo usuário criado.
 - `(I) mecontrola.identity_entitlements` — plano vinculado.
 - `(I) mecontrola.onboarding_tokens` — token marcado como `CONSUMED`.
-- `(O) mecontrola.onboarding_sessions` — sessão criada com `state='in_progress'`, `payload.phase='welcome'`, `welcome_sent_at`.
-- `(A) mecontrola.agent_threads` — thread `(user_id, whatsapp)`.
+- `(O) mecontrola.onboarding_sessions` — sessão criada com `state='in_progress'`, `phase=''`, `welcome_sent_at`.
+- `(A) mecontrola.agent_threads` — thread `(user_id, WhatsApp)`.
 - `(A) mecontrola.agent_runs` — run de abertura com status `succeeded`.
 
-**Resposta do MeControla:**
+**Resposta do MeControla (fallback real do código):**
 ```
-👋 Oi! Eu sou o MeControla, seu parceiro pra organizar o dinheiro sem complicação.
+👋 Oi! Eu sou o *MeControla*, seu parceiro financeiro.
 
-Em poucos minutos a gente deixa tudo no controle e você começa a acompanhar seus objetivos de forma simples.
+📊 Aqui no MeControla todo dinheiro é organizado em apenas *5 categorias*:
 
-Vamos começar? 🚀
-```
+💰 *Custo Fixo*
+Contas que acontecem todos os meses.
 
----
+🎓 *Conhecimento*
+Cursos, livros e tudo que faz você evoluir.
 
-### Mensagem 2 — Confirma início
+🎉 *Prazeres*
+Lazer, diversão e experiências.
 
-**Usuário:** `Sim`
+🎯 *Metas*
+Objetivos específicos que você deseja realizar.
 
-**Ação do sistema:**
-- Avança para a etapa de objetivo.
+🏦 *Liberdade Financeira*
+Reserva financeira e investimentos.
 
-**Use cases:**
-- `SetOnboardingPhase(phase='objective')`
-- `AppendOnboardingTurn(role='user', text='Sim')`
-- `AppendOnboardingTurn(role='assistant', text='...objetivo...')`
+Pronto 😊
 
-**Tabelas:**
-- `(O) mecontrola.onboarding_sessions` — `payload.phase='objective'`, `recent_turns` atualizado.
-- `(A) mecontrola.agent_runs` — novo run da interação.
+Agora vamos montar seu plano.
 
-**Resposta do MeControla:**
-```
-🎯 Antes da gente falar de números, me conta uma coisa:
-
-Qual objetivo você quer alcançar organizando melhor seu dinheiro?
-
-Exemplos:
-• Quitar dívidas
-• Fazer uma viagem
-• Comprar uma casa
-• Criar uma reserva
-• Sair do aperto financeiro
+🔵 *Etapa 1/4 — Objetivo*
+Qual é o seu objetivo principal? (ex: quitar dívidas, fazer uma viagem, criar uma reserva)
 ```
 
 ---
 
-### Mensagem 3 — Define objetivo
+### Mensagem 2 — Define objetivo
 
 **Usuário:** `Quero quitar minhas dívidas`
 
 **Ação do sistema:**
-- Salva o objetivo na sessão.
+- Fase `objective`. O LLM chama `save_onboarding_objective`.
+- Salva o objetivo e o perfil.
+- Avança para `budget`.
 
 **Use cases:**
 - `SaveOnboardingObjective`
-- `SetOnboardingPhase(phase='income')`
+- `SetOnboardingPhase(phase='budget')`
 - `AppendOnboardingTurn`
 
 **Tabelas:**
-- `(O) mecontrola.onboarding_sessions` — `payload.objective='Quitar dívidas'`, `payload.objective_profile`, `phase='income'`.
+- `(O) mecontrola.onboarding_sessions` — `payload.objective='Quero quitar minhas dívidas'`, `payload.objective_profile`, `phase='budget'`.
+- `(A) mecontrola.agent_sessions.pending_action` — draft v2 com `objective_profile` e `step=budget`.
 - `(A) mecontrola.agent_runs`.
 
-**Resposta do MeControla:**
+**Resposta do MeControla (fallback real):**
 ```
-🎯 Perfeito!
+🎯 Anotado: seu foco é *Quero quitar minhas dívidas*. Vou usar isso pra te manter motivado!
 
-Vamos montar tudo pensando nesse objetivo.
+🔵 *Etapa 2/4 — Orçamento*
 
-💰 Agora me diga:
-
-Qual o valor disponível do seu orçamento mensal?
+Pra montar seu plano, qual é o seu *orçamento mensal*? (quanto você tem por mês)
 ```
 
 ---
 
-### Mensagem 4 — Define renda/orçamento
+### Mensagem 3 — Define orçamento
 
 **Usuário:** `4000`
 
 **Ação do sistema:**
-- Salva a renda e publica evento `IncomeRegistered`.
+- Fase `budget`. O LLM chama `save_onboarding_income` com `income_cents=400000`.
+- Publica `IncomeRegistered`.
+- Chama `SuggestBudgetSplit` para gerar splits automáticos.
+- Persiste o draft v2 com `income=400000` e `auto_splits`.
+- Avança para `cards`.
 
 **Use cases:**
 - `SaveOnboardingIncome`
+- `SuggestBudgetSplit`
 - `SetOnboardingPhase(phase='cards')`
 - `AppendOnboardingTurn`
 
 **Tabelas:**
 - `(O) mecontrola.onboarding_sessions` — `payload.income_cents=400000`, `phase='cards'`.
-- `(P) mecontrola.outbox_events` — evento `IncomeRegistered` pendente de publicação.
+- `(P) mecontrola.outbox_events` — evento `IncomeRegistered`.
+- `(A) mecontrola.agent_sessions.pending_action` — draft v2 com `income`, `auto_splits`, `step=cards`.
 - `(B) mecontrola.budgets` — criado/atualizado pelo consumer de `IncomeRegistered`.
 - `(A) mecontrola.agent_runs`.
 
-**Resposta do MeControla:**
+**Resposta do MeControla (possivel, com splits sugeridos):**
 ```
-✅ Orçamento registrado
+✅ Orçamento de *R$ 4.000* registrado!
 
-💰 R$ 4.000
+📊 Aqui está uma sugestão de distribuição para o seu orçamento:
 
-💳 Você usa cartão de crédito?
+💰 *Custo Fixo*: R$ 2.000
+🎓 *Conhecimento*: R$ 300
+🎉 *Prazeres*: R$ 500
+🎯 *Metas*: R$ 700
+🏦 *Liberdade Financeira*: R$ 500
 
-Se sim, me diga:
-• Apelido do cartão
-• Dia de vencimento da fatura
+🔵 *Etapa 3/4 — Cartões*
 
-Se não usar, é só me avisar 😊
+💳 Você usa *cartão de crédito*?
+
+Se usar, me responda assim:
+
+Nubank 13 / Inter 5 / Itaú 10
+
+(apelido + dia de fechamento)
+
+Se não usar, basta responder: *Não uso*
 ```
 
 ---
 
-### Mensagem 5 — Cadastra cartão
+### Mensagem 4 — Cadastra cartão
 
-**Usuário:** `Nubank dia 13`
+**Usuário:** `Nubank 13`
 
 **Ação do sistema:**
-- Salva o cartão no rascunho do onboarding e publica evento `CardRegistered`.
+- Fase `cards`. O LLM chama `save_onboarding_card` com `nickname='Nubank'`, `closing_day=13`.
+- Publica `CardRegistered`.
+- Avança para `financial_plan`.
 
 **Use cases:**
 - `SaveOnboardingCard`
+- `SetOnboardingPhase(phase='financial_plan')`
 - `AppendOnboardingTurn`
 
 **Tabelas:**
@@ -861,197 +966,94 @@ Se não usar, é só me avisar 😊
 - `(C) mecontrola.cards` — cartão criado pelo consumer de `CardRegistered`.
 - `(A) mecontrola.agent_runs`.
 
-**Resposta do MeControla:**
+**Resposta do MeControla (template real `buildFinancialPlanMessage`):**
 ```
-✅ Cartão salvo
+💳 Cartão *Nubank* salvo (fecha dia 13 📅). Quer adicionar outro? Se não usa cartão, é só dizer.
 
-💳 Nubank
-📅 Vencimento: dia 13
+🔵 *Etapa 4/4 — Plano Financeiro*
 
-Deseja adicionar outro cartão?
-```
+🎯 *Objetivo*: Quero quitar minhas dívidas
+💰 *Orçamento*: R$ 4.000/mês
+💳 *Cartões*: Nubank (fecha dia 13)
 
----
+📋 *Distribuição Final*:
 
-### Mensagem 6 — Não adiciona mais cartões
+💰 *Custo Fixo*: R$ 2.000
+🎓 *Conhecimento*: R$ 300
+🎉 *Prazeres*: R$ 500
+🎯 *Metas*: R$ 700
+🏦 *Liberdade Financeira*: R$ 500
 
-**Usuário:** `Não`
-
-**Ação do sistema:**
-- Avança para apresentação das categorias.
-
-**Use cases:**
-- `SetOnboardingPhase(phase='categories')`
-- `AppendOnboardingTurn`
-- Consulta `mecontrola.categories` / `mecontrola.category_dictionary` — **somente leitura**.
-
-**Tabelas:**
-- `(O) mecontrola.onboarding_sessions` — `phase='categories'`, `recent_turns` atualizado.
-- `(A) mecontrola.agent_runs`.
-
-**Resposta do MeControla:**
-```
-📊 Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui.
-
-Tudo vive em apenas 5 categorias:
-
-💰 Custo Fixo
-🎓 Conhecimento
-🎉 Prazeres
-🎯 Metas
-🏦 Liberdade Financeira
-
-Faz sentido? 😊
+Responde *sim* pra confirmar, ou me diz como quer distribuir.
 ```
 
 ---
 
-### Mensagem 7 — Confirma categorias
+### Mensagem 5 — Confirma plano financeiro
 
 **Usuário:** `Sim`
 
 **Ação do sistema:**
-- Avança para definição dos valores das categorias.
+- Fase `financial_plan`. Como a mensagem não tem dígitos e é afirmativa, o sistema constrói automaticamente a tool call `save_onboarding_budget_splits` com os splits sugeridos.
+- Salva os splits.
+- Publica `SplitsCalculated`.
+- Limpa o draft v2.
+- Avança para `first_tx`.
 
 **Use cases:**
-- `SetOnboardingPhase(phase='splits')`
-- `AppendOnboardingTurn`
-
-**Tabelas:**
-- `(O) mecontrola.onboarding_sessions` — `phase='splits'`, `recent_turns` atualizado.
-- `(A) mecontrola.agent_runs`.
-
-**Resposta do MeControla:**
-```
-💰 Quanto deseja definir para Custo Fixo?
-```
-
----
-
-### Mensagens 8 a 12 — Definição dos valores das categorias
-
-**Usuário:**
-1. `2000`
-2. `300`
-3. `500`
-4. `700`
-5. `500`
-
-**Ação do sistema:**
-- A tool de onboarding acumula os valores informados no `payload.custom_split` da sessão.
-- Após o 5º valor, chama `SaveOnboardingBudgetSplits` com as 5 alocações e publica `SplitsCalculated`.
-
-**Use cases:**
-- `SuggestBudgetSplit` (opcional, na primeira categoria)
 - `SaveOnboardingBudgetSplits`
-- `SetOnboardingPhase(phase='summary')`
-- `AppendOnboardingTurn` (a cada resposta)
-
-**Tabelas:**
-- `(O) mecontrola.onboarding_sessions` — `payload.custom_split` com:
-  - `custo_fixo`: 2000
-  - `conhecimento`: 300
-  - `prazeres`: 500
-  - `metas`: 700
-  - `liberdade_financeira`: 500
-  - `phase='summary'`.
-- `(P) mecontrola.outbox_events` — evento `SplitsCalculated`.
-- `(B) mecontrola.budgets` — total e competência atualizados.
-- `(B) mecontrola.budgets_allocations` — 5 alocações criadas.
-- `(A) mecontrola.agent_runs` — um run por mensagem processada.
-
-**Resposta do MeControla (após o último valor):**
-```
-✅ Planejamento criado!
-
-🎯 Objetivo:
-Quitar dívidas
-
-💰 Orçamento:
-R$ 4.000
-
-📊 Distribuição
-
-💰 Custo Fixo
-R$ 2.000 (50%)
-
-🎓 Conhecimento
-R$ 300 (7,5%)
-
-🎉 Prazeres
-R$ 500 (12,5%)
-
-🎯 Metas
-R$ 700 (17,5%)
-
-🏦 Liberdade Financeira
-R$ 500 (12,5%)
-
-Está tudo certo? 😊
-```
-
----
-
-### Mensagem 13 — Confirma resumo
-
-**Usuário:** `Tudo certo`
-
-**Ação do sistema:**
-- Avança para conclusão, aguardando a primeira movimentação.
-
-**Use cases:**
-- `SetOnboardingPhase(phase='awaiting_first_transaction')`
+- `SetOnboardingPhase(phase='first_tx')`
 - `AppendOnboardingTurn`
 
 **Tabelas:**
-- `(O) mecontrola.onboarding_sessions` — `phase='awaiting_first_transaction'`, `recent_turns` atualizado.
+- `(O) mecontrola.onboarding_sessions` — `payload.custom_split` com as 5 alocações, `phase='first_tx'`.
+- `(P) mecontrola.outbox_events` — evento `SplitsCalculated`.
+- `(A) mecontrola.agent_sessions.pending_action` — limpo (`{}`).
+- `(B) mecontrola.budgets` / `mecontrola.budgets_allocations` — atualizados pelo consumer.
 - `(A) mecontrola.agent_runs`.
 
-**Resposta do MeControla:**
+**Resposta do MeControla (fallback real):**
 ```
-🚀 Seu planejamento está pronto!
+✅ *Distribuição salva!*
+💰 Custo Fixo: R$ 2.000 (50%)
+🎓 Conhecimento: R$ 300 (7%)
+🎉 Prazeres: R$ 500 (12%)
+🎯 Metas: R$ 700 (17%)
+🏦 Liberdade Financeira: R$ 500 (12%)
 
-Agora é só me enviar suas movimentações normalmente.
+🚀 Agora é só começar! Me manda seu *primeiro lançamento* do jeito que você fala:
 
-Exemplos:
-• Mercado 120 pix
-• Uber 35 Nubank
-• Recebi salário 4000
-• Como estou esse mês?
-• Quanto ainda posso gastar?
+"gastei 35 no mercado" ou "recebi 2500 de salário"
 ```
 
 ---
 
-### Mensagem 14 — Primeira movimentação
+### Mensagem 6 — Primeira movimentação
 
 **Usuário:** `Mercado 120 pix`
 
 **Ação do sistema:**
-- O workflow `transactions` do agente identifica a intenção, aplica a `WriteGuard` e executa o use case de registro de despesa.
-- Após o sucesso, o onboarding marca `FirstTxRecorded=true` e completa a sessão.
+- Fase `first_tx`. O LLM chama `record_transaction`.
+- A tool delega para `ExpenseRecorder` (`internal/transactions`), que registra a despesa.
+- Chama `MarkFirstTransactionRecorded`.
+- Chama `CompleteOnboardingSession`, que publica `OnboardingCompleted`.
 
 **Use cases:**
-- `RecordExpense` / `RecordTransaction` (`internal/transactions`).
+- `RecordTransaction` / `RecordExpense` (`internal/transactions`).
 - `MarkFirstTransactionRecorded` (`internal/onboarding`).
 - `CompleteOnboardingSession` (`internal/onboarding`).
 
 **Tabelas:**
 - `(T) mecontrola.transactions` — despesa `Mercado 120 pix` registrada.
-- `(T) mecontrola.transactions_card_purchases` — se aplicável (pix = sem cartão, então não necessariamente).
 - `(O) mecontrola.onboarding_sessions` — `payload.first_tx_recorded=true`, `payload.completed_at`, `state='active'`, `recent_turns` limpo.
 - `(P) mecontrola.outbox_events` — evento `OnboardingCompleted`.
-- `(A) mecontrola.agent_runs` — runs das tools de transação e de conclusão.
+- `(A) mecontrola.agent_runs` — runs da tool `record_transaction` e da conclusão.
 
 **Resposta do MeControla:**
 ```
-✅ Despesa registrada
+🏆 Boa! Registrei *R$ 120 em custo_fixo/supermercado*. Esse é o primeiro passo pro seu controle financeiro!
 
-📉 Mercado
-💰 R$ 120
-💳 Pix
-
-🎉 Seu onboarding está completo! Agora você pode acompanhar tudo por aqui.
+🎉 *Onboarding concluído!* Agora é só me chamar: registrar gastos, ver fatura do cartão, acompanhar metas e pedir o resumo do mês. Conta comigo! ✅
 ```
 
 ---
@@ -1067,6 +1069,7 @@ Exemplos:
 | `mecontrola.outbox_events` | `internal/platform/outbox` | Eventos `IncomeRegistered`, `CardRegistered`, `SplitsCalculated`, `OnboardingCompleted` publicados. |
 | `mecontrola.agent_threads` | `internal/agent` | Thread ativa para o usuário. |
 | `mecontrola.agent_runs` | `internal/agent` | Múltiplos runs (um por interação), todos auditados. |
+| `mecontrola.agent_sessions` | `internal/agent` | `pending_action` limpo (`{}`); `recent_turns` mantido durante o onboarding. |
 | `mecontrola.cards` | `internal/card` | Cartão `Nubank` cadastrado. |
 | `mecontrola.budgets` | `internal/budgets` | Orçamento de R$ 4.000 para a competência atual. |
 | `mecontrola.budgets_allocations` | `internal/budgets` | 5 alocações conforme splits informados. |

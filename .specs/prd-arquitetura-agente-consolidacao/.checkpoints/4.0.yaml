@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-arquitetura-agente-consolidacao/4.0_execution_report.md
+summary: "Removidos tools destrutivos (delete/edit/card-delete) do registry; caminho único via dispatchWriteDestructive + HITL gate; suites HITL e parity verdes"
+timestamp: 2026-06-24T00:00:00Z

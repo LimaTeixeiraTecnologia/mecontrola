@@ -8,7 +8,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/budgetdraft"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/pendingexpense"
 	budgetsoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/output"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
@@ -232,8 +231,22 @@ type RecurringLister interface {
 	Execute(ctx context.Context, userID string) ([]RecurringView, error)
 }
 
-type PendingExpenseConfirmationGateway interface {
-	Load(ctx context.Context, userID uuid.UUID, channel string) (pendingexpense.Draft, bool, error)
-	Save(ctx context.Context, userID uuid.UUID, channel string, draft pendingexpense.Draft) error
-	Clear(ctx context.Context, userID uuid.UUID, channel string) error
+type IncomeSourceView struct {
+	Description string
+	AmountCents int64
+}
+
+type IncomeSummaryInput struct {
+	UserID   string
+	RefMonth string
+}
+
+type IncomeSummaryResult struct {
+	RefMonth   string
+	TotalCents int64
+	Sources    []IncomeSourceView
+}
+
+type IncomeSummaryReader interface {
+	Execute(ctx context.Context, in IncomeSummaryInput) (IncomeSummaryResult, error)
 }
