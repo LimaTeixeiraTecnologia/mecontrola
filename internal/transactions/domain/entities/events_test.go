@@ -66,15 +66,3 @@ func TestCardPurchaseUpdated_HasInvoiceDeltas(t *testing.T) {
 	assert.Contains(t, string(data), "invoice_deltas")
 	assert.Contains(t, string(data), "ref_months_affected")
 }
-
-func TestRecurringTemplateCreated_Fields(t *testing.T) {
-	evt := entities.RecurringTemplateCreated{
-		EventID:     uuid.New(),
-		AggregateID: uuid.New(),
-		UserID:      uuid.New(),
-		OccurredAt:  time.Now().UTC(),
-	}
-	data, err := json.Marshal(evt)
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "event_id")
-}

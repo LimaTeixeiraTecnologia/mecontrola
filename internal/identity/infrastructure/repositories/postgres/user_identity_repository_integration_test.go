@@ -79,7 +79,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertAndTryFindActive() {
 			setup: func(repo interfaces.UserIdentityRepository) (entities.UserIdentity, bool, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newWhatsAppIdentity(userID, "+5511100000001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511900000001", now)
 
 				err := repo.Insert(s.ctx, identity)
 				s.Require().NoError(err)
@@ -126,7 +126,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertDuplicate() {
 			setup: func(repo interfaces.UserIdentityRepository) (int, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newWhatsAppIdentity(userID, "+5511200000001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511900000002", now)
 
 				s.Require().NoError(repo.Insert(s.ctx, identity))
 
@@ -173,7 +173,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestUnlink() {
 			setup: func(repo interfaces.UserIdentityRepository) (entities.UserIdentity, bool, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newWhatsAppIdentity(userID, "+5511300000001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511900000003", now)
 
 				s.Require().NoError(repo.Insert(s.ctx, identity))
 
@@ -222,13 +222,13 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestListByUser() {
 				now := time.Now().UTC().Truncate(time.Microsecond)
 
 				chWhatsApp := valueobjects.ChannelWhatsApp()
-				extActive, err := valueobjects.NewExternalID(chWhatsApp, "+5511400000001")
+				extActive, err := valueobjects.NewExternalID(chWhatsApp, "+5511900000004")
 				s.Require().NoError(err)
 				identityActive, err := entities.NewUserIdentity(uuid.New(), userID, chWhatsApp, extActive, now)
 				s.Require().NoError(err)
 				s.Require().NoError(repo.Insert(s.ctx, identityActive))
 
-				extUnlinked, err := valueobjects.NewExternalID(chWhatsApp, "+5511400000002")
+				extUnlinked, err := valueobjects.NewExternalID(chWhatsApp, "+5511900000005")
 				s.Require().NoError(err)
 				identityUnlinked, err := entities.NewUserIdentity(uuid.New(), userID, chWhatsApp, extUnlinked, now.Add(time.Millisecond))
 				s.Require().NoError(err)
@@ -281,7 +281,7 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestFindByUserAndChannel() {
 			setup: func(repo interfaces.UserIdentityRepository) (entities.UserIdentity, bool, error) {
 				userID := s.seedUser()
 				now := time.Now().UTC().Truncate(time.Microsecond)
-				identity := s.newWhatsAppIdentity(userID, "+5511500000001", now)
+				identity := s.newWhatsAppIdentity(userID, "+5511900000006", now)
 
 				s.Require().NoError(repo.Insert(s.ctx, identity))
 

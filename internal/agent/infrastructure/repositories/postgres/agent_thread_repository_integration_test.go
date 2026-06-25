@@ -133,7 +133,7 @@ func (s *AgentThreadRepositorySuite) TestGetNotFound() {
 	ctx := context.Background()
 	userID := insertTestUser(s.T(), s.db)
 
-	_, found, err := s.repo().GetByUserAndChannel(ctx, userID, "telegram")
+	_, found, err := s.repo().GetByUserAndChannel(ctx, userID, "whatsapp")
 	s.Require().NoError(err)
 	s.False(found)
 }

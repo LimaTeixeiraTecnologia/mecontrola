@@ -141,13 +141,13 @@ func (s *ObservationMemorySuite) TestLoadContextWithObservations() {
 	}{
 		{
 			name: "two observations joined with separator",
-			args: args{userID: userID, channel: "telegram"},
+			args: args{userID: userID, channel: "whatsapp"},
 			dependencies: dependencies{
 				repo: &stubObservationRepo{
 					insertSignal: make(chan struct{}, 1),
 					listResult: []entities.Observation{
-						{ID: uuid.New(), UserID: userID, Channel: "telegram", Content: "obs2", CreatedAt: now},
-						{ID: uuid.New(), UserID: userID, Channel: "telegram", Content: "obs1", CreatedAt: now.Add(-time.Minute)},
+						{ID: uuid.New(), UserID: userID, Channel: "whatsapp", Content: "obs2", CreatedAt: now},
+						{ID: uuid.New(), UserID: userID, Channel: "whatsapp", Content: "obs1", CreatedAt: now.Add(-time.Minute)},
 					},
 				},
 			},

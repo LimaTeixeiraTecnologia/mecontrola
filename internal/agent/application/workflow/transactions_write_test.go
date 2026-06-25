@@ -272,7 +272,7 @@ func (s *TransactionsWriteSuite) TestExpenseStateFromToolInput() {
 	kind := intent.KindRecordExpense
 	in := tools.ToolInput{
 		UserID:       uuid.New(),
-		Channel:      "telegram",
+		Channel:      "whatsapp",
 		MessageID:    "msg-42",
 		Intent:       mustBuildExpenseIntent(5000, "Mercado"),
 		LLMModel:     "google/gemini-2.5-flash-lite",
@@ -282,7 +282,7 @@ func (s *TransactionsWriteSuite) TestExpenseStateFromToolInput() {
 	}
 	state := ExpenseStateFromToolInput(in)
 	s.Equal(in.UserID, state.UserID)
-	s.Equal("telegram", state.Channel)
+	s.Equal("whatsapp", state.Channel)
 	s.Equal(kind, state.Kind)
 	s.Equal(int64(5000), state.AmountCents)
 	s.Equal("Mercado", state.Merchant)

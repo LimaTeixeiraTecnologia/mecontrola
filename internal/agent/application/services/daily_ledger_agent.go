@@ -309,6 +309,9 @@ func (a *DailyLedgerAgent) dispatchPlan(ctx context.Context, principal Principal
 		a.record(ctx, parsed.Intent.Kind().String(), channel, tools.OutcomeFallback)
 		return RouteResult{Reply: reply, Outcome: tools.OutcomeFallback, Kind: parsed.Intent.Kind()}
 	}
+	if result.Outcome == tools.OutcomeReplay && result.Reply == "" {
+		result.Reply = alreadyProcessedText
+	}
 	a.record(ctx, parsed.Intent.Kind().String(), channel, result.Outcome)
 	return RouteResult{Reply: result.Reply, Outcome: result.Outcome, Kind: parsed.Intent.Kind()}
 }
@@ -324,6 +327,9 @@ func (a *DailyLedgerAgent) continuePendingPlan(ctx context.Context, userID uuid.
 	}
 	if !handled {
 		return false, RouteResult{}
+	}
+	if result.Outcome == tools.OutcomeReplay && result.Reply == "" {
+		result.Reply = alreadyProcessedText
 	}
 	a.record(ctx, intent.KindUnknown.String(), channel, result.Outcome)
 	return true, RouteResult{Reply: result.Reply, Outcome: result.Outcome, Kind: intent.KindUnknown}

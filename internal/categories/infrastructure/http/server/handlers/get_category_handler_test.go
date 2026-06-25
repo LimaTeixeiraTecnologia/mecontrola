@@ -105,6 +105,16 @@ func (s *GetCategoryHandlerSuite) TestHandle_InvalidID() {
 	s.Contains(rec.Body.String(), "invalid_query")
 }
 
+func (s *GetCategoryHandlerSuite) TestHandle_ZeroID() {
+	req := s.newRequestWithID(uuid.Nil.String())
+	rec := httptest.NewRecorder()
+
+	s.handler.Handle(rec, req)
+
+	s.Equal(http.StatusUnprocessableEntity, rec.Code)
+	s.Contains(rec.Body.String(), "invalid_query")
+}
+
 func (s *GetCategoryHandlerSuite) TestHandle_NotModified() {
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	req := s.newRequestWithID(id.String())

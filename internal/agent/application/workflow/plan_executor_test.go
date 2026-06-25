@@ -282,6 +282,96 @@ func (s *PlanExecutorSuite) TestStepIndexPassedToDispatcher() {
 	s.Equal([]int{0, 1}, capturedIndexes)
 }
 
+func (s *PlanExecutorSuite) TestSerializeDeserializeByRefAndConfigureBudget() {
+	deleteByRef, err := intent.NewDeleteTransactionByRef("uber")
+	s.Require().NoError(err)
+	editByRef, err := intent.NewEditTransactionByRef("mercado", 4200)
+	s.Require().NoError(err)
+	configureBudget, err := intent.NewConfigureBudget(intent.ConfigureBudgetFields{
+		TotalCents:  400000,
+		Allocations: map[string]int{"expense.metas": 4000},
+	})
+	s.Require().NoError(err)
+
+	captured := make([]intent.Intent, 0, 3)
+	pe, err := NewPlanExecutor(s.newEngine(), func(_ context.Context, in PlanDispatchInput) (tools.ToolResult, error) {
+		captured = append(captured, in.Intent)
+		return tools.ToolResult{Reply: in.Intent.Kind().String(), Outcome: tools.OutcomeRouted}, nil
+	}, s.obs)
+	s.Require().NoError(err)
+
+	result, err := pe.Execute(s.ctx, PlanInput{
+		UserID:    s.user,
+		Channel:   "whatsapp",
+		MessageID: "msg-by-ref",
+		Text:      "plano",
+		Plan: PlanSteps{Steps: []PlanStepItem{
+			{Intent: deleteByRef, Confidence: 0.9, Index: 0},
+			{Intent: editByRef, Confidence: 0.9, Index: 1},
+			{Intent: configureBudget, Confidence: 0.9, Index: 2},
+		}},
+	})
+
+	s.NoError(err)
+	s.Equal(tools.OutcomeRouted, result.Outcome)
+	s.Contains(result.Reply, "delete_transaction_by_ref")
+	s.Contains(result.Reply, "edit_transaction_by_ref")
+	s.Contains(result.Reply, "configure_budget")
+	s.Require().Len(captured, 3)
+	s.Equal("uber", captured[0].SearchQuery())
+	s.Equal("mercado", captured[1].SearchQuery())
+	s.Equal(int64(4200), captured[1].AmountCents())
+	s.Equal(int64(400000), captured[2].BudgetTotalCents())
+	s.Equal(map[string]int{"expense.metas": 4000}, captured[2].BudgetAllocations())
+}
+
+func (s *PlanExecutorSuite) TestRunConflictReturnsReplay() {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"already_exists", platform.ErrRunAlreadyExists},
+		{"conflict", platform.ErrRunConflict},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name+"/execute", func() {
+			engine := &conflictEngine{err: tc.err}
+			pe, err := NewPlanExecutor(engine, func(_ context.Context, _ PlanDispatchInput) (tools.ToolResult, error) {
+				return tools.ToolResult{Outcome: tools.OutcomeRouted}, nil
+			}, s.obs)
+			s.Require().NoError(err)
+
+			result, execErr := pe.Execute(s.ctx, PlanInput{
+				UserID:    s.user,
+				Channel:   "whatsapp",
+				MessageID: "msg-conflict-" + tc.name,
+				Text:      "gastei 30",
+				Plan: PlanSteps{Steps: []PlanStepItem{
+					{s.makeExpenseIntent(), 0.9, 0},
+				}},
+			})
+
+			s.NoError(execErr)
+			s.Equal(tools.OutcomeReplay, result.Outcome)
+		})
+
+		s.Run(tc.name+"/resume", func() {
+			engine := &conflictEngine{err: tc.err}
+			pe, err := NewPlanExecutor(engine, func(_ context.Context, _ PlanDispatchInput) (tools.ToolResult, error) {
+				return tools.ToolResult{Outcome: tools.OutcomeRouted}, nil
+			}, s.obs)
+			s.Require().NoError(err)
+
+			result, handled, resumeErr := pe.Resume(s.ctx, s.user, "whatsapp", "sim")
+
+			s.NoError(resumeErr)
+			s.True(handled)
+			s.Equal(tools.OutcomeReplay, result.Outcome)
+		})
+	}
+}
+
 func (s *PlanExecutorSuite) TestPlanMetadataPassedToDispatcher() {
 	expense := s.makeExpenseIntent()
 	var captured PlanDispatchInput
@@ -328,4 +418,16 @@ func (e *inspectEngine) Start(ctx context.Context, def platform.Definition[PlanS
 
 func (e *inspectEngine) Resume(ctx context.Context, def platform.Definition[PlanState], key string, resume []byte) (platform.RunResult[PlanState], error) {
 	return e.inner.Resume(ctx, def, key, resume)
+}
+
+type conflictEngine struct {
+	err error
+}
+
+func (e *conflictEngine) Start(ctx context.Context, def platform.Definition[PlanState], key string, initial PlanState) (platform.RunResult[PlanState], error) {
+	return platform.RunResult[PlanState]{}, e.err
+}
+
+func (e *conflictEngine) Resume(ctx context.Context, def platform.Definition[PlanState], key string, resume []byte) (platform.RunResult[PlanState], error) {
+	return platform.RunResult[PlanState]{}, e.err
 }

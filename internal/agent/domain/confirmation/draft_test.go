@@ -151,7 +151,7 @@ func (s *ConfirmationSuite) TestConfirmStateMergePatchCompatible() {
 		RepromptCount:    0,
 		MessageID:        "msg-001",
 		UserID:           "user-1",
-		Channel:          "telegram",
+		Channel:          "whatsapp",
 	}
 
 	baseBytes, err := json.Marshal(base)

@@ -5,7 +5,6 @@ Scripts de carga para validar capacidade do MVP antes do primeiro deploy e antes
 Cobertura:
 
 - **Webhook Kiwify** — `kiwify-webhook.js` (k6, 50 VUs × 2 min).
-- **Webhook Telegram** — `telegram-webhook.js` (k6, 30 VUs × 2 min).
 - **Outbox throughput** — `outbox-throughput.sh` (bash, N eventos sintéticos, mede drenagem).
 
 ## Pré-requisitos
@@ -55,23 +54,6 @@ Thresholds (falham o run quando violados):
 
 Cada VU gera um `funnel_token` (sck) único de 43 chars + `order_id` único, então cada request cria uma sessão de onboarding nova — mantenha vacuum/autovacuum habilitados na tabela `onboarding_sessions`.
 
-### Telegram webhook
-
-```bash
-export TELEGRAM_WEBHOOK_SECRET="<mesmo valor do .env do app>"
-
-k6 run scripts/loadtest/telegram-webhook.js
-```
-
-Thresholds:
-
-| Métrica | Limite |
-|---------|--------|
-| `http_req_duration` p95 | < 1000 ms |
-| `http_req_failed` rate | < 2 % |
-
-O p95 é maior porque o handler chama o LLM (OpenRouter) internamente para classificar intent. Se o LLM estiver lento ou indisponível, o teste vai falhar — confirme `OPENROUTER_API_KEY` antes.
-
 ### Outbox throughput
 
 ```bash
@@ -102,7 +84,7 @@ DELETE FROM mecontrola.outbox_events
 
 Possíveis causas:
 - DB pool saturado → ver `mecontrola_db_pool_in_use` no Grafana.
-- LLM lento (Telegram) → ver `agent_llm_request_duration_seconds`.
+- LLM lento (WhatsApp) → ver `agent_llm_request_duration_seconds`.
 - Lock contention em `onboarding_sessions` na virada de mês → checar `pg_stat_activity` por `wait_event_type=Lock`.
 
 ### Falha por error rate

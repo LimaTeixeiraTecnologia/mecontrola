@@ -71,14 +71,14 @@ func (s *AgentSessionRepositorySuite) TestCreateThenGet() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	record := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	record := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(repo.Create(ctx, record))
 
-	got, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	got, err := repo.GetByUserAndChannel(ctx, userID, "whatsapp")
 	s.Require().NoError(err)
 	s.Assert().Equal(record.ID, got.ID)
 	s.Assert().Equal(record.UserID, got.UserID)
-	s.Assert().Equal("telegram", got.Channel)
+	s.Assert().Equal("whatsapp", got.Channel)
 	s.Assert().JSONEq(string(record.PendingAction), string(got.PendingAction))
 	s.Assert().JSONEq(string(record.RecentTurns), string(got.RecentTurns))
 }
@@ -98,10 +98,10 @@ func (s *AgentSessionRepositorySuite) TestCreateConflictSameUserChannel() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	first := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	first := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(repo.Create(ctx, first))
 
-	second := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	second := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	err := repo.Create(ctx, second)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrAgentSessionConflict))
@@ -112,7 +112,7 @@ func (s *AgentSessionRepositorySuite) TestUpdate() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	record := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	record := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(repo.Create(ctx, record))
 
 	record.PendingAction = []byte(`{"action":"awaiting_category"}`)
@@ -121,7 +121,7 @@ func (s *AgentSessionRepositorySuite) TestUpdate() {
 	record.ExpiresAt = time.Now().UTC().Add(2 * time.Hour)
 	s.Require().NoError(repo.Update(ctx, record))
 
-	got, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	got, err := repo.GetByUserAndChannel(ctx, userID, "whatsapp")
 	s.Require().NoError(err)
 	s.Assert().JSONEq(`{"action":"awaiting_category"}`, string(got.PendingAction))
 	s.Assert().JSONEq(`[{"role":"assistant","text":"qual categoria?"}]`, string(got.RecentTurns))
@@ -132,7 +132,7 @@ func (s *AgentSessionRepositorySuite) TestUpdateMissingReturnsNotFound() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	record := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	record := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	err := repo.Update(ctx, record)
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrAgentSessionNotFound))
@@ -144,9 +144,9 @@ func (s *AgentSessionRepositorySuite) TestUserIsolation() {
 	userA := s.insertTestUser(ctx)
 	userB := s.insertTestUser(ctx)
 
-	s.Require().NoError(repo.Create(ctx, s.makeRecord(userA, "telegram", time.Now().UTC().Add(time.Hour))))
+	s.Require().NoError(repo.Create(ctx, s.makeRecord(userA, "whatsapp", time.Now().UTC().Add(time.Hour))))
 
-	_, err := repo.GetByUserAndChannel(ctx, userB, "telegram")
+	_, err := repo.GetByUserAndChannel(ctx, userB, "whatsapp")
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrAgentSessionNotFound))
 }
@@ -156,10 +156,10 @@ func (s *AgentSessionRepositorySuite) TestGetSkipsExpired() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	expired := s.makeRecord(userID, "telegram", time.Now().UTC().Add(-time.Minute))
+	expired := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(-time.Minute))
 	s.Require().NoError(repo.Create(ctx, expired))
 
-	_, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	_, err := repo.GetByUserAndChannel(ctx, userID, "whatsapp")
 	s.Require().Error(err)
 	s.Assert().True(errors.Is(err, interfaces.ErrAgentSessionNotFound))
 }
@@ -169,11 +169,11 @@ func (s *AgentSessionRepositorySuite) TestUpsertInsertsWhenAbsent() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	record := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	record := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	record.PendingAction = []byte(`{"kind":"budget_config","total_cents":500000,"allocations":{},"competence":"2026-06"}`)
 	s.Require().NoError(repo.Upsert(ctx, record))
 
-	got, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	got, err := repo.GetByUserAndChannel(ctx, userID, "whatsapp")
 	s.Require().NoError(err)
 	s.Assert().JSONEq(string(record.PendingAction), string(got.PendingAction))
 }
@@ -183,14 +183,14 @@ func (s *AgentSessionRepositorySuite) TestUpsertUpdatesOnConflict() {
 	repo := s.newRepo()
 	userID := s.insertTestUser(ctx)
 
-	first := s.makeRecord(userID, "telegram", time.Now().UTC().Add(time.Hour))
+	first := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(time.Hour))
 	s.Require().NoError(repo.Create(ctx, first))
 
-	second := s.makeRecord(userID, "telegram", time.Now().UTC().Add(2*time.Hour))
+	second := s.makeRecord(userID, "whatsapp", time.Now().UTC().Add(2*time.Hour))
 	second.PendingAction = []byte(`{"kind":"budget_config","total_cents":800000,"allocations":{"expense.metas":2000},"competence":"2026-06"}`)
 	s.Require().NoError(repo.Upsert(ctx, second))
 
-	got, err := repo.GetByUserAndChannel(ctx, userID, "telegram")
+	got, err := repo.GetByUserAndChannel(ctx, userID, "whatsapp")
 	s.Require().NoError(err)
 	s.Assert().Equal(first.ID, got.ID)
 	s.Assert().JSONEq(string(second.PendingAction), string(got.PendingAction))
@@ -202,13 +202,13 @@ func (s *AgentSessionRepositorySuite) TestDeleteExpired() {
 	userActive := s.insertTestUser(ctx)
 	userExpired := s.insertTestUser(ctx)
 
-	s.Require().NoError(repo.Create(ctx, s.makeRecord(userActive, "telegram", time.Now().UTC().Add(time.Hour))))
-	s.Require().NoError(repo.Create(ctx, s.makeRecord(userExpired, "telegram", time.Now().UTC().Add(-time.Hour))))
+	s.Require().NoError(repo.Create(ctx, s.makeRecord(userActive, "whatsapp", time.Now().UTC().Add(time.Hour))))
+	s.Require().NoError(repo.Create(ctx, s.makeRecord(userExpired, "whatsapp", time.Now().UTC().Add(-time.Hour))))
 
 	deleted, err := repo.DeleteExpired(ctx, time.Now().UTC())
 	s.Require().NoError(err)
 	s.Assert().GreaterOrEqual(deleted, int64(1))
 
-	_, err = repo.GetByUserAndChannel(ctx, userActive, "telegram")
+	_, err = repo.GetByUserAndChannel(ctx, userActive, "whatsapp")
 	s.Require().NoError(err)
 }

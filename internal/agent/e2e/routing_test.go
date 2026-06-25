@@ -53,14 +53,39 @@ func TestAgentRouter_RealLLM_PersistsTransactions_Integration(t *testing.T) {
 		agentbinding.NewTransactionCreatorAdapter(txModule.CreateTransactionUC),
 		o11y,
 	)
+	logCardPurchase := usecases.NewRecordCardPurchaseFromAgent(
+		categoriesModule.SearchDictionaryUC,
+		agentbinding.NewCardPurchaseCreatorAdapter(cardModule.ListCardsUC, txModule.CreateCardPurchaseUC),
+		o11y,
+	)
+
+	lister := agentbinding.NewTransactionListerAdapter(txModule.ListTransactionsUC)
+	searcher := agentbinding.NewTransactionSearcherAdapter(txModule.SearchTransactionsUC)
+	lastEditor := agentbinding.NewLastTransactionEditorAdapter(txModule.GetTransactionUC, txModule.UpdateTransactionUC)
+	lastDeleter := agentbinding.NewLastTransactionDeleterAdapter(txModule.DeleteTransactionUC)
+	cardLister := cardModule.ListCardsUC
+	cardDeleter := agentbinding.NewCardDeleterAdapter(cardModule.ListCardsUC, cardModule.SoftDeleteCardUC)
+
+	kernelCategoryResolver := agentbinding.NewKernelCategoryResolver(categoriesModule.SearchDictionaryUC)
+	kernelPersistFn := agentbinding.NewKernelPersistFunc(
+		agentbinding.NewTransactionLoggerAdapter(logTx),
+		agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
+	)
+	kernelDeps, _, err := buildConfirmKernelDeps(o11y, mgr, cfg, lister, searcher, lastEditor, lastDeleter, cardLister, cardDeleter, kernelCategoryResolver, kernelPersistFn)
+	require.NoError(t, err)
 
 	gateway := &CapturingGateway{}
 	router, err := appservices.NewIntentRouter(o11y, appservices.IntentRouterDeps{
-		Parser:          &parserAdapter{uc: realParser(t)},
-		ExpenseRecorder: agentbinding.NewTransactionLoggerAdapter(logTx),
-		Fallback:        &StubFallback{},
-		WhatsAppGateway: gateway,
-		Location:        time.UTC,
+		Parser:            &parserAdapter{uc: realParser(t)},
+		ExpenseRecorder:   agentbinding.NewTransactionLoggerAdapter(logTx),
+		CardPurchaseLog:   agentbinding.NewCardPurchaseLoggerAdapter(logCardPurchase),
+		TransactionLister: lister,
+		LastDeleter:       lastDeleter,
+		LastEditor:        lastEditor,
+		Fallback:          &StubFallback{},
+		WhatsAppGateway:   gateway,
+		Location:          time.UTC,
+		Kernel:            kernelDeps,
 	})
 	require.NoError(t, err)
 
@@ -68,7 +93,7 @@ func TestAgentRouter_RealLLM_PersistsTransactions_Integration(t *testing.T) {
 	principal := appservices.Principal{UserID: userID}
 
 	expense := router.RouteWhatsApp(ctx, principal, appservices.InboundMessage{
-		Text: "ifood 58 reais", WhatsAppTo: "+5511900000099", MessageID: "wamid.router.exp.1",
+		Text: "gastei 58 no ifood", WhatsAppTo: "+5511900000099", MessageID: "wamid.router.exp.1",
 	})
 	require.Equal(t, tools.OutcomeRouted, expense.Outcome, "gasto deve ser roteado e persistido")
 

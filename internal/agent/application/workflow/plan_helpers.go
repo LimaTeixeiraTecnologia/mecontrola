@@ -9,30 +9,33 @@ import (
 
 func serializePlanStep(in intent.Intent, confidence float64, index int) PlanStepSerialized {
 	s := PlanStepSerialized{
-		Index:            index,
-		IntentKind:       in.Kind().String(),
-		AmountCents:      in.AmountCents(),
-		Merchant:         in.Merchant(),
-		CategoryHint:     in.CategoryHint(),
-		PaymentMethod:    in.PaymentMethod(),
-		CardHint:         in.CardHint(),
-		CategoryName:     in.CategoryName(),
-		GoalName:         in.GoalName(),
-		RefMonth:         in.RefMonth(),
-		RawText:          in.RawText(),
-		Installments:     in.Installments(),
-		Direction:        in.Direction(),
-		Frequency:        in.Frequency(),
-		DayOfMonth:       in.DayOfMonth(),
-		ClosingDay:       in.ClosingDay(),
-		DueDay:           in.DueDay(),
-		LimitCents:       in.LimitCents(),
-		Percentage:       in.Percentage(),
-		CardName:         in.CardName(),
-		Nickname:         in.CardNickname(),
-		Confidence:       confidence,
-		Months:           in.Months(),
-		SourceCompetence: in.SourceCompetence(),
+		Index:             index,
+		IntentKind:        in.Kind().String(),
+		AmountCents:       in.AmountCents(),
+		Merchant:          in.Merchant(),
+		CategoryHint:      in.CategoryHint(),
+		PaymentMethod:     in.PaymentMethod(),
+		CardHint:          in.CardHint(),
+		CategoryName:      in.CategoryName(),
+		GoalName:          in.GoalName(),
+		RefMonth:          in.RefMonth(),
+		RawText:           in.RawText(),
+		Installments:      in.Installments(),
+		Direction:         in.Direction(),
+		Frequency:         in.Frequency(),
+		DayOfMonth:        in.DayOfMonth(),
+		ClosingDay:        in.ClosingDay(),
+		DueDay:            in.DueDay(),
+		LimitCents:        in.LimitCents(),
+		Percentage:        in.Percentage(),
+		CardName:          in.CardName(),
+		Nickname:          in.CardNickname(),
+		Confidence:        confidence,
+		Months:            in.Months(),
+		SourceCompetence:  in.SourceCompetence(),
+		SearchQuery:       in.SearchQuery(),
+		BudgetTotalCents:  in.BudgetTotalCents(),
+		BudgetAllocations: in.BudgetAllocations(),
 	}
 	if in.NicknamePtr() != nil {
 		s.NewNickname = *in.NicknamePtr()
@@ -149,7 +152,14 @@ func deserializePlanStep(s PlanStepSerialized) (intent.Intent, error) { //nolint
 	case intent.KindHowAmIDoing:
 		return intent.NewHowAmIDoing(), nil
 	case intent.KindConfigureBudget:
-		return intent.NewConfigureBudget(intent.ConfigureBudgetFields{})
+		return intent.NewConfigureBudget(intent.ConfigureBudgetFields{
+			TotalCents:  s.BudgetTotalCents,
+			Allocations: s.BudgetAllocations,
+		})
+	case intent.KindDeleteTransactionByRef:
+		return intent.NewDeleteTransactionByRef(s.SearchQuery)
+	case intent.KindEditTransactionByRef:
+		return intent.NewEditTransactionByRef(s.SearchQuery, s.AmountCents)
 	case intent.KindListRecurring:
 		return intent.NewListRecurring(), nil
 	case intent.KindListCards:

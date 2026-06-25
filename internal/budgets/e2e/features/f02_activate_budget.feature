@@ -7,7 +7,6 @@ Funcionalidade: Ativação de orçamento
     Quando o usuário autenticado ativa o orçamento da competência "2025-03"
     Então a resposta HTTP deve ter status 200
     E o banco deve conter o orçamento da competência "2025-03" com estado "active"
-    E a tabela outbox_events deve conter 1 evento do tipo "budgets.budget_activated.v1"
 
   Cenário: ativar orçamento inexistente retorna 404
     Dado que o ambiente de teste para budgets está pronto

@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -184,6 +185,12 @@ func (pe *PlanExecutor) Execute(ctx context.Context, in PlanInput) (tools.ToolRe
 	def := pe.buildDefinition(hasWrite)
 	result, err := pe.engine.Start(ctx, def, planCorrelationKey(in.UserID.String(), in.Channel), initial)
 	if err != nil {
+		if errors.Is(err, platform.ErrRunAlreadyExists) || errors.Is(err, platform.ErrRunConflict) {
+			pe.o11y.Logger().Warn(ctx, "agent.workflow.plan_executor: run conflict treated as replay",
+				observability.String("message_id", in.MessageID),
+			)
+			return tools.ToolResult{Outcome: tools.OutcomeReplay}, nil
+		}
 		return tools.ToolResult{}, fmt.Errorf("agent.workflow.plan_executor: engine start: %w", err)
 	}
 	return planResultToToolResult(result), nil
@@ -199,6 +206,13 @@ func (pe *PlanExecutor) Resume(ctx context.Context, userID uuid.UUID, channel, r
 	}
 	result, err := pe.engine.Resume(ctx, def, planCorrelationKey(userID.String(), channel), resumeBytes)
 	if err != nil {
+		if errors.Is(err, platform.ErrRunAlreadyExists) || errors.Is(err, platform.ErrRunConflict) {
+			pe.o11y.Logger().Warn(ctx, "agent.workflow.plan_executor: run conflict on resume treated as replay",
+				observability.String("user_id", userID.String()),
+				observability.String("channel", channel),
+			)
+			return tools.ToolResult{Outcome: tools.OutcomeReplay}, true, nil
+		}
 		return tools.ToolResult{}, false, fmt.Errorf("agent.workflow.plan_executor: engine resume: %w", err)
 	}
 	if result.Status == platform.RunStatusRunning || result.RunID == uuid.Nil {

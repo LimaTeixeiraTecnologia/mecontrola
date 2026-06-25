@@ -83,24 +83,3 @@ type CardPurchaseDeleted struct {
 	RefMonthsAffected []valueobjects.RefMonth `json:"ref_months_affected"`
 	InvoiceDeltas     map[string]int64        `json:"invoice_deltas"`
 }
-
-type RecurringTemplateCreated struct {
-	EventID     uuid.UUID `json:"event_id"`
-	AggregateID uuid.UUID `json:"aggregate_id"`
-	UserID      uuid.UUID `json:"user_id"`
-	OccurredAt  time.Time `json:"occurred_at"`
-}
-
-type RecurringTemplateUpdated struct {
-	EventID     uuid.UUID `json:"event_id"`
-	AggregateID uuid.UUID `json:"aggregate_id"`
-	UserID      uuid.UUID `json:"user_id"`
-	OccurredAt  time.Time `json:"occurred_at"`
-}
-
-type RecurringTemplateDeleted struct {
-	EventID     uuid.UUID `json:"event_id"`
-	AggregateID uuid.UUID `json:"aggregate_id"`
-	UserID      uuid.UUID `json:"user_id"`
-	OccurredAt  time.Time `json:"occurred_at"`
-}

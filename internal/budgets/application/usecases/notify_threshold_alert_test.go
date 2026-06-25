@@ -125,13 +125,13 @@ func (s *NotifyThresholdAlertSuite) TestExecute() {
 			dependencies: dependencies{
 				gw: func() *stubChannelGateway {
 					s.repo.EXPECT().IsNotified(mock.Anything, userID, budgetID, kind, refDay).Return(false, nil).Once()
-					s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "telegram", ExternalID: "1234"}, true, nil).Once()
-					s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "telegram", mock.Anything).Return(false, nil).Once()
+					s.resolver.EXPECT().ResolvePreferred(mock.Anything, userID).Return(appinterfaces.UserChannelPreference{Channel: "whatsapp", ExternalID: "1234"}, true, nil).Once()
+					s.repo.EXPECT().MarkNotified(mock.Anything, userID, budgetID, kind, refDay, "whatsapp", mock.Anything).Return(false, nil).Once()
 					return &stubChannelGateway{}
 				}(),
 			},
 			expectOutcome: NotifyOutcomeAlreadySent,
-			expectChannel: "telegram",
+			expectChannel: "whatsapp",
 		},
 	}
 

@@ -105,7 +105,7 @@ func TestPromptContextLoader_DegradesOnCardsError(t *testing.T) {
 	cardsUC := &stubListCards{err: errors.New("db down")}
 
 	sut := loader.NewPromptContextLoader(categoriesUC, cardsUC, noop.NewProvider())
-	seed, err := sut.Load(context.Background(), uuid.New(), "telegram")
+	seed, err := sut.Load(context.Background(), uuid.New(), "whatsapp")
 
 	require.NoError(t, err)
 	assert.Len(t, seed.Categories, 1)

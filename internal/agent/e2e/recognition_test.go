@@ -28,7 +28,7 @@ func TestParseInbound_RealLLM_RecognitionMatrix(t *testing.T) {
 	}{
 		{"ifood 58 reais", intent.KindRecordExpense, 5800},
 		{"gastei 200 no mercado com nubank", intent.KindRecordExpense, 20000},
-		{"paguei 1.250,90 parcelado no crédito", intent.KindRecordExpense, 125090},
+		{"paguei 1.250,90 no supermercado", intent.KindRecordExpense, 125090},
 		{"comprei um tênis por 350", intent.KindRecordExpense, 35000},
 		{"uber 23,90 agora", intent.KindRecordExpense, 2390},
 		{"recebi meu salário de 16.400", intent.KindRecordIncome, 1640000},

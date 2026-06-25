@@ -59,6 +59,10 @@ func (h *GetCategoryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if err := in.Validate(); err != nil {
+		h.handleError(ctx, w, r, start, span, err)
+		return
+	}
 
 	out, err := h.usecase.Execute(ctx, in)
 	if err != nil {
@@ -100,6 +104,15 @@ func (h *GetCategoryHandler) buildInput(w http.ResponseWriter, r *http.Request, 
 func (h *GetCategoryHandler) handleError(ctx context.Context, w http.ResponseWriter, r *http.Request, start time.Time, span observability.Span, err error) {
 	span.RecordError(err)
 	d := time.Since(start)
+	if errors.Is(err, input.ErrCategoryIDRequired) {
+		h.recordMetrics(ctx, "invalid_query")
+		h.recordDuration(ctx, d, "invalid_query")
+		h.logRequest(r, "invalid_query", d)
+		version := h.currentVersion(ctx)
+		w.Header().Set("ETag", formatETag(version))
+		writeProblem(w, http.StatusUnprocessableEntity, "invalid id", "invalid_query", version)
+		return
+	}
 	if errors.Is(err, usecases.ErrCategoryNotFound) {
 		h.recordMetrics(ctx, "not_found")
 		h.recordDuration(ctx, d, "not_found")

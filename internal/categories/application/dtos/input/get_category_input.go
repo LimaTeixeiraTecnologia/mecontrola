@@ -1,10 +1,6 @@
 package input
 
-import (
-	"errors"
-
-	"github.com/google/uuid"
-)
+import "github.com/google/uuid"
 
 type GetCategoryInput struct {
 	ID                uuid.UUID
@@ -12,9 +8,8 @@ type GetCategoryInput struct {
 }
 
 func (i *GetCategoryInput) Validate() error {
-	var errs []error
 	if i.ID == uuid.Nil {
-		errs = append(errs, ErrCategoryIDRequired)
+		return ErrCategoryIDRequired
 	}
-	return errors.Join(errs...)
+	return nil
 }

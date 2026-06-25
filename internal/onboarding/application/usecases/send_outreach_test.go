@@ -166,7 +166,7 @@ func (s *SendOutreachSuite) TestExecute() {
 			},
 		},
 		{
-			name: "deve pular token sem whatsapp e sem telegram_external_id",
+			name: "deve pular token sem canal configurado",
 			dependencies: dependencies{
 				tokenRepo: func() *mocks.MagicTokenRepository {
 					token := buildPaidTokenNoChannel()
