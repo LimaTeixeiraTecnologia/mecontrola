@@ -18,6 +18,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
+const (
+	workflowTransactions   = "transactions"
+	workflowBudget         = "budget"
+	workflowCards          = "cards"
+	workflowConversational = "conversational"
+)
+
 type stubRuntimeRouter struct {
 	result RouteResult
 	calls  int
@@ -336,12 +343,8 @@ func legacyWorkflowFor(kind intent.Kind) string {
 		intent.KindEditCategoryPercentage,
 		intent.KindQueryCategory,
 		intent.KindQueryGoal,
-		intent.KindQueryCard,
-		intent.KindBudgetDetails:
+		intent.KindQueryCard:
 		return workflowBudget
-	case intent.KindListCategories,
-		intent.KindClassifyCategory:
-		return workflowCategories
 	case intent.KindListCards,
 		intent.KindCreateCard,
 		intent.KindCountCards,

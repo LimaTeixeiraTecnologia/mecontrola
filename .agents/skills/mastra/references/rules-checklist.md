@@ -50,7 +50,7 @@ grep -n "OutcomeClarify" internal/agent/application/services/daily_ledger_agent.
 - [ ] Comportamento novo entrou como Workflow/Tool no seam `buildRegistry`, não como `case`.
 - [ ] Tool fina: sem regra de negócio, SQL ou branching de domínio.
 - [ ] `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind`/`Kind` fechados (sem string livre).
-- [ ] Escrita passa pelo `WriteGuard` compartilhado; leitura não duplica authz/policy.
+- [ ] Escrita durável passa pelo kernel write seam (`NewTransactionsWriteDefinition`, roteado por `kind.IsKernelWrite()`); leitura não duplica authz/policy.
 - [ ] LLM só em `ParseInbound` (ou exceção sancionada: conversational/onboarding).
 - [ ] `OutcomeClarify` sempre acompanhado de `Draft` salvo; draft limpo após uso.
 - [ ] Run auditável: thread resolvido, status fechado, métricas com labels enum-only.

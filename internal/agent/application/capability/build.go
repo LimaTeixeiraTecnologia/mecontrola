@@ -5,7 +5,6 @@ import "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/inten
 const (
 	workflowTransactions = "transactions"
 	workflowBudget       = "budget"
-	workflowCategories   = "categories"
 	workflowCards        = "cards"
 	whatsAppChannel      = "whatsapp"
 )
@@ -37,9 +36,6 @@ func BuildCatalog() (*Catalog, error) {
 		newSpec(workflowCards, intent.KindDeleteCard, ModeWrite, true, true, true),
 		newSpec(workflowTransactions, intent.KindDeleteTransactionByRef, ModeWrite, true, true, true),
 		newSpec(workflowTransactions, intent.KindEditTransactionByRef, ModeWrite, true, true, true),
-		newSpec(workflowBudget, intent.KindBudgetDetails, ModeRead, false, false, false),
-		newSpec(workflowCategories, intent.KindListCategories, ModeRead, false, false, false),
-		newSpec(workflowCategories, intent.KindClassifyCategory, ModeRead, false, false, false),
 	)
 }
 

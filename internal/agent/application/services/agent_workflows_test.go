@@ -23,7 +23,7 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsHasNoDuplicates() {
 		s.False(seen[k], "kind duplicado: %v", k)
 		seen[k] = true
 	}
-	s.Len(kinds, 23)
+	s.Len(kinds, 20)
 }
 
 func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
@@ -53,9 +53,6 @@ func (s *AgentWorkflowsSuite) TestRoutableKindsContainsExpectedKinds() {
 		intent.KindCountCards,
 		intent.KindUpdateCard,
 		intent.KindQueryIncomeSummary,
-		intent.KindBudgetDetails,
-		intent.KindListCategories,
-		intent.KindClassifyCategory,
 		intent.KindUnknown,
 	}
 	for _, k := range expected {
@@ -80,20 +77,19 @@ func (s *AgentWorkflowsSuite) TestDestructiveKindsNotInRoutableKinds() {
 	}
 }
 
-func (s *AgentWorkflowsSuite) TestBuildRegistryCreates5Workflows() {
+func (s *AgentWorkflowsSuite) TestBuildRegistryCreates4Workflows() {
 	a := &DailyLedgerAgent{}
 	registry, err := a.buildRegistry()
 	s.Require().NoError(err)
 	s.Require().NotNil(registry)
 	wfs := registry.Workflows()
-	s.Len(wfs, 5)
+	s.Len(wfs, 4)
 	ids := make(map[string]bool, len(wfs))
 	for _, wf := range wfs {
 		ids[wf.ID()] = true
 	}
 	s.True(ids["transactions"])
 	s.True(ids["budget"])
-	s.True(ids["categories"])
 	s.True(ids["cards"])
 	s.True(ids["conversational"])
 }

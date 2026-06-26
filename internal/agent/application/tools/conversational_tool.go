@@ -23,7 +23,7 @@ func NewConversational(recorder *Recorder, fallback Fallback, o11y observability
 func (t *Conversational) Name() string { return "conversational" }
 
 func (t *Conversational) Descriptor() ToolSpec {
-	return ToolSpec{Name: "conversational", IntentKind: intent.KindUnknown, Description: "conversational", SchemaVersion: "v1", Timeout: 0, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "conversational", IntentKind: intent.KindUnknown, Description: "conversational"}
 }
 
 func (t *Conversational) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {

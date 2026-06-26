@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
@@ -24,7 +23,7 @@ func NewListCards(recorder *Recorder, lister CardLister, o11y observability.Obse
 func (t *ListCards) Name() string { return "list_cards" }
 
 func (t *ListCards) Descriptor() ToolSpec {
-	return ToolSpec{Name: "list_cards", IntentKind: intent.KindListCards, Description: "list_cards", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "list_cards", IntentKind: intent.KindListCards, Description: "list_cards"}
 }
 
 func (t *ListCards) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -58,7 +57,7 @@ func NewCreateCard(recorder *Recorder, creator CardCreator, o11y observability.O
 func (t *CreateCard) Name() string { return "create_card" }
 
 func (t *CreateCard) Descriptor() ToolSpec {
-	return ToolSpec{Name: "create_card", IntentKind: intent.KindCreateCard, Description: "create_card", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "create_card", IntentKind: intent.KindCreateCard, Description: "create_card"}
 }
 
 func (t *CreateCard) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -90,7 +89,7 @@ func NewCountCards(recorder *Recorder, counter CardCounter, o11y observability.O
 func (t *CountCards) Name() string { return "count_cards" }
 
 func (t *CountCards) Descriptor() ToolSpec {
-	return ToolSpec{Name: "count_cards", IntentKind: intent.KindCountCards, Description: "count_cards", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "count_cards", IntentKind: intent.KindCountCards, Description: "count_cards"}
 }
 
 func (t *CountCards) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -125,7 +124,7 @@ func NewUpdateCard(recorder *Recorder, clarification *ClarificationResolver, upd
 func (t *UpdateCard) Name() string { return "update_card" }
 
 func (t *UpdateCard) Descriptor() ToolSpec {
-	return ToolSpec{Name: "update_card", IntentKind: intent.KindUpdateCard, Description: "update_card", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "update_card", IntentKind: intent.KindUpdateCard, Description: "update_card"}
 }
 
 func (t *UpdateCard) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -161,7 +160,7 @@ func NewDeleteCard(recorder *Recorder, clarification *ClarificationResolver, del
 func (t *DeleteCard) Name() string { return "delete_card" }
 
 func (t *DeleteCard) Descriptor() ToolSpec {
-	return ToolSpec{Name: "delete_card", IntentKind: intent.KindDeleteCard, Description: "delete_card", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "delete_card", IntentKind: intent.KindDeleteCard, Description: "delete_card"}
 }
 
 func (t *DeleteCard) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {

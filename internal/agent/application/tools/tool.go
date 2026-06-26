@@ -57,13 +57,6 @@ func (o ToolOutcome) String() string {
 	}
 }
 
-type AuthzMode int
-
-const (
-	AuthzPublic AuthzMode = iota + 1
-	AuthzUserOwned
-)
-
 func ParseOutcome(raw string) (ToolOutcome, error) {
 	switch raw {
 	case "routed":

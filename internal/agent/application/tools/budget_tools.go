@@ -29,7 +29,7 @@ func NewMonthlySummary(recorder *Recorder, summary MonthlySummaryReader, loc *ti
 func (t *MonthlySummary) Name() string { return "monthly_summary" }
 
 func (t *MonthlySummary) Descriptor() ToolSpec {
-	return ToolSpec{Name: "monthly_summary", IntentKind: intent.KindMonthlySummary, Description: "monthly_summary", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "monthly_summary", IntentKind: intent.KindMonthlySummary, Description: "monthly_summary"}
 }
 
 func (t *MonthlySummary) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -71,7 +71,7 @@ func NewHowAmIDoing(recorder *Recorder, summary MonthlySummaryReader, loc *time.
 func (t *HowAmIDoing) Name() string { return "how_am_i_doing" }
 
 func (t *HowAmIDoing) Descriptor() ToolSpec {
-	return ToolSpec{Name: "how_am_i_doing", IntentKind: intent.KindHowAmIDoing, Description: "how_am_i_doing", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "how_am_i_doing", IntentKind: intent.KindHowAmIDoing, Description: "how_am_i_doing"}
 }
 
 func (t *HowAmIDoing) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -107,7 +107,7 @@ func NewQueryCategory(recorder *Recorder, summary MonthlySummaryReader, loc *tim
 func (t *QueryCategory) Name() string { return "query_category" }
 
 func (t *QueryCategory) Descriptor() ToolSpec {
-	return ToolSpec{Name: "query_category", IntentKind: intent.KindQueryCategory, Description: "query_category", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "query_category", IntentKind: intent.KindQueryCategory, Description: "query_category"}
 }
 
 func (t *QueryCategory) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -146,7 +146,7 @@ func NewQueryGoal(recorder *Recorder, summary MonthlySummaryReader, loc *time.Lo
 func (t *QueryGoal) Name() string { return "query_goal" }
 
 func (t *QueryGoal) Descriptor() ToolSpec {
-	return ToolSpec{Name: "query_goal", IntentKind: intent.KindQueryGoal, Description: "query_goal", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "query_goal", IntentKind: intent.KindQueryGoal, Description: "query_goal"}
 }
 
 func (t *QueryGoal) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -186,7 +186,7 @@ func NewQueryCard(recorder *Recorder, lister CardLister, invoice CardInvoiceRead
 func (t *QueryCard) Name() string { return "query_card" }
 
 func (t *QueryCard) Descriptor() ToolSpec {
-	return ToolSpec{Name: "query_card", IntentKind: intent.KindQueryCard, Description: "query_card", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "query_card", IntentKind: intent.KindQueryCard, Description: "query_card"}
 }
 
 func (t *QueryCard) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -245,7 +245,7 @@ func NewConfigureBudget(recorder *Recorder, session *BudgetSessionRunner, o11y o
 func (t *ConfigureBudget) Name() string { return "configure_budget" }
 
 func (t *ConfigureBudget) Descriptor() ToolSpec {
-	return ToolSpec{Name: "configure_budget", IntentKind: intent.KindConfigureBudget, Description: "configure_budget", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "configure_budget", IntentKind: intent.KindConfigureBudget, Description: "configure_budget"}
 }
 
 func (t *ConfigureBudget) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -278,7 +278,7 @@ func NewEditCategoryPercentage(recorder *Recorder, editor CategoryPercentageEdit
 func (t *EditCategoryPercentage) Name() string { return "edit_category_percentage" }
 
 func (t *EditCategoryPercentage) Descriptor() ToolSpec {
-	return ToolSpec{Name: "edit_category_percentage", IntentKind: intent.KindEditCategoryPercentage, Description: "edit_category_percentage", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "edit_category_percentage", IntentKind: intent.KindEditCategoryPercentage, Description: "edit_category_percentage"}
 }
 
 func (t *EditCategoryPercentage) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -328,7 +328,7 @@ func NewBudgetRecurrenceCreatorTool(recorder *Recorder, creator BudgetRecurrence
 func (t *BudgetRecurrenceCreatorTool) Name() string { return "budget_recurrence" }
 
 func (t *BudgetRecurrenceCreatorTool) Descriptor() ToolSpec {
-	return ToolSpec{Name: "budget_recurrence", IntentKind: intent.KindBudgetRecurrence, Description: "budget_recurrence", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "budget_recurrence", IntentKind: intent.KindBudgetRecurrence, Description: "budget_recurrence"}
 }
 
 func (t *BudgetRecurrenceCreatorTool) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {

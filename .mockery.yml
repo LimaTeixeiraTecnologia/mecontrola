@@ -139,11 +139,6 @@ packages:
     interfaces:
       AgentDecisionRepository: {}
       AgentDecisionRepositoryFactory: {}
-  github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools:
-    interfaces:
-      CategoryLister: {}
-      CategoryClassifier: {}
-      MonthlySummaryReader: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow:
     interfaces:
       UnitOfWork: {}

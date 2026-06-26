@@ -11,15 +11,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 )
 
-const (
-	runtimeAgentID          = "daily_agent"
-	defaultRunSchemaVersion = "v1"
-	workflowTransactions    = "transactions"
-	workflowBudget          = "budget"
-	workflowCategories      = "categories"
-	workflowCards           = "cards"
-	workflowConversational  = "conversational"
-)
+const runtimeAgentID = "daily_agent"
 
 type runtimeRouter interface {
 	route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult
@@ -137,12 +129,11 @@ func (rt *AgentRuntime) startRun(ctx context.Context, principal Principal, chann
 	}
 
 	run, err := entities.StartRun(entities.StartRunParams{
-		ThreadID:      thread.ID(),
-		UserID:        principal.UserID,
-		Channel:       channel,
-		MessageID:     messageID,
-		AgentID:       runtimeAgentID,
-		SchemaVersion: defaultRunSchemaVersion,
+		ThreadID:  thread.ID(),
+		UserID:    principal.UserID,
+		Channel:   channel,
+		MessageID: messageID,
+		AgentID:   runtimeAgentID,
 	})
 	if err != nil {
 		rt.o11y.Logger().Warn(ctx, "agent.runtime.start_run_failed",

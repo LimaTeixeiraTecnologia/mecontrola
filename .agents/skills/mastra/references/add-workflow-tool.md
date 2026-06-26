@@ -57,8 +57,8 @@ clarificação ao `ClarificationResolver`. Sem regra de negócio, sem SQL, sem b
 
 Os contratos de binding consumidos (interfaces + structs Input/Result) vivem em `tools/contracts.go`
 — interface no consumidor (R6.3); o pacote `tools` é a fonte única, sem aliases em `services`.
-Métrica via `Recorder` injetado (`tools/recorder.go`). Padrão existente: `RecordExpenseTool`,
-`ListCardsTool`.
+Métrica via `Recorder` injetado (`tools/recorder.go`). Padrão existente: `RecordExpense`,
+`ListCards`.
 
 ```go
 type FooTool struct {
@@ -82,11 +82,12 @@ func (t *FooTool) Execute(ctx context.Context, in ToolInput) (ToolResult, error)
 ### 3. Novo workflow
 
 - Se a capability pede um owner novo ou um agrupamento novo de kinds, criar o workflow em
-  `buildRegistry()` com `workflow.NewWorkflow(...)` ou `agentwf.NewIntentWorkflow(...)`, conforme o
-  padrão real do arquivo.
+  `buildRegistry()` com `agentwf.NewIntentWorkflow(id string, bindings ...agentwf.KindTool)`,
+  conforme o padrão real do arquivo.
 - Registrar a `CapabilitySpec` no catálogo canônico em
   `internal/agent/application/capability/build.go` com `WorkflowID` coerente.
-- Se criou workflow novo, incluir o workflow na chamada final de `workflow.NewRegistry(...)`.
+- Se criou workflow novo, incluir o workflow na chamada final de
+  `agentwf.NewIntentRegistry(routableKinds(), ...)`.
 
 Dentro de `buildRegistry()` em `agent_workflows.go`, instanciar a struct (não mais closure `routeTool`):
 
@@ -138,8 +139,8 @@ clarificação ao `ClarificationResolver`. Sem regra de negócio, sem SQL, sem b
 
 Os contratos de binding consumidos (interfaces + structs Input/Result) vivem em `tools/contracts.go`
 — interface no consumidor (R6.3); o pacote `tools` é a fonte única, sem aliases em `services`.
-Métrica via `Recorder` injetado (`tools/recorder.go`). Padrão existente: `RecordExpenseTool`,
-`ListCardsTool`.
+Métrica via `Recorder` injetado (`tools/recorder.go`). Padrão existente: `RecordExpense`,
+`ListCards`.
 
 ```go
 type FooTool struct {
@@ -168,26 +169,29 @@ Dentro de `buildRegistry()` em `agent_workflows.go`, instanciar a struct:
 fooTool := tools.NewFooTool(a.fooBinding, a.recorder, a.o11y)
 ```
 
-Adicionar `workflow.KindTool{Kind: intent.KindFoo, Tool: fooTool}` a um `NewWorkflow(...)` existente
-(`transactions`/`budget`/`cards`) **ou** criar um novo workflow:
+Adicionar `agentwf.KindTool{Kind: intent.KindFoo, Tool: fooTool}` a um `NewIntentWorkflow(...)`
+existente (`transactions`/`budget`/`cards`) **ou** criar um novo workflow:
 
 ```go
-fooWorkflow, err := workflow.NewWorkflow("foo", guard, // guard p/ escrita; nil p/ só leitura
-    workflow.KindTool{Kind: intent.KindFoo, Tool: fooTool},
+fooWorkflow, err := agentwf.NewIntentWorkflow("foo",
+    agentwf.KindTool{Kind: intent.KindFoo, Tool: fooTool},
 )
 if err != nil {
     return nil, err
 }
 ```
 
-- **Escrita** → passar o `guard` compartilhado (`a.newWriteGuard()`), que aplica authz/replay/policy/audit.
-- **Leitura/fallback** → `guard` pode ser `nil`; `composite.Execute` pula a guarda quando
-  `!kind.IsWrite() || guard == nil`.
+- **Leitura** → o workflow roteável (`composite`) só resolve `kind -> Tool`; `composite.Execute`
+  não aplica guarda.
+- **Escrita durável** → authz/replay/policy/audit NÃO vivem no workflow roteável; pertencem ao kernel
+  write seam (`buildKernelDefinition()` + `NewTransactionsWriteDefinition(...)`, com os steps
+  `steps.NewAuthorize`/`NewReplay`/`NewPolicy`/`NewAuditBegin`). Roteie kinds de escrita durável por
+  `kind.IsKernelWrite()`.
 
 ### 3. Registrar a tool no workflow
 
 Adicionar `intent.KindFoo` ao slice de `routableKinds()` e, se criou workflow novo, incluí-lo na
-chamada final `workflow.NewRegistry(routableKinds(), ..., fooWorkflow)`.
+chamada final `agentwf.NewIntentRegistry(routableKinds(), ..., fooWorkflow)`.
 
 ### 4. Registrar o kind como roteável + `CapabilitySpec`
 
@@ -207,8 +211,13 @@ sem `init()`).
 - [ ] Tool (struct sob `application/tools/`) sem regra de negócio, SQL (`QueryContext`/`ExecContext`/...) ou branching de domínio.
 - [ ] Zero comentários em `.go` (exceto `//go:`, `//nolint:`, `// Code generated`).
 - [ ] `Outcome` é `ToolOutcome` fechado; `Kind` é `intent.Kind` fechado.
-- [ ] Escrita passa pelo `guard`; leitura não duplica authz/policy.
+- [ ] Escrita durável passa pelo kernel write seam (`NewTransactionsWriteDefinition`, roteado por `kind.IsKernelWrite()`); leitura não duplica authz/policy.
 - [ ] Sem chamada de LLM dentro da tool/workflow (exceto exceções sancionadas — ver `parse-llm-boundary.md`).
 - [ ] Teste de unidade no padrão testify/suite (R-TESTING-001).
+- [ ] `CapabilitySpec` registrada em `internal/agent/application/capability/build.go` e guards do catálogo
+  verdes: `TestBuildCatalogCoversAllRoutableKinds`, `TestBuildCatalogMatchesRegistryWorkflowOwners`
+  (`internal/agent/application/services/capability_catalog_guard_test.go`) e a equivalência por kind
+  `TestCatalogClassificationMatchesLegacyLabelsExceptKnownDrift`
+  (`internal/agent/application/services/agent_runtime_test.go`).
 
 Valide com `rules-checklist.md`.

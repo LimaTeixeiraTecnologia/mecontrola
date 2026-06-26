@@ -405,12 +405,6 @@ func fillBudgetCategoryDeps(w *agentModuleWiring, deps *appservices.IntentRouter
 	if w.budgetsModule != nil && w.budgetsModule.CreateRecurrenceUC != nil {
 		deps.BudgetRecurrenceCreator = agentbinding.NewBudgetRecurrenceCreatorAdapter(w.budgetsModule.CreateRecurrenceUC)
 	}
-	if w.categoriesModule != nil && w.categoriesModule.ListCategoriesUC != nil {
-		deps.CategoryLister = agentbinding.NewListCategoriesBinding(w.categoriesModule.ListCategoriesUC)
-	}
-	if w.categoriesModule != nil && w.categoriesModule.SearchDictionaryUC != nil {
-		deps.CategoryClassifier = agentbinding.NewClassifyCategoryBinding(w.categoriesModule.SearchDictionaryUC)
-	}
 }
 
 func attachExpenseRecorder(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {

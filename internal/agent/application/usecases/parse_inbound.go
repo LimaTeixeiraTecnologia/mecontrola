@@ -491,12 +491,6 @@ func build(kind intent.Kind, dto rawIntentDTO, fallbackText string) (intent.Inte
 		})
 	case intent.KindQueryIncomeSummary:
 		return intent.NewQueryIncomeSummary(dto.RefMonth)
-	case intent.KindBudgetDetails:
-		return intent.NewBudgetDetails(dto.RefMonth)
-	case intent.KindListCategories:
-		return intent.NewListCategories(), nil
-	case intent.KindClassifyCategory:
-		return intent.NewClassifyCategory(dto.SearchQuery)
 	case intent.KindBudgetRecurrence:
 		months := dto.Months
 		if months <= 0 {

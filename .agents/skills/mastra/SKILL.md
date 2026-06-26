@@ -26,7 +26,7 @@ seams abaixo podem evoluir — sempre abra o arquivo citado e valide antes de co
 IntentRouter
   -> AgentRuntime.Execute            (Thread-first → Run auditável)
   -> WorkflowRegistry.Resolve(kind)
-  -> Workflow.Execute                (composite; aplica WriteGuard se kind.IsWrite())
+  -> Workflow.Execute                (composite resolve kind -> Tool; escrita durável vai pelo kernel write seam)
   -> Tool.Execute                    (adapter fino)
   -> binding -> usecase -> domain -> repo
 ```
@@ -39,7 +39,7 @@ nunca como novo `case intent.Kind` no switch**. O `daily_ledger_agent.go` perman
 | Mastra            | Go (mecontrola)                              | Arquivo |
 | ----------------- | -------------------------------------------- | ------- |
 | Agent             | `DailyLedgerAgent` + `AgentRuntime`          | `internal/agent/application/services/{daily_ledger_agent,agent_runtime}.go` |
-| Workflow          | `workflow.Workflow` / `composite`            | `internal/agent/application/workflow/{workflow,composite,registry}.go` |
+| Workflow          | `workflow.IntentWorkflow` / `composite`      | `internal/agent/application/workflow/{workflow,composite,registry}.go` |
 | Tool              | `tools.Tool` (adapter fino)                  | `internal/agent/application/tools/tool.go` |
 | Thread            | `entities.Thread` + `ThreadGateway`          | `internal/agent/domain/entities/thread.go`, `application/services/agent_runtime.go` |
 | Run               | `entities.Run` + `RunGateway`                | `internal/agent/domain/entities/run.go` |

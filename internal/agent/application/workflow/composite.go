@@ -71,10 +71,5 @@ func (c *composite) Execute(ctx context.Context, in tools.ToolInput) (tools.Tool
 	if !ok {
 		return tools.ToolResult{Kind: kind, Outcome: tools.OutcomeUsecaseError}, fmt.Errorf("workflow=%q kind=%q: %w", c.id, kind.String(), ErrKindNotHandled)
 	}
-	if timeout := tool.Descriptor().Timeout; timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
 	return tool.Execute(ctx, in)
 }

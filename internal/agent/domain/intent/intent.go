@@ -36,9 +36,6 @@ const (
 	KindBudgetRecurrence
 	KindDeleteTransactionByRef
 	KindEditTransactionByRef
-	KindBudgetDetails
-	KindListCategories
-	KindClassifyCategory
 )
 
 func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent kind
@@ -91,12 +88,6 @@ func (k Kind) String() string { //nolint:revive // dispatch exaustivo por intent
 		return "delete_transaction_by_ref"
 	case KindEditTransactionByRef:
 		return "edit_transaction_by_ref"
-	case KindBudgetDetails:
-		return "budget_details"
-	case KindListCategories:
-		return "list_categories"
-	case KindClassifyCategory:
-		return "classify_category"
 	case KindUnknown:
 		return "unknown"
 	default:
@@ -187,12 +178,6 @@ func ParseKind(raw string) (Kind, error) { //nolint:revive // dispatch exaustivo
 		return KindDeleteTransactionByRef, nil
 	case "edit_transaction_by_ref":
 		return KindEditTransactionByRef, nil
-	case "budget_details":
-		return KindBudgetDetails, nil
-	case "list_categories":
-		return KindListCategories, nil
-	case "classify_category":
-		return KindClassifyCategory, nil
 	case "unknown", "":
 		return KindUnknown, nil
 	default:
@@ -777,32 +762,6 @@ func NewBudgetRecurrence(f BudgetRecurrenceFields) (Intent, error) {
 		return Intent{}, ErrBudgetRecurrenceMonths
 	}
 	return Intent{kind: KindBudgetRecurrence, sourceCompetence: trimmed, months: f.Months}, nil
-}
-
-func NewBudgetDetails(refMonth string) (Intent, error) {
-	trimmed := strings.TrimSpace(refMonth)
-	if trimmed == "" {
-		return Intent{kind: KindBudgetDetails}, nil
-	}
-	if !isYearMonth(trimmed) {
-		return Intent{}, ErrRefMonthInvalid
-	}
-	return Intent{kind: KindBudgetDetails, refMonth: trimmed}, nil
-}
-
-func NewListCategories() Intent {
-	return Intent{kind: KindListCategories}
-}
-
-func NewClassifyCategory(query string) (Intent, error) {
-	trimmed := strings.TrimSpace(query)
-	if len([]rune(trimmed)) < minSearchQueryLength {
-		return Intent{}, ErrSearchQueryTooShort
-	}
-	if len([]rune(trimmed)) > maxCategoryHintLength {
-		return Intent{}, ErrCategoryHintTooLong
-	}
-	return Intent{kind: KindClassifyCategory, searchQuery: trimmed}, nil
 }
 
 func NewUnknown(rawText string) (Intent, error) {

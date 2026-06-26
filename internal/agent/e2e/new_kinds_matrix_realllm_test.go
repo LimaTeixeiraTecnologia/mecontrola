@@ -87,13 +87,6 @@ func newKindsMatrixPhrases() []matrixPhrase {
 		{"ajusta moradia para 50 por cento", intent.KindEditCategoryPercentage, pctEq(50), "edit_pct moradia=50", false},
 		{"zera o percentual da categoria viagem, coloca 0%", intent.KindEditCategoryPercentage, pctEq(0), "edit_pct viagem=0", false},
 		{"bota investimentos em 100 por cento", intent.KindEditCategoryPercentage, pctEq(100), "edit_pct investimentos=100", false},
-
-		{"quanto sobra no meu orçamento?", intent.KindBudgetDetails, func(i intent.Intent) bool { return i.Kind() == intent.KindBudgetDetails }, "budget_details", false},
-		{"quanto ainda posso gastar em cada categoria?", intent.KindBudgetDetails, func(i intent.Intent) bool { return i.Kind() == intent.KindBudgetDetails }, "budget_details", false},
-		{"quais categorias existem?", intent.KindListCategories, func(i intent.Intent) bool { return i.Kind() == intent.KindListCategories }, "list_categories", false},
-		{"lista as categorias disponíveis", intent.KindListCategories, func(i intent.Intent) bool { return i.Kind() == intent.KindListCategories }, "list_categories", false},
-		{"em que categoria entra o ifood?", intent.KindClassifyCategory, func(i intent.Intent) bool { return normalizeName(i.SearchQuery()) != "" }, "classify_category query!=\"\"", false},
-		{"qual categoria pra farmácia?", intent.KindClassifyCategory, func(i intent.Intent) bool { return normalizeName(i.SearchQuery()) != "" }, "classify_category query!=\"\"", false},
 	}
 }
 

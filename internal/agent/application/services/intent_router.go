@@ -127,8 +127,6 @@ type IntentRouterDeps struct {
 	CardUpdater              tools.CardUpdater
 	CardDeleter              tools.CardDeleter
 	CategoryPercentageEditor tools.CategoryPercentageEditor
-	CategoryLister           tools.CategoryLister
-	CategoryClassifier       tools.CategoryClassifier
 	ExpenseRecorder          tools.ExpenseRecorder
 	CardPurchaseLog          tools.CardPurchaseLogger
 	TransactionLister        tools.TransactionLister
@@ -242,9 +240,6 @@ func buildToolBindingEntries(deps IntentRouterDeps) []toolBinding {
 		{name: "count_cards", kind: intent.KindCountCards, present: deps.CardCounter != nil},
 		{name: "update_card", kind: intent.KindUpdateCard, present: deps.CardUpdater != nil},
 		{name: "query_income_summary", kind: intent.KindQueryIncomeSummary, present: deps.IncomeSummaryReader != nil},
-		{name: "get_budget_details", kind: intent.KindBudgetDetails, present: deps.MonthlySummary != nil},
-		{name: "list_categories", kind: intent.KindListCategories, present: deps.CategoryLister != nil},
-		{name: "classify_category", kind: intent.KindClassifyCategory, present: deps.CategoryClassifier != nil},
 	}
 }
 

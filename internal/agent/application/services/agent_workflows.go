@@ -43,15 +43,6 @@ func (a *DailyLedgerAgent) buildRegistry() (*agentwf.IntentRegistry, error) {
 		agentwf.KindTool{Kind: intent.KindConfigureBudget, Tool: tools.NewConfigureBudget(a.recorder, a.budgetRunner, a.o11y)},
 		agentwf.KindTool{Kind: intent.KindEditCategoryPercentage, Tool: tools.NewEditCategoryPercentage(a.recorder, a.categoryPercentageEditor, a.loc, a.o11y)},
 		agentwf.KindTool{Kind: intent.KindBudgetRecurrence, Tool: tools.NewBudgetRecurrenceCreatorTool(a.recorder, a.budgetRecurrenceCreator, a.loc, a.o11y)},
-		agentwf.KindTool{Kind: intent.KindBudgetDetails, Tool: tools.NewBudgetDetails(a.recorder, a.monthlySummary, a.loc, a.o11y)},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	categoriesWorkflow, err := agentwf.NewIntentWorkflow("categories",
-		agentwf.KindTool{Kind: intent.KindListCategories, Tool: tools.NewListCategories(a.recorder, a.categoryLister, a.o11y)},
-		agentwf.KindTool{Kind: intent.KindClassifyCategory, Tool: tools.NewClassifyCategory(a.recorder, a.categoryClassifier, a.o11y)},
 	)
 	if err != nil {
 		return nil, err
@@ -74,7 +65,7 @@ func (a *DailyLedgerAgent) buildRegistry() (*agentwf.IntentRegistry, error) {
 		return nil, err
 	}
 
-	return agentwf.NewIntentRegistry(routableKinds(), transactionsWorkflow, budgetWorkflow, categoriesWorkflow, cardsWorkflow, conversationalWorkflow)
+	return agentwf.NewIntentRegistry(routableKinds(), transactionsWorkflow, budgetWorkflow, cardsWorkflow, conversationalWorkflow)
 }
 
 func routableKinds() []intent.Kind {
@@ -98,9 +89,6 @@ func routableKinds() []intent.Kind {
 		intent.KindCountCards,
 		intent.KindUpdateCard,
 		intent.KindQueryIncomeSummary,
-		intent.KindBudgetDetails,
-		intent.KindListCategories,
-		intent.KindClassifyCategory,
 		intent.KindUnknown,
 	}
 }

@@ -19,8 +19,8 @@ func TestKindSchemaParitySuite(t *testing.T) {
 }
 
 func parityKinds() []intent.Kind {
-	kinds := make([]intent.Kind, 0, int(intent.KindClassifyCategory))
-	for k := intent.KindUnknown; k <= intent.KindClassifyCategory; k++ {
+	kinds := make([]intent.Kind, 0, int(intent.KindEditTransactionByRef))
+	for k := intent.KindUnknown; k <= intent.KindEditTransactionByRef; k++ {
 		kinds = append(kinds, k)
 	}
 	return kinds

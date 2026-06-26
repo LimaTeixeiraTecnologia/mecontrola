@@ -79,8 +79,6 @@ type DailyLedgerAgent struct {
 	cardUpdater              tools.CardUpdater
 	cardDeleter              tools.CardDeleter
 	categoryPercentageEditor tools.CategoryPercentageEditor
-	categoryLister           tools.CategoryLister
-	categoryClassifier       tools.CategoryClassifier
 	expenseRecorder          tools.ExpenseRecorder
 	cardPurchaseLog          tools.CardPurchaseLogger
 	transactionLister        tools.TransactionLister
@@ -135,8 +133,6 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		cardUpdater:              deps.CardUpdater,
 		cardDeleter:              deps.CardDeleter,
 		categoryPercentageEditor: deps.CategoryPercentageEditor,
-		categoryLister:           deps.CategoryLister,
-		categoryClassifier:       deps.CategoryClassifier,
 		expenseRecorder:          deps.ExpenseRecorder,
 		cardPurchaseLog:          deps.CardPurchaseLog,
 		transactionLister:        deps.TransactionLister,
@@ -670,11 +666,11 @@ var intentToOperationKind = map[intent.Kind]confirmation.OperationKind{
 
 func (a *DailyLedgerAgent) isDestructiveKind(k intent.Kind) bool {
 	if a == nil || a.catalog == nil {
-		return false
+		return true
 	}
 	spec, ok := a.catalog.Lookup(k)
 	if !ok {
-		return false
+		return true
 	}
 	return spec.RequiresConfirmation
 }

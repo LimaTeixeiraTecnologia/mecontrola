@@ -25,7 +25,7 @@ func NewRecordExpense(recorder *Recorder, clarification *ClarificationResolver, 
 func (t *RecordExpense) Name() string { return "record_expense" }
 
 func (t *RecordExpense) Descriptor() ToolSpec {
-	return ToolSpec{Name: "record_expense", IntentKind: intent.KindRecordExpense, Description: "record_expense", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "record_expense", IntentKind: intent.KindRecordExpense, Description: "record_expense"}
 }
 
 func (t *RecordExpense) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -61,7 +61,7 @@ func NewRecordIncome(recorder *Recorder, clarification *ClarificationResolver, e
 func (t *RecordIncome) Name() string { return "record_income" }
 
 func (t *RecordIncome) Descriptor() ToolSpec {
-	return ToolSpec{Name: "record_income", IntentKind: intent.KindRecordIncome, Description: "record_income", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "record_income", IntentKind: intent.KindRecordIncome, Description: "record_income"}
 }
 
 func (t *RecordIncome) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -97,7 +97,7 @@ func NewRecordCardPurchase(recorder *Recorder, clarification *ClarificationResol
 func (t *RecordCardPurchase) Name() string { return "record_card_purchase" }
 
 func (t *RecordCardPurchase) Descriptor() ToolSpec {
-	return ToolSpec{Name: "record_card_purchase", IntentKind: intent.KindRecordCardPurchase, Description: "record_card_purchase", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "record_card_purchase", IntentKind: intent.KindRecordCardPurchase, Description: "record_card_purchase"}
 }
 
 func (t *RecordCardPurchase) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -141,7 +141,7 @@ func NewListTransactions(recorder *Recorder, lister TransactionLister, loc *time
 func (t *ListTransactions) Name() string { return "list_transactions" }
 
 func (t *ListTransactions) Descriptor() ToolSpec {
-	return ToolSpec{Name: "list_transactions", IntentKind: intent.KindListTransactions, Description: "list_transactions", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "list_transactions", IntentKind: intent.KindListTransactions, Description: "list_transactions"}
 }
 
 func (t *ListTransactions) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -184,7 +184,7 @@ func NewDeleteLastTransaction(recorder *Recorder, lister TransactionLister, dele
 func (t *DeleteLastTransaction) Name() string { return "delete_last_transaction" }
 
 func (t *DeleteLastTransaction) Descriptor() ToolSpec {
-	return ToolSpec{Name: "delete_last_transaction", IntentKind: intent.KindDeleteLastTransaction, Description: "delete_last_transaction", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "delete_last_transaction", IntentKind: intent.KindDeleteLastTransaction, Description: "delete_last_transaction"}
 }
 
 func (t *DeleteLastTransaction) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -226,7 +226,7 @@ func NewEditLastTransaction(recorder *Recorder, lister TransactionLister, editor
 func (t *EditLastTransaction) Name() string { return "edit_last_transaction" }
 
 func (t *EditLastTransaction) Descriptor() ToolSpec {
-	return ToolSpec{Name: "edit_last_transaction", IntentKind: intent.KindEditLastTransaction, Description: "edit_last_transaction", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "edit_last_transaction", IntentKind: intent.KindEditLastTransaction, Description: "edit_last_transaction"}
 }
 
 func (t *EditLastTransaction) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -268,7 +268,7 @@ func NewCreateRecurring(recorder *Recorder, clarification *ClarificationResolver
 func (t *CreateRecurring) Name() string { return "create_recurring" }
 
 func (t *CreateRecurring) Descriptor() ToolSpec {
-	return ToolSpec{Name: "create_recurring", IntentKind: intent.KindCreateRecurring, Description: "create_recurring", SchemaVersion: "v1", Timeout: 8 * time.Second, AuthzMode: AuthzUserOwned}
+	return ToolSpec{Name: "create_recurring", IntentKind: intent.KindCreateRecurring, Description: "create_recurring"}
 }
 
 func (t *CreateRecurring) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {
@@ -308,7 +308,7 @@ func NewListRecurring(recorder *Recorder, lister RecurringLister, o11y observabi
 func (t *ListRecurring) Name() string { return "list_recurring" }
 
 func (t *ListRecurring) Descriptor() ToolSpec {
-	return ToolSpec{Name: "list_recurring", IntentKind: intent.KindListRecurring, Description: "list_recurring", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
+	return ToolSpec{Name: "list_recurring", IntentKind: intent.KindListRecurring, Description: "list_recurring"}
 }
 
 func (t *ListRecurring) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {

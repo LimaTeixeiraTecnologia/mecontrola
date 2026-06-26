@@ -29,8 +29,8 @@ func (r *agentRunRepository) Insert(ctx context.Context, run entities.Run) error
 	const query = `
 		INSERT INTO mecontrola.agent_runs
 		       (id, thread_id, user_id, channel, message_id, agent_id, workflow, tool_name,
-		        intent_kind, schema_version, outcome, status, error, decision_id, started_at, ended_at, duration_ms)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		        intent_kind, outcome, status, error, decision_id, started_at, ended_at, duration_ms)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
 	decisionID, hasDecision := run.DecisionID()
@@ -46,7 +46,6 @@ func (r *agentRunRepository) Insert(ctx context.Context, run entities.Run) error
 		run.Workflow(),
 		run.ToolName(),
 		run.IntentKind(),
-		run.SchemaVersion(),
 		run.Outcome(),
 		run.Status().String(),
 		run.ErrText(),
