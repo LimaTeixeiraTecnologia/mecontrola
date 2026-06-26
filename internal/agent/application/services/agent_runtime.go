@@ -12,11 +12,13 @@ import (
 )
 
 const (
-	runtimeAgentID         = "daily_agent"
-	workflowTransactions   = "transactions"
-	workflowBudget         = "budget"
-	workflowCards          = "cards"
-	workflowConversational = "conversational"
+	runtimeAgentID          = "daily_agent"
+	defaultRunSchemaVersion = "v1"
+	workflowTransactions    = "transactions"
+	workflowBudget          = "budget"
+	workflowCategories      = "categories"
+	workflowCards           = "cards"
+	workflowConversational  = "conversational"
 )
 
 type runtimeRouter interface {
@@ -135,11 +137,12 @@ func (rt *AgentRuntime) startRun(ctx context.Context, principal Principal, chann
 	}
 
 	run, err := entities.StartRun(entities.StartRunParams{
-		ThreadID:  thread.ID(),
-		UserID:    principal.UserID,
-		Channel:   channel,
-		MessageID: messageID,
-		AgentID:   runtimeAgentID,
+		ThreadID:      thread.ID(),
+		UserID:        principal.UserID,
+		Channel:       channel,
+		MessageID:     messageID,
+		AgentID:       runtimeAgentID,
+		SchemaVersion: defaultRunSchemaVersion,
 	})
 	if err != nil {
 		rt.o11y.Logger().Warn(ctx, "agent.runtime.start_run_failed",

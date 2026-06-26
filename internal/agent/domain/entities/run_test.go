@@ -96,6 +96,27 @@ func (s *RunSuite) TestStartRunValidation() {
 	}
 }
 
+func (s *RunSuite) TestStartRunSchemaVersionDefault() {
+	params := baseStartRunParams()
+	params.SchemaVersion = ""
+
+	run, err := entities.StartRun(params)
+	s.Require().NoError(err)
+	s.Equal("v1", run.SchemaVersion())
+}
+
+func (s *RunSuite) TestStartRunSchemaVersionExplicit() {
+	params := baseStartRunParams()
+	params.SchemaVersion = "v2"
+
+	run, err := entities.StartRun(params)
+	s.Require().NoError(err)
+	s.Equal("v2", run.SchemaVersion())
+
+	finished := run.Finish("routed", true, "")
+	s.Equal("v2", finished.SchemaVersion())
+}
+
 func (s *RunSuite) TestStartRunWithDecision() {
 	params := baseStartRunParams()
 	decisionID := uuid.New()

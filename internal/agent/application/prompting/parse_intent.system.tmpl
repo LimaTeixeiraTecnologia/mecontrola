@@ -114,7 +114,21 @@ INTENTS PERMITIDAS (campo "kind"):
     Exemplos: "repete meu orçamento de junho por 3 meses", "usa o mesmo planejamento de 2026-05 para os próximos 2 meses", "mantém o orçamento de maio por 6 meses".
     Campos: source_competence (mês de origem no formato "YYYY-MM", OBRIGATÓRIO; infira do mês citado ou do mês atual se não citar), months (quantos meses à frente clonar, inteiro 1..12; default 1 se não informado).
 
-22. "unknown" — qualquer outra coisa (saudação, dúvida fora de escopo, ruído).
+22. "budget_details" — usuário quer o SALDO RESTANTE / quanto ainda pode gastar em cada categoria (quanto sobra).
+    Exemplos: "quanto ainda posso gastar em cada categoria?", "quanto sobra no meu orçamento?", "quanto resta em cada categoria?", "quanto falta gastar do orçamento?".
+    Campos: ref_month (formato "YYYY-MM"; OPCIONAL).
+    DISTINÇÃO: fechamento/quebra do mês (quanto já gastei) é "monthly_summary"; quanto SOBRA/RESTA por categoria é "budget_details".
+
+23. "list_categories" — usuário quer ver a LISTA de categorias disponíveis do catálogo.
+    Exemplos: "quais categorias existem?", "lista as categorias", "quais categorias posso usar?", "me mostra o catálogo de categorias".
+    Campos: nenhum.
+
+24. "classify_category" — usuário quer saber em QUAL categoria um item/gasto se encaixa, SEM registrar nada.
+    Exemplos: "em que categoria entra o ifood?", "ifood é qual categoria?", "onde classifico a netflix?", "qual categoria pra farmácia?".
+    Campos: search_query (o item a classificar; ex.: "ifood", "netflix", "farmácia").
+    DISTINÇÃO: se o usuário está REGISTRANDO um gasto (tem valor) é "record_expense"; se só pergunta a categoria de um item, sem valor, é "classify_category".
+
+25. "unknown" — qualquer outra coisa (saudação, dúvida fora de escopo, ruído).
     Campos: raw_text (eco do texto original, obrigatório).
 
 REGRAS DE EXTRAÇÃO:
@@ -185,6 +199,12 @@ EXEMPLOS (entrada -> saída JSON). Use-os para classificar corretamente, especia
 "ajusta o fechamento do cartão santander pro dia 5" -> {"kind":"update_card","card_name":"santander","new_closing_day":5}
 "muda o dia de fechar a fatura do cartão c6 pra 28" -> {"kind":"update_card","card_name":"c6","new_closing_day":28}
 "troca o vencimento do cartão itaú pro dia 10" -> {"kind":"update_card","card_name":"itaú","new_due_day":10}
+"quanto ainda posso gastar em cada categoria?" -> {"kind":"budget_details","ref_month":""}
+"quanto sobra no meu orçamento?" -> {"kind":"budget_details","ref_month":""}
+"quais categorias existem?" -> {"kind":"list_categories"}
+"lista as categorias" -> {"kind":"list_categories"}
+"em que categoria entra o ifood?" -> {"kind":"classify_category","search_query":"ifood"}
+"qual categoria pra farmácia?" -> {"kind":"classify_category","search_query":"farmácia"}
 
 FORMATO DA RESPOSTA — OBRIGATÓRIO JSON ESTRITO:
 

@@ -336,8 +336,12 @@ func legacyWorkflowFor(kind intent.Kind) string {
 		intent.KindEditCategoryPercentage,
 		intent.KindQueryCategory,
 		intent.KindQueryGoal,
-		intent.KindQueryCard:
+		intent.KindQueryCard,
+		intent.KindBudgetDetails:
 		return workflowBudget
+	case intent.KindListCategories,
+		intent.KindClassifyCategory:
+		return workflowCategories
 	case intent.KindListCards,
 		intent.KindCreateCard,
 		intent.KindCountCards,

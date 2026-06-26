@@ -373,6 +373,11 @@ func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDe
 	if w.budgetsModule != nil && w.budgetsModule.GetMonthlySummaryUC != nil {
 		deps.MonthlySummary = w.budgetsModule.GetMonthlySummaryUC
 	}
+	fillCardDeps(w, deps)
+	fillBudgetCategoryDeps(w, deps)
+}
+
+func fillCardDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	if w.cardModule.ListCardsUC != nil {
 		deps.CardLister = w.cardModule.ListCardsUC
 	}
@@ -391,11 +396,20 @@ func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDe
 	if w.cardModule.ListCardsUC != nil && w.cardModule.SoftDeleteCardUC != nil {
 		deps.CardDeleter = agentbinding.NewCardDeleterAdapter(w.cardModule.ListCardsUC, w.cardModule.SoftDeleteCardUC)
 	}
+}
+
+func fillBudgetCategoryDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	if w.budgetsModule != nil && w.budgetsModule.EditCategoryPercentageUC != nil {
 		deps.CategoryPercentageEditor = agentbinding.NewCategoryPercentageEditorAdapter(w.budgetsModule.EditCategoryPercentageUC)
 	}
 	if w.budgetsModule != nil && w.budgetsModule.CreateRecurrenceUC != nil {
 		deps.BudgetRecurrenceCreator = agentbinding.NewBudgetRecurrenceCreatorAdapter(w.budgetsModule.CreateRecurrenceUC)
+	}
+	if w.categoriesModule != nil && w.categoriesModule.ListCategoriesUC != nil {
+		deps.CategoryLister = agentbinding.NewListCategoriesBinding(w.categoriesModule.ListCategoriesUC)
+	}
+	if w.categoriesModule != nil && w.categoriesModule.SearchDictionaryUC != nil {
+		deps.CategoryClassifier = agentbinding.NewClassifyCategoryBinding(w.categoriesModule.SearchDictionaryUC)
 	}
 }
 

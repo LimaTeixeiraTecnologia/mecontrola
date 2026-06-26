@@ -15,7 +15,7 @@ func TestBuildCatalogDefinesCurrentUniqueKinds(t *testing.T) {
 	require.NoError(t, err)
 
 	list := catalog.List()
-	require.Len(t, list, 25)
+	require.Len(t, list, 28)
 
 	for _, spec := range list {
 		require.Equal(t, []string{whatsAppChannel}, spec.Channels)

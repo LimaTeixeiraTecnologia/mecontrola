@@ -59,34 +59,38 @@ var (
 )
 
 type StartRunParams struct {
-	ThreadID   uuid.UUID
-	UserID     uuid.UUID
-	Channel    string
-	MessageID  string
-	AgentID    string
-	Workflow   string
-	ToolName   string
-	IntentKind string
-	DecisionID uuid.UUID
+	ThreadID      uuid.UUID
+	UserID        uuid.UUID
+	Channel       string
+	MessageID     string
+	AgentID       string
+	Workflow      string
+	ToolName      string
+	IntentKind    string
+	SchemaVersion string
+	DecisionID    uuid.UUID
 }
 
 type Run struct {
-	id         uuid.UUID
-	threadID   uuid.UUID
-	userID     uuid.UUID
-	channel    string
-	messageID  string
-	agentID    string
-	workflow   string
-	toolName   string
-	intentKind string
-	outcome    string
-	status     RunStatus
-	errText    string
-	decisionID uuid.UUID
-	startedAt  time.Time
-	endedAt    *time.Time
+	id            uuid.UUID
+	threadID      uuid.UUID
+	userID        uuid.UUID
+	channel       string
+	messageID     string
+	agentID       string
+	workflow      string
+	toolName      string
+	intentKind    string
+	schemaVersion string
+	outcome       string
+	status        RunStatus
+	errText       string
+	decisionID    uuid.UUID
+	startedAt     time.Time
+	endedAt       *time.Time
 }
+
+const runSchemaVersionDefault = "v1"
 
 func StartRun(params StartRunParams) (Run, error) {
 	if params.ThreadID == uuid.Nil {
@@ -99,19 +103,24 @@ func StartRun(params StartRunParams) (Run, error) {
 	if channel == "" {
 		return Run{}, ErrRunChannelRequired
 	}
+	schemaVersion := strings.TrimSpace(params.SchemaVersion)
+	if schemaVersion == "" {
+		schemaVersion = runSchemaVersionDefault
+	}
 	return Run{
-		id:         uuid.New(),
-		threadID:   params.ThreadID,
-		userID:     params.UserID,
-		channel:    channel,
-		messageID:  strings.TrimSpace(params.MessageID),
-		agentID:    strings.TrimSpace(params.AgentID),
-		workflow:   strings.TrimSpace(params.Workflow),
-		toolName:   strings.TrimSpace(params.ToolName),
-		intentKind: strings.TrimSpace(params.IntentKind),
-		status:     RunStatusRunning,
-		decisionID: params.DecisionID,
-		startedAt:  time.Now().UTC(),
+		id:            uuid.New(),
+		threadID:      params.ThreadID,
+		userID:        params.UserID,
+		channel:       channel,
+		messageID:     strings.TrimSpace(params.MessageID),
+		agentID:       strings.TrimSpace(params.AgentID),
+		workflow:      strings.TrimSpace(params.Workflow),
+		toolName:      strings.TrimSpace(params.ToolName),
+		intentKind:    strings.TrimSpace(params.IntentKind),
+		schemaVersion: schemaVersion,
+		status:        RunStatusRunning,
+		decisionID:    params.DecisionID,
+		startedAt:     time.Now().UTC(),
 	}, nil
 }
 
@@ -151,19 +160,20 @@ func (r Run) DurationMs() int64 {
 	return r.endedAt.Sub(r.startedAt).Milliseconds()
 }
 
-func (r Run) ID() uuid.UUID        { return r.id }
-func (r Run) ThreadID() uuid.UUID  { return r.threadID }
-func (r Run) UserID() uuid.UUID    { return r.userID }
-func (r Run) Channel() string      { return r.channel }
-func (r Run) MessageID() string    { return r.messageID }
-func (r Run) AgentID() string      { return r.agentID }
-func (r Run) Workflow() string     { return r.workflow }
-func (r Run) ToolName() string     { return r.toolName }
-func (r Run) IntentKind() string   { return r.intentKind }
-func (r Run) Outcome() string      { return r.outcome }
-func (r Run) Status() RunStatus    { return r.status }
-func (r Run) ErrText() string      { return r.errText }
-func (r Run) StartedAt() time.Time { return r.startedAt }
+func (r Run) ID() uuid.UUID         { return r.id }
+func (r Run) ThreadID() uuid.UUID   { return r.threadID }
+func (r Run) UserID() uuid.UUID     { return r.userID }
+func (r Run) Channel() string       { return r.channel }
+func (r Run) MessageID() string     { return r.messageID }
+func (r Run) AgentID() string       { return r.agentID }
+func (r Run) Workflow() string      { return r.workflow }
+func (r Run) ToolName() string      { return r.toolName }
+func (r Run) IntentKind() string    { return r.intentKind }
+func (r Run) SchemaVersion() string { return r.schemaVersion }
+func (r Run) Outcome() string       { return r.outcome }
+func (r Run) Status() RunStatus     { return r.status }
+func (r Run) ErrText() string       { return r.errText }
+func (r Run) StartedAt() time.Time  { return r.startedAt }
 
 func (r Run) EndedAt() (time.Time, bool) {
 	if r.endedAt == nil {

@@ -95,17 +95,19 @@ func (s *AgentRunRepositorySuite) TestInsertAndFinishSucceeded() {
 	s.Require().NoError(repo.UpdateOnFinish(ctx, finished))
 
 	var (
-		status   string
-		outcome  string
-		duration int64
+		status        string
+		outcome       string
+		duration      int64
+		schemaVersion string
 	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT status, outcome, duration_ms FROM mecontrola.agent_runs WHERE id = $1`, run.ID(),
-	).Scan(&status, &outcome, &duration)
+		`SELECT status, outcome, duration_ms, schema_version FROM mecontrola.agent_runs WHERE id = $1`, run.ID(),
+	).Scan(&status, &outcome, &duration, &schemaVersion)
 	s.Require().NoError(err)
 	s.Equal("succeeded", status)
 	s.Equal("routed", outcome)
 	s.GreaterOrEqual(duration, int64(0))
+	s.Equal("v1", schemaVersion)
 }
 
 func (s *AgentRunRepositorySuite) TestInsertAndFinishFailed() {

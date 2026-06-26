@@ -19,6 +19,7 @@ import (
 const (
 	defaultProseMaxTokens         = 200
 	conversationalRedirectMessage = "Estou aqui para cuidar das suas finanças: categorias, cartões, orçamento e lançamentos. Como posso te ajudar com isso? 💪"
+	recentTurnsRetentionPairs     = 15
 )
 
 var ErrComposeEmptyText = errors.New("agent.llm.usecase.compose_conversational_reply: empty text")
@@ -272,7 +273,7 @@ func (uc *ComposeConversationalReply) persistTurns(ctx context.Context, userID u
 	if sessionFound {
 		existingTurns, _ = uc.turnHistory.Deserialize(sessionRecord.RecentTurns)
 	}
-	updatedTurns := uc.turnHistory.Append(existingTurns, userMsg, reply, time.Now().UTC(), 3)
+	updatedTurns := uc.turnHistory.Append(existingTurns, userMsg, reply, time.Now().UTC(), recentTurnsRetentionPairs)
 	serialized, serErr := uc.turnHistory.Serialize(updatedTurns)
 	if serErr != nil {
 		return

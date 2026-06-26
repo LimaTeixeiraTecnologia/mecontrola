@@ -4,22 +4,27 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
 var (
-	ErrToolNameEmpty        = errors.New("agent.application.tools: tool name is empty")
-	ErrToolDescriptionEmpty = errors.New("agent.application.tools: tool description is empty")
-	ErrDuplicateToolName    = errors.New("agent.application.tools: duplicate tool name")
-	ErrDuplicateIntentKind  = errors.New("agent.application.tools: duplicate intent kind")
-	ErrEmptyRegistry        = errors.New("agent.application.tools: registry has no tools")
+	ErrToolNameEmpty          = errors.New("agent.application.tools: tool name is empty")
+	ErrToolDescriptionEmpty   = errors.New("agent.application.tools: tool description is empty")
+	ErrToolSchemaVersionEmpty = errors.New("agent.application.tools: tool schema version is empty")
+	ErrDuplicateToolName      = errors.New("agent.application.tools: duplicate tool name")
+	ErrDuplicateIntentKind    = errors.New("agent.application.tools: duplicate intent kind")
+	ErrEmptyRegistry          = errors.New("agent.application.tools: registry has no tools")
 )
 
 type ToolSpec struct {
-	Name        string
-	IntentKind  intent.Kind
-	Description string
+	Name          string
+	IntentKind    intent.Kind
+	Description   string
+	SchemaVersion string
+	Timeout       time.Duration
+	AuthzMode     AuthzMode
 }
 
 type Registry struct {
@@ -43,6 +48,10 @@ func NewRegistry(specs ...ToolSpec) (*Registry, error) {
 		}
 		if strings.TrimSpace(spec.Description) == "" {
 			errs = append(errs, fmt.Errorf("name=%q: %w", name, ErrToolDescriptionEmpty))
+			continue
+		}
+		if strings.TrimSpace(spec.SchemaVersion) == "" {
+			errs = append(errs, fmt.Errorf("name=%q: %w", name, ErrToolSchemaVersionEmpty))
 			continue
 		}
 		if _, exists := seenName[name]; exists {

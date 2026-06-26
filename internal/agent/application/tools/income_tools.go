@@ -23,7 +23,7 @@ func NewQueryIncomeSummary(recorder *Recorder, reader IncomeSummaryReader, loc *
 func (t *QueryIncomeSummary) Name() string { return "query_income_summary" }
 
 func (t *QueryIncomeSummary) Descriptor() ToolSpec {
-	return ToolSpec{Name: "query_income_summary", IntentKind: intent.KindQueryIncomeSummary, Description: "query_income_summary"}
+	return ToolSpec{Name: "query_income_summary", IntentKind: intent.KindQueryIncomeSummary, Description: "query_income_summary", SchemaVersion: "v1", Timeout: 5 * time.Second, AuthzMode: AuthzPublic}
 }
 
 func (t *QueryIncomeSummary) Execute(ctx context.Context, in ToolInput) (ToolResult, error) {

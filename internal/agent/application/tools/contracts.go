@@ -278,3 +278,32 @@ type IncomeSummaryResult struct {
 type IncomeSummaryReader interface {
 	Execute(ctx context.Context, in IncomeSummaryInput) (IncomeSummaryResult, error)
 }
+
+type CategoryView struct {
+	Slug       string
+	Name       string
+	ParentSlug string
+}
+
+type CategoryListResult struct {
+	Categories []CategoryView
+}
+
+type CategoryLister interface {
+	Execute(ctx context.Context, userID uuid.UUID) (CategoryListResult, error)
+}
+
+type CategoryClassifyInput struct {
+	Query string
+}
+
+type CategoryClassifyResult struct {
+	Matched bool
+	Slug    string
+	Name    string
+	Path    string
+}
+
+type CategoryClassifier interface {
+	Execute(ctx context.Context, in CategoryClassifyInput) (CategoryClassifyResult, error)
+}
