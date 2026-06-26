@@ -607,7 +607,7 @@ Saída esperada: `migrations reverted (steps=-1)` seguido de `migrations applied
 ```bash
 # Confirma versão mais alta e dirty=false
 docker exec mecontrola-postgres-1 psql -U mecontrola -d mecontrola_db \
-  -c "SELECT version, dirty FROM schema_migrations ORDER BY version;"
+  -c "SELECT version, dirty FROM mecontrola.schema_migrations ORDER BY version;"
 
 # Confirma seed: dicionário de categorias (≥544 entradas)
 docker exec mecontrola-postgres-1 psql -U mecontrola -d mecontrola_db \
@@ -733,7 +733,7 @@ Saída esperada ao final (resumida):
 [vps] up server worker
 [vps] healthy após 10s
 [vps] === verificação pós-deploy ===
-[vps] schema_migrations (version dirty): 16|f
+[vps] schema_migrations (version dirty): 2|f
 [vps] mecontrola-server-1 ...:<tag> Up 5 seconds (healthy)
 [vps] mecontrola-worker-1 ...:<tag> Up 5 seconds (healthy)
 [vps] HEAD host: <tag>

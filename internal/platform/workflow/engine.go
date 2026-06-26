@@ -233,6 +233,7 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 
 	current := state
 	stepCount := len(seq.steps)
+	var lastOut StepOutput[S]
 
 	for i := cursorOffset; i < stepCount; i++ {
 		step := seq.steps[i]
@@ -257,6 +258,7 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 		}
 
 		current = out.State
+		lastOut = out
 
 		if out.Status == StepStatusSuspended {
 			snap.Status = RunStatusSuspended
@@ -313,7 +315,7 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 		}
 	}
 
-	return RunResult[S]{RunID: snap.RunID, Status: RunStatusSucceeded, State: current}, nil
+	return RunResult[S]{RunID: snap.RunID, Status: RunStatusSucceeded, State: current, Suspend: lastOut.Suspend}, nil
 }
 
 func (e *engine[S]) executeStep(ctx context.Context, def Definition[S], snap Snapshot, step Step[S], state S, idx int) (RunResult[S], error) {
@@ -388,7 +390,7 @@ func (e *engine[S]) finalizeSucceeded(ctx context.Context, def Definition[S], sn
 			return e.resolveConflictOrFail(ctx, def, snap, snapErr)
 		}
 	}
-	return RunResult[S]{RunID: snap.RunID, Status: RunStatusSucceeded, State: out.State}, nil
+	return RunResult[S]{RunID: snap.RunID, Status: RunStatusSucceeded, State: out.State, Suspend: out.Suspend}, nil
 }
 
 func (e *engine[S]) runStep(ctx context.Context, def Definition[S], snap Snapshot, step Step[S], state S, seq int) (StepOutput[S], error) {

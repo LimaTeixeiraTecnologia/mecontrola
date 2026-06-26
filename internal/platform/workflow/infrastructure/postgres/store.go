@@ -85,6 +85,23 @@ func (s *postgresStore) Load(ctx context.Context, wf, key string) (workflow.Snap
 		 LIMIT 1
 	`
 
+	row := s.conn(ctx).QueryRowContext(ctx, query, wf, key)
+	snap, err := s.scanSnapshot(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return workflow.Snapshot{}, false, nil
+	}
+	if err != nil {
+		span.RecordError(err)
+		return workflow.Snapshot{}, false, fmt.Errorf("%s load: %w", prefixWorkflowStore, err)
+	}
+	return snap, true, nil
+}
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func (s *postgresStore) scanSnapshot(row scanner) (workflow.Snapshot, error) {
 	var (
 		id          uuid.UUID
 		wfName      string
@@ -102,22 +119,17 @@ func (s *postgresStore) Load(ctx context.Context, wf, key string) (workflow.Snap
 		endedAt     sql.NullTime
 	)
 
-	err := s.conn(ctx).QueryRowContext(ctx, query, wf, key).Scan(
+	if err := row.Scan(
 		&id, &wfName, &corrKey, &statusStr, &suspendStr, &cursor,
 		&state, &attempts, &maxAttempts, &version, &lastError,
 		&createdAt, &updatedAt, &endedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return workflow.Snapshot{}, false, nil
-	}
-	if err != nil {
-		span.RecordError(err)
-		return workflow.Snapshot{}, false, fmt.Errorf("%s load: %w", prefixWorkflowStore, err)
+	); err != nil {
+		return workflow.Snapshot{}, err
 	}
 
-	status, parseErr := workflow.ParseRunStatus(statusStr)
-	if parseErr != nil {
-		return workflow.Snapshot{}, false, fmt.Errorf("%s load parse status: %w", prefixWorkflowStore, parseErr)
+	status, err := workflow.ParseRunStatus(statusStr)
+	if err != nil {
+		return workflow.Snapshot{}, fmt.Errorf("%s parse status: %w", prefixWorkflowStore, err)
 	}
 
 	suspendReason, _ := workflow.ParseSuspendReason(suspendStr)
@@ -128,7 +140,7 @@ func (s *postgresStore) Load(ctx context.Context, wf, key string) (workflow.Snap
 		endedAtPtr = &t
 	}
 
-	snap := workflow.Snapshot{
+	return workflow.Snapshot{
 		RunID:          id,
 		Workflow:       wfName,
 		CorrelationKey: corrKey,
@@ -143,8 +155,7 @@ func (s *postgresStore) Load(ctx context.Context, wf, key string) (workflow.Snap
 		CreatedAt:      createdAt.UTC(),
 		UpdatedAt:      updatedAt.UTC(),
 		EndedAt:        endedAtPtr,
-	}
-	return snap, true, nil
+	}, nil
 }
 
 func (s *postgresStore) Save(ctx context.Context, snap workflow.Snapshot, expectedVersion int64) error {
@@ -234,6 +245,44 @@ func (s *postgresStore) AppendStep(ctx context.Context, rec workflow.StepRecord)
 		return fmt.Errorf("%s append_step: %w", prefixWorkflowStore, err)
 	}
 	return nil
+}
+
+func (s *postgresStore) ListSuspended(ctx context.Context, workflowName string, updatedBefore time.Time, limit int) ([]workflow.Snapshot, error) {
+	ctx, span := s.o11y.Tracer().Start(ctx, "workflow.store.pg.list_suspended")
+	defer span.End()
+
+	const query = `
+		SELECT id, workflow, correlation_key, status, suspend_reason, cursor,
+		       state, attempts, max_attempts, version, last_error, created_at, updated_at, ended_at
+		  FROM mecontrola.workflow_runs
+		 WHERE workflow = $1
+		   AND status = 'suspended'
+		   AND updated_at < $2
+		 ORDER BY updated_at ASC
+		 LIMIT $3
+	`
+
+	rows, err := s.conn(ctx).QueryContext(ctx, query, workflowName, updatedBefore.UTC(), limit)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("%s list_suspended: %w", prefixWorkflowStore, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []workflow.Snapshot
+	for rows.Next() {
+		snap, scanErr := s.scanSnapshot(rows)
+		if scanErr != nil {
+			span.RecordError(scanErr)
+			return nil, fmt.Errorf("%s list_suspended scan: %w", prefixWorkflowStore, scanErr)
+		}
+		result = append(result, snap)
+	}
+	if err := rows.Err(); err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("%s list_suspended rows: %w", prefixWorkflowStore, err)
+	}
+	return result, nil
 }
 
 func (s *postgresStore) DeleteCompleted(ctx context.Context, retention time.Duration, limit int) (int64, error) {

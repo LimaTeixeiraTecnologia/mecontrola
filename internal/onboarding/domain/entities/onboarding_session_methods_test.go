@@ -39,24 +39,30 @@ func fullAllocation(t *testing.T) valueobjects.BudgetAllocation {
 
 func TestNewOnboardingCardDraft_HappyPath(t *testing.T) {
 	t.Parallel()
-	got, err := entities.NewOnboardingCardDraft("  nubank ", 10)
+	got, err := entities.NewOnboardingCardDraft("  nubank ", 20, 10)
 	require.NoError(t, err)
 	require.Equal(t, "nubank", got.Name)
 	require.Equal(t, 10, got.ClosingDay)
-	require.Equal(t, 0, got.DueDay)
+	require.Equal(t, 20, got.DueDay)
 	require.Equal(t, int64(0), got.LimitCents)
 }
 
 func TestNewOnboardingCardDraft_EmptyNickname(t *testing.T) {
 	t.Parallel()
-	_, err := entities.NewOnboardingCardDraft("  ", 10)
+	_, err := entities.NewOnboardingCardDraft("  ", 20, 10)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, entities.ErrOnboardingCardNicknameRequired))
 }
 
 func TestNewOnboardingCardDraft_InvalidClosingDay(t *testing.T) {
 	t.Parallel()
-	_, err := entities.NewOnboardingCardDraft("nubank", 40)
+	_, err := entities.NewOnboardingCardDraft("nubank", 20, 40)
+	require.Error(t, err)
+}
+
+func TestNewOnboardingCardDraft_InvalidDueDay(t *testing.T) {
+	t.Parallel()
+	_, err := entities.NewOnboardingCardDraft("nubank", 40, 10)
 	require.Error(t, err)
 }
 
@@ -78,14 +84,15 @@ func TestWithIncome(t *testing.T) {
 
 func TestWithAppendedCard_Dedupes(t *testing.T) {
 	t.Parallel()
-	card, err := entities.NewOnboardingCardDraft("nubank", 10)
+	card, err := entities.NewOnboardingCardDraft("nubank", 20, 10)
 	require.NoError(t, err)
 	session := newSession(t).WithAppendedCard(card, time.Now().UTC())
-	again, err := entities.NewOnboardingCardDraft("NuBank", 15)
+	again, err := entities.NewOnboardingCardDraft("NuBank", 25, 15)
 	require.NoError(t, err)
 	session = session.WithAppendedCard(again, time.Now().UTC())
 	require.Len(t, session.Payload().Cards, 1)
 	require.Equal(t, 15, session.Payload().Cards[0].ClosingDay)
+	require.Equal(t, 25, session.Payload().Cards[0].DueDay)
 }
 
 func TestWithCustomSplit(t *testing.T) {
@@ -105,12 +112,47 @@ func TestIsReadyToComplete(t *testing.T) {
 		WithObjective(objective, time.Now().UTC()).
 		WithIncome(income, time.Now().UTC()).
 		WithCustomSplit(fullAllocation(t), time.Now().UTC())
-	require.False(t, session.IsReadyToComplete())
+	require.True(t, session.IsReadyToComplete())
 	require.False(t, session.HasFirstTransaction())
 
 	session = session.WithFirstTransactionRecorded(time.Now().UTC())
 	require.True(t, session.HasFirstTransaction())
 	require.True(t, session.IsReadyToComplete())
+}
+
+func TestIsReadyToComplete_MissingObjective(t *testing.T) {
+	t.Parallel()
+	income, err := valueobjects.NewMonthlyIncome(500000)
+	require.NoError(t, err)
+
+	session := newSession(t).
+		WithIncome(income, time.Now().UTC()).
+		WithCustomSplit(fullAllocation(t), time.Now().UTC())
+	require.False(t, session.IsReadyToComplete())
+}
+
+func TestIsReadyToComplete_MissingIncome(t *testing.T) {
+	t.Parallel()
+	objective, err := valueobjects.NewFinancialObjective("viagem")
+	require.NoError(t, err)
+
+	session := newSession(t).
+		WithObjective(objective, time.Now().UTC()).
+		WithCustomSplit(fullAllocation(t), time.Now().UTC())
+	require.False(t, session.IsReadyToComplete())
+}
+
+func TestIsReadyToComplete_IncompleteSplit(t *testing.T) {
+	t.Parallel()
+	objective, err := valueobjects.NewFinancialObjective("viagem")
+	require.NoError(t, err)
+	income, err := valueobjects.NewMonthlyIncome(500000)
+	require.NoError(t, err)
+
+	session := newSession(t).
+		WithObjective(objective, time.Now().UTC()).
+		WithIncome(income, time.Now().UTC())
+	require.False(t, session.IsReadyToComplete())
 }
 
 func TestWithAppendedTurn_BoundThreePairs(t *testing.T) {

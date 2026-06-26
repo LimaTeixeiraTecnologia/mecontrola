@@ -50,4 +50,5 @@ type Store interface {
 	Save(ctx context.Context, snap Snapshot, expectedVersion int64) error
 	AppendStep(ctx context.Context, rec StepRecord) error
 	DeleteCompleted(ctx context.Context, retention time.Duration, limit int) (int64, error)
+	ListSuspended(ctx context.Context, workflow string, updatedBefore time.Time, limit int) ([]Snapshot, error)
 }

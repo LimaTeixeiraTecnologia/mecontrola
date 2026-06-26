@@ -14,15 +14,16 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type SetOnboardingPhaseInput struct {
 	UserID uuid.UUID
-	Phase  string
+	Phase  valueobjects.OnboardingPhase
 }
 
 type SetOnboardingPhaseResult struct {
-	Phase string
+	Phase valueobjects.OnboardingPhase
 }
 
 type SetOnboardingPhase struct {
@@ -45,6 +46,9 @@ func (uc *SetOnboardingPhase) Execute(ctx context.Context, in SetOnboardingPhase
 
 	if in.UserID == uuid.Nil {
 		return SetOnboardingPhaseResult{}, fmt.Errorf("onboarding: set phase: user id required")
+	}
+	if !in.Phase.IsValid() {
+		return SetOnboardingPhaseResult{}, fmt.Errorf("onboarding: set phase: %w", valueobjects.ErrOnboardingPhaseInvalid)
 	}
 
 	return uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (SetOnboardingPhaseResult, error) {

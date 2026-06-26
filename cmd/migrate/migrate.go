@@ -138,9 +138,12 @@ type runtime struct {
 }
 
 func (r *runtime) newMigrator() (*migrate.Migrate, error) {
+	if _, err := r.dbManager.DB().ExecContext(context.Background(), `CREATE SCHEMA IF NOT EXISTS mecontrola`); err != nil {
+		return nil, fmt.Errorf("migrate: garantir schema mecontrola: %w", err)
+	}
 	driver, err := migratepgx.WithInstance(r.dbManager.DB(), &migratepgx.Config{
 		MigrationsTable: migratepgx.DefaultMigrationsTable,
-		SchemaName:      "public",
+		SchemaName:      "mecontrola",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("migrate: criar driver: %w", err)

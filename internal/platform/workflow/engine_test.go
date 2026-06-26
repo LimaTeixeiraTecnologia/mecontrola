@@ -501,6 +501,28 @@ func (f *FakeStore) AppendStep(_ context.Context, rec StepRecord) error {
 	return nil
 }
 
+func (f *FakeStore) ListSuspended(_ context.Context, workflow string, updatedBefore time.Time, limit int) ([]Snapshot, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var result []Snapshot
+	for _, snap := range f.snaps {
+		if snap.Workflow != workflow {
+			continue
+		}
+		if snap.Status != RunStatusSuspended {
+			continue
+		}
+		if !snap.UpdatedAt.Before(updatedBefore) {
+			continue
+		}
+		result = append(result, snap)
+		if limit > 0 && len(result) >= limit {
+			break
+		}
+	}
+	return result, nil
+}
+
 func (f *FakeStore) DeleteCompleted(_ context.Context, retention time.Duration, limit int) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

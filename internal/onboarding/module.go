@@ -61,13 +61,11 @@ type OnboardingModule struct {
 	SaveOnboardingIncome         *usecases.SaveOnboardingIncome
 	SaveOnboardingCard           *usecases.SaveOnboardingCard
 	SaveOnboardingBudgetSplits   *usecases.SaveOnboardingBudgetSplits
-	MarkFirstTransactionRecorded *usecases.MarkFirstTransactionRecorded
 	CompleteOnboardingSession    *usecases.CompleteOnboardingSession
 	SetOnboardingPhase           *usecases.SetOnboardingPhase
 	AppendOnboardingTurn         *usecases.AppendOnboardingTurn
 	LoadOnboardingTurns          *usecases.LoadOnboardingTurns
 	MarkWelcomeSent              *usecases.MarkWelcomeSent
-	SuggestBudgetSplit           *usecases.SuggestBudgetSplit
 	EventHandlers                []EventHandlerRegistration
 }
 
@@ -90,7 +88,6 @@ type onboardingDependencies struct {
 	whatsAppGateway appinterfaces.WhatsAppGateway
 	bindingService  *binding.SubscriptionBindingService
 	cardCreator     usecases.SynchronousCardCreator
-	budgetAllocator usecases.BudgetAllocator
 }
 
 type OnboardingModuleOption func(*onboardingDependencies)
@@ -98,12 +95,6 @@ type OnboardingModuleOption func(*onboardingDependencies)
 func WithOnboardingCardCreator(creator usecases.SynchronousCardCreator) OnboardingModuleOption {
 	return func(d *onboardingDependencies) {
 		d.cardCreator = creator
-	}
-}
-
-func WithBudgetAllocator(allocator usecases.BudgetAllocator) OnboardingModuleOption {
-	return func(d *onboardingDependencies) {
-		d.budgetAllocator = allocator
 	}
 }
 
@@ -124,13 +115,11 @@ type onboardingUseCasesBundle struct {
 	saveIncome               *usecases.SaveOnboardingIncome
 	saveCard                 *usecases.SaveOnboardingCard
 	saveBudgetSplits         *usecases.SaveOnboardingBudgetSplits
-	markFirstTransaction     *usecases.MarkFirstTransactionRecorded
 	completeSession          *usecases.CompleteOnboardingSession
 	setPhase                 *usecases.SetOnboardingPhase
 	appendTurn               *usecases.AppendOnboardingTurn
 	loadTurns                *usecases.LoadOnboardingTurns
 	markWelcomeSent          *usecases.MarkWelcomeSent
-	suggestBudgetSplit       *usecases.SuggestBudgetSplit
 }
 
 func NewOnboardingModule(
@@ -176,13 +165,11 @@ func NewOnboardingModule(
 		SaveOnboardingIncome:         useCases.saveIncome,
 		SaveOnboardingCard:           useCases.saveCard,
 		SaveOnboardingBudgetSplits:   useCases.saveBudgetSplits,
-		MarkFirstTransactionRecorded: useCases.markFirstTransaction,
 		CompleteOnboardingSession:    useCases.completeSession,
 		SetOnboardingPhase:           useCases.setPhase,
 		AppendOnboardingTurn:         useCases.appendTurn,
 		LoadOnboardingTurns:          useCases.loadTurns,
 		MarkWelcomeSent:              useCases.markWelcomeSent,
-		SuggestBudgetSplit:           useCases.suggestBudgetSplit,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
 			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
@@ -249,7 +236,6 @@ func buildOnboardingUseCases(
 	saveIncomeUoW := uow.NewUnitOfWork(db)
 	saveCardUoW := uow.NewUnitOfWork(db)
 	saveSplitsUoW := uow.NewUnitOfWork(db)
-	markFirstTxUoW := uow.NewUnitOfWork(db)
 	completeSessionUoW := uow.NewUnitOfWork(db)
 	setPhaseUoW := uow.NewUnitOfWork(db)
 	onboardingSessionRepo := deps.factory.OnboardingSessionRepository(db)
@@ -284,23 +270,14 @@ func buildOnboardingUseCases(
 		getOnboardingContext:     usecases.NewGetOnboardingContext(onboardingSessionRepo, o11y),
 		saveObjective:            usecases.NewSaveOnboardingObjective(saveObjectiveUoW, deps.factory, o11y),
 		saveIncome:               usecases.NewSaveOnboardingIncome(saveIncomeUoW, deps.factory, o11y),
-		saveCard:                 usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y, deps.cardCreator),
+		saveCard:                 usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y, deps.cardCreator, cfg.CardClosingOffsetDays),
 		saveBudgetSplits:         usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		markFirstTransaction:     usecases.NewMarkFirstTransactionRecorded(markFirstTxUoW, deps.factory, o11y),
 		completeSession:          usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),
 		setPhase:                 usecases.NewSetOnboardingPhase(setPhaseUoW, deps.factory, o11y),
 		appendTurn:               usecases.NewAppendOnboardingTurn(uow.NewUnitOfWork(db), deps.factory, o11y),
 		loadTurns:                usecases.NewLoadOnboardingTurns(onboardingSessionRepo, o11y),
 		markWelcomeSent:          usecases.NewMarkWelcomeSent(uow.NewUnitOfWork(db), deps.factory, o11y),
-		suggestBudgetSplit:       buildSuggestBudgetSplit(deps.budgetAllocator, o11y),
 	}, nil
-}
-
-func buildSuggestBudgetSplit(allocator usecases.BudgetAllocator, o11y observability.Observability) *usecases.SuggestBudgetSplit {
-	if allocator == nil {
-		return nil
-	}
-	return usecases.NewSuggestBudgetSplit(allocator, o11y)
 }
 
 func buildNotificationChannelGateway(

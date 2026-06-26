@@ -9,6 +9,7 @@ import (
 
 	"github.com/cucumber/godog"
 
+	agentservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 )
 
@@ -29,6 +30,7 @@ func TestE2E(t *testing.T) {
 			registerJobSteps(sc, world)
 			registerRobustnessSteps(sc, world)
 			registerOutboxPublisherSteps(sc, world)
+			registerOnboardingConversationalSteps(sc, world)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",
@@ -51,4 +53,5 @@ type onboardingRuntime struct {
 	emailSender     *recordingEmailSender
 	failingHandler  *forcedFailureHandler
 	registryFactory func() *eventRegistry
+	onboardingAgent *agentservices.OnboardingAgent
 }

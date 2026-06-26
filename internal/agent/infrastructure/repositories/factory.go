@@ -28,6 +28,10 @@ func NewObservationRepositoryFactory(o11y observability.Observability) interface
 	return &repositoryFactory{o11y: o11y}
 }
 
+func NewProcessedEventRepositoryFactory(o11y observability.Observability) interfaces.ProcessedEventRepositoryFactory {
+	return &repositoryFactory{o11y: o11y}
+}
+
 func NewThreadRepositoryFactory(o11y observability.Observability) interfaces.AgentThreadRepositoryFactory {
 	return &repositoryFactory{o11y: o11y}
 }
@@ -50,6 +54,10 @@ func (f *repositoryFactory) WorkingMemoryRepository(db database.DBTX) interfaces
 
 func (f *repositoryFactory) ObservationRepository(db database.DBTX) interfaces.ObservationRepository {
 	return postgres.NewObservationRepository(f.o11y, db)
+}
+
+func (f *repositoryFactory) ProcessedEventRepository(db database.DBTX) interfaces.ProcessedEventRepository {
+	return postgres.NewProcessedEventRepository(f.o11y, db)
 }
 
 func (f *repositoryFactory) AgentThreadRepository(db database.DBTX) interfaces.AgentThreadRepository {

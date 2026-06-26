@@ -903,6 +903,34 @@ func (s *ConfigSuite) TestValidate() {
 				s.assertConfigError(err, "WHATSAPP_WEBHOOK_RATE_LIMIT_BURST deve ser maior que zero")
 			},
 		},
+		{
+			name: "deve rejeitar card closing offset days zero",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.OnboardingConfig.CardClosingOffsetDays = 0
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "ONBOARDING_CARD_CLOSING_OFFSET_DAYS inválido")
+			},
+		},
+		{
+			name: "deve rejeitar card closing offset days negativo",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.OnboardingConfig.CardClosingOffsetDays = -5
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "ONBOARDING_CARD_CLOSING_OFFSET_DAYS inválido")
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -1172,6 +1200,56 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.Equal(365, cfg.BillingConfig.AnonymizationRetentionDays)
 			},
 		},
+		{
+			name: "deve aplicar AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS quando ONBOARDING_CARD_CLOSING_OFFSET_DAYS nao estiver definido",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS", "20")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(20, cfg.OnboardingConfig.CardClosingOffsetDays)
+			},
+		},
+		{
+			name: "deve dar precedencia a AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS sobre ONBOARDING_CARD_CLOSING_OFFSET_DAYS",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS", "20")
+				s.writeEnvFile(path, "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\nONBOARDING_CARD_CLOSING_OFFSET_DAYS=10\n")
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(20, cfg.OnboardingConfig.CardClosingOffsetDays)
+			},
+		},
+		{
+			name: "deve manter ONBOARDING_CARD_CLOSING_OFFSET_DAYS quando AGENT nao estiver definido",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\nONBOARDING_CARD_CLOSING_OFFSET_DAYS=15\n")
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(15, cfg.OnboardingConfig.CardClosingOffsetDays)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -1346,7 +1424,7 @@ func (s *ConfigSuite) TestDBConfigAccessors() {
 			},
 			setup: func() {},
 			expect: func(result string) {
-				s.Equal("postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require&search_path=mecontrola,public&x-migrations-table=%22public%22.%22schema_migrations%22&x-migrations-table-quoted=true", result)
+				s.Equal("postgres://mecontrola:supersecretpassword@db.example.com:5432/mecontrola_db?sslmode=require&search_path=mecontrola,public&x-migrations-table=%22mecontrola%22.%22schema_migrations%22&x-migrations-table-quoted=true", result)
 			},
 		},
 	}
@@ -1530,6 +1608,11 @@ func (s *ConfigSuite) newBaseConfig() *configs.Config {
 			WebhookRateLimitBurst:  120,
 		},
 		WorkflowKernelConfig: s.newValidWorkflowKernelConfig(),
+		OnboardingConfig: configs.OnboardingConfig{
+			AbandonmentTTLHours:    48,
+			AbandonmentJobSchedule: "@hourly",
+			AbandonmentBatchSize:   100,
+		},
 	}
 }
 
@@ -1555,6 +1638,10 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.AgentConfig.MaxTokens = 256
 	cfg.AgentConfig.MaxInputChars = 2000
 	cfg.AgentConfig.RequestTimeout = 8 * time.Second
+	cfg.OnboardingConfig.AbandonmentTTLHours = 48
+	cfg.OnboardingConfig.AbandonmentJobSchedule = "@hourly"
+	cfg.OnboardingConfig.AbandonmentBatchSize = 100
+	cfg.OnboardingConfig.CardClosingOffsetDays = 10
 	return cfg
 }
 

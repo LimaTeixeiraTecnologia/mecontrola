@@ -44,6 +44,9 @@ func (f *fakeHousekeepingStore) Load(_ context.Context, _, _ string) (Snapshot, 
 }
 func (f *fakeHousekeepingStore) Save(_ context.Context, _ Snapshot, _ int64) error { return nil }
 func (f *fakeHousekeepingStore) AppendStep(_ context.Context, _ StepRecord) error  { return nil }
+func (f *fakeHousekeepingStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]Snapshot, error) {
+	return nil, nil
+}
 func (f *fakeHousekeepingStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (int64, error) {
 	if f.idx >= len(f.results) {
 		return 0, nil

@@ -14,6 +14,7 @@ import (
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	appusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	agentworkflow "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	platformevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
@@ -87,7 +88,7 @@ func (s *OnboardingBoundConsumerSuite) TestHandle_ValidPayload_NoGuards_CallsRou
 	s.NoError(err)
 	s.True(s.router.called)
 	s.Equal(userID, s.router.principal.UserID)
-	s.Equal(appservices.OnboardingWelcomeSignal, s.router.msg.Text)
+	s.Equal(agentworkflow.OnboardingWelcomeSignal, s.router.msg.Text)
 	s.Equal("+5511999990000", s.router.msg.WhatsAppTo)
 }
 

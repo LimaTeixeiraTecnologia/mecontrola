@@ -2,9 +2,12 @@ package consumers_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
@@ -13,19 +16,42 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/infrastructure/messaging/database/consumers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 type stubCardCreator struct {
 	capturedInput input.CreateCard
+	capturedCtx   context.Context
 	called        bool
 	err           error
 }
 
-func (f *stubCardCreator) Execute(_ context.Context, in input.CreateCard) (output.Card, error) {
+func (f *stubCardCreator) Execute(ctx context.Context, in input.CreateCard) (output.Card, error) {
 	f.called = true
+	f.capturedCtx = ctx
 	f.capturedInput = in
 	return output.Card{}, f.err
+}
+
+type fakeIdempotencyStorage struct {
+	records map[string]idempotency.Record
+}
+
+func newFakeIdempotencyStorage() *fakeIdempotencyStorage {
+	return &fakeIdempotencyStorage{records: make(map[string]idempotency.Record)}
+}
+
+func (f *fakeIdempotencyStorage) Get(_ context.Context, scope, key, userID string) (idempotency.Record, error) {
+	if rec, ok := f.records[scope+":"+key+":"+userID]; ok {
+		return rec, nil
+	}
+	return idempotency.Record{}, idempotency.ErrNotFound
+}
+
+func (f *fakeIdempotencyStorage) Put(_ context.Context, rec idempotency.Record) error {
+	f.records[rec.Scope+":"+rec.Key+":"+rec.UserID] = rec
+	return nil
 }
 
 type stubEvent struct {
@@ -44,7 +70,7 @@ func TestOnboardingCardConsumer(t *testing.T) {
 	suite.Run(t, new(onboardingCardConsumerSuite))
 }
 
-func (s *onboardingCardConsumerSuite) buildEnvelope(userID uuid.UUID, name string, limitCents int64, closingDay, dueDay int) outbox.Envelope {
+func (s *onboardingCardConsumerSuite) buildEnvelope(id string, userID uuid.UUID, name string, limitCents int64, closingDay, dueDay int) outbox.Envelope {
 	raw, _ := json.Marshal(map[string]any{
 		"UserID":     userID.String(),
 		"Name":       name,
@@ -52,15 +78,16 @@ func (s *onboardingCardConsumerSuite) buildEnvelope(userID uuid.UUID, name strin
 		"ClosingDay": closingDay,
 		"DueDay":     dueDay,
 	})
-	return outbox.Envelope{ID: uuid.New().String(), Payload: raw}
+	return outbox.Envelope{ID: id, Payload: raw}
 }
 
 func (s *onboardingCardConsumerSuite) TestHappyPath_CallsExecuteWithCorrectFields() {
 	userID := uuid.New()
-	env := s.buildEnvelope(userID, "Nubank", 500000, 10, 15)
-
+	eventID := uuid.NewString()
+	env := s.buildEnvelope(eventID, userID, "Nubank", 500000, 10, 15)
+	storage := newFakeIdempotencyStorage()
 	creator := &stubCardCreator{}
-	consumer := consumers.NewOnboardingCardConsumer(creator, noop.NewProvider())
+	consumer := consumers.NewOnboardingCardConsumer(creator, storage, noop.NewProvider())
 
 	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
 	s.Require().NoError(err)
@@ -73,29 +100,35 @@ func (s *onboardingCardConsumerSuite) TestHappyPath_CallsExecuteWithCorrectField
 	s.Equal(10, creator.capturedInput.ClosingDay)
 	s.Require().NotNil(creator.capturedInput.DueDay)
 	s.Equal(15, *creator.capturedInput.DueDay)
+
+	ic, ok := idempotency.FromContext(creator.capturedCtx)
+	s.Require().True(ok)
+	s.Equal("event:onboarding.card_registered", ic.Scope)
+	s.Equal(eventID, ic.Key)
+	s.Equal(userID.String(), ic.UserID)
+	expectedHash := sha256.Sum256([]byte(eventID))
+	s.Equal(hex.EncodeToString(expectedHash[:]), ic.RequestHash)
 }
 
-func (s *onboardingCardConsumerSuite) TestOptionalDueDay_ZeroMapsToNil() {
+func (s *onboardingCardConsumerSuite) TestMissingDueDay_ReturnsError() {
 	userID := uuid.New()
-	env := s.buildEnvelope(userID, "Nubank", 500000, 10, 0)
-
+	env := s.buildEnvelope(uuid.NewString(), userID, "Nubank", 500000, 10, 0)
+	storage := newFakeIdempotencyStorage()
 	creator := &stubCardCreator{}
-	consumer := consumers.NewOnboardingCardConsumer(creator, noop.NewProvider())
+	consumer := consumers.NewOnboardingCardConsumer(creator, storage, noop.NewProvider())
 
 	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
-	s.Require().NoError(err)
-
-	s.True(creator.called)
-	s.Equal(10, creator.capturedInput.ClosingDay)
-	s.Nil(creator.capturedInput.DueDay)
+	s.Require().Error(err)
+	s.ErrorContains(err, "due_day")
+	s.False(creator.called)
 }
 
 func (s *onboardingCardConsumerSuite) TestUsecaseError_IsPropagated() {
 	userID := uuid.New()
-	env := s.buildEnvelope(userID, "Itau", 100000, 5, 10)
-
+	env := s.buildEnvelope(uuid.NewString(), userID, "Itau", 100000, 5, 10)
+	storage := newFakeIdempotencyStorage()
 	creator := &stubCardCreator{err: errors.New("infra error")}
-	consumer := consumers.NewOnboardingCardConsumer(creator, noop.NewProvider())
+	consumer := consumers.NewOnboardingCardConsumer(creator, storage, noop.NewProvider())
 
 	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
 	s.Require().Error(err)
@@ -103,7 +136,8 @@ func (s *onboardingCardConsumerSuite) TestUsecaseError_IsPropagated() {
 }
 
 func (s *onboardingCardConsumerSuite) TestInvalidPayloadType_ReturnsError() {
-	consumer := consumers.NewOnboardingCardConsumer(&stubCardCreator{}, noop.NewProvider())
+	storage := newFakeIdempotencyStorage()
+	consumer := consumers.NewOnboardingCardConsumer(&stubCardCreator{}, storage, noop.NewProvider())
 	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: "not-envelope"})
 	s.Require().Error(err)
 	s.ErrorContains(err, "tipo de payload inesperado")
@@ -117,17 +151,45 @@ func (s *onboardingCardConsumerSuite) TestInvalidUserID_ReturnsError() {
 		"ClosingDay": 5,
 		"DueDay":     10,
 	})
-	env := outbox.Envelope{ID: uuid.New().String(), Payload: raw}
-	consumer := consumers.NewOnboardingCardConsumer(&stubCardCreator{}, noop.NewProvider())
+	env := outbox.Envelope{ID: uuid.NewString(), Payload: raw}
+	storage := newFakeIdempotencyStorage()
+	consumer := consumers.NewOnboardingCardConsumer(&stubCardCreator{}, storage, noop.NewProvider())
 	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
 	s.Require().Error(err)
 	s.ErrorContains(err, "user_id inválido")
 }
 
 func (s *onboardingCardConsumerSuite) TestMalformedJSON_ReturnsError() {
-	env := outbox.Envelope{ID: uuid.New().String(), Payload: []byte("not-json")}
-	consumer := consumers.NewOnboardingCardConsumer(&stubCardCreator{}, noop.NewProvider())
+	env := outbox.Envelope{ID: uuid.NewString(), Payload: []byte("not-json")}
+	storage := newFakeIdempotencyStorage()
+	consumer := consumers.NewOnboardingCardConsumer(&stubCardCreator{}, storage, noop.NewProvider())
 	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
 	s.Require().Error(err)
 	s.ErrorContains(err, "deserializar payload")
+}
+
+func (s *onboardingCardConsumerSuite) TestReplay_SkipsCreate() {
+	userID := uuid.New()
+	eventID := uuid.NewString()
+	env := s.buildEnvelope(eventID, userID, "Nubank", 500000, 10, 15)
+	storage := newFakeIdempotencyStorage()
+	creator := &stubCardCreator{}
+	consumer := consumers.NewOnboardingCardConsumer(creator, storage, noop.NewProvider())
+
+	err := consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
+	s.Require().NoError(err)
+	s.True(creator.called)
+
+	creator.called = false
+	_ = storage.Put(context.Background(), idempotency.Record{
+		Scope:       "event:onboarding.card_registered",
+		Key:         eventID,
+		UserID:      userID.String(),
+		RequestHash: eventID,
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	})
+
+	err = consumer.Handle(context.Background(), stubEvent{eventType: "onboarding.card_registered", payload: env})
+	s.Require().NoError(err)
+	s.False(creator.called)
 }

@@ -20,15 +20,18 @@ import (
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
-type fakeOnboardingTurnRunner struct {
+type fakeOnboardingHandler struct {
 	handled bool
 	reply   string
 	calls   int
 }
 
-func (f *fakeOnboardingTurnRunner) Run(_ context.Context, _ uuid.UUID, _, _ string) (services.OnboardingTurnResult, error) {
+func (f *fakeOnboardingHandler) Handle(_ context.Context, _ uuid.UUID, _, _, _, _ string) (services.RouteResult, bool) {
 	f.calls++
-	return services.OnboardingTurnResult{Handled: f.handled, Reply: f.reply}, nil
+	if !f.handled {
+		return services.RouteResult{}, false
+	}
+	return services.RouteResult{Reply: f.reply, Outcome: tools.OutcomeRouted, Kind: intent.KindConfigureBudget}, true
 }
 
 type fakeConfirmExpenseRecorder struct {
@@ -63,7 +66,7 @@ func (s *PendingExpensePrioritySuite) buildRouterWithKernelAndOnboarding(
 	store platform.Store,
 	resolver steps.CategoryResolverFunc,
 	persistFn steps.PersistFunc,
-	onboarding *fakeOnboardingTurnRunner,
+	onboarding *fakeOnboardingHandler,
 	expense tools.ExpenseRecorder,
 ) *services.IntentRouter {
 	obs := fake.NewProvider()
@@ -75,12 +78,12 @@ func (s *PendingExpensePrioritySuite) buildRouterWithKernelAndOnboarding(
 	s.parser = &fakeParser{intent: mustBuildExpenseIntent2(13150, "farmácia", "medicamentos"), confidence: confidence.Value()}
 
 	deps := services.IntentRouterDeps{
-		Parser:           s.parser,
-		Fallback:         s.fallback,
-		WhatsAppGateway:  s.wa,
-		OnboardingRunner: onboarding,
-		ExpenseRecorder:  expense,
-		Location:         time.UTC,
+		Parser:            s.parser,
+		Fallback:          s.fallback,
+		WhatsAppGateway:   s.wa,
+		OnboardingHandler: onboarding,
+		ExpenseRecorder:   expense,
+		Location:          time.UTC,
 		Kernel: &services.KernelDeps{
 			Engine:           engine,
 			SettleReg:        settleReg,
@@ -114,7 +117,7 @@ func (s *PendingExpensePrioritySuite) TestKernelResumePriorBeforeOnboarding() {
 	expense := &fakeConfirmExpenseRecorder{
 		result: tools.ExpenseRecorderResult{Persisted: true, AmountCents: 13150, CategoryPath: candidates[0]},
 	}
-	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "onboarding reply"}
+	onboarding := &fakeOnboardingHandler{handled: true, reply: "onboarding reply"}
 
 	def := agentwf.NewTransactionsWriteDefinition(agentwf.TransactionsWriteDeps{
 		Authorize: func(_ context.Context, _ steps.ExpenseState) bool { return true },
@@ -165,7 +168,7 @@ func (s *PendingExpensePrioritySuite) TestKernelResumePriorBeforeOnboarding() {
 
 func (s *PendingExpensePrioritySuite) TestNoPendingKernelRun_OnboardingHandles() {
 	store := newE2EStore()
-	onboarding := &fakeOnboardingTurnRunner{handled: true, reply: "resposta do onboarding"}
+	onboarding := &fakeOnboardingHandler{handled: true, reply: "resposta do onboarding"}
 	expense := &fakeConfirmExpenseRecorder{}
 
 	confidence, err := valueobjects.NewConfidence(1.0)
@@ -177,12 +180,12 @@ func (s *PendingExpensePrioritySuite) TestNoPendingKernelRun_OnboardingHandles()
 	settleReg := services.NewSettleRegistry()
 
 	deps := services.IntentRouterDeps{
-		Parser:           s.parser,
-		Fallback:         s.fallback,
-		WhatsAppGateway:  s.wa,
-		OnboardingRunner: onboarding,
-		ExpenseRecorder:  expense,
-		Location:         time.UTC,
+		Parser:            s.parser,
+		Fallback:          s.fallback,
+		WhatsAppGateway:   s.wa,
+		OnboardingHandler: onboarding,
+		ExpenseRecorder:   expense,
+		Location:          time.UTC,
 		Kernel: &services.KernelDeps{
 			Engine:           engine,
 			SettleReg:        settleReg,

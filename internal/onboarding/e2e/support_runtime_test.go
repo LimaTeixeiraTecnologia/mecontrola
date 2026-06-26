@@ -20,6 +20,8 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	agentservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	agentworkflow "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	identityinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
@@ -44,6 +46,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
+	platformworkflow "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	wfpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
 )
 
 const (
@@ -57,41 +61,50 @@ const (
 )
 
 type onboardingDependencies struct {
-	db                        *sqlx.DB
-	o11y                      observability.Observability
-	factory                   appinterfaces.RepositoryFactory
-	identityModule            identity.IdentityModule
-	outboxFactory             outbox.OutboxRepositoryFactory
-	outboxCfg                 configs.OutboxConfig
-	idGen                     id.Generator
-	tokenCipher               appinterfaces.TokenCipher
-	checkoutBuilder           appinterfaces.CheckoutURLBuilder
-	subscriptionBinder        appinterfaces.SubscriptionBinder
-	identityGateway           appinterfaces.IdentityGateway
-	bindingService            *binding.SubscriptionBindingService
-	createCheckout            *usecases.CreateCheckoutSession
-	getTokenState             *usecases.GetTokenState
-	markTokenPaid             *usecases.MarkTokenPaid
-	handlePaidWithoutToken    *usecases.HandlePaidWithoutToken
-	sendActivationEmail       *usecases.SendActivationEmail
-	consumeToken              *usecases.ConsumeMagicToken
-	fallbackActivation        *usecases.TryFallbackActivation
-	startBudgetConfiguration  *usecases.StartBudgetConfiguration
-	sendOutreach              *usecases.SendOutreach
-	expireTokens              *usecases.ExpireTokens
-	cleanupTables             *usecases.CleanupOnboardingTables
-	publicRouter              *onboardingserver.PublicRouter
-	whatsAppProcessor         *appservices.WhatsAppMessageProcessor
-	subscriptionConsumer      events.Handler
-	activationEmailConsumer   events.Handler
-	paidWithoutTokenConsumer  events.Handler
-	subscriptionBoundConsumer events.Handler
-	outreachJob               worker.Job
-	expirationJob             worker.Job
-	cleanupJob                worker.Job
-	metaGateway               *recordingWhatsAppGateway
-	outreachGateway           *recordingOutreachGateway
-	emailSender               *recordingEmailSender
+	db                         *sqlx.DB
+	o11y                       observability.Observability
+	factory                    appinterfaces.RepositoryFactory
+	identityModule             identity.IdentityModule
+	outboxFactory              outbox.OutboxRepositoryFactory
+	outboxCfg                  configs.OutboxConfig
+	idGen                      id.Generator
+	tokenCipher                appinterfaces.TokenCipher
+	checkoutBuilder            appinterfaces.CheckoutURLBuilder
+	subscriptionBinder         appinterfaces.SubscriptionBinder
+	identityGateway            appinterfaces.IdentityGateway
+	bindingService             *binding.SubscriptionBindingService
+	createCheckout             *usecases.CreateCheckoutSession
+	getTokenState              *usecases.GetTokenState
+	markTokenPaid              *usecases.MarkTokenPaid
+	handlePaidWithoutToken     *usecases.HandlePaidWithoutToken
+	sendActivationEmail        *usecases.SendActivationEmail
+	consumeToken               *usecases.ConsumeMagicToken
+	fallbackActivation         *usecases.TryFallbackActivation
+	startBudgetConfiguration   *usecases.StartBudgetConfiguration
+	getOnboardingContext       *usecases.GetOnboardingContext
+	saveOnboardingObjective    *usecases.SaveOnboardingObjective
+	saveOnboardingIncome       *usecases.SaveOnboardingIncome
+	saveOnboardingCard         *usecases.SaveOnboardingCard
+	saveOnboardingBudgetSplits *usecases.SaveOnboardingBudgetSplits
+	completeOnboardingSession  *usecases.CompleteOnboardingSession
+	setOnboardingPhase         *usecases.SetOnboardingPhase
+	markWelcomeSent            *usecases.MarkWelcomeSent
+	sendOutreach               *usecases.SendOutreach
+	expireTokens               *usecases.ExpireTokens
+	cleanupTables              *usecases.CleanupOnboardingTables
+	publicRouter               *onboardingserver.PublicRouter
+	whatsAppProcessor          *appservices.WhatsAppMessageProcessor
+	onboardingAgent            *agentservices.OnboardingAgent
+	subscriptionConsumer       events.Handler
+	activationEmailConsumer    events.Handler
+	paidWithoutTokenConsumer   events.Handler
+	subscriptionBoundConsumer  events.Handler
+	outreachJob                worker.Job
+	expirationJob              worker.Job
+	cleanupJob                 worker.Job
+	metaGateway                *recordingWhatsAppGateway
+	outreachGateway            *recordingOutreachGateway
+	emailSender                *recordingEmailSender
 }
 
 type txAwarePublisher struct {
@@ -128,6 +141,7 @@ func buildOnboardingRuntime(t *testing.T, db *sqlx.DB) *onboardingRuntime {
 			mustRegisterHandler(t, registry, "onboarding.subscription_bound", deps.subscriptionBoundConsumer)
 			return registry
 		},
+		onboardingAgent: deps.onboardingAgent,
 	}
 }
 
@@ -286,6 +300,14 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		factory,
 		o11y,
 	)
+	getOnboardingContext := usecases.NewGetOnboardingContext(factory.OnboardingSessionRepository(db), o11y)
+	saveObjective := usecases.NewSaveOnboardingObjective(uow.NewUnitOfWork(db), factory, o11y)
+	saveIncome := usecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), factory, o11y)
+	saveCard := usecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y, nil, e2eCardClosingOffsetDays)
+	saveSplits := usecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
+	completeSession := usecases.NewCompleteOnboardingSession(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
+	setPhase := usecases.NewSetOnboardingPhase(uow.NewUnitOfWork(db), factory, o11y)
+	markWelcomeSent := usecases.NewMarkWelcomeSent(uow.NewUnitOfWork(db), factory, o11y)
 	sendOutreach := usecases.NewSendOutreach(
 		factory.MagicTokenRepository(db),
 		outreachGateway,
@@ -320,42 +342,63 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		runtimeCfg.Messages,
 		o11y,
 	)
+	onboardingAgent := newE2EOnboardingAgent(
+		o11y,
+		db,
+		getOnboardingContext,
+		markWelcomeSent,
+		saveObjective,
+		saveIncome,
+		saveCard,
+		saveSplits,
+		setPhase,
+		completeSession,
+	)
 	return &onboardingDependencies{
-		db:                        db,
-		o11y:                      o11y,
-		factory:                   factory,
-		identityModule:            identityModule,
-		outboxFactory:             outbox.NewRepositoryFactory(o11y),
-		outboxCfg:                 outboxCfg,
-		idGen:                     idGen,
-		tokenCipher:               tokenCipher,
-		checkoutBuilder:           checkoutBuilder,
-		subscriptionBinder:        subscriptionBinder,
-		identityGateway:           identityGateway,
-		bindingService:            bindingService,
-		createCheckout:            createCheckout,
-		getTokenState:             getTokenState,
-		markTokenPaid:             markTokenPaid,
-		handlePaidWithoutToken:    handlePaidWithoutToken,
-		sendActivationEmail:       sendActivationEmail,
-		consumeToken:              consumeToken,
-		fallbackActivation:        fallbackActivation,
-		startBudgetConfiguration:  startBudgetConfiguration,
-		sendOutreach:              sendOutreach,
-		expireTokens:              expireTokens,
-		cleanupTables:             cleanupTables,
-		publicRouter:              publicRouter,
-		whatsAppProcessor:         whatsAppProcessor,
-		subscriptionConsumer:      consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y),
-		activationEmailConsumer:   consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
-		paidWithoutTokenConsumer:  consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),
-		subscriptionBoundConsumer: consumers.NewSubscriptionBoundSessionConsumer(startBudgetConfiguration, o11y),
-		outreachJob:               jobhandlers.NewOutreachJob(sendOutreach, true),
-		expirationJob:             jobhandlers.NewTokenExpirationJob(expireTokens, "@daily"),
-		cleanupJob:                jobhandlers.NewMetaProcessedMessagesCleanupJob(cleanupTables, "@daily"),
-		metaGateway:               metaGateway,
-		outreachGateway:           outreachGateway,
-		emailSender:               emailSender,
+		db:                         db,
+		o11y:                       o11y,
+		factory:                    factory,
+		identityModule:             identityModule,
+		outboxFactory:              outbox.NewRepositoryFactory(o11y),
+		outboxCfg:                  outboxCfg,
+		idGen:                      idGen,
+		tokenCipher:                tokenCipher,
+		checkoutBuilder:            checkoutBuilder,
+		subscriptionBinder:         subscriptionBinder,
+		identityGateway:            identityGateway,
+		bindingService:             bindingService,
+		createCheckout:             createCheckout,
+		getTokenState:              getTokenState,
+		markTokenPaid:              markTokenPaid,
+		handlePaidWithoutToken:     handlePaidWithoutToken,
+		sendActivationEmail:        sendActivationEmail,
+		consumeToken:               consumeToken,
+		fallbackActivation:         fallbackActivation,
+		startBudgetConfiguration:   startBudgetConfiguration,
+		getOnboardingContext:       getOnboardingContext,
+		saveOnboardingObjective:    saveObjective,
+		saveOnboardingIncome:       saveIncome,
+		saveOnboardingCard:         saveCard,
+		saveOnboardingBudgetSplits: saveSplits,
+		completeOnboardingSession:  completeSession,
+		setOnboardingPhase:         setPhase,
+		markWelcomeSent:            markWelcomeSent,
+		sendOutreach:               sendOutreach,
+		expireTokens:               expireTokens,
+		cleanupTables:              cleanupTables,
+		publicRouter:               publicRouter,
+		whatsAppProcessor:          whatsAppProcessor,
+		onboardingAgent:            onboardingAgent,
+		subscriptionConsumer:       consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y),
+		activationEmailConsumer:    consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
+		paidWithoutTokenConsumer:   consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),
+		subscriptionBoundConsumer:  consumers.NewSubscriptionBoundSessionConsumer(startBudgetConfiguration, o11y),
+		outreachJob:                jobhandlers.NewOutreachJob(sendOutreach, true),
+		expirationJob:              jobhandlers.NewTokenExpirationJob(expireTokens, "@daily"),
+		cleanupJob:                 jobhandlers.NewMetaProcessedMessagesCleanupJob(cleanupTables, "@daily"),
+		metaGateway:                metaGateway,
+		outreachGateway:            outreachGateway,
+		emailSender:                emailSender,
 	}
 }
 
@@ -385,6 +428,40 @@ func (a *identityGatewayAdapter) UpsertUserByWhatsApp(ctx context.Context, mobil
 		return appinterfaces.UpsertUserResult{}, err
 	}
 	return appinterfaces.UpsertUserResult{UserID: result.ID}, nil
+}
+
+const e2eCardClosingOffsetDays = 10
+
+func newE2EOnboardingAgent(
+	o11y observability.Observability,
+	db *sqlx.DB,
+	getContext *usecases.GetOnboardingContext,
+	markWelcome *usecases.MarkWelcomeSent,
+	saveObjective *usecases.SaveOnboardingObjective,
+	saveIncome *usecases.SaveOnboardingIncome,
+	saveCard *usecases.SaveOnboardingCard,
+	saveSplits *usecases.SaveOnboardingBudgetSplits,
+	setPhase *usecases.SetOnboardingPhase,
+	complete *usecases.CompleteOnboardingSession,
+) *agentservices.OnboardingAgent {
+	deps := agentworkflow.OnboardingDeps{
+		Interpreter:      &e2eOnboardingInterpreter{},
+		WelcomeMarker:    &e2eWelcomeMarker{uc: markWelcome},
+		ObjectiveSaver:   &e2eObjectiveSaver{uc: saveObjective},
+		IncomeSaver:      &e2eIncomeSaver{uc: saveIncome},
+		CardSaver:        &e2eCardSaver{uc: saveCard},
+		SplitsSaver:      &e2eSplitsSaver{uc: saveSplits},
+		PhaseSetter:      &e2ePhaseSetter{uc: setPhase},
+		ContextLoader:    &e2eContextLoader{uc: getContext},
+		SessionCompleter: &e2eSessionCompleter{uc: complete},
+		O11y:             o11y,
+	}
+	def := agentworkflow.BuildOnboardingDefinition(deps)
+	store := wfpostgres.NewStoreFactory(o11y).Store(db)
+	engine := platformworkflow.NewEngine[agentworkflow.OnboardingState](store, o11y)
+	checker := &e2eStateChecker{uc: getContext}
+	routedTotal := o11y.Metrics().Counter("agent_intent_routed_total", "", "1")
+	return agentservices.NewOnboardingAgent(o11y, routedTotal, engine, def, store, checker)
 }
 
 type recordingWhatsAppGateway struct {

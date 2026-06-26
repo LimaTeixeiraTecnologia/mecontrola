@@ -11,6 +11,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type GetOnboardingContextInput struct {
@@ -20,6 +21,7 @@ type GetOnboardingContextInput struct {
 type OnboardingCardView struct {
 	Name       string
 	ClosingDay int
+	DueDay     int
 }
 
 type OnboardingAllocationView struct {
@@ -34,7 +36,7 @@ type GetOnboardingContextResult struct {
 	Cards           []OnboardingCardView
 	CustomSplit     []OnboardingAllocationView
 	FirstTxRecorded bool
-	Phase           string
+	Phase           valueobjects.OnboardingPhase
 	WelcomeSent     bool
 	CompletedAt     *time.Time
 }
@@ -67,7 +69,7 @@ func (uc *GetOnboardingContext) Execute(ctx context.Context, in GetOnboardingCon
 	payload := session.Payload()
 	cards := make([]OnboardingCardView, 0, len(payload.Cards))
 	for _, c := range payload.Cards {
-		cards = append(cards, OnboardingCardView{Name: c.Name, ClosingDay: c.ClosingDay})
+		cards = append(cards, OnboardingCardView{Name: c.Name, ClosingDay: c.ClosingDay, DueDay: c.DueDay})
 	}
 	splits := make([]OnboardingAllocationView, 0, len(payload.CustomSplit))
 	for _, a := range payload.CustomSplit {

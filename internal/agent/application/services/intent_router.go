@@ -74,22 +74,17 @@ type RouteResult struct {
 	Delivered bool
 }
 
-type OnboardingTurnResult struct {
-	Handled bool
-	Reply   string
-}
-
-type OnboardingTurnRunner interface {
-	Run(ctx context.Context, userID uuid.UUID, channel, text string) (OnboardingTurnResult, error)
-}
-
 type IntentRouter struct {
-	onboarding      *OnboardingAgent
+	onboarding      onboardingHandler
 	daily           *DailyLedgerAgent
 	whatsAppGateway WhatsAppOutbound
 	o11y            observability.Observability
 	routedTotal     observability.Counter
 	runtime         *AgentRuntime
+}
+
+type onboardingHandler interface {
+	Handle(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID string) (RouteResult, bool)
 }
 
 func (r *IntentRouter) EnableRuntime(catalog *capability.Catalog, threads ThreadGateway, runs RunGateway) {
@@ -140,7 +135,12 @@ type IntentRouterDeps struct {
 	BudgetConvo              tools.BudgetConversation
 	BudgetCommitter          tools.BudgetConfigCommitter
 	BudgetSession            tools.BudgetSessionGateway
-	OnboardingRunner         OnboardingTurnRunner
+	OnboardingEngine         platform.Engine[workflow.OnboardingState]
+	OnboardingDef            platform.Definition[workflow.OnboardingState]
+	OnboardingStore          platform.Store
+	OnboardingStateChecker   OnboardingStateChecker
+	OnboardingHistoryGateway workflow.HistoryGateway
+	OnboardingHandler        onboardingHandler
 	Fallback                 tools.Fallback
 	WhatsAppGateway          WhatsAppOutbound
 	Decision                 DecisionAuditDeps
@@ -204,8 +204,12 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		return nil, err
 	}
 	warnMissingToolBindings(o11y, deps)
+	onboarding := deps.OnboardingHandler
+	if onboarding == nil {
+		onboarding = NewOnboardingAgent(o11y, routedTotal, deps.OnboardingEngine, deps.OnboardingDef, deps.OnboardingStore, deps.OnboardingStateChecker, deps.OnboardingHistoryGateway)
+	}
 	return &IntentRouter{
-		onboarding:      newOnboardingAgent(o11y, routedTotal, deps),
+		onboarding:      onboarding,
 		daily:           daily,
 		whatsAppGateway: deps.WhatsAppGateway,
 		o11y:            o11y,

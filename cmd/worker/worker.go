@@ -284,6 +284,9 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if agentModule.WorkflowKernelHousekeepingJob != nil {
 		jobs = append(jobs, agentModule.WorkflowKernelHousekeepingJob)
 	}
+	if agentModule.OnboardingAbandonmentJob != nil {
+		jobs = append(jobs, agentModule.OnboardingAbandonmentJob)
+	}
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	return worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger), nil

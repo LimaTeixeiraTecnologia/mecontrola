@@ -135,6 +135,10 @@ type OnboardingConfig struct {
 	TokenExpirationSchedule string `mapstructure:"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE"`
 	MaxTokenLookupAttempts  int    `mapstructure:"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS"`
 	TokenEncryptionKey      string `mapstructure:"ONBOARDING_TOKEN_ENCRYPTION_KEY"`
+	CardClosingOffsetDays   int    `mapstructure:"ONBOARDING_CARD_CLOSING_OFFSET_DAYS"`
+	AbandonmentTTLHours     int    `mapstructure:"ONBOARDING_ABANDONMENT_TTL_HOURS"`
+	AbandonmentJobSchedule  string `mapstructure:"ONBOARDING_ABANDONMENT_JOB_SCHEDULE"`
+	AbandonmentBatchSize    int    `mapstructure:"ONBOARDING_ABANDONMENT_BATCH_SIZE"`
 }
 
 type WhatsAppConfig struct {
@@ -278,7 +282,7 @@ type DBConfig struct {
 }
 
 const databaseSearchPath = "mecontrola,public"
-const migrationTableQueryParam = "&x-migrations-table=%22public%22.%22schema_migrations%22&x-migrations-table-quoted=true"
+const migrationTableQueryParam = "&x-migrations-table=%22mecontrola%22.%22schema_migrations%22&x-migrations-table-quoted=true"
 
 func (d *DBConfig) DSN() string {
 	return d.formatDSN(true)
@@ -406,11 +410,19 @@ func (l *configLoader) load() (*Config, error) {
 		return nil, fmt.Errorf("deserializando configuração: %w", err)
 	}
 
+	l.resolveCardClosingOffset(cfg)
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validando configuração: %w", err)
 	}
 
 	return cfg, nil
+}
+
+func (l *configLoader) resolveCardClosingOffset(cfg *Config) {
+	if l.v.IsSet("AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS") {
+		cfg.OnboardingConfig.CardClosingOffsetDays = l.v.GetInt("AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS")
+	}
 }
 
 func (l *configLoader) envKeys() []string {
@@ -476,6 +488,10 @@ func (l *configLoader) envKeys() []string {
 		"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE",
 		"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS",
 		"ONBOARDING_TOKEN_ENCRYPTION_KEY",
+		"ONBOARDING_CARD_CLOSING_OFFSET_DAYS",
+		"ONBOARDING_ABANDONMENT_TTL_HOURS",
+		"ONBOARDING_ABANDONMENT_JOB_SCHEDULE",
+		"ONBOARDING_ABANDONMENT_BATCH_SIZE",
 		"META_PHONE_NUMBER_ID",
 		"META_ACCESS_TOKEN",
 		"META_APP_SECRET",
@@ -529,6 +545,7 @@ func (l *configLoader) envKeys() []string {
 		"AGENT_LLM_CONV_PRIMARY_MODEL",
 		"AGENT_LLM_CONV_FALLBACK_MODELS",
 		"AGENT_LLM_CONV_MAX_TOKENS",
+		"AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS",
 		"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT",
 		"IDENTITY_GATEWAY_SHARED_SECRET_NEXT",
 		"IDENTITY_GATEWAY_AUTH_WINDOW",
@@ -1141,6 +1158,38 @@ func (c *Config) validateOnboarding() []string {
 		len(o.TokenEncryptionKey) != 43 && len(o.TokenEncryptionKey) != 44 {
 		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY deve ter 32 bytes ou base64 de 32 bytes")
 	}
+	if o.CardClosingOffsetDays < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_CARD_CLOSING_OFFSET_DAYS inválido %d: deve ser maior que zero",
+			o.CardClosingOffsetDays,
+		))
+	}
+	errs = append(errs, validateOnboardingAbandonment(o)...)
+	return errs
+}
+
+func validateOnboardingAbandonment(o OnboardingConfig) []string {
+	var errs []string
+	if o.AbandonmentTTLHours < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_ABANDONMENT_TTL_HOURS inválido %d: deve ser maior que zero",
+			o.AbandonmentTTLHours,
+		))
+	}
+	if o.AbandonmentJobSchedule == "" {
+		errs = append(errs, "ONBOARDING_ABANDONMENT_JOB_SCHEDULE inválido: não pode ser vazio")
+	} else if _, err := cron.ParseStandard(o.AbandonmentJobSchedule); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_ABANDONMENT_JOB_SCHEDULE inválido %q: %v",
+			o.AbandonmentJobSchedule, err,
+		))
+	}
+	if o.AbandonmentBatchSize < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_ABANDONMENT_BATCH_SIZE inválido %d: deve ser maior que zero",
+			o.AbandonmentBatchSize,
+		))
+	}
 	return errs
 }
 
@@ -1159,6 +1208,10 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_META_CLEANUP_SCHEDULE", "30 3 * * *")
 	l.v.SetDefault("ONBOARDING_TOKEN_EXPIRATION_SCHEDULE", "0 3 * * *")
 	l.v.SetDefault("ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS", 5)
+	l.v.SetDefault("ONBOARDING_CARD_CLOSING_OFFSET_DAYS", 10)
+	l.v.SetDefault("ONBOARDING_ABANDONMENT_TTL_HOURS", 48)
+	l.v.SetDefault("ONBOARDING_ABANDONMENT_JOB_SCHEDULE", "@hourly")
+	l.v.SetDefault("ONBOARDING_ABANDONMENT_BATCH_SIZE", 100)
 }
 
 func (l *configLoader) setWhatsAppDefaults() {

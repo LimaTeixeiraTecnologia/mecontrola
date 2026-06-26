@@ -48,16 +48,22 @@ func buildDestructiveConfirmDefWithTTL(ttl time.Duration) platform.Definition[co
 	})
 }
 
-type stubOnboardingRunner struct {
+type stubOnboardingHandler struct {
 	handled bool
 	reply   string
 	err     error
 	calls   int
 }
 
-func (r *stubOnboardingRunner) Run(_ context.Context, _ uuid.UUID, _, _ string) (services.OnboardingTurnResult, error) {
+func (r *stubOnboardingHandler) Handle(_ context.Context, _ uuid.UUID, _, _, _, _ string) (services.RouteResult, bool) {
 	r.calls++
-	return services.OnboardingTurnResult{Handled: r.handled, Reply: r.reply}, r.err
+	if r.err != nil {
+		return services.RouteResult{}, false
+	}
+	if !r.handled {
+		return services.RouteResult{}, false
+	}
+	return services.RouteResult{Reply: r.reply, Outcome: tools.OutcomeRouted, Kind: intent.KindConfigureBudget}, true
 }
 
 type fakeTransactionSearcher struct {
@@ -645,22 +651,22 @@ func (s *HITLRoutingSuite) TestDestructiveKind_EditByRef_PassesSearchQueryAndAmo
 	s.Equal(int64(4200), capturedState.NewAmountCents)
 }
 
-func (s *HITLRoutingSuite) TestHITLResumeWinsWithPassiveOnboardingRunner() {
+func (s *HITLRoutingSuite) TestHITLResumeWinsWithPassiveOnboardingHandler() {
 	obs := fake.NewProvider()
 	store := newE2EStore()
 	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, obs)
 	confirmDef := buildDestructiveConfirmDef(nil, true)
-	onboarding := &stubOnboardingRunner{handled: false}
+	onboarding := &stubOnboardingHandler{handled: false}
 
 	userID := uuid.New()
 	peer := "+5511999"
 
 	deps := services.IntentRouterDeps{
-		Parser:           &fakeParser{intent: intent.NewDeleteLastTransaction()},
-		OnboardingRunner: onboarding,
-		Fallback:         &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:  s.wa,
-		Location:         time.UTC,
+		Parser:            &fakeParser{intent: intent.NewDeleteLastTransaction()},
+		OnboardingHandler: onboarding,
+		Fallback:          &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:   s.wa,
+		Location:          time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
@@ -685,14 +691,14 @@ func (s *HITLRoutingSuite) TestActiveOnboardingTakesPriorityOverDestructiveGate(
 	store := newE2EStore()
 	confirmEngine := platform.NewEngine[confirmation.ConfirmState](store, obs)
 	confirmDef := buildDestructiveConfirmDef(nil, true)
-	onboarding := &stubOnboardingRunner{handled: true, reply: "vamos terminar seu cadastro primeiro"}
+	onboarding := &stubOnboardingHandler{handled: true, reply: "vamos terminar seu cadastro primeiro"}
 
 	deps := services.IntentRouterDeps{
-		Parser:           &fakeParser{intent: intent.NewDeleteLastTransaction()},
-		OnboardingRunner: onboarding,
-		Fallback:         &fakeFallback{reply: "fallback"},
-		WhatsAppGateway:  s.wa,
-		Location:         time.UTC,
+		Parser:            &fakeParser{intent: intent.NewDeleteLastTransaction()},
+		OnboardingHandler: onboarding,
+		Fallback:          &fakeFallback{reply: "fallback"},
+		WhatsAppGateway:   s.wa,
+		Location:          time.UTC,
 		Kernel: &services.KernelDeps{
 			ConfirmEngine: confirmEngine,
 			ConfirmDef:    confirmDef,
