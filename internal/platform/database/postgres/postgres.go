@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 type Database struct {
@@ -21,7 +22,12 @@ func New(uri string, opts ...Option) (*Database, error) {
 		return nil, fmt.Errorf("postgres: uri não pode estar vazia")
 	}
 
-	db, err := instrumentDriver("pgx", uri)
+	driverDSN, err := registerSimpleProtocolConn(uri)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: falha ao configurar conexão: %w", err)
+	}
+
+	db, err := instrumentDriver("pgx", driverDSN)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: falha ao abrir conexão: %w", err)
 	}
@@ -42,6 +48,26 @@ func New(uri string, opts ...Option) (*Database, error) {
 	}
 
 	return d, nil
+}
+
+func simpleProtocolConnConfig(uri string) (*pgx.ConnConfig, error) {
+	connConfig, err := pgx.ParseConfig(uri)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: parse conn config: %w", err)
+	}
+
+	connConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+
+	return connConfig, nil
+}
+
+func registerSimpleProtocolConn(uri string) (string, error) {
+	connConfig, err := simpleProtocolConnConfig(uri)
+	if err != nil {
+		return "", err
+	}
+
+	return stdlib.RegisterConnConfig(connConfig), nil
 }
 
 func (d *Database) applyDefaultPoolConfig() {

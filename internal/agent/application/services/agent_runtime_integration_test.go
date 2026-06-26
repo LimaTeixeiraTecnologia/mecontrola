@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 
 	"github.com/google/uuid"
@@ -130,8 +131,10 @@ func (s *AgentRuntimeIntegrationSuite) insertUser() uuid.UUID {
 }
 
 func (s *AgentRuntimeIntegrationSuite) newRuntime(result RouteResult) (*AgentRuntime, *fakeRouteEngine) {
+	catalog, err := capability.BuildCatalog()
+	s.Require().NoError(err)
 	engine := &fakeRouteEngine{result: result}
-	rt := NewAgentRuntime(noop.NewProvider(), engine, s.threads, s.runs)
+	rt := NewAgentRuntime(noop.NewProvider(), catalog, engine, s.threads, s.runs)
 	return rt, engine
 }
 

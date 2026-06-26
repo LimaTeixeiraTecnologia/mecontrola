@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
@@ -325,6 +326,11 @@ func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservice
 		WhatsAppGateway:     w.whatsAppGateway,
 		PolicyMinConfidence: w.cfg.AgentConfig.PolicyMinConfidence,
 	}
+	catalog, err := capability.BuildCatalog()
+	if err != nil {
+		return nil, fmt.Errorf("agent.module: capability catalog: %w", err)
+	}
+	deps.CapabilityCatalog = catalog
 	fillIntentRouterDeps(w, &deps)
 	attachExpenseRecorder(w, &deps)
 	attachCardPurchaseLogger(w, &deps)
@@ -340,24 +346,27 @@ func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservice
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: intent router: %w", err)
 	}
-	attachRuntime(w, router)
+	if err := attachRuntime(w, router, catalog); err != nil {
+		return nil, err
+	}
 	return router, nil
 }
 
-func attachRuntime(w *agentModuleWiring, router *appservices.IntentRouter) {
+func attachRuntime(w *agentModuleWiring, router *appservices.IntentRouter, catalog *capability.Catalog) error {
 	if w.threadRepoFact == nil || w.runRepoFact == nil || w.runtimeUoW == nil {
 		w.o11y.Logger().Warn(context.Background(), "agent.module.runtime",
 			observability.String("mode", "legacy"),
 			observability.String("reason", "session_store_missing"),
 		)
-		return
+		return nil
 	}
 	threads := agentbinding.NewThreadGatewayAdapter(w.threadRepoFact, w.runtimeUoW)
 	runs := agentbinding.NewRunGatewayAdapter(w.runRepoFact, w.runtimeUoW)
-	router.EnableRuntime(threads, runs)
+	router.EnableRuntime(catalog, threads, runs)
 	w.o11y.Logger().Info(context.Background(), "agent.module.runtime",
 		observability.String("mode", "enabled"),
 	)
+	return nil
 }
 
 func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {

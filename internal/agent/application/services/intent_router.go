@@ -9,6 +9,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
@@ -91,8 +92,8 @@ type IntentRouter struct {
 	runtime         *AgentRuntime
 }
 
-func (r *IntentRouter) EnableRuntime(threads ThreadGateway, runs RunGateway) {
-	r.runtime = NewAgentRuntime(r.o11y, r, threads, runs)
+func (r *IntentRouter) EnableRuntime(catalog *capability.Catalog, threads ThreadGateway, runs RunGateway) {
+	r.runtime = NewAgentRuntime(r.o11y, catalog, r, threads, runs)
 }
 
 func (r *IntentRouter) dispatch(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
@@ -116,6 +117,7 @@ type KernelDeps struct {
 }
 
 type IntentRouterDeps struct {
+	CapabilityCatalog        *capability.Catalog
 	Parser                   IntentParser
 	MonthlySummary           tools.MonthlySummaryReader
 	CardLister               tools.CardLister
@@ -165,6 +167,13 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 	}
 	if deps.WhatsAppGateway == nil {
 		return nil, ErrWhatsAppGatewayNil
+	}
+	if deps.CapabilityCatalog == nil {
+		catalog, err := capability.BuildCatalog()
+		if err != nil {
+			return nil, err
+		}
+		deps.CapabilityCatalog = catalog
 	}
 	loc := deps.Location
 	if loc == nil {

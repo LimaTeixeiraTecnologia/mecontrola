@@ -152,3 +152,36 @@ groups:
         annotations:
           summary: "Replays idempotentes acima do esperado"
           description: "Reentrega de webhook ou tentativa de duplicação elevada. Confirme se o guard está evitando dupla execução; investigue origem das mensagens repetidas."
+
+  - name: mecontrola.platform
+    interval: 1m
+    rules:
+      - alert: OutboxDeadLetter
+        expr: sum(increase(outbox_dead_letter_total[10m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Evento do outbox movido para dead-letter"
+          description: "Pelo menos um evento esgotou os retries e foi para dead-letter (event_type={{ $labels.event_type }}) — entrega perdida é incidente. Inspecione a tabela de outbox, identifique o handler que falha e reprocesse manualmente. Ver runbook docs/runbooks/outbox.md."
+
+      - alert: WorkflowRunFailures
+        expr: |
+          sum(rate(workflow_runs_total{status="failed"}[10m]))
+          /
+          (sum(rate(workflow_runs_total[10m])) + 0.0001) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Workflows finalizando em failed acima de 10%"
+          description: "Taxa de runs com status=failed: {{ $value | humanizePercentage }}. Verifique steps que retornam erro no kernel internal/platform/workflow e os usecases acionados. Ver runbook docs/runbooks/workflow-kernel.md."
+
+      - alert: WorkflowVersionConflictSpike
+        expr: sum(rate(workflow_version_conflict_total[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Conflitos de versão (CAS) no kernel de workflow elevados"
+          description: "Conflitos de optimistic locking acima do esperado por workflow ({{ $labels.workflow }}). Contenção alta pode indicar duas instâncias retomando o mesmo run ou laço de resume. Verifique o dispatcher de resume e o housekeeping de runs."

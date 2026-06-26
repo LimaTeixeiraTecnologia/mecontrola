@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agent-capability-catalog/1.0_execution_report.md
+summary: Dominio puro de capability catalog implementado com enum fechado, catalogo imutavel e testes unitarios.
+timestamp: 2026-06-26T08:23:03Z

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agent-capability-catalog/3.0_execution_report.md
+summary: Runtime do agent agora deriva workflow/tool do catálogo e remove o mapeamento manual legado.
+timestamp: 2026-06-26T08:37:57Z

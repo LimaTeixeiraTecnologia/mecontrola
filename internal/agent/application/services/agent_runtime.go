@@ -6,9 +6,9 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 )
 
 const (
@@ -34,6 +34,7 @@ type RunGateway interface {
 
 type AgentRuntime struct {
 	router          runtimeRouter
+	catalog         *capability.Catalog
 	threads         ThreadGateway
 	runs            RunGateway
 	o11y            observability.Observability
@@ -42,7 +43,13 @@ type AgentRuntime struct {
 	toolInvocations observability.Counter
 }
 
-func NewAgentRuntime(o11y observability.Observability, router runtimeRouter, threads ThreadGateway, runs RunGateway) *AgentRuntime {
+func NewAgentRuntime(
+	o11y observability.Observability,
+	catalog *capability.Catalog,
+	router runtimeRouter,
+	threads ThreadGateway,
+	runs RunGateway,
+) *AgentRuntime {
 	runsTotal := o11y.Metrics().Counter(
 		"agent_runs_total",
 		"Total de runs do AgentRuntime por agent_id, channel, workflow e status",
@@ -60,6 +67,7 @@ func NewAgentRuntime(o11y observability.Observability, router runtimeRouter, thr
 	)
 	return &AgentRuntime{
 		router:          router,
+		catalog:         catalog,
 		threads:         threads,
 		runs:            runs,
 		o11y:            o11y,
@@ -77,8 +85,7 @@ func (rt *AgentRuntime) Execute(ctx context.Context, principal Principal, channe
 
 	result := rt.router.route(ctx, principal, channel, peer, text, messageID)
 
-	workflow := workflowFor(result.Kind)
-	tool := toolFor(result.Kind)
+	workflow, tool := rt.catalog.Classify(result.Kind)
 	ok := outcomeSucceeded(result.Outcome)
 
 	if hasRun {
@@ -203,43 +210,4 @@ func runErrText(ok bool, outcome tools.ToolOutcome) string {
 		return ""
 	}
 	return outcome.String()
-}
-
-func workflowFor(kind intent.Kind) string {
-	switch kind {
-	case intent.KindRecordExpense,
-		intent.KindRecordIncome,
-		intent.KindRecordCardPurchase,
-		intent.KindListTransactions,
-		intent.KindDeleteLastTransaction,
-		intent.KindEditLastTransaction,
-		intent.KindCreateRecurring,
-		intent.KindListRecurring:
-		return workflowTransactions
-	case intent.KindMonthlySummary,
-		intent.KindHowAmIDoing,
-		intent.KindConfigureBudget,
-		intent.KindEditCategoryPercentage,
-		intent.KindQueryCategory,
-		intent.KindQueryGoal,
-		intent.KindQueryCard:
-		return workflowBudget
-	case intent.KindListCards,
-		intent.KindCreateCard,
-		intent.KindCountCards,
-		intent.KindUpdateCard,
-		intent.KindDeleteCard:
-		return workflowCards
-	default:
-		return workflowConversational
-	}
-}
-
-func toolFor(kind intent.Kind) string {
-	switch workflowFor(kind) {
-	case workflowConversational:
-		return ""
-	default:
-		return kind.String()
-	}
 }

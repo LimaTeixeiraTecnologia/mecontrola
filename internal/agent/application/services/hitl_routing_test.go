@@ -60,6 +60,15 @@ func (r *stubOnboardingRunner) Run(_ context.Context, _ uuid.UUID, _, _ string) 
 	return services.OnboardingTurnResult{Handled: r.handled, Reply: r.reply}, r.err
 }
 
+type fakeTransactionSearcher struct {
+	result tools.TransactionSearchResult
+	err    error
+}
+
+func (f *fakeTransactionSearcher) Execute(_ context.Context, _ tools.TransactionSearchInput) (tools.TransactionSearchResult, error) {
+	return f.result, f.err
+}
+
 type HITLRoutingSuite struct {
 	suite.Suite
 	ctx context.Context
@@ -79,6 +88,9 @@ func buildDestructiveConfirmDef(
 	targetReply func(op confirmation.OperationKind) string,
 	executeOK bool,
 ) platform.Definition[confirmation.ConfirmState] {
+	searcher := &fakeTransactionSearcher{result: tools.TransactionSearchResult{Candidates: []tools.TransactionView{
+		{ID: "tx-1", Version: 1, Description: "Uber", AmountCents: 4200},
+	}}}
 	targets := map[confirmation.OperationKind]steps.TargetResolver{
 		confirmation.OperationDeleteLast: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
 			if targetReply != nil {
@@ -90,6 +102,12 @@ func buildDestructiveConfirmDef(
 			return st, nil
 		},
 		confirmation.OperationDeleteCard: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+			return st, nil
+		},
+		confirmation.OperationDeleteByRef: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+			return st, nil
+		},
+		confirmation.OperationEditByRef: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
 			return st, nil
 		},
 		confirmation.OperationBudgetCommit: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
@@ -115,6 +133,16 @@ func buildDestructiveConfirmDef(
 			st.Reply = "✅ Cartão removido com sucesso."
 			return st, nil
 		},
+		confirmation.OperationDeleteByRef: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+			st.Outcome = int(tools.OutcomeRouted)
+			st.Reply = "✅ Lançamento apagado com sucesso."
+			return st, nil
+		},
+		confirmation.OperationEditByRef: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+			st.Outcome = int(tools.OutcomeRouted)
+			st.Reply = "✅ Lançamento atualizado com sucesso."
+			return st, nil
+		},
 		confirmation.OperationBudgetCommit: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
 			st.Outcome = int(tools.OutcomeRouted)
 			st.Reply = "✅ Orçamento configurado e ativado com sucesso."
@@ -129,6 +157,7 @@ func buildDestructiveConfirmDef(
 			return steps.ConfirmAuditBeginResult{}
 		},
 		OnSettle:       nil,
+		Searcher:       searcher,
 		Targets:        targets,
 		Executors:      executors,
 		TTL:            10 * time.Minute,
@@ -184,6 +213,24 @@ func (s *HITLRoutingSuite) TestDestructiveKind_FirstMessage_SuspendsWaitingConfi
 			kind: intent.KindDeleteCard,
 			mkIntent: func() intent.Intent {
 				in, err := intent.NewDeleteCard("Nubank")
+				s.Require().NoError(err)
+				return in
+			},
+		},
+		{
+			name: "KindDeleteTransactionByRef suspende na 1a mensagem",
+			kind: intent.KindDeleteTransactionByRef,
+			mkIntent: func() intent.Intent {
+				in, err := intent.NewDeleteTransactionByRef("uber")
+				s.Require().NoError(err)
+				return in
+			},
+		},
+		{
+			name: "KindEditTransactionByRef suspende na 1a mensagem",
+			kind: intent.KindEditTransactionByRef,
+			mkIntent: func() intent.Intent {
+				in, err := intent.NewEditTransactionByRef("uber", 4200)
 				s.Require().NoError(err)
 				return in
 			},
@@ -481,6 +528,121 @@ func (s *HITLRoutingSuite) TestDestructiveKind_DeleteCard_PassesCardName() {
 
 	s.Equal(confirmation.OperationDeleteCard, capturedState.OperationKind)
 	s.Equal("Nubank", capturedState.CardName)
+}
+
+func (s *HITLRoutingSuite) TestDestructiveKind_DeleteByRef_PassesSearchQuery() {
+	obs := fake.NewProvider()
+	store := newE2EStore()
+
+	var capturedState confirmation.ConfirmState
+	searcher := &fakeTransactionSearcher{result: tools.TransactionSearchResult{Candidates: []tools.TransactionView{
+		{ID: "tx-1", Version: 1, Description: "Uber", AmountCents: 4200},
+	}}}
+	confirmDef := agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
+		Authorize: func(_ context.Context, _ confirmation.ConfirmState) bool { return true },
+		Replay:    func(_ context.Context, _ confirmation.ConfirmState) (string, bool) { return "", false },
+		Policy:    func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, _ confirmation.ConfirmState) steps.ConfirmAuditBeginResult {
+			return steps.ConfirmAuditBeginResult{}
+		},
+		OnSettle: nil,
+		Searcher: searcher,
+		Targets: map[confirmation.OperationKind]steps.TargetResolver{
+			confirmation.OperationDeleteByRef: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+				capturedState = st
+				st.PromptText = "confirme?"
+				return st, nil
+			},
+		},
+		Executors:      map[confirmation.OperationKind]steps.DestructiveExecutor{},
+		TTL:            10 * time.Minute,
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha",
+	})
+
+	deleteByRefIntent, err := intent.NewDeleteTransactionByRef("uber")
+	s.Require().NoError(err)
+
+	deps := services.IntentRouterDeps{
+		Parser:          &fakeParser{intent: deleteByRefIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		Kernel: &services.KernelDeps{
+			ConfirmEngine: platform.NewEngine[confirmation.ConfirmState](store, obs),
+			ConfirmDef:    confirmDef,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	router.RouteWhatsApp(
+		s.ctx,
+		services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "apagar uber", WhatsAppTo: "+5511999"},
+	)
+
+	s.Equal(confirmation.OperationDeleteByRef, capturedState.OperationKind)
+	s.Equal("uber", capturedState.SearchQuery)
+}
+
+func (s *HITLRoutingSuite) TestDestructiveKind_EditByRef_PassesSearchQueryAndAmount() {
+	obs := fake.NewProvider()
+	store := newE2EStore()
+
+	var capturedState confirmation.ConfirmState
+	searcher := &fakeTransactionSearcher{result: tools.TransactionSearchResult{Candidates: []tools.TransactionView{
+		{ID: "tx-1", Version: 1, Description: "Uber", AmountCents: 4200},
+	}}}
+	confirmDef := agentwf.NewDestructiveConfirmDefinition(agentwf.DestructiveConfirmDeps{
+		Authorize: func(_ context.Context, _ confirmation.ConfirmState) bool { return true },
+		Replay:    func(_ context.Context, _ confirmation.ConfirmState) (string, bool) { return "", false },
+		Policy:    func(_ context.Context, _ confirmation.ConfirmState) (bool, string) { return false, "" },
+		AuditBegin: func(_ context.Context, _ confirmation.ConfirmState) steps.ConfirmAuditBeginResult {
+			return steps.ConfirmAuditBeginResult{}
+		},
+		OnSettle: nil,
+		Searcher: searcher,
+		Targets: map[confirmation.OperationKind]steps.TargetResolver{
+			confirmation.OperationEditByRef: func(_ context.Context, st confirmation.ConfirmState) (confirmation.ConfirmState, error) {
+				capturedState = st
+				st.PromptText = "confirme?"
+				return st, nil
+			},
+		},
+		Executors:      map[confirmation.OperationKind]steps.DestructiveExecutor{},
+		TTL:            10 * time.Minute,
+		DenyReply:      "negado",
+		ReplayReply:    "replay",
+		AuditFailReply: "falha",
+	})
+
+	editByRefIntent, err := intent.NewEditTransactionByRef("uber", 4200)
+	s.Require().NoError(err)
+
+	deps := services.IntentRouterDeps{
+		Parser:          &fakeParser{intent: editByRefIntent},
+		Fallback:        &fakeFallback{reply: "fallback"},
+		WhatsAppGateway: s.wa,
+		Location:        time.UTC,
+		Kernel: &services.KernelDeps{
+			ConfirmEngine: platform.NewEngine[confirmation.ConfirmState](store, obs),
+			ConfirmDef:    confirmDef,
+		},
+	}
+	router, err := services.NewIntentRouter(obs, deps)
+	s.Require().NoError(err)
+
+	router.RouteWhatsApp(
+		s.ctx,
+		services.Principal{UserID: uuid.New()},
+		services.InboundMessage{Text: "editar uber para 42", WhatsAppTo: "+5511999"},
+	)
+
+	s.Equal(confirmation.OperationEditByRef, capturedState.OperationKind)
+	s.Equal("uber", capturedState.SearchQuery)
+	s.Equal(int64(4200), capturedState.NewAmountCents)
 }
 
 func (s *HITLRoutingSuite) TestHITLResumeWinsWithPassiveOnboardingRunner() {
