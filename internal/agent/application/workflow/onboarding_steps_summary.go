@@ -40,7 +40,7 @@ func newSummaryStep(d onboardingDeps) platform.Step[OnboardingState] {
 			return applyCorrection(ctx, d, s, contextState, parsed)
 		case OutcomeConfirm:
 			d.record(ctx, "summary", "confirm")
-			return d.advance(ctx, s, valueobjects.PhaseConclusion)
+			return d.advance(ctx, s, valueobjects.PhaseConclusion, "")
 		default:
 			if s.RepromptCount >= 1 {
 				d.record(ctx, "summary", "clarify")

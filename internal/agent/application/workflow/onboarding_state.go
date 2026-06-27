@@ -80,6 +80,7 @@ type OnboardingState struct {
 	ProcessedMessageIDs []string                     `json:"processed_message_ids"`
 	CardLoop            int                          `json:"card_loop"`
 	Values              map[string]int64             `json:"values"`
+	Ack                 string                       `json:"ack"`
 	Correction          CorrectionTarget             `json:"correction"`
 	RepromptCount       int                          `json:"reprompt_count"`
 	SuspendedAt         time.Time                    `json:"suspended_at"`

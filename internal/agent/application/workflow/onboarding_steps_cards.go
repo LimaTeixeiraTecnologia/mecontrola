@@ -26,7 +26,7 @@ func newCardsStep(d onboardingDeps) platform.Step[OnboardingState] {
 		case OutcomeAdvance:
 			if parsed.Skip {
 				d.record(ctx, "cards", "advance")
-				return d.advance(ctx, s, valueobjects.PhaseCategories)
+				return d.advance(ctx, s, valueobjects.PhaseCategories, "")
 			}
 			if parsed.AddAnother {
 				d.record(ctx, "cards", "advance")
@@ -37,6 +37,7 @@ func newCardsStep(d onboardingDeps) platform.Step[OnboardingState] {
 					return fail(saveErr)
 				}
 				s.CardLoop++
+				s.Ack = d.Interpreter.RenderCardSaved(ctx, parsed.Nickname, parsed.DueDay)
 				d.record(ctx, "cards", "advance")
 				return d.suspend(ctx, s, valueobjects.PhaseCards, AwaitingText, d.Interpreter.RenderCards(ctx, s.CardLoop))
 			}

@@ -49,7 +49,7 @@ func (r *processedEventRepository) IsProcessed(ctx context.Context, eventID uuid
 		span.RecordError(err)
 		return false, fmt.Errorf("%s is_processed: %w", prefixProcessedEventRepository, err)
 	}
-	return true, nil
+	return exists, nil
 }
 
 func (r *processedEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID, eventType string, userID uuid.UUID, processedAt time.Time) error {

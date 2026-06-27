@@ -17,7 +17,7 @@ func newWelcomeStep(d onboardingDeps) platform.Step[OnboardingState] {
 			}
 			if alreadySent {
 				d.record(ctx, "welcome", "advance")
-				return d.advance(ctx, s, valueobjects.PhaseObjective)
+				return d.advance(ctx, s, valueobjects.PhaseObjective, "")
 			}
 			return d.suspend(ctx, s, valueobjects.PhaseWelcome, AwaitingText, d.Interpreter.RenderWelcome(ctx))
 		}
@@ -28,7 +28,7 @@ func newWelcomeStep(d onboardingDeps) platform.Step[OnboardingState] {
 		}
 		if isConfirmation(text) {
 			d.record(ctx, "welcome", "advance")
-			return d.advance(ctx, s, valueobjects.PhaseObjective)
+			return d.advance(ctx, s, valueobjects.PhaseObjective, "")
 		}
 		d.record(ctx, "welcome", "clarify")
 		return d.suspend(ctx, s, valueobjects.PhaseWelcome, AwaitingText, d.Interpreter.RenderRetry(ctx, "welcome"))
@@ -38,7 +38,9 @@ func newWelcomeStep(d onboardingDeps) platform.Step[OnboardingState] {
 func isConfirmation(text string) bool {
 	text = strings.ToLower(strings.TrimSpace(text))
 	switch text {
-	case "sim", "yes", "vamos", "começar", "bora", "ok", "certo":
+	case "sim", "yes", "vamos", "vamos lá", "vamos la", "começar", "comecar", "bora", "simbora",
+		"partiu", "ok", "okay", "certo", "claro", "isso", "isso aí", "isso ai", "pode",
+		"pode ser", "com certeza", "beleza", "blz", "quero", "quero sim", "uhum", "aham":
 		return true
 	default:
 		return false

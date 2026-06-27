@@ -71,65 +71,56 @@ func (i *onboardingInterpreter) RenderConclusion(ctx context.Context) string {
 	return i.render(ctx, conclusionSystemPrompt, conclusionCue)
 }
 
-func (i *onboardingInterpreter) ParseObjective(_ context.Context, text string) (agentwf.ParsedObjective, error) {
+func (i *onboardingInterpreter) parseObjectiveDeterministic(text string) agentwf.ParsedObjective {
 	trimmed := strings.TrimSpace(text)
 	return agentwf.ParsedObjective{
 		Objective:    trimmed,
 		DailyCommand: isDailyCommandText(trimmed),
 		Ambiguous:    trimmed == "",
-	}, nil
+	}
 }
 
-func (i *onboardingInterpreter) ParseBudget(_ context.Context, text string) (agentwf.ParsedBudget, error) {
+func (i *onboardingInterpreter) parseBudgetDeterministic(text string) agentwf.ParsedBudget {
 	trimmed := strings.TrimSpace(text)
 	if isDailyCommandText(trimmed) {
-		return agentwf.ParsedBudget{DailyCommand: true}, nil
+		return agentwf.ParsedBudget{DailyCommand: true}
 	}
 	cents, ok := parseMoney(trimmed)
 	if !ok {
-		return agentwf.ParsedBudget{Ambiguous: true}, nil
+		return agentwf.ParsedBudget{Ambiguous: true}
 	}
-	return agentwf.ParsedBudget{IncomeCents: cents}, nil
+	return agentwf.ParsedBudget{IncomeCents: cents}
 }
 
-func (i *onboardingInterpreter) ParseCards(_ context.Context, text string, loop int) (agentwf.ParsedCards, error) {
+func (i *onboardingInterpreter) parseCardsDeterministic(text string, loop int) agentwf.ParsedCards {
 	trimmed := strings.TrimSpace(text)
 	lower := strings.ToLower(trimmed)
 	if isDailyCommandText(trimmed) {
-		return agentwf.ParsedCards{DailyCommand: true}, nil
+		return agentwf.ParsedCards{DailyCommand: true}
 	}
 	if isNegation(lower) {
-		return agentwf.ParsedCards{Skip: true}, nil
+		return agentwf.ParsedCards{Skip: true}
 	}
 	if loop == 0 && isConfirmation(lower) {
-		return agentwf.ParsedCards{AddAnother: true}, nil
+		return agentwf.ParsedCards{AddAnother: true}
 	}
 	nickname, dueDay, foundDay := extractCard(trimmed)
 	if nickname == "" || !foundDay || dueDay < 1 || dueDay > 31 {
-		return agentwf.ParsedCards{Ambiguous: true}, nil
+		return agentwf.ParsedCards{Ambiguous: true}
 	}
-	return agentwf.ParsedCards{Nickname: nickname, DueDay: dueDay}, nil
+	return agentwf.ParsedCards{Nickname: nickname, DueDay: dueDay}
 }
 
-func (i *onboardingInterpreter) ParseCategoriesConfirm(_ context.Context, text string) (bool, error) {
-	trimmed := strings.TrimSpace(text)
-	lower := strings.ToLower(trimmed)
-	if isDailyCommandText(trimmed) {
-		return false, nil
-	}
-	return isConfirmation(lower), nil
-}
-
-func (i *onboardingInterpreter) ParseValue(_ context.Context, text string) (agentwf.ParsedValue, error) {
+func (i *onboardingInterpreter) parseValueDeterministic(text string) agentwf.ParsedValue {
 	trimmed := strings.TrimSpace(text)
 	if isDailyCommandText(trimmed) {
-		return agentwf.ParsedValue{DailyCommand: true}, nil
+		return agentwf.ParsedValue{DailyCommand: true}
 	}
 	cents, ok := parseMoney(trimmed)
 	if !ok {
-		return agentwf.ParsedValue{Ambiguous: true}, nil
+		return agentwf.ParsedValue{Ambiguous: true}
 	}
-	return agentwf.ParsedValue{ValueCents: cents}, nil
+	return agentwf.ParsedValue{ValueCents: cents}
 }
 
 func (i *onboardingInterpreter) ParseSummary(ctx context.Context, text string) (agentwf.ParsedSummary, error) {
@@ -339,16 +330,12 @@ func summaryCue(state agentwf.SummaryState) string {
 	b.WriteString("\n\nDistribuição:\n")
 	for _, slug := range []string{"fixed_cost", "knowledge", "pleasures", "goals", "financial_freedom"} {
 		amount := state.Values[slug]
-		percent := int64(0)
-		if state.IncomeCents > 0 {
-			percent = (amount * 100) / state.IncomeCents
-		}
 		b.WriteString("• ")
 		b.WriteString(categoryLabel(slug))
 		b.WriteString(": R$ ")
 		b.WriteString(formatCents(amount))
 		b.WriteString(" (")
-		b.WriteString(strconv.FormatInt(percent, 10))
+		b.WriteString(formatPercent(amount, state.IncomeCents))
 		b.WriteString("%)\n")
 	}
 	b.WriteString("\nEstá tudo certo?")

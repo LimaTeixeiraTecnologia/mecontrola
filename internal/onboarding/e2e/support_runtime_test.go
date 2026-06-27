@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/go-chi/chi/v5"
@@ -461,7 +463,13 @@ func newE2EOnboardingAgent(
 	engine := platformworkflow.NewEngine[agentworkflow.OnboardingState](store, o11y)
 	checker := &e2eStateChecker{uc: getContext}
 	routedTotal := o11y.Metrics().Counter("agent_intent_routed_total", "", "1")
-	return agentservices.NewOnboardingAgent(o11y, routedTotal, engine, def, store, checker)
+	return agentservices.NewOnboardingAgent(o11y, routedTotal, engine, def, store, checker, &e2eHistoryGateway{})
+}
+
+type e2eHistoryGateway struct{}
+
+func (g *e2eHistoryGateway) AppendTurn(_ context.Context, _ uuid.UUID, _, _ string) error {
+	return nil
 }
 
 type recordingWhatsAppGateway struct {

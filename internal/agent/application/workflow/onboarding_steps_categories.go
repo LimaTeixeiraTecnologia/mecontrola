@@ -23,9 +23,9 @@ func newCategoriesStep(d onboardingDeps) platform.Step[OnboardingState] {
 		}
 		if !confirmed {
 			d.record(ctx, "categories", "clarify")
-			return d.advance(ctx, s, valueobjects.PhaseValues)
+			return d.advance(ctx, s, valueobjects.PhaseValues, d.Interpreter.RenderCategoriesClarify(ctx))
 		}
 		d.record(ctx, "categories", "advance")
-		return d.advance(ctx, s, valueobjects.PhaseValues)
+		return d.advance(ctx, s, valueobjects.PhaseValues, d.Interpreter.RenderCategoriesConfirmed(ctx))
 	})
 }

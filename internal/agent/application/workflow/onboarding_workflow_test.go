@@ -104,7 +104,7 @@ func (s *OnboardingWorkflowSuite) TestWorkflow_ObjectiveToBudget() {
 	res, err := eng.Resume(s.ctx(), def, "user-1", s.resumePayload("viajar", "m2"))
 	s.NoError(err)
 	s.Equal(platform.RunStatusSuspended, res.Status)
-	s.Equal("budget", res.Suspend.Prompt)
+	s.Equal("objective-saved\n\nbudget", res.Suspend.Prompt)
 	s.Equal("viajar", s.objective.saved)
 }
 
@@ -120,7 +120,7 @@ func (s *OnboardingWorkflowSuite) TestWorkflow_BudgetToCards() {
 	res, err := eng.Resume(s.ctx(), def, "user-1", s.resumePayload("4000", "m3"))
 	s.NoError(err)
 	s.Equal(platform.RunStatusSuspended, res.Status)
-	s.Equal("cards", res.Suspend.Prompt)
+	s.Equal("budget-saved\n\ncards", res.Suspend.Prompt)
 }
 
 func (s *OnboardingWorkflowSuite) TestWorkflow_CardsSkipToCategories() {
@@ -154,7 +154,7 @@ func (s *OnboardingWorkflowSuite) TestWorkflow_CategoriesToValues() {
 	res, err := eng.Resume(s.ctx(), def, "user-1", s.resumePayload("ok", "m5"))
 	s.NoError(err)
 	s.Equal(platform.RunStatusSuspended, res.Status)
-	s.Equal("values", res.Suspend.Prompt)
+	s.Equal("categories-confirmed\n\nvalues", res.Suspend.Prompt)
 	s.Equal(valueobjects.PhaseValues, res.State.Phase)
 }
 
@@ -173,6 +173,7 @@ func (s *OnboardingWorkflowSuite) TestWorkflow_CardLoop() {
 	s.NoError(err)
 	s.Equal(platform.RunStatusSuspended, res.Status)
 	s.Equal(1, res.State.CardLoop)
+	s.Equal("card-saved\n\ncards", res.Suspend.Prompt)
 
 	s.interpreter.parseCardsResult = ParsedCards{Nickname: "Inter", DueDay: 20}
 	res, err = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("Inter 20", "m5"))
@@ -186,6 +187,81 @@ func (s *OnboardingWorkflowSuite) TestWorkflow_CardLoop() {
 	s.Equal(platform.RunStatusSuspended, res.Status)
 	s.Equal("categories", res.Suspend.Prompt)
 	s.Len(s.cards.saved, 2)
+}
+
+func (s *OnboardingWorkflowSuite) TestWorkflow_CategoriesNotConfirmed_ClarifiesAndProceeds() {
+	s.interpreter.parseObjectiveResult = ParsedObjective{Objective: "viajar"}
+	s.interpreter.parseBudgetResult = ParsedBudget{IncomeCents: 500000}
+	s.interpreter.parseCardsResult = ParsedCards{Skip: true}
+	s.interpreter.parseCategoriesConfirmed = false
+	s.loader.context = OnboardingContext{IncomeCents: 500000}
+	def := BuildOnboardingDefinition(s.deps())
+	eng := platform.NewEngine[OnboardingState](s.store, s.obs)
+	_, _ = eng.Start(s.ctx(), def, "user-1", s.initialState())
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("sim", "m1"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("viajar", "m2"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("5000", "m3"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("não uso", "m4"))
+	res, err := eng.Resume(s.ctx(), def, "user-1", s.resumePayload("o que é isso?", "m5"))
+	s.NoError(err)
+	s.Equal(platform.RunStatusSuspended, res.Status)
+	s.Equal("categories-clarify\n\nvalues", res.Suspend.Prompt)
+	s.Equal(valueobjects.PhaseValues, res.State.Phase)
+}
+
+func (s *OnboardingWorkflowSuite) TestWorkflow_ValuesMismatch_ExplainsAndStays() {
+	s.interpreter.parseObjectiveResult = ParsedObjective{Objective: "viajar"}
+	s.interpreter.parseBudgetResult = ParsedBudget{IncomeCents: 500000}
+	s.interpreter.parseCardsResult = ParsedCards{Skip: true}
+	s.loader.context = OnboardingContext{IncomeCents: 500000}
+	def := BuildOnboardingDefinition(s.deps())
+	eng := platform.NewEngine[OnboardingState](s.store, s.obs)
+	_, _ = eng.Start(s.ctx(), def, "user-1", s.initialState())
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("sim", "m1"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("viajar", "m2"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("5000", "m3"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("não uso", "m4"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("ok", "m5"))
+
+	amounts := []int64{100000, 100000, 100000, 100000, 50000}
+	var res platform.RunResult[OnboardingState]
+	var err error
+	for idx, amount := range amounts {
+		s.interpreter.parseValueResult = ParsedValue{ValueCents: amount}
+		res, err = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("v", "vm"+string(rune('a'+idx))))
+		s.NoError(err)
+	}
+	s.Equal(platform.RunStatusSuspended, res.Status)
+	s.Equal(valueobjects.PhaseValues, res.State.Phase)
+	s.Equal("values-mismatch", res.Suspend.Prompt)
+	s.False(s.completer.completed)
+}
+
+func (s *OnboardingWorkflowSuite) TestWorkflow_ValuesToSummary_ConfirmsEachAndAdvances() {
+	s.interpreter.parseObjectiveResult = ParsedObjective{Objective: "viajar"}
+	s.interpreter.parseBudgetResult = ParsedBudget{IncomeCents: 500000}
+	s.interpreter.parseCardsResult = ParsedCards{Skip: true}
+	s.loader.context = OnboardingContext{IncomeCents: 500000}
+	def := BuildOnboardingDefinition(s.deps())
+	eng := platform.NewEngine[OnboardingState](s.store, s.obs)
+	_, _ = eng.Start(s.ctx(), def, "user-1", s.initialState())
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("sim", "m1"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("viajar", "m2"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("5000", "m3"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("não uso", "m4"))
+	_, _ = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("ok", "m5"))
+
+	var res platform.RunResult[OnboardingState]
+	var err error
+	for idx := range 5 {
+		s.interpreter.parseValueResult = ParsedValue{ValueCents: 100000}
+		res, err = eng.Resume(s.ctx(), def, "user-1", s.resumePayload("1000", "vs"+string(rune('a'+idx))))
+		s.NoError(err)
+	}
+	s.Equal(platform.RunStatusSuspended, res.Status)
+	s.Equal(valueobjects.PhaseSummary, res.State.Phase)
+	s.Contains(res.Suspend.Prompt, "value-saved")
+	s.Contains(res.Suspend.Prompt, "summary")
 }
 
 func (s *OnboardingWorkflowSuite) ctx() context.Context {

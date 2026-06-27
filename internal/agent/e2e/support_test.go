@@ -23,7 +23,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	agentvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
@@ -167,16 +166,6 @@ func SeedActiveUserWA(t *testing.T, db database.DBTX, waNumber string) uuid.UUID
 	}
 	return userID
 }
-
-type noopV2Session struct{}
-
-func (noopV2Session) Load(_ context.Context, _ uuid.UUID, _ string) (onboardingv2draft.Draft, bool, error) {
-	return onboardingv2draft.Draft{}, false, nil
-}
-func (noopV2Session) Save(_ context.Context, _ uuid.UUID, _ string, _ onboardingv2draft.Draft) error {
-	return nil
-}
-func (noopV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error { return nil }
 
 func buildConfirmKernelDeps(
 	o11y observability.Observability,

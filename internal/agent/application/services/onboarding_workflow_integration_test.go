@@ -88,6 +88,34 @@ func (d *deterministicInterpreter) RenderConclusion(_ context.Context) string {
 	return "Pronto!"
 }
 
+func (d *deterministicInterpreter) RenderObjectiveSaved(_ context.Context) string {
+	return "Perfeito! Vamos montar tudo pensando nesse objetivo."
+}
+
+func (d *deterministicInterpreter) RenderBudgetSaved(_ context.Context, incomeCents int64) string {
+	return fmt.Sprintf("Orçamento registrado: %d", incomeCents)
+}
+
+func (d *deterministicInterpreter) RenderCardSaved(_ context.Context, nickname string, dueDay int) string {
+	return fmt.Sprintf("Cartão salvo: %s dia %d", nickname, dueDay)
+}
+
+func (d *deterministicInterpreter) RenderValueSaved(_ context.Context, slug string, valueCents int64) string {
+	return fmt.Sprintf("%s definido: %d", slug, valueCents)
+}
+
+func (d *deterministicInterpreter) RenderCategoriesConfirmed(_ context.Context) string {
+	return "Perfeito! Agora vamos montar seu planejamento."
+}
+
+func (d *deterministicInterpreter) RenderCategoriesClarify(_ context.Context) string {
+	return "As 5 categorias organizam seu dinheiro. Vamos montar seu planejamento."
+}
+
+func (d *deterministicInterpreter) RenderValuesMismatch(_ context.Context, sumCents, incomeCents int64) string {
+	return fmt.Sprintf("Soma %d difere do orçamento %d.", sumCents, incomeCents)
+}
+
 func (d *deterministicInterpreter) ParseObjective(_ context.Context, text string) (agentwf.ParsedObjective, error) {
 	trimmed := strings.TrimSpace(text)
 	if isDailyCommandTextIntegration(trimmed) {

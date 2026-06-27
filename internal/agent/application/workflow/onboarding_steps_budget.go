@@ -28,7 +28,7 @@ func newBudgetStep(d onboardingDeps) platform.Step[OnboardingState] {
 				return fail(saveErr)
 			}
 			d.record(ctx, "budget", "advance")
-			return d.advance(ctx, s, valueobjects.PhaseCards)
+			return d.advance(ctx, s, valueobjects.PhaseCards, d.Interpreter.RenderBudgetSaved(ctx, parsed.IncomeCents))
 		default:
 			d.record(ctx, "budget", "clarify")
 			return d.suspend(ctx, s, valueobjects.PhaseBudget, AwaitingText, d.Interpreter.RenderRetry(ctx, "budget"))

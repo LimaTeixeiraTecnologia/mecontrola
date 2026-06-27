@@ -115,15 +115,15 @@ type e2eStateChecker struct {
 	uc *usecases.GetOnboardingContext
 }
 
-func (c *e2eStateChecker) IsOnboardingInProgress(ctx context.Context, userID uuid.UUID) (bool, error) {
+func (c *e2eStateChecker) Check(ctx context.Context, userID uuid.UUID) (bool, valueobjects.OnboardingPhase, error) {
 	out, err := c.uc.Execute(ctx, usecases.GetOnboardingContextInput{UserID: userID})
 	if err != nil {
-		return false, err
+		return false, valueobjects.OnboardingPhase(0), err
 	}
 	if !out.Found {
-		return false, nil
+		return false, valueobjects.OnboardingPhase(0), nil
 	}
-	return out.CompletedAt == nil, nil
+	return out.CompletedAt == nil, out.Phase, nil
 }
 
 type e2eContextLoader struct {
@@ -191,6 +191,34 @@ func (d *e2eOnboardingInterpreter) RenderConclusion(_ context.Context) string {
 	return "Pronto!"
 }
 
+func (d *e2eOnboardingInterpreter) RenderObjectiveSaved(_ context.Context) string {
+	return "Perfeito! Vamos montar tudo pensando nesse objetivo."
+}
+
+func (d *e2eOnboardingInterpreter) RenderBudgetSaved(_ context.Context, incomeCents int64) string {
+	return fmt.Sprintf("Orçamento registrado: %d", incomeCents)
+}
+
+func (d *e2eOnboardingInterpreter) RenderCardSaved(_ context.Context, nickname string, dueDay int) string {
+	return fmt.Sprintf("Cartão salvo: %s dia %d", nickname, dueDay)
+}
+
+func (d *e2eOnboardingInterpreter) RenderValueSaved(_ context.Context, slug string, valueCents int64) string {
+	return fmt.Sprintf("%s definido: %d", slug, valueCents)
+}
+
+func (d *e2eOnboardingInterpreter) RenderCategoriesConfirmed(_ context.Context) string {
+	return "Perfeito! Agora vamos montar seu planejamento."
+}
+
+func (d *e2eOnboardingInterpreter) RenderCategoriesClarify(_ context.Context) string {
+	return "As 5 categorias organizam seu dinheiro. Vamos montar seu planejamento."
+}
+
+func (d *e2eOnboardingInterpreter) RenderValuesMismatch(_ context.Context, sumCents, incomeCents int64) string {
+	return fmt.Sprintf("Soma %d difere do orçamento %d.", sumCents, incomeCents)
+}
+
 func (d *e2eOnboardingInterpreter) ParseObjective(_ context.Context, text string) (agentworkflow.ParsedObjective, error) {
 	trimmed := strings.TrimSpace(text)
 	if isDailyCommandTextE2E(trimmed) {
@@ -234,13 +262,16 @@ func (d *e2eOnboardingInterpreter) ParseCategoriesConfirm(_ context.Context, _ s
 	return true, nil
 }
 
-func (d *e2eOnboardingInterpreter) ParseValue(_ context.Context, text string) (int64, bool, error) {
+func (d *e2eOnboardingInterpreter) ParseValue(_ context.Context, text string) (agentworkflow.ParsedValue, error) {
 	trimmed := strings.TrimSpace(text)
+	if isDailyCommandTextE2E(trimmed) {
+		return agentworkflow.ParsedValue{DailyCommand: true}, nil
+	}
 	cents, ok := parseMoneyCentsE2E(trimmed)
 	if !ok {
-		return 0, true, nil
+		return agentworkflow.ParsedValue{Ambiguous: true}, nil
 	}
-	return cents, false, nil
+	return agentworkflow.ParsedValue{ValueCents: cents}, nil
 }
 
 func (d *e2eOnboardingInterpreter) ParseSummary(_ context.Context, text string) (agentworkflow.ParsedSummary, error) {

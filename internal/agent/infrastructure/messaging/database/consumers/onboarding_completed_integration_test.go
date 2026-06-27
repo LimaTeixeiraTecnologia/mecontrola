@@ -64,6 +64,21 @@ func (d *completedInterpreter) RenderDailyRedirect(_ context.Context, _ string) 
 	return "Termine"
 }
 func (d *completedInterpreter) RenderConclusion(_ context.Context) string { return "Pronto" }
+func (d *completedInterpreter) RenderObjectiveSaved(_ context.Context) string {
+	return "Perfeito"
+}
+func (d *completedInterpreter) RenderBudgetSaved(_ context.Context, _ int64) string { return "ok" }
+func (d *completedInterpreter) RenderCardSaved(_ context.Context, _ string, _ int) string {
+	return "ok"
+}
+func (d *completedInterpreter) RenderValueSaved(_ context.Context, _ string, _ int64) string {
+	return "ok"
+}
+func (d *completedInterpreter) RenderCategoriesConfirmed(_ context.Context) string { return "ok" }
+func (d *completedInterpreter) RenderCategoriesClarify(_ context.Context) string   { return "ok" }
+func (d *completedInterpreter) RenderValuesMismatch(_ context.Context, _, _ int64) string {
+	return "ok"
+}
 
 func (d *completedInterpreter) ParseObjective(_ context.Context, text string) (agentwf.ParsedObjective, error) {
 	return agentwf.ParsedObjective{Objective: strings.TrimSpace(text)}, nil
@@ -88,12 +103,12 @@ func (d *completedInterpreter) ParseCards(_ context.Context, text string, _ int)
 func (d *completedInterpreter) ParseCategoriesConfirm(_ context.Context, _ string) (bool, error) {
 	return true, nil
 }
-func (d *completedInterpreter) ParseValue(_ context.Context, text string) (int64, bool, error) {
+func (d *completedInterpreter) ParseValue(_ context.Context, text string) (agentwf.ParsedValue, error) {
 	cents, ok := parseMoneyCompleted(text)
 	if !ok {
-		return 0, true, nil
+		return agentwf.ParsedValue{Ambiguous: true}, nil
 	}
-	return cents, false, nil
+	return agentwf.ParsedValue{ValueCents: cents}, nil
 }
 func (d *completedInterpreter) ParseSummary(_ context.Context, text string) (agentwf.ParsedSummary, error) {
 	if strings.ToLower(strings.TrimSpace(text)) == "sim" {

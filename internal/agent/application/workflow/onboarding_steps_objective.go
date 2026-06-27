@@ -28,7 +28,7 @@ func newObjectiveStep(d onboardingDeps) platform.Step[OnboardingState] {
 				return fail(saveErr)
 			}
 			d.record(ctx, "objective", "advance")
-			return d.advance(ctx, s, valueobjects.PhaseBudget)
+			return d.advance(ctx, s, valueobjects.PhaseBudget, d.Interpreter.RenderObjectiveSaved(ctx))
 		default:
 			d.record(ctx, "objective", "clarify")
 			return d.suspend(ctx, s, valueobjects.PhaseObjective, AwaitingText, d.Interpreter.RenderRetry(ctx, "objective"))

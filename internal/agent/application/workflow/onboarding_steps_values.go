@@ -32,6 +32,7 @@ func newValuesStep(d onboardingDeps) platform.Step[OnboardingState] {
 		candidate[pending] = parsed.ValueCents
 		if next := pendingCategory(candidate); next != "" {
 			s.Values = candidate
+			s.Ack = d.Interpreter.RenderValueSaved(ctx, pending, parsed.ValueCents)
 			return d.suspend(ctx, s, valueobjects.PhaseValues, AwaitingText, d.Interpreter.RenderValues(ctx, next))
 		}
 		contextState, err := d.ContextLoader.Load(ctx, s.UserID)
@@ -41,7 +42,7 @@ func newValuesStep(d onboardingDeps) platform.Step[OnboardingState] {
 		state := BuildValuesState(candidate, contextState.IncomeCents)
 		if DecideValues(state) != OutcomeAdvance {
 			d.record(ctx, "values", "clarify")
-			return d.suspend(ctx, s, valueobjects.PhaseValues, AwaitingText, d.Interpreter.RenderRetry(ctx, "values"))
+			return d.suspend(ctx, s, valueobjects.PhaseValues, AwaitingText, d.Interpreter.RenderValuesMismatch(ctx, sumValues(candidate), contextState.IncomeCents))
 		}
 		applied, err := d.SplitsSaver.Save(ctx, s.UserID, candidate)
 		if err != nil {
@@ -53,6 +54,6 @@ func newValuesStep(d onboardingDeps) platform.Step[OnboardingState] {
 		}
 		s.Values = candidate
 		d.record(ctx, "values", "advance")
-		return d.advance(ctx, s, valueobjects.PhaseSummary)
+		return d.advance(ctx, s, valueobjects.PhaseSummary, d.Interpreter.RenderValueSaved(ctx, pending, parsed.ValueCents))
 	})
 }

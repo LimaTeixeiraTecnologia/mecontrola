@@ -61,6 +61,27 @@ func (m *mockOnboardingInterpreter) RenderDailyRedirect(_ context.Context, _ str
 func (m *mockOnboardingInterpreter) RenderConclusion(_ context.Context) string {
 	return m.conclusionPrompt
 }
+func (m *mockOnboardingInterpreter) RenderObjectiveSaved(_ context.Context) string {
+	return "objective-saved"
+}
+func (m *mockOnboardingInterpreter) RenderBudgetSaved(_ context.Context, _ int64) string {
+	return "budget-saved"
+}
+func (m *mockOnboardingInterpreter) RenderCardSaved(_ context.Context, _ string, _ int) string {
+	return "card-saved"
+}
+func (m *mockOnboardingInterpreter) RenderValueSaved(_ context.Context, _ string, _ int64) string {
+	return "value-saved"
+}
+func (m *mockOnboardingInterpreter) RenderCategoriesConfirmed(_ context.Context) string {
+	return "categories-confirmed"
+}
+func (m *mockOnboardingInterpreter) RenderCategoriesClarify(_ context.Context) string {
+	return "categories-clarify"
+}
+func (m *mockOnboardingInterpreter) RenderValuesMismatch(_ context.Context, _, _ int64) string {
+	return "values-mismatch"
+}
 func (m *mockOnboardingInterpreter) ParseObjective(_ context.Context, _ string) (ParsedObjective, error) {
 	return m.parseObjectiveResult, nil
 }
@@ -481,7 +502,7 @@ func (s *OnboardingStepsSuite) TestValuesStep_Mismatch_Clarify() {
 	out, err := step.Execute(s.ctx, state)
 	s.NoError(err)
 	s.Equal(platform.StepStatusSuspended, out.Status)
-	s.Equal("retry", out.Suspend.Prompt)
+	s.Equal("values-mismatch", out.Suspend.Prompt)
 }
 
 func (s *OnboardingStepsSuite) TestValuesStep_SaveError_Fail() {

@@ -22,6 +22,13 @@ type OnboardingInterpreter interface {
 	RenderRetry(ctx context.Context, phase string) string
 	RenderDailyRedirect(ctx context.Context, phase string) string
 	RenderConclusion(ctx context.Context) string
+	RenderObjectiveSaved(ctx context.Context) string
+	RenderBudgetSaved(ctx context.Context, incomeCents int64) string
+	RenderCardSaved(ctx context.Context, nickname string, dueDay int) string
+	RenderValueSaved(ctx context.Context, slug string, valueCents int64) string
+	RenderCategoriesConfirmed(ctx context.Context) string
+	RenderCategoriesClarify(ctx context.Context) string
+	RenderValuesMismatch(ctx context.Context, sumCents, incomeCents int64) string
 	ParseObjective(ctx context.Context, text string) (ParsedObjective, error)
 	ParseBudget(ctx context.Context, text string) (ParsedBudget, error)
 	ParseCards(ctx context.Context, text string, loop int) (ParsedCards, error)
@@ -137,6 +144,8 @@ func (d onboardingDeps) suspend(ctx context.Context, s OnboardingState, phase va
 	s.Awaiting = awaiting
 	s.Inbound = ""
 	s.SuspendedAt = time.Now().UTC()
+	prompt = joinAck(s.Ack, prompt)
+	s.Ack = ""
 	return platform.StepOutput[OnboardingState]{
 		State:   s,
 		Status:  platform.StepStatusSuspended,
@@ -144,7 +153,7 @@ func (d onboardingDeps) suspend(ctx context.Context, s OnboardingState, phase va
 	}, nil
 }
 
-func (d onboardingDeps) advance(ctx context.Context, s OnboardingState, phase valueobjects.OnboardingPhase) (platform.StepOutput[OnboardingState], error) {
+func (d onboardingDeps) advance(ctx context.Context, s OnboardingState, phase valueobjects.OnboardingPhase, ack string) (platform.StepOutput[OnboardingState], error) {
 	if err := d.Set(ctx, s.UserID, phase.String()); err != nil {
 		return platform.StepOutput[OnboardingState]{}, err
 	}
@@ -153,7 +162,20 @@ func (d onboardingDeps) advance(ctx context.Context, s OnboardingState, phase va
 	s.Inbound = ""
 	s.MessageID = ""
 	s.RepromptCount = 0
+	if ack != "" {
+		s.Ack = ack
+	}
 	return platform.StepOutput[OnboardingState]{State: s, Status: platform.StepStatusCompleted}, nil
+}
+
+func joinAck(ack, prompt string) string {
+	if ack == "" {
+		return prompt
+	}
+	if prompt == "" {
+		return ack
+	}
+	return ack + "\n\n" + prompt
 }
 
 func fail(err error) (platform.StepOutput[OnboardingState], error) {
@@ -185,6 +207,14 @@ func pendingCategory(values map[string]int64) string {
 		}
 	}
 	return ""
+}
+
+func sumValues(values map[string]int64) int64 {
+	var sum int64
+	for _, v := range values {
+		sum += v
+	}
+	return sum
 }
 
 func copyValues(values map[string]int64) map[string]int64 {
