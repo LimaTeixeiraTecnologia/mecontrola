@@ -1,6 +1,6 @@
 //go:build integration
 
-package services
+package e2e_test
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
-
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
+	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
 	agentrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
@@ -26,22 +26,22 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
-type fakeRouteEngine struct {
-	result RouteResult
+type runtimeRouteStub struct {
+	result appservices.RouteResult
 	calls  int
 }
 
-func (f *fakeRouteEngine) route(_ context.Context, _ Principal, _, _, _, _ string) RouteResult {
-	f.calls++
-	return f.result
+func (s *runtimeRouteStub) handle(_ context.Context, _ appservices.Principal, _, _, _, _ string) appservices.RouteResult {
+	s.calls++
+	return s.result
 }
 
-type pgThreadGateway struct {
+type runtimeThreadGateway struct {
 	factory appinterfaces.AgentThreadRepositoryFactory
 	unit    uow.UnitOfWork
 }
 
-func (g *pgThreadGateway) GetOrCreate(ctx context.Context, userID uuid.UUID, channel string) (entities.Thread, error) {
+func (g *runtimeThreadGateway) GetOrCreate(ctx context.Context, userID uuid.UUID, channel string) (entities.Thread, error) {
 	var resolved entities.Thread
 	op := func(ctx context.Context, db database.DBTX) error {
 		repo := g.factory.AgentThreadRepository(db)
@@ -70,12 +70,12 @@ func (g *pgThreadGateway) GetOrCreate(ctx context.Context, userID uuid.UUID, cha
 	return resolved, nil
 }
 
-type pgRunGateway struct {
+type runtimeRunGateway struct {
 	factory appinterfaces.AgentRunRepositoryFactory
 	unit    uow.UnitOfWork
 }
 
-func (g *pgRunGateway) Insert(ctx context.Context, run entities.Run) error {
+func (g *runtimeRunGateway) Insert(ctx context.Context, run entities.Run) error {
 	op := func(ctx context.Context, db database.DBTX) error {
 		return g.factory.AgentRunRepository(db).Insert(ctx, run)
 	}
@@ -85,7 +85,7 @@ func (g *pgRunGateway) Insert(ctx context.Context, run entities.Run) error {
 	return nil
 }
 
-func (g *pgRunGateway) Finish(ctx context.Context, run entities.Run) error {
+func (g *runtimeRunGateway) Finish(ctx context.Context, run entities.Run) error {
 	op := func(ctx context.Context, db database.DBTX) error {
 		return g.factory.AgentRunRepository(db).UpdateOnFinish(ctx, run)
 	}
@@ -98,8 +98,8 @@ func (g *pgRunGateway) Finish(ctx context.Context, run entities.Run) error {
 type AgentRuntimeIntegrationSuite struct {
 	suite.Suite
 	db      *sqlx.DB
-	threads ThreadGateway
-	runs    RunGateway
+	threads appservices.ThreadGateway
+	runs    appservices.RunGateway
 }
 
 func TestAgentRuntimeIntegrationSuite(t *testing.T) {
@@ -114,8 +114,8 @@ func (s *AgentRuntimeIntegrationSuite) SetupSuite() {
 	runFactory := agentrepos.NewRunRepositoryFactory(noop.NewProvider())
 	unit := uow.NewUnitOfWork(db)
 
-	s.threads = &pgThreadGateway{factory: threadFactory, unit: unit}
-	s.runs = &pgRunGateway{factory: runFactory, unit: unit}
+	s.threads = &runtimeThreadGateway{factory: threadFactory, unit: unit}
+	s.runs = &runtimeRunGateway{factory: runFactory, unit: unit}
 }
 
 func (s *AgentRuntimeIntegrationSuite) insertUser() uuid.UUID {
@@ -130,26 +130,26 @@ func (s *AgentRuntimeIntegrationSuite) insertUser() uuid.UUID {
 	return userID
 }
 
-func (s *AgentRuntimeIntegrationSuite) newRuntime(result RouteResult) (*AgentRuntime, *fakeRouteEngine) {
+func (s *AgentRuntimeIntegrationSuite) newRuntime(result appservices.RouteResult) (*appservices.AgentRuntime, *runtimeRouteStub) {
 	catalog, err := capability.BuildCatalog()
 	s.Require().NoError(err)
-	engine := &fakeRouteEngine{result: result}
-	rt := NewAgentRuntime(noop.NewProvider(), catalog, engine, s.threads, s.runs)
-	return rt, engine
+	stub := &runtimeRouteStub{result: result}
+	rt := appservices.NewAgentRuntime(noop.NewProvider(), catalog, appservices.RouterFunc(stub.handle), s.threads, s.runs)
+	return rt, stub
 }
 
 func (s *AgentRuntimeIntegrationSuite) TestRoutedRunPersisted() {
 	ctx := context.Background()
 	userID := s.insertUser()
-	principal := Principal{UserID: userID}
+	principal := appservices.Principal{UserID: userID}
 
-	expected := RouteResult{Reply: "lançado", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}
-	rt, engine := s.newRuntime(expected)
+	expected := appservices.RouteResult{Reply: "lançado", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}
+	rt, stub := s.newRuntime(expected)
 
 	got := rt.Execute(ctx, principal, "whatsapp", "+5511999999999", "cadastrar cartão nubank", "wamid.routed-1")
 
 	s.Equal(expected, got)
-	s.Equal(1, engine.calls)
+	s.Equal(1, stub.calls)
 
 	var threadID uuid.UUID
 	err := s.db.QueryRowContext(ctx,
@@ -183,7 +183,7 @@ func (s *AgentRuntimeIntegrationSuite) TestRoutedRunPersisted() {
 	s.Equal(threadID, runThreadID)
 	s.Equal("succeeded", status)
 	s.Equal(tools.OutcomeRouted.String(), outcome)
-	s.Equal(workflowCards, workflow)
+	s.Equal("cards", workflow)
 	s.Equal(intent.KindCreateCard.String(), toolName)
 	s.Equal(intent.KindCreateCard.String(), intentKind)
 	s.Empty(errText)
@@ -196,13 +196,13 @@ func (s *AgentRuntimeIntegrationSuite) TestRoutedRunPersisted() {
 func (s *AgentRuntimeIntegrationSuite) TestThreadReusedAcrossRuns() {
 	ctx := context.Background()
 	userID := s.insertUser()
-	principal := Principal{UserID: userID}
+	principal := appservices.Principal{UserID: userID}
 
-	rt1, _ := s.newRuntime(RouteResult{Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard})
+	rt1, _ := s.newRuntime(appservices.RouteResult{Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard})
 	s.Require().Equal(tools.OutcomeRouted,
 		rt1.Execute(ctx, principal, "whatsapp", "+5511999999999", "cartão 1", "wamid.reuse-1").Outcome)
 
-	rt2, _ := s.newRuntime(RouteResult{Outcome: tools.OutcomeRouted, Kind: intent.KindListCards})
+	rt2, _ := s.newRuntime(appservices.RouteResult{Outcome: tools.OutcomeRouted, Kind: intent.KindListCards})
 	s.Require().Equal(tools.OutcomeRouted,
 		rt2.Execute(ctx, principal, "whatsapp", "+5511999999999", "meus cartões", "wamid.reuse-2").Outcome)
 
@@ -230,9 +230,9 @@ func (s *AgentRuntimeIntegrationSuite) TestThreadReusedAcrossRuns() {
 func (s *AgentRuntimeIntegrationSuite) TestFailureRunPersisted() {
 	ctx := context.Background()
 	userID := s.insertUser()
-	principal := Principal{UserID: userID}
+	principal := appservices.Principal{UserID: userID}
 
-	expected := RouteResult{Reply: "falhou", Outcome: tools.OutcomeUsecaseError, Kind: intent.KindCreateCard}
+	expected := appservices.RouteResult{Reply: "falhou", Outcome: tools.OutcomeUsecaseError, Kind: intent.KindCreateCard}
 	rt, _ := s.newRuntime(expected)
 
 	got := rt.Execute(ctx, principal, "whatsapp", "+5511999999999", "cadastrar cartão", "wamid.failed-1")
@@ -253,15 +253,15 @@ func (s *AgentRuntimeIntegrationSuite) TestFailureRunPersisted() {
 
 func (s *AgentRuntimeIntegrationSuite) TestRouteResultIdenticalWithUnknownUser() {
 	ctx := context.Background()
-	principal := Principal{UserID: uuid.New()}
+	principal := appservices.Principal{UserID: uuid.New()}
 
-	expected := RouteResult{Reply: "ok mesmo sem persistir", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}
-	rt, engine := s.newRuntime(expected)
+	expected := appservices.RouteResult{Reply: "ok mesmo sem persistir", Outcome: tools.OutcomeRouted, Kind: intent.KindCreateCard}
+	rt, stub := s.newRuntime(expected)
 
 	got := rt.Execute(ctx, principal, "whatsapp", "+5511999999999", "qualquer", "wamid.degraded-1")
 
 	s.Equal(expected, got)
-	s.Equal(1, engine.calls)
+	s.Equal(1, stub.calls)
 
 	var runCount int
 	err := s.db.QueryRowContext(ctx,

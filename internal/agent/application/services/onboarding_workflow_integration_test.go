@@ -131,13 +131,16 @@ func (d *deterministicInterpreter) ParseCategoriesConfirm(_ context.Context, _ s
 	return true, nil
 }
 
-func (d *deterministicInterpreter) ParseValue(_ context.Context, text string) (int64, bool, error) {
+func (d *deterministicInterpreter) ParseValue(_ context.Context, text string) (agentwf.ParsedValue, error) {
 	trimmed := strings.TrimSpace(text)
+	if isDailyCommandTextIntegration(trimmed) {
+		return agentwf.ParsedValue{DailyCommand: true}, nil
+	}
 	cents, ok := parseMoneyCentsIntegration(trimmed)
 	if !ok {
-		return 0, true, nil
+		return agentwf.ParsedValue{Ambiguous: true}, nil
 	}
-	return cents, false, nil
+	return agentwf.ParsedValue{ValueCents: cents}, nil
 }
 
 func (d *deterministicInterpreter) ParseSummary(_ context.Context, text string) (agentwf.ParsedSummary, error) {
@@ -391,6 +394,11 @@ func (c *integrationStateChecker) Check(ctx context.Context, userID uuid.UUID) (
 		return true, onbvalueobjects.PhaseWelcome, nil
 	}
 	return true, out.Phase, nil
+}
+
+func (c *integrationStateChecker) IsOnboardingInProgress(ctx context.Context, userID uuid.UUID) (bool, error) {
+	inProgress, _, err := c.Check(ctx, userID)
+	return inProgress, err
 }
 
 type onboardingWorkflowIntegrationSuite struct {
@@ -678,8 +686,11 @@ func (s *onboardingWorkflowIntegrationSuite) TestBudgetSplitsPropagatesToBudgets
 	).Scan(&outboxID)
 	s.Require().NoError(err)
 
-	s.dispatchOutboxEvent(outboxID, s.budgetsModule.OnboardingBudgetConsumer)
-	s.dispatchOutboxEvent(outboxID, s.budgetsModule.OnboardingBudgetConsumer)
+	err = s.dispatchOutboxEvent(outboxID, s.budgetsModule.OnboardingBudgetConsumer)
+	s.Require().NoError(err)
+
+	err = s.dispatchOutboxEvent(outboxID, s.budgetsModule.OnboardingBudgetConsumer)
+	s.Require().NoError(err)
 
 	var count int
 	err = s.db.QueryRowContext(s.ctx, `SELECT COUNT(*) FROM mecontrola.budgets WHERE user_id = $1`, userID).Scan(&count)

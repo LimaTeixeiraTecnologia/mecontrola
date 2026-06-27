@@ -17,6 +17,12 @@ type runtimeRouter interface {
 	route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult
 }
 
+type RouterFunc func(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult
+
+func (f RouterFunc) route(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
+	return f(ctx, principal, channel, peer, text, messageID)
+}
+
 type ThreadGateway interface {
 	GetOrCreate(ctx context.Context, userID uuid.UUID, channel string) (entities.Thread, error)
 }
