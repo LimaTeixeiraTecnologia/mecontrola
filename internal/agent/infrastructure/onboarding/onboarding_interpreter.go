@@ -129,15 +129,14 @@ func (i *onboardingInterpreter) ParseSummary(ctx context.Context, text string) (
 	if isDailyCommandText(trimmed) {
 		return agentwf.ParsedSummary{DailyCommand: true}, nil
 	}
+	if parsed, ok := i.parseSummaryWithLLM(ctx, text); ok {
+		return parsed, nil
+	}
 	if isConfirmation(lower) {
 		return agentwf.ParsedSummary{Confirm: true}, nil
 	}
 	if isNegation(lower) {
 		return agentwf.ParsedSummary{Ambiguous: true}, nil
-	}
-	parsed, ok := i.parseSummaryWithLLM(ctx, text)
-	if ok {
-		return parsed, nil
 	}
 	if strings.Contains(lower, "corrig") || strings.Contains(lower, "errado") || strings.Contains(lower, "altera") {
 		return parseCorrection(trimmed), nil
@@ -146,15 +145,18 @@ func (i *onboardingInterpreter) ParseSummary(ctx context.Context, text string) (
 }
 
 func (i *onboardingInterpreter) parseSummaryWithLLM(ctx context.Context, text string) (agentwf.ParsedSummary, bool) {
+	if i.interpreter == nil {
+		return agentwf.ParsedSummary{}, false
+	}
 	var schema map[string]any
-	if json.Unmarshal([]byte(summaryCorrectionSchema), &schema) != nil {
+	if json.Unmarshal([]byte(summaryIntentSchema), &schema) != nil {
 		return agentwf.ParsedSummary{}, false
 	}
 	resp, err := i.interpreter.Interpret(ctx, interfaces.LLMRequest{
-		SystemPrompt: summaryCorrectionSystemPrompt,
+		SystemPrompt: summaryIntentSystemPrompt,
 		UserMessage:  text,
 		JSONSchema: &interfaces.JSONSchemaSpec{
-			Name:   "summary_correction",
+			Name:   "summary_intent",
 			Strict: true,
 			Schema: schema,
 		},
@@ -164,25 +166,38 @@ func (i *onboardingInterpreter) parseSummaryWithLLM(ctx context.Context, text st
 		return agentwf.ParsedSummary{}, false
 	}
 	var raw struct {
+		Action   string `json:"action"`
 		Target   string `json:"target"`
 		NewValue string `json:"new_value"`
 	}
 	if json.Unmarshal(resp.RawJSON, &raw) != nil {
 		return agentwf.ParsedSummary{}, false
 	}
-	switch strings.ToLower(raw.Target) {
+	switch strings.ToLower(raw.Action) {
+	case "confirm":
+		return agentwf.ParsedSummary{Confirm: true}, true
+	case "cancel":
+		return agentwf.ParsedSummary{Cancel: true}, true
+	case "correct":
+		return summaryCorrection(raw.Target, raw.NewValue)
+	}
+	return agentwf.ParsedSummary{}, false
+}
+
+func summaryCorrection(target, newValue string) (agentwf.ParsedSummary, bool) {
+	switch strings.ToLower(target) {
 	case "objective":
-		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetObjective, NewValue: raw.NewValue}, true
+		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetObjective, NewValue: newValue}, true
 	case "budget", "renda":
-		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetBudget, NewValue: raw.NewValue}, true
+		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetBudget, NewValue: newValue}, true
 	case "values", "categoria", "categorias", "distribuicao", "distribuição":
-		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetValues, NewValue: raw.NewValue}, true
+		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetValues, NewValue: newValue}, true
 	case "cards", "cartao", "cartão":
-		nickname, dueDay, ok := extractCard(raw.NewValue)
+		nickname, dueDay, ok := extractCard(newValue)
 		if ok {
 			return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetCards, NewValue: fmt.Sprintf("%s %d", nickname, dueDay)}, true
 		}
-		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetCards, NewValue: raw.NewValue}, true
+		return agentwf.ParsedSummary{Correct: true, Target: agentwf.CorrectionTargetCards, NewValue: newValue}, true
 	}
 	return agentwf.ParsedSummary{}, false
 }
@@ -322,23 +337,25 @@ func valuesCue(pending string) string {
 
 func summaryCue(state agentwf.SummaryState) string {
 	var b strings.Builder
-	b.WriteString("Aqui está o resumo do seu planejamento:\n\n")
-	b.WriteString("🎯 Objetivo: ")
+	b.WriteString("✅ Planejamento criado!\n\n")
+	b.WriteString("🎯 Objetivo:\n")
 	b.WriteString(state.Objective)
-	b.WriteString("\n💰 Orçamento: R$ ")
-	b.WriteString(formatCents(state.IncomeCents))
-	b.WriteString("\n\nDistribuição:\n")
+	b.WriteString("\n\n💰 Orçamento:\n")
+	b.WriteString(formatBRL(state.IncomeCents))
+	b.WriteString("\n\n📊 Distribuição\n")
 	for _, slug := range []string{"fixed_cost", "knowledge", "pleasures", "goals", "financial_freedom"} {
 		amount := state.Values[slug]
-		b.WriteString("• ")
+		b.WriteString("\n")
+		b.WriteString(categoryEmoji(slug))
+		b.WriteString(" ")
 		b.WriteString(categoryLabel(slug))
-		b.WriteString(": R$ ")
-		b.WriteString(formatCents(amount))
+		b.WriteString("\n")
+		b.WriteString(formatBRL(amount))
 		b.WriteString(" (")
 		b.WriteString(formatPercent(amount, state.IncomeCents))
 		b.WriteString("%)\n")
 	}
-	b.WriteString("\nEstá tudo certo?")
+	b.WriteString("\nEstá tudo certo? 😊")
 	return b.String()
 }
 
@@ -359,13 +376,21 @@ func categoryLabel(slug string) string {
 	}
 }
 
-func formatCents(cents int64) string {
-	reais := cents / 100
-	centavos := cents % 100
-	if centavos < 0 {
-		centavos = -centavos
+func categoryEmoji(slug string) string {
+	switch slug {
+	case "fixed_cost":
+		return "💰"
+	case "knowledge":
+		return "🎓"
+	case "pleasures":
+		return "🎉"
+	case "goals":
+		return "🎯"
+	case "financial_freedom":
+		return "🏦"
+	default:
+		return "•"
 	}
-	return strconv.FormatInt(reais, 10) + "," + fmt.Sprintf("%02d", centavos)
 }
 
 func retryCue(phase string) string {
@@ -395,18 +420,22 @@ func dailyRedirectCue(phase string) string {
 }
 
 const (
-	summaryCorrectionSystemPrompt = `Você é o MeControla. O usuário está no resumo do onboarding e quer corrigir algum campo.
-Analise a mensagem e retorne o campo a corrigir e o novo valor.
-Campos possíveis: objective (objetivo financeiro), budget (renda/orçamento mensal), cards (cartão: apelido e dia de vencimento), values (distribuição/valores das categorias).
-Se não for uma correção clara, retorne target="none".`
+	summaryIntentSystemPrompt = `Você é o MeControla. O usuário está revisando o resumo do planejamento e foi perguntado "Está tudo certo?".
+Classifique a mensagem:
+- action="confirm" quando concorda que está tudo certo (ex: "sim", "está tudo certo", "tá ok", "perfeito", "pode confirmar", "fechado").
+- action="correct" quando quer mudar um campo: preencha "target" (objective|budget|cards|values) e "new_value".
+- action="cancel" quando quer cancelar ou recomeçar.
+- action="none" quando não estiver claro.
+Campos: objective (objetivo), budget (renda/orçamento), cards (cartão), values (distribuição/valores).`
 
-	summaryCorrectionSchema = `{
+	summaryIntentSchema = `{
   "type": "object",
   "properties": {
-    "target": {"type": "string", "enum": ["objective", "budget", "cards", "values", "none"]},
+    "action": {"type": "string", "enum": ["confirm", "correct", "cancel", "none"]},
+    "target": {"type": "string", "enum": ["objective", "budget", "cards", "values", ""]},
     "new_value": {"type": "string"}
   },
-  "required": ["target", "new_value"],
+  "required": ["action", "target", "new_value"],
   "additionalProperties": false
 }`
 )

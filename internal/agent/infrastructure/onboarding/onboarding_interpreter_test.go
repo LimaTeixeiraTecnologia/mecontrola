@@ -192,6 +192,23 @@ func (s *OnboardingInterpreterSuite) TestParseCards_LLMFirst_AddAnotherOnLoopZer
 	s.True(parsed.AddAnother)
 }
 
+func (s *OnboardingInterpreterSuite) TestParseSummary_LLMFirst_NaturalConfirm() {
+	interp := &onboardingInterpreter{interpreter: &scriptedIntentInterpreter{rawJSON: `{"action":"confirm","target":"","new_value":""}`}, maxTokens: 256}
+	parsed, err := interp.ParseSummary(s.ctx, "está tudo certo")
+	s.NoError(err)
+	s.True(parsed.Confirm)
+	s.False(parsed.Correct)
+}
+
+func (s *OnboardingInterpreterSuite) TestParseSummary_LLMFirst_Correction() {
+	interp := &onboardingInterpreter{interpreter: &scriptedIntentInterpreter{rawJSON: `{"action":"correct","target":"budget","new_value":"6000"}`}, maxTokens: 256}
+	parsed, err := interp.ParseSummary(s.ctx, "na verdade meu orçamento é 6000")
+	s.NoError(err)
+	s.True(parsed.Correct)
+	s.Equal(agentwf.CorrectionTargetBudget, parsed.Target)
+	s.Equal("6000", parsed.NewValue)
+}
+
 func (s *OnboardingInterpreterSuite) TestFormatPercent_OneDecimal() {
 	s.Equal("50", formatPercent(200000, 400000))
 	s.Equal("7,5", formatPercent(30000, 400000))
@@ -200,9 +217,9 @@ func (s *OnboardingInterpreterSuite) TestFormatPercent_OneDecimal() {
 	s.Equal("0", formatPercent(100, 0))
 }
 
-func (s *OnboardingInterpreterSuite) TestSummaryCue_RendersDecimalPercent() {
+func (s *OnboardingInterpreterSuite) TestSummaryCue_MatchesOfficialEtapa7() {
 	cue := summaryCue(agentwf.SummaryState{
-		Objective:   "quitar dívidas",
+		Objective:   "Quitar dívidas",
 		IncomeCents: 400000,
 		Values: map[string]int64{
 			"fixed_cost":        200000,
@@ -214,4 +231,14 @@ func (s *OnboardingInterpreterSuite) TestSummaryCue_RendersDecimalPercent() {
 	})
 	s.Contains(cue, "(50%)")
 	s.Contains(cue, "(7,5%)")
+	s.Contains(cue, "✅ Planejamento criado!")
+	s.Contains(cue, "🎯 Objetivo:\nQuitar dívidas")
+	s.Contains(cue, "💰 Orçamento:\nR$ 4.000")
+	s.Contains(cue, "📊 Distribuição")
+	s.Contains(cue, "💰 Custo Fixo\nR$ 2.000 (50%)")
+	s.Contains(cue, "🎓 Conhecimento\nR$ 300 (7,5%)")
+	s.Contains(cue, "🎉 Prazeres\nR$ 500 (12,5%)")
+	s.Contains(cue, "🎯 Metas\nR$ 700 (17,5%)")
+	s.Contains(cue, "🏦 Liberdade Financeira\nR$ 500 (12,5%)")
+	s.Contains(cue, "Está tudo certo? 😊")
 }
