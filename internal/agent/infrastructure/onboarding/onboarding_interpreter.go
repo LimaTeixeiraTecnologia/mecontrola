@@ -250,20 +250,7 @@ func extractObjectiveText(text string) string {
 }
 
 func (i *onboardingInterpreter) render(ctx context.Context, system, user string) string {
-	resp, err := i.interpreter.Interpret(ctx, interfaces.LLMRequest{
-		SystemPrompt: system,
-		UserMessage:  user,
-		FreeText:     true,
-		MaxTokens:    i.maxTokens,
-	})
-	if err != nil {
-		return user
-	}
-	reply := strings.TrimSpace(string(resp.RawJSON))
-	if reply == "" {
-		return user
-	}
-	return reply
+	return user
 }
 
 func parseMoney(text string) (int64, bool) {

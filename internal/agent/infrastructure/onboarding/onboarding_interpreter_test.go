@@ -125,6 +125,17 @@ func (s *OnboardingInterpreterSuite) TestNewOnboardingInterpreter_DefaultTokens(
 	s.NotNil(interp)
 }
 
+func (s *OnboardingInterpreterSuite) TestRenderBudget_IgnoresFreeTextLLMReplyAndUsesOfficialCue() {
+	interp := &onboardingInterpreter{interpreter: &scriptedIntentInterpreter{rawJSON: "me diga sua renda estimada"}}
+	s.Equal(budgetCue, interp.RenderBudget(s.ctx))
+}
+
+func (s *OnboardingInterpreterSuite) TestRenderCards_IgnoresFreeTextLLMReplyAndUsesOfficialCue() {
+	interp := &onboardingInterpreter{interpreter: &scriptedIntentInterpreter{rawJSON: "me conte sobre seus hábitos de gasto"}}
+	s.Equal(cardsFirstCue, interp.RenderCards(s.ctx, 0))
+	s.Equal(cardsNextCue, interp.RenderCards(s.ctx, 1))
+}
+
 type fakeIntentInterpreter struct{}
 
 func (f *fakeIntentInterpreter) Interpret(_ context.Context, _ interfaces.LLMRequest) (interfaces.LLMResponse, error) {
