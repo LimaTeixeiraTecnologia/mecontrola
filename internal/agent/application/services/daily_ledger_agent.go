@@ -259,10 +259,7 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 
 	if a.budgetRunner.Enabled() {
 		if draft, active := a.budgetRunner.Active(ctx, principal.UserID, channel); active {
-			change := budgetdraft.Change{
-				TotalCents:  parsed.Intent.BudgetTotalCents(),
-				Allocations: parsed.Intent.BudgetAllocations(),
-			}
+			change := a.budgetChange(text, parsed)
 			return toRouteResult(a.budgetRunner.Resume(ctx, principal.UserID, channel, messageID, change, draft))
 		}
 	}
@@ -289,6 +286,22 @@ func (a *DailyLedgerAgent) Handle(ctx context.Context, principal Principal, chan
 		return a.routeFallback(ctx, principal.UserID, channel, kind, text)
 	}
 	return toRouteResult(result)
+}
+
+func (a *DailyLedgerAgent) budgetChange(text string, parsed ParsedIntent) budgetdraft.Change {
+	change := budgetdraft.Change{
+		TotalCents:  parsed.Intent.BudgetTotalCents(),
+		Allocations: parsed.Intent.BudgetAllocations(),
+	}
+	if change.TotalCents > 0 || len(change.Allocations) > 0 {
+		return change
+	}
+	cents, ok := workflow.ParseMoneyCents(text)
+	if !ok || cents <= 0 {
+		return change
+	}
+	change.TotalCents = cents
+	return change
 }
 
 func (a *DailyLedgerAgent) dispatchPlan(ctx context.Context, principal Principal, channel, messageID, text string, parsed ParsedIntent) RouteResult {

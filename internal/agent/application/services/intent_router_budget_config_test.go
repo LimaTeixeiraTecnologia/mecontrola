@@ -257,6 +257,27 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionNonCancelTextStillProcesses(
 	s.Equal(0, s.session.cleared)
 }
 
+func (s *BudgetConfigRouterSuite) TestPendingSessionPlainIncomeTextFallsBackDeterministically() {
+	s.session.found = true
+	s.session.draft = budgetdraft.New("2026-06")
+	partial, err := budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 1350000})
+	require.NoError(s.T(), err)
+	s.convo.result = tools.BudgetConversationResult{Draft: partial, Complete: false, Reply: "Faltam categorias"}
+	s.parser.intent, err = intent.NewUnknown("R$ 13.500,00")
+	require.NoError(s.T(), err)
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
+		Text: "R$ 13.500,00", WhatsAppTo: "+5511999",
+	})
+
+	s.Equal(tools.OutcomeRouted, result.Outcome)
+	s.Equal("Faltam categorias", result.Reply)
+	s.Equal(int64(1350000), s.convo.lastChange.TotalCents)
+	s.Equal(1, s.convo.calls)
+	s.Equal(1, s.session.saved)
+}
+
 func (s *BudgetConfigRouterSuite) TestNoPendingSessionFallsThroughToParser() {
 	s.session.found = false
 	s.parser.intent = intent.NewHowAmIDoing()
