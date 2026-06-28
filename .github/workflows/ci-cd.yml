@@ -213,7 +213,7 @@ jobs:
             ${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.image-digest }}
 
   deploy:
-    name: Deploy to VPS
+    name: Deploy Swarm Stack
     runs-on: [self-hosted, staging]
     timeout-minutes: 20
     needs: [build-image, scan-image, sign-image]
@@ -226,14 +226,15 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - name: Deploy to VPS
+      - name: Deploy to Swarm
         env:
-          LOCAL_DEPLOY: "true"
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.build-image.outputs.image-tag }}
-          GHCR_USER: ${{ secrets.GHCR_USER }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: bash deployment/scripts/deploy.sh "$IMAGE_TAG"
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG"
 
   healthcheck:
     name: Healthcheck

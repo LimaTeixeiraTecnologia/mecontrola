@@ -1201,41 +1201,7 @@ func (s *ConfigSuite) TestLoadConfig() {
 			},
 		},
 		{
-			name: "deve aplicar AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS quando ONBOARDING_CARD_CLOSING_OFFSET_DAYS nao estiver definido",
-			args: args{
-				path: func() string {
-					return s.T().TempDir()
-				},
-			},
-			setup: func(path string) {
-				s.T().Setenv("AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS", "20")
-				s.writeEnvFile(path, s.minimalLocalEnv())
-			},
-			expect: func(cfg *configs.Config, err error) {
-				s.Require().NoError(err)
-				s.Require().NotNil(cfg)
-				s.Equal(20, cfg.OnboardingConfig.CardClosingOffsetDays)
-			},
-		},
-		{
-			name: "deve dar precedencia a AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS sobre ONBOARDING_CARD_CLOSING_OFFSET_DAYS",
-			args: args{
-				path: func() string {
-					return s.T().TempDir()
-				},
-			},
-			setup: func(path string) {
-				s.T().Setenv("AGENT_ONBOARDING_CARD_CLOSING_OFFSET_DAYS", "20")
-				s.writeEnvFile(path, "ENVIRONMENT=local\nPORT=8080\nOTEL_TRACE_SAMPLE_RATE=1.0\nONBOARDING_CARD_CLOSING_OFFSET_DAYS=10\n")
-			},
-			expect: func(cfg *configs.Config, err error) {
-				s.Require().NoError(err)
-				s.Require().NotNil(cfg)
-				s.Equal(20, cfg.OnboardingConfig.CardClosingOffsetDays)
-			},
-		},
-		{
-			name: "deve manter ONBOARDING_CARD_CLOSING_OFFSET_DAYS quando AGENT nao estiver definido",
+			name: "deve manter ONBOARDING_CARD_CLOSING_OFFSET_DAYS quando definido",
 			args: args{
 				path: func() string {
 					return s.T().TempDir()

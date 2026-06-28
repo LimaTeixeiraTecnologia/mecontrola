@@ -1,0 +1,36 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram-mecontrola
+    receivers:
+      - uid: telegram-mecontrola-receiver
+        type: telegram
+        settings:
+          bottoken: ${ALERT_TELEGRAM_BOT_TOKEN}
+          chatid: "${ALERT_TELEGRAM_CHAT_ID}"
+          message: |
+            {{ template "default.message" . }}
+
+policies:
+  - orgId: 1
+    receiver: telegram-mecontrola
+    group_by: ['alertname', 'severity']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: telegram-mecontrola
+        matchers:
+          - severity =~ "critical|warning"
+
+templates:
+  - name: default.message
+    template: |
+      {{ define "default.message" }}
+      {{ range .Alerts }}
+      *{{ .Status }}: {{ .Labels.alertname }}*
+      {{ .Annotations.summary }}
+      {{ .Annotations.description }}
+      {{ end }}
+      {{ end }}

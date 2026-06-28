@@ -135,6 +135,171 @@ groups:
                   evaluator: { type: gt, params: [1] }
 
   - orgId: 1
+    name: infraestrutura
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-disk-usage-high
+        title: Uso de disco alto
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Uso de disco acima de 80% por 5 minutos."
+          description: "Disco da VPS está próximo da saturação. Verifique logs, métricas e traces; considere housekeeping ou expansão de volume."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 - ((node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"} * 100) / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [80] }
+
+      - uid: mc-cpu-usage-high
+        title: Uso de CPU alto
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Uso de CPU acima de 70% por 5 minutos."
+          description: "CPU da VPS sustentada acima do threshold. Avalie se há processo runaway ou se é hora de upgrade de VPS."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [70] }
+
+      - uid: mc-memory-usage-high
+        title: Uso de RAM alto
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Uso de RAM acima de 80% por 5 minutos."
+          description: "RAM da VPS próxima da saturação. Verifique containers com alto consumo e risco de OOM kill."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * (1 - ((node_memory_MemAvailable_bytes or node_memory_MemFree_bytes) / node_memory_MemTotal_bytes))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [80] }
+
+      - uid: mc-wal-lag-high
+        title: WAL lag alto no PostgreSQL
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "WAL lag acima de 15 minutos no PostgreSQL."
+          description: "pgBackRest ou arquivamento de WAL está atrasado. Risco de PITR comprometido; verifique conectividade S3 e processo de archive-push."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'pg_stat_archiver_last_archive_age > 900'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [900] }
+
+      - uid: mc-outbox-queue-high
+        title: Fila de jobs outbox alta
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Fila de jobs outbox acima de 1000 por 5 minutos."
+          description: "Workers não estão acompanhando a produção de eventos. Verifique saúde dos workers, latência de handlers e disponibilidade de banco."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(outbox_pending_jobs)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [1000] }
+
+  - orgId: 1
     name: negocio
     folder: MeControla Alerts
     interval: 5m

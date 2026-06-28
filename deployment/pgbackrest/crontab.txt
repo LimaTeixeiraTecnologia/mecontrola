@@ -1,20 +1,7 @@
-# pgBackRest crontab — instalar com: crontab -u postgres crontab.txt
-# Requer pgbackrest instalado e stanza inicializada:
-#   pgbackrest --stanza=mecontrola stanza-create
-#   pgbackrest --stanza=mecontrola --type=full backup  (primeiro backup manual)
-
-# Full backup — toda domingo 01:00 UTC
-0 1 * * 0 pgbackrest --stanza=mecontrola --type=full backup >> /var/log/pgbackrest/cron.log 2>&1
-
-# Differential backup — seg-sáb 01:00 UTC
-0 1 * * 1-6 pgbackrest --stanza=mecontrola --type=diff backup >> /var/log/pgbackrest/cron.log 2>&1
-
-# Verificar integridade — toda domingo 03:00 UTC (após full)
-0 3 * * 0 pgbackrest --stanza=mecontrola check >> /var/log/pgbackrest/cron.log 2>&1
-
-# Expirar backups antigos — toda domingo 03:30 UTC
-30 3 * * 0 pgbackrest --stanza=mecontrola expire >> /var/log/pgbackrest/cron.log 2>&1
-
-# Atualizar métrica de último backup bem-sucedido (para Prometheus)
-# Requer node_exporter com --collector.textfile.directory=/var/lib/node_exporter/textfile_collector
-*/5 * * * * LAST=$(pgbackrest --stanza=mecontrola info --output=json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['backup'][-1]['timestamp']['stop'])" 2>/dev/null || echo 0); echo "backup_last_success_timestamp_seconds $LAST" > /var/lib/node_exporter/textfile_collector/pgbackrest.prom.tmp && mv /var/lib/node_exporter/textfile_collector/pgbackrest.prom.tmp /var/lib/node_exporter/textfile_collector/pgbackrest.prom
+# pgBackRest backup schedule for mecontrola
+# Full weekly backup (Sunday 05:00 UTC / 02:00 BRT)
+0 5 * * 0 PGBACKREST_S3_KEY=${PGBACKREST_S3_KEY} PGBACKREST_S3_KEY_SECRET=${PGBACKREST_S3_KEY_SECRET} pgbackrest --stanza=mecontrola --type=full backup
+# Differential daily backup (Monday-Saturday 05:00 UTC / 02:00 BRT)
+0 5 * * 1-6 PGBACKREST_S3_KEY=${PGBACKREST_S3_KEY} PGBACKREST_S3_KEY_SECRET=${PGBACKREST_S3_KEY_SECRET} pgbackrest --stanza=mecontrola --type=diff backup
+# Incremental backup every 6 hours
+0 */6 * * * PGBACKREST_S3_KEY=${PGBACKREST_S3_KEY} PGBACKREST_S3_KEY_SECRET=${PGBACKREST_S3_KEY_SECRET} pgbackrest --stanza=mecontrola --type=incr backup

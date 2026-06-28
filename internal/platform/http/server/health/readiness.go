@@ -27,6 +27,14 @@ func (rt *ReadinessRouter) Register(r chi.Router) {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case <-rt.ctx.Done():
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	})
 	r.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})

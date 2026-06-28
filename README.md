@@ -681,6 +681,96 @@ Dependabot atualiza semanalmente (gomod, github-actions, docker). PRs de minor/p
 
 ---
 
+## Docker Swarm
+
+A arquitetura de produção usa Docker Swarm single-node com 2 réplicas de `server` e 2 de `worker`. A stack está em `deployment/compose/compose.swarm.yml`.
+
+### Swarm local (desenvolvimento/teste)
+
+```bash
+# Validar compose.swarm.yml
+task swarm:local:config
+
+# Inicializar Swarm e subir stack local
+task swarm:local:deploy IMAGE_TAG=local
+
+# Ver servicos
+task swarm:local:ps
+
+# Logs
+task swarm:local:logs
+
+# Remover stack local
+task swarm:local:rm
+```
+
+### Deploy Swarm em producao
+
+O fluxo de producao usa imagem publicada no GHCR com tag imutável (SHA curto do commit). O `deploy-swarm.sh` renderiza `compose.swarm.yml` via `deployment/scripts/render-stack.py` para gerar um YAML 100% compatível com `docker stack deploy`, atualiza `IMAGE_TAG` no `.env` remoto e executa migrate + deploy + health checks com rollback automatico.
+
+```bash
+# 1. Sincronizar codigo para a VPS (preserva .env remoto)
+task swarm:prod:sync
+
+# 2. Backup do .env remoto para S3
+task swarm:prod:backup-env
+
+# 3. Criar/atualizar Docker secrets
+task swarm:prod:secrets
+
+# 4. Deploy completo (migrate + stack + health check + rollback automatico)
+task swarm:prod:deploy IMAGE_TAG=<tag>
+
+# 5. Verificar servicos
+task swarm:prod:ps
+task swarm:prod:health
+```
+
+Ou, em um unico comando:
+
+```bash
+IMAGE_TAG=<tag> task swarm:prod:sync swarm:prod:backup-env swarm:prod:secrets swarm:prod:deploy swarm:prod:health
+```
+
+### Rollback
+
+```bash
+task swarm:prod:rollback
+```
+
+### Backup e restore PostgreSQL (pgBackRest)
+
+```bash
+# Verificar configuracao
+task swarm:prod:pgbackrest:check
+
+# Backup full/diff/incr
+task swarm:prod:pgbackrest:backup TYPE=full
+task swarm:prod:pgbackrest:backup TYPE=diff
+task swarm:prod:pgbackrest:backup TYPE=incr
+
+# Listar backups
+task swarm:prod:pgbackrest:info
+```
+
+Para restore PITR e recuperacao completa da VPS, siga os runbooks:
+- `deployment/runbooks/restore-pitr.md`
+- `deployment/runbooks/restore-vps.md`
+
+### Alertas e observabilidade
+
+```bash
+# Configurar alertas do Grafana e disparar teste no Telegram
+task swarm:prod:alert:test
+```
+
+Retencao configurada:
+- Logs (Loki): 7 dias
+- Traces (Tempo): 7 dias
+- Métricas (Prometheus): 15 dias
+
+---
+
 ## Deploy da máquina local direto na VPS (`deploy-local.sh`)
 
 Deploy de um único comando, **da sua máquina direto para a VPS, sem depender do GHCR nem da CI/CD**. Use quando a pipeline estiver indisponível ou quando precisar subir uma correção rápida gerando tudo localmente.
@@ -690,9 +780,10 @@ O script `deployment/scripts/deploy-local.sh` faz, em sequência:
 1. **Build** da imagem `linux/amd64` localmente (arquitetura da VPS — a imagem não precisa casar com o Mac/arm64).
 2. **Transferência** da imagem para a VPS via `docker save | ssh docker load` (sem `docker push`/GHCR).
 3. **Sync** do repositório no host (`git pull --ff-only`, best-effort) + captura da imagem anterior para rollback.
-4. **Migrations** (`compose run --rm migrate`) — aplicadas **antes** do app subir.
-5. **server + worker** recriados com a nova tag + **healthcheck** com **rollback automático** para a imagem anterior se falhar.
-6. **Alinhamento** do `IMAGE_TAG` no `.env` da VPS + **verificação pós-deploy** (`schema_migrations`, imagens em execução, HEAD do host).
+4. **Migrations** (`docker run --rm migrate`) — aplicadas **antes** do app subir.
+5. **Renderização** de `compose.swarm.yml` via `deployment/scripts/render-stack.py` para YAML compatível com `docker stack deploy`.
+6. **server + worker** recriados com a nova tag + **healthcheck** com **rollback automático** para a imagem anterior se falhar.
+7. **Alinhamento** do `IMAGE_TAG` no `.env` da VPS + **verificação pós-deploy** (`schema_migrations`, imagens em execução, HEAD do host).
 
 ### Pré-requisitos
 

@@ -1,27 +1,71 @@
 {
 	email {$CADDY_EMAIL}
+	admin off
 }
 
-{$APP_DOMAIN} {
-	# Block admin/debug/metrics endpoints from external access (RF-07)
+(mecontrola-headers) {
+	header -Server
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	header X-Content-Type-Options "nosniff"
+	header X-Frame-Options "DENY"
+	header Referrer-Policy "strict-origin-when-cross-origin"
+	header Permissions-Policy "geolocation=(), microphone=(), camera=()"
+	header Content-Security-Policy "default-src 'none'; connect-src 'self'; frame-ancestors 'none'"
+}
+
+(rate-limit) {
+	rate_limit {
+		zone ip {
+			key {remote_host}
+			events 100
+			window 1s
+		}
+		burst 200
+		bad_request_code 429
+	}
+}
+
+:80 {
+	import mecontrola-headers
+	import rate-limit
+
 	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
 	respond @admin 404
 
-	reverse_proxy server:{$PORT:-8080} {
-		# Strip gateway/internal headers injected externally (RF-08)
-		header_up -X-User-ID
-		header_up -X-Gateway-Auth
-		header_up -X-Gateway-Timestamp
+	reverse_proxy server-1:8080 server-2:8080 {
+		lb_policy round_robin
+		health_uri /healthz
+		health_interval 10s
+		health_timeout 5s
+		health_status 200
+		fail_duration 30s
+		max_fails 3
 	}
 
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "no-referrer"
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		X-Frame-Options "DENY"
-		Content-Security-Policy "default-src 'none'; connect-src 'self'; frame-ancestors 'none'"
-		-Server
+	encode gzip zstd
+
+	log {
+		output stderr
+		format json
+		level INFO
+	}
+}
+
+{$APP_DOMAIN}:443 {
+	import mecontrola-headers
+	import rate-limit
+
+	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
+	respond @admin 404
+
+	reverse_proxy server-1:8080 server-2:8080 {
+		lb_policy round_robin
+		health_uri /healthz
+		health_interval 10s
+		health_timeout 5s
+		health_status 200
+		fail_duration 30s
+		max_fails 3
 	}
 
 	encode gzip zstd

@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,22 @@ func NewDown() *cobra.Command {
 	return cmd
 }
 
+const migrationAdvisoryLockID int64 = 424242
+
+func acquireMigrationLock(ctx context.Context, db *sql.DB) (func(), error) {
+	var acquired bool
+	err := db.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", migrationAdvisoryLockID).Scan(&acquired)
+	if err != nil {
+		return nil, fmt.Errorf("advisory lock query: %w", err)
+	}
+	if !acquired {
+		return nil, fmt.Errorf("outro processo de migrate esta em execucao")
+	}
+	return func() {
+		_, _ = db.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrationAdvisoryLockID)
+	}, nil
+}
+
 func Run(writer io.Writer) (retErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -62,6 +79,12 @@ func Run(writer io.Writer) (retErr error) {
 	defer func() {
 		retErr = errors.Join(retErr, rt.shutdown(shutdownCtx))
 	}()
+
+	unlock, err := acquireMigrationLock(ctx, rt.dbManager.DB())
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	defer unlock()
 
 	migrator, err := rt.newMigrator()
 	if err != nil {
@@ -105,6 +128,12 @@ func RunDown(writer io.Writer, steps int) (retErr error) {
 	defer func() {
 		retErr = errors.Join(retErr, rt.shutdown(shutdownCtx))
 	}()
+
+	unlock, err := acquireMigrationLock(ctx, rt.dbManager.DB())
+	if err != nil {
+		return fmt.Errorf("migrate-down: %w", err)
+	}
+	defer unlock()
 
 	migrator, err := rt.newMigrator()
 	if err != nil {

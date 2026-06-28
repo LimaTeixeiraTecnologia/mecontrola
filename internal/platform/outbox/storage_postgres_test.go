@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -249,4 +250,21 @@ func (s *StoragePostgresSuite) TestStorageMutations() {
 			scenario.expect(result, err)
 		})
 	}
+}
+
+func (s *StoragePostgresSuite) TestCountPending() {
+	db, mockDB, err := sqlmock.New()
+	s.Require().NoError(err)
+	defer func() { _ = db.Close() }()
+
+	mockDB.ExpectQuery("SELECT COUNT\\(\\*\\)").
+		WithArgs(int(outbox.StatusPending)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(42))
+
+	storage := outbox.NewPostgresStorage(db)
+	count, err := storage.CountPending(context.Background())
+
+	s.NoError(err)
+	s.NoError(mockDB.ExpectationsWereMet())
+	s.Equal(int64(42), count)
 }
