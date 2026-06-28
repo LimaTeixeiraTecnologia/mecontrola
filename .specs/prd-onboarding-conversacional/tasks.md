@@ -1,5 +1,5 @@
 <!-- spec-hash-prd: cdca23b5b8c2a440473e9d0ed3ab4ea609af53edfd522c70aa6b0cb2dfa6b5b7 -->
-<!-- spec-hash-techspec: fcf917320f1c826920334524ab37aa10b4642d6e7616cd17363ef58adeba933a -->
+<!-- spec-hash-techspec: 07b0d68b06bf0ca013414ea4fa2edd60584ebc05579e5191641b972736745c05 -->
 # Resumo das Tarefas de Implementação para Onboarding Conversacional
 
 ## Metadados
@@ -12,15 +12,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Domínio puro e tipos fechados (DMMF state-as-type) | pending | — | — | — |
-| 2.0 | Use cases e eventos do internal/onboarding | pending | 1.0 | — | — |
-| 3.0 | Módulo card — vencimento + fechamento derivado | pending | 1.0, 2.0 | Com 4.0 | — |
-| 4.0 | Steps ETAPAS 1–6 e OnboardingWorkflow no kernel | pending | 1.0, 2.0 | Com 3.0 | mastra |
-| 5.0 | ETAPA 7 (Resumo + gate HITL) e ETAPA 8 (Conclusão) | pending | 4.0 | — | mastra |
-| 6.0 | Wiring OnboardingAgent e remoção do legado | pending | 4.0, 5.0 | — | mastra |
-| 7.0 | Working memory e limpeza de turns | pending | 2.0, 6.0 | Com 8.0 | mastra |
-| 8.0 | Observabilidade e job de abandono | pending | 6.0 | Com 7.0 | — |
-| 9.0 | Testes de integração e E2E | pending | 3.0, 5.0, 6.0, 7.0, 8.0 | — | mastra |
+| 1.0 | Domínio puro e tipos fechados (DMMF state-as-type) | done | — | — | — |
+| 2.0 | Use cases e eventos do internal/onboarding | done | 1.0 | — | — |
+| 3.0 | Módulo card — vencimento + fechamento derivado | done | 1.0, 2.0 | Com 4.0 | — |
+| 4.0 | Steps ETAPAS 1–6 e OnboardingWorkflow no kernel | done | 1.0, 2.0 | Com 3.0 | mastra |
+| 5.0 | ETAPA 7 (Resumo + gate HITL) e ETAPA 8 (Conclusão) | done | 4.0 | — | mastra |
+| 6.0 | Wiring OnboardingAgent e remoção do legado | done | 4.0, 5.0 | — | mastra |
+| 7.0 | Working memory e limpeza de turns | done | 2.0, 6.0 | Com 8.0 | mastra |
+| 8.0 | Observabilidade e job de abandono | done | 6.0 | Com 7.0 | — |
+| 9.0 | Testes de integração e E2E | done | 3.0, 5.0, 6.0, 7.0, 8.0 | — | mastra |
 
 ## Dependências Críticas
 - **1.0** é fundação (domínio puro, tipos fechados, `Decide*`, `DeriveClosingDay`) e desbloqueia 2.0 e 4.0.

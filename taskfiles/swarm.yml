@@ -1,0 +1,142 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+# Operacoes Docker Swarm single-node para dev local e producao.
+# Comandos de producao leem credenciais de .env e usam ssh-agent para acesso a VPS.
+
+vars:
+  COMPOSE_SWARM: deployment/compose/compose.swarm.yml
+  STACK_NAME: '{{.STACK_NAME | default "mecontrola"}}'
+
+  VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+  VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+  VPS_DEPLOY_PATH: '{{.VPS_DEPLOY_PATH | default (env "VPS_DEPLOY_PATH") | default "/opt/mecontrola"}}'
+
+tasks:
+  local:config:
+    desc: Valida o compose.swarm.yml localmente com variaveis dummy.
+    cmds:
+      - IMAGE_TAG=local DB_PASSWORD=dummy OTEL_LGTM_ADMIN_PASSWORD=dummy PGBACKREST_REPO1_CIPHER_PASS=dummy docker stack config -c {{.COMPOSE_SWARM}} >/dev/null
+      - echo "compose.swarm.yml valido"
+
+  local:init:
+    desc: Inicializa Docker Swarm no host local (idempotente).
+    cmds:
+      - docker swarm init 2>/dev/null || echo "Swarm ja inicializado ou ja participa de um swarm"
+
+  local:deploy:
+    desc: Faz deploy local da stack Swarm (use IMAGE_TAG=local ou tag real).
+    deps: [local:init]
+    cmds:
+      - IMAGE_TAG={{.IMAGE_TAG | default "local"}} docker stack deploy -c {{.COMPOSE_SWARM}} {{.STACK_NAME}}
+      - echo "Stack local {{.STACK_NAME}} deployada. Aguarde os servicos iniciarem."
+
+  local:ps:
+    desc: Lista servicos da stack Swarm local.
+    cmds:
+      - docker service ls --filter name={{.STACK_NAME}}_
+
+  local:logs:
+    desc: Exibe logs dos servicos Swarm local (Ctrl+C para sair).
+    cmds:
+      - docker service logs -f {{.STACK_NAME}}_server-1 {{.STACK_NAME}}_server-2 {{.STACK_NAME}}_worker-1 {{.STACK_NAME}}_worker-2
+
+  local:rm:
+    desc: Remove a stack Swarm local.
+    prompt: Isso derruba a stack local. Continuar?
+    cmds:
+      - docker stack rm {{.STACK_NAME}}
+
+  prod:sync:
+    desc: Sincroniza codigo local para a VPS de producao (preserva .env).
+    cmds:
+      - |
+        rsync -avz --delete \
+          --exclude='.git' \
+          --exclude='.env' \
+          --exclude='bin' \
+          --exclude='coverage' \
+          --exclude='tmp' \
+          --exclude='*.bak*' \
+          --exclude='.specs' \
+          ./ {{.VPS_USER}}@{{.VPS_HOST}}:{{.VPS_DEPLOY_PATH}}/
+      - echo "Codigo sincronizado para {{.VPS_USER}}@{{.VPS_HOST}}:{{.VPS_DEPLOY_PATH}}"
+
+  prod:backup-env:
+    desc: Faz backup do .env da VPS para o S3.
+    cmds:
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && bash deployment/scripts/backup-env-s3.sh .env"
+
+  prod:secrets:
+    desc: Cria/atualiza Docker secrets na VPS a partir do .env.
+    cmds:
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && bash deployment/scripts/create-secrets.sh .env"
+
+  prod:migrate:
+    desc: Executa migrations na VPS (advisory lock protege concorrencia).
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
+          docker run --rm --env-file .env --network mecontrola_backend \
+            -e DB_HOST=postgres \
+            -e DB_PORT=5432 \
+            -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 \
+            -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
+            -e OTEL_EXPORTER_OTLP_INSECURE=true \
+            ghcr.io/limateixeiratecnologia/mecontrola:{{.IMAGE_TAG | default \"latest\"}} \
+            migrate"
+
+  prod:deploy:
+    desc: Deploy Swarm na VPS de producao (sobrescreva IMAGE_TAG com tag real).
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
+          IMAGE_TAG={{.IMAGE_TAG | default \"latest\"}} bash deployment/scripts/deploy-swarm.sh {{.IMAGE_TAG | default \"latest\"}}"
+
+  prod:rollback:
+    desc: Rollback manual para tag anterior na VPS (executa deploy-swarm.sh com rollback).
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
+          bash deployment/scripts/deploy-swarm.sh --rollback"
+
+  prod:ps:
+    desc: Lista servicos da stack Swarm na VPS.
+    cmds:
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker service ls --filter name=mecontrola_"
+
+  prod:health:
+    desc: Verifica health checks dos servicos na VPS.
+    cmds:
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker ps --filter health=healthy --filter name=mecontrola"
+
+  prod:pgbackrest:backup:
+    desc: Executa backup pgBackRest do tipo especificado (full|diff|incr) na VPS.
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
+          su - postgres -c 'pgbackrest --stanza=mecontrola --type={{.TYPE | default \"full\"}} backup'"
+
+  prod:pgbackrest:info:
+    desc: Exibe informacoes dos backups pgBackRest na VPS.
+    cmds:
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
+          su - postgres -c 'pgbackrest --stanza=mecontrola info'"
+
+  prod:pgbackrest:check:
+    desc: Verifica configuracao do pgBackRest na VPS.
+    cmds:
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
+          su - postgres -c 'pgbackrest --stanza=mecontrola check'"
+
+  prod:alert:test:
+    desc: Dispara alerta de teste no Telegram via Bot API (valida credenciais e entrega).
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
+          bash deployment/scripts/setup-grafana-alerts.sh .env && \
+          BOT_TOKEN=\$(grep '^ALERT_TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2) && \
+          CHAT_ID=\$(grep '^ALERT_TELEGRAM_CHAT_ID=' .env | cut -d= -f2) && \
+          curl -s -X POST \"https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\" \
+            -d \"chat_id=\${CHAT_ID}\" \
+            -d \"text=Teste de alerta MeControla - \$(date -u +%Y-%m-%dT%H:%M:%SZ)\""

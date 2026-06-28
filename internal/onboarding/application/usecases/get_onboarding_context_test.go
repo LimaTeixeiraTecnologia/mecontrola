@@ -15,6 +15,7 @@ import (
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type GetOnboardingContextSuite struct {
@@ -41,8 +42,9 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 		IncomeCents:     500000,
 		Objective:       "quitar dividas",
 		FirstTxRecorded: true,
+		Phase:           valueobjects.PhaseBudget,
 		Cards: []entities.OnboardingCardDraft{
-			{Name: "nubank", ClosingDay: 17},
+			{Name: "nubank", ClosingDay: 17, DueDay: 20},
 		},
 		CustomSplit: []entities.OnboardingBudgetAllocationEntry{
 			{Kind: "fixed_cost", BasisPoints: 4000},
@@ -67,9 +69,11 @@ func (s *GetOnboardingContextSuite) TestFoundMapsAllFields() {
 	require.Equal(s.T(), int64(500000), result.IncomeCents)
 	require.Equal(s.T(), "quitar dividas", result.Objective)
 	require.True(s.T(), result.FirstTxRecorded)
+	require.Equal(s.T(), valueobjects.PhaseBudget, result.Phase)
 	require.Len(s.T(), result.Cards, 1)
 	require.Equal(s.T(), "nubank", result.Cards[0].Name)
 	require.Equal(s.T(), 17, result.Cards[0].ClosingDay)
+	require.Equal(s.T(), 20, result.Cards[0].DueDay)
 	require.Len(s.T(), result.CustomSplit, 5)
 	require.Equal(s.T(), "fixed_cost", result.CustomSplit[0].Kind)
 	require.Equal(s.T(), 4000, result.CustomSplit[0].BasisPoints)

@@ -157,6 +157,9 @@ func (s *routerTestStore) AppendStep(_ context.Context, _ platform.StepRecord) e
 func (s *routerTestStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (int64, error) {
 	return 0, nil
 }
+func (s *routerTestStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]platform.Snapshot, error) {
+	return nil, nil
+}
 
 func newMinimalKernel() *services.KernelDeps {
 	obs := fake.NewProvider()

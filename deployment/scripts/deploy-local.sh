@@ -68,63 +68,87 @@ docker save "$IMAGE_REF" | gzip -1 | ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOS
 remote "docker image inspect ${IMAGE_REF} --format 'imagem na VPS: {{.Architecture}}'" \
   || die "imagem ${IMAGE_REF} não carregou na VPS"
 
-log "3/5 migrate + 4/5 server/worker + healthcheck (no host)"
+log "3/5 deploy Swarm no host"
 ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
-  bash -s -- "$IMAGE_TAG" "$VPS_DEPLOY_PATH" "$HEALTH_RETRIES" "$HEALTH_INTERVAL" <<'REMOTE'
-set -uo pipefail
-TAG="$1"; DP="$2"; RETRIES="$3"; INTERVAL="$4"
-CF="-f $DP/deployment/compose/compose.yml -f $DP/deployment/compose/compose.prod.yml"
-CE="--env-file $DP/.env"
-dc() { IMAGE_TAG="$TAG" docker compose $CE $CF "$@"; }
+  STACK=mecontrola IMAGE_NAME="$IMAGE_NAME" IMAGE_TAG="$IMAGE_TAG" \
+  VPS_HOST=localhost VPS_USER="$(whoami)" VPS_DEPLOY_PATH="$VPS_DEPLOY_PATH" \
+  HEALTH_RETRIES="$HEALTH_RETRIES" HEALTH_INTERVAL="$HEALTH_INTERVAL" \
+  bash -s -- <<'REMOTE'
+set -euo pipefail
+DP="${VPS_DEPLOY_PATH}"
+TAG="${IMAGE_TAG}"
+STACK="${STACK:-mecontrola}"
 
-PREV=$(docker inspect mecontrola-server-1 --format '{{.Config.Image}}' 2>/dev/null | sed 's/.*://' || echo '')
-echo "[vps] rollback target: ${PREV:-<nenhuma>}"
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
-git config --global --add safe.directory "$DP" 2>/dev/null || true
-( cd "$DP" && git pull --ff-only ) || echo "[vps] AVISO: git pull falhou — seguindo (binário e migrations vêm da imagem)"
-
-echo "[vps] pre-check migration 000020"
-( cd "$DP" && bash scripts/migrations/pre-deploy-000020.sh ) || { echo "[vps] ERRO: pre-check da migration 000020 falhou — abortando"; exit 1; }
-
-echo "[vps] migrate"
-# </dev/null é obrigatório: este script chega via stdin (bash -s). `compose run` anexa o
-# stdin do chamador e consumiria o resto do heredoc (pulando up/healthcheck em silêncio).
-# Redirecionar de /dev/null isola o stdin do migrate e preserva o heredoc para o bash.
-( cd "$DP" && dc run --rm --no-deps -T migrate </dev/null ) || { echo "[vps] ERRO: migrations falharam — abortando (containers intactos)"; exit 1; }
-
-echo "[vps] up server worker"
-( cd "$DP" && dc up -d --no-deps server worker ) || { echo "[vps] ERRO: up server/worker falhou"; exit 1; }
-
-ok=false
-for i in $(seq 1 "$RETRIES"); do
-  H=$(docker inspect --format='{{.State.Health.Status}}' mecontrola-server-1 2>/dev/null || echo unknown)
-  W=$(docker inspect --format='{{.State.Health.Status}}' mecontrola-worker-1 2>/dev/null || echo unknown)
-  if [ "$H" = healthy ] && [ "$W" = healthy ]; then ok=true; echo "[vps] healthy após $((i * INTERVAL))s"; break; fi
-  echo "[vps] aguardando ($i/$RETRIES) server=$H worker=$W"; sleep "$INTERVAL"
-done
-
-if [ "$ok" != true ]; then
-  echo "[vps] healthcheck FALHOU — iniciando rollback"
-  if [ -n "$PREV" ] && [ "$PREV" != "$TAG" ]; then
-    ( cd "$DP" && IMAGE_TAG="$PREV" docker compose $CE $CF up -d --no-deps server worker ) || true
-    echo "[vps] rollback para $PREV concluído"
-  else
-    echo "[vps] sem imagem anterior para rollback — containers permanecem em $TAG"
-  fi
+SWARM_STATE=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo unknown)
+if [ "$SWARM_STATE" != "active" ]; then
+  echo "[vps] ERRO: Docker Swarm não está ativo (estado: $SWARM_STATE)"
   exit 1
 fi
 
-echo "[vps] alinhando IMAGE_TAG no .env (evita rollback silencioso em compose up sem shell var)"
+git config --global --add safe.directory "$DP" 2>/dev/null || true
+( cd "$DP" && git pull --ff-only ) || { echo "[vps] ERRO: git pull falhou"; exit 1; }
+
+chmod 600 "$DP/.env"
+
+echo "[vps] criando/atualizando Docker secrets"
+( cd "$DP" && bash deployment/scripts/create-secrets.sh "$DP/.env" )
+
+if grep -qE '^AWS_ACCESS_KEY_ID=[^[:space:]]' "$DP/.env" && grep -qE '^AWS_SECRET_ACCESS_KEY=[^[:space:]]' "$DP/.env"; then
+  echo "[vps] backup do .env para S3"
+  ( cd "$DP" && bash deployment/scripts/backup-env-s3.sh "$DP/.env" )
+fi
+
+echo "[vps] migrate via docker run --rm"
+docker run --rm \
+  --network "${STACK}_backend" \
+  --env-file "$DP/.env" \
+  -e ENVIRONMENT=production \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 \
+  -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
+  -e OTEL_EXPORTER_OTLP_INSECURE=true \
+  --name "${STACK}-migrate-${TAG}" \
+  "${IMAGE_NAME}:${TAG}" \
+  migrate || { echo "[vps] ERRO: migrations falharam — abortando"; exit 1; }
+
+echo "[vps] renderizando stack Swarm"
+( cd "$DP" && python3 deployment/scripts/render-stack.py "$DP/.env" deployment/compose/compose.swarm.yml > "/tmp/${STACK}-stack-rendered.yml" )
+
+echo "[vps] docker stack deploy"
+docker stack deploy -c "/tmp/${STACK}-stack-rendered.yml" "$STACK"
+
+echo "[vps] aguardando health checks"
+ok=false
+for i in $(seq 1 "${HEALTH_RETRIES}"); do
+  s1=$(docker ps --filter name="${STACK}_server-1" --filter health=healthy --format '{{.Names}}' | head -n1 || true)
+  s2=$(docker ps --filter name="${STACK}_server-2" --filter health=healthy --format '{{.Names}}' | head -n1 || true)
+  w1=$(docker ps --filter name="${STACK}_worker-1" --filter health=healthy --format '{{.Names}}' | head -n1 || true)
+  w2=$(docker ps --filter name="${STACK}_worker-2" --filter health=healthy --format '{{.Names}}' | head -n1 || true)
+  if [ -n "$s1" ] && [ -n "$s2" ] && [ -n "$w1" ] && [ -n "$w2" ]; then
+    ok=true
+    echo "[vps] todos os services saudáveis após $((i * HEALTH_INTERVAL))s"
+    break
+  fi
+  echo "[vps] aguardando ($i/${HEALTH_RETRIES}) s1=${s1:--} s2=${s2:--} w1=${w1:--} w2=${w2:--}"
+  sleep "${HEALTH_INTERVAL}"
+done
+
+if [ "$ok" != true ]; then
+  echo "[vps] healthcheck FALHOU — consulte logs e execute rollback manual conforme deployment/runbooks/rollback.md"
+  exit 1
+fi
+
+echo "[vps] alinhando IMAGE_TAG no .env"
 if grep -q '^IMAGE_TAG=' "$DP/.env"; then
   sed -i.bak-deploylocal "s/^IMAGE_TAG=.*/IMAGE_TAG=$TAG/" "$DP/.env"
 fi
 
 echo "[vps] === verificação pós-deploy ==="
-PU=$(docker exec mecontrola-postgres-1 printenv POSTGRES_USER)
-PD=$(docker exec mecontrola-postgres-1 printenv POSTGRES_DB)
-echo -n "[vps] schema_migrations (version dirty): "
-docker exec mecontrola-postgres-1 psql -U "$PU" -d "$PD" -tAc 'SELECT version, dirty FROM schema_migrations;'
-docker ps --format '[vps] {{.Names}} {{.Image}} {{.Status}}' | grep -E 'server|worker'
+docker stack ps "$STACK" --format '[vps] {{.Name}} {{.CurrentState}}' | grep -E 'server-|worker-'
+docker service ls --format '[vps] {{.Name}} {{.Replicas}}' | grep -E "${STACK}_(server|worker)"
 echo -n "[vps] HEAD host: "; git -C "$DP" rev-parse --short HEAD
 docker image prune -f --filter 'until=72h' >/dev/null 2>&1 || true
 echo "[vps] OK"

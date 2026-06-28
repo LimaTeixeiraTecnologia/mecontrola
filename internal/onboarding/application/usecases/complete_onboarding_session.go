@@ -15,11 +15,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 )
-
-var ErrOnboardingFirstTransactionRequired = errors.New("onboarding: first transaction required before completion")
 
 type CompleteOnboardingSessionInput struct {
 	UserID uuid.UUID
@@ -69,8 +68,8 @@ func (uc *CompleteOnboardingSession) Execute(ctx context.Context, in CompleteOnb
 		if session.IsActive() {
 			return CompleteOnboardingSessionResult{AlreadyActive: true}, nil
 		}
-		if !session.HasFirstTransaction() {
-			return CompleteOnboardingSessionResult{}, ErrOnboardingFirstTransactionRequired
+		if !session.IsReadyToComplete() {
+			return CompleteOnboardingSessionResult{}, fmt.Errorf("onboarding: complete session: %w", application.ErrOnboardingNotReadyToComplete)
 		}
 
 		now := time.Now().UTC()

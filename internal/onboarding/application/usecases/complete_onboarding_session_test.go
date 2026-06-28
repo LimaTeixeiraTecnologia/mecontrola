@@ -13,9 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 )
 
@@ -54,7 +56,7 @@ func (s *CompleteOnboardingSessionSuite) TestActiveSessionAlreadyActive() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		entities.OnboardingSessionPayload{FirstTxRecorded: true, CompletedAt: &completedAt},
+		entities.OnboardingSessionPayload{CompletedAt: &completedAt},
 		time.Now().UTC(),
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
@@ -67,27 +69,23 @@ func (s *CompleteOnboardingSessionSuite) TestActiveSessionAlreadyActive() {
 	s.publisher.AssertNotCalled(s.T(), "Publish", mock.Anything, mock.Anything)
 }
 
-func (s *CompleteOnboardingSessionSuite) TestMissingFirstTransactionRejected() {
+func (s *CompleteOnboardingSessionSuite) TestNotReadyToComplete_RejectsIncompleteSession() {
 	session := entities.HydrateOnboardingSession(
 		s.userID,
 		entities.OnboardingChannelWhatsApp,
-		entities.OnboardingSessionPayload{FirstTxRecorded: false},
+		entities.OnboardingSessionPayload{},
 		time.Now().UTC(),
 	)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 
 	_, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
-	require.ErrorIs(s.T(), err, ErrOnboardingFirstTransactionRequired)
+	require.ErrorIs(s.T(), err, application.ErrOnboardingNotReadyToComplete)
 	s.sessionRepo.AssertNotCalled(s.T(), "Upsert", mock.Anything, mock.Anything)
+	s.publisher.AssertNotCalled(s.T(), "Publish", mock.Anything, mock.Anything)
 }
 
-func (s *CompleteOnboardingSessionSuite) TestHappyPath() {
-	session := entities.HydrateOnboardingSession(
-		s.userID,
-		entities.OnboardingChannelWhatsApp,
-		entities.OnboardingSessionPayload{FirstTxRecorded: true},
-		time.Now().UTC(),
-	)
+func (s *CompleteOnboardingSessionSuite) TestHappyPath_WithoutFirstTransaction() {
+	session := newReadyToCompleteSession(s.userID)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
 		return sess.IsActive()
@@ -109,12 +107,7 @@ func (s *CompleteOnboardingSessionSuite) TestSessionNotFound() {
 }
 
 func (s *CompleteOnboardingSessionSuite) TestUpsertFailure() {
-	session := entities.HydrateOnboardingSession(
-		s.userID,
-		entities.OnboardingChannelWhatsApp,
-		entities.OnboardingSessionPayload{FirstTxRecorded: true},
-		time.Now().UTC(),
-	)
+	session := newReadyToCompleteSession(s.userID)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.Anything).Return(errors.New("db error")).Once()
 
@@ -124,12 +117,7 @@ func (s *CompleteOnboardingSessionSuite) TestUpsertFailure() {
 }
 
 func (s *CompleteOnboardingSessionSuite) TestPublishFailure() {
-	session := entities.HydrateOnboardingSession(
-		s.userID,
-		entities.OnboardingChannelWhatsApp,
-		entities.OnboardingSessionPayload{FirstTxRecorded: true},
-		time.Now().UTC(),
-	)
+	session := newReadyToCompleteSession(s.userID)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.Anything).Return(nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("publish error")).Once()
@@ -140,16 +128,9 @@ func (s *CompleteOnboardingSessionSuite) TestPublishFailure() {
 
 func (s *CompleteOnboardingSessionSuite) TestHappyPath_CompletedAtSetAndTurnsCleared() {
 	now := time.Now().UTC()
-	turns := []entities.OnboardingTurn{
-		{Role: "user", Text: "msg1", OccurredAt: now},
-		{Role: "assistant", Text: "reply1", OccurredAt: now},
-	}
-	session := entities.HydrateOnboardingSession(
-		s.userID,
-		entities.OnboardingChannelWhatsApp,
-		entities.OnboardingSessionPayload{FirstTxRecorded: true, RecentTurns: turns},
-		now,
-	)
+	session := newReadyToCompleteSession(s.userID).
+		WithAppendedTurn("user", "msg1", now).
+		WithAppendedTurn("assistant", "reply1", now)
 	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(session, nil).Once()
 	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
 		p := sess.Payload()
@@ -162,4 +143,22 @@ func (s *CompleteOnboardingSessionSuite) TestHappyPath_CompletedAtSetAndTurnsCle
 	result, err := s.uc.Execute(context.Background(), CompleteOnboardingSessionInput{UserID: s.userID})
 	require.NoError(s.T(), err)
 	require.True(s.T(), result.Completed)
+}
+
+func newReadyToCompleteSession(userID uuid.UUID) entities.OnboardingSession {
+	objective, _ := valueobjects.NewFinancialObjective("quitar dívidas")
+	income, _ := valueobjects.NewMonthlyIncome(500000)
+	allocation, _ := valueobjects.NewBudgetAllocationFromAmounts([]valueobjects.CategoryAmount{
+		{Kind: valueobjects.CategoryKindFixedCost, AmountCents: 200000},
+		{Kind: valueobjects.CategoryKindKnowledge, AmountCents: 50000},
+		{Kind: valueobjects.CategoryKindPleasures, AmountCents: 75000},
+		{Kind: valueobjects.CategoryKindGoals, AmountCents: 100000},
+		{Kind: valueobjects.CategoryKindFinancialFreedom, AmountCents: 75000},
+	}, 500000)
+	now := time.Now().UTC()
+	session, _ := entities.NewOnboardingSession(userID, entities.OnboardingChannelWhatsApp, now)
+	return session.
+		WithObjective(objective, now).
+		WithIncome(income, now).
+		WithCustomSplit(allocation, now)
 }

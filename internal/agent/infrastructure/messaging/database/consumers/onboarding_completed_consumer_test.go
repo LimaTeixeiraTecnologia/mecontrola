@@ -5,45 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	agentinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
-	agententities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
-	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
 	platformevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
-type stubContextReader struct {
-	result onbusecases.GetOnboardingContextResult
-	err    error
+type stubOnboardingCompletedUseCase struct {
+	calls []usecases.ConsolidateOnboardingWorkingMemoryInput
+	err   error
 }
 
-func (r *stubContextReader) Execute(_ context.Context, _ onbusecases.GetOnboardingContextInput) (onbusecases.GetOnboardingContextResult, error) {
-	return r.result, r.err
+func (s *stubOnboardingCompletedUseCase) Execute(_ context.Context, in usecases.ConsolidateOnboardingWorkingMemoryInput) error {
+	s.calls = append(s.calls, in)
+	return s.err
 }
-
-type stubWMRepo struct {
-	getResult agententities.WorkingMemory
-	getFound  bool
-	getErr    error
-	upsertErr error
-	upserted  *agententities.WorkingMemory
-}
-
-func (r *stubWMRepo) Get(_ context.Context, _ uuid.UUID) (agententities.WorkingMemory, bool, error) {
-	return r.getResult, r.getFound, r.getErr
-}
-
-func (r *stubWMRepo) Upsert(_ context.Context, wm agententities.WorkingMemory) error {
-	r.upserted = &wm
-	return r.upsertErr
-}
-
-var _ agentinterfaces.WorkingMemoryRepository = (*stubWMRepo)(nil)
 
 type OnboardingCompletedConsumerSuite struct {
 	suite.Suite
@@ -58,151 +39,78 @@ func (s *OnboardingCompletedConsumerSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
-func (s *OnboardingCompletedConsumerSuite) buildEvent(userID string) platformevents.Event {
+func (s *OnboardingCompletedConsumerSuite) buildEvent(userID, eventID string, occurredAt time.Time) platformevents.Event {
 	raw, _ := json.Marshal(onboardingCompletedPayload{UserID: userID})
-	return &stubEvent{payload: outbox.Envelope{Payload: raw}}
+	return &stubEvent{payload: outbox.Envelope{
+		ID:         eventID,
+		EventType:  "onboarding.completed",
+		OccurredAt: occurredAt,
+		Payload:    raw,
+	}}
 }
 
-func (s *OnboardingCompletedConsumerSuite) TestHandle_ValidPayload_UpsertsCalled() {
-	type dependencies struct {
-		reader *stubContextReader
-		wmRepo *stubWMRepo
-	}
-	type args struct {
-		userID string
-	}
+func (s *OnboardingCompletedConsumerSuite) TestHandle_ValidPayload_DelegatesToUseCase() {
+	uc := &stubOnboardingCompletedUseCase{}
+	sut := NewOnboardingCompletedConsumer(uc, fake.NewProvider())
+	userID := uuid.New().String()
+	eventID := uuid.New().String()
+	occurredAt := time.Now().UTC().Truncate(time.Second)
 
-	scenarios := []struct {
-		name   string
-		args   args
-		deps   dependencies
-		expect func(wmRepo *stubWMRepo, err error)
-	}{
-		{
-			name: "deve chamar upsert quando onboarding encontrado e WM ausente",
-			args: args{userID: uuid.New().String()},
-			deps: func() dependencies {
-				return dependencies{
-					reader: &stubContextReader{
-						result: onbusecases.GetOnboardingContextResult{
-							Found:       true,
-							Objective:   "quitar dívidas",
-							IncomeCents: 500000,
-						},
-					},
-					wmRepo: &stubWMRepo{getFound: false},
-				}
-			}(),
-			expect: func(wmRepo *stubWMRepo, err error) {
-				s.NoError(err)
-				s.NotNil(wmRepo.upserted)
-				s.Contains(wmRepo.upserted.Content, "quitar dívidas")
-			},
-		},
-		{
-			name: "deve ser no-op quando WM ja possui conteudo",
-			args: args{userID: uuid.New().String()},
-			deps: func() dependencies {
-				existing := agententities.NewWorkingMemory(uuid.New())
-				existing.Content = "conteudo existente"
-				return dependencies{
-					reader: &stubContextReader{
-						result: onbusecases.GetOnboardingContextResult{
-							Found:       true,
-							Objective:   "economizar",
-							IncomeCents: 300000,
-						},
-					},
-					wmRepo: &stubWMRepo{getFound: true, getResult: existing},
-				}
-			}(),
-			expect: func(wmRepo *stubWMRepo, err error) {
-				s.NoError(err)
-				s.Nil(wmRepo.upserted)
-			},
-		},
-		{
-			name: "deve retornar erro quando contextReader falha",
-			args: args{userID: uuid.New().String()},
-			deps: func() dependencies {
-				return dependencies{
-					reader: &stubContextReader{err: errors.New("db error")},
-					wmRepo: &stubWMRepo{},
-				}
-			}(),
-			expect: func(wmRepo *stubWMRepo, err error) {
-				s.Error(err)
-				s.Nil(wmRepo.upserted)
-			},
-		},
-		{
-			name: "deve retornar erro e incrementar decodeFails quando user_id invalido",
-			args: args{userID: "not-a-uuid"},
-			deps: func() dependencies {
-				return dependencies{
-					reader: &stubContextReader{},
-					wmRepo: &stubWMRepo{},
-				}
-			}(),
-			expect: func(wmRepo *stubWMRepo, err error) {
-				s.Error(err)
-			},
-		},
-		{
-			name: "deve retornar erro quando upsert falha",
-			args: args{userID: uuid.New().String()},
-			deps: func() dependencies {
-				return dependencies{
-					reader: &stubContextReader{
-						result: onbusecases.GetOnboardingContextResult{
-							Found:       true,
-							Objective:   "investir",
-							IncomeCents: 800000,
-						},
-					},
-					wmRepo: &stubWMRepo{getFound: false, upsertErr: errors.New("upsert failed")},
-				}
-			}(),
-			expect: func(wmRepo *stubWMRepo, err error) {
-				s.Error(err)
-			},
-		},
-		{
-			name: "deve ser no-op quando onboarding nao encontrado",
-			args: args{userID: uuid.New().String()},
-			deps: func() dependencies {
-				return dependencies{
-					reader: &stubContextReader{result: onbusecases.GetOnboardingContextResult{Found: false}},
-					wmRepo: &stubWMRepo{},
-				}
-			}(),
-			expect: func(wmRepo *stubWMRepo, err error) {
-				s.NoError(err)
-				s.Nil(wmRepo.upserted)
-			},
-		},
-	}
+	event := s.buildEvent(userID, eventID, occurredAt)
+	err := sut.Handle(s.ctx, event)
 
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			sut := NewOnboardingCompletedConsumer(scenario.deps.reader, scenario.deps.wmRepo, fake.NewProvider())
-			event := s.buildEvent(scenario.args.userID)
-			err := sut.Handle(s.ctx, event)
-			scenario.expect(scenario.deps.wmRepo, err)
-		})
-	}
+	s.NoError(err)
+	s.Len(uc.calls, 1)
+	s.Equal(userID, uc.calls[0].UserID.String())
+	s.Equal(eventID, uc.calls[0].EventID.String())
+	s.Equal("onboarding.completed", uc.calls[0].EventType)
+	s.Equal(occurredAt, uc.calls[0].OccurredAt)
 }
 
 func (s *OnboardingCompletedConsumerSuite) TestHandle_InvalidPayloadType_ReturnsError() {
-	sut := NewOnboardingCompletedConsumer(&stubContextReader{}, &stubWMRepo{}, fake.NewProvider())
+	sut := NewOnboardingCompletedConsumer(&stubOnboardingCompletedUseCase{}, fake.NewProvider())
 	event := &stubEvent{payload: "not_an_envelope"}
 	err := sut.Handle(s.ctx, event)
 	s.Error(err)
 }
 
 func (s *OnboardingCompletedConsumerSuite) TestHandle_MalformedJSON_ReturnsError() {
-	sut := NewOnboardingCompletedConsumer(&stubContextReader{}, &stubWMRepo{}, fake.NewProvider())
+	sut := NewOnboardingCompletedConsumer(&stubOnboardingCompletedUseCase{}, fake.NewProvider())
 	event := &stubEvent{payload: outbox.Envelope{Payload: []byte("{bad json")}}
 	err := sut.Handle(s.ctx, event)
 	s.Error(err)
+}
+
+func (s *OnboardingCompletedConsumerSuite) TestHandle_InvalidUserID_ReturnsError() {
+	sut := NewOnboardingCompletedConsumer(&stubOnboardingCompletedUseCase{}, fake.NewProvider())
+	event := s.buildEvent("not-a-uuid", uuid.New().String(), time.Now().UTC())
+	err := sut.Handle(s.ctx, event)
+	s.Error(err)
+}
+
+func (s *OnboardingCompletedConsumerSuite) TestHandle_UseCaseError_ReturnsError() {
+	uc := &stubOnboardingCompletedUseCase{err: errors.New("use case failed")}
+	sut := NewOnboardingCompletedConsumer(uc, fake.NewProvider())
+	event := s.buildEvent(uuid.New().String(), uuid.New().String(), time.Now().UTC())
+	err := sut.Handle(s.ctx, event)
+	s.Error(err)
+}
+
+func (s *OnboardingCompletedConsumerSuite) TestHandle_ZeroOccurredAt_FallsBackToNow() {
+	uc := &stubOnboardingCompletedUseCase{}
+	sut := NewOnboardingCompletedConsumer(uc, fake.NewProvider())
+	userID := uuid.New().String()
+	eventID := uuid.New().String()
+
+	raw, _ := json.Marshal(onboardingCompletedPayload{UserID: userID})
+	event := &stubEvent{payload: outbox.Envelope{
+		ID:        eventID,
+		EventType: "onboarding.completed",
+		Payload:   raw,
+	}}
+
+	err := sut.Handle(s.ctx, event)
+	s.NoError(err)
+	s.Len(uc.calls, 1)
+	s.False(uc.calls[0].OccurredAt.IsZero())
 }

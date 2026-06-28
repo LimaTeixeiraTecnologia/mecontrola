@@ -23,7 +23,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/confirmation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/onboardingv2draft"
 	agentvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentrepo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/repositories"
@@ -32,7 +31,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	identityvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 	identityrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/repositories"
-	onbusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	platform "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -167,28 +165,6 @@ func SeedActiveUserWA(t *testing.T, db database.DBTX, waNumber string) uuid.UUID
 		t.Fatalf("e2e.seed: upsert entitlement: %v", upsertErr)
 	}
 	return userID
-}
-
-type noopV2Session struct{}
-
-func (noopV2Session) Load(_ context.Context, _ uuid.UUID, _ string) (onboardingv2draft.Draft, bool, error) {
-	return onboardingv2draft.Draft{}, false, nil
-}
-func (noopV2Session) Save(_ context.Context, _ uuid.UUID, _ string, _ onboardingv2draft.Draft) error {
-	return nil
-}
-func (noopV2Session) Clear(_ context.Context, _ uuid.UUID, _ string) error { return nil }
-
-type fakeSplitSuggester struct{}
-
-func (fakeSplitSuggester) Suggest(_ context.Context, _ uuid.UUID, _, _ string, incomeCents int64) ([]onbusecases.SuggestBudgetSplitView, error) {
-	return []onbusecases.SuggestBudgetSplitView{
-		{RootSlug: "expense.custo_fixo", BasisPoints: 3500, PlannedCents: incomeCents * 35 / 100},
-		{RootSlug: "expense.conhecimento", BasisPoints: 1000, PlannedCents: incomeCents * 10 / 100},
-		{RootSlug: "expense.prazeres", BasisPoints: 2000, PlannedCents: incomeCents * 20 / 100},
-		{RootSlug: "expense.metas", BasisPoints: 1500, PlannedCents: incomeCents * 15 / 100},
-		{RootSlug: "expense.liberdade_financeira", BasisPoints: 2000, PlannedCents: incomeCents * 20 / 100},
-	}, nil
 }
 
 func buildConfirmKernelDeps(

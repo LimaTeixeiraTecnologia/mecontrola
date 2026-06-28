@@ -100,6 +100,10 @@ func (s *reproStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) 
 	return 0, nil
 }
 
+func (s *reproStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]platform.Snapshot, error) {
+	return nil, nil
+}
+
 type ForcedCategoryPersistReproSuite struct {
 	suite.Suite
 	ctx context.Context

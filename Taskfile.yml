@@ -25,6 +25,8 @@ includes:
     taskfile: ./taskfiles/ngrok.yml
   deploy:
     taskfile: ./taskfiles/deploy.yml
+  swarm:
+    taskfile: ./taskfiles/swarm.yml
 silent: true
 
 vars:

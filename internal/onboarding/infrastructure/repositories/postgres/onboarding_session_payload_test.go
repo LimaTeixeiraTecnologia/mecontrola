@@ -109,3 +109,17 @@ func TestPayloadJSON_ObjectiveProfile_Preserved(t *testing.T) {
 
 	assert.Equal(t, "payoff_debt", decoded.ObjectiveProfile)
 }
+
+func TestPayloadJSON_PhaseRoundTrip(t *testing.T) {
+	pj := onboardingSessionPayloadJSON{
+		Phase: "cards",
+	}
+
+	raw, err := json.Marshal(pj)
+	require.NoError(t, err)
+
+	var decoded onboardingSessionPayloadJSON
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+
+	assert.Equal(t, "cards", decoded.Phase)
+}

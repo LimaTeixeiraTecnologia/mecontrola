@@ -62,6 +62,10 @@ func (s *kernelStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int)
 	return 0, nil
 }
 
+func (s *kernelStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]platform.Snapshot, error) {
+	return nil, nil
+}
+
 type kernelRunResult struct {
 	Outcome tools.ToolOutcome
 	Kind    intent.Kind

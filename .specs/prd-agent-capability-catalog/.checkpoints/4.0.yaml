@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agent-capability-catalog/4.0_execution_report.md
+summary: Migração de isDestructiveKind para Capability Catalog concluída com cobertura HITL ampliada
+timestamp: 2026-06-26T08:47:24Z

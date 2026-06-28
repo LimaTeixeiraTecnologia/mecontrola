@@ -16,10 +16,12 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/dtos/input"
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
+	domainservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/services"
 )
 
 type SaveOnboardingCardResult struct {
 	Name       string
+	DueDay     int
 	ClosingDay int
 	CardCount  int
 }
@@ -29,12 +31,13 @@ type SynchronousCardCreator interface {
 }
 
 type SaveOnboardingCard struct {
-	uow         uow.UnitOfWork
-	factory     appinterfaces.RepositoryFactory
-	publisher   outbox.Publisher
-	idGen       id.Generator
-	o11y        observability.Observability
-	cardCreator SynchronousCardCreator
+	uow               uow.UnitOfWork
+	factory           appinterfaces.RepositoryFactory
+	publisher         outbox.Publisher
+	idGen             id.Generator
+	o11y              observability.Observability
+	cardCreator       SynchronousCardCreator
+	closingOffsetDays int
 }
 
 func NewSaveOnboardingCard(
@@ -44,8 +47,17 @@ func NewSaveOnboardingCard(
 	idGen id.Generator,
 	o11y observability.Observability,
 	cardCreator SynchronousCardCreator,
+	closingOffsetDays int,
 ) *SaveOnboardingCard {
-	return &SaveOnboardingCard{uow: u, factory: factory, publisher: publisher, idGen: idGen, o11y: o11y, cardCreator: cardCreator}
+	return &SaveOnboardingCard{
+		uow:               u,
+		factory:           factory,
+		publisher:         publisher,
+		idGen:             idGen,
+		o11y:              o11y,
+		cardCreator:       cardCreator,
+		closingOffsetDays: closingOffsetDays,
+	}
 }
 
 func (uc *SaveOnboardingCard) SetCardCreator(creator SynchronousCardCreator) {
@@ -60,7 +72,8 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in input.SaveOnboardi
 		return SaveOnboardingCardResult{}, err
 	}
 
-	card, err := entities.NewOnboardingCardDraft(in.Nickname, in.ClosingDay)
+	closingDay := domainservices.DeriveClosingDay(in.DueDay, uc.closingOffsetDays)
+	card, err := entities.NewOnboardingCardDraft(in.Nickname, in.DueDay, closingDay)
 	if err != nil {
 		return SaveOnboardingCardResult{}, err
 	}
@@ -94,6 +107,7 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in input.SaveOnboardi
 			Name:       card.Name,
 			LimitCents: card.LimitCents,
 			ClosingDay: card.ClosingDay,
+			DueDay:     card.DueDay,
 			OccurredAt: now,
 		}
 		envelope, buildErr := buildOutboxEvent(in.UserID, event, now)
@@ -105,6 +119,7 @@ func (uc *SaveOnboardingCard) Execute(ctx context.Context, in input.SaveOnboardi
 		}
 		return SaveOnboardingCardResult{
 			Name:       card.Name,
+			DueDay:     card.DueDay,
 			ClosingDay: card.ClosingDay,
 			CardCount:  len(updated.Payload().Cards),
 		}, nil

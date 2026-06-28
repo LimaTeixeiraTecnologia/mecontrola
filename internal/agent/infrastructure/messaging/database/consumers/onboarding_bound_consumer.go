@@ -12,6 +12,7 @@ import (
 
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
 	appusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases"
+	agentworkflow "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	platformevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
@@ -122,7 +123,7 @@ func (c *OnboardingBoundConsumer) Handle(ctx context.Context, event platformeven
 	res := c.router.RouteWhatsApp(ctx,
 		appservices.Principal{UserID: userID},
 		appservices.InboundMessage{
-			Text:       appservices.OnboardingWelcomeSignal,
+			Text:       agentworkflow.OnboardingWelcomeSignal,
 			WhatsAppTo: p.PeerE164,
 			MessageID:  messageID,
 		},
@@ -176,7 +177,7 @@ func (c *OnboardingBoundConsumer) shouldSkipGreeting(ctx context.Context, userID
 func (c *OnboardingBoundConsumer) persistGreetingIdempotency(ctx context.Context, userID uuid.UUID, channel, messageID string) error {
 	now := time.Now().UTC()
 
-	var registered, marked bool
+	var persisted int
 	var idempotencyErr error
 
 	if c.decisionStore != nil {
@@ -187,7 +188,7 @@ func (c *OnboardingBoundConsumer) persistGreetingIdempotency(ctx context.Context
 			)
 			idempotencyErr = errors.Join(idempotencyErr, regErr)
 		} else {
-			registered = true
+			persisted++
 		}
 	}
 
@@ -199,12 +200,12 @@ func (c *OnboardingBoundConsumer) persistGreetingIdempotency(ctx context.Context
 			)
 			idempotencyErr = errors.Join(idempotencyErr, markErr)
 		} else {
-			marked = true
+			persisted++
 			c.dedupTotal.Add(ctx, 1, observability.String("result", "sent"))
 		}
 	}
 
-	if !registered && !marked && idempotencyErr != nil {
+	if persisted == 0 && idempotencyErr != nil {
 		return fmt.Errorf("agent.consumer.onboarding_bound: persistir idempotência da saudação (retry): %w", idempotencyErr)
 	}
 

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-conversacional/task-9.0_execution_report.md
+summary: Testes de integracao e E2E do onboarding conversacional concluidos com cobertura de resume duravel, propagacao idempotente de eventos, migracao-reset e jornada completa.
+timestamp: 2026-06-26T16:35:00Z

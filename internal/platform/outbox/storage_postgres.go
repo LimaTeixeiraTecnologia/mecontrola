@@ -177,6 +177,20 @@ func (s *postgresStorage) ResetStuck(ctx context.Context, stuckAfter time.Durati
 	return n, nil
 }
 
+func (s *postgresStorage) CountPending(ctx context.Context) (int64, error) {
+	const q = `
+		SELECT COUNT(*)
+		  FROM outbox_events
+		 WHERE status = $1
+		   AND next_attempt_at <= now()`
+
+	var count int64
+	if err := s.db.QueryRowContext(ctx, q, int(StatusPending)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("outbox: count pending: %w", err)
+	}
+	return count, nil
+}
+
 func (s *postgresStorage) DeletePublishedBatch(ctx context.Context, retention time.Duration, limit int) (int64, error) {
 	const q = `
 		DELETE FROM outbox_events

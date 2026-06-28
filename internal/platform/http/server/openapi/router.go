@@ -321,7 +321,7 @@ func NewRouter() (*docsRouter, error) {
 }
 
 func loadSpecs() (map[string]loadedSpec, error) {
-	repoRoot, err := resolveRepoRoot()
+	searchRoots, err := resolveSearchRoots()
 	if err != nil {
 		return nil, err
 	}
@@ -330,8 +330,7 @@ func loadSpecs() (map[string]loadedSpec, error) {
 	specs := make(map[string]loadedSpec, len(specDefinitions))
 
 	for _, def := range specDefinitions {
-		absPath := filepath.Join(repoRoot, filepath.FromSlash(def.RelativePath))
-		raw, readErr := os.ReadFile(absPath)
+		raw, absPath, readErr := readSpecFile(searchRoots, def.RelativePath)
 		if readErr != nil {
 			return nil, fmt.Errorf("openapi: read %s: %w", def.RelativePath, readErr)
 		}
@@ -358,12 +357,43 @@ func loadSpecs() (map[string]loadedSpec, error) {
 	return specs, nil
 }
 
+func resolveSearchRoots() ([]string, error) {
+	var roots []string
+
+	if repoRoot, err := resolveRepoRoot(); err == nil {
+		roots = append(roots, repoRoot)
+	}
+
+	if wd, err := os.Getwd(); err == nil {
+		roots = append(roots, wd)
+	}
+
+	roots = append(roots, "/app")
+
+	return roots, nil
+}
+
+func readSpecFile(searchRoots []string, relativePath string) ([]byte, string, error) {
+	for _, root := range searchRoots {
+		absPath := filepath.Join(root, filepath.FromSlash(relativePath))
+		raw, err := os.ReadFile(absPath)
+		if err == nil {
+			return raw, absPath, nil
+		}
+	}
+	return nil, "", fmt.Errorf("openapi: spec file not found in any search root: %s", relativePath)
+}
+
 func resolveRepoRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		return "", fmt.Errorf("openapi: runtime caller unavailable")
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..")), nil
+	callerDir := filepath.Dir(file)
+	if strings.HasPrefix(callerDir, "github.com/") {
+		return "", fmt.Errorf("openapi: runtime caller path is trimmed (%s)", callerDir)
+	}
+	return filepath.Clean(filepath.Join(callerDir, "..", "..", "..", "..", "..")), nil
 }
 
 func collectOperations(doc *openapi3.T) []operation {

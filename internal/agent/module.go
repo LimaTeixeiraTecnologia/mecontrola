@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/sanitize"
 	appservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
@@ -22,6 +23,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/valueobjects"
 	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	agentevents "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/events"
+	agenthandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/jobs/handlers"
 	agentconsumers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/messaging/database/consumers"
 	agentonboarding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/providers/openrouter"
@@ -68,21 +70,20 @@ type AgentModule struct {
 	SessionRepositoryFact         interfaces.AgentSessionRepositoryFactory
 	EventHandlers                 []EventHandlerRegistration
 	WorkflowKernelHousekeepingJob worker.Job
+	OnboardingAbandonmentJob      worker.Job
 }
 
 type OnboardingLLMUseCases struct {
-	GetContext         *onbusecases.GetOnboardingContext
-	SaveObjective      *onbusecases.SaveOnboardingObjective
-	SaveIncome         *onbusecases.SaveOnboardingIncome
-	SaveCard           *onbusecases.SaveOnboardingCard
-	SaveBudgetSplits   *onbusecases.SaveOnboardingBudgetSplits
-	MarkFirstTx        *onbusecases.MarkFirstTransactionRecorded
-	Complete           *onbusecases.CompleteOnboardingSession
-	SetPhase           *onbusecases.SetOnboardingPhase
-	AppendTurn         *onbusecases.AppendOnboardingTurn
-	LoadTurns          *onbusecases.LoadOnboardingTurns
-	MarkWelcomeSent    *onbusecases.MarkWelcomeSent
-	SuggestBudgetSplit *onbusecases.SuggestBudgetSplit
+	GetContext       *onbusecases.GetOnboardingContext
+	SaveObjective    *onbusecases.SaveOnboardingObjective
+	SaveIncome       *onbusecases.SaveOnboardingIncome
+	SaveCard         *onbusecases.SaveOnboardingCard
+	SaveBudgetSplits *onbusecases.SaveOnboardingBudgetSplits
+	Complete         *onbusecases.CompleteOnboardingSession
+	SetPhase         *onbusecases.SetOnboardingPhase
+	AppendTurn       *onbusecases.AppendOnboardingTurn
+	LoadTurns        *onbusecases.LoadOnboardingTurns
+	MarkWelcomeSent  *onbusecases.MarkWelcomeSent
 }
 
 type AgentModuleDeps struct {
@@ -102,29 +103,33 @@ type llmRuntime struct {
 }
 
 type agentModuleWiring struct {
-	cfg                *configs.Config
-	o11y               observability.Observability
-	identityModule     identity.IdentityModule
-	categoriesModule   *categories.CategoriesModule
-	cardModule         card.CardModule
-	transactionsModule transactions.TransactionsModule
-	budgetsModule      *budgets.BudgetsModule
-	whatsAppGateway    whatsAppGateway
-	onboardingLLM      *OnboardingLLMUseCases
-	sessionDB          *sqlx.DB
-	sessionRepo        interfaces.AgentSessionRepository
-	sessionRepoFact    interfaces.AgentSessionRepositoryFactory
-	sessionUoW         uow.UnitOfWork
-	decisionRepoFact   interfaces.AgentDecisionRepositoryFactory
-	decisionUoW        uow.UnitOfWork
-	threadRepoFact     interfaces.AgentThreadRepositoryFactory
-	runRepoFact        interfaces.AgentRunRepositoryFactory
-	runtimeUoW         uow.UnitOfWork
-	wmRepo             interfaces.WorkingMemoryRepository
-	obsRepo            interfaces.ObservationRepository
-	outboxPublisher    outbox.Publisher
-	wfStoreFactory     platform.StoreFactory
-	wfHousekeepingJob  worker.Job
+	cfg                      *configs.Config
+	o11y                     observability.Observability
+	identityModule           identity.IdentityModule
+	categoriesModule         *categories.CategoriesModule
+	cardModule               card.CardModule
+	transactionsModule       transactions.TransactionsModule
+	budgetsModule            *budgets.BudgetsModule
+	whatsAppGateway          whatsAppGateway
+	onboardingLLM            *OnboardingLLMUseCases
+	sessionDB                *sqlx.DB
+	sessionRepo              interfaces.AgentSessionRepository
+	sessionRepoFact          interfaces.AgentSessionRepositoryFactory
+	sessionUoW               uow.UnitOfWork
+	decisionRepoFact         interfaces.AgentDecisionRepositoryFactory
+	decisionUoW              uow.UnitOfWork
+	threadRepoFact           interfaces.AgentThreadRepositoryFactory
+	runRepoFact              interfaces.AgentRunRepositoryFactory
+	runtimeUoW               uow.UnitOfWork
+	wmRepo                   interfaces.WorkingMemoryRepository
+	obsRepo                  interfaces.ObservationRepository
+	processedEventFact       interfaces.ProcessedEventRepositoryFactory
+	outboxPublisher          outbox.Publisher
+	wfStoreFactory           platform.StoreFactory
+	wfHousekeepingJob        worker.Job
+	onboardingEngine         platform.Engine[agentwf.OnboardingState]
+	onboardingDef            platform.Definition[agentwf.OnboardingState]
+	onboardingAbandonmentJob worker.Job
 }
 
 func NewAgentModule(
@@ -160,6 +165,7 @@ func NewAgentModule(
 	}
 
 	prepareSessionStore(w)
+	attachOnboardingAbandonmentJob(w)
 
 	llmModule, err := buildLLMModule(w)
 	if err != nil {
@@ -185,6 +191,7 @@ func NewAgentModule(
 		SessionUnitOfWork:             w.sessionUoW,
 		EventHandlers:                 buildEventHandlers(w, intentRouter),
 		WorkflowKernelHousekeepingJob: w.wfHousekeepingJob,
+		OnboardingAbandonmentJob:      w.onboardingAbandonmentJob,
 	}
 	return module, nil
 }
@@ -203,10 +210,17 @@ func buildEventHandlers(w *agentModuleWiring, router *appservices.IntentRouter) 
 			Handler:   buildOnboardingBoundConsumer(w, router),
 		},
 	}
-	if w.onboardingLLM != nil && w.onboardingLLM.GetContext != nil && w.wmRepo != nil {
+	if w.onboardingLLM != nil && w.onboardingLLM.GetContext != nil && w.wmRepo != nil && w.processedEventFact != nil {
+		uc := usecases.NewConsolidateOnboardingWorkingMemory(
+			w.sessionUoW,
+			w.onboardingLLM.GetContext,
+			agentrepo.NewWorkingMemoryRepositoryFactory(w.o11y),
+			w.processedEventFact,
+			w.o11y,
+		)
 		handlers = append(handlers, EventHandlerRegistration{
 			EventType: "onboarding.completed",
-			Handler:   agentconsumers.NewOnboardingCompletedConsumer(w.onboardingLLM.GetContext, w.wmRepo, w.o11y),
+			Handler:   agentconsumers.NewOnboardingCompletedConsumer(uc, w.o11y),
 		})
 	}
 	return handlers
@@ -244,6 +258,7 @@ func prepareSessionStore(w *agentModuleWiring) {
 	w.wmRepo = wmFactory.WorkingMemoryRepository(w.sessionDB)
 	obsFactory := agentrepo.NewObservationRepositoryFactory(w.o11y)
 	w.obsRepo = obsFactory.ObservationRepository(w.sessionDB)
+	w.processedEventFact = agentrepo.NewProcessedEventRepositoryFactory(w.o11y)
 	w.wfStoreFactory = wfpostgres.NewStoreFactory(w.o11y)
 }
 
@@ -325,13 +340,18 @@ func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservice
 		WhatsAppGateway:     w.whatsAppGateway,
 		PolicyMinConfidence: w.cfg.AgentConfig.PolicyMinConfidence,
 	}
+	catalog, err := capability.BuildCatalog()
+	if err != nil {
+		return nil, fmt.Errorf("agent.module: capability catalog: %w", err)
+	}
+	deps.CapabilityCatalog = catalog
 	fillIntentRouterDeps(w, &deps)
 	attachExpenseRecorder(w, &deps)
 	attachCardPurchaseLogger(w, &deps)
 	attachTransactionQueries(w, &deps)
 	attachRecurring(w, &deps)
 	attachBudgetConfigSession(w, &deps)
-	attachOnboardingLLM(w, &deps, llmModule)
+	attachOnboardingWorkflow(w, &deps, llmModule)
 	attachDecisionAudit(w, &deps)
 	if err := attachKernel(w, &deps); err != nil {
 		return nil, fmt.Errorf("agent.module: kernel wiring: %w", err)
@@ -340,30 +360,38 @@ func buildIntentRouter(w *agentModuleWiring, llmModule *llmRuntime) (*appservice
 	if err != nil {
 		return nil, fmt.Errorf("agent.module: intent router: %w", err)
 	}
-	attachRuntime(w, router)
+	if err := attachRuntime(w, router, catalog); err != nil {
+		return nil, err
+	}
 	return router, nil
 }
 
-func attachRuntime(w *agentModuleWiring, router *appservices.IntentRouter) {
+func attachRuntime(w *agentModuleWiring, router *appservices.IntentRouter, catalog *capability.Catalog) error {
 	if w.threadRepoFact == nil || w.runRepoFact == nil || w.runtimeUoW == nil {
 		w.o11y.Logger().Warn(context.Background(), "agent.module.runtime",
 			observability.String("mode", "legacy"),
 			observability.String("reason", "session_store_missing"),
 		)
-		return
+		return nil
 	}
 	threads := agentbinding.NewThreadGatewayAdapter(w.threadRepoFact, w.runtimeUoW)
 	runs := agentbinding.NewRunGatewayAdapter(w.runRepoFact, w.runtimeUoW)
-	router.EnableRuntime(threads, runs)
+	router.EnableRuntime(catalog, threads, runs)
 	w.o11y.Logger().Info(context.Background(), "agent.module.runtime",
 		observability.String("mode", "enabled"),
 	)
+	return nil
 }
 
 func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	if w.budgetsModule != nil && w.budgetsModule.GetMonthlySummaryUC != nil {
 		deps.MonthlySummary = w.budgetsModule.GetMonthlySummaryUC
 	}
+	fillCardDeps(w, deps)
+	fillBudgetCategoryDeps(w, deps)
+}
+
+func fillCardDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	if w.cardModule.ListCardsUC != nil {
 		deps.CardLister = w.cardModule.ListCardsUC
 	}
@@ -382,6 +410,9 @@ func fillIntentRouterDeps(w *agentModuleWiring, deps *appservices.IntentRouterDe
 	if w.cardModule.ListCardsUC != nil && w.cardModule.SoftDeleteCardUC != nil {
 		deps.CardDeleter = agentbinding.NewCardDeleterAdapter(w.cardModule.ListCardsUC, w.cardModule.SoftDeleteCardUC)
 	}
+}
+
+func fillBudgetCategoryDeps(w *agentModuleWiring, deps *appservices.IntentRouterDeps) {
 	if w.budgetsModule != nil && w.budgetsModule.EditCategoryPercentageUC != nil {
 		deps.CategoryPercentageEditor = agentbinding.NewCategoryPercentageEditorAdapter(w.budgetsModule.EditCategoryPercentageUC)
 	}
@@ -602,66 +633,84 @@ func attachDecisionAudit(w *agentModuleWiring, deps *appservices.IntentRouterDep
 	deps.Redactor = redactor
 }
 
-func attachOnboardingLLM(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
-	if reason := onboardingLLMUnavailable(w, deps, llmModule); reason != "" {
+func attachOnboardingWorkflow(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) {
+	if reason := onboardingWorkflowUnavailable(w, llmModule); reason != "" {
 		w.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
 			observability.String("mode", "deterministic"),
 			observability.String("reason", reason),
 		)
 		return
 	}
-	uc := w.onboardingLLM
-	reader := agentonboarding.NewOnboardingStateReader(uc.GetContext)
-	dispatcher := agentonboarding.NewOnboardingToolDispatcher(
-		uc.SaveObjective,
-		uc.SaveIncome,
-		uc.SaveCard,
-		uc.SaveBudgetSplits,
-		uc.MarkFirstTx,
-		uc.Complete,
-		deps.ExpenseRecorder,
-	)
-	phaseSetter := agentonboarding.NewOnboardingPhaseSetter(uc.SetPhase)
-	v2session := agentbinding.NewOnboardingSessionGateway(w.sessionRepo)
 
-	var historyGateway usecases.OnboardingHistoryGatewayIface
-	if uc.AppendTurn != nil && uc.LoadTurns != nil && uc.MarkWelcomeSent != nil {
-		historyGateway = agentonboarding.NewOnboardingHistoryGateway(uc.AppendTurn, uc.LoadTurns, uc.MarkWelcomeSent)
+	uc := w.onboardingLLM
+	interpreter := agentonboarding.NewOnboardingInterpreter(llmModule.OnboardingInterpreter, w.cfg.AgentConfig.OnboardingMaxTokens)
+
+	onboardingDeps := agentwf.OnboardingDeps{
+		Interpreter:      interpreter,
+		WelcomeMarker:    agentonboarding.NewWelcomeMarkerBinding(uc.MarkWelcomeSent),
+		ObjectiveSaver:   agentonboarding.NewObjectiveSaverBinding(uc.SaveObjective),
+		IncomeSaver:      agentonboarding.NewIncomeSaverBinding(uc.SaveIncome),
+		CardSaver:        agentonboarding.NewCardSaverBinding(uc.SaveCard),
+		SplitsSaver:      agentonboarding.NewSplitsSaverBinding(uc.SaveBudgetSplits),
+		PhaseSetter:      agentonboarding.NewPhaseSetterBinding(uc.SetPhase),
+		ContextLoader:    agentonboarding.NewContextLoaderBinding(uc.GetContext),
+		SessionCompleter: agentonboarding.NewSessionCompleterBinding(uc.Complete),
+		HistoryGateway:   agentonboarding.NewOnboardingHistoryGateway(uc.AppendTurn, uc.LoadTurns, uc.MarkWelcomeSent),
+		O11y:             w.o11y,
 	}
-	var splitSuggester usecases.BudgetSplitSuggesterIface
-	if uc.SuggestBudgetSplit != nil {
-		splitSuggester = agentonboarding.NewBudgetSplitSuggester(uc.SuggestBudgetSplit)
+
+	w.onboardingDef = agentwf.BuildOnboardingDefinition(onboardingDeps)
+	w.onboardingEngine = platform.NewEngine[agentwf.OnboardingState](w.wfStoreFactory.Store(w.sessionDB), w.o11y)
+
+	deps.OnboardingEngine = w.onboardingEngine
+	deps.OnboardingDef = w.onboardingDef
+	deps.OnboardingStore = w.wfStoreFactory.Store(w.sessionDB)
+	deps.OnboardingStateChecker = agentonboarding.NewOnboardingProgressChecker(uc.GetContext)
+	deps.OnboardingHistoryGateway = onboardingDeps.HistoryGateway
+
+	w.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
+		observability.String("mode", "workflow"),
+	)
+}
+
+func attachOnboardingAbandonmentJob(w *agentModuleWiring) {
+	if w.sessionDB == nil || w.wfStoreFactory == nil {
+		return
 	}
-	runTurn, err := usecases.NewRunOnboardingTurn(llmModule.OnboardingInterpreter, reader, dispatcher, phaseSetter, w.cfg.AgentConfig.OnboardingMaxTokens, w.o11y, historyGateway, splitSuggester, v2session)
+	abandonmentUoW := uow.NewUnitOfWork(w.sessionDB)
+	job, err := agenthandlers.NewOnboardingAbandonmentJob(abandonmentUoW, w.wfStoreFactory, w.cfg.OnboardingConfig, w.o11y)
 	if err != nil {
-		w.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_route",
-			observability.String("mode", "deterministic"),
-			observability.String("reason", "run_turn_build_failed"),
+		w.o11y.Logger().Warn(context.Background(), "agent.module.onboarding_abandonment_job_failed",
 			observability.Error(err),
 		)
 		return
 	}
-	deps.OnboardingRunner = agentonboarding.NewOnboardingTurnRunnerAdapter(runTurn)
-	w.o11y.Logger().Info(context.Background(), "agent.module.onboarding_route",
-		observability.String("mode", "llm"),
-	)
+	w.onboardingAbandonmentJob = job
 }
 
-func onboardingLLMUnavailable(w *agentModuleWiring, deps *appservices.IntentRouterDeps, llmModule *llmRuntime) string {
+func onboardingWorkflowUnavailable(w *agentModuleWiring, llmModule *llmRuntime) string {
 	if w.onboardingLLM == nil {
 		return "usecases_missing"
+	}
+	if reason := onboardingUseCasesUnavailable(w.onboardingLLM); reason != "" {
+		return reason
 	}
 	if llmModule == nil || llmModule.OnboardingInterpreter == nil {
 		return "interpreter_missing"
 	}
-	if deps.ExpenseRecorder == nil {
-		return "expense_logger_missing"
+	if w.sessionDB == nil || w.wfStoreFactory == nil {
+		return "workflow_store_missing"
 	}
-	if w.onboardingLLM.GetContext == nil {
-		return "context_reader_missing"
-	}
-	if w.onboardingLLM.SetPhase == nil {
-		return "phase_setter_missing"
+	return ""
+}
+
+func onboardingUseCasesUnavailable(uc *OnboardingLLMUseCases) string {
+	if uc.GetContext == nil || uc.SetPhase == nil ||
+		uc.SaveObjective == nil || uc.SaveIncome == nil ||
+		uc.SaveCard == nil || uc.SaveBudgetSplits == nil ||
+		uc.Complete == nil || uc.MarkWelcomeSent == nil ||
+		uc.AppendTurn == nil || uc.LoadTurns == nil {
+		return "onboarding_usecase_missing"
 	}
 	return ""
 }

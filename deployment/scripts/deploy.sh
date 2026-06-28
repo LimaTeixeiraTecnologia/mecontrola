@@ -65,12 +65,43 @@ update_code() {
 
 log "Iniciando deploy — tag: ${IMAGE_TAG}"
 
+SWARM_STATE=$(run_cmd "docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo 'unknown'")
+if [[ "$SWARM_STATE" == "active" ]]; then
+  log "Docker Swarm ativo — delegando para deploy-swarm.sh"
+  if [[ "$LOCAL_DEPLOY" == "true" ]]; then
+    VPS_HOST="${VPS_HOST:-localhost}" VPS_USER="${VPS_USER:-$(whoami)}" \
+      bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG"
+  else
+    VPS_HOST="${VPS_HOST:?VPS_HOST is required}" VPS_USER="${VPS_USER:-deploy}" VPS_SSH_KEY="${VPS_SSH_KEY:-}" \
+      bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG"
+  fi
+  exit $?
+fi
+
 log "Atualizando código no servidor"
 update_code
 
 if [[ -n "${GHCR_TOKEN}" ]]; then
   log "Autenticando no GHCR"
   run_cmd "echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${GHCR_USER:-x-access-token}' --password-stdin"
+fi
+
+log "Garantindo permissões do .env"
+run_cmd "chmod 600 ${VPS_DEPLOY_PATH}/.env"
+
+SWARM_STATE=$(run_cmd "docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo 'unknown'")
+if [[ "$SWARM_STATE" == "active" ]]; then
+  log "Criando/atualizando Docker secrets"
+  run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/scripts/create-secrets.sh ${VPS_DEPLOY_PATH}/.env"
+else
+  log "AVISO: Docker Swarm não está ativo — pulando criação de secrets"
+fi
+
+if run_cmd "grep -qE '^AWS_ACCESS_KEY_ID=[^[:space:]]' ${VPS_DEPLOY_PATH}/.env 2>/dev/null && grep -qE '^AWS_SECRET_ACCESS_KEY=[^[:space:]]' ${VPS_DEPLOY_PATH}/.env 2>/dev/null"; then
+  log "Fazendo backup do .env para S3"
+  run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/scripts/backup-env-s3.sh ${VPS_DEPLOY_PATH}/.env"
+else
+  log "AVISO: AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY não configurados — pulando backup do .env"
 fi
 
 log "Capturando imagem anterior para rollback"

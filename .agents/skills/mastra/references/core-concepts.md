@@ -9,25 +9,25 @@ Dois objetos formam o "Agent":
 - `AgentRuntime` (`application/services/agent_runtime.go`) — fronteira de execução Mastra-style:
   resolve Thread, abre/fecha Run, emite métricas. `Execute(ctx, principal, channel, peer, text, messageID)`.
 - `DailyLedgerAgent` (`application/services/daily_ledger_agent.go`) — orquestrador fino: detém o
-  `*workflow.Registry`, roda guarda/format compartilhados e delega resolução de kind ao registry.
+  `*workflow.IntentRegistry`, roda format compartilhado e delega resolução de kind ao registry.
   **Não** contém `switch case intent.Kind` de domínio.
 
 ## Workflow
 
-`workflow.Workflow` é a interface; `composite` é a implementação
+`workflow.IntentWorkflow` é a interface; `composite` é a implementação
 (`application/workflow/composite.go`):
 
 ```go
-type Workflow interface {
+type IntentWorkflow interface {
     ID() string
     Handles(kind intent.Kind) bool
     Execute(ctx context.Context, in tools.ToolInput) (tools.ToolResult, error)
 }
 ```
 
-Um workflow agrupa `KindTool{Kind, Tool}` e aplica o `WriteGuard` quando `kind.IsWrite()`. Há 4
-workflows: `transactions`, `budget`, `cards`, `conversational`. O `conversational` recebe `guard=nil`
-(só leitura/fallback).
+Um workflow agrupa `KindTool{Kind, Tool}` e resolve `kind -> Tool`; o `composite` **não** aplica
+guarda. A pré-escrita durável (authz/replay/policy/audit) vive no kernel write seam
+(`NewTransactionsWriteDefinition`, ver `write-guard.md`), roteado por `kind.IsKernelWrite()`.
 
 ## Tool
 
@@ -41,9 +41,11 @@ type Tool interface {
 }
 ```
 
-Construída via `tools.NewTool(spec, exec)`. No mecontrola, cada tool é montada por
-`DailyLedgerAgent.routeTool(name, kind, route)`, que envolve um método `routeXxx` (o handler que
-chama binding→usecase). **Proibido** regra de negócio, SQL ou branching de domínio dentro da tool.
+Cada tool é uma struct fina em `application/tools/` (ex.: `RecordExpense`, `ListCards`),
+instanciada por `tools.New<Nome>(...)` e ligada a um kind via `agentwf.KindTool{Kind, Tool}` dentro
+de `buildRegistry()` (`application/services/agent_workflows.go`). O `Execute` mapeia
+`intent.Intent` → binding→usecase. **Proibido** regra de negócio, SQL ou branching de domínio
+dentro da tool.
 
 `ToolInput` carrega `UserID`, `Channel`, `Intent`, `MessageID`, `Text`, `Confidence`, `Parsed`.
 `ToolResult` carrega `Reply`, `Outcome` (`ToolOutcome`), `Kind`.

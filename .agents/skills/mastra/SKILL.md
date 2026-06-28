@@ -26,7 +26,7 @@ seams abaixo podem evoluir — sempre abra o arquivo citado e valide antes de co
 IntentRouter
   -> AgentRuntime.Execute            (Thread-first → Run auditável)
   -> WorkflowRegistry.Resolve(kind)
-  -> Workflow.Execute                (composite; aplica WriteGuard se kind.IsWrite())
+  -> Workflow.Execute                (composite resolve kind -> Tool; escrita durável vai pelo kernel write seam)
   -> Tool.Execute                    (adapter fino)
   -> binding -> usecase -> domain -> repo
 ```
@@ -39,7 +39,7 @@ nunca como novo `case intent.Kind` no switch**. O `daily_ledger_agent.go` perman
 | Mastra            | Go (mecontrola)                              | Arquivo |
 | ----------------- | -------------------------------------------- | ------- |
 | Agent             | `DailyLedgerAgent` + `AgentRuntime`          | `internal/agent/application/services/{daily_ledger_agent,agent_runtime}.go` |
-| Workflow          | `workflow.Workflow` / `composite`            | `internal/agent/application/workflow/{workflow,composite,registry}.go` |
+| Workflow          | `workflow.IntentWorkflow` / `composite`      | `internal/agent/application/workflow/{workflow,composite,registry}.go` |
 | Tool              | `tools.Tool` (adapter fino)                  | `internal/agent/application/tools/tool.go` |
 | Thread            | `entities.Thread` + `ThreadGateway`          | `internal/agent/domain/entities/thread.go`, `application/services/agent_runtime.go` |
 | Run               | `entities.Run` + `RunGateway`                | `internal/agent/domain/entities/run.go` |
@@ -47,11 +47,31 @@ nunca como novo `case intent.Kind` no switch**. O `daily_ledger_agent.go` perman
 | Pending Step      | `pendingexpense.Draft` + resume              | `internal/agent/domain/pendingexpense/draft.go` |
 | Model router (TS) | OpenRouter + FallbackChain (env-driven)      | `internal/agent/infrastructure/providers/openrouter/`, `application/services/fallback_chain.go` |
 
-## Onde colar código novo: o seam
+## Seams reais de extensão
 
-A função `buildRegistry()` em
-`internal/agent/application/services/agent_workflows.go` é **o único ponto** onde workflows e tools
-são montados. Toda extensão passa por ela. Ver `references/add-workflow-tool.md`.
+O `internal/agent` já não tem seam único. A extensão correta depende do tipo de mudança:
+
+1. **Registry seam** — registrar kind/tool/workflow roteável em
+   `internal/agent/application/services/agent_workflows.go` via `buildRegistry()` e manter
+   `routableKinds()` coerente.
+2. **Kernel write seam** — evoluir o caminho durável de escrita em
+   `internal/agent/application/services/agent_workflows.go` via `buildKernelDefinition()` e
+   `internal/agent/application/workflow/transactions_write.go` via
+   `NewTransactionsWriteDefinition(...)`.
+3. **Confirmation seam** — evoluir operações destrutivas/sensíveis em
+   `internal/agent/application/workflow/destructive_confirm.go` via
+   `NewDestructiveConfirmDefinition(...)`.
+4. **Plan seam** — evoluir execução multi-step em
+   `internal/agent/application/workflow/plan_executor.go` via `NewPlanExecutor(...)`.
+5. **Resume chain seam** — preservar a ordem de retomada em
+   `internal/agent/application/services/daily_ledger_agent.go`:
+   `continuePendingExpenseConfirmation(...) -> continuePendingPlan(...) -> continuePendingApproval(...)`.
+
+Fonte única de classificação/auditoria: o catálogo canônico em
+`internal/agent/application/capability/` (`BuildCatalog()`, `CapabilitySpec`, `Catalog.Lookup`,
+`Catalog.List`, `Catalog.Classify`). Toda capability nova ou alterada deve ser registrada nele.
+
+Ver `references/add-workflow-tool.md`.
 
 ## Referências (carregue só o necessário — economia de contexto)
 
@@ -81,5 +101,6 @@ Matriz determinística de carregamento por tarefa: [`references/INDEX.yaml`](ref
 1. Carregar `go-implementation` (e `agent-governance` se a mudança for transversal).
 2. Ler `references/core-concepts.md` para situar o conceito Mastra no código Go.
 3. Carregar a referência da tarefa via `INDEX.yaml` (máx. 4 simultâneas).
-4. Implementar no seam (`buildRegistry`), mantendo Tool fina (sem regra/SQL/branching de domínio).
+4. Escolher o seam correto da mudança e implementar no ponto real de extensão, mantendo Tool fina
+   (sem regra/SQL/branching de domínio).
 5. Validar com `references/rules-checklist.md` e reportar evidência.

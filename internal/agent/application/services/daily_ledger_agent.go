@@ -12,6 +12,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
@@ -99,6 +100,7 @@ type DailyLedgerAgent struct {
 	policyBlockedTotal       observability.Counter
 	idempotencyReplayTotal   observability.Counter
 	loc                      *time.Location
+	catalog                  *capability.Catalog
 	registry                 *workflow.IntentRegistry
 	recorder                 *tools.Recorder
 	clarification            *tools.ClarificationResolver
@@ -113,6 +115,14 @@ type DailyLedgerAgent struct {
 }
 
 func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDeniedTotal, policyBlockedTotal, idempotencyReplayTotal observability.Counter, loc *time.Location, deps IntentRouterDeps) (*DailyLedgerAgent, error) {
+	catalog := deps.CapabilityCatalog
+	if catalog == nil {
+		var err error
+		catalog, err = capability.BuildCatalog()
+		if err != nil {
+			return nil, fmt.Errorf("construir capability catalog: %w", err)
+		}
+	}
 	agent := &DailyLedgerAgent{
 		parser:                   deps.Parser,
 		monthlySummary:           deps.MonthlySummary,
@@ -144,6 +154,7 @@ func newDailyLedgerAgent(o11y observability.Observability, routedTotal, authzDen
 		policyBlockedTotal:       policyBlockedTotal,
 		idempotencyReplayTotal:   idempotencyReplayTotal,
 		loc:                      loc,
+		catalog:                  catalog,
 	}
 	agent.recorder = tools.NewRecorder(routedTotal)
 	agent.clarification = tools.NewClarificationResolver(agent.recorder, o11y)
@@ -344,7 +355,7 @@ func (a *DailyLedgerAgent) routeFallback(ctx context.Context, userID uuid.UUID, 
 func (a *DailyLedgerAgent) dispatchWrite(ctx context.Context, principal Principal, channel, messageID, trimmed string, parsed ParsedIntent) RouteResult {
 	kind := parsed.Intent.Kind()
 
-	if isDestructiveKind(kind) {
+	if a.isDestructiveKind(kind) {
 		if a.confirmEngine == (platform.Engine[confirmation.ConfirmState])(nil) {
 			a.o11y.Logger().Error(ctx, "agent.intent_router.confirm_engine_missing_for_destructive",
 				observability.String("kind", kind.String()),
@@ -516,7 +527,7 @@ func (a *DailyLedgerAgent) executePlanStep(ctx context.Context, in workflow.Plan
 		StepIndex:    in.StepIndex,
 	}
 	principal := Principal{UserID: in.UserID}
-	if in.Resuming && isDestructiveKind(in.Intent.Kind()) {
+	if in.Resuming && a.isDestructiveKind(in.Intent.Kind()) {
 		handled, result := a.continuePendingApproval(ctx, in.UserID, in.Channel, in.ResumeText, in.MessageID)
 		if !handled {
 			return tools.ToolResult{Reply: auditWriteFailedText, Outcome: tools.OutcomeUsecaseError, Kind: in.Intent.Kind()}, nil
@@ -653,9 +664,15 @@ var intentToOperationKind = map[intent.Kind]confirmation.OperationKind{
 	intent.KindEditTransactionByRef:   confirmation.OperationEditByRef,
 }
 
-func isDestructiveKind(k intent.Kind) bool {
-	_, ok := intentToOperationKind[k]
-	return ok
+func (a *DailyLedgerAgent) isDestructiveKind(k intent.Kind) bool {
+	if a == nil || a.catalog == nil {
+		return true
+	}
+	spec, ok := a.catalog.Lookup(k)
+	if !ok {
+		return true
+	}
+	return spec.RequiresConfirmation
 }
 
 func resolveOperationKind(k intent.Kind) (confirmation.OperationKind, bool) {

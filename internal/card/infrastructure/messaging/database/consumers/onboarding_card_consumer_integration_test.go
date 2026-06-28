@@ -55,7 +55,7 @@ func (s *OnboardingCardConsumerIntegrationSuite) newSUT() *consumers.OnboardingC
 	idemStorage := idempotency.NewPostgresStorage(s.db)
 	createUoW := uow.NewUnitOfWork(s.db)
 	createCard := usecases.NewCreateCard(createUoW, factory, idemStorage, o11y)
-	return consumers.NewOnboardingCardConsumer(createCard, o11y)
+	return consumers.NewOnboardingCardConsumer(createCard, idemStorage, o11y)
 }
 
 func (s *OnboardingCardConsumerIntegrationSuite) insertUser(ctx context.Context) uuid.UUID {

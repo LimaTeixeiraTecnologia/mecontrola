@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-infra-producao-robusta-10k-dez-2026/6.0_execution_report.md
+summary: "Re-validacao com credenciais de staging (IAM mecontrola-staging-s3): pgbackrest check/info/full/diff/incr e restore PITR funcionaram no bucket mecontrola-backups-660838763799-use1; pgbouncer e statement_timeout validados."
+timestamp: 2026-06-28T15:16:05Z

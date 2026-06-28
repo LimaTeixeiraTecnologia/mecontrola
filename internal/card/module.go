@@ -101,7 +101,7 @@ func NewCardModule(
 
 	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, updateLimitHandler, deleteHandler, invoiceForHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
 
-	onboardingCardConsumer := cardconsumers.NewOnboardingCardConsumer(createCard, o11y)
+	onboardingCardConsumer := cardconsumers.NewOnboardingCardConsumer(createCard, idemStorage, o11y)
 
 	eventHandlers := []EventHandlerRegistration{
 		{EventType: "onboarding.card_registered", Handler: onboardingCardConsumer},

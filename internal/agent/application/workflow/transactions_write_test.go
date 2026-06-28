@@ -62,6 +62,10 @@ func (t *testStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (
 	return 0, nil
 }
 
+func (t *testStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]platform.Snapshot, error) {
+	return nil, nil
+}
+
 type TransactionsWriteSuite struct {
 	suite.Suite
 	ctx context.Context

@@ -1,0 +1,16 @@
+aws_region = "us-east-1"
+project    = "mecontrola"
+environment = "staging"
+
+# Optional. Leave commented to derive mecontrola-backups-<account-id>-use1.
+# backup_bucket_name = "mecontrola-backups-123456789012-use1"
+
+# Optional. Leave commented to derive mecontrola-staging-s3.
+# staging_iam_user_name = "mecontrola-staging-s3"
+
+lifecycle_transition_days = 90
+
+tags = {
+  Owner      = "platform"
+  CostCenter = "infra"
+}

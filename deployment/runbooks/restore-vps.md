@@ -1,166 +1,221 @@
-# Runbook: Restore VPS — pgBackRest PITR
+# Runbook: Restore Completo da VPS a partir de Backups S3
 
-**Referências:** deployment/pgbackrest/pgbackrest.conf, deployment/pgbackrest/crontab.txt
+**Referências:** `deployment/pgbackrest/pgbackrest.conf`, `deployment/runbooks/restore-pitr.md`
 
 ## Quando Usar
 
-- Corrupção de dados causada por bug ou operação humana.
-- Necessidade de restaurar estado do banco a um ponto específico no tempo.
-- Falha catastrófica do VPS (restore em novo servidor).
+- Falha catastrófica da VPS (host inacessível, volume corrompido, ransomware).
+- Necessidade de recriar toda a stack em um novo servidor.
+- PITR local não é suficiente ou o host original está comprometido.
 
 ## RTO Alvo
 
 | Operação | Duração Estimada |
 |----------|-----------------|
-| Stop dos containers | < 1 min |
-| Restore full + diff (último backup ~1 GB) | 5–15 min |
-| Start + health check | 2 min |
-| Validacao | 2 min |
-| **RTO total** | **< 20 min** |
+| Provisionar nova VPS (Ubuntu 24.04, Docker, AWS CLI) | 15–30 min |
+| Restaurar `.env` a partir do S3 | 5 min |
+| Recriar Docker secrets e Swarm | 5 min |
+| Restore do PostgreSQL via pgBackRest | 10–30 min |
+| Subir stack Swarm e validar health checks | 10 min |
+| **RTO total** | **< 4 horas** |
 
-Medir e atualizar após primeiro restore real em staging.
+> Atualizar após primeiro restore real em staging.
 
 ## Pré-requisitos
 
+- Bucket S3 `mecontrola-backups` acessível com as credenciais da conta.
+- Bucket S3 com backup do `.env` no prefixo `mecontrola-env-backups/`.
+- Imagem da aplicação disponível em `ghcr.io/limateixeiratecnologia/mecontrola:<tag>`.
+- Imagem `mecontrola-postgres:<tag>` disponível.
+- Acesso ao GitHub Actions ou a uma cópia local do repositório.
+- Domínio e DNS apontados para a nova VPS.
+
+## Variáveis de ambiente (na nova VPS)
+
 ```bash
-export PGBACKREST_S3_KEY=...
-export PGBACKREST_S3_KEY_SECRET=...
+export STACK=mecontrola
 export STANZA=mecontrola
+export VPS_DEPLOY_PATH=/opt/mecontrola
 export PGBACKREST_CONF=/etc/pgbackrest/pgbackrest.conf
+export IMAGE_TAG=<tag-da-imagem>
+export S3_ENV_BUCKET=mecontrola-backups
 ```
 
 ## Passo a Passo
 
-### 1. Parar a aplicação
+### 1. Preparar a nova VPS
 
 ```bash
-cd /repo
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  stop server worker caddy
+# Ubuntu 24.04
+sudo apt-get update && sudo apt-get install -y docker.io docker-compose-plugin awscli git fail2ban
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Hardening básico
+sudo systemctl enable --now docker
+sudo systemctl enable --now fail2ban
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
 ```
 
-Verificar que não há conexões ativas:
+### 2. Inicializar Docker Swarm
+
 ```bash
-docker exec mecontrola-postgres-1 psql -U mecontrola -c \
-  "SELECT count(*) FROM pg_stat_activity WHERE datname = 'mecontrola_db';"
+docker swarm init --advertise-addr $(hostname -I | awk '{print $1}')
 ```
 
-### 2. Listar backups disponíveis
+### 3. Recuperar `.env` do S3
 
 ```bash
-pgbackrest --config="$PGBACKREST_CONF" \
-  --repo1-s3-key="$PGBACKREST_S3_KEY" \
-  --repo1-s3-key-secret="$PGBACKREST_S3_KEY_SECRET" \
-  --stanza="$STANZA" \
-  info
+mkdir -p "$VPS_DEPLOY_PATH"
+cd "$VPS_DEPLOY_PATH"
+
+# Listar backups disponíveis
+aws s3 ls "s3://${S3_ENV_BUCKET}/mecontrola-env-backups/"
+
+# Baixar o mais recente
+aws s3 cp "s3://${S3_ENV_BUCKET}/mecontrola-env-backups/.env-<mais-recente>" "$VPS_DEPLOY_PATH/.env"
+chmod 600 "$VPS_DEPLOY_PATH/.env"
 ```
 
-Anotar o `label` do backup full mais recente.
-
-### 3. Parar o postgres e limpar data dir
+### 4. Clonar repositório e checkout na tag
 
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  stop postgres
-
-PGDATA="$(docker volume inspect mecontrola_postgres-data --format '{{.Mountpoint}}')"
-mv "$PGDATA" "${PGDATA}.bak.$(date +%Y%m%d%H%M%S)"
-mkdir -p "$PGDATA"
-chown 999:999 "$PGDATA"
-chmod 700 "$PGDATA"
+cd "$VPS_DEPLOY_PATH"
+git clone <repo-url> .
+git checkout "${IMAGE_TAG}"
 ```
 
-### 4. Restore pgBackRest
+### 5. Criar Docker secrets
 
-Para restore até o último ponto disponível:
 ```bash
-pgbackrest --config="$PGBACKREST_CONF" \
-  --repo1-s3-key="$PGBACKREST_S3_KEY" \
-  --repo1-s3-key-secret="$PGBACKREST_S3_KEY_SECRET" \
-  --stanza="$STANZA" \
-  --pg1-path="$PGDATA" \
-  restore
+cd "$VPS_DEPLOY_PATH"
+bash deployment/scripts/create-secrets.sh "$VPS_DEPLOY_PATH/.env"
 ```
 
-Para PITR (ponto específico no tempo):
+### 6. Subir PostgreSQL sem aplicação
+
+Primeiro subimos apenas postgres para poder restaurar o data dir.
+
 ```bash
-pgbackrest --config="$PGBACKREST_CONF" \
-  --repo1-s3-key="$PGBACKREST_S3_KEY" \
-  --repo1-s3-key-secret="$PGBACKREST_S3_KEY_SECRET" \
-  --stanza="$STANZA" \
-  --pg1-path="$PGDATA" \
-  --type=time \
-  --target="2026-06-15 14:00:00 UTC" \
-  --target-action=promote \
-  restore
+cd "$VPS_DEPLOY_PATH"
+cat > /tmp/postgres-only.yml <<EOF
+version: "3.8"
+services:
+  postgres:
+    image: mecontrola-postgres:${IMAGE_TAG}
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    environment:
+      POSTGRES_USER: ${DB_USER:-mecontrola}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-mecontrola_db}
+      PGBACKREST_REPO1_S3_KEY: ${PGBACKREST_S3_KEY}
+      PGBACKREST_REPO1_S3_KEY_SECRET: ${PGBACKREST_S3_KEY_SECRET}
+    volumes:
+      - ${STACK}_postgres-data:/var/lib/postgresql/data
+      - ./deployment/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./deployment/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+    networks:
+      - ${STACK}_backend
+    deploy:
+      replicas: 1
+volumes:
+  ${STACK}_postgres-data:
+networks:
+  ${STACK}_backend:
+    external: true
+EOF
+
+docker stack deploy -c /tmp/postgres-only.yml ${STACK}
 ```
 
-### 5. Iniciar postgres e verificar
+### 7. Restaurar o banco via pgBackRest
 
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  start postgres
+# Aguardar postgres iniciar para poder parar
+sleep 10
+docker service scale ${STACK}_postgres=0
 
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  exec postgres pg_isready -U mecontrola
+# Restore do backup mais recente (ou PITR)
+docker run --rm \
+  --network ${STACK}_backend \
+  -v ${STACK}_postgres-data:/var/lib/postgresql/data \
+  -v ${VPS_DEPLOY_PATH}/deployment/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro \
+  -e PGBACKREST_REPO1_S3_KEY="$PGBACKREST_S3_KEY" \
+  -e PGBACKREST_REPO1_S3_KEY_SECRET="$PGBACKREST_S3_KEY_SECRET" \
+  mecontrola-postgres:${IMAGE_TAG} \
+  pgbackrest --config="$PGBACKREST_CONF" \
+    --stanza="$STANZA" \
+    --pg1-path=/var/lib/postgresql/data \
+    restore
+
+# Para PITR, adicione:
+#   --type=time --target="2026-12-15 14:00:00 UTC" --target-action=promote
 ```
 
-### 6. Executar migrations pós-restore
+### 8. Subir stack completa
 
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  run --rm migrate
+cd "$VPS_DEPLOY_PATH"
+IMAGE_TAG=${IMAGE_TAG} docker stack deploy -c deployment/compose/compose.swarm.yml ${STACK}
 ```
 
-### 7. Validacao
+### 9. Executar migrations
 
 ```bash
-docker exec mecontrola-postgres-1 psql -U mecontrola mecontrola_db \
-  -c "SELECT COUNT(*) FROM users;"
-
-curl -sf https://${APP_DOMAIN}/health | jq .
+docker run --rm \
+  --network ${STACK}_backend \
+  --env-file ${VPS_DEPLOY_PATH}/.env \
+  -e ENVIRONMENT=production \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 \
+  -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
+  -e OTEL_EXPORTER_OTLP_INSECURE=true \
+  ghcr.io/limateixeiratecnologia/mecontrola:${IMAGE_TAG} \
+  migrate
 ```
 
-### 8. Iniciar aplicação
+### 10. Validar health checks
 
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  start server worker caddy
+for svc in server-1 server-2 worker-1 worker-2 caddy; do
+  until docker ps --filter name=${STACK}_${svc} --filter health=healthy --format '{{.Names}}' | grep -q .; do
+    echo "aguardando $svc..."; sleep 5
+  done
+  echo "$svc: OK"
+done
+
+curl -fsS https://${APP_DOMAIN}/healthz
+curl -fsS https://${APP_DOMAIN}/readyz
 ```
 
-### 9. Verificar logs
+### 11. Verificar logs
 
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  logs --tail=50 server worker
+for svc in server-1 server-2 worker-1 worker-2 postgres caddy; do
+  echo "=== $svc ==="
+  docker service logs --since 10m ${STACK}_${svc} | tail -n 30
+done
 ```
 
-## Restore via pg_dump (alternativa sem pgBackRest)
-
-Se o backup disponível for um dump `.sql.gz.age`:
+### 12. Criar novo backup full
 
 ```bash
-AGE_KEY_FILE=/etc/age/key.txt
-DUMP_FILE=mecontrola_YYYYMMDD_HHMMSS.sql.gz.age
-
-rclone copy "${BACKUP_REMOTE}/${DUMP_FILE}" /tmp/restore/
-
-age --decrypt \
-    --identity="$AGE_KEY_FILE" \
-    --output=/tmp/restore/dump.sql.gz \
-    "/tmp/restore/${DUMP_FILE}"
-
-gunzip /tmp/restore/dump.sql.gz
-
-docker exec -i mecontrola-postgres-1 \
-  psql -U mecontrola mecontrola_db < /tmp/restore/dump.sql
+docker exec "${STACK}_postgres.1.$(docker service ps ${STACK}_postgres -q | head -n1)" \
+  pgbackrest --stanza="$STANZA" --type=full backup
 ```
 
 ## Pós-Restore
 
-- Documentar: timestamp do restore, causa raiz, dados perdidos (se houver).
-- Atualizar RTO medido na tabela acima.
-- Criar novo backup full imediatamente após restore:
-  ```bash
-  pgbackrest --stanza="$STANZA" --type=full backup
-  ```
+- Documentar: timestamp do restore, causa raiz, RTO real, dados perdidos (se houver).
+- Verificar TLS/certs do Caddy e DNS.
+- Validar webhooks externos (Kiwify, WhatsApp) apontados para o novo IP/domínio.
+- Atualizar GitHub Actions/secrets se o IP da VPS mudou.
+- Sincronizar novo `.env` de volta para o S3.
+
+## Rollback
+
+Se a nova VPS não funcionar, mantenha o backup do data dir original (se houver) e repita o restore com outro ponto no tempo, ou restaure o DNS para a VPS anterior enquanto ela ainda estiver acessível.

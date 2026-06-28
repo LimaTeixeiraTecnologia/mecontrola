@@ -9,13 +9,13 @@ import (
 var (
 	ErrCardUserIDRequired   = errors.New("user_id: obrigatório")
 	ErrCardNicknameRequired = errors.New("nickname: obrigatório")
-	ErrCardClosingDayRange  = errors.New("closing_day: deve estar entre 1 e 31")
+	ErrCardDueDayRange      = errors.New("due_day: deve estar entre 1 e 31")
 )
 
 type SaveOnboardingCardInput struct {
-	UserID     uuid.UUID
-	Nickname   string
-	ClosingDay int
+	UserID   uuid.UUID
+	Nickname string
+	DueDay   int
 }
 
 func (i *SaveOnboardingCardInput) Validate() error {
@@ -26,8 +26,8 @@ func (i *SaveOnboardingCardInput) Validate() error {
 	if i.Nickname == "" {
 		errs = append(errs, ErrCardNicknameRequired)
 	}
-	if i.ClosingDay < 1 || i.ClosingDay > 31 {
-		errs = append(errs, ErrCardClosingDayRange)
+	if i.DueDay < 1 || i.DueDay > 31 {
+		errs = append(errs, ErrCardDueDayRange)
 	}
 	return errors.Join(errs...)
 }

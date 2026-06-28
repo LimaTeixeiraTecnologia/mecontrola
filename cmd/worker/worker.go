@@ -55,7 +55,7 @@ func New() *cobra.Command {
 	}
 }
 
-func Run() error {
+func Run() error { //nolint:revive // bootstrap do worker agrega lifecycle de providers; refatorar fragmentaria ordem de shutdown critica
 	cfg, err := configs.LoadConfig(".")
 	if err != nil {
 		return err
@@ -97,6 +97,8 @@ func Run() error {
 	}
 
 	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager, db: sqlx.NewDb(dbManager.DB(), "pgx")}
+	registerOutboxMetrics(o11y, runtime.db)
+
 	workerManager, err := runtime.newManager(ctx)
 	if err != nil {
 		return err
@@ -108,6 +110,25 @@ func Run() error {
 		defer o11yStartCancel()
 		return errors.Join(
 			fmt.Errorf("worker: erro ao iniciar worker manager: %w", err),
+			dbManager.Shutdown(dbStartCtx),
+			o11y.Shutdown(o11yStartCtx),
+		)
+	}
+
+	health := newHealthServer(runtime.db, workerManager, cfg.HTTPConfig.HealthAddr)
+	if err := health.start(ctx); err != nil {
+		healthStartCtx, healthStartCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer healthStartCancel()
+		workerStartCtx, workerStartCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer workerStartCancel()
+		dbStartCtx, dbStartCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer dbStartCancel()
+		o11yStartCtx, o11yStartCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer o11yStartCancel()
+		return errors.Join(
+			fmt.Errorf("worker: erro ao iniciar health server: %w", err),
+			health.shutdown(healthStartCtx),
+			workerManager.Stop(workerStartCtx),
 			dbManager.Shutdown(dbStartCtx),
 			o11y.Shutdown(o11yStartCtx),
 		)
@@ -130,7 +151,23 @@ func Run() error {
 		"shutdown signal received, draining",
 	)
 
-	return runtime.shutdown(workerManager)
+	return runtime.shutdown(workerManager, health)
+}
+
+func registerOutboxMetrics(o11y observability.Observability, db *sqlx.DB) {
+	factory := outbox.NewRepositoryFactory(o11y)
+	_ = o11y.Metrics().Gauge(
+		"outbox_pending_jobs",
+		"Total de eventos pendentes na fila do outbox",
+		"1",
+		func(ctx context.Context) float64 {
+			count, err := factory.OutboxRepository(db).CountPending(ctx)
+			if err != nil {
+				return -1
+			}
+			return float64(count)
+		},
+	)
 }
 
 type workerRuntime struct {
@@ -284,13 +321,22 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if agentModule.WorkflowKernelHousekeepingJob != nil {
 		jobs = append(jobs, agentModule.WorkflowKernelHousekeepingJob)
 	}
+	if agentModule.OnboardingAbandonmentJob != nil {
+		jobs = append(jobs, agentModule.OnboardingAbandonmentJob)
+	}
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	return worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger), nil
 }
 
-func (r *workerRuntime) shutdown(workerManager *worker.Manager) error {
+func (r *workerRuntime) shutdown(workerManager *worker.Manager, health *healthServer) error {
 	var shutdownErrs []error
+
+	healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer healthCancel()
+	if err := health.shutdown(healthCtx); err != nil {
+		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro ao encerrar health server: %w", err))
+	}
 
 	workerCtx, workerCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer workerCancel()

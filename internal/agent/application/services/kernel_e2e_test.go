@@ -56,6 +56,9 @@ func (s *e2eStore) AppendStep(_ context.Context, _ platform.StepRecord) error { 
 func (s *e2eStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (int64, error) {
 	return 0, nil
 }
+func (s *e2eStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]platform.Snapshot, error) {
+	return nil, nil
+}
 
 type KernelE2ESuite struct {
 	suite.Suite

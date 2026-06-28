@@ -2,7 +2,7 @@
 version: '3'
 
 # Deploy operacional da maquina local direto na VPS, sem GHCR.
-# Encapsula deployment/scripts/deploy-local.sh. Ver secao dedicada no README.
+# Para deploy Swarm em producao, use `task swarm:prod:*`.
 
 tasks:
   local:
@@ -14,3 +14,12 @@ tasks:
       VPS_SSH_KEY, IMAGE_NAME, PLATFORM, HEALTH_RETRIES, ALLOW_DIRTY, SKIP_BUILD.
     cmds:
       - bash deployment/scripts/deploy-local.sh {{.CLI_ARGS}}
+
+  swarm:
+    desc: >-
+      Deploy Swarm em producao na VPS (alias para `task swarm:prod:deploy`).
+      Sobrescreva IMAGE_TAG com a tag real da imagem GHCR.
+    cmds:
+      - task: swarm:prod:deploy
+        vars:
+          IMAGE_TAG: '{{.IMAGE_TAG | default (env "IMAGE_TAG") | default "latest"}}'

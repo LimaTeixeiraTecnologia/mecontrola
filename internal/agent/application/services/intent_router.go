@@ -9,6 +9,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow/steps"
@@ -73,17 +74,8 @@ type RouteResult struct {
 	Delivered bool
 }
 
-type OnboardingTurnResult struct {
-	Handled bool
-	Reply   string
-}
-
-type OnboardingTurnRunner interface {
-	Run(ctx context.Context, userID uuid.UUID, channel, text string) (OnboardingTurnResult, error)
-}
-
 type IntentRouter struct {
-	onboarding      *OnboardingAgent
+	onboarding      onboardingHandler
 	daily           *DailyLedgerAgent
 	whatsAppGateway WhatsAppOutbound
 	o11y            observability.Observability
@@ -91,8 +83,12 @@ type IntentRouter struct {
 	runtime         *AgentRuntime
 }
 
-func (r *IntentRouter) EnableRuntime(threads ThreadGateway, runs RunGateway) {
-	r.runtime = NewAgentRuntime(r.o11y, r, threads, runs)
+type onboardingHandler interface {
+	Handle(ctx context.Context, userID uuid.UUID, channel, peer, text, messageID string) (RouteResult, bool)
+}
+
+func (r *IntentRouter) EnableRuntime(catalog *capability.Catalog, threads ThreadGateway, runs RunGateway) {
+	r.runtime = NewAgentRuntime(r.o11y, catalog, r, threads, runs)
 }
 
 func (r *IntentRouter) dispatch(ctx context.Context, principal Principal, channel, peer, text, messageID string) RouteResult {
@@ -116,6 +112,7 @@ type KernelDeps struct {
 }
 
 type IntentRouterDeps struct {
+	CapabilityCatalog        *capability.Catalog
 	Parser                   IntentParser
 	MonthlySummary           tools.MonthlySummaryReader
 	CardLister               tools.CardLister
@@ -138,7 +135,12 @@ type IntentRouterDeps struct {
 	BudgetConvo              tools.BudgetConversation
 	BudgetCommitter          tools.BudgetConfigCommitter
 	BudgetSession            tools.BudgetSessionGateway
-	OnboardingRunner         OnboardingTurnRunner
+	OnboardingEngine         platform.Engine[workflow.OnboardingState]
+	OnboardingDef            platform.Definition[workflow.OnboardingState]
+	OnboardingStore          platform.Store
+	OnboardingStateChecker   OnboardingStateChecker
+	OnboardingHistoryGateway workflow.HistoryGateway
+	OnboardingHandler        onboardingHandler
 	Fallback                 tools.Fallback
 	WhatsAppGateway          WhatsAppOutbound
 	Decision                 DecisionAuditDeps
@@ -165,6 +167,13 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 	}
 	if deps.WhatsAppGateway == nil {
 		return nil, ErrWhatsAppGatewayNil
+	}
+	if deps.CapabilityCatalog == nil {
+		catalog, err := capability.BuildCatalog()
+		if err != nil {
+			return nil, err
+		}
+		deps.CapabilityCatalog = catalog
 	}
 	loc := deps.Location
 	if loc == nil {
@@ -195,8 +204,12 @@ func NewIntentRouter(o11y observability.Observability, deps IntentRouterDeps) (*
 		return nil, err
 	}
 	warnMissingToolBindings(o11y, deps)
+	onboarding := deps.OnboardingHandler
+	if onboarding == nil {
+		onboarding = NewOnboardingAgent(o11y, routedTotal, deps.OnboardingEngine, deps.OnboardingDef, deps.OnboardingStore, deps.OnboardingStateChecker, deps.OnboardingHistoryGateway)
+	}
 	return &IntentRouter{
-		onboarding:      newOnboardingAgent(o11y, routedTotal, deps),
+		onboarding:      onboarding,
 		daily:           daily,
 		whatsAppGateway: deps.WhatsAppGateway,
 		o11y:            o11y,

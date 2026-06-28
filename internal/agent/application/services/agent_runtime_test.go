@@ -5,15 +5,24 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/capability"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/tools"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/domain/intent"
+)
+
+const (
+	workflowTransactions   = "transactions"
+	workflowBudget         = "budget"
+	workflowCards          = "cards"
+	workflowConversational = "conversational"
 )
 
 type stubRuntimeRouter struct {
@@ -71,7 +80,7 @@ type AgentRuntimeSuite struct {
 	suite.Suite
 
 	ctx       context.Context
-	obs       observability.Observability
+	obs       *fake.Provider
 	principal Principal
 	thread    entities.Thread
 }
@@ -126,6 +135,22 @@ func (s *AgentRuntimeSuite) TestExecute() {
 				s.Equal(runtimeAgentID, finished.AgentID())
 				s.Equal(workflowCards, finished.Workflow())
 				s.GreaterOrEqual(finished.DurationMs(), int64(0))
+			},
+		},
+		{
+			name: "deve derivar workflow e tool do catalogo em kind com drift corrigido",
+			args: args{result: RouteResult{Reply: "resumo", Outcome: tools.OutcomeRouted, Kind: intent.KindQueryIncomeSummary}},
+			dependencies: dependencies{
+				router:  &stubRuntimeRouter{result: RouteResult{Reply: "resumo", Outcome: tools.OutcomeRouted, Kind: intent.KindQueryIncomeSummary}},
+				threads: &stubThreadGateway{thread: s.thread},
+				runs:    &stubRunGateway{},
+			},
+			expect: func(out RouteResult, deps dependencies) {
+				s.Equal("resumo", out.Reply)
+				s.Require().Len(deps.runs.finished, 1)
+				finished := deps.runs.finished[0]
+				s.Equal(workflowTransactions, finished.Workflow())
+				s.Equal(intent.KindQueryIncomeSummary.String(), finished.ToolName())
 			},
 		},
 		{
@@ -189,11 +214,15 @@ func (s *AgentRuntimeSuite) TestExecute() {
 		},
 	}
 
+	catalog := s.buildCatalog()
+
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			rt := NewAgentRuntime(s.obs, scenario.dependencies.router, scenario.dependencies.threads, scenario.dependencies.runs)
+			obs := fake.NewProvider()
+			rt := NewAgentRuntime(obs, catalog, scenario.dependencies.router, scenario.dependencies.threads, scenario.dependencies.runs)
 			out := rt.Execute(s.ctx, s.principal, ChannelWhatsApp, "", "registrar", "msg-1")
 			scenario.expect(out, scenario.dependencies)
+			s.assertMetricLabels(obs.Metrics().(*fake.FakeMetrics), scenario.args.result)
 		})
 	}
 }
@@ -203,7 +232,7 @@ func (s *AgentRuntimeSuite) TestExecuteReusesThreadAcrossMessages() {
 	threads := &stubThreadGateway{thread: s.thread}
 	runs := &stubRunGateway{}
 
-	rt := NewAgentRuntime(s.obs, router, threads, runs)
+	rt := NewAgentRuntime(s.obs, s.buildCatalog(), router, threads, runs)
 	rt.Execute(s.ctx, s.principal, ChannelWhatsApp, "", "msg um", "m-1")
 	rt.Execute(s.ctx, s.principal, ChannelWhatsApp, "", "msg dois", "m-2")
 
@@ -213,4 +242,131 @@ func (s *AgentRuntimeSuite) TestExecuteReusesThreadAcrossMessages() {
 	s.Require().Len(runs.inserted, 2)
 	s.Equal(s.thread.ID(), runs.inserted[0].ThreadID())
 	s.Equal(s.thread.ID(), runs.inserted[1].ThreadID())
+}
+
+func TestCatalogClassificationMatchesLegacyLabelsExceptKnownDrift(t *testing.T) {
+	t.Parallel()
+
+	catalog, err := capability.BuildCatalog()
+	require.NoError(t, err)
+
+	expectedDrift := map[intent.Kind]struct {
+		workflow string
+		tool     string
+	}{
+		intent.KindQueryIncomeSummary:     {workflow: workflowTransactions, tool: intent.KindQueryIncomeSummary.String()},
+		intent.KindBudgetRecurrence:       {workflow: workflowBudget, tool: intent.KindBudgetRecurrence.String()},
+		intent.KindDeleteTransactionByRef: {workflow: workflowTransactions, tool: intent.KindDeleteTransactionByRef.String()},
+		intent.KindEditTransactionByRef:   {workflow: workflowTransactions, tool: intent.KindEditTransactionByRef.String()},
+	}
+	require.Len(t, expectedDrift, 4)
+
+	for _, kind := range catalogEquivalenceKinds() {
+		workflow, tool := catalog.Classify(kind)
+		legacyWorkflow := legacyWorkflowFor(kind)
+		legacyTool := legacyToolFor(kind)
+		if expected, ok := expectedDrift[kind]; ok {
+			require.Equal(t, expected.workflow, workflow, "workflow corrigido para kind %s", kind.String())
+			require.Equal(t, expected.tool, tool, "tool corrigida para kind %s", kind.String())
+			require.NotEqual(t, legacyWorkflow, workflow, "kind %s deveria ser excecao de drift", kind.String())
+			continue
+		}
+		require.Equal(t, legacyWorkflow, workflow, "workflow legado divergente para kind %s", kind.String())
+		require.Equal(t, legacyTool, tool, "tool legada divergente para kind %s", kind.String())
+	}
+}
+
+func (s *AgentRuntimeSuite) buildCatalog() *capability.Catalog {
+	catalog, err := capability.BuildCatalog()
+	s.Require().NoError(err)
+	return catalog
+}
+
+func (s *AgentRuntimeSuite) assertMetricLabels(metrics *fake.FakeMetrics, result RouteResult) {
+	s.Require().NotNil(metrics)
+
+	expectedWorkflow, expectedTool := s.buildCatalog().Classify(result.Kind)
+
+	runsTotal := metrics.GetCounter("agent_runs_total")
+	s.Require().NotNil(runsTotal)
+	s.Require().Len(runsTotal.GetValues(), 1)
+	runFields := fieldsByKey(runsTotal.GetValues()[0].Fields)
+	s.Equal(runtimeAgentID, runFields["agent_id"])
+	s.Equal(ChannelWhatsApp, runFields["channel"])
+	s.Equal(expectedWorkflow, runFields["workflow"])
+
+	toolInvocations := metrics.GetCounter("agent_tool_invocations_total")
+	if expectedTool == "" {
+		if toolInvocations != nil {
+			s.Empty(toolInvocations.GetValues())
+		}
+		return
+	}
+	s.Require().NotNil(toolInvocations)
+	s.Require().Len(toolInvocations.GetValues(), 1)
+	toolFields := fieldsByKey(toolInvocations.GetValues()[0].Fields)
+	s.Equal(expectedTool, toolFields["tool"])
+	s.Equal(result.Outcome.String(), toolFields["outcome"])
+}
+
+func catalogEquivalenceKinds() []intent.Kind {
+	kinds := append([]intent.Kind(nil), routableKinds()...)
+	for kind := range intentToOperationKind {
+		found := false
+		for _, existing := range kinds {
+			if existing == kind {
+				found = true
+				break
+			}
+		}
+		if !found {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds
+}
+
+func legacyWorkflowFor(kind intent.Kind) string {
+	switch kind {
+	case intent.KindRecordExpense,
+		intent.KindRecordIncome,
+		intent.KindRecordCardPurchase,
+		intent.KindListTransactions,
+		intent.KindDeleteLastTransaction,
+		intent.KindEditLastTransaction,
+		intent.KindCreateRecurring,
+		intent.KindListRecurring:
+		return workflowTransactions
+	case intent.KindMonthlySummary,
+		intent.KindHowAmIDoing,
+		intent.KindConfigureBudget,
+		intent.KindEditCategoryPercentage,
+		intent.KindQueryCategory,
+		intent.KindQueryGoal,
+		intent.KindQueryCard:
+		return workflowBudget
+	case intent.KindListCards,
+		intent.KindCreateCard,
+		intent.KindCountCards,
+		intent.KindUpdateCard,
+		intent.KindDeleteCard:
+		return workflowCards
+	default:
+		return workflowConversational
+	}
+}
+
+func legacyToolFor(kind intent.Kind) string {
+	if legacyWorkflowFor(kind) == workflowConversational {
+		return ""
+	}
+	return kind.String()
+}
+
+func fieldsByKey(fields []observability.Field) map[string]any {
+	out := make(map[string]any, len(fields))
+	for _, field := range fields {
+		out[field.Key] = field.AnyValue()
+	}
+	return out
 }

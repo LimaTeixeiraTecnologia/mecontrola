@@ -70,6 +70,9 @@ func (s *replayTestStore) AppendStep(_ context.Context, _ platform.StepRecord) e
 func (s *replayTestStore) DeleteCompleted(_ context.Context, _ time.Duration, _ int) (int64, error) {
 	return 0, nil
 }
+func (s *replayTestStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]platform.Snapshot, error) {
+	return nil, nil
+}
 
 type DailyLedgerWriteSuite struct {
 	suite.Suite

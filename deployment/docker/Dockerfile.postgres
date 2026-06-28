@@ -8,7 +8,7 @@
 FROM postgres:16
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends pgbackrest \
+    && apt-get install -y --no-install-recommends pgbackrest ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY deployment/pgbackrest/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf

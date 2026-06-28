@@ -42,9 +42,11 @@ func (s *MigrationSuite) SetupSuite() {
 func (s *MigrationSuite) SetupTest() {}
 
 func (s *MigrationSuite) newMigrator() *migrate.Migrate {
+	_, err := s.db.ExecContext(s.ctx, `CREATE SCHEMA IF NOT EXISTS mecontrola`)
+	s.Require().NoError(err)
 	driver, err := migratepgx.WithInstance(s.db.DB, &migratepgx.Config{
 		MigrationsTable: migratepgx.DefaultMigrationsTable,
-		SchemaName:      "public",
+		SchemaName:      "mecontrola",
 	})
 	s.Require().NoError(err)
 	src, err := iofs.New(migrations.FS, ".")
@@ -82,6 +84,7 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 
 	s.applyBaseline(migrator)
 
+	s.assertTablePresent("mecontrola.schema_migrations")
 	s.assertTablePresent("mecontrola.billing_plans")
 	s.assertTablePresent("mecontrola.categories")
 	s.assertTablePresent("mecontrola.category_dictionary")
@@ -103,6 +106,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertDictionaryCanonicalsCount()
 	s.assertDictionaryAliasesCount()
 	s.assertUnaccentAvailable()
+	s.assertPgcryptoAvailable()
+	s.assertPgTrgmAvailable()
 
 	s.downToVersion(migrator, 0)
 
@@ -183,69 +188,6 @@ func (s *MigrationSuite) TestChannelDedupAndUserIdentitiesConstraints() {
 	`, uuid.NewString(), userID)
 	s.Require().Error(telegramIdentityErr)
 	s.Contains(telegramIdentityErr.Error(), "user_identities_channel_check")
-}
-
-func (s *MigrationSuite) TestMigration000020DropTelegramUpDown() {
-	migrator := s.newMigrator()
-	s.applyBaseline(migrator)
-
-	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
-
-	telegramMsgErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
-		VALUES ('telegram', 'tg-msg-1', now())
-	`)
-	s.Require().Error(telegramMsgErr)
-	s.Contains(telegramMsgErr.Error(), "channel_processed_messages_channel_check")
-
-	userID := "eeeeeeee-1111-1111-1111-eeeeeeeeeeee"
-	insertUserErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
-		VALUES ($1, '+5511988880011', 'ACTIVE', now(), now())
-		ON CONFLICT (id) DO NOTHING
-	`, userID)
-	s.Require().NoError(insertUserErr)
-
-	telegramIdentityErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
-		VALUES ($1, $2, 'telegram', 'tg-ext-1', now(), now())
-	`, uuid.NewString(), userID)
-	s.Require().Error(telegramIdentityErr)
-	s.Contains(telegramIdentityErr.Error(), "user_identities_channel_check")
-
-	telegramSessionErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.onboarding_sessions (user_id, channel, state, payload, updated_at)
-		VALUES ($1, 'telegram', 'started', '{}', now())
-	`, userID)
-	s.Require().Error(telegramSessionErr)
-	s.Contains(telegramSessionErr.Error(), "onboarding_sessions_channel_chk")
-
-	s.downToVersion(migrator, 19)
-
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "telegram_external_id")
-
-	telegramMsgOkErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.channel_processed_messages (channel, message_id, processed_at)
-		VALUES ('telegram', 'tg-msg-2', now())
-	`)
-	s.Require().NoError(telegramMsgOkErr)
-
-	telegramIdentityOkErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at)
-		VALUES ($1, $2, 'telegram', 'tg-ext-2', now(), now())
-	`, uuid.NewString(), userID)
-	s.Require().NoError(telegramIdentityOkErr)
-
-	cleanErr := execSQL(s.db, s.ctx, `
-		DELETE FROM mecontrola.user_identities WHERE channel = 'telegram';
-		DELETE FROM mecontrola.channel_processed_messages WHERE channel = 'telegram';
-		DELETE FROM mecontrola.onboarding_sessions WHERE channel = 'telegram';
-	`)
-	s.Require().NoError(cleanErr)
-
-	s.applyBaseline(migrator)
-
-	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
 }
 
 func (s *MigrationSuite) TestIdempotencyKeysConstraints() {
@@ -559,7 +501,21 @@ func (s *MigrationSuite) assertColumnMissing(table, column string) {
 
 func (s *MigrationSuite) assertUnaccentAvailable() {
 	var result bool
-	err := s.db.QueryRowContext(s.ctx, `SELECT unaccent('á') = 'a'`).Scan(&result)
+	err := s.db.QueryRowContext(s.ctx, `SELECT mecontrola.unaccent('á') = 'a'`).Scan(&result)
+	s.Require().NoError(err)
+	s.True(result)
+}
+
+func (s *MigrationSuite) assertPgcryptoAvailable() {
+	var result bool
+	err := s.db.QueryRowContext(s.ctx, `SELECT gen_random_uuid() IS NOT NULL`).Scan(&result)
+	s.Require().NoError(err)
+	s.True(result)
+}
+
+func (s *MigrationSuite) assertPgTrgmAvailable() {
+	var result bool
+	err := s.db.QueryRowContext(s.ctx, `SELECT similarity('mercado', 'mercadinho') > 0`).Scan(&result)
 	s.Require().NoError(err)
 	s.True(result)
 }

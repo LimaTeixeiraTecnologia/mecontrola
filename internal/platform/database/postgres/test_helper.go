@@ -32,7 +32,7 @@ const (
 	testCleanupTTL      = 15 * time.Second
 	testMigrationTTL    = 120 * time.Second
 	testSearchPath      = "mecontrola,public"
-	testMigrationSchema = "public"
+	testMigrationSchema = "mecontrola"
 )
 
 var (
@@ -118,6 +118,10 @@ func runTestMigrations(dsn string) error {
 		return fmt.Errorf("open migration connection: %w", err)
 	}
 	defer func() { _ = migrateDB.Close() }()
+
+	if _, err := migrateDB.ExecContext(context.Background(), `CREATE SCHEMA IF NOT EXISTS mecontrola`); err != nil {
+		return fmt.Errorf("ensure mecontrola schema: %w", err)
+	}
 
 	driver, err := migratepgx.WithInstance(migrateDB, &migratepgx.Config{
 		MigrationsTable:       migratepgx.DefaultMigrationsTable,

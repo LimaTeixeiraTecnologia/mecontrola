@@ -46,16 +46,20 @@ type OnboardingCardDraft struct {
 	DueDay     int
 }
 
-func NewOnboardingCardDraft(nickname string, closingDay int) (OnboardingCardDraft, error) {
+func NewOnboardingCardDraft(nickname string, dueDay, closingDay int) (OnboardingCardDraft, error) {
 	name := strings.TrimSpace(nickname)
 	if name == "" {
 		return OnboardingCardDraft{}, ErrOnboardingCardNicknameRequired
+	}
+	due, err := valueobjects.NewCardDueDay(dueDay)
+	if err != nil {
+		return OnboardingCardDraft{}, err
 	}
 	closing, err := valueobjects.NewCardClosingDay(closingDay)
 	if err != nil {
 		return OnboardingCardDraft{}, err
 	}
-	return OnboardingCardDraft{Name: name, ClosingDay: closing.Value()}, nil
+	return OnboardingCardDraft{Name: name, ClosingDay: closing.Value(), DueDay: due.Value()}, nil
 }
 
 type OnboardingTurn struct {
@@ -73,7 +77,7 @@ type OnboardingSessionPayload struct {
 	Objective        string
 	CustomSplit      []OnboardingBudgetAllocationEntry
 	FirstTxRecorded  bool
-	Phase            string
+	Phase            valueobjects.OnboardingPhase
 	RecentTurns      []OnboardingTurn
 	WelcomeSentAt    *time.Time
 	CompletedAt      *time.Time
@@ -112,6 +116,7 @@ func NewOnboardingSession(
 		userID:    userID,
 		channel:   channel,
 		updatedAt: updatedAt,
+		payload:   OnboardingSessionPayload{Phase: valueobjects.PhaseWelcome},
 	}, nil
 }
 
@@ -170,7 +175,7 @@ func (s OnboardingSession) WithCustomSplit(allocation valueobjects.BudgetAllocat
 	return s
 }
 
-func (s OnboardingSession) WithPhase(phase string, updatedAt time.Time) OnboardingSession {
+func (s OnboardingSession) WithPhase(phase valueobjects.OnboardingPhase, updatedAt time.Time) OnboardingSession {
 	s.payload.Phase = phase
 	s.updatedAt = updatedAt
 	return s
@@ -187,8 +192,7 @@ func (s OnboardingSession) HasFirstTransaction() bool {
 }
 
 func (s OnboardingSession) IsReadyToComplete() bool {
-	return s.payload.FirstTxRecorded &&
-		strings.TrimSpace(s.payload.Objective) != "" &&
+	return strings.TrimSpace(s.payload.Objective) != "" &&
 		s.payload.IncomeCents > 0 &&
 		len(s.payload.CustomSplit) == 5
 }

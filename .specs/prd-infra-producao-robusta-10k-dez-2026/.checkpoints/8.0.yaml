@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-infra-producao-robusta-10k-dez-2026/8.0_execution_report.md
+summary: Runbooks, alertas Grafana, retenção LGTM e auditoria de idempotência concluídos; migração real Compose→Swarm na VPS 187.77.45.48, alerta de teste Telegram, backup full pgBackRest e restore PITR em instância isolada executados com sucesso.
+timestamp: 2026-06-28T20:51:00Z

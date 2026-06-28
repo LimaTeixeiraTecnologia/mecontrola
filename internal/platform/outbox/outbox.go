@@ -122,6 +122,7 @@ type Storage interface {
 	MarkFailed(ctx context.Context, id string, lastErr string) error
 	ResetStuck(ctx context.Context, stuckAfter time.Duration) (int64, error)
 	DeletePublishedBatch(ctx context.Context, retention time.Duration, limit int) (int64, error)
+	CountPending(ctx context.Context) (int64, error)
 }
 
 type Registry interface {

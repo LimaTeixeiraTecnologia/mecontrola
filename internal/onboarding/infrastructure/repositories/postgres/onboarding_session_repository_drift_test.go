@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type OnboardingSessionDriftSuite struct {
@@ -155,4 +157,69 @@ func (s *OnboardingSessionDriftSuite) TestFind_NoDrift_ActiveWithCompletedAt() {
 	if counter != nil {
 		s.Empty(counter.GetValues(), "counter nao deve ser incrementado quando completed_at presente")
 	}
+}
+
+func (s *OnboardingSessionDriftSuite) TestFind_PhaseMigrationReset_InProgressUnknownPhase() {
+	userID := uuid.New()
+	payload, err := json.Marshal(onboardingSessionPayloadJSON{
+		IncomeCents: 100000,
+		Phase:       "legacy_unknown_phase",
+	})
+	s.Require().NoError(err)
+
+	row := []driver.Value{
+		[]byte(userID.String()),
+		"whatsapp",
+		"in_progress",
+		payload,
+		time.Now().UTC(),
+	}
+	db := buildDriftDB(s.T(), "onboarding_phase_reset_in_progress", row)
+
+	obs := fake.NewProvider()
+	repo := NewOnboardingSessionRepository(obs, db)
+
+	got, findErr := repo.Find(context.Background(), userID)
+	s.Require().NoError(findErr)
+	s.Equal(valueobjects.PhaseWelcome, got.Payload().Phase)
+	s.Equal(int64(0), got.Payload().IncomeCents)
+
+	logs := obs.Logger().(*fake.FakeLogger).GetEntries()
+	var warnFound bool
+	for _, e := range logs {
+		if e.Message == "onboarding.repository.phase_migration_reset" {
+			warnFound = true
+			break
+		}
+	}
+	s.True(warnFound, "warn onboarding.repository.phase_migration_reset deve ser emitido")
+}
+
+func (s *OnboardingSessionDriftSuite) TestFind_PhaseMigrationReset_ActiveUnknownPhaseKeepsData() {
+	userID := uuid.New()
+	now := time.Now().UTC()
+	payload, err := json.Marshal(onboardingSessionPayloadJSON{
+		IncomeCents: 100000,
+		Phase:       "legacy_unknown_phase",
+		CompletedAt: &now,
+	})
+	s.Require().NoError(err)
+
+	row := []driver.Value{
+		[]byte(userID.String()),
+		"whatsapp",
+		"active",
+		payload,
+		time.Now().UTC(),
+	}
+	db := buildDriftDB(s.T(), "onboarding_phase_reset_active", row)
+
+	obs := fake.NewProvider()
+	repo := NewOnboardingSessionRepository(obs, db)
+
+	got, findErr := repo.Find(context.Background(), userID)
+	s.Require().NoError(findErr)
+	s.Equal(valueobjects.PhaseWelcome, got.Payload().Phase)
+	s.Equal(int64(100000), got.Payload().IncomeCents)
+	s.NotNil(got.Payload().CompletedAt)
 }

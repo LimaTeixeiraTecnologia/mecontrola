@@ -135,6 +135,10 @@ type OnboardingConfig struct {
 	TokenExpirationSchedule string `mapstructure:"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE"`
 	MaxTokenLookupAttempts  int    `mapstructure:"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS"`
 	TokenEncryptionKey      string `mapstructure:"ONBOARDING_TOKEN_ENCRYPTION_KEY"`
+	CardClosingOffsetDays   int    `mapstructure:"ONBOARDING_CARD_CLOSING_OFFSET_DAYS"`
+	AbandonmentTTLHours     int    `mapstructure:"ONBOARDING_ABANDONMENT_TTL_HOURS"`
+	AbandonmentJobSchedule  string `mapstructure:"ONBOARDING_ABANDONMENT_JOB_SCHEDULE"`
+	AbandonmentBatchSize    int    `mapstructure:"ONBOARDING_ABANDONMENT_BATCH_SIZE"`
 }
 
 type WhatsAppConfig struct {
@@ -257,6 +261,7 @@ type AppConfig struct {
 
 type HTTPConfig struct {
 	Port               int    `mapstructure:"PORT"`
+	HealthAddr         string `mapstructure:"WORKER_HEALTH_ADDR"`
 	ServiceNameAPI     string `mapstructure:"SERVICE_NAME_API"`
 	ServiceNameWorker  string `mapstructure:"SERVICE_NAME_WORKER"`
 	CORSAllowedOrigins string `mapstructure:"CORS_ALLOWED_ORIGINS"`
@@ -278,7 +283,7 @@ type DBConfig struct {
 }
 
 const databaseSearchPath = "mecontrola,public"
-const migrationTableQueryParam = "&x-migrations-table=%22public%22.%22schema_migrations%22&x-migrations-table-quoted=true"
+const migrationTableQueryParam = "&x-migrations-table=%22mecontrola%22.%22schema_migrations%22&x-migrations-table-quoted=true"
 
 func (d *DBConfig) DSN() string {
 	return d.formatDSN(true)
@@ -416,7 +421,7 @@ func (l *configLoader) load() (*Config, error) {
 func (l *configLoader) envKeys() []string {
 	return []string{
 		"ENVIRONMENT", "APP_MODE",
-		"PORT", "SERVICE_NAME_API", "CORS_ALLOWED_ORIGINS",
+		"PORT", "WORKER_HEALTH_ADDR", "SERVICE_NAME_API", "CORS_ALLOWED_ORIGINS",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSL_MODE",
 		"DB_MAX_CONNS", "DB_MIN_CONNS", "DB_MAX_IDLE_CONNS",
 		"DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
@@ -447,6 +452,9 @@ func (l *configLoader) envKeys() []string {
 		"KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN",
 		"KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN",
 		"KIWIFY_RATE_LIMIT_BURST",
+		"KIWIFY_WEBHOOK_RATE_LIMIT_PER_MIN",
+		"KIWIFY_WEBHOOK_RATE_LIMIT_BURST",
+		"KIWIFY_WEBHOOK_TRUSTED_PROXIES",
 		"KIWIFY_RECONCILIATION_INTERVAL",
 		"KIWIFY_RECONCILIATION_BATCH_SIZE",
 		"KIWIFY_HTTP_TIMEOUT",
@@ -460,6 +468,7 @@ func (l *configLoader) envKeys() []string {
 		"BILLING_KIWIFY_EVENTS_RETENTION_DAYS",
 		"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH",
+		"BILLING_GRACE_EXPIRATION_SCHEDULE",
 		"ONBOARDING_TOKEN_TTL_DAYS",
 		"ONBOARDING_OUTREACH_GAP_HOURS",
 		"ONBOARDING_OUTREACH_ENABLED",
@@ -476,6 +485,10 @@ func (l *configLoader) envKeys() []string {
 		"ONBOARDING_TOKEN_EXPIRATION_SCHEDULE",
 		"ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS",
 		"ONBOARDING_TOKEN_ENCRYPTION_KEY",
+		"ONBOARDING_CARD_CLOSING_OFFSET_DAYS",
+		"ONBOARDING_ABANDONMENT_TTL_HOURS",
+		"ONBOARDING_ABANDONMENT_JOB_SCHEDULE",
+		"ONBOARDING_ABANDONMENT_BATCH_SIZE",
 		"META_PHONE_NUMBER_ID",
 		"META_ACCESS_TOKEN",
 		"META_APP_SECRET",
@@ -505,6 +518,7 @@ func (l *configLoader) envKeys() []string {
 		"BUDGETS_RETENTION_PURGE_CRON",
 		"BUDGETS_RETENTION_PURGE_BATCH_SIZE",
 		"BUDGETS_THRESHOLD_ALERTS_CRON",
+		"BUDGETS_THRESHOLD_ALERTS_MODE",
 		"BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT",
 		"BUDGETS_THRESHOLD_CATEGORY_RATIO",
 		"BUDGETS_THRESHOLD_GOAL_RATIO",
@@ -520,7 +534,21 @@ func (l *configLoader) envKeys() []string {
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON",
 		"TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS",
 		"TRANSACTIONS_BRAZIL_TIMEZONE",
+		"OPENROUTER_BASE_URL",
 		"OPENROUTER_API_KEY",
+		"AGENT_LLM_HTTP_REFERER",
+		"AGENT_LLM_X_TITLE",
+		"AGENT_LLM_PRIMARY_MODEL",
+		"AGENT_LLM_FALLBACK_MODELS",
+		"AGENT_LLM_MAX_TOKENS",
+		"AGENT_LLM_MAX_INPUT_CHARS",
+		"AGENT_LLM_PROSE_MAX_TOKENS",
+		"AGENT_LLM_TEMPERATURE",
+		"AGENT_LLM_REQUEST_TIMEOUT",
+		"AGENT_LLM_CIRCUIT_FAILURES",
+		"AGENT_LLM_CIRCUIT_WINDOW",
+		"AGENT_LLM_CIRCUIT_COOLDOWN",
+		"AGENT_POLICY_MIN_CONFIDENCE",
 		"AGENT_LLM_PARSE_PRIMARY_MODEL",
 		"AGENT_LLM_PARSE_FALLBACK_MODELS",
 		"AGENT_LLM_PARSE_MAX_TOKENS",
@@ -529,11 +557,29 @@ func (l *configLoader) envKeys() []string {
 		"AGENT_LLM_CONV_PRIMARY_MODEL",
 		"AGENT_LLM_CONV_FALLBACK_MODELS",
 		"AGENT_LLM_CONV_MAX_TOKENS",
+		"AGENT_ONBOARDING_LLM_MAX_TOKENS",
+		"AGENT_ONBOARDING_LLM_MODEL",
+		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE",
+		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH",
+		"IDENTITY_AUTH_EVENTS_RETENTION_DAYS",
 		"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT",
 		"IDENTITY_GATEWAY_SHARED_SECRET_NEXT",
 		"IDENTITY_GATEWAY_AUTH_WINDOW",
 		"AUTH_RATE_LIMIT_PER_USER_PER_MIN",
 		"AUTH_RATE_LIMIT_PER_USER_BURST",
+		"EMAIL_PROVIDER",
+		"EMAIL_FROM_ADDRESS",
+		"EMAIL_FROM_NAME",
+		"EMAIL_REPLY_TO",
+		"SMTP_HOST",
+		"SMTP_PORT",
+		"SMTP_USERNAME",
+		"SMTP_PASSWORD",
+		"SMTP_STARTTLS",
+		"SMTP_TIMEOUT",
+		"RESEND_API_KEY",
+		"RESEND_BASE_URL",
+		"EMAIL_HTTP_TIMEOUT",
 		"WORKFLOW_KERNEL_MAX_ATTEMPTS",
 		"WORKFLOW_KERNEL_RETRY_BASE_BACKOFF",
 		"WORKFLOW_KERNEL_RETRY_MAX_BACKOFF",
@@ -608,6 +654,7 @@ func (l *configLoader) setEmailDefaults() {
 
 func (l *configLoader) setCoreDefaults() {
 	l.v.SetDefault("PORT", 8080)
+	l.v.SetDefault("WORKER_HEALTH_ADDR", ":8081")
 	l.v.SetDefault("APP_MODE", "server")
 	l.v.SetDefault("ENVIRONMENT", "local")
 	l.v.SetDefault("LOG_LEVEL", "info")
@@ -1141,6 +1188,38 @@ func (c *Config) validateOnboarding() []string {
 		len(o.TokenEncryptionKey) != 43 && len(o.TokenEncryptionKey) != 44 {
 		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY deve ter 32 bytes ou base64 de 32 bytes")
 	}
+	if o.CardClosingOffsetDays < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_CARD_CLOSING_OFFSET_DAYS inválido %d: deve ser maior que zero",
+			o.CardClosingOffsetDays,
+		))
+	}
+	errs = append(errs, validateOnboardingAbandonment(o)...)
+	return errs
+}
+
+func validateOnboardingAbandonment(o OnboardingConfig) []string {
+	var errs []string
+	if o.AbandonmentTTLHours < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_ABANDONMENT_TTL_HOURS inválido %d: deve ser maior que zero",
+			o.AbandonmentTTLHours,
+		))
+	}
+	if o.AbandonmentJobSchedule == "" {
+		errs = append(errs, "ONBOARDING_ABANDONMENT_JOB_SCHEDULE inválido: não pode ser vazio")
+	} else if _, err := cron.ParseStandard(o.AbandonmentJobSchedule); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_ABANDONMENT_JOB_SCHEDULE inválido %q: %v",
+			o.AbandonmentJobSchedule, err,
+		))
+	}
+	if o.AbandonmentBatchSize < 1 {
+		errs = append(errs, fmt.Sprintf(
+			"ONBOARDING_ABANDONMENT_BATCH_SIZE inválido %d: deve ser maior que zero",
+			o.AbandonmentBatchSize,
+		))
+	}
 	return errs
 }
 
@@ -1159,6 +1238,10 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_META_CLEANUP_SCHEDULE", "30 3 * * *")
 	l.v.SetDefault("ONBOARDING_TOKEN_EXPIRATION_SCHEDULE", "0 3 * * *")
 	l.v.SetDefault("ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS", 5)
+	l.v.SetDefault("ONBOARDING_CARD_CLOSING_OFFSET_DAYS", 10)
+	l.v.SetDefault("ONBOARDING_ABANDONMENT_TTL_HOURS", 48)
+	l.v.SetDefault("ONBOARDING_ABANDONMENT_JOB_SCHEDULE", "@hourly")
+	l.v.SetDefault("ONBOARDING_ABANDONMENT_BATCH_SIZE", 100)
 }
 
 func (l *configLoader) setWhatsAppDefaults() {
@@ -1198,7 +1281,6 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_POLICY_MIN_CONFIDENCE", 0.8)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
 	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")
-	l.v.SetDefault("AGENT_RUNTIME_ENABLED", false)
 	l.v.SetDefault("AGENT_LLM_PARSE_PRIMARY_MODEL", "")
 	l.v.SetDefault("AGENT_LLM_PARSE_FALLBACK_MODELS", "")
 	l.v.SetDefault("AGENT_LLM_PARSE_MAX_TOKENS", 0)

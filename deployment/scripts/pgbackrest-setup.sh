@@ -24,6 +24,13 @@ set -euo pipefail
 : "${PGBACKREST_S3_KEY:?PGBACKREST_S3_KEY obrigatório}"
 : "${PGBACKREST_S3_KEY_SECRET:?PGBACKREST_S3_KEY_SECRET obrigatório}"
 
+export PGBACKREST_REPO1_S3_KEY="$PGBACKREST_S3_KEY"
+export PGBACKREST_REPO1_S3_KEY_SECRET="$PGBACKREST_S3_KEY_SECRET"
+
+if [[ -n "${PGBACKREST_REPO1_CIPHER_PASS:-}" ]]; then
+  export PGBACKREST_REPO1_CIPHER_PASS
+fi
+
 STANZA=mecontrola
 PGBACKREST_CONF=/etc/pgbackrest/pgbackrest.conf
 RUN_BACKUP=false
@@ -51,8 +58,6 @@ fi
 
 PGB_FLAGS=(
   --config="$PGBACKREST_CONF"
-  "--repo1-s3-key=$PGBACKREST_S3_KEY"
-  "--repo1-s3-key-secret=$PGBACKREST_S3_KEY_SECRET"
   "--stanza=$STANZA"
 )
 

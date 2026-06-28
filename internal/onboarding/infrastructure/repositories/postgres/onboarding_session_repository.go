@@ -116,6 +116,19 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 		)
 	}
 
+	phase, phaseErr := valueobjects.ParseOnboardingPhase(pj.Phase)
+	if phaseErr != nil {
+		r.o11y.Logger().Warn(ctx, "onboarding.repository.phase_migration_reset",
+			observability.String("session_id", uid.String()),
+			observability.String("phase_raw", pj.Phase),
+			observability.Error(phaseErr),
+		)
+		if state == valueobjects.OnboardingStateInProgress {
+			pj = onboardingSessionPayloadJSON{Phase: valueobjects.PhaseWelcome.String()}
+		}
+		phase = valueobjects.PhaseWelcome
+	}
+
 	domainPayload := entities.OnboardingSessionPayload{
 		IncomeCents:      pj.IncomeCents,
 		Cards:            fromCardsJSON(pj.Cards),
@@ -125,7 +138,7 @@ func (r *onboardingSessionRepository) Find(ctx context.Context, userID uuid.UUID
 		Objective:        pj.Objective,
 		CustomSplit:      fromAllocationJSON(pj.CustomSplit),
 		FirstTxRecorded:  pj.FirstTxRecorded,
-		Phase:            pj.Phase,
+		Phase:            phase,
 		RecentTurns:      fromTurnsJSON(pj.RecentTurns),
 		WelcomeSentAt:    pj.WelcomeSentAt,
 		CompletedAt:      pj.CompletedAt,
@@ -159,7 +172,7 @@ func (r *onboardingSessionRepository) Upsert(ctx context.Context, session entiti
 		Objective:        p.Objective,
 		CustomSplit:      toAllocationJSON(p.CustomSplit),
 		FirstTxRecorded:  p.FirstTxRecorded,
-		Phase:            p.Phase,
+		Phase:            p.Phase.String(),
 		RecentTurns:      toTurnsJSON(p.RecentTurns),
 		WelcomeSentAt:    p.WelcomeSentAt,
 		CompletedAt:      p.CompletedAt,

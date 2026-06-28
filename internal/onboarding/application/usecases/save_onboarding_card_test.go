@@ -51,6 +51,7 @@ func (s *SaveOnboardingCardSuite) newUC(cardCreator SynchronousCardCreator) *Sav
 		&onboardingFixedIDGen{id: "99999999-9999-9999-9999-999999999999"},
 		s.obs,
 		cardCreator,
+		10,
 	)
 }
 
@@ -63,50 +64,27 @@ func (s *SaveOnboardingCardSuite) baseSession() entities.OnboardingSession {
 	)
 }
 
-func (s *SaveOnboardingCardSuite) TestHappyPath_ClosingDay() {
-	type args struct {
-		in onbinput.SaveOnboardingCardInput
-	}
-	type dependencies struct {
-		cardCreator SynchronousCardCreator
-	}
+func (s *SaveOnboardingCardSuite) TestHappyPath_DueDay() {
+	s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(s.baseSession(), nil).Once()
+	s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
+		return len(sess.Payload().Cards) == 1 &&
+			sess.Payload().Cards[0].Name == "nubank" &&
+			sess.Payload().Cards[0].DueDay == 20 &&
+			sess.Payload().Cards[0].ClosingDay == 10
+	})).Return(nil).Once()
+	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
-	scenarios := []struct {
-		name         string
-		args         args
-		dependencies dependencies
-		expect       func(out SaveOnboardingCardResult, err error)
-	}{
-		{
-			name: "closing_day valido persiste cartao e publica evento",
-			args: args{in: onbinput.SaveOnboardingCardInput{
-				UserID:     s.userID,
-				Nickname:   "nubank",
-				ClosingDay: 10,
-			}},
-			dependencies: dependencies{cardCreator: nil},
-			expect: func(out SaveOnboardingCardResult, err error) {
-				s.NoError(err)
-				s.Equal("nubank", out.Name)
-				s.Equal(10, out.ClosingDay)
-				s.Equal(1, out.CardCount)
-			},
-		},
-	}
-
-	for _, tc := range scenarios {
-		s.Run(tc.name, func() {
-			s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(s.baseSession(), nil).Once()
-			s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.MatchedBy(func(sess entities.OnboardingSession) bool {
-				return len(sess.Payload().Cards) == 1 && sess.Payload().Cards[0].Name == "nubank"
-			})).Return(nil).Once()
-			s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
-
-			uc := s.newUC(tc.dependencies.cardCreator)
-			out, err := uc.Execute(s.ctx, tc.args.in)
-			tc.expect(out, err)
-		})
-	}
+	uc := s.newUC(nil)
+	out, err := uc.Execute(s.ctx, onbinput.SaveOnboardingCardInput{
+		UserID:   s.userID,
+		Nickname: "nubank",
+		DueDay:   20,
+	})
+	s.NoError(err)
+	s.Equal("nubank", out.Name)
+	s.Equal(20, out.DueDay)
+	s.Equal(10, out.ClosingDay)
+	s.Equal(1, out.CardCount)
 }
 
 func (s *SaveOnboardingCardSuite) TestValidationErrors() {
@@ -122,9 +100,9 @@ func (s *SaveOnboardingCardSuite) TestValidationErrors() {
 		{
 			name: "nickname vazio rejeitado antes de IO",
 			args: args{in: onbinput.SaveOnboardingCardInput{
-				UserID:     s.userID,
-				Nickname:   "",
-				ClosingDay: 10,
+				UserID:   s.userID,
+				Nickname: "",
+				DueDay:   20,
 			}},
 			expect: func(err error) {
 				s.Error(err)
@@ -132,35 +110,35 @@ func (s *SaveOnboardingCardSuite) TestValidationErrors() {
 			},
 		},
 		{
-			name: "closing_day zero rejeitado antes de IO",
+			name: "due_day zero rejeitado antes de IO",
 			args: args{in: onbinput.SaveOnboardingCardInput{
-				UserID:     s.userID,
-				Nickname:   "nubank",
-				ClosingDay: 0,
+				UserID:   s.userID,
+				Nickname: "nubank",
+				DueDay:   0,
 			}},
 			expect: func(err error) {
 				s.Error(err)
-				s.ErrorIs(err, onbinput.ErrCardClosingDayRange)
+				s.ErrorIs(err, onbinput.ErrCardDueDayRange)
 			},
 		},
 		{
-			name: "closing_day 32 rejeitado antes de IO",
+			name: "due_day 32 rejeitado antes de IO",
 			args: args{in: onbinput.SaveOnboardingCardInput{
-				UserID:     s.userID,
-				Nickname:   "nubank",
-				ClosingDay: 32,
+				UserID:   s.userID,
+				Nickname: "nubank",
+				DueDay:   32,
 			}},
 			expect: func(err error) {
 				s.Error(err)
-				s.ErrorIs(err, onbinput.ErrCardClosingDayRange)
+				s.ErrorIs(err, onbinput.ErrCardDueDayRange)
 			},
 		},
 		{
 			name: "user_id nulo rejeitado antes de IO",
 			args: args{in: onbinput.SaveOnboardingCardInput{
-				UserID:     uuid.Nil,
-				Nickname:   "nubank",
-				ClosingDay: 10,
+				UserID:   uuid.Nil,
+				Nickname: "nubank",
+				DueDay:   20,
 			}},
 			expect: func(err error) {
 				s.Error(err)
@@ -182,9 +160,9 @@ func (s *SaveOnboardingCardSuite) TestValidationErrors() {
 func (s *SaveOnboardingCardSuite) TestNaoUso_NicknameVazio() {
 	uc := s.newUC(nil)
 	_, err := uc.Execute(s.ctx, onbinput.SaveOnboardingCardInput{
-		UserID:     s.userID,
-		Nickname:   "",
-		ClosingDay: 10,
+		UserID:   s.userID,
+		Nickname: "",
+		DueDay:   20,
 	})
 	s.Error(err)
 	s.sessionRepo.AssertNotCalled(s.T(), "Find", mock.Anything, mock.Anything)
@@ -196,9 +174,9 @@ func (s *SaveOnboardingCardSuite) TestSessionNotFound() {
 
 	uc := s.newUC(nil)
 	_, err := uc.Execute(s.ctx, onbinput.SaveOnboardingCardInput{
-		UserID:     s.userID,
-		Nickname:   "nubank",
-		ClosingDay: 10,
+		UserID:   s.userID,
+		Nickname: "nubank",
+		DueDay:   20,
 	})
 	s.ErrorIs(err, appinterfaces.ErrOnboardingSessionNotFound)
 }
@@ -222,7 +200,7 @@ func (s *SaveOnboardingCardSuite) TestCardCreatorDelegado() {
 		expect       func(out SaveOnboardingCardResult, err error, st *state)
 	}{
 		{
-			name:         "card creator chamado com closing_day correto",
+			name:         "card creator chamado com closing_day derivado",
 			dependencies: dependencies{st: &state{}, returnErr: nil},
 			expect: func(out SaveOnboardingCardResult, err error, st *state) {
 				s.NoError(err)
@@ -263,11 +241,61 @@ func (s *SaveOnboardingCardSuite) TestCardCreatorDelegado() {
 
 			uc := s.newUC(creator)
 			out, err := uc.Execute(s.ctx, onbinput.SaveOnboardingCardInput{
-				UserID:     s.userID,
-				Nickname:   "nubank",
-				ClosingDay: 10,
+				UserID:   s.userID,
+				Nickname: "nubank",
+				DueDay:   20,
 			})
 			tc.expect(out, err, dep.st)
+		})
+	}
+}
+
+func (s *SaveOnboardingCardSuite) TestClosingDayDerivation() {
+	type args struct {
+		offset int
+		in     onbinput.SaveOnboardingCardInput
+	}
+
+	scenarios := []struct {
+		name          string
+		args          args
+		expectClosing int
+	}{
+		{
+			name:          "offset padrao 10",
+			args:          args{offset: 10, in: onbinput.SaveOnboardingCardInput{UserID: s.userID, Nickname: "nubank", DueDay: 20}},
+			expectClosing: 10,
+		},
+		{
+			name:          "offset zero mantem due_day",
+			args:          args{offset: 0, in: onbinput.SaveOnboardingCardInput{UserID: s.userID, Nickname: "nubank", DueDay: 15}},
+			expectClosing: 15,
+		},
+		{
+			name:          "wrap para mes anterior",
+			args:          args{offset: 10, in: onbinput.SaveOnboardingCardInput{UserID: s.userID, Nickname: "nubank", DueDay: 5}},
+			expectClosing: 26,
+		},
+	}
+
+	for _, tc := range scenarios {
+		s.Run(tc.name, func() {
+			s.sessionRepo.EXPECT().Find(mock.Anything, s.userID).Return(s.baseSession(), nil).Once()
+			s.sessionRepo.EXPECT().Upsert(mock.Anything, mock.Anything).Return(nil).Once()
+			s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+
+			uc := NewSaveOnboardingCard(
+				&onboardingUoWStub{},
+				s.factory,
+				s.publisher,
+				&onboardingFixedIDGen{id: "99999999-9999-9999-9999-999999999999"},
+				s.obs,
+				nil,
+				tc.args.offset,
+			)
+			out, err := uc.Execute(s.ctx, tc.args.in)
+			s.NoError(err)
+			s.Equal(tc.expectClosing, out.ClosingDay)
 		})
 	}
 }
