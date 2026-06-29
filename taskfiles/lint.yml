@@ -106,10 +106,10 @@ tasks:
 
   deadcode:
     desc: |
-      Gate RF-40: codigo morto em internal/agent bloqueia o build. Instala deadcode
+      Gate RF-40: codigo morto em internal/agents bloqueia o build. Instala deadcode
       se ausente, roda `deadcode ./cmd/...` e falha quando reporta funcao inalcancavel
-      em internal/agent fora da allowlist (deadcode-agent-allowlist.txt). Cada simbolo
+      em internal/agents fora da allowlist (deadcode-agent-allowlist.txt). Cada simbolo
       preservado e justificado por simetria de API, satisfacao de interface via registry
-      ou feature HITL. Qualquer NOVO codigo morto em internal/agent falha o CI.
+      ou feature ainda nao wired. Qualquer NOVO codigo morto em internal/agents falha o CI.
     cmds:
       - bash deployment/scripts/lint-deadcode.sh

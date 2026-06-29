@@ -48,14 +48,15 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - Carregar referências go-implementation conforme Matriz R-ADAPTER-001.3 em `.claude/rules/go-adapters.md`.
 - Ver `.claude/rules/go-adapters.md` para contrato completo e gates de verificação.
 
-**R-AGENT-WF-001 (hard) — Workflow/Tool + Mastra canônico em `internal/agent` — SOMENTE `internal/agent`:**
-- Fluxo: `IntentRouter → WorkflowRegistry.Resolve(kind) → Workflow → Tool → binding → usecase`. Proibido `case` de domínio novo no switch de `daily_ledger_agent.go`.
-- Tool é adapter fino: zero regra de negócio, SQL ou branching. LLM apenas em `ParseInbound`.
-- `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind` são tipos fechados — nunca string livre.
-- Thread → Run: toda execução resolve `Thread(user_id, channel)` e abre/fecha um `Run` auditável.
-- Pending step: erro de categoria DEVE salvar `Draft{AwaitingKind}` antes de retornar `OutcomeClarify`.
-- WorkingMemory: conteúdo pré-carregado no system prompt quando disponível.
-- Esses padrões Mastra são **proibidos** fora de `internal/agent`; o agent PODE consumir o kernel genérico.
+**R-AGENT-WF-001 (hard) — substrato `internal/platform/agent` + consumidor `internal/agents` (emenda 2026-06-29; `internal/agent` descontinuado):**
+- Fluxo inbound: `InboundRequest → AgentRuntime.Execute → ThreadGateway.GetOrCreate → RunStore.Insert → AgentRegistry.Resolve → Agent.Execute (loop tool-calling) → MessageStore.Append → closeRun`. Durável multi-step via `workflow.Engine[S].Start/Resume`.
+- Comportamento novo = novo agente/tool/workflow/scorer no consumidor, montando primitivos do substrato. Sem `switch case intent.Kind`; resolução por registry. Skill operacional: `mastra`.
+- Tool é adapter fino (`tool.NewTool[I,O]`): zero regra de negócio, SQL ou branching; o `exec` delega a client/usecase.
+- Estados fechados: `agent.RunStatus`/`agent.ToolOutcome`, `workflow.RunStatus`/`StepStatus`/`SuspendReason`, `scorer.ScorerKind`, `memory.MessageRole` — nunca string livre.
+- Thread → Run: toda execução resolve `Thread(resourceId, threadId)` opaco e abre/fecha um `Run` auditável.
+- Pending step: estado de espera fechado salvo no `Snapshot` do kernel; resume por merge-patch antes do parse.
+- WorkingMemory injetada no system prompt quando disponível. LLM só nas call-sites sancionadas (loop do agent, step `Stream`, scorer LLM-judged); OpenRouter único provider.
+- Thread/Run/WorkingMemory/PendingStep são primitivos de `internal/platform/{agent,memory}`; consumidos pelos módulos, nunca reimplementados em domínio.
 - Ver `.claude/rules/agent-workflows-tools.md` (R-AGENT-WF-001.1–001.8 + addendum .6-A/.8-A) para contrato completo.
 
 **R-WF-KERNEL-001 (hard) — Kernel genérico de workflow em `internal/platform/workflow`:**
@@ -69,13 +70,13 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 
 ## DMMF e Mastra
 
-Ver secoes "DMMF — Domain Modeling Made Functional" e "Padrao Workflow/Tool do Agent" em `AGENTS.md`. Resumo critico para Claude:
+Ver secoes "DMMF — Domain Modeling Made Functional" e "Padrao de Agent — substrato `internal/platform/agent`" em `AGENTS.md`. Resumo critico para Claude:
 
-- **State-as-type `[HARD]`**: `AwaitingKind`, `TransactionKind`, `RunStatus`, `ToolOutcome` sao tipos fechados com constantes enumeradas; nunca `string` livre em assinatura publica.
-- **Pending step** (Mastra-inspired): estado de espera salvo como `pendingexpense.Draft{AwaitingKind, TransactionKind, Candidates, ...}` em `agent_sessions`; `continuePendingExpenseConfirmation` intercepta o sinal antes do parse LLM.
+- **State-as-type `[HARD]`**: `agent.RunStatus`/`agent.ToolOutcome`/`agent.AwaitingKind`, `workflow.RunStatus`/`StepStatus`/`SuspendReason`, `scorer.ScorerKind`, `memory.MessageRole` sao tipos fechados com constantes enumeradas; nunca `string` livre em assinatura publica.
+- **Pending step** (Mastra-inspired): estado de espera modelado como tipo fechado, salvo no `Snapshot` do kernel e retomado por merge-patch antes do parse; sem side-store de dominio.
 - **Decide* puro `[HARD]`**: sem IO, sem `context.Context`, deterministico; regra de negocio vive exclusivamente aqui.
 - **Anti-padroes proibidos `[HARD]`**: `Result[T,E]` customizado, currying, DSL de pipeline, monades.
-- **Mastra `[HARD]` — SOMENTE em `internal/agent`**: Thread = `(user_id, channel)` resolvido a cada execucao; Run aberto e fechado com RunStatus fechado; pending step = `Draft{AwaitingKind}` salvo em erro de categoria; working memory no system prompt; sinal = mensagem; resume antes de ParseInbound. Proibido aplicar esses padroes fora de `internal/agent`.
+- **Primitivos de plataforma `[HARD]`**: Thread = `(resourceId, threadId)` opaco resolvido a cada execucao; Run aberto e fechado com RunStatus fechado; working memory no system prompt; resume antes do parse. Vivem em `internal/platform/{agent,memory}`; consumidos pelos modulos (ex.: `internal/agents`), nunca reimplementados em dominio.
 
 ## Outbox
 

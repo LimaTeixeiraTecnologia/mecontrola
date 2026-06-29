@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# Gate RF-40: deadcode em internal/agent bloqueia o build.
+# Gate RF-40: deadcode em internal/agents bloqueia o build.
 #
 # Roda `deadcode ./cmd/...` (entrypoints cmd/server + cmd/worker) e falha
-# quando reporta qualquer funcao inalcancavel em internal/agent que NAO esteja
+# quando reporta qualquer funcao inalcancavel em internal/agents que NAO esteja
 # na allowlist de simbolos intencionalmente preservados.
 #
 # A allowlist (deadcode-agent-allowlist.txt) documenta cada simbolo mantido por
 # simetria de API (closed-type Parse*/String*), satisfacao de interface via
-# registry, ou feature HITL ainda nao 100% wired. Qualquer NOVO codigo morto em
-# internal/agent fora da allowlist falha o gate.
+# registry, ou feature ainda nao 100% wired. Qualquer NOVO codigo morto em
+# internal/agents fora da allowlist falha o gate.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +36,7 @@ if [ ! -r "$ALLOWLIST" ]; then
   exit 1
 fi
 
-RAW="$("$DEADCODE_BIN" ./cmd/... 2>/dev/null | grep "internal/agent/" || true)"
+RAW="$("$DEADCODE_BIN" ./cmd/... 2>/dev/null | grep "internal/agents/" || true)"
 
 VIOLATIONS=""
 while IFS= read -r line; do
@@ -50,11 +50,11 @@ while IFS= read -r line; do
 done <<< "$RAW"
 
 if [ -n "${VIOLATIONS//[$'\n']/}" ]; then
-  echo "FAIL: codigo morto em internal/agent fora da allowlist (RF-40):"
+  echo "FAIL: codigo morto em internal/agents fora da allowlist (RF-40):"
   printf '%s' "$VIOLATIONS"
   echo ""
   echo "Remova o codigo morto ou justifique a manutencao em deadcode-agent-allowlist.txt."
   exit 1
 fi
 
-echo "PASS lint:deadcode: nenhum codigo morto acionavel em internal/agent (RF-40)"
+echo "PASS lint:deadcode: nenhum codigo morto acionavel em internal/agents (RF-40)"

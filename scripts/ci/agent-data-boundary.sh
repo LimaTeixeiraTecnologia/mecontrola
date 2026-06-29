@@ -6,22 +6,22 @@ cd "$REPO_ROOT"
 
 FAIL=0
 
-echo "==> [1/7] R-ADAPTER-001: SQL direto em internal/agent application e binding"
+echo "==> [1/7] R-ADAPTER-001: SQL direto em internal/agents application e tools"
 if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   "QueryContext\|ExecContext\|db\.Query\|tx\.Exec\|db\.Exec" \
-  internal/agent/application/ internal/agent/infrastructure/binding/ 2>/dev/null \
+  internal/agents/application/ internal/agents/infrastructure/ 2>/dev/null \
   | grep -v "infrastructure/repositories/postgres"; then
-  echo "FAIL: SQL direto em internal/agent application/binding"
+  echo "FAIL: SQL direto em internal/agents application/infrastructure"
   FAIL=1
 else
   echo "OK"
 fi
 
-echo "==> [2/7] R-ADAPTER-001: import de repo/infra de outro BC em internal/agent"
+echo "==> [2/7] R-ADAPTER-001: import de repo/infra de outro BC em internal/agents"
 if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   "internal/transactions/infrastructure/repositories\|internal/budgets/infrastructure/repositories\|internal/card/infrastructure/repositories\|internal/categories/infrastructure/repositories\|internal/onboarding/infrastructure/repositories\|internal/identity/infrastructure/repositories" \
-  internal/agent/ 2>/dev/null; then
-  echo "FAIL: import de repo/infra de outro BC em internal/agent"
+  internal/agents/ 2>/dev/null; then
+  echo "FAIL: import de repo/infra de outro BC em internal/agents"
   FAIL=1
 else
   echo "OK"
@@ -50,9 +50,9 @@ else
   echo "OK"
 fi
 
-echo "==> [5/7] R-WF-KERNEL-001: import de dominio em kernel"
+echo "==> [5/7] R-WF-KERNEL-001: import de dominio ou camada superior em kernel"
 if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
-  "internal/agent\|internal/transactions\|internal/billing\|internal/identity" \
+  "internal/platform/agent\|internal/platform/memory\|internal/transactions\|internal/billing\|internal/identity" \
   internal/platform/workflow/ 2>/dev/null; then
   echo "FAIL: import de dominio em workflow kernel"
   FAIL=1

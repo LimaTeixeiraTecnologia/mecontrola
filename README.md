@@ -1,11 +1,11 @@
 # MeControla
 
 [![CI/CD](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
-![Signed Image](https://img.shields.io/badge/image-signed%20cosign-brightgreen)
-![SBOM Available](https://img.shields.io/badge/SBOM-SPDX--JSON-blue)
-![Governance](https://img.shields.io/badge/governance-ai--spec-purple)
+[![Image Signed](https://img.shields.io/badge/image-cosign%20keyless-blue)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
+[![SBOM](https://img.shields.io/badge/SBOM-SPDX--JSON-green)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
+[![Governance](https://img.shields.io/badge/governance-AGENTS.md-orange)](./AGENTS.md)
 
-Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com bootstrap separado para server, worker e migrations.
+Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp.
 
 ---
 
@@ -23,7 +23,10 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com
 - [Sequências comuns](#sequências-comuns)
 - [Reset do banco de produção](#reset-do-banco-de-produção)
 - [CI/CD](#cicd)
+- [Docker Swarm](#docker-swarm)
 - [Deploy da máquina local direto na VPS (deploy-local.sh)](#deploy-da-máquina-local-direto-na-vps-deploy-localsh)
+- [Acesso Remoto](#acesso-remoto)
+- [skills-lock.json](#skills-lockjson)
 - [Contribuição](#contribuição)
 - [Governance](#governance)
 
@@ -31,62 +34,66 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com
 
 ## Pré-requisitos
 
-Ferramentas necessárias para desenvolvimento local. Execute `task setup` após instalar para configurar hooks e assinatura de commits.
+| Ferramenta | Versão | Observação |
+|---|---|---|
+| Docker Engine + Compose v2 | Docker 24+ | Obrigatório para infra local e Swarm |
+| Go | 1.26+ | Versão declarada em `go.mod` |
+| Task | 3.51.1 | Runner de tarefas (`Taskfile.yml`) |
+| golangci-lint | v2.12.2 | Linter estático |
+| mockery | v2.53.6 | Geração de mocks |
+| govulncheck | v1.1.4 | Auditoria de vulnerabilidades |
+| trivy | v0.62.1 | Supply chain / SBOM |
+| cosign | v2.4.3 | Assinatura keyless de imagem |
+| gitsign | v0.12.0 | Assinatura keyless de commits |
+| ngrok | qualquer | Opcional — túnel para webhook local |
 
-| Ferramenta | Versão mínima | Obrigatório | Instalação |
-|---|---|---|---|
-| Docker Engine + Compose v2 | Docker 24+ | Sim | [docs.docker.com](https://docs.docker.com/engine/install/) |
-| Go | 1.26+ | Sim (desenvolvimento) | [go.dev/dl](https://go.dev/dl/) |
-| Task | 3.51.1 | Sim | `go install github.com/go-task/task/v3/cmd/task@v3.51.1` |
-| golangci-lint | v2.12.2 | Sim (lint) | instalado via `task setup` |
-| mockery | v2.53.3 | Sim (mocks) | instalado via `task setup` |
-| govulncheck | v1.1.4 | Sim (security) | instalado via `task setup` |
-| trivy | v0.62.1 | Sim (security/CI) | instalado via `task setup` |
-| cosign | v2.4.3 | Para assinar imagens | instalado via `task setup` |
-| gitsign | v0.12.0 | Para assinar commits | instalado via `task setup` |
-| ngrok | qualquer | Opcional (webhooks locais) | [ngrok.com/download](https://ngrok.com/download) |
+Após instalar todas as ferramentas obrigatórias, execute:
+
+```bash
+task setup
+```
 
 ---
 
 ## Stack
 
-Componentes, versões e registros de imagem usados em produção.
-
-| Componente | Versão / detalhe |
+| Componente | Tecnologia / Versão |
 |---|---|
-| Go | `1.26.4` |
-| Router HTTP | `go-chi/chi v5.3.0` |
-| Banco | PostgreSQL 16 (`postgres:16-alpine`) |
-| Connection Pooler | pgBouncer (`edoburu/pgbouncer:v1.25.2-p0`, pool mode: transaction) |
-| Observabilidade local | `grafana/otel-lgtm:0.7.5` |
-| Proxy de produção | Caddy 2 |
-| Automação | Task `3.51.1` |
-| Registro de imagem | `ghcr.io/limateixeiratecnologia/mecontrola` |
+| Linguagem | Go 1.26.4 |
+| Banco de dados | PostgreSQL 16 |
+| Connection pooler | pgBouncer edoburu/pgbouncer:v1.25.2-p0 (pool mode: transaction) |
+| Driver PostgreSQL | pgx/v5 v5.10.0 |
+| Migrações | golang-migrate v4.19.1 |
+| Roteador HTTP | go-chi/chi v5.3.0 |
+| Observabilidade | OpenTelemetry v1.44.0 |
+| Observabilidade local | grafana/otel-lgtm:0.7.5 |
+| Proxy / TLS | Caddy 2 |
+| Orquestração | Docker Swarm single-node |
+| Registro de imagem | ghcr.io/limateixeiratecnologia/mecontrola |
 | Supply chain | Trivy + cosign keyless + SBOM SPDX-JSON |
 
 ---
 
 ## Módulos e responsabilidades
 
-Monolito modular com 9 bounded contexts em `internal/`. Cada módulo segue as camadas Domain → Application → Infrastructure e se registra no bootstrap via `module.go`. O módulo `platform` provê capacidades transversais (outbox, worker, canais de mensagem) consumidas pelos demais.
-
 | Módulo | Responsabilidade |
 |---|---|
-| `internal/identity` | Usuários, principal/auth, entitlements, gateway HMAC-SHA256, housekeeping de `auth_events` |
-| `internal/billing` | Webhook Kiwify, reconciliação de assinaturas, grace period PAST_DUE (3 dias), housekeeping de eventos |
-| `internal/onboarding` | Magic token, ativação via WhatsApp, outreach, expiração de tokens, limpeza de mensagens Meta e prompts determinísticos por etapa |
-| `internal/categories` | Catálogo de categorias, dicionário com busca HTTP e ETag cache |
+| `internal/agents` | Integração LLM via OpenRouter; port do Weather Mastra em Go; padrão Workflow/Tool com `WorkflowRegistry`; runtime Thread/Run auditável; structured output; dispatch via WhatsApp Cloud API |
+| `internal/billing` | Webhook Kiwify, reconciliação de assinaturas, grace period `PAST_DUE` (3 dias), housekeeping de eventos de cobrança |
+| `internal/budgets` | Orçamentos mensais, despesas por categoria, recorrência, resumo mensal, reaper/purge jobs |
 | `internal/card` | CRUD de cartões, listagem paginada, fatura por competência, conformidade PCI RF-16 |
-| `internal/budgets` | Orçamentos mensais, despesas, recorrência, resumo mensal, reaper/purge jobs |
-| `internal/transactions` | Transações financeiras (DMMF/Decide\*), idempotência, resumo mensal, recorrência materializada |
-| `internal/agent` | Integração LLM via OpenRouter; padrão canônico Workflow/Tool com WorkflowRegistry (intent kind → Workflow → Tool → binding → usecase); runtime Thread/Run auditável com métricas; circuit breaker; dispatch via WhatsApp; fallbacks determinísticos para sessões ativas de orçamento |
-| `internal/platform` | Outbox transacional, worker manager, WhatsApp Cloud API, idempotência, rate limit |
+| `internal/categories` | Catálogo de categorias, dicionário com busca HTTP e ETag cache |
+| `internal/identity` | Usuários, principal/auth, entitlements, gateway HMAC-SHA256, housekeeping de `auth_events` |
+| `internal/onboarding` | Magic token, ativação via WhatsApp, outreach, expiração de tokens, limpeza de mensagens Meta |
+| `internal/transactions` | Transações financeiras (DMMF / `Decide*`), idempotência, resumo mensal, recorrência materializada |
+| `internal/platform` | Plataforma genérica reutilizável com subcamadas: **workflow kernel** (`Engine[S]`, `Step[S]`, suspend/resume via merge-patch RFC 7386); **agent** (Thread/Run auditável, WorkingMemory, PendingStep); **memory** (threads, mensagens, working memory, embeddings via pgvector); **llm** (OpenRouter provider); **scorer/evals**; outbox transacional; worker manager; WhatsApp Cloud API; idempotência; rate limit |
+| `internal/bootstrap` | Inicialização da aplicação, wiring de todos os módulos |
 
 ---
 
 ## Entrypoints
 
-O binário expõe 4 subcomandos Cobra. `server` e `worker` rodam em paralelo; `migrate` é one-shot e sai após aplicar as mudanças.
+O binário `mecontrola` expõe quatro subcomandos via Cobra:
 
 ```bash
 mecontrola server          # HTTP server (Chi, porta configurada em PORT)
@@ -95,11 +102,19 @@ mecontrola migrate         # Aplica todas as migrations pendentes e sai
 mecontrola migrate-down    # Reverte migrations (flag --steps N opcional)
 ```
 
+Migrações disponíveis:
+
+| Versão | Descrição |
+|---|---|
+| `000001_initial_schema` | Schema inicial completo |
+| `000002_seed_reference_data` | Seed de dados de referência (categorias) |
+| `000003_platform_mastra` | Tabelas genéricas de plataforma (agent, memory, workflow, scorer); habilita pgvector |
+
 ---
 
 ## Configuração (.env)
 
-Copie `.env.example` para `.env` e preencha os valores marcados com `CHANGE_ME_*`. Esses valores são rejeitados pelo `Config.Validate()` quando `ENVIRONMENT=production`. Em produção o arquivo fica em `chmod 600`, dono root, na raiz do repositório.
+Copie `.env.example` para `.env` e preencha os valores marcados com `CHANGE_ME_*`. Em `ENVIRONMENT=production`, qualquer variável com prefixo `CHANGE_ME_*` causa falha no `Config.Validate()` na inicialização.
 
 ```bash
 cp .env.example .env
@@ -108,7 +123,7 @@ cp .env.example .env
 ### Aplicação
 
 ```env
-ENVIRONMENT=local          # local | production
+ENVIRONMENT=local   # local | production
 APP_MODE=server
 ```
 
@@ -119,14 +134,14 @@ PORT=8080
 WORKER_HEALTH_ADDR=:8081
 SERVICE_NAME_API=mecontrola-api
 SERVICE_NAME_WORKER=mecontrola-worker
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4321,http://localhost:5173
 AUTH_RATE_LIMIT_PER_USER_PER_MIN=120
 AUTH_RATE_LIMIT_PER_USER_BURST=60
 ```
 
-> Em `production`: lista explícita obrigatória. Wildcard `*` ou valor vazio causam erro de boot.
+> **Produção:** `CORS_ALLOWED_ORIGINS` exige lista explícita de origens separadas por vírgula. Wildcard `*` ou valor vazio causam erro de boot.
 
-### Banco de dados
+### Banco de Dados
 
 ```env
 DB_HOST=localhost
@@ -147,8 +162,6 @@ DATABASE_URL=postgres://mecontrola:CHANGE_ME_USE_STRONG_PASSWORD@localhost:5432/
 
 ### Observabilidade (OpenTelemetry)
 
-Stack local via `docker compose` sobe `grafana/otel-lgtm:0.7.5` em `localhost`. Em produção, apontar para Grafana Cloud ou instância dedicada.
-
 ```env
 OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -161,25 +174,21 @@ LOG_FORMAT=json
 
 ### Docker Compose local (otel-lgtm)
 
-Variáveis do container `grafana/otel-lgtm` usado em dev local (`task local:infra` / `task local:up`):
-
 ```env
 OTEL_LGTM_ADMIN_USER=admin
-OTEL_LGTM_ADMIN_PASSWORD=admin@dev
+OTEL_LGTM_ADMIN_PASSWORD=CHANGE_ME_use_strong_password
 ```
 
-### Stack de observabilidade completa (profile `observability`)
-
-O serviço `grafana` (Grafana standalone) é ativado apenas com `--profile observability`. A variável abaixo tem default `admin@dev` para dev local, mas **deve ser definida explicitamente em produção**.
+### Grafana standalone (profile `observability`)
 
 ```env
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=CHANGE_ME_use_strong_password
 ```
 
-> Em produção: defina `GRAFANA_ADMIN_PASSWORD` com valor forte. O default `admin@dev` é aceito apenas em dev local.
+> **Produção:** altere `GRAFANA_ADMIN_PASSWORD` antes do primeiro boot.
 
-### Deploy / infraestrutura
+### Deploy / Infraestrutura
 
 ```env
 APP_DOMAIN=CHANGE_ME_yourdomain.com
@@ -187,13 +196,16 @@ CADDY_EMAIL=CHANGE_ME_your@email.com
 IMAGE_NAME=ghcr.io/limateixeiratecnologia/mecontrola
 IMAGE_TAG=latest
 POSTGRES_IMAGE=postgres:16-alpine
+BACKUP_REMOTE=CHANGE_ME_backup:mecontrola-backups
+AGE_RECIPIENT=CHANGE_ME_age1...
+RETENTION_DAYS=30
 PGBACKREST_S3_BUCKET=CHANGE_ME_mecontrola-backups-123456789012-use1
 PGBACKREST_REPO1_CIPHER_PASS=CHANGE_ME_gerar_senha_forte_32_plus_caracteres
 ALERT_TELEGRAM_BOT_TOKEN=
 ALERT_TELEGRAM_CHAT_ID=
 ```
 
-### Outbox transacional (RF-26 / D-03)
+### Outbox Transacional (RF-26 / D-03)
 
 ```env
 OUTBOX_DISPATCHER_ENABLED=true
@@ -325,6 +337,8 @@ WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN=600
 WHATSAPP_WEBHOOK_RATE_LIMIT_BURST=100
 ```
 
+> `META_APP_SECRET_NEXT` é opcional — preenchido apenas durante rotação zero-downtime do segredo.
+
 ### Alertas Telegram (Grafana)
 
 ```env
@@ -337,31 +351,18 @@ ALERT_TELEGRAM_CHAT_ID=
 ```env
 OPENROUTER_BASE_URL=https://openrouter.ai
 OPENROUTER_API_KEY=CHANGE_ME_openrouter_api_key
-AGENT_LLM_HTTP_REFERER=https://mecontrola.app
-AGENT_LLM_X_TITLE=MeControla
 AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
-AGENT_LLM_FALLBACK_MODELS=mistralai/mistral-small-3.2-24b-instruct
+AGENT_LLM_EMBED_MODEL=openai/text-embedding-3-small
 AGENT_LLM_MAX_TOKENS=768
-AGENT_LLM_PROSE_MAX_TOKENS=200
 AGENT_LLM_TEMPERATURE=0
-AGENT_LLM_REQUEST_TIMEOUT=8s
-AGENT_LLM_CIRCUIT_FAILURES=5
-AGENT_LLM_CIRCUIT_WINDOW=30s
-AGENT_LLM_CIRCUIT_COOLDOWN=60s
-AGENT_POLICY_MIN_CONFIDENCE=0.8
-AGENT_LLM_PARSE_PRIMARY_MODEL=
-AGENT_LLM_PARSE_FALLBACK_MODELS=
-AGENT_LLM_PARSE_MAX_TOKENS=0
-AGENT_LLM_CONV_PRIMARY_MODEL=
-AGENT_LLM_CONV_FALLBACK_MODELS=
-AGENT_LLM_CONV_MAX_TOKENS=0
-AGENT_ONBOARDING_LLM_MODEL=anthropic/claude-haiku-4.5
-AGENT_ONBOARDING_LLM_MAX_TOKENS=512
+RUN_REAL_LLM=   # defina como "1" para testes de conformidade com LLM real
 ```
+
+> `RUN_REAL_LLM=1` habilita testes de conformidade que disparam chamadas reais ao OpenRouter via `OPENROUTER_API_KEY`. Nunca ative em pipelines de CI sem controle de custo.
 
 ### Gateway Auth (HMAC-SHA256)
 
-Autenticação interna entre o agent LLM e a API. O segredo deve ser gerado com `openssl rand -hex 32`. `NEXT` é opcional e usado durante rotação.
+Autenticação interna entre o agent LLM e a API. O segredo deve ser gerado com `openssl rand -hex 32`. `NEXT` é opcional e usado durante rotação zero-downtime.
 
 ```env
 IDENTITY_GATEWAY_SHARED_SECRET_CURRENT=CHANGE_ME_openssl_rand_hex_32
@@ -372,7 +373,7 @@ IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH=500
 IDENTITY_AUTH_EVENTS_RETENTION_DAYS=90
 ```
 
-### Workflow kernel
+### Workflow Kernel
 
 ```env
 WORKFLOW_KERNEL_MAX_ATTEMPTS=3
@@ -383,11 +384,35 @@ WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE=@daily
 WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE=500
 ```
 
+### Email
+
+```env
+EMAIL_PROVIDER=smtp   # smtp (local com mailpit) | resend (produção)
+EMAIL_FROM_ADDRESS=noreply@mecontrola.local
+EMAIL_FROM_NAME=MeControla
+EMAIL_REPLY_TO=
+
+# SMTP (local/mailpit)
+SMTP_HOST=mailpit
+SMTP_PORT=1025
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_STARTTLS=false
+SMTP_TIMEOUT=10s
+
+# Resend (produção)
+RESEND_API_KEY=
+RESEND_BASE_URL=https://api.resend.com
+EMAIL_HTTP_TIMEOUT=10s
+```
+
+> **Produção:** defina `EMAIL_PROVIDER=resend` e preencha `RESEND_API_KEY`.
+
 ---
 
 ## Subir só a infra
 
-Use quando quiser rodar o server/worker via `go run`, `task run` ou debug no VS Code — sem precisar dos containers da aplicação. Sobe PostgreSQL e Grafana LGTM (observabilidade) apenas.
+Use quando precisar apenas dos serviços de suporte (banco de dados, observabilidade, email) sem rodar a aplicação — por exemplo, ao desenvolver com `go run` direto ou ao depurar via VS Code.
 
 ```bash
 task local:infra
@@ -396,10 +421,10 @@ task local:infra
 Equivalente manual:
 
 ```bash
-docker compose --env-file .env \
+docker compose \
   -f deployment/compose/compose.yml \
   -f deployment/compose/compose.local.yml \
-  up -d postgres otel-lgtm
+  up -d postgres otel-lgtm mailpit
 ```
 
 Endpoints disponíveis após subir:
@@ -407,15 +432,16 @@ Endpoints disponíveis após subir:
 | Serviço | Endereço |
 |---|---|
 | PostgreSQL | `localhost:5432` |
-| Grafana | `http://localhost:3000` (admin / admin@dev) |
+| Grafana | `http://localhost:3000` (admin / valor de `OTEL_LGTM_ADMIN_PASSWORD`) |
 | OTLP gRPC | `localhost:4317` |
 | OTLP HTTP | `localhost:4318` |
+| Mailpit Web UI | `http://localhost:8025` |
 
 ---
 
 ## Subir tudo (infra + migrate + server + worker)
 
-Sobe o ambiente completo em sequência determinística. Use no dia a dia quando não precisar de debug com breakpoints. O `migrate` roda como one-shot e sai; `server` e `worker` ficam em background.
+Sobe o ambiente completo em sequência determinística. Use no dia a dia quando não precisar de debug com breakpoints.
 
 ```bash
 task local:up
@@ -423,7 +449,7 @@ task local:up
 
 Sequência executada internamente:
 
-1. `docker compose up -d postgres otel-lgtm` — aguarda healthcheck do postgres
+1. `docker compose up -d postgres otel-lgtm mailpit` — aguarda healthcheck do postgres
 2. `docker compose run --rm migrate` — aplica migrations pendentes e sai
 3. `docker compose up -d server worker` — sobe e fica em background
 
@@ -434,6 +460,7 @@ Endpoints após subir:
 | API | `http://localhost:8080` |
 | Health | `http://localhost:8080/health` |
 | Grafana | `http://localhost:3000` |
+| Mailpit Web UI | `http://localhost:8025` |
 
 Outros comandos de gerenciamento do ambiente local:
 
@@ -442,30 +469,44 @@ task local:down       # para e remove containers (preserva volumes)
 task local:destroy    # para + remove volumes (apaga dados) — pede confirmação
 task local:logs       # tail de todos os containers (Ctrl+C para sair)
 task local:ps         # status dos containers
+task local:db:restart # reinicia apenas postgres e pgbouncer
 ```
 
 ---
 
 ## Debug no VS Code
 
-O projeto vem com `.vscode/launch.json` configurado para debugar `server`, `worker` e `migrate` individualmente ou em conjunto. Não é necessário subir os containers da app — apenas a infra.
+O projeto vem com `.vscode/launch.json` configurado para depurar `server`, `worker` e `migrate` individualmente ou em conjunto. Não é necessário subir os containers da app — apenas a infra.
 
 **Pré-requisitos:** extensão [Go for VS Code](https://marketplace.visualstudio.com/items?itemName=golang.go) instalada, `.env` preenchido, infra no ar.
 
 ```bash
-task local:infra   # postgres + otel-lgtm
+task local:infra   # postgres + otel-lgtm + mailpit
 task migrate:up    # aplica migrations
 # VS Code: F5 → selecionar configuração
 ```
 
+Todas as configurações injetam automaticamente:
+
+| Variável | Valor |
+|---|---|
+| `DB_HOST` | `localhost` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` |
+| `LOG_LEVEL` | `debug` |
+| `LOG_FORMAT` | `console` |
+
 Configurações disponíveis em `.vscode/launch.json`:
 
-| Configuração | Comando | Quando usar |
+| Configuração | Tipo | Quando usar |
 |---|---|---|
-| `migrate` | `cmd migrate` + `.env` | Aplicar migrations em debug |
-| `server` | `cmd server` + `.env` | Debugar o HTTP server com breakpoints |
-| `worker` | `cmd worker` + `.env` | Debugar jobs em background |
-| `server + worker` | ambos simultâneos | Debugar fluxo completo; `stopAll: true` ao encerrar |
+| `server` | `go` — `cmd server` + `.env` | Depurar o HTTP server com breakpoints |
+| `worker` | `go` — `cmd worker` + `.env` | Depurar jobs em background |
+| `migrate` | `go` — `cmd migrate` + `.env` | Aplicar migrations em debug |
+| `Test: current file` | `go/test` — arquivo atual | Depurar testes de um único arquivo |
+| `Test: current package` | `go/test` — pacote atual | Depurar testes com seleção interativa |
+| `Test: integration suite` | `go/test` — tag `integration` | Depurar testes de integração |
+| `server (attach to PID)` | `go` — attach | Anexar a processo já em execução |
+| `Stack: server + worker` | compound | Depurar fluxo completo; `stopAll: true` ao encerrar |
 
 > Alternativa via CLI: `dlv debug ./cmd -- server`
 
@@ -473,22 +514,22 @@ Configurações disponíveis em `.vscode/launch.json`:
 
 ## Comandos Task
 
-O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` para ver todas as tasks disponíveis.
+O projeto usa [Task v3.51.1](https://taskfile.dev). Execute `task --list-all` para ver todas as tasks. O `Taskfile.yml` raiz inclui taskfiles especializados em `taskfiles/`.
 
-### Setup e inicialização
+### Setup e Inicialização
 
 | Task | Objetivo | Quando executar |
 |---|---|---|
 | `task setup` | Instala pre-commit hooks, gitsign e configura assinatura de commits | Uma vez ao clonar |
 | `task mocks:mocks` | Regenera mocks via mockery conforme `.mockery.yml` | Após alterar interfaces |
 | `task mocks:clean` | Remove todos os mocks gerados | Antes de regenerar do zero |
-| `task mocks:verify` | Falha se os mocks estiverem desatualizados (uso em CI) | — |
+| `task mocks:verify` | Falha se os mocks estiverem desatualizados | CI |
 
 ### Build
 
 | Task | Objetivo |
 |---|---|
-| `task build:build` | Compila binário para o SO atual em `bin/mecontrola` |
+| `task build:build` | Compila binário para o SO atual em `bin/mecontrola` (CGO_ENABLED=0, -trimpath) |
 | `task build:all` | Cross-compile linux/darwin/windows × amd64/arm64 em `bin/` |
 | `task build:docker:build IMAGE_TAG=<tag>` | Build da imagem Docker multi-stage distroless (≤30 MB, USER 65532) |
 | `task build:clean` | Remove `bin/` e `.task/` |
@@ -498,7 +539,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 
 | Task | Objetivo |
 |---|---|
-| `task local:infra` | Sobe postgres + otel-lgtm sem aplicação |
+| `task local:infra` | Sobe postgres + otel-lgtm + mailpit sem aplicação |
 | `task local:up` | Sequência completa: infra → migrate → server + worker |
 | `task local:down` | Para e remove containers (preserva volumes) |
 | `task local:destroy` | Para + remove volumes (apaga dados) — pede confirmação |
@@ -523,7 +564,8 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task test:integration` | Integração com testcontainers | Docker disponível |
 | `task test:coverage` | Relatório HTML em `coverage/coverage.html` | `test:unit` |
 | `task test:coverage:identity` | Cobertura do módulo identity com validação de pontos críticos (RF-17) | `test:unit` |
-| `task test:e2e` | Testes E2E BDD com Godog (agent + categories, requer Docker) | Docker disponível |
+| `task test:e2e` | Testes E2E BDD com Godog (requer Docker) | Docker disponível |
+| `task test:conformance:real` | Suite de conformidade do weather agent com LLM real (`RUN_REAL_LLM=1`) | OpenRouter API key |
 | `task test:watch` | Re-executa unitários ao salvar | — |
 | `task card:test` | Unitários do módulo card com `-race` | — |
 | `task card:integration` | Integração do módulo card | Docker disponível |
@@ -532,7 +574,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 
 | Task | Objetivo |
 |---|---|
-| `task lint:run` | golangci-lint + gates: auth-bypass, outbox-user-id, deadcode do `internal/agent` |
+| `task lint:run` | golangci-lint + gates: auth-bypass, outbox-user-id, deadcode |
 | `task lint:fix` | Aplica correções automáticas do linter |
 | `task lint:fmt` | gofmt + goimports |
 | `task lint:fmt:check` | Falha se arquivo não formatado (uso em CI) |
@@ -541,7 +583,8 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task lint:user-isolation` | Gate: UPDATE/DELETE sem `user_id` na WHERE em repos per-user |
 | `task lint:auth-bypass` | Gate M-09: `RequireGatewayAuth` obrigatório antes de `InjectPrincipal` |
 | `task lint:outbox-user-id` | Gate: `AggregateUserID` obrigatório em `EventInput` |
-| `task lint:outbox-user-id:test` | Regressão do gate outbox-user-id com fixtures (missing field, empty, populated, allowlist) |
+| `task lint:outbox-user-id:test` | Regressão do gate outbox-user-id com fixtures |
+| `task lint:deadcode` | Gate RF-40: código morto detectado pelo deadcode |
 | `task card:lint` | golangci-lint escopo card (inclui regra forbidigo PCI) |
 | `task card:audit` | Auditoria R0–R7: init, panic, clock, interface-assertion, zero-comentários, SQL em adapter, PCI |
 
@@ -552,7 +595,16 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task check` | `lint:run` + `test:unit` + `security:vulncheck` — executar antes de abrir PR |
 | `task ci:pipeline` | Pipeline CI completa (lint + testes + segurança + build) |
 | `task ci:fast` | Subconjunto rápido para feedback em PR (lint + testes unitários) |
-| `task ci:agent-boundary` | Gate de fronteira de dados do `internal/agent` |
+| `task ci:agent-boundary` | Gate de fronteira de dados do `internal/agents` |
+| `task ci:platform-gates` | Gates R-WF-KERNEL-001, R-AGENT-WF-001 (kernel sem domínio, sem LLM, estados fechados) |
+| `task ci:no-internal-agent` | Gate ADR-004 cutover: `internal/agent` ausente + sem imports proibidos |
+
+### Gates de arquitetura
+
+| Task | Objetivo |
+|---|---|
+| `task gates:platform` | 5 gates: kernel sem import de domínio, sem LLM no kernel, zero comments, cardinalidade controlada, tipos fechados sem string |
+| `task gates:no-internal-agent` | Gate ADR-004: ausência de `internal/agent` confirmada |
 
 ### Segurança
 
@@ -561,11 +613,11 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task security:vulncheck` | govulncheck nas dependências Go | govulncheck |
 | `task security:scan` | vulncheck + audit | govulncheck |
 | `task security:audit` | `go list -m -u all` + `go mod verify` | — |
-| `task security:image-scan IMAGE_SHA=<sha>` | Trivy na imagem do GHCR | trivy, acesso GHCR |
+| `task security:image-scan IMAGE_SHA=<sha>` | Trivy na imagem do GHCR (HIGH/CRITICAL) | trivy, acesso GHCR |
 | `task security:sbom IMAGE_SHA=<sha>` | Gera `sbom.spdx.json` da imagem | trivy, acesso GHCR |
-| `task security:sign-image IMAGE_REF=<ref> IMAGE_SHA=<sha>` | Assina imagem via cosign keyless + gera SBOM e provenance attestations | cosign, OIDC GitHub Actions |
+| `task security:sign-image IMAGE_REF=<ref> IMAGE_SHA=<sha>` | Assina imagem via cosign keyless + SBOM + provenance attestations | cosign, OIDC GitHub Actions |
 | `task security:verify-image IMAGE_SHA=<sha>` | Verifica assinatura cosign keyless | cosign |
-| `task security:vps:firewall VPS_HOST=<ip>` | Aplica regras ufw no VPS via SSH (22/80/443) — `--force-enable` ativa o ufw | SSH + sudo no VPS |
+| `task security:vps:firewall VPS_HOST=<ip>` | Aplica regras ufw no VPS via SSH (22/80/443) | SSH + sudo no VPS |
 
 ### ngrok — webhooks locais
 
@@ -589,13 +641,11 @@ Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
 
 | Task | Objetivo |
 |---|---|
-| `task deploy:local` | Deploy da máquina local direto na VPS, sem GHCR (build amd64 + `docker save\|load` + migrate + server/worker + healthcheck/rollback). Aceita `-- <tag>`. Ver [seção dedicada](#deploy-da-máquina-local-direto-na-vps-deploy-localsh) |
+| `task deploy:local` | Deploy da máquina local direto na VPS, sem GHCR (build amd64 + `docker save\|load` + migrate + server/worker + healthcheck/rollback). Aceita `-- <tag>`. |
 
 ---
 
 ## Sequências comuns
-
-Receitas prontas para os fluxos mais frequentes.
 
 **Primeira vez (clone do zero):**
 
@@ -626,8 +676,6 @@ task local:destroy   # remove volumes (confirma prompt)
 task local:up        # recria do zero
 ```
 
-> Para reset do banco de **produção**, ver a seção [Reset do banco de produção](#reset-do-banco-de-produção).
-
 **Testar webhook com ngrok:**
 
 ```bash
@@ -635,6 +683,12 @@ task ngrok:server    # sobe ambiente completo + abre túnel
 task ngrok:urls      # copia URLs → configurar no Meta/Kiwify Dashboard
 # Ctrl+C para encerrar o túnel
 task local:down      # para os containers
+```
+
+**Executar testes de conformidade do agent com LLM real:**
+
+```bash
+RUN_REAL_LLM=1 task test:conformance:real
 ```
 
 ---
@@ -670,8 +724,6 @@ docker service scale \
 
 ### Reset na VPS usando a imagem atual
 
-O caminho correto em produção é usar a mesma imagem configurada no host, conectando direto na rede Swarm `mecontrola_backend` e no `postgres` (sem pgbouncer).
-
 ```bash
 ssh root@187.77.45.48
 cd /opt/mecontrola
@@ -701,15 +753,13 @@ docker run --rm \
   migrate
 ```
 
-Saída esperada: reversão completa seguida de reaplicação bem-sucedida das migrations `000001` e `000002`.
-
 ### Verificação pós-reset
 
 ```bash
 STACK=mecontrola
 POSTGRES_CONTAINER=$(docker ps --filter name="${STACK}_postgres." --format '{{.Names}}' | head -n1)
 
-# Confirma schema_migrations consistente
+# Confirma schema_migrations consistente (3 versões, dirty = false)
 docker exec "${POSTGRES_CONTAINER}" \
   psql -U "${DB_USER:-mecontrola}" -d "${DB_NAME:-mecontrola_db}" \
   -c 'SELECT version, dirty FROM schema_migrations ORDER BY version;'
@@ -721,7 +771,7 @@ docker exec "${POSTGRES_CONTAINER}" \
 ```
 
 Resultado esperado:
-- última versão em `schema_migrations` = `2`
+- última versão em `schema_migrations` = `3`
 - `dirty = false`
 - `category_dictionary` com dados seedados
 
@@ -734,17 +784,9 @@ docker service scale \
   ${STACK}_server-2=1 \
   ${STACK}_worker-1=1 \
   ${STACK}_worker-2=1
-
-for svc in server-1 server-2 worker-1 worker-2; do
-  until docker ps --filter name="${STACK}_${svc}" --filter health=healthy --format '{{.Names}}' | grep -q .; do
-    echo "aguardando ${svc}..."; sleep 5
-  done
-done
 ```
 
 ### Execução remota a partir do macOS
-
-Se quiser disparar o reset a partir do macOS sem abrir shell interativo na VPS, execute os mesmos comandos via `ssh`:
 
 ```bash
 ssh root@187.77.45.48 '
@@ -772,11 +814,9 @@ task local:up
 
 ## CI/CD
 
-O fluxo principal está centralizado em `.github/workflows/ci-cd.yml`. Ele valida build, qualidade, testes, vulnerabilidades, imagem, assinatura e deploy em staging a cada `push` na `main`. Há ainda um workflow manual separado para E2E e um workflow específico para auto-merge de PRs do Dependabot.
+O fluxo principal está centralizado em `.github/workflows/ci-cd.yml`. Ativado em `push` na `main` e manualmente via `workflow_dispatch`.
 
-### Pipeline principal (`.github/workflows/ci-cd.yml`)
-
-Ativado em `push` na `main` e manualmente via `workflow_dispatch`.
+### Pipeline principal
 
 | Job | Quando | O que faz |
 |---|---|---|
@@ -785,13 +825,15 @@ Ativado em `push` na `main` e manualmente via `workflow_dispatch`.
 | `unit` | sempre | `task test:unit` + upload de cobertura unitária |
 | `integration` | sempre | `task test:integration` com Docker/testcontainers |
 | `vulncheck` | sempre | `task security:vulncheck` |
-| `agent-data-boundary` | sempre | `task ci:agent-boundary` |
-| `build-image` | após gates verdes | build + push da imagem para GHCR com tag = SHA curto |
+| `agent-data-boundary` | sempre | `task ci:agent-boundary` — gate RF-40: fronteira de dados do `internal/agents` |
+| `platform-gates` | sempre | `task ci:platform-gates` — R-WF-KERNEL-001 e R-AGENT-WF-001 |
+| `no-internal-agent` | sempre | `task ci:no-internal-agent` — ADR-004 cutover: confirma que `internal/agent` foi removido |
+| `build-image` | após todos os gates verdes | build + push da imagem GHCR com tag = SHA curto + provenance + SBOM |
 | `scan-image` | após build da imagem | Trivy image scan e upload SARIF |
 | `sign-image` | após build da imagem | assinatura cosign keyless |
-| `deploy` | `main` | deploy Swarm em staging via runner self-hosted |
-| `healthcheck` | após deploy | valida `/health` e `/ready` do staging |
-| `notify` | `main` | notificação final no Telegram com status da run |
+| `deploy` | `main`, após scan + sign | deploy Swarm em produção via runner self-hosted |
+| `healthcheck` | após deploy | valida `/health` e `/ready` do servidor com retry |
+| `notify` | `main` | notificação Telegram com status da run |
 
 ### E2E manual (`.github/workflows/e2e.yml`)
 
@@ -807,51 +849,59 @@ Dependabot atualiza semanalmente (gomod, github-actions, docker). PRs de minor/p
 
 A arquitetura de produção usa Docker Swarm single-node com 2 réplicas de `server` e 2 de `worker`. A stack está em `deployment/compose/compose.swarm.yml`.
 
+**Serviços e recursos em produção:**
+
+| Serviço | Réplicas | CPU (lim/res) | RAM (lim/res) | Notas |
+|---|---|---|---|---|
+| `postgres` | 1 | 1.0 / 0.25 | 2 GB / 512 M | — |
+| `pgbouncer` | 1 | 0.25 / — | 128 M / — | Connection pooling |
+| `postgres-exporter` | 1 | — | — | Métricas Prometheus |
+| `node-exporter` | 1 | — | — | Métricas de nó |
+| `migrate` | 1 | — | — | One-shot (`restart: none`) |
+| `server-1`, `server-2` | 1 cada | 0.75 / — | 768 M / — | UID 65532, read-only fs |
+| `worker-1`, `worker-2` | 1 cada | 0.50 / — | 384 M / — | UID 65532, read-only fs |
+| `caddy` | 1 | 0.25 / — | 128 M / — | Reverse proxy |
+| `otel-lgtm` | 1 | 0.50 / — | 512 M / — | Observabilidade |
+
+**Secrets externos** (gerenciados via `task swarm:prod:secrets`):
+
+```
+mecontrola_DB_PASSWORD
+mecontrola_META_ACCESS_TOKEN
+mecontrola_META_APP_SECRET
+mecontrola_KIWIFY_WEBHOOK_SECRET
+mecontrola_KIWIFY_CLIENT_SECRET
+mecontrola_OPENROUTER_API_KEY
+mecontrola_ONBOARDING_TOKEN_ENCRYPTION_KEY
+mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_CURRENT
+mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_NEXT
+```
+
 ### Swarm local (desenvolvimento/teste)
 
 ```bash
-# Validar compose.swarm.yml
-task swarm:local:config
-
-# Inicializar Swarm e subir stack local
-task swarm:local:deploy IMAGE_TAG=local
-
-# Ver servicos
-task swarm:local:ps
-
-# Logs
-task swarm:local:logs
-
-# Remover stack local
-task swarm:local:rm
+task swarm:local:config                  # valida compose.swarm.yml
+task swarm:local:init                    # inicializa Swarm (idempotente)
+task swarm:local:deploy IMAGE_TAG=local  # deploy local da stack
+task swarm:local:ps                      # lista services
+task swarm:local:logs                    # segue logs
+task swarm:local:rm                      # remove stack local
 ```
 
-### Deploy Swarm em producao
-
-O fluxo de producao usa imagem publicada no GHCR com tag imutável (SHA curto do commit). O `deploy-swarm.sh` renderiza `compose.swarm.yml` via `deployment/scripts/render-stack.py` para gerar um YAML 100% compatível com `docker stack deploy`, atualiza `IMAGE_TAG` no `.env` remoto e executa migrate + deploy + health checks com rollback automático em caso de falha.
+### Deploy Swarm em produção
 
 ```bash
-# 1. Sincronizar codigo para a VPS (preserva .env remoto)
-task swarm:prod:sync
+# Etapas individuais
+task swarm:prod:sync                           # rsync código para VPS (preserva .env remoto)
+task swarm:prod:backup-env                     # backup .env para S3
+task swarm:prod:secrets                        # cria/atualiza Docker secrets
+task swarm:prod:migrate                        # migrations com advisory lock
+task swarm:prod:deploy IMAGE_TAG=<tag>         # deploy + health check + rollback automático
+task swarm:prod:ps                             # verifica services
+task swarm:prod:health                         # verifica healthchecks
 
-# 2. Backup do .env remoto para S3
-task swarm:prod:backup-env
-
-# 3. Criar/atualizar Docker secrets
-task swarm:prod:secrets
-
-# 4. Deploy completo (migrate + stack + health check + rollback automatico)
-task swarm:prod:deploy IMAGE_TAG=<tag>
-
-# 5. Verificar servicos
-task swarm:prod:ps
-task swarm:prod:health
-```
-
-Ou, em um unico comando:
-
-```bash
-IMAGE_TAG=<tag> task swarm:prod:sync swarm:prod:backup-env swarm:prod:secrets swarm:prod:deploy swarm:prod:health
+# Ou em um único comando:
+IMAGE_TAG=<tag> task swarm:prod:sync swarm:prod:backup-env swarm:prod:secrets swarm:prod:migrate swarm:prod:deploy swarm:prod:health
 ```
 
 ### Rollback
@@ -863,49 +913,42 @@ task swarm:prod:rollback
 ### Backup e restore PostgreSQL (pgBackRest)
 
 ```bash
-# Verificar configuracao
-task swarm:prod:pgbackrest:check
-
-# Backup full/diff/incr
-task swarm:prod:pgbackrest:backup TYPE=full
-task swarm:prod:pgbackrest:backup TYPE=diff
-task swarm:prod:pgbackrest:backup TYPE=incr
-
-# Listar backups
-task swarm:prod:pgbackrest:info
+task swarm:prod:pgbackrest:check              # verifica configuração
+task swarm:prod:pgbackrest:backup TYPE=full   # backup completo
+task swarm:prod:pgbackrest:backup TYPE=diff   # backup diferencial
+task swarm:prod:pgbackrest:backup TYPE=incr   # backup incremental
+task swarm:prod:pgbackrest:info               # lista backups disponíveis
 ```
 
-Para restore PITR e recuperacao completa da VPS, siga os runbooks:
+Para restore PITR e recuperação completa da VPS, siga os runbooks:
 - `deployment/runbooks/restore-pitr.md`
 - `deployment/runbooks/restore-vps.md`
 
 ### Alertas e observabilidade
 
 ```bash
-# Configurar alertas do Grafana e disparar teste no Telegram
-task swarm:prod:alert:test
+task swarm:prod:alert:test   # configura alertas Grafana + dispara teste no Telegram
 ```
 
-Retencao configurada:
-- Logs (Loki): 7 dias
-- Traces (Tempo): 7 dias
-- Métricas (Prometheus): 15 dias
+| Sinal | Retenção |
+|---|---|
+| Logs (Loki) | 7 dias |
+| Traces (Tempo) | 7 dias |
+| Métricas (Prometheus) | 15 dias |
 
 ---
 
 ## Deploy da máquina local direto na VPS (`deploy-local.sh`)
 
-Deploy de um único comando, **da sua máquina direto para a VPS, sem depender do GHCR nem da CI/CD**. Use quando a pipeline estiver indisponível ou quando precisar subir uma correção rápida gerando tudo localmente.
+Deploy de um único comando, **da sua máquina direto para a VPS, sem depender do GHCR nem da CI/CD**. Use quando a pipeline estiver indisponível ou quando precisar subir uma correção rápida.
 
 O script `deployment/scripts/deploy-local.sh` faz, em sequência:
 
-1. **Build** da imagem `linux/amd64` localmente (arquitetura da VPS — a imagem não precisa casar com o Mac/arm64).
-2. **Transferência** da imagem para a VPS via `docker save | ssh docker load` (sem `docker push`/GHCR).
-3. **Sync** do repositório no host (`git pull --ff-only`, best-effort) + captura da imagem anterior para rollback.
-4. **Migrations** (`docker run --rm migrate`) — aplicadas **antes** do app subir.
-5. **Renderização** de `compose.swarm.yml` via `deployment/scripts/render-stack.py` para YAML compatível com `docker stack deploy`.
-6. **server + worker** recriados com a nova tag + **healthcheck** com **rollback automático** para a imagem anterior se falhar.
-7. **Alinhamento** do `IMAGE_TAG` no `.env` da VPS + **verificação pós-deploy** (`schema_migrations`, imagens em execução, HEAD do host).
+1. **Build** da imagem `linux/amd64` localmente.
+2. **Transferência** da imagem para a VPS via `docker save | gzip | ssh docker load` (sem `docker push`/GHCR).
+3. **Preparação na VPS** — `git pull --ff-only` + `create-secrets.sh` + `backup-env-s3.sh` (se AWS configurado) + migrations.
+4. **Deploy** — renderização de `compose.swarm.yml` via `render-stack.py` + `docker stack deploy` + server/worker com nova tag.
+5. **Healthcheck** com rollback automático + alinhamento do `IMAGE_TAG` no `.env` da VPS.
 
 ### Pré-requisitos
 
@@ -914,7 +957,7 @@ O script `deployment/scripts/deploy-local.sh` faz, em sequência:
 | Docker local | daemon ativo (build + `docker save`) |
 | Acesso SSH por chave à VPS | sem senha (`BatchMode`); a chave padrão ou `VPS_SSH_KEY` |
 | Árvore git limpa | a tag = short SHA do commit; suja é bloqueada (use `ALLOW_DIRTY=true` para burlar) |
-| `.env` na VPS | já presente em `VPS_DEPLOY_PATH/.env` (o script não cria nem altera segredos, só o `IMAGE_TAG`) |
+| `.env` na VPS | já presente em `VPS_DEPLOY_PATH/.env` |
 
 ### Passo a passo
 
@@ -929,14 +972,14 @@ bash deployment/scripts/deploy-local.sh
 bash deployment/scripts/deploy-local.sh 1a2b3c4
 ```
 
-Atalho via Task (equivalente):
+Atalho via Task:
 
 ```bash
 task deploy:local              # tag = short SHA do HEAD
 task deploy:local -- 1a2b3c4   # tag explícita
 ```
 
-Saída esperada ao final (resumida):
+Saída esperada ao final:
 
 ```
 [..] 1/5 build ghcr.io/limateixeiratecnologia/mecontrola:<tag>
@@ -946,7 +989,7 @@ Saída esperada ao final (resumida):
 [vps] up server worker
 [vps] healthy após 10s
 [vps] === verificação pós-deploy ===
-[vps] schema_migrations (version dirty): 2|f
+[vps] schema_migrations (version dirty): 3|f
 [vps] mecontrola-server-1 ...:<tag> Up 5 seconds (healthy)
 [vps] mecontrola-worker-1 ...:<tag> Up 5 seconds (healthy)
 [vps] HEAD host: <tag>
@@ -955,9 +998,7 @@ Saída esperada ao final (resumida):
 
 ### Variáveis de override
 
-Todas opcionais; defaults entre parênteses.
-
-| Variável | Default | Uso |
+| Variável | Padrão | Uso |
 |---|---|---|
 | `IMAGE_TAG` | short SHA do `HEAD` | tag da imagem (também aceita como `$1`) |
 | `VPS_HOST` | `187.77.45.48` | host da VPS |
@@ -975,9 +1016,109 @@ Todas opcionais; defaults entre parênteses.
 VPS_HOST=10.0.0.9 SKIP_BUILD=true bash deployment/scripts/deploy-local.sh
 ```
 
-> **Segurança:** o script aborta antes de tocar a VPS se a árvore git estiver suja (a tag não refletiria o commit) ou se o SSH falhar. Em falha de healthcheck, faz rollback automático para a imagem anterior. As migrations rodam **antes** do app; se falharem, o deploy aborta e os containers atuais permanecem intactos.
+> **Segurança:** o script aborta antes de tocar a VPS se a árvore git estiver suja ou se o SSH falhar. Em falha de healthcheck, faz rollback automático para a imagem anterior. As migrations rodam **antes** do app; se falharem, o deploy aborta e os containers atuais permanecem intactos.
 
-> **Quando usar a CI/CD em vez disto:** o caminho padrão de produção é a pipeline (build assinado por cosign + scan Trivy). O `deploy-local.sh` é um atalho operacional para a VPS — ele **não** assina a imagem nem gera SBOM. Veja [CI/CD](#cicd) e o runbook `deployment/runbooks/deploy.md`.
+> **Quando usar a CI/CD em vez disto:** o caminho padrão de produção é a pipeline (build assinado por cosign + scan Trivy + SBOM). O `deploy-local.sh` é um atalho operacional — ele **não** assina a imagem nem gera SBOM.
+
+---
+
+## Acesso Remoto
+
+### VPS — SSH direto
+
+```bash
+ssh root@187.77.45.48
+cd /opt/mecontrola
+```
+
+### Banco de dados via DBeaver
+
+Adicione os aliases ao `~/.zshrc` ou `~/.bashrc`:
+
+```bash
+alias mecontrola-db="ssh -N -L 5433:172.18.0.2:5432 root@187.77.45.48"
+```
+
+**Passo a passo:**
+
+1. Em um terminal, abra o túnel e mantenha-o aberto:
+
+   ```bash
+   mecontrola-db
+   ```
+
+2. No DBeaver, crie uma nova conexão PostgreSQL:
+
+   | Campo | Valor |
+   |---|---|
+   | Host | `localhost` |
+   | Porta | `5433` (túnel local) |
+   | Database | `mecontrola_db` |
+   | User | `mecontrola` |
+   | Password | valor de `DB_PASSWORD` no `.env` da VPS |
+   | SSL | `disable` |
+
+3. O túnel mapeia `localhost:5433` → container Postgres interno (`172.18.0.2:5432`).
+
+### Grafana da VPS
+
+Adicione os aliases ao `~/.zshrc` ou `~/.bashrc`:
+
+```bash
+alias mecontrola-o11y="ssh -N -L 3001:127.0.0.1:3000 root@187.77.45.48"
+```
+
+**Passo a passo:**
+
+1. Em um terminal, abra o túnel e mantenha-o aberto:
+
+   ```bash
+   mecontrola-o11y
+   ```
+
+2. Acesse no browser: `http://localhost:3001`
+
+   | Campo | Valor |
+   |---|---|
+   | User | `admin` |
+   | Password | valor de `OTEL_LGTM_ADMIN_PASSWORD` no `.env` da VPS |
+
+3. O túnel mapeia `localhost:3001` → Grafana da VPS (`127.0.0.1:3000`).
+
+---
+
+## skills-lock.json
+
+O arquivo `skills-lock.json` na raiz controla as skills de IA externas usadas pelo projeto. Cada skill aponta para um `SKILL.md` versionado em repositório GitHub externo; o `computedHash` garante que o conteúdo carregado pelos agentes é exatamente o que foi auditado.
+
+**Formato:**
+
+```json
+{
+  "version": 1,
+  "skills": {
+    "<nome>": {
+      "source": "owner/repo",
+      "sourceType": "github",
+      "skillPath": "skills/<nome>/SKILL.md",
+      "computedHash": "<hash>"
+    }
+  }
+}
+```
+
+**Skills registradas** (fonte: `JailtonJunior94/skills`)
+
+| Nome | Descrição |
+|---|---|
+| `azure-devops-epic-stories` | Geração de épicos e histórias de usuário para Azure DevOps |
+| `decision-brainstorming` | Brainstorming estruturado de decisões técnicas |
+| `prompt-enricher` | Enriquecimento de prompts para LLMs |
+| `taskfile-production` | Criação e manutenção de Taskfiles em produção |
+| `technical-discovery-production` | Discovery técnico de projetos |
+| `tracker-to-prd` | Conversão de issues/tickets para PRD |
+
+Para atualizar: edite `skills-lock.json` com o hash correto do `SKILL.md` na fonte e abra PR para revisão.
 
 ---
 
@@ -1002,3 +1143,5 @@ Referências canônicas para regras de arquitetura, ADRs e especificações de p
 | Arquitetura completa | `docs/diagrams/architecture.md` | Visão textual consolidada da arquitetura, bootstrap e fluxos principais |
 | Diagramas C4 | `docs/diagrams/` | PlantUML por módulo (container + fluxos) |
 | Coleção Postman | `docs/postman/` | Endpoints + environment |
+| Regras transversais | `.claude/rules/` | R-ADAPTER-001, R-WF-KERNEL-001, R-AGENT-WF-001, R-TXN-WORKFLOWS-001, R-TESTING-001, R-DTO-VALIDATE-001, R-GOV-001 |
+| Runbooks operacionais | `deployment/runbooks/` | Deploy, PITR restore, rollback, rotação de secrets, firewall |

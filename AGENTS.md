@@ -73,7 +73,7 @@ Principios obrigatorios inspirados em *Domain Modeling Made Functional* (Scott W
 3. **Decide* puro**: toda regra de negocio vive em funcoes `Decide*` — sem IO, sem `context.Context`, deterministico; recebe `ids []uuid.UUID` e `now time.Time` como parametros quando necessario.
 4. **Workflow pipeline**: fluxo linear `parse → validate → decide → persist → publish`; cada passo recebe o resultado tipado do anterior; sem branching de dominio fora do `Decide*`.
 5. **Discriminated union via errors.As**: divergencia de fluxo via `errors.As(err, &typed)` ou `errors.Is`; nunca `switch` em campo `string`.
-6. **Pending step tipado** (inspiracao Mastra): estado de espera de input do usuario e modelado como struct com `AwaitingKind` fechado (`category_confirm | category_choice`); nunca flag booleano solta. Thread = `(user_id, channel)`; sinal = mensagem recebida; resume = check de pending intercepta sinal antes do parse LLM.
+6. **Pending step tipado** (inspiracao Mastra): estado de espera de input do usuario e modelado como tipo fechado (ex.: `AwaitingKind`), nunca flag booleano solta; persistido no `Snapshot` do kernel e retomado por merge-patch antes do parse. Thread = `(resourceId, threadId)` opaco; sinal = mensagem recebida. Esses primitivos (Thread/Run/WorkingMemory/PendingStep) vivem em `internal/platform/{agent,memory}` e sao consumidos pelos modulos, nunca reimplementados em dominio.
 
 ## Layout Obrigatorio por Modulo
 
@@ -143,31 +143,31 @@ Regras obrigatorias:
 5. Em novos desenvolvimentos, nao injetar `RepositoryFactory`, `manager.Manager`, `database.DBTX`, clients externos ou services de dominio diretamente em handlers/consumers/jobs quando o use case correspondente puder receber essa responsabilidade.
 6. Em use cases e services, e proibido criar interfaces locais apenas para expor `DBTX(ctx)`; quando a dependencia for somente o handle de banco, injetar `database.DBTX` concreto na struct consumidora.
 
-## Padrao Workflow/Tool do Agent (`internal/agent`)
+## Padrao de Agent — substrato `internal/platform/agent` + consumidor `internal/agents`
 
-O modulo `internal/agent` usa `Workflow/Tool` como padrao canonico e obrigatorio de roteamento, codificado em `.claude/rules/agent-workflows-tools.md` (`R-AGENT-WF-001`, hard).
+A capacidade agentiva e um port de comportamento do Mastra em duas camadas: o substrato reutilizavel `internal/platform/{agent,llm,memory,workflow,tool,scorer}` e o consumidor de referencia `internal/agents` (port weather, molde para novos agentes). Codificado em `.claude/rules/agent-workflows-tools.md` (`R-AGENT-WF-001`, hard, re-escopado pela emenda 2026-06-29 — `internal/agent` foi descontinuado). Skill operacional: `mastra`.
 
 Regras obrigatorias:
-1. Fluxo canonico: `IntentRouter -> WorkflowRegistry.Resolve(kind) -> Workflow -> Tool -> binding -> usecase -> domain -> repo`.
-2. Proibido adicionar novo `case` de dominio ao switch de `daily_ledger_agent.go` ou logica de roteamento por intent kind fora de um `Workflow`. Comportamento novo entra como `Workflow`/`Tool` reutilizando bindings e usecases existentes.
-3. `Tool` e adapter fino de responsabilidade unica (herda R-ADAPTER-001): zero regra de negocio, SQL direto ou branching de dominio. Pre-write (authz+replay+policy+audit) vive no step de guarda reutilizavel, nao duplicado por tool.
-4. `ToolOutcome` e `RunStatus` sao tipos fechados (DMMF state-as-type), nunca strings livres; toda execucao e um `Run` auditavel (`thread_id`, `run_id`, `workflow`, `tool`, `status`, `duration_ms`, `error`).
-5. LLM aparece apenas no step de parse (`ParseInbound`); nunca dentro de `Workflow`/`Tool` de execucao.
-6. Toda alteracao Go no modulo agent exige `go-implementation` (Etapas 1-5 + checklist R0-R7) e DMMF conforme a precedencia em `.claude/rules/governance.md`.
-7. **Padrao Mastra `[HARD]` — obrigatorio em `internal/agent`, proibido em qualquer outro modulo**: Thread = `(user_id, channel)` resolvido a cada execucao via `ThreadGateway.GetOrCreate`; toda execucao abre e fecha um `Run` com `RunStatus` fechado (`running|succeeded|failed`); pending step = `Draft{AwaitingKind, TransactionKind, Candidates, ...}` salvo quando categoria nao identificavel; working memory pre-carregada no system prompt quando disponivel; sinal = mensagem do usuario; resume = check pending antes de `ParseInbound`. Referencia: R-AGENT-WF-001.6–001.8 e addendum `.6-A`/`.8-A` em `.claude/rules/agent-workflows-tools.md`. O agent PODE consumir o kernel generico (`Engine[S]` de `internal/platform/workflow`) mantendo sua semantica propria.
+1. Fluxo canonico de inbound: `InboundRequest -> AgentRuntime.Execute -> ThreadGateway.GetOrCreate -> RunStore.Insert -> AgentRegistry.Resolve -> Agent.Execute (loop tool-calling) -> MessageStore.Append -> closeRun`. Execucao duravel multi-step pelo kernel `workflow.Engine[S].Start/Resume`.
+2. Comportamento novo entra como novo agente/tool/workflow/scorer no consumidor, montando primitivos do substrato. Proibido roteamento por `switch case intent.Kind`; resolucao por `AgentRegistry`/`WorkflowRegistry`.
+3. `Tool` e adapter fino (`tool.NewTool[I,O]`, herda R-ADAPTER-001): zero regra de negocio, SQL direto ou branching de dominio; o `exec` delega a client/usecase.
+4. Estados de fronteira sao tipos fechados (DMMF state-as-type): `agent.RunStatus`/`agent.ToolOutcome`, `workflow.RunStatus`/`StepStatus`/`SuspendReason`, `scorer.ScorerKind`, `memory.MessageRole`. Toda execucao e um `Run` auditavel (`run_id`, `thread`, `agent_id`, `status`, `duration_ms`, `error`).
+5. LLM aparece apenas nas call-sites sancionadas (loop tool-calling do agent, step que chama `Stream`, scorer LLM-judged); nunca no kernel. OpenRouter e o unico provider; sem fallback chain.
+6. Toda alteracao Go exige `go-implementation` (Etapas 1-5 + checklist R0-R7) e DMMF conforme a precedencia em `.claude/rules/governance.md`.
+7. **Primitivos de plataforma `[HARD]`**: Thread = `(resourceId, threadId)` opaco resolvido a cada execucao via `ThreadGateway.GetOrCreate`; `Run` aberto e fechado com `RunStatus` fechado; pending step = estado de espera fechado salvo no `Snapshot` do kernel; working memory injetada no system prompt quando disponivel; resume por merge-patch antes do parse. Thread/Run/WorkingMemory/PendingStep vivem em `internal/platform/{agent,memory}` e sao consumidos pelos modulos, nunca reimplementados em dominio. Referencia: R-AGENT-WF-001.6–001.8 e addendum `.6-A`/`.8-A`. Os consumidores consomem o kernel generico (`Engine[S]` de `internal/platform/workflow`).
 
 ## Kernel Generico de Workflow (`internal/platform/workflow`)
 
 O kernel de workflow em `internal/platform/workflow` e um mecanismo generico de orquestacao de passos (`Step[S]`, `Engine[S]`, combinadores, suspend/resume, retry), codificado em `.claude/rules/workflow-kernel.md` (`R-WF-KERNEL-001`, hard). Gate bloqueante (ADR-004): regra redigida antes de qualquer codigo do kernel.
 
 Regras obrigatorias:
-1. Proibido import de pacote de dominio: `internal/agent`, `internal/transactions`, `internal/billing`, `internal/identity` ou qualquer tipo semantico (`intent`, `pendingexpense`, `category`).
-2. O kernel opera sobre estado generico `S any` e `correlationKey string` opaca — sem `user_id`, `channel` ou `intent.Kind` em assinaturas publicas.
+1. Proibido import de pacote de dominio (`internal/transactions`, `internal/billing`, `internal/identity`) ou de camada superior que consome o kernel (`internal/platform/agent`, `internal/platform/memory`), bem como qualquer tipo semantico (`intent`, `pendingexpense`, `category`).
+2. O kernel opera sobre estado generico `S any` e `correlationKey string` opaca — sem `user_id`, `resourceId` ou tipo semantico de dominio em assinaturas publicas.
 3. Estados (`RunStatus`/`StepStatus`/`SuspendReason`) sao tipos fechados — nunca string livre.
 4. SQL apenas no adapter Postgres (`infrastructure/postgres/`); zero regra de negocio, branching de dominio ou LLM no kernel.
 5. Metricas com cardinalidade controlada: labels permitidos sao `workflow`, `step`, `status`, `outcome`; proibido `user_id`, `correlation_key`, `category_id`.
 6. Zero comentarios em Go de producao (herda R-ADAPTER-001.1).
-7. O `internal/agent` e o primeiro consumidor: instancia `Engine[ExpenseState]` para o write de transactions, mantendo Thread/WorkingMemory/PendingStep como responsabilidade exclusiva do agent.
+7. Os consumidores instanciam `Engine[S]` com sua propria struct de estado (ex.: `internal/agents` usa `Engine[WeatherState]` no workflow weather); Thread/WorkingMemory/PendingStep sao primitivos de `internal/platform/{agent,memory}`, nunca do kernel.
 
 ## Plataforma Compartilhada
 

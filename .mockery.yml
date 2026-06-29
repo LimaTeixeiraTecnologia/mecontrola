@@ -126,19 +126,11 @@ packages:
       CategoryValidator: {}
       TransactionEventPublisher: {}
       CardPurchaseEventPublisher: {}
-      RecurringTemplateEventPublisher: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces:
     interfaces:
       CategoryRepository: {}
       DictionaryRepository: {}
       VersionReader: {}
-  github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/usecases:
-    interfaces:
-      IntentInterpreter: {}
-  github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/interfaces:
-    interfaces:
-      AgentDecisionRepository: {}
-      AgentDecisionRepositoryFactory: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow:
     interfaces:
       UnitOfWork: {}

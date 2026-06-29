@@ -1,9 +1,9 @@
 {
   "uid": "mecontrola-agent-runtime",
-  "title": "MeControla — Agent Runtime",
-  "tags": ["mecontrola", "otel", "agent"],
+  "title": "MeControla — Agents Runtime",
+  "tags": ["mecontrola", "otel", "agents"],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "refresh": "30s",
   "time": { "from": "now-6h", "to": "now" },
@@ -100,13 +100,13 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Run throughput by workflow / status (runs/s)",
+      "title": "Runs by agent / status (runs/s)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{workflow}} / {{status}}", "expr": "sum by (workflow, status) (rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "{{agent_id}} / {{status}}", "expr": "sum by (agent_id, status) (rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
@@ -126,37 +126,37 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Runs by channel (runs/s)",
+      "title": "Runs by agent (runs/s)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" }, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{channel}}", "expr": "sum by (channel) (rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "{{agent_id}}", "expr": "sum by (agent_id) (rate(agent_runs_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Run latency p95 by workflow (s)",
+      "title": "Workflow run latency p95 by workflow (s)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{workflow}}", "expr": "histogram_quantile(0.95, sum by (le, workflow) (rate(agent_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" }
+        { "refId": "A", "legendFormat": "{{workflow}}", "expr": "histogram_quantile(0.95, sum by (le, workflow) (rate(workflow_run_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" }
       ]
     },
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Tool invocations by tool / outcome (ops/s)",
+      "title": "Tool invocations by agent / tool (ops/s)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{tool}} / {{outcome}}", "expr": "sum by (tool, outcome) (rate(agent_tool_invocations_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "{{agent_id}} / {{tool}}", "expr": "sum by (agent_id, tool) (rate(agent_tool_invocations_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
@@ -168,60 +168,73 @@
       "fieldConfig": { "defaults": { "unit": "ops", "decimals": 3 }, "overrides": [] },
       "options": { "showHeader": true },
       "targets": [
-        { "refId": "A", "format": "table", "instant": true, "expr": "topk(15, sum by (tool, outcome) (rate(agent_tool_invocations_total{job=\"$job\"}[$__rate_interval])))" }
+        { "refId": "A", "format": "table", "instant": true, "expr": "topk(15, sum by (tool) (rate(agent_tool_invocations_total{job=\"$job\"}[$__rate_interval])))" }
       ],
       "transformations": [ { "id": "labelsToFields", "options": {} } ]
     },
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Intent routed by outcome (ops/s)",
+      "title": "Workflow runs by workflow / status (runs/s)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{outcome}}", "expr": "sum by (outcome) (rate(agent_intent_routed_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "{{workflow}} / {{status}}", "expr": "sum by (workflow, status) (rate(workflow_runs_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Intent routed by kind (ops/s)",
+      "title": "Workflow suspend / resume / version conflict (ops/s)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{kind}}", "expr": "sum by (kind) (rate(agent_intent_routed_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "suspend", "expr": "sum(rate(workflow_suspend_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "resume", "expr": "sum(rate(workflow_resume_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "C", "legendFormat": "version conflict", "expr": "sum(rate(workflow_version_conflict_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Write guard events — authz denied / policy blocks / idempotency replay (ops/s)",
+      "title": "LLM provider calls / errors (ops/s)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "authz denied", "expr": "sum(rate(agent_authz_denied_total{job=\"$job\"}[$__rate_interval]))" },
-        { "refId": "B", "legendFormat": "policy blocks", "expr": "sum(rate(agent_policy_blocks_total{job=\"$job\"}[$__rate_interval]))" },
-        { "refId": "C", "legendFormat": "idempotency replay", "expr": "sum(rate(agent_idempotency_replay_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "calls · {{status}}", "expr": "sum by (status) (rate(agent_llm_provider_call_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "errors · {{reason}}", "expr": "sum by (reason) (rate(agent_llm_provider_errors_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Write guard events by kind (ops/s)",
+      "title": "Embedding index pipeline (ops/s)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "authz denied · {{kind}}", "expr": "sum by (kind) (rate(agent_authz_denied_total{job=\"$job\"}[$__rate_interval]))" },
-        { "refId": "B", "legendFormat": "policy block · {{kind}}", "expr": "sum by (kind) (rate(agent_policy_blocks_total{job=\"$job\"}[$__rate_interval]))" },
-        { "refId": "C", "legendFormat": "replay · {{kind}}", "expr": "sum by (kind) (rate(agent_idempotency_replay_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "published", "expr": "sum(rate(platform_memory_embedding_index_published_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "B", "legendFormat": "succeeded", "expr": "sum(rate(platform_memory_embedding_index_succeeded_total{job=\"$job\"}[$__rate_interval]))" },
+        { "refId": "C", "legendFormat": "failed", "expr": "sum(rate(platform_memory_embedding_index_failed_total{job=\"$job\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Scorer runs by scorer / outcome (ops/s)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{scorer_id}} · {{kind}} / {{outcome}}", "expr": "sum by (scorer_id, kind, outcome) (rate(scorer_runs_total{job=\"$job\"}[$__rate_interval]))" }
       ]
     }
   ]

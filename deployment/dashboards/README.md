@@ -9,7 +9,7 @@ Dashboards para o stack OpenTelemetry consolidado no `grafana/otel-lgtm`
 |---------|------|-------------|
 | `mecontrola-api.json` | RED da API (rate, errors, duration) + DB client | Prometheus |
 | `mecontrola-ops.json` | Saúde operacional: pool/tx do DB, outbox, onboarding, throughput de negócio, logs | Prometheus + Loki |
-| `agent-runtime-overview.json` | AgentRuntime: throughput/sucesso/erro de runs, latência p50/p95/p99, tool invocations, métricas do IntentRouter (routed, authz, policy, idempotência) | Prometheus |
+| `agent-runtime-overview.json` | AgentRuntime (`internal/platform/agent`): throughput/sucesso/erro de runs, latência p50/p95/p99 e tool invocations | Prometheus |
 
 ## Como importar
 
@@ -53,12 +53,11 @@ em segundos**, **client/DB em milissegundos**.
   `onboarding_activation_email_dispatched_total`, `onboarding_paid_to_consumed_seconds_*`.
 - Billing/canais: `billing_webhooks_received_total`, `meta_inbound_messages_total`, `whatsapp_dispatcher_route_total`.
 
-**Agent Runtime (`agent-runtime-overview.json`):**
-- `agent_runs_total` — counter; labels `agent_id`, `channel`, `workflow`, `status` (`succeeded`/`failed`).
-- `agent_run_duration_seconds_bucket|_sum|_count` — histograma (s); labels `agent_id`, `channel`, `workflow`.
-- `agent_tool_invocations_total` — counter; labels `tool`, `outcome`.
-- IntentRouter: `agent_intent_routed_total` (labels `kind`, `channel`, `outcome`),
-  `agent_authz_denied_total`, `agent_policy_blocks_total`, `agent_idempotency_replay_total` (label `kind`).
+**Agent Runtime (`agent-runtime-overview.json`) — substrato `internal/platform/agent`:**
+- `agent_runs_total` — counter; labels `agent_id`, `status` (`succeeded`/`failed`).
+- `agent_run_duration_seconds_bucket|_sum|_count` — histograma (s); label `agent_id`.
+- `agent_tool_invocations_total` — counter; labels `agent_id`, `tool`.
+- `agent_stream_total` — counter; label `agent_id` (execuções em modo stream).
 - Cardinalidade fechada: nenhum label carrega `user_id`.
 
 **Logs (Loki):** stream `{service_name=~"mecontrola-.+", detected_level=~"error|warn"}`.

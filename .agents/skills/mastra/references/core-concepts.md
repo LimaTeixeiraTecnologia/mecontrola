@@ -1,82 +1,97 @@
-# Core Concepts — primitivos Mastra no Go do internal/agent
+# Core concepts — primitivos do substrato e o layering
 
-Use para situar cada conceito Mastra no código Go real antes de implementar.
+Situa cada primitivo Mastra no código Go real. Duas camadas: **substrato** `internal/platform/*`
+(genérico, reutilizável) e **consumidor** `internal/agents` (port weather, molde a copiar).
 
-## Agent
+## Layering unidirecional (ADR-002)
 
-Dois objetos formam o "Agent":
-
-- `AgentRuntime` (`application/services/agent_runtime.go`) — fronteira de execução Mastra-style:
-  resolve Thread, abre/fecha Run, emite métricas. `Execute(ctx, principal, channel, peer, text, messageID)`.
-- `DailyLedgerAgent` (`application/services/daily_ledger_agent.go`) — orquestrador fino: detém o
-  `*workflow.IntentRegistry`, roda format compartilhado e delega resolução de kind ao registry.
-  **Não** contém `switch case intent.Kind` de domínio.
-
-## Workflow
-
-`workflow.IntentWorkflow` é a interface; `composite` é a implementação
-(`application/workflow/composite.go`):
-
-```go
-type IntentWorkflow interface {
-    ID() string
-    Handles(kind intent.Kind) bool
-    Execute(ctx context.Context, in tools.ToolInput) (tools.ToolResult, error)
-}
+```
+consumidor (internal/agents, test/conformance/weather)
+        │
+        ▼
+internal/platform/agent ──► internal/platform/tool
+        │      │      └────► internal/platform/memory ──► internal/platform/llm (Embed)
+        │      └───────────► internal/platform/scorer ──► internal/platform/llm (Complete)
+        │
+        ├──► internal/platform/llm        (Complete | Stream | Embed via OpenRouter)
+        └──► internal/platform/workflow   (KERNEL — Engine[S], Step[S], Store, Codec)
 ```
 
-Um workflow agrupa `KindTool{Kind, Tool}` e resolve `kind -> Tool`; o `composite` **não** aplica
-guarda. A pré-escrita durável (authz/replay/policy/audit) vive no kernel write seam
-(`NewTransactionsWriteDefinition`, ver `write-guard.md`), roteado por `kind.IsKernelWrite()`.
+Regra dura: o **kernel** `internal/platform/workflow` não importa nenhuma camada superior nem domínio
+(R-WF-KERNEL-001.1). Camadas superiores consomem o kernel; nunca o contrário.
 
-## Tool
+## Agent — `internal/platform/agent`
 
-`tools.Tool` (`application/tools/tool.go`) é adapter fino de responsabilidade única:
+- `Agent` (`ports.go`): `ID()`, `Instructions()`, `Execute(ctx, Request) (Result, error)`,
+  `Stream(ctx, Request) (ResultStream, error)`.
+- `NewAgent(id, instructions, provider, o11y, opts...)` (`agent.go`) com `WithTools(...)` e `WithHooks(...)`.
+  `Execute` roda o loop de tool-calling (`completeWithTools`, máx. `maxToolRounds = 5`); se houver
+  `Decoder`, valida `resp.RawJSON` contra o contrato (`ErrContractNotMet`).
+- `AgentRuntime` (`runtime.go`): fronteira de inbound. `Execute(ctx, InboundRequest) (Outcome, error)`
+  resolve Thread, abre Run, monta mensagens (system+working memory+recent+user), chama `Agent.Execute`,
+  persiste turnos e fecha o Run. Único ponto que orquestra Thread→Run.
+- `AgentRegistry` (`registry.go`): `Register`/`Resolve(id)`.
+- `WorkflowRegistry[S]`/`MutableWorkflowRegistry[S]` (`registry.go`): resolve `workflow.Definition[S]` por agentId.
 
-```go
-type Tool interface {
-    Name() string
-    Descriptor() ToolSpec
-    Execute(ctx context.Context, in ToolInput) (ToolResult, error)
-}
-```
+## Tool — `internal/platform/tool`
 
-Cada tool é uma struct fina em `application/tools/` (ex.: `RecordExpense`, `ListCards`),
-instanciada por `tools.New<Nome>(...)` e ligada a um kind via `agentwf.KindTool{Kind, Tool}` dentro
-de `buildRegistry()` (`application/services/agent_workflows.go`). O `Execute` mapeia
-`intent.Intent` → binding→usecase. **Proibido** regra de negócio, SQL ou branching de domínio
-dentro da tool.
+- `ToolHandle` (`tool.go`): `ID()`, `Description()`, `Parameters()`, `Invoke(ctx, argsJSON) ([]byte, error)`.
+- `NewTool[I, O any](id, desc string, in, out llm.Schema, exec func(ctx, I) (O, error)) ToolHandle` —
+  valida o input contra o JSON Schema (lazy, `sync.Once`), faz unmarshal tipado, chama `exec`, marshal do output.
+- `Registry` (`registry.go`): `Register`/`Resolve(id)`, erro `ErrToolNotFound`.
+- A Tool é **adapter fino**: o `exec` delega a um client/usecase; sem regra/SQL/branching de domínio.
 
-`ToolInput` carrega `UserID`, `Channel`, `Intent`, `MessageID`, `Text`, `Confidence`, `Parsed`.
-`ToolResult` carrega `Reply`, `Outcome` (`ToolOutcome`), `Kind`.
+## Workflow / Step (kernel) — `internal/platform/workflow`
 
-## Thread
+- `Step[S]` (`step.go`): `ID()`, `Execute(ctx, state S) (StepOutput[S], error)`. `StepOutput[S]` carrega
+  `State`, `Status` (`StepStatus`) e `*Suspension`. Helper `NewStepFunc[S](id, fn)`.
+- `Definition[S]` (`engine.go`): `ID`, `Root Step[S]`, `Durable bool`, `MaxAttempts int`.
+- `Engine[S]` (`engine.go`): `Start(ctx, def, key, initial) (RunResult[S], error)` e
+  `Resume(ctx, def, key, resume []byte)`. `NewEngine[S](store, o11y)`. Durável → `Snapshot`+`StepRecord`
+  no `Store`; CAS por `Version` (`ErrVersionConflict`/`ErrRunConflict`); `ErrRunAlreadyExists` se já há run ativo.
+- Combinators (`combinators.go`): `Sequence`, `Branch`, `Parallel(merge,...)`, `Retry(step, RetryPolicy)`.
+- `Codec[S]` (`codec.go`): `Encode`/`Decode` JSON e `MergePatch(base, patch)` (RFC 7386 — `null` remove chave,
+  arrays substituídos). O resume aplica o patch sobre `Snapshot.State` — nunca substitui o estado inteiro.
 
-`entities.Thread` (`domain/entities/thread.go`) com identidade canônica `(user_id, channel)` —
-espelha Mastra `resourceId=user_id`, `threadId=channel`. Resolvida por
-`ThreadGateway.GetOrCreate(ctx, userID, channel)` no `AgentRuntime`.
+## Memory — `internal/platform/memory`
 
-## Run
+- `ThreadGateway.GetOrCreate(ctx, resourceID, threadID) (Thread, error)` — identidade opaca `(resourceId, threadId)`.
+- `MessageStore.Append`/`Recent(ctx, threadPK, limit)` — turnos por thread; janela configurável (runtime usa 20).
+- `WorkingMemory.Get`/`Upsert(ctx, resourceID, content)` — markdown por `resourceId`, injetado no system prompt.
+- `SemanticRecall.Index`/`Recall(ctx, resourceID, query, embedding, k)` — RAG via pgvector.
+- `MessageRole` (`types.go`): `RoleUser`/`RoleAssistant`/`RoleTool`/`RoleSystem` (tipo fechado).
+- Indexação assíncrona: `NewPublishingMessageStore` publica `IndexMessagePayload` (evento
+  `EventTypeEmbeddingIndex`); `infrastructure/indexer.EmbeddingIndexHandler` consome, gera embedding via
+  `llm.Embed` e chama `SemanticRecall.Index`. Idempotência por `event_id` do outbox.
 
-`entities.Run` (`domain/entities/run.go`) — execução auditável. `RunStatus` fechado
-(`running|succeeded|failed`). `StartRun` → `Resolve` (workflow/tool/kind) → `Finish(outcome, ok, errText)`.
-Persistida por `RunGateway` (`Insert`/`Finish`). Ver `thread-run-runtime.md`.
+## Scorer / Evals — `internal/platform/scorer`
 
-## WorkingMemory
+- `Scorer` (`scorer.go`): `ID()`, `Kind() ScorerKind`, `Score(ctx, RunSample) (ScoreResult, error)`.
+- Code-based (`code_based.go`): `NewToolCallAccuracyScorer(id, expectedTools)`, `NewCompletenessScorer(id, fields)`.
+- LLM-judged (`llm_judged.go`): `NewLLMJudgedScorer(id, provider, instructions)` — usa `judgeContract`
+  com `llm.Schema` strict (score 0..1 + reason).
+- `ScorerRunner` (`runner.go`): `Observe(ctx, runID, RunSample)` assíncrono (pool de workers), `Shutdown`.
+  Persiste `ScorerResult` via `ResultStore`. Sampling: `AlwaysSample`/`NeverSample`/`RatioSample`.
 
-`entities.WorkingMemory` (escopo `resource`, por `user_id`, markdown). O `ContextBuilder`
-(`application/prompting/context_builder.go`) concatena persona + budgets + working memory no
-`SystemPrompt` usado pelo parser. Ausência de working memory não é erro. Ver `parse-llm-boundary.md`.
+## LLM Provider — `internal/platform/llm`
 
-## Pending Step
+- `Provider` (`provider.go`): `Slug()`, `Complete(ctx, Request) (Response, error)`,
+  `Stream(ctx, Request) (TokenStream, error)`, `Embed(ctx, texts) ([][]float32, error)`.
+- OpenRouter é o **único** provider oficial (`NewOpenRouterProvider`, `openrouter.go`). Não há mais
+  FallbackChain nem CircuitBreaker.
+- `Request`/`Response`/`Schema`/`StructuredContract[T]`/`ToolSpec`/`ToolCall` em `types.go`.
 
-`pendingexpense.Draft` (`domain/pendingexpense/draft.go`) — estado de espera salvo quando uma
-clarificação de categoria é necessária. `AwaitingKind` (`category_confirm|category_choice`) e
-`TransactionKind` (`expense|income|card_purchase`) são tipos fechados. Resume ocorre **antes** do
-`ParseInbound` via `continuePendingExpenseConfirmation`. Ver `pending-step.md`.
+## Run auditável — `internal/platform/agent`
 
-## Model router (equivalente Go)
+- `Run` (`ports.go`): `ID`, `ThreadPK`, `ResourceID`, `ThreadID`, `AgentID`, `Status` (`RunStatus`),
+  `Outcome` (`ToolOutcome`), `Error`, `StartedAt`, `EndedAt`, `DurationMs`.
+- `RunStore`: `Insert`/`Update`/`Load`. Persistência em `agent/infrastructure/postgres/run_store.go`
+  (tabela `platform_runs`).
 
-Mastra usa `"provider/model-name"` no model router TS. No Go, modelos são resolvidos por env
-(`AGENT_*_LLM_MODEL`) via OpenRouter (`infrastructure/providers/openrouter/`) com `FallbackChain`
-(primário + fallbacks) e `CircuitBreaker`. Onboarding usa modelo dedicado por decisão de projeto.
+## Structured output — `internal/platform/agent` + `internal/platform/llm`
+
+- `StructuredDecoder` (`decoder.go`): `Schema()` + `Validate(raw)`. `NewDecoder[T](StructuredContract[T])`.
+- Sync: `Agent.Execute` valida no fim (`ErrContractNotMet`). Stream: validação na **conclusão** do stream
+  (ADR-003), nunca durante.
+
+Ver as referências específicas por tarefa no `INDEX.yaml`.

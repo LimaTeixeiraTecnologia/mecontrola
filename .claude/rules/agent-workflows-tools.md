@@ -44,41 +44,46 @@ embutido. As regras abaixo herdam e reforcam R-ADAPTER-001 e a precedencia DMMF 
 
 ## R-AGENT-WF-001.1 — Roteamento `Workflow -> Tool -> binding -> usecase` [HARD]
 
-O fluxo canonico de execucao e:
+O fluxo canonico de inbound (substrato `internal/platform/agent`) e:
 
 ```
-IntentRouter -> WorkflowRegistry.Resolve(kind) -> Workflow.Execute -> Tool.Execute -> binding -> usecase -> domain -> repo
+InboundRequest -> AgentRuntime.Execute -> ThreadGateway.GetOrCreate -> RunStore.Insert
+  -> AgentRegistry.Resolve(agentId) -> Agent.Execute (loop tool-calling) -> tool.ToolHandle.Invoke -> exec
+  -> MessageStore.Append -> closeRun
 ```
+
+Execucao duravel multi-step usa o kernel: `workflow.Engine[S].Start/Resume` sobre `Step[S]`
+(`Sequence`/`Branch`/`Parallel`/`Retry`), com resume por merge-patch.
 
 Proibido:
 
-1. Adicionar novo `case` de dominio ao `switch` de
-   `internal/agent/application/.../daily_ledger_agent.go`. Cada intent kind novo DEVE ser atendido
-   por um `Workflow` registrado no `WorkflowRegistry`.
-2. Logica de roteamento por intent kind fora de um `Workflow` (ex: branching sobre `intent.Kind`
-   em handler, consumer, job ou entrypoint para decidir qual usecase chamar).
-3. Chamar binding ou usecase diretamente do entrypoint sem passar por `Workflow -> Tool`.
+1. Roteamento por `switch case intent.Kind` (em agente, handler, consumer, job ou entrypoint) para
+   decidir qual usecase chamar. Resolucao acontece via `AgentRegistry.Resolve(agentId)` /
+   `WorkflowRegistry.Resolve` — comportamento novo entra como novo agente/tool/workflow no consumidor.
+2. Chamar binding ou usecase diretamente do entrypoint sem passar pelo `AgentRuntime` (loop tool-calling)
+   ou por um `Workflow`/`Tool`.
 
-`daily_ledger_agent.go` deve permanecer fino: orquestra registry, guarda de escrita e formatacao
-compartilhada. Resolucao de kind acontece exclusivamente via `WorkflowRegistry.Resolve(kind)`.
+O agente do consumidor permanece fino: monta tools e instructions e delega ao runtime/registry; nao
+contem branching de dominio por kind.
 
 ## R-AGENT-WF-001.2 — Tool e adapter fino de responsabilidade unica [HARD]
 
-Cada `Tool` tem **uma unica responsabilidade** e e um adapter fino sobre `binding -> usecase`.
-Herda integralmente R-ADAPTER-001.2.
+Cada `Tool` (`tool.NewTool[I,O]`) tem **uma unica responsabilidade** e e um adapter fino: o `exec`
+delega a um client/usecase. Herda integralmente R-ADAPTER-001.2.
 
-Proibido em qualquer `Tool` (`internal/agent/application/tools/`) ou `Workflow`
-(`internal/agent/application/workflow/`):
+Proibido em qualquer `Tool` do consumidor (`internal/agents/application/tools/`) ou `Workflow`
+(`internal/agents/application/workflows/`):
 
-1. Regra ou calculo de negocio (ex: re-normalizar allocations, decidir status de dominio).
+1. Regra ou calculo de negocio (ex: re-normalizar valores, decidir status de dominio).
 2. Query SQL direta (`QueryContext`, `ExecContext`, `db.Query`, `tx.Exec`, `db.Exec`).
 3. Branching sobre estado de dominio — comparar campos de entidade para decidir comportamento.
 
-Permitido: mapear `intent.Intent` para o DTO/command do usecase, invocar o binding, mapear o
-retorno para `ToolResult` e fazer wrapping de erro (`fmt.Errorf("ctx: %w", err)`).
+Permitido: validar o input contra o schema, mapear para o DTO/command do usecase, invocar o
+client/binding, mapear o retorno para o output tipado e fazer wrapping de erro (`fmt.Errorf("ctx: %w", err)`).
+Calculo puro de dominio vive em `domain/`.
 
-A lógica de pre-write (authz + replay + policy + decision audit) NAO e duplicada por tool: vive no
-step de guarda reutilizavel (`write_guard.go`) aplicado pelos workflows de escrita.
+Quando houver pre-write (authz + replay + policy + audit), a logica NAO e duplicada por tool: vive em
+um `Step[S]` de guarda reutilizavel aplicado pelos workflows de escrita.
 
 ## R-AGENT-WF-001.3 — `ToolOutcome` e `RunStatus` sao tipos fechados [HARD]
 
@@ -96,23 +101,19 @@ Proibido:
 
 Persistencia em coluna TEXT e permitida via `String()`; a fronteira de codigo permanece tipada.
 
-## R-AGENT-WF-001.4 — LLM apenas no step de parse [HARD]
+## R-AGENT-WF-001.4 — LLM apenas nas call-sites sancionadas [HARD]
 
-O LLM aparece exclusivamente no step de parse a montante (`ParseInbound`). Proibido invocar LLM,
-prompt rendering ou fallback chain dentro de qualquer `Workflow` ou `Tool` de execucao **de dominio**
-(escrita ou leitura). Workflows e tools de dominio operam sobre `intent.Intent` ja parseado e
-deterministico.
+O LLM aparece exclusivamente nas call-sites sancionadas do substrato:
 
-Excecoes sancionadas (unicas call-sites de LLM fora de `ParseInbound`):
+1. **Loop de tool-calling do Agent** (`agent.Agent.Execute` -> `llm.Provider.Complete`): o ciclo
+   completa-com-tools resolve a resposta e as invocacoes de ferramenta.
+2. **Step de workflow que chama `Agent.Stream`** (ex.: um passo que gera texto livre a partir do estado).
+3. **Scorer LLM-judged** (`scorer.NewLLMJudgedScorer` -> `llm.Provider.Complete`), fora do caminho principal.
 
-1. **Conversational fallback** (`KindUnknown`): a geracao de resposta livre via fallback chain
-   (`delegateFallback` -> `fallback.Reply`) e o escape-hatch conversacional; nenhuma execucao de
-   dominio depende dele.
-2. **Onboarding**: chain de LLM dedicado, com modelo proprio por decisao de projeto, separado do
-   chain principal.
-
-Fora dessas duas excecoes, manter a proibicao integral. Qualquer nova necessidade de LLM no meio da
-execucao deve pertencer ao parse ou ser uma variante conversacional/onboarding explicita.
+OpenRouter e o unico provider (`llm.NewOpenRouterProvider`); nao existe fallback chain nem circuit breaker.
+Proibido invocar LLM, prompt rendering ou client de modelo no **kernel** (`internal/platform/workflow`)
+ou dentro de uma `Tool` de dominio (o `exec` da tool e deterministico e delega a client/usecase).
+Qualquer nova necessidade de LLM deve pertencer a uma dessas tres call-sites sancionadas.
 
 ## R-AGENT-WF-001.5 — Toda execucao e um Run auditavel [HARD]
 
@@ -158,19 +159,29 @@ esses conceitos. A distincao preservada e apenas **kernel-mecanismo vs primitivo
 kernel oferece o mecanismo anonimo; Thread/Run/WorkingMemory/PendingStep deixam de ser exclusivos de
 qualquer modulo e passam a ser primitivos genericos de plataforma.
 
-## R-AGENT-WF-001.7 — Pending step obrigatorio em erro de categoria [HARD]
+## R-AGENT-WF-001.7 — Pending step obrigatorio antes de pedir clarificacao [HARD]
 
-Quando `categoryClarification` detecta `CategoryAmbiguousError` ou `CategoryNeedsConfirmationError`, DEVE salvar `pendingexpense.Draft` com `AwaitingKind` fechado antes de retornar `OutcomeClarify`. Proibido retornar clarificacao sem salvar o estado de retomada.
+Invariante generica (substrato): quando um passo precisa de input adicional do usuario para prosseguir,
+DEVE persistir o estado de espera **antes** de retornar a pergunta de clarificacao/confirmacao;
+proibido pedir clarificacao sem salvar o estado de retomada.
 
 Contratos:
-- `AwaitingKind` aceita apenas `category_confirm | category_choice` (tipos fechados — DMMF state-as-type).
-- `TransactionKind` aceita apenas `expense | income | card_purchase`.
-- A retomada (resume) ocorre via `continuePendingExpenseConfirmation`, chamado **antes** de `ParseInbound`.
-- O draft e limpo (`Clear`) imediatamente apos execucao ou cancelamento — nunca fica orphan.
-
-Cobre: `KindRecordExpense`, `KindRecordIncome`, `KindRecordCardPurchase`.
+- O estado de espera e um tipo fechado (DMMF state-as-type), nunca flag booleano nem string solta.
+- E persistido no `Snapshot` do kernel (`workflow.Store`), fonte unica de verdade.
+- A retomada (resume) aplica merge-patch sobre o `Snapshot.State` e ocorre **antes** de qualquer parse.
+- O estado e limpo imediatamente apos execucao ou cancelamento — nunca fica orphan.
 
 ### Addendum R-AGENT-WF-001.7-A — Estado de espera `AwaitingApproval` para gates HITL [HARD]
+
+> SUPERSEDED como caminho literal (Reemissao 2026-06-29, `prd-platform-mastra`): este addendum foi
+> escrito para o gate HITL do agent financeiro removido (`internal/agent`); as operacoes, funcoes
+> (`continuePendingApproval`, `continuePendingExpenseConfirmation`, `ParseInbound`) e tipos
+> (`AwaitingApproval`, `OperationKind`, `ConfirmState`) citados abaixo pertenciam a esse modulo e
+> NAO existem mais. O **contrato comportamental** permanece valido como referencia (estado de espera
+> como tipo fechado, persistido no `Snapshot` antes de pedir confirmacao, retomado por merge-patch
+> antes de qualquer parse, limpeza deterministica) e deve ser reemitido apontando para os arquivos
+> reais quando um consumidor reintroduzir HITL. Ate la, leia o que segue como contrato, nao como
+> caminho de codigo.
 
 Adicionado em 2026-06-24 (ADR-003 + ADR-002) para cobrir o gate Human-in-the-Loop de operacoes
 destrutivas/sensiveis.
@@ -231,30 +242,24 @@ draft orphan ou run suspenso indefinidamente.
 - Proibido representar `AwaitingApproval` ou `OperationKind` como `string` livre.
 - Proibido side-store separado para o estado do gate HITL — snapshot do kernel e fonte unica (ADR-001).
 
-Gate de verificacao — sem `AwaitingApproval` como string solta (deve retornar vazio antes de merge):
+> Reemissao 2026-06-29: com `internal/agent` apagado, os dois gates HITL abaixo ficam SUPERSEDED como
+> caminho literal. O contrato (estado de espera fechado, persistido antes da confirmacao, resumido por
+> merge-patch antes do parse) permanece hard e deve ser reemitido pelo consumidor que reintroduzir HITL.
+
+Gate de verificacao — sem estado de espera HITL como string solta (deve retornar vazio antes de merge):
 
 ```bash
 grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   "AwaitingApproval\s*=\s*\"[^\"]*\"\|OperationKind\s*=\s*\"[^\"]*\"" \
-  internal/agent/ \
+  internal/platform/agent/ internal/agents/ 2>/dev/null \
   && echo "FAIL: AwaitingApproval ou OperationKind como string solta" && exit 1 \
   || true
 ```
 
-Gate de verificacao — resume de aprovacao antes do parse (deve retornar `continuePendingApproval`
-listado antes de `ParseInbound` na chamada inbound):
-
-```bash
-f=$(find internal/agent -name "daily_ledger_agent.go" ! -name "*_test.go")
-[ -z "$f" ] && { echo "SKIP: daily_ledger_agent.go ausente"; } || {
-  grep -n "continuePendingApproval\|ParseInbound" "$f" \
-    | grep -v "_test" \
-    | awk -F: '{print NR, $0}' \
-    | grep -q "continuePendingApproval" \
-    && echo "OK: continuePendingApproval presente" \
-    || echo "WARN: continuePendingApproval ausente — verificar se gate HITL foi implementado"
-}
-```
+Gate de verificacao — resume da aprovacao antes do parse: SUPERSEDED como caminho literal
+(`daily_ledger_agent.go`/`continuePendingApproval` pertenciam ao agent removido). Reemitir quando um
+consumidor reintroduzir o gate HITL, validando que o resume do estado de espera ocorre antes do parse
+do inbound nos arquivos reais desse consumidor.
 
 Referencias: ADR-001 (merge-patch no kernel), ADR-002 (HITL sempre-on, registry),
 ADR-003 (contrato de confirmacao), ADR-004 (gate de budget no ponto de commit) —
@@ -281,58 +286,64 @@ nunca do kernel.
 
 ## Gate de Verificacao
 
-**1. Switch de dominio nao cresce em `daily_ledger_agent.go`:**
+> Reemissao 2026-06-29 (`prd-platform-mastra`): `internal/agent` foi apagado. Os gates abaixo apontam
+> para o primitivo de agent da plataforma (`internal/platform/agent`) e para os consumidores
+> (`internal/agents`). Os gates de semantica de dominio do agent removido (switch de
+> `daily_ledger_agent.go`, `pendingexpense.Draft` em `categoryClarification`) ficam SUPERSEDED como
+> caminho literal — valem como contrato comportamental historico (roteamento por registry, salvar
+> estado de espera antes de pedir confirmacao) a ser reemitido pela techspec do consumidor que
+> reintroduzir HITL/clarificacao.
+
+**1. Roteamento por registry (sem switch de dominio) — primitivo de agent:**
 
 ```bash
-f=$(find internal/agent -name "daily_ledger_agent.go" ! -name "*_test.go")
-[ -z "$f" ] && { echo "SKIP: daily_ledger_agent.go ausente"; } || {
-  cases=$(grep -cE "^[[:space:]]*case intent\.Kind" "$f" || true)
-  [ "${cases:-0}" -gt 1 ] \
-    && echo "FAIL: switch de dominio cresceu em daily_ledger_agent.go (cases=$cases); use WorkflowRegistry" && exit 1 \
-    || true
-}
+grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+  "^[[:space:]]*case intent\.Kind" \
+  internal/platform/agent/ internal/agents/ 2>/dev/null \
+  && echo "FAIL: switch de dominio por intent.Kind; use AgentRegistry/WorkflowRegistry" && exit 1 \
+  || true
 ```
 
-**2. Zero comentarios em tools e workflows (herda R-ADAPTER-001.1):**
+**2. Zero comentarios em tools e workflows do consumidor (herda R-ADAPTER-001.1):**
 
 ```bash
 grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   "^[[:space:]]*//" \
-  internal/agent/application/tools/ \
-  internal/agent/application/workflow/ 2>/dev/null \
+  internal/platform/agent/ \
+  internal/agents/application/tools/ \
+  internal/agents/application/workflows/ 2>/dev/null \
   | grep -Ev "(//go:|//nolint:|// Code generated)" \
   && echo "FAIL: comentarios proibidos em tools/workflow" && exit 1 \
   || true
 ```
 
-**4. Pending step salvo em categoryClarification (R-AGENT-WF-001.7):**
-
-```bash
-grep -n "OutcomeClarify" internal/agent/application/services/daily_ledger_agent.go \
-  | grep -v "savePendingDraft\|buildPendingDraft\|_test\|CategoryNotFound\|CategoryHintMissing" \
-  && echo "WARN: revisar se OutcomeClarify retorna sem salvar Draft" || true
-```
-
-**3. Sem SQL direto em tools/workflows (herda R-ADAPTER-001.2):**
+**3. Sem SQL direto em tools/consumers (herda R-ADAPTER-001.2):**
 
 ```bash
 grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   "QueryContext\|ExecContext\|db\.Query\|tx\.Exec\|db\.Exec" \
-  internal/agent/application/tools/ \
-  internal/agent/application/workflow/ 2>/dev/null \
-  && echo "FAIL: SQL direto em tool/workflow" && exit 1 \
+  internal/agents/application/tools/ \
+  internal/agents/infrastructure/messaging/database/consumers/ 2>/dev/null \
+  && echo "FAIL: SQL direto em tool/consumer" && exit 1 \
   || true
 ```
 
+**4. Estado de espera salvo antes de pedir confirmacao (SUPERSEDED como caminho literal):**
+
+O contrato comportamental — salvar o estado de espera (pending/draft) no snapshot do kernel antes de
+retornar a pergunta de confirmacao, e retomar via merge-patch antes de qualquer parse — permanece hard.
+O gate executavel sobre `daily_ledger_agent.go`/`categoryClarification` fica suspenso ate o consumidor
+que reintroduzir HITL reemitir o equivalente apontando para seus arquivos reais.
+
 ## Proibido (R-AGENT-WF-001 global)
 
-- Aprovar PR que adicione `case` de dominio ao switch de `daily_ledger_agent.go`.
+- Aprovar PR que roteie por `switch case intent.Kind` em vez de `AgentRegistry`/`WorkflowRegistry`.
 - Aprovar PR com regra de negocio, SQL direto ou branching de dominio em `Tool`/`Workflow`.
-- Representar `ToolOutcome`/`RunStatus`/`AwaitingKind`/`TransactionKind`/`AwaitingApproval`/`OperationKind` como string livre.
-- Invocar LLM fora do step de parse.
-- Retornar `OutcomeClarify` em erro de categoria sem salvar `pendingexpense.Draft` (viola R-AGENT-WF-001.7).
+- Representar estados de fronteira (`agent.ToolOutcome`/`agent.RunStatus`/`agent.AwaitingKind`, `workflow.RunStatus`/`StepStatus`/`SuspendReason`, `scorer.ScorerKind`, `memory.MessageRole`) como string livre.
+- Invocar LLM fora das call-sites sancionadas (loop do Agent, step que chama `Stream`, scorer LLM-judged) ou dentro do kernel.
+- Pedir clarificacao/confirmacao sem antes persistir o estado de espera (tipo fechado) no `Snapshot` (viola R-AGENT-WF-001.7).
 - Efetivar operacao destrutiva/sensivel sem confirmacao humana explicita (viola Addendum R-AGENT-WF-001.7-A).
-- Retornar pergunta de confirmacao HITL sem persistir `ConfirmState` com `AwaitingConfirm` (viola Addendum R-AGENT-WF-001.7-A).
+- Retornar pergunta de confirmacao HITL sem antes persistir o estado de espera (tipo fechado) no `Snapshot` (contrato do Addendum R-AGENT-WF-001.7-A).
 - Iniciar execucao sem resolver Thread + Run via `AgentRuntime` (viola R-AGENT-WF-001.6).
 - Implementar Thread, Run, WorkingMemory ou PendingStep em pacote de dominio; esses primitivos
   pertencem a `internal/platform` (agent/memory) e sao consumidos pelos modulos de dominio.

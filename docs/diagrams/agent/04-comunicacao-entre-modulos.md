@@ -15,7 +15,9 @@ Documentacao do padrao de comunicacao assincrona entre modulos via Transactional
 | Worker bootstrap | `cmd/worker/worker.go` |
 | Identity consumers | `internal/identity/infrastructure/messaging/database/consumers/` |
 | Billing producers | `internal/billing/infrastructure/messaging/database/producers/` |
-| Agent event publisher | `internal/agent/infrastructure/events/intent_event_publisher.go` |
+| Agents WhatsApp route (producer) | `internal/agents/module.go` (`buildWhatsAppAgentRoute`) |
+| Agents inbound consumer | `internal/agents/infrastructure/messaging/database/consumers/whatsapp_inbound_consumer.go` |
+| Agents embedding index handler | `internal/platform/memory/infrastructure/indexer/handler.go` |
 
 ---
 
@@ -152,9 +154,9 @@ flowchart TB
         E9["onboarding.subscription_bound"]
     end
 
-    subgraph AGENT ["agent"]
-        E10["agent.intent.executed.v1\nAggregateType: AgentIntent"]
-        E11["agent.intent.rejected.v1"]
+    subgraph AGENTS ["agents (platform substrate)"]
+        E10["agents.whatsapp.inbound.v1\nAggregateType: User"]
+        E11["platform.memory.embedding.index.v1\nAggregateType: Resource"]
     end
 ```
 
@@ -168,7 +170,7 @@ flowchart LR
         P1["Identity\nOutboxPublisher"]
         P2["Billing\nSubscriptionEventPublisher"]
         P3["Onboarding\nOnboardingEventPublisher"]
-        P4["Agent\nIntentEventPublisher"]
+        P4["Agents\nWhatsApp route + PublishingMessageStore"]
     end
 
     OB[("outbox table\nPostgres")]
@@ -180,6 +182,7 @@ flowchart LR
         C4["Card\nCardCreationOnOnboardingHandler"]
         C5["Budgets\nPendingEventsHandler"]
         C6["Transactions\nMonthlySummaryRecomputeHandler"]
+        C7["Agents\nWhatsAppInboundConsumer\nEmbeddingIndexHandler"]
     end
 
     P1 --> OB
@@ -193,6 +196,7 @@ flowchart LR
     OB -->|"onboarding.subscription_bound"| C4
     OB -->|"billing.subscription.*"| C5
     OB -->|"billing.subscription.*"| C6
+    OB -->|"agents.whatsapp.inbound.v1\nplatform.memory.embedding.index.v1"| C7
 ```
 
 ---

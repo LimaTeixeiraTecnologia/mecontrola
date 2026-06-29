@@ -1,58 +1,65 @@
 schema: 1
 skill: mastra
 purpose: >-
-  Matriz determinística de carregamento de referências por tarefa no internal/agent.
-  Carregue apenas required_refs + optional_refs pertinentes. Máximo 4 simultâneas;
-  se conflito, priorize as 3 mais críticas e registre as demais como contexto não carregado.
+  Matriz deterministica de carregamento de referencias por tarefa no substrato internal/platform/*
+  e no consumidor internal/agents. Carregue apenas required_refs + optional_refs pertinentes.
+  Maximo 4 simultaneas; se conflito, priorize as 3 mais criticas e registre as demais como contexto
+  nao carregado.
 
 defaults:
   always_load:
     - core-concepts.md
   hard_rules:
+    - ".claude/rules/workflow-kernel.md"
     - ".claude/rules/agent-workflows-tools.md"
     - ".claude/rules/go-adapters.md"
+    - ".claude/rules/input-dto-validate.md"
   prerequisite_skills:
     - go-implementation
     - agent-governance
 
 task_types:
-  add-read-workflow:
-    trigger: "novo workflow/tool somente leitura (query, list, summary)"
-    required_refs: [add-workflow-tool.md, state-as-type.md]
-    optional_refs: [thread-run-runtime.md, rules-checklist.md]
-    forbidden_refs: [write-guard.md]
+  build-new-agent:
+    trigger: "criar um novo agente igual a internal/agents (port weather)"
+    required_refs: [build-new-agent.md, core-concepts.md]
+    optional_refs: [thread-run-runtime.md, scorer-evals.md, memory-recall.md, rules-checklist.md]
 
-  add-write-workflow:
-    trigger: "novo workflow/tool de escrita (record, create, update, delete, configure)"
-    required_refs: [add-workflow-tool.md, write-guard.md, state-as-type.md]
-    optional_refs: [pending-step.md, thread-run-runtime.md, rules-checklist.md]
+  add-tool:
+    trigger: "adicionar/alterar uma tool tipada (NewTool[I,O])"
+    required_refs: [build-new-agent.md]
+    optional_refs: [llm-structured-output.md, rules-checklist.md]
 
-  add-outcome-or-kind:
-    trigger: "novo ToolOutcome, intent.Kind, RunStatus, AwaitingKind ou TransactionKind"
+  add-workflow:
+    trigger: "adicionar/alterar workflow duravel (Engine/Step/combinators/suspend-resume)"
+    required_refs: [workflow-engine.md]
+    optional_refs: [state-as-type.md, build-new-agent.md, rules-checklist.md]
+
+  memory-recall:
+    trigger: "Thread, Message, WorkingMemory, Semantic Recall, indexer de embedding"
+    required_refs: [memory-recall.md]
+    optional_refs: [thread-run-runtime.md, llm-structured-output.md, rules-checklist.md]
+
+  scorer-evals:
+    trigger: "adicionar/alterar scorers (code-based ou LLM-judged), sampling, hooks"
+    required_refs: [scorer-evals.md]
+    optional_refs: [llm-structured-output.md, state-as-type.md, rules-checklist.md]
+
+  llm-structured-output:
+    trigger: "LLM Provider, structured output, streaming, embeddings"
+    required_refs: [llm-structured-output.md]
+    optional_refs: [core-concepts.md, rules-checklist.md]
+
+  add-state-type:
+    trigger: "novo enum fechado (RunStatus, StepStatus, ToolOutcome, ScorerKind, MessageRole...)"
     required_refs: [state-as-type.md]
-    optional_refs: [add-workflow-tool.md, rules-checklist.md]
-
-  add-pending-step:
-    trigger: "nova clarificação / suspend-resume / Draft"
-    required_refs: [pending-step.md, state-as-type.md]
-    optional_refs: [parse-llm-boundary.md, rules-checklist.md]
+    optional_refs: [rules-checklist.md]
 
   runtime-thread-run:
-    trigger: "ciclo Thread→Run, gateways, métricas, AgentRuntime"
+    trigger: "ciclo Thread->Run, gateways, metricas, AgentRuntime"
     required_refs: [thread-run-runtime.md]
     optional_refs: [state-as-type.md, rules-checklist.md]
 
-  parse-llm:
-    trigger: "ParseInbound, system prompt, working memory, fallback/onboarding LLM"
-    required_refs: [parse-llm-boundary.md]
-    optional_refs: [core-concepts.md, rules-checklist.md]
-
-  wiring:
-    trigger: "DI manual em module.go, registrar workflow/registry"
-    required_refs: [add-workflow-tool.md]
-    optional_refs: [thread-run-runtime.md, write-guard.md]
-
   validate:
-    trigger: "verificar mudança antes do merge"
+    trigger: "verificar mudanca antes do merge"
     required_refs: [rules-checklist.md]
     optional_refs: []

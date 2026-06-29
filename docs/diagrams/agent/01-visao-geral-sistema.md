@@ -8,11 +8,10 @@ Diagrama de nível macro mostrando os processos, módulos internos e dependênci
 
 ```mermaid
 flowchart TB
-    USER["👤 Usuário\nWhatsApp / Telegram"]
+    USER["👤 Usuário\nWhatsApp"]
 
     subgraph EXTERNAL ["Serviços Externos"]
         WA_API["WhatsApp Cloud API\nMeta Graph API"]
-        TG_API["Telegram Bot API"]
         OR_API["OpenRouter\nGemini / GPT / Mistral / Claude"]
         KW_API["Kiwify\nPagamentos e assinaturas"]
         OTEL_SRV["Grafana LGTM\nOTEL Collector"]
@@ -25,12 +24,9 @@ flowchart TB
     end
 
     USER -->|"envia mensagem"| WA_API
-    USER -->|"envia mensagem"| TG_API
     WA_API -->|"POST /api/v1/whatsapp/inbound"| SERVER
-    TG_API -->|"POST /api/v1/telegram/inbound"| SERVER
     KW_API -->|"POST /api/v1/kiwify/webhook"| SERVER
     SERVER -->|"POST /{phone_id}/messages"| WA_API
-    SERVER -->|"POST /sendMessage"| TG_API
     SERVER -->|"POST /api/v1/chat/completions"| OR_API
     SERVER -->|"lê / escreve"| PG
     SERVER -->|"INSERT outbox events"| PG
@@ -48,7 +44,6 @@ flowchart TB
 flowchart TB
     subgraph ENTRY ["Entrada (cmd/server)"]
         WH_WA["WhatsApp Webhook Router\n/api/v1/whatsapp/inbound"]
-        WH_TG["Telegram Webhook Router\n/api/v1/telegram/inbound"]
         WH_KW["Kiwify Webhook Router\n/api/v1/kiwify/webhook"]
         HTTP_API["HTTP REST APIs\n/api/v1/..."]
     end
@@ -63,11 +58,11 @@ flowchart TB
         ID["Identity\nusuários · auth · entitlements\nWhatsApp dedup · rate limiter"]
         CAT["Categories\ncatálogo · dicionário + ETag cache"]
         BILL["Billing\nassinaturas Kiwify\ngrace period · reconciliação"]
-        ONB["Onboarding\nmagic token · ativação\noutreach · WA/TG processor"]
+        ONB["Onboarding\nmagic token · ativação\noutreach · WA processor"]
         CARD["Card\nCRUD cartões\nfatura por competência"]
         BUD["Budgets\norçamentos mensais\nalertas de threshold"]
         TX["Transactions\nlançamentos · recorrência\nresumo reconciliado"]
-        AGT["Agent\nintent parsing LLM\nroteamento · session store\nonboarding LLM"]
+        AGT["Agents\nport weather (Mastra)\nThread · Run · Memory\nloop tool-calling LLM"]
     end
 
     subgraph ADAPTERS ["Adapters Externos"]
@@ -79,9 +74,6 @@ flowchart TB
     WH_WA --> ID
     WH_WA --> ONB
     WH_WA --> AGT
-    WH_TG --> ID
-    WH_TG --> ONB
-    WH_TG --> AGT
     WH_KW --> BILL
     HTTP_API --> ID
     HTTP_API --> CARD
@@ -90,10 +82,6 @@ flowchart TB
     HTTP_API --> CAT
 
     AGT --> OR_CLIENT
-    AGT --> TX
-    AGT --> BUD
-    AGT --> CARD
-    AGT --> CAT
 
     ONB --> META
     BILL --> KW_CLIENT

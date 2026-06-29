@@ -193,13 +193,13 @@ grep -n "current = rs\|current = decoded\|current = resumed" \
   || true
 ```
 
-Gate de verificacao — MergePatch sem tipo de dominio (deve retornar vazio antes de merge):
+Gate de verificacao — kernel sem tipo de dominio (deve retornar vazio antes de merge):
 
 ```bash
 grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
-  "AwaitingApproval\|OperationKind\|ConfirmState\|AwaitingKind\|pendingexpense" \
+  "intent\.\|pendingexpense\|\.category\|transaction\b\|billing\b\|identity\b" \
   internal/platform/workflow/ \
-  && echo "FAIL: tipo de dominio em MergePatch ou engine do kernel" && exit 1 \
+  && echo "FAIL: tipo de dominio no kernel (MergePatch/engine sao genericos)" && exit 1 \
   || true
 ```
 

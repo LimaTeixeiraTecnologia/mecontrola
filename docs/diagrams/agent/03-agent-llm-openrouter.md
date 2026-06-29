@@ -1,267 +1,209 @@
 # Fluxo: Agent → LLM → OpenRouter
 
-Diagrama detalhado do processamento de uma mensagem pelo módulo de agent, da invocação do LLM via OpenRouter até a resposta de volta ao usuário.
+Diagrama detalhado do processamento de uma mensagem pelo substrato de agent da plataforma, da invocacao do LLM via OpenRouter (provider unico) ate a resposta de volta ao usuario.
 
-## Referências de código
+> O antigo modulo financeiro de agente (no singular), com roteamento por enum de intent, cadeia de fallback de LLM e disjuntor de circuito, foi removido. O substrato atual vive em `internal/platform/{agent,llm,memory,tool,workflow,scorer}` e e exercitado pelo consumidor de referencia `internal/agents` (port do exemplo Weather do Mastra). Existe **um unico provider LLM** (`llm.NewOpenRouterProvider`); nao ha mais cadeia de fallback nem disjuntor de circuito.
+
+## Referencias de codigo
 
 | Componente | Arquivo |
 |---|---|
-| Agent module / wiring | `internal/agent/module.go` |
-| WhatsApp agent route | `internal/agent/module.go:425-445` |
-| IntentRouter | `internal/agent/application/services/intent_router.go` |
-| ParseInbound use case | `internal/agent/application/usecases/parse_inbound.go` |
-| ComposeConversationalReply | `internal/agent/application/usecases/compose_conversational_reply.go` |
-| FallbackChain | `internal/agent/application/services/fallback_chain.go` |
-| OpenRouter client | `internal/agent/infrastructure/providers/openrouter/client.go` |
-| LLM interfaces | `internal/agent/application/interfaces/llm_provider.go` |
-| Meta client | `internal/onboarding/infrastructure/http/client/meta/client.go` |
+| Agents module / wiring | `internal/agents/module.go` |
+| WhatsApp agent route | `internal/agents/module.go` (`buildWhatsAppAgentRoute`) |
+| HandleInbound use case | `internal/agents/application/usecases/handle_inbound.go` |
+| WhatsApp inbound consumer | `internal/agents/infrastructure/messaging/database/consumers/whatsapp_inbound_consumer.go` |
+| AgentRuntime | `internal/platform/agent/runtime.go` |
+| Agent (loop tool-calling) | `internal/platform/agent/agent.go` |
+| LLM Provider interface | `internal/platform/llm/provider.go` |
+| OpenRouter Provider | `internal/platform/llm/openrouter.go` |
+| ToolHandle | `internal/platform/tool/tool.go` |
+| Weather client (open-meteo) | `internal/agents/infrastructure/weather/client.go` |
 | WhatsApp gateway | `internal/onboarding/infrastructure/gateway/whatsapp_gateway.go` |
-| Intent event publisher | `internal/agent/infrastructure/events/intent_event_publisher.go` |
 
 ---
 
-## Sequência Completa: agentRoute → OpenRouter → Reply
+## Sequencia Completa: Inbound → OpenRouter → Reply
 
 ```mermaid
 sequenceDiagram
     autonumber
 
-    participant DISP as Dispatcher
-    participant AR as AgentRoute
-    participant IR as IntentRouter
-    participant IP as ParseInbound
-    participant FC as FallbackChain
-    participant CB as CircuitBreaker
+    participant CONS as WhatsAppInboundConsumer
+    participant UC as HandleInbound
+    participant RT as AgentRuntime
+    participant TG as ThreadGateway
+    participant RS as RunStore
+    participant REG as AgentRegistry
+    participant AG as Agent
     participant OR as OpenRouter Provider
     participant ORA as openrouter.ai
-    participant HD as Intent Handler
-    participant EVT as EventPublisher
+    participant TH as ToolHandle (get-weather)
+    participant MS as MessageStore
     participant GW as WhatsAppGateway
     participant META as Meta Graph API
 
-    DISP->>+AR: agentRoute(ctx, msg)
-    Note over AR: extrai Principal do ctx<br/>auth.FromContext(ctx)
+    CONS->>+UC: Execute(InboundInput)
+    Note over CONS: AgentID = "weather-agent"<br/>ResourceID = UserID, ThreadID = Peer
+    UC->>UC: in.Validate()
+    UC->>+RT: Execute(ctx, InboundRequest)
 
-    AR->>+IR: RouteWhatsApp(ctx, Principal, InboundMessage)
+    RT->>+TG: GetOrCreate(resourceID, threadID)
+    TG-->>-RT: Thread (platform_threads)
+    RT->>+RS: Insert(Run status=running)
+    RS-->>-RT: ok (platform_runs)
+    RT->>+REG: Resolve(agentID)
+    REG-->>-RT: Agent
+    RT->>+AG: Execute(ctx, req)
 
-    IR->>+IP: Parse(ctx, userID, text)
-    Note over IP: renderiza system prompt + user message<br/>carrega JSON schema da intent
+    loop max 5 rounds (maxToolRounds)
+        AG->>+OR: Complete(ctx, Request{Messages, Tools})
+        Note over OR: Model: AGENT_LLM_PRIMARY_MODEL<br/>(google/gemini-2.5-flash-lite)<br/>MaxTokens, Temperature da Config
 
-    IP->>+FC: Interpret(ctx, LLMRequest)
-    Note over FC: itera providers em ordem:<br/>1. PrimaryModel<br/>2. FallbackModels[]
+        OR->>+ORA: POST /api/v1/chat/completions
+        Note over OR,ORA: Authorization: Bearer OPENROUTER_API_KEY<br/>HTTP-Referer: HTTPReferer<br/>X-Title: XTitle<br/>Body: model, messages, max_tokens,<br/>temperature, tools, tool_choice
 
-    FC->>+CB: State(primaryModel)?
-    alt Circuit OPEN (muitas falhas recentes)
-        CB-->>FC: open
-        Note over FC: pula provider<br/>agent_llm_fallback_skipped_total++
-        FC->>CB: State(fallbackModel)?
-    end
-    CB-->>-FC: closed
+        alt HTTP 200
+            ORA-->>-OR: chatResponse{choices, usage}
+            Note over OR: agent_llm_provider_call_total{status=ok}++<br/>agent_llm_provider_latency_seconds observe<br/>agent_llm_tokens_total{type} add
+            OR-->>AG: Response{Content, ToolCalls}
+        else Erro HTTP ou timeout
+            ORA-->>OR: error
+            Note over OR: agent_llm_provider_errors_total{reason}++
+            OR-->>AG: error
+            Note over AG: erro propaga, run fecha status=failed
+        end
 
-    FC->>+OR: Interpret(ctx, LLMRequest)
-    Note over OR: Slug: google/gemini-2.5-flash-lite<br/>MaxTokens: 256<br/>Temperature: 0<br/>Timeout: 8s
-
-    OR->>+ORA: POST /api/v1/chat/completions
-    Note over OR,ORA: Authorization: Bearer OPENROUTER_API_KEY<br/>HTTP-Referer: AGENT_LLM_HTTP_REFERER<br/>X-Title: AGENT_LLM_X_TITLE<br/>Content-Type: application/json
-    Note over ORA: Body: model, messages[system+user],<br/>max_tokens, temperature,<br/>response_format{type:json_schema, schema:intentSchema}
-
-    alt HTTP 200
-        ORA-->>-OR: chatResponse{choices, usage}
-        OR->>CB: RecordSuccess()
-        Note over OR: agent_llm_provider_call_total{status=ok}++<br/>agent_llm_provider_latency_seconds observe
-        OR-->>FC: LLMResponse{RawJSON, PromptTokens, CompletionTokens}
-    else Erro HTTP ou timeout
-        ORA-->>OR: error
-        OR->>CB: RecordFailure()
-        Note over OR: agent_llm_provider_errors_total{reason}++<br/>apos 5 falhas em 30s: circuit abre por 60s
-        OR-->>FC: error
-        Note over FC: tenta proximo fallback model<br/>mistralai/mistral-small-3.2-24b-instruct
-    end
-
-    FC-->>-IP: LLMResponse
-
-    alt finish_reason = "length" (truncado)
-        IP->>IP: fallback para DirectReply
+        alt Response tem tool_calls
+            AG->>+TH: Invoke(ctx, argsJSON)
+            Note over TH: get-weather: geocoding +<br/>forecast via open-meteo
+            TH-->>-AG: resultJSON (role=tool)
+            Note over AG: append result em Messages,<br/>segue para proximo round
+        else Sem tool_calls
+            Note over AG: Content final pronto
+        end
     end
 
-    IP->>IP: json.Unmarshal(RawJSON) -> rawIntentDTO
-    alt JSON invalido ou texto livre
-        IP->>IP: kind = DirectReply<br/>usa choices[0].message.content
+    AG-->>-RT: result{Content}
+
+    RT->>+MS: Append(user + assistant)
+    MS-->>-RT: ok (platform_messages)
+    Note over MS: PublishingMessageStore publica<br/>platform.memory.embedding.index.v1
+
+    RT->>RT: closeRun(status=succeeded)
+    RT-->>-UC: Outcome{RunID, Content, Status, Mode}
+    UC-->>-CONS: Outcome
+
+    alt outcome.Content nao vazio
+        CONS->>+GW: SendTextMessage(peer, outcome.Content)
+        GW->>+META: POST /{META_PHONE_NUMBER_ID}/messages
+        META-->>-GW: {messages:[{id:wamid.xxx}]}
+        GW-->>-CONS: nil
     end
-    IP-->>-IR: ParsedIntent{Intent, Raw, DirectReply}
-
-    alt DirectReply (resposta em prosa)
-        IR->>+HD: ComposeConversationalReply.Execute(ctx, text)
-        Note over HD: segunda chamada LLM com FreeText=true<br/>MaxTokens: AGENT_LLM_PROSE_MAX_TOKENS=200<br/>sem JSON schema, resposta em texto livre
-        HD-->>-IR: reply string
-    else Intent estruturada
-        IR->>+HD: handler para intent.Kind
-        Note over HD: ver 05-intent-dispatch-micro.md<br/>17 kinds e handlers
-        HD-->>-IR: reply string
-    end
-
-    IR->>+EVT: PublishExecuted(ctx, IntentEvent)
-    Note over EVT: outbox.Event type=agent.intent.executed.v1<br/>payload: event_id, channel, outcome,<br/>module, action, provider_used,<br/>latency_ms, prompt_tokens,<br/>completion_tokens, occurred_at
-    EVT-->>-IR: nil
-
-    IR->>+GW: SendTextMessage(ctx, whatsappTo, reply)
-    GW->>+META: POST /{META_PHONE_NUMBER_ID}/messages
-    Note over GW,META: Authorization: Bearer META_ACCESS_TOKEN<br/>Body: {messaging_product:whatsapp,<br/>to:5511999999999, type:text,<br/>text:{body:reply}}
-    META-->>-GW: {messages:[{id:wamid.xxx}]}
-    GW-->>-IR: nil
-
-    IR-->>-AR: RouteResult{Reply, Outcome, Kind}
-    AR-->>-DISP: OutcomeAgent
 ```
 
 ---
 
-## Circuit Breaker — Estados
+## Indexacao Assincrona de Embeddings (Semantic Recall)
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Closed : inicio
+sequenceDiagram
+    autonumber
 
-    Closed --> Open : CircuitFailures(5) falhas em CircuitWindow(30s)
-    Open --> HalfOpen : apos CircuitCooldown(60s)
-    HalfOpen --> Closed : proxima chamada OK
-    HalfOpen --> Open : proxima chamada falha
-    Closed --> Closed : chamada OK RecordSuccess
+    participant MS as PublishingMessageStore
+    participant OUT as outbox table
+    participant JOB as OutboxDispatcherJob
+    participant IDX as EmbeddingIndexHandler
+    participant OR as OpenRouter Provider
+    participant SR as SemanticRecall
 
-    note right of Open
-        Provider ignorado
-        agent_llm_fallback_skipped_total++
-        label: model, state=open
-    end note
+    MS->>MS: Append(message) -> platform_messages
+    MS->>OUT: publica platform.memory.embedding.index.v1
+    Note over MS,OUT: IndexMessagePayload{resource_id, thread_id,<br/>message_pk, content, model}
 
-    note right of HalfOpen
-        1 chamada de teste
-        permitida
-    end note
+    JOB->>OUT: SELECT FOR UPDATE SKIP LOCKED
+    JOB->>+IDX: Handle(ctx, event)
+    IDX->>+OR: Embed(ctx, [content])
+    OR-->>-IDX: [][]float32
+    IDX->>+SR: Index(resourceID, threadID, messagePK, content, model, embedding)
+    SR-->>-IDX: ok (platform_embeddings, vector 1536)
+    IDX-->>-JOB: nil
+    Note over IDX: platform_memory_embedding_index_succeeded_total++
 ```
 
 ---
 
-## Structs OpenRouter — Request e Response
+## Interface llm.Provider
 
 ```mermaid
 classDiagram
-    class chatRequest {
-        +string Model
-        +chatMessage[] Messages
-        +int MaxTokens
-        +float64 Temperature
-        +responseFmt ResponseFmt
-        +toolDefinition[] Tools
-        +any ToolChoice
-        +bool ParallelToolCalls
-    }
-
-    class chatMessage {
-        +string Role
-        +string Content
-        +toolCall[] ToolCalls
-    }
-
-    class responseFmt {
-        +string Type
-        +responseFmtJSONSchema JSONSchema
-    }
-
-    class toolDefinition {
-        +string Type
-        +toolFunctionDef Function
-    }
-
-    class toolFunctionDef {
-        +string Name
-        +string Description
-        +map Parameters
-    }
-
-    class chatResponse {
-        +chatChoice[] Choices
-        +chatUsage Usage
-        +chatError Error
-    }
-
-    class chatChoice {
-        +chatMessage Message
-        +string FinishReason
-    }
-
-    class chatUsage {
-        +int PromptTokens
-        +int CompletionTokens
-    }
-
-    class toolCall {
-        +string ID
-        +string Type
-        +toolCallFunction Function
-    }
-
-    chatRequest --> chatMessage
-    chatRequest --> responseFmt
-    chatRequest --> toolDefinition
-    chatResponse --> chatChoice
-    chatResponse --> chatUsage
-    chatChoice --> chatMessage
-    chatMessage --> toolCall
-    toolDefinition --> toolFunctionDef
-```
-
----
-
-## Interface LLMProvider
-
-```mermaid
-classDiagram
-    class LLMProvider {
+    class Provider {
         <<interface>>
-        +Slug() ModelSlug
-        +Interpret(ctx, LLMRequest) LLMResponse
+        +Slug() string
+        +Complete(ctx, Request) (Response, error)
+        +Stream(ctx, Request) (TokenStream, error)
+        +Embed(ctx, texts []string) ([][]float32, error)
     }
 
-    class LLMRequest {
-        +string SystemPrompt
-        +string UserMessage
-        +JSONSchemaSpec JSONSchema
-        +bool FreeText
-        +int MaxTokens
+    class Request {
+        +Message[] Messages
         +ToolSpec[] Tools
         +string ToolChoice
+        +Schema ResponseSchema
+        +int MaxTokens
+        +float64 Temperature
     }
 
-    class LLMResponse {
-        +ModelSlug Provider
-        +bytes RawJSON
+    class Response {
+        +string Content
+        +ToolCall[] ToolCalls
         +int PromptTokens
         +int CompletionTokens
-        +ToolCall[] ToolCalls
+        +string FinishReason
     }
 
     class ToolCall {
         +string ID
         +string FunctionName
-        +map ArgumentsJSON
+        +bytes ArgumentsJSON
     }
 
-    class Provider {
-        -ProviderConfig cfg
+    class openrouterProvider {
+        -Config cfg
         -httpclient.Client client
         -observability o11y
-        -Counter callTotal
-        -Counter callError
-        -Counter toolCalls
-        -Histogram latency
-        +Slug() ModelSlug
-        +Interpret(ctx, LLMRequest) LLMResponse
+        +Slug() string
+        +Complete(ctx, Request) (Response, error)
+        +Stream(ctx, Request) (TokenStream, error)
+        +Embed(ctx, texts) ([][]float32, error)
     }
 
-    LLMProvider <|.. Provider
-    LLMResponse --> ToolCall
+    Provider <|.. openrouterProvider
+    Request --> ToolCall
+    Response --> ToolCall
 ```
+
+`Stream` alimenta o modo `ExecutionModeStream` do `AgentRuntime`; `Embed` alimenta a indexacao de embeddings para Semantic Recall (pgvector).
+
+---
+
+## Config do OpenRouter Provider
+
+```mermaid
+classDiagram
+    class Config {
+        +string Model
+        +string EmbedModel
+        +string BaseURL
+        +string APIKey
+        +string HTTPReferer
+        +string XTitle
+        +int MaxTokens
+        +float64 Temperature
+        +time.Duration RequestTimeout
+    }
+```
+
+Endpoints internos: `POST /api/v1/chat/completions` (Complete/Stream) e `POST /api/v1/embeddings` (Embed).
 
 ---
 
@@ -271,13 +213,14 @@ classDiagram
 |---------|------|--------|-----------|
 | `agent_llm_provider_call_total` | Counter | `model`, `status` | Total de chamadas por modelo |
 | `agent_llm_provider_errors_total` | Counter | `model`, `reason` | Erros por tipo |
-| `agent_llm_provider_tool_calls_total` | Counter | `model`, `function` | Tool calls emitidos |
-| `agent_llm_provider_latency_seconds` | Histogram | `model` | Latencia (0.1s a 10s) |
-| `agent_llm_fallback_attempts_total` | Counter | `model`, `outcome` | Tentativas na chain |
-| `agent_llm_fallback_exhausted_total` | Counter | — | Chain esgotada |
-| `agent_llm_fallback_skipped_total` | Counter | `model`, `state` | Providers pulados |
-| `agent_intent_parsed_total` | Counter | `kind`, `outcome` | Intents por tipo |
-| `agent_intent_parse_decode_failed_total` | Counter | `reason` | Falhas de decode |
+| `agent_llm_provider_latency_seconds` | Histogram | `model` | Latencia das chamadas |
+| `agent_llm_tokens_total` | Counter | `model`, `type` | Tokens prompt/completion |
+| `agent_runs_total` | Counter | `agent_id`, `status` | Runs por agente |
+| `agent_tool_invocations_total` | Counter | `agent_id`, `tool` | Tool calls invocados |
+| `platform_memory_embedding_index_succeeded_total` | Counter | `model` | Embeddings indexados |
+| `platform_memory_embedding_index_failed_total` | Counter | `reason` | Falhas de indexacao |
+
+**Cardinalidade controlada:** labels sao enums fechados; sem `user_id`, `resource_id` ou `correlation_key`.
 
 ---
 
@@ -290,19 +233,9 @@ AGENT_LLM_HTTP_REFERER=https://mecontrola.app
 AGENT_LLM_X_TITLE=MeControla
 
 AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
-AGENT_LLM_FALLBACK_MODELS=mistralai/mistral-small-3.2-24b-instruct
+AGENT_LLM_EMBED_MODEL=openai/text-embedding-3-small
 
-AGENT_LLM_MAX_TOKENS=256
-AGENT_LLM_PROSE_MAX_TOKENS=200
+AGENT_LLM_MAX_TOKENS=768
 AGENT_LLM_TEMPERATURE=0
-AGENT_LLM_REQUEST_TIMEOUT=8s
-AGENT_LLM_PROMPT_PAD_TOKENS=1100
-
-AGENT_LLM_CIRCUIT_FAILURES=5
-AGENT_LLM_CIRCUIT_WINDOW=30s
-AGENT_LLM_CIRCUIT_COOLDOWN=60s
-
-AGENT_ONBOARDING_LLM_ENABLED=true
-AGENT_ONBOARDING_LLM_MODEL=anthropic/claude-haiku-4.5
-AGENT_ONBOARDING_LLM_MAX_TOKENS=512
 ```
+</content>

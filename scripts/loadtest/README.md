@@ -84,7 +84,7 @@ DELETE FROM mecontrola.outbox_events
 
 Possíveis causas:
 - DB pool saturado → ver `mecontrola_db_pool_in_use` no Grafana.
-- LLM lento (WhatsApp) → ver `agent_llm_request_duration_seconds`.
+- LLM lento (WhatsApp) → ver `agent_run_duration_seconds` (substrato `internal/platform/agent`).
 - Lock contention em `onboarding_sessions` na virada de mês → checar `pg_stat_activity` por `wait_event_type=Lock`.
 
 ### Falha por error rate
@@ -104,7 +104,7 @@ Possíveis causas:
 
 - **Antes do primeiro deploy** (Hostinger) — baseline obrigatória.
 - **Antes de release major** (mudança de schema, novo broker, troca de LLM).
-- **Após mudança em** `internal/billing/infrastructure/http/server/middleware/rate_limit.go`, `internal/platform/outbox/`, ou `internal/agent/`.
+- **Após mudança em** `internal/billing/infrastructure/http/server/middleware/rate_limit.go`, `internal/platform/outbox/`, `internal/platform/agent/` ou `internal/agents/`.
 
 ## Limitações conhecidas
 

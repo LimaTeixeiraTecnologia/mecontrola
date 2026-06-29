@@ -21,7 +21,7 @@ cmd/
 | Driver DB | jackc/pgx v5 + jmoiron/sqlx |
 | Migrations | golang-migrate v4 (embedded SQL) |
 | Observabilidade | OpenTelemetry SDK → OtelCollector → Grafana LGTM |
-| LLM | OpenRouter API (Gemini Flash Lite / Mistral Small) |
+| LLM | OpenRouter API (provider unico via llm.Provider; default Gemini Flash Lite) |
 | Config | spf13/viper + .env |
 | Mocks | vektra/mockery v2 |
 | Testes | stretchr/testify + testcontainers + cucumber/godog (BDD) |
@@ -48,7 +48,7 @@ mecontrola/
 │       └── {migrate_test,advisory_lock_test}.go
 │
 ├── internal/
-│   ├── agent/                        # LLM integration, Workflow/Tool pattern
+│   ├── agents/                       # Consumidor de referencia (port Weather Mastra) sobre platform/*
 │   ├── billing/                      # Kiwify, subscriptions, reconciliation
 │   ├── budgets/                      # Orçamentos, allocations, threshold alerts
 │   ├── card/                         # Cartões de crédito (PCI RF-16)
@@ -129,11 +129,11 @@ internal/platform/whatsapp/dispatcher/dispatcher.go
   │    usuário não reconhecido?  → onboardingRoute()
   │    else                       → agentRoute()
   │
-  ├─ agentRoute():
+  ├─ agentRoute()  (internal/agents buildWhatsAppAgentRoute):
   │    Publica para outbox_events:
-  │    { event_type: "agent.whatsappinboundmessage",
+  │    { event_type: "agents.whatsapp.inbound.v1",
   │      aggregate_id: userID,
-  │      payload: { msg_id, text, from, channel } }
+  │      payload: { user_id, peer, text, message_id } }
   │
   └─ HTTP 200 → ACK para Meta (SLA máximo 20s)
 ```
@@ -153,75 +153,54 @@ internal/platform/whatsapp/dispatcher/dispatcher.go
   │    → lookup handler registrado via Register(event_type, handler)
   │
   ▼
-internal/agent/infrastructure/messaging/database/consumers/
+internal/agents/infrastructure/messaging/database/consumers/
   WhatsAppInboundConsumer.Handle(ctx, event)
   │
+  ├─ Decode whatsAppInboundPayload{ user_id, peer, text, message_id }
+  │
   ▼
-internal/agent/application/services/intent_router.go
-  IntentRouter.RouteWhatsApp(ctx, principal, msg)
+internal/agents/application/usecases/handle_inbound.go
+  HandleInbound.Execute(ctx, InboundInput)
+  │    in.Validate()  → mapeia para agent.InboundRequest
+  │    AgentID fixo: "weather-agent"
+  │    ResourceID = user_id | ThreadID = peer
   │
-  ├─ tryResumeInbound()   → verifica runs suspensos (ordem determinística):
-  │    1. continuePendingExpenseConfirmation()  → pendingexpense.Draft ativo?
-  │    2. continuePendingApproval()             → ConfirmState HITL ativo?
-  │    3. continuePendingPlan()                 → PlanState suspenso?
-  │    4. continueBudgetSession()               → BudgetSession ativa?
-  │    Se qualquer resume → executa e retorna
+  ▼
+internal/platform/agent/runtime.go
+  AgentRuntime.Execute(ctx, InboundRequest)
   │
-  ├─ ParseInbound.Execute()
-  │    internal/agent/application/usecases/parse_inbound.go
+  ├─ ThreadGateway.GetOrCreate(resourceID, threadID)  → tabela platform_threads
+  ├─ RunStore.Insert(Run status=running)              → tabela platform_runs
+  ├─ AgentRegistry.Resolve(agentID)                   → Agent
+  │
+  ▼
+internal/platform/agent/agent.go
+  Agent.Execute(ctx, req)   → loop de tool-calling (máx 5 rounds — maxToolRounds)
+  │
+  ├─ Loop:
+  │    llm.Provider.Complete(ctx, Request{Messages, Tools})
+  │      internal/platform/llm/openrouter.go
+  │      Model: AGENT_LLM_PRIMARY_MODEL (google/gemini-2.5-flash-lite)
+  │      Provider único — sem fallback chain, sem circuit breaker
+  │      POST /api/v1/chat/completions
   │    │
-  │    ├─ sanitize.Sanitizer — limpa input (trunca em 2000 chars)
-  │    ├─ OpenRouter inference:
-  │    │    internal/agent/infrastructure/providers/openrouter/client.go
-  │    │    Primary:  google/gemini-2.5-flash-lite  (LLMClassParse)
-  │    │    Fallback: mistralai/mistral-small-3.2-24b
-  │    │    JSON schema strict mode → structured output
-  │    │    Max tokens: 768 | Prose: 200
-  │    │    Circuit breaker: 5 failures / 30s window / 60s cooldown
-  │    ├─ Decode JSON → ParsedIntent{ Kind, Confidence(0-1), Intent, Plan, Raw }
-  │    ├─ If Confidence < AGENT_POLICY_MIN_CONFIDENCE (0.8) → PolicyEvaluator bloqueia write
-  │    └─ Returns ParseInboundOutput
+  │    ├─ Response tem tool_calls?
+  │    │    SIM → tool.ToolHandle.Invoke(ctx, argsJSON)
+  │    │          ex: get-weather (open-meteo: geocoding + forecast)
+  │    │          resultado vira mensagem role=tool → próximo round
+  │    │    NÃO → Response.Content é a resposta final
+  │    │
+  │    └─ Excedeu 5 rounds → erro (tool rounds exhausted)
+  │
+  ├─ MessageStore.Append(user + assistant)            → tabela platform_messages
+  │    PublishingMessageStore publica
+  │    platform.memory.embedding.index.v1 (indexação assíncrona — ver §7.4)
+  │
+  ├─ closeRun(status=succeeded)                       → platform_runs.ended_at, duration_ms
+  └─ Outcome{ RunID, Content, Status(RunStatus), Mode(ExecutionMode) }
   │
   ▼
-internal/agent/application/services/daily_ledger_agent.go
-  DailyLedgerAgent.Handle(ctx, principal, channel, peer, text, messageID)
-  │
-  ├─ ThreadGateway.GetOrCreate(userID, channel)  → tabela agent_threads
-  ├─ RunGateway.Create(threadID, workflow, ...)   → tabela agent_runs
-  │
-  ├─ Classifica intent.Kind:
-  │
-  │  [READ — queries, resumos, listagens]
-  │    WorkflowRegistry.Resolve(kind) → IntentWorkflow.Execute(ToolInput)
-  │    → Tool.Execute() → binding → usecase → repository → PostgreSQL
-  │    → Reply formatado
-  │
-  │  [WRITE STANDARD — income, card purchase simples]
-  │    WorkflowRegistry.Resolve(kind) → Workflow.Execute(ToolInput)
-  │    → fluxo adapter fino: Tool → binding → usecase → DB
-  │
-  │  [WRITE KERNEL — expense com categoria, card purchase complexo]
-  │    kernelEngine.Start(ctx, kernelDef, correlationKey, ExpenseState{...})
-  │    → internal/platform/workflow/engine.go
-  │    → 14 steps sequenciais (ver seção 7)
-  │    → suspend/resume em workflow_runs + workflow_steps
-  │
-  │  [WRITE DESTRUCTIVE — delete last, edit last, delete card, budget commit]
-  │    confirmEngine.Start(ctx, confirmDef, correlationKey, ConfirmState{...})
-  │    → Step confirm_gate → Suspend com prompt "Confirma operação? Sim/Não"
-  │    → Aguarda Resume com texto do usuário
-  │    → Se "sim" → executor correspondente → DB
-  │    → Se "não"/ambíguo/TTL expirado → cancela
-  │
-  │  [PLAN — multi-step intents]
-  │    planEngine.Start() → PlanState → executa steps em sequência
-  │
-  │  [BUDGET SESSION — configuração interativa de orçamento]
-  │    budgetSessionEngine.Start() → sessão conversacional
-  │
-  ▼
-WhatsAppGateway.SendTextMessage(userID, channel, reply)
-  internal/agent/infrastructure/binding/
+WhatsAppGateway.SendTextMessage(peer, outcome.Content)
   → HTTP client → Meta WhatsApp Cloud API
   → Persiste message_id em whatsapp_message_status
 
@@ -248,8 +227,7 @@ internal/<modulo>/
 ├── application/
 │   ├── usecases/       # Orquestra domain + infrastructure
 │   ├── dtos/           # Input (com Validate()) + Output
-│   ├── interfaces/     # Contratos de repositório (mocks gerados aqui)
-│   └── binding/        # Wiring para o agent (quando aplicável)
+│   └── interfaces/     # Contratos de repositório (mocks gerados aqui)
 ├── infrastructure/
 │   ├── http/server/handlers/        # Adapter fino: handler → usecase
 │   ├── repositories/postgres/       # Implementações de repositório
@@ -358,20 +336,21 @@ internal/<modulo>/
 | Eventos Publicados | transactions.transactioncreated, transactions.transactionupdated, transactions.cardpurchasecreated |
 | Tabelas | transactions |
 
-### 4.8 agent
+### 4.8 agents (consumidor de referência)
 
-**Responsabilidade:** Integração LLM via OpenRouter, padrão Workflow/Tool canônico, WorkflowRegistry, kernel de steps durável (14 steps), Thread/Run/WorkingMemory auditáveis, dispatch multicanal.
+**Responsabilidade:** Port 1:1 do exemplo Weather do Mastra sobre o substrato `internal/platform/{agent,llm,memory,tool,workflow,scorer}`. Exercita o ciclo Thread→Run→tool-calling, memória, workflow durável e scorers, validado no canal WhatsApp. Não contém lógica financeira (o antigo módulo de agente financeiro, no singular, foi removido).
 
 | Item | Detalhe |
 |------|---------|
-| LLM Primary | google/gemini-2.5-flash-lite |
-| LLM Fallback | mistralai/mistral-small-3.2-24b |
-| Max Tokens | 768 output, 2000 chars input |
-| Confidence Min | 0.8 (AGENT_POLICY_MIN_CONFIDENCE) |
-| Circuit Breaker | 5 falhas / 30s window / 60s cooldown |
-| Consumers | WhatsAppInboundConsumer, OnboardingBoundConsumer, OnboardingCompletedConsumer |
+| LLM | Provider único OpenRouter (`llm.NewOpenRouterProvider`); default google/gemini-2.5-flash-lite |
+| Max Tokens | 768 output (AGENT_LLM_MAX_TOKENS) |
+| Agent | BuildWeatherAgent → id `weather-agent` (loop tool-calling, máx 5 rounds) |
+| Tool | BuildWeatherTool → id `get-weather` (open-meteo) |
+| Workflow | BuildWeatherWorkflow → id `weather-workflow` (steps fetch-weather, plan-activities) |
+| Scorers | BuildWeatherScorers → tool-call-accuracy, completeness, translation (LLM-judged) |
+| Consumers | WhatsAppInboundConsumer (`agents.whatsapp.inbound.v1`), EmbeddingIndexHandler (`platform.memory.embedding.index.v1`) |
 | Jobs | (sem jobs próprios — processamento via consumer) |
-| Tabelas | agent_sessions, agent_decisions, agent_runs, agent_threads, agent_working_memory, agent_observations |
+| Tabelas | platform_threads, platform_messages, platform_resources, platform_runs, platform_embeddings, platform_scorer_results |
 
 ---
 
@@ -427,7 +406,7 @@ internal/platform/workflow/
 ```
 
 **Regras críticas (R-WF-KERNEL-001):**
-- Zero import de domínio (`internal/agent`, `internal/transactions`, etc.)
+- Zero import de domínio nem de camada superior (`internal/platform/agent`, `internal/platform/memory`, `internal/transactions`, etc.)
 - Estados fechados: `RunStatus` (Running/Suspended/Succeeded/Failed), `StepStatus`, `SuspendReason`
 - `Resume()` aplica delta merge-patch RFC 7386 sobre `Snapshot.State` — nunca substitui inteiro
 - LLM proibido no kernel
@@ -456,13 +435,18 @@ internal/platform/whatsapp/
 
 | Pacote | Função |
 |--------|--------|
+| `agent/` | Substrato de agent (Mastra-equivalente): AgentRuntime, Agent (loop tool-calling), AgentRegistry, RunStore, tipos fechados RunStatus/ToolOutcome/ExecutionMode |
+| `llm/` | Provider único OpenRouter: Complete/Stream/Embed (`llm.NewOpenRouterProvider`) |
+| `memory/` | ThreadGateway, MessageStore, WorkingMemory, SemanticRecall (pgvector); PublishingMessageStore + EmbeddingIndexHandler (indexação assíncrona) |
+| `tool/` | ToolHandle (Invoke valida schema → exec → serializa) + Registry |
+| `scorer/` | ScorerRunner + scorers code-based e LLM-judged (evals), persiste platform_scorer_results |
 | `idempotency/` | Chaves de idempotência 24h TTL (tabela idempotency_keys) |
 | `worker/` | Job scheduler (robfig/cron v3), interface Consumer |
 | `http/server/health/` | GET /healthz, GET /readyz |
 | `http/server/openapi/` | Docs em /__docs |
 | `httpclient/` | HTTP client com timeout e retry |
 | `notification/adapters/` | Email, SMS, Push notification adapters |
-| `channels/` | Routing de canal: WhatsApp / Telegram / Email |
+| `channels/` | Routing de canal: WhatsApp |
 | `money/` | Precisão decimal monetária (cents) |
 | `id/` | Geração de UUIDs |
 | `stringsutil/` | Utilitários de string |
@@ -531,142 +515,95 @@ workflow_steps (
 
 ---
 
-## 7. Agent: Workflows, Tools e Kernel Steps
+## 7. Agent Substrate: Runtime, Tools, Memory e Scorers
 
-### 7.1 WorkflowRegistry
+`internal/platform/{agent,llm,memory,tool,workflow,scorer}` é o substrato reutilizável (Mastra-equivalente). O consumidor de referência `internal/agents` (port do exemplo Weather) registra um Agent, uma Tool, um Workflow e Scorers e os exercita via WhatsApp.
 
-```
-internal/agent/application/workflow/registry.go
-  IntentRegistry{ byKind map[intent.Kind]IntentWorkflow }
-
-  Resolve(kind) → IntentWorkflow
-  IntentWorkflow.Execute(ctx, ToolInput) → ToolResult
-    ToolInput{ UserID, Channel, Intent, Text, MessageID }
-    ToolResult{ Outcome ToolOutcome, Reply string }
-```
-
-Workflows e tools são adaptadores finos: `Tool.Execute()` → `binding` → `usecase` → repositório. Zero regra de negócio, SQL ou branching de domínio.
-
-### 7.2 Kernel Steps (14 steps — ExpenseState)
+### 7.1 AgentRuntime e Loop de Tool-Calling
 
 ```
-internal/agent/application/workflow/steps/
+internal/platform/agent/runtime.go
+  AgentRuntime.Execute(ctx, InboundRequest) → (Outcome, error)
+    InboundRequest{ ResourceID, ThreadID, AgentID, Message, MessageID }
+    │
+    ├─ ThreadGateway.GetOrCreate(resourceID, threadID)  → platform_threads
+    ├─ RunStore.Insert(Run status=running)              → platform_runs
+    ├─ AgentRegistry.Resolve(agentID)                   → Agent
+    ├─ Agent.Execute(ctx, req)                          → loop tool-calling
+    ├─ MessageStore.Append(user + assistant)            → platform_messages
+    └─ closeRun(status) + Outcome{ RunID, Content, Status, Mode }
 
-Ordem de execução:
- 1. replay.go            → ReplayStep: busca decision_id em agent_decisions (idempotência)
- 2. audit_begin.go       → AuditBeginStep: inicia registro em agent_decisions
- 3. authorize.go         → AuthorizeStep: valida userID == principal
- 4. policy.go            → PolicyStep: confidence >= AGENT_POLICY_MIN_CONFIDENCE?
- 5. resolve_category.go  → ResolveCategoryStep: busca category_id via SearchDictionary
-                            → SUSPEND se CategoryAmbiguousError ou CategoryNeedsConfirmationError
-                            → salva pendingexpense.Draft{AwaitingKind, TransactionKind, Candidates}
- 6. resolve_candidates.go → confirma candidatos após resume
- 7. prepare_target.go    → PrepareTargetStep: monta objeto final (entity command)
- 8. format.go            → FormatStep: constrói string de reply
- 9. persist.go           → PersistStep: chama ExpenseRecorder ou CardPurchaseLogger
-                            → binding → usecase → UoW → PostgreSQL (transação atômica)
-10. confirm_gate.go      → (para writes destrutivos dentro do kernel)
-11. execute_destructive.go → executa operação destrutiva confirmada
-12. confirm_guard.go     → validação final pós-confirmação
-13. state.go             → StateStep: atualiza agent_working_memory com sumário
-14. (housekeeping)       → finaliza agent_decisions, fecha Run
+internal/platform/agent/agent.go
+  Agent.Execute → loop (máx 5 rounds — maxToolRounds):
+    llm.Provider.Complete(ctx, Request{Messages, Tools})
+      → Response com tool_calls?  SIM → tool.ToolHandle.Invoke(argsJSON) → role=tool → próximo round
+                                  NÃO → Response.Content é a resposta final
 ```
 
-**ExpenseState (estrutura de estado JSON no Snapshot):**
+`RunStatus` (running|succeeded|failed), `ToolOutcome` e `ExecutionMode` (sync|stream) são tipos fechados (DMMF state-as-type). Tools e workflows são adaptadores finos: zero regra de negócio, SQL ou branching de domínio.
+
+### 7.2 Tool (ToolHandle)
 
 ```
-ExpenseState {
-  Kind           intent.Kind
-  UserID         string
-  Channel        string
-  MessageID      string
-  DecisionID     uuid.UUID
-  Outcome        tools.ToolOutcome    // tipo fechado
-  Reply          string
-  AmountCents    int64
-  CategoryPath   string
-  CardName       string
-  TransactionID  uuid.UUID
-  PendingDraft   pendingexpense.Draft  // quando suspenso em categoria
-}
+internal/platform/tool/tool.go
+  ToolHandle{ ID(), Description(), Parameters(), Invoke(ctx, argsJSON) ([]byte, error) }
+  Registry{ Register(h), Resolve(id) }
+
+internal/agents/application/tools/tool.go
+  BuildWeatherTool → id "get-weather"
+    valida argsJSON contra schema → weather.Client (open-meteo: geocoding + forecast) → resultJSON
 ```
 
-### 7.3 ConfirmState Machine (Gates HITL)
+### 7.3 Workflow Durável (Kernel)
 
 ```
-internal/agent/domain/confirmation/
+internal/agents/application/workflows/workflow.go
+  BuildWeatherWorkflow → workflow.Definition[WeatherState], id "weather-workflow"
+    Steps: "fetch-weather", "plan-activities" | Durable, MaxAttempts 3
 
-Operações (OperationKind — tipo fechado):
-  OperationDeleteLast    → apagar último lançamento
-  OperationEditLast      → editar último lançamento
-  OperationDeleteCard    → remover cartão
-  OperationDeleteByRef   → apagar por busca
-  OperationEditByRef     → editar por busca
-  OperationBudgetCommit  → ativar orçamento (gate de budget no commit)
-
-Fluxo:
-  confirmEngine.Start(ConfirmState{ OperationKind, AwaitingApproval=AwaitingConfirm })
-    → Step confirm_gate → SUSPEND com prompt "Confirma operação? Sim/Não"
-
-  User responde → Resume({ "ResumeText": "sim" })
-    → merge-patch sobre Snapshot.State
-    → Parse resposta:
-       "sim"|"confirmar"|"ok"|"pode" → executa operação → RunStatus=Succeeded
-       "não"|"cancelar"              → descarta → RunStatus=Succeeded
-       ambíguo 1ª vez               → re-prompt (RepromptCount 0→1), re-suspend
-       ambíguo 2ª vez               → cancela → RunStatus=Succeeded
-       TTL expirado                 → cancela, devolve handled=false → ParseInbound
+internal/platform/workflow/engine.go
+  Engine[S].Start / Resume   (ver §6: Snapshot + MergePatch RFC 7386, combinators
+                              Sequence/Branch/Parallel/Retry)
 ```
 
-**Regras críticas:** Nunca retornar pergunta sem persistir ConfirmState com AwaitingConfirm. LLM proibido no confirm_gate. OperationKind e AwaitingApproval são tipos fechados (nunca string livre).
-
-### 7.4 Thread / Run / WorkingMemory
+### 7.4 Memory: Thread, Message, WorkingMemory, SemanticRecall
 
 ```
-internal/agent/domain/entities/
+internal/platform/memory/ports.go
 
-Thread{
-  ID      uuid.UUID
-  UserID  string
-  Channel string       // "whatsapp"
-}
-  → tabela agent_threads
-  → ThreadGateway.GetOrCreate(userID, channel)
-
-Run{
-  ID         uuid.UUID
-  ThreadID   uuid.UUID
-  Workflow   string
-  ToolName   string
-  IntentKind intent.Kind
-  Status     RunStatus   // tipo fechado: running|succeeded|failed
-  Outcome    ToolOutcome
-  DurationMs int64
-}
-  → tabela agent_runs
-  → RunGateway.Create() / Complete()
-
-WorkingMemory{
-  UserID    string
-  Content   string      // Markdown estruturado
-  UpdatedAt time.Time
-}
-  → tabela agent_working_memory
-  → Incluída no system prompt de ParseInbound quando disponível
-  → Atualizada no StateStep após cada lançamento
+ThreadGateway.GetOrCreate(resourceID, threadID)          → platform_threads
+MessageStore.Append / Recent(threadPK, limit)            → platform_messages
+WorkingMemory.Get / Upsert(resourceID, content)          → platform_resources.working_memory
+SemanticRecall.Index / Recall(resourceID, query, k)      → platform_embeddings (pgvector 1536)
 ```
 
-**WorkingMemory e Thread são exclusivos de `internal/agent`.** Outros módulos não têm esses conceitos.
+**Indexação assíncrona de embeddings:**
 
-### 7.5 PendingStep (Categoria)
+```
+NewPublishingMessageStore(next, publisher, model, o11y)
+  → no Append, publica evento "platform.memory.embedding.index.v1"
+       IndexMessagePayload{ resource_id, thread_id, message_pk, content, model }
+  → OutboxDispatcherJob → indexer.EmbeddingIndexHandler.Handle(ctx, event)
+       → llm.Provider.Embed(content) → SemanticRecall.Index(...)
+```
 
-Quando `resolve_category` detecta ambiguidade:
+Thread, Run, WorkingMemory e PendingStep são primitivos genéricos de plataforma sobre chaves opacas (`resourceId`, `threadId`); o kernel `internal/platform/workflow` permanece sem esses conceitos.
 
-1. Salva `pendingexpense.Draft{ AwaitingKind: category_confirm|category_choice, TransactionKind, Candidates }` em `agent_sessions`
-2. Retorna `OutcomeClarify` com prompt
-3. Na próxima mensagem, `continuePendingExpenseConfirmation()` intercepta **antes** de `ParseInbound`
-4. Resume o kernel com categoria escolhida
-5. Draft é limpo (`Clear()`) imediatamente após execução ou cancelamento
+### 7.5 Scorers / Evals
+
+```
+internal/platform/scorer/
+  ScorerRunner.Observe(runID, RunSample) / Shutdown(ctx)
+  Scorer{ ID(), Kind() ScorerKind, Score(ctx, RunSample) (ScoreResult, error) }
+  ScorerKind fechado: ScorerKindCodeBased | ScorerKindLLMJudged
+  → persiste platform_scorer_results
+
+internal/agents/application/scorers/scorers.go
+  BuildWeatherScorers(provider) → 3 entries:
+    NewToolCallAccuracyScorer("tool-call-accuracy", ["get-weather"])   (code-based)
+    NewCompletenessScorer("completeness", [...campos])                 (code-based)
+    NewTranslationScorer(provider)                                     (LLM-judged)
+```
 
 ---
 
@@ -676,8 +613,9 @@ Quando `resolve_category` detecta ambiguidade:
 
 ```
 migrations/
-├── 000001_initial_schema.up.sql    # Todas as tabelas + índices + FK
-└── 000002_seed_reference_data.up.sql  # categories, system defaults
+├── 000001_initial_schema.up.sql       # Tabelas de negócio + workflow_runs/steps + índices + FK
+├── 000002_seed_reference_data.up.sql  # categories, system defaults
+└── 000003_platform_mastra.up.sql      # platform_threads/messages/resources/runs/embeddings/scorer_results (pgvector)
 ```
 
 Embedded em `migrations/embed.go` via `//go:embed *.sql`. Aplicado com advisory lock para evitar race em múltiplas instâncias.
@@ -779,33 +717,42 @@ mecontrola.budgets_expenses (
 )
 ```
 
-**Agent**
+**Platform Agent Substrate (migration 000003)**
 ```sql
-mecontrola.agent_sessions (
-  id, user_id, channel, pending_draft JSONB,
-  created_at, updated_at
+mecontrola.platform_threads (
+  id UUID PRIMARY KEY, resource_id TEXT, thread_id TEXT,
+  title TEXT, metadata JSONB,
+  created_at, updated_at,
+  UNIQUE (resource_id, thread_id)
 )
-mecontrola.agent_decisions (
-  id, user_id, intent_kind TEXT, outcome TEXT,
-  confidence NUMERIC, reply TEXT, message_id TEXT,
-  prompt_sha256 TEXT, created_at
+mecontrola.platform_messages (
+  id UUID PRIMARY KEY, thread_pk UUID REFERENCES platform_threads,
+  resource_id TEXT, role TEXT CHECK('user','assistant','tool','system'),
+  content TEXT, parts JSONB, created_at
 )
-mecontrola.agent_runs (
-  id, thread_id, workflow TEXT, tool_name TEXT,
-  intent_kind TEXT, status TEXT, outcome TEXT,
-  duration_ms BIGINT, error TEXT,
-  created_at, ended_at
+mecontrola.platform_resources (
+  resource_id TEXT PRIMARY KEY,
+  working_memory TEXT, metadata JSONB, updated_at
 )
-mecontrola.agent_threads (
-  id, user_id, channel TEXT,
-  created_at, updated_at
+mecontrola.platform_runs (
+  id UUID PRIMARY KEY, thread_pk UUID REFERENCES platform_threads,
+  resource_id TEXT, thread_id TEXT, agent_id TEXT,
+  workflow TEXT, correlation_key TEXT,
+  status TEXT CHECK('running','succeeded','failed'),
+  outcome TEXT, error TEXT,
+  started_at, ended_at, duration_ms BIGINT
 )
-mecontrola.agent_working_memory (
-  user_id TEXT PRIMARY KEY, content TEXT,
-  updated_at TIMESTAMPTZ
+mecontrola.platform_embeddings (
+  id UUID PRIMARY KEY, resource_id TEXT, thread_id TEXT,
+  source_message_pk UUID, content TEXT,
+  embedding VECTOR(1536), model TEXT, created_at,
+  UNIQUE (source_message_pk, model)
 )
-mecontrola.agent_observations (
-  id, user_id, observation_text TEXT, created_at
+mecontrola.platform_scorer_results (
+  id UUID PRIMARY KEY, run_id UUID REFERENCES platform_runs,
+  scorer_id TEXT, kind TEXT CHECK('code_based','llm_judged'),
+  score DOUBLE PRECISION, reason TEXT, metadata JSONB,
+  sampled BOOL, created_at
 )
 ```
 
@@ -873,7 +820,8 @@ Todos os eventos de domínio são publicados via `outbox.Publisher` **na mesma t
 | transactions | transactions.cardpurchasecreated | card_purchase |
 | budgets | budgets.thresholdcrossed | budget |
 | budgets | budgets.expensecommitted | budget |
-| agent | agent.whatsappinboundmessage | user |
+| agents | agents.whatsapp.inbound.v1 | user |
+| agents | platform.memory.embedding.index.v1 | resource |
 
 ### 9.2 Consumers por Evento
 
@@ -881,12 +829,12 @@ Todos os eventos de domínio são publicados via `outbox.Publisher` **na mesma t
 |-----------|---------|--------|
 | identity.subscriptionactivated | SubscriptionEventProjector | identity |
 | onboarding.bound | SubscriptionBoundSessionConsumer | onboarding |
-| onboarding.completed | OnboardingCompletedConsumer | agent |
 | transactions.transactioncreated | TransactionCreatedConsumer | budgets |
 | transactions.transactioncreated | MonthlySummaryRecomputeConsumer | transactions |
 | transactions.cardpurchasecreated | CardPurchaseCreatedConsumer | budgets |
 | budgets.thresholdcrossed | ThresholdAlertNotifier | budgets |
-| agent.whatsappinboundmessage | WhatsAppInboundConsumer | agent |
+| agents.whatsapp.inbound.v1 | WhatsAppInboundConsumer | agents |
+| platform.memory.embedding.index.v1 | EmbeddingIndexHandler | agents |
 
 ---
 
@@ -948,7 +896,7 @@ Grafana :3000
   ├─ Datasource: Loki
   ├─ Datasource: Tempo
   └─ Dashboards provisionados (deployment/dashboards/):
-       agent-runtime-overview.json   → métricas do agent (intents, outcomes, latência)
+       agent-runtime-overview.json   → métricas do agent runtime (runs, tool calls, latência LLM)
        mecontrola-api.json           → HTTP (latência, status codes, throughput)
        mecontrola-infra.json         → PostgreSQL, pgBouncer, memória, CPU
        mecontrola-ops.json           → outbox, jobs, consumers
@@ -971,11 +919,15 @@ Bootstrap via devkit-go em `cmd/server/server.go` e `cmd/worker/worker.go`.
 | `outbox_pending_jobs` (gauge) | — | platform/outbox |
 | `whatsapp_dispatcher_route_total` | outcome | platform/whatsapp |
 | `whatsapp_webhook_rate_limit_exceeded_total` | — | platform/whatsapp |
-| `agent_intent_parsed_total` | kind, outcome | agent |
-| `agent_intent_routed_total` | kind, channel | agent |
-| `agent_authz_denied_total` | reason | agent |
-| `agent_policy_blocks_total` | kind | agent |
-| `agent_idempotency_replay_total` | kind | agent |
+| `agent_runs_total` | agent_id, status | platform/agent |
+| `agent_run_duration_seconds` | agent_id | platform/agent |
+| `agent_tool_invocations_total` | agent_id, tool | platform/agent |
+| `agent_llm_provider_call_total` | model, status | platform/llm |
+| `agent_llm_provider_latency_seconds` | model | platform/llm |
+| `agent_llm_tokens_total` | model, type | platform/llm |
+| `platform_memory_embedding_index_succeeded_total` | model | platform/memory |
+| `scorer_runs_total` | scorer_id, kind, outcome | platform/scorer |
+| `agents_whatsapp_inbound_total` | channel, outcome | agents |
 | `workflow_runs_total` | workflow, status | platform/workflow |
 | `workflow_run_duration_seconds` | workflow | platform/workflow |
 | `workflow_steps_total` | workflow, step, status | platform/workflow |
@@ -1084,8 +1036,8 @@ DatabaseConfig     { Host(pgbouncer), Port(6432), Name, User, Pass, MaxConns(10)
 HTTPConfig         { Port(8080), CORS origins, Timeouts }
 OTelConfig         { OTLPEndpoint, Protocol(grpc), TraceSampleRate(0.1), LogFormat(json) }
 WhatsAppConfig     { VerifyToken, AppSecret, PhoneNumberID, BusinessAccountID }
-AgentConfig        { PrimaryModel, FallbackModel, MaxTokens(768), MinConfidence(0.8),
-                     CircuitBreakerFailures(5), CircuitBreakerWindow(30s), Cooldown(60s) }
+AgentConfig (LLM)  { Model(google/gemini-2.5-flash-lite), EmbedModel(openai/text-embedding-3-small),
+                     BaseURL, APIKey, HTTPReferer, XTitle, MaxTokens(768), Temperature(0) }
 BillingConfig      { KiwifyAPIKey, WebhookSecret, GracePeriodDays(3) }
 OnboardingConfig   { TokenTTLDays(7), LLMModel(claude-haiku-4.5), EmailProvider }
 OutboxConfig       { DispatcherEnabled, TickInterval(2s), BatchSize(50), MaxAttempts(3),
@@ -1143,7 +1095,7 @@ task ngrok:start        # tunnel local para webhook Meta
 |-------|--------|--------|
 | R-ADAPTER-001 | handlers/, consumers/, producers/, jobs/handlers/ | Zero comentários Go; adapter fino handler→usecase; sem SQL direto |
 | R-WF-KERNEL-001 | internal/platform/workflow/ | Kernel genérico; sem import de domínio; estados fechados; sem LLM |
-| R-AGENT-WF-001 | internal/agent/ | WorkflowRegistry obrigatório; Thread+Run em toda execução; LLM só em ParseInbound |
+| R-AGENT-WF-001 | internal/platform/agent/ | Roteamento Agent→Tool; Thread+Run em toda execução; tipos fechados RunStatus/ToolOutcome |
 | R-TXN-WORKFLOWS-001 | internal/transactions/ | Decide* puro; validação só em smart constructors; producers só mapeiam |
 | R-TESTING-001 | */application/usecases/*_test.go | testify/suite whitebox; fake.NewProvider(); IIFE por mock |
 | R-DTO-VALIDATE-001 | */application/dtos/input/ | Todo input DTO tem Validate(); use case chama após span.End() |
@@ -1181,30 +1133,30 @@ task ngrok:start        # tunnel local para webhook Meta
 │                    cmd/worker                                    │
 │  OutboxDispatcherJob                                            │
 │  → events.Dispatcher.Dispatch(event_type)                      │
-│  → WhatsAppInboundConsumer                                      │
-│       → IntentRouter                                            │
-│            → tryResumeInbound() [pending expense/approval/plan] │
-│            → ParseInbound (OpenRouter LLM)                      │
-│                 Primary:  gemini-2.5-flash-lite                 │
-│                 Fallback: mistral-small-3.2-24b                 │
-│            → DailyLedgerAgent                                   │
-│                 ├─ READ  → WorkflowRegistry → Tool → binding    │
-│                 ├─ WRITE → Workflow → Tool → binding → UoW      │
-│                 ├─ KERNEL → Engine[ExpenseState] → 14 steps     │
-│                 │           → persist step → UoW → PostgreSQL   │
-│                 └─ DESTRUCTIVE → Engine[ConfirmState]           │
-│                                  → suspend → approve → execute  │
+│  → WhatsAppInboundConsumer (internal/agents)                   │
+│       → HandleInbound → AgentRuntime.Execute                   │
+│            → ThreadGateway.GetOrCreate → platform_threads      │
+│            → RunStore.Insert → platform_runs                   │
+│            → AgentRegistry.Resolve("weather-agent")            │
+│            → Agent.Execute (loop tool-calling, máx 5 rounds)   │
+│                 ├─ llm.Provider.Complete (OpenRouter único)    │
+│                 │     gemini-2.5-flash-lite                    │
+│                 └─ tool.ToolHandle.Invoke (get-weather)        │
+│            → MessageStore.Append → platform_messages           │
+│                 → publica platform.memory.embedding.index.v1   │
+│  → EmbeddingIndexHandler → Embed → SemanticRecall.Index        │
 │  + outros consumers (budgets, transactions, card, onboarding)  │
 │  + jobs agendados (cron): reaper, reconciliation, alerts, purge │
 └──────────────────┬───────────────────────┬──────────────────────┘
-                   │ writes (UoW + Tx)      │ reply
+                   │ persist (memory)       │ reply
                    ▼                        ▼
 ┌──────────────────────────┐   ┌───────────────────────────────┐
 │  PostgreSQL 16            │   │  Meta WhatsApp Cloud API      │
 │  schema mecontrola        │   │  SendTextMessage → usuário    │
 │  users, cards             │   └───────────────────────────────┘
 │  transactions, budgets    │
-│  agent_threads/runs/mem   │
+│  platform_threads/runs    │
+│  platform_messages/embed  │
 │  workflow_runs/steps      │
 │  outbox_events            │
 └──────────────┬────────────┘

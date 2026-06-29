@@ -1,54 +1,66 @@
 # State-as-Type — enums fechados e smart constructors (DMMF)
 
-R-AGENT-WF-001.3: `ToolOutcome`, `RunStatus`, `AwaitingKind`, `TransactionKind` (e `intent.Kind`)
-são **tipos fechados**. Nunca string livre em assinatura pública nem branching sobre string crua.
-Persistência em coluna TEXT é permitida via `String()`; a fronteira de código permanece tipada.
+Estados de fronteira são **tipos fechados**: nunca string livre em assinatura pública nem branching sobre
+string crua. Persistência em coluna TEXT é permitida via `String()`; a fronteira de código permanece tipada.
+Vale para o kernel (R-WF-KERNEL-001.3) e para o primitivo de agent (R-AGENT-WF-001.3).
 
 ## Inventário e onde mora
 
-| Tipo              | Valores                                              | Arquivo |
-| ----------------- | --------------------------------------------------- | ------- |
-| `ToolOutcome`     | `routed, fallback, parse_error, usecase_error, missing_resolver, reply_failed, empty_text, authz_denied, clarify, policy_blocked, replay` | `application/tools/tool.go` |
-| `RunStatus`       | `running, succeeded, failed`                        | `domain/entities/run.go` |
-| `AwaitingKind`    | `category_confirm, category_choice`                 | `domain/pendingexpense/draft.go` |
-| `TransactionKind` | `expense, income, card_purchase`                    | `domain/pendingexpense/draft.go` |
-| `intent.Kind`     | 21 kinds fechados                                   | `domain/intent/intent.go` |
-| `Confidence`      | `[0,1]` com smart constructor                       | `domain/valueobjects/confidence.go` |
-| `DecisionStatus`  | `pending, executed, rejected, awaiting_confirmation`| `domain/valueobjects/decision_status.go` |
+| Tipo | Valores | Arquivo |
+| --- | --- | --- |
+| `agent.RunStatus` | `running, succeeded, failed` | `internal/platform/agent/types.go` |
+| `agent.ToolOutcome` | `routed, clarify, usecaseError, missingResolver, replay` | `internal/platform/agent/types.go` |
+| `agent.AwaitingKind` | `none, confirm` | `internal/platform/agent/types.go` |
+| `agent.ExecutionMode` | `sync, stream` | `internal/platform/agent/types.go` |
+| `workflow.RunStatus` | `running, suspended, succeeded, failed` | `internal/platform/workflow/step.go` |
+| `workflow.StepStatus` | `completed, suspended, failed, skipped` | `internal/platform/workflow/step.go` |
+| `workflow.SuspendReason` | `awaiting_input` | `internal/platform/workflow/step.go` |
+| `memory.MessageRole` | `user, assistant, tool, system` | `internal/platform/memory/types.go` |
+| `scorer.ScorerKind` | `code_based, llm_judged` | `internal/platform/scorer/types.go` |
+| `scorer.SamplingType` | `ratio, always, never` | `internal/platform/scorer/types.go` |
 
-## Padrão canônico (ex.: `ToolOutcome`)
+Nota: `agent.RunStatus` e `workflow.RunStatus` são **tipos distintos** (mecanismo do kernel vs Run semântico
+do agent — addendum R-AGENT-WF-001.6-A); não os compartilhe.
+
+## Padrão canônico (ex.: `agent.ToolOutcome`)
 
 ```go
 type ToolOutcome int
 
 const (
-    OutcomeRouted ToolOutcome = iota + 1
-    OutcomeFallback
-    // ...
+    ToolOutcomeRouted ToolOutcome = iota + 1
+    ToolOutcomeClarify
+    ToolOutcomeUsecaseError
+    ToolOutcomeMissingResolver
+    ToolOutcomeReplay
 )
 
 func (o ToolOutcome) String() string { /* switch exaustivo */ }
-
-func ParseOutcome(raw string) (ToolOutcome, error) { /* string -> tipo, erro se inválido */ }
+func (o ToolOutcome) IsValid() bool  { return o >= ToolOutcomeRouted && o <= ToolOutcomeReplay }
+func ParseToolOutcome(s string) (ToolOutcome, error) { /* string -> tipo, erro se inválido */ }
 ```
 
 Elementos obrigatórios:
 - `iota + 1` (zero-value inválido, força construção explícita).
 - `String()` com switch exaustivo.
-- `Parse...(raw string) (T, error)` como smart constructor que **rejeita** valor desconhecido
-  (ex.: `ErrToolOutcomeUnknown`, `ErrRunStatusInvalid`).
+- `IsValid()` por faixa.
+- `Parse...(s string) (T, error)` como smart constructor que **rejeita** valor desconhecido
+  (ex.: `errInvalidToolOutcome`, `errInvalidRunStatus`).
+
+`MessageRole` é a variante string-based (tipo nomeado `string` com `IsValid()` por `switch`), também fechado.
 
 ## Como adicionar um novo valor
 
-1. Adicionar a constante ao bloco `const`.
+1. Adicionar a constante ao bloco `const` (preservando ordem para `IsValid()` por faixa).
 2. Cobrir o novo valor em `String()` e no `Parse...`.
 3. Atualizar todo switch exaustivo que consome o tipo (o compilador não força — buscar usos).
-4. Se o valor cruza fronteira de métrica, confirmar que continua sendo label enum-fechado
-   (R-AGENT-WF-001.5 / R-TXN-004): nunca `user_id`/`category_id` como label.
-5. Teste de unidade cobrindo `String()`↔`Parse...` ida e volta + erro no valor inválido.
+4. Ajustar `IsValid()` (limite superior da faixa) se aplicável.
+5. Se cruza fronteira de métrica, confirmar que continua label enum-fechado (R-WF-KERNEL-001.4 / R-TXN-004):
+   nunca `user_id`/`resource_id`/`correlation_key`/`category_id` como label.
+6. Teste cobrindo `String()`↔`Parse...` ida e volta + erro no valor inválido.
 
 ## Anti-padrões proibidos (hard)
 
-- `string` solta em assinatura de Tool/Workflow/Run para representar outcome/status/kind.
+- `string` solta em assinatura pública para representar status/outcome/kind/role.
 - Construir o valor a partir de string externa sem passar pelo smart constructor.
 - `Result[T,E]` customizado, `Either`, currying, DSL de pipeline, mônadas (ver `governance.md`).

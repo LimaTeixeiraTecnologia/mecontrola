@@ -1,299 +1,223 @@
-# Intent Dispatch — Nivel Micro
+# Agent Tool-Calling Loop — Nivel Micro
 
-Documentacao detalhada do roteamento de intents dentro do IntentRouter, cobrindo todos os 17 kinds, handlers correspondentes e fluxos especiais (onboarding LLM, budget conversation, fallback).
+> **Nota de descontinuacao.** O mecanismo antigo de roteamento por enum (roteador de intent com 17 kinds e um handler por kind, agente financeiro de ledger diario e rascunho de despesa pendente) foi **removido** junto com o antigo modulo de agente financeiro (no singular). Nao ha mais dispatch por enum. O equivalente atual e o **loop de tool-calling** do `Agent` da plataforma (`internal/platform/agent`), resolvido por `AgentRegistry` e validado no consumidor de referencia `internal/agents` (port do exemplo Weather do Mastra). Este documento descreve esse mecanismo novo. O nome do arquivo e mantido por compatibilidade de links.
+
+Documentacao detalhada do loop de tool-calling executado por `Agent.Execute` dentro do `AgentRuntime`, cobrindo a resolucao por `AgentRegistry`, a invocacao do LLM, o ciclo de tool calls e a persistencia de mensagens.
 
 ## Referencias de codigo
 
 | Componente | Arquivo |
 |---|---|
-| IntentRouter | `internal/agent/application/services/intent_router.go` |
-| Intent kinds | `internal/agent/domain/intent/intent.go` |
-| ParseInbound | `internal/agent/application/usecases/parse_inbound.go` |
-| Agent module (wiring) | `internal/agent/module.go` |
-| Budget draft domain | `internal/agent/domain/budgetdraft/` |
-| Binding adapters | `internal/agent/infrastructure/binding/` |
-| Onboarding runner | `internal/agent/infrastructure/onboarding/` |
+| AgentRuntime | `internal/platform/agent/runtime.go` |
+| Agent (loop tool-calling) | `internal/platform/agent/agent.go` |
+| AgentRegistry | `internal/platform/agent/registry.go` |
+| RunStore | `internal/platform/agent/infrastructure/postgres/` |
+| ToolHandle | `internal/platform/tool/tool.go` |
+| Tool Registry | `internal/platform/tool/registry.go` |
+| LLM Provider | `internal/platform/llm/provider.go` |
+| Memory ports | `internal/platform/memory/ports.go` |
+| HandleInbound use case | `internal/agents/application/usecases/handle_inbound.go` |
+| WhatsApp inbound consumer | `internal/agents/infrastructure/messaging/database/consumers/whatsapp_inbound_consumer.go` |
+| Weather agent (build) | `internal/agents/application/agents/agent.go` |
+| Weather tool (build) | `internal/agents/application/tools/tool.go` |
 
 ---
 
-## Todos os Intent Kinds e Handlers
+## Resolucao e Loop de Tool-Calling
 
 ```mermaid
 flowchart TD
-    START([ParsedIntent recebida]) --> KIND{intent.Kind}
+    START([InboundRequest]) --> RT["AgentRuntime.Execute\nResourceID, ThreadID, AgentID, Message, MessageID"]
 
-    KIND -->|KindLogExpense| H1["ExpenseLogger\nlog_transaction_from_agent.go"]
-    KIND -->|KindLogIncome| H2["IncomeLogger\nvia ExpenseLogger direction=income"]
-    KIND -->|KindLogCardPurchase| H3["CardPurchaseLogger\nlog_card_purchase_from_agent.go"]
-    KIND -->|KindQueryCard| H4["CardInvoiceReader + CardLister\nquery_card.go"]
-    KIND -->|KindListCards| H5["CardLister\nlist_cards.go"]
-    KIND -->|KindCreateCard| H6["CardCreator\ncreate_card.go"]
-    KIND -->|KindCountCards| H7["CardCounter\ncount_cards.go"]
-    KIND -->|KindMonthlySummary| H8["MonthlySummaryReader\nmonthly_summary.go"]
-    KIND -->|KindHowAmIDoing| H9["MonthlySummaryReader\nhow_am_i_doing.go"]
-    KIND -->|KindListTransactions| H10["TransactionLister\nlist_transactions.go"]
-    KIND -->|KindDeleteLastTransaction| H11["LastDeleter\ndelete_last_transaction.go"]
-    KIND -->|KindEditLastTransaction| H12["LastEditor\nedit_last_transaction.go"]
-    KIND -->|KindCreateRecurring| H13["RecurringCreator\ncreate_recurring.go"]
-    KIND -->|KindListRecurring| H14["RecurringLister\nlist_recurring.go"]
-    KIND -->|KindQueryCategory| H15["CategorySearcher\nquery_category.go"]
-    KIND -->|KindQueryGoal| H16["GoalReader\nquery_goal.go"]
-    KIND -->|KindConfigureBudget| H17["BudgetConvoOrCommitter\nconfigure_budget.go"]
-    KIND -->|KindUnknown| H18["FallbackReply\nComposeConversationalReply"]
+    RT --> TH["ThreadGateway.GetOrCreate(resourceID, threadID)\n-> platform_threads"]
+    TH --> RUN["RunStore.Insert(Run status=running)\n-> platform_runs"]
+    RUN --> RES["AgentRegistry.Resolve(agentID)"]
 
-    H1 & H2 & H3 & H4 & H5 & H6 & H7 & H8 & H9 --> REPLY
-    H10 & H11 & H12 & H13 & H14 & H15 & H16 & H17 & H18 --> REPLY
+    RES -->|encontrado| AG["Agent.Execute(ctx, req)"]
+    RES -->|nao encontrado| ERR["erro: agent nao registrado\ncloseRun status=failed"]
 
-    REPLY["reply string\nWhatsAppGateway.SendTextMessage"]
+    AG --> LOOP{"loop tool-calling\nmax 5 rounds"}
+    LOOP -->|round| LLM["llm.Provider.Complete(ctx, Request)"]
+    LLM --> DEC{"Response tem\ntool_calls?"}
+
+    DEC -->|sim| TOOL["tool.ToolHandle.Invoke(ctx, argsJSON)\nresultado como role=tool"]
+    TOOL --> LOOP
+    DEC -->|nao| OUT["Response.Content final"]
+
+    LOOP -->|excedeu 5 rounds| EXH["erro: tool rounds exhausted"]
+
+    OUT --> APPEND["MessageStore.Append(user + assistant)\n-> platform_messages"]
+    APPEND --> CLOSE["closeRun(status=succeeded)\nplatform_runs.ended_at, duration_ms"]
+    CLOSE --> REPLY["Outcome{RunID, Content, Status, Mode}"]
 ```
 
 ---
 
-## Fluxo Completo do IntentRouter
+## Sequencia Completa: WhatsApp Inbound → AgentRuntime → Reply
 
 ```mermaid
 sequenceDiagram
     autonumber
 
-    participant AGT as AgentRoute
-    participant IR as IntentRouter
-    participant IP as IntentParser
-    participant BSS as BudgetSessionStore
-    participant BC as BudgetCancelCheck
-    participant ONB as OnboardingCheck
-    participant ONB_RUN as OnboardingRunner
-    participant HANDLER as Intent Handler
-    participant FALLBACK as ConversationalReply
-    participant EVT as EventPublisher
+    participant CONS as WhatsAppInboundConsumer
+    participant UC as HandleInbound
+    participant RT as AgentRuntime
+    participant TG as ThreadGateway
+    participant RS as RunStore
+    participant REG as AgentRegistry
+    participant AG as Agent
+    participant LLM as llm.Provider (OpenRouter)
+    participant TH as ToolHandle
+    participant MS as MessageStore
     participant GW as WhatsAppGateway
 
-    AGT->>+IR: RouteWhatsApp(ctx, principal, msg)
+    CONS->>+UC: Execute(InboundInput{ResourceID, ThreadID, AgentID, Message, MessageID})
+    Note over CONS: AgentID = "weather-agent"<br/>ResourceID = UserID, ThreadID = Peer
 
-    alt msg.Text vazio
-        IR->>GW: SendTextMessage fallbackMissingText
-        IR-->>AGT: RouteResult empty_text
-    end
+    UC->>+RT: Execute(ctx, InboundRequest)
 
-    IR->>+ONB: IsOnboarding(ctx, userID)
-    ONB-->>-IR: bool
+    RT->>+TG: GetOrCreate(resourceID, threadID)
+    TG-->>-RT: Thread (platform_threads)
 
-    alt usuario em onboarding
-        IR->>+ONB_RUN: RunOnboardingTurn(ctx, userID, text)
-        Note over ONB_RUN: modelo: anthropic/claude-haiku-4.5<br/>MaxTokens: 512<br/>gerencia fases via use cases:<br/>GetContext, SaveObjective, SaveIncome<br/>SaveCard, SaveBudgetSplits<br/>MarkFirstTx, SetPhase, Complete
-        ONB_RUN-->>-IR: reply string
-        IR->>GW: SendTextMessage reply
-        IR-->>AGT: RouteResult routed kind=onboarding
-    end
+    RT->>+RS: Insert(Run status=running)
+    RS-->>-RT: ok (platform_runs)
 
-    IR->>+BSS: GetDraft(ctx, userID)
-    BSS-->>-IR: BudgetDraft ou nil
+    RT->>+REG: Resolve(agentID)
+    REG-->>-RT: Agent
 
-    alt BudgetDraft ativo
-        IR->>+BC: matchesBudgetCancel(text)
-        Note over BC: palavras: cancelar, cancela,<br/>deixa pra la, esquece, parar
-        alt texto e cancelamento
-            BC-->>IR: true
-            IR->>BSS: DeleteDraft
-            IR->>GW: SendTextMessage budgetCancelledText
-            IR-->>AGT: RouteResult budget_cancelled
+    RT->>+AG: Execute(ctx, req)
+
+    loop max 5 rounds
+        AG->>+LLM: Complete(ctx, Request{Messages, Tools})
+        LLM-->>-AG: Response{Content, ToolCalls}
+
+        alt Response tem tool_calls
+            AG->>+TH: Invoke(ctx, argsJSON)
+            Note over TH: ex: get-weather (open-meteo)<br/>geocoding + forecast
+            TH-->>-AG: resultJSON (role=tool)
+            Note over AG: append result em Messages<br/>continua loop
+        else Sem tool_calls
+            Note over AG: resposta final pronta
         end
-        BC-->>IR: false
-
-        IR->>+HANDLER: BudgetConvo.Execute(ctx, userID, text, draft)
-        Note over HANDLER: conversa LLM coleta splits por categoria<br/>modelo primario Gemini Flash Lite
-        HANDLER-->>-IR: reply, newDraft
-        IR->>BSS: SaveDraft newDraft
-        IR->>GW: SendTextMessage reply
-        IR-->>AGT: RouteResult routed kind=configure_budget
     end
 
-    IR->>+IP: Parse(ctx, userID, text)
-    IP-->>-IR: ParsedIntent
+    AG-->>-RT: result{Content}
 
-    alt Parse falhou ErrFallbackChainExhausted
-        IR->>GW: SendTextMessage fallbackParseError
-        IR->>EVT: PublishRejected reason=parse_error
-        IR-->>AGT: RouteResult parse_error
+    RT->>+MS: Append(user message)
+    RT->>MS: Append(assistant message)
+    MS-->>-RT: ok (platform_messages)
+    Note over MS: PublishingMessageStore publica<br/>platform.memory.embedding.index.v1<br/>para indexacao assincrona
+
+    RT->>RT: closeRun(status=succeeded)
+    RT-->>-UC: Outcome{RunID, Content, Status, Mode}
+    UC-->>-CONS: Outcome
+
+    alt outcome.Content nao vazio
+        CONS->>+GW: SendTextMessage(peer, outcome.Content)
+        GW-->>-CONS: nil
     end
-
-    alt DirectReply (LLM retornou texto livre)
-        IR->>+FALLBACK: Execute(ctx, text)
-        Note over FALLBACK: segunda chamada LLM com FreeText=true<br/>MaxTokens: AGENT_LLM_PROSE_MAX_TOKENS=200
-        FALLBACK-->>-IR: reply
-        IR->>GW: SendTextMessage reply
-        IR->>EVT: PublishExecuted kind=direct_reply
-        IR-->>AGT: RouteResult routed kind=direct_reply
-    end
-
-    IR->>+HANDLER: dispatch(ctx, principal, intent)
-    alt Handler falhou
-        HANDLER-->>IR: error
-        IR->>GW: SendTextMessage fallbackUsecaseError
-        IR->>EVT: PublishRejected reason=usecase_error
-        IR-->>AGT: RouteResult usecase_error
-    end
-    HANDLER-->>-IR: reply
-
-    IR->>EVT: PublishExecuted intent event
-    IR->>GW: SendTextMessage reply
-    IR-->>-AGT: RouteResult routed
 ```
 
 ---
 
-## Tabela Completa: Kind Handler Modulo
-
-| Kind | Handler / Use Case | Modulo | Operacao |
-|------|-------------------|--------|---------|
-| `KindLogExpense` | `ExpenseLogger` | Transactions | Cria Transaction direction=outcome |
-| `KindLogIncome` | `ExpenseLogger` | Transactions | Cria Transaction direction=income |
-| `KindLogCardPurchase` | `CardPurchaseLogger` | Transactions | Cria CardPurchase com parcelas |
-| `KindQueryCard` | `CardInvoiceReader + CardLister` | Card | Lista cartoes e busca fatura do mes |
-| `KindListCards` | `CardLister` | Card | Lista cartoes (limit 200) |
-| `KindCreateCard` | `CardCreator` | Card | Cria cartao com closing_day, due_day |
-| `KindCountCards` | `CardCounter` | Card | Conta cartoes do usuario |
-| `KindMonthlySummary` | `MonthlySummaryReader` | Budgets | Resumo receita/despesa/saldo do mes |
-| `KindHowAmIDoing` | `MonthlySummaryReader` | Budgets | Versao conversacional do resumo |
-| `KindListTransactions` | `TransactionLister` | Transactions | Lista ultimas N transacoes |
-| `KindDeleteLastTransaction` | `LastDeleter` | Transactions | Soft-delete da ultima transacao |
-| `KindEditLastTransaction` | `LastEditor` | Transactions | Edita ultima transacao |
-| `KindCreateRecurring` | `RecurringCreator` | Transactions | Cria recorrencia com day_of_month |
-| `KindListRecurring` | `RecurringLister` | Transactions | Lista recorrencias ativas |
-| `KindQueryCategory` | `CategorySearcher` | Categories | Busca categoria por nome |
-| `KindQueryGoal` | `GoalReader` | Budgets | Consulta meta/objetivo de orcamento |
-| `KindConfigureBudget` | `BudgetConvo / BudgetCommitter` | Budgets | Inicia ou continua config de orcamento |
-| `KindUnknown` | `ComposeConversationalReply` | Agent LLM | Resposta livre via LLM |
-
----
-
-## rawIntentDTO — Schema da Resposta LLM
+## Tipos Fechados (DMMF state-as-type)
 
 ```mermaid
 classDiagram
-    class rawIntentDTO {
-        +string Kind
-        +int64 AmountCents
-        +string Merchant
-        +string CategoryHint
-        +string PaymentMethod
-        +string CardHint
-        +string CategoryName
-        +string GoalName
-        +string CardName
-        +string Nickname
-        +string RefMonth
-        +string RawText
-        +int Installments
-        +string Direction
-        +string Frequency
-        +int DayOfMonth
-        +int ClosingDay
-        +int DueDay
-        +int64 LimitCents
+    class InboundRequest {
+        +string ResourceID
+        +string ThreadID
+        +string AgentID
+        +string Message
+        +string MessageID
     }
 
-    class Intent {
-        +string Kind
-        +int64 AmountCents
-        +string Merchant
-        +string CategoryHint
-        +string PaymentMethod
-        +string CardHint
-        +string RefMonth
-        +string RawText
-        +int Installments
-        +string Direction
-        +string Frequency
-        +int DayOfMonth
-        +string CategoryName
-        +string GoalName
-        +string CardName
-        +string Nickname
-        +int ClosingDay
-        +int DueDay
-        +int64 LimitCents
-        +string ResponseHint
-        +string DirectReply
-        +string Error
+    class Outcome {
+        +uuid.UUID RunID
+        +string Content
+        +RunStatus Status
+        +ExecutionMode Mode
     }
 
-    rawIntentDTO --> Intent : mapeado por ParseInbound
+    class RunStatus {
+        <<enum>>
+        RunStatusRunning
+        RunStatusSucceeded
+        RunStatusFailed
+    }
+
+    class ToolOutcome {
+        <<enum>>
+        ToolOutcomeRouted
+        ToolOutcomeClarify
+        ToolOutcomeUsecaseError
+        ToolOutcomeMissingResolver
+        ToolOutcomeReplay
+    }
+
+    class ExecutionMode {
+        <<enum>>
+        ExecutionModeSync
+        ExecutionModeStream
+    }
+
+    InboundRequest --> Outcome : AgentRuntime.Execute
+    Outcome --> RunStatus
+    Outcome --> ExecutionMode
 ```
+
+`RunStatus`, `ToolOutcome` e `ExecutionMode` sao tipos fechados com constantes enumeradas (DMMF state-as-type). Nunca representados como string livre na fronteira de codigo.
 
 ---
 
-## Fluxo Especial: Onboarding com LLM
+## ToolHandle — Contrato
 
 ```mermaid
-sequenceDiagram
-    participant IR as IntentRouter
-    participant ONB as OnboardingRunner
-    participant LLM as FallbackChain claude-haiku-4.5
-    participant UC as OnboardingLLM UseCases
+classDiagram
+    class ToolHandle {
+        <<interface>>
+        +ID() string
+        +Description() string
+        +Parameters() map~string,any~
+        +Invoke(ctx, argsJSON []byte) ([]byte, error)
+    }
 
-    IR->>+ONB: RunOnboardingTurn(ctx, userID, text)
-    ONB->>+UC: GetContext(ctx, userID)
-    UC-->>-ONB: OnboardingContext fase atual
+    class Registry {
+        <<interface>>
+        +Register(h ToolHandle)
+        +Resolve(id string) (ToolHandle, error)
+    }
 
-    ONB->>+LLM: Interpret(ctx, LLMRequest)
-    Note over LLM: modelo: anthropic/claude-haiku-4.5<br/>MaxTokens: 512<br/>schema estruturado de resposta
-    LLM-->>-ONB: acao a tomar
-
-    alt fase collect_objective
-        ONB->>UC: SaveObjective
-    else fase collect_income
-        ONB->>UC: SaveIncome
-    else fase collect_card
-        ONB->>UC: SaveCard
-    else fase collect_budget
-        ONB->>UC: SaveBudgetSplits
-    else fase complete
-        ONB->>UC: Complete
-        ONB->>UC: MarkFirstTx
-    end
-
-    ONB->>UC: SetPhase(nextPhase)
-    ONB-->>-IR: reply string
+    Registry --> ToolHandle : resolve
 ```
 
----
-
-## State Machine: Budget Configuration (Sessao Multi-turn)
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle : usuario autenticado
-
-    Idle --> BudgetSession : KindConfigureBudget detectada
-    BudgetSession --> BudgetSession : conversa LLM coleta splits
-    BudgetSession --> Committed : todos splits coletados BudgetCommitter
-    BudgetSession --> Idle : matchesBudgetCancel true DeleteDraft
-    Committed --> Idle : orcamento salvo sessao encerrada
-```
+Cada `ToolHandle` e um adapter fino de responsabilidade unica: valida o JSON de entrada contra o schema, executa a funcao de dominio e serializa o resultado. Zero regra de negocio, SQL ou branching de dominio (R-ADAPTER-001 / R-AGENT-WF-001.2). No consumidor de referencia, a tool e `get-weather` (`BuildWeatherTool`), que consulta a API open-meteo via `weather.Client`.
 
 ---
 
-## Textos de Fallback
+## Agent de Referencia: Weather (internal/agents)
 
-| Situacao | Texto |
-|----------|-------|
-| Mensagem vazia | Nao recebi nenhuma mensagem. Me conta o que voce precisa nas suas financas |
-| Erro de parse LLM | Nao entendi direito. Pode reformular? Posso te ajudar com cartoes, orcamento e lancamentos. |
-| Erro em use case | Tive uma instabilidade para consultar isso agora. Tente de novo em instantes |
-| Registro indisponivel | Ainda nao consigo registrar lancamentos por aqui. Ja ja isso fica disponivel pra voce |
-| Sem transacoes | Nao encontrei nenhum lancamento recente seu para mexer. Quer registrar um agora? |
-| Budget cancelado | Ok, cancelei a configuracao do orcamento. Quando quiser, e so chamar de novo. |
+| Bloco | Construtor | Identificador |
+|------|-----------|---------------|
+| Agent | `BuildWeatherAgent` | `weather-agent` |
+| Tool | `BuildWeatherTool` | `get-weather` (open-meteo) |
+| Workflow | `BuildWeatherWorkflow` | `weather-workflow` (steps `fetch-weather`, `plan-activities`) |
+| Scorers | `BuildWeatherScorers` | `tool-call-accuracy`, `completeness`, `translation` (LLM-judged) |
+
+O wiring vive em `internal/agents/module.go`: monta `llm.NewOpenRouterProvider`, registra o agent no `AgentRegistry`, instancia memoria (thread/message/working/embedding), `RunStore`, `ScorerRunner` e o `AgentRuntime`. O canal WhatsApp entra via `WhatsAppInboundConsumer` ouvindo o evento `agents.whatsapp.inbound.v1`.
 
 ---
 
-## RouteResult Outcomes
+## Metricas Emitidas
 
-| Outcome | Significado |
-|---------|------------|
-| `routed` | Intent processada e resposta enviada com sucesso |
-| `fallback` | Resposta via LLM conversacional kind=unknown |
-| `parse_error` | FallbackChain esgotada, enviou mensagem de erro |
-| `usecase_error` | Use case falhou, enviou mensagem de instabilidade |
-| `missing_resolver` | Canal sem gateway configurado |
-| `reply_failed` | Gateway de envio falhou |
-| `empty_text` | Mensagem vazia recebida |
+| Metrica | Tipo | Labels | Descricao |
+|---------|------|--------|-----------|
+| `agent_runs_total` | Counter | `agent_id`, `status` | Runs por agente e status |
+| `agent_run_duration_seconds` | Histogram | `agent_id` | Duracao do run |
+| `agent_tool_invocations_total` | Counter | `agent_id`, `tool` | Tool calls invocados |
+| `agent_stream_total` | Counter | `agent_id` | Execucoes em modo stream |
+| `agents_whatsapp_inbound_total` | Counter | `channel`, `outcome` | Inbound processados pelo consumer |
+| `agents_whatsapp_route_total` | Counter | `outcome` | Mensagens roteadas no server |
+
+**Cardinalidade controlada:** nenhum label de alta cardinalidade (`user_id`, `resource_id`, `correlation_key`). Labels sao enums fechados.
+</content>
