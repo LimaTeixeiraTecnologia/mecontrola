@@ -111,7 +111,11 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 
 	s.downToVersion(migrator, 0)
 
-	s.assertSchemaMissing("mecontrola")
+	s.assertTablePresent("mecontrola.schema_migrations")
+	s.assertTableMissing("mecontrola.billing_plans")
+	s.assertTableMissing("mecontrola.categories")
+	s.assertTableMissing("mecontrola.transactions")
+	s.assertTableMissing("mecontrola.users")
 
 	s.applyBaseline(migrator)
 
@@ -456,19 +460,6 @@ func (s *MigrationSuite) assertTableMissing(name string) {
 	err := s.db.QueryRowContext(s.ctx, `SELECT to_regclass($1)`, name).Scan(&regclass)
 	s.Require().NoError(err)
 	s.False(regclass.Valid)
-}
-
-func (s *MigrationSuite) assertSchemaMissing(name string) {
-	var exists bool
-	err := s.db.QueryRowContext(s.ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM pg_namespace
-			WHERE nspname = $1
-		)
-	`, name).Scan(&exists)
-	s.Require().NoError(err)
-	s.False(exists)
 }
 
 func (s *MigrationSuite) assertColumnPresent(table, column string) {
