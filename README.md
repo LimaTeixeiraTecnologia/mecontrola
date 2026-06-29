@@ -1,11 +1,11 @@
 # MeControla
 
-[![CI](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci.yml/badge.svg)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
 ![Signed Image](https://img.shields.io/badge/image-signed%20cosign-brightgreen)
 ![SBOM Available](https://img.shields.io/badge/SBOM-SPDX--JSON-blue)
 ![Governance](https://img.shields.io/badge/governance-ai--spec-purple)
 
-Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp e Telegram, com bootstrap separado para server, worker e migrations.
+Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp, com bootstrap separado para server, worker e migrations.
 
 ---
 
@@ -74,13 +74,13 @@ Monolito modular com 9 bounded contexts em `internal/`. Cada módulo segue as ca
 |---|---|
 | `internal/identity` | Usuários, principal/auth, entitlements, gateway HMAC-SHA256, housekeeping de `auth_events` |
 | `internal/billing` | Webhook Kiwify, reconciliação de assinaturas, grace period PAST_DUE (3 dias), housekeeping de eventos |
-| `internal/onboarding` | Magic token, ativação via WhatsApp/Telegram, outreach, expiração de tokens, limpeza de mensagens Meta |
+| `internal/onboarding` | Magic token, ativação via WhatsApp, outreach, expiração de tokens, limpeza de mensagens Meta e prompts determinísticos por etapa |
 | `internal/categories` | Catálogo de categorias, dicionário com busca HTTP e ETag cache |
 | `internal/card` | CRUD de cartões, listagem paginada, fatura por competência, conformidade PCI RF-16 |
 | `internal/budgets` | Orçamentos mensais, despesas, recorrência, resumo mensal, reaper/purge jobs |
 | `internal/transactions` | Transações financeiras (DMMF/Decide\*), idempotência, resumo mensal, recorrência materializada |
-| `internal/agent` | Integração LLM via OpenRouter; padrão canônico Workflow/Tool com WorkflowRegistry (intent kind → Workflow → Tool → binding → usecase); runtime Thread/Run auditável com métricas; circuit breaker; dispatch multicanal (WhatsApp/Telegram) |
-| `internal/platform` | Outbox transacional, worker manager, WhatsApp Cloud API, Telegram Bot, idempotência, rate limit |
+| `internal/agent` | Integração LLM via OpenRouter; padrão canônico Workflow/Tool com WorkflowRegistry (intent kind → Workflow → Tool → binding → usecase); runtime Thread/Run auditável com métricas; circuit breaker; dispatch via WhatsApp; fallbacks determinísticos para sessões ativas de orçamento |
+| `internal/platform` | Outbox transacional, worker manager, WhatsApp Cloud API, idempotência, rate limit |
 
 ---
 
@@ -116,6 +116,7 @@ APP_MODE=server
 
 ```env
 PORT=8080
+WORKER_HEALTH_ADDR=:8081
 SERVICE_NAME_API=mecontrola-api
 SERVICE_NAME_WORKER=mecontrola-worker
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
@@ -178,6 +179,20 @@ GRAFANA_ADMIN_PASSWORD=CHANGE_ME_use_strong_password
 
 > Em produção: defina `GRAFANA_ADMIN_PASSWORD` com valor forte. O default `admin@dev` é aceito apenas em dev local.
 
+### Deploy / infraestrutura
+
+```env
+APP_DOMAIN=CHANGE_ME_yourdomain.com
+CADDY_EMAIL=CHANGE_ME_your@email.com
+IMAGE_NAME=ghcr.io/limateixeiratecnologia/mecontrola
+IMAGE_TAG=latest
+POSTGRES_IMAGE=postgres:16-alpine
+PGBACKREST_S3_BUCKET=CHANGE_ME_mecontrola-backups-123456789012-use1
+PGBACKREST_REPO1_CIPHER_PASS=CHANGE_ME_gerar_senha_forte_32_plus_caracteres
+ALERT_TELEGRAM_BOT_TOKEN=
+ALERT_TELEGRAM_CHAT_ID=
+```
+
 ### Outbox transacional (RF-26 / D-03)
 
 ```env
@@ -206,6 +221,13 @@ KIWIFY_PRODUCT_ID_QUARTERLY=CHANGE_ME_product_id_quarterly
 KIWIFY_PRODUCT_ID_ANNUAL=CHANGE_ME_product_id_annual
 KIWIFY_WEBHOOK_SECRET=CHANGE_ME_generate_secure_webhook_secret
 KIWIFY_WEBHOOK_SECRET_NEXT=
+KIWIFY_WEBHOOK_TOKEN_HEADER=X-Kiwify-Webhook-Token
+KIWIFY_OAUTH_TOKEN_SAFETY_MARGIN=5m
+KIWIFY_RATE_LIMIT_MAX_REQUESTS_PER_MIN=100
+KIWIFY_RATE_LIMIT_BURST=10
+KIWIFY_WEBHOOK_RATE_LIMIT_PER_MIN=60
+KIWIFY_WEBHOOK_RATE_LIMIT_BURST=30
+KIWIFY_WEBHOOK_TRUSTED_PROXIES=
 KIWIFY_RECONCILIATION_INTERVAL=@hourly
 KIWIFY_RECONCILIATION_BATCH_SIZE=200
 KIWIFY_HTTP_TIMEOUT=10s
@@ -219,7 +241,11 @@ KIWIFY_HTTP_RETRY_BACKOFF=1s
 BILLING_ENTITLEMENT_CACHE_CAPACITY=50000
 BILLING_ENTITLEMENT_CACHE_TTL=5m
 BILLING_ANONYMIZATION_SCHEDULE=@daily
+BILLING_ANONYMIZATION_BATCH_SIZE=500
 BILLING_ANONYMIZATION_RETENTION_DAYS=365
+BILLING_KIWIFY_EVENTS_RETENTION_DAYS=90
+BILLING_KIWIFY_EVENTS_HOUSEKEEPING_SCHEDULE=@daily
+BILLING_KIWIFY_EVENTS_HOUSEKEEPING_BATCH=500
 BILLING_GRACE_EXPIRATION_SCHEDULE=@daily
 ```
 
@@ -231,6 +257,21 @@ BUDGETS_PENDING_TTL_HOURS=24
 BUDGETS_ABANDONED_DRAFT_CRON=0 3 * * *
 BUDGETS_RETENTION_PURGE_CRON=0 4 1 * *
 BUDGETS_RETENTION_PURGE_BATCH_SIZE=500
+BUDGETS_THRESHOLD_ALERTS_CRON=@hourly
+BUDGETS_THRESHOLD_ALERTS_MODE=legacy
+BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT=500
+BUDGETS_THRESHOLD_CATEGORY_RATIO=0.80
+BUDGETS_THRESHOLD_GOAL_RATIO=0.50
+BUDGETS_THRESHOLD_CARD_RATIO=0.85
+```
+
+### Card
+
+```env
+CARD_INVOICE_DUE_ALERTS_ENABLED=false
+CARD_INVOICE_DUE_ALERTS_CRON=@daily
+CARD_INVOICE_DUE_WINDOW_DAYS=3
+CARD_INVOICE_DUE_SCAN_LIMIT=500
 ```
 
 ### Transactions
@@ -241,6 +282,7 @@ TRANSACTIONS_IDEMPOTENCY_TTL=24h
 TRANSACTIONS_MONTHLY_SUMMARY_DEBOUNCE_WINDOW=1500ms
 TRANSACTIONS_RECURRING_MATERIALIZER_CRON=@daily
 TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_CRON=@daily
+TRANSACTIONS_MONTHLY_SUMMARY_RECONCILER_LOOKBACK_HOURS=48
 TRANSACTIONS_BRAZIL_TIMEZONE=America/Sao_Paulo
 ```
 
@@ -250,14 +292,23 @@ TRANSACTIONS_BRAZIL_TIMEZONE=America/Sao_Paulo
 ONBOARDING_TOKEN_TTL_DAYS=7
 ONBOARDING_OUTREACH_GAP_HOURS=2
 ONBOARDING_OUTREACH_ENABLED=false
+ONBOARDING_CHECKOUT_CORS_ORIGINS=https://www.mecontrola.app.br,https://mecontrola.app.br
+ONBOARDING_TRUSTED_PROXIES=127.0.0.1/32,::1/128
 ONBOARDING_CHECKOUT_RATE_LIMIT_PER_MIN=10
 ONBOARDING_CHECKOUT_RATE_LIMIT_BURST=5
 ONBOARDING_STATE_RATE_LIMIT_PER_MIN=30
+ONBOARDING_STATE_RATE_LIMIT_BURST=10
+ONBOARDING_KIWIFY_CHECKOUT_URLS=
+ONBOARDING_KIWIFY_ALLOWED_HOSTS=pay.kiwify.com.br
 ONBOARDING_TOKEN_ENCRYPTION_KEY=CHANGE_ME_32_byte_token_encryption_key
 ONBOARDING_TOKEN_EXPIRATION_SCHEDULE=0 3 * * *
 ONBOARDING_MAX_TOKEN_LOOKUP_ATTEMPTS=5
 ONBOARDING_META_RETENTION_DAYS=30
 ONBOARDING_META_CLEANUP_SCHEDULE=30 3 * * *
+ONBOARDING_CARD_CLOSING_OFFSET_DAYS=10
+ONBOARDING_ABANDONMENT_TTL_HOURS=48
+ONBOARDING_ABANDONMENT_JOB_SCHEDULE=@hourly
+ONBOARDING_ABANDONMENT_BATCH_SIZE=100
 ```
 
 ### WhatsApp / Meta Cloud API
@@ -274,33 +325,38 @@ WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN=600
 WHATSAPP_WEBHOOK_RATE_LIMIT_BURST=100
 ```
 
-### Telegram
+### Alertas Telegram (Grafana)
 
 ```env
-TELEGRAM_ENABLED=false
-TELEGRAM_BOT_TOKEN=CHANGE_ME_telegram_bot_token
-TELEGRAM_BOT_ID=0
-TELEGRAM_BOT_USERNAME=CHANGE_ME_bot_username
-TELEGRAM_SECRET_TOKEN=CHANGE_ME_telegram_secret_token
-TELEGRAM_SECRET_TOKEN_NEXT=
-TELEGRAM_WEBHOOK_PATH=/api/v1/channels/telegram/webhook
-TELEGRAM_WEBHOOK_RATE_LIMIT_PER_MIN=600
-TELEGRAM_OUTBOUND_TIMEOUT=10s
+ALERT_TELEGRAM_BOT_TOKEN=
+ALERT_TELEGRAM_CHAT_ID=
 ```
 
 ### Agent / LLM (OpenRouter)
 
 ```env
+OPENROUTER_BASE_URL=https://openrouter.ai
 OPENROUTER_API_KEY=CHANGE_ME_openrouter_api_key
 AGENT_LLM_HTTP_REFERER=https://mecontrola.app
+AGENT_LLM_X_TITLE=MeControla
 AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
 AGENT_LLM_FALLBACK_MODELS=mistralai/mistral-small-3.2-24b-instruct
-AGENT_LLM_MAX_TOKENS=256
+AGENT_LLM_MAX_TOKENS=768
+AGENT_LLM_PROSE_MAX_TOKENS=200
 AGENT_LLM_TEMPERATURE=0
 AGENT_LLM_REQUEST_TIMEOUT=8s
 AGENT_LLM_CIRCUIT_FAILURES=5
 AGENT_LLM_CIRCUIT_WINDOW=30s
 AGENT_LLM_CIRCUIT_COOLDOWN=60s
+AGENT_POLICY_MIN_CONFIDENCE=0.8
+AGENT_LLM_PARSE_PRIMARY_MODEL=
+AGENT_LLM_PARSE_FALLBACK_MODELS=
+AGENT_LLM_PARSE_MAX_TOKENS=0
+AGENT_LLM_CONV_PRIMARY_MODEL=
+AGENT_LLM_CONV_FALLBACK_MODELS=
+AGENT_LLM_CONV_MAX_TOKENS=0
+AGENT_ONBOARDING_LLM_MODEL=anthropic/claude-haiku-4.5
+AGENT_ONBOARDING_LLM_MAX_TOKENS=512
 ```
 
 ### Gateway Auth (HMAC-SHA256)
@@ -314,6 +370,17 @@ IDENTITY_GATEWAY_AUTH_WINDOW=60s
 IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE=@daily
 IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH=500
 IDENTITY_AUTH_EVENTS_RETENTION_DAYS=90
+```
+
+### Workflow kernel
+
+```env
+WORKFLOW_KERNEL_MAX_ATTEMPTS=3
+WORKFLOW_KERNEL_RETRY_BASE_BACKOFF=200ms
+WORKFLOW_KERNEL_RETRY_MAX_BACKOFF=5s
+WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS=30
+WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE=@daily
+WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE=500
 ```
 
 ---
@@ -465,7 +532,7 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 
 | Task | Objetivo |
 |---|---|
-| `task lint:run` | golangci-lint + gates: auth-bypass, outbox-user-id |
+| `task lint:run` | golangci-lint + gates: auth-bypass, outbox-user-id, deadcode do `internal/agent` |
 | `task lint:fix` | Aplica correções automáticas do linter |
 | `task lint:fmt` | gofmt + goimports |
 | `task lint:fmt:check` | Falha se arquivo não formatado (uso em CI) |
@@ -485,13 +552,14 @@ O projeto usa [Task](https://taskfile.dev) `v3.51.1`. Execute `task --list-all` 
 | `task check` | `lint:run` + `test:unit` + `security:vulncheck` — executar antes de abrir PR |
 | `task ci:pipeline` | Pipeline CI completa (lint + testes + segurança + build) |
 | `task ci:fast` | Subconjunto rápido para feedback em PR (lint + testes unitários) |
+| `task ci:agent-boundary` | Gate de fronteira de dados do `internal/agent` |
 
 ### Segurança
 
 | Task | Objetivo | Requer |
 |---|---|---|
-| `task security:vulncheck` | govulncheck + trivy fs HIGH/CRITICAL | govulncheck, trivy |
-| `task security:scan` | vulncheck + audit | govulncheck, trivy |
+| `task security:vulncheck` | govulncheck nas dependências Go | govulncheck |
+| `task security:scan` | vulncheck + audit | govulncheck |
 | `task security:audit` | `go list -m -u all` + `go mod verify` | — |
 | `task security:image-scan IMAGE_SHA=<sha>` | Trivy na imagem do GHCR | trivy, acesso GHCR |
 | `task security:sbom IMAGE_SHA=<sha>` | Gera `sbom.spdx.json` da imagem | trivy, acesso GHCR |
@@ -573,107 +641,161 @@ task local:down      # para os containers
 
 ## Reset do banco de produção
 
-Procedimento para apagar todos os dados e recriar o schema a partir das migrations. Usado quando o banco de produção precisa ser trazido ao estado inicial (novo banco limpo + seeds).
+Procedimento para zerar o banco de produção e recriar o schema exclusivamente a partir das migrations atuais do projeto.
 
-> ⚠️ **Operação destrutiva e irreversível.** Todos os dados de produção serão apagados permanentemente.
+> ⚠️ **Operação destrutiva e irreversível.** Execute apenas em janela de manutenção e com backup validado.
 
-### Como funciona
+### Antes de começar
 
-O binário expõe `migrate-down --steps -1` (reverte todas via `migrator.Down()`) e `migrate` (reaplicar via `migrator.Up()`). Em produção, ambos são executados pelo serviço `migrate` do Compose, que conecta diretamente ao postgres (sem pgbouncer).
+1. Confirme que o deploy de produção usa a stack Swarm em `/opt/mecontrola`.
+2. Faça backup antes do reset:
 
-### Passo 1 — Execute na VPS via docker compose
+```bash
+ssh root@187.77.45.48
+cd /opt/mecontrola
+task swarm:prod:pgbackrest:backup TYPE=full
+task swarm:prod:pgbackrest:info
+```
+
+3. Pause a aplicação para evitar escrita concorrente durante o reset:
+
+```bash
+STACK=mecontrola
+docker service scale \
+  ${STACK}_server-1=0 \
+  ${STACK}_server-2=0 \
+  ${STACK}_worker-1=0 \
+  ${STACK}_worker-2=0
+```
+
+### Reset na VPS usando a imagem atual
+
+O caminho correto em produção é usar a mesma imagem configurada no host, conectando direto na rede Swarm `mecontrola_backend` e no `postgres` (sem pgbouncer).
 
 ```bash
 ssh root@187.77.45.48
 cd /opt/mecontrola
 
-# Reverter TODAS as migrations (apaga dados e schema)
-docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  run --rm migrate migrate-down --steps -1
+STACK=mecontrola
+IMAGE_NAME=${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}
+IMAGE_TAG=$(grep '^IMAGE_TAG=' .env | cut -d= -f2)
 
-# Reaplicar TODAS as migrations (recria schema + seeds)
-docker compose --env-file .env \
-  -f deployment/compose/compose.yml \
-  -f deployment/compose/compose.prod.yml \
-  run --rm migrate migrate
+# Reverter TODAS as migrations
+docker run --rm \
+  --network "${STACK}_backend" \
+  --env-file .env \
+  -e ENVIRONMENT=production \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  "${IMAGE_NAME}:${IMAGE_TAG}" \
+  migrate-down --steps -1
+
+# Reaplicar TODAS as migrations
+docker run --rm \
+  --network "${STACK}_backend" \
+  --env-file .env \
+  -e ENVIRONMENT=production \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  "${IMAGE_NAME}:${IMAGE_TAG}" \
+  migrate
 ```
 
-Saída esperada: `migrations reverted (steps=-1)` seguido de `migrations applied`.
+Saída esperada: reversão completa seguida de reaplicação bem-sucedida das migrations `000001` e `000002`.
 
-### Passo 2 — Verificar estado pós-reset
+### Verificação pós-reset
 
 ```bash
-# Confirma versão mais alta e dirty=false
-docker exec mecontrola-postgres-1 psql -U mecontrola -d mecontrola_db \
-  -c "SELECT version, dirty FROM mecontrola.schema_migrations ORDER BY version;"
+STACK=mecontrola
+POSTGRES_CONTAINER=$(docker ps --filter name="${STACK}_postgres." --format '{{.Names}}' | head -n1)
 
-# Confirma seed: dicionário de categorias (≥544 entradas)
-docker exec mecontrola-postgres-1 psql -U mecontrola -d mecontrola_db \
-  -c "SELECT COUNT(*) FROM mecontrola.category_dictionary;"
+# Confirma schema_migrations consistente
+docker exec "${POSTGRES_CONTAINER}" \
+  psql -U "${DB_USER:-mecontrola}" -d "${DB_NAME:-mecontrola_db}" \
+  -c 'SELECT version, dirty FROM schema_migrations ORDER BY version;'
+
+# Confirma seed do dicionário
+docker exec "${POSTGRES_CONTAINER}" \
+  psql -U "${DB_USER:-mecontrola}" -d "${DB_NAME:-mecontrola_db}" \
+  -c 'SELECT COUNT(*) FROM mecontrola.category_dictionary;'
 ```
 
-Resultado esperado: versão `18`, `dirty = false`, contagem `544`.
+Resultado esperado:
+- última versão em `schema_migrations` = `2`
+- `dirty = false`
+- `category_dictionary` com dados seedados
 
-### Via túnel SSH (alternativa local)
-
-Se preferir executar localmente com o túnel ativo (`mecontrola-db` no `.zshrc`):
+### Reativar a aplicação
 
 ```bash
-# Terminal 1 — abrir túnel
-mecontrola-db   # ou: ssh -N -L 5433:172.18.0.2:5432 root@187.77.45.48
+STACK=mecontrola
+docker service scale \
+  ${STACK}_server-1=1 \
+  ${STACK}_server-2=1 \
+  ${STACK}_worker-1=1 \
+  ${STACK}_worker-2=1
 
-# Terminal 2 — reverter e reaplicar
-DB_HOST=localhost DB_PORT=5433 \
-  DB_USER=mecontrola DB_PASSWORD=<senha> DB_NAME=mecontrola_db DB_SSL_MODE=disable \
-  go run ./cmd/... migrate-down --steps -1
+for svc in server-1 server-2 worker-1 worker-2; do
+  until docker ps --filter name="${STACK}_${svc}" --filter health=healthy --format '{{.Names}}' | grep -q .; do
+    echo "aguardando ${svc}..."; sleep 5
+  done
+done
+```
 
-DB_HOST=localhost DB_PORT=5433 \
-  DB_USER=mecontrola DB_PASSWORD=<senha> DB_NAME=mecontrola_db DB_SSL_MODE=disable \
-  go run ./cmd/... migrate
+### Execução remota a partir do macOS
+
+Se quiser disparar o reset a partir do macOS sem abrir shell interativo na VPS, execute os mesmos comandos via `ssh`:
+
+```bash
+ssh root@187.77.45.48 '
+  cd /opt/mecontrola &&
+  STACK=mecontrola &&
+  IMAGE_NAME=${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola} &&
+  IMAGE_TAG=$(grep "^IMAGE_TAG=" .env | cut -d= -f2) &&
+  docker run --rm --network "${STACK}_backend" --env-file .env \
+    -e ENVIRONMENT=production -e DB_HOST=postgres -e DB_PORT=5432 \
+    "${IMAGE_NAME}:${IMAGE_TAG}" migrate-down --steps -1 &&
+  docker run --rm --network "${STACK}_backend" --env-file .env \
+    -e ENVIRONMENT=production -e DB_HOST=postgres -e DB_PORT=5432 \
+    "${IMAGE_NAME}:${IMAGE_TAG}" migrate
+'
 ```
 
 ### Reset completo do banco local
 
 ```bash
-task local:destroy   # remove volumes (pede confirmação)
-task local:up        # recria schema + seeds do zero
+task local:destroy
+task local:up
 ```
 
 ---
 
 ## CI/CD
 
-Dois workflows GitHub Actions independentes. CI valida qualidade e segurança a cada PR e na main; CD implanta na VPS somente após CI verde na main (ou via dispatch manual).
+O fluxo principal está centralizado em `.github/workflows/ci-cd.yml`. Ele valida build, qualidade, testes, vulnerabilidades, imagem, assinatura e deploy em staging a cada `push` na `main`. Há ainda um workflow manual separado para E2E e um workflow específico para auto-merge de PRs do Dependabot.
 
-### CI (`.github/workflows/ci.yml`)
+### Pipeline principal (`.github/workflows/ci-cd.yml`)
 
-Ativado em `pull_request` (branches: main) e `push` (branch: main).
+Ativado em `push` na `main` e manualmente via `workflow_dispatch`.
 
 | Job | Quando | O que faz |
 |---|---|---|
-| `lint` | sempre | `lint:run` + `lint:fmt:check` + `lint:pci` |
-| `unit` | sempre | `test:unit` + upload de artefato de cobertura |
-| `integration` | sempre | `test:integration` com testcontainers |
-| `security` | sempre | `security:vulncheck` (govulncheck + trivy fs) |
-| `governance` | sempre | ai-spec doctor + lint, conventional commits, validação do Taskfile |
-| `card-audit` | sempre | `card:audit` (gates R0–R7 + anti-PCI) |
-| `coverage-comment` | apenas PR | Posta relatório de cobertura como comentário no PR |
-| `build-image` | apenas main | Build + push da imagem para GHCR com tag = SHA curto |
-| `scan-and-attest` | apenas main | Trivy image scan + SBOM SPDX-JSON + cosign sign + attestations |
+| `build` | sempre | `task build:build` |
+| `lint` | sempre | `task lint:run` + `task lint:deadcode` + `task lint:fmt:check` + `task lint:pci` |
+| `unit` | sempre | `task test:unit` + upload de cobertura unitária |
+| `integration` | sempre | `task test:integration` com Docker/testcontainers |
+| `vulncheck` | sempre | `task security:vulncheck` |
+| `agent-data-boundary` | sempre | `task ci:agent-boundary` |
+| `build-image` | após gates verdes | build + push da imagem para GHCR com tag = SHA curto |
+| `scan-image` | após build da imagem | Trivy image scan e upload SARIF |
+| `sign-image` | após build da imagem | assinatura cosign keyless |
+| `deploy` | `main` | deploy Swarm em staging via runner self-hosted |
+| `healthcheck` | após deploy | valida `/health` e `/ready` do staging |
+| `notify` | `main` | notificação final no Telegram com status da run |
 
-### CD (`.github/workflows/cd.yml`)
+### E2E manual (`.github/workflows/e2e.yml`)
 
-Ativado automaticamente após CI verde na main, ou manualmente via `workflow_dispatch` com `image_tag` customizado.
-
-```
-Automático (workflow_run):
-  gate (download image-meta do CI) → deploy VPS
-
-Manual (workflow_dispatch com image_tag):
-  deploy VPS
-```
+Workflow manual para testes E2E BDD com Godog (`task test:e2e`) e upload de `coverage/e2e.out`, com notificação opcional no Telegram ao final.
 
 ### Dependabot (`.github/workflows/auto-merge.yml`)
 
@@ -706,7 +828,7 @@ task swarm:local:rm
 
 ### Deploy Swarm em producao
 
-O fluxo de producao usa imagem publicada no GHCR com tag imutável (SHA curto do commit). O `deploy-swarm.sh` renderiza `compose.swarm.yml` via `deployment/scripts/render-stack.py` para gerar um YAML 100% compatível com `docker stack deploy`, atualiza `IMAGE_TAG` no `.env` remoto e executa migrate + deploy + health checks com rollback automatico.
+O fluxo de producao usa imagem publicada no GHCR com tag imutável (SHA curto do commit). O `deploy-swarm.sh` renderiza `compose.swarm.yml` via `deployment/scripts/render-stack.py` para gerar um YAML 100% compatível com `docker stack deploy`, atualiza `IMAGE_TAG` no `.env` remoto e executa migrate + deploy + health checks com rollback automático em caso de falha.
 
 ```bash
 # 1. Sincronizar codigo para a VPS (preserva .env remoto)
@@ -855,14 +977,14 @@ VPS_HOST=10.0.0.9 SKIP_BUILD=true bash deployment/scripts/deploy-local.sh
 
 > **Segurança:** o script aborta antes de tocar a VPS se a árvore git estiver suja (a tag não refletiria o commit) ou se o SSH falhar. Em falha de healthcheck, faz rollback automático para a imagem anterior. As migrations rodam **antes** do app; se falharem, o deploy aborta e os containers atuais permanecem intactos.
 
-> **Quando usar a CI/CD em vez disto:** o caminho padrão de produção é a pipeline (build assinado por cosign + SBOM + scan Trivy). O `deploy-local.sh` é um atalho operacional para a VPS — ele **não** assina a imagem nem gera SBOM. Veja [CI/CD](#cicd) e o runbook `docs/runbooks/deploy-producao.md`.
+> **Quando usar a CI/CD em vez disto:** o caminho padrão de produção é a pipeline (build assinado por cosign + scan Trivy). O `deploy-local.sh` é um atalho operacional para a VPS — ele **não** assina a imagem nem gera SBOM. Veja [CI/CD](#cicd) e o runbook `deployment/runbooks/deploy.md`.
 
 ---
 
 ## Contribuição
 
 1. **Abra uma issue** antes de iniciar qualquer mudança de escopo maior para alinhar contexto e abordagem.
-2. **Siga Conventional Commits** — o gate `governance` no CI rejeita commits que não seguem o padrão (`feat:`, `fix:`, `chore:`, etc.).
+2. **Siga Conventional Commits** — o hook `commit-msg` instalado por `task setup` valida esse padrão localmente (`feat:`, `fix:`, `chore:`, etc.).
 3. **Execute `task check`** antes de abrir PR — roda lint, testes unitários e vulncheck localmente.
 4. **Execute `task setup`** ao clonar — instala pre-commit hooks e configura gitsign para assinatura de commits.
 5. **Não flexibilize regras de arquitetura** — as regras em `AGENTS.md` são inegociáveis e verificadas automaticamente no CI.
@@ -877,5 +999,6 @@ Referências canônicas para regras de arquitetura, ADRs e especificações de p
 |---|---|---|
 | Regras e skills | `AGENTS.md` | Fonte canônica de arquitetura, ADRs e regras obrigatórias |
 | PRDs e techspecs | `.specs/` | Especificações por módulo |
+| Arquitetura completa | `docs/diagrams/architecture.md` | Visão textual consolidada da arquitetura, bootstrap e fluxos principais |
 | Diagramas C4 | `docs/diagrams/` | PlantUML por módulo (container + fluxos) |
 | Coleção Postman | `docs/postman/` | Endpoints + environment |
