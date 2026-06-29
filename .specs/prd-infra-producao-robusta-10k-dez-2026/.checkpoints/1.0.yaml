@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-infra-producao-robusta-10k-dez-2026/1.0_execution_report.md
-summary: compose.swarm.yml criado e validado via docker stack config/deploy local; runbooks/deploy.md atualizado com procedimento de migração.
-timestamp: 2026-06-27T19:01:09Z

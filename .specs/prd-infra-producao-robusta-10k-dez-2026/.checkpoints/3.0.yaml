@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-infra-producao-robusta-10k-dez-2026/3.0_execution_report.md
-summary: Servidor HTTP de health check do worker implementado com /livez, /readyz, shutdown gracioso, testes e healthcheck do Swarm atualizado.
-timestamp: 2026-06-27T19:25:41Z

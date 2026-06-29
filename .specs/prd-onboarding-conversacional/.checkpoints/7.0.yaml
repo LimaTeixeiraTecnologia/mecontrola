@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-conversacional/task-7.0_execution_report.md
-summary: "Task 7.0 concluída: use case dedicado consolida WM (objetivo/renda/cartões/distribuição) no consumer onboarding.completed, recent_turns zerados na conclusão e idempotência por event_id via agent_processed_events; build, testes race, lint, vet e gates verdes."
-timestamp: "2026-06-26T14:54:14Z"

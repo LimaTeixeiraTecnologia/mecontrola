@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-infra-producao-robusta-10k-dez-2026/4.0_execution_report.md
-summary: Advisory lock implementado em cmd/migrate com testes unitarios (sqlmock) e de integracao (PostgreSQL real); lint/vet/build passam.
-timestamp: 2026-06-27T19:25:41Z

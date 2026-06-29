@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-agent-capability-catalog/6.0_execution_report.md
-summary: Task 6.0 validated agent/workflow non-regression with green suites and governance gates.
-timestamp: 2026-06-26T03:00:00Z
