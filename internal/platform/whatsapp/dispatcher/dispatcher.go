@@ -23,9 +23,8 @@ import (
 type RouteOutcome string
 
 const (
-	OutcomeOnboarding  RouteOutcome = "onboarding"
 	OutcomeAgent       RouteOutcome = "agent"
-	OutcomeFallback    RouteOutcome = "fallback"
+	OutcomeNoRoute     RouteOutcome = "no_route"
 	OutcomeRateLimited RouteOutcome = "rate_limited"
 	OutcomeDuplicate   RouteOutcome = "duplicate"
 	OutcomeInvalid     RouteOutcome = "invalid"
@@ -43,16 +42,15 @@ type DedupRepository interface {
 }
 
 type Dispatcher struct {
-	dedup           DedupRepository
-	establish       EstablishPrincipalUseCase
-	limiter         *ratelimit.Limiter
-	publisher       outbox.Publisher
-	onboardingRoute func(ctx context.Context, msg payload.Message) RouteOutcome
-	agentRoute      func(ctx context.Context, msg payload.Message) RouteOutcome
-	o11y            observability.Observability
-	routeTotal      observability.Counter
-	rateLimitHits   observability.Counter
-	staleWebhook    observability.Counter
+	dedup         DedupRepository
+	establish     EstablishPrincipalUseCase
+	limiter       *ratelimit.Limiter
+	publisher     outbox.Publisher
+	agentRoute    func(ctx context.Context, msg payload.Message) RouteOutcome
+	o11y          observability.Observability
+	routeTotal    observability.Counter
+	rateLimitHits observability.Counter
+	staleWebhook  observability.Counter
 }
 
 func New(
@@ -60,7 +58,6 @@ func New(
 	establish EstablishPrincipalUseCase,
 	limiter *ratelimit.Limiter,
 	publisher outbox.Publisher,
-	onboardingRoute func(ctx context.Context, msg payload.Message) RouteOutcome,
 	agentRoute func(ctx context.Context, msg payload.Message) RouteOutcome,
 	o11y observability.Observability,
 ) *Dispatcher {
@@ -80,16 +77,15 @@ func New(
 		"1",
 	)
 	return &Dispatcher{
-		dedup:           dedupRepo,
-		establish:       establish,
-		limiter:         limiter,
-		publisher:       publisher,
-		onboardingRoute: onboardingRoute,
-		agentRoute:      agentRoute,
-		o11y:            o11y,
-		routeTotal:      routeTotal,
-		rateLimitHits:   rateLimitHits,
-		staleWebhook:    staleWebhook,
+		dedup:         dedupRepo,
+		establish:     establish,
+		limiter:       limiter,
+		publisher:     publisher,
+		agentRoute:    agentRoute,
+		o11y:          o11y,
+		routeTotal:    routeTotal,
+		rateLimitHits: rateLimitHits,
+		staleWebhook:  staleWebhook,
 	}
 }
 
@@ -143,13 +139,13 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 	}
 
 	if _, ok := channels.MatchActivationCommand(msg.Text); ok {
-		return d.finish(ctx, span, d.onboardingRoute(ctx, msg), true, false), nil
+		return d.finish(ctx, span, OutcomeNoRoute, true, false), nil
 	}
 
 	principal, establishErr := d.establish.Execute(ctx, input.EstablishPrincipalInput{WhatsAppNumber: msg.From})
 	if establishErr != nil {
 		if errors.Is(establishErr, application.ErrUnknownUser) {
-			return d.finish(ctx, span, d.onboardingRoute(ctx, msg), false, false), nil
+			return d.finish(ctx, span, OutcomeNoRoute, false, false), nil
 		}
 		d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.establish_failed",
 			observability.String("wa_id_masked", payload.MaskMobile(msg.From)),
@@ -160,7 +156,7 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 	}
 
 	if principal.IsZero() {
-		return d.finish(ctx, span, d.onboardingRoute(ctx, msg), false, false), nil
+		return d.finish(ctx, span, OutcomeNoRoute, false, false), nil
 	}
 
 	if !d.limiter.Allow(principal.UserID) {

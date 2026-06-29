@@ -267,7 +267,12 @@ func (r *dictionaryRepository) buildListQuery(q interfaces.DictionaryQuery, page
 		termNormalized, id, ok := decodeCursor(q.Cursor)
 		if ok {
 			argIdx += 2
-			sql += fmt.Sprintf(" AND (term_normalized, id) > ($%d, $%d)", argIdx-1, argIdx)
+			termIdx := argIdx - 1
+			idIdx := argIdx
+			sql += fmt.Sprintf(
+				` AND (term_normalized COLLATE "pt-BR-x-icu" > $%d COLLATE "pt-BR-x-icu" OR (term_normalized COLLATE "pt-BR-x-icu" = $%d COLLATE "pt-BR-x-icu" AND id > $%d))`,
+				termIdx, termIdx, idIdx,
+			)
 			args = append(args, termNormalized, id)
 		}
 	}

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-platform-mastra/9.0_execution_report.md
+summary: "gates:platform com 5 greps de governança adicionados ao Taskfile e ao CI como passo bloqueante"
+timestamp: 2026-06-29T00:00:00Z

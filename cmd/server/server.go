@@ -19,12 +19,11 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
-	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
@@ -32,7 +31,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/health"
 	openapidocs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/openapi"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
@@ -187,7 +185,7 @@ func Run() error {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
 	o11y.Logger().Info(ctx, "card module initialized", observability.Bool("router_present", cardModule.CardRouter != nil))
-	onboardingModule.SaveOnboardingCard.SetCardCreator(agentbinding.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
+	onboardingModule.SaveOnboardingCard.SetCardCreator(bootstrap.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
 
 	channelGateway, err := bootstrap.BuildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
 	if err != nil {
@@ -219,38 +217,32 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "transactions module wired", observability.Bool("router_registered", transactionsModule.Router != nil))
 
-	agentModule, err := agent.NewAgentModule(
-		cfg,
-		o11y,
-		identityModule,
-		categoriesModule,
-		cardModule,
-		transactionsModule,
-		budgetsModule,
-		onboardingModule.WhatsAppGateway,
-		agent.AgentModuleDeps{
-			SessionStore:    db,
-			OutboxPublisher: identityModule.OutboxPublisher,
-			OnboardingLLM: &agent.OnboardingLLMUseCases{
-				GetContext:       onboardingModule.GetOnboardingContext,
-				SaveObjective:    onboardingModule.SaveOnboardingObjective,
-				SaveIncome:       onboardingModule.SaveOnboardingIncome,
-				SaveCard:         onboardingModule.SaveOnboardingCard,
-				SaveBudgetSplits: onboardingModule.SaveOnboardingBudgetSplits,
-				Complete:         onboardingModule.CompleteOnboardingSession,
-				SetPhase:         onboardingModule.SetOnboardingPhase,
-				AppendTurn:       onboardingModule.AppendOnboardingTurn,
-				LoadTurns:        onboardingModule.LoadOnboardingTurns,
-				MarkWelcomeSent:  onboardingModule.MarkWelcomeSent,
-			},
+	agentsModule, err := agents.NewModule(agents.Deps{
+		DB:              db,
+		O11y:            o11y,
+		OutboxPublisher: identityModule.OutboxPublisher,
+		LLM: agents.LLMConfig{
+			Model:       cfg.AgentConfig.PrimaryModel,
+			EmbedModel:  cfg.AgentConfig.EmbedModel,
+			APIKey:      cfg.AgentConfig.OpenRouterAPIKey,
+			BaseURL:     cfg.AgentConfig.OpenRouterBaseURL,
+			MaxTokens:   cfg.AgentConfig.MaxTokens,
+			Temperature: cfg.AgentConfig.Temperature,
 		},
-	)
+		WeatherClient:   weather.NewClient(),
+		WhatsAppGateway: onboardingModule.WhatsAppGateway,
+	})
 	if err != nil {
-		return fmt.Errorf("run: inicializar modulo agent: %w", err)
+		return fmt.Errorf("run: inicializar modulo agents: %w", err)
 	}
-	o11y.Logger().Info(ctx, "agent module wired", observability.String("mode", "openrouter"))
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		agentsModule.Shutdown(shutdownCtx)
+	}()
+	o11y.Logger().Info(ctx, "agents module wired")
 
-	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, onboardingModule, agentModule)
+	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, agentsModule)
 	srv.RegisterRouters(waWebhookRouter)
 	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
 

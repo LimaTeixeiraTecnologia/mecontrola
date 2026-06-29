@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	testImage           = "postgres:16-alpine"
+	testImage           = "pgvector/pgvector:pg16"
 	testUser            = "test"
 	testPassword        = "test"
 	testStartupTTL      = 90 * time.Second

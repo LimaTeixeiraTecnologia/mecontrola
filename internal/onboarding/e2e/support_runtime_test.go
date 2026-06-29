@@ -14,16 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/JailtonJunior94/devkit-go/pkg/observability"
-	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
-	agentservices "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/services"
-	agentworkflow "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/application/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	identityinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/binding"
@@ -48,8 +45,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
-	platformworkflow "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
-	wfpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
 )
 
 const (
@@ -96,7 +91,6 @@ type onboardingDependencies struct {
 	cleanupTables              *usecases.CleanupOnboardingTables
 	publicRouter               *onboardingserver.PublicRouter
 	whatsAppProcessor          *appservices.WhatsAppMessageProcessor
-	onboardingAgent            *agentservices.OnboardingAgent
 	subscriptionConsumer       events.Handler
 	activationEmailConsumer    events.Handler
 	paidWithoutTokenConsumer   events.Handler
@@ -143,7 +137,6 @@ func buildOnboardingRuntime(t *testing.T, db *sqlx.DB) *onboardingRuntime {
 			mustRegisterHandler(t, registry, "onboarding.subscription_bound", deps.subscriptionBoundConsumer)
 			return registry
 		},
-		onboardingAgent: deps.onboardingAgent,
 	}
 }
 
@@ -344,18 +337,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		runtimeCfg.Messages,
 		o11y,
 	)
-	onboardingAgent := newE2EOnboardingAgent(
-		o11y,
-		db,
-		getOnboardingContext,
-		markWelcomeSent,
-		saveObjective,
-		saveIncome,
-		saveCard,
-		saveSplits,
-		setPhase,
-		completeSession,
-	)
 	return &onboardingDependencies{
 		db:                         db,
 		o11y:                       o11y,
@@ -390,7 +371,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		cleanupTables:              cleanupTables,
 		publicRouter:               publicRouter,
 		whatsAppProcessor:          whatsAppProcessor,
-		onboardingAgent:            onboardingAgent,
 		subscriptionConsumer:       consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y),
 		activationEmailConsumer:    consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
 		paidWithoutTokenConsumer:   consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),
@@ -433,44 +413,6 @@ func (a *identityGatewayAdapter) UpsertUserByWhatsApp(ctx context.Context, mobil
 }
 
 const e2eCardClosingOffsetDays = 10
-
-func newE2EOnboardingAgent(
-	o11y observability.Observability,
-	db *sqlx.DB,
-	getContext *usecases.GetOnboardingContext,
-	markWelcome *usecases.MarkWelcomeSent,
-	saveObjective *usecases.SaveOnboardingObjective,
-	saveIncome *usecases.SaveOnboardingIncome,
-	saveCard *usecases.SaveOnboardingCard,
-	saveSplits *usecases.SaveOnboardingBudgetSplits,
-	setPhase *usecases.SetOnboardingPhase,
-	complete *usecases.CompleteOnboardingSession,
-) *agentservices.OnboardingAgent {
-	deps := agentworkflow.OnboardingDeps{
-		Interpreter:      &e2eOnboardingInterpreter{},
-		WelcomeMarker:    &e2eWelcomeMarker{uc: markWelcome},
-		ObjectiveSaver:   &e2eObjectiveSaver{uc: saveObjective},
-		IncomeSaver:      &e2eIncomeSaver{uc: saveIncome},
-		CardSaver:        &e2eCardSaver{uc: saveCard},
-		SplitsSaver:      &e2eSplitsSaver{uc: saveSplits},
-		PhaseSetter:      &e2ePhaseSetter{uc: setPhase},
-		ContextLoader:    &e2eContextLoader{uc: getContext},
-		SessionCompleter: &e2eSessionCompleter{uc: complete},
-		O11y:             o11y,
-	}
-	def := agentworkflow.BuildOnboardingDefinition(deps)
-	store := wfpostgres.NewStoreFactory(o11y).Store(db)
-	engine := platformworkflow.NewEngine[agentworkflow.OnboardingState](store, o11y)
-	checker := &e2eStateChecker{uc: getContext}
-	routedTotal := o11y.Metrics().Counter("agent_intent_routed_total", "", "1")
-	return agentservices.NewOnboardingAgent(o11y, routedTotal, engine, def, store, checker, &e2eHistoryGateway{})
-}
-
-type e2eHistoryGateway struct{}
-
-func (g *e2eHistoryGateway) AppendTurn(_ context.Context, _ uuid.UUID, _, _ string) error {
-	return nil
-}
 
 type recordingWhatsAppGateway struct {
 	mu       sync.Mutex

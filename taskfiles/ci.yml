@@ -25,3 +25,19 @@ tasks:
     desc: Gate de fronteira de dados do internal/agent (RF-20, R-ADAPTER-001, R-AGENT-WF-001, R-WF-KERNEL-001).
     cmds:
       - bash scripts/ci/agent-data-boundary.sh
+
+  platform-gates:
+    desc: |
+      Gates de governanca da plataforma (RF-31..34, R-WF-KERNEL-001, R-AGENT-WF-001).
+      Bloqueia merge se: kernel importar dominio/camada-superior, LLM no kernel,
+      comentarios em producao nas 5 camadas, label de alta cardinalidade ou tipo fechado
+      como string solta em internal/platform.
+    cmds:
+      - task: :gates:platform
+
+  no-internal-agent:
+    desc: |
+      Gate de ausencia de internal/agent (RF-30, ADR-004 cutover). Bloqueia merge
+      se o diretorio legado existir ou se qualquer import proibido for detectado.
+    cmds:
+      - task: :gates:no-internal-agent

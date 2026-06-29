@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agents-weather-mastra/5.0_execution_report.md
+summary: Canal WhatsApp wired via outbox route + consumer + gateway reply (7 testes PASS)
+timestamp: 2026-06-29T12:00:00Z

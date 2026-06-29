@@ -2,15 +2,44 @@
 
 - Rule ID: R-AGENT-WF-001
 - Severidade: hard
-- Escopo: `internal/agent/`
+- Escopo: `internal/platform/agent/` (primitivo generico de agent; ex-`internal/agent`, descontinuado)
 - Plano de origem: `docs/runs/2026-06-23-evolucao-dailyagent-mastra.md`
+- PRD vigente: `.specs/prd-platform-mastra/prd.md` (spec-version 2)
+
+## Emenda 2026-06-29 — Re-escopo para o primitivo de agent da plataforma; internal/agent descontinuado [HARD]
+
+Origem: `.specs/prd-platform-mastra/prd.md` (spec-version 2).
+
+O modulo `internal/agent` sera descontinuado e apagado definitivamente. Esta regra deixa de ter
+escopo `internal/agent/` e passa a reger o **primitivo generico de agent da plataforma**, em
+`internal/platform/agent/` (com memory/threads correlatos em `internal/platform/memory`). O kernel
+`internal/platform/workflow` e a base evolutiva aproveitada da inspiracao Mastra e permanece intacto.
+
+Mudancas mandatorias desta emenda:
+
+1. Thread, Run, WorkingMemory e PendingStep sao PERMITIDOS em `internal/platform` como primitivos
+   genericos sobre chaves opacas (`resourceId`, `threadId`). Ficam REVOGADAS todas as clausulas que
+   os declaravam "exclusivos de internal/agent" ou "proibidos fora de internal/agent" (em especial
+   R-AGENT-WF-001.6, addendum .6-A, addendum .8-A e o item global correspondente).
+2. As invariantes ESTRUTURAIS permanecem hard e passam a reger o primitivo da plataforma:
+   roteamento `Workflow -> Tool -> binding -> usecase` (.1), Tool fina sem regra/SQL/branching (.2),
+   `ToolOutcome`/`RunStatus` como tipos fechados (.3), LLM so no step de parse (.4), Run auditavel
+   (.5), Thread-first (.6, re-escopado), pending step antes de clarify (.7), gate HITL com
+   `AwaitingApproval`/`OperationKind` fechados (.7-A), WorkingMemory no system prompt (.8).
+3. Os GATES e exemplos que citam artefatos de dominio do agent removido (`daily_ledger_agent.go`,
+   `pendingexpense`, `intent.Kind` de orcamento, `categoryClarification`, budget commit) ficam
+   SUPERSEDED com a remocao de `internal/agent`. A techspec do `prd-platform-mastra` deve reemitir
+   os gates equivalentes apontando para os arquivos genericos da plataforma. Ate la, valem como
+   referencia historica do contrato comportamental a preservar, nao como caminho de arquivo literal.
+4. `ThreadGateway`/`RunGateway` (ou equivalentes) passam a viver em `internal/platform/agent`; a
+   proibicao de implementa-los "fora de internal/agent" fica revogada.
 
 ## Objetivo
 
-Tornar **Workflow + Tool o padrao canonico e obrigatorio** de roteamento do `internal/agent`,
-substituindo o `switch` de `daily_ledger_agent.go` por um `WorkflowRegistry`. Todo comportamento
-novo entra como `Workflow`/`Tool` reutilizando bindings e usecases existentes — nunca como novo
-`case` de dominio. As regras abaixo herdam e reforcam R-ADAPTER-001 e a precedencia DMMF de
+Tornar **Workflow + Tool o padrao canonico e obrigatorio** de roteamento do primitivo de agent da
+plataforma (`internal/platform/agent`), via `WorkflowRegistry`. Todo comportamento novo entra como
+`Workflow`/`Tool` reutilizando bindings e usecases dos consumidores — nunca como `case` de dominio
+embutido. As regras abaixo herdam e reforcam R-ADAPTER-001 e a precedencia DMMF de
 `.claude/rules/governance.md`.
 
 ## R-AGENT-WF-001.1 — Roteamento `Workflow -> Tool -> binding -> usecase` [HARD]
@@ -97,14 +126,14 @@ Cardinalidade de metricas (herda R-TXN-004): labels permitidos sao enums fechado
 
 ## R-AGENT-WF-001.6 — Thread-first: toda execucao resolve Thread [HARD]
 
-Toda chamada a `AgentRuntime.Execute` DEVE resolver um `Thread` via `ThreadGateway.GetOrCreate(userID, channel)` antes de iniciar o `Run`. O par `(user_id, channel)` e a identidade canonica do Thread, espelhando o modelo Mastra: `resourceId = user_id`, `threadId = channel`.
+Toda chamada a `AgentRuntime.Execute` DEVE resolver um `Thread` via `ThreadGateway.GetOrCreate(resourceID, threadID)` antes de iniciar o `Run`. O par opaco `(resourceId, threadId)` e a identidade canonica do Thread, espelhando o modelo Mastra; o mapeamento de `resourceId`/`threadId` para identidades de dominio (ex.: usuario, canal) e responsabilidade do consumidor.
 
 Proibido:
 - Iniciar um `Run` sem `thread_id` valido.
 - Criar logica de routing sem passar pelo `AgentRuntime` (que garante o ciclo Thread→Run).
-- Implementar `ThreadGateway` ou `RunGateway` fora de `internal/agent`.
+- Implementar `ThreadGateway`/`RunGateway` em pacote de dominio; eles pertencem a `internal/platform/agent`.
 
-Este padrao e **exclusivo de `internal/agent`**; outros modulos NAO devem ter Thread, Run ou WorkingMemory proprios.
+Este padrao vive no **primitivo de agent da plataforma** (`internal/platform/agent`); Thread, Run e WorkingMemory sao primitivos genericos de plataforma sobre chaves opacas, nao mais exclusivos de um modulo. Modulos de dominio consomem esses primitivos sem reimplementa-los.
 
 ### Addendum R-AGENT-WF-001.6-A — Distincao kernel-mecanismo vs agent-semantico [HARD]
 
@@ -114,19 +143,20 @@ O kernel generico em `internal/platform/workflow` oferece `Run` como **mecanismo
 duravel** — um `Snapshot` + `StepRecord` com `RunStatus` fechado, identificado por `correlationKey`
 opaca. Esse mecanismo e **distinto** do `Run auditavel semantico` do agent:
 
-| Conceito | Kernel (`internal/platform/workflow`) | Agent (`internal/agent`) |
+| Conceito | Kernel (`internal/platform/workflow`) | Primitivo de agent (`internal/platform/agent`) |
 |----------|--------------------------------------|--------------------------|
 | Run | mecanismo generico; `correlationKey` opaca | Run semantico; vinculado a `thread_id`/`run_id` auditavel |
 | Status | `RunStatus` fechado (kernel) | `RunStatus` fechado (agent) — tipos distintos, nao compartilhados |
-| Suspend/Resume | `Snapshot` duravel; retomada por `Engine.Resume` | `pendingexpense.Draft` como estado do run suspenso do kernel |
-| Thread | ausente no kernel | `(user_id, channel)` resolvido via `ThreadGateway` |
+| Suspend/Resume | `Snapshot` duravel; retomada por `Engine.Resume` | estado de espera generico (ex.: PendingStep/Draft) no snapshot do kernel |
+| Thread | ausente no kernel | `(resourceId, threadId)` opacos resolvidos via `ThreadGateway` |
 | WorkingMemory | ausente no kernel | `resource`-scoped, no system prompt |
 
-O `internal/agent` PODE consumir `Engine[S]` do kernel para seus workflows de escrita, passando
-sua estrutura de estado propria como `S`. A semantica Thread/WorkingMemory/PendingStep permanece
-exclusiva do agent — o kernel nao conhece esses conceitos. Essa distincao nao reabre brecha: a
-proibicao de Thread, Run semantico e WorkingMemory **fora de `internal/agent`** se mantem; o
-kernel oferece apenas o mecanismo anonimo.
+O primitivo de agent da plataforma (`internal/platform/agent`) consome `Engine[S]` do kernel para
+seus workflows, passando sua estrutura de estado propria como `S`. A semantica
+Thread/WorkingMemory/PendingStep vive nesse primitivo de plataforma — o kernel continua sem conhecer
+esses conceitos. A distincao preservada e apenas **kernel-mecanismo vs primitivo-de-agent**: o
+kernel oferece o mecanismo anonimo; Thread/Run/WorkingMemory/PendingStep deixam de ser exclusivos de
+qualquer modulo e passam a ser primitivos genericos de plataforma.
 
 ## R-AGENT-WF-001.7 — Pending step obrigatorio em erro de categoria [HARD]
 
@@ -234,19 +264,20 @@ todos em `.specs/prd-agent-platform-evolution/`.
 
 O `ContextBuilder` (ou equivalente) DEVE incluir o conteudo de `WorkingMemory` do usuario no system prompt quando disponivel. Proibido ignorar a working memory em chamadas de `ParseInbound`.
 
-- `WorkingMemory` e escopo `resource` (por `user_id`), compartilhada entre canais.
+- `WorkingMemory` e escopo `resource` (por `resourceId`), compartilhada entre threads/canais.
 - Formato: markdown estruturado; atualizavel via usecase dedicado.
-- Ausencia de working memory (usuario novo) NAO e erro — system prompt e renderizado sem ela.
+- Ausencia de working memory (resource novo) NAO e erro — system prompt e renderizado sem ela.
 
-### Addendum R-AGENT-WF-001.8-A — WorkingMemory e exclusiva do agent [HARD]
+### Addendum R-AGENT-WF-001.8-A — WorkingMemory e primitivo de plataforma [HARD]
 
-Adicionado em 2026-06-24 (ADR-004) para coexistir com `R-WF-KERNEL-001`.
+Adicionado em 2026-06-24 (ADR-004); revisado em 2026-06-29 (`prd-platform-mastra`).
 
-`WorkingMemory` e um conceito semantico exclusivo de `internal/agent`. O kernel generico
-(`internal/platform/workflow`) NAO tem WorkingMemory, system prompt ou qualquer mecanismo de
-contexto conversacional. Quando o agent consome o kernel via `Engine[S]`, o estado `S` passado
-ao kernel pode conter dados derivados de WorkingMemory, mas a logica de construcao e injecao
-desse contexto e responsabilidade exclusiva do agent, nunca do kernel.
+`WorkingMemory` e um primitivo de plataforma (`internal/platform/memory`), nao mais exclusivo de um
+modulo de dominio. O kernel generico (`internal/platform/workflow`) continua SEM WorkingMemory,
+system prompt ou qualquer mecanismo de contexto conversacional. Quando o primitivo de agent consome
+o kernel via `Engine[S]`, o estado `S` pode conter dados derivados de WorkingMemory, mas a logica de
+construcao e injecao desse contexto e responsabilidade do primitivo de agent/memory da plataforma,
+nunca do kernel.
 
 ## Gate de Verificacao
 
@@ -303,7 +334,8 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 - Efetivar operacao destrutiva/sensivel sem confirmacao humana explicita (viola Addendum R-AGENT-WF-001.7-A).
 - Retornar pergunta de confirmacao HITL sem persistir `ConfirmState` com `AwaitingConfirm` (viola Addendum R-AGENT-WF-001.7-A).
 - Iniciar execucao sem resolver Thread + Run via `AgentRuntime` (viola R-AGENT-WF-001.6).
-- Implementar Thread, Run, WorkingMemory ou PendingStep em modulo diferente de `internal/agent`.
+- Implementar Thread, Run, WorkingMemory ou PendingStep em pacote de dominio; esses primitivos
+  pertencem a `internal/platform` (agent/memory) e sao consumidos pelos modulos de dominio.
 - Flexibilizar estas regras por diferenca de ferramenta, conveniencia ou deadline.
 
 ## Referencias

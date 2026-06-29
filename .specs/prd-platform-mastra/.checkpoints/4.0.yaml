@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-platform-mastra/4.0_execution_report.md
+summary: RuntimeContext (WithRuntime/RuntimeFrom) adicionado ao kernel; 4 testes novos provam repasse e não-persistência; todos gates R-WF-KERNEL-001 passam.
+timestamp: 2026-06-29T00:00:00Z

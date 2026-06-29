@@ -5,24 +5,43 @@
 - Escopo: `internal/platform/workflow/`
 - ADR de origem: ADR-004 (`.specs/prd-workflow-kernel/adr-004-governance-gate.md`)
 
+## Emenda 2026-06-29 — internal/agent descontinuado; primitivos de agent/memory permitidos em internal/platform [HARD]
+
+Origem: `.specs/prd-platform-mastra/prd.md` (spec-version 2).
+
+O modulo `internal/agent` sera descontinuado e apagado definitivamente. Os conceitos Thread, Run
+auditavel, WorkingMemory e PendingStep deixam de ser exclusivos de `internal/agent` e passam a ser
+**primitivos genericos de plataforma**, implementados em pacotes irmaos de `internal/platform`
+(ex.: `internal/platform/agent`, `internal/platform/memory`), operando sobre chaves opacas
+(`resourceId`, `threadId`, `correlationKey`) sem semantica de dominio.
+
+Esta emenda PERMITE explicitamente Thread/Run/WorkingMemory/PendingStep em `internal/platform`.
+Ela NAO afrouxa a pureza do kernel: `internal/platform/workflow` continua sendo apenas o mecanismo
+de orquestracao e NAO pode importar nem depender desses primitivos de camada superior (preserva o
+layering: agent/memory consomem o kernel, nunca o contrario). As demais regras hard do kernel
+(sem dominio, sem SQL fora do adapter, estados como tipos fechados, cardinalidade controlada, sem
+LLM, zero comentarios, merge-patch no resume) permanecem integralmente.
+
 ## Objetivo
 
 Garantir que o kernel de workflow em `internal/platform/workflow` permaneca um mecanismo generico
 de orquestacao de passos, sem qualquer dependencia ou conhecimento de dominio. O kernel oferece
-primitivos (`Step`, `Engine`, `Store`, combinadores, suspend/resume, retry); a semantica de dominio
-(Thread, Run auditavel de agent, WorkingMemory, PendingStep, intent) e exclusiva de `internal/agent`
-e modulos consumidores.
+primitivos (`Step`, `Engine`, `Store`, combinadores, suspend/resume, retry); Thread, Run auditavel,
+WorkingMemory e PendingStep sao primitivos genericos de plataforma (pacotes irmaos como
+`internal/platform/agent` e `internal/platform/memory`), nunca do kernel; a semantica de dominio
+(intent, category, transaction) e exclusiva dos modulos consumidores.
 
 ## R-WF-KERNEL-001.1 — Proibido import de pacote de dominio [HARD]
 
-Nenhum arquivo em `internal/platform/workflow/` pode importar pacotes de dominio ou de bounded
-contexts:
+Nenhum arquivo em `internal/platform/workflow/` pode importar pacotes de dominio, de bounded
+contexts, ou primitivos de plataforma de camada superior que consomem o kernel:
 
-- `internal/agent/...`
 - `internal/transactions/...`
 - `internal/billing/...`
 - `internal/identity/...`
-- pacotes que contenham `intent`, `agent`, `pendingexpense`, `category`, `transaction`
+- `internal/platform/agent/...`, `internal/platform/memory/...` (camada superior — consomem o
+  kernel; o kernel importa-los inverteria o layering)
+- pacotes que contenham `intent`, `pendingexpense`, `category`, `transaction`
 
 O kernel opera sobre um estado generico `S any` e uma `correlationKey string` opaca. Proibido
 receber `user_id`, `channel`, `intent.Kind` ou qualquer outro tipo semantico de dominio como
@@ -32,9 +51,9 @@ Gate de verificacao (deve retornar vazio antes de merge):
 
 ```bash
 grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
-  "internal/agent\|internal/transactions\|internal/billing\|internal/identity" \
+  "internal/transactions\|internal/billing\|internal/identity\|internal/platform/agent\|internal/platform/memory" \
   internal/platform/workflow/ \
-  && echo "FAIL: import de dominio em workflow kernel" && exit 1 \
+  && echo "FAIL: import de dominio ou de camada superior em workflow kernel" && exit 1 \
   || true
 ```
 
@@ -106,8 +125,8 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 ## R-WF-KERNEL-001.5 — LLM proibido no kernel [HARD]
 
 O kernel nao pode invocar LLM, prompt rendering, fallback chain ou qualquer client de modelo de
-linguagem. Preserva R-AGENT-WF-001.4: LLM aparece exclusivamente no step de parse (`ParseInbound`)
-no `internal/agent`.
+linguagem. Preserva R-AGENT-WF-001.4: LLM aparece exclusivamente no primitivo de agent da
+plataforma (`internal/platform/agent`, step de parse), nunca no kernel.
 
 Gate de verificacao (deve retornar vazio antes de merge):
 
@@ -186,14 +205,16 @@ grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
 
 ## Permitido (consumo pelo agent e demais modulos)
 
-O `internal/agent` e qualquer outro modulo podem **consumir** o kernel:
+Os primitivos de plataforma (`internal/platform/agent`, `internal/platform/memory`) e qualquer
+modulo consumidor podem **consumir** o kernel `internal/platform/workflow`, que e a base evolutiva
+aproveitada da inspiracao Mastra:
 
 - Instanciar `Engine[S]` passando sua estrutura de estado proprio como `S`.
-- Registrar `Step[S]` que chamam bindings e usecases do modulo consumidor.
+- Registrar `Step[S]` que chamam bindings e usecases do consumidor.
 - Usar `Store` (porta) com o adapter Postgres.
 
-O consumidor e responsavel por manter sua semantica propria (Thread, WorkingMemory, PendingStep
-no caso do agent) sem delegar essa responsabilidade ao kernel.
+A semantica de Thread, WorkingMemory e PendingStep e responsabilidade dos primitivos de plataforma
+de camada superior (`internal/platform/agent`, `internal/platform/memory`), nunca do kernel.
 
 ## Proibido (R-WF-KERNEL-001 global)
 
@@ -205,9 +226,10 @@ no caso do agent) sem delegar essa responsabilidade ao kernel.
 
 ## Referencias
 
+- PRD (descontinuacao do agent + plataforma reutilizavel): `.specs/prd-platform-mastra/prd.md` (spec-version 2)
 - ADR-004 (prd-workflow-kernel): `.specs/prd-workflow-kernel/adr-004-governance-gate.md`
 - ADR-001 (prd-agent-platform-evolution): `.specs/prd-agent-platform-evolution/adr-001-kernel-resume-merge-patch.md` — merge-patch no resume
-- R-AGENT-WF-001: `.claude/rules/agent-workflows-tools.md` — semantica exclusiva do agent
+- R-AGENT-WF-001: `.claude/rules/agent-workflows-tools.md` — primitivo de agent da plataforma (Thread/Run/WorkingMemory/PendingStep genericos)
 - R-ADAPTER-001: `.claude/rules/go-adapters.md` — zero comentarios e adaptadores finos
 - R-TXN-004: `.claude/rules/transactions-workflows.md` — cardinalidade de metricas
 - `governance.md`: `.claude/rules/governance.md` — precedencia DMMF state-as-type

@@ -36,7 +36,7 @@ if [ ! -r "$ALLOWLIST" ]; then
   exit 1
 fi
 
-RAW="$("$DEADCODE_BIN" ./cmd/... 2>/dev/null | grep "internal/agent" || true)"
+RAW="$("$DEADCODE_BIN" ./cmd/... 2>/dev/null | grep "internal/agent/" || true)"
 
 VIOLATIONS=""
 while IFS= read -r line; do

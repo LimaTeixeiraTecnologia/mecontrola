@@ -168,12 +168,9 @@ func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mo
 
 	dedupRepo := postgres.NewMessageRepository(s.o11y, s.db)
 
-	onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
-		return dispatcher.OutcomeOnboarding
-	}
 	agentRoute := func(ctx context.Context, msg payload.Message) dispatcher.RouteOutcome {
 		if _, ok := auth.FromContext(ctx); !ok {
-			return dispatcher.OutcomeFallback
+			return dispatcher.OutcomeNoRoute
 		}
 		if err := waGW.SendTextMessage(ctx, msg.From, "MeControla recebeu sua mensagem — estamos preparando sua experiencia."); err != nil {
 			s.o11y.Logger().Warn(ctx, "test.agent_route_failed")
@@ -181,7 +178,7 @@ func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mo
 		return dispatcher.OutcomeAgent
 	}
 
-	return dispatcher.New(dedupRepo, establishUC, limiter, s.newPublisher(), onboarding, agentRoute, s.o11y)
+	return dispatcher.New(dedupRepo, establishUC, limiter, s.newPublisher(), agentRoute, s.o11y)
 }
 
 func (s *DispatcherIntegrationSuite) TestRoute_ValidPayload_ActiveUser_RoutesToAgent() {

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-platform-mastra/3.0_execution_report.md
+summary: "ToolHandle + NewTool[I,O] + Registry implementados em internal/platform/tool; 6 testes pass; gates limpos"
+timestamp: "2026-06-29T00:00:00Z"

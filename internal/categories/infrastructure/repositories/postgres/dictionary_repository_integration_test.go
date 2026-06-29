@@ -79,11 +79,19 @@ func (s *DictionaryRepositoryIntegrationSuite) TestList() {
 func (s *DictionaryRepositoryIntegrationSuite) TestListPagination() {
 	ctx := context.Background()
 
+	var total int
+	err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE deprecated_at IS NULL",
+	).Scan(&total)
+	s.Require().NoError(err)
+	s.Require().Greater(total, 0)
+
 	allEntries := make([]string, 0)
 	var cursor string
 	pageCount := 0
+	maxPages := total + 10
 
-	for pageCount < 5 {
+	for pageCount < maxPages {
 		entries, nextCursor, err := s.repo.List(ctx, interfaces.DictionaryQuery{
 			PageSize: 100,
 			Cursor:   cursor,
@@ -111,6 +119,11 @@ func (s *DictionaryRepositoryIntegrationSuite) TestListPagination() {
 		s.Assert().False(seen[id], "entrada %s nao deve aparecer duplicada", id)
 		seen[id] = true
 	}
+
+	s.Assert().Equalf(total, len(seen),
+		"paginacao deve cobrir todas as %d entradas sem lacunas, mas cobriu %d distintas",
+		total, len(seen),
+	)
 }
 
 func (s *DictionaryRepositoryIntegrationSuite) TestSearch() {

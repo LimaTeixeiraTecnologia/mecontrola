@@ -27,6 +27,8 @@ includes:
     taskfile: ./taskfiles/deploy.yml
   swarm:
     taskfile: ./taskfiles/swarm.yml
+  gates:
+    taskfile: ./taskfiles/gates.yml
 silent: true
 
 vars:

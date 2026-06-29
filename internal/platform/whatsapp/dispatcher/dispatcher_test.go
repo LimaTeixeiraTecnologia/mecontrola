@@ -83,7 +83,7 @@ func (s *DispatcherSuite) TestRoute() {
 		expectedOutcome dispatcher.RouteOutcome
 	}{
 		{
-			name: "ATIVAR keyword routes to onboarding",
+			name: "ATIVAR keyword returns no_route",
 			raw:  validPayload("ATIVAR abcdefghij1234567890abcdefghij1234567890abc"),
 			setupDedup: func(d *mockDedup) {
 				d.On("InsertIfAbsent", mock.Anything, mock.Anything).Return(true, nil)
@@ -91,7 +91,7 @@ func (s *DispatcherSuite) TestRoute() {
 			setupEstablish:  func(e *mockEstablish) {},
 			setupPublisher:  func(p *outboxmocks.Publisher) {},
 			limiter:         s.newLimiter,
-			expectedOutcome: dispatcher.OutcomeOnboarding,
+			expectedOutcome: dispatcher.OutcomeNoRoute,
 		},
 		{
 			name: "normal message + active principal routes to agent",
@@ -107,7 +107,7 @@ func (s *DispatcherSuite) TestRoute() {
 			expectedOutcome: dispatcher.OutcomeAgent,
 		},
 		{
-			name: "EstablishPrincipal returns ErrUnknownUser routes to onboarding fallback",
+			name: "EstablishPrincipal returns ErrUnknownUser returns no_route",
 			raw:  validPayload("oi"),
 			setupDedup: func(d *mockDedup) {
 				d.On("InsertIfAbsent", mock.Anything, mock.Anything).Return(true, nil)
@@ -117,7 +117,7 @@ func (s *DispatcherSuite) TestRoute() {
 			},
 			setupPublisher:  func(p *outboxmocks.Publisher) {},
 			limiter:         s.newLimiter,
-			expectedOutcome: dispatcher.OutcomeOnboarding,
+			expectedOutcome: dispatcher.OutcomeNoRoute,
 		},
 		{
 			name: "rate-limit exceeded routes to rate_limited and publishes auth.failed",
@@ -186,14 +186,11 @@ func (s *DispatcherSuite) TestRoute() {
 				_ = limiter.Shutdown(ctx)
 			})
 
-			onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
-				return dispatcher.OutcomeOnboarding
-			}
 			agentRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 				return dispatcher.OutcomeAgent
 			}
 
-			sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, onboarding, agentRoute, s.o11y)
+			sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, s.o11y)
 			outcome, err := sut.Route(s.ctx, sc.raw)
 
 			s.NoError(err)
@@ -217,14 +214,11 @@ func (s *DispatcherSuite) TestRoute_NoMessages_ReturnsInvalid() {
 		_ = limiter.Shutdown(ctx)
 	})
 
-	onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
-		return dispatcher.OutcomeOnboarding
-	}
 	agentRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 		return dispatcher.OutcomeAgent
 	}
 
-	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, onboarding, agentRoute, s.o11y)
+	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, s.o11y)
 	outcome, err := sut.Route(s.ctx, raw)
 
 	s.NoError(err)
@@ -249,14 +243,11 @@ func (s *DispatcherSuite) TestRoute_DedupError_PropagatesErrorFor5xx() {
 		_ = limiter.Shutdown(ctx)
 	})
 
-	onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
-		return dispatcher.OutcomeOnboarding
-	}
 	agentRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 		return dispatcher.OutcomeAgent
 	}
 
-	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, onboarding, agentRoute, s.o11y)
+	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, s.o11y)
 	outcome, err := sut.Route(s.ctx, raw)
 
 	s.Error(err, "dedup DB error MUST propagate para handler retornar 5xx (Meta retry)")
@@ -284,14 +275,11 @@ func (s *DispatcherSuite) TestRoute_EstablishPrincipal_DBError_PropagatesErrorFo
 		_ = limiter.Shutdown(ctx)
 	})
 
-	onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
-		return dispatcher.OutcomeOnboarding
-	}
 	agentRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 		return dispatcher.OutcomeAgent
 	}
 
-	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, onboarding, agentRoute, s.o11y)
+	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, s.o11y)
 	outcome, err := sut.Route(s.ctx, raw)
 
 	s.Error(err, "DB error em EstablishPrincipal MUST propagar para Meta retry")
@@ -308,10 +296,10 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 		expectedOutcome dispatcher.RouteOutcome
 	}{
 		{
-			name:            "timestamp within window returns normal outcome",
+			name:            "timestamp within window returns no_route for unknown user",
 			timestamp:       fmt.Sprintf("%d", now.Unix()),
 			setupPublisher:  func(p *outboxmocks.Publisher) {},
-			expectedOutcome: dispatcher.OutcomeOnboarding,
+			expectedOutcome: dispatcher.OutcomeNoRoute,
 		},
 		{
 			name:      "timestamp +6min in future returns stale_webhook",
@@ -362,10 +350,10 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 			expectedOutcome: dispatcher.OutcomeStaleTS,
 		},
 		{
-			name:            "timestamp 4min59s in past stays within window",
+			name:            "timestamp 4min59s in past stays within window returns no_route",
 			timestamp:       fmt.Sprintf("%d", now.Add(-(4*time.Minute + 59*time.Second)).Unix()),
 			setupPublisher:  func(p *outboxmocks.Publisher) {},
-			expectedOutcome: dispatcher.OutcomeOnboarding,
+			expectedOutcome: dispatcher.OutcomeNoRoute,
 		},
 		{
 			name:      "timestamp 5min1s in past returns stale_webhook",
@@ -404,14 +392,11 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 				_ = limiter.Shutdown(ctx)
 			})
 
-			onboarding := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
-				return dispatcher.OutcomeOnboarding
-			}
 			agentRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
 				return dispatcher.OutcomeAgent
 			}
 
-			sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, onboarding, agentRoute, s.o11y)
+			sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, s.o11y)
 			outcome, err := sut.Route(s.ctx, raw)
 
 			s.NoError(err)

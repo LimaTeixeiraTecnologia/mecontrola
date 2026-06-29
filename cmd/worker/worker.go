@@ -23,19 +23,16 @@ import (
 	"net/http"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
-
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
-
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent"
-	agentbinding "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agent/infrastructure/binding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
-
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
 	deduphandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/jobs/handlers"
@@ -171,10 +168,11 @@ func registerOutboxMetrics(o11y observability.Observability, db *sqlx.DB) {
 }
 
 type workerRuntime struct {
-	cfg       *configs.Config
-	o11y      observability.Observability
-	dbManager *postgres.Database
-	db        *sqlx.DB
+	cfg            *configs.Config
+	o11y           observability.Observability
+	dbManager      *postgres.Database
+	db             *sqlx.DB
+	agentsShutdown func(context.Context)
 }
 
 func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error) { //nolint:revive // composition root agrega bootstrap de módulos; refatorar fragmentaria a ordem de lifecycle crítica
@@ -217,7 +215,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}
-	onboardingModule.SaveOnboardingCard.SetCardCreator(agentbinding.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
+	onboardingModule.SaveOnboardingCard.SetCardCreator(bootstrap.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
 	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.db, cardModule, categoriesModule, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
@@ -228,32 +226,34 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 
-	agentModule, err := agent.NewAgentModule(
-		r.cfg,
-		r.o11y,
-		identityModule,
-		categoriesModule,
-		cardModule,
-		transactionsModule,
-		budgetsModule,
-		onboardingModule.WhatsAppGateway,
-		agent.AgentModuleDeps{
-			SessionStore:    r.db,
-			OutboxPublisher: identityModule.OutboxPublisher,
+	agentsModule, err := agents.NewModule(agents.Deps{
+		DB:              r.db,
+		O11y:            r.o11y,
+		OutboxPublisher: identityModule.OutboxPublisher,
+		LLM: agents.LLMConfig{
+			Model:       r.cfg.AgentConfig.PrimaryModel,
+			EmbedModel:  r.cfg.AgentConfig.EmbedModel,
+			APIKey:      r.cfg.AgentConfig.OpenRouterAPIKey,
+			BaseURL:     r.cfg.AgentConfig.OpenRouterBaseURL,
+			MaxTokens:   r.cfg.AgentConfig.MaxTokens,
+			Temperature: r.cfg.AgentConfig.Temperature,
 		},
-	)
+		WeatherClient:   weather.NewClient(),
+		WhatsAppGateway: onboardingModule.WhatsAppGateway,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("worker: inicializar modulo agent: %w", err)
+		return nil, fmt.Errorf("worker: inicializar modulo agents: %w", err)
 	}
+	r.agentsShutdown = agentsModule.Shutdown
 
 	for _, reg := range identityModule.EventHandlers {
 		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
 			return nil, fmt.Errorf("worker: registrar handler identity %s: %w", reg.EventType, err)
 		}
 	}
-	for _, reg := range agentModule.EventHandlers {
+	for _, reg := range agentsModule.EventHandlers {
 		if err := eventsDispatcher.Register(reg.EventType, reg.Handler); err != nil {
-			return nil, fmt.Errorf("worker: registrar handler agent %s: %w", reg.EventType, err)
+			return nil, fmt.Errorf("worker: registrar handler agents %s: %w", reg.EventType, err)
 		}
 	}
 	for _, reg := range billingModule.EventHandlers {
@@ -318,12 +318,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if transactionsModule.MonthlySummaryReconcilerJob != nil {
 		jobs = append(jobs, transactionsModule.MonthlySummaryReconcilerJob)
 	}
-	if agentModule.WorkflowKernelHousekeepingJob != nil {
-		jobs = append(jobs, agentModule.WorkflowKernelHousekeepingJob)
-	}
-	if agentModule.OnboardingAbandonmentJob != nil {
-		jobs = append(jobs, agentModule.OnboardingAbandonmentJob)
-	}
+	jobs = append(jobs, agentsModule.Jobs...)
 
 	schedLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	return worker.NewManager(worker.Config{ShutdownTimeout: 30 * time.Second}, jobs, nil, schedLogger), nil
@@ -342,6 +337,12 @@ func (r *workerRuntime) shutdown(workerManager *worker.Manager, health *healthSe
 	defer workerCancel()
 	if err := workerManager.Stop(workerCtx); err != nil {
 		shutdownErrs = append(shutdownErrs, fmt.Errorf("worker: erro ao parar worker manager: %w", err))
+	}
+
+	if r.agentsShutdown != nil {
+		agentsCtx, agentsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		r.agentsShutdown(agentsCtx)
+		agentsCancel()
 	}
 
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)

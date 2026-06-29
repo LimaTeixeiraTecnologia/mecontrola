@@ -51,7 +51,11 @@ func (s *MaterializeRecurringForDaySuite) SetupTest() {
 	s.cardCreator = uowMocks.NewCardPurchaseCreator(s.T())
 }
 
-func (s *MaterializeRecurringForDaySuite) buildTemplate(userID uuid.UUID, day int) *entities.RecurringTemplate {
+func (s *MaterializeRecurringForDaySuite) referenceToday() time.Time {
+	return time.Date(2026, time.January, 15, 12, 0, 0, 0, s.brazilLoc)
+}
+
+func (s *MaterializeRecurringForDaySuite) buildTemplate(userID uuid.UUID, day int, today time.Time) *entities.RecurringTemplate {
 	dir := valueobjects.DirectionIncome
 	pm := valueobjects.PaymentMethodPix
 	amount, _ := valueobjects.NewMoney(5000)
@@ -70,13 +74,13 @@ func (s *MaterializeRecurringForDaySuite) buildTemplate(userID uuid.UUID, day in
 		option.None[valueobjects.SubcategoryID](),
 		"Receita", "",
 		freq, dom, inst,
-		now.Add(-24*time.Hour), option.None[time.Time](), now,
+		today.Add(-24*time.Hour), option.None[time.Time](), now,
 	)
 	return &t
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_NoTemplatesForDay_ReturnsNil() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
 	s.templateRepo.EXPECT().
@@ -92,10 +96,10 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_NoTemplatesForDay_ReturnsN
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_LockNotAcquired_SkipsTemplate() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
-	template := s.buildTemplate(uuid.New(), day)
+	template := s.buildTemplate(uuid.New(), day, today)
 	refMonth := valueobjects.RefMonthFromTime(today, s.brazilLoc)
 
 	s.templateRepo.EXPECT().
@@ -115,10 +119,10 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_LockNotAcquired_SkipsTempl
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_AlreadyMaterialized_SkipsCreate() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
-	template := s.buildTemplate(uuid.New(), day)
+	template := s.buildTemplate(uuid.New(), day, today)
 	refMonth := valueobjects.RefMonthFromTime(today, s.brazilLoc)
 
 	s.templateRepo.EXPECT().
@@ -146,10 +150,10 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_AlreadyMaterialized_SkipsC
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsTransaction() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
-	template := s.buildTemplate(uuid.New(), day)
+	template := s.buildTemplate(uuid.New(), day, today)
 	refMonth := valueobjects.RefMonthFromTime(today, s.brazilLoc)
 
 	s.templateRepo.EXPECT().
@@ -181,10 +185,10 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsTransaction(
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_TransactionCreatorError_ReturnsError() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
-	template := s.buildTemplate(uuid.New(), day)
+	template := s.buildTemplate(uuid.New(), day, today)
 	refMonth := valueobjects.RefMonthFromTime(today, s.brazilLoc)
 
 	s.templateRepo.EXPECT().
@@ -211,7 +215,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_TransactionCreatorError_Re
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCardPurchase() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
 	userID := uuid.New()
@@ -234,7 +238,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCardPurchase
 		option.None[valueobjects.SubcategoryID](),
 		"Despesa", "",
 		freq, dom, inst,
-		now.Add(-24*time.Hour), option.None[time.Time](), now,
+		today.Add(-24*time.Hour), option.None[time.Time](), now,
 	)
 	template := &t
 	refMonth := valueobjects.RefMonthFromTime(today, s.brazilLoc)
@@ -268,7 +272,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCardPurchase
 }
 
 func (s *MaterializeRecurringForDaySuite) TestExecute_CardPurchaseCreatorError() {
-	today := time.Now().In(s.brazilLoc)
+	today := s.referenceToday()
 	day := today.Day()
 
 	userID := uuid.New()
@@ -291,7 +295,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_CardPurchaseCreatorError()
 		option.None[valueobjects.SubcategoryID](),
 		"Despesa", "",
 		freq, dom, inst,
-		now.Add(-24*time.Hour), option.None[time.Time](), now,
+		today.Add(-24*time.Hour), option.None[time.Time](), now,
 	)
 	template := &t
 	refMonth := valueobjects.RefMonthFromTime(today, s.brazilLoc)

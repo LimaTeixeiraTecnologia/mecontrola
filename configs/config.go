@@ -169,33 +169,12 @@ type WhatsAppConfig struct {
 }
 
 type AgentConfig struct {
-	OpenRouterBaseURL   string        `mapstructure:"OPENROUTER_BASE_URL"`
-	OpenRouterAPIKey    string        `mapstructure:"OPENROUTER_API_KEY"`
-	HTTPReferer         string        `mapstructure:"AGENT_LLM_HTTP_REFERER"`
-	XTitle              string        `mapstructure:"AGENT_LLM_X_TITLE"`
-	PrimaryModel        string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
-	FallbackModels      string        `mapstructure:"AGENT_LLM_FALLBACK_MODELS"`
-	MaxTokens           int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
-	MaxInputChars       int           `mapstructure:"AGENT_LLM_MAX_INPUT_CHARS"`
-	ProseMaxTokens      int           `mapstructure:"AGENT_LLM_PROSE_MAX_TOKENS"`
-	Temperature         float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
-	RequestTimeout      time.Duration `mapstructure:"AGENT_LLM_REQUEST_TIMEOUT"`
-	CircuitFailures     int           `mapstructure:"AGENT_LLM_CIRCUIT_FAILURES"`
-	CircuitWindow       time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_WINDOW"`
-	CircuitCooldown     time.Duration `mapstructure:"AGENT_LLM_CIRCUIT_COOLDOWN"`
-	PolicyMinConfidence float64       `mapstructure:"AGENT_POLICY_MIN_CONFIDENCE"`
-
-	OnboardingMaxTokens int    `mapstructure:"AGENT_ONBOARDING_LLM_MAX_TOKENS"`
-	OnboardingModel     string `mapstructure:"AGENT_ONBOARDING_LLM_MODEL"`
-
-	ParsePrimaryModel        string `mapstructure:"AGENT_LLM_PARSE_PRIMARY_MODEL"`
-	ParseFallbackModels      string `mapstructure:"AGENT_LLM_PARSE_FALLBACK_MODELS"`
-	ParseMaxTokens           int    `mapstructure:"AGENT_LLM_PARSE_MAX_TOKENS"`
-	OnboardingPrimaryModel   string `mapstructure:"AGENT_LLM_ONBOARDING_PRIMARY_MODEL"`
-	OnboardingFallbackModels string `mapstructure:"AGENT_LLM_ONBOARDING_FALLBACK_MODELS"`
-	ConvPrimaryModel         string `mapstructure:"AGENT_LLM_CONV_PRIMARY_MODEL"`
-	ConvFallbackModels       string `mapstructure:"AGENT_LLM_CONV_FALLBACK_MODELS"`
-	ConvMaxTokens            int    `mapstructure:"AGENT_LLM_CONV_MAX_TOKENS"`
+	OpenRouterBaseURL string  `mapstructure:"OPENROUTER_BASE_URL"`
+	OpenRouterAPIKey  string  `mapstructure:"OPENROUTER_API_KEY"`
+	PrimaryModel      string  `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
+	EmbedModel        string  `mapstructure:"AGENT_LLM_EMBED_MODEL"`
+	MaxTokens         int     `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	Temperature       float64 `mapstructure:"AGENT_LLM_TEMPERATURE"`
 }
 
 type KiwifyConfig struct {
@@ -536,29 +515,10 @@ func (l *configLoader) envKeys() []string {
 		"TRANSACTIONS_BRAZIL_TIMEZONE",
 		"OPENROUTER_BASE_URL",
 		"OPENROUTER_API_KEY",
-		"AGENT_LLM_HTTP_REFERER",
-		"AGENT_LLM_X_TITLE",
 		"AGENT_LLM_PRIMARY_MODEL",
-		"AGENT_LLM_FALLBACK_MODELS",
+		"AGENT_LLM_EMBED_MODEL",
 		"AGENT_LLM_MAX_TOKENS",
-		"AGENT_LLM_MAX_INPUT_CHARS",
-		"AGENT_LLM_PROSE_MAX_TOKENS",
 		"AGENT_LLM_TEMPERATURE",
-		"AGENT_LLM_REQUEST_TIMEOUT",
-		"AGENT_LLM_CIRCUIT_FAILURES",
-		"AGENT_LLM_CIRCUIT_WINDOW",
-		"AGENT_LLM_CIRCUIT_COOLDOWN",
-		"AGENT_POLICY_MIN_CONFIDENCE",
-		"AGENT_LLM_PARSE_PRIMARY_MODEL",
-		"AGENT_LLM_PARSE_FALLBACK_MODELS",
-		"AGENT_LLM_PARSE_MAX_TOKENS",
-		"AGENT_LLM_ONBOARDING_PRIMARY_MODEL",
-		"AGENT_LLM_ONBOARDING_FALLBACK_MODELS",
-		"AGENT_LLM_CONV_PRIMARY_MODEL",
-		"AGENT_LLM_CONV_FALLBACK_MODELS",
-		"AGENT_LLM_CONV_MAX_TOKENS",
-		"AGENT_ONBOARDING_LLM_MAX_TOKENS",
-		"AGENT_ONBOARDING_LLM_MODEL",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH",
 		"IDENTITY_AUTH_EVENTS_RETENTION_DAYS",
@@ -972,12 +932,6 @@ func (c *Config) validateProductionAgent() []string {
 	if c.AgentConfig.MaxTokens <= 0 || c.AgentConfig.MaxTokens > 4096 {
 		errs = append(errs, "AGENT_LLM_MAX_TOKENS deve estar no intervalo (0..4096] em production")
 	}
-	if c.AgentConfig.MaxInputChars <= 0 || c.AgentConfig.MaxInputChars > 8192 {
-		errs = append(errs, "AGENT_LLM_MAX_INPUT_CHARS deve estar no intervalo (0..8192] em production")
-	}
-	if c.AgentConfig.RequestTimeout <= 0 || c.AgentConfig.RequestTimeout > 30*time.Second {
-		errs = append(errs, "AGENT_LLM_REQUEST_TIMEOUT deve estar no intervalo (0..30s] em production")
-	}
 	return errs
 }
 
@@ -1175,9 +1129,6 @@ func (c *Config) validateOnboarding() []string {
 	}
 
 	var errs []string
-	if strings.TrimSpace(c.AgentConfig.OnboardingModel) == "" {
-		errs = append(errs, "AGENT_ONBOARDING_LLM_MODEL é obrigatório — onboarding sem LLM é proibido")
-	}
 	if o.TokenEncryptionKey == "" {
 		errs = append(errs, "ONBOARDING_TOKEN_ENCRYPTION_KEY é obrigatório quando onboarding está habilitado")
 	}
@@ -1266,29 +1217,10 @@ func (l *configLoader) setWhatsAppDefaults() {
 
 func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
-	l.v.SetDefault("AGENT_LLM_HTTP_REFERER", "https://mecontrola.app")
-	l.v.SetDefault("AGENT_LLM_X_TITLE", "MeControla")
 	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
-	l.v.SetDefault("AGENT_LLM_FALLBACK_MODELS", "mistralai/mistral-small-3.2-24b-instruct")
+	l.v.SetDefault("AGENT_LLM_EMBED_MODEL", "openai/text-embedding-3-small")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 768)
-	l.v.SetDefault("AGENT_LLM_MAX_INPUT_CHARS", 2000)
-	l.v.SetDefault("AGENT_LLM_PROSE_MAX_TOKENS", 200)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
-	l.v.SetDefault("AGENT_LLM_REQUEST_TIMEOUT", 8*time.Second)
-	l.v.SetDefault("AGENT_LLM_CIRCUIT_FAILURES", 5)
-	l.v.SetDefault("AGENT_LLM_CIRCUIT_WINDOW", 30*time.Second)
-	l.v.SetDefault("AGENT_LLM_CIRCUIT_COOLDOWN", 60*time.Second)
-	l.v.SetDefault("AGENT_POLICY_MIN_CONFIDENCE", 0.8)
-	l.v.SetDefault("AGENT_ONBOARDING_LLM_MAX_TOKENS", 512)
-	l.v.SetDefault("AGENT_ONBOARDING_LLM_MODEL", "anthropic/claude-haiku-4.5")
-	l.v.SetDefault("AGENT_LLM_PARSE_PRIMARY_MODEL", "")
-	l.v.SetDefault("AGENT_LLM_PARSE_FALLBACK_MODELS", "")
-	l.v.SetDefault("AGENT_LLM_PARSE_MAX_TOKENS", 0)
-	l.v.SetDefault("AGENT_LLM_ONBOARDING_PRIMARY_MODEL", "")
-	l.v.SetDefault("AGENT_LLM_ONBOARDING_FALLBACK_MODELS", "")
-	l.v.SetDefault("AGENT_LLM_CONV_PRIMARY_MODEL", "")
-	l.v.SetDefault("AGENT_LLM_CONV_FALLBACK_MODELS", "")
-	l.v.SetDefault("AGENT_LLM_CONV_MAX_TOKENS", 0)
 }
 
 func (c *Config) validateWorkflowKernel() []string {

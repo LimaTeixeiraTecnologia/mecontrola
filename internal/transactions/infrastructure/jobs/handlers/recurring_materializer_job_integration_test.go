@@ -75,7 +75,7 @@ func (s *RecurringMaterializerJobIntegrationSuite) TestTwoExecutions_OnlyOneMate
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	s.Require().NoError(err)
 
-	today := time.Now().In(loc)
+	today := time.Date(2026, time.January, 15, 12, 0, 0, 0, loc)
 	dayOfMonth := today.Day()
 
 	userID := uuid.New()

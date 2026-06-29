@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+tasks:
+  platform:
+    desc: |
+      Gates de governanca R-WF-KERNEL-001 / R-AGENT-WF-001 para internal/platform.
+      Falha (exit != 0) ao detectar qualquer violacao; retorna 0 quando conforme.
+      Executa: (1) import proibido no kernel, (2) LLM no kernel, (3) zero comentarios
+      nas 5 camadas novas, (4) cardinalidade de metricas, (5) tipos fechados como string solta.
+    cmds:
+      - |
+        set -eu
+        echo "==> [GATE-1] Kernel nao importa dominio nem camada superior..."
+        HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+          "internal/transactions\|internal/billing\|internal/identity\|internal/platform/agent\|internal/platform/memory\|internal/platform/llm\|internal/platform/scorer\|internal/platform/tool" \
+          internal/platform/workflow/ 2>/dev/null || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: kernel importa dominio ou camada superior"
+          echo "$HITS"
+          exit 1
+        fi
+        echo "PASS GATE-1: kernel sem import de dominio ou camada superior"
+      - |
+        set -eu
+        echo "==> [GATE-2] Sem LLM no kernel..."
+        HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+          "openai\|anthropic\|openrouter\|gemini\|mistral\|llm\." \
+          internal/platform/workflow/ 2>/dev/null || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: LLM no kernel"
+          echo "$HITS"
+          exit 1
+        fi
+        echo "PASS GATE-2: sem LLM no kernel"
+      - |
+        set -eu
+        echo "==> [GATE-3] Zero comentarios em Go de producao nas 5 camadas novas..."
+        DIRS=""
+        for d in \
+          internal/platform/agent \
+          internal/platform/memory \
+          internal/platform/llm \
+          internal/platform/scorer \
+          internal/platform/tool; do
+          [ -d "$d" ] && DIRS="$DIRS $d"
+        done
+        if [ -z "$DIRS" ]; then
+          echo "SKIP GATE-3: nenhuma das 5 camadas existe ainda"
+        else
+          HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+            "^[[:space:]]*//" $DIRS 2>/dev/null \
+            | grep -Ev "(//go:|//nolint:|// Code generated)" || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL: comentarios em Go de producao"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "PASS GATE-3: zero comentarios em producao"
+        fi
+      - |
+        set -eu
+        echo "==> [GATE-4] Cardinalidade controlada (sem resource_id/thread_id/correlation_key como label)..."
+        DIRS=""
+        for d in internal/platform/agent internal/platform/scorer; do
+          [ -d "$d" ] && DIRS="$DIRS $d"
+        done
+        if [ -z "$DIRS" ]; then
+          echo "SKIP GATE-4: camadas agent/scorer ainda nao existem"
+        else
+          HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+            '"resource_id"\|"thread_id"\|"correlation_key"\|"category_id"' \
+            $DIRS 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL: label de alta cardinalidade em metrica"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "PASS GATE-4: sem label de alta cardinalidade"
+        fi
+      - |
+        set -eu
+        echo "==> [GATE-5] Tipos fechados sem string solta (RunStatus/StepStatus/SuspendReason/ToolOutcome/ScorerKind)..."
+        HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+          'RunStatus[[:space:]]*=[[:space:]]*"[^"]*"\|StepStatus[[:space:]]*=[[:space:]]*"[^"]*"\|SuspendReason[[:space:]]*=[[:space:]]*"[^"]*"\|ToolOutcome[[:space:]]*=[[:space:]]*"[^"]*"\|ScorerKind[[:space:]]*=[[:space:]]*"[^"]*"' \
+          internal/platform/ 2>/dev/null || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: tipo fechado como string solta em internal/platform"
+          echo "$HITS"
+          exit 1
+        fi
+        echo "PASS GATE-5: tipos fechados sem string solta"
+      - echo "==> Todos os gates de governanca de plataforma passaram com sucesso"
+
+  no-internal-agent:
+    desc: |
+      Gate de ausencia de internal/agent (RF-30, ADR-004 cutover).
+      Falha se o diretorio internal/agent existir ou se qualquer arquivo Go de producao
+      importar o pacote legado (exceto internal/platform/agent que e permitido).
+    cmds:
+      - |
+        set -eu
+        echo "==> [GATE-CUTOVER] Ausencia de internal/agent em producao..."
+        if [ -d internal/agent ]; then
+          echo "FAIL: diretorio internal/agent existe - remover antes do merge"
+          exit 1
+        fi
+        echo "PASS: diretorio internal/agent ausente"
+      - |
+        set -eu
+        echo "==> [GATE-CUTOVER] Sem import de internal/agent em Go de producao..."
+        HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+          "LimaTeixeiraTecnologia/mecontrola/internal/agent\"" \
+          internal/ cmd/ test/ 2>/dev/null \
+          | grep -v "internal/platform/agent" || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: import de internal/agent encontrado em codigo de producao"
+          echo "$HITS"
+          exit 1
+        fi
+        echo "PASS: sem import de internal/agent em producao"
+        echo "==> GATE-CUTOVER: internal/agent ausente e sem imports proibidos"
