@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +30,66 @@ import (
 const defaultPolicyMinConfidence = 0.8
 
 const settleRegistryTTL = 30 * 24 * time.Hour
+
+type budgetAllocationAlias struct {
+	slug    string
+	aliases []string
+}
+
+var budgetAllocationAliases = []budgetAllocationAlias{
+	{
+		slug: budgetdraft.SlugCustoFixo,
+		aliases: []string{
+			"custos fixos",
+			"custo fixo",
+			"contas fixas",
+			"expense.custo_fixo",
+			"custo_fixo",
+			"fixo",
+		},
+	},
+	{
+		slug: budgetdraft.SlugConhecimento,
+		aliases: []string{
+			"conhecimento",
+			"educacao",
+			"educação",
+			"estudos",
+			"expense.conhecimento",
+		},
+	},
+	{
+		slug: budgetdraft.SlugPrazeres,
+		aliases: []string{
+			"prazeres",
+			"diversao",
+			"diversão",
+			"expense.prazeres",
+			"prazer",
+			"lazer",
+		},
+	},
+	{
+		slug: budgetdraft.SlugMetas,
+		aliases: []string{
+			"objetivos",
+			"expense.metas",
+			"metas",
+			"meta",
+		},
+	},
+	{
+		slug: budgetdraft.SlugLiberdadeFinanceira,
+		aliases: []string{
+			"liberdade financeira",
+			"liberdade_financeira",
+			"expense.liberdade_financeira",
+			"investimentos",
+			"liberdade",
+			"reserva",
+		},
+	},
+}
 
 type settleEntry struct {
 	fn        steps.AuditSettleFunc
@@ -293,6 +355,9 @@ func (a *DailyLedgerAgent) budgetChange(text string, parsed ParsedIntent) budget
 		TotalCents:  parsed.Intent.BudgetTotalCents(),
 		Allocations: parsed.Intent.BudgetAllocations(),
 	}
+	if len(change.Allocations) == 0 {
+		change.Allocations = a.parseBudgetAllocations(text)
+	}
 	if change.TotalCents > 0 || len(change.Allocations) > 0 {
 		return change
 	}
@@ -302,6 +367,75 @@ func (a *DailyLedgerAgent) budgetChange(text string, parsed ParsedIntent) budget
 	}
 	change.TotalCents = cents
 	return change
+}
+
+func (a *DailyLedgerAgent) parseBudgetAllocations(text string) map[string]int {
+	normalized := a.normalizeBudgetAllocationText(text)
+	if normalized == "" {
+		return nil
+	}
+	allocations := make(map[string]int, len(budgetAllocationAliases))
+	for _, candidate := range budgetAllocationAliases {
+		basisPoints, ok := a.matchBudgetAllocationBasisPoints(normalized, candidate.aliases)
+		if !ok {
+			continue
+		}
+		allocations[candidate.slug] = basisPoints
+	}
+	if len(allocations) == 0 {
+		return nil
+	}
+	return allocations
+}
+
+func (a *DailyLedgerAgent) matchBudgetAllocationBasisPoints(text string, aliases []string) (int, bool) {
+	pattern := `(?:^|[\n,;]|\be\b)\s*(?:` + a.joinBudgetAliases(aliases) + `)\s*(?:[:|=-]\s*|\s+)(\d{1,3})\s*%`
+	re := regexp.MustCompile(pattern)
+	matches := re.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return 0, false
+	}
+	last := matches[len(matches)-1]
+	if len(last) < 2 {
+		return 0, false
+	}
+	percentage, err := strconv.Atoi(last[1])
+	if err != nil || percentage <= 0 || percentage > 100 {
+		return 0, false
+	}
+	return percentage * 100, true
+}
+
+func (a *DailyLedgerAgent) joinBudgetAliases(aliases []string) string {
+	parts := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		parts = append(parts, regexp.QuoteMeta(alias))
+	}
+	return strings.Join(parts, "|")
+}
+
+func (a *DailyLedgerAgent) normalizeBudgetAllocationText(text string) string {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"\t", " ",
+		"\r", "\n",
+		"á", "a",
+		"à", "a",
+		"â", "a",
+		"ã", "a",
+		"é", "e",
+		"ê", "e",
+		"í", "i",
+		"ó", "o",
+		"ô", "o",
+		"õ", "o",
+		"ú", "u",
+		"ç", "c",
+	)
+	return replacer.Replace(normalized)
 }
 
 func (a *DailyLedgerAgent) dispatchPlan(ctx context.Context, principal Principal, channel, messageID, text string, parsed ParsedIntent) RouteResult {

@@ -278,6 +278,40 @@ func (s *BudgetConfigRouterSuite) TestPendingSessionPlainIncomeTextFallsBackDete
 	s.Equal(1, s.session.saved)
 }
 
+func (s *BudgetConfigRouterSuite) TestPendingSessionPercentagesFallbackDeterministically() {
+	s.session.found = true
+	s.session.draft, _ = budgetdraft.New("2026-06").Merge(budgetdraft.Change{TotalCents: 1350000})
+	s.convo.result = tools.BudgetConversationResult{
+		Draft:    s.session.draft,
+		Complete: false,
+		Reply:    "seguindo",
+	}
+	var err error
+	s.parser.intent, err = intent.NewUnknown("percentuais")
+	require.NoError(s.T(), err)
+
+	router := s.newRouter()
+	result := router.RouteWhatsApp(context.Background(), services.Principal{UserID: uuid.New()}, services.InboundMessage{
+		Text: `Custos fixos         | 40%
+Metas                | 15%
+Prazeres             | 20%
+ Conhecimento         | 5%
+Liberdade Financeira | 20%`, WhatsAppTo: "+5511999",
+	})
+
+	s.Equal(tools.OutcomeRouted, result.Outcome)
+	s.Equal("seguindo", result.Reply)
+	s.Equal(map[string]int{
+		budgetdraft.SlugCustoFixo:           4000,
+		budgetdraft.SlugMetas:               1500,
+		budgetdraft.SlugPrazeres:            2000,
+		budgetdraft.SlugConhecimento:        500,
+		budgetdraft.SlugLiberdadeFinanceira: 2000,
+	}, s.convo.lastChange.Allocations)
+	s.Equal(1, s.convo.calls)
+	s.Equal(1, s.session.saved)
+}
+
 func (s *BudgetConfigRouterSuite) TestNoPendingSessionFallsThroughToParser() {
 	s.session.found = false
 	s.parser.intent = intent.NewHowAmIDoing()
