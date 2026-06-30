@@ -1217,7 +1217,7 @@ func (l *configLoader) setWhatsAppDefaults() {
 
 func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
-	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "google/gemini-2.5-flash-lite")
+	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "openai/gpt-4o-mini")
 	l.v.SetDefault("AGENT_LLM_EMBED_MODEL", "openai/text-embedding-3-small")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 768)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)

@@ -1569,7 +1569,7 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.WhatsAppConfig.DedupHousekeepingBatch = 10000
 	cfg.OnboardingConfig.TokenEncryptionKey = "testencryptionkey1234567890abcde"
 	cfg.AgentConfig.OpenRouterAPIKey = "sk-real-key-for-testing"
-	cfg.AgentConfig.PrimaryModel = "google/gemini-2.5-flash-lite"
+	cfg.AgentConfig.PrimaryModel = "openai/gpt-4o-mini"
 	cfg.AgentConfig.MaxTokens = 256
 	cfg.OnboardingConfig.AbandonmentTTLHours = 48
 	cfg.OnboardingConfig.AbandonmentJobSchedule = "@hourly"

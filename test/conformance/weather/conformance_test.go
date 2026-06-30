@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents"
@@ -77,7 +79,7 @@ func buildRealProvider(t *testing.T, obs observability.Observability) llm.Provid
 		t.Fatalf("httpclient: %v", err)
 	}
 	return llm.NewOpenRouterProvider(client, llm.Config{
-		Model:          "google/gemini-2.5-flash-lite",
+		Model:          "openai/gpt-4o-mini",
 		EmbedModel:     "openai/text-embedding-3-small",
 		BaseURL:        baseURL,
 		APIKey:         apiKey,
@@ -283,6 +285,36 @@ func (s *WeatherConformanceSuite) TestWeatherAgent_Execute_Sync() {
 				Messages: []llm.Message{{Role: "user", Content: "What is the weather in New York?"}},
 			})
 			scenario.expect(result, err)
+		})
+	}
+}
+
+func TestRealLLM_RespostaSempreEmPortugues(t *testing.T) {
+	obs := fake.NewProvider()
+	provider := buildRealProvider(t, obs)
+	if provider == nil {
+		t.Skip("OPENROUTER_API_KEY + RUN_REAL_LLM=1 required for this test")
+	}
+	a := agents.BuildWeatherAgent(provider, tools.BuildWeatherTool(weather.NewClient()), nil, obs)
+
+	inputs := []string{"Oi", "Hello", "What's the weather?", "Quem descobriu o Brasil?"}
+	englishMarkers := []string{"i can only", "i can help", "what location", "weather information", "are you interested", "sorry, i can", "i'm a weather", "i am a weather"}
+
+	for _, in := range inputs {
+		t.Run(in, func(t *testing.T) {
+			result, err := a.Execute(context.Background(), agent.Request{
+				AgentID: a.ID(),
+				Messages: []llm.Message{
+					{Role: "system", Content: a.Instructions()},
+					{Role: "user", Content: in},
+				},
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, result.Content)
+			body := strings.ToLower(result.Content)
+			for _, marker := range englishMarkers {
+				require.NotContainsf(t, body, marker, "resposta deveria ser pt-br, mas contém inglês (%q): %q", marker, result.Content)
+			}
 		})
 	}
 }
