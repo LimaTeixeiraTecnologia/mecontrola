@@ -6,5 +6,4 @@ type RepositoryFactory interface {
 	MagicTokenRepository(db database.DBTX) MagicTokenRepository
 	SupportSignalRepository(db database.DBTX) SupportSignalRepository
 	OnboardingCleanupRepository(db database.DBTX) OnboardingCleanupRepository
-	OnboardingSessionRepository(db database.DBTX) OnboardingSessionRepository
 }

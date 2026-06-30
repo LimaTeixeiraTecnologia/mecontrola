@@ -52,16 +52,19 @@ func (uc *CreateCheckoutSession) Execute(ctx context.Context, in input.CreateChe
 	defer span.End()
 
 	if err := in.Validate(); err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, err
 	}
 
 	token, err := valueobjects.NewToken()
 	if err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: generate token: %w", err)
 	}
 
 	checkoutURL, err := uc.builder.Build(ctx, in.PlanID, token.ClearText())
 	if err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: build url: %w", err)
 	}
 
@@ -70,14 +73,17 @@ func (uc *CreateCheckoutSession) Execute(ctx context.Context, in input.CreateChe
 
 	magicToken, err := entities.NewMagicToken(tokenID, token.Hash(), in.PlanID, expiresAt)
 	if err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: build entity: %w", err)
 	}
 	ciphertext, err := uc.cipher.Encrypt(ctx, token.ClearText())
 	if err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: encrypt token: %w", err)
 	}
 	magicToken, err = magicToken.WithActivationTokenCiphertext(ciphertext)
 	if err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, fmt.Errorf("onboarding: create checkout session: set encrypted token: %w", err)
 	}
 
@@ -89,6 +95,7 @@ func (uc *CreateCheckoutSession) Execute(ctx context.Context, in input.CreateChe
 		return nil
 	})
 	if err != nil {
+		span.RecordError(err)
 		return output.CreateCheckoutSessionOutput{}, err
 	}
 

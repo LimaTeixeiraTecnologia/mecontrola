@@ -28,7 +28,3 @@ func (f *repositoryFactory) SupportSignalRepository(db database.DBTX) appinterfa
 func (f *repositoryFactory) OnboardingCleanupRepository(db database.DBTX) appinterfaces.OnboardingCleanupRepository {
 	return postgres.NewOnboardingCleanupRepository(f.o11y, db)
 }
-
-func (f *repositoryFactory) OnboardingSessionRepository(db database.DBTX) appinterfaces.OnboardingSessionRepository {
-	return postgres.NewOnboardingSessionRepository(f.o11y, db)
-}

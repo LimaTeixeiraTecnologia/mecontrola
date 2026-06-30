@@ -1,14 +1,12 @@
 # language: pt
 Funcionalidade: Robustez de onboarding
 
-  Cenário: Fallback por WhatsApp consome token e abre sessão
+  Cenário: Fallback por WhatsApp consome token e publica subscription_bound
     Dado existe um token pago elegível para fallback por WhatsApp
     Quando o processor de WhatsApp recebe uma tentativa de fallback do número atual
     Então a última mensagem WhatsApp enviada deve ser "wa-welcome"
     E deve existir 1 evento(s) outbox do tipo "onboarding.subscription_bound"
-    Quando o dispatcher processa o evento onboarding.subscription_bound
-    Então o token atual deve estar consumido pelo usuário corrente
-    E deve existir uma sessão de onboarding em estado "in_progress"
+    E o token atual deve estar consumido pelo usuário corrente
 
   Cenário: Reutilização de token consumido cria sinal de suporte
     Dado existe um token já consumido por outro usuário

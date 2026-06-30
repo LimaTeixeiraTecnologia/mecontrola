@@ -47,7 +47,7 @@ func TestWeatherConditionIsValid(t *testing.T) {
 
 func TestParseWeatherCondition(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		c, err := ParseWeatherCondition("Clear sky")
+		c, err := ParseWeatherCondition("Céu limpo")
 		require.NoError(t, err)
 		assert.Equal(t, WeatherConditionClearSky, c)
 	})
@@ -58,7 +58,7 @@ func TestParseWeatherCondition(t *testing.T) {
 }
 
 func TestWeatherConditionString(t *testing.T) {
-	assert.Equal(t, "Clear sky", WeatherConditionClearSky.String())
-	assert.Equal(t, "Unknown", WeatherConditionUnknown.String())
-	assert.Equal(t, "Unknown", WeatherCondition(0).String())
+	assert.Equal(t, "Céu limpo", WeatherConditionClearSky.String())
+	assert.Equal(t, "Desconhecido", WeatherConditionUnknown.String())
+	assert.Equal(t, "Desconhecido", WeatherCondition(0).String())
 }

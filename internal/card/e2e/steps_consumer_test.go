@@ -14,14 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
-func shortCardName(nome string) string {
-	runes := []rune(nome)
-	if len(runes) > 12 {
-		runes = runes[:12]
-	}
-	return fmt.Sprintf("%s-%s", string(runes), uuid.NewString()[:8])
-}
-
 type cardConsumerEvent struct {
 	eventType string
 	payload   any
@@ -31,84 +23,11 @@ func (ev *cardConsumerEvent) GetEventType() string { return ev.eventType }
 func (ev *cardConsumerEvent) GetPayload() any      { return ev.payload }
 
 func registerConsumerSteps(sc *godog.ScenarioContext, e *cardE2ECtx) {
-	sc.Step(`^o consumer recebe o evento "([^"]*)" com nome "([^"]*)", limite (\d+), fechamento (\d+) e vencimento (\d+)$`, e.consumerReceivesOnboardingEvent)
-	sc.Step(`^o cartão deve estar persistido no banco para o usuário$`, e.assertCardPersistedForUser)
 	sc.Step(`^o consumer recebe o evento "([^"]*)" para o cartão criado com vencimento em (\d+) dias$`, e.consumerReceivesInvoiceDueEvent)
 	sc.Step(`^a gateway de canal deve ter recebido ao menos 1 mensagem para o usuário$`, e.assertGatewayReceivedMessage)
-	sc.Step(`^o mesmo evento de onboarding é reprocessado com o mesmo event_id$`, e.reprocessSameOnboardingEvent)
-	sc.Step(`^o banco deve conter exatamente (\d+) cartão com aquele nome para o usuário$`, e.assertExactCardCountByName)
 	sc.Step(`^o mesmo evento de vencimento é reprocessado$`, e.reprocessSameInvoiceDueEvent)
 	sc.Step(`^a gateway de canal deve ter recebido exatamente (\d+) mensagem para o usuário$`, e.assertGatewayReceivedExactMessages)
 	sc.Step(`^existe um registro de alerta pendente para o cartão com vencimento em (\d+) dias$`, e.insertPendingAlertForCard)
-}
-
-func (e *cardE2ECtx) consumerReceivesOnboardingEvent(_ string, nome string, limite int64, fechamento, vencimento int) error {
-	h, ok := e.eventHandlers["onboarding.card_registered"]
-	if !ok {
-		return fmt.Errorf("handler para onboarding.card_registered nao registrado")
-	}
-
-	cardName := shortCardName(nome)
-	e.cardName = cardName
-
-	raw, err := json.Marshal(struct {
-		UserID     string `json:"UserID"`
-		Name       string `json:"Name"`
-		LimitCents int64  `json:"LimitCents"`
-		ClosingDay int    `json:"ClosingDay"`
-		DueDay     int    `json:"DueDay"`
-	}{
-		UserID:     e.userID.String(),
-		Name:       cardName,
-		LimitCents: limite,
-		ClosingDay: fechamento,
-		DueDay:     vencimento,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal payload onboarding: %w", err)
-	}
-
-	eventID := uuid.NewString()
-	e.lastOnboardingEventID = eventID
-
-	envelope := outbox.Envelope{
-		ID:              eventID,
-		EventType:       "onboarding.card_registered",
-		AggregateUserID: e.userID.String(),
-		OccurredAt:      time.Now().UTC(),
-		Payload:         json.RawMessage(raw),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	return h.Handle(ctx, &cardConsumerEvent{eventType: "onboarding.card_registered", payload: envelope})
-}
-
-func (e *cardE2ECtx) assertCardPersistedForUser() error {
-	if e.cardName == "" {
-		return fmt.Errorf("cardName nao definido")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var count int
-	err := e.db.QueryRowContext(
-		ctx,
-		`SELECT COUNT(*) FROM mecontrola.cards WHERE name = $1 AND user_id = $2 AND deleted_at IS NULL`,
-		e.cardName,
-		e.userID,
-	).Scan(&count)
-	if err != nil {
-		return fmt.Errorf("consultar cartao no banco: %w", err)
-	}
-
-	if count < 1 {
-		return fmt.Errorf("cartao %q nao encontrado no banco para o usuario %s", e.cardName, e.userID)
-	}
-
-	return nil
 }
 
 func (e *cardE2ECtx) consumerReceivesInvoiceDueEvent(_ string, daysUntil int) error {
@@ -175,74 +94,6 @@ func (e *cardE2ECtx) assertGatewayReceivedMessage() error {
 	}
 
 	return fmt.Errorf("gateway nao recebeu mensagem para o usuario com phone %q", e2eUserPhone)
-}
-
-func (e *cardE2ECtx) reprocessSameOnboardingEvent() error {
-	h, ok := e.eventHandlers["onboarding.card_registered"]
-	if !ok {
-		return fmt.Errorf("handler para onboarding.card_registered nao registrado")
-	}
-
-	if e.lastOnboardingEventID == "" {
-		return fmt.Errorf("lastOnboardingEventID nao definido")
-	}
-
-	raw, err := json.Marshal(struct {
-		UserID     string `json:"UserID"`
-		Name       string `json:"Name"`
-		LimitCents int64  `json:"LimitCents"`
-		ClosingDay int    `json:"ClosingDay"`
-		DueDay     int    `json:"DueDay"`
-	}{
-		UserID:     e.userID.String(),
-		Name:       e.cardName,
-		LimitCents: 50000,
-		ClosingDay: 3,
-		DueDay:     10,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal payload reprocess onboarding: %w", err)
-	}
-
-	envelope := outbox.Envelope{
-		ID:              e.lastOnboardingEventID,
-		EventType:       "onboarding.card_registered",
-		AggregateUserID: e.userID.String(),
-		OccurredAt:      time.Now().UTC(),
-		Payload:         json.RawMessage(raw),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	_ = h.Handle(ctx, &cardConsumerEvent{eventType: "onboarding.card_registered", payload: envelope})
-	return nil
-}
-
-func (e *cardE2ECtx) assertExactCardCountByName(expected int) error {
-	if e.cardName == "" {
-		return fmt.Errorf("cardName nao definido")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var count int
-	err := e.db.QueryRowContext(
-		ctx,
-		`SELECT COUNT(*) FROM mecontrola.cards WHERE name = $1 AND user_id = $2 AND deleted_at IS NULL`,
-		e.cardName,
-		e.userID,
-	).Scan(&count)
-	if err != nil {
-		return fmt.Errorf("consultar cartao no banco: %w", err)
-	}
-
-	if count != expected {
-		return fmt.Errorf("esperado %d cartao(s) com nome %q, encontrado %d", expected, e.cardName, count)
-	}
-
-	return nil
 }
 
 func (e *cardE2ECtx) reprocessSameInvoiceDueEvent() error {

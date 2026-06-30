@@ -170,7 +170,7 @@ func (s *WeatherConformanceSuite) defaultTool() tool.ToolHandle {
 func (s *WeatherConformanceSuite) TestWeatherTool_Schema() {
 	wt := s.defaultTool()
 	s.Equal("get-weather", wt.ID())
-	s.Equal("Get current weather for a location", wt.Description())
+	s.Equal("Obter condições climáticas atuais de uma localidade", wt.Description())
 	params := wt.Parameters()
 	s.NotNil(params)
 	s.Equal("object", params["type"])
@@ -351,7 +351,7 @@ func (s *WeatherConformanceSuite) TestWeatherWorkflow_Definition() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			a := agents.BuildWeatherAgent(scenario.dependencies.providerMock, s.defaultTool(), nil, s.obs)
-			def := workflows.BuildWeatherWorkflow(a, weather.NewClient(), "https://api.open-meteo.com/v1/forecast")
+			def := workflows.BuildWeatherWorkflow(a, weather.NewClient(), "https://api.open-meteo.com/v1/forecast", http.DefaultClient)
 			scenario.expect(def)
 		})
 	}
@@ -381,7 +381,7 @@ func (s *WeatherConformanceSuite) TestWeatherWorkflow_FetchAndPlan() {
 				s.Require().NoError(err)
 				s.Equal(workflow.RunStatusSucceeded, result.Status)
 				s.Equal("Paris", result.State.Location)
-				s.Equal("Clear sky", result.State.Condition)
+				s.Equal("Céu limpo", result.State.Condition)
 				s.NotEmpty(result.State.Activities)
 			},
 		},
@@ -391,7 +391,7 @@ func (s *WeatherConformanceSuite) TestWeatherWorkflow_FetchAndPlan() {
 			a := agents.BuildWeatherAgent(scenario.dependencies.provider, s.defaultTool(), nil, s.obs)
 			engine := workflow.NewEngine[workflows.WeatherState](s.store, s.obs)
 			client := s.newWeatherClient(geoSrv.URL, fcSrv.URL)
-			def := workflows.BuildWeatherWorkflow(a, client, fcSrv.URL)
+			def := workflows.BuildWeatherWorkflow(a, client, fcSrv.URL, fcSrv.Client())
 			result, err := engine.Start(s.ctx, def, "test-key-paris", workflows.WeatherState{City: "Paris"})
 			scenario.expect(result, err)
 		})

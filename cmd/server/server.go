@@ -185,8 +185,6 @@ func Run() error {
 		return fmt.Errorf("run: inicializar modulo card: %w", err)
 	}
 	o11y.Logger().Info(ctx, "card module initialized", observability.Bool("router_present", cardModule.CardRouter != nil))
-	onboardingModule.SaveOnboardingCard.SetCardCreator(bootstrap.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
-
 	channelGateway, err := bootstrap.BuildChannelGateway(cfg, o11y, onboardingModule.WhatsAppGateway)
 	if err != nil {
 		return fmt.Errorf("run: build channel gateway: %w", err)

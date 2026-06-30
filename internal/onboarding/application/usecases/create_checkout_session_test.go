@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -60,11 +61,13 @@ func (s *CreateCheckoutSessionSuite) TestExecute() {
 	}
 	scenarios := []struct {
 		name         string
+		in           input.CreateCheckoutSessionInput
 		dependencies dependencies
 		expect       func(out output.CreateCheckoutSessionOutput, err error)
 	}{
 		{
 			name: "deve persistir token criptografado para outreach",
+			in:   input.CreateCheckoutSessionInput{PlanID: "plan-1"},
 			dependencies: dependencies{
 				tokenRepo: func() *mocks.MagicTokenRepository {
 					s.tokenRepo.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(t entities.MagicToken) bool {
@@ -87,6 +90,80 @@ func (s *CreateCheckoutSessionSuite) TestExecute() {
 				s.NotEmpty(out.CheckoutURL)
 			},
 		},
+		{
+			name: "deve retornar erro de validacao quando PlanID estiver vazio",
+			in:   input.CreateCheckoutSessionInput{PlanID: ""},
+			dependencies: dependencies{
+				tokenRepo: s.tokenRepo,
+				factory:   s.factory,
+				builder:   s.builder,
+				cipher:    s.cipher,
+			},
+			expect: func(out output.CreateCheckoutSessionOutput, err error) {
+				s.Error(err)
+				s.Empty(out.CheckoutURL)
+			},
+		},
+		{
+			name: "deve retornar erro quando builder falhar",
+			in:   input.CreateCheckoutSessionInput{PlanID: "plan-1"},
+			dependencies: dependencies{
+				tokenRepo: s.tokenRepo,
+				factory:   s.factory,
+				builder: func() *mocks.CheckoutURLBuilder {
+					s.builder.EXPECT().Build(mock.Anything, mock.Anything, mock.Anything).Return("", errors.New("builder error")).Once()
+					return s.builder
+				}(),
+				cipher: s.cipher,
+			},
+			expect: func(out output.CreateCheckoutSessionOutput, err error) {
+				s.Error(err)
+				s.Empty(out.CheckoutURL)
+			},
+		},
+		{
+			name: "deve retornar erro quando cipher falhar",
+			in:   input.CreateCheckoutSessionInput{PlanID: "plan-1"},
+			dependencies: dependencies{
+				tokenRepo: s.tokenRepo,
+				factory:   s.factory,
+				builder: func() *mocks.CheckoutURLBuilder {
+					s.builder.EXPECT().Build(mock.Anything, mock.Anything, mock.Anything).Return("https://pay.kiwify.com.br/checkout?sck=token", nil).Once()
+					return s.builder
+				}(),
+				cipher: func() *mocks.TokenCipher {
+					s.cipher.EXPECT().Encrypt(mock.Anything, mock.Anything).Return("", errors.New("cipher error")).Once()
+					return s.cipher
+				}(),
+			},
+			expect: func(out output.CreateCheckoutSessionOutput, err error) {
+				s.Error(err)
+				s.Empty(out.CheckoutURL)
+			},
+		},
+		{
+			name: "deve retornar erro quando insert no repositorio falhar",
+			in:   input.CreateCheckoutSessionInput{PlanID: "plan-1"},
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().Insert(mock.Anything, mock.Anything).Return(errors.New("db error")).Once()
+					return s.tokenRepo
+				}(),
+				factory: s.factory,
+				builder: func() *mocks.CheckoutURLBuilder {
+					s.builder.EXPECT().Build(mock.Anything, mock.Anything, mock.Anything).Return("https://pay.kiwify.com.br/checkout?sck=token", nil).Once()
+					return s.builder
+				}(),
+				cipher: func() *mocks.TokenCipher {
+					s.cipher.EXPECT().Encrypt(mock.Anything, mock.Anything).Return("cipher:token", nil).Once()
+					return s.cipher
+				}(),
+			},
+			expect: func(out output.CreateCheckoutSessionOutput, err error) {
+				s.Error(err)
+				s.Empty(out.CheckoutURL)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -100,7 +177,7 @@ func (s *CreateCheckoutSessionSuite) TestExecute() {
 				7*24*time.Hour,
 				s.obs,
 			)
-			out, err := uc.Execute(s.ctx, input.CreateCheckoutSessionInput{PlanID: "plan-1"})
+			out, err := uc.Execute(s.ctx, scenario.in)
 			scenario.expect(out, err)
 		})
 	}

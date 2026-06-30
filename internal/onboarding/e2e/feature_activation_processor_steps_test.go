@@ -14,8 +14,6 @@ import (
 func registerActivationProcessorSteps(sc *godog.ScenarioContext, w *onboardingWorld) {
 	sc.Step(`^existe um token pago com assinatura e dados do cliente$`, w.givenPaidTokenWithSubscriptionExists)
 	sc.Step(`^o processor de WhatsApp recebe um comando de ativação com o token atual$`, w.whenWhatsAppProcessorHandlesActivation)
-	sc.Step(`^o dispatcher processa o evento onboarding\.subscription_bound$`, w.whenSubscriptionBoundEventIsDispatched)
-	sc.Step(`^deve existir uma sessão de onboarding em estado "([^"]*)"$`, w.thenOnboardingSessionStateShouldBe)
 	sc.Step(`^o token atual deve estar consumido pelo usuário corrente$`, w.thenCurrentTokenShouldBeConsumedByCurrentUser)
 	sc.Step(`^o processor retorna a mensagem "([^"]*)"$`, w.thenProcessorReplyShouldBe)
 }
@@ -39,26 +37,6 @@ func (w *onboardingWorld) whenWhatsAppProcessorHandlesActivation() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return w.runtime.deps.whatsAppProcessor.HandleActivation(ctx, "+5511999994444", w.currentTokenClear)
-}
-
-func (w *onboardingWorld) whenSubscriptionBoundEventIsDispatched() error {
-	return w.runDispatcher(w.runtime.registryFactory())
-}
-
-func (w *onboardingWorld) thenOnboardingSessionStateShouldBe(expected string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	row := w.runtime.deps.db.QueryRowContext(ctx, `SELECT user_id, state FROM mecontrola.onboarding_sessions LIMIT 1`)
-	var userID uuid.UUID
-	var state string
-	if err := row.Scan(&userID, &state); err != nil {
-		return err
-	}
-	w.currentUserID = userID
-	if state != expected {
-		return fmt.Errorf("estado esperado %q, recebido %q", expected, state)
-	}
-	return nil
 }
 
 func (w *onboardingWorld) thenCurrentTokenShouldBeConsumedByCurrentUser() error {

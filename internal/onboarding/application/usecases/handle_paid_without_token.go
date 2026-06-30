@@ -40,6 +40,7 @@ func (uc *HandlePaidWithoutToken) Execute(ctx context.Context, in input.HandlePa
 	defer span.End()
 
 	if err := in.Validate(); err != nil {
+		span.RecordError(err)
 		return err
 	}
 
@@ -50,15 +51,18 @@ func (uc *HandlePaidWithoutToken) Execute(ctx context.Context, in input.HandlePa
 		"paid_at":                in.PaidAt,
 	})
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: handle paid without token: marshal signal: %w", err)
 	}
 
 	sig, err := entities.NewSupportSignal(uc.idGen.NewID(), valueobjects.SupportSignalKindPaidWithoutToken, payload)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: handle paid without token: new signal: %w", err)
 	}
 
 	if err := uc.repo.Insert(ctx, sig); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: handle paid without token: insert signal: %w", err)
 	}
 

@@ -100,6 +100,7 @@ func (uc *ConsumeMagicToken) Execute(ctx context.Context, in input.ConsumeMagicT
 	defer span.End()
 
 	if err := in.Validate(); err != nil {
+		span.RecordError(err)
 		return ConsumeResult{}, err
 	}
 
@@ -119,6 +120,7 @@ func (uc *ConsumeMagicToken) Execute(ctx context.Context, in input.ConsumeMagicT
 	if err != nil && errors.Is(err, domain.ErrTokenAlreadyConsumedOther) && result.signal != nil && uc.uow.DBTX() != nil {
 		signalRepo := uc.factory.SupportSignalRepository(uc.uow.DBTX())
 		if insertErr := signalRepo.Insert(ctx, *result.signal); insertErr != nil {
+			span.RecordError(insertErr)
 			return ConsumeResult{}, fmt.Errorf("onboarding: consume magic token: persist reuse signal: %w", insertErr)
 		}
 	}

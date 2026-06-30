@@ -30,7 +30,7 @@ func BuildWeatherTool(client interfaces.WeatherClient) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"location": map[string]any{"type": "string", "description": "City name"},
+				"location": map[string]any{"type": "string", "description": "Nome da cidade"},
 			},
 			"required":             []string{"location"},
 			"additionalProperties": false,
@@ -56,7 +56,7 @@ func BuildWeatherTool(client interfaces.WeatherClient) tool.ToolHandle {
 	}
 
 	exec := buildWeatherExec(client)
-	return tool.NewTool[WeatherInput, WeatherOutput]("get-weather", "Get current weather for a location", in, out, exec)
+	return tool.NewTool[WeatherInput, WeatherOutput]("get-weather", "Obter condições climáticas atuais de uma localidade", in, out, exec)
 }
 
 func buildWeatherExec(client interfaces.WeatherClient) func(context.Context, WeatherInput) (WeatherOutput, error) {

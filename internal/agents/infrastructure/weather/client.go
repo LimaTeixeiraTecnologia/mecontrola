@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/domain"
@@ -38,7 +39,7 @@ func WithForecastBase(base string) Option {
 
 func NewClient(opts ...Option) interfaces.WeatherClient {
 	cl := &httpClient{
-		http:          http.DefaultClient,
+		http:          &http.Client{Timeout: 10 * time.Second},
 		geocodingBase: defaultGeocodingBase,
 		forecastBase:  defaultForecastBase,
 	}
@@ -119,12 +120,16 @@ func (c *httpClient) Forecast(ctx context.Context, lat, lon float64) (domain.For
 	}
 
 	condition := domain.WeatherConditionFromCode(data.Current.WeatherCode)
-	return domain.Forecast{
-		Temperature: data.Current.Temperature,
-		FeelsLike:   data.Current.ApparentTemperature,
-		Humidity:    data.Current.Humidity,
-		WindSpeed:   data.Current.WindSpeed,
-		WindGust:    data.Current.WindGust,
-		Condition:   condition,
-	}, nil
+	f, err := domain.NewForecast(
+		data.Current.Temperature,
+		data.Current.ApparentTemperature,
+		data.Current.Humidity,
+		data.Current.WindSpeed,
+		data.Current.WindGust,
+		condition,
+	)
+	if err != nil {
+		return domain.Forecast{}, fmt.Errorf("weather.client.forecast: invalid_forecast: %w", err)
+	}
+	return f, nil
 }

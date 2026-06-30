@@ -26,7 +26,6 @@ func TestBuildWeatherToolSuccess(t *testing.T) {
 		WindSpeed:   8.0,
 		WindGust:    12.0,
 		Condition:   domain.WeatherConditionMainlyClear,
-		Location:    "Tokyo",
 	}, nil).Once()
 
 	handle := BuildWeatherTool(client)
@@ -42,7 +41,7 @@ func TestBuildWeatherToolSuccess(t *testing.T) {
 	var result WeatherOutput
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.InDelta(t, 22.0, result.Temperature, 0.01)
-	assert.Equal(t, "Mainly clear", result.Conditions)
+	assert.Equal(t, "Predominantemente limpo", result.Conditions)
 	assert.Equal(t, "Tokyo", result.Location)
 }
 

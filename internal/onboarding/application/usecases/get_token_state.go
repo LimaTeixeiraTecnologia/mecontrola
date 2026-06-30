@@ -71,6 +71,7 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 				Reason: TokenStateReasonNotFound,
 			}, nil
 		}
+		span.RecordError(err)
 		return GetTokenStateResult{}, fmt.Errorf("onboarding: get token state: find: %w", err)
 	}
 

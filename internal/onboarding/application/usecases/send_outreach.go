@@ -64,6 +64,7 @@ func (uc *SendOutreach) Execute(ctx context.Context) error {
 
 	candidates, err := uc.repo.FindPaidForOutreach(ctx, olderThan, outreachBatchSize)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: send outreach: find candidates: %w", err)
 	}
 

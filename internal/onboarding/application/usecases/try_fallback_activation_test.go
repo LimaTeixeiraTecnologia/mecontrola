@@ -110,11 +110,17 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 	}{
 		{
 			name: "deve retornar NoMatch quando token nao for encontrado",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999990001"
-				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
-				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, "+5511999990001").Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
+					return s.tokenRepo
+				}(),
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				fromE164:   "+5511999990001",
+			},
 			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
 				s.Equal(FallbackOutcomeNoMatch, result.Outcome)
@@ -122,12 +128,17 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar OutreachRequired quando token sem outreach",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999990002"
-				token := buildPaidTokenWithoutOutreach(fromE164)
-				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, "+5511999990002").Return(buildPaidTokenWithoutOutreach("+5511999990002"), nil).Once()
+					return s.tokenRepo
+				}(),
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				fromE164:   "+5511999990002",
+			},
 			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
 				s.Equal(FallbackOutcomeOutreachRequired, result.Outcome)
@@ -135,16 +146,27 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 		},
 		{
 			name: "deve ativar quando token com outreach",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999990003"
-				token := buildPaidTokenWithOutreach(fromE164)
-				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}, nil).Once()
-				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
-				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, "+5511999990003").Return(buildPaidTokenWithOutreach("+5511999990003"), nil).Once()
+					s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.tokenRepo
+				}(),
+				factory: s.factory,
+				identityGW: func() *mocks.IdentityGateway {
+					s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}, nil).Once()
+					return s.identityGW
+				}(),
+				binder: func() *mocks.SubscriptionBinder {
+					s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+					return s.binder
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
+				fromE164: "+5511999990003",
+			},
 			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
 				s.Equal(FallbackOutcomeActivated, result.Outcome)
@@ -152,12 +174,17 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar NoMatch quando token expirado",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999990004"
-				token := buildExpiredPaidTokenWithOutreach(fromE164)
-				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, "+5511999990004").Return(buildExpiredPaidTokenWithOutreach("+5511999990004"), nil).Once()
+					return s.tokenRepo
+				}(),
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				fromE164:   "+5511999990004",
+			},
 			expect: func(result FallbackResult, err error) {
 				s.NoError(err)
 				s.Equal(FallbackOutcomeNoMatch, result.Outcome)
@@ -165,24 +192,37 @@ func (s *TryFallbackActivationSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar erro quando identity gateway falha",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999990005"
-				token := buildPaidTokenWithOutreach(fromE164)
-				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(token, nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{}, errors.New("identity unavailable")).Once()
-				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, "+5511999990005").Return(buildPaidTokenWithOutreach("+5511999990005"), nil).Once()
+					return s.tokenRepo
+				}(),
+				factory: s.factory,
+				identityGW: func() *mocks.IdentityGateway {
+					s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{}, errors.New("identity unavailable")).Once()
+					return s.identityGW
+				}(),
+				binder:    s.binder,
+				publisher: s.publisher,
+				fromE164:  "+5511999990005",
+			},
 			expect: func(result FallbackResult, err error) {
 				s.Error(err)
 			},
 		},
 		{
 			name: "deve retornar erro quando find falha",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999990006"
-				s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, fromE164).Return(entities.MagicToken{}, errors.New("db error")).Once()
-				return dependencies{tokenRepo: s.tokenRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, fromE164: fromE164}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindPaidByMobileForFallback(mock.Anything, "+5511999990006").Return(entities.MagicToken{}, errors.New("db error")).Once()
+					return s.tokenRepo
+				}(),
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				fromE164:   "+5511999990006",
+			},
 			expect: func(result FallbackResult, err error) {
 				s.Error(err)
 			},

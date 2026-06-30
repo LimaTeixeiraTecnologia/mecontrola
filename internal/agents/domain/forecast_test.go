@@ -16,7 +16,6 @@ func TestNewForecast(t *testing.T) {
 		windSpeed   float64
 		windGust    float64
 		condition   WeatherCondition
-		location    string
 		wantErr     bool
 	}{
 		{
@@ -27,7 +26,6 @@ func TestNewForecast(t *testing.T) {
 			windSpeed:   10.0,
 			windGust:    15.0,
 			condition:   WeatherConditionClearSky,
-			location:    "São Paulo",
 			wantErr:     false,
 		},
 		{
@@ -38,7 +36,6 @@ func TestNewForecast(t *testing.T) {
 			windSpeed:   10.0,
 			windGust:    15.0,
 			condition:   WeatherConditionClearSky,
-			location:    "São Paulo",
 			wantErr:     true,
 		},
 		{
@@ -49,7 +46,6 @@ func TestNewForecast(t *testing.T) {
 			windSpeed:   10.0,
 			windGust:    15.0,
 			condition:   WeatherConditionClearSky,
-			location:    "São Paulo",
 			wantErr:     true,
 		},
 		{
@@ -60,7 +56,6 @@ func TestNewForecast(t *testing.T) {
 			windSpeed:   -5.0,
 			windGust:    15.0,
 			condition:   WeatherConditionClearSky,
-			location:    "São Paulo",
 			wantErr:     true,
 		},
 		{
@@ -71,7 +66,6 @@ func TestNewForecast(t *testing.T) {
 			windSpeed:   10.0,
 			windGust:    -1.0,
 			condition:   WeatherConditionClearSky,
-			location:    "São Paulo",
 			wantErr:     true,
 		},
 		{
@@ -82,25 +76,13 @@ func TestNewForecast(t *testing.T) {
 			windSpeed:   10.0,
 			windGust:    15.0,
 			condition:   WeatherCondition(0),
-			location:    "São Paulo",
-			wantErr:     true,
-		},
-		{
-			name:        "empty location",
-			temperature: 25.0,
-			feelsLike:   23.0,
-			humidity:    60.0,
-			windSpeed:   10.0,
-			windGust:    15.0,
-			condition:   WeatherConditionClearSky,
-			location:    "",
 			wantErr:     true,
 		},
 	}
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			f, err := NewForecast(s.temperature, s.feelsLike, s.humidity, s.windSpeed, s.windGust, s.condition, s.location)
+			f, err := NewForecast(s.temperature, s.feelsLike, s.humidity, s.windSpeed, s.windGust, s.condition)
 			if s.wantErr {
 				assert.Error(t, err)
 				return
@@ -112,7 +94,6 @@ func TestNewForecast(t *testing.T) {
 			assert.Equal(t, s.windSpeed, f.WindSpeed)
 			assert.Equal(t, s.windGust, f.WindGust)
 			assert.Equal(t, s.condition, f.Condition)
-			assert.Equal(t, s.location, f.Location)
 		})
 	}
 }

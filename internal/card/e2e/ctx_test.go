@@ -39,7 +39,6 @@ type cardE2ECtx struct {
 	invoiceDueJob         worker.Job
 	expectedDueDate       time.Time
 	expectedDaysUntil     int
-	lastOnboardingEventID string
 	lastInvoiceDueEventID string
 }
 

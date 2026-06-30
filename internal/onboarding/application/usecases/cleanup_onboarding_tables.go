@@ -37,6 +37,7 @@ func (uc *CleanupOnboardingTables) Execute(ctx context.Context) error {
 	before := time.Now().UTC().Add(-uc.retentionPeriod)
 
 	if err := uc.deleteMetaProcessed(ctx, before); err != nil {
+		span.RecordError(err)
 		return err
 	}
 	return uc.deleteConsumerLookupAttempts(ctx, before)

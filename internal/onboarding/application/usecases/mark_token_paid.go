@@ -38,16 +38,19 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 	defer span.End()
 
 	if err := in.Validate(); err != nil {
+		span.RecordError(err)
 		return err
 	}
 
 	clearToken, err := valueobjects.TokenFromClear(in.FunnelToken)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: mark token paid: parse funnel token: %w", err)
 	}
 
 	token, err := uc.repo.FindByHash(ctx, clearToken.Hash())
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: mark token paid: find token: %w", err)
 	}
 
@@ -59,6 +62,7 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 		PaidAt:             in.PaidAt,
 	})
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: mark token paid: decide: %w", err)
 	}
 
@@ -71,6 +75,7 @@ func (uc *MarkTokenPaid) Execute(ctx context.Context, in input.MarkTokenPaidInpu
 	}
 
 	if err := uc.repo.UpdateMarkPaid(ctx, decision.Token); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("onboarding: mark token paid: update: %w", err)
 	}
 

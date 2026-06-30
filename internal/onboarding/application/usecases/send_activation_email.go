@@ -10,6 +10,8 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
+	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 )
 
 type ActivationTemplateInput struct {
@@ -23,6 +25,7 @@ type ActivationTemplate interface {
 }
 
 type SendActivationEmail struct {
+	repo          appinterfaces.MagicTokenRepository
 	sender        appinterfaces.EmailSender
 	template      ActivationTemplate
 	botNumber     string
@@ -36,6 +39,7 @@ type SendActivationEmail struct {
 }
 
 func NewSendActivationEmail(
+	repo appinterfaces.MagicTokenRepository,
 	sender appinterfaces.EmailSender,
 	template ActivationTemplate,
 	botNumber string,
@@ -51,6 +55,7 @@ func NewSendActivationEmail(
 		"1",
 	)
 	return &SendActivationEmail{
+		repo:          repo,
 		sender:        sender,
 		template:      template,
 		botNumber:     botNumber,
@@ -80,6 +85,23 @@ func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEma
 	if strings.TrimSpace(in.ClearToken) == "" {
 		uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "no_token"))
 		return errors.New("onboarding: send activation email: token vazio")
+	}
+
+	clearToken, err := valueobjects.TokenFromClear(in.ClearToken)
+	if err != nil {
+		return fmt.Errorf("onboarding: send activation email: parse token: %w", err)
+	}
+
+	found, findErr := uc.repo.FindByHash(ctx, clearToken.Hash())
+	if findErr != nil && !errors.Is(findErr, domain.ErrTokenNotFound) {
+		return fmt.Errorf("onboarding: send activation email: find token: %w", findErr)
+	}
+	if findErr == nil {
+		st := found.Status()
+		if st == valueobjects.TokenStatusConsumed || st == valueobjects.TokenStatusExpired {
+			uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "skipped_idempotent"))
+			return nil
+		}
 	}
 
 	waMe := fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), in.ClearToken)

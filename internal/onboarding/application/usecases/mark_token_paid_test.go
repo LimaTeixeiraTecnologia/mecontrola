@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -91,6 +92,80 @@ func (s *MarkTokenPaidSuite) TestExecute() {
 			}(),
 			expect: func(in input.MarkTokenPaidInput, err error) {
 				s.Error(err)
+			},
+		},
+		{
+			name: "deve retornar erro de validacao quando SubscriptionID estiver vazio",
+			dependencies: dependencies{
+				tokenRepo: s.tokenRepo,
+				in:        input.MarkTokenPaidInput{},
+			},
+			expect: func(in input.MarkTokenPaidInput, err error) {
+				s.Error(err)
+			},
+		},
+		{
+			name: "deve retornar erro quando UpdateMarkPaid falhar",
+			dependencies: func() dependencies {
+				clearToken, _ := valueobjects.NewToken()
+				expectedHash := clearToken.Hash()
+				token, _ := entities.NewMagicToken("tok-id", expectedHash, "plan-1", time.Now().UTC().Add(7*24*time.Hour))
+				s.tokenRepo.EXPECT().FindByHash(mock.Anything, expectedHash).Return(token, nil).Once()
+				s.tokenRepo.EXPECT().UpdateMarkPaid(mock.Anything, mock.Anything).Return(errors.New("db error")).Once()
+				return dependencies{
+					tokenRepo: s.tokenRepo,
+					in: input.MarkTokenPaidInput{
+						SubscriptionID:     "sub-003",
+						FunnelToken:        clearToken.ClearText(),
+						CustomerMobileE164: "+5511999999999",
+						CustomerEmail:      "user@example.com",
+						ExternalSaleID:     "sale-003",
+						PaidAt:             time.Now().UTC(),
+					},
+				}
+			}(),
+			expect: func(in input.MarkTokenPaidInput, err error) {
+				s.Error(err)
+			},
+		},
+		{
+			name: "deve retornar nil quando token ja estiver pago (idempotente)",
+			dependencies: func() dependencies {
+				clearToken, _ := valueobjects.NewToken()
+				paidToken := entities.HydrateMagicToken(
+					"tok-id",
+					clearToken.Hash(),
+					valueobjects.TokenStatusPaid,
+					"plan-1",
+					time.Now().UTC().Add(7*24*time.Hour),
+					time.Now().UTC(),
+					time.Now().UTC(),
+					time.Time{},
+					time.Time{},
+					"cipher-token",
+					"sub-004",
+					"+5511999999999",
+					"user@example.com",
+					"sale-004",
+					"",
+					"",
+					valueobjects.ActivationPath(0),
+				)
+				s.tokenRepo.EXPECT().FindByHash(mock.Anything, clearToken.Hash()).Return(paidToken, nil).Once()
+				return dependencies{
+					tokenRepo: s.tokenRepo,
+					in: input.MarkTokenPaidInput{
+						SubscriptionID:     "sub-004",
+						FunnelToken:        clearToken.ClearText(),
+						CustomerMobileE164: "+5511999999999",
+						CustomerEmail:      "user@example.com",
+						ExternalSaleID:     "sale-004",
+						PaidAt:             time.Now().UTC(),
+					},
+				}
+			}(),
+			expect: func(in input.MarkTokenPaidInput, err error) {
+				s.NoError(err)
 			},
 		},
 	}

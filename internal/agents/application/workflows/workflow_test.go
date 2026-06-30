@@ -37,50 +37,10 @@ func (s *WorkflowSuite) SetupTest() {
 	s.weatherMock = weathermocks.NewWeatherClient(s.T())
 }
 
-func (s *WorkflowSuite) TestWeatherConditionFromCode_KnownCodes() {
-	type args struct {
-		code int
-	}
-
-	scenarios := []struct {
-		name   string
-		args   args
-		expect func(result string)
-	}{
-		{
-			name:   "código 0 retorna Clear sky",
-			args:   args{code: 0},
-			expect: func(result string) { s.Equal("Clear sky", result) },
-		},
-		{
-			name:   "código 95 retorna Thunderstorm",
-			args:   args{code: 95},
-			expect: func(result string) { s.Equal("Thunderstorm", result) },
-		},
-		{
-			name:   "código desconhecido retorna Unknown",
-			args:   args{code: 9999},
-			expect: func(result string) { s.Equal("Unknown", result) },
-		},
-		{
-			name:   "código 61 retorna Slight rain",
-			args:   args{code: 61},
-			expect: func(result string) { s.Equal("Slight rain", result) },
-		},
-	}
-
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			result := weatherConditionFromCode(scenario.args.code)
-			scenario.expect(result)
-		})
-	}
-}
-
 func (s *WorkflowSuite) TestBuildWeatherWorkflow_IDAndStructure() {
 	s.agentMock.EXPECT().ID().Return("weather-agent").Maybe()
 
-	def := BuildWeatherWorkflow(s.agentMock, s.weatherMock, "https://api.open-meteo.com/v1/forecast")
+	def := BuildWeatherWorkflow(s.agentMock, s.weatherMock, "https://api.open-meteo.com/v1/forecast", http.DefaultClient)
 
 	s.Equal(WeatherWorkflowID, def.ID)
 	s.NotNil(def.Root)
@@ -108,7 +68,7 @@ func (s *WorkflowSuite) TestFetchWeatherStep_Success() {
 
 	step := workflow.NewStepFunc(
 		StepFetchWeatherID,
-		BuildFetchWeatherStep(s.weatherMock, forecastServer.URL),
+		BuildFetchWeatherStep(s.weatherMock, forecastServer.URL, forecastServer.Client()),
 	)
 
 	state := WeatherState{City: "London"}
@@ -117,7 +77,7 @@ func (s *WorkflowSuite) TestFetchWeatherStep_Success() {
 	s.NoError(err)
 	s.Equal(workflow.StepStatusCompleted, out.Status)
 	s.Equal("London", out.State.Location)
-	s.Equal("Clear sky", out.State.Condition)
+	s.Equal("Céu limpo", out.State.Condition)
 	s.InDelta(25.0, out.State.MaxTemp, 0.001)
 	s.InDelta(20.0, out.State.MinTemp, 0.001)
 	s.InDelta(10.0, out.State.PrecipitationChance, 0.001)
@@ -130,7 +90,7 @@ func (s *WorkflowSuite) TestFetchWeatherStep_LocationNotFound() {
 
 	step := workflow.NewStepFunc(
 		StepFetchWeatherID,
-		BuildFetchWeatherStep(s.weatherMock, "https://unused.example/forecast"),
+		BuildFetchWeatherStep(s.weatherMock, "https://unused.example/forecast", http.DefaultClient),
 	)
 
 	state := WeatherState{City: "NonExistentCity"}

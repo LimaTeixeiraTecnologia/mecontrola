@@ -215,7 +215,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo card: %w", err)
 	}
-	onboardingModule.SaveOnboardingCard.SetCardCreator(bootstrap.NewOnboardingCardCreatorAdapter(cardModule.CreateCardUC))
 	transactionsModule, err := transactions.NewTransactionsModule(r.cfg, r.o11y, r.db, cardModule, categoriesModule, passthroughGateway)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)

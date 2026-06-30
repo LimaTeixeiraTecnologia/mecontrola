@@ -53,6 +53,7 @@ func (uc *ExpireTokens) Execute(ctx context.Context) error {
 	for {
 		expired, err := tokenRepo.BulkExpire(ctx, now, expireBatchSize)
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("onboarding: expire tokens: bulk expire: %w", err)
 		}
 		if len(expired) == 0 {

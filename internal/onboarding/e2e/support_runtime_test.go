@@ -58,49 +58,39 @@ const (
 )
 
 type onboardingDependencies struct {
-	db                         *sqlx.DB
-	o11y                       observability.Observability
-	factory                    appinterfaces.RepositoryFactory
-	identityModule             identity.IdentityModule
-	outboxFactory              outbox.OutboxRepositoryFactory
-	outboxCfg                  configs.OutboxConfig
-	idGen                      id.Generator
-	tokenCipher                appinterfaces.TokenCipher
-	checkoutBuilder            appinterfaces.CheckoutURLBuilder
-	subscriptionBinder         appinterfaces.SubscriptionBinder
-	identityGateway            appinterfaces.IdentityGateway
-	bindingService             *binding.SubscriptionBindingService
-	createCheckout             *usecases.CreateCheckoutSession
-	getTokenState              *usecases.GetTokenState
-	markTokenPaid              *usecases.MarkTokenPaid
-	handlePaidWithoutToken     *usecases.HandlePaidWithoutToken
-	sendActivationEmail        *usecases.SendActivationEmail
-	consumeToken               *usecases.ConsumeMagicToken
-	fallbackActivation         *usecases.TryFallbackActivation
-	startBudgetConfiguration   *usecases.StartBudgetConfiguration
-	getOnboardingContext       *usecases.GetOnboardingContext
-	saveOnboardingObjective    *usecases.SaveOnboardingObjective
-	saveOnboardingIncome       *usecases.SaveOnboardingIncome
-	saveOnboardingCard         *usecases.SaveOnboardingCard
-	saveOnboardingBudgetSplits *usecases.SaveOnboardingBudgetSplits
-	completeOnboardingSession  *usecases.CompleteOnboardingSession
-	setOnboardingPhase         *usecases.SetOnboardingPhase
-	markWelcomeSent            *usecases.MarkWelcomeSent
-	sendOutreach               *usecases.SendOutreach
-	expireTokens               *usecases.ExpireTokens
-	cleanupTables              *usecases.CleanupOnboardingTables
-	publicRouter               *onboardingserver.PublicRouter
-	whatsAppProcessor          *appservices.WhatsAppMessageProcessor
-	subscriptionConsumer       events.Handler
-	activationEmailConsumer    events.Handler
-	paidWithoutTokenConsumer   events.Handler
-	subscriptionBoundConsumer  events.Handler
-	outreachJob                worker.Job
-	expirationJob              worker.Job
-	cleanupJob                 worker.Job
-	metaGateway                *recordingWhatsAppGateway
-	outreachGateway            *recordingOutreachGateway
-	emailSender                *recordingEmailSender
+	db                       *sqlx.DB
+	o11y                     observability.Observability
+	factory                  appinterfaces.RepositoryFactory
+	identityModule           identity.IdentityModule
+	outboxFactory            outbox.OutboxRepositoryFactory
+	outboxCfg                configs.OutboxConfig
+	idGen                    id.Generator
+	tokenCipher              appinterfaces.TokenCipher
+	checkoutBuilder          appinterfaces.CheckoutURLBuilder
+	subscriptionBinder       appinterfaces.SubscriptionBinder
+	identityGateway          appinterfaces.IdentityGateway
+	bindingService           *binding.SubscriptionBindingService
+	createCheckout           *usecases.CreateCheckoutSession
+	getTokenState            *usecases.GetTokenState
+	markTokenPaid            *usecases.MarkTokenPaid
+	handlePaidWithoutToken   *usecases.HandlePaidWithoutToken
+	sendActivationEmail      *usecases.SendActivationEmail
+	consumeToken             *usecases.ConsumeMagicToken
+	fallbackActivation       *usecases.TryFallbackActivation
+	sendOutreach             *usecases.SendOutreach
+	expireTokens             *usecases.ExpireTokens
+	cleanupTables            *usecases.CleanupOnboardingTables
+	publicRouter             *onboardingserver.PublicRouter
+	whatsAppProcessor        *appservices.WhatsAppMessageProcessor
+	subscriptionConsumer     events.Handler
+	activationEmailConsumer  events.Handler
+	paidWithoutTokenConsumer events.Handler
+	outreachJob              worker.Job
+	expirationJob            worker.Job
+	cleanupJob               worker.Job
+	metaGateway              *recordingWhatsAppGateway
+	outreachGateway          *recordingOutreachGateway
+	emailSender              *recordingEmailSender
 }
 
 type txAwarePublisher struct {
@@ -134,7 +124,6 @@ func buildOnboardingRuntime(t *testing.T, db *sqlx.DB) *onboardingRuntime {
 			mustRegisterHandler(t, registry, "billing.subscription.activated", deps.subscriptionConsumer)
 			mustRegisterHandler(t, registry, "billing.subscription.activated", deps.activationEmailConsumer)
 			mustRegisterHandler(t, registry, "billing.subscription.activated_without_token", deps.paidWithoutTokenConsumer)
-			mustRegisterHandler(t, registry, "onboarding.subscription_bound", deps.subscriptionBoundConsumer)
 			return registry
 		},
 	}
@@ -268,6 +257,7 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		o11y,
 	)
 	sendActivationEmail := usecases.NewSendActivationEmail(
+		factory.MagicTokenRepository(db),
 		emailSender,
 		onboardingemail.NewActivationTemplate(),
 		e2eActivateBaseURL,
@@ -290,19 +280,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		bindingService,
 		o11y,
 	)
-	startBudgetConfiguration := usecases.NewStartBudgetConfiguration(
-		uow.NewUnitOfWork(db),
-		factory,
-		o11y,
-	)
-	getOnboardingContext := usecases.NewGetOnboardingContext(factory.OnboardingSessionRepository(db), o11y)
-	saveObjective := usecases.NewSaveOnboardingObjective(uow.NewUnitOfWork(db), factory, o11y)
-	saveIncome := usecases.NewSaveOnboardingIncome(uow.NewUnitOfWork(db), factory, o11y)
-	saveCard := usecases.NewSaveOnboardingCard(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y, nil, e2eCardClosingOffsetDays)
-	saveSplits := usecases.NewSaveOnboardingBudgetSplits(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
-	completeSession := usecases.NewCompleteOnboardingSession(uow.NewUnitOfWork(db), factory, publisher, idGen, o11y)
-	setPhase := usecases.NewSetOnboardingPhase(uow.NewUnitOfWork(db), factory, o11y)
-	markWelcomeSent := usecases.NewMarkWelcomeSent(uow.NewUnitOfWork(db), factory, o11y)
 	sendOutreach := usecases.NewSendOutreach(
 		factory.MagicTokenRepository(db),
 		outreachGateway,
@@ -332,55 +309,44 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 	whatsAppProcessor := appservices.NewWhatsAppMessageProcessor(
 		consumeToken,
 		fallbackActivation,
-		startBudgetConfiguration,
 		metaGateway,
 		runtimeCfg.Messages,
 		o11y,
 	)
 	return &onboardingDependencies{
-		db:                         db,
-		o11y:                       o11y,
-		factory:                    factory,
-		identityModule:             identityModule,
-		outboxFactory:              outbox.NewRepositoryFactory(o11y),
-		outboxCfg:                  outboxCfg,
-		idGen:                      idGen,
-		tokenCipher:                tokenCipher,
-		checkoutBuilder:            checkoutBuilder,
-		subscriptionBinder:         subscriptionBinder,
-		identityGateway:            identityGateway,
-		bindingService:             bindingService,
-		createCheckout:             createCheckout,
-		getTokenState:              getTokenState,
-		markTokenPaid:              markTokenPaid,
-		handlePaidWithoutToken:     handlePaidWithoutToken,
-		sendActivationEmail:        sendActivationEmail,
-		consumeToken:               consumeToken,
-		fallbackActivation:         fallbackActivation,
-		startBudgetConfiguration:   startBudgetConfiguration,
-		getOnboardingContext:       getOnboardingContext,
-		saveOnboardingObjective:    saveObjective,
-		saveOnboardingIncome:       saveIncome,
-		saveOnboardingCard:         saveCard,
-		saveOnboardingBudgetSplits: saveSplits,
-		completeOnboardingSession:  completeSession,
-		setOnboardingPhase:         setPhase,
-		markWelcomeSent:            markWelcomeSent,
-		sendOutreach:               sendOutreach,
-		expireTokens:               expireTokens,
-		cleanupTables:              cleanupTables,
-		publicRouter:               publicRouter,
-		whatsAppProcessor:          whatsAppProcessor,
-		subscriptionConsumer:       consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y),
-		activationEmailConsumer:    consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
-		paidWithoutTokenConsumer:   consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),
-		subscriptionBoundConsumer:  consumers.NewSubscriptionBoundSessionConsumer(startBudgetConfiguration, o11y),
-		outreachJob:                jobhandlers.NewOutreachJob(sendOutreach, true),
-		expirationJob:              jobhandlers.NewTokenExpirationJob(expireTokens, "@daily"),
-		cleanupJob:                 jobhandlers.NewMetaProcessedMessagesCleanupJob(cleanupTables, "@daily"),
-		metaGateway:                metaGateway,
-		outreachGateway:            outreachGateway,
-		emailSender:                emailSender,
+		db:                       db,
+		o11y:                     o11y,
+		factory:                  factory,
+		identityModule:           identityModule,
+		outboxFactory:            outbox.NewRepositoryFactory(o11y),
+		outboxCfg:                outboxCfg,
+		idGen:                    idGen,
+		tokenCipher:              tokenCipher,
+		checkoutBuilder:          checkoutBuilder,
+		subscriptionBinder:       subscriptionBinder,
+		identityGateway:          identityGateway,
+		bindingService:           bindingService,
+		createCheckout:           createCheckout,
+		getTokenState:            getTokenState,
+		markTokenPaid:            markTokenPaid,
+		handlePaidWithoutToken:   handlePaidWithoutToken,
+		sendActivationEmail:      sendActivationEmail,
+		consumeToken:             consumeToken,
+		fallbackActivation:       fallbackActivation,
+		sendOutreach:             sendOutreach,
+		expireTokens:             expireTokens,
+		cleanupTables:            cleanupTables,
+		publicRouter:             publicRouter,
+		whatsAppProcessor:        whatsAppProcessor,
+		subscriptionConsumer:     consumers.NewSubscriptionPaidConsumer(markTokenPaid, o11y),
+		activationEmailConsumer:  consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
+		paidWithoutTokenConsumer: consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),
+		outreachJob:              jobhandlers.NewOutreachJob(sendOutreach, true),
+		expirationJob:            jobhandlers.NewTokenExpirationJob(expireTokens, "@daily"),
+		cleanupJob:               jobhandlers.NewMetaProcessedMessagesCleanupJob(cleanupTables, "@daily"),
+		metaGateway:              metaGateway,
+		outreachGateway:          outreachGateway,
+		emailSender:              emailSender,
 	}
 }
 

@@ -49,8 +49,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 				tok, _ := valueobjects.NewToken()
 				mt, _ := entities.NewMagicToken("id-1", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
 				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC())
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(paid, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(paid, nil).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
@@ -65,8 +70,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 			dependencies: func() dependencies {
 				tok, _ := valueobjects.NewToken()
 				mt, _ := entities.NewMagicToken("id-2", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(mt, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(mt, nil).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
@@ -83,8 +93,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 				tok, _ := valueobjects.NewToken()
 				mt, _ := entities.NewMagicToken("id-3", tok.Hash(), "plan-1", time.Now().UTC().Add(-1*time.Hour))
 				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC().Add(-2*time.Hour))
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(paid, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(paid, nil).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
@@ -99,8 +114,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 			name: "deve retornar ReadyToActivate false quando token nao encontrado",
 			dependencies: func() dependencies {
 				tok, _ := valueobjects.NewToken()
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
@@ -116,8 +136,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 				tok, _ := valueobjects.NewToken()
 				mt, _ := entities.NewMagicToken("id-4", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
 				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC())
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(paid, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(paid, nil).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
@@ -132,8 +157,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 				mt, _ := entities.NewMagicToken("id-5", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
 				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC())
 				consumed, _ := paid.MarkConsumed("u-001", "+5511999999999", valueobjects.ActivationPathDirect, time.Now().UTC())
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(consumed, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(consumed, nil).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
@@ -152,8 +182,13 @@ func (s *GetTokenStateSuite) TestExecute() {
 				mt, _ := entities.NewMagicToken("id-6", tok.Hash(), "plan-1", time.Now().UTC().Add(7*24*time.Hour))
 				paid, _ := mt.MarkPaid("sub-001", "+5511999999999", "u@test.com", "sale-1", time.Now().UTC())
 				consumed, _ := paid.MarkConsumed("u-001", "+5511999999999", valueobjects.ActivationPathDirect, time.Now().UTC())
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(consumed, nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, tokenClear: tok.ClearText()}
+				return dependencies{
+					tokenRepo: func() *mocks.MagicTokenRepository {
+						s.tokenRepo.EXPECT().FindByHash(mock.Anything, tok.Hash()).Return(consumed, nil).Once()
+						return s.tokenRepo
+					}(),
+					tokenClear: tok.ClearText(),
+				}
 			}(),
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)

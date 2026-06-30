@@ -12,12 +12,11 @@ type Forecast struct {
 	WindSpeed   float64
 	WindGust    float64
 	Condition   WeatherCondition
-	Location    string
 }
 
 var errInvalidForecast = errors.New("domain: invalid forecast")
 
-func NewForecast(temperature, feelsLike, humidity, windSpeed, windGust float64, condition WeatherCondition, location string) (Forecast, error) {
+func NewForecast(temperature, feelsLike, humidity, windSpeed, windGust float64, condition WeatherCondition) (Forecast, error) {
 	var errs []error
 	if humidity < 0 || humidity > 100 {
 		errs = append(errs, fmt.Errorf("humidity: %w: must be in range 0..100", errInvalidForecast))
@@ -31,9 +30,6 @@ func NewForecast(temperature, feelsLike, humidity, windSpeed, windGust float64, 
 	if !condition.IsValid() {
 		errs = append(errs, fmt.Errorf("condition: %w: invalid weather condition", errInvalidForecast))
 	}
-	if location == "" {
-		errs = append(errs, fmt.Errorf("location: %w: must not be empty", errInvalidForecast))
-	}
 	if len(errs) > 0 {
 		return Forecast{}, errors.Join(errs...)
 	}
@@ -44,6 +40,5 @@ func NewForecast(temperature, feelsLike, humidity, windSpeed, windGust float64, 
 		WindSpeed:   windSpeed,
 		WindGust:    windGust,
 		Condition:   condition,
-		Location:    location,
 	}, nil
 }

@@ -45,7 +45,6 @@ type BudgetsModule struct {
 	ThresholdAlertsJob          *budgetsjobs.ThresholdAlertsJob
 	ExpenseCommittedConsumer    *consumers.ExpenseCommittedConsumer
 	ThresholdAlertNotifier      *consumers.ThresholdAlertNotifier
-	OnboardingBudgetConsumer    *consumers.OnboardingBudgetConsumer
 	TransactionCreatedConsumer  *consumers.TransactionCreatedConsumer
 	TransactionDeletedConsumer  *consumers.TransactionDeletedConsumer
 	CardPurchaseCreatedConsumer *consumers.CardPurchaseCreatedConsumer
@@ -132,7 +131,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	}
 
 	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
-	onboardingBudgetConsumer := consumers.NewOnboardingBudgetConsumer(useCases.createBudget, useCases.activateBudget, b.o11y)
 	transactionCreatedConsumer := consumers.NewTransactionCreatedConsumer(useCases.upsertExpense, b.o11y)
 	transactionDeletedConsumer := consumers.NewTransactionDeletedConsumer(useCases.deleteExpense, b.o11y)
 	cardPurchaseCreatedConsumer := consumers.NewCardPurchaseCreatedConsumer(useCases.upsertExpense, b.o11y)
@@ -145,7 +143,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	jobEnabled := mode == configs.ThresholdAlertsModeJob || mode == configs.ThresholdAlertsModeBoth
 
 	eventHandlers := []BudgetsEventHandlerRegistration{
-		{EventType: "onboarding.splits_calculated", Handler: onboardingBudgetConsumer},
 		{EventType: "transactions.transaction.created.v1", Handler: transactionCreatedConsumer},
 		{EventType: "transactions.transaction.deleted.v1", Handler: transactionDeletedConsumer},
 		{EventType: "transactions.card_purchase.created.v1", Handler: cardPurchaseCreatedConsumer},
@@ -179,7 +176,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		ThresholdAlertsJob:          thresholdAlertsJob,
 		ExpenseCommittedConsumer:    expenseCommittedConsumer,
 		ThresholdAlertNotifier:      thresholdAlertNotifier,
-		OnboardingBudgetConsumer:    onboardingBudgetConsumer,
 		TransactionCreatedConsumer:  transactionCreatedConsumer,
 		TransactionDeletedConsumer:  transactionDeletedConsumer,
 		CardPurchaseCreatedConsumer: cardPurchaseCreatedConsumer,

@@ -28,29 +28,29 @@ const (
 )
 
 var weatherConditionLabels = map[WeatherCondition]string{
-	WeatherConditionClearSky:          "Clear sky",
-	WeatherConditionMainlyClear:       "Mainly clear",
-	WeatherConditionPartlyCloudy:      "Partly cloudy",
-	WeatherConditionOvercast:          "Overcast",
-	WeatherConditionFoggy:             "Foggy",
-	WeatherConditionDepositingRimeFog: "Depositing rime fog",
-	WeatherConditionLightDrizzle:      "Light drizzle",
-	WeatherConditionModerateDrizzle:   "Moderate drizzle",
-	WeatherConditionDenseDrizzle:      "Dense drizzle",
-	WeatherConditionSlightRain:        "Slight rain",
-	WeatherConditionModerateRain:      "Moderate rain",
-	WeatherConditionHeavyRain:         "Heavy rain",
-	WeatherConditionSlightSnowFall:    "Slight snow fall",
-	WeatherConditionModerateSnowFall:  "Moderate snow fall",
-	WeatherConditionHeavySnowFall:     "Heavy snow fall",
-	WeatherConditionThunderstorm:      "Thunderstorm",
+	WeatherConditionClearSky:          "Céu limpo",
+	WeatherConditionMainlyClear:       "Predominantemente limpo",
+	WeatherConditionPartlyCloudy:      "Parcialmente nublado",
+	WeatherConditionOvercast:          "Nublado",
+	WeatherConditionFoggy:             "Neblina",
+	WeatherConditionDepositingRimeFog: "Neblina com geada",
+	WeatherConditionLightDrizzle:      "Garoa leve",
+	WeatherConditionModerateDrizzle:   "Garoa moderada",
+	WeatherConditionDenseDrizzle:      "Garoa intensa",
+	WeatherConditionSlightRain:        "Chuva leve",
+	WeatherConditionModerateRain:      "Chuva moderada",
+	WeatherConditionHeavyRain:         "Chuva forte",
+	WeatherConditionSlightSnowFall:    "Nevada leve",
+	WeatherConditionModerateSnowFall:  "Nevada moderada",
+	WeatherConditionHeavySnowFall:     "Nevada intensa",
+	WeatherConditionThunderstorm:      "Tempestade",
 }
 
 func (c WeatherCondition) String() string {
 	if label, ok := weatherConditionLabels[c]; ok {
 		return label
 	}
-	return "Unknown"
+	return "Desconhecido"
 }
 
 func (c WeatherCondition) IsValid() bool {

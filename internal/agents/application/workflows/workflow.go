@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -41,24 +42,8 @@ type hourlyForecastResponse struct {
 	} `json:"hourly"`
 }
 
-var weatherCodeMap = map[int]string{
-	0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-	45: "Foggy", 48: "Depositing rime fog",
-	51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
-	61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
-	71: "Slight snow fall", 73: "Moderate snow fall", 75: "Heavy snow fall",
-	95: "Thunderstorm",
-}
-
-func weatherConditionFromCode(code int) string {
-	if s, ok := weatherCodeMap[code]; ok {
-		return s
-	}
-	return "Unknown"
-}
-
-func BuildWeatherWorkflow(a agent.Agent, client interfaces.WeatherClient, forecastBase string) workflow.Definition[WeatherState] {
-	fetchStep := workflow.NewStepFunc[WeatherState](StepFetchWeatherID, BuildFetchWeatherStep(client, forecastBase))
+func BuildWeatherWorkflow(a agent.Agent, client interfaces.WeatherClient, forecastBase string, httpClient *http.Client) workflow.Definition[WeatherState] {
+	fetchStep := workflow.NewStepFunc[WeatherState](StepFetchWeatherID, BuildFetchWeatherStep(client, forecastBase, httpClient))
 	planStep := workflow.NewStepFunc[WeatherState](StepPlanActivities, BuildPlanActivitiesStep(a))
 
 	return workflow.Definition[WeatherState]{
@@ -69,7 +54,7 @@ func BuildWeatherWorkflow(a agent.Agent, client interfaces.WeatherClient, foreca
 	}
 }
 
-func BuildFetchWeatherStep(client interfaces.WeatherClient, forecastBase string) func(context.Context, WeatherState) (workflow.StepOutput[WeatherState], error) {
+func BuildFetchWeatherStep(client interfaces.WeatherClient, forecastBase string, httpClient *http.Client) func(context.Context, WeatherState) (workflow.StepOutput[WeatherState], error) {
 	return func(ctx context.Context, state WeatherState) (workflow.StepOutput[WeatherState], error) {
 		lat, lon, name, err := client.Geocode(ctx, state.City)
 		if err != nil {
@@ -85,7 +70,7 @@ func BuildFetchWeatherStep(client interfaces.WeatherClient, forecastBase string)
 			return workflow.StepOutput[WeatherState]{State: state, Status: workflow.StepStatusFailed},
 				fmt.Errorf("agents.workflow.fetch_weather: new_request: %w", err)
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			return workflow.StepOutput[WeatherState]{State: state, Status: workflow.StepStatusFailed},
 				fmt.Errorf("agents.workflow.fetch_weather: do: %w", err)
@@ -124,7 +109,7 @@ func BuildFetchWeatherStep(client interfaces.WeatherClient, forecastBase string)
 		state.MaxTemp = maxTemp
 		state.MinTemp = minTemp
 		state.PrecipitationChance = maxPrecip
-		state.Condition = weatherConditionFromCode(data.Current.WeatherCode)
+		state.Condition = domain.WeatherConditionFromCode(data.Current.WeatherCode).String()
 		state.Location = name
 
 		return workflow.StepOutput[WeatherState]{State: state, Status: workflow.StepStatusCompleted}, nil
@@ -147,7 +132,7 @@ func BuildPlanActivitiesStep(a agent.Agent) func(context.Context, WeatherState) 
 		}
 
 		prompt := fmt.Sprintf(
-			"Based on the following weather forecast for %s, suggest appropriate activities:\n%s\n\nKeep your response concise.",
+			"Com base na seguinte previsão do tempo para %s, sugira atividades adequadas:\n%s\n\nSeja conciso.",
 			state.Location, string(forecastJSON),
 		)
 

@@ -55,17 +55,6 @@ type OnboardingModule struct {
 	ExpirationJob                worker.Job
 	MetaProcessedMessagesCleanup worker.Job
 	SendActivationEmail          *usecases.SendActivationEmail
-	StartBudgetConfiguration     *usecases.StartBudgetConfiguration
-	GetOnboardingContext         *usecases.GetOnboardingContext
-	SaveOnboardingObjective      *usecases.SaveOnboardingObjective
-	SaveOnboardingIncome         *usecases.SaveOnboardingIncome
-	SaveOnboardingCard           *usecases.SaveOnboardingCard
-	SaveOnboardingBudgetSplits   *usecases.SaveOnboardingBudgetSplits
-	CompleteOnboardingSession    *usecases.CompleteOnboardingSession
-	SetOnboardingPhase           *usecases.SetOnboardingPhase
-	AppendOnboardingTurn         *usecases.AppendOnboardingTurn
-	LoadOnboardingTurns          *usecases.LoadOnboardingTurns
-	MarkWelcomeSent              *usecases.MarkWelcomeSent
 	EventHandlers                []EventHandlerRegistration
 }
 
@@ -87,39 +76,19 @@ type onboardingDependencies struct {
 	idGen           id.Generator
 	whatsAppGateway appinterfaces.WhatsAppGateway
 	bindingService  *binding.SubscriptionBindingService
-	cardCreator     usecases.SynchronousCardCreator
-}
-
-type OnboardingModuleOption func(*onboardingDependencies)
-
-func WithOnboardingCardCreator(creator usecases.SynchronousCardCreator) OnboardingModuleOption {
-	return func(d *onboardingDependencies) {
-		d.cardCreator = creator
-	}
 }
 
 type onboardingUseCasesBundle struct {
-	createCheckout           *usecases.CreateCheckoutSession
-	markTokenPaid            *usecases.MarkTokenPaid
-	consumeToken             *usecases.ConsumeMagicToken
-	fallbackActivation       *usecases.TryFallbackActivation
-	getTokenState            *usecases.GetTokenState
-	sendOutreach             *usecases.SendOutreach
-	sendActivationEmail      *usecases.SendActivationEmail
-	expireTokens             *usecases.ExpireTokens
-	handlePaidWithoutToken   *usecases.HandlePaidWithoutToken
-	cleanupTables            *usecases.CleanupOnboardingTables
-	startBudgetConfiguration *usecases.StartBudgetConfiguration
-	getOnboardingContext     *usecases.GetOnboardingContext
-	saveObjective            *usecases.SaveOnboardingObjective
-	saveIncome               *usecases.SaveOnboardingIncome
-	saveCard                 *usecases.SaveOnboardingCard
-	saveBudgetSplits         *usecases.SaveOnboardingBudgetSplits
-	completeSession          *usecases.CompleteOnboardingSession
-	setPhase                 *usecases.SetOnboardingPhase
-	appendTurn               *usecases.AppendOnboardingTurn
-	loadTurns                *usecases.LoadOnboardingTurns
-	markWelcomeSent          *usecases.MarkWelcomeSent
+	createCheckout         *usecases.CreateCheckoutSession
+	markTokenPaid          *usecases.MarkTokenPaid
+	consumeToken           *usecases.ConsumeMagicToken
+	fallbackActivation     *usecases.TryFallbackActivation
+	getTokenState          *usecases.GetTokenState
+	sendOutreach           *usecases.SendOutreach
+	sendActivationEmail    *usecases.SendActivationEmail
+	expireTokens           *usecases.ExpireTokens
+	handlePaidWithoutToken *usecases.HandlePaidWithoutToken
+	cleanupTables          *usecases.CleanupOnboardingTables
 }
 
 func NewOnboardingModule(
@@ -130,16 +99,12 @@ func NewOnboardingModule(
 	emailCfg configs.EmailConfig,
 	identityModule identity.IdentityModule,
 	o11y observability.Observability,
-	opts ...OnboardingModuleOption,
 ) (OnboardingModule, error) {
 	deps, err := buildOnboardingDependencies(db, cfg, waCfg, outboxCfg, identityModule, o11y)
 	if err != nil {
 		return OnboardingModule{}, err
 	}
-	for _, opt := range opts {
-		opt(&deps)
-	}
-	useCases, err := buildOnboardingUseCases(db, cfg, waCfg, emailCfg, identityModule, deps, o11y)
+	useCases, err := buildOnboardingUseCases(db, cfg, waCfg, emailCfg, deps, o11y)
 	if err != nil {
 		return OnboardingModule{}, err
 	}
@@ -147,7 +112,6 @@ func NewOnboardingModule(
 	subscriptionConsumer := consumers.NewSubscriptionPaidConsumer(useCases.markTokenPaid, o11y)
 	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(useCases.handlePaidWithoutToken, o11y)
 	activationEmailConsumer := consumers.NewActivationEmailConsumer(useCases.sendActivationEmail, o11y)
-	subscriptionBoundSessionConsumer := consumers.NewSubscriptionBoundSessionConsumer(useCases.startBudgetConfiguration, o11y)
 
 	return OnboardingModule{
 		PublicRouter:                 newPublicRouter(cfg, deps.runtimeCfg, useCases.createCheckout, useCases.getTokenState, o11y),
@@ -159,22 +123,10 @@ func NewOnboardingModule(
 		ExpirationJob:                onboardingjobs.NewTokenExpirationJob(useCases.expireTokens, cfg.TokenExpirationSchedule),
 		MetaProcessedMessagesCleanup: onboardingjobs.NewMetaProcessedMessagesCleanupJob(useCases.cleanupTables, cfg.MetaCleanupSchedule),
 		SendActivationEmail:          useCases.sendActivationEmail,
-		StartBudgetConfiguration:     useCases.startBudgetConfiguration,
-		GetOnboardingContext:         useCases.getOnboardingContext,
-		SaveOnboardingObjective:      useCases.saveObjective,
-		SaveOnboardingIncome:         useCases.saveIncome,
-		SaveOnboardingCard:           useCases.saveCard,
-		SaveOnboardingBudgetSplits:   useCases.saveBudgetSplits,
-		CompleteOnboardingSession:    useCases.completeSession,
-		SetOnboardingPhase:           useCases.setPhase,
-		AppendOnboardingTurn:         useCases.appendTurn,
-		LoadOnboardingTurns:          useCases.loadTurns,
-		MarkWelcomeSent:              useCases.markWelcomeSent,
 		EventHandlers: []EventHandlerRegistration{
 			{EventType: "billing.subscription.activated", Handler: subscriptionConsumer},
 			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
 			{EventType: "billing.subscription.activated_without_token", Handler: paidWithoutTokenConsumer},
-			{EventType: "onboarding.subscription_bound", Handler: subscriptionBoundSessionConsumer},
 		},
 	}, nil
 }
@@ -216,7 +168,6 @@ func buildOnboardingUseCases(
 	cfg configs.OnboardingConfig,
 	waCfg configs.WhatsAppConfig,
 	emailCfg configs.EmailConfig,
-	identityModule identity.IdentityModule,
 	deps onboardingDependencies,
 	o11y observability.Observability,
 ) (onboardingUseCasesBundle, error) {
@@ -231,21 +182,12 @@ func buildOnboardingUseCases(
 	}
 	checkoutUoW := uow.NewUnitOfWork(db)
 	consumeUoW := uow.NewUnitOfWork(db)
-	startBudgetUoW := uow.NewUnitOfWork(db)
-	saveObjectiveUoW := uow.NewUnitOfWork(db)
-	saveIncomeUoW := uow.NewUnitOfWork(db)
-	saveCardUoW := uow.NewUnitOfWork(db)
-	saveSplitsUoW := uow.NewUnitOfWork(db)
-	completeSessionUoW := uow.NewUnitOfWork(db)
-	setPhaseUoW := uow.NewUnitOfWork(db)
-	onboardingSessionRepo := deps.factory.OnboardingSessionRepository(db)
 	urlBuilder := checkout.NewKiwifyURLBuilder(deps.runtimeCfg.CheckoutURLs, deps.runtimeCfg.KiwifyAllowedHosts)
 	activationTemplate := onboardingemail.NewActivationTemplate()
 	magicTokenWorkflow := domainservices.NewMagicTokenWorkflow()
 	magicTokenRepo := deps.factory.MagicTokenRepository(db)
 	supportSignalRepo := deps.factory.SupportSignalRepository(db)
 	cleanupRepo := deps.factory.OnboardingCleanupRepository(db)
-	_ = identityModule
 	return onboardingUseCasesBundle{
 		createCheckout:     usecases.NewCreateCheckoutSession(checkoutUoW, deps.factory, urlBuilder, tokenCipher, deps.idGen, deps.runtimeCfg.TokenTTL, o11y),
 		markTokenPaid:      usecases.NewMarkTokenPaid(magicTokenRepo, magicTokenWorkflow, o11y),
@@ -254,6 +196,7 @@ func buildOnboardingUseCases(
 		getTokenState:      usecases.NewGetTokenState(magicTokenRepo, waCfg.BotNumberE164, waCfg.BotNumberDisplay, o11y),
 		sendOutreach:       usecases.NewSendOutreach(magicTokenRepo, channelGateway, tokenCipher, deps.idGen, waCfg.OutreachTemplateName, deps.runtimeCfg.OutreachGap, o11y),
 		sendActivationEmail: usecases.NewSendActivationEmail(
+			magicTokenRepo,
 			emailSender,
 			activationTemplate,
 			waCfg.BotNumberE164,
@@ -263,20 +206,9 @@ func buildOnboardingUseCases(
 			deps.runtimeCfg.TokenTTL,
 			o11y,
 		),
-		expireTokens:             usecases.NewExpireTokens(db, deps.factory, deps.idGen, o11y),
-		handlePaidWithoutToken:   usecases.NewHandlePaidWithoutToken(supportSignalRepo, deps.idGen, o11y),
-		cleanupTables:            usecases.NewCleanupOnboardingTables(cleanupRepo, deps.runtimeCfg.MetaRetention, o11y),
-		startBudgetConfiguration: usecases.NewStartBudgetConfiguration(startBudgetUoW, deps.factory, o11y),
-		getOnboardingContext:     usecases.NewGetOnboardingContext(onboardingSessionRepo, o11y),
-		saveObjective:            usecases.NewSaveOnboardingObjective(saveObjectiveUoW, deps.factory, o11y),
-		saveIncome:               usecases.NewSaveOnboardingIncome(saveIncomeUoW, deps.factory, o11y),
-		saveCard:                 usecases.NewSaveOnboardingCard(saveCardUoW, deps.factory, deps.publisher, deps.idGen, o11y, deps.cardCreator, cfg.CardClosingOffsetDays),
-		saveBudgetSplits:         usecases.NewSaveOnboardingBudgetSplits(saveSplitsUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		completeSession:          usecases.NewCompleteOnboardingSession(completeSessionUoW, deps.factory, deps.publisher, deps.idGen, o11y),
-		setPhase:                 usecases.NewSetOnboardingPhase(setPhaseUoW, deps.factory, o11y),
-		appendTurn:               usecases.NewAppendOnboardingTurn(uow.NewUnitOfWork(db), deps.factory, o11y),
-		loadTurns:                usecases.NewLoadOnboardingTurns(onboardingSessionRepo, o11y),
-		markWelcomeSent:          usecases.NewMarkWelcomeSent(uow.NewUnitOfWork(db), deps.factory, o11y),
+		expireTokens:           usecases.NewExpireTokens(db, deps.factory, deps.idGen, o11y),
+		handlePaidWithoutToken: usecases.NewHandlePaidWithoutToken(supportSignalRepo, deps.idGen, o11y),
+		cleanupTables:          usecases.NewCleanupOnboardingTables(cleanupRepo, deps.runtimeCfg.MetaRetention, o11y),
 	}, nil
 }
 
@@ -298,7 +230,6 @@ func newWhatsAppMessageProcessor(
 	return services.NewWhatsAppMessageProcessor(
 		useCases.consumeToken,
 		useCases.fallbackActivation,
-		useCases.startBudgetConfiguration,
 		deps.whatsAppGateway,
 		deps.runtimeCfg.Messages,
 		o11y,

@@ -58,8 +58,6 @@ packages:
       OutreachChannelGateway: {}
       OnboardingCleanupRepository: {}
       OnboardingCleanupRepositoryFactory: {}
-      OnboardingSessionRepository: {}
-      OnboardingSessionRepositoryFactory: {}
       RepositoryFactory: {}
       SubscriptionBinder: {}
       SupportSignalRepository: {}

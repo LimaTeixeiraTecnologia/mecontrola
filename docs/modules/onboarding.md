@@ -14,7 +14,7 @@
 
 ## 1. Propósito e Responsabilidade
 
-O módulo `internal/onboarding` é o dono do **funil completo de ativação de novos usuários**: desde a geração do link de checkout Kiwify até a conclusão da sessão conversacional de configuração de orçamento via WhatsApp.
+O módulo `internal/onboarding` é o dono do **ciclo de vida do MagicToken e do funil de ativação de novos usuários**: desde a geração do link de checkout Kiwify até a vinculação da assinatura ao usuário recém-criado.
 
 ### O que este módulo faz
 
@@ -23,8 +23,7 @@ O módulo `internal/onboarding` é o dono do **funil completo de ativação de n
 - Envia e-mail com link de ativação ao cliente após o pagamento
 - Executa outreach proativo via WhatsApp para tokens `PAID` ainda não consumidos
 - Processa a mensagem de ativação do WhatsApp e vincula a assinatura ao usuário recém-criado
-- Orquestra a sessão conversacional de 8 fases que captura objetivo financeiro, renda mensal, cartões de crédito e alocação de orçamento
-- Emite eventos de domínio (`onboarding.subscription_bound`, `onboarding.completed`, etc.) consumidos por outros módulos
+- Emite o evento de domínio `onboarding.subscription_bound` consumido por outros módulos
 - Registra `SupportSignal`s para anomalias operacionais que requerem intervenção humana
 - Expira tokens obsoletos e limpa tabelas de deduplicação por meio de jobs agendados
 
@@ -68,18 +67,18 @@ graph TD
 ```mermaid
 graph LR
     subgraph domain["Domain"]
-        E["Entities\n(MagicToken, OnboardingSession,\nSupportSignal)"]
-        VO["Value Objects\n(TokenStatus, OnboardingPhase,\nBudgetAllocation, ...)"]
+        E["Entities\n(MagicToken, SupportSignal)"]
+        VO["Value Objects\n(TokenStatus, ActivationPath,\nSupportSignalKind, ...)"]
         DS["Domain Services\n(MagicTokenWorkflow)"]
     end
     subgraph application["Application"]
-        UC["Use Cases (23)"]
+        UC["Use Cases (10)"]
         Ports["Ports / Interfaces"]
         Events["Domain Events"]
     end
     subgraph infra["Infrastructure"]
         HTTP["HTTP Handlers"]
-        Consumers["Event Consumers (4)"]
+        Consumers["Event Consumers (3)"]
         Jobs["Scheduled Jobs (3)"]
         Repos["PostgreSQL Repositories"]
         GW["Gateways\n(WhatsApp, Email, Checkout)"]
@@ -97,8 +96,8 @@ graph LR
 | Transactional Outbox | Todos os domain events publicados via `outbox.Publisher` dentro da mesma transação |
 | Unit of Work | Use cases recebem UoW; escrita coordenada entre tabelas |
 | Port & Adapter | Gateways (WhatsApp, email, identity) definidos como interfaces na camada application |
-| State-as-type | `TokenStatus`, `OnboardingPhase`, `ActivationPath` — tipos fechados, nunca `string` livre |
-| Smart Constructors | `NewMagicToken()`, `NewToken()`, `NewBudgetAllocation()` — validam invariantes na criação |
+| State-as-type | `TokenStatus`, `ActivationPath`, `SupportSignalKind` — tipos fechados, nunca `string` livre |
+| Smart Constructors | `NewMagicToken()`, `NewToken()` — validam invariantes na criação |
 | Manual DI | `NewOnboardingModule()` em `module.go` — sem framework de injeção |
 
 ---
@@ -108,13 +107,8 @@ graph LR
 | Termo | Definição |
 |-------|-----------|
 | **MagicToken** | Link de ativação gerado no checkout. Contém o hash do token (SHA-256) e metadados do pagamento. Ciclo de vida: `PENDING → PAID → CONSUMED` (ou `EXPIRED`) |
-| **OnboardingSession** | Sessão conversacional de 8 fases armazenada no banco. Captura objetivo financeiro, renda, cartões e alocação de orçamento. Identificada por `user_id` |
 | **ActivationPath** | Como o token foi ativado: `direct` (link normal), `fallback_e164` (busca por celular), `outreach` (template WhatsApp), `admin` (manual) |
 | **SupportSignal** | Anomalia operacional registrada para resolução humana: `orphan_expired_subscription`, `paid_without_token`, `token_reuse_attempt` |
-| **BudgetAllocation** | Distribuição do orçamento em basis points (1 bp = 0,01%) entre as 5 categorias fixas. Soma obrigatória: 10.000 bp (= 100%) |
-| **ObjectiveProfile** | Perfil financeiro classificado automaticamente por palavras-chave do texto do objetivo (PT-BR): `organize_spending`, `payoff_debt`, `emergency_fund`, `invest`, `specific_goal` |
-| **CategoryKind** | As 5 categorias fixas de orçamento: `fixed_cost`, `knowledge`, `pleasures`, `goals`, `financial_freedom` |
-| **RecentTurns** | Últimas 6 trocas de mensagem (usuário + assistente) da sessão, mantidas no JSONB do payload |
 | **Outreach** | Envio proativo via template WhatsApp para usuários que pagaram mas não ativaram o token |
 | **Token cleartext** | Valor aleatório de 32 bytes em Base64-URL — nunca gravado no banco; apenas o hash SHA-256 é persistido |
 | **Token ciphertext** | `cleartext` criptografado com AES-GCM — armazenado na coluna `activation_token_ciphertext` e enviado no e-mail |
@@ -129,24 +123,16 @@ internal/onboarding/
 ├── domain/
 │   ├── entities/
 │   │   ├── magic_token.go                 # Agregado MagicToken + state machine
-│   │   ├── onboarding_session.go          # Agregado OnboardingSession + 8 fases
 │   │   ├── support_signal.go              # Agregado SupportSignal
-│   │   ├── events.go                      # SubscriptionBound (domain event)
-│   │   └── onboarding_session_events.go   # CardRegistered, SplitsCalculated, OnboardingCompleted
+│   │   └── events.go                      # SubscriptionBound (domain event)
 │   ├── valueobjects/
 │   │   ├── token.go / token_status.go / token_hash_prefix.go
-│   │   ├── onboarding_phase.go / onboarding_state.go
-│   │   ├── activation_path.go / support_signal_kind.go
-│   │   ├── financial_objective.go / monthly_income.go
-│   │   ├── budget_allocation.go / category_split.go / objective_profile.go
-│   │   └── card_closing_day.go / card_due_day.go
+│   │   └── activation_path.go / support_signal_kind.go
 │   ├── services/
-│   │   ├── magic_token_workflow.go        # Decide* puro: DecideMarkPaid, DecideConsume
-│   │   ├── card_closing.go                # DeriveClosingDay(dueDay, offsetDays)
-│   │   └── onboarding_split_events.go     # BuildSplitsCalculatedFromAllocation
+│   │   └── magic_token_workflow.go        # Decide* puro: DecideMarkPaid, DecideConsume
 │   └── errors.go                          # Sentinelas de domínio
 ├── application/
-│   ├── usecases/                          # 23 use cases (ver §6)
+│   ├── usecases/                          # 10 use cases (ver §6)
 │   ├── dtos/input/ / dtos/output/
 │   ├── interfaces/                        # Ports: repositórios, gateways, cipher
 │   ├── binding/subscription_binding.go    # BindAndConsume — orquestra identity + subscription
@@ -159,9 +145,9 @@ internal/onboarding/
     │   ├── handlers/token_state_handler.go
     │   └── middleware/rate_limit.go
     ├── http/client/meta/                  # HTTP client Meta/WhatsApp API
-    ├── messaging/database/consumers/      # 4 consumers de outbox
+    ├── messaging/database/consumers/      # 3 consumers de outbox
     ├── jobs/handlers/                     # 3 job handlers
-    ├── repositories/postgres/             # 5 repositórios + subscription binder
+    ├── repositories/postgres/             # repositórios + subscription binder
     ├── gateway/whatsapp_gateway.go
     ├── email/                             # Factory + SMTP + Resend
     ├── crypto/token_cipher.go             # AES-GCM
@@ -234,7 +220,6 @@ Todos os consumers lêem do outbox PostgreSQL (at-least-once delivery). Deduplic
 | `SubscriptionPaidConsumer` | `billing.subscription.activated` | `MarkTokenPaid` | Transição token `PENDING → PAID` |
 | `ActivationEmailConsumer` | `billing.subscription.activated` | `SendActivationEmail` | Skip silencioso se sem e-mail ou sem `funnel_token` |
 | `PaidWithoutTokenConsumer` | `billing.subscription.activated_without_token` | `HandlePaidWithoutToken` | Cria `SupportSignal(paid_without_token)` |
-| `SubscriptionBoundSessionConsumer` | `onboarding.subscription_bound` | `StartBudgetConfiguration` | Inicia sessão no canal `whatsapp` |
 
 **Payload de `billing.subscription.activated`**
 
@@ -281,27 +266,6 @@ Todos os consumers lêem do outbox PostgreSQL (at-least-once delivery). Deduplic
 |----------|-------|--------|-----------------|
 | `SendOutreach` | `tokenID: uuid` | — | Descriptografa token; envia template WhatsApp; marca `outreach_sent_at` |
 | `SendActivationEmail` | campos do billing event | — | Renderiza template HTML/texto; envia via Resend ou SMTP |
-
-### Sessão de Onboarding
-
-| Use Case | Input | Output | Efeito colateral |
-|----------|-------|--------|-----------------|
-| `StartBudgetConfiguration` | `userID`, `channel` | — | Cria `onboarding_sessions` (in_progress) |
-| `GetOnboardingContext` | `userID` | `OnboardingSessionPayload` | Leitura pura |
-| `SetOnboardingPhase` | `userID`, `phase: OnboardingPhase` | — | Atualiza `payload.phase` |
-| `AppendOnboardingTurn` | `userID`, `role`, `text` | — | Acrescenta turn (máx 6 mantidos) |
-| `LoadOnboardingTurns` | `userID` | `[]OnboardingTurn` | Leitura pura |
-| `MarkWelcomeSent` | `userID`, `now` | — | Seta `payload.welcome_sent_at` (idempotente) |
-
-### Captura de Dados
-
-| Use Case | Input | Efeito colateral |
-|----------|-------|-----------------|
-| `SaveOnboardingObjective` | `userID`, `objective: string` | Persiste texto + classifica `ObjectiveProfile` |
-| `SaveOnboardingIncome` | `userID`, `incomeCents: int64` | Persiste renda mensal |
-| `SaveOnboardingCard` | `userID`, `name`, `nickname`, `limitCents`, `closingDay`, `dueDay` | Cria registro em `cards`; adiciona rascunho na sessão; publica `onboarding.card_registered` |
-| `SaveOnboardingBudgetSplits` | `userID`, `[]CategorySplit` | Persiste alocação; publica `onboarding.splits_calculated` |
-| `CompleteOnboardingSession` | `userID` | Marca `completed_at`; muda state para `active`; publica `onboarding.completed` |
 
 ### Suporte & Limpeza
 
@@ -352,34 +316,6 @@ stateDiagram-v2
 
 ---
 
-#### `OnboardingSession`
-
-| Campo | Tipo | Notas |
-|-------|------|-------|
-| `userID` | `UUID` | PK; FK → `users.id` ON DELETE CASCADE |
-| `channel` | `OnboardingChannel` | `whatsapp` (único valor atual) |
-| `state` | `string` | `in_progress` (CompletedAt == nil) / `active` (CompletedAt != nil) |
-| `payload` | `OnboardingSessionPayload` | JSONB |
-
-**Campos do `payload` JSONB:**
-
-| Campo | Tipo | Regras |
-|-------|------|-------|
-| `phase` | `OnboardingPhase` | 1=welcome … 8=conclusion |
-| `income_cents` | `int64` | 50.000–10.000.000.000 |
-| `objective` | `string` | max 280 runes (Unicode) |
-| `objective_profile` | `string` | classificado automaticamente |
-| `cards` | `[]OnboardingCardDraft` | deduplicado por `nickname` |
-| `custom_split` | `[]OnboardingBudgetAllocationEntry` | exatamente 5; soma = 10.000 bp |
-| `recent_turns` | `[]OnboardingTurn` | máx 6 (janela deslizante) |
-| `welcome_sent_at` | `*time.Time` | idempotente |
-| `completed_at` | `*time.Time` | `nil` = in_progress |
-
-**Pré-condição para `CompleteOnboardingSession`:**
-`IsReadyToComplete()` → objetivo + renda + exatamente 5 entradas em `custom_split` preenchidos.
-
----
-
 #### `SupportSignal`
 
 | Campo | Tipo | Notas |
@@ -395,19 +331,6 @@ stateDiagram-v2
 ---
 
 ### Enumerações
-
-#### `OnboardingPhase`
-
-| Valor | Constante | Fase |
-|-------|-----------|------|
-| 1 | `PhaseWelcome` | Boas-vindas |
-| 2 | `PhaseObjective` | Objetivo financeiro |
-| 3 | `PhaseBudget` | Configuração de orçamento |
-| 4 | `PhaseCards` | Cartões de crédito |
-| 5 | `PhaseCategories` | Categorias de gasto |
-| 6 | `PhaseValues` | Valores e percentuais |
-| 7 | `PhaseSummary` | Resumo |
-| 8 | `PhaseConclusion` | Conclusão |
 
 #### `TokenStatus`
 
@@ -426,26 +349,6 @@ stateDiagram-v2
 | 2 | `ActivationPathFallbackE164` | Lookup por número de celular |
 | 3 | `ActivationPathOutreach` | Ativação por template WhatsApp |
 | 4 | `ActivationPathAdmin` | Ativação manual pelo suporte |
-
-#### `CategoryKind` (5 categorias fixas de orçamento)
-
-| Valor | Constante | Slug `budgets_allocations` |
-|-------|-----------|---------------------------|
-| 1 | `CategoryKindFixedCost` | `expense.custo_fixo` |
-| 2 | `CategoryKindKnowledge` | `expense.conhecimento` |
-| 3 | `CategoryKindPleasures` | `expense.prazeres` |
-| 4 | `CategoryKindGoals` | `expense.metas` |
-| 5 | `CategoryKindFinancialFreedom` | `expense.liberdade_financeira` |
-
-#### `ObjectiveProfile` — alocações template (basis points)
-
-| Profile | `fixed_cost` | `knowledge` | `pleasures` | `goals` | `financial_freedom` |
-|---------|-------------|-------------|------------|---------|-------------------|
-| `organize_spending` (default) | 4.000 | 1.000 | 1.500 | 2.000 | 1.500 |
-| `payoff_debt` | 4.500 | 500 | 1.000 | 2.500 | 1.500 |
-| `emergency_fund` | 4.000 | 500 | 1.000 | 1.500 | 3.000 |
-| `invest` | 4.000 | 1.000 | 1.000 | 1.000 | 3.000 |
-| `specific_goal` | 4.000 | 500 | 1.000 | 3.000 | 1.500 |
 
 #### `SupportSignalKind`
 
@@ -498,8 +401,6 @@ sequenceDiagram
     participant Identity as internal/identity
     participant SB as SubscriptionBinder
     participant OB as Outbox
-    participant SBSC as SubscriptionBoundSessionConsumer
-    participant SBC as StartBudgetConfiguration
 
     Kiwify->>Billing: webhook (subscription.activated)
     Billing->>OB: publica billing.subscription.activated
@@ -518,9 +419,6 @@ sequenceDiagram
     CMT->>SB: BindUser(subscriptionID, userID)
     CMT->>CMT: DecideConsume() → PAID→CONSUMED + SubscriptionBound event
     CMT->>OB: publica onboarding.subscription_bound
-    OB->>SBSC: dequeue
-    SBSC->>SBC: Execute(userID, whatsapp)
-    SBC->>SBC: INSERT onboarding_sessions (in_progress)
 ```
 
 ---
@@ -599,13 +497,6 @@ erDiagram
         TEXT activation_path
         JSONB metadata
     }
-    onboarding_sessions {
-        UUID user_id PK
-        TEXT channel
-        TEXT state
-        JSONB payload
-        TIMESTAMPTZ updated_at
-    }
     support_signals {
         UUID id PK
         TEXT kind
@@ -636,7 +527,6 @@ erDiagram
         TIMESTAMPTZ last_attempt_at
     }
 
-    users ||--o{ onboarding_sessions : "user_id"
     users ||--o{ cards : "user_id"
 ```
 
@@ -660,24 +550,6 @@ CONSTRAINT onboarding_tokens_activation_path_check
 | `onboarding_tokens_status_expires_idx` | `(status, expires_at)` | `status IN ('PENDING','PAID')` | Job de expiração |
 | `onboarding_tokens_outreach_pick_idx` | `(status, paid_at)` | `status = 'PAID' AND outreach_sent_at IS NULL` | OutreachJob pick |
 | `onboarding_tokens_by_mobile_paid_idx` | `(customer_mobile_e164)` | `status = 'PAID' AND outreach_sent_at IS NOT NULL` | Fallback E164 |
-
----
-
-#### `mecontrola.onboarding_sessions`
-
-Uma linha por usuário. FK com `ON DELETE CASCADE` — removida se o usuário for deletado.
-
-```sql
-CONSTRAINT onboarding_sessions_channel_chk CHECK (channel IN ('whatsapp'))
-```
-
-| Índice | Colunas | Propósito |
-|--------|---------|----------|
-| `onboarding_sessions_channel_state_idx` | `(channel, state)` | Lookup por canal e estado |
-
-**Semântica do campo `state`:**
-- `in_progress` — `CompletedAt == nil` — sessão em andamento
-- `active` — `CompletedAt != nil` — sessão concluída com sucesso
 
 ---
 
@@ -762,71 +634,7 @@ Publicado por: `ConsumeMagicToken`, `TryFallbackActivation`
 ```
 
 **Aggregate type:** `onboarding_token`
-**Consumers conhecidos:** `internal/onboarding` (StartBudgetConfiguration), `internal/billing` (reconciliação)
-
----
-
-#### `onboarding.card_registered`
-
-Publicado por: `SaveOnboardingCard`
-
-```json
-{
-  "event_id": "uuid-v4",
-  "user_id": "uuid",
-  "channel": "whatsapp",
-  "name": "Nubank",
-  "limit_cents": 500000,
-  "closing_day": 3,
-  "due_day": 10,
-  "occurred_at": "2026-01-01T00:00:00Z"
-}
-```
-
-**Aggregate type:** `onboarding_session`
-
----
-
-#### `onboarding.splits_calculated`
-
-Publicado por: `SaveOnboardingBudgetSplits`
-
-```json
-{
-  "event_id": "uuid-v4",
-  "user_id": "uuid",
-  "channel": "whatsapp",
-  "income_cents": 600000,
-  "allocations": [
-    { "kind": "fixed_cost", "percent": 40 },
-    { "kind": "knowledge", "percent": 10 },
-    { "kind": "pleasures", "percent": 15 },
-    { "kind": "goals", "percent": 20 },
-    { "kind": "financial_freedom", "percent": 15 }
-  ],
-  "occurred_at": "2026-01-01T00:00:00Z"
-}
-```
-
-**Aggregate type:** `onboarding_session`
-
----
-
-#### `onboarding.completed`
-
-Publicado por: `CompleteOnboardingSession`
-
-```json
-{
-  "event_id": "uuid-v4",
-  "user_id": "uuid",
-  "channel": "whatsapp",
-  "occurred_at": "2026-01-01T00:00:00Z"
-}
-```
-
-**Aggregate type:** `onboarding_session`
-**Consumers conhecidos:** `internal/agents` (trigger de configuração inicial de orçamento)
+**Consumers conhecidos:** `internal/billing` (reconciliação)
 
 ---
 
@@ -836,7 +644,6 @@ Publicado por: `CompleteOnboardingSession`
 |--------|-------------|-------------------------------|
 | `billing.subscription.activated` | `internal/billing` | `subscription_id`, `funnel_token`, `plan_code`, `external_sale_id`, `customer_mobile_e164`, `paid_at` |
 | `billing.subscription.activated_without_token` | `internal/billing` | `subscription_id`, `plan_code`, `customer_mobile_e164`, `paid_at` |
-| `onboarding.subscription_bound` | próprio módulo (self-consume) | `user_id` |
 
 ---
 
@@ -892,7 +699,6 @@ Todas as métricas seguem R-TXN-004: sem labels de alta cardinalidade (`user_id`
 | `onboarding_paid_to_consumed_seconds` | Histogram | `activation_path` | p99 > 3600s (1h) → outreach não está funcionando |
 | `onboarding_activation_email_dispatched_total` | Counter | `result` | Taxa de erro alta → checar SMTP/Resend |
 | `onboarding_activation_email_skipped_total` | Counter | `reason` | `no_email` alto → dados do Kiwify incompletos |
-| `onboarding_subscription_bound_session_consumer_decode_failed_total` | Counter | — | Qualquer valor > 0 → drift de schema de evento |
 
 **Traces:** Cada handler e use case abre um span com `o11y.Tracer().Start(ctx, "onboarding.{layer}.{op}")`. Erros são registrados via `span.RecordError(err)`.
 
@@ -1034,21 +840,8 @@ ORDER BY created_at DESC LIMIT 20;
 ```go
 type OnboardingModule struct {
     PublicRouter   func(r chi.Router)   // registra /api/v1/onboarding/*
-    EventHandlers  []outbox.Consumer    // 4 consumers
+    EventHandlers  []outbox.Consumer    // 3 consumers
     Jobs           []worker.Job         // 3 jobs
-    // Use cases expostos para internal/agents:
-    StartBudgetConfiguration  usecases.StartBudgetConfigurationUseCase
-    GetOnboardingContext       usecases.GetOnboardingContextUseCase
-    SaveOnboardingObjective    usecases.SaveOnboardingObjectiveUseCase
-    SaveOnboardingIncome       usecases.SaveOnboardingIncomeUseCase
-    SaveOnboardingCard         usecases.SaveOnboardingCardUseCase
-    SaveOnboardingBudgetSplits usecases.SaveOnboardingBudgetSplitsUseCase
-    CompleteOnboardingSession  usecases.CompleteOnboardingSessionUseCase
-    SetOnboardingPhase         usecases.SetOnboardingPhaseUseCase
-    AppendOnboardingTurn       usecases.AppendOnboardingTurnUseCase
-    LoadOnboardingTurns        usecases.LoadOnboardingTurnsUseCase
-    MarkWelcomeSent            usecases.MarkWelcomeSentUseCase
-    SendActivationEmail        usecases.SendActivationEmailUseCase
 }
 ```
 
@@ -1063,9 +856,5 @@ type OnboardingModule struct {
 | **Hash SHA-256 persistido; cleartext nunca gravado** | Mesmo com acesso ao banco, o atacante não consegue recriar o link de ativação |
 | **AES-GCM para ciphertext no e-mail** | O e-mail contém o link de ativação (ciphertext) que o OutreachJob descriptografa sem precisar de estado adicional |
 | **Transactional Outbox para todos os domain events** | Garante que o evento `subscription_bound` é publicado somente se a transação de token foi confirmada — sem mensagens fantasmas |
-| **JSONB para `onboarding_sessions.payload`** | Permite evolução de schema sem migrações durante o ciclo de vida experimental do onboarding conversacional |
 | **Fallback por E164 como `ActivationPath` explícito** | Resiliência quando QR code falha; rastreabilidade de como cada ativação ocorreu para análise de funil |
-| **ObjectiveProfile derivado automaticamente** | Elimina etapa manual; profile alimenta a alocação template sugerida ao usuário |
 | **Rate limiting com jitter criptográfico no `TokenStateHandler`** | Mitiga timing attacks que poderiam inferir validade de tokens por diferença de tempo de resposta |
-| **Sessão de onboarding ownership exclusivo** | `onboarding_sessions.user_id` é PK — uma sessão por usuário; impossível criar duplicata |
-| **`RecentTurns` com janela de 6** | Equilíbrio entre contexto conversacional e tamanho do JSONB em banco; turns mais antigos são descartados |

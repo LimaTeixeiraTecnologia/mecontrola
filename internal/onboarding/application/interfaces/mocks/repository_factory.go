@@ -143,59 +143,6 @@ func (_c *RepositoryFactory_OnboardingCleanupRepository_Call) RunAndReturn(run f
 	return _c
 }
 
-// OnboardingSessionRepository provides a mock function for the type RepositoryFactory
-func (_mock *RepositoryFactory) OnboardingSessionRepository(db database.DBTX) interfaces.OnboardingSessionRepository {
-	ret := _mock.Called(db)
-
-	if len(ret) == 0 {
-		panic("no return value specified for OnboardingSessionRepository")
-	}
-
-	var r0 interfaces.OnboardingSessionRepository
-	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.OnboardingSessionRepository); ok {
-		r0 = returnFunc(db)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(interfaces.OnboardingSessionRepository)
-		}
-	}
-	return r0
-}
-
-// RepositoryFactory_OnboardingSessionRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OnboardingSessionRepository'
-type RepositoryFactory_OnboardingSessionRepository_Call struct {
-	*mock.Call
-}
-
-// OnboardingSessionRepository is a helper method to define mock.On call
-//   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) OnboardingSessionRepository(db any) *RepositoryFactory_OnboardingSessionRepository_Call {
-	return &RepositoryFactory_OnboardingSessionRepository_Call{Call: _e.mock.On("OnboardingSessionRepository", db)}
-}
-
-func (_c *RepositoryFactory_OnboardingSessionRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_OnboardingSessionRepository_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 database.DBTX
-		if args[0] != nil {
-			arg0 = args[0].(database.DBTX)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *RepositoryFactory_OnboardingSessionRepository_Call) Return(onboardingSessionRepository interfaces.OnboardingSessionRepository) *RepositoryFactory_OnboardingSessionRepository_Call {
-	_c.Call.Return(onboardingSessionRepository)
-	return _c
-}
-
-func (_c *RepositoryFactory_OnboardingSessionRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.OnboardingSessionRepository) *RepositoryFactory_OnboardingSessionRepository_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // SupportSignalRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) SupportSignalRepository(db database.DBTX) interfaces.SupportSignalRepository {
 	ret := _mock.Called(db)

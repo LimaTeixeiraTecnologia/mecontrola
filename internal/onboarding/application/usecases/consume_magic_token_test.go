@@ -135,10 +135,18 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 	}{
 		{
 			name: "deve retornar NotFound quando token nao for encontrado",
-			dependencies: func() dependencies {
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput("+5511999999999")}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(entities.MagicToken{}, domain.ErrTokenNotFound).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in:         s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeNotFound, result.Outcome)
@@ -146,13 +154,19 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar NotFound quando formato do token for invalido",
-			dependencies: func() dependencies {
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: input.ConsumeMagicTokenInput{
+			dependencies: dependencies{
+				tokenRepo:  s.tokenRepo,
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in: input.ConsumeMagicTokenInput{
 					Token:          "!!invalid!!",
 					FromE164:       "+5511999999999",
 					ActivationPath: valueobjects.ActivationPathDirect,
-				}}
-			}(),
+				},
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeNotFound, result.Outcome)
@@ -160,10 +174,18 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar NotYetPaid quando token PENDING",
-			dependencies: func() dependencies {
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildPendingToken(), nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput("+5511999999999")}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildPendingToken(), nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in:         s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeNotYetPaid, result.Outcome)
@@ -171,10 +193,18 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar Expired quando token expirado",
-			dependencies: func() dependencies {
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildExpiredToken(), nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput("+5511999999999")}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildExpiredToken(), nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in:         s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeExpired, result.Outcome)
@@ -182,11 +212,18 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar AlreadyActive quando token ja consumido pelo mesmo numero",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999999999"
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumedToken(fromE164), nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput(fromE164)}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumedToken("+5511999999999"), nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in:         s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeAlreadyActive, result.Outcome)
@@ -194,17 +231,25 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve inserir signal quando token consumido por numero diferente",
-			dependencies: func() dependencies {
-				consumedByE164 := "+5511999999999"
-				fromE164 := "+5521888888888"
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumedToken(consumedByE164), nil).Once()
-				s.signalRepo.EXPECT().Insert(mock.Anything, mock.Anything).Return(nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: input.ConsumeMagicTokenInput{
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumedToken("+5511999999999"), nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: func() *mocks.SupportSignalRepository {
+					s.signalRepo.EXPECT().Insert(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.signalRepo
+				}(),
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in: input.ConsumeMagicTokenInput{
 					Token:          "validtokenstring123456789012345678901234567",
-					FromE164:       fromE164,
+					FromE164:       "+5521888888888",
 					ActivationPath: valueobjects.ActivationPathDirect,
-				}}
-			}(),
+				},
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeReuseOtherAccount, result.Outcome)
@@ -212,15 +257,28 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve ativar com sucesso quando token pago",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999999999"
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
-				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
-				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput(fromE164)}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken("+5511999999999", "u@test.com"), nil).Once()
+					s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: func() *mocks.IdentityGateway {
+					s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
+					return s.identityGW
+				}(),
+				binder: func() *mocks.SubscriptionBinder {
+					s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+					return s.binder
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
+				in: s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeActivated, result.Outcome)
@@ -229,18 +287,31 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve vincular subscription e publicar subscription_id no evento",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999999999"
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
-				s.binder.EXPECT().BindUser(mock.Anything, "sub-001", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").Return(nil).Once()
-				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
-				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, event outbox.Event) error {
-					s.events = append(s.events, event)
-					return nil
-				}).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput(fromE164)}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken("+5511999999999", "u@test.com"), nil).Once()
+					s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: func() *mocks.IdentityGateway {
+					s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
+					return s.identityGW
+				}(),
+				binder: func() *mocks.SubscriptionBinder {
+					s.binder.EXPECT().BindUser(mock.Anything, "sub-001", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").Return(nil).Once()
+					return s.binder
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, event outbox.Event) error {
+						s.events = append(s.events, event)
+						return nil
+					}).Once()
+					return s.publisher
+				}(),
+				in: s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeActivated, result.Outcome)
@@ -252,22 +323,39 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve retornar erro quando identity gateway falha",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999999999"
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{}, errors.New("identity unavailable")).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput(fromE164)}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken("+5511999999999", "u@test.com"), nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: func() *mocks.IdentityGateway {
+					s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{}, errors.New("identity unavailable")).Once()
+					return s.identityGW
+				}(),
+				binder:    s.binder,
+				publisher: s.publisher,
+				in:        s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.Error(err)
 			},
 		},
 		{
 			name: "deve mapear pais nao suportado para outcome especifico sem erro",
-			dependencies: func() dependencies {
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(entities.MagicToken{}, domain.ErrUnsupportedCountry).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput("+12125551234")}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(entities.MagicToken{}, domain.ErrUnsupportedCountry).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: s.identityGW,
+				binder:     s.binder,
+				publisher:  s.publisher,
+				in:         s.validInput("+12125551234"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.NoError(err)
 				s.Equal(ConsumeOutcomeUnsupportedCountry, result.Outcome)
@@ -275,15 +363,28 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		},
 		{
 			name: "deve propagar erro quando publish do outbox falha mantendo atomicidade",
-			dependencies: func() dependencies {
-				fromE164 := "+5511999999999"
-				s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken(fromE164, "u@test.com"), nil).Once()
-				s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
-				s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-				s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
-				s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox unavailable")).Once()
-				return dependencies{tokenRepo: s.tokenRepo, signalRepo: s.signalRepo, factory: s.factory, identityGW: s.identityGW, binder: s.binder, publisher: s.publisher, in: s.validInput(fromE164)}
-			}(),
+			dependencies: dependencies{
+				tokenRepo: func() *mocks.MagicTokenRepository {
+					s.tokenRepo.EXPECT().FindByHash(mock.Anything, mock.Anything).Return(buildConsumePaidToken("+5511999999999", "u@test.com"), nil).Once()
+					s.tokenRepo.EXPECT().UpdateMarkConsumed(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.tokenRepo
+				}(),
+				signalRepo: s.signalRepo,
+				factory:    s.factory,
+				identityGW: func() *mocks.IdentityGateway {
+					s.identityGW.EXPECT().UpsertUserByWhatsApp(mock.Anything, mock.Anything, mock.Anything).Return(interfaces.UpsertUserResult{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, nil).Once()
+					return s.identityGW
+				}(),
+				binder: func() *mocks.SubscriptionBinder {
+					s.binder.EXPECT().BindUser(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+					return s.binder
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(errors.New("outbox unavailable")).Once()
+					return s.publisher
+				}(),
+				in: s.validInput("+5511999999999"),
+			},
 			expect: func(result ConsumeResult, err error) {
 				s.Error(err)
 			},

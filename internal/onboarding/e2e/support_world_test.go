@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/usecases"
-	onboardingentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	onboardingvalueobjects "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/google/uuid"
@@ -321,16 +319,6 @@ func (w *onboardingWorld) runDispatcher(registry outbox.Registry) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return newDispatcherJob(w.runtime.deps.db, w.runtime.deps.outboxCfg, registry, w.runtime.deps.o11y).Run(ctx)
-}
-
-func (w *onboardingWorld) startBudgetSessionForCurrentUser(_ string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := w.runtime.deps.startBudgetConfiguration.Execute(ctx, usecases.StartBudgetConfigurationInput{
-		UserID:  w.currentUserID,
-		Channel: onboardingentities.OnboardingChannelWhatsApp,
-	})
-	return err
 }
 
 func (w *onboardingWorld) extractTokenFromCheckoutURL() error {
