@@ -1,4 +1,4 @@
-package weather
+package interfaces
 
 import "errors"
 

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -57,7 +57,7 @@ func weatherConditionFromCode(code int) string {
 	return "Unknown"
 }
 
-func BuildWeatherWorkflow(a agent.Agent, client weather.Client, forecastBase string) workflow.Definition[WeatherState] {
+func BuildWeatherWorkflow(a agent.Agent, client interfaces.WeatherClient, forecastBase string) workflow.Definition[WeatherState] {
 	fetchStep := workflow.NewStepFunc[WeatherState](StepFetchWeatherID, BuildFetchWeatherStep(client, forecastBase))
 	planStep := workflow.NewStepFunc[WeatherState](StepPlanActivities, BuildPlanActivitiesStep(a))
 
@@ -69,7 +69,7 @@ func BuildWeatherWorkflow(a agent.Agent, client weather.Client, forecastBase str
 	}
 }
 
-func BuildFetchWeatherStep(client weather.Client, forecastBase string) func(context.Context, WeatherState) (workflow.StepOutput[WeatherState], error) {
+func BuildFetchWeatherStep(client interfaces.WeatherClient, forecastBase string) func(context.Context, WeatherState) (workflow.StepOutput[WeatherState], error) {
 	return func(ctx context.Context, state WeatherState) (workflow.StepOutput[WeatherState], error) {
 		lat, lon, name, err := client.Geocode(ctx, state.City)
 		if err != nil {

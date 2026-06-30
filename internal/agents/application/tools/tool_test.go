@@ -4,45 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/domain"
 )
 
-func buildTestServers(t *testing.T, geoBody, forecastBody string, geoStatus, forecastStatus int) (*httptest.Server, *httptest.Server) {
-	t.Helper()
-	geo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(geoStatus)
-		_, _ = w.Write([]byte(geoBody))
-	}))
-	fore := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(forecastStatus)
-		_, _ = w.Write([]byte(forecastBody))
-	}))
-	return geo, fore
-}
-
 func TestBuildWeatherToolSuccess(t *testing.T) {
-	geo, fore := buildTestServers(t,
-		`{"results":[{"latitude":35.6,"longitude":139.7,"name":"Tokyo"}]}`,
-		`{"current":{"temperature_2m":22.0,"apparent_temperature":21.0,"relative_humidity_2m":65.0,"wind_speed_10m":8.0,"wind_gusts_10m":12.0,"weather_code":1}}`,
-		http.StatusOK, http.StatusOK,
-	)
-	defer geo.Close()
-	defer fore.Close()
+	client := mocks.NewWeatherClient(t)
+	client.EXPECT().Geocode(mock.Anything, "Tokyo").Return(35.6, 139.7, "Tokyo", nil).Once()
+	client.EXPECT().Forecast(mock.Anything, 35.6, 139.7).Return(domain.Forecast{
+		Temperature: 22.0,
+		FeelsLike:   21.0,
+		Humidity:    65.0,
+		WindSpeed:   8.0,
+		WindGust:    12.0,
+		Condition:   domain.WeatherConditionMainlyClear,
+		Location:    "Tokyo",
+	}, nil).Once()
 
-	client := weather.NewClient(
-		weather.WithHTTPClient(geo.Client()),
-		weather.WithGeocodingBase(geo.URL),
-		weather.WithForecastBase(fore.URL),
-	)
 	handle := BuildWeatherTool(client)
 
 	assert.Equal(t, "get-weather", handle.ID())
@@ -61,41 +47,24 @@ func TestBuildWeatherToolSuccess(t *testing.T) {
 }
 
 func TestBuildWeatherToolLocationNotFound(t *testing.T) {
-	geo, fore := buildTestServers(t,
-		`{"results":[]}`,
-		`{}`,
-		http.StatusOK, http.StatusOK,
-	)
-	defer geo.Close()
-	defer fore.Close()
+	client := mocks.NewWeatherClient(t)
+	client.EXPECT().Geocode(mock.Anything, "nonexistentcity12345").
+		Return(0, 0, "", fmt.Errorf("geocode: %w", interfaces.ErrLocationNotFound)).Once()
 
-	client := weather.NewClient(
-		weather.WithHTTPClient(geo.Client()),
-		weather.WithGeocodingBase(geo.URL),
-		weather.WithForecastBase(fore.URL),
-	)
 	handle := BuildWeatherTool(client)
 
 	argsJSON, _ := json.Marshal(WeatherInput{Location: "nonexistentcity12345"})
 	_, err := handle.Invoke(context.Background(), argsJSON)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, weather.ErrLocationNotFound))
+	assert.True(t, errors.Is(err, interfaces.ErrLocationNotFound))
 }
 
 func TestBuildWeatherToolUpstreamError(t *testing.T) {
-	geo, fore := buildTestServers(t,
-		`{"results":[{"latitude":35.6,"longitude":139.7,"name":"Tokyo"}]}`,
-		``,
-		http.StatusOK, http.StatusInternalServerError,
-	)
-	defer geo.Close()
-	defer fore.Close()
+	client := mocks.NewWeatherClient(t)
+	client.EXPECT().Geocode(mock.Anything, "Tokyo").Return(35.6, 139.7, "Tokyo", nil).Once()
+	client.EXPECT().Forecast(mock.Anything, 35.6, 139.7).
+		Return(domain.Forecast{}, errors.New("upstream status 500")).Once()
 
-	client := weather.NewClient(
-		weather.WithHTTPClient(geo.Client()),
-		weather.WithGeocodingBase(geo.URL),
-		weather.WithForecastBase(fore.URL),
-	)
 	handle := BuildWeatherTool(client)
 
 	argsJSON, _ := json.Marshal(WeatherInput{Location: "Tokyo"})
@@ -104,15 +73,8 @@ func TestBuildWeatherToolUpstreamError(t *testing.T) {
 }
 
 func TestWeatherToolSchemaValidation(t *testing.T) {
-	geo, fore := buildTestServers(t, `{}`, `{}`, http.StatusOK, http.StatusOK)
-	defer geo.Close()
-	defer fore.Close()
+	client := mocks.NewWeatherClient(t)
 
-	client := weather.NewClient(
-		weather.WithHTTPClient(geo.Client()),
-		weather.WithGeocodingBase(geo.URL),
-		weather.WithForecastBase(fore.URL),
-	)
 	handle := BuildWeatherTool(client)
 
 	_, err := handle.Invoke(context.Background(), []byte(`{}`))

@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 
 	agentapplication "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	agentscorers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/scorers"
 	agenttools "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/messaging/database/consumers"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	agentpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/infrastructure/postgres"
@@ -75,7 +75,7 @@ type Deps struct {
 	O11y            observability.Observability
 	OutboxPublisher outbox.Publisher
 	LLM             LLMConfig
-	WeatherClient   weather.Client
+	WeatherClient   interfaces.WeatherClient
 	WhatsAppGateway whatsAppGateway
 }
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
@@ -23,7 +23,7 @@ type WeatherOutput struct {
 	Location    string  `json:"location"`
 }
 
-func BuildWeatherTool(client weather.Client) tool.ToolHandle {
+func BuildWeatherTool(client interfaces.WeatherClient) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "weather_tool_input",
 		Strict: true,
@@ -59,7 +59,7 @@ func BuildWeatherTool(client weather.Client) tool.ToolHandle {
 	return tool.NewTool[WeatherInput, WeatherOutput]("get-weather", "Get current weather for a location", in, out, exec)
 }
 
-func buildWeatherExec(client weather.Client) func(context.Context, WeatherInput) (WeatherOutput, error) {
+func buildWeatherExec(client interfaces.WeatherClient) func(context.Context, WeatherInput) (WeatherOutput, error) {
 	return func(ctx context.Context, in WeatherInput) (WeatherOutput, error) {
 		lat, lon, name, err := client.Geocode(ctx, in.Location)
 		if err != nil {

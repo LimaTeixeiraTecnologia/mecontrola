@@ -31,12 +31,13 @@ func (p *outboxMessageIndexPublisher) PublishIndex(ctx context.Context, payload 
 	}
 
 	evt, err := outbox.NewEvent(outbox.EventInput{
-		ID:            uuid.NewString(),
-		Type:          memory.EventTypeEmbeddingIndex,
-		AggregateType: aggregateTypeMessage,
-		AggregateID:   payload.MessagePK.String(),
-		Payload:       raw,
-		OccurredAt:    time.Now().UTC(),
+		ID:              uuid.NewString(),
+		Type:            memory.EventTypeEmbeddingIndex,
+		AggregateType:   aggregateTypeMessage,
+		AggregateID:     payload.MessagePK.String(),
+		AggregateUserID: payload.ResourceID,
+		Payload:         raw,
+		OccurredAt:      time.Now().UTC(),
 	})
 	if err != nil {
 		return fmt.Errorf("indexer.outbox_publisher: new event: %w", err)

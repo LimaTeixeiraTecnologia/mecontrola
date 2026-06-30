@@ -126,6 +126,8 @@ linters:
               desc: "application não pode importar infrastructure (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/conversation/infrastructure"
               desc: "application não pode importar infrastructure (hexagonal boundary violation)"
+            - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure"
+              desc: "application não pode importar infrastructure (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/finance/infrastructure"
               desc: "application não pode importar infrastructure (hexagonal boundary violation)"
             - pkg: "github.com/LimaTeixeiraTecnologia/mecontrola/internal/notifications/infrastructure"

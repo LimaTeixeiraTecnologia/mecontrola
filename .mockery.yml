@@ -131,6 +131,9 @@ packages:
       CategoryRepository: {}
       DictionaryRepository: {}
       VersionReader: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces:
+    interfaces:
+      WeatherClient: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow:
     interfaces:
       UnitOfWork: {}

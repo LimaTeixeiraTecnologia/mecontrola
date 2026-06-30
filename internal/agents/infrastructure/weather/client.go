@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/domain"
 )
 
@@ -14,11 +15,6 @@ const (
 	defaultGeocodingBase = "https://geocoding-api.open-meteo.com/v1/search"
 	defaultForecastBase  = "https://api.open-meteo.com/v1/forecast"
 )
-
-type Client interface {
-	Geocode(ctx context.Context, name string) (lat, lon float64, resolved string, err error)
-	Forecast(ctx context.Context, lat, lon float64) (domain.Forecast, error)
-}
 
 type httpClient struct {
 	http          *http.Client
@@ -40,7 +36,7 @@ func WithForecastBase(base string) Option {
 	return func(cl *httpClient) { cl.forecastBase = base }
 }
 
-func NewClient(opts ...Option) Client {
+func NewClient(opts ...Option) interfaces.WeatherClient {
 	cl := &httpClient{
 		http:          http.DefaultClient,
 		geocodingBase: defaultGeocodingBase,
@@ -81,7 +77,7 @@ func (c *httpClient) Geocode(ctx context.Context, name string) (float64, float64
 		return 0, 0, "", fmt.Errorf("weather.client.geocode: decode: %w", err)
 	}
 	if len(data.Results) == 0 {
-		return 0, 0, "", fmt.Errorf("weather.client.geocode: %w: %q", ErrLocationNotFound, name)
+		return 0, 0, "", fmt.Errorf("weather.client.geocode: %w: %q", interfaces.ErrLocationNotFound, name)
 	}
 	r := data.Results[0]
 	return r.Latitude, r.Longitude, r.Name, nil

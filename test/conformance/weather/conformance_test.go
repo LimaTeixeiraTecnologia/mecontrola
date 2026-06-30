@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/scorers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
@@ -155,7 +156,7 @@ func (s *WeatherConformanceSuite) hourlyForecastServer(weatherCode int, temps, p
 	}))
 }
 
-func (s *WeatherConformanceSuite) newWeatherClient(geocodingBase, forecastBase string) weather.Client {
+func (s *WeatherConformanceSuite) newWeatherClient(geocodingBase, forecastBase string) interfaces.WeatherClient {
 	return weather.NewClient(
 		weather.WithGeocodingBase(geocodingBase),
 		weather.WithForecastBase(forecastBase),

@@ -10,10 +10,9 @@
 LAYOUT_WITH_LEGEND()
 title Onboarding — C4 Container View (Geral)
 
-Person(user, "Usuário", "Acessa via link de checkout\ne ativa pelo WhatsApp ou Telegram")
+Person(user, "Usuário", "Acessa via link de checkout\ne ativa pelo WhatsApp")
 System_Ext(kiwify, "Kiwify", "Gateway de pagamento.\nGera sessão de checkout e\nnotifica pagamentos via webhook.")
 System_Ext(meta_api, "Meta WhatsApp Cloud API", "Envia templates e mensagens\nde texto ao usuário via WhatsApp.")
-System_Ext(telegram_api, "Telegram Bot API", "Canal alternativo de ativação.\nRecebe /ativar <token> do usuário.")
 System_Ext(billing_module, "Billing Module", "Publica eventos de\nativação de subscription.")
 System_Ext(identity_module, "Identity Module", "UpsertUserByWhatsApp,\nLinkChannelToUser.")
 
@@ -41,8 +40,5 @@ Rel(worker, outbox, "Publica onboarding.subscription_bound", "SQL INSERT")
 Rel(user, http_api, "ATIVAR <token> via WhatsApp", "WhatsApp → Handler")
 Rel(http_api, identity_module, "UpsertUserByWhatsApp\nLinkChannelToUser", "Internal call")
 Rel(http_api, outbox, "Publica subscription_bound\n(PAID → CONSUMED)", "SQL INSERT")
-
-Rel(user, http_api, "/ativar <token> via Telegram", "Telegram → Handler")
-Rel(http_api, identity_module, "LinkChannelToUser\n(channel=telegram)", "Internal call")
 
 @enduml

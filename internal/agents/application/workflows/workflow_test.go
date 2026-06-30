@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,17 +12,19 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	weathermocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	agentpkg "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	agentmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/mocks"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type WorkflowSuite struct {
 	suite.Suite
-	ctx       context.Context
-	agentMock *agentmocks.Agent
+	ctx         context.Context
+	agentMock   *agentmocks.Agent
+	weatherMock *weathermocks.WeatherClient
 }
 
 func TestWorkflowSuite(t *testing.T) {
@@ -31,6 +34,7 @@ func TestWorkflowSuite(t *testing.T) {
 func (s *WorkflowSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.agentMock = agentmocks.NewAgent(s.T())
+	s.weatherMock = weathermocks.NewWeatherClient(s.T())
 }
 
 func (s *WorkflowSuite) TestWeatherConditionFromCode_KnownCodes() {
@@ -76,8 +80,7 @@ func (s *WorkflowSuite) TestWeatherConditionFromCode_KnownCodes() {
 func (s *WorkflowSuite) TestBuildWeatherWorkflow_IDAndStructure() {
 	s.agentMock.EXPECT().ID().Return("weather-agent").Maybe()
 
-	client := weather.NewClient()
-	def := BuildWeatherWorkflow(s.agentMock, client, "https://api.open-meteo.com/v1/forecast")
+	def := BuildWeatherWorkflow(s.agentMock, s.weatherMock, "https://api.open-meteo.com/v1/forecast")
 
 	s.Equal(WeatherWorkflowID, def.ID)
 	s.NotNil(def.Root)
@@ -86,16 +89,7 @@ func (s *WorkflowSuite) TestBuildWeatherWorkflow_IDAndStructure() {
 }
 
 func (s *WorkflowSuite) TestFetchWeatherStep_Success() {
-	geocodingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]any{
-			"results": []map[string]any{
-				{"latitude": 51.5074, "longitude": -0.1278, "name": "London"},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer geocodingServer.Close()
+	s.weatherMock.EXPECT().Geocode(mock.Anything, "London").Return(51.5074, -0.1278, "London", nil).Once()
 
 	forecastServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
@@ -112,15 +106,9 @@ func (s *WorkflowSuite) TestFetchWeatherStep_Success() {
 	}))
 	defer forecastServer.Close()
 
-	client := weather.NewClient(
-		weather.WithHTTPClient(geocodingServer.Client()),
-		weather.WithGeocodingBase(geocodingServer.URL),
-		weather.WithForecastBase(forecastServer.URL),
-	)
-
 	step := workflow.NewStepFunc(
 		StepFetchWeatherID,
-		BuildFetchWeatherStep(client, forecastServer.URL),
+		BuildFetchWeatherStep(s.weatherMock, forecastServer.URL),
 	)
 
 	state := WeatherState{City: "London"}
@@ -137,27 +125,12 @@ func (s *WorkflowSuite) TestFetchWeatherStep_Success() {
 }
 
 func (s *WorkflowSuite) TestFetchWeatherStep_LocationNotFound() {
-	geocodingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]any{"results": []map[string]any{}}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer geocodingServer.Close()
-
-	forecastServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer forecastServer.Close()
-
-	client := weather.NewClient(
-		weather.WithHTTPClient(geocodingServer.Client()),
-		weather.WithGeocodingBase(geocodingServer.URL),
-		weather.WithForecastBase(forecastServer.URL),
-	)
+	s.weatherMock.EXPECT().Geocode(mock.Anything, "NonExistentCity").
+		Return(0, 0, "", fmt.Errorf("geocode: %w", interfaces.ErrLocationNotFound)).Once()
 
 	step := workflow.NewStepFunc(
 		StepFetchWeatherID,
-		BuildFetchWeatherStep(client, forecastServer.URL),
+		BuildFetchWeatherStep(s.weatherMock, "https://unused.example/forecast"),
 	)
 
 	state := WeatherState{City: "NonExistentCity"}

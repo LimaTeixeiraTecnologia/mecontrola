@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/domain"
 )
 
@@ -38,7 +39,7 @@ func TestGeocodeNotFound(t *testing.T) {
 	cl := NewClient(WithHTTPClient(srv.Client()), WithGeocodingBase(srv.URL))
 	_, _, _, err := cl.Geocode(context.Background(), "nonexistentcity12345")
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrLocationNotFound))
+	assert.True(t, errors.Is(err, interfaces.ErrLocationNotFound))
 }
 
 func TestGeocodeUpstreamError(t *testing.T) {
