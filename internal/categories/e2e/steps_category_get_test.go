@@ -59,7 +59,7 @@ func (e *categoriesE2ECtx) whenClientGetsDeprecatedCategoryIncludingDeprecated(s
 }
 
 func (e *categoriesE2ECtx) whenClientGetsNonexistentCategory() error {
-	return e.get("/api/v1/categories/00000000-0000-0000-0000-000000000000")
+	return e.get("/api/v1/categories/99999999-9999-9999-9999-999999999999")
 }
 
 func (e *categoriesE2ECtx) whenClientGetsCategoryWithInvalidID() error {
