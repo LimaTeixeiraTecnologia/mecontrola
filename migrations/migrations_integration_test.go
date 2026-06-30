@@ -95,7 +95,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTablePresent("mecontrola.user_identities")
 	s.assertTablePresent("mecontrola.channel_processed_messages")
 	s.assertTablePresent("mecontrola.budget_alerts_sent")
-	s.assertTablePresent("mecontrola.onboarding_sessions")
+	s.assertTablePresent("mecontrola.onboarding_tokens")
+	s.assertTableMissing("mecontrola.onboarding_sessions")
 
 	s.assertTableMissing("mecontrola.meta_processed_messages")
 	s.assertTableMissing("mecontrola.telegram_processed_updates")
@@ -726,6 +727,80 @@ func (s *MigrationSuite) assertBudgetsPendingEventIdempotency() {
 	`, eventID)
 	s.Require().Error(dupErr)
 	s.Contains(dupErr.Error(), "budgets_expense_events_pending_event_uk")
+}
+
+func (s *MigrationSuite) TestActivationJourneyMigrationUpDown() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "email_sent_at")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "page_opened_at")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "activation_started_at")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "whatsapp_opened_at")
+	s.assertTablePresent("mecontrola.onboarding_activation_nomatch_throttle")
+	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
+	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
+
+	s.downToVersion(migrator, 4)
+
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "email_sent_at")
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "page_opened_at")
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "activation_started_at")
+	s.assertColumnMissing("mecontrola.onboarding_tokens", "whatsapp_opened_at")
+	s.assertTableMissing("mecontrola.onboarding_activation_nomatch_throttle")
+	s.assertTableMissing("mecontrola.onboarding_welcome_processed")
+	s.assertIndexMissing("mecontrola", "onboarding_tokens_mobile_activable_idx")
+
+	s.applyBaseline(migrator)
+
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "email_sent_at")
+	s.assertTablePresent("mecontrola.onboarding_activation_nomatch_throttle")
+	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
+	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
+}
+
+func (s *MigrationSuite) TestActivationJourneyThrottleTableConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	fixedWindow := "2026-01-01 00:00:00+00"
+
+	insertErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.onboarding_activation_nomatch_throttle (mobile_e164, window_start)
+		VALUES ('+5511999990001', $1)
+	`, fixedWindow)
+	s.Require().NoError(insertErr)
+
+	dupErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.onboarding_activation_nomatch_throttle (mobile_e164, window_start)
+		VALUES ('+5511999990001', $1)
+	`, fixedWindow)
+	s.Require().Error(dupErr)
+	s.Contains(dupErr.Error(), "onboarding_activation_nomatch_throttle_pkey")
+}
+
+func (s *MigrationSuite) assertIndexPresent(schema, indexName string) {
+	var count int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM pg_indexes
+		WHERE schemaname = $1
+		  AND indexname = $2
+	`, schema, indexName).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(1), count, "index %s.%s should be present", schema, indexName)
+}
+
+func (s *MigrationSuite) assertIndexMissing(schema, indexName string) {
+	var count int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM pg_indexes
+		WHERE schemaname = $1
+		  AND indexname = $2
+	`, schema, indexName).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(int64(0), count, "index %s.%s should be absent", schema, indexName)
 }
 
 func splitTableName(qualified string) [2]string {

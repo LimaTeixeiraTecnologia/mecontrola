@@ -21,18 +21,20 @@ import (
 )
 
 type onboardingWorld struct {
-	t                     *testing.T
-	runtime               *onboardingRuntime
-	lastResp              *http.Response
-	lastBody              map[string]any
-	lastBodyText          string
-	lastReply             string
-	lastOutboxEventID     string
-	currentTokenClear     string
-	currentTokenID        string
-	currentSubscriptionID string
-	currentUserID         uuid.UUID
-	lastStatusCodes       []int
+	t                       *testing.T
+	runtime                 *onboardingRuntime
+	lastResp                *http.Response
+	lastBody                map[string]any
+	lastBodyText            string
+	lastReply               string
+	lastOutboxEventID       string
+	currentTokenClear       string
+	currentTokenID          string
+	currentSubscriptionID   string
+	currentUserID           uuid.UUID
+	lastStatusCodes         []int
+	lastActivationMobile    string
+	lastActivationMessageID string
 }
 
 func newOnboardingWorld(t *testing.T, runtime *onboardingRuntime) *onboardingWorld {
@@ -56,13 +58,14 @@ func (w *onboardingWorld) reset() error {
 			mecontrola.auth_events,
 			mecontrola.user_identities,
 			mecontrola.identity_entitlements,
-			mecontrola.onboarding_sessions,
 			mecontrola.support_signals,
 			mecontrola.consumer_lookup_attempts,
 			mecontrola.channel_processed_messages,
 			mecontrola.outbox_events,
 			mecontrola.billing_subscriptions,
 			mecontrola.onboarding_tokens,
+			mecontrola.onboarding_activation_nomatch_throttle,
+			mecontrola.onboarding_welcome_processed,
 			mecontrola.users
 		RESTART IDENTITY CASCADE
 	`)
@@ -84,6 +87,8 @@ func (w *onboardingWorld) reset() error {
 	w.currentSubscriptionID = ""
 	w.currentUserID = uuid.Nil
 	w.lastStatusCodes = nil
+	w.lastActivationMobile = ""
+	w.lastActivationMessageID = ""
 	return nil
 }
 
@@ -316,9 +321,35 @@ func (w *onboardingWorld) latestOutboxDelivery(eventType string) (int, string, e
 }
 
 func (w *onboardingWorld) runDispatcher(registry outbox.Registry) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return newDispatcherJob(w.runtime.deps.db, w.runtime.deps.outboxCfg, registry, w.runtime.deps.o11y).Run(ctx)
+	job := newDispatcherJob(w.runtime.deps.db, w.runtime.deps.outboxCfg, registry, w.runtime.deps.o11y)
+	for i := 0; i < 10; i++ {
+		pending, err := w.pendingOutboxCount(ctx)
+		if err != nil {
+			return err
+		}
+		if pending == 0 {
+			return nil
+		}
+		if err := job.Run(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *onboardingWorld) pendingOutboxCount(ctx context.Context) (int, error) {
+	var count int
+	err := w.runtime.deps.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		  FROM mecontrola.outbox_events
+		 WHERE status = 1 AND next_attempt_at <= now()
+	`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("pending outbox count: %w", err)
+	}
+	return count, nil
 }
 
 func (w *onboardingWorld) extractTokenFromCheckoutURL() error {

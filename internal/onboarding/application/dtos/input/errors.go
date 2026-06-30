@@ -11,4 +11,8 @@ var (
 	ErrSubscriptionIDRequired = errors.New("subscription_id: obrigatório")
 	ErrFunnelTokenRequired    = errors.New("funnel_token: obrigatório")
 	ErrTokenRequired          = errors.New("token: obrigatório")
+	ErrEventRequired          = errors.New("event: obrigatório")
+	ErrEventInvalid           = errors.New("event: deve ser page_opened ou whatsapp_opened")
+	ErrPeerE164Required       = errors.New("peer_e164: obrigatório")
+	ErrMessageIDRequired      = errors.New("message_id: obrigatório")
 )

@@ -172,3 +172,35 @@ func (s *OnboardingCleanupRepositoryIntegrationSuite) TestDeleteConsumerLookupAt
 	s.Require().NoError(err)
 	s.Equal(int64(0), deleted)
 }
+
+func (s *OnboardingCleanupRepositoryIntegrationSuite) TestDeleteWelcomeProcessedOlderThan() {
+	db, _ := testcontainer.Postgres(s.T())
+	ctx := context.Background()
+
+	repo := postgres.NewOnboardingCleanupRepository(noop.NewProvider(), db)
+
+	old := time.Now().UTC().Add(-2 * time.Hour)
+	for i := 0; i < 2; i++ {
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO mecontrola.onboarding_welcome_processed (event_id, processed_at) VALUES ($1, $2)`,
+			uuid.NewString(), old,
+		)
+		s.Require().NoError(err)
+	}
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO mecontrola.onboarding_welcome_processed (event_id, processed_at) VALUES ($1, $2)`,
+		uuid.NewString(), time.Now().UTC().Add(1*time.Hour),
+	)
+	s.Require().NoError(err)
+
+	cutoff := time.Now().UTC().Add(-1 * time.Hour)
+	deleted, err := repo.DeleteWelcomeProcessedOlderThan(ctx, cutoff, 10)
+	s.Require().NoError(err)
+	s.Equal(int64(2), deleted)
+
+	var remaining int
+	s.Require().NoError(db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM mecontrola.onboarding_welcome_processed`,
+	).Scan(&remaining))
+	s.Equal(1, remaining)
+}

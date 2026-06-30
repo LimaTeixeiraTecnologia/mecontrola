@@ -40,7 +40,30 @@ func (uc *CleanupOnboardingTables) Execute(ctx context.Context) error {
 		span.RecordError(err)
 		return err
 	}
-	return uc.deleteConsumerLookupAttempts(ctx, before)
+	if err := uc.deleteConsumerLookupAttempts(ctx, before); err != nil {
+		span.RecordError(err)
+		return err
+	}
+	return uc.deleteWelcomeProcessed(ctx, before)
+}
+
+func (uc *CleanupOnboardingTables) deleteWelcomeProcessed(
+	ctx context.Context,
+	before time.Time,
+) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("onboarding: cleanup onboarding_welcome_processed: context cancelled: %w", err)
+		}
+		deleted, err := uc.repo.DeleteWelcomeProcessedOlderThan(ctx, before, cleanupBatchSize)
+		if err != nil {
+			return fmt.Errorf("onboarding: cleanup onboarding_welcome_processed: %w", err)
+		}
+		if deleted < int64(cleanupBatchSize) {
+			break
+		}
+	}
+	return nil
 }
 
 func (uc *CleanupOnboardingTables) deleteMetaProcessed(

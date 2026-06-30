@@ -181,3 +181,75 @@ func (_c *OnboardingCleanupRepository_DeleteMetaProcessedOlderThan_Call) RunAndR
 	_c.Call.Return(run)
 	return _c
 }
+
+// DeleteWelcomeProcessedOlderThan provides a mock function for the type OnboardingCleanupRepository
+func (_mock *OnboardingCleanupRepository) DeleteWelcomeProcessedOlderThan(ctx context.Context, before time.Time, limit int) (int64, error) {
+	ret := _mock.Called(ctx, before, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteWelcomeProcessedOlderThan")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) (int64, error)); ok {
+		return returnFunc(ctx, before, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) int64); ok {
+		r0 = returnFunc(ctx, before, limit)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, int) error); ok {
+		r1 = returnFunc(ctx, before, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteWelcomeProcessedOlderThan'
+type OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call struct {
+	*mock.Call
+}
+
+// DeleteWelcomeProcessedOlderThan is a helper method to define mock.On call
+//   - ctx context.Context
+//   - before time.Time
+//   - limit int
+func (_e *OnboardingCleanupRepository_Expecter) DeleteWelcomeProcessedOlderThan(ctx any, before any, limit any) *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call {
+	return &OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call{Call: _e.mock.On("DeleteWelcomeProcessedOlderThan", ctx, before, limit)}
+}
+
+func (_c *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call) Run(run func(ctx context.Context, before time.Time, limit int)) *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call) Return(n int64, err error) *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call) RunAndReturn(run func(ctx context.Context, before time.Time, limit int) (int64, error)) *OnboardingCleanupRepository_DeleteWelcomeProcessedOlderThan_Call {
+	_c.Call.Return(run)
+	return _c
+}

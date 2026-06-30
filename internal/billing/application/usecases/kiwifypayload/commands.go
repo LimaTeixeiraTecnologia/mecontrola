@@ -4,10 +4,12 @@ import (
 	"time"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing/application/dtos/input"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/phone"
 )
 
 func ToSaleApprovedInput(p Payload) input.ProcessSaleApprovedInput {
 	token, _ := ExtractFunnel(p)
+	mobile, _ := phone.NormalizeBR(p.Customer.Mobile)
 	return input.ProcessSaleApprovedInput{
 		EnvelopeID:         p.OrderID,
 		SaleID:             p.OrderID,
@@ -15,7 +17,7 @@ func ToSaleApprovedInput(p Payload) input.ProcessSaleApprovedInput {
 		OrderID:            p.OrderID,
 		KiwifySubID:        p.SubscriptionID,
 		FunnelToken:        token,
-		CustomerMobileE164: p.Customer.Mobile,
+		CustomerMobileE164: mobile,
 		CustomerEmail:      p.Customer.Email,
 		OccurredAt:         approvedAtUTC(p),
 	}

@@ -14,7 +14,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/channels"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/ratelimit"
@@ -42,15 +41,16 @@ type DedupRepository interface {
 }
 
 type Dispatcher struct {
-	dedup         DedupRepository
-	establish     EstablishPrincipalUseCase
-	limiter       *ratelimit.Limiter
-	publisher     outbox.Publisher
-	agentRoute    func(ctx context.Context, msg payload.Message) RouteOutcome
-	o11y          observability.Observability
-	routeTotal    observability.Counter
-	rateLimitHits observability.Counter
-	staleWebhook  observability.Counter
+	dedup           DedupRepository
+	establish       EstablishPrincipalUseCase
+	limiter         *ratelimit.Limiter
+	publisher       outbox.Publisher
+	agentRoute      func(ctx context.Context, msg payload.Message) RouteOutcome
+	activationRoute func(ctx context.Context, msg payload.Message) RouteOutcome
+	o11y            observability.Observability
+	routeTotal      observability.Counter
+	rateLimitHits   observability.Counter
+	staleWebhook    observability.Counter
 }
 
 func New(
@@ -59,6 +59,7 @@ func New(
 	limiter *ratelimit.Limiter,
 	publisher outbox.Publisher,
 	agentRoute func(ctx context.Context, msg payload.Message) RouteOutcome,
+	activationRoute func(ctx context.Context, msg payload.Message) RouteOutcome,
 	o11y observability.Observability,
 ) *Dispatcher {
 	routeTotal := o11y.Metrics().Counter(
@@ -77,15 +78,16 @@ func New(
 		"1",
 	)
 	return &Dispatcher{
-		dedup:         dedupRepo,
-		establish:     establish,
-		limiter:       limiter,
-		publisher:     publisher,
-		agentRoute:    agentRoute,
-		o11y:          o11y,
-		routeTotal:    routeTotal,
-		rateLimitHits: rateLimitHits,
-		staleWebhook:  staleWebhook,
+		dedup:           dedupRepo,
+		establish:       establish,
+		limiter:         limiter,
+		publisher:       publisher,
+		agentRoute:      agentRoute,
+		activationRoute: activationRoute,
+		o11y:            o11y,
+		routeTotal:      routeTotal,
+		rateLimitHits:   rateLimitHits,
+		staleWebhook:    staleWebhook,
 	}
 }
 
@@ -138,14 +140,10 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 		return d.finish(ctx, span, OutcomeDuplicate, false, true), nil
 	}
 
-	if _, ok := channels.MatchActivationCommand(msg.Text); ok {
-		return d.finish(ctx, span, OutcomeNoRoute, true, false), nil
-	}
-
 	principal, establishErr := d.establish.Execute(ctx, input.EstablishPrincipalInput{WhatsAppNumber: msg.From})
 	if establishErr != nil {
 		if errors.Is(establishErr, application.ErrUnknownUser) {
-			return d.finish(ctx, span, OutcomeNoRoute, false, false), nil
+			return d.finish(ctx, span, d.activationRoute(ctx, msg), false, false), nil
 		}
 		d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.establish_failed",
 			observability.String("wa_id_masked", payload.MaskMobile(msg.From)),

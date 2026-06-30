@@ -47,7 +47,6 @@ func (s *OnboardingRuntimeConfigSuite) TestNewOnboardingRuntimeConfig() {
 				CodeExpired:       "ce",
 				CodeInvalid:       "ci",
 				SystemUnavailable: "su",
-				PleaseUseAtivar:   "pua",
 				InvalidCountry:    "ic",
 				OnboardingIntro:   "intro",
 			},
@@ -64,7 +63,7 @@ func (s *OnboardingRuntimeConfigSuite) TestNewOnboardingRuntimeConfig() {
 				s.Equal("wa", rc.Messages["welcome_activated"])
 				s.Equal("ic", rc.Messages["invalid_country"])
 				s.Equal("intro", rc.Messages["onboarding_intro"])
-				s.Len(rc.Messages, 10)
+				s.Len(rc.Messages, 9)
 			},
 		},
 		{

@@ -9,6 +9,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	identityserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/infrastructure/http/server"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/server/middleware"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/stringsutil"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
@@ -21,6 +22,7 @@ func composeWhatsAppWebhookRouter(
 	o11y observability.Observability,
 	identityModule identity.IdentityModule,
 	agentsModule agents.Module,
+	onboardingModule onboarding.OnboardingModule,
 ) *identityserver.WhatsAppWebhookRouter {
 	disp := wadispatcher.New(
 		identityModule.WhatsAppDedupRepository,
@@ -28,6 +30,7 @@ func composeWhatsAppWebhookRouter(
 		identityModule.WhatsAppLimiter,
 		identityModule.OutboxPublisher,
 		agentsModule.WhatsAppAgentRoute,
+		onboardingModule.WhatsAppActivationRoute,
 		o11y,
 	)
 

@@ -10,6 +10,7 @@ import (
 type OnboardingCleanupRepository interface {
 	DeleteMetaProcessedOlderThan(ctx context.Context, before time.Time, limit int) (int64, error)
 	DeleteConsumerLookupAttemptsOlderThan(ctx context.Context, before time.Time, limit int) (int64, error)
+	DeleteWelcomeProcessedOlderThan(ctx context.Context, before time.Time, limit int) (int64, error)
 }
 
 type OnboardingCleanupRepositoryFactory interface {

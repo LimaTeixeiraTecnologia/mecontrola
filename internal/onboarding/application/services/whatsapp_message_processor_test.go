@@ -51,7 +51,6 @@ func whatsAppMessages() map[string]string {
 		"code_invalid_check_again":        "sentinel_code_invalid_check_again",
 		"invalid_country":                 "sentinel_invalid_country",
 		"system_unavailable_retry":        "sentinel_system_unavailable_retry",
-		"please_use_ativar_command":       "sentinel_please_use_ativar_command",
 	}
 }
 
@@ -190,7 +189,7 @@ func TestWhatsAppMessageProcessor_HandleFallback_ActivatedSendsWelcome(t *testin
 	assert.Equal(t, "sentinel_welcome_activated", gateway.sent[0])
 }
 
-func TestWhatsAppMessageProcessor_HandleFallback_OutreachRequiredSendsCommand(t *testing.T) {
+func TestWhatsAppMessageProcessor_HandleFallback_OutreachRequiredSendsNothing(t *testing.T) {
 	fallback := &stubTryFallbackActivation{resp: usecases.FallbackResult{Outcome: usecases.FallbackOutcomeOutreachRequired}}
 	gateway := &recordingWhatsAppGateway{}
 	sut := newWhatsAppProcessorFull(nil, fallback, gateway)
@@ -198,8 +197,7 @@ func TestWhatsAppMessageProcessor_HandleFallback_OutreachRequiredSendsCommand(t 
 	err := sut.HandleFallback(context.Background(), "+5511999999999")
 
 	require.NoError(t, err)
-	require.Len(t, gateway.sent, 1)
-	assert.Equal(t, "sentinel_please_use_ativar_command", gateway.sent[0])
+	assert.Empty(t, gateway.sent)
 }
 
 func TestWhatsAppMessageProcessor_HandleFallback_ErrorReturnsError(t *testing.T) {

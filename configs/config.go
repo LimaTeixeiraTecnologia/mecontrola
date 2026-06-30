@@ -128,6 +128,8 @@ type OnboardingConfig struct {
 	CheckoutRateLimitBurst  int    `mapstructure:"ONBOARDING_CHECKOUT_RATE_LIMIT_BURST"`
 	StateRateLimitPerMin    int    `mapstructure:"ONBOARDING_STATE_RATE_LIMIT_PER_MIN"`
 	StateRateLimitBurst     int    `mapstructure:"ONBOARDING_STATE_RATE_LIMIT_BURST"`
+	BeaconRateLimitPerMin   int    `mapstructure:"ONBOARDING_BEACON_RATE_LIMIT_PER_MIN"`
+	BeaconRateLimitBurst    int    `mapstructure:"ONBOARDING_BEACON_RATE_LIMIT_BURST"`
 	KiwifyCheckoutURLs      string `mapstructure:"ONBOARDING_KIWIFY_CHECKOUT_URLS"`
 	KiwifyAllowedHosts      string `mapstructure:"ONBOARDING_KIWIFY_ALLOWED_HOSTS"`
 	MetaRetentionDays       int    `mapstructure:"ONBOARDING_META_RETENTION_DAYS"`
@@ -139,6 +141,12 @@ type OnboardingConfig struct {
 	AbandonmentTTLHours     int    `mapstructure:"ONBOARDING_ABANDONMENT_TTL_HOURS"`
 	AbandonmentJobSchedule  string `mapstructure:"ONBOARDING_ABANDONMENT_JOB_SCHEDULE"`
 	AbandonmentBatchSize    int    `mapstructure:"ONBOARDING_ABANDONMENT_BATCH_SIZE"`
+
+	ActivationWindowHours                         int    `mapstructure:"ONBOARDING_ACTIVATION_WINDOW_HOURS"`
+	ActivationPageURL                             string `mapstructure:"ONBOARDING_ACTIVATION_PAGE_URL"`
+	ActivationNoMatchThrottleHousekeepingSchedule string `mapstructure:"ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_HOUSEKEEPING_SCHEDULE"`
+	ActivationNoMatchThrottleRetentionDays        int    `mapstructure:"ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_RETENTION_DAYS"`
+	ActivationNoMatchThrottleBatch                int    `mapstructure:"ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_BATCH"`
 }
 
 type WhatsAppConfig struct {
@@ -157,9 +165,9 @@ type WhatsAppConfig struct {
 	CodeExpired            string `mapstructure:"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
 	CodeInvalid            string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
 	SystemUnavailable      string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
-	PleaseUseAtivar        string `mapstructure:"WA_MSG_PLEASE_USE_ATIVAR_COMMAND"`
 	InvalidCountry         string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
 	OnboardingIntro        string `mapstructure:"WA_MSG_ONBOARDING_INTRO"`
+	ActivationNotFound     string `mapstructure:"WA_MSG_ACTIVATION_NOT_FOUND"`
 	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
 
@@ -468,6 +476,11 @@ func (l *configLoader) envKeys() []string {
 		"ONBOARDING_ABANDONMENT_TTL_HOURS",
 		"ONBOARDING_ABANDONMENT_JOB_SCHEDULE",
 		"ONBOARDING_ABANDONMENT_BATCH_SIZE",
+		"ONBOARDING_ACTIVATION_WINDOW_HOURS",
+		"ONBOARDING_ACTIVATION_PAGE_URL",
+		"ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_HOUSEKEEPING_SCHEDULE",
+		"ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_RETENTION_DAYS",
+		"ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_BATCH",
 		"META_PHONE_NUMBER_ID",
 		"META_ACCESS_TOKEN",
 		"META_APP_SECRET",
@@ -483,9 +496,9 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT",
 		"WA_MSG_CODE_INVALID_CHECK_AGAIN",
 		"WA_MSG_SYSTEM_UNAVAILABLE_RETRY",
-		"WA_MSG_PLEASE_USE_ATIVAR_COMMAND",
 		"WA_MSG_INVALID_COUNTRY",
 		"WA_MSG_ONBOARDING_INTRO",
+		"WA_MSG_ACTIVATION_NOT_FOUND",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
 		"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE",
@@ -1184,6 +1197,8 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_CHECKOUT_RATE_LIMIT_BURST", 5)
 	l.v.SetDefault("ONBOARDING_STATE_RATE_LIMIT_PER_MIN", 30)
 	l.v.SetDefault("ONBOARDING_STATE_RATE_LIMIT_BURST", 10)
+	l.v.SetDefault("ONBOARDING_BEACON_RATE_LIMIT_PER_MIN", 60)
+	l.v.SetDefault("ONBOARDING_BEACON_RATE_LIMIT_BURST", 20)
 	l.v.SetDefault("ONBOARDING_KIWIFY_ALLOWED_HOSTS", "pay.kiwify.com.br")
 	l.v.SetDefault("ONBOARDING_META_RETENTION_DAYS", 30)
 	l.v.SetDefault("ONBOARDING_META_CLEANUP_SCHEDULE", "30 3 * * *")
@@ -1193,21 +1208,26 @@ func (l *configLoader) setOnboardingDefaults() {
 	l.v.SetDefault("ONBOARDING_ABANDONMENT_TTL_HOURS", 48)
 	l.v.SetDefault("ONBOARDING_ABANDONMENT_JOB_SCHEDULE", "@hourly")
 	l.v.SetDefault("ONBOARDING_ABANDONMENT_BATCH_SIZE", 100)
+	l.v.SetDefault("ONBOARDING_ACTIVATION_WINDOW_HOURS", 24)
+	l.v.SetDefault("ONBOARDING_ACTIVATION_PAGE_URL", "https://mecontrola.app.br")
+	l.v.SetDefault("ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_HOUSEKEEPING_SCHEDULE", "@daily")
+	l.v.SetDefault("ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_RETENTION_DAYS", 7)
+	l.v.SetDefault("ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_BATCH", 500)
 }
 
 func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("META_OUTREACH_TEMPLATE_NAME", "activation_reminder")
 	l.v.SetDefault("META_BOT_NUMBER_DISPLAY", "+55 11 9XXXX-XXXX")
-	l.v.SetDefault("WA_MSG_WELCOME_ACTIVATED", "Sua conta foi ativada com sucesso! Bem-vindo ao MeControla.")
+	l.v.SetDefault("WA_MSG_WELCOME_ACTIVATED", "🎉 Bem-vindo ao Me Controla! Sua conta foi ativada com sucesso. Seu WhatsApp agora está conectado ao Me Controla.")
 	l.v.SetDefault("WA_MSG_ALREADY_ACTIVE", "Sua conta ja esta ativa.")
 	l.v.SetDefault("WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT", "Este codigo ja foi utilizado por outra conta.")
 	l.v.SetDefault("WA_MSG_PAYMENT_STILL_PROCESSING_RETRY", "Seu pagamento ainda esta sendo processado. Tente novamente em alguns minutos.")
 	l.v.SetDefault("WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT", "Este codigo expirou. Entre em contato com o suporte.")
 	l.v.SetDefault("WA_MSG_CODE_INVALID_CHECK_AGAIN", "Codigo invalido. Verifique o link de ativacao e tente novamente.")
 	l.v.SetDefault("WA_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
-	l.v.SetDefault("WA_MSG_PLEASE_USE_ATIVAR_COMMAND", "Para ativar sua conta, envie: ATIVAR seguido do seu codigo de ativacao.")
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
-	l.v.SetDefault("WA_MSG_ONBOARDING_INTRO", "Eu sou o assistente do MeControla 🤖. Vou te ajudar a organizar suas financas direto aqui pelo WhatsApp: e so me contar seus gastos e receitas que eu registro tudo pra voce. Vamos comecar uma configuracao rapida.")
+	l.v.SetDefault("WA_MSG_ONBOARDING_INTRO", "Sou seu assistente financeiro. Vou ajudar você a controlar seus gastos, cartões e orçamento. Vamos começar?")
+	l.v.SetDefault("WA_MSG_ACTIVATION_NOT_FOUND", "Nao encontramos nenhuma ativacao pendente para seu numero. Acesse o link enviado por e-mail para ativar sua conta ou entre em contato com o suporte.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
 	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE", "@daily")

@@ -395,7 +395,7 @@ func (s *ConsumeMagicTokenSuite) TestExecute() {
 		s.Run(scenario.name, func() {
 			idGen := id.NewUUIDGenerator()
 			bind := binding.NewSubscriptionBindingService(scenario.dependencies.identityGW, scenario.dependencies.binder, services.NewMagicTokenWorkflow(), scenario.dependencies.publisher, idGen)
-			uc := NewConsumeMagicToken(&unitOfWorkConsume{}, scenario.dependencies.factory, bind, idGen, s.obs)
+			uc := NewConsumeMagicToken(&unitOfWorkConsume{}, scenario.dependencies.factory, bind, idGen, 24*time.Hour, s.obs)
 			result, err := uc.Execute(s.ctx, scenario.dependencies.in)
 			scenario.expect(result, err)
 		})

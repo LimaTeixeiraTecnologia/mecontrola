@@ -70,8 +70,9 @@ func (c *ActivationEmailConsumer) Handle(ctx context.Context, event events.Event
 	}
 
 	if err := c.usecase.Execute(ctx, usecases.SendActivationEmailInput{
-		ClearToken:    funnelToken,
-		CustomerEmail: customerEmail,
+		ClearToken:     funnelToken,
+		CustomerEmail:  customerEmail,
+		SubscriptionID: p.SubscriptionID,
 	}); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("onboarding.consumer.activation_email: send: %w", err)

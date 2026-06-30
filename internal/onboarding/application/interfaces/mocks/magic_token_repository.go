@@ -173,6 +173,78 @@ func (_c *MagicTokenRepository_CountPaidUnconsumed_Call) RunAndReturn(run func(c
 	return _c
 }
 
+// FindActivableByMobile provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) FindActivableByMobile(ctx context.Context, mobileE164 string, paidAfter time.Time) (entities.MagicToken, error) {
+	ret := _mock.Called(ctx, mobileE164, paidAfter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindActivableByMobile")
+	}
+
+	var r0 entities.MagicToken
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) (entities.MagicToken, error)); ok {
+		return returnFunc(ctx, mobileE164, paidAfter)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) entities.MagicToken); ok {
+		r0 = returnFunc(ctx, mobileE164, paidAfter)
+	} else {
+		r0 = ret.Get(0).(entities.MagicToken)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, time.Time) error); ok {
+		r1 = returnFunc(ctx, mobileE164, paidAfter)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MagicTokenRepository_FindActivableByMobile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindActivableByMobile'
+type MagicTokenRepository_FindActivableByMobile_Call struct {
+	*mock.Call
+}
+
+// FindActivableByMobile is a helper method to define mock.On call
+//   - ctx context.Context
+//   - mobileE164 string
+//   - paidAfter time.Time
+func (_e *MagicTokenRepository_Expecter) FindActivableByMobile(ctx any, mobileE164 any, paidAfter any) *MagicTokenRepository_FindActivableByMobile_Call {
+	return &MagicTokenRepository_FindActivableByMobile_Call{Call: _e.mock.On("FindActivableByMobile", ctx, mobileE164, paidAfter)}
+}
+
+func (_c *MagicTokenRepository_FindActivableByMobile_Call) Run(run func(ctx context.Context, mobileE164 string, paidAfter time.Time)) *MagicTokenRepository_FindActivableByMobile_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_FindActivableByMobile_Call) Return(magicToken entities.MagicToken, err error) *MagicTokenRepository_FindActivableByMobile_Call {
+	_c.Call.Return(magicToken, err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_FindActivableByMobile_Call) RunAndReturn(run func(ctx context.Context, mobileE164 string, paidAfter time.Time) (entities.MagicToken, error)) *MagicTokenRepository_FindActivableByMobile_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // FindByHash provides a mock function for the type MagicTokenRepository
 func (_mock *MagicTokenRepository) FindByHash(ctx context.Context, tokenHash []byte) (entities.MagicToken, error) {
 	ret := _mock.Called(ctx, tokenHash)
@@ -379,6 +451,72 @@ func (_c *MagicTokenRepository_FindPaidForOutreach_Call) RunAndReturn(run func(c
 	return _c
 }
 
+// HasConsumedByMobile provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) HasConsumedByMobile(ctx context.Context, mobileE164 string) (bool, error) {
+	ret := _mock.Called(ctx, mobileE164)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasConsumedByMobile")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bool, error)); ok {
+		return returnFunc(ctx, mobileE164)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bool); ok {
+		r0 = returnFunc(ctx, mobileE164)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, mobileE164)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MagicTokenRepository_HasConsumedByMobile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasConsumedByMobile'
+type MagicTokenRepository_HasConsumedByMobile_Call struct {
+	*mock.Call
+}
+
+// HasConsumedByMobile is a helper method to define mock.On call
+//   - ctx context.Context
+//   - mobileE164 string
+func (_e *MagicTokenRepository_Expecter) HasConsumedByMobile(ctx any, mobileE164 any) *MagicTokenRepository_HasConsumedByMobile_Call {
+	return &MagicTokenRepository_HasConsumedByMobile_Call{Call: _e.mock.On("HasConsumedByMobile", ctx, mobileE164)}
+}
+
+func (_c *MagicTokenRepository_HasConsumedByMobile_Call) Run(run func(ctx context.Context, mobileE164 string)) *MagicTokenRepository_HasConsumedByMobile_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_HasConsumedByMobile_Call) Return(b bool, err error) *MagicTokenRepository_HasConsumedByMobile_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_HasConsumedByMobile_Call) RunAndReturn(run func(ctx context.Context, mobileE164 string) (bool, error)) *MagicTokenRepository_HasConsumedByMobile_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Insert provides a mock function for the type MagicTokenRepository
 func (_mock *MagicTokenRepository) Insert(ctx context.Context, token entities.MagicToken) error {
 	ret := _mock.Called(ctx, token)
@@ -432,6 +570,261 @@ func (_c *MagicTokenRepository_Insert_Call) Return(err error) *MagicTokenReposit
 }
 
 func (_c *MagicTokenRepository_Insert_Call) RunAndReturn(run func(ctx context.Context, token entities.MagicToken) error) *MagicTokenRepository_Insert_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IsEmailSent provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) IsEmailSent(ctx context.Context, tokenID string) (bool, error) {
+	ret := _mock.Called(ctx, tokenID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsEmailSent")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bool, error)); ok {
+		return returnFunc(ctx, tokenID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bool); ok {
+		r0 = returnFunc(ctx, tokenID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, tokenID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MagicTokenRepository_IsEmailSent_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsEmailSent'
+type MagicTokenRepository_IsEmailSent_Call struct {
+	*mock.Call
+}
+
+// IsEmailSent is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tokenID string
+func (_e *MagicTokenRepository_Expecter) IsEmailSent(ctx any, tokenID any) *MagicTokenRepository_IsEmailSent_Call {
+	return &MagicTokenRepository_IsEmailSent_Call{Call: _e.mock.On("IsEmailSent", ctx, tokenID)}
+}
+
+func (_c *MagicTokenRepository_IsEmailSent_Call) Run(run func(ctx context.Context, tokenID string)) *MagicTokenRepository_IsEmailSent_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_IsEmailSent_Call) Return(b bool, err error) *MagicTokenRepository_IsEmailSent_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_IsEmailSent_Call) RunAndReturn(run func(ctx context.Context, tokenID string) (bool, error)) *MagicTokenRepository_IsEmailSent_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkPageOpened provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) MarkPageOpened(ctx context.Context, tokenID string, now time.Time) error {
+	ret := _mock.Called(ctx, tokenID, now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkPageOpened")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, tokenID, now)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MagicTokenRepository_MarkPageOpened_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkPageOpened'
+type MagicTokenRepository_MarkPageOpened_Call struct {
+	*mock.Call
+}
+
+// MarkPageOpened is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tokenID string
+//   - now time.Time
+func (_e *MagicTokenRepository_Expecter) MarkPageOpened(ctx any, tokenID any, now any) *MagicTokenRepository_MarkPageOpened_Call {
+	return &MagicTokenRepository_MarkPageOpened_Call{Call: _e.mock.On("MarkPageOpened", ctx, tokenID, now)}
+}
+
+func (_c *MagicTokenRepository_MarkPageOpened_Call) Run(run func(ctx context.Context, tokenID string, now time.Time)) *MagicTokenRepository_MarkPageOpened_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_MarkPageOpened_Call) Return(err error) *MagicTokenRepository_MarkPageOpened_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_MarkPageOpened_Call) RunAndReturn(run func(ctx context.Context, tokenID string, now time.Time) error) *MagicTokenRepository_MarkPageOpened_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWhatsAppOpened provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) MarkWhatsAppOpened(ctx context.Context, tokenID string, now time.Time) error {
+	ret := _mock.Called(ctx, tokenID, now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWhatsAppOpened")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, tokenID, now)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MagicTokenRepository_MarkWhatsAppOpened_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWhatsAppOpened'
+type MagicTokenRepository_MarkWhatsAppOpened_Call struct {
+	*mock.Call
+}
+
+// MarkWhatsAppOpened is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tokenID string
+//   - now time.Time
+func (_e *MagicTokenRepository_Expecter) MarkWhatsAppOpened(ctx any, tokenID any, now any) *MagicTokenRepository_MarkWhatsAppOpened_Call {
+	return &MagicTokenRepository_MarkWhatsAppOpened_Call{Call: _e.mock.On("MarkWhatsAppOpened", ctx, tokenID, now)}
+}
+
+func (_c *MagicTokenRepository_MarkWhatsAppOpened_Call) Run(run func(ctx context.Context, tokenID string, now time.Time)) *MagicTokenRepository_MarkWhatsAppOpened_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_MarkWhatsAppOpened_Call) Return(err error) *MagicTokenRepository_MarkWhatsAppOpened_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_MarkWhatsAppOpened_Call) RunAndReturn(run func(ctx context.Context, tokenID string, now time.Time) error) *MagicTokenRepository_MarkWhatsAppOpened_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateMarkActivationStartedAt provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) UpdateMarkActivationStartedAt(ctx context.Context, tokenID string, now time.Time) error {
+	ret := _mock.Called(ctx, tokenID, now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateMarkActivationStartedAt")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, tokenID, now)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MagicTokenRepository_UpdateMarkActivationStartedAt_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateMarkActivationStartedAt'
+type MagicTokenRepository_UpdateMarkActivationStartedAt_Call struct {
+	*mock.Call
+}
+
+// UpdateMarkActivationStartedAt is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tokenID string
+//   - now time.Time
+func (_e *MagicTokenRepository_Expecter) UpdateMarkActivationStartedAt(ctx any, tokenID any, now any) *MagicTokenRepository_UpdateMarkActivationStartedAt_Call {
+	return &MagicTokenRepository_UpdateMarkActivationStartedAt_Call{Call: _e.mock.On("UpdateMarkActivationStartedAt", ctx, tokenID, now)}
+}
+
+func (_c *MagicTokenRepository_UpdateMarkActivationStartedAt_Call) Run(run func(ctx context.Context, tokenID string, now time.Time)) *MagicTokenRepository_UpdateMarkActivationStartedAt_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_UpdateMarkActivationStartedAt_Call) Return(err error) *MagicTokenRepository_UpdateMarkActivationStartedAt_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_UpdateMarkActivationStartedAt_Call) RunAndReturn(run func(ctx context.Context, tokenID string, now time.Time) error) *MagicTokenRepository_UpdateMarkActivationStartedAt_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -666,6 +1059,69 @@ func (_c *MagicTokenRepository_UpdateMarkPaid_Call) Return(err error) *MagicToke
 }
 
 func (_c *MagicTokenRepository_UpdateMarkPaid_Call) RunAndReturn(run func(ctx context.Context, token entities.MagicToken) error) *MagicTokenRepository_UpdateMarkPaid_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateSetEmailSentAt provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) UpdateSetEmailSentAt(ctx context.Context, tokenID string, now time.Time) error {
+	ret := _mock.Called(ctx, tokenID, now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateSetEmailSentAt")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, tokenID, now)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MagicTokenRepository_UpdateSetEmailSentAt_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateSetEmailSentAt'
+type MagicTokenRepository_UpdateSetEmailSentAt_Call struct {
+	*mock.Call
+}
+
+// UpdateSetEmailSentAt is a helper method to define mock.On call
+//   - ctx context.Context
+//   - tokenID string
+//   - now time.Time
+func (_e *MagicTokenRepository_Expecter) UpdateSetEmailSentAt(ctx any, tokenID any, now any) *MagicTokenRepository_UpdateSetEmailSentAt_Call {
+	return &MagicTokenRepository_UpdateSetEmailSentAt_Call{Call: _e.mock.On("UpdateSetEmailSentAt", ctx, tokenID, now)}
+}
+
+func (_c *MagicTokenRepository_UpdateSetEmailSentAt_Call) Run(run func(ctx context.Context, tokenID string, now time.Time)) *MagicTokenRepository_UpdateSetEmailSentAt_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_UpdateSetEmailSentAt_Call) Return(err error) *MagicTokenRepository_UpdateSetEmailSentAt_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_UpdateSetEmailSentAt_Call) RunAndReturn(run func(ctx context.Context, tokenID string, now time.Time) error) *MagicTokenRepository_UpdateSetEmailSentAt_Call {
 	_c.Call.Return(run)
 	return _c
 }

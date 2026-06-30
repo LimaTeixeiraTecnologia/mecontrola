@@ -37,7 +37,6 @@ func NewOnboardingRuntimeConfig(cfg configs.OnboardingConfig, waCfg configs.What
 		"code_expired_contact_support":    waCfg.CodeExpired,
 		"code_invalid_check_again":        waCfg.CodeInvalid,
 		"system_unavailable_retry":        waCfg.SystemUnavailable,
-		"please_use_ativar_command":       waCfg.PleaseUseAtivar,
 		"invalid_country":                 waCfg.InvalidCountry,
 		"onboarding_intro":                waCfg.OnboardingIntro,
 	}

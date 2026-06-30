@@ -1199,6 +1199,137 @@ func (s *ConfigSuite) TestLoadConfig() {
 	}
 }
 
+func (s *ConfigSuite) TestLoadConfigActivationDefaults() {
+	type args struct {
+		path func() string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(path string)
+		expect func(cfg *configs.Config, err error)
+	}{
+		{
+			name: "deve aplicar defaults das chaves de ativacao em OnboardingConfig",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(24, cfg.OnboardingConfig.ActivationWindowHours)
+				s.Equal("https://mecontrola.app.br", cfg.OnboardingConfig.ActivationPageURL)
+				s.Equal("@daily", cfg.OnboardingConfig.ActivationNoMatchThrottleHousekeepingSchedule)
+				s.Equal(7, cfg.OnboardingConfig.ActivationNoMatchThrottleRetentionDays)
+				s.Equal(500, cfg.OnboardingConfig.ActivationNoMatchThrottleBatch)
+			},
+		},
+		{
+			name: "deve aplicar default de WA_MSG_ACTIVATION_NOT_FOUND em WhatsAppConfig",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.NotEmpty(cfg.WhatsAppConfig.ActivationNotFound)
+			},
+		},
+		{
+			name: "deve sobrescrever ONBOARDING_ACTIVATION_WINDOW_HOURS via env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("ONBOARDING_ACTIVATION_WINDOW_HOURS", "48")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal(48, cfg.OnboardingConfig.ActivationWindowHours)
+			},
+		},
+		{
+			name: "deve sobrescrever ONBOARDING_ACTIVATION_PAGE_URL via env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("ONBOARDING_ACTIVATION_PAGE_URL", "https://staging.mecontrola.app.br")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal("https://staging.mecontrola.app.br", cfg.OnboardingConfig.ActivationPageURL)
+			},
+		},
+		{
+			name: "deve sobrescrever WA_MSG_ACTIVATION_NOT_FOUND via env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("WA_MSG_ACTIVATION_NOT_FOUND", "Numero nao reconhecido. Fale com o suporte.")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal("Numero nao reconhecido. Fale com o suporte.", cfg.WhatsAppConfig.ActivationNotFound)
+			},
+		},
+		{
+			name: "deve sobrescrever throttle housekeeping via env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_HOUSEKEEPING_SCHEDULE", "@weekly")
+				s.T().Setenv("ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_RETENTION_DAYS", "14")
+				s.T().Setenv("ONBOARDING_ACTIVATION_NOMATCH_THROTTLE_BATCH", "1000")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.Equal("@weekly", cfg.OnboardingConfig.ActivationNoMatchThrottleHousekeepingSchedule)
+				s.Equal(14, cfg.OnboardingConfig.ActivationNoMatchThrottleRetentionDays)
+				s.Equal(1000, cfg.OnboardingConfig.ActivationNoMatchThrottleBatch)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			path := scenario.args.path()
+			scenario.setup(path)
+			cfg, err := configs.LoadConfig(path)
+			scenario.expect(cfg, err)
+		})
+	}
+}
+
 func (s *ConfigSuite) TestNormalizedExporterEndpoint() {
 	scenarios := []struct {
 		name     string

@@ -93,6 +93,48 @@ func (r *magicTokenRepository) FindPaidByMobileForFallback(ctx context.Context, 
 	return scanMagicToken(row)
 }
 
+func (r *magicTokenRepository) FindActivableByMobile(ctx context.Context, mobileE164 string, paidAfter time.Time) (entities.MagicToken, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.find_activable_by_mobile")
+	defer span.End()
+
+	const query = `
+		SELECT id, token_hash, status, plan_id, expires_at, created_at,
+		       paid_at, consumed_at, outreach_sent_at,
+		       activation_token_ciphertext, subscription_id,
+		       customer_mobile_e164, customer_email, external_sale_id,
+		       consumed_by_user_id, consumed_by_mobile_e164, activation_path
+		  FROM mecontrola.onboarding_tokens
+		 WHERE status = 'PAID'
+		   AND customer_mobile_e164 = $1
+		   AND paid_at > $2
+		 ORDER BY paid_at DESC
+		 LIMIT 1
+	`
+
+	row := r.db.QueryRowContext(ctx, query, mobileE164, paidAfter)
+	return scanMagicToken(row)
+}
+
+func (r *magicTokenRepository) HasConsumedByMobile(ctx context.Context, mobileE164 string) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.has_consumed_by_mobile")
+	defer span.End()
+
+	const query = `
+		SELECT EXISTS (
+			SELECT 1
+			  FROM mecontrola.onboarding_tokens
+			 WHERE status = 'CONSUMED'
+			   AND consumed_by_mobile_e164 = $1
+		)
+	`
+
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, query, mobileE164).Scan(&exists); err != nil {
+		return false, fmt.Errorf("onboarding: magic_token_repository.has_consumed_by_mobile: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *magicTokenRepository) FindPaidForOutreach(ctx context.Context, olderThan time.Time, limit int) ([]entities.MagicToken, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.find_paid_for_outreach")
 	defer span.End()
@@ -183,7 +225,7 @@ func (r *magicTokenRepository) UpdateMarkConsumed(ctx context.Context, token ent
 		   AND status = 'PAID'
 	`
 
-	_, err := r.db.ExecContext(ctx, query,
+	result, err := r.db.ExecContext(ctx, query,
 		token.Status().String(),
 		sqlnull.Time(token.ConsumedAt()),
 		sqlnull.Str(token.ConsumedByUserID()),
@@ -193,6 +235,13 @@ func (r *magicTokenRepository) UpdateMarkConsumed(ctx context.Context, token ent
 	)
 	if err != nil {
 		return fmt.Errorf("onboarding: magic_token_repository.update_mark_consumed: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("onboarding: magic_token_repository.update_mark_consumed: rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("onboarding: magic_token_repository.update_mark_consumed: %w", domain.ErrTokenAlreadyConsumedRace)
 	}
 	return nil
 }
@@ -289,6 +338,93 @@ func (r *magicTokenRepository) CountPaidUnconsumed(ctx context.Context) (int64, 
 		return 0, fmt.Errorf("onboarding: magic_token_repository.count_paid_unconsumed: %w", err)
 	}
 	return count, nil
+}
+
+func (r *magicTokenRepository) UpdateSetEmailSentAt(ctx context.Context, tokenID string, now time.Time) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.update_set_email_sent_at")
+	defer span.End()
+
+	const query = `
+		UPDATE mecontrola.onboarding_tokens
+		   SET email_sent_at = COALESCE(email_sent_at, $1)
+		 WHERE id = $2
+	`
+
+	_, err := r.db.ExecContext(ctx, query, now, tokenID)
+	if err != nil {
+		return fmt.Errorf("onboarding: magic_token_repository.update_set_email_sent_at: %w", err)
+	}
+	return nil
+}
+
+func (r *magicTokenRepository) IsEmailSent(ctx context.Context, tokenID string) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.is_email_sent")
+	defer span.End()
+
+	const query = `
+		SELECT email_sent_at IS NOT NULL
+		  FROM mecontrola.onboarding_tokens
+		 WHERE id = $1
+	`
+
+	var sent bool
+	if err := r.db.QueryRowContext(ctx, query, tokenID).Scan(&sent); err != nil {
+		return false, fmt.Errorf("onboarding: magic_token_repository.is_email_sent: %w", err)
+	}
+	return sent, nil
+}
+
+func (r *magicTokenRepository) MarkPageOpened(ctx context.Context, tokenID string, now time.Time) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.mark_page_opened")
+	defer span.End()
+
+	const query = `
+		UPDATE mecontrola.onboarding_tokens
+		   SET page_opened_at = $1
+		 WHERE id               = $2
+		   AND page_opened_at  IS NULL
+	`
+
+	_, err := r.db.ExecContext(ctx, query, now, tokenID)
+	if err != nil {
+		return fmt.Errorf("onboarding: magic_token_repository.mark_page_opened: %w", err)
+	}
+	return nil
+}
+
+func (r *magicTokenRepository) MarkWhatsAppOpened(ctx context.Context, tokenID string, now time.Time) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.mark_whatsapp_opened")
+	defer span.End()
+
+	const query = `
+		UPDATE mecontrola.onboarding_tokens
+		   SET whatsapp_opened_at = $1
+		 WHERE id                   = $2
+		   AND whatsapp_opened_at  IS NULL
+	`
+
+	_, err := r.db.ExecContext(ctx, query, now, tokenID)
+	if err != nil {
+		return fmt.Errorf("onboarding: magic_token_repository.mark_whatsapp_opened: %w", err)
+	}
+	return nil
+}
+
+func (r *magicTokenRepository) UpdateMarkActivationStartedAt(ctx context.Context, tokenID string, now time.Time) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.update_mark_activation_started_at")
+	defer span.End()
+
+	const query = `
+		UPDATE mecontrola.onboarding_tokens
+		   SET activation_started_at = COALESCE(activation_started_at, $1)
+		 WHERE id = $2
+	`
+
+	_, err := r.db.ExecContext(ctx, query, now, tokenID)
+	if err != nil {
+		return fmt.Errorf("onboarding: magic_token_repository.update_mark_activation_started_at: %w", err)
+	}
+	return nil
 }
 
 type rowScanner interface {

@@ -1,0 +1,12 @@
+id: "9.0"
+title: "Beacon de jornada (page_opened/whatsapp_opened)"
+status: done
+date: "2026-06-30"
+report: ".specs/prd-ativacao-whatsapp/9.0_execution_report.md"
+tests_passed: 11
+build: ok
+gates:
+  zero_comments: pass
+  no_sql_in_adapter: pass
+  no_init_no_panic: pass
+  time_now_inline: pass

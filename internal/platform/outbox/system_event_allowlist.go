@@ -11,7 +11,8 @@ func isSystemEvent(eventType string) bool {
 }
 
 var noUserEventAllowlist = map[string]struct{}{
-	"billing.subscription.activated": {},
+	"billing.subscription.activated":     {},
+	"onboarding.activation.attempted.v1": {},
 }
 
 func isNoUserEvent(eventType string) bool {

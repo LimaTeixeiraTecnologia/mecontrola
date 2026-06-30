@@ -44,7 +44,8 @@ func (s *stubEmailSender) Send(ctx context.Context, msg appinterfaces.EmailMessa
 }
 
 type stubMagicTokenRepository struct {
-	findByHashFn func(ctx context.Context, hash []byte) (entities.MagicToken, error)
+	findByHashFn  func(ctx context.Context, hash []byte) (entities.MagicToken, error)
+	isEmailSentFn func(ctx context.Context, tokenID string) (bool, error)
 }
 
 func (s *stubMagicTokenRepository) FindByHash(ctx context.Context, hash []byte) (entities.MagicToken, error) {
@@ -90,6 +91,49 @@ func (s *stubMagicTokenRepository) CountPaidUnconsumed(_ context.Context) (int64
 	return 0, nil
 }
 
+func (s *stubMagicTokenRepository) UpdateSetEmailSentAt(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+func (s *stubMagicTokenRepository) IsEmailSent(ctx context.Context, tokenID string) (bool, error) {
+	if s.isEmailSentFn != nil {
+		return s.isEmailSentFn(ctx, tokenID)
+	}
+	return false, nil
+}
+
+func (s *stubMagicTokenRepository) FindActivableByMobile(_ context.Context, _ string, _ time.Time) (entities.MagicToken, error) {
+	return entities.MagicToken{}, nil
+}
+
+func (s *stubMagicTokenRepository) HasConsumedByMobile(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (s *stubMagicTokenRepository) MarkPageOpened(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+func (s *stubMagicTokenRepository) MarkWhatsAppOpened(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+func (s *stubMagicTokenRepository) UpdateMarkActivationStartedAt(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+type stubBoundCheckerAlwaysFalse struct{}
+
+func (s *stubBoundCheckerAlwaysFalse) IsAlreadyBound(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+type stubBoundCheckerAlwaysTrue struct{}
+
+func (s *stubBoundCheckerAlwaysTrue) IsAlreadyBound(_ context.Context, _ string) (bool, error) {
+	return true, nil
+}
+
 func newPaidToken() entities.MagicToken {
 	t, _ := entities.NewMagicToken("id-1", []byte("hash"), "plan-1", time.Now().Add(24*time.Hour))
 	t, _ = t.MarkPaid("sub-1", "+5511999999999", "u@e.com", "sale-1", time.Now())
@@ -111,10 +155,11 @@ func newExpiredToken() entities.MagicToken {
 
 type SendActivationEmailSuite struct {
 	suite.Suite
-	ctx      context.Context
-	obs      observability.Observability
-	botNum   string
-	tokenTTL time.Duration
+	ctx            context.Context
+	obs            observability.Observability
+	botNum         string
+	tokenTTL       time.Duration
+	activationPage string
 }
 
 func TestSendActivationEmailSuite(t *testing.T) {
@@ -126,6 +171,28 @@ func (s *SendActivationEmailSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.botNum = "+5511999999999"
 	s.tokenTTL = 24 * time.Hour
+	s.activationPage = "https://mecontrola.app.br"
+}
+
+func (s *SendActivationEmailSuite) newUC(
+	repo *stubMagicTokenRepository,
+	sender *stubEmailSender,
+	tmpl *stubActivationTemplate,
+	bound appinterfaces.SubscriptionBoundChecker,
+) *SendActivationEmail {
+	return NewSendActivationEmail(
+		repo,
+		sender,
+		tmpl,
+		s.botNum,
+		s.activationPage,
+		"noreply@mecontrola.app.br",
+		"MeControla",
+		"",
+		s.tokenTTL,
+		bound,
+		s.obs,
+	)
 }
 
 func (s *SendActivationEmailSuite) TestExecute() {
@@ -136,11 +203,21 @@ func (s *SendActivationEmailSuite) TestExecute() {
 		template *stubActivationTemplate
 		sender   *stubEmailSender
 		repo     *stubMagicTokenRepository
+		bound    appinterfaces.SubscriptionBoundChecker
 	}
 
 	paidRepo := &stubMagicTokenRepository{findByHashFn: func(_ context.Context, _ []byte) (entities.MagicToken, error) {
 		return newPaidToken(), nil
 	}}
+
+	alreadySentRepo := &stubMagicTokenRepository{
+		findByHashFn: func(_ context.Context, _ []byte) (entities.MagicToken, error) {
+			return newPaidToken(), nil
+		},
+		isEmailSentFn: func(_ context.Context, _ string) (bool, error) {
+			return true, nil
+		},
+	}
 
 	scenarios := []struct {
 		name         string
@@ -149,7 +226,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 		expect       func(tmpl *stubActivationTemplate, err error)
 	}{
 		{
-			name: "token e email validos: WaMeURL contem wa.me com ATIVAR pré-preenchido",
+			name: "token e email validos: ActivationURL contem link da pagina de ativacao com token",
 			args: args{input: SendActivationEmailInput{
 				ClearToken:    validClearToken,
 				CustomerEmail: "user@example.com",
@@ -158,12 +235,30 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				template: &stubActivationTemplate{},
 				sender:   &stubEmailSender{},
 				repo:     paidRepo,
+				bound:    nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.NoError(err)
-				s.Contains(tmpl.lastIn.WaMeURL, "wa.me/")
-				s.Contains(tmpl.lastIn.WaMeURL, "?text=ATIVAR%20")
-				s.Contains(tmpl.lastIn.WaMeURL, validClearToken)
+				s.Contains(tmpl.lastIn.ActivationURL, "/ativar")
+				s.Contains(tmpl.lastIn.ActivationURL, "token=")
+				s.Contains(tmpl.lastIn.ActivationURL, validClearToken)
+			},
+		},
+		{
+			name: "email ja enviado para a sessao: pula sem renderizar nem enviar (RF-15 idempotencia)",
+			args: args{input: SendActivationEmailInput{
+				ClearToken:    validClearToken,
+				CustomerEmail: "user@example.com",
+			}},
+			dependencies: dependencies{
+				template: &stubActivationTemplate{},
+				sender:   &stubEmailSender{},
+				repo:     alreadySentRepo,
+				bound:    nil,
+			},
+			expect: func(tmpl *stubActivationTemplate, err error) {
+				s.NoError(err)
+				s.Empty(tmpl.lastIn.ActivationURL)
 			},
 		},
 		{
@@ -176,6 +271,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				template: &stubActivationTemplate{},
 				sender:   &stubEmailSender{},
 				repo:     paidRepo,
+				bound:    nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.NoError(err)
@@ -197,6 +293,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				},
 				sender: &stubEmailSender{},
 				repo:   &stubMagicTokenRepository{},
+				bound:  nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.NoError(err)
@@ -216,6 +313,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				},
 				sender: &stubEmailSender{},
 				repo:   &stubMagicTokenRepository{},
+				bound:  nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.Error(err)
@@ -235,6 +333,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				},
 				sender: &stubEmailSender{},
 				repo:   paidRepo,
+				bound:  nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.Error(err)
@@ -254,7 +353,8 @@ func (s *SendActivationEmailSuite) TestExecute() {
 						return errors.New("smtp error")
 					},
 				},
-				repo: paidRepo,
+				repo:  paidRepo,
+				bound: nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.Error(err)
@@ -290,6 +390,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				repo: &stubMagicTokenRepository{findByHashFn: func(_ context.Context, _ []byte) (entities.MagicToken, error) {
 					return newConsumedToken(), nil
 				}},
+				bound: nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.NoError(err)
@@ -311,6 +412,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				repo: &stubMagicTokenRepository{findByHashFn: func(_ context.Context, _ []byte) (entities.MagicToken, error) {
 					return newExpiredToken(), nil
 				}},
+				bound: nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.NoError(err)
@@ -326,6 +428,7 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				template: &stubActivationTemplate{},
 				sender:   &stubEmailSender{},
 				repo:     &stubMagicTokenRepository{},
+				bound:    nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.NoError(err)
@@ -343,26 +446,61 @@ func (s *SendActivationEmailSuite) TestExecute() {
 				repo: &stubMagicTokenRepository{findByHashFn: func(_ context.Context, _ []byte) (entities.MagicToken, error) {
 					return entities.MagicToken{}, errors.New("db down")
 				}},
+				bound: nil,
 			},
 			expect: func(tmpl *stubActivationTemplate, err error) {
 				s.Error(err)
 				s.Contains(err.Error(), "find token")
 			},
 		},
+		{
+			name: "recompra: suprime email quando assinatura ja vinculada a usuario",
+			args: args{input: SendActivationEmailInput{
+				ClearToken:     validClearToken,
+				CustomerEmail:  "user@example.com",
+				SubscriptionID: "sub-already-bound",
+			}},
+			dependencies: dependencies{
+				template: &stubActivationTemplate{
+					renderFn: func(in ActivationTemplateInput) (string, string, error) {
+						panic("template nao deve ser chamado para recompra")
+					},
+				},
+				sender: &stubEmailSender{},
+				repo:   paidRepo,
+				bound:  &stubBoundCheckerAlwaysTrue{},
+			},
+			expect: func(tmpl *stubActivationTemplate, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "recompra: envia email quando assinatura nao esta vinculada",
+			args: args{input: SendActivationEmailInput{
+				ClearToken:     validClearToken,
+				CustomerEmail:  "user@example.com",
+				SubscriptionID: "sub-not-bound",
+			}},
+			dependencies: dependencies{
+				template: &stubActivationTemplate{},
+				sender:   &stubEmailSender{},
+				repo:     paidRepo,
+				bound:    &stubBoundCheckerAlwaysFalse{},
+			},
+			expect: func(tmpl *stubActivationTemplate, err error) {
+				s.NoError(err)
+				s.Contains(tmpl.lastIn.ActivationURL, "/ativar")
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			uc := NewSendActivationEmail(
+			uc := s.newUC(
 				scenario.dependencies.repo,
 				scenario.dependencies.sender,
 				scenario.dependencies.template,
-				s.botNum,
-				"noreply@mecontrola.app.br",
-				"MeControla",
-				"",
-				s.tokenTTL,
-				s.obs,
+				scenario.dependencies.bound,
 			)
 			err := uc.Execute(s.ctx, scenario.args.input)
 			scenario.expect(scenario.dependencies.template, err)

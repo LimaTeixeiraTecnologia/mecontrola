@@ -147,7 +147,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
 				s.True(result.Output.ReadyToActivate)
-				s.Contains(result.Output.WaMeURL, "?text=ATIVAR%20")
+				s.Contains(result.Output.WaMeURL, "?text=Ativar+o+meu+plano")
 			},
 		},
 		{
@@ -193,7 +193,7 @@ func (s *GetTokenStateSuite) TestExecute() {
 			expect: func(result GetTokenStateResult, err error) {
 				s.NoError(err)
 				s.Equal("https://wa.me/5511999999999", result.Output.SupportURL)
-				s.Contains(result.Output.WaMeURL, "wa.me/5511999999999?text=ATIVAR%20")
+				s.Contains(result.Output.WaMeURL, "wa.me/5511999999999?text=Ativar+o+meu+plano")
 			},
 		},
 	}

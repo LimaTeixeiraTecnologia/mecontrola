@@ -29,6 +29,8 @@ func TestE2E(t *testing.T) {
 			registerJobSteps(sc, world)
 			registerRobustnessSteps(sc, world)
 			registerOutboxPublisherSteps(sc, world)
+			registerE2EJourneySteps(sc, world)
+			registerWebhookRegressionSteps(sc, world)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",
@@ -43,12 +45,13 @@ func TestE2E(t *testing.T) {
 }
 
 type onboardingRuntime struct {
-	server          *httptest.Server
-	httpClient      *http.Client
-	deps            *onboardingDependencies
-	metaGateway     *recordingWhatsAppGateway
-	outreachGateway *recordingOutreachGateway
-	emailSender     *recordingEmailSender
-	failingHandler  *forcedFailureHandler
-	registryFactory func() *eventRegistry
+	server                 *httptest.Server
+	httpClient             *http.Client
+	deps                   *onboardingDependencies
+	metaGateway            *recordingWhatsAppGateway
+	outreachGateway        *recordingOutreachGateway
+	emailSender            *recordingEmailSender
+	failingHandler         *forcedFailureHandler
+	registryFactory        func() *eventRegistry
+	journeyRegistryFactory func() *eventRegistry
 }

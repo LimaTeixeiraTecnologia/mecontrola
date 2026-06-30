@@ -240,7 +240,7 @@ func Run() error {
 	}()
 	o11y.Logger().Info(ctx, "agents module wired")
 
-	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, agentsModule)
+	waWebhookRouter := composeWhatsAppWebhookRouter(cfg, o11y, identityModule, agentsModule, onboardingModule)
 	srv.RegisterRouters(waWebhookRouter)
 	o11y.Logger().Info(ctx, "whatsapp webhook router wired", observability.String("path", "/api/v1/whatsapp"))
 

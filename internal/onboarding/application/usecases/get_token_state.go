@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -78,7 +79,7 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 	now := time.Now().UTC()
 
 	if magicToken.Status() == valueobjects.TokenStatusPaid && !magicToken.IsExpiredAt(now) {
-		waMe := fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), clearToken)
+		waMe := buildWaMeURL(uc.botNumber, clearToken, magicToken.CustomerMobileE164())
 		return GetTokenStateResult{
 			Output: output.GetTokenStateOutput{
 				ReadyToActivate:  true,
@@ -96,10 +97,18 @@ func (uc *GetTokenState) Execute(ctx context.Context, clearToken string) (GetTok
 		SupportURL:      support,
 	}
 	if reason == TokenStateReasonConsumed {
-		out.WaMeURL = fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), clearToken)
+		out.WaMeURL = buildWaMeURL(uc.botNumber, clearToken, magicToken.CustomerMobileE164())
 		out.BotNumberDisplay = uc.botNumberDisplay
 	}
 	return GetTokenStateResult{Output: out, Reason: reason}, nil
+}
+
+func buildWaMeURL(botNumber, clearToken, customerMobileE164 string) string {
+	bot := sanitizeE164(botNumber)
+	if strings.TrimSpace(customerMobileE164) != "" {
+		return fmt.Sprintf("https://wa.me/%s?text=Ativar+o+meu+plano", bot)
+	}
+	return fmt.Sprintf("https://wa.me/%s?text=%s", bot, clearToken)
 }
 
 func reasonFromStatus(status valueobjects.TokenStatus, expired bool) TokenStateReason {

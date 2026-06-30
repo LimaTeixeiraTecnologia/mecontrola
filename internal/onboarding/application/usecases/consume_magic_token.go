@@ -27,15 +27,16 @@ type ConsumeInternalResult struct {
 }
 
 type ConsumeMagicToken struct {
-	uow            uow.UnitOfWork
-	factory        appinterfaces.RepositoryFactory
-	binding        *binding.SubscriptionBindingService
-	idGen          id.Generator
-	o11y           observability.Observability
-	tokensConsumed observability.Counter
-	reuseAttempts  observability.Counter
-	consumeLatency observability.Histogram
-	paidToConsumed observability.Histogram
+	uow              uow.UnitOfWork
+	factory          appinterfaces.RepositoryFactory
+	binding          *binding.SubscriptionBindingService
+	idGen            id.Generator
+	activationWindow time.Duration
+	o11y             observability.Observability
+	tokensConsumed   observability.Counter
+	reuseAttempts    observability.Counter
+	consumeLatency   observability.Histogram
+	paidToConsumed   observability.Histogram
 }
 
 func NewConsumeMagicToken(
@@ -43,6 +44,7 @@ func NewConsumeMagicToken(
 	factory appinterfaces.RepositoryFactory,
 	binding *binding.SubscriptionBindingService,
 	idGen id.Generator,
+	activationWindow time.Duration,
 	o11y observability.Observability,
 ) *ConsumeMagicToken {
 	tokensConsumed := o11y.Metrics().Counter(
@@ -66,15 +68,16 @@ func NewConsumeMagicToken(
 		"s",
 	)
 	return &ConsumeMagicToken{
-		uow:            u,
-		factory:        factory,
-		binding:        binding,
-		idGen:          idGen,
-		o11y:           o11y,
-		tokensConsumed: tokensConsumed,
-		reuseAttempts:  reuseAttempts,
-		consumeLatency: consumeLatency,
-		paidToConsumed: paidToConsumed,
+		uow:              u,
+		factory:          factory,
+		binding:          binding,
+		idGen:            idGen,
+		activationWindow: activationWindow,
+		o11y:             o11y,
+		tokensConsumed:   tokensConsumed,
+		reuseAttempts:    reuseAttempts,
+		consumeLatency:   consumeLatency,
+		paidToConsumed:   paidToConsumed,
 	}
 }
 
@@ -188,6 +191,9 @@ func (uc *ConsumeMagicToken) handleConsumedToken(ctx context.Context, token valu
 }
 
 func (uc *ConsumeMagicToken) handlePaidToken(ctx context.Context, token valueobjects.Token, in input.ConsumeMagicTokenInput, magicToken entities.MagicToken, tokenRepo appinterfaces.MagicTokenRepository, now time.Time) (ConsumeInternalResult, error) {
+	if uc.activationWindow > 0 && !magicToken.IsActivationWindowOpen(now, uc.activationWindow) {
+		return ConsumeInternalResult{magicToken: magicToken}, domain.ErrActivationWindowClosed
+	}
 	consumed, err := uc.binding.BindAndConsume(ctx, tokenRepo, magicToken, in.FromE164, in.ActivationPath, now)
 	if err != nil {
 		slog.ErrorContext(ctx, "onboarding.token.bind_consume_failed",
@@ -221,9 +227,13 @@ func (uc *ConsumeMagicToken) mapResult(ctx context.Context, token valueobjects.T
 		return ConsumeResult{Outcome: ConsumeOutcomeNotFound}, nil
 	case errors.Is(err, domain.ErrTokenExpired):
 		return ConsumeResult{Outcome: ConsumeOutcomeExpired}, nil
+	case errors.Is(err, domain.ErrActivationWindowClosed):
+		return ConsumeResult{Outcome: ConsumeOutcomeExpired}, nil
 	case errors.Is(err, domain.ErrTokenNotYetPaid):
 		return ConsumeResult{Outcome: ConsumeOutcomeNotYetPaid}, nil
 	case errors.Is(err, domain.ErrTokenAlreadyConsumedSame):
+		return ConsumeResult{Outcome: ConsumeOutcomeAlreadyActive}, nil
+	case errors.Is(err, domain.ErrTokenAlreadyConsumedRace):
 		return ConsumeResult{Outcome: ConsumeOutcomeAlreadyActive}, nil
 	case errors.Is(err, domain.ErrTokenAlreadyConsumedOther):
 		uc.reuseAttempts.Add(ctx, 1, observability.String("reason", "different_number"))
@@ -246,10 +256,14 @@ func consumeResultLabel(err error) string {
 		return "not_found"
 	case errors.Is(err, domain.ErrTokenExpired):
 		return "expired"
+	case errors.Is(err, domain.ErrActivationWindowClosed):
+		return "window_closed"
 	case errors.Is(err, domain.ErrTokenNotYetPaid):
 		return "not_yet_paid"
 	case errors.Is(err, domain.ErrTokenAlreadyConsumedSame):
 		return "already_active"
+	case errors.Is(err, domain.ErrTokenAlreadyConsumedRace):
+		return "already_active_race"
 	case errors.Is(err, domain.ErrTokenAlreadyConsumedOther):
 		return "reuse_other"
 	case errors.Is(err, domain.ErrUnsupportedCountry):

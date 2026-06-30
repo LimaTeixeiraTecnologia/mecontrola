@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-ativacao-whatsapp/5.0_execution_report.md
+summary: Usecase ActivateFromInbound + DTO Validate() implementados com 11 testes passando e zero regressões
+timestamp: 2026-06-30T13:10:00Z

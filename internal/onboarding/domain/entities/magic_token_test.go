@@ -266,3 +266,70 @@ func (s *MagicTokenSuite) TestHelpers() {
 		s.Run(scenario.name, scenario.expect)
 	}
 }
+
+func (s *MagicTokenSuite) TestIsActivationWindowOpen() {
+	window := 24 * time.Hour
+
+	scenarios := []struct {
+		name   string
+		token  func() entities.MagicToken
+		now    time.Time
+		expect bool
+	}{
+		{
+			name: "dentro da janela",
+			token: func() entities.MagicToken {
+				return s.newPaidToken(s.now.Add(7 * 24 * time.Hour))
+			},
+			now:    s.now.Add(12 * time.Hour),
+			expect: true,
+		},
+		{
+			name: "exatamente na borda da janela",
+			token: func() entities.MagicToken {
+				return s.newPaidToken(s.now.Add(7 * 24 * time.Hour))
+			},
+			now:    s.now.Add(24 * time.Hour),
+			expect: true,
+		},
+		{
+			name: "apos a janela",
+			token: func() entities.MagicToken {
+				return s.newPaidToken(s.now.Add(7 * 24 * time.Hour))
+			},
+			now:    s.now.Add(25 * time.Hour),
+			expect: false,
+		},
+		{
+			name: "now antes de paidAt",
+			token: func() entities.MagicToken {
+				return s.newPaidToken(s.now.Add(7 * 24 * time.Hour))
+			},
+			now:    s.now.Add(-1 * time.Hour),
+			expect: false,
+		},
+		{
+			name: "token com status nao pago",
+			token: func() entities.MagicToken {
+				return s.newConsumedToken(s.now.Add(7 * 24 * time.Hour))
+			},
+			now:    s.now.Add(12 * time.Hour),
+			expect: false,
+		},
+		{
+			name: "token pendente",
+			token: func() entities.MagicToken {
+				return s.newPendingToken(s.now.Add(7 * 24 * time.Hour))
+			},
+			now:    s.now.Add(12 * time.Hour),
+			expect: false,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			result := scenario.token().IsActivationWindowOpen(scenario.now, window)
+			s.Equal(scenario.expect, result)
+		})
+	}
+}

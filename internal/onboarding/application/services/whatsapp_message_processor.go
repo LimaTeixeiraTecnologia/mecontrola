@@ -114,11 +114,8 @@ func (p *WhatsAppMessageProcessor) HandleFallback(ctx context.Context, fromE164 
 		return fmt.Errorf("onboarding.processor: fallback activation: %w", execErr)
 	}
 
-	switch result.Outcome {
-	case usecases.FallbackOutcomeActivated:
+	if result.Outcome == usecases.FallbackOutcomeActivated {
 		p.sendMessage(ctx, from.String(), p.msg("welcome_activated"))
-	case usecases.FallbackOutcomeOutreachRequired:
-		p.sendMessage(ctx, from.String(), p.msg("please_use_ativar_command"))
 	}
 	return nil
 }

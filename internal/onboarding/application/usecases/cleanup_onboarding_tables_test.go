@@ -58,11 +58,40 @@ func (s *CleanupOnboardingTablesSuite) TestExecute() {
 						DeleteConsumerLookupAttemptsOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
 						Return(int64(5), nil).
 						Once()
+					s.cleanupRepo.EXPECT().
+						DeleteWelcomeProcessedOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
+						Return(int64(3), nil).
+						Once()
 					return s.cleanupRepo
 				}(),
 			},
 			expect: func(err error) {
 				s.NoError(err)
+			},
+		},
+		{
+			name: "deve retornar erro quando DeleteWelcomeProcessedOlderThan falha",
+			args: args{ctx: s.ctx},
+			dependencies: dependencies{
+				cleanupRepo: func() *mocks.OnboardingCleanupRepository {
+					s.cleanupRepo.EXPECT().
+						DeleteMetaProcessedOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
+						Return(int64(0), nil).
+						Once()
+					s.cleanupRepo.EXPECT().
+						DeleteConsumerLookupAttemptsOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
+						Return(int64(0), nil).
+						Once()
+					s.cleanupRepo.EXPECT().
+						DeleteWelcomeProcessedOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
+						Return(int64(0), errors.New("db error welcome")).
+						Once()
+					return s.cleanupRepo
+				}(),
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.ErrorContains(err, "cleanup onboarding_welcome_processed")
 			},
 		},
 		{
@@ -118,6 +147,10 @@ func (s *CleanupOnboardingTablesSuite) TestExecute() {
 						Once()
 					s.cleanupRepo.EXPECT().
 						DeleteConsumerLookupAttemptsOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
+						Return(int64(0), nil).
+						Once()
+					s.cleanupRepo.EXPECT().
+						DeleteWelcomeProcessedOlderThan(mock.Anything, mock.Anything, cleanupBatchSize).
 						Return(int64(0), nil).
 						Once()
 					return s.cleanupRepo

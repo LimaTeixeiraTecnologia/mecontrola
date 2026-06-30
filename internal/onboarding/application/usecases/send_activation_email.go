@@ -15,7 +15,7 @@ import (
 )
 
 type ActivationTemplateInput struct {
-	WaMeURL        string
+	ActivationURL  string
 	SupportURL     string
 	ExpiresInHours int
 }
@@ -25,17 +25,19 @@ type ActivationTemplate interface {
 }
 
 type SendActivationEmail struct {
-	repo          appinterfaces.MagicTokenRepository
-	sender        appinterfaces.EmailSender
-	template      ActivationTemplate
-	botNumber     string
-	fromAddress   string
-	fromName      string
-	replyTo       string
-	subject       string
-	tokenTTL      time.Duration
-	o11y          observability.Observability
-	dispatchedCtr observability.Counter
+	repo              appinterfaces.MagicTokenRepository
+	sender            appinterfaces.EmailSender
+	template          ActivationTemplate
+	boundChecker      appinterfaces.SubscriptionBoundChecker
+	botNumber         string
+	activationPageURL string
+	fromAddress       string
+	fromName          string
+	replyTo           string
+	subject           string
+	tokenTTL          time.Duration
+	o11y              observability.Observability
+	dispatchedCtr     observability.Counter
 }
 
 func NewSendActivationEmail(
@@ -43,10 +45,12 @@ func NewSendActivationEmail(
 	sender appinterfaces.EmailSender,
 	template ActivationTemplate,
 	botNumber string,
+	activationPageURL string,
 	fromAddress string,
 	fromName string,
 	replyTo string,
 	tokenTTL time.Duration,
+	boundChecker appinterfaces.SubscriptionBoundChecker,
 	o11y observability.Observability,
 ) *SendActivationEmail {
 	dispatchedCtr := o11y.Metrics().Counter(
@@ -55,23 +59,26 @@ func NewSendActivationEmail(
 		"1",
 	)
 	return &SendActivationEmail{
-		repo:          repo,
-		sender:        sender,
-		template:      template,
-		botNumber:     botNumber,
-		fromAddress:   fromAddress,
-		fromName:      fromName,
-		replyTo:       replyTo,
-		subject:       "Ative sua conta MeControla",
-		tokenTTL:      tokenTTL,
-		o11y:          o11y,
-		dispatchedCtr: dispatchedCtr,
+		repo:              repo,
+		sender:            sender,
+		template:          template,
+		boundChecker:      boundChecker,
+		botNumber:         botNumber,
+		activationPageURL: activationPageURL,
+		fromAddress:       fromAddress,
+		fromName:          fromName,
+		replyTo:           replyTo,
+		subject:           "Ative sua conta MeControla",
+		tokenTTL:          tokenTTL,
+		o11y:              o11y,
+		dispatchedCtr:     dispatchedCtr,
 	}
 }
 
 type SendActivationEmailInput struct {
-	ClearToken    string
-	CustomerEmail string
+	ClearToken     string
+	CustomerEmail  string
+	SubscriptionID string
 }
 
 func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEmailInput) error {
@@ -87,24 +94,15 @@ func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEma
 		return errors.New("onboarding: send activation email: token vazio")
 	}
 
-	clearToken, err := valueobjects.TokenFromClear(in.ClearToken)
+	skip, foundID, err := uc.resolveSkip(ctx, in)
 	if err != nil {
-		return fmt.Errorf("onboarding: send activation email: parse token: %w", err)
+		return err
+	}
+	if skip {
+		return nil
 	}
 
-	found, findErr := uc.repo.FindByHash(ctx, clearToken.Hash())
-	if findErr != nil && !errors.Is(findErr, domain.ErrTokenNotFound) {
-		return fmt.Errorf("onboarding: send activation email: find token: %w", findErr)
-	}
-	if findErr == nil {
-		st := found.Status()
-		if st == valueobjects.TokenStatusConsumed || st == valueobjects.TokenStatusExpired {
-			uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "skipped_idempotent"))
-			return nil
-		}
-	}
-
-	waMe := fmt.Sprintf("https://wa.me/%s?text=ATIVAR%%20%s", sanitizeE164(uc.botNumber), in.ClearToken)
+	activationURL := fmt.Sprintf("%s/ativar?token=%s", strings.TrimRight(uc.activationPageURL, "/"), in.ClearToken)
 	support := fmt.Sprintf("https://wa.me/%s", sanitizeE164(uc.botNumber))
 	expiresHours := int(uc.tokenTTL / time.Hour)
 	if expiresHours <= 0 {
@@ -112,7 +110,7 @@ func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEma
 	}
 
 	html, text, err := uc.template.Render(ActivationTemplateInput{
-		WaMeURL:        waMe,
+		ActivationURL:  activationURL,
 		SupportURL:     support,
 		ExpiresInHours: expiresHours,
 	})
@@ -133,6 +131,55 @@ func (uc *SendActivationEmail) Execute(ctx context.Context, in SendActivationEma
 		return fmt.Errorf("onboarding: send activation email: send: %w", err)
 	}
 
+	if foundID != "" {
+		if tsErr := uc.repo.UpdateSetEmailSentAt(ctx, foundID, time.Now().UTC()); tsErr != nil {
+			span.RecordError(tsErr)
+		}
+	}
+
 	uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "sent"))
 	return nil
+}
+
+func (uc *SendActivationEmail) resolveSkip(ctx context.Context, in SendActivationEmailInput) (bool, string, error) {
+	if uc.boundChecker != nil && strings.TrimSpace(in.SubscriptionID) != "" {
+		bound, err := uc.boundChecker.IsAlreadyBound(ctx, in.SubscriptionID)
+		if err != nil {
+			return false, "", fmt.Errorf("onboarding: send activation email: check bound: %w", err)
+		}
+		if bound {
+			uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "skipped_already_bound"))
+			return true, "", nil
+		}
+	}
+
+	clearToken, err := valueobjects.TokenFromClear(in.ClearToken)
+	if err != nil {
+		return false, "", fmt.Errorf("onboarding: send activation email: parse token: %w", err)
+	}
+
+	found, findErr := uc.repo.FindByHash(ctx, clearToken.Hash())
+	if findErr != nil {
+		if errors.Is(findErr, domain.ErrTokenNotFound) {
+			return false, "", nil
+		}
+		return false, "", fmt.Errorf("onboarding: send activation email: find token: %w", findErr)
+	}
+
+	st := found.Status()
+	if st == valueobjects.TokenStatusConsumed || st == valueobjects.TokenStatusExpired {
+		uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "skipped_idempotent"))
+		return true, found.ID(), nil
+	}
+
+	alreadySent, sentErr := uc.repo.IsEmailSent(ctx, found.ID())
+	if sentErr != nil {
+		return false, "", fmt.Errorf("onboarding: send activation email: check email sent: %w", sentErr)
+	}
+	if alreadySent {
+		uc.dispatchedCtr.Add(ctx, 1, observability.String("result", "skipped_already_sent"))
+		return true, found.ID(), nil
+	}
+
+	return false, found.ID(), nil
 }

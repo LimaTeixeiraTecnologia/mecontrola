@@ -44,7 +44,7 @@ func (t *ActivationTemplate) Render(in usecases.ActivationTemplateInput) (string
 	html := buf.String()
 	text := fmt.Sprintf(
 		"Bem-vindo(a) ao MeControla!\n\nAtive sua conta abrindo este link no celular:\n%s\n\nEste link expira em %d horas.",
-		in.WaMeURL,
+		in.ActivationURL,
 		in.ExpiresInHours,
 	)
 	return html, text, nil

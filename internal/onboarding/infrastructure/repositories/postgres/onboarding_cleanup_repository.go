@@ -68,3 +68,27 @@ func (r *onboardingCleanupRepository) DeleteConsumerLookupAttemptsOlderThan(ctx 
 	}
 	return affected, nil
 }
+
+func (r *onboardingCleanupRepository) DeleteWelcomeProcessedOlderThan(ctx context.Context, before time.Time, limit int) (int64, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.cleanup.delete_welcome_processed")
+	defer span.End()
+
+	const query = `
+		DELETE FROM mecontrola.onboarding_welcome_processed
+		 WHERE event_id IN (
+		     SELECT event_id FROM mecontrola.onboarding_welcome_processed
+		      WHERE processed_at < $1
+		      LIMIT $2
+		 )
+	`
+
+	result, err := r.db.ExecContext(ctx, query, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("onboarding: cleanup_repository.delete_welcome_processed: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("onboarding: cleanup_repository.delete_welcome_processed: rows affected: %w", err)
+	}
+	return affected, nil
+}

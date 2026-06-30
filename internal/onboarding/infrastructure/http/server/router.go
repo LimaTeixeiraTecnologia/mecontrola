@@ -13,23 +13,29 @@ import (
 type PublicRouter struct {
 	checkoutHandler *handlers.CreateCheckoutHandler
 	stateHandler    *handlers.TokenStateHandler
+	beaconHandler   *handlers.RecordJourneyBeaconHandler
 	checkoutLimiter *middleware.RateLimiter
 	stateLimiter    *middleware.RateLimiter
+	beaconLimiter   *middleware.RateLimiter
 	corsOrigins     []string
 }
 
 func NewPublicRouter(
 	checkoutHandler *handlers.CreateCheckoutHandler,
 	stateHandler *handlers.TokenStateHandler,
+	beaconHandler *handlers.RecordJourneyBeaconHandler,
 	checkoutLimiter *middleware.RateLimiter,
 	stateLimiter *middleware.RateLimiter,
+	beaconLimiter *middleware.RateLimiter,
 	corsOrigins []string,
 ) *PublicRouter {
 	return &PublicRouter{
 		checkoutHandler: checkoutHandler,
 		stateHandler:    stateHandler,
+		beaconHandler:   beaconHandler,
 		checkoutLimiter: checkoutLimiter,
 		stateLimiter:    stateLimiter,
+		beaconLimiter:   beaconLimiter,
 		corsOrigins:     corsOrigins,
 	}
 }
@@ -54,6 +60,16 @@ func (rt *PublicRouter) Register(r chi.Router) {
 			rt.stateLimiter.Middleware,
 			rt.corsMiddleware,
 		).Options("/tokens/{token}/state", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}).ServeHTTP)
+
+		sub.With(
+			rt.beaconLimiter.Middleware,
+			rt.corsMiddleware,
+			chiMiddleware.AllowContentType("application/json"),
+		).Post("/tokens/{token}/opened", rt.beaconHandler.Handle)
+		sub.With(
+			rt.beaconLimiter.Middleware,
+			rt.corsMiddleware,
+		).Options("/tokens/{token}/opened", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}).ServeHTTP)
 	})
 }
 

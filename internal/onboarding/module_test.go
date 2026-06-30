@@ -40,7 +40,6 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 			CodeExpired:          "expired",
 			CodeInvalid:          "invalid",
 			SystemUnavailable:    "unavailable",
-			PleaseUseAtivar:      "ativar",
 			InvalidCountry:       "country",
 		},
 		configs.OutboxConfig{},
@@ -60,13 +59,16 @@ func TestNewOnboardingModule_FieldsNotNil(t *testing.T) {
 	assert.NotNil(t, module.PublicRouter)
 	assert.NotNil(t, module.WhatsAppGateway)
 	assert.NotNil(t, module.WhatsAppMessageProcessor)
+	assert.NotNil(t, module.WhatsAppActivationRoute)
 	assert.NotNil(t, module.SubscriptionConsumer)
 	assert.NotNil(t, module.PaidWithoutTokenConsumer)
 	assert.NotNil(t, module.OutreachJob)
 	assert.NotNil(t, module.ExpirationJob)
 	assert.NotNil(t, module.MetaProcessedMessagesCleanup)
-	assert.Len(t, module.EventHandlers, 3)
+	assert.Len(t, module.EventHandlers, 5)
 	assert.Equal(t, "billing.subscription.activated", module.EventHandlers[0].EventType)
 	assert.Equal(t, "billing.subscription.activated", module.EventHandlers[1].EventType)
 	assert.Equal(t, "billing.subscription.activated_without_token", module.EventHandlers[2].EventType)
+	assert.Equal(t, "onboarding.activation.attempted.v1", module.EventHandlers[3].EventType)
+	assert.Equal(t, "onboarding.subscription_bound", module.EventHandlers[4].EventType)
 }

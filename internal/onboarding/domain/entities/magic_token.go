@@ -113,6 +113,13 @@ func (m MagicToken) IsExpiredAt(now time.Time) bool {
 	return now.After(m.expiresAt)
 }
 
+func (m MagicToken) IsActivationWindowOpen(now time.Time, window time.Duration) bool {
+	return m.status == valueobjects.TokenStatusPaid &&
+		!m.paidAt.IsZero() &&
+		!now.Before(m.paidAt) &&
+		now.Sub(m.paidAt) <= window
+}
+
 func (m MagicToken) HasOutreach() bool {
 	return !m.outreachSentAt.IsZero()
 }

@@ -178,7 +178,11 @@ func (s *DispatcherIntegrationSuite) newSUT(limiter *ratelimit.Limiter, waGW *mo
 		return dispatcher.OutcomeAgent
 	}
 
-	return dispatcher.New(dedupRepo, establishUC, limiter, s.newPublisher(), agentRoute, s.o11y)
+	activationRoute := func(ctx context.Context, msg payload.Message) dispatcher.RouteOutcome {
+		return dispatcher.OutcomeNoRoute
+	}
+
+	return dispatcher.New(dedupRepo, establishUC, limiter, s.newPublisher(), agentRoute, activationRoute, s.o11y)
 }
 
 func (s *DispatcherIntegrationSuite) TestRoute_ValidPayload_ActiveUser_RoutesToAgent() {
