@@ -171,9 +171,7 @@
           "name": "GET /readiness",
           "request": {
             "method": "GET",
-            "header": [
-
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/readiness",
               "host": [
@@ -200,9 +198,7 @@
           "name": "GET /healthz",
           "request": {
             "method": "GET",
-            "header": [
-
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/healthz",
               "host": [
@@ -229,9 +225,7 @@
           "name": "GET /readyz",
           "request": {
             "method": "GET",
-            "header": [
-
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/readyz",
               "host": [
@@ -258,9 +252,7 @@
           "name": "GET /livez",
           "request": {
             "method": "GET",
-            "header": [
-
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/livez",
               "host": [
@@ -348,9 +340,7 @@
           "name": "GET /api/v1/onboarding/tokens/:token/state",
           "request": {
             "method": "GET",
-            "header": [
-
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
               "host": [
@@ -434,7 +424,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-approved-{{$timestamp}}\",\n  \"order_ref\": \"ref-approved-{{$timestamp}}\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"order_approved\",\n  \"subscription_id\": \"sub-approved-{{$timestamp}}\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-approved-{{$timestamp}}\",\n  \"order_ref\": \"ref-approved-{{$timestamp}}\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"order_approved\",\n  \"subscription_id\": \"sub-approved-{{$timestamp}}\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

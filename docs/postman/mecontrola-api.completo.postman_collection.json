@@ -2834,7 +2834,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-approved-{{$timestamp}}\",\n  \"order_ref\": \"ref-approved-{{$timestamp}}\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"order_approved\",\n  \"subscription_id\": \"sub-approved-{{$timestamp}}\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-approved-{{$timestamp}}\",\n  \"order_ref\": \"ref-approved-{{$timestamp}}\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"order_approved\",\n  \"subscription_id\": \"sub-approved-{{$timestamp}}\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2896,7 +2896,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-renewed-001\",\n  \"order_ref\": \"ref-002\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_renewed\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-08-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-07-15 10:00:00\",\n  \"updated_at\": \"2026-07-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-renewed-001\",\n  \"order_ref\": \"ref-002\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_renewed\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"active\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-08-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-07-15 10:00:00\",\n  \"updated_at\": \"2026-07-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2958,7 +2958,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-late-001\",\n  \"order_ref\": \"ref-003\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"subscription_late\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"late\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-07-18 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-late-001\",\n  \"order_ref\": \"ref-003\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"subscription_late\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"late\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-07-18 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3020,7 +3020,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-canceled-001\",\n  \"order_ref\": \"ref-004\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_canceled\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-07-01 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-canceled-001\",\n  \"order_ref\": \"ref-004\",\n  \"order_status\": \"paid\",\n  \"webhook_event_type\": \"subscription_canceled\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-07-01 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3082,7 +3082,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-refunded-001\",\n  \"order_ref\": \"ref-005\",\n  \"order_status\": \"refunded\",\n  \"webhook_event_type\": \"order_refunded\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"refunded_at\": \"2026-06-20 10:00:00\",\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-20 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-refunded-001\",\n  \"order_ref\": \"ref-005\",\n  \"order_status\": \"refunded\",\n  \"webhook_event_type\": \"order_refunded\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"refunded_at\": \"2026-06-20 10:00:00\",\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-20 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3144,7 +3144,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-chargeback-001\",\n  \"order_ref\": \"ref-006\",\n  \"order_status\": \"chargedback\",\n  \"webhook_event_type\": \"chargeback\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-22 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-chargeback-001\",\n  \"order_ref\": \"ref-006\",\n  \"order_status\": \"chargedback\",\n  \"webhook_event_type\": \"chargeback\",\n  \"subscription_id\": \"sub-001\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"Subscription\": {\n    \"status\": \"canceled\",\n    \"start_date\": \"2026-06-15T10:00:00.000Z\",\n    \"next_payment\": \"2026-07-15T10:00:00.000Z\"\n  },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-22 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3206,7 +3206,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-billet-001\",\n  \"order_ref\": \"ref-007\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"billet_created\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-billet-001\",\n  \"order_ref\": \"ref-007\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"billet_created\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3268,7 +3268,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-pix-001\",\n  \"order_ref\": \"ref-008\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"pix_created\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-pix-001\",\n  \"order_ref\": \"ref-008\",\n  \"order_status\": \"waiting_payment\",\n  \"webhook_event_type\": \"pix_created\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3330,7 +3330,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"order_id\": \"order-rejected-001\",\n  \"order_ref\": \"ref-009\",\n  \"order_status\": \"refused\",\n  \"webhook_event_type\": \"order_rejected\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"prod-monthly-001\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
+              "raw": "{\n  \"order_id\": \"order-rejected-001\",\n  \"order_ref\": \"ref-009\",\n  \"order_status\": \"refused\",\n  \"webhook_event_type\": \"order_rejected\",\n  \"subscription_id\": \"\",\n  \"Product\": { \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\", \"product_name\": \"MeControla Mensal\" },\n  \"Customer\": { \"email\": \"{{user_email}}\", \"mobile\": \"{{user_whatsapp}}\", \"CPF\": \"00000000000\" },\n  \"TrackingParameters\": { \"sck\": \"{{funnel_token}}\", \"s1\": null, \"src\": null },\n  \"approved_date\": \"2026-06-15 10:00:00\",\n  \"updated_at\": \"2026-06-15 10:00:00\",\n  \"created_at\": \"2026-06-15 10:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3392,7 +3392,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"c6euk9v1lfj9jqxhfs\",\n  \"status\": \"abandoned\",\n  \"checkout_link\": \"IDhfYNV\",\n  \"country\": \"br\",\n  \"cpf\": \"30574187242\",\n  \"created_at\": \"2026-06-15T15:44:25.411Z\",\n  \"email\": \"johndoe@example.com\",\n  \"name\": \"John Doe\",\n  \"offer_name\": null,\n  \"phone\": \"(11) 99999-9999\",\n  \"product_id\": \"prod-monthly-001\",\n  \"product_name\": \"MeControla Mensal\",\n  \"store_id\": \"Q33AnzwYbfkFFwS\",\n  \"subscription_plan\": \"Mensal\"\n}",
+              "raw": "{\n  \"id\": \"c6euk9v1lfj9jqxhfs\",\n  \"status\": \"abandoned\",\n  \"checkout_link\": \"IDhfYNV\",\n  \"country\": \"br\",\n  \"cpf\": \"30574187242\",\n  \"created_at\": \"2026-06-15T15:44:25.411Z\",\n  \"email\": \"johndoe@example.com\",\n  \"name\": \"John Doe\",\n  \"offer_name\": null,\n  \"phone\": \"(11) 99999-9999\",\n  \"product_id\": \"{{KIWIFY_PRODUCT_ID_MONTHLY}}\",\n  \"product_name\": \"MeControla Mensal\",\n  \"store_id\": \"Q33AnzwYbfkFFwS\",\n  \"subscription_plan\": \"Mensal\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
