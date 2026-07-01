@@ -45,6 +45,10 @@ vendor/
 
 # Binarios temporarios
 *.tmp
+backups/
+.env.backup.*
+.env.bak-*
+mecontrola-unify-*
 .claude/worktrees/
 
 # Go compiled test binaries

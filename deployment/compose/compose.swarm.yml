@@ -492,17 +492,57 @@ services:
       <<: *default-deploy
       resources:
         limits:
-          cpus: "0.50"
-          memory: 512M
+          cpus: "1.0"
+          memory: 2G
         reservations:
           cpus: "0.10"
-          memory: 128M
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:13133/ready || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 30s
+    logging: *default-logging
+
+  pg-tunnel:
+    image: alpine/socat:latest
+    command: TCP-LISTEN:5432,fork,reuseaddr TCP:postgres:5432
+    ports:
+      - target: 5432
+        published: 15432
+        protocol: tcp
+        mode: host
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: pause
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 60s
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 16M
+        reservations:
+          cpus: "0.01"
+          memory: 8M
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     logging: *default-logging
 
 secrets:

@@ -103,6 +103,7 @@ ssh_exec "cd ${VPS_DEPLOY_PATH} && python3 deployment/scripts/render-stack.py ${
 
 log "Fazendo deploy da stack Swarm"
 ssh_exec "docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}"
+ssh_exec "rm -f /tmp/${STACK}-stack-rendered.yml" || true
 
 wait_service_running() {
   local svc="$1"
@@ -146,7 +147,7 @@ for svc in server-1 server-2 worker-1 worker-2; do
     log "ERRO: deploy falhou — iniciando rollback"
     if [[ -n "$PREVIOUS_TAG" && "$PREVIOUS_TAG" != "$IMAGE_TAG" ]]; then
       log "Revertendo para imagem anterior: ${PREVIOUS_TAG}"
-      ssh_exec "cd ${VPS_DEPLOY_PATH} && IMAGE_TAG=${PREVIOUS_TAG} python3 deployment/scripts/render-stack.py ${VPS_DEPLOY_PATH}/.env deployment/compose/compose.swarm.yml > /tmp/${STACK}-stack-rendered.yml && docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}"
+      ssh_exec "cd ${VPS_DEPLOY_PATH} && IMAGE_TAG=${PREVIOUS_TAG} python3 deployment/scripts/render-stack.py ${VPS_DEPLOY_PATH}/.env deployment/compose/compose.swarm.yml > /tmp/${STACK}-stack-rendered.yml && docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}; rm -f /tmp/${STACK}-stack-rendered.yml"
     else
       log "AVISO: sem imagem anterior para rollback"
     fi
@@ -160,7 +161,7 @@ for svc in server-1 server-2; do
     log "ERRO: health check de ${svc} falhou — iniciando rollback"
     if [[ -n "$PREVIOUS_TAG" && "$PREVIOUS_TAG" != "$IMAGE_TAG" ]]; then
       log "Revertendo para imagem anterior: ${PREVIOUS_TAG}"
-      ssh_exec "cd ${VPS_DEPLOY_PATH} && IMAGE_TAG=${PREVIOUS_TAG} python3 deployment/scripts/render-stack.py ${VPS_DEPLOY_PATH}/.env deployment/compose/compose.swarm.yml > /tmp/${STACK}-stack-rendered.yml && docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}"
+      ssh_exec "cd ${VPS_DEPLOY_PATH} && IMAGE_TAG=${PREVIOUS_TAG} python3 deployment/scripts/render-stack.py ${VPS_DEPLOY_PATH}/.env deployment/compose/compose.swarm.yml > /tmp/${STACK}-stack-rendered.yml && docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}; rm -f /tmp/${STACK}-stack-rendered.yml"
     else
       log "AVISO: sem imagem anterior para rollback"
     fi
@@ -173,7 +174,7 @@ for svc in worker-1 worker-2; do
     log "ERRO: health check de ${svc} falhou — iniciando rollback"
     if [[ -n "$PREVIOUS_TAG" && "$PREVIOUS_TAG" != "$IMAGE_TAG" ]]; then
       log "Revertendo para imagem anterior: ${PREVIOUS_TAG}"
-      ssh_exec "cd ${VPS_DEPLOY_PATH} && IMAGE_TAG=${PREVIOUS_TAG} python3 deployment/scripts/render-stack.py ${VPS_DEPLOY_PATH}/.env deployment/compose/compose.swarm.yml > /tmp/${STACK}-stack-rendered.yml && docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}"
+      ssh_exec "cd ${VPS_DEPLOY_PATH} && IMAGE_TAG=${PREVIOUS_TAG} python3 deployment/scripts/render-stack.py ${VPS_DEPLOY_PATH}/.env deployment/compose/compose.swarm.yml > /tmp/${STACK}-stack-rendered.yml && docker stack deploy -c /tmp/${STACK}-stack-rendered.yml ${STACK}; rm -f /tmp/${STACK}-stack-rendered.yml"
     else
       log "AVISO: sem imagem anterior para rollback"
     fi
