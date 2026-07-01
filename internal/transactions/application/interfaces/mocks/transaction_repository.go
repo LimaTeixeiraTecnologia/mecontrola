@@ -44,20 +44,37 @@ func (_m *TransactionRepository) EXPECT() *TransactionRepository_Expecter {
 }
 
 // Create provides a mock function for the type TransactionRepository
-func (_mock *TransactionRepository) Create(ctx context.Context, tx *entities.Transaction) error {
+func (_mock *TransactionRepository) Create(ctx context.Context, tx *entities.Transaction) (uuid.UUID, bool, error) {
 	ret := _mock.Called(ctx, tx)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *entities.Transaction) error); ok {
+	var r0 uuid.UUID
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *entities.Transaction) (uuid.UUID, bool, error)); ok {
+		return returnFunc(ctx, tx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *entities.Transaction) uuid.UUID); ok {
 		r0 = returnFunc(ctx, tx)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(uuid.UUID)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *entities.Transaction) bool); ok {
+		r1 = returnFunc(ctx, tx)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, *entities.Transaction) error); ok {
+		r2 = returnFunc(ctx, tx)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // TransactionRepository_Create_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Create'
@@ -90,12 +107,12 @@ func (_c *TransactionRepository_Create_Call) Run(run func(ctx context.Context, t
 	return _c
 }
 
-func (_c *TransactionRepository_Create_Call) Return(err error) *TransactionRepository_Create_Call {
-	_c.Call.Return(err)
+func (_c *TransactionRepository_Create_Call) Return(uUID uuid.UUID, b bool, err error) *TransactionRepository_Create_Call {
+	_c.Call.Return(uUID, b, err)
 	return _c
 }
 
-func (_c *TransactionRepository_Create_Call) RunAndReturn(run func(ctx context.Context, tx *entities.Transaction) error) *TransactionRepository_Create_Call {
+func (_c *TransactionRepository_Create_Call) RunAndReturn(run func(ctx context.Context, tx *entities.Transaction) (uuid.UUID, bool, error)) *TransactionRepository_Create_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -24,6 +24,7 @@ type Transaction struct {
 	Version                 int64      `json:"version"`
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
+	Reconciled              bool       `json:"reconciled,omitempty"`
 }
 
 func TransactionFrom(t *entities.Transaction) Transaction {

@@ -67,24 +67,7 @@ func (uc *CreateCardPurchase) Execute(ctx context.Context, raw input.RawCreateCa
 		return output.CardPurchase{}, err
 	}
 
-	purchasedAt, parseErr := parseISO8601(raw.PurchasedAt)
-	if parseErr != nil {
-		return output.CardPurchase{}, fmt.Errorf("transactions/create_card_purchase: purchased_at inválido: %w", parseErr)
-	}
-
-	rawCmd := commands.RawCreateCardPurchase{
-		CardID:            raw.CardID.String(),
-		TotalAmountCents:  raw.TotalAmountCents,
-		InstallmentsTotal: raw.InstallmentsTotal,
-		Description:       raw.Description,
-		CategoryID:        raw.CategoryID.String(),
-		PurchasedAt:       purchasedAt,
-	}
-	if raw.SubcategoryID != nil {
-		rawCmd.SubcategoryID = raw.SubcategoryID.String()
-	}
-
-	cmd, err := commands.NewCreateCardPurchase(rawCmd, principal.UserID)
+	cmd, err := uc.buildCommand(raw, principal.UserID)
 	if err != nil {
 		return output.CardPurchase{}, err
 	}
@@ -125,23 +108,63 @@ func (uc *CreateCardPurchase) Execute(ctx context.Context, raw input.RawCreateCa
 		time.Now().UTC(),
 	)
 
+	if raw.OriginWamid != "" {
+		purchase.SetOrigin(raw.OriginWamid, raw.OriginItemSeq, raw.OriginOperation)
+	}
+
 	resolver := services.BillingCycleResolver{}
 	_, closings, dues := resolver.Resolve(cmd.PurchasedAt, snapshot, cmd.Installments)
 
-	_, err = uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.CardPurchase, error) {
-		return uc.executeInTx(ctx, db, &purchase, decision, cmd, closings, dues)
+	var created bool
+	result, err := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.CardPurchase, error) {
+		p, c, e := uc.executeInTx(ctx, db, &purchase, decision, cmd, closings, dues)
+		created = c
+		return p, e
 	})
 	if err != nil {
 		span.RecordError(err)
 		return output.CardPurchase{}, err
 	}
 
+	if !created {
+		out := output.CardPurchaseFrom(&result, nil, nil)
+		out.Reconciled = true
+		return out, nil
+	}
+
+	return uc.successOutput(&purchase, decision), nil
+}
+
+func (uc *CreateCardPurchase) successOutput(purchase *entities.CardPurchase, decision services.CardPurchaseDecision) output.CardPurchase {
 	refMonthsStr := make([]string, len(decision.Items))
 	for i, item := range decision.Items {
 		refMonthsStr[i] = item.RefMonth().String()
 	}
 
-	return output.CardPurchaseFrom(&purchase, nil, refMonthsStr), nil
+	out := output.CardPurchaseFrom(purchase, nil, refMonthsStr)
+	out.Reconciled = false
+	return out
+}
+
+func (uc *CreateCardPurchase) buildCommand(raw input.RawCreateCardPurchase, userID uuid.UUID) (commands.CreateCardPurchase, error) {
+	purchasedAt, parseErr := parseISO8601(raw.PurchasedAt)
+	if parseErr != nil {
+		return commands.CreateCardPurchase{}, fmt.Errorf("transactions/create_card_purchase: purchased_at inválido: %w", parseErr)
+	}
+
+	rawCmd := commands.RawCreateCardPurchase{
+		CardID:            raw.CardID.String(),
+		TotalAmountCents:  raw.TotalAmountCents,
+		InstallmentsTotal: raw.InstallmentsTotal,
+		Description:       raw.Description,
+		CategoryID:        raw.CategoryID.String(),
+		PurchasedAt:       purchasedAt,
+	}
+	if raw.SubcategoryID != nil {
+		rawCmd.SubcategoryID = raw.SubcategoryID.String()
+	}
+
+	return commands.NewCreateCardPurchase(rawCmd, userID)
 }
 
 func (uc *CreateCardPurchase) executeInTx(
@@ -151,31 +174,39 @@ func (uc *CreateCardPurchase) executeInTx(
 	decision services.CardPurchaseDecision,
 	cmd commands.CreateCardPurchase,
 	closings, dues []time.Time,
-) (entities.CardPurchase, error) {
+) (entities.CardPurchase, bool, error) {
 	purchasesRepo := uc.factory.CardPurchaseRepository(db)
 	invoicesRepo := uc.factory.CardInvoiceRepository(db)
 
-	if createErr := purchasesRepo.Create(ctx, purchase); createErr != nil {
-		return entities.CardPurchase{}, fmt.Errorf("transactions/create_card_purchase: criar compra: %w", createErr)
+	canonicalID, created, createErr := purchasesRepo.Create(ctx, purchase)
+	if createErr != nil {
+		return entities.CardPurchase{}, false, fmt.Errorf("transactions/create_card_purchase: criar compra: %w", createErr)
+	}
+	if !created {
+		existing, getErr := purchasesRepo.GetByID(ctx, canonicalID, cmd.UserID.UUID())
+		if getErr != nil {
+			return entities.CardPurchase{}, false, fmt.Errorf("transactions/create_card_purchase: reconciliar compra: %w", getErr)
+		}
+		return *existing, false, nil
 	}
 
 	items, buildErr := buildItemsWithInvoices(ctx, invoicesRepo, cmd, decision.Items, closings, dues)
 	if buildErr != nil {
-		return entities.CardPurchase{}, buildErr
+		return entities.CardPurchase{}, false, buildErr
 	}
 
 	if replaceErr := purchasesRepo.ReplaceItems(ctx, purchase.ID(), items); replaceErr != nil {
-		return entities.CardPurchase{}, fmt.Errorf("transactions/create_card_purchase: replace items: %w", replaceErr)
+		return entities.CardPurchase{}, false, fmt.Errorf("transactions/create_card_purchase: replace items: %w", replaceErr)
 	}
 
 	evt, evtOk := decision.Event.(entities.CardPurchaseCreated)
 	if !evtOk {
-		return entities.CardPurchase{}, fmt.Errorf("transactions/create_card_purchase: tipo de evento inesperado")
+		return entities.CardPurchase{}, false, fmt.Errorf("transactions/create_card_purchase: tipo de evento inesperado")
 	}
 	if pubErr := uc.publisher.PublishCreated(ctx, db, evt); pubErr != nil {
-		return entities.CardPurchase{}, fmt.Errorf("transactions/create_card_purchase: publicar evento: %w", pubErr)
+		return entities.CardPurchase{}, false, fmt.Errorf("transactions/create_card_purchase: publicar evento: %w", pubErr)
 	}
-	return *purchase, nil
+	return *purchase, true, nil
 }
 
 func buildItemsWithInvoices(

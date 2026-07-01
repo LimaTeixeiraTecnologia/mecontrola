@@ -7,13 +7,16 @@ import (
 )
 
 type RawCreateTransaction struct {
-	Direction     string     `json:"direction"`
-	PaymentMethod string     `json:"payment_method"`
-	AmountCents   int64      `json:"amount_cents"`
-	Description   string     `json:"description"`
-	CategoryID    uuid.UUID  `json:"category_id"`
-	SubcategoryID *uuid.UUID `json:"subcategory_id,omitempty"`
-	OccurredAt    string     `json:"occurred_at"`
+	Direction       string     `json:"direction"`
+	PaymentMethod   string     `json:"payment_method"`
+	AmountCents     int64      `json:"amount_cents"`
+	Description     string     `json:"description"`
+	CategoryID      uuid.UUID  `json:"category_id"`
+	SubcategoryID   *uuid.UUID `json:"subcategory_id,omitempty"`
+	OccurredAt      string     `json:"occurred_at"`
+	OriginWamid     string     `json:"origin_wamid,omitempty"`
+	OriginItemSeq   int        `json:"origin_item_seq,omitempty"`
+	OriginOperation string     `json:"origin_operation,omitempty"`
 }
 
 func (i *RawCreateTransaction) Validate() error {
@@ -35,6 +38,9 @@ func (i *RawCreateTransaction) Validate() error {
 	}
 	if i.OccurredAt == "" {
 		errs = append(errs, ErrInputOccurredAtRequired)
+	}
+	if i.OriginWamid != "" && i.OriginOperation == "" {
+		errs = append(errs, errors.New("origin_operation: obrigatório quando origin_wamid presente"))
 	}
 	return errors.Join(errs...)
 }

@@ -72,13 +72,18 @@ func (s *CardPurchaseRepositoryIntegrationSuite) newPurchase(userID, cardID uuid
 	)
 }
 
+func createPurchase(repo interfaces.CardPurchaseRepository, ctx context.Context, p *entities.CardPurchase) error {
+	_, _, err := repo.Create(ctx, p)
+	return err
+}
+
 func (s *CardPurchaseRepositoryIntegrationSuite) TestCreate_GetByID_RoundTrip() {
 	userID := uuid.New()
 	cardID := uuid.New()
 	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 5000, 5)
 
-	s.Require().NoError(s.repo.Create(context.Background(), &p))
+	s.Require().NoError(createPurchase(s.repo, context.Background(), &p))
 
 	got, err := s.repo.GetByID(context.Background(), p.ID(), userID)
 	s.Require().NoError(err)
@@ -92,7 +97,7 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_VersionConflict(
 	cardID := uuid.New()
 	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 1000, 1)
-	s.Require().NoError(s.repo.Create(context.Background(), &p))
+	s.Require().NoError(createPurchase(s.repo, context.Background(), &p))
 
 	err := s.repo.SoftDelete(context.Background(), p.ID(), userID, 999, time.Now())
 	s.Require().Error(err)
@@ -103,7 +108,7 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_Success() {
 	cardID := uuid.New()
 	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 1000, 1)
-	s.Require().NoError(s.repo.Create(context.Background(), &p))
+	s.Require().NoError(createPurchase(s.repo, context.Background(), &p))
 
 	err := s.repo.SoftDelete(context.Background(), p.ID(), userID, 1, time.Now())
 	s.Require().NoError(err)
@@ -117,7 +122,7 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestSoftDelete_DeletedAtPopulat
 	cardID := uuid.New()
 	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 3000, 1)
-	s.Require().NoError(s.repo.Create(context.Background(), &p))
+	s.Require().NoError(createPurchase(s.repo, context.Background(), &p))
 
 	now := time.Now().UTC()
 	err := s.repo.SoftDelete(context.Background(), p.ID(), userID, 1, now)
@@ -138,7 +143,7 @@ func (s *CardPurchaseRepositoryIntegrationSuite) TestReplaceItems_AtomicUpsert()
 	cardID := uuid.New()
 	s.prepareCard(userID, cardID)
 	p := s.newPurchase(userID, cardID, 2000, 2)
-	s.Require().NoError(s.repo.Create(context.Background(), &p))
+	s.Require().NoError(createPurchase(s.repo, context.Background(), &p))
 
 	rm1, _ := valueobjects.NewRefMonth("2024-01")
 	rm2, _ := valueobjects.NewRefMonth("2024-02")

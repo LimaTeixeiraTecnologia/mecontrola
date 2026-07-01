@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-agent/7.0_execution_report.md
+summary: BuildMeControlaAgent + BuildMeControlaScorers + consumer routing onboarding×destrutivo implementados com testes; todos verdes
+timestamp: 2026-06-30T00:00:00Z

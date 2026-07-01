@@ -16,7 +16,7 @@ var ErrTransactionNotFound = errors.New("transactions: lançamento não encontra
 var ErrTransactionVersionConflict = errors.New("transactions: conflito de versão")
 
 type TransactionRepository interface {
-	Create(ctx context.Context, tx *entities.Transaction) error
+	Create(ctx context.Context, tx *entities.Transaction) (uuid.UUID, bool, error)
 	UpdateWithVersion(ctx context.Context, tx *entities.Transaction, expectedVersion int64) error
 	SoftDelete(ctx context.Context, id uuid.UUID, userID uuid.UUID, expectedVersion int64, now time.Time) error
 	GetByID(ctx context.Context, id, userID uuid.UUID) (*entities.Transaction, error)

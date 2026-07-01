@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-agent/5.0_execution_report.md
+summary: HITL gate implementado com ConfirmState fechado, resume antes do parse, 21 testes passando
+timestamp: 2026-06-30T00:00:00Z

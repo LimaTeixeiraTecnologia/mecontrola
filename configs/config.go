@@ -183,6 +183,7 @@ type AgentConfig struct {
 	EmbedModel        string  `mapstructure:"AGENT_LLM_EMBED_MODEL"`
 	MaxTokens         int     `mapstructure:"AGENT_LLM_MAX_TOKENS"`
 	Temperature       float64 `mapstructure:"AGENT_LLM_TEMPERATURE"`
+	WriteAdvisoryLock bool    `mapstructure:"AGENT_WRITE_ADVISORY_LOCK"`
 }
 
 type KiwifyConfig struct {
@@ -1241,6 +1242,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_EMBED_MODEL", "openai/text-embedding-3-small")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 768)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
+	l.v.SetDefault("AGENT_WRITE_ADVISORY_LOCK", true)
 }
 
 func (c *Config) validateWorkflowKernel() []string {

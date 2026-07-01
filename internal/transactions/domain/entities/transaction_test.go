@@ -90,3 +90,19 @@ func TestTransaction_SoftDelete_AlreadyDeleted(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, entities.ErrTransactionAlreadyDeleted)
 }
+
+func TestTransaction_SetOrigin(t *testing.T) {
+	tx := newTestTransaction(t)
+
+	assert.False(t, tx.HasOrigin())
+	assert.Empty(t, tx.OriginWamid())
+	assert.Zero(t, tx.OriginItemSeq())
+	assert.Empty(t, tx.OriginOperation())
+
+	tx.SetOrigin("wamid.ABC123", 2, "create_transaction")
+
+	assert.True(t, tx.HasOrigin())
+	assert.Equal(t, "wamid.ABC123", tx.OriginWamid())
+	assert.Equal(t, 2, tx.OriginItemSeq())
+	assert.Equal(t, "create_transaction", tx.OriginOperation())
+}

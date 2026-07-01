@@ -29,6 +29,10 @@ type CardPurchase struct {
 	deletedAt               *time.Time
 	createdAt               time.Time
 	updatedAt               time.Time
+	originWamid             string
+	originItemSeq           int
+	originOperation         string
+	hasOrigin               bool
 }
 
 func NewCardPurchase(
@@ -119,6 +123,18 @@ func (p *CardPurchase) UpdateNameSnapshots(categoryName, subcategoryName string)
 	p.categoryNameSnapshot = categoryName
 	p.subcategoryNameSnapshot = subcategoryName
 }
+
+func (p *CardPurchase) SetOrigin(wamid string, itemSeq int, operation string) {
+	p.originWamid = wamid
+	p.originItemSeq = itemSeq
+	p.originOperation = operation
+	p.hasOrigin = true
+}
+
+func (p *CardPurchase) OriginWamid() string     { return p.originWamid }
+func (p *CardPurchase) OriginItemSeq() int      { return p.originItemSeq }
+func (p *CardPurchase) OriginOperation() string { return p.originOperation }
+func (p *CardPurchase) HasOrigin() bool         { return p.hasOrigin }
 
 func (p *CardPurchase) HydrateVersion(v int64, updatedAt time.Time) {
 	p.version = v

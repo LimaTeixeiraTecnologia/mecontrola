@@ -57,7 +57,7 @@ func (s *TransactionRepositorySuite) TestCreateAndGetByID() {
 	userID := uuid.New()
 	tx := s.newTransaction(userID)
 
-	s.Require().NoError(repo.Create(ctx, tx))
+	s.Require().NoError(createTx(repo, ctx, tx))
 
 	found, err := repo.GetByID(ctx, tx.ID(), userID)
 	s.Require().NoError(err)
@@ -85,7 +85,7 @@ func (s *TransactionRepositorySuite) TestUpdateWithVersion_Success() {
 
 	userID := uuid.New()
 	tx := s.newTransaction(userID)
-	s.Require().NoError(repo.Create(ctx, tx))
+	s.Require().NoError(createTx(repo, ctx, tx))
 
 	amount2, _ := valueobjects.NewMoney(9999)
 	desc2, _ := valueobjects.NewDescription("Farmácia")
@@ -114,7 +114,7 @@ func (s *TransactionRepositorySuite) TestUpdateWithVersion_VersionConflict() {
 
 	userID := uuid.New()
 	tx := s.newTransaction(userID)
-	s.Require().NoError(repo.Create(ctx, tx))
+	s.Require().NoError(createTx(repo, ctx, tx))
 
 	tx.Update(tx.Direction(), tx.PaymentMethod(), tx.Amount(), tx.Description(),
 		tx.CategoryID(), tx.SubcategoryID(), "", "",
@@ -133,7 +133,7 @@ func (s *TransactionRepositorySuite) TestSoftDelete() {
 
 	userID := uuid.New()
 	tx := s.newTransaction(userID)
-	s.Require().NoError(repo.Create(ctx, tx))
+	s.Require().NoError(createTx(repo, ctx, tx))
 
 	s.Require().NoError(repo.SoftDelete(ctx, tx.ID(), userID, 1, time.Now().UTC()))
 
@@ -153,7 +153,7 @@ func (s *TransactionRepositorySuite) TestListByMonth_CursorRoundtrip() {
 
 	for i := 0; i < 5; i++ {
 		tx := s.newTransaction(userID)
-		s.Require().NoError(repo.Create(ctx, tx))
+		s.Require().NoError(createTx(repo, ctx, tx))
 		time.Sleep(2 * time.Millisecond)
 	}
 
@@ -202,8 +202,8 @@ func (s *TransactionRepositorySuite) TestSumByMonth() {
 		option.None[valueobjects.SubcategoryID](),
 		"Renda", "", rm, now, now,
 	)
-	s.Require().NoError(repo.Create(ctx, &txOut))
-	s.Require().NoError(repo.Create(ctx, &txIn))
+	s.Require().NoError(createTx(repo, ctx, &txOut))
+	s.Require().NoError(createTx(repo, ctx, &txIn))
 
 	income, outcome, err := repo.SumByMonth(ctx, userID, rm)
 	s.Require().NoError(err)
@@ -221,10 +221,10 @@ func (s *TransactionRepositorySuite) TestSoftDelete_NotInList() {
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 
 	active := s.newTransaction(userID)
-	s.Require().NoError(repo.Create(ctx, active))
+	s.Require().NoError(createTx(repo, ctx, active))
 
 	deleted := s.newTransaction(userID)
-	s.Require().NoError(repo.Create(ctx, deleted))
+	s.Require().NoError(createTx(repo, ctx, deleted))
 	s.Require().NoError(repo.SoftDelete(ctx, deleted.ID(), userID, 1, time.Now().UTC()))
 
 	list, _, err := repo.ListByMonth(ctx, userID, rm, interfaces.Cursor{}, 50)
@@ -241,6 +241,11 @@ func (s *TransactionRepositorySuite) TestSoftDelete_NotInList() {
 		}
 	}
 	s.True(found, "lançamento ativo deve aparecer na listagem")
+}
+
+func createTx(repo interfaces.TransactionRepository, ctx context.Context, tx *entities.Transaction) error {
+	_, _, err := repo.Create(ctx, tx)
+	return err
 }
 
 func mustMoney(t *testing.T, cents int64) valueobjects.Money {

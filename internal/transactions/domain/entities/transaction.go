@@ -30,6 +30,10 @@ type Transaction struct {
 	deletedAt               *time.Time
 	createdAt               time.Time
 	updatedAt               time.Time
+	originWamid             string
+	originItemSeq           int
+	originOperation         string
+	hasOrigin               bool
 }
 
 func NewTransaction(
@@ -154,6 +158,18 @@ func (t *Transaction) SetCategorySnapshots(categoryName, subcategoryName string)
 	t.categoryNameSnapshot = categoryName
 	t.subcategoryNameSnapshot = subcategoryName
 }
+
+func (t *Transaction) SetOrigin(wamid string, itemSeq int, operation string) {
+	t.originWamid = wamid
+	t.originItemSeq = itemSeq
+	t.originOperation = operation
+	t.hasOrigin = true
+}
+
+func (t *Transaction) OriginWamid() string     { return t.originWamid }
+func (t *Transaction) OriginItemSeq() int      { return t.originItemSeq }
+func (t *Transaction) OriginOperation() string { return t.originOperation }
+func (t *Transaction) HasOrigin() bool         { return t.hasOrigin }
 
 func (t *Transaction) SoftDelete(now time.Time) error {
 	if t.deletedAt != nil {

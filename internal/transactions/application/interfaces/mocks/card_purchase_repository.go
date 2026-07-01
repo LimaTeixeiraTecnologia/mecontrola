@@ -43,20 +43,37 @@ func (_m *CardPurchaseRepository) EXPECT() *CardPurchaseRepository_Expecter {
 }
 
 // Create provides a mock function for the type CardPurchaseRepository
-func (_mock *CardPurchaseRepository) Create(ctx context.Context, p *entities.CardPurchase) error {
+func (_mock *CardPurchaseRepository) Create(ctx context.Context, p *entities.CardPurchase) (uuid.UUID, bool, error) {
 	ret := _mock.Called(ctx, p)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *entities.CardPurchase) error); ok {
+	var r0 uuid.UUID
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *entities.CardPurchase) (uuid.UUID, bool, error)); ok {
+		return returnFunc(ctx, p)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *entities.CardPurchase) uuid.UUID); ok {
 		r0 = returnFunc(ctx, p)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(uuid.UUID)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *entities.CardPurchase) bool); ok {
+		r1 = returnFunc(ctx, p)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, *entities.CardPurchase) error); ok {
+		r2 = returnFunc(ctx, p)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // CardPurchaseRepository_Create_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Create'
@@ -89,12 +106,84 @@ func (_c *CardPurchaseRepository_Create_Call) Run(run func(ctx context.Context, 
 	return _c
 }
 
-func (_c *CardPurchaseRepository_Create_Call) Return(err error) *CardPurchaseRepository_Create_Call {
-	_c.Call.Return(err)
+func (_c *CardPurchaseRepository_Create_Call) Return(uUID uuid.UUID, b bool, err error) *CardPurchaseRepository_Create_Call {
+	_c.Call.Return(uUID, b, err)
 	return _c
 }
 
-func (_c *CardPurchaseRepository_Create_Call) RunAndReturn(run func(ctx context.Context, p *entities.CardPurchase) error) *CardPurchaseRepository_Create_Call {
+func (_c *CardPurchaseRepository_Create_Call) RunAndReturn(run func(ctx context.Context, p *entities.CardPurchase) (uuid.UUID, bool, error)) *CardPurchaseRepository_Create_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ExistsActiveByCardAndUser provides a mock function for the type CardPurchaseRepository
+func (_mock *CardPurchaseRepository) ExistsActiveByCardAndUser(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) (bool, error) {
+	ret := _mock.Called(ctx, cardID, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExistsActiveByCardAndUser")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) (bool, error)); ok {
+		return returnFunc(ctx, cardID, userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) bool); ok {
+		r0 = returnFunc(ctx, cardID, userID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, cardID, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardPurchaseRepository_ExistsActiveByCardAndUser_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExistsActiveByCardAndUser'
+type CardPurchaseRepository_ExistsActiveByCardAndUser_Call struct {
+	*mock.Call
+}
+
+// ExistsActiveByCardAndUser is a helper method to define mock.On call
+//   - ctx context.Context
+//   - cardID uuid.UUID
+//   - userID uuid.UUID
+func (_e *CardPurchaseRepository_Expecter) ExistsActiveByCardAndUser(ctx any, cardID any, userID any) *CardPurchaseRepository_ExistsActiveByCardAndUser_Call {
+	return &CardPurchaseRepository_ExistsActiveByCardAndUser_Call{Call: _e.mock.On("ExistsActiveByCardAndUser", ctx, cardID, userID)}
+}
+
+func (_c *CardPurchaseRepository_ExistsActiveByCardAndUser_Call) Run(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID)) *CardPurchaseRepository_ExistsActiveByCardAndUser_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 uuid.UUID
+		if args[2] != nil {
+			arg2 = args[2].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CardPurchaseRepository_ExistsActiveByCardAndUser_Call) Return(b bool, err error) *CardPurchaseRepository_ExistsActiveByCardAndUser_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *CardPurchaseRepository_ExistsActiveByCardAndUser_Call) RunAndReturn(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) (bool, error)) *CardPurchaseRepository_ExistsActiveByCardAndUser_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -131,7 +131,10 @@ packages:
       VersionReader: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces:
     interfaces:
-      WeatherClient: {}
+      BudgetPlanner: {}
+      CardManager: {}
+      CategoriesReader: {}
+      TransactionsLedger: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow:
     interfaces:
       UnitOfWork: {}

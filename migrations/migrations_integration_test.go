@@ -97,6 +97,7 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTablePresent("mecontrola.budget_alerts_sent")
 	s.assertTablePresent("mecontrola.onboarding_tokens")
 	s.assertTableMissing("mecontrola.onboarding_sessions")
+	s.assertTablePresent("mecontrola.agents_write_ledger")
 
 	s.assertTableMissing("mecontrola.meta_processed_messages")
 	s.assertTableMissing("mecontrola.telegram_processed_updates")

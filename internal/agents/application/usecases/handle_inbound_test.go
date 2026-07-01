@@ -56,7 +56,7 @@ func (s *HandleInboundSuite) TestExecute() {
 				in: input.InboundInput{
 					ResourceID: "user-123",
 					ThreadID:   "thread-abc",
-					AgentID:    "weather-agent",
+					AgentID:    "mecontrola-agent",
 					Message:    "Qual o clima em São Paulo?",
 					MessageID:  "msg-001",
 				},
@@ -67,7 +67,7 @@ func (s *HandleInboundSuite) TestExecute() {
 						Execute(mock.Anything, agent.InboundRequest{
 							ResourceID: "user-123",
 							ThreadID:   "thread-abc",
-							AgentID:    "weather-agent",
+							AgentID:    "mecontrola-agent",
 							Message:    "Qual o clima em São Paulo?",
 							MessageID:  "msg-001",
 						}).
@@ -93,7 +93,7 @@ func (s *HandleInboundSuite) TestExecute() {
 			args: args{
 				in: input.InboundInput{
 					ThreadID: "thread-abc",
-					AgentID:  "weather-agent",
+					AgentID:  "mecontrola-agent",
 					Message:  "Qual o clima?",
 				},
 			},
@@ -108,7 +108,7 @@ func (s *HandleInboundSuite) TestExecute() {
 			args: args{
 				in: input.InboundInput{
 					ResourceID: "user-123",
-					AgentID:    "weather-agent",
+					AgentID:    "mecontrola-agent",
 					Message:    "Qual o clima?",
 				},
 			},
@@ -139,7 +139,7 @@ func (s *HandleInboundSuite) TestExecute() {
 				in: input.InboundInput{
 					ResourceID: "user-123",
 					ThreadID:   "thread-abc",
-					AgentID:    "weather-agent",
+					AgentID:    "mecontrola-agent",
 				},
 			},
 			dependencies: dependencies{runtimeMock: s.runtimeMock},
@@ -154,7 +154,7 @@ func (s *HandleInboundSuite) TestExecute() {
 				in: input.InboundInput{
 					ResourceID: "user-123",
 					ThreadID:   "thread-abc",
-					AgentID:    "weather-agent",
+					AgentID:    "mecontrola-agent",
 					Message:    "Qual o clima?",
 				},
 			},
@@ -164,7 +164,7 @@ func (s *HandleInboundSuite) TestExecute() {
 						Execute(mock.Anything, agent.InboundRequest{
 							ResourceID: "user-123",
 							ThreadID:   "thread-abc",
-							AgentID:    "weather-agent",
+							AgentID:    "mecontrola-agent",
 							Message:    "Qual o clima?",
 						}).
 						Return(agent.Outcome{}, errors.New("runtime failure")).

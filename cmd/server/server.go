@@ -20,7 +20,8 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/weather"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
+	agentpersistence "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -215,6 +216,11 @@ func Run() error {
 	}
 	o11y.Logger().Info(ctx, "transactions module wired", observability.Bool("router_registered", transactionsModule.Router != nil))
 
+	var agentKeyLocker usecases.KeyLocker
+	if cfg.AgentConfig.WriteAdvisoryLock {
+		agentKeyLocker = agentpersistence.NewAdvisoryKeyLocker(db, o11y)
+	}
+
 	agentsModule, err := agents.NewModule(agents.Deps{
 		DB:              db,
 		O11y:            o11y,
@@ -227,8 +233,12 @@ func Run() error {
 			MaxTokens:   cfg.AgentConfig.MaxTokens,
 			Temperature: cfg.AgentConfig.Temperature,
 		},
-		WeatherClient:   weather.NewClient(),
-		WhatsAppGateway: onboardingModule.WhatsAppGateway,
+		CategoriesModule:   categoriesModule,
+		CardModule:         cardModule,
+		BudgetsModule:      budgetsModule,
+		TransactionsModule: transactionsModule,
+		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
+		KeyLocker:          agentKeyLocker,
 	})
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agents: %w", err)

@@ -34,7 +34,7 @@ func NewTransactionRepository(o11y observability.Observability, db database.DBTX
 	return &transactionRepository{db: db, o11y: o11y}
 }
 
-func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transaction) error {
+func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transaction) (uuid.UUID, bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.create")
 	defer span.End()
 
@@ -42,8 +42,11 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		INSERT INTO mecontrola.transactions
 		       (id, user_id, direction, payment_method, amount_cents, description,
 		        category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
-		        ref_month, occurred_at, version, deleted_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		        ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+		        origin_wamid, origin_item_seq, origin_operation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		ON CONFLICT (origin_wamid, origin_item_seq, origin_operation) WHERE origin_wamid IS NOT NULL DO NOTHING
+		RETURNING id
 	`
 
 	var subID *uuid.UUID
@@ -52,7 +55,17 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		subID = &u
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
+	var originWamid, originOperation *string
+	var originItemSeq *int
+	if tx.HasOrigin() {
+		w := tx.OriginWamid()
+		op := tx.OriginOperation()
+		seq := tx.OriginItemSeq()
+		originWamid, originOperation, originItemSeq = &w, &op, &seq
+	}
+
+	var returnedID uuid.UUID
+	err := r.db.QueryRowContext(ctx, query,
 		tx.ID(), tx.UserID().UUID(), int(tx.Direction()), int(tx.PaymentMethod()),
 		tx.Amount().Cents(), tx.Description().String(),
 		tx.CategoryID().UUID(), subID,
@@ -60,12 +73,25 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		tx.RefMonth().String(), tx.OccurredAt(),
 		tx.Version(), tx.DeletedAt(),
 		tx.CreatedAt(), tx.UpdatedAt(),
-	)
+		originWamid, originItemSeq, originOperation,
+	).Scan(&returnedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		const existingQuery = `
+			SELECT id FROM mecontrola.transactions
+			 WHERE origin_wamid = $1 AND origin_item_seq = $2 AND origin_operation = $3
+		`
+		var existingID uuid.UUID
+		if selErr := r.db.QueryRowContext(ctx, existingQuery, originWamid, originItemSeq, originOperation).Scan(&existingID); selErr != nil {
+			span.RecordError(selErr)
+			return uuid.Nil, false, fmt.Errorf("transactions/repository: reconciliar lançamento: %w", selErr)
+		}
+		return existingID, false, nil
+	}
 	if err != nil {
 		span.RecordError(err)
-		return fmt.Errorf("transactions/repository: criar lançamento: %w", err)
+		return uuid.Nil, false, fmt.Errorf("transactions/repository: criar lançamento: %w", err)
 	}
-	return nil
+	return returnedID, true, nil
 }
 
 func (r *transactionRepository) UpdateWithVersion(ctx context.Context, tx *entities.Transaction, expectedVersion int64) error {

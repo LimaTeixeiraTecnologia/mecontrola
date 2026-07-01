@@ -291,6 +291,72 @@ func (s *RuntimeTestSuite) TestExecute_AgentExecuteError() {
 	}
 }
 
+func (s *RuntimeTestSuite) TestExecute_InjectsRecentHistoryIntoMessages() {
+	threadID := uuid.New()
+	history := []memory.Message{
+		{Role: memory.RoleUser, Content: "primeira pergunta"},
+		{Role: memory.RoleAssistant, Content: "primeira resposta"},
+	}
+	msgStore := &capturingMessageStore{recent: history}
+	ag := &capturingAgent{id: "agent-1", instructions: "Be helpful", result: Result{Content: "ok", Mode: ExecutionModeSync}}
+
+	reg := NewAgentRegistry()
+	reg.Register(ag)
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		msgStore,
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		s.obs,
+	)
+
+	in := InboundRequest{AgentID: "agent-1", ResourceID: "res-1", ThreadID: "thr-1", Message: "nova pergunta", MessageID: "msg-1"}
+	_, err := rt.Execute(s.ctx, in)
+	s.NoError(err)
+
+	s.Equal(20, msgStore.capturedLimit)
+	s.Require().Len(ag.captured.Messages, 4)
+	s.Equal("system", ag.captured.Messages[0].Role)
+	s.Equal("primeira pergunta", ag.captured.Messages[1].Content)
+	s.Equal("primeira resposta", ag.captured.Messages[2].Content)
+	s.Equal("nova pergunta", ag.captured.Messages[3].Content)
+}
+
+type capturingMessageStore struct {
+	recent        []memory.Message
+	capturedLimit int
+}
+
+func (f *capturingMessageStore) Append(_ context.Context, _ uuid.UUID, _ memory.Message) error {
+	return nil
+}
+
+func (f *capturingMessageStore) Recent(_ context.Context, _ uuid.UUID, limit int) ([]memory.Message, error) {
+	f.capturedLimit = limit
+	return f.recent, nil
+}
+
+type capturingAgent struct {
+	id           string
+	instructions string
+	result       Result
+	captured     Request
+}
+
+func (f *capturingAgent) ID() string { return f.id }
+
+func (f *capturingAgent) Instructions() string { return f.instructions }
+
+func (f *capturingAgent) Execute(_ context.Context, req Request) (Result, error) {
+	f.captured = req
+	return f.result, nil
+}
+
+func (f *capturingAgent) Stream(_ context.Context, _ Request) (ResultStream, error) {
+	return nil, nil
+}
+
 type fakeThreadGateway struct {
 	thread memory.Thread
 	err    error

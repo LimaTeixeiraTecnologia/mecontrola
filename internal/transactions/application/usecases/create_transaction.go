@@ -83,14 +83,27 @@ func (uc *CreateTransaction) Execute(ctx context.Context, raw input.RawCreateTra
 
 	decision := uc.workflow.DecideCreate(cmd, txID, eventID, now)
 	decision.Transaction.SetCategorySnapshots(catSnap.Name, snapSubName(catSubID, catSnap))
+	if raw.OriginWamid != "" {
+		decision.Transaction.SetOrigin(raw.OriginWamid, raw.OriginItemSeq, raw.OriginOperation)
+	}
 
+	var created bool
 	tx, err := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.Transaction, error) {
 		repo := uc.factory.TransactionRepository(db)
-		if createErr := repo.Create(ctx, &decision.Transaction); createErr != nil {
+		canonicalID, c, createErr := repo.Create(ctx, &decision.Transaction)
+		if createErr != nil {
 			return entities.Transaction{}, fmt.Errorf("transactions/create_transaction: persistir: %w", createErr)
 		}
-		if created, ok := decision.Event.(entities.TransactionCreated); ok {
-			if publishErr := uc.publisher.PublishCreated(ctx, db, created); publishErr != nil {
+		created = c
+		if !c {
+			existing, getErr := repo.GetByID(ctx, canonicalID, principal.UserID)
+			if getErr != nil {
+				return entities.Transaction{}, fmt.Errorf("transactions/create_transaction: reconciliar: %w", getErr)
+			}
+			return *existing, nil
+		}
+		if createdEvt, ok := decision.Event.(entities.TransactionCreated); ok {
+			if publishErr := uc.publisher.PublishCreated(ctx, db, createdEvt); publishErr != nil {
 				return entities.Transaction{}, fmt.Errorf("transactions/create_transaction: publicar evento: %w", publishErr)
 			}
 		}
@@ -101,5 +114,7 @@ func (uc *CreateTransaction) Execute(ctx context.Context, raw input.RawCreateTra
 		return output.Transaction{}, err
 	}
 
-	return output.TransactionFrom(&tx), nil
+	out := output.TransactionFrom(&tx)
+	out.Reconciled = !created
+	return out, nil
 }

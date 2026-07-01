@@ -51,44 +51,44 @@ func (s *ScoringHooksSuite) TestObservesRunWithToolCalls() {
 
 	req := agent.Request{Messages: []llm.Message{
 		{Role: "system", Content: "instructions"},
-		{Role: "user", Content: "what is the weather in Tokyo?"},
+		{Role: "user", Content: "gastei R$ 50 no mercado"},
 	}}
 
-	ctx = s.hooks.BeforeExecute(ctx, "weather-agent", req)
-	s.hooks.AfterTool(ctx, "weather-agent", "get-weather", []byte(`{}`), nil)
-	s.hooks.AfterExecute(ctx, "weather-agent", agent.Result{Content: "It is sunny."}, nil)
+	ctx = s.hooks.BeforeExecute(ctx, "mecontrola-agent", req)
+	s.hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", []byte(`{}`), nil)
+	s.hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: "Registrei R$ 50,00."}, nil)
 
 	s.Require().Len(s.runner.observed, 1)
 	call := s.runner.observed[0]
 	s.Equal(runID, call.runID)
-	s.Equal("what is the weather in Tokyo?", call.sample.Input)
-	s.Equal("It is sunny.", call.sample.Output)
+	s.Equal("gastei R$ 50 no mercado", call.sample.Input)
+	s.Equal("Registrei R$ 50,00.", call.sample.Output)
 	s.Require().Len(call.sample.ToolCalls, 1)
-	s.Equal("get-weather", call.sample.ToolCalls[0].Name)
+	s.Equal("register_expense", call.sample.ToolCalls[0].Name)
 }
 
 func (s *ScoringHooksSuite) TestSkipsOnExecutionError() {
 	ctx := agent.WithRunID(s.ctx, uuid.New())
-	ctx = s.hooks.BeforeExecute(ctx, "weather-agent", agent.Request{})
-	s.hooks.AfterExecute(ctx, "weather-agent", agent.Result{}, errors.New("boom"))
+	ctx = s.hooks.BeforeExecute(ctx, "mecontrola-agent", agent.Request{})
+	s.hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{}, errors.New("boom"))
 	s.Empty(s.runner.observed)
 }
 
 func (s *ScoringHooksSuite) TestSkipsWhenRunIDMissing() {
-	ctx := s.hooks.BeforeExecute(s.ctx, "weather-agent", agent.Request{
+	ctx := s.hooks.BeforeExecute(s.ctx, "mecontrola-agent", agent.Request{
 		Messages: []llm.Message{{Role: "user", Content: "hi"}},
 	})
-	s.hooks.AfterExecute(ctx, "weather-agent", agent.Result{Content: "hello"}, nil)
+	s.hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: "hello"}, nil)
 	s.Empty(s.runner.observed)
 }
 
 func (s *ScoringHooksSuite) TestSkipsToolCallOnError() {
 	ctx := agent.WithRunID(s.ctx, uuid.New())
-	ctx = s.hooks.BeforeExecute(ctx, "weather-agent", agent.Request{
+	ctx = s.hooks.BeforeExecute(ctx, "mecontrola-agent", agent.Request{
 		Messages: []llm.Message{{Role: "user", Content: "hi"}},
 	})
-	s.hooks.AfterTool(ctx, "weather-agent", "get-weather", nil, errors.New("tool failed"))
-	s.hooks.AfterExecute(ctx, "weather-agent", agent.Result{Content: "ok"}, nil)
+	s.hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", nil, errors.New("tool failed"))
+	s.hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: "ok"}, nil)
 
 	s.Require().Len(s.runner.observed, 1)
 	s.Empty(s.runner.observed[0].sample.ToolCalls)

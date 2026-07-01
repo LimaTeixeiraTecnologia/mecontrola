@@ -133,7 +133,7 @@ func (s *CreateCardPurchaseSuite) TestExecute_Success_3Installments() {
 		Return(inv1, nil)
 	s.invoices.On("ApplyDelta", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
-	s.purchases.On("Create", mock.Anything, mock.Anything).Return(nil)
+	s.purchases.On("Create", mock.Anything, mock.Anything).Return(uuid.New(), true, nil)
 	s.purchases.On("ReplaceItems", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	s.publisher.On("PublishCreated", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 

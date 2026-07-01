@@ -56,3 +56,85 @@ Introduzir um **ledger de idempotência agent-owned**: tabela `agents_write_ledg
 ## Revisão Futura
 
 - Reavaliar se o middleware global for corrigido para 2xx (poderia simplificar o ledger).
+
+---
+
+## Emenda 2026-07-01 — Idempotência alcança o domínio via `origin_ref` (PARA REVISÃO)
+
+- **Status da emenda:** proposta / em revisão
+- **Origem:** `docs/plans/2026-07-01-eliminar-janela-idempotencia-write-ledger.md` (Fase 2, opção D)
+- **Reabre:** a alternativa "Adicionar idempotency key aos use cases de transactions", antes **rejeitada** na seção "Alternativas Consideradas", agora com contrato restrito que preserva a fronteira.
+
+### Contexto da emenda
+
+A decisão original entregou **exactly-once do registro do ledger** e aceitou como risco residual a
+**janela entre o commit do domínio e a gravação do ledger** (seção "Riscos e Mitigações"): sob crash
+entre os dois commits (M1) ou concorrência de mesma chave (M2), a escrita de domínio pode duplicar,
+porque o `uuid.New()` de `CreateTransaction`/`CreateCardPurchase` gera um agregado novo a cada execução
+e o ledger vive em transação separada (o agente **não** compartilha transação com `transactions` —
+`feedback_agent_calls_modules_own_persistence`).
+
+A Fase 1 (advisory lock por chave, `internal/agents`) já serializou M2. Esta emenda fecha **M1**, que só
+é eliminável se a idempotência **alcançar a linha de domínio**.
+
+### Motivo para reabrir a alternativa rejeitada
+
+A rejeição original supunha "idempotency key" como **regra de domínio** injetada no use case
+(violaria R-TXN-001/002 e a fronteira). Esta emenda evita isso: `origin_ref` é uma **afordância de
+infraestrutura de persistência**, não regra de negócio. Distinções que preservam a governança:
+
+- **`Decide*` permanece puro e intocado** — `origin_ref` NÃO entra em nenhum `Decide*`, comando ou
+  cálculo de negócio. É provenance carregada como metadado, definida **após** o `Decide*`, no mesmo
+  ponto onde hoje já se chama `SetCategorySnapshots` (padrão de mutator pós-decisão já existente).
+- **A unicidade vive no repositório** (`ON CONFLICT` sobre índice único parcial), não em branching de
+  domínio no use case. Não há comparação de campo semântico (`amount`, `direction`) para decidir
+  comportamento — preserva R-TXN-002/004 e o gate ADR-006.
+- **Producers continuam apenas mapeando evento** (R-TXN-003): o evento de criação só é publicado
+  quando a linha é **de fato criada** (`created=true`); no replay não há segundo evento (as projeções
+  downstream já são idempotentes por `event_id`).
+
+### Decisão da emenda
+
+1. **Schema (aditivo):** `mecontrola.transactions` e `mecontrola.transactions_card_purchases` ganham
+   colunas *nullable* `origin_wamid TEXT`, `origin_item_seq INT`, `origin_operation TEXT` e um
+   **índice único parcial** `... (origin_wamid, origin_item_seq, origin_operation) WHERE origin_wamid
+   IS NOT NULL`. Linhas legadas ficam `NULL` (fora do índice) — **sem backfill**. Índice não-`CONCURRENTLY`
+   (migrations rodam em transação com o runner golang-migrate/pgx; partial index sobre coluna nova é de
+   construção instantânea). Para tabela grande em produção, a construção `CONCURRENTLY` é passo de runbook
+   fora da migration.
+2. **Contrato de escrita:** `RawCreateTransaction`/`RawCreateCardPurchase` aceitam `OriginRef` **opcional**
+   (`{Wamid, ItemSeq, Operation}`). Quando presente, o repositório insere com
+   `INSERT ... ON CONFLICT (origin_*) WHERE origin_wamid IS NOT NULL DO NOTHING`; em conflito, retorna a
+   linha **existente** e `created=false`. Quando ausente (caminho HTTP), o índice parcial não se aplica —
+   comportamento inalterado.
+3. **Efeito no agente:** com a escrita de domínio idempotente, o `IdempotentWrite` do agente reexecuta a
+   `WriteFn` com segurança após M1 — a `ON CONFLICT` devolve o mesmo `resource_id` (sem 2ª linha) e o
+   ledger é reconciliado. O ledger passa a ser **cache de replay rápido + auditoria**, não a única
+   garantia. `agents_write_total{outcome}` ganha `reconciled` (linha já existia no domínio).
+
+### Consequências da emenda
+
+- **Benefício:** exactly-once **por intenção** de fato (M1 e M2 eliminados), sem compartilhar transação
+  entre módulos e sem regra de negócio nova em `transactions`.
+- **Custo:** 2 migrations aditivas + índices parciais; um `SELECT` extra apenas no caminho de replay
+  (raro); leve aumento do contrato de input (`OriginRef` opcional).
+- **Invariante de governança preservada:** `Decide*` puro; sem SQL/branching de domínio fora do repo;
+  cardinalidade de métrica controlada; zero comentários.
+
+### Gate de verificação da emenda (deve permanecer verde)
+
+```bash
+grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
+  "origin_wamid\|OriginRef\|origin_operation" \
+  internal/transactions/domain/services/ \
+  && echo "FAIL: origin_ref vazou para Decide*/domain services" && exit 1 || true
+```
+
+### Prova exigida antes de aprovar (production-ready)
+
+- Teste de integração (testcontainers): duas criações com o mesmo `OriginRef` → **1** linha, **1**
+  evento, 2ª retorna mesmo id com `created=false`.
+- **Teste de crash-injection (M1):** commit de domínio seguido de reexecução com o mesmo `OriginRef`
+  (simulando reentrega após crash antes do ledger) → **0** linhas adicionais.
+- Concorrência (M2, defesa em profundidade com Fase 1): N goroutines mesma chave → 1 linha.
+- Gate R-TXN e gate acima verdes; `go test ./...` sem falha.

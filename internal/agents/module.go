@@ -15,7 +15,14 @@ import (
 	agentscorers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/scorers"
 	agenttools "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/binding"
+	jobhandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/messaging/database/consumers"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	agentpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/infrastructure/postgres"
@@ -29,9 +36,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer"
 	scorerpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer/infrastructure/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	workflowpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
 const EventTypeWhatsAppInbound = "agents.whatsapp.inbound.v1"
@@ -71,12 +82,16 @@ type LLMConfig struct {
 }
 
 type Deps struct {
-	DB              database.DBTX
-	O11y            observability.Observability
-	OutboxPublisher outbox.Publisher
-	LLM             LLMConfig
-	WeatherClient   interfaces.WeatherClient
-	WhatsAppGateway whatsAppGateway
+	DB                 database.DBTX
+	O11y               observability.Observability
+	OutboxPublisher    outbox.Publisher
+	LLM                LLMConfig
+	CategoriesModule   *categories.CategoriesModule
+	CardModule         card.CardModule
+	BudgetsModule      *budgets.BudgetsModule
+	TransactionsModule transactions.TransactionsModule
+	WhatsAppGateway    whatsAppGateway
+	KeyLocker          usecases.KeyLocker
 }
 
 type whatsAppInboundPayload struct {
@@ -86,7 +101,7 @@ type whatsAppInboundPayload struct {
 	MessageID string `json:"message_id"`
 }
 
-func NewModule(deps Deps) (Module, error) {
+func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root do módulo de agentes; construção sequencial bindings→tools→workflows→runtime é crítica para R-AGENT-WF-001
 	if deps.DB == nil {
 		return Module{}, fmt.Errorf("agents.module: db is required")
 	}
@@ -115,20 +130,69 @@ func NewModule(deps Deps) (Module, error) {
 	}, deps.O11y)
 
 	scorerResultStore := scorerpostgres.NewResultStore(deps.DB)
-	scorerEntries := agentscorers.BuildWeatherScorers(provider)
+	scorerEntries := agentscorers.BuildMeControlaScorers(provider)
 	scorerRunner := scorer.NewScorerRunner(scorerEntries, scorerResultStore, deps.O11y)
 	scoringHooks := agentapplication.NewScoringHooks(scorerRunner)
 
-	weatherTool := agenttools.BuildWeatherTool(deps.WeatherClient)
-	weatherAgent := agentapplication.BuildWeatherAgent(provider, weatherTool, scoringHooks, deps.O11y)
+	writeLedgerRepo := persistence.NewWriteLedgerRepository(deps.DB, deps.O11y)
+	var idemOpts []usecases.IdempotentWriteOption
+	if deps.KeyLocker != nil {
+		idemOpts = append(idemOpts, usecases.WithKeyLocker(deps.KeyLocker))
+	}
+	idempotentWrite := usecases.NewIdempotentWrite(writeLedgerRepo, deps.O11y, idemOpts...)
 
-	registry := agent.NewAgentRegistry()
-	registry.Register(weatherAgent)
+	categoriesReader := binding.NewCategoriesReaderAdapter(
+		deps.CategoriesModule.SearchDictionaryUC,
+		deps.CategoriesModule.ResolveBySlug,
+		deps.O11y,
+	)
+	cardManager := binding.NewCardManagerAdapter(
+		deps.CardModule.CreateCardUC,
+		deps.CardModule.ListCardsUC,
+		deps.CardModule.SoftDeleteCardUC,
+		deps.TransactionsModule.HasOpenInstallmentsUC,
+		deps.O11y,
+	)
+	budgetPlanner := binding.NewBudgetPlannerAdapter(
+		deps.BudgetsModule.CreateBudgetUC,
+		deps.BudgetsModule.DeleteDraftBudgetUC,
+		deps.BudgetsModule.ActivateBudgetUC,
+		deps.BudgetsModule.CreateRecurrenceUC,
+		deps.BudgetsModule.EditCategoryPercentageUC,
+		deps.BudgetsModule.GetMonthlySummaryUC,
+		deps.BudgetsModule.ListAlertsUC,
+		deps.O11y,
+	)
+	txLedger := binding.NewTransactionsLedgerAdapter(
+		deps.TransactionsModule.CreateTransactionUC,
+		deps.TransactionsModule.CreateCardPurchaseUC,
+		deps.TransactionsModule.UpdateTransactionUC,
+		deps.TransactionsModule.DeleteTransactionUC,
+		deps.TransactionsModule.UpdateCardPurchaseUC,
+		deps.TransactionsModule.DeleteCardPurchaseUC,
+		deps.TransactionsModule.ListMonthlyEntriesUC,
+		deps.TransactionsModule.GetMonthlySummaryUC,
+		deps.O11y,
+	)
+
+	workflowStore := workflowpostgres.NewPostgresStore(deps.O11y, deps.DB)
+	onboardingEngine := workflow.NewEngine[workflows.OnboardingState](workflowStore, deps.O11y)
+	confirmEngine := workflow.NewEngine[workflows.ConfirmState](workflowStore, deps.O11y)
 
 	threadGateway := memorypostgres.NewThreadRepository(deps.DB, deps.O11y)
 	rawMessageStore := memorypostgres.NewMessageRepository(deps.DB, deps.O11y)
 	workingMem := memorypostgres.NewWorkingMemoryRepository(deps.DB, deps.O11y)
 	semanticRecall := memorypostgres.NewEmbeddingRepository(deps.DB, deps.O11y)
+
+	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
+	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem)
+	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager)
+
+	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, confirmEngine, confirmDef, idempotentWrite)
+	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y)
+
+	registry := agent.NewAgentRegistry()
+	registry.Register(meControlaAgent)
 
 	messageStore := rawMessageStore
 	var eventHandlers []EventHandlerRegistration
@@ -143,14 +207,24 @@ func NewModule(deps Deps) (Module, error) {
 	}
 
 	runStore := agentpostgres.NewRunStore(deps.DB)
-
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y)
-
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
+
+	resolveOnboarding := usecases.NewResolveOnboardingOrAgent(onboardingEngine, workflowStore, workingMem, onboardingDef, deps.O11y)
+	continueDestructive := usecases.NewDestructiveConfirmContinuer(confirmEngine, confirmDef, deps.O11y)
+
+	purgeLedger := usecases.NewPurgeLedger(writeLedgerRepo, 0, 0, deps.O11y)
+	ledgerRetentionJob := jobhandlers.NewLedgerRetentionJob(purgeLedger, "")
 
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
-		inboundConsumer := consumers.NewWhatsAppInboundConsumer(handleInbound, deps.WhatsAppGateway, deps.O11y)
+		inboundConsumer := consumers.NewWhatsAppInboundConsumer(
+			handleInbound,
+			deps.WhatsAppGateway,
+			deps.O11y,
+			consumers.WithOnboardingResolver(resolveOnboarding),
+			consumers.WithDestructiveConfirmResolver(continueDestructive),
+		)
 		eventHandlers = append(eventHandlers, EventHandlerRegistration{
 			EventType: EventTypeWhatsAppInbound,
 			Handler:   inboundConsumer,
@@ -162,8 +236,31 @@ func NewModule(deps Deps) (Module, error) {
 		HandleInbound:      handleInbound,
 		WhatsAppAgentRoute: whatsAppRoute,
 		EventHandlers:      eventHandlers,
+		Jobs:               []worker.Job{ledgerRetentionJob},
 		scorerRunner:       scorerRunner,
 	}, nil
+}
+
+func buildFinancialTools(
+	ledger interfaces.TransactionsLedger,
+	cards interfaces.CardManager,
+	planner interfaces.BudgetPlanner,
+	reader interfaces.CategoriesReader,
+	confirmEngine workflow.Engine[workflows.ConfirmState],
+	confirmDef workflow.Definition[workflows.ConfirmState],
+	writer *usecases.IdempotentWrite,
+) []tool.ToolHandle {
+	return []tool.ToolHandle{
+		agenttools.BuildRegisterExpenseTool(ledger, writer),
+		agenttools.BuildRegisterIncomeTool(ledger, writer),
+		agenttools.BuildRegisterCardPurchaseTool(ledger, cards, writer),
+		agenttools.BuildQueryMonthTool(ledger),
+		agenttools.BuildQueryPlanTool(planner),
+		agenttools.BuildEditEntryTool(confirmEngine, confirmDef),
+		agenttools.BuildDeleteEntryTool(confirmEngine, confirmDef, cards),
+		agenttools.BuildAdjustAllocationTool(planner),
+		agenttools.BuildClassifyCategoryTool(reader),
+	}
 }
 
 func buildWhatsAppAgentRoute(publisher outbox.Publisher, o11y observability.Observability) func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {

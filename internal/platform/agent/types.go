@@ -53,6 +53,7 @@ const (
 	ToolOutcomeUsecaseError
 	ToolOutcomeMissingResolver
 	ToolOutcomeReplay
+	ToolOutcomeReconciled
 )
 
 func (o ToolOutcome) String() string {
@@ -67,13 +68,15 @@ func (o ToolOutcome) String() string {
 		return "missingResolver"
 	case ToolOutcomeReplay:
 		return "replay"
+	case ToolOutcomeReconciled:
+		return "reconciled"
 	default:
 		return "unknown"
 	}
 }
 
 func (o ToolOutcome) IsValid() bool {
-	return o >= ToolOutcomeRouted && o <= ToolOutcomeReplay
+	return o >= ToolOutcomeRouted && o <= ToolOutcomeReconciled
 }
 
 var errInvalidToolOutcome = errors.New("agent: invalid tool outcome")
@@ -90,6 +93,8 @@ func ParseToolOutcome(s string) (ToolOutcome, error) {
 		return ToolOutcomeMissingResolver, nil
 	case "replay":
 		return ToolOutcomeReplay, nil
+	case "reconciled":
+		return ToolOutcomeReconciled, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", errInvalidToolOutcome, s)
 	}

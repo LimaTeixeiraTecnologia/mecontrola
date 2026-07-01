@@ -40,7 +40,7 @@ func (s *AgentTestSuite) TestStream_ResultWithoutDrainingDeltasDoesNotBlockOrLea
 
 	ts := llmmocks.NewTokenStream(s.T())
 	ch := make(chan string, 200)
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		ch <- "x"
 	}
 	close(ch)
@@ -138,14 +138,14 @@ func (s *AgentTestSuite) TestExecute_Success() {
 }
 
 func (s *AgentTestSuite) TestExecute_ToolLoop_FeedsResultsBackToModel() {
-	var invocations int32
-	weatherTool := tool.NewTool[map[string]any, map[string]any](
+	var invocations atomic.Int32
+	weatherTool := tool.NewTool(
 		"get_weather",
 		"Get weather",
 		llm.Schema{Schema: map[string]any{"type": "object"}},
 		llm.Schema{},
 		func(_ context.Context, _ map[string]any) (map[string]any, error) {
-			atomic.AddInt32(&invocations, 1)
+			invocations.Add(1)
 			return map[string]any{"temp": "20C"}, nil
 		},
 	)
@@ -178,7 +178,7 @@ func (s *AgentTestSuite) TestExecute_ToolLoop_FeedsResultsBackToModel() {
 	s.NoError(err)
 	s.Equal("It is 20C in New York.", result.Content)
 	s.Equal(ExecutionModeSync, result.Mode)
-	s.Equal(int32(1), atomic.LoadInt32(&invocations))
+	s.Equal(int32(1), invocations.Load())
 
 	var hasAssistantToolCalls, hasToolResult bool
 	for _, m := range secondReq.Messages {
@@ -194,7 +194,7 @@ func (s *AgentTestSuite) TestExecute_ToolLoop_FeedsResultsBackToModel() {
 }
 
 func (s *AgentTestSuite) TestExecute_ToolLoop_MaxRoundsEmptyContentErrors() {
-	loopTool := tool.NewTool[map[string]any, map[string]any](
+	loopTool := tool.NewTool(
 		"loop_tool",
 		"Always loops",
 		llm.Schema{Schema: map[string]any{"type": "object"}},
@@ -217,6 +217,55 @@ func (s *AgentTestSuite) TestExecute_ToolLoop_MaxRoundsEmptyContentErrors() {
 		Messages: []llm.Message{{Role: "user", Content: "loop forever"}},
 	})
 
+	s.Error(err)
+	s.True(errors.Is(err, ErrMaxToolRounds))
+	s.Empty(result.Content)
+}
+
+func (s *AgentTestSuite) TestWithMaxToolRounds_DefaultIsPreserved() {
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{Content: "ok"}, nil).
+		Once()
+
+	a := NewAgent("agent-1", "instr", s.providerMock, s.obs)
+	impl := a.(*agentImpl)
+	s.Equal(defaultMaxToolRounds, impl.maxToolRounds)
+
+	result, err := a.Execute(s.ctx, Request{
+		AgentID:  "agent-1",
+		Messages: []llm.Message{{Role: "user", Content: "hi"}},
+	})
+	s.NoError(err)
+	s.Equal("ok", result.Content)
+}
+
+func (s *AgentTestSuite) TestWithMaxToolRounds_CustomRoundsRespected() {
+	loopTool := tool.NewTool(
+		"loop_tool",
+		"Always loops",
+		llm.Schema{Schema: map[string]any{"type": "object"}},
+		llm.Schema{},
+		func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return map[string]any{"ok": true}, nil
+		},
+	)
+
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{
+			ToolCalls: []llm.ToolCall{{ID: "tc1", FunctionName: "loop_tool", ArgumentsJSON: map[string]any{}}},
+		}, nil).
+		Times(12)
+
+	a := NewAgent("agent-1", "instr", s.providerMock, s.obs, WithTools(loopTool), WithMaxToolRounds(12))
+	impl := a.(*agentImpl)
+	s.Equal(12, impl.maxToolRounds)
+
+	result, err := a.Execute(s.ctx, Request{
+		AgentID:  "agent-1",
+		Messages: []llm.Message{{Role: "user", Content: "loop"}},
+	})
 	s.Error(err)
 	s.True(errors.Is(err, ErrMaxToolRounds))
 	s.Empty(result.Content)

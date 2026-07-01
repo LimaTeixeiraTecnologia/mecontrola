@@ -51,8 +51,8 @@ func (s *TransactionSearchSuite) TestSearchByDescription_ILIKE() {
 	repo := txpostgres.NewTransactionRepository(noop.NewProvider(), db)
 
 	userID := uuid.New()
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userID, "Uber para o trabalho")))
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userID, "Mercado Extra")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userID, "Uber para o trabalho")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userID, "Mercado Extra")))
 
 	q, _ := valueobjects.NewSearchQuery("uber")
 	results, err := repo.SearchByDescription(ctx, userID, q, option.None[valueobjects.RefMonth](), 10)
@@ -67,9 +67,9 @@ func (s *TransactionSearchSuite) TestSearchByDescription_MultipleMatches() {
 	repo := txpostgres.NewTransactionRepository(noop.NewProvider(), db)
 
 	userID := uuid.New()
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userID, "Mercado")))
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userID, "Mercado Extra")))
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userID, "Mercadinho")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userID, "Mercado")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userID, "Mercado Extra")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userID, "Mercadinho")))
 
 	q, _ := valueobjects.NewSearchQuery("mercad")
 	results, err := repo.SearchByDescription(ctx, userID, q, option.None[valueobjects.RefMonth](), 10)
@@ -84,7 +84,7 @@ func (s *TransactionSearchSuite) TestSearchByDescription_LimitApplied() {
 
 	userID := uuid.New()
 	for i := 0; i < 12; i++ {
-		s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userID, "Padaria do bairro")))
+		s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userID, "Padaria do bairro")))
 		time.Sleep(time.Millisecond)
 	}
 
@@ -101,8 +101,8 @@ func (s *TransactionSearchSuite) TestSearchByDescription_UserIsolation() {
 
 	userA := uuid.New()
 	userB := uuid.New()
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userA, "Uber A")))
-	s.Require().NoError(repo.Create(ctx, s.newTransactionWithDescription(userB, "Uber B")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userA, "Uber A")))
+	s.Require().NoError(createTx(repo, ctx, s.newTransactionWithDescription(userB, "Uber B")))
 
 	q, _ := valueobjects.NewSearchQuery("uber")
 	results, err := repo.SearchByDescription(ctx, userA, q, option.None[valueobjects.RefMonth](), 10)
@@ -118,7 +118,7 @@ func (s *TransactionSearchSuite) TestSearchByDescription_ExcludesDeleted() {
 
 	userID := uuid.New()
 	deleted := s.newTransactionWithDescription(userID, "Uber cancelado")
-	s.Require().NoError(repo.Create(ctx, deleted))
+	s.Require().NoError(createTx(repo, ctx, deleted))
 	s.Require().NoError(repo.SoftDelete(ctx, deleted.ID(), userID, 1, time.Now().UTC()))
 
 	q, _ := valueobjects.NewSearchQuery("uber")

@@ -14,6 +14,9 @@ type RawCreateCardPurchase struct {
 	CategoryID        uuid.UUID  `json:"category_id"`
 	SubcategoryID     *uuid.UUID `json:"subcategory_id,omitempty"`
 	PurchasedAt       string     `json:"purchased_at"`
+	OriginWamid       string     `json:"origin_wamid,omitempty"`
+	OriginItemSeq     int        `json:"origin_item_seq,omitempty"`
+	OriginOperation   string     `json:"origin_operation,omitempty"`
 }
 
 func (i *RawCreateCardPurchase) Validate() error {
@@ -35,6 +38,9 @@ func (i *RawCreateCardPurchase) Validate() error {
 	}
 	if i.PurchasedAt == "" {
 		errs = append(errs, ErrInputPurchasedAtRequired)
+	}
+	if i.OriginWamid != "" && i.OriginOperation == "" {
+		errs = append(errs, errors.New("origin_operation: obrigatório quando origin_wamid presente"))
 	}
 	return errors.Join(errs...)
 }

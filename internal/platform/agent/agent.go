@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	maxToolRounds = 5
-	roleAssistant = "assistant"
-	roleTool      = "tool"
+	defaultMaxToolRounds = 5
+	roleAssistant        = "assistant"
+	roleTool             = "tool"
 )
 
 type AgentOption func(*agentImpl)
@@ -31,28 +31,36 @@ func WithHooks(h Hooks) AgentOption {
 	}
 }
 
+func WithMaxToolRounds(n int) AgentOption {
+	return func(a *agentImpl) {
+		a.maxToolRounds = n
+	}
+}
+
 type agentMetrics struct {
 	streamTotal     observability.Counter
 	toolInvocations observability.Counter
 }
 
 type agentImpl struct {
-	id           string
-	instructions string
-	provider     llm.Provider
-	tools        []tool.ToolHandle
-	hooks        Hooks
-	o11y         observability.Observability
-	metrics      agentMetrics
+	id            string
+	instructions  string
+	provider      llm.Provider
+	tools         []tool.ToolHandle
+	hooks         Hooks
+	o11y          observability.Observability
+	metrics       agentMetrics
+	maxToolRounds int
 }
 
 func NewAgent(id, instructions string, provider llm.Provider, o11y observability.Observability, opts ...AgentOption) Agent {
 	a := &agentImpl{
-		id:           id,
-		instructions: instructions,
-		provider:     provider,
-		hooks:        NoopHooks{},
-		o11y:         o11y,
+		id:            id,
+		instructions:  instructions,
+		provider:      provider,
+		hooks:         NoopHooks{},
+		o11y:          o11y,
+		maxToolRounds: defaultMaxToolRounds,
 		metrics: agentMetrics{
 			streamTotal:     o11y.Metrics().Counter("agent_stream_total", "Total agent stream runs", "1"),
 			toolInvocations: o11y.Metrics().Counter("agent_tool_invocations_total", "Total agent tool invocations", "1"),
@@ -142,7 +150,7 @@ func (a *agentImpl) prepareTools() ([]llm.ToolSpec, map[string]tool.ToolHandle) 
 
 func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, toolMap map[string]tool.ToolHandle) (llm.Response, bool, error) {
 	var resp llm.Response
-	for round := 0; round < maxToolRounds; round++ {
+	for round := 0; round < a.maxToolRounds; round++ {
 		var err error
 		resp, err = a.provider.Complete(ctx, *llmReq)
 		if err != nil {

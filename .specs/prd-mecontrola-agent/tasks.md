@@ -12,15 +12,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Substrato: `WithMaxToolRounds` + exposição de use cases no TransactionsModule | pending | — | — | mastra |
-| 2.0 | Interfaces consumer-side + adapters de binding (categories/card/budgets/transactions) | pending | 1.0 | Com 3.0 | mastra |
-| 3.0 | Ledger de idempotência agent-owned (`agents_write_ledger` + `IdempotentWrite`) | pending | — | Com 2.0 | mastra |
-| 4.0 | Tools de operação diária (registrar/consultar/editar/remover/ajustar/classificar) | pending | 2.0, 3.0 | — | mastra |
-| 5.0 | HITL de operações destrutivas (ConfirmState fechado, resume antes do parse) | pending | 4.0 | Com 6.0 | mastra |
-| 6.0 | Onboarding workflow durável de 8 etapas (fases fechadas, suspend/resume) | pending | 2.0, 4.0 | Com 5.0 | mastra |
-| 7.0 | Agente + system prompt + scorers + memória/histórico/roteamento | pending | 5.0, 6.0 | — | mastra |
-| 8.0 | `module.go` + wiring `cmd/server`/`cmd/worker` (Deps 4 módulos, modelo, observabilidade) | pending | 7.0 | — | mastra |
-| 9.0 | Cutover: remoção total do weather sem resíduo + e2e + gates verdes | pending | 8.0 | — | mastra |
+| 1.0 | Substrato: `WithMaxToolRounds` + exposição de use cases no TransactionsModule | done | — | — | mastra |
+| 2.0 | Interfaces consumer-side + adapters de binding (categories/card/budgets/transactions) | done | 1.0 | Com 3.0 | mastra |
+| 3.0 | Ledger de idempotência agent-owned (`agents_write_ledger` + `IdempotentWrite`) | done | — | Com 2.0 | mastra |
+| 4.0 | Tools de operação diária (registrar/consultar/editar/remover/ajustar/classificar) | done | 2.0, 3.0 | — | mastra |
+| 5.0 | HITL de operações destrutivas (ConfirmState fechado, resume antes do parse) | done | 4.0 | Com 6.0 | mastra |
+| 6.0 | Onboarding workflow durável de 8 etapas (fases fechadas, suspend/resume) | done | 2.0, 4.0 | Com 5.0 | mastra |
+| 7.0 | Agente + system prompt + scorers + memória/histórico/roteamento | done | 5.0, 6.0 | — | mastra |
+| 8.0 | `module.go` + wiring `cmd/server`/`cmd/worker` (Deps 4 módulos, modelo, observabilidade) | done | 7.0 | — | mastra |
+| 9.0 | Cutover: remoção total do weather sem resíduo + e2e + gates verdes | done | 8.0 | — | mastra |
 
 ## Dependências Críticas
 - **1.0 desbloqueia 2.0**: bindings precisam dos use cases expostos no `TransactionsModule` (`UpdateCardPurchase`, `DeleteCardPurchase`, `GetMonthlySummary`, `ListMonthlyEntries`) e do `WithMaxToolRounds` no substrato.

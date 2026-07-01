@@ -17,7 +17,9 @@ import (
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/option"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type CreateTransactionSuite struct {
@@ -57,7 +59,7 @@ func (s *CreateTransactionSuite) TestExecute_Success() {
 	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Delivery", ParentName: "Custo Fixo"}
 	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
-	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(nil).Once()
+	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
 	s.publisher.EXPECT().
 		PublishCreated(mock.Anything, mock.Anything, mock.Anything).
 		Run(func(_ context.Context, _ database.DBTX, evt entities.TransactionCreated) {
@@ -149,7 +151,7 @@ func (s *CreateTransactionSuite) TestExecute_RepositoryError() {
 	catID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Cat"}
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
-	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(interfaces.ErrTransactionNotFound).Once()
+	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.Nil, false, interfaces.ErrTransactionNotFound).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
 		Direction:     "income",
@@ -166,7 +168,7 @@ func (s *CreateTransactionSuite) TestExecute_IdempotencyPublisher() {
 	catID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Test"}
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
-	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(nil).Once()
+	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
 	s.publisher.EXPECT().PublishCreated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
@@ -178,4 +180,52 @@ func (s *CreateTransactionSuite) TestExecute_IdempotencyPublisher() {
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 	s.Require().NoError(err)
+}
+
+func (s *CreateTransactionSuite) TestExecute_Replay_DoesNotPublish() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	canonicalID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Delivery", ParentName: "Custo Fixo"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(canonicalID, false, nil).Once()
+
+	existing := s.newPersistedTransaction(canonicalID, catID)
+	s.repo.EXPECT().GetByID(mock.Anything, canonicalID, s.userID).Return(existing, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:       "outcome",
+		PaymentMethod:   "pix",
+		AmountCents:     1000,
+		Description:     "Mercado",
+		CategoryID:      catID,
+		SubcategoryID:   &subcategoryID,
+		OccurredAt:      time.Now().UTC().Format(time.RFC3339),
+		OriginWamid:     "wamid.ABC",
+		OriginItemSeq:   0,
+		OriginOperation: "create_transaction",
+	})
+
+	s.Require().NoError(err)
+	s.Equal(canonicalID, result.ID)
+	s.publisher.AssertNotCalled(s.T(), "PublishCreated", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *CreateTransactionSuite) newPersistedTransaction(id, catID uuid.UUID) *entities.Transaction {
+	amount, _ := valueobjects.NewMoney(1000)
+	desc, _ := valueobjects.NewDescription("Mercado")
+	rm, _ := valueobjects.NewRefMonth("2026-07")
+	now := time.Now().UTC()
+	tx := entities.NewTransaction(
+		id,
+		valueobjects.UserIDFromUUID(s.userID),
+		valueobjects.DirectionOutcome,
+		valueobjects.PaymentMethodPix,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(catID),
+		option.None[valueobjects.SubcategoryID](),
+		"Custo Fixo", "Delivery",
+		rm, now, now,
+	)
+	return &tx
 }

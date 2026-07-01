@@ -100,6 +100,14 @@ tasks:
     cmds:
       - go test -race -count=1 -tags=integration ./internal/card/... ./internal/platform/idempotency/...
 
+  agents:integration:
+    desc: Executa testes de integracao do modulo agents (requer Docker para testcontainers). Os testes E2E com LLM real so rodam quando RUN_REAL_LLM=1 e OPENROUTER_API_KEY estao definidos; caso contrario eles fazem skip determinístico e os demais testes de integracao rodam normalmente.
+    preconditions:
+      - sh: docker info >/dev/null 2>&1
+        msg: "Docker nao esta disponivel; suba as dependencias antes dos testes de integracao."
+    cmds:
+      - go test -race -count=1 -tags=integration ./internal/agents/...
+
   card:audit:
     desc: Auditoria R0-R7 do modulo card — gates de init, panic, clock, interface-assertion e zero-comentarios.
     cmds:

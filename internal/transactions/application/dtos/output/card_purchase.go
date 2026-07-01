@@ -33,6 +33,7 @@ type CardPurchase struct {
 	Items                   []CardInvoiceItemOutput `json:"items,omitempty"`
 	CreatedAt               time.Time               `json:"created_at"`
 	UpdatedAt               time.Time               `json:"updated_at"`
+	Reconciled              bool                    `json:"reconciled,omitempty"`
 }
 
 func CardPurchaseFrom(p *entities.CardPurchase, items []*entities.CardInvoiceItem, refMonthsAffected []string) CardPurchase {

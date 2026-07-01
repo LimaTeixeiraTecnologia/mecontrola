@@ -31,7 +31,7 @@ func NewCardPurchaseRepository(o11y observability.Observability, db database.DBT
 	return &cardPurchaseRepository{db: db, o11y: o11y}
 }
 
-func (r *cardPurchaseRepository) Create(ctx context.Context, p *entities.CardPurchase) error {
+func (r *cardPurchaseRepository) Create(ctx context.Context, p *entities.CardPurchase) (uuid.UUID, bool, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.card_purchase.create")
 	defer span.End()
 
@@ -41,27 +41,52 @@ func (r *cardPurchaseRepository) Create(ctx context.Context, p *entities.CardPur
 		subID = &v
 	}
 
+	var originWamid, originOperation *string
+	var originItemSeq *int
+	if p.HasOrigin() {
+		w := p.OriginWamid()
+		op := p.OriginOperation()
+		seq := p.OriginItemSeq()
+		originWamid, originOperation, originItemSeq = &w, &op, &seq
+	}
+
 	const q = `
 		INSERT INTO mecontrola.transactions_card_purchases
 			(id, user_id, card_id, direction, total_amount_cents, installments_total,
 			 description, category_id, subcategory_id, category_name_snapshot,
 			 subcategory_name_snapshot, purchased_at, card_closing_day, card_due_day,
-			 version, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+			 version, created_at, updated_at, origin_wamid, origin_item_seq, origin_operation)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		ON CONFLICT (origin_wamid, origin_item_seq, origin_operation) WHERE origin_wamid IS NOT NULL DO NOTHING
+		RETURNING id
 	`
-	_, err := r.db.ExecContext(ctx, q,
+	var returnedID uuid.UUID
+	err := r.db.QueryRowContext(ctx, q,
 		p.ID(), p.UserID().UUID(), p.CardID().UUID(), 2,
 		p.TotalAmount().Cents(), p.InstallmentsTotal().Value(),
 		p.Description().String(), p.CategoryID().UUID(), subID,
 		p.CategoryNameSnapshot(), nullableString(p.SubcategoryNameSnapshot()),
 		p.PurchasedAt(), p.BillingSnapshot().ClosingDay().Value(), p.BillingSnapshot().DueDay().Value(),
 		p.Version(), p.CreatedAt(), p.UpdatedAt(),
-	)
+		originWamid, originItemSeq, originOperation,
+	).Scan(&returnedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		const existingQ = `
+			SELECT id FROM mecontrola.transactions_card_purchases
+			 WHERE origin_wamid = $1 AND origin_item_seq = $2 AND origin_operation = $3
+		`
+		var existingID uuid.UUID
+		if selErr := r.db.QueryRowContext(ctx, existingQ, originWamid, originItemSeq, originOperation).Scan(&existingID); selErr != nil {
+			span.RecordError(selErr)
+			return uuid.Nil, false, fmt.Errorf("transactions/postgres: reconciliar compra: %w", selErr)
+		}
+		return existingID, false, nil
+	}
 	if err != nil {
 		span.RecordError(err)
-		return fmt.Errorf("transactions/postgres: criar compra: %w", err)
+		return uuid.Nil, false, fmt.Errorf("transactions/postgres: criar compra: %w", err)
 	}
-	return nil
+	return returnedID, true, nil
 }
 
 func (r *cardPurchaseRepository) UpdateWithVersion(ctx context.Context, p *entities.CardPurchase, expectedVersion int64) error {
@@ -221,6 +246,24 @@ func (r *cardPurchaseRepository) ListByCardAndMonth(
 		nextCursor = interfaces.Cursor{Value: encodePurchaseCursor(last.CreatedAt(), last.ID())}
 	}
 	return result, nextCursor, nil
+}
+
+func (r *cardPurchaseRepository) ExistsActiveByCardAndUser(ctx context.Context, cardID, userID uuid.UUID) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.card_purchase.exists_active_by_card_and_user")
+	defer span.End()
+
+	const q = `
+		SELECT EXISTS(
+			SELECT 1 FROM mecontrola.transactions_card_purchases
+			 WHERE card_id=$1 AND user_id=$2 AND deleted_at IS NULL
+		)
+	`
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, q, cardID, userID).Scan(&exists); err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("transactions/postgres: verificar parcelas abertas: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *cardPurchaseRepository) ReplaceItems(ctx context.Context, purchaseID uuid.UUID, items []*entities.CardInvoiceItem) error {

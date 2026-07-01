@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-agent/7.0_execution_report.md
+summary: "Testes RUN_REAL_LLM criados e aprovados: tool-calling (register_expense, query_month) + scorer LLM-judged (categorization) — 3/3 PASS (7.771s, openai/gpt-4o-mini)"
+timestamp: "2026-07-01T00:00:00Z"

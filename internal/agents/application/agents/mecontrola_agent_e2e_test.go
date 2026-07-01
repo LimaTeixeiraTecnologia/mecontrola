@@ -1,0 +1,246 @@
+//go:build integration
+
+package agents
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/suite"
+
+	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	agenttools "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
+	agentusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/binding"
+	agentpersistence "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
+	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
+	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
+	txrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/infrastructure/repositories"
+	"github.com/jmoiron/sqlx"
+)
+
+type e2eTxPublisher struct{}
+
+func (p *e2eTxPublisher) PublishCreated(_ context.Context, _ database.DBTX, _ entities.TransactionCreated) error {
+	return nil
+}
+
+func (p *e2eTxPublisher) PublishUpdated(_ context.Context, _ database.DBTX, _ entities.TransactionUpdated) error {
+	return nil
+}
+
+func (p *e2eTxPublisher) PublishDeleted(_ context.Context, _ database.DBTX, _ entities.TransactionDeleted) error {
+	return nil
+}
+
+type e2eSpyHooks struct {
+	t      *testing.T
+	calls  int
+	errs   int
+	lastID string
+}
+
+func (h *e2eSpyHooks) BeforeExecute(ctx context.Context, _ string, _ agent.Request) context.Context {
+	return ctx
+}
+
+func (h *e2eSpyHooks) AfterExecute(_ context.Context, _ string, _ agent.Result, _ error) {}
+
+func (h *e2eSpyHooks) BeforeTool(ctx context.Context, _, toolID string) context.Context {
+	h.calls++
+	h.lastID = toolID
+	return ctx
+}
+
+func (h *e2eSpyHooks) AfterTool(_ context.Context, _, toolID string, resultBytes []byte, err error) {
+	if err != nil {
+		h.errs++
+	}
+	h.t.Logf("tool=%s err=%v result=%s", toolID, err, string(resultBytes))
+}
+
+type e2eStubCategoryValidator struct{ catID uuid.UUID }
+
+func (v *e2eStubCategoryValidator) Validate(_ context.Context, _ uuid.UUID, _ *uuid.UUID) (txifaces.CategorySnapshot, error) {
+	return txifaces.CategorySnapshot{ID: v.catID, Name: "Alimentação"}, nil
+}
+
+type MeControlaAgentE2ESuite struct {
+	suite.Suite
+	ctx           context.Context
+	db            *sqlx.DB
+	userID        uuid.UUID
+	categoryID    uuid.UUID
+	subcategoryID uuid.UUID
+	adapter       agentsifaces.TransactionsLedger
+	ledgerRepo    agentusecases.WriteLedgerRepository
+	idem          *agentusecases.IdempotentWrite
+	provider      llm.Provider
+	tools         []tool.ToolHandle
+	firstWamid    string
+	firstSeq      int
+	firstTxID     uuid.UUID
+	firstOpName   string
+}
+
+func TestMeControlaAgentE2ESuite(t *testing.T) {
+	suite.Run(t, new(MeControlaAgentE2ESuite))
+}
+
+func (s *MeControlaAgentE2ESuite) SetupSuite() {
+	s.ctx = context.Background()
+	s.provider = buildRealLLMProvider(s.T())
+
+	db, _ := testcontainer.Postgres(s.T())
+	s.db = db
+	o11y := fake.NewProvider()
+	factory := txrepos.NewRepositoryFactory(o11y)
+
+	s.userID = uuid.New()
+	s.categoryID = uuid.New()
+	s.subcategoryID = uuid.New()
+	catID := uuid.New()
+
+	_, err := db.ExecContext(s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511988880001', 'ACTIVE', now(), now())`,
+		s.userID,
+	)
+	s.Require().NoError(err)
+
+	createTx := txusecases.NewCreateTransaction(
+		factory,
+		uow.NewUnitOfWork(db),
+		&e2eStubCategoryValidator{catID: catID},
+		services.TransactionWorkflow{},
+		&e2eTxPublisher{},
+		o11y,
+	)
+
+	getMS := txusecases.NewGetMonthlySummary(factory, uow.NewUnitOfWork(db), o11y)
+	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
+
+	s.adapter = binding.NewTransactionsLedgerAdapter(
+		createTx, nil, nil, nil, nil, nil, listME, getMS, o11y,
+	)
+
+	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)
+	s.idem = agentusecases.NewIdempotentWrite(s.ledgerRepo, o11y)
+
+	s.tools = []tool.ToolHandle{
+		agenttools.BuildRegisterExpenseTool(s.adapter, s.idem),
+		agenttools.BuildQueryMonthTool(s.adapter),
+	}
+}
+
+func (s *MeControlaAgentE2ESuite) authedCtx() context.Context {
+	return auth.WithPrincipal(s.ctx, auth.Principal{UserID: s.userID, Source: auth.SourceWhatsApp})
+}
+
+func (s *MeControlaAgentE2ESuite) countTransactions() int {
+	var n int
+	err := s.db.QueryRowContext(s.ctx,
+		`SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1 AND deleted_at IS NULL`,
+		s.userID,
+	).Scan(&n)
+	s.Require().NoError(err)
+	return n
+}
+
+func (s *MeControlaAgentE2ESuite) findLedgerRow() (wamid string, itemSeq int, operation string, resourceID uuid.UUID, found bool) {
+	err := s.db.QueryRowContext(s.ctx,
+		`SELECT wamid, item_seq, operation, resource_id
+		   FROM mecontrola.agents_write_ledger
+		  WHERE user_id = $1
+		  ORDER BY created_at DESC
+		  LIMIT 1`,
+		s.userID,
+	).Scan(&wamid, &itemSeq, &operation, &resourceID)
+	if err != nil {
+		return "", 0, "", uuid.Nil, false
+	}
+	return wamid, itemSeq, operation, resourceID, true
+}
+
+func (s *MeControlaAgentE2ESuite) TestE2E1_RegistrarDespesaViaLLMPersisteNoBanco() {
+	hooks := &e2eSpyHooks{t: s.T()}
+	a := BuildMeControlaAgent(s.provider, s.tools, hooks, fake.NewProvider())
+
+	ctx, cancel := context.WithTimeout(s.authedCtx(), 90*time.Second)
+	defer cancel()
+
+	result, err := a.Execute(ctx, agent.Request{
+		AgentID: MecontrolaAgentID,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Registre esta despesa agora chamando a ferramenta register_expense com estes valores EXATOS: " +
+				"userId=" + s.userID.String() + ", wamid=wamid-e2e-expense-1, itemSeq=0, amountCents=5000, " +
+				"description=almoço, paymentMethod=debit_card, categoryId=" + s.categoryID.String() + ", " +
+				"subcategoryId=" + s.subcategoryID.String() + ", " +
+				"occurredAt=" + time.Now().Format("2006-01-02") + ". Não peça confirmação, apenas registre."},
+		},
+		MaxTokens: 512,
+	})
+	s.Require().NoError(err)
+	s.T().Logf("resposta do agente E2E-1: %s", result.Content)
+	s.T().Logf("tool calls=%d tool errs=%d lastTool=%s", hooks.calls, hooks.errs, hooks.lastID)
+
+	s.Require().Equal(1, s.countTransactions(),
+		"deve existir exatamente 1 transação persistida para o usuário após o registro via LLM")
+
+	wamid, itemSeq, operation, resourceID, found := s.findLedgerRow()
+	s.Require().True(found, "deve existir uma entrada no write ledger para o usuário")
+	s.Equal("create_expense", operation, "operação do ledger deve ser create_expense")
+
+	ledgerEntry, err := s.ledgerRepo.FindByKey(s.ctx, wamid, itemSeq, operation)
+	s.Require().NoError(err, "ledger deve ser localizável pela chave real usada pelo agente")
+	s.Equal(resourceID, ledgerEntry.ResourceID)
+
+	s.firstWamid = wamid
+	s.firstSeq = itemSeq
+	s.firstOpName = operation
+	s.firstTxID = resourceID
+}
+
+func (s *MeControlaAgentE2ESuite) TestE2E2_ReprocessarMesmoWamidNaoDuplica() {
+	s.Require().NotEmpty(s.firstWamid, "E2E1 deve ter registrado a despesa e populado a chave do ledger")
+
+	before := s.countTransactions()
+	s.Require().Equal(1, before, "estado inicial deve ter exatamente 1 transação")
+
+	res, err := s.idem.Execute(s.authedCtx(), s.userID, s.firstWamid, s.firstSeq, s.firstOpName, "transaction",
+		func(innerCtx context.Context) (uuid.UUID, bool, error) {
+			ref, createErr := s.adapter.CreateTransaction(innerCtx, agentsifaces.RawTransaction{
+				Direction:     "outcome",
+				PaymentMethod: "debit",
+				AmountCents:   5000,
+				Description:   "almoço duplicado",
+				CategoryID:    s.categoryID,
+				SubcategoryID: &s.subcategoryID,
+				OccurredAt:    time.Now().Format("2006-01-02"),
+			})
+			if createErr != nil {
+				return uuid.Nil, false, createErr
+			}
+			return ref.ID, ref.Reconciled, nil
+		},
+	)
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeReplay, res.Outcome,
+		"reexecutar com o mesmo wamid+itemSeq+operation deve ser replay, sem nova escrita")
+	s.Equal(s.firstTxID, res.ResourceID, "replay deve retornar o resourceID original")
+
+	s.Equal(1, s.countTransactions(),
+		"não deve duplicar a transação após replay idempotente ponta-a-ponta")
+}

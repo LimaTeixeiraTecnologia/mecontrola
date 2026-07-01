@@ -62,3 +62,19 @@ func TestCardPurchase_SoftDelete_AlreadyDeleted(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, entities.ErrCardPurchaseAlreadyDeleted)
 }
+
+func TestCardPurchase_SetOrigin(t *testing.T) {
+	p := newTestCardPurchase(t)
+
+	assert.False(t, p.HasOrigin())
+	assert.Empty(t, p.OriginWamid())
+	assert.Zero(t, p.OriginItemSeq())
+	assert.Empty(t, p.OriginOperation())
+
+	p.SetOrigin("wamid.XYZ789", 1, "create_card_purchase")
+
+	assert.True(t, p.HasOrigin())
+	assert.Equal(t, "wamid.XYZ789", p.OriginWamid())
+	assert.Equal(t, 1, p.OriginItemSeq())
+	assert.Equal(t, "create_card_purchase", p.OriginOperation())
+}

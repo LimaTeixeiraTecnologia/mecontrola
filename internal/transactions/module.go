@@ -49,6 +49,11 @@ type TransactionsModule struct {
 	DeleteTransactionUC             *usecases.DeleteTransaction
 	GetTransactionUC                *usecases.GetTransaction
 	CreateCardPurchaseUC            *usecases.CreateCardPurchase
+	UpdateCardPurchaseUC            *usecases.UpdateCardPurchase
+	DeleteCardPurchaseUC            *usecases.DeleteCardPurchase
+	GetMonthlySummaryUC             *usecases.GetMonthlySummary
+	ListMonthlyEntriesUC            *usecases.ListMonthlyEntries
+	HasOpenInstallmentsUC           *usecases.HasOpenInstallments
 	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
 	ListRecurringTemplatesUC        *usecases.ListRecurringTemplates
 	GetCardInvoiceHandler           *handlers.GetCardInvoiceHandler
@@ -250,6 +255,11 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
+	hasOpenInstallments := usecases.NewHasOpenInstallments(
+		factory,
+		uow.NewUnitOfWork(b.db),
+		b.o11y,
+	)
 
 	materializeUC := usecases.NewMaterializeRecurringForDay(
 		db,
@@ -313,6 +323,11 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		DeleteTransactionUC:             deleteTx,
 		GetTransactionUC:                getTx,
 		CreateCardPurchaseUC:            createCP,
+		UpdateCardPurchaseUC:            updateCP,
+		DeleteCardPurchaseUC:            deleteCP,
+		GetMonthlySummaryUC:             getMS,
+		ListMonthlyEntriesUC:            listME,
+		HasOpenInstallmentsUC:           hasOpenInstallments,
 		CreateRecurringTemplateUC:       createRT,
 		ListRecurringTemplatesUC:        listRT,
 		GetCardInvoiceHandler:           getCardInvoiceHandler,
