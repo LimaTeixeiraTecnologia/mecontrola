@@ -317,7 +317,11 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	s.ensureUserExists(ctx, mgr, userID)
 
 	now := time.Now().UTC()
-	competence := budgetvo.CompetenceFromTime(now, budgetvo.SaoPauloLocation()).String()
+	loc := budgetvo.SaoPauloLocation()
+	if loc == nil {
+		loc = time.UTC
+	}
+	competence := budgetvo.CompetenceFromTime(now, loc).String()
 
 	created, err := budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
 		UserID:     userID.String(),
