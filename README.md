@@ -39,7 +39,7 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp.
 | Docker Engine + Compose v2 | Docker 24+ | Obrigatório para infra local e Swarm |
 | Go | 1.26+ | Versão declarada em `go.mod` |
 | Task | 3.51.1 | Runner de tarefas (`Taskfile.yml`) |
-| golangci-lint | v2.12.2 | Linter estático |
+| golangci-lint | v2.12.2 | Linter estático; `task setup` e `task lint:*` provisionam a versão pinada em `.tools/bin` |
 | mockery | v2.53.6 | Geração de mocks |
 | govulncheck | v1.1.4 | Auditoria de vulnerabilidades |
 | trivy | v0.62.1 | Supply chain / SBOM |
@@ -47,11 +47,13 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp.
 | gitsign | v0.12.0 | Assinatura keyless de commits |
 | ngrok | qualquer | Opcional — túnel para webhook local |
 
-Após instalar todas as ferramentas obrigatórias, execute:
+Após instalar as ferramentas-base obrigatórias, execute:
 
 ```bash
 task setup
 ```
+
+`task setup` instala o `golangci-lint` pinado do repositório em `.tools/bin`, então uma versão global incompatível no `PATH` não interfere no fluxo local.
 
 ---
 
@@ -106,9 +108,7 @@ Migrações disponíveis:
 
 | Versão | Descrição |
 |---|---|
-| `000001_initial_schema` | Schema inicial completo |
-| `000002_seed_reference_data` | Seed de dados de referência (categorias) |
-| `000003_platform_mastra` | Tabelas genéricas de plataforma (agent, memory, workflow, scorer); habilita pgvector |
+| `000001_initial_schema` | Baseline único do schema final, incluindo seeds de referência, jornada de ativação, ledger de escrita do agente, origem de transações e tabelas `platform_*` com `pgvector` |
 
 ---
 
@@ -171,6 +171,10 @@ OTEL_SERVICE_VERSION=dev
 LOG_LEVEL=debug
 LOG_FORMAT=json
 ```
+
+Em Docker Compose local, `localhost:4317` e `localhost:4318` sao validos porque o `otel-lgtm`
+publica essas portas no host. Em producao com Swarm, use `OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317`
+para workloads containerizados na rede `mecontrola_backend`.
 
 ### Docker Compose local (otel-lgtm)
 
@@ -520,7 +524,7 @@ O projeto usa [Task v3.51.1](https://taskfile.dev). Execute `task --list-all` pa
 
 | Task | Objetivo | Quando executar |
 |---|---|---|
-| `task setup` | Instala pre-commit hooks, gitsign e configura assinatura de commits | Uma vez ao clonar |
+| `task setup` | Instala pre-commit hooks, gitsign, golangci-lint pinado e configura assinatura de commits | Uma vez ao clonar |
 | `task mocks:mocks` | Regenera mocks via mockery conforme `.mockery.yml` | Após alterar interfaces |
 | `task mocks:clean` | Remove todos os mocks gerados | Antes de regenerar do zero |
 | `task mocks:verify` | Falha se os mocks estiverem desatualizados | CI |
@@ -574,7 +578,7 @@ O projeto usa [Task v3.51.1](https://taskfile.dev). Execute `task --list-all` pa
 
 | Task | Objetivo |
 |---|---|
-| `task lint:run` | golangci-lint + gates: auth-bypass, outbox-user-id, deadcode |
+| `task lint:run` | golangci-lint pinado em `.tools/bin` + gates: auth-bypass, outbox-user-id, deadcode |
 | `task lint:fix` | Aplica correções automáticas do linter |
 | `task lint:fmt` | gofmt + goimports |
 | `task lint:fmt:check` | Falha se arquivo não formatado (uso em CI) |
@@ -585,7 +589,7 @@ O projeto usa [Task v3.51.1](https://taskfile.dev). Execute `task --list-all` pa
 | `task lint:outbox-user-id` | Gate: `AggregateUserID` obrigatório em `EventInput` |
 | `task lint:outbox-user-id:test` | Regressão do gate outbox-user-id com fixtures |
 | `task lint:deadcode` | Gate RF-40: código morto detectado pelo deadcode |
-| `task card:lint` | golangci-lint escopo card (inclui regra forbidigo PCI) |
+| `task card:lint` | golangci-lint pinado em `.tools/bin` no escopo card (inclui regra forbidigo PCI) |
 | `task card:audit` | Auditoria R0–R7: init, panic, clock, interface-assertion, zero-comentários, SQL em adapter, PCI |
 
 ### Validação rápida
@@ -651,7 +655,7 @@ Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
 
 ```bash
 cp .env.example .env   # preencher CHANGE_ME_* e ajustar valores locais
-task setup             # pre-commit + gitsign
+task setup             # pre-commit + gitsign + golangci-lint pinado
 task local:up          # infra + migrate + server + worker
 ```
 
@@ -759,7 +763,7 @@ docker run --rm \
 STACK=mecontrola
 POSTGRES_CONTAINER=$(docker ps --filter name="${STACK}_postgres." --format '{{.Names}}' | head -n1)
 
-# Confirma schema_migrations consistente (3 versões, dirty = false)
+# Confirma schema_migrations consistente (1 versão, dirty = false)
 docker exec "${POSTGRES_CONTAINER}" \
   psql -U "${DB_USER:-mecontrola}" -d "${DB_NAME:-mecontrola_db}" \
   -c 'SELECT version, dirty FROM schema_migrations ORDER BY version;'
@@ -771,7 +775,7 @@ docker exec "${POSTGRES_CONTAINER}" \
 ```
 
 Resultado esperado:
-- última versão em `schema_migrations` = `3`
+- última versão em `schema_migrations` = `1`
 - `dirty = false`
 - `category_dictionary` com dados seedados
 
@@ -989,7 +993,7 @@ Saída esperada ao final:
 [vps] up server worker
 [vps] healthy após 10s
 [vps] === verificação pós-deploy ===
-[vps] schema_migrations (version dirty): 3|f
+[vps] schema_migrations (version dirty): 1|f
 [vps] mecontrola-server-1 ...:<tag> Up 5 seconds (healthy)
 [vps] mecontrola-worker-1 ...:<tag> Up 5 seconds (healthy)
 [vps] HEAD host: <tag>
@@ -1127,7 +1131,7 @@ Para atualizar: edite `skills-lock.json` com o hash correto do `SKILL.md` na fon
 1. **Abra uma issue** antes de iniciar qualquer mudança de escopo maior para alinhar contexto e abordagem.
 2. **Siga Conventional Commits** — o hook `commit-msg` instalado por `task setup` valida esse padrão localmente (`feat:`, `fix:`, `chore:`, etc.).
 3. **Execute `task check`** antes de abrir PR — roda lint, testes unitários e vulncheck localmente.
-4. **Execute `task setup`** ao clonar — instala pre-commit hooks e configura gitsign para assinatura de commits.
+4. **Execute `task setup`** ao clonar — instala pre-commit hooks, provisiona o `golangci-lint` pinado e configura gitsign para assinatura de commits.
 5. **Não flexibilize regras de arquitetura** — as regras em `AGENTS.md` são inegociáveis e verificadas automaticamente no CI.
 
 ---

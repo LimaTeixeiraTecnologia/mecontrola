@@ -3,14 +3,20 @@ version: '3'
 
 # Lint e formatacao. As tarefas falham a pipeline quando ha violacoes.
 
+vars:
+  GOLANGCI_LINT_BIN: ./.tools/bin/golangci-lint
+
 tasks:
+  ensure:
+    desc: Garante o golangci-lint pinado do repositório em .tools/bin.
+    cmds:
+      - bash taskfiles/scripts/ensure-golangci-lint.sh
+
   run:
     desc: Executa o linter estatico e os gates obrigatorios de seguranca/review.
-    preconditions:
-      - sh: command -v golangci-lint >/dev/null 2>&1
-        msg: "golangci-lint ausente. Instale: https://golangci-lint.run/welcome/install/"
     cmds:
-      - golangci-lint run ./...
+      - task: ensure
+      - "{{.GOLANGCI_LINT_BIN}} run ./..."
       - task: auth-bypass
       - task: outbox-user-id
       - task: outbox-user-id:test
@@ -19,7 +25,8 @@ tasks:
   fix:
     desc: Aplica correcoes automaticas do linter.
     cmds:
-      - golangci-lint run --fix ./...
+      - task: ensure
+      - "{{.GOLANGCI_LINT_BIN}} run --fix ./..."
 
   fmt:
     desc: Formata o codigo e organiza imports.

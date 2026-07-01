@@ -16,6 +16,7 @@ DROP FUNCTION IF EXISTS mecontrola.categories_parent_kind_change_blocks_children
 DROP FUNCTION IF EXISTS mecontrola.categories_parent_same_kind() CASCADE;
 DROP FUNCTION IF EXISTS mecontrola.immutable_unaccent(text) CASCADE;
 
+DROP EXTENSION IF EXISTS vector;
 DROP EXTENSION IF EXISTS pg_trgm;
 DROP EXTENSION IF EXISTS unaccent;
 DROP EXTENSION IF EXISTS pgcrypto;

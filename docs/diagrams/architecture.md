@@ -63,8 +63,7 @@ mecontrola/
 │
 ├── migrations/
 │   ├── embed.go                      # //go:embed *.sql
-│   ├── 000001_initial_schema.{up,down}.sql
-│   └── 000002_seed_reference_data.{up,down}.sql
+│   └── 000001_initial_schema.{up,down}.sql
 │
 ├── deployment/
 │   ├── docker/Dockerfile             # Multi-stage: builder → distroless
@@ -613,9 +612,7 @@ internal/agents/application/scorers/scorers.go
 
 ```
 migrations/
-├── 000001_initial_schema.up.sql       # Tabelas de negócio + workflow_runs/steps + índices + FK
-├── 000002_seed_reference_data.up.sql  # categories, system defaults
-└── 000003_platform_mastra.up.sql      # platform_threads/messages/resources/runs/embeddings/scorer_results (pgvector)
+└── 000001_initial_schema.up.sql  # Baseline único: tabelas de negócio, seeds, activation journey, platform_* (pgvector), workflow_* e índices/FKs finais
 ```
 
 Embedded em `migrations/embed.go` via `//go:embed *.sql`. Aplicado com advisory lock para evitar race em múltiplas instâncias.

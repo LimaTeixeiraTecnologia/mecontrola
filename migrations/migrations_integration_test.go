@@ -742,7 +742,7 @@ func (s *MigrationSuite) TestActivationJourneyMigrationUpDown() {
 	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
 	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
 
-	s.downToVersion(migrator, 4)
+	s.downToVersion(migrator, 0)
 
 	s.assertColumnMissing("mecontrola.onboarding_tokens", "email_sent_at")
 	s.assertColumnMissing("mecontrola.onboarding_tokens", "page_opened_at")

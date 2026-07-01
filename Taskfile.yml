@@ -43,9 +43,10 @@ tasks:
       - task --list-all
 
   setup:
-    desc: Instala pre-commit hooks, gitsign e ferramentas pinadas.
+    desc: Instala pre-commit hooks, gitsign e ferramentas locais pinadas.
     cmds:
       - echo "==> Instalando ferramentas pinadas..."
+      - bash taskfiles/scripts/ensure-golangci-lint.sh
       - cmd: pip3 install pre-commit --quiet || pip install pre-commit --quiet
         ignore_error: true
       - cmd: brew install gitsign 2>/dev/null || go install github.com/sigstore/gitsign@latest 2>/dev/null || true
@@ -81,11 +82,9 @@ tasks:
 
   card:lint:
     desc: Executa golangci-lint no escopo do modulo card (inclui regra forbidigo anti-PCI).
-    preconditions:
-      - sh: command -v golangci-lint >/dev/null 2>&1
-        msg: "golangci-lint ausente. Instale: https://golangci-lint.run/welcome/install/"
     cmds:
-      - golangci-lint run ./internal/card/... ./internal/platform/idempotency/...
+      - bash taskfiles/scripts/ensure-golangci-lint.sh
+      - ./.tools/bin/golangci-lint run ./internal/card/... ./internal/platform/idempotency/...
 
   card:test:
     desc: Executa testes unitarios do modulo card com detector de corrida.
