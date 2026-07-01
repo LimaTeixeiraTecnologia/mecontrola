@@ -60,6 +60,8 @@ var webhookErrorTable = []webhookErrorMapping{
 	{target: usecases.ErrFunnelTokenMissing, body: respondUnprocessable("funnel token missing", "funnel_token_missing")},
 	{target: usecases.ErrKiwifySubscriptionIDInvalid, body: respondUnprocessable("invalid kiwify subscription id", "invalid_kiwify_subscription_id")},
 	{target: usecases.ErrUnknownTrigger, body: respondUnprocessable("unknown trigger", "unknown_trigger")},
+	{target: usecases.ErrPlanNotFound, body: respondUnprocessable("plan not found", "plan_not_found")},
+	{target: usecases.ErrConcurrentActiveSub, body: respondUnprocessable("concurrent active subscription", "concurrent_active_subscription")},
 }
 
 func (h *KiwifyWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
