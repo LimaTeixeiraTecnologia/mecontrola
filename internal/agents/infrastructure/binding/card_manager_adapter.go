@@ -2,6 +2,7 @@ package binding
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -10,6 +11,7 @@ import (
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
 	cardusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
+	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 )
 
@@ -49,6 +51,16 @@ func (a *cardManagerAdapter) CreateCard(ctx context.Context, in agentsifaces.New
 		LimitCents: 0,
 	})
 	if err != nil {
+		if errors.Is(err, carddomain.ErrNicknameConflict) {
+			existing, listErr := a.ListCards(ctx, in.UserID)
+			if listErr == nil {
+				for _, c := range existing {
+					if c.Nickname == in.Nickname {
+						return agentsifaces.CardRef{ID: c.ID, Nickname: c.Nickname}, nil
+					}
+				}
+			}
+		}
 		span.RecordError(err)
 		return agentsifaces.CardRef{}, fmt.Errorf("agents/binding/card_manager: criar cartão: %w", err)
 	}
