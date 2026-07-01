@@ -12,6 +12,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory"
 	memorymocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
@@ -175,6 +176,36 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 				}(),
 				wm: func() *memorymocks.WorkingMemory {
 					s.wmMock.EXPECT().Get(mock.Anything, "user-4").Return("", nil).Once()
+					return s.wmMock
+				}(),
+			},
+			expect: func(result OnboardingResult, err error) {
+				s.NoError(err)
+				s.True(result.Handled)
+				s.False(result.Done)
+				s.Equal("bem-vindo!", result.Message)
+			},
+		},
+		{
+			name: "sem run ativo e WM inexistente deve iniciar workflow",
+			args: args{userID: "user-9", message: "quero comecar"},
+			dependencies: dependencies{
+				engine: func() *mockOnboardingEngine {
+					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-9", mock.Anything).
+						Return(workflow.RunResult[workflows.OnboardingState]{
+							Status:  workflow.RunStatusSuspended,
+							Suspend: &workflow.Suspension{Prompt: "bem-vindo!"},
+						}, nil).Once()
+					return s.engineMock
+				}(),
+				store: func() *mockOnboardingStore {
+					s.storeMock.On("Load", mock.Anything, mock.Anything, "user-9").
+						Return(workflow.Snapshot{}, false, nil).Once()
+					return s.storeMock
+				}(),
+				wm: func() *memorymocks.WorkingMemory {
+					s.wmMock.EXPECT().Get(mock.Anything, "user-9").
+						Return("", memory.ErrWorkingMemoryNotFound).Once()
 					return s.wmMock
 				}(),
 			},

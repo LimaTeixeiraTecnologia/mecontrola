@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -84,7 +85,7 @@ func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, message
 	}
 
 	wm, err := uc.workingMem.Get(ctx, userID)
-	if err != nil {
+	if err != nil && !errors.Is(err, memory.ErrWorkingMemoryNotFound) {
 		span.RecordError(err)
 		return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: get_wm: %w", err)
 	}
