@@ -271,6 +271,126 @@ func (s *AgentTestSuite) TestWithMaxToolRounds_CustomRoundsRespected() {
 	s.Empty(result.Content)
 }
 
+func (s *AgentTestSuite) TestExecute_DefaultMaxTokensPrecedence() {
+	scenarios := []struct {
+		name              string
+		agentDefault      int
+		requestMaxTokens  int
+		expectedMaxTokens int
+	}{
+		{
+			name:              "deve usar max tokens da request quando informado",
+			agentDefault:      768,
+			requestMaxTokens:  1024,
+			expectedMaxTokens: 1024,
+		},
+		{
+			name:              "deve usar default do agente quando request nao informar",
+			agentDefault:      768,
+			requestMaxTokens:  0,
+			expectedMaxTokens: 768,
+		},
+		{
+			name:              "deve preservar zero quando request e default nao informarem",
+			agentDefault:      0,
+			requestMaxTokens:  0,
+			expectedMaxTokens: 0,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := llmmocks.NewProvider(s.T())
+			provider.EXPECT().
+				Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+				Run(func(_ context.Context, req llm.Request) {
+					s.Equal(scenario.expectedMaxTokens, req.MaxTokens)
+				}).
+				Return(llm.Response{Content: "ok"}, nil).
+				Once()
+
+			a := NewAgent(
+				"agent-1",
+				"instr",
+				provider,
+				s.obs,
+				WithDefaultMaxTokens(scenario.agentDefault),
+			)
+
+			result, err := a.Execute(s.ctx, Request{
+				AgentID:     "agent-1",
+				Messages:    []llm.Message{{Role: "user", Content: "hi"}},
+				MaxTokens:   scenario.requestMaxTokens,
+				Temperature: 0,
+			})
+
+			s.NoError(err)
+			s.Equal("ok", result.Content)
+		})
+	}
+}
+
+func (s *AgentTestSuite) TestStream_DefaultMaxTokensPrecedence() {
+	scenarios := []struct {
+		name              string
+		agentDefault      int
+		requestMaxTokens  int
+		expectedMaxTokens int
+	}{
+		{
+			name:              "deve usar max tokens da request no stream quando informado",
+			agentDefault:      768,
+			requestMaxTokens:  1024,
+			expectedMaxTokens: 1024,
+		},
+		{
+			name:              "deve usar default do agente no stream quando request nao informar",
+			agentDefault:      768,
+			requestMaxTokens:  0,
+			expectedMaxTokens: 768,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := llmmocks.NewProvider(s.T())
+			ts := llmmocks.NewTokenStream(s.T())
+			ch := make(chan string, 1)
+			ch <- "ok"
+			close(ch)
+			ts.EXPECT().Deltas().Return((<-chan string)(ch)).Once()
+			ts.EXPECT().Err().Return(nil).Once()
+
+			provider.EXPECT().
+				Stream(mock.Anything, mock.AnythingOfType("llm.Request")).
+				RunAndReturn(func(_ context.Context, req llm.Request) (llm.TokenStream, error) {
+					s.Equal(scenario.expectedMaxTokens, req.MaxTokens)
+					return ts, nil
+				}).
+				Once()
+
+			a := NewAgent(
+				"agent-1",
+				"instr",
+				provider,
+				s.obs,
+				WithDefaultMaxTokens(scenario.agentDefault),
+			)
+
+			rs, err := a.Stream(s.ctx, Request{
+				AgentID:   "agent-1",
+				Messages:  []llm.Message{{Role: "user", Content: "hi"}},
+				MaxTokens: scenario.requestMaxTokens,
+			})
+			s.NoError(err)
+
+			result, resErr := rs.Result(s.ctx)
+			s.NoError(resErr)
+			s.Equal("ok", result.Content)
+		})
+	}
+}
+
 func (s *AgentTestSuite) TestExecute_StructuredOutput() {
 	type args struct {
 		in Request

@@ -362,6 +362,46 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			},
 		},
 		{
+			name: "deve normalizar resposta do agente para whatsapp antes de enviar",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-format-321",
+						Peer:      "+5511222222222",
+						Text:      "ative meu orçamento",
+						MessageID: "wamid-010",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{
+							Content: "### Resumo de Onboarding\n\n- **Custo Fixo**: R$2.400,00\n\nVocê confirma que deseja ativar este orçamento?",
+							Status:  agent.RunStatusSucceeded,
+						}, nil).Once()
+					return m
+				}(),
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511222222222", "### 📊 Resumo de Onboarding\n\n- *Custo Fixo*: R$2.400,00\n\n✅ Você confirma que deseja ativar este orçamento?").
+						Return(nil).Once()
+					return m
+				}(),
+				onboardingMock: func() *mockOnboardingResolver {
+					m := &mockOnboardingResolver{}
+					m.On("Execute", mock.Anything, "user-format-321", "ative meu orçamento").
+						Return(usecases.OnboardingResult{Handled: false}, nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
 			name: "deve retornar erro quando onboarding resolver falha",
 			args: args{
 				event: &mockEvent{

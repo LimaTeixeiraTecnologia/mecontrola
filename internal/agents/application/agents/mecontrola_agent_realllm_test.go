@@ -5,6 +5,7 @@ package agents
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/formatting"
 )
 
 func buildRealLLMProvider(t *testing.T) llm.Provider {
@@ -241,4 +243,35 @@ func TestRealLLM_Scorer_CategorizationLLMJudged(t *testing.T) {
 	require.LessOrEqual(t, result.Score, 1.0)
 	require.NotEmpty(t, result.Reason)
 	t.Logf("score=%.2f reason=%s", result.Score, result.Reason)
+}
+
+func TestRealLLM_OnboardingSummary_UsesWhatsAppFormattingAndEmojis(t *testing.T) {
+	provider := buildRealLLMProvider(t)
+	obs := fake.NewProvider()
+
+	a := BuildMeControlaAgent(provider, nil, nil, obs)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	result, err := a.Execute(ctx, agent.Request{
+		AgentID: MecontrolaAgentID,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Explique de forma didática as 5 categorias do orçamento 30/20/20/10/20 do MeControla, usando negrito compatível com WhatsApp para os nomes das categorias. Depois gere um resumo de onboarding com renda mensal de R$8.000,00, sem objetivo financeiro definido, cartão de crédito não informado, distribuição: Conhecimento 20%, Custo Fixo 30%, Liberdade Financeira 20%, Metas 10%, Prazeres 20%. Termine com uma única pergunta de confirmação para ativar o orçamento."},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Content)
+
+	normalized := formatting.NormalizeOutboundText(result.Content)
+
+	require.Contains(t, normalized, "*Custo Fixo")
+	require.NotContains(t, normalized, "**")
+	require.Contains(t, normalized, "📊")
+	require.True(t, strings.Contains(normalized, "✅") || strings.Contains(normalized, "🎯"))
+	require.Contains(t, normalized, "Liberdade Financeira")
+	require.Contains(t, normalized, "Você confirma")
+	t.Logf("resposta onboarding raw: %s", result.Content)
+	t.Logf("resposta onboarding normalized: %s", normalized)
 }

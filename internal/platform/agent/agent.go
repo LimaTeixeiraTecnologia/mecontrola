@@ -37,20 +37,27 @@ func WithMaxToolRounds(n int) AgentOption {
 	}
 }
 
+func WithDefaultMaxTokens(n int) AgentOption {
+	return func(a *agentImpl) {
+		a.defaultMaxTokens = n
+	}
+}
+
 type agentMetrics struct {
 	streamTotal     observability.Counter
 	toolInvocations observability.Counter
 }
 
 type agentImpl struct {
-	id            string
-	instructions  string
-	provider      llm.Provider
-	tools         []tool.ToolHandle
-	hooks         Hooks
-	o11y          observability.Observability
-	metrics       agentMetrics
-	maxToolRounds int
+	id               string
+	instructions     string
+	provider         llm.Provider
+	tools            []tool.ToolHandle
+	hooks            Hooks
+	o11y             observability.Observability
+	metrics          agentMetrics
+	defaultMaxTokens int
+	maxToolRounds    int
 }
 
 func NewAgent(id, instructions string, provider llm.Provider, o11y observability.Observability, opts ...AgentOption) Agent {
@@ -91,7 +98,7 @@ func (a *agentImpl) Execute(ctx context.Context, in Request) (Result, error) {
 	toolSpecs, toolMap := a.prepareTools()
 	llmReq := llm.Request{
 		Messages:    in.Messages,
-		MaxTokens:   in.MaxTokens,
+		MaxTokens:   a.resolveMaxTokens(in.MaxTokens),
 		Temperature: in.Temperature,
 		Tools:       toolSpecs,
 	}
@@ -206,7 +213,7 @@ func (a *agentImpl) Stream(ctx context.Context, in Request) (ResultStream, error
 
 	llmReq := llm.Request{
 		Messages:    in.Messages,
-		MaxTokens:   in.MaxTokens,
+		MaxTokens:   a.resolveMaxTokens(in.MaxTokens),
 		Temperature: in.Temperature,
 		FreeText:    in.Schema == nil,
 	}
@@ -227,4 +234,11 @@ func (a *agentImpl) Stream(ctx context.Context, in Request) (ResultStream, error
 	)
 
 	return newResultStream(ctx, ts, in.Decoder, a.hooks, a.id), nil
+}
+
+func (a *agentImpl) resolveMaxTokens(requested int) int {
+	if requested > 0 {
+		return requested
+	}
+	return a.defaultMaxTokens
 }

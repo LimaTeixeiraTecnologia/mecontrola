@@ -12,6 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/formatting"
 )
 
 const mecontrolaAgentID = "mecontrola-agent"
@@ -170,6 +171,8 @@ func (c *WhatsAppInboundConsumer) sendReply(ctx context.Context, peer, content s
 		)
 		return nil
 	}
+
+	content = formatting.NormalizeOutboundText(content)
 
 	if err := c.gateway.SendTextMessage(ctx, peer, content); err != nil {
 		c.inboundTotal.Add(ctx, 1,
