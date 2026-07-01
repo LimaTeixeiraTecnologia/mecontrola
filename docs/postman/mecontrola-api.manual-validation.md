@@ -20,9 +20,20 @@ Preencher no environment ativo antes de executar:
 - `kiwify_webhook_secret`
 - `meta_app_secret`
 - `meta_verify_token`
-- `telegram_secret_token` se quiser testar Telegram
 - `gateway_secret` se quiser seguir depois para endpoints autenticados
 - `whatsapp_phone_number_id`
+
+Mapeamento com o `.env` local:
+
+| Variavel no Postman | Origem no `.env` |
+| --- | --- |
+| `kiwify_webhook_secret` | `KIWIFY_WEBHOOK_SECRET` |
+| `meta_app_secret` | `META_APP_SECRET` |
+| `meta_verify_token` | `META_VERIFY_TOKEN` |
+| `gateway_secret` | `IDENTITY_GATEWAY_SHARED_SECRET_CURRENT` |
+| `whatsapp_phone_number_id` | `META_PHONE_NUMBER_ID` |
+
+Use apenas o `.env` local como fonte de preenchimento e nao versione valores reais de secrets nos environments do Postman.
 
 ## Variaveis encadeadas automaticamente
 
@@ -33,7 +44,6 @@ Essas variaveis nao precisam de preenchimento manual no fluxo principal:
 - `funnel_token`
 - `expected_ready_to_activate`
 - `wa_me_url`
-- `telegram_deep_link`
 - `kiwify_signature`
 - `meta_signature`
 
@@ -51,7 +61,7 @@ Essas variaveis nao precisam de preenchimento manual no fluxo principal:
 ## Ordem de execucao
 
 1. Importar a collection e escolher um environment local.
-2. Executar `GET /health` para confirmar a API no ar.
+2. Executar `GET /healthz` para confirmar a API no ar.
 3. Executar `POST /api/v1/onboarding/checkout`.
 4. Confirmar no Postman que `onboarding_checkout_url`, `onboarding_token` e `funnel_token` foram preenchidos.
 5. Executar `GET /api/v1/onboarding/tokens/:token/state`.
@@ -87,3 +97,4 @@ Essas variaveis nao precisam de preenchimento manual no fluxo principal:
 - O token de onboarding agora e extraido automaticamente do `checkout_url?sck=...`.
 - O webhook Kiwify principal usa o mesmo token do checkout via `{{funnel_token}}`; nao ha mais necessidade de editar `sck` manualmente.
 - O request de WhatsApp usa `ATIVAR {{onboarding_token}}`; se o token nao existir, a collection falha no request anterior.
+- O backend atual nao expoe webhook Telegram no workspace; a colecao completa foi reduzida ao fluxo real de WhatsApp.

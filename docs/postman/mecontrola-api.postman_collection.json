@@ -33,7 +33,7 @@
           "    upsertHeader('X-Kiwify-Signature', sig);",
           "  }",
           "}",
-          "if (rawUrl.includes('/api/v1/whatsapp/inbound')) {",
+          "if (rawUrl.includes('/api/v1/whatsapp/inbound') || rawUrl.includes('/api/v1/whatsapp/status')) {",
           "  const secret = pm.environment.get('meta_app_secret');",
           "  if (secret) {",
           "    const sig = CryptoJS.HmacSHA256(rawBody, secret).toString(CryptoJS.enc.Hex);",
@@ -41,10 +41,6 @@
           "    pm.environment.set('meta_signature', headerValue);",
           "    upsertHeader('X-Hub-Signature-256', headerValue);",
           "  }",
-          "}",
-          "if (rawUrl.includes(resolve('{{telegram_webhook_path}}'))) {",
-          "  const token = pm.environment.get('telegram_secret_token');",
-          "  if (token) upsertHeader('X-Telegram-Bot-Api-Secret-Token', token);",
           "}"
         ]
       }
@@ -147,11 +143,6 @@
       "type": "string"
     },
     {
-      "key": "telegram_deep_link",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "kiwify_signature",
       "value": "",
       "type": "string"
@@ -159,11 +150,6 @@
     {
       "key": "meta_signature",
       "value": "",
-      "type": "string"
-    },
-    {
-      "key": "telegram_webhook_path",
-      "value": "/api/v1/channels/telegram/webhook",
       "type": "string"
     },
     {
@@ -182,37 +168,12 @@
       "name": "01 — Health & Readiness",
       "item": [
         {
-          "name": "GET /health",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/health",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "health"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "GET /readiness",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+
+            ],
             "url": {
               "raw": "{{base_url}}/readiness",
               "host": [
@@ -239,7 +200,9 @@
           "name": "GET /healthz",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+
+            ],
             "url": {
               "raw": "{{base_url}}/healthz",
               "host": [
@@ -263,10 +226,41 @@
           ]
         },
         {
+          "name": "GET /readyz",
+          "request": {
+            "method": "GET",
+            "header": [
+
+            ],
+            "url": {
+              "raw": "{{base_url}}/readyz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /livez",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+
+            ],
             "url": {
               "raw": "{{base_url}}/livez",
               "host": [
@@ -344,43 +338,7 @@
                   "  pm.environment.set(\"funnel_token\", token);",
                   "}",
                   "pm.environment.set(\"expected_ready_to_activate\", \"false\");",
-                  "pm.environment.unset(\"wa_me_url\");",
-                  "pm.environment.unset(\"telegram_deep_link\");"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "OPTIONS /api/v1/onboarding/checkout",
-          "request": {
-            "method": "OPTIONS",
-            "header": [
-              {
-                "key": "Origin",
-                "value": "http://localhost:4321"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/onboarding/checkout",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "onboarding",
-                "checkout"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                  "pm.environment.unset(\"wa_me_url\");"
                 ]
               }
             }
@@ -390,7 +348,9 @@
           "name": "GET /api/v1/onboarding/tokens/:token/state",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+
+            ],
             "url": {
               "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
               "host": [
@@ -421,45 +381,7 @@
                   "  const expected = expectedRaw === \"true\";",
                   "  pm.test(`ready_to_activate=${expected}`, () => pm.expect(body.ready_to_activate).to.equal(expected));",
                   "}",
-                  "if (body.wa_me_url) pm.environment.set(\"wa_me_url\", body.wa_me_url);",
-                  "if (body.telegram_deep_link) pm.environment.set(\"telegram_deep_link\", body.telegram_deep_link);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "OPTIONS /api/v1/onboarding/tokens/{{onboarding_token}}/state",
-          "request": {
-            "method": "OPTIONS",
-            "header": [
-              {
-                "key": "Origin",
-                "value": "http://localhost:4321"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token}}/state",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "onboarding",
-                "tokens",
-                "{{onboarding_token}}",
-                "state"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                  "if (body.wa_me_url) pm.environment.set(\"wa_me_url\", body.wa_me_url);"
                 ]
               }
             }
@@ -594,6 +516,50 @@
               ]
             }
           }
+        },
+        {
+          "name": "POST /api/v1/whatsapp/status — delivered",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entry\": [{\n    \"id\": \"entry-status-1\",\n    \"changes\": [{\n      \"field\": \"messages\",\n      \"value\": {\n        \"statuses\": [{\n          \"id\": \"wamid-status-001\",\n          \"status\": \"delivered\",\n          \"timestamp\": \"1718400001\",\n          \"recipient_id\": \"{{user_whatsapp_from}}\"\n        }]\n      }\n    }]\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "status"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "POST /api/v1/whatsapp/inbound — assinatura inválida (→ 401)",
