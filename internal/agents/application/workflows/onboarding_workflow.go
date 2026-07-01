@@ -278,6 +278,18 @@ func BuildWelcomeStep(a agent.Agent) func(context.Context, OnboardingState) (wor
 	}
 }
 
+func repromptInput(ctx context.Context, a agent.Agent, state OnboardingState, instruction, fallback string) workflow.StepOutput[OnboardingState] {
+	msg, err := agentStream(ctx, a, instruction)
+	if err != nil || strings.TrimSpace(msg) == "" {
+		msg = fallback
+	}
+	return workflow.StepOutput[OnboardingState]{
+		State:   state,
+		Status:  workflow.StepStatusSuspended,
+		Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
+	}
+}
+
 func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
@@ -313,8 +325,10 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 		}
 		goal, err := DecideGoal(extract.Goal)
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.goal: decide: %w", err)
+			return repromptInput(ctx, a, state,
+				"O usuario nao informou um objetivo financeiro claro. Peca gentilmente que ele diga qual e o principal objetivo financeiro dele para este mes, com um exemplo curto.",
+				"Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva.",
+			), nil
 		}
 		state.Goal = goal
 		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
@@ -356,8 +370,10 @@ func BuildIncomeStep(a agent.Agent) func(context.Context, OnboardingState) (work
 		}
 		cents, err := DecideIncomeCents(extract.AmountBRL)
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.income: decide: %w", err)
+			return repromptInput(ctx, a, state,
+				"O valor de renda informado nao foi valido. Peca novamente a renda mensal liquida em reais, com um exemplo curto.",
+				"Não consegui identificar o valor. Qual é a sua renda mensal líquida em reais? Por exemplo: R$ 3.500,00.",
+			), nil
 		}
 		state.IncomeCents = cents
 		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
@@ -413,8 +429,10 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 		}
 		if extract.WantsCard {
 			if err := DecideCardEntry(extract.Nickname, extract.DueDay); err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.cards: decide: %w", err)
+				return repromptInput(ctx, a, state,
+					"O usuario quer adicionar um cartao mas nao informou o apelido e/ou o dia de vencimento validos. Peca o apelido do cartao e o dia de vencimento da fatura (numero entre 1 e 31), com um exemplo curto.",
+					"Para adicionar o cartão, me diga o apelido dele e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\".",
+				), nil
 			}
 			userUUID, err := uuid.Parse(state.UserID)
 			if err != nil {

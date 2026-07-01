@@ -365,7 +365,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			},
 		},
 		{
-			name: "resume com objetivo vazio deve falhar",
+			name: "resume com objetivo vazio deve re-perguntar",
 			args: args{state: OnboardingState{UserID: "u1", ResumeText: "..."}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
@@ -373,12 +373,18 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					stream := &fakeResultStream{deltas: []string{"Qual é seu objetivo?"}}
+					s.agentMock.EXPECT().ID().Return("onboarding-agent").Once()
+					s.agentMock.EXPECT().
+						Stream(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(stream, nil).Once()
 					return s.agentMock
 				}(),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
-				s.Error(err)
-				s.Equal(workflow.StepStatusFailed, out.Status)
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.NotNil(out.Suspend)
 			},
 		},
 	}
