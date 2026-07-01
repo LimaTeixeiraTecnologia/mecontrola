@@ -17,6 +17,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	budgetinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
+	budgetvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -315,9 +316,12 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	userID := uuid.New()
 	s.ensureUserExists(ctx, mgr, userID)
 
+	now := time.Now().UTC()
+	competence := budgetvo.CompetenceFromTime(now, budgetvo.SaoPauloLocation()).String()
+
 	created, err := budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
 		UserID:     userID.String(),
-		Competence: expectedCompetence,
+		Competence: competence,
 		TotalCents: 100000,
 		Allocations: []budgetinput.AllocationInput{
 			{RootSlug: "expense.prazeres", BasisPoints: 10000},
@@ -327,7 +331,7 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 
 	_, err = budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
 		UserID:     userID.String(),
-		Competence: expectedCompetence,
+		Competence: competence,
 	})
 	s.Require().NoError(err)
 
@@ -336,9 +340,9 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 		Source:                "transactions",
 		ExternalTransactionID: uuid.New().String(),
 		SubcategoryID:         deliverySubcategoryID,
-		Competence:            expectedCompetence,
+		Competence:            competence,
 		AmountCents:           int64(85000),
-		OccurredAt:            time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC),
+		OccurredAt:            now,
 	})
 	s.Require().NoError(err)
 	s.Require().NoError(budgetsModule.ThresholdAlertsJob.Run(ctx))

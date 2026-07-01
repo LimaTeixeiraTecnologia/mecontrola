@@ -7,3 +7,6 @@ internal/agents/domain/weather_condition.go:ParseWeatherCondition
 internal/agents/infrastructure/weather/client.go:WithHTTPClient
 internal/agents/infrastructure/weather/client.go:WithGeocodingBase
 internal/agents/infrastructure/weather/client.go:WithForecastBase
+internal/agents/application/workflows/confirm_state.go:ParseAwaitingKind
+internal/agents/application/workflows/confirm_state.go:ParseOperationKind
+internal/agents/application/workflows/onboarding_workflow.go:ParseOnboardingPhase

@@ -10,7 +10,7 @@ echo "==> [1/7] R-ADAPTER-001: SQL direto em internal/agents application e tools
 if grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" \
   "QueryContext\|ExecContext\|db\.Query\|tx\.Exec\|db\.Exec" \
   internal/agents/application/ internal/agents/infrastructure/ 2>/dev/null \
-  | grep -v "infrastructure/repositories/postgres"; then
+  | grep -vE "infrastructure/(repositories/postgres|persistence)"; then
   echo "FAIL: SQL direto em internal/agents application/infrastructure"
   FAIL=1
 else

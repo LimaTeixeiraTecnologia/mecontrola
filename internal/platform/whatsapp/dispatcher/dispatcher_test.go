@@ -297,23 +297,21 @@ func (s *DispatcherSuite) TestRoute_EstablishPrincipal_DBError_PropagatesErrorFo
 }
 
 func (s *DispatcherSuite) TestTimestampValidation() {
-	now := time.Now().UTC()
-
 	scenarios := []struct {
 		name            string
-		timestamp       string
+		timestamp       func() string
 		setupPublisher  func(p *outboxmocks.Publisher)
 		expectedOutcome dispatcher.RouteOutcome
 	}{
 		{
 			name:            "timestamp within window returns no_route for unknown user",
-			timestamp:       fmt.Sprintf("%d", now.Unix()),
+			timestamp:       func() string { return fmt.Sprintf("%d", time.Now().UTC().Unix()) },
 			setupPublisher:  func(p *outboxmocks.Publisher) {},
 			expectedOutcome: dispatcher.OutcomeNoRoute,
 		},
 		{
 			name:      "timestamp +6min in future returns stale_webhook",
-			timestamp: fmt.Sprintf("%d", now.Add(6*time.Minute).Unix()),
+			timestamp: func() string { return fmt.Sprintf("%d", time.Now().UTC().Add(6*time.Minute).Unix()) },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -321,7 +319,7 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 		},
 		{
 			name:      "timestamp -6min in past returns stale_webhook",
-			timestamp: fmt.Sprintf("%d", now.Add(-6*time.Minute).Unix()),
+			timestamp: func() string { return fmt.Sprintf("%d", time.Now().UTC().Add(-6*time.Minute).Unix()) },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -329,7 +327,7 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 		},
 		{
 			name:      "absent timestamp returns stale_webhook with invalid_webhook_timestamp",
-			timestamp: "",
+			timestamp: func() string { return "" },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -337,7 +335,7 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 		},
 		{
 			name:      "invalid timestamp string returns stale_webhook with invalid_webhook_timestamp",
-			timestamp: "not-a-number",
+			timestamp: func() string { return "not-a-number" },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -345,7 +343,7 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 		},
 		{
 			name:      "timestamp zero treated as invalid_webhook_timestamp",
-			timestamp: "0",
+			timestamp: func() string { return "0" },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -353,21 +351,23 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 		},
 		{
 			name:      "timestamp negative treated as invalid_webhook_timestamp",
-			timestamp: "-1",
+			timestamp: func() string { return "-1" },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
 			expectedOutcome: dispatcher.OutcomeStaleTS,
 		},
 		{
-			name:            "timestamp 4min59s in past stays within window returns no_route",
-			timestamp:       fmt.Sprintf("%d", now.Add(-(4*time.Minute + 59*time.Second)).Unix()),
+			name: "timestamp 4min59s in past stays within window returns no_route",
+			timestamp: func() string {
+				return fmt.Sprintf("%d", time.Now().UTC().Add(-(4*time.Minute + 59*time.Second)).Unix())
+			},
 			setupPublisher:  func(p *outboxmocks.Publisher) {},
 			expectedOutcome: dispatcher.OutcomeNoRoute,
 		},
 		{
 			name:      "timestamp 5min1s in past returns stale_webhook",
-			timestamp: fmt.Sprintf("%d", now.Add(-(5*time.Minute + 1*time.Second)).Unix()),
+			timestamp: func() string { return fmt.Sprintf("%d", time.Now().UTC().Add(-(5*time.Minute + 1*time.Second)).Unix()) },
 			setupPublisher: func(p *outboxmocks.Publisher) {
 				p.On("Publish", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -377,7 +377,7 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 
 	for _, sc := range scenarios {
 		s.Run(sc.name, func() {
-			raw := payloadWithTimestamp("oi", sc.timestamp)
+			raw := payloadWithTimestamp("oi", sc.timestamp())
 
 			dedupMock := &mockDedup{}
 			if sc.expectedOutcome != dispatcher.OutcomeStaleTS {
