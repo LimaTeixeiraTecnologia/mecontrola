@@ -22,10 +22,9 @@ type updateCardUseCase interface {
 }
 
 type updateCardRequest struct {
-	Name       *string `json:"name,omitempty"`
-	Nickname   *string `json:"nickname,omitempty"`
-	ClosingDay *int    `json:"closing_day,omitempty"`
-	DueDay     *int    `json:"due_day,omitempty"`
+	Nickname *string `json:"nickname,omitempty"`
+	Bank     *string `json:"bank,omitempty"`
+	DueDay   *int    `json:"due_day,omitempty"`
 }
 
 type UpdateCardHandler struct {
@@ -64,7 +63,7 @@ func (h *UpdateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == nil && req.Nickname == nil && req.ClosingDay == nil && req.DueDay == nil {
+	if req.Nickname == nil && req.Bank == nil && req.DueDay == nil {
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, "informe ao menos um campo para atualizar",
 			map[string]string{"code": "empty_payload"})
@@ -72,12 +71,11 @@ func (h *UpdateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := h.usecase.Execute(ctx, input.UpdateCard{
-		ID:         cardID,
-		UserID:     principal.UserID,
-		Name:       req.Name,
-		Nickname:   req.Nickname,
-		ClosingDay: req.ClosingDay,
-		DueDay:     req.DueDay,
+		ID:       cardID,
+		UserID:   principal.UserID,
+		Nickname: req.Nickname,
+		Bank:     req.Bank,
+		DueDay:   req.DueDay,
 	})
 	if err != nil {
 		span.RecordError(err)

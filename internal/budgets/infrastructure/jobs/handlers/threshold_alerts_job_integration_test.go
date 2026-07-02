@@ -83,7 +83,6 @@ func TestThresholdAlertsJobIntegration_DispatchesAlertWhenAboveThreshold(t *test
 	thresholdConfig := services.ThresholdConfig{
 		Category: mustThresholdRatio(t, 0.80),
 		Goal:     mustThresholdRatio(t, 0.50),
-		Card:     mustThresholdRatio(t, 0.85),
 	}
 
 	uc := usecases.NewEvaluateThresholdAlerts(factory, publisher, unitOfWork, thresholdConfig, time.UTC, 500, o11y)
@@ -123,7 +122,6 @@ func TestThresholdAlertsJobIntegration_DoubleRunDoesNotDuplicateAlerts(t *testin
 	thresholdConfig := services.ThresholdConfig{
 		Category: mustThresholdRatio(t, 0.80),
 		Goal:     mustThresholdRatio(t, 0.50),
-		Card:     mustThresholdRatio(t, 0.85),
 	}
 
 	uc := usecases.NewEvaluateThresholdAlerts(factory, publisher, unitOfWork, thresholdConfig, time.UTC, 500, o11y)

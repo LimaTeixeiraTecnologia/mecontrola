@@ -7,12 +7,10 @@ import (
 )
 
 type CreateCard struct {
-	UserID     uuid.UUID
-	Name       string
-	Nickname   string
-	ClosingDay int
-	DueDay     *int
-	LimitCents int64
+	UserID   uuid.UUID
+	Nickname string
+	Bank     string
+	DueDay   int
 }
 
 func (i *CreateCard) Validate() error {
@@ -20,17 +18,11 @@ func (i *CreateCard) Validate() error {
 	if i.UserID == uuid.Nil {
 		errs = append(errs, ErrCardUserIDRequired)
 	}
-	if i.Name == "" {
-		errs = append(errs, ErrCardNameRequired)
+	if i.Bank == "" {
+		errs = append(errs, ErrCardBankRequired)
 	}
-	if i.ClosingDay < 1 || i.ClosingDay > 31 {
-		errs = append(errs, ErrCardClosingDayInvalid)
-	}
-	if i.DueDay != nil && (*i.DueDay < 1 || *i.DueDay > 31) {
+	if i.DueDay < 1 || i.DueDay > 31 {
 		errs = append(errs, ErrCardDueDayInvalid)
-	}
-	if i.LimitCents < 0 {
-		errs = append(errs, ErrCardLimitCentsInvalid)
 	}
 	return errors.Join(errs...)
 }

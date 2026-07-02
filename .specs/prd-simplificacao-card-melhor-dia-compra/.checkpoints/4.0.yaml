@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-simplificacao-card-melhor-dia-compra/4.0_execution_report.md
+summary: "Application card: DTOs (CreateCard/UpdateCard/BestPurchaseDay), use cases, mapper e repo SQL reescritos; UpdateCardLimit removido; zero comentários; todos os testes passam"
+timestamp: "2026-07-02T00:00:00Z"

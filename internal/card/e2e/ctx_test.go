@@ -28,11 +28,12 @@ type cardE2ECtx struct {
 	lastBody              map[string]any
 	lastBodyText          string
 	cardID                string
-	cardName              string
+	cardNickname          string
 	lastCursor            string
 	listItems             []map[string]any
 	capturedIdemKey       string
 	capturedIdemPayload   map[string]any
+	capturedNickname      string
 	firstResponseBody     string
 	channelGateway        *cardE2EChannelGateway
 	eventHandlers         map[string]platformevents.Handler
@@ -118,13 +119,13 @@ func (e *cardE2ECtx) makeRequestWithKey(method, path string, payload any, key st
 	return nil
 }
 
-func (e *cardE2ECtx) createCardViaHTTP(name string, closingDay, dueDay int, limitCents int64) error {
+func (e *cardE2ECtx) createCardViaHTTP(bank string, dueDay int) error {
+	nick := e.uniqueNickname("card")
+	e.capturedNickname = nick
 	payload := map[string]any{
-		"name":        name,
-		"nickname":    e.uniqueNickname(name),
-		"closing_day": closingDay,
-		"due_day":     dueDay,
-		"limit_cents": limitCents,
+		"nickname": nick,
+		"bank":     bank,
+		"due_day":  dueDay,
 	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/cards/", payload); err != nil {
 		return err
@@ -140,12 +141,8 @@ func (e *cardE2ECtx) createCardViaHTTP(name string, closingDay, dueDay int, limi
 		return fmt.Errorf("resposta de criação sem id válido: %s", e.lastBodyText)
 	}
 	e.cardID = id
-	e.cardName = name
+	e.cardNickname = nick
 	return nil
-}
-
-func (e *cardE2ECtx) uniqueCardName(prefix string) string {
-	return fmt.Sprintf("%s %d", prefix, time.Now().UnixNano())
 }
 
 func (e *cardE2ECtx) uniqueNickname(prefix string) string {
@@ -156,8 +153,8 @@ func (e *cardE2ECtx) uniqueNickname(prefix string) string {
 	return fmt.Sprintf("%s-%s", base, uuid.NewString()[:8])
 }
 
-func (e *cardE2ECtx) cardExistsWithDetails(nome string, fechamento, vencimento int, limite int64) error {
-	return e.createCardViaHTTP(nome, fechamento, vencimento, limite)
+func (e *cardE2ECtx) cardExistsWithDetails(banco string, dueDay int) error {
+	return e.createCardViaHTTP(banco, dueDay)
 }
 
 func (e *cardE2ECtx) runInvoiceDueAlertsJob() error {
@@ -170,7 +167,7 @@ func (e *cardE2ECtx) runInvoiceDueAlertsJob() error {
 }
 
 func parseCardResponseBody(resp *http.Response) (map[string]any, string) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]any
 	_ = json.Unmarshal(data, &result)

@@ -126,6 +126,7 @@ type Alert struct {
 type NewCard struct {
 	UserID   uuid.UUID
 	Nickname string
+	Bank     string
 	DueDay   int
 }
 
@@ -137,9 +138,9 @@ type CardRef struct {
 type Card struct {
 	ID         string
 	Nickname   string
+	Bank       string
 	ClosingDay int
 	DueDay     int
-	LimitCents int64
 }
 
 type CategoryCandidate struct {

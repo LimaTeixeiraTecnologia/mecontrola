@@ -143,8 +143,6 @@ func renderThresholdAlertText(in NotifyThresholdAlertInput) (string, error) {
 		return fmt.Sprintf("Atencao: voce ja utilizou %.1f%% de %s. Ainda restam %s.", percent, category, remaining), nil
 	case services.ThresholdAlertGoal:
 		return fmt.Sprintf("Boa! Voce ja acumulou %.1f%% da meta. Continue assim!", percent), nil
-	case services.ThresholdAlertCardLimit:
-		return fmt.Sprintf("Atencao: voce ja utilizou %.1f%% do limite do cartao. Restam apenas %s.", percent, remaining), nil
 	default:
 		return "", fmt.Errorf("budgets: kind desconhecido: %d", in.Kind)
 	}

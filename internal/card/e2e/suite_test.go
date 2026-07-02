@@ -177,4 +177,5 @@ func registerSteps(sc *godog.ScenarioContext, e *cardE2ECtx) {
 	registerDeleteSteps(sc, e)
 	registerInvoiceSteps(sc, e)
 	registerConsumerSteps(sc, e)
+	registerBestPurchaseDaySteps(sc, e)
 }

@@ -28,6 +28,12 @@ Já correto e a preservar: o marcador de conclusão bloqueia restart de usuário
 (`resolve_onboarding_or_agent.go`), e cada passo suspende com estado no `Snapshot` **antes** de pedir
 input (R-AGENT-WF-001.7 — pending step). `OnboardingPhase` é tipo fechado (state-as-type).
 
+Nota de schema (verificado contra produção `mastra-20260629` em 2026-07-02): os nomes reais são
+`workflow_runs` (status **texto** `'running'|'suspended'`) — o índice `workflow_runs_active_key_uidx`
+existe exatamente como citado — e `platform_messages` (FK `thread_pk` → `platform_threads.id`; o
+`threadId` opaco é `platform_threads.thread_id`, TEXT). Turnos de onboarding usam a **mesma thread** do
+agente (D-15). Não há drift entre a migration local `000001` e o schema deployado.
+
 ## Decisão
 
 1. **Start idempotente-resume:** no `engine.Start` (kernel genérico), capturar a violação do índice

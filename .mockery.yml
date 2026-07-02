@@ -76,6 +76,7 @@ packages:
       markTokenPaidUseCase: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces:
     interfaces:
+      BankDaysReader: {}
       CardRepository: {}
       RepositoryFactory: {}
       InvoiceDueAlertSentRepository: {}

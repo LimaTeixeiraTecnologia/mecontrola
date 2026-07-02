@@ -88,17 +88,12 @@ func (uc *EvaluateThresholdAlerts) Execute(ctx context.Context) error {
 
 func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.DBTX, competence valueobjects.Competence, refDay time.Time, now time.Time) error {
 	sentRepo := uc.factory.ThresholdAlertSentRepository(tx)
-	cardReader := uc.factory.CardThresholdReader(tx)
 
 	active, err := sentRepo.ListActiveForThresholdScan(ctx, competence, uc.scanLimit)
 	if err != nil {
 		return fmt.Errorf("budgets.usecase.evaluate_threshold_alerts: listar budgets ativos: %w", err)
 	}
-	activeCards, err := cardReader.ListActiveCardsForThresholdScan(ctx, competence, uc.scanLimit)
-	if err != nil {
-		return fmt.Errorf("budgets.usecase.evaluate_threshold_alerts: listar cards ativos: %w", err)
-	}
-	if len(active) == 0 && len(activeCards) == 0 {
+	if len(active) == 0 {
 		return nil
 	}
 
@@ -118,7 +113,6 @@ func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.
 	}
 
 	snapshots := uc.buildSnapshots(active)
-	snapshots = append(snapshots, uc.buildCardSnapshots(activeCards)...)
 	alerts := services.ThresholdWorkflow{}.DecideAlerts(snapshots, uc.thresholds, alreadySent, refDay)
 
 	for _, alert := range alerts {
@@ -127,25 +121,6 @@ func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.
 		}
 	}
 	return nil
-}
-
-func (uc *EvaluateThresholdAlerts) buildCardSnapshots(active []interfaces.ActiveCardForScan) []services.ActiveBudgetSnapshot {
-	out := make([]services.ActiveBudgetSnapshot, 0, len(active))
-	for _, a := range active {
-		if a.LimitCents <= 0 {
-			continue
-		}
-		out = append(out, services.ActiveBudgetSnapshot{
-			UserID:       a.UserID,
-			BudgetID:     a.CardID,
-			Kind:         services.ThresholdAlertCardLimit,
-			CategoryID:   uuid.Nil,
-			CardID:       a.CardID,
-			PlannedCents: a.LimitCents,
-			SpentCents:   a.SpentCents,
-		})
-	}
-	return out
 }
 
 func (uc *EvaluateThresholdAlerts) buildSnapshots(active []interfaces.ActiveBudgetForScan) []services.ActiveBudgetSnapshot {

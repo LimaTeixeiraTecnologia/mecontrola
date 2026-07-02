@@ -8,10 +8,9 @@ import (
 )
 
 type UpdateCardCommand struct {
-	Name       *string
-	Nickname   *string
-	ClosingDay *int
-	DueDay     *int
+	Nickname *string
+	Bank     *valueobjects.BankCode
+	Cycle    *valueobjects.BillingCycle
 }
 
 type UpdateCardDecider struct{}
@@ -21,15 +20,6 @@ func NewUpdateCardDecider() UpdateCardDecider {
 }
 
 func (UpdateCardDecider) Decide(current entities.Card, cmd UpdateCardCommand, now time.Time) (entities.Card, error) {
-	name := current.Name
-	if cmd.Name != nil {
-		n, err := valueobjects.NewCardName(*cmd.Name)
-		if err != nil {
-			return entities.Card{}, err
-		}
-		name = n
-	}
-
 	nickname := current.Nickname
 	if cmd.Nickname != nil {
 		nk, err := valueobjects.NewNickname(*cmd.Nickname)
@@ -39,30 +29,22 @@ func (UpdateCardDecider) Decide(current entities.Card, cmd UpdateCardCommand, no
 		nickname = nk
 	}
 
+	bank := current.Bank
+	if cmd.Bank != nil {
+		bank = *cmd.Bank
+	}
+
 	cycle := current.Cycle
-	if cmd.ClosingDay != nil || cmd.DueDay != nil {
-		cd := current.Cycle.ClosingDay
-		dd := current.Cycle.DueDay
-		if cmd.ClosingDay != nil {
-			cd = *cmd.ClosingDay
-		}
-		if cmd.DueDay != nil {
-			dd = *cmd.DueDay
-		}
-		c, err := valueobjects.NewBillingCycle(cd, dd)
-		if err != nil {
-			return entities.Card{}, err
-		}
-		cycle = c
+	if cmd.Cycle != nil {
+		cycle = *cmd.Cycle
 	}
 
 	return entities.HydrateCardWithVersion(
 		current.ID,
 		current.UserID,
-		name,
 		nickname,
+		bank,
 		cycle,
-		current.LimitCents,
 		current.Version,
 		current.CreatedAt,
 		now.UTC(),

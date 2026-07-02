@@ -13,7 +13,7 @@ import (
 )
 
 func TestRedactCardLogFields_NoPII(t *testing.T) {
-	name, err := valueobjects.NewCardName("Nubank")
+	bank, err := valueobjects.NewBankCode("nubank")
 	require.NoError(t, err)
 
 	nickname, err := valueobjects.NewNickname("Nu")
@@ -25,10 +25,9 @@ func TestRedactCardLogFields_NoPII(t *testing.T) {
 	card := entities.HydrateCard(
 		uuid.New(),
 		uuid.New(),
-		name,
 		nickname,
+		bank,
 		cycle,
-		0,
 		time.Now().UTC(),
 		time.Now().UTC(),
 		nil,
@@ -54,11 +53,11 @@ func TestRedactCardLogFields_Values(t *testing.T) {
 	cardID := uuid.New()
 	userID := uuid.New()
 
-	name, _ := valueobjects.NewCardName("Itau")
+	bank, _ := valueobjects.NewBankCode("itau")
 	nickname, _ := valueobjects.NewNickname("It")
 	cycle, _ := valueobjects.NewBillingCycle(10, 20)
 
-	card := entities.HydrateCard(cardID, userID, name, nickname, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
+	card := entities.HydrateCard(cardID, userID, nickname, bank, cycle, time.Now().UTC(), time.Now().UTC(), nil)
 
 	fields := cardobs.Redactor{}.RedactCardLogFields(card)
 

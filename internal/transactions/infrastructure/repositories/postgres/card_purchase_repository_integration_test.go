@@ -48,8 +48,8 @@ func (s *CardPurchaseRepositoryIntegrationSuite) prepareCard(userID, cardID uuid
 	)
 	s.Require().NoError(err)
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, created_at, updated_at)
-		 VALUES ($1, $2, 'Test Card', 'test', 10, 20, now(), now()) ON CONFLICT DO NOTHING`,
+		`INSERT INTO mecontrola.cards (id, user_id, nickname, bank, closing_day, due_day, created_at, updated_at)
+		 VALUES ($1, $2, 'test', 'nubank', 10, 20, now(), now()) ON CONFLICT DO NOTHING`,
 		cardID, userID,
 	)
 	s.Require().NoError(err)

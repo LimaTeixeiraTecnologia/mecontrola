@@ -61,17 +61,16 @@ func (s *EvaluateInvoiceDueAlertsSuite) buildCardDueInDays(days int) entities.Ca
 	due := time.Now().UTC().AddDate(0, 0, days)
 	cycle, err := valueobjects.NewBillingCycle(1, due.Day())
 	s.Require().NoError(err)
-	name, err := valueobjects.NewCardName("Cartao Teste")
+	bank, err := valueobjects.NewBankCode("nubank")
 	s.Require().NoError(err)
 	nick, err := valueobjects.NewNickname("teste")
 	s.Require().NoError(err)
 	return entities.HydrateCardWithVersion(
 		uuid.New(),
 		uuid.New(),
-		name,
 		nick,
+		bank,
 		cycle,
-		500000,
 		1,
 		time.Now().UTC(),
 		time.Now().UTC(),
@@ -104,7 +103,6 @@ func (s *EvaluateInvoiceDueAlertsSuite) TestExecute_DueInThreeDays_PublishesOneE
 		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(a services.InvoiceDueAlert) bool {
 			return a.UserID == card.UserID &&
 				a.CardID == card.ID &&
-				a.LimitCents == card.LimitCents &&
 				a.DaysUntil >= 0 && a.DaysUntil <= 3
 		}), mock.Anything).
 		Return(nil).

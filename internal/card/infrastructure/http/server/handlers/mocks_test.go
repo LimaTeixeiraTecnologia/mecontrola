@@ -37,13 +37,6 @@ func (m *mockUpdateCard) Execute(ctx context.Context, in input.UpdateCard) (outp
 	return args.Get(0).(output.Card), args.Error(1)
 }
 
-type mockUpdateCardLimit struct{ mock.Mock }
-
-func (m *mockUpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit) (output.Card, error) {
-	args := m.Called(ctx, in)
-	return args.Get(0).(output.Card), args.Error(1)
-}
-
 type mockSoftDeleteCard struct{ mock.Mock }
 
 func (m *mockSoftDeleteCard) Execute(ctx context.Context, in input.SoftDeleteCard) error {
@@ -56,4 +49,11 @@ type mockInvoiceFor struct{ mock.Mock }
 func (m *mockInvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.Invoice, error) {
 	args := m.Called(ctx, in)
 	return args.Get(0).(output.Invoice), args.Error(1)
+}
+
+type mockBestPurchaseDay struct{ mock.Mock }
+
+func (m *mockBestPurchaseDay) Execute(ctx context.Context, in input.BestPurchaseDay) (output.BestPurchaseDay, error) {
+	args := m.Called(ctx, in)
+	return args.Get(0).(output.BestPurchaseDay), args.Error(1)
 }

@@ -97,11 +97,10 @@ func (uc *EvaluateInvoiceDueAlerts) executeInTx(ctx context.Context, tx database
 	candidates := make([]services.InvoiceDueCandidate, 0, len(cards))
 	for _, c := range cards {
 		candidates = append(candidates, services.InvoiceDueCandidate{
-			UserID:     c.UserID,
-			CardID:     c.ID,
-			CardName:   c.Name.String(),
-			Cycle:      c.Cycle,
-			LimitCents: c.LimitCents,
+			UserID:       c.UserID,
+			CardID:       c.ID,
+			CardNickname: c.Nickname.String(),
+			Cycle:        c.Cycle,
 		})
 	}
 

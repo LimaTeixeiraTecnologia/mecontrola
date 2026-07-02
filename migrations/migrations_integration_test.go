@@ -132,7 +132,9 @@ func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
 	s.assertColumnPresent("mecontrola.outbox_events", "aggregate_user_id")
 	s.assertColumnPresent("mecontrola.auth_events", "request_id")
 	s.assertColumnPresent("mecontrola.auth_events", "client_ip")
-	s.assertColumnPresent("mecontrola.cards", "limit_cents")
+	s.assertColumnMissing("mecontrola.cards", "limit_cents")
+	s.assertColumnMissing("mecontrola.cards", "name")
+	s.assertColumnPresent("mecontrola.cards", "bank")
 	s.assertColumnPresent("mecontrola.cards", "version")
 	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
 
@@ -239,42 +241,42 @@ func (s *MigrationSuite) TestCardsConstraints() {
 	s.Require().NoError(insertUserErr)
 
 	closingZeroErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
-		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 0, 5)
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Nubank', 'mycard', 0, 5)
 	`, userID)
 	s.Require().Error(closingZeroErr)
 	s.Contains(closingZeroErr.Error(), "cards_closing_day_chk")
 
 	closing32Err := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
-		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 32, 5)
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Nubank', 'mycard', 32, 5)
 	`, userID)
 	s.Require().Error(closing32Err)
 	s.Contains(closing32Err.Error(), "cards_closing_day_chk")
 
 	emptyNicknameErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
-		VALUES (gen_random_uuid(), $1, 'Valid Card', '', 10, 15)
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Nubank', '', 10, 15)
 	`, userID)
 	s.Require().Error(emptyNicknameErr)
 	s.Contains(emptyNicknameErr.Error(), "cards_nickname_len_chk")
 
-	longNameErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
+	longBankErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day)
 		VALUES (gen_random_uuid(), $1, $2, 'mycard', 10, 15)
-	`, userID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	s.Require().Error(longNameErr)
-	s.Contains(longNameErr.Error(), "cards_name_len_chk")
+	`, userID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	s.Require().Error(longBankErr)
+	s.Contains(longBankErr.Error(), "cards_bank_len_chk")
 
 	insertCardErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
-		VALUES (gen_random_uuid(), $1, 'Valid Card', 'mycard', 10, 15)
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Nubank', 'mycard', 10, 15)
 	`, userID)
 	s.Require().NoError(insertCardErr)
 
 	dupNicknameErr := execSQL(s.db, s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day)
-		VALUES (gen_random_uuid(), $1, 'Another Card', 'mycard', 15, 20)
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day)
+		VALUES (gen_random_uuid(), $1, 'Itaú', 'mycard', 15, 20)
 	`, userID)
 	s.Require().Error(dupNicknameErr)
 	s.Contains(dupNicknameErr.Error(), "cards_user_nickname_active_uniq_idx")
@@ -728,6 +730,74 @@ func (s *MigrationSuite) assertBudgetsPendingEventIdempotency() {
 	`, eventID)
 	s.Require().Error(dupErr)
 	s.Contains(dupErr.Error(), "budgets_expense_events_pending_event_uk")
+}
+
+func (s *MigrationSuite) TestCardSimplificationMigrationUpDownUp() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertTablePresent("mecontrola.banks")
+	s.assertColumnPresent("mecontrola.cards", "bank")
+	s.assertColumnMissing("mecontrola.cards", "limit_cents")
+	s.assertColumnMissing("mecontrola.cards", "name")
+	s.assertIndexPresent("mecontrola", "cards_user_nickname_active_uniq_idx")
+	s.assertBanksSeed()
+
+	s.downToVersion(migrator, 1)
+
+	s.assertTableMissing("mecontrola.banks")
+	s.assertColumnMissing("mecontrola.cards", "bank")
+	s.assertColumnPresent("mecontrola.cards", "limit_cents")
+	s.assertColumnPresent("mecontrola.cards", "name")
+
+	s.applyBaseline(migrator)
+
+	s.assertTablePresent("mecontrola.banks")
+	s.assertColumnPresent("mecontrola.cards", "bank")
+	s.assertColumnMissing("mecontrola.cards", "limit_cents")
+	s.assertBanksSeed()
+}
+
+func (s *MigrationSuite) assertBanksSeed() {
+	type bankRow struct {
+		code          string
+		daysBeforeDue int
+	}
+
+	rows, err := s.db.QueryContext(s.ctx, `
+		SELECT code, days_before_due
+		FROM mecontrola.banks
+		ORDER BY code
+	`)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() {
+		_ = rows.Close()
+	})
+
+	var banks []bankRow
+	for rows.Next() {
+		var row bankRow
+		s.Require().NoError(rows.Scan(&row.code, &row.daysBeforeDue))
+		banks = append(banks, row)
+	}
+	s.Require().NoError(rows.Err())
+	s.Require().Len(banks, 8)
+
+	expected := map[string]int{
+		"nubank":          7,
+		"itau":            8,
+		"santander":       8,
+		"bradesco":        7,
+		"banco-do-brasil": 7,
+		"caixa":           7,
+		"inter":           7,
+		"c6-bank":         7,
+	}
+	for _, b := range banks {
+		days, ok := expected[b.code]
+		s.Truef(ok, "banco inesperado: %s", b.code)
+		s.Equalf(days, b.daysBeforeDue, "banco %s: days_before_due incorreto", b.code)
+	}
 }
 
 func (s *MigrationSuite) TestActivationJourneyMigrationUpDown() {

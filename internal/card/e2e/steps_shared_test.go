@@ -15,7 +15,7 @@ func registerSharedSteps(sc *godog.ScenarioContext, e *cardE2ECtx) {
 	sc.Step(`^o campo de erro deve ser "([^"]*)"$`, e.assertErrorCode)
 	sc.Step(`^o campo texto "([^"]*)" da resposta deve ser "([^"]*)"$`, e.assertTextFieldEquals)
 	sc.Step(`^o campo numérico "([^"]*)" da resposta deve ser (\d+)$`, e.assertNumericFieldEquals)
-	sc.Step(`^que o usuário possui um cartão criado com nome "([^"]*)", fechamento (\d+), vencimento (\d+) e limite (\d+)$`, e.cardExistsWithDetails)
+	sc.Step(`^que o usuário possui um cartão criado com banco "([^"]*)" e vencimento (\d+)$`, e.cardExistsWithDetails)
 }
 
 func (e *cardE2ECtx) existeUmUsuarioAutenticado() error {

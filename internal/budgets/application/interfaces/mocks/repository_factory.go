@@ -143,59 +143,6 @@ func (_c *RepositoryFactory_BudgetRepository_Call) RunAndReturn(run func(db data
 	return _c
 }
 
-// CardThresholdReader provides a mock function for the type RepositoryFactory
-func (_mock *RepositoryFactory) CardThresholdReader(db database.DBTX) interfaces.CardThresholdReader {
-	ret := _mock.Called(db)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CardThresholdReader")
-	}
-
-	var r0 interfaces.CardThresholdReader
-	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.CardThresholdReader); ok {
-		r0 = returnFunc(db)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(interfaces.CardThresholdReader)
-		}
-	}
-	return r0
-}
-
-// RepositoryFactory_CardThresholdReader_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CardThresholdReader'
-type RepositoryFactory_CardThresholdReader_Call struct {
-	*mock.Call
-}
-
-// CardThresholdReader is a helper method to define mock.On call
-//   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) CardThresholdReader(db any) *RepositoryFactory_CardThresholdReader_Call {
-	return &RepositoryFactory_CardThresholdReader_Call{Call: _e.mock.On("CardThresholdReader", db)}
-}
-
-func (_c *RepositoryFactory_CardThresholdReader_Call) Run(run func(db database.DBTX)) *RepositoryFactory_CardThresholdReader_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 database.DBTX
-		if args[0] != nil {
-			arg0 = args[0].(database.DBTX)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *RepositoryFactory_CardThresholdReader_Call) Return(cardThresholdReader interfaces.CardThresholdReader) *RepositoryFactory_CardThresholdReader_Call {
-	_c.Call.Return(cardThresholdReader)
-	return _c
-}
-
-func (_c *RepositoryFactory_CardThresholdReader_Call) RunAndReturn(run func(db database.DBTX) interfaces.CardThresholdReader) *RepositoryFactory_CardThresholdReader_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // ExpenseRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) ExpenseRepository(db database.DBTX) interfaces.ExpenseRepository {
 	ret := _mock.Called(db)

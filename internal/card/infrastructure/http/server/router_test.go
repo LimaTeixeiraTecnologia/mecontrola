@@ -48,13 +48,6 @@ func (m *mockUpdateCard) Execute(ctx context.Context, in input.UpdateCard) (outp
 	return args.Get(0).(output.Card), args.Error(1)
 }
 
-type mockUpdateCardLimit struct{ mock.Mock }
-
-func (m *mockUpdateCardLimit) Execute(ctx context.Context, in input.UpdateCardLimit) (output.Card, error) {
-	args := m.Called(ctx, in)
-	return args.Get(0).(output.Card), args.Error(1)
-}
-
 type mockSoftDeleteCard struct{ mock.Mock }
 
 func (m *mockSoftDeleteCard) Execute(ctx context.Context, in input.SoftDeleteCard) error {
@@ -69,17 +62,24 @@ func (m *mockInvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (outp
 	return args.Get(0).(output.Invoice), args.Error(1)
 }
 
+type mockBestPurchaseDay struct{ mock.Mock }
+
+func (m *mockBestPurchaseDay) Execute(ctx context.Context, in input.BestPurchaseDay) (output.BestPurchaseDay, error) {
+	args := m.Called(ctx, in)
+	return args.Get(0).(output.BestPurchaseDay), args.Error(1)
+}
+
 type CardRouterSuite struct {
 	suite.Suite
-	router      chi.Router
-	idemStorage *idemocks.Storage
-	createUC    *mockCreateCard
-	listUC      *mockListCards
-	getUC       *mockGetCard
-	updateUC    *mockUpdateCard
-	updateLimUC *mockUpdateCardLimit
-	deleteUC    *mockSoftDeleteCard
-	invoiceUC   *mockInvoiceFor
+	router         chi.Router
+	idemStorage    *idemocks.Storage
+	createUC       *mockCreateCard
+	listUC         *mockListCards
+	getUC          *mockGetCard
+	updateUC       *mockUpdateCard
+	deleteUC       *mockSoftDeleteCard
+	invoiceUC      *mockInvoiceFor
+	bestPurchaseUC *mockBestPurchaseDay
 }
 
 func TestCardRouter(t *testing.T) {
@@ -93,20 +93,20 @@ func (s *CardRouterSuite) SetupTest() {
 	s.listUC = &mockListCards{}
 	s.getUC = &mockGetCard{}
 	s.updateUC = &mockUpdateCard{}
-	s.updateLimUC = &mockUpdateCardLimit{}
 	s.deleteUC = &mockSoftDeleteCard{}
 	s.invoiceUC = &mockInvoiceFor{}
+	s.bestPurchaseUC = &mockBestPurchaseDay{}
 
 	createH := handlers.NewCreateCardHandler(s.createUC, o11y)
 	listH := handlers.NewListCardsHandler(s.listUC, o11y)
 	getH := handlers.NewGetCardHandler(s.getUC, o11y)
 	updateH := handlers.NewUpdateCardHandler(s.updateUC, o11y)
-	updateLimH := handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y)
 	deleteH := handlers.NewDeleteCardHandler(s.deleteUC, o11y)
 	invoiceH := handlers.NewInvoiceForHandler(s.invoiceUC, o11y)
+	bestPurchaseH := handlers.NewBestPurchaseDayHandler(s.bestPurchaseUC, o11y)
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, updateLimH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
+	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, bestPurchaseH, s.idemStorage, o11y, passthrough, passthrough)
 
 	r := chi.NewRouter()
 	cardRouter.Register(r)
@@ -120,9 +120,9 @@ func (s *CardRouterSuite) TestRoutes_NoXUserID_Returns401() {
 		body   string
 	}{
 		{http.MethodGet, "/api/v1/cards", ""},
-		{http.MethodPost, "/api/v1/cards", `{"name":"X","nickname":"X","closing_day":1,"due_day":2}`},
+		{http.MethodPost, "/api/v1/cards", `{"nickname":"X","bank":"nubank","due_day":2}`},
 		{http.MethodGet, "/api/v1/cards/" + uuid.New().String(), ""},
-		{http.MethodPut, "/api/v1/cards/" + uuid.New().String(), `{"name":"X","nickname":"X","closing_day":1,"due_day":2}`},
+		{http.MethodPut, "/api/v1/cards/" + uuid.New().String(), `{"nickname":"X","bank":"nubank","due_day":2}`},
 		{http.MethodDelete, "/api/v1/cards/" + uuid.New().String(), ""},
 		{http.MethodGet, "/api/v1/cards/" + uuid.New().String() + "/invoices?for=2024-01-01", ""},
 	}
@@ -138,7 +138,7 @@ func (s *CardRouterSuite) TestRoutes_NoXUserID_Returns401() {
 func (s *CardRouterSuite) TestPost_WithoutIdempotencyKey_Returns400() {
 	userID := uuid.New().String()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/cards",
-		strings.NewReader(`{"name":"Nu","nickname":"Nu","closing_day":1,"due_day":2}`))
+		strings.NewReader(`{"nickname":"Nu","bank":"nubank","due_day":2}`))
 	req.Header.Set("X-User-ID", userID)
 	rr := httptest.NewRecorder()
 	s.router.ServeHTTP(rr, req)
@@ -149,7 +149,7 @@ func (s *CardRouterSuite) TestPut_WithoutIdempotencyKey_Returns400() {
 	userID := uuid.New().String()
 	cardID := uuid.New().String()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/cards/"+cardID,
-		strings.NewReader(`{"name":"Nu","nickname":"Nu","closing_day":1,"due_day":2}`))
+		strings.NewReader(`{"nickname":"Nu","bank":"nubank","due_day":2}`))
 	req.Header.Set("X-User-ID", userID)
 	rr := httptest.NewRecorder()
 	s.router.ServeHTTP(rr, req)
@@ -178,6 +178,30 @@ func (s *CardRouterSuite) TestGet_NoIdempotencyRequired() {
 	s.Equal(http.StatusOK, rr.Code)
 }
 
+func (s *CardRouterSuite) TestBestPurchaseDay_NotCapturedAsIDParam() {
+	userID := uuid.New().String()
+	s.bestPurchaseUC.On("Execute", mock.Anything, mock.AnythingOfType("input.BestPurchaseDay")).
+		Return(output.BestPurchaseDay{ClosingDay: 13, BestPurchaseDay: 14}, nil).Once()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cards/best-purchase-day?bank=nubank&due_day=20", nil)
+	req.Header.Set("X-User-ID", userID)
+	rr := httptest.NewRecorder()
+	s.router.ServeHTTP(rr, req)
+
+	s.Equal(http.StatusOK, rr.Code)
+	s.Contains(rr.Body.String(), "closing_day")
+}
+
+func (s *CardRouterSuite) TestLimitRoute_Returns404() {
+	userID := uuid.New().String()
+	cardID := uuid.New().String()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cards/"+cardID+"/limit", nil)
+	req.Header.Set("X-User-ID", userID)
+	rr := httptest.NewRecorder()
+	s.router.ServeHTTP(rr, req)
+	s.Equal(http.StatusNotFound, rr.Code)
+}
+
 type dummyInvoiceByMonthHandler struct{}
 
 func (dummyInvoiceByMonthHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -193,9 +217,9 @@ func (s *CardRouterSuite) TestInvoiceByMonthRoute_WhenHandlerProvided() {
 		handlers.NewListCardsHandler(s.listUC, o11y),
 		handlers.NewGetCardHandler(s.getUC, o11y),
 		handlers.NewUpdateCardHandler(s.updateUC, o11y),
-		handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y),
 		handlers.NewDeleteCardHandler(s.deleteUC, o11y),
 		handlers.NewInvoiceForHandler(s.invoiceUC, o11y),
+		handlers.NewBestPurchaseDayHandler(s.bestPurchaseUC, o11y),
 		s.idemStorage,
 		o11y,
 		passthrough,

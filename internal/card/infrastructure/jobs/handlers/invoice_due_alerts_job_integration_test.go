@@ -83,8 +83,8 @@ func seedCardWithDueDay(t *testing.T, db *sqlx.DB, cardID, userID string, dueDay
 	defer cancel()
 	nick := fmt.Sprintf("card-%d-%d", dueDay, time.Now().UnixNano()%1000000000)
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at)
-		 VALUES ($1, $2, 'Test Card', $3, 5, $4, 500000, 1, now(), now())`,
+		`INSERT INTO mecontrola.cards (id, user_id, nickname, bank, closing_day, due_day, version, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'nubank', 5, $4, 1, now(), now())`,
 		cardID, userID, nick, dueDay,
 	)
 	require.NoError(t, err)

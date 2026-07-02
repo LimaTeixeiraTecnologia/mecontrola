@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-simplificacao-card-melhor-dia-compra/9.0_execution_report.md
+summary: "agents onboarding: adicionado campo bank na extração LLM, DecideCardEntry valida bank, adapter corrige drift DueDay e repassa Bank, LimitCents removido"
+timestamp: 2026-07-02T10:51:15Z

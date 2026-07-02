@@ -9,20 +9,18 @@ import (
 )
 
 type InvoiceDueCandidate struct {
-	UserID     uuid.UUID
-	CardID     uuid.UUID
-	CardName   string
-	Cycle      valueobjects.BillingCycle
-	LimitCents int64
+	UserID       uuid.UUID
+	CardID       uuid.UUID
+	CardNickname string
+	Cycle        valueobjects.BillingCycle
 }
 
 type InvoiceDueAlert struct {
-	UserID     uuid.UUID
-	CardID     uuid.UUID
-	CardName   string
-	LimitCents int64
-	DueDate    time.Time
-	DaysUntil  int
+	UserID       uuid.UUID
+	CardID       uuid.UUID
+	CardNickname string
+	DueDate      time.Time
+	DaysUntil    int
 }
 
 type InvoiceDueAlertsDecider struct{}
@@ -47,12 +45,11 @@ func (InvoiceDueAlertsDecider) Decide(candidates []InvoiceDueCandidate, windowDa
 			continue
 		}
 		out = append(out, InvoiceDueAlert{
-			UserID:     c.UserID,
-			CardID:     c.CardID,
-			CardName:   c.CardName,
-			LimitCents: c.LimitCents,
-			DueDate:    dueDate,
-			DaysUntil:  days,
+			UserID:       c.UserID,
+			CardID:       c.CardID,
+			CardNickname: c.CardNickname,
+			DueDate:      dueDate,
+			DaysUntil:    days,
 		})
 	}
 	return out

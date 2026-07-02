@@ -21,12 +21,11 @@ type notifyInvoiceDueUseCase interface {
 }
 
 type invoiceDuePayload struct {
-	UserID     string `json:"user_id"`
-	CardID     string `json:"card_id"`
-	CardName   string `json:"card_name"`
-	LimitCents int64  `json:"limit_cents"`
-	DueDate    string `json:"due_date"`
-	DaysUntil  int    `json:"days_until"`
+	UserID       string `json:"user_id"`
+	CardID       string `json:"card_id"`
+	CardNickname string `json:"card_nickname"`
+	DueDate      string `json:"due_date"`
+	DaysUntil    int    `json:"days_until"`
 }
 
 type InvoiceDueNotifier struct {
@@ -85,12 +84,11 @@ func (c *InvoiceDueNotifier) Handle(ctx context.Context, event events.Event) err
 	}
 
 	in := usecases.NotifyInvoiceDueInput{
-		UserID:     userID,
-		CardID:     cardID,
-		CardName:   p.CardName,
-		LimitCents: p.LimitCents,
-		DueDate:    dueDate.UTC(),
-		DaysUntil:  p.DaysUntil,
+		UserID:       userID,
+		CardID:       cardID,
+		CardNickname: p.CardNickname,
+		DueDate:      dueDate.UTC(),
+		DaysUntil:    p.DaysUntil,
 	}
 
 	if _, err := c.notify.Execute(ctx, in); err != nil {

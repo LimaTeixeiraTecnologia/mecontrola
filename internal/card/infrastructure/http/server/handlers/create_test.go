@@ -67,11 +67,11 @@ func (s *CreateCardHandlerSuite) TestHandle_InvalidJSON() {
 	s.Equal("payload inválido", detail)
 }
 
-func (s *CreateCardHandlerSuite) TestHandle_InvalidCardName() {
+func (s *CreateCardHandlerSuite) TestHandle_InvalidBank() {
 	s.uc.On("Execute", mock.Anything, mock.AnythingOfType("input.CreateCard")).
-		Return(output.Card{}, domain.ErrInvalidCardName).Once()
+		Return(output.Card{}, domain.ErrInvalidBank).Once()
 
-	rr := s.post(`{"name":"","nickname":"Nu","closing_day":15,"due_day":22}`)
+	rr := s.post(`{"nickname":"Nu","bank":"","due_day":22}`)
 	s.Equal(http.StatusBadRequest, rr.Code)
 }
 

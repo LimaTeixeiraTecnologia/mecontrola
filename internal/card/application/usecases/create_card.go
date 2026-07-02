@@ -26,6 +26,7 @@ type CreateCard struct {
 	factory interfaces.RepositoryFactory
 	idem    idempotency.Storage
 	decider services.CreateCardDecider
+	svc     services.PurchaseDayService
 	o11y    observability.Observability
 }
 
@@ -40,6 +41,7 @@ func NewCreateCard(
 		factory: factory,
 		idem:    idem,
 		decider: services.NewCreateCardDecider(),
+		svc:     services.PurchaseDayService{},
 		o11y:    o11y,
 	}
 }
@@ -56,59 +58,60 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		return output.Card{}, err
 	}
 
-	u.o11y.Logger().Info(ctx, "card.create.started",
-		observability.String("user_id", in.UserID.String()),
-	)
-
-	name, err := valueobjects.NewCardName(in.Name)
-	if err != nil {
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		return output.Card{}, err
-	}
-
 	nickname, err := valueobjects.NewNickname(in.Nickname)
 	if err != nil {
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		return output.Card{}, err
 	}
 
-	dueDay := in.ClosingDay + 7
-	if in.DueDay != nil {
-		dueDay = *in.DueDay
-	} else if dueDay > 31 {
-		dueDay -= 30
-	}
-	cycle, err := valueobjects.NewBillingCycle(in.ClosingDay, dueDay)
+	bank, err := valueobjects.NewBankCode(in.Bank)
 	if err != nil {
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		return output.Card{}, err
 	}
 
-	limit, err := valueobjects.NewCardLimit(in.LimitCents)
+	tz, err := services.NewSaoPauloLocation()
 	if err != nil {
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		return output.Card{}, err
+		return output.Card{}, fmt.Errorf("card/create: timezone: %w", err)
 	}
 
+	now := time.Now().UTC()
+	cardID := entities.NewCardID()
 	ic, hasIdem := idempotency.FromContext(ctx)
 
-	cardID := entities.NewCardID()
-	now := time.Now().UTC()
-	cmd := services.CreateCardCommand{
-		UserID:     in.UserID,
-		Name:       name,
-		Nickname:   nickname,
-		Cycle:      cycle,
-		LimitCents: limit.Cents(),
-	}
+	u.o11y.Logger().Info(ctx, "card.create.started",
+		observability.String("user_id", in.UserID.String()),
+	)
 
 	var card entities.Card
 	err = u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
+		bankReader := u.factory.BankDaysReader(tx)
 		repo := u.factory.CardRepository(tx)
+
+		days, readErr := bankReader.DaysBeforeDue(ctx, bank)
+		if readErr != nil {
+			return fmt.Errorf("card/create: bank_days: %w", readErr)
+		}
+
+		pd := u.svc.Decide(in.DueDay, days, now, tz)
+
+		cycle, cycleErr := valueobjects.NewBillingCycle(pd.ClosingDay, in.DueDay)
+		if cycleErr != nil {
+			return fmt.Errorf("card/create: cycle: %w", cycleErr)
+		}
+
+		cmd := services.CreateCardCommand{
+			UserID:   in.UserID,
+			Nickname: nickname,
+			Bank:     bank,
+			Cycle:    cycle,
+		}
+
 		c := u.decider.Decide(cmd, cardID, now)
 		if insertErr := repo.Insert(ctx, c); insertErr != nil {
 			return insertErr
 		}
+
 		if hasIdem {
 			body, marshalErr := json.Marshal(mappers.M.ToCardOutput(c))
 			if marshalErr != nil {
@@ -127,6 +130,7 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 				return fmt.Errorf("create_card: idempotency put: %w", putErr)
 			}
 		}
+
 		card = c
 		return nil
 	})

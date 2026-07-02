@@ -44,11 +44,10 @@ func (a *cardManagerAdapter) CreateCard(ctx context.Context, in agentsifaces.New
 	defer span.End()
 
 	out, err := a.createCard.Execute(ctx, cardinput.CreateCard{
-		UserID:     in.UserID,
-		Name:       in.Nickname,
-		Nickname:   in.Nickname,
-		ClosingDay: in.DueDay,
-		LimitCents: 0,
+		UserID:   in.UserID,
+		Nickname: in.Nickname,
+		Bank:     in.Bank,
+		DueDay:   in.DueDay,
 	})
 	if err != nil {
 		if errors.Is(err, carddomain.ErrNicknameConflict) {
@@ -88,9 +87,9 @@ func (a *cardManagerAdapter) ListCards(ctx context.Context, userID uuid.UUID) ([
 		cards = append(cards, agentsifaces.Card{
 			ID:         c.ID,
 			Nickname:   c.Nickname,
+			Bank:       c.Bank,
 			ClosingDay: c.ClosingDay,
 			DueDay:     c.DueDay,
-			LimitCents: c.LimitCents,
 		})
 	}
 	return cards, nil

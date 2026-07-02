@@ -84,12 +84,11 @@ func (s *NotifyInvoiceDueSuite) TestExecute_SendsTextWithCorrectContent() {
 		Once()
 
 	in := NotifyInvoiceDueInput{
-		UserID:     userID,
-		CardID:     cardID,
-		CardName:   "Nubank",
-		LimitCents: 500000,
-		DueDate:    dueDate,
-		DaysUntil:  3,
+		UserID:       userID,
+		CardID:       cardID,
+		CardNickname: "Nubank",
+		DueDate:      dueDate,
+		DaysUntil:    3,
 	}
 
 	result, err := s.useCase.Execute(s.ctx, in)
@@ -98,7 +97,7 @@ func (s *NotifyInvoiceDueSuite) TestExecute_SendsTextWithCorrectContent() {
 	s.Equal(1, s.gateway.calls)
 	s.Equal(notification.ChannelWhatsApp, s.gateway.channel)
 	s.Equal("5511999999999", s.gateway.externalID)
-	s.Equal("Sua fatura do cartao Nubank vence em 3 dias (10/07). Limite: R$5000,00.", s.gateway.text)
+	s.Equal("Sua fatura do cartao Nubank vence em 3 dias (10/07).", s.gateway.text)
 }
 
 func (s *NotifyInvoiceDueSuite) TestExecute_AlreadyNotified_NoSend() {
@@ -112,11 +111,11 @@ func (s *NotifyInvoiceDueSuite) TestExecute_AlreadyNotified_NoSend() {
 		Once()
 
 	in := NotifyInvoiceDueInput{
-		UserID:    userID,
-		CardID:    cardID,
-		CardName:  "Nubank",
-		DueDate:   dueDate,
-		DaysUntil: 3,
+		UserID:       userID,
+		CardID:       cardID,
+		CardNickname: "Nubank",
+		DueDate:      dueDate,
+		DaysUntil:    3,
 	}
 
 	result, err := s.useCase.Execute(s.ctx, in)

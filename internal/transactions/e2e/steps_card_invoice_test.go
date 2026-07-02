@@ -25,7 +25,7 @@ func (e *txE2ECtx) queExisteUmCartaoConfiguradoParaOUsuarioComFechamentoNoDia(cl
 	if dueDay > 28 {
 		dueDay = 28
 	}
-	id, err := insertCardViaSQL(ctx, e.db, e.userID, "Cartão Invoice E2E", fmt.Sprintf("invoice-e2e-%s", uuid.NewString()[:8]), closingDay, dueDay)
+	id, err := insertCardViaSQL(ctx, e.db, e.userID, "nubank", fmt.Sprintf("invoice-e2e-%s", uuid.NewString()[:8]), closingDay, dueDay)
 	if err != nil {
 		return err
 	}

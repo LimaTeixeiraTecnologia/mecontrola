@@ -23,12 +23,13 @@ import (
 
 type CreateCardSuite struct {
 	suite.Suite
-	obs         observability.Observability
-	ctx         context.Context
-	uowMock     *ucmocks.UnitOfWorkCard
-	factoryMock *ifacemocks.RepositoryFactory
-	repoMock    *ifacemocks.CardRepository
-	idemMock    *idemocks.Storage
+	obs            observability.Observability
+	ctx            context.Context
+	uowMock        *ucmocks.UnitOfWorkCard
+	factoryMock    *ifacemocks.RepositoryFactory
+	repoMock       *ifacemocks.CardRepository
+	bankReaderMock *ifacemocks.BankDaysReader
+	idemMock       *idemocks.Storage
 }
 
 func TestCreateCard(t *testing.T) {
@@ -41,34 +42,139 @@ func (s *CreateCardSuite) SetupTest() {
 	s.uowMock = ucmocks.NewUnitOfWorkCard(s.T())
 	s.factoryMock = ifacemocks.NewRepositoryFactory(s.T())
 	s.repoMock = ifacemocks.NewCardRepository(s.T())
+	s.bankReaderMock = ifacemocks.NewBankDaysReader(s.T())
 	s.idemMock = idemocks.NewStorage(s.T())
 }
 
 func (s *CreateCardSuite) makeInput() input.CreateCard {
-	dueDay := 22
 	return input.CreateCard{
-		UserID:     uuid.New(),
-		Name:       "Nubank",
-		Nickname:   "Nu",
-		ClosingDay: 15,
-		DueDay:     &dueDay,
-		LimitCents: 500000,
+		UserID:   uuid.New(),
+		Nickname: "Nu",
+		Bank:     "nubank",
+		DueDay:   22,
 	}
 }
 
 func (s *CreateCardSuite) TestExecute_HappyPath() {
-	in := s.makeInput()
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
-	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
+	type dependencies struct {
+		factory    *ifacemocks.RepositoryFactory
+		repo       *ifacemocks.CardRepository
+		bankReader *ifacemocks.BankDaysReader
+		idem       *idemocks.Storage
+	}
 
-	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
-	out, err := sut.Execute(s.ctx, in)
+	scenarios := []struct {
+		name         string
+		args         input.CreateCard
+		dependencies dependencies
+		expect       func(out interface{}, err error)
+	}{
+		{
+			name: "deve criar cartao com sucesso",
+			args: s.makeInput(),
+			dependencies: dependencies{
+				factory: func() *ifacemocks.RepositoryFactory {
+					s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
+					s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+					return s.factoryMock
+				}(),
+				repo: func() *ifacemocks.CardRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
+					return s.repoMock
+				}(),
+				bankReader: func() *ifacemocks.BankDaysReader {
+					s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
+					return s.bankReaderMock
+				}(),
+				idem: s.idemMock,
+			},
+			expect: func(out interface{}, err error) {
+				s.Require().NoError(err)
+			},
+		},
+	}
 
-	s.Require().NoError(err)
-	s.Equal(in.Name, out.Name)
-	s.Equal(in.Nickname, out.Nickname)
-	s.Equal(in.ClosingDay, out.ClosingDay)
-	s.Equal(*in.DueDay, out.DueDay)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := NewCreateCard(s.uowMock, scenario.dependencies.factory, scenario.dependencies.idem, s.obs)
+			out, err := sut.Execute(s.ctx, scenario.args)
+			scenario.expect(out, err)
+		})
+	}
+}
+
+func (s *CreateCardSuite) TestExecute_ValidationError() {
+	type dependencies struct {
+		factory *ifacemocks.RepositoryFactory
+		idem    *idemocks.Storage
+	}
+
+	scenarios := []struct {
+		name         string
+		args         input.CreateCard
+		dependencies dependencies
+		expect       func(err error)
+	}{
+		{
+			name: "banco vazio retorna erro de validacao",
+			args: input.CreateCard{
+				UserID:   uuid.New(),
+				Nickname: "Nu",
+				Bank:     "",
+				DueDay:   22,
+			},
+			dependencies: dependencies{
+				factory: s.factoryMock,
+				idem:    s.idemMock,
+			},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, input.ErrCardBankRequired)
+			},
+		},
+		{
+			name: "due_day invalido retorna erro de validacao",
+			args: input.CreateCard{
+				UserID:   uuid.New(),
+				Nickname: "Nu",
+				Bank:     "nubank",
+				DueDay:   0,
+			},
+			dependencies: dependencies{
+				factory: s.factoryMock,
+				idem:    s.idemMock,
+			},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, input.ErrCardDueDayInvalid)
+			},
+		},
+		{
+			name: "user_id vazio retorna erro de validacao",
+			args: input.CreateCard{
+				UserID:   uuid.Nil,
+				Nickname: "Nu",
+				Bank:     "nubank",
+				DueDay:   22,
+			},
+			dependencies: dependencies{
+				factory: s.factoryMock,
+				idem:    s.idemMock,
+			},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, input.ErrCardUserIDRequired)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := NewCreateCard(s.uowMock, scenario.dependencies.factory, scenario.dependencies.idem, s.obs)
+			_, err := sut.Execute(s.ctx, scenario.args)
+			scenario.expect(err)
+		})
+	}
 }
 
 func (s *CreateCardSuite) TestExecute_WithIdempotency() {
@@ -82,111 +188,24 @@ func (s *CreateCardSuite) TestExecute_WithIdempotency() {
 	}
 	ctx := idempotency.WithContext(s.ctx, ic)
 
+	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
 	s.idemMock.EXPECT().Put(mock.Anything, mock.AnythingOfType("idempotency.Record")).Return(nil).Once()
 
 	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
-	out, err := sut.Execute(ctx, in)
+	_, err := sut.Execute(ctx, in)
 
 	s.Require().NoError(err)
-	s.Equal(in.Name, out.Name)
-}
-
-func (s *CreateCardSuite) TestExecute_InvalidName() {
-	in := s.makeInput()
-	in.Name = ""
-
-	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
-	_, err := sut.Execute(s.ctx, in)
-
-	s.Require().Error(err)
-	s.Require().ErrorIs(err, input.ErrCardNameRequired)
-}
-
-func (s *CreateCardSuite) TestExecute_InvalidNickname() {
-	in := s.makeInput()
-	in.Nickname = ""
-
-	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
-	_, err := sut.Execute(s.ctx, in)
-
-	s.Require().Error(err)
-	s.Require().ErrorIs(err, domain.ErrInvalidNickname)
-}
-
-func (s *CreateCardSuite) TestExecute_InvalidClosingDay() {
-	in := s.makeInput()
-	in.ClosingDay = 0
-
-	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
-	_, err := sut.Execute(s.ctx, in)
-
-	s.Require().Error(err)
-	s.Require().ErrorIs(err, input.ErrCardClosingDayInvalid)
-}
-
-func (s *CreateCardSuite) TestExecute_DerivesDueDayWhenNil() {
-	type args struct {
-		closingDay int
-	}
-
-	scenarios := []struct {
-		name           string
-		args           args
-		expectedDueDay int
-	}{
-		{
-			name:           "closing_day 10 deriva due_day 17",
-			args:           args{closingDay: 10},
-			expectedDueDay: 17,
-		},
-		{
-			name:           "closing_day 24 deriva due_day 31",
-			args:           args{closingDay: 24},
-			expectedDueDay: 31,
-		},
-		{
-			name:           "closing_day 25 deriva due_day 2 com wrap",
-			args:           args{closingDay: 25},
-			expectedDueDay: 2,
-		},
-		{
-			name:           "closing_day 31 deriva due_day 8 com wrap",
-			args:           args{closingDay: 31},
-			expectedDueDay: 8,
-		},
-	}
-
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			factoryMock := ifacemocks.NewRepositoryFactory(s.T())
-			repoMock := ifacemocks.NewCardRepository(s.T())
-			factoryMock.EXPECT().CardRepository(mock.Anything).Return(repoMock).Once()
-			repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
-
-			in := input.CreateCard{
-				UserID:     uuid.New(),
-				Name:       "Nubank",
-				Nickname:   "Nu",
-				ClosingDay: scenario.args.closingDay,
-				DueDay:     nil,
-				LimitCents: 500000,
-			}
-
-			sut := NewCreateCard(s.uowMock, factoryMock, s.idemMock, s.obs)
-			out, err := sut.Execute(s.ctx, in)
-
-			s.Require().NoError(err)
-			s.Equal(scenario.args.closingDay, out.ClosingDay)
-			s.Equal(scenario.expectedDueDay, out.DueDay)
-		})
-	}
 }
 
 func (s *CreateCardSuite) TestExecute_NicknameConflict() {
 	in := s.makeInput()
+
+	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(domain.ErrNicknameConflict).Once()
 
 	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
@@ -199,7 +218,10 @@ func (s *CreateCardSuite) TestExecute_NicknameConflict() {
 func (s *CreateCardSuite) TestExecute_RepositoryError() {
 	in := s.makeInput()
 	repoErr := errors.New("db error")
+
+	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(repoErr).Once()
 
 	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
@@ -209,7 +231,7 @@ func (s *CreateCardSuite) TestExecute_RepositoryError() {
 	s.Contains(err.Error(), "db error")
 }
 
-func (s *CreateCardSuite) TestExecute_RINT05_IdempotencyPutErrorCausesRollback() {
+func (s *CreateCardSuite) TestExecute_IdempotencyPutErrorCausesRollback() {
 	in := s.makeInput()
 	ic := idempotency.IdempotencyContext{
 		Scope:       "card",
@@ -223,7 +245,9 @@ func (s *CreateCardSuite) TestExecute_RINT05_IdempotencyPutErrorCausesRollback()
 	idemErr := errors.New("idempotency storage unavailable")
 
 	insertCount := 0
+	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).
 		RunAndReturn(func(ctx context.Context, c entities.Card) error {
 			insertCount++

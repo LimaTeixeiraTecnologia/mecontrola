@@ -5,18 +5,17 @@ Funcionalidade: Leitura e listagem de cartões
     Dado existe um usuário autenticado
 
   Cenário: Buscar cartão existente retorna 200 com todos os campos
-    Dado que o usuário possui um cartão criado com nome "Leitura Unitária", fechamento 5, vencimento 12 e limite 150000
+    Dado que o usuário possui um cartão criado com banco "nubank" e vencimento 20
     Quando o usuário busca o cartão pelo ID cadastrado
     Então a resposta HTTP deve ter status 200
     E o corpo da resposta deve conter o campo "id"
     E o corpo da resposta deve conter o campo "user_id"
-    E o corpo da resposta deve conter o campo "name"
+    E o corpo da resposta deve conter o campo "bank"
     E o corpo da resposta deve conter o campo "nickname"
     E o corpo da resposta deve conter o campo "closing_day"
     E o corpo da resposta deve conter o campo "due_day"
-    E o corpo da resposta deve conter o campo "limit_cents"
-    E o campo texto "name" da resposta deve ser "Leitura Unitária"
-    E o campo numérico "limit_cents" da resposta deve ser 150000
+    E o corpo da resposta deve conter o campo "best_purchase_day"
+    E o campo texto "bank" da resposta deve ser "nubank"
 
   Cenário: Buscar cartão com ID inexistente retorna 404
     Quando o usuário busca um cartão com ID aleatório inexistente
@@ -24,15 +23,15 @@ Funcionalidade: Leitura e listagem de cartões
     E o campo de erro deve ser "card_not_found"
 
   Cenário: Listar cartões inclui o cartão recém-criado
-    Dado que o usuário possui um cartão criado com nome "Listagem Base", fechamento 3, vencimento 8 e limite 50000
+    Dado que o usuário possui um cartão criado com banco "nubank" e vencimento 20
     Quando o usuário lista todos os seus cartões
     Então a resposta HTTP deve ter status 200
     E a lista de cartões deve conter ao menos 1 item
     E o campo "items" da lista deve estar presente
 
   Cenário: Listar com limit=1 e 2 cartões cadastrados retorna next_cursor
-    Dado que o usuário possui um cartão criado com nome "Página 1-A", fechamento 5, vencimento 12 e limite 50000
-    E que o usuário possui um cartão criado com nome "Página 1-B", fechamento 5, vencimento 12 e limite 50000
+    Dado que o usuário possui um cartão criado com banco "nubank" e vencimento 20
+    E que o usuário possui um cartão criado com banco "itau" e vencimento 15
     Quando o usuário lista os cartões com limit 1
     Então a resposta HTTP deve ter status 200
     E a lista de cartões deve conter 1 item

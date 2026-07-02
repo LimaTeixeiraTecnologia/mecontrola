@@ -7,12 +7,11 @@ import (
 )
 
 type UpdateCard struct {
-	ID         uuid.UUID
-	UserID     uuid.UUID
-	Name       *string
-	Nickname   *string
-	ClosingDay *int
-	DueDay     *int
+	ID       uuid.UUID
+	UserID   uuid.UUID
+	Nickname *string
+	Bank     *string
+	DueDay   *int
 }
 
 func (i *UpdateCard) Validate() error {
@@ -22,6 +21,9 @@ func (i *UpdateCard) Validate() error {
 	}
 	if i.UserID == uuid.Nil {
 		errs = append(errs, ErrCardUserIDRequired)
+	}
+	if i.DueDay != nil && (*i.DueDay < 1 || *i.DueDay > 31) {
+		errs = append(errs, ErrCardDueDayInvalid)
 	}
 	return errors.Join(errs...)
 }

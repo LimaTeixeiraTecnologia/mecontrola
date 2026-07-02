@@ -30,11 +30,10 @@ func (s *InvoiceDueAlertsDeciderSuite) candidate(dueDay int) services.InvoiceDue
 	cycle, err := valueobjects.NewBillingCycle(1, dueDay)
 	s.Require().NoError(err)
 	return services.InvoiceDueCandidate{
-		UserID:     uuid.New(),
-		CardID:     uuid.New(),
-		CardName:   "Card",
-		Cycle:      cycle,
-		LimitCents: 100000,
+		UserID:       uuid.New(),
+		CardID:       uuid.New(),
+		CardNickname: "Card",
+		Cycle:        cycle,
 	}
 }
 

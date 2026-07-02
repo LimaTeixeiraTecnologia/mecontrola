@@ -40,7 +40,3 @@ func (f *repositoryFactory) ThresholdStateRepository(db database.DBTX) interface
 func (f *repositoryFactory) ThresholdAlertSentRepository(db database.DBTX) interfaces.ThresholdAlertSentRepository {
 	return postgres.NewThresholdAlertSentRepository(f.o11y, db)
 }
-
-func (f *repositoryFactory) CardThresholdReader(db database.DBTX) interfaces.CardThresholdReader {
-	return postgres.NewCardThresholdReader(f.o11y, db)
-}

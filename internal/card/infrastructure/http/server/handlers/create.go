@@ -21,11 +21,9 @@ type createCardUseCase interface {
 }
 
 type createCardRequest struct {
-	Name       string `json:"name"`
-	Nickname   string `json:"nickname"`
-	ClosingDay int    `json:"closing_day"`
-	DueDay     *int   `json:"due_day,omitempty"`
-	LimitCents int64  `json:"limit_cents,omitempty"`
+	Nickname string `json:"nickname"`
+	Bank     string `json:"bank"`
+	DueDay   int    `json:"due_day"`
 }
 
 type CreateCardHandler struct {
@@ -52,12 +50,10 @@ func (h *CreateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := h.usecase.Execute(ctx, input.CreateCard{
-		UserID:     principal.UserID,
-		Name:       req.Name,
-		Nickname:   req.Nickname,
-		ClosingDay: req.ClosingDay,
-		DueDay:     req.DueDay,
-		LimitCents: req.LimitCents,
+		UserID:   principal.UserID,
+		Nickname: req.Nickname,
+		Bank:     req.Bank,
+		DueDay:   req.DueDay,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -80,14 +76,26 @@ func (h *CreateCardHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 func mapCardError(w http.ResponseWriter, span observability.Span, err error) {
 	switch {
-	case errors.Is(err, domain.ErrInvalidCardName):
+	case errors.Is(err, input.ErrCardDueDayInvalid):
 		span.SetAttributes(observability.String("outcome", "invalid"))
-		responses.ErrorWithDetails(w, http.StatusBadRequest, "nome do cartão inválido",
-			map[string]string{"code": "invalid_card_name"})
+		responses.ErrorWithDetails(w, http.StatusBadRequest, "dia de vencimento inválido",
+			map[string]string{"code": "invalid_due_day"})
+	case errors.Is(err, input.ErrCardBankRequired):
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, "banco obrigatório",
+			map[string]string{"code": "bank_required"})
+	case errors.Is(err, input.ErrCardUserIDRequired), errors.Is(err, input.ErrCardIDRequired):
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, "requisição inválida",
+			map[string]string{"code": "invalid_request"})
 	case errors.Is(err, domain.ErrInvalidNickname):
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, "apelido inválido",
 			map[string]string{"code": "invalid_nickname"})
+	case errors.Is(err, domain.ErrInvalidBank):
+		span.SetAttributes(observability.String("outcome", "invalid"))
+		responses.ErrorWithDetails(w, http.StatusBadRequest, "banco inválido",
+			map[string]string{"code": "invalid_bank"})
 	case errors.Is(err, domain.ErrInvalidClosingDay):
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, "dia de fechamento inválido",
@@ -96,14 +104,6 @@ func mapCardError(w http.ResponseWriter, span observability.Span, err error) {
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, "dia de vencimento inválido",
 			map[string]string{"code": "invalid_due_day"})
-	case errors.Is(err, domain.ErrCardLimitNegative):
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		responses.ErrorWithDetails(w, http.StatusBadRequest, "limite do cartão inválido",
-			map[string]string{"code": "invalid_card_limit"})
-	case errors.Is(err, domain.ErrCardLimitTooLarge):
-		span.SetAttributes(observability.String("outcome", "invalid"))
-		responses.ErrorWithDetails(w, http.StatusBadRequest, "limite do cartão excede o máximo permitido",
-			map[string]string{"code": "card_limit_too_large"})
 	case errors.Is(err, domain.ErrInvalidPurchaseDate):
 		span.SetAttributes(observability.String("outcome", "invalid"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, "data inválida; use YYYY-MM-DD",
@@ -116,10 +116,6 @@ func mapCardError(w http.ResponseWriter, span observability.Span, err error) {
 		span.SetAttributes(observability.String("outcome", "conflict"))
 		responses.ErrorWithDetails(w, http.StatusConflict, "apelido já em uso",
 			map[string]string{"code": "nickname_in_use"})
-	case errors.Is(err, domain.ErrCardLimitConflict):
-		span.SetAttributes(observability.String("outcome", "conflict"))
-		responses.ErrorWithDetails(w, http.StatusConflict, "limite do cartão foi alterado por outra requisição",
-			map[string]string{"code": "card_limit_version_conflict"})
 	case errors.Is(err, domain.ErrCardNotFound):
 		span.SetAttributes(observability.String("outcome", "not_found"))
 		responses.ErrorWithDetails(w, http.StatusNotFound, "cartão não encontrado",

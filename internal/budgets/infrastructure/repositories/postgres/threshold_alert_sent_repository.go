@@ -222,8 +222,6 @@ func parseAlertKind(s string) (services.ThresholdAlertKind, error) {
 		return services.ThresholdAlertCategory, nil
 	case "goal_achieved":
 		return services.ThresholdAlertGoal, nil
-	case "card_limit_near":
-		return services.ThresholdAlertCardLimit, nil
 	default:
 		return 0, fmt.Errorf("budgets/postgres: kind desconhecido: %q", s)
 	}

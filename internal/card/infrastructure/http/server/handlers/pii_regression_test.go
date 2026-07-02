@@ -131,14 +131,15 @@ func TestM07_NoPIIInHandlerLogs(t *testing.T) {
 	cardID := uuid.New().String()
 
 	card := output.Card{
-		ID:         cardID,
-		UserID:     userID.String(),
-		Name:       "Nubank Secreto",
-		Nickname:   "NuPrivado",
-		ClosingDay: 15,
-		DueDay:     22,
-		CreatedAt:  time.Now().UTC(),
-		UpdatedAt:  time.Now().UTC(),
+		ID:              cardID,
+		UserID:          userID.String(),
+		Nickname:        "NuPrivado",
+		Bank:            "nubank-secreto",
+		ClosingDay:      15,
+		DueDay:          22,
+		BestPurchaseDay: 16,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 
 	assertNoPII := func(t *testing.T, logOutput string) {

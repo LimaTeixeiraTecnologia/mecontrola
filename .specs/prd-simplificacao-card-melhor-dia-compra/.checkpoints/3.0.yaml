@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-simplificacao-card-melhor-dia-compra/3.0_execution_report.md
+summary: "BankDaysReader interface + bank_repository adapter (fallback 7) + wiring factory + mock gerado"
+timestamp: 2026-07-02T10:10:00Z

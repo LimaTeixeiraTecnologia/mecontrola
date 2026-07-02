@@ -10,11 +10,10 @@ import (
 )
 
 type CreateCardCommand struct {
-	UserID     uuid.UUID
-	Name       valueobjects.CardName
-	Nickname   valueobjects.Nickname
-	Cycle      valueobjects.BillingCycle
-	LimitCents int64
+	UserID   uuid.UUID
+	Nickname valueobjects.Nickname
+	Bank     valueobjects.BankCode
+	Cycle    valueobjects.BillingCycle
 }
 
 type CreateCardDecider struct{}
@@ -28,10 +27,9 @@ func (CreateCardDecider) Decide(cmd CreateCardCommand, cardID uuid.UUID, now tim
 	return entities.HydrateCard(
 		cardID,
 		cmd.UserID,
-		cmd.Name,
 		cmd.Nickname,
+		cmd.Bank,
 		cmd.Cycle,
-		cmd.LimitCents,
 		at,
 		at,
 		nil,

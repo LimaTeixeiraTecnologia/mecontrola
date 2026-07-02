@@ -109,7 +109,6 @@ type BudgetsConfig struct {
 	ThresholdAlertsMode      string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_MODE"`
 	ThresholdCategoryRatio   float64       `mapstructure:"BUDGETS_THRESHOLD_CATEGORY_RATIO"`
 	ThresholdGoalRatio       float64       `mapstructure:"BUDGETS_THRESHOLD_GOAL_RATIO"`
-	ThresholdCardRatio       float64       `mapstructure:"BUDGETS_THRESHOLD_CARD_RATIO"`
 }
 
 const (
@@ -515,7 +514,6 @@ func (l *configLoader) envKeys() []string {
 		"BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT",
 		"BUDGETS_THRESHOLD_CATEGORY_RATIO",
 		"BUDGETS_THRESHOLD_GOAL_RATIO",
-		"BUDGETS_THRESHOLD_CARD_RATIO",
 		"CARD_INVOICE_DUE_ALERTS_ENABLED",
 		"CARD_INVOICE_DUE_ALERTS_CRON",
 		"CARD_INVOICE_DUE_WINDOW_DAYS",
@@ -590,7 +588,6 @@ func (l *configLoader) setBudgetsDefaults() {
 	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_MODE", ThresholdAlertsModeLegacy)
 	l.v.SetDefault("BUDGETS_THRESHOLD_CATEGORY_RATIO", 0.80)
 	l.v.SetDefault("BUDGETS_THRESHOLD_GOAL_RATIO", 0.50)
-	l.v.SetDefault("BUDGETS_THRESHOLD_CARD_RATIO", 0.85)
 }
 
 func (l *configLoader) setCardDefaults() {

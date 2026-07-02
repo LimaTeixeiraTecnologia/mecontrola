@@ -18,17 +18,21 @@ func (Mapper) ToInvoiceOutput(invoice services.Invoice, tz *time.Location) outpu
 }
 
 func (Mapper) ToCardOutput(c entities.Card) output.Card {
+	bestDay := c.Cycle.ClosingDay + 1
+	if bestDay > 31 {
+		bestDay = 1
+	}
 	return output.Card{
-		ID:         c.ID.String(),
-		UserID:     c.UserID.String(),
-		Name:       c.Name.String(),
-		Nickname:   c.Nickname.String(),
-		ClosingDay: c.Cycle.ClosingDay,
-		DueDay:     c.Cycle.DueDay,
-		LimitCents: c.LimitCents,
-		CreatedAt:  c.CreatedAt,
-		UpdatedAt:  c.UpdatedAt,
-		DeletedAt:  c.DeletedAt,
+		ID:              c.ID.String(),
+		UserID:          c.UserID.String(),
+		Nickname:        c.Nickname.String(),
+		Bank:            c.Bank.String(),
+		ClosingDay:      c.Cycle.ClosingDay,
+		DueDay:          c.Cycle.DueDay,
+		BestPurchaseDay: bestDay,
+		CreatedAt:       c.CreatedAt,
+		UpdatedAt:       c.UpdatedAt,
+		DeletedAt:       c.DeletedAt,
 	}
 }
 

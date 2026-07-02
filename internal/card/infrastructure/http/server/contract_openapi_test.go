@@ -34,17 +34,17 @@ import (
 
 type ContractOpenAPISuite struct {
 	suite.Suite
-	doc         *openapi3.T
-	apiRouter   routers.Router
-	httpRouter  chi.Router
-	idemStorage *idemocks.Storage
-	createUC    *mockCreateCard
-	listUC      *mockListCards
-	getUC       *mockGetCard
-	updateUC    *mockUpdateCard
-	updateLimUC *mockUpdateCardLimit
-	deleteUC    *mockSoftDeleteCard
-	invoiceUC   *mockInvoiceFor
+	doc            *openapi3.T
+	apiRouter      routers.Router
+	httpRouter     chi.Router
+	idemStorage    *idemocks.Storage
+	createUC       *mockCreateCard
+	listUC         *mockListCards
+	getUC          *mockGetCard
+	updateUC       *mockUpdateCard
+	deleteUC       *mockSoftDeleteCard
+	invoiceUC      *mockInvoiceFor
+	bestPurchaseUC *mockBestPurchaseDay
 }
 
 func TestContractOpenAPI(t *testing.T) {
@@ -71,20 +71,20 @@ func (s *ContractOpenAPISuite) SetupTest() {
 	s.listUC = &mockListCards{}
 	s.getUC = &mockGetCard{}
 	s.updateUC = &mockUpdateCard{}
-	s.updateLimUC = &mockUpdateCardLimit{}
 	s.deleteUC = &mockSoftDeleteCard{}
 	s.invoiceUC = &mockInvoiceFor{}
+	s.bestPurchaseUC = &mockBestPurchaseDay{}
 
 	createH := handlers.NewCreateCardHandler(s.createUC, o11y)
 	listH := handlers.NewListCardsHandler(s.listUC, o11y)
 	getH := handlers.NewGetCardHandler(s.getUC, o11y)
 	updateH := handlers.NewUpdateCardHandler(s.updateUC, o11y)
-	updateLimH := handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y)
 	deleteH := handlers.NewDeleteCardHandler(s.deleteUC, o11y)
 	invoiceH := handlers.NewInvoiceForHandler(s.invoiceUC, o11y)
+	bestPurchaseH := handlers.NewBestPurchaseDayHandler(s.bestPurchaseUC, o11y)
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, updateLimH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
+	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, bestPurchaseH, s.idemStorage, o11y, passthrough, passthrough)
 	r := chi.NewRouter()
 	cardRouter.Register(r)
 	s.httpRouter = r
@@ -193,12 +193,12 @@ func (s *ContractOpenAPISuite) TestContract_PostCards_RealValidation() {
 	s.createUC.On("Execute", mock.Anything, mock.AnythingOfType("input.CreateCard")).
 		Return(contractCard(), nil).Once()
 
-	body := `{"name":"Nubank","nickname":"Nu","closing_day":15,"due_day":22}`
+	body := `{"nickname":"Nu","bank":"nubank","due_day":22}`
 	rr, _ := s.execAndValidate(s.T(), http.MethodPost, "/api/v1/cards", body, s.mutHeaders("idem-oa-post-001"))
 
 	s.Equal(http.StatusCreated, rr.Code)
 	m := s.decodeMap(rr)
-	for _, k := range []string{"id", "user_id", "name", "nickname", "closing_day", "due_day", "created_at", "updated_at"} {
+	for _, k := range []string{"id", "user_id", "nickname", "bank", "closing_day", "due_day", "best_purchase_day", "created_at", "updated_at"} {
 		s.Contains(m, k, "campo snake_case %q deve existir no payload Card", k)
 	}
 }
@@ -244,7 +244,7 @@ func (s *ContractOpenAPISuite) TestContract_PutCard_RealValidation() {
 	s.updateUC.On("Execute", mock.Anything, mock.AnythingOfType("input.UpdateCard")).
 		Return(contractUpdatedCard(), nil).Once()
 
-	body := `{"name":"Nubank Gold","nickname":"Nu Gold","closing_day":20,"due_day":27}`
+	body := `{"nickname":"Nu Gold","bank":"nubank","due_day":27}`
 	path := "/api/v1/cards/" + contractCardID
 	rr, _ := s.execAndValidate(s.T(), http.MethodPut, path, body, s.mutHeaders("idem-oa-put-001"))
 
@@ -266,6 +266,23 @@ func (s *ContractOpenAPISuite) TestContract_DeleteCard_RealValidation() {
 
 	s.Equal(http.StatusNoContent, rr.Code)
 	s.Empty(bytes.TrimSpace(rr.Body.Bytes()), "204 deve ter body vazio")
+}
+
+func (s *ContractOpenAPISuite) TestContract_GetBestPurchaseDay_RealValidation() {
+	s.bestPurchaseUC.On("Execute", mock.Anything, mock.AnythingOfType("input.BestPurchaseDay")).
+		Return(output.BestPurchaseDay{ClosingDay: 13, BestPurchaseDay: 14}, nil).Once()
+
+	path := "/api/v1/cards/best-purchase-day?bank=nubank&due_day=20"
+	rr, _ := s.execAndValidate(s.T(), http.MethodGet, path, "", s.authHeaders())
+
+	s.Equal(http.StatusOK, rr.Code)
+	m := s.decodeMap(rr)
+	s.Contains(m, "closing_day", "BestPurchaseDayResponse deve conter 'closing_day'")
+	s.Contains(m, "best_purchase_day", "BestPurchaseDayResponse deve conter 'best_purchase_day'")
+	closingDay, _ := m["closing_day"].(float64)
+	bestDay, _ := m["best_purchase_day"].(float64)
+	s.Equal(float64(13), closingDay, "Nubank/20 deve retornar closing_day=13")
+	s.Equal(float64(14), bestDay, "Nubank/20 deve retornar best_purchase_day=14")
 }
 
 func (s *ContractOpenAPISuite) TestContract_GetInvoices_RealValidation() {

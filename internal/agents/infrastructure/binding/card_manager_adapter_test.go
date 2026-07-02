@@ -12,7 +12,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
-	cardmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
+	cardifacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces/mocks"
 	cardusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	cardentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
@@ -24,12 +24,13 @@ import (
 
 type CardManagerAdapterSuite struct {
 	suite.Suite
-	ctx      context.Context
-	userID   uuid.UUID
-	cardRepo *cardmocks.CardRepository
-	factory  *cardmocks.RepositoryFactory
-	uow      *uowmocks.UnitOfWork
-	idem     *idemmocks.Storage
+	ctx          context.Context
+	userID       uuid.UUID
+	cardRepo     *cardifacemocks.CardRepository
+	bankDaysMock *cardifacemocks.BankDaysReader
+	factory      *cardifacemocks.RepositoryFactory
+	uow          *uowmocks.UnitOfWork
+	idem         *idemmocks.Storage
 }
 
 func TestCardManagerAdapterSuite(t *testing.T) {
@@ -39,8 +40,9 @@ func TestCardManagerAdapterSuite(t *testing.T) {
 func (s *CardManagerAdapterSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.userID = uuid.New()
-	s.cardRepo = cardmocks.NewCardRepository(s.T())
-	s.factory = cardmocks.NewRepositoryFactory(s.T())
+	s.cardRepo = cardifacemocks.NewCardRepository(s.T())
+	s.bankDaysMock = cardifacemocks.NewBankDaysReader(s.T())
+	s.factory = cardifacemocks.NewRepositoryFactory(s.T())
 	s.uow = uowmocks.NewUnitOfWork(s.T())
 	s.idem = idemmocks.NewStorage(s.T())
 }
@@ -53,18 +55,17 @@ func (s *CardManagerAdapterSuite) buildAdapter() agentsifaces.CardManager {
 }
 
 func (s *CardManagerAdapterSuite) existingCard(nickname string) cardentities.Card {
-	name, err := cardvo.NewCardName(nickname)
-	s.Require().NoError(err)
 	nick, err := cardvo.NewNickname(nickname)
+	s.Require().NoError(err)
+	bank, err := cardvo.NewBankCode("Nubank")
 	s.Require().NoError(err)
 	cycle, err := cardvo.NewBillingCycle(1, 8)
 	s.Require().NoError(err)
 	return cardentities.NewCard(cardentities.NewCardInput{
-		UserID:     s.userID,
-		Name:       name,
-		Nickname:   nick,
-		Cycle:      cycle,
-		LimitCents: 0,
+		UserID:   s.userID,
+		Nickname: nick,
+		Bank:     bank,
+		Cycle:    cycle,
 	})
 }
 
@@ -76,6 +77,11 @@ func (s *CardManagerAdapterSuite) TestCreateCard_NicknameConflict_ReturnsExistin
 		RunAndReturn(func(ctx context.Context, fn func(context.Context, database.DBTX) error) error {
 			return fn(ctx, nil)
 		}).
+		Once()
+	s.factory.EXPECT().BankDaysReader(mock.Anything).Return(s.bankDaysMock).Once()
+	s.bankDaysMock.EXPECT().
+		DaysBeforeDue(mock.Anything, mock.Anything).
+		Return(7, nil).
 		Once()
 	s.factory.EXPECT().CardRepository(mock.Anything).Return(s.cardRepo).Once()
 	s.cardRepo.EXPECT().
@@ -91,6 +97,7 @@ func (s *CardManagerAdapterSuite) TestCreateCard_NicknameConflict_ReturnsExistin
 	ref, err := adapter.CreateCard(s.ctx, agentsifaces.NewCard{
 		UserID:   s.userID,
 		Nickname: "Nu",
+		Bank:     "Nubank",
 		DueDay:   1,
 	})
 
@@ -106,6 +113,11 @@ func (s *CardManagerAdapterSuite) TestCreateCard_NicknameConflict_NoMatchPropaga
 			return fn(ctx, nil)
 		}).
 		Once()
+	s.factory.EXPECT().BankDaysReader(mock.Anything).Return(s.bankDaysMock).Once()
+	s.bankDaysMock.EXPECT().
+		DaysBeforeDue(mock.Anything, mock.Anything).
+		Return(7, nil).
+		Once()
 	s.factory.EXPECT().CardRepository(mock.Anything).Return(s.cardRepo).Once()
 	s.cardRepo.EXPECT().
 		Insert(mock.Anything, mock.AnythingOfType("entities.Card")).
@@ -120,6 +132,7 @@ func (s *CardManagerAdapterSuite) TestCreateCard_NicknameConflict_NoMatchPropaga
 	ref, err := adapter.CreateCard(s.ctx, agentsifaces.NewCard{
 		UserID:   s.userID,
 		Nickname: "Nu",
+		Bank:     "Nubank",
 		DueDay:   1,
 	})
 

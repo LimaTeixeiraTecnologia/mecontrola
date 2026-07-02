@@ -281,10 +281,6 @@ func (b *moduleBuilder) buildThresholdConfig() (services.ThresholdConfig, error)
 	if goal <= 0 {
 		goal = 0.50
 	}
-	card := b.cfg.BudgetsConfig.ThresholdCardRatio
-	if card <= 0 {
-		card = 0.85
-	}
 	catRatio, err := valueobjects.NewThresholdRatio(category)
 	if err != nil {
 		return services.ThresholdConfig{}, fmt.Errorf("budgets: threshold category: %w", err)
@@ -293,11 +289,7 @@ func (b *moduleBuilder) buildThresholdConfig() (services.ThresholdConfig, error)
 	if err != nil {
 		return services.ThresholdConfig{}, fmt.Errorf("budgets: threshold goal: %w", err)
 	}
-	cardRatio, err := valueobjects.NewThresholdRatio(card)
-	if err != nil {
-		return services.ThresholdConfig{}, fmt.Errorf("budgets: threshold card: %w", err)
-	}
-	return services.ThresholdConfig{Category: catRatio, Goal: goalRatio, Card: cardRatio}, nil
+	return services.ThresholdConfig{Category: catRatio, Goal: goalRatio}, nil
 }
 
 func (b *moduleBuilder) buildRouter(useCases moduleUseCases) *budgetsserver.BudgetsRouter {

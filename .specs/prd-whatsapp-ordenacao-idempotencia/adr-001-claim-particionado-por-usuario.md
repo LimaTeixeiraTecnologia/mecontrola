@@ -29,7 +29,7 @@ em voo (status=2) por usuário**; o próximo evento de um usuário só é reivin
 concluir. Ordenação FIFO por `occurred_at` (que passará a carregar o **timestamp da Meta**, RF-18).
 
 Mecanismo (adapter Postgres, sem mudar a assinatura pública do repositório):
-- Migration `000002`: índice parcial `(aggregate_user_id, occurred_at) WHERE status=1` e índice
+- Migration `000003`: índice parcial `(aggregate_user_id, occurred_at) WHERE status=1` e índice
   **único** parcial `(aggregate_user_id) WHERE status=2` (backstop "1 em voo").
 - `ClaimBatch` reivindica apenas eventos de usuários sem evento em voo e sem pendente anterior
   (`NOT EXISTS`), `ORDER BY occurred_at`, `FOR UPDATE SKIP LOCKED`, marcando status=2 na mesma
@@ -70,12 +70,19 @@ domínio — preserva R-WF-KERNEL-001. Nenhuma conexão é segurada durante o LL
 - **Risco:** contenção/latência sob alto fan-out. **Mitigação:** índices parciais; métrica de lag
   p95; evolução para partição por hash se necessário. **Rollback:** reverter `ClaimBatch` ao
   `ORDER BY next_attempt_at` e dropar índices (migration down) — comportamento antigo restaurado.
-- **Risco:** colisão no índice único em voo vazar como erro. **Mitigação:** tratar `unique_violation`
-  como "adiar" (evento segue pendente, reivindicado no próximo tick).
+- **Risco:** colisão no índice único em voo vazar como erro. **Mitigação:** o `UPDATE ... FROM
+  claimable` é atômico por statement — uma violação `SQLSTATE 23505` aborta o lote inteiro, não só a
+  linha. O `ClaimBatch` DEVE capturar o 23505 e **descartar o lote**, reivindicando no próximo tick
+  (evento segue pendente). Colisão é rara (`FOR UPDATE SKIP LOCKED` + `NOT EXISTS`); perder 1 tick é
+  aceitável (D-14).
+- **Risco:** poison head-of-line — evento inbound com falha permanente e `occurred_at` anterior
+  (status=1) bloqueia os seguintes do usuário via `NOT EXISTS`. **Mitigação:** `max_attempts`/backoff
+  dos eventos inbound dimensionados para dead-letter (`status=4`, excluído do bloqueio) em ~1 turno;
+  alerta em `status=4 > 0` (RF-22/D-19). FIFO estrito preservado.
 
 ## Plano de Implementação
 
-1. Migration `000002` com os dois índices parciais (`IF NOT EXISTS`, sem downtime).
+1. Migration `000003` com os dois índices parciais (`IF NOT EXISTS`, sem downtime).
 2. Reescrever `ClaimBatch` (CTE `claimable` + UPDATE ... RETURNING) no adapter Postgres.
 3. Propagar `msg.Timestamp` (Meta) ao `OccurredAt` do evento (RF-18) para o FIFO refletir o usuário.
 4. Testes de integração de concorrência (testcontainers): 1 em voo por usuário; paralelismo entre

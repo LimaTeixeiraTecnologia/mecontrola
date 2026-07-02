@@ -56,7 +56,8 @@ func (u *InvoiceFor) Execute(ctx context.Context, in input.InvoiceFor) (output.I
 		return output.Invoice{}, fmt.Errorf("card/invoice_for: %w", domain.ErrCardNotFound)
 	}
 
-	invoice := services.BillingCycleService{}.InvoiceFor(in.Purchase, card.Cycle, u.loc)
+	purchase := time.Date(in.Purchase.Year(), in.Purchase.Month(), in.Purchase.Day(), 0, 0, 0, 0, u.loc)
+	invoice := services.BillingCycleService{}.InvoiceFor(purchase, card.Cycle, u.loc)
 
 	span.SetAttributes(observability.String("outcome", "success"))
 	u.o11y.Logger().Info(ctx, "card.invoice_for.computed",

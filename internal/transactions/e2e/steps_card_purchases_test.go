@@ -31,7 +31,7 @@ func registerCardPurchaseSteps(sc *godog.ScenarioContext, e *txE2ECtx) {
 func (e *txE2ECtx) queExisteUmCartaoConfiguradoParaOUsuario() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	id, err := insertCardViaSQL(ctx, e.db, e.userID, "Cartão E2E", fmt.Sprintf("cartao-%s", uuid.NewString()[:8]), 10, 20)
+	id, err := insertCardViaSQL(ctx, e.db, e.userID, "nubank", fmt.Sprintf("cartao-%s", uuid.NewString()[:8]), 10, 20)
 	if err != nil {
 		return err
 	}

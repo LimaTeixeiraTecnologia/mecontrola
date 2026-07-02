@@ -16,9 +16,9 @@ func TestSentinels(t *testing.T) {
 		{"ErrNicknameConflict", domain.ErrNicknameConflict},
 		{"ErrInvalidClosingDay", domain.ErrInvalidClosingDay},
 		{"ErrInvalidDueDay", domain.ErrInvalidDueDay},
-		{"ErrInvalidCardName", domain.ErrInvalidCardName},
 		{"ErrInvalidNickname", domain.ErrInvalidNickname},
 		{"ErrInvalidPurchaseDate", domain.ErrInvalidPurchaseDate},
+		{"ErrInvalidBank", domain.ErrInvalidBank},
 	}
 
 	for _, s := range sentinels {

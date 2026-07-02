@@ -40,14 +40,14 @@ func (s *OpenAPIValidationSuite) TestDoc_Info() {
 	s.Equal("MeControla Cards API", s.doc.Info.Title)
 }
 
-func (s *OpenAPIValidationSuite) TestDoc_SixEndpoints() {
+func (s *OpenAPIValidationSuite) TestDoc_Endpoints() {
 	s.Require().NotNil(s.doc.Paths)
 
 	paths := map[string][]string{
-		"/api/v1/cards":               {"POST", "GET"},
-		"/api/v1/cards/{id}":          {"GET", "PUT", "DELETE"},
-		"/api/v1/cards/{id}/limit":    {"PATCH"},
-		"/api/v1/cards/{id}/invoices": {"GET"},
+		"/api/v1/cards":                   {"POST", "GET"},
+		"/api/v1/cards/best-purchase-day": {"GET"},
+		"/api/v1/cards/{id}":              {"GET", "PUT", "DELETE"},
+		"/api/v1/cards/{id}/invoices":     {"GET"},
 	}
 
 	for path, methods := range paths {
@@ -68,6 +68,8 @@ func (s *OpenAPIValidationSuite) TestDoc_SixEndpoints() {
 			}
 		}
 	}
+
+	s.Nil(s.doc.Paths.Find("/api/v1/cards/{id}/limit"), "rota /limit deve ter sido removida")
 }
 
 func (s *OpenAPIValidationSuite) TestDoc_Schemas() {
@@ -78,7 +80,39 @@ func (s *OpenAPIValidationSuite) TestDoc_Schemas() {
 	s.Contains(schemas, "Invoice")
 	s.Contains(schemas, "CreateCardRequest")
 	s.Contains(schemas, "UpdateCardRequest")
+	s.Contains(schemas, "BestPurchaseDayResponse")
 	s.Contains(schemas, "ProblemDetail")
+}
+
+func (s *OpenAPIValidationSuite) TestDoc_BestPurchaseDayResponse_Has200And400And401And500() {
+	path := s.doc.Paths.Find("/api/v1/cards/best-purchase-day")
+	s.Require().NotNil(path, "path /api/v1/cards/best-purchase-day deve existir")
+	s.Require().NotNil(path.Get)
+	responses := path.Get.Responses
+	s.NotNil(responses.Status(200), "200 deve existir em GET /api/v1/cards/best-purchase-day")
+	s.NotNil(responses.Status(400), "400 deve existir em GET /api/v1/cards/best-purchase-day")
+	s.NotNil(responses.Status(401), "401 deve existir em GET /api/v1/cards/best-purchase-day")
+	s.NotNil(responses.Status(500), "500 deve existir em GET /api/v1/cards/best-purchase-day")
+}
+
+func (s *OpenAPIValidationSuite) TestDoc_CreateCardRequest_HasBankNotLimitCents() {
+	s.Require().NotNil(s.doc.Components)
+	schema := s.doc.Components.Schemas["CreateCardRequest"]
+	s.Require().NotNil(schema)
+	props := schema.Value.Properties
+	s.Contains(props, "bank", "CreateCardRequest deve ter campo bank")
+	s.NotContains(props, "limit_cents", "CreateCardRequest nao deve ter campo limit_cents")
+	s.NotContains(props, "closing_day", "CreateCardRequest nao deve ter campo closing_day como entrada")
+}
+
+func (s *OpenAPIValidationSuite) TestDoc_Card_HasBestPurchaseDayNotLimitCents() {
+	s.Require().NotNil(s.doc.Components)
+	schema := s.doc.Components.Schemas["Card"]
+	s.Require().NotNil(schema)
+	props := schema.Value.Properties
+	s.Contains(props, "best_purchase_day", "Card deve ter campo best_purchase_day")
+	s.Contains(props, "bank", "Card deve ter campo bank")
+	s.NotContains(props, "limit_cents", "Card nao deve ter campo limit_cents")
 }
 
 func (s *OpenAPIValidationSuite) TestDoc_PostCards_Has201And400And401And409And500() {

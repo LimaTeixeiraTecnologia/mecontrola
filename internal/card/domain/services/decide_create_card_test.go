@@ -25,17 +25,17 @@ func (s *CreateCardDeciderSuite) SetupTest() {
 }
 
 func (s *CreateCardDeciderSuite) buildCommand() (services.CreateCardCommand, uuid.UUID) {
-	name, err := valueobjects.NewCardName("Visa Black")
-	s.Require().NoError(err)
 	nick, err := valueobjects.NewNickname("Visa")
 	s.Require().NoError(err)
-	cycle, err := valueobjects.NewBillingCycle(10, 17)
+	bank, err := valueobjects.NewBankCode("Nubank")
+	s.Require().NoError(err)
+	cycle, err := valueobjects.NewBillingCycle(13, 20)
 	s.Require().NoError(err)
 	userID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 	return services.CreateCardCommand{
 		UserID:   userID,
-		Name:     name,
 		Nickname: nick,
+		Bank:     bank,
 		Cycle:    cycle,
 	}, userID
 }
@@ -49,8 +49,8 @@ func (s *CreateCardDeciderSuite) TestDecide_AssemblesCardWithExplicitIDAndTimest
 
 	s.Equal(cardID, got.ID)
 	s.Equal(userID, got.UserID)
-	s.Equal(cmd.Name, got.Name)
 	s.Equal(cmd.Nickname, got.Nickname)
+	s.Equal(cmd.Bank, got.Bank)
 	s.Equal(cmd.Cycle, got.Cycle)
 	s.Equal(now, got.CreatedAt)
 	s.Equal(now, got.UpdatedAt)

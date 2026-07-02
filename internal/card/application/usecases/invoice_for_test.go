@@ -38,10 +38,10 @@ func (s *InvoiceForSuite) SetupTest() {
 }
 
 func (s *InvoiceForSuite) activeCard() entities.Card {
-	name, _ := valueobjects.NewCardName("Visa Gold")
+	bank, _ := valueobjects.NewBankCode("nubank")
 	nick, _ := valueobjects.NewNickname("Visa")
 	cycle, _ := valueobjects.NewBillingCycle(15, 22)
-	return entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
+	return entities.HydrateCard(uuid.New(), uuid.New(), nick, bank, cycle, time.Now().UTC(), time.Now().UTC(), nil)
 }
 
 func (s *InvoiceForSuite) TestExecute_HappyPath() {
@@ -59,6 +59,25 @@ func (s *InvoiceForSuite) TestExecute_HappyPath() {
 	s.NotEmpty(out.DueDate)
 }
 
+func (s *InvoiceForSuite) TestExecute_DayAfterClosing_RollsToNextCycle() {
+	bank, _ := valueobjects.NewBankCode("nubank")
+	nick, _ := valueobjects.NewNickname("Visa")
+	cycle, _ := valueobjects.NewBillingCycle(13, 20)
+	card := entities.HydrateCard(uuid.New(), uuid.New(), nick, bank, cycle, time.Now().UTC(), time.Now().UTC(), nil)
+
+	purchase := time.Date(2025, 6, 14, 0, 0, 0, 0, time.UTC)
+	in := input.InvoiceFor{CardID: card.ID, UserID: card.UserID, Purchase: purchase}
+
+	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
+
+	sut := NewInvoiceFor(s.repoMock, s.loc, s.obs)
+	out, err := sut.Execute(context.Background(), in)
+
+	s.Require().NoError(err)
+	s.Equal("2025-07-13", out.ClosingDate)
+	s.Equal("2025-07-20", out.DueDate)
+}
+
 func (s *InvoiceForSuite) TestExecute_CardNotFound() {
 	in := input.InvoiceFor{CardID: uuid.New(), UserID: uuid.New(), Purchase: time.Now()}
 
@@ -72,11 +91,11 @@ func (s *InvoiceForSuite) TestExecute_CardNotFound() {
 }
 
 func (s *InvoiceForSuite) TestExecute_SoftDeletedCardReturnsNotFound() {
-	name, _ := valueobjects.NewCardName("Deleted")
+	bank, _ := valueobjects.NewBankCode("itau")
 	nick, _ := valueobjects.NewNickname("Del")
 	cycle, _ := valueobjects.NewBillingCycle(5, 12)
 	deletedAt := time.Now().UTC()
-	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), &deletedAt)
+	card := entities.HydrateCard(uuid.New(), uuid.New(), nick, bank, cycle, time.Now().UTC(), time.Now().UTC(), &deletedAt)
 
 	in := input.InvoiceFor{CardID: card.ID, UserID: card.UserID, Purchase: time.Now()}
 

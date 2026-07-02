@@ -9,5 +9,4 @@ type RepositoryFactory interface {
 	PendingEventRepository(db database.DBTX) PendingEventRepository
 	ThresholdStateRepository(db database.DBTX) ThresholdStateRepository
 	ThresholdAlertSentRepository(db database.DBTX) ThresholdAlertSentRepository
-	CardThresholdReader(db database.DBTX) CardThresholdReader
 }

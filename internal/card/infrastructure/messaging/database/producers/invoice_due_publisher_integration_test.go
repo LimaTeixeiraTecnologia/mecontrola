@@ -51,8 +51,8 @@ func seedUserAndCard(t *testing.T, db *sqlx.DB) (userID, cardID uuid.UUID) {
 		t.Fatalf("seed user: %v", err)
 	}
 	_, err = db.ExecContext(ctx,
-		`INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, limit_cents)
-		 VALUES ($1, $2, 'Test Card', 'test', 10, 20, 100000)`,
+		`INSERT INTO mecontrola.cards (id, user_id, nickname, bank, closing_day, due_day)
+		 VALUES ($1, $2, 'test', 'nubank', 10, 20)`,
 		cardID.String(), userID.String(),
 	)
 	if err != nil {
@@ -63,12 +63,11 @@ func seedUserAndCard(t *testing.T, db *sqlx.DB) (userID, cardID uuid.UUID) {
 
 func buildAlert(userID, cardID uuid.UUID) services.InvoiceDueAlert {
 	return services.InvoiceDueAlert{
-		UserID:     userID,
-		CardID:     cardID,
-		CardName:   "Test Card",
-		LimitCents: 100000,
-		DueDate:    time.Now().UTC().AddDate(0, 0, 3),
-		DaysUntil:  3,
+		UserID:       userID,
+		CardID:       cardID,
+		CardNickname: "Test Card",
+		DueDate:      time.Now().UTC().AddDate(0, 0, 3),
+		DaysUntil:    3,
 	}
 }
 

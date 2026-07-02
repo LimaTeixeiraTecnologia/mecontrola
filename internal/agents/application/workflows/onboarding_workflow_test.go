@@ -166,6 +166,7 @@ func (s *OnboardingWorkflowSuite) TestDecideDistribution() {
 func (s *OnboardingWorkflowSuite) TestDecideCardEntry() {
 	type args struct {
 		nickname string
+		bank     string
 		dueDay   int
 	}
 	scenarios := []struct {
@@ -175,33 +176,38 @@ func (s *OnboardingWorkflowSuite) TestDecideCardEntry() {
 	}{
 		{
 			name:   "deve retornar erro para nickname vazio",
-			args:   args{nickname: "", dueDay: 10},
+			args:   args{nickname: "", bank: "Nubank", dueDay: 10},
+			expect: func(err error) { s.Error(err) },
+		},
+		{
+			name:   "deve retornar erro para bank vazio",
+			args:   args{nickname: "Nubank", bank: "", dueDay: 10},
 			expect: func(err error) { s.Error(err) },
 		},
 		{
 			name:   "deve retornar erro para dueDay zero",
-			args:   args{nickname: "Nubank", dueDay: 0},
+			args:   args{nickname: "Nubank", bank: "Nubank", dueDay: 0},
 			expect: func(err error) { s.Error(err) },
 		},
 		{
 			name:   "deve retornar erro para dueDay 32",
-			args:   args{nickname: "Nubank", dueDay: 32},
+			args:   args{nickname: "Nubank", bank: "Nubank", dueDay: 32},
 			expect: func(err error) { s.Error(err) },
 		},
 		{
 			name:   "deve aceitar entry valida",
-			args:   args{nickname: "Nubank", dueDay: 10},
+			args:   args{nickname: "Nubank", bank: "Nubank", dueDay: 10},
 			expect: func(err error) { s.NoError(err) },
 		},
 		{
 			name:   "deve aceitar dueDay limite 31",
-			args:   args{nickname: "Bradesco", dueDay: 31},
+			args:   args{nickname: "Bradesco", bank: "Bradesco", dueDay: 31},
 			expect: func(err error) { s.NoError(err) },
 		},
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			err := DecideCardEntry(scenario.args.nickname, scenario.args.dueDay)
+			err := DecideCardEntry(scenario.args.nickname, scenario.args.bank, scenario.args.dueDay)
 			scenario.expect(err)
 		})
 	}

@@ -19,7 +19,6 @@ type CardRepository interface {
 	ListByUser(ctx context.Context, userID, cursor string, limit int) ([]entities.Card, string, error)
 	CountActiveByUser(ctx context.Context, userID string) (int64, error)
 	UpdateByIDForUser(ctx context.Context, c entities.Card) (entities.Card, error)
-	UpdateLimitByIDForUser(ctx context.Context, c entities.Card, expectedVersion int64) (entities.Card, error)
 	SoftDeleteByIDForUser(ctx context.Context, cardID, userID string, now time.Time) error
 	FindCardsWithInvoiceDueWithin(ctx context.Context, windowDays, limit int) ([]entities.Card, error)
 }
@@ -41,4 +40,5 @@ type InvoiceDueAlertSentRepository interface {
 type RepositoryFactory interface {
 	CardRepository(db database.DBTX) CardRepository
 	InvoiceDueAlertSentRepository(db database.DBTX) InvoiceDueAlertSentRepository
+	BankDaysReader(db database.DBTX) BankDaysReader
 }

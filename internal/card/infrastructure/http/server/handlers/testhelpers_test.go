@@ -24,14 +24,15 @@ func ctxWithPrincipal(userID uuid.UUID) context.Context {
 
 func sampleCard(userID uuid.UUID) output.Card {
 	return output.Card{
-		ID:         uuid.New().String(),
-		UserID:     userID.String(),
-		Name:       "Nubank",
-		Nickname:   "Nu",
-		ClosingDay: 15,
-		DueDay:     22,
-		CreatedAt:  time.Now().UTC(),
-		UpdatedAt:  time.Now().UTC(),
+		ID:              uuid.New().String(),
+		UserID:          userID.String(),
+		Nickname:        "Nu",
+		Bank:            "nubank",
+		ClosingDay:      15,
+		DueDay:          22,
+		BestPurchaseDay: 16,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 }
 

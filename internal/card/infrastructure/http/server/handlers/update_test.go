@@ -79,11 +79,11 @@ func (s *UpdateCardHandlerSuite) TestHandle_NicknameConflict() {
 	s.Equal(http.StatusConflict, rr.Code)
 }
 
-func (s *UpdateCardHandlerSuite) TestHandle_InvalidName() {
+func (s *UpdateCardHandlerSuite) TestHandle_InvalidBank() {
 	s.uc.On("Execute", mock.Anything, mock.AnythingOfType("input.UpdateCard")).
-		Return(output.Card{}, domain.ErrInvalidCardName).Once()
+		Return(output.Card{}, domain.ErrInvalidBank).Once()
 
-	rr := s.put(uuid.New().String(), `{"name":"","nickname":"It","closing_day":10,"due_day":20}`)
+	rr := s.put(uuid.New().String(), `{"bank":""}`)
 	s.Equal(http.StatusBadRequest, rr.Code)
 }
 

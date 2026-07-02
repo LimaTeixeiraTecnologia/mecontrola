@@ -40,12 +40,11 @@ func (s *InvoiceDueNotifierSuite) TestHandleHappyPath() {
 	userID := uuid.New()
 	cardID := uuid.New()
 	payload := map[string]any{
-		"user_id":     userID.String(),
-		"card_id":     cardID.String(),
-		"card_name":   "Nubank",
-		"limit_cents": 500000,
-		"due_date":    "2026-07-10",
-		"days_until":  3,
+		"user_id":       userID.String(),
+		"card_id":       cardID.String(),
+		"card_nickname": "Nubank",
+		"due_date":      "2026-07-10",
+		"days_until":    3,
 	}
 	raw, _ := json.Marshal(payload)
 	env := outbox.Envelope{ID: uuid.New().String(), Payload: raw}
@@ -58,8 +57,7 @@ func (s *InvoiceDueNotifierSuite) TestHandleHappyPath() {
 	s.True(uc.called)
 	s.Equal(userID, uc.input.UserID)
 	s.Equal(cardID, uc.input.CardID)
-	s.Equal("Nubank", uc.input.CardName)
-	s.Equal(int64(500000), uc.input.LimitCents)
+	s.Equal("Nubank", uc.input.CardNickname)
 	s.Equal(3, uc.input.DaysUntil)
 	s.True(uc.input.DueDate.Equal(time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)))
 }

@@ -50,7 +50,9 @@ Restrição: cardinalidade controlada (R-TXN-004 / R-WF-KERNEL-001.4) — sem `u
    em minutos). Reaper `STUCK_AFTER=5m` permanece como rede de segurança.
 5. **Métricas de ordenação/idempotência** (novas, cardinalidade controlada): lag
    `occurred_at → published_at` (p95), duplicidade de escrita (=0), outbound vazio (=0), reivindicações
-   adiadas por "usuário em voo".
+   adiadas por "usuário em voo", **eventos em dead-letter (`status=4`, alerta > 0 — RF-22)**, e
+   **timeouts de LLM/tool** (contador; confirma que o timeout ≪ `STUCK_AFTER` atua antes do reaper —
+   RF-21). Sem `user_id`/`correlation_key` como label.
 
 ## Alternativas Consideradas
 
@@ -85,15 +87,17 @@ Restrição: cardinalidade controlada (R-TXN-004 / R-WF-KERNEL-001.4) — sem `u
 ### Riscos e Mitigações
 
 - **Risco:** parent-based ainda perder traces se a raiz não for corretamente marcada. **Mitigação:**
-  validar propagação de contexto do handler até o worker (o hop de outbox quebra o trace — o worker
-  inicia novo trace; considerar propagar `traceparent` no `metadata` do evento para linkar).
+  validar propagação de contexto do handler até o worker; a propagação do `traceparent` no `metadata`
+  do evento é **obrigatória** (D-10), não opcional — sem ela o hop de outbox quebra o trace.
   **Rollback:** reverter para taxa fixa.
 - **Risco:** `stop_grace_period` alto atrasa deploy. **Mitigação:** 30s é suficiente e proporcional.
 
 ## Plano de Implementação
 
-1. Configurar sampler parent-based (provider OTel em `cmd/server`/`cmd/worker`); opcional: propagar
-   `traceparent` no `metadata` do evento outbox para costurar o trace através do hop assíncrono.
+1. Configurar sampler parent-based (provider OTel em `cmd/server`/`cmd/worker`); **obrigatório
+   (D-10):** propagar `traceparent` (W3C) no `metadata` (JSONB) do evento outbox e restaurá-lo no
+   consumer para costurar o trace através do hop assíncrono — sem isso o worker inicia trace separado e
+   RF-14 (correlação fim-a-fim por `run_id`/`thread_id`) não fecha.
 2. Adicionar outcome `resumed_on_conflict` (cardinalidade controlada).
 3. `compose.swarm.yml`: `OTEL_SERVICE_VERSION=${IMAGE_TAG}` + `stop_grace_period: 30s` nos 4 serviços.
 4. Novas métricas de lag/idempotência/outbound-vazio.

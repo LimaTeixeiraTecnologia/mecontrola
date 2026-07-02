@@ -44,9 +44,9 @@ type CardModule struct {
 	CreateCardUC        *usecases.CreateCard
 	GetCardUC           *usecases.GetCard
 	UpdateCardUC        *usecases.UpdateCard
-	UpdateCardLimitUC   *usecases.UpdateCardLimit
 	SoftDeleteCardUC    *usecases.SoftDeleteCard
 	InvoiceForUC        *usecases.InvoiceFor
+	BestPurchaseDayUC   *usecases.BestPurchaseDay
 	InvoiceDueAlertsJob worker.Job
 	EventHandlers       []EventHandlerRegistration
 }
@@ -71,7 +71,6 @@ func NewCardModule(
 
 	createUoW := uow.NewUnitOfWork(db)
 	updateUoW := uow.NewUnitOfWork(db)
-	updateLimitUoW := uow.NewUnitOfWork(db)
 	deleteUoW := uow.NewUnitOfWork(db)
 
 	createCard := usecases.NewCreateCard(createUoW, factory, idemStorage, o11y)
@@ -79,18 +78,18 @@ func NewCardModule(
 	listCards := usecases.NewListCards(cardRepo, o11y)
 	countCards := usecases.NewCountCards(cardRepo, o11y)
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
-	updateCardLimit := usecases.NewUpdateCardLimit(updateLimitUoW, factory, idemStorage, o11y)
 	softDelete := usecases.NewSoftDeleteCard(deleteUoW, factory, idemStorage, o11y)
 	invoiceFor := usecases.NewInvoiceFor(cardRepo, loc, o11y)
 	getCardForUser := usecases.NewGetCardForUser(cardRepo, o11y)
+	bestPurchaseDay := usecases.NewBestPurchaseDay(factory, db, o11y)
 
 	createHandler := handlers.NewCreateCardHandler(createCard, o11y)
 	listHandler := handlers.NewListCardsHandler(listCards, o11y)
 	getHandler := handlers.NewGetCardHandler(getCard, o11y)
 	updateHandler := handlers.NewUpdateCardHandler(updateCard, o11y)
-	updateLimitHandler := handlers.NewUpdateCardLimitHandler(updateCardLimit, o11y)
 	deleteHandler := handlers.NewDeleteCardHandler(softDelete, o11y)
 	invoiceForHandler := handlers.NewInvoiceForHandler(invoiceFor, o11y)
+	bestPurchaseDayHandler := handlers.NewBestPurchaseDayHandler(bestPurchaseDay, o11y)
 
 	userRateLimit := ratelimit.NewRateLimitMiddleware(ctx, ratelimit.RateLimitConfig{
 		PerMinute: cfg.AuthRateLimit.PerUserPerMin,
@@ -99,7 +98,7 @@ func NewCardModule(
 		Scope:     "user",
 	}, o11y)
 
-	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, updateLimitHandler, deleteHandler, invoiceForHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
+	router := httpserver.NewCardRouter(createHandler, listHandler, getHandler, updateHandler, deleteHandler, invoiceForHandler, bestPurchaseDayHandler, idemStorage, o11y, gatewayAuth, userRateLimit)
 
 	var eventHandlers []EventHandlerRegistration
 
@@ -123,9 +122,9 @@ func NewCardModule(
 		CreateCardUC:        createCard,
 		GetCardUC:           getCard,
 		UpdateCardUC:        updateCard,
-		UpdateCardLimitUC:   updateCardLimit,
 		SoftDeleteCardUC:    softDelete,
 		InvoiceForUC:        invoiceFor,
+		BestPurchaseDayUC:   bestPurchaseDay,
 		InvoiceDueAlertsJob: invoiceDueAlertsJob,
 		EventHandlers:       eventHandlers,
 	}, nil

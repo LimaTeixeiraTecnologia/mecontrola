@@ -48,19 +48,17 @@ func (e *cardE2ECtx) consumerReceivesInvoiceDueEvent(_ string, daysUntil int) er
 	dueDate := dueDateVal.Format("2006-01-02")
 
 	raw, err := json.Marshal(struct {
-		UserID     string `json:"user_id"`
-		CardID     string `json:"card_id"`
-		CardName   string `json:"card_name"`
-		LimitCents int64  `json:"limit_cents"`
-		DueDate    string `json:"due_date"`
-		DaysUntil  int    `json:"days_until"`
+		UserID       string `json:"user_id"`
+		CardID       string `json:"card_id"`
+		CardNickname string `json:"card_nickname"`
+		DueDate      string `json:"due_date"`
+		DaysUntil    int    `json:"days_until"`
 	}{
-		UserID:     e.userID.String(),
-		CardID:     e.cardID,
-		CardName:   e.cardName,
-		LimitCents: 100000,
-		DueDate:    dueDate,
-		DaysUntil:  daysUntil,
+		UserID:       e.userID.String(),
+		CardID:       e.cardID,
+		CardNickname: e.cardNickname,
+		DueDate:      dueDate,
+		DaysUntil:    daysUntil,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal payload invoice_due: %w", err)
@@ -113,19 +111,17 @@ func (e *cardE2ECtx) reprocessSameInvoiceDueEvent() error {
 	dueDate := e.expectedDueDate.Format("2006-01-02")
 
 	raw, err := json.Marshal(struct {
-		UserID     string `json:"user_id"`
-		CardID     string `json:"card_id"`
-		CardName   string `json:"card_name"`
-		LimitCents int64  `json:"limit_cents"`
-		DueDate    string `json:"due_date"`
-		DaysUntil  int    `json:"days_until"`
+		UserID       string `json:"user_id"`
+		CardID       string `json:"card_id"`
+		CardNickname string `json:"card_nickname"`
+		DueDate      string `json:"due_date"`
+		DaysUntil    int    `json:"days_until"`
 	}{
-		UserID:     e.userID.String(),
-		CardID:     e.cardID,
-		CardName:   e.cardName,
-		LimitCents: 100000,
-		DueDate:    dueDate,
-		DaysUntil:  e.expectedDaysUntil,
+		UserID:       e.userID.String(),
+		CardID:       e.cardID,
+		CardNickname: e.cardNickname,
+		DueDate:      dueDate,
+		DaysUntil:    e.expectedDaysUntil,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal payload reprocess invoice_due: %w", err)

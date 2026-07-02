@@ -12,8 +12,6 @@ func classifyCardOutcome(err error) string {
 		return "not_found"
 	case errors.Is(err, domain.ErrNicknameConflict):
 		return "conflict"
-	case errors.Is(err, domain.ErrCardLimitConflict):
-		return "conflict"
 	case isCardValidationError(err):
 		return "invalid"
 	default:
@@ -22,12 +20,10 @@ func classifyCardOutcome(err error) string {
 }
 
 func isCardValidationError(err error) bool {
-	return errors.Is(err, domain.ErrInvalidCardName) ||
-		errors.Is(err, domain.ErrInvalidNickname) ||
+	return errors.Is(err, domain.ErrInvalidNickname) ||
 		errors.Is(err, domain.ErrInvalidClosingDay) ||
 		errors.Is(err, domain.ErrInvalidDueDay) ||
 		errors.Is(err, domain.ErrInvalidPurchaseDate) ||
 		errors.Is(err, domain.ErrInvalidCursor) ||
-		errors.Is(err, domain.ErrCardLimitNegative) ||
-		errors.Is(err, domain.ErrCardLimitTooLarge)
+		errors.Is(err, domain.ErrInvalidBank)
 }

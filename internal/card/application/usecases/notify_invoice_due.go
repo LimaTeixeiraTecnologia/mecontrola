@@ -25,12 +25,11 @@ const (
 var ErrInvoiceDueChannelUnavailable = errors.New("card: canal nao disponivel para notificacao")
 
 type NotifyInvoiceDueInput struct {
-	UserID     uuid.UUID
-	CardID     uuid.UUID
-	CardName   string
-	LimitCents int64
-	DueDate    time.Time
-	DaysUntil  int
+	UserID       uuid.UUID
+	CardID       uuid.UUID
+	CardNickname string
+	DueDate      time.Time
+	DaysUntil    int
 }
 
 type NotifyInvoiceDueResult struct {
@@ -124,18 +123,17 @@ func (uc *NotifyInvoiceDue) renderText(in NotifyInvoiceDueInput) string {
 		loc = time.UTC
 	}
 	due := in.DueDate.In(loc).Format("02/01")
-	name := in.CardName
+	name := in.CardNickname
 	if name == "" {
 		name = "seu cartao"
 	}
-	limit := formatBRL(in.LimitCents)
 	switch {
 	case in.DaysUntil <= 0:
-		return fmt.Sprintf("Sua fatura do cartao %s vence hoje (%s). Limite: %s.", name, due, limit)
+		return fmt.Sprintf("Sua fatura do cartao %s vence hoje (%s).", name, due)
 	case in.DaysUntil == 1:
-		return fmt.Sprintf("Sua fatura do cartao %s vence amanha (%s). Limite: %s.", name, due, limit)
+		return fmt.Sprintf("Sua fatura do cartao %s vence amanha (%s).", name, due)
 	default:
-		return fmt.Sprintf("Sua fatura do cartao %s vence em %d dias (%s). Limite: %s.", name, in.DaysUntil, due, limit)
+		return fmt.Sprintf("Sua fatura do cartao %s vence em %d dias (%s).", name, in.DaysUntil, due)
 	}
 }
 
@@ -144,18 +142,4 @@ func (uc *NotifyInvoiceDue) recordOutcome(ctx context.Context, channel, outcome 
 		observability.String("channel", channel),
 		observability.String("outcome", outcome),
 	)
-}
-
-func formatBRL(cents int64) string {
-	negative := cents < 0
-	if negative {
-		cents = -cents
-	}
-	reais := cents / 100
-	subunit := cents % 100
-	prefix := "R$"
-	if negative {
-		prefix = "-R$"
-	}
-	return fmt.Sprintf("%s%d,%02d", prefix, reais, subunit)
 }

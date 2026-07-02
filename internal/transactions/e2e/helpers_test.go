@@ -176,12 +176,12 @@ func countRecurringMaterializationsForDay(ctx context.Context, db *sqlx.DB, temp
 	return n, nil
 }
 
-func insertCardViaSQL(ctx context.Context, db *sqlx.DB, userID uuid.UUID, name, nickname string, closingDay, dueDay int) (string, error) {
+func insertCardViaSQL(ctx context.Context, db *sqlx.DB, userID uuid.UUID, bank, nickname string, closingDay, dueDay int) (string, error) {
 	id := uuid.NewString()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, created_at, updated_at)
+		INSERT INTO mecontrola.cards (id, user_id, bank, nickname, closing_day, due_day, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, now(), now())
-	`, id, userID.String(), name, nickname, closingDay, dueDay)
+	`, id, userID.String(), bank, nickname, closingDay, dueDay)
 	if err != nil {
 		return "", fmt.Errorf("insertCardViaSQL: %w", err)
 	}

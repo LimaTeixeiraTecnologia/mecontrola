@@ -64,7 +64,7 @@ func (s *InvoiceDuePhase5Suite) insertCardWithDueDay(ctx context.Context, userID
 	uid, err := uuid.Parse(userID)
 	s.Require().NoError(err)
 
-	name, err := valueobjects.NewCardName("Due Card")
+	bank, err := valueobjects.NewBankCode("Nubank")
 	s.Require().NoError(err)
 	nick, err := valueobjects.NewNickname(fmt.Sprintf("due-%d-%d", dueDay, time.Now().UnixNano()))
 	s.Require().NoError(err)
@@ -73,8 +73,8 @@ func (s *InvoiceDuePhase5Suite) insertCardWithDueDay(ctx context.Context, userID
 
 	card := entities.NewCard(entities.NewCardInput{
 		UserID:   uid,
-		Name:     name,
 		Nickname: nick,
+		Bank:     bank,
 		Cycle:    cycle,
 	})
 	s.Require().NoError(repo.Insert(ctx, card))

@@ -82,13 +82,9 @@ func (e *cardE2ECtx) getInvoiceForRegisteredCard(data string) error {
 func (e *cardE2ECtx) cardWithInvoiceDueInDays(days int) error {
 	now := time.Now().UTC()
 	dueDate := now.AddDate(0, 0, days)
-	closingDay := dueDate.Day() - 5
-	if closingDay < 1 {
-		closingDay = 1
-	}
 	dueDay := dueDate.Day()
 
-	if err := e.createCardViaHTTP(e.uniqueCardName("InvoiceDue"), closingDay, dueDay, 100000); err != nil {
+	if err := e.createCardViaHTTP("nubank", dueDay); err != nil {
 		return err
 	}
 

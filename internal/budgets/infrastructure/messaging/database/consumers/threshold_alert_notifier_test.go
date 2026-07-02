@@ -105,7 +105,7 @@ func (s *ThresholdAlertNotifierSuite) TestHandlePropagatesUseCaseError() {
 	payload := map[string]any{
 		"user_id":   userID.String(),
 		"budget_id": budgetID.String(),
-		"kind":      "card_limit_near",
+		"kind":      "category_threshold",
 		"ref_day":   "2026-06-15",
 	}
 	raw, _ := json.Marshal(payload)

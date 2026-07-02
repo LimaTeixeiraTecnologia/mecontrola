@@ -37,6 +37,59 @@ func (_m *RepositoryFactory) EXPECT() *RepositoryFactory_Expecter {
 	return &RepositoryFactory_Expecter{mock: &_m.Mock}
 }
 
+// BankDaysReader provides a mock function for the type RepositoryFactory
+func (_mock *RepositoryFactory) BankDaysReader(db database.DBTX) interfaces.BankDaysReader {
+	ret := _mock.Called(db)
+
+	if len(ret) == 0 {
+		panic("no return value specified for BankDaysReader")
+	}
+
+	var r0 interfaces.BankDaysReader
+	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.BankDaysReader); ok {
+		r0 = returnFunc(db)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(interfaces.BankDaysReader)
+		}
+	}
+	return r0
+}
+
+// RepositoryFactory_BankDaysReader_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BankDaysReader'
+type RepositoryFactory_BankDaysReader_Call struct {
+	*mock.Call
+}
+
+// BankDaysReader is a helper method to define mock.On call
+//   - db database.DBTX
+func (_e *RepositoryFactory_Expecter) BankDaysReader(db any) *RepositoryFactory_BankDaysReader_Call {
+	return &RepositoryFactory_BankDaysReader_Call{Call: _e.mock.On("BankDaysReader", db)}
+}
+
+func (_c *RepositoryFactory_BankDaysReader_Call) Run(run func(db database.DBTX)) *RepositoryFactory_BankDaysReader_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 database.DBTX
+		if args[0] != nil {
+			arg0 = args[0].(database.DBTX)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *RepositoryFactory_BankDaysReader_Call) Return(bankDaysReader interfaces.BankDaysReader) *RepositoryFactory_BankDaysReader_Call {
+	_c.Call.Return(bankDaysReader)
+	return _c
+}
+
+func (_c *RepositoryFactory_BankDaysReader_Call) RunAndReturn(run func(db database.DBTX) interfaces.BankDaysReader) *RepositoryFactory_BankDaysReader_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CardRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) CardRepository(db database.DBTX) interfaces.CardRepository {
 	ret := _mock.Called(db)

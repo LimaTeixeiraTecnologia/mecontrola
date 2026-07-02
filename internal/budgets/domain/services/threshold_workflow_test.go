@@ -22,8 +22,7 @@ func TestThresholdWorkflowSuite(t *testing.T) {
 func (s *ThresholdWorkflowSuite) defaultConfig() services.ThresholdConfig {
 	cat, _ := valueobjects.NewThresholdRatio(0.80)
 	goal, _ := valueobjects.NewThresholdRatio(0.50)
-	card, _ := valueobjects.NewThresholdRatio(0.85)
-	return services.ThresholdConfig{Category: cat, Goal: goal, Card: card}
+	return services.ThresholdConfig{Category: cat, Goal: goal}
 }
 
 func (s *ThresholdWorkflowSuite) TestDecideAlerts_Category() {
@@ -102,45 +101,6 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_Goal() {
 			if tc.want {
 				s.Len(alerts, 1)
 				s.Equal(services.ThresholdAlertGoal, alerts[0].Kind)
-			} else {
-				s.Empty(alerts)
-			}
-		})
-	}
-}
-
-func (s *ThresholdWorkflowSuite) TestDecideAlerts_CardLimit() {
-	userID := uuid.New()
-	budgetID := uuid.New()
-	refDay := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
-	cfg := s.defaultConfig()
-
-	cases := []struct {
-		name    string
-		spent   int64
-		planned int64
-		want    bool
-	}{
-		{"84% — sem alerta", 84, 100, false},
-		{"85% — alerta", 85, 100, true},
-		{"100% — alerta", 100, 100, true},
-	}
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			snaps := []services.ActiveBudgetSnapshot{
-				{
-					UserID:       userID,
-					BudgetID:     budgetID,
-					Kind:         services.ThresholdAlertCardLimit,
-					CardID:       uuid.New(),
-					PlannedCents: tc.planned,
-					SpentCents:   tc.spent,
-				},
-			}
-			alerts := services.ThresholdWorkflow{}.DecideAlerts(snaps, cfg, nil, refDay)
-			if tc.want {
-				s.Len(alerts, 1)
-				s.Equal(services.ThresholdAlertCardLimit, alerts[0].Kind)
 			} else {
 				s.Empty(alerts)
 			}

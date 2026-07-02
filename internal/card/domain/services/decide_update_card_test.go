@@ -26,21 +26,32 @@ func TestUpdateCardDecider(t *testing.T) {
 
 func (s *UpdateCardDeciderSuite) SetupTest() {
 	s.decider = services.NewUpdateCardDecider()
-	name, err := valueobjects.NewCardName("OldName")
-	s.Require().NoError(err)
 	nick, err := valueobjects.NewNickname("OldNick")
 	s.Require().NoError(err)
-	cycle, err := valueobjects.NewBillingCycle(10, 17)
+	bank, err := valueobjects.NewBankCode("Nubank")
+	s.Require().NoError(err)
+	cycle, err := valueobjects.NewBillingCycle(13, 20)
 	s.Require().NoError(err)
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	updatedAt := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-	s.existing = entities.HydrateCard(id, userID, name, nick, cycle, 0, createdAt, updatedAt, nil)
+	s.existing = entities.HydrateCard(id, userID, nick, bank, cycle, createdAt, updatedAt, nil)
 }
 
 func (s *UpdateCardDeciderSuite) ptrStr(v string) *string { return &v }
-func (s *UpdateCardDeciderSuite) ptrInt(v int) *int       { return &v }
+
+func (s *UpdateCardDeciderSuite) ptrCycle(closing, due int) *valueobjects.BillingCycle {
+	c, err := valueobjects.NewBillingCycle(closing, due)
+	s.Require().NoError(err)
+	return &c
+}
+
+func (s *UpdateCardDeciderSuite) ptrBank(v string) *valueobjects.BankCode {
+	b, err := valueobjects.NewBankCode(v)
+	s.Require().NoError(err)
+	return &b
+}
 
 func (s *UpdateCardDeciderSuite) TestDecide_EmptyCommandKeepsFieldsButBumpsUpdatedAt() {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -48,23 +59,13 @@ func (s *UpdateCardDeciderSuite) TestDecide_EmptyCommandKeepsFieldsButBumpsUpdat
 	s.Require().NoError(err)
 	s.Equal(s.existing.ID, got.ID)
 	s.Equal(s.existing.UserID, got.UserID)
-	s.Equal(s.existing.Name, got.Name)
 	s.Equal(s.existing.Nickname, got.Nickname)
+	s.Equal(s.existing.Bank, got.Bank)
 	s.Equal(s.existing.Cycle, got.Cycle)
 	s.True(s.existing.CreatedAt.Equal(got.CreatedAt))
 	s.True(now.Equal(got.UpdatedAt))
 	s.Equal(time.UTC, got.UpdatedAt.Location())
 	s.Equal(s.existing.DeletedAt, got.DeletedAt)
-}
-
-func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_NameOnly() {
-	got, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		Name: s.ptrStr("NewName"),
-	}, time.Now().UTC())
-	s.Require().NoError(err)
-	s.Equal("NewName", got.Name.String())
-	s.Equal(s.existing.Nickname, got.Nickname)
-	s.Equal(s.existing.Cycle, got.Cycle)
 }
 
 func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_NicknameOnly() {
@@ -73,47 +74,43 @@ func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_NicknameOnly() {
 	}, time.Now().UTC())
 	s.Require().NoError(err)
 	s.Equal("NewNick", got.Nickname.String())
-	s.Equal(s.existing.Name, got.Name)
+	s.Equal(s.existing.Bank, got.Bank)
+	s.Equal(s.existing.Cycle, got.Cycle)
 }
 
-func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_ClosingDayOnly() {
+func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_BankOnly() {
 	got, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		ClosingDay: s.ptrInt(5),
+		Bank: s.ptrBank("Itaú"),
 	}, time.Now().UTC())
 	s.Require().NoError(err)
-	s.Equal(5, got.Cycle.ClosingDay)
-	s.Equal(s.existing.Cycle.DueDay, got.Cycle.DueDay)
+	s.Equal("Itaú", got.Bank.String())
+	s.Equal("itau", got.Bank.LookupKey())
+	s.Equal(s.existing.Nickname, got.Nickname)
+	s.Equal(s.existing.Cycle, got.Cycle)
 }
 
-func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_DueDayOnly() {
+func (s *UpdateCardDeciderSuite) TestDecide_PartialUpdate_CycleOnly() {
 	got, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		DueDay: s.ptrInt(28),
+		Cycle: s.ptrCycle(2, 10),
 	}, time.Now().UTC())
 	s.Require().NoError(err)
-	s.Equal(s.existing.Cycle.ClosingDay, got.Cycle.ClosingDay)
-	s.Equal(28, got.Cycle.DueDay)
+	s.Equal(2, got.Cycle.ClosingDay)
+	s.Equal(10, got.Cycle.DueDay)
+	s.Equal(s.existing.Nickname, got.Nickname)
+	s.Equal(s.existing.Bank, got.Bank)
 }
 
 func (s *UpdateCardDeciderSuite) TestDecide_FullUpdate() {
 	got, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		Name:       s.ptrStr("Full"),
-		Nickname:   s.ptrStr("FullNick"),
-		ClosingDay: s.ptrInt(3),
-		DueDay:     s.ptrInt(10),
+		Nickname: s.ptrStr("FullNick"),
+		Bank:     s.ptrBank("Bradesco"),
+		Cycle:    s.ptrCycle(3, 10),
 	}, time.Now().UTC())
 	s.Require().NoError(err)
-	s.Equal("Full", got.Name.String())
 	s.Equal("FullNick", got.Nickname.String())
+	s.Equal("Bradesco", got.Bank.String())
 	s.Equal(3, got.Cycle.ClosingDay)
 	s.Equal(10, got.Cycle.DueDay)
-}
-
-func (s *UpdateCardDeciderSuite) TestDecide_InvalidNameReturnsSentinel() {
-	_, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		Name: s.ptrStr(""),
-	}, time.Now().UTC())
-	s.Require().Error(err)
-	s.True(errors.Is(err, domain.ErrInvalidCardName))
 }
 
 func (s *UpdateCardDeciderSuite) TestDecide_InvalidNicknameReturnsSentinel() {
@@ -124,36 +121,10 @@ func (s *UpdateCardDeciderSuite) TestDecide_InvalidNicknameReturnsSentinel() {
 	s.True(errors.Is(err, domain.ErrInvalidNickname))
 }
 
-func (s *UpdateCardDeciderSuite) TestDecide_InvalidClosingDayReturnsSentinel() {
-	_, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		ClosingDay: s.ptrInt(0),
-	}, time.Now().UTC())
-	s.Require().Error(err)
-	s.True(errors.Is(err, domain.ErrInvalidClosingDay))
-}
-
-func (s *UpdateCardDeciderSuite) TestDecide_InvalidDueDayReturnsSentinel() {
-	_, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		DueDay: s.ptrInt(32),
-	}, time.Now().UTC())
-	s.Require().Error(err)
-	s.True(errors.Is(err, domain.ErrInvalidDueDay))
-}
-
-func (s *UpdateCardDeciderSuite) TestDecide_NameValidatedBeforeNickname() {
-	_, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		Name:     s.ptrStr(""),
-		Nickname: s.ptrStr(""),
-	}, time.Now().UTC())
-	s.Require().Error(err)
-	s.True(errors.Is(err, domain.ErrInvalidCardName))
-	s.False(errors.Is(err, domain.ErrInvalidNickname))
-}
-
 func (s *UpdateCardDeciderSuite) TestDecide_PreservesImmutableFieldsAndBumpsUpdatedAt() {
 	now := time.Date(2026, 6, 15, 9, 30, 0, 0, time.UTC)
 	got, err := s.decider.Decide(s.existing, services.UpdateCardCommand{
-		Name: s.ptrStr("Diff"),
+		Nickname: s.ptrStr("Diff"),
 	}, now)
 	s.Require().NoError(err)
 	s.Equal(s.existing.ID, got.ID)

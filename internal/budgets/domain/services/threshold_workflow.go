@@ -13,7 +13,6 @@ type ThresholdAlertKind uint8
 const (
 	ThresholdAlertCategory ThresholdAlertKind = iota + 1
 	ThresholdAlertGoal
-	ThresholdAlertCardLimit
 )
 
 func (k ThresholdAlertKind) String() string {
@@ -22,8 +21,6 @@ func (k ThresholdAlertKind) String() string {
 		return "category_threshold"
 	case ThresholdAlertGoal:
 		return "goal_achieved"
-	case ThresholdAlertCardLimit:
-		return "card_limit_near"
 	default:
 		return ""
 	}
@@ -43,7 +40,6 @@ type ActiveBudgetSnapshot struct {
 type ThresholdConfig struct {
 	Category valueobjects.ThresholdRatio
 	Goal     valueobjects.ThresholdRatio
-	Card     valueobjects.ThresholdRatio
 }
 
 type DomainAlert struct {
@@ -111,8 +107,6 @@ func thresholdForKind(k ThresholdAlertKind, cfg ThresholdConfig) (valueobjects.T
 		return cfg.Category, true
 	case ThresholdAlertGoal:
 		return cfg.Goal, true
-	case ThresholdAlertCardLimit:
-		return cfg.Card, true
 	default:
 		return valueobjects.ThresholdRatio{}, false
 	}

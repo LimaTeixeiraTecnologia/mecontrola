@@ -18,15 +18,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Migration `000002`: tabela `banks` + seed; altera `cards` (drop `limit_cents`+`name`, add `bank`) | pending | — | Com 2.0 | — |
-| 2.0 | Domínio card: VO `BankCode`, `PurchaseDayService` puro, entity/deciders/errors | pending | — | Com 1.0 | — |
-| 3.0 | Porta `BankDaysReader` + adapter `bank_repository` (fallback 7) + wiring factory | pending | 1.0, 2.0 | — | — |
-| 4.0 | Application card: DTOs, use cases (`CreateCard`/`UpdateCard` recompute, `BestPurchaseDay`; remove `UpdateCardLimit`), mapper, repo SQL | pending | 2.0, 3.0 | — | — |
-| 5.0 | Infra HTTP card: handlers, router (rota nova antes de `{id}`, remove `/limit`), module wiring | pending | 4.0 | Com 6.0 | — |
-| 6.0 | Cadeia `invoice_due`: decider/evaluate/producer/consumer/notify (drop `LimitCents`, `card_name`→`card_nickname`) | pending | 2.0 | Com 5.0 | — |
-| 7.0 | OpenAPI + testes de contrato + e2e; verificação de não-regressão de `internal/transactions` | pending | 5.0, 6.0 | — | — |
-| 8.0 | budgets: remoção cirúrgica do alerta de limite de cartão (ADR-004) + auditoria dashboard/alerta | pending | — | Com 1.0 | otel-grafana-dashboards |
-| 9.0 | agents onboarding: coletar `bank`, corrigir drift `ClosingDay=DueDay`, remover `LimitCents` | pending | 4.0 | Com 6.0 | mastra |
+| 1.0 | Migration `000002`: tabela `banks` + seed; altera `cards` (drop `limit_cents`+`name`, add `bank`) | done | — | Com 2.0 | — |
+| 2.0 | Domínio card: VO `BankCode`, `PurchaseDayService` puro, entity/deciders/errors | done | — | Com 1.0 | — |
+| 3.0 | Porta `BankDaysReader` + adapter `bank_repository` (fallback 7) + wiring factory | done | 1.0, 2.0 | — | — |
+| 4.0 | Application card: DTOs, use cases (`CreateCard`/`UpdateCard` recompute, `BestPurchaseDay`; remove `UpdateCardLimit`), mapper, repo SQL | done | 2.0, 3.0 | — | — |
+| 5.0 | Infra HTTP card: handlers, router (rota nova antes de `{id}`, remove `/limit`), module wiring | done | 4.0 | Com 6.0 | — |
+| 6.0 | Cadeia `invoice_due`: decider/evaluate/producer/consumer/notify (drop `LimitCents`, `card_name`→`card_nickname`) | done | 2.0 | Com 5.0 | — |
+| 7.0 | OpenAPI + testes de contrato + e2e; verificação de não-regressão de `internal/transactions` | done | 5.0, 6.0 | — | — |
+| 8.0 | budgets: remoção cirúrgica do alerta de limite de cartão (ADR-004) + auditoria dashboard/alerta | done | — | Com 1.0 | otel-grafana-dashboards |
+| 9.0 | agents onboarding: coletar `bank`, corrigir drift `ClosingDay=DueDay`, remover `LimitCents` | done | 4.0 | Com 6.0 | mastra |
 
 ## Dependências Críticas
 - **1.0 (migration)** habilita 3.0 (lookup em `banks`) e o novo schema de `cards` consumido por 4.0.

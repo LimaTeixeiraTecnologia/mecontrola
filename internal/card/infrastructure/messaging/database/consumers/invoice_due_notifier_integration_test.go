@@ -80,12 +80,11 @@ func (s *InvoiceDueNotifierIntegrationSuite) buildConsumer(gateway notification.
 
 func (s *InvoiceDueNotifierIntegrationSuite) buildEnvelope(userID, cardID uuid.UUID, dueDate time.Time) outbox.Envelope {
 	payload := map[string]any{
-		"user_id":     userID.String(),
-		"card_id":     cardID.String(),
-		"card_name":   "Nubank",
-		"limit_cents": int64(500000),
-		"due_date":    dueDate.Format("2006-01-02"),
-		"days_until":  3,
+		"user_id":       userID.String(),
+		"card_id":       cardID.String(),
+		"card_nickname": "Nubank",
+		"due_date":      dueDate.Format("2006-01-02"),
+		"days_until":    3,
 	}
 	raw, _ := json.Marshal(payload)
 	return outbox.Envelope{
@@ -187,8 +186,8 @@ func insertUser(t *testing.T, db *sqlx.DB, userID uuid.UUID) {
 func insertCard(t *testing.T, db *sqlx.DB, cardID, userID uuid.UUID) {
 	t.Helper()
 	const q = `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, limit_cents, version)
-		VALUES ($1, $2, 'Test Card', 'testcard', 5, 10, 500000, 1)
+		INSERT INTO mecontrola.cards (id, user_id, nickname, bank, closing_day, due_day, version)
+		VALUES ($1, $2, 'testcard', 'nubank', 5, 10, 1)
 	`
 	_, err := db.ExecContext(context.Background(), q, cardID, userID)
 	if err != nil {

@@ -22,7 +22,7 @@ func TestCardMapper(t *testing.T) {
 }
 
 func (s *CardMapperSuite) makeCard(deleted *time.Time) entities.Card {
-	name, err := valueobjects.NewCardName("Itaú Platinum")
+	bank, err := valueobjects.NewBankCode("itau")
 	s.Require().NoError(err)
 	nick, err := valueobjects.NewNickname("itau-pt")
 	s.Require().NoError(err)
@@ -32,7 +32,7 @@ func (s *CardMapperSuite) makeCard(deleted *time.Time) entities.Card {
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	createdAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	updatedAt := time.Date(2026, 1, 3, 3, 4, 5, 0, time.UTC)
-	return entities.HydrateCard(id, userID, name, nick, cycle, 0, createdAt, updatedAt, deleted)
+	return entities.HydrateCard(id, userID, nick, bank, cycle, createdAt, updatedAt, deleted)
 }
 
 func (s *CardMapperSuite) TestToCardOutput_PreservesAllFields() {
@@ -41,13 +41,26 @@ func (s *CardMapperSuite) TestToCardOutput_PreservesAllFields() {
 
 	s.Equal(card.ID.String(), out.ID)
 	s.Equal(card.UserID.String(), out.UserID)
-	s.Equal("Itaú Platinum", out.Name)
+	s.Equal("itau", out.Bank)
 	s.Equal("itau-pt", out.Nickname)
 	s.Equal(10, out.ClosingDay)
 	s.Equal(17, out.DueDay)
+	s.Equal(11, out.BestPurchaseDay)
 	s.Equal(card.CreatedAt, out.CreatedAt)
 	s.Equal(card.UpdatedAt, out.UpdatedAt)
 	s.Nil(out.DeletedAt)
+}
+
+func (s *CardMapperSuite) TestToCardOutput_BestPurchaseDayWrapsAt31() {
+	bank, _ := valueobjects.NewBankCode("nubank")
+	nick, _ := valueobjects.NewNickname("nu")
+	cycle, _ := valueobjects.NewBillingCycle(31, 7)
+	card := entities.HydrateCard(
+		uuid.New(), uuid.New(), nick, bank, cycle,
+		time.Now(), time.Now(), nil,
+	)
+	out := mappers.M.ToCardOutput(card)
+	s.Equal(1, out.BestPurchaseDay)
 }
 
 func (s *CardMapperSuite) TestToCardOutput_PropagatesDeletedAt() {

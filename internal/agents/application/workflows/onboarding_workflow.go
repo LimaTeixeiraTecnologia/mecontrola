@@ -153,10 +153,13 @@ func DecideDistribution(allocs map[string]int) error {
 	return nil
 }
 
-func DecideCardEntry(nickname string, dueDay int) error {
+func DecideCardEntry(nickname, bank string, dueDay int) error {
 	var errs []error
 	if strings.TrimSpace(nickname) == "" {
 		errs = append(errs, errors.New("card_entry: nickname nao pode ser vazio"))
+	}
+	if strings.TrimSpace(bank) == "" {
+		errs = append(errs, errors.New("card_entry: bank nao pode ser vazio"))
 	}
 	if dueDay < 1 || dueDay > 31 {
 		errs = append(errs, fmt.Errorf("card_entry: dueDay deve estar entre 1 e 31, recebido %d", dueDay))
@@ -175,6 +178,7 @@ type incomeExtract struct {
 type cardExtract struct {
 	WantsCard bool   `json:"wantsCard"`
 	Nickname  string `json:"nickname"`
+	Bank      string `json:"bank"`
 	DueDay    int    `json:"dueDay"`
 }
 
@@ -213,9 +217,10 @@ var cardSchema = map[string]any{
 	"properties": map[string]any{
 		"wantsCard": map[string]any{"type": "boolean"},
 		"nickname":  map[string]any{"type": "string"},
+		"bank":      map[string]any{"type": "string"},
 		"dueDay":    map[string]any{"type": "integer"},
 	},
-	"required":             []any{"wantsCard", "nickname", "dueDay"},
+	"required":             []any{"wantsCard", "nickname", "bank", "dueDay"},
 	"additionalProperties": false,
 }
 
@@ -395,7 +400,7 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 					fmt.Errorf("agents.onboarding.cards: list_cards: %w", err)
 			}
 			prompt := fmt.Sprintf(
-				"O usuario tem %d cartao(oes) cadastrado(s). Pergunte se ele deseja adicionar um cartao de credito agora. Se sim, peca o apelido do cartao e o dia de vencimento da fatura (numero entre 1 e 31).",
+				"O usuario tem %d cartao(oes) cadastrado(s). Pergunte se ele deseja adicionar um cartao de credito agora. Se sim, peca o apelido do cartao, o banco emissor e o dia de vencimento da fatura (numero entre 1 e 31).",
 				len(existingCards),
 			)
 			msg, err := agentStream(ctx, a, prompt)
@@ -413,7 +418,7 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 		state.ResumeText = ""
 		extracted, err := a.Execute(ctx, agent.Request{
 			Messages: []llm.Message{
-				{Role: "system", Content: "Extraia do texto do usuario se ele quer adicionar um cartao (wantsCard), o apelido (nickname) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser cartao, retorne wantsCard=false, nickname vazio e dueDay=0."},
+				{Role: "system", Content: "Extraia do texto do usuario se ele quer adicionar um cartao (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser cartao, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."},
 				{Role: "user", Content: resumeText},
 			},
 			Schema: &llm.Schema{Name: "card_extract", Strict: true, Schema: cardSchema},
@@ -428,10 +433,10 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 				fmt.Errorf("agents.onboarding.cards: unmarshal: %w", err)
 		}
 		if extract.WantsCard {
-			if err := DecideCardEntry(extract.Nickname, extract.DueDay); err != nil {
+			if err := DecideCardEntry(extract.Nickname, extract.Bank, extract.DueDay); err != nil {
 				return repromptInput(ctx, a, state,
-					"O usuario quer adicionar um cartao mas nao informou o apelido e/ou o dia de vencimento validos. Peca o apelido do cartao e o dia de vencimento da fatura (numero entre 1 e 31), com um exemplo curto.",
-					"Para adicionar o cartão, me diga o apelido dele e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\".",
+					"O usuario quer adicionar um cartao mas nao informou o apelido, o banco e/ou o dia de vencimento validos. Peca o apelido do cartao, o banco emissor e o dia de vencimento da fatura (numero entre 1 e 31), com um exemplo curto.",
+					"Para adicionar o cartão, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\".",
 				), nil
 			}
 			userUUID, err := uuid.Parse(state.UserID)
@@ -442,6 +447,7 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 			if _, err := cards.CreateCard(ctx, interfaces.NewCard{
 				UserID:   userUUID,
 				Nickname: extract.Nickname,
+				Bank:     extract.Bank,
 				DueDay:   extract.DueDay,
 			}); err != nil {
 				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},

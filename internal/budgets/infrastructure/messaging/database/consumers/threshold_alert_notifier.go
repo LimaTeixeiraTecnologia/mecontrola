@@ -115,8 +115,6 @@ func parseAlertKindLabel(s string) (services.ThresholdAlertKind, error) {
 		return services.ThresholdAlertCategory, nil
 	case "goal_achieved":
 		return services.ThresholdAlertGoal, nil
-	case "card_limit_near":
-		return services.ThresholdAlertCardLimit, nil
 	default:
 		return 0, fmt.Errorf("budgets.consumer.threshold_alert_notifier: kind desconhecido %q", s)
 	}

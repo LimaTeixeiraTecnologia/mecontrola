@@ -23,3 +23,7 @@ func (f *repositoryFactory) CardRepository(db database.DBTX) interfaces.CardRepo
 func (f *repositoryFactory) InvoiceDueAlertSentRepository(db database.DBTX) interfaces.InvoiceDueAlertSentRepository {
 	return postgres.NewInvoiceDueAlertSentRepository(f.o11y, db)
 }
+
+func (f *repositoryFactory) BankDaysReader(db database.DBTX) interfaces.BankDaysReader {
+	return postgres.NewBankRepository(f.o11y, db)
+}

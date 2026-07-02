@@ -105,8 +105,8 @@ func (s *TransactionsIntegrationSuite) SetupSuite() {
 	s.Require().NoError(err)
 
 	_, err = db.ExecContext(s.ctx, `
-		INSERT INTO mecontrola.cards (id, user_id, name, nickname, closing_day, due_day, limit_cents, version, created_at, updated_at)
-		VALUES ($1, $2, 'Nubank', 'nubank', 20, 25, 500000, 1, now(), now())`,
+		INSERT INTO mecontrola.cards (id, user_id, nickname, bank, closing_day, due_day, version, created_at, updated_at)
+		VALUES ($1, $2, 'nubank', 'nubank', 20, 25, 1, now(), now())`,
 		s.cardID, s.cardOwner,
 	)
 	s.Require().NoError(err)

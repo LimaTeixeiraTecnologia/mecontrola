@@ -33,10 +33,10 @@ func (s *GetCardForUserSuite) SetupTest() {
 }
 
 func (s *GetCardForUserSuite) activeCard() entities.Card {
-	name, _ := valueobjects.NewCardName("Nubank Gold")
+	bank, _ := valueobjects.NewBankCode("nubank")
 	nick, _ := valueobjects.NewNickname("Nu")
 	cycle, _ := valueobjects.NewBillingCycle(10, 17)
-	return entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), nil)
+	return entities.HydrateCard(uuid.New(), uuid.New(), nick, bank, cycle, time.Now().UTC(), time.Now().UTC(), nil)
 }
 
 func (s *GetCardForUserSuite) TestExecute_HappyPath() {
@@ -66,11 +66,11 @@ func (s *GetCardForUserSuite) TestExecute_CardNotFound() {
 }
 
 func (s *GetCardForUserSuite) TestExecute_OwnershipMismatch_SoftDeleted() {
-	name, _ := valueobjects.NewCardName("Deleted Card")
+	bank, _ := valueobjects.NewBankCode("itau")
 	nick, _ := valueobjects.NewNickname("Del")
 	cycle, _ := valueobjects.NewBillingCycle(5, 12)
 	deletedAt := time.Now().UTC()
-	card := entities.HydrateCard(uuid.New(), uuid.New(), name, nick, cycle, 0, time.Now().UTC(), time.Now().UTC(), &deletedAt)
+	card := entities.HydrateCard(uuid.New(), uuid.New(), nick, bank, cycle, time.Now().UTC(), time.Now().UTC(), &deletedAt)
 
 	s.repoMock.EXPECT().GetByIDForUser(mock.Anything, card.ID.String(), card.UserID.String()).Return(card, nil).Once()
 

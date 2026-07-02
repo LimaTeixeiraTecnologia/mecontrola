@@ -20,12 +20,11 @@ const eventTypeInvoiceDue = "card.invoice_due.v1"
 const aggregateTypeCardInvoiceDue = "card.invoice_due"
 
 type invoiceDuePayload struct {
-	UserID     string `json:"user_id"`
-	CardID     string `json:"card_id"`
-	CardName   string `json:"card_name"`
-	LimitCents int64  `json:"limit_cents"`
-	DueDate    string `json:"due_date"`
-	DaysUntil  int    `json:"days_until"`
+	UserID       string `json:"user_id"`
+	CardID       string `json:"card_id"`
+	CardNickname string `json:"card_nickname"`
+	DueDate      string `json:"due_date"`
+	DaysUntil    int    `json:"days_until"`
 }
 
 type InvoiceDuePublisher struct {
@@ -51,12 +50,11 @@ func NewInvoiceDuePublisher(
 
 func (p *InvoiceDuePublisher) Publish(ctx context.Context, db database.DBTX, alert services.InvoiceDueAlert, occurredAt time.Time) error {
 	payload := invoiceDuePayload{
-		UserID:     alert.UserID.String(),
-		CardID:     alert.CardID.String(),
-		CardName:   alert.CardName,
-		LimitCents: alert.LimitCents,
-		DueDate:    alert.DueDate.UTC().Format("2006-01-02"),
-		DaysUntil:  alert.DaysUntil,
+		UserID:       alert.UserID.String(),
+		CardID:       alert.CardID.String(),
+		CardNickname: alert.CardNickname,
+		DueDate:      alert.DueDate.UTC().Format("2006-01-02"),
+		DaysUntil:    alert.DaysUntil,
 	}
 
 	raw, err := json.Marshal(payload)

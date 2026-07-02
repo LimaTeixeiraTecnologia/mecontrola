@@ -1,10 +1,14 @@
 # Documento de Requisitos do Produto (PRD) — Ordenação e Idempotência do Fluxo WhatsApp do Agente
 
-<!-- spec-version: 2 -->
+<!-- spec-version: 3 -->
 
 - Origem: `docs/runs/2026-07-01-diagnostico-mensagens-fora-ordem-arquitetura-10k.md`
 - Tipo: remediação de confiabilidade + preparação para escala (0 → 10.000 usuários ativos)
-- Histórico: v1 (rascunho com questões em aberto) → v2 (decisões D-01..D-08 travadas; zero questões em aberto)
+- Histórico: v1 (rascunho com questões em aberto) → v2 (decisões D-01..D-08 travadas) →
+  v3 (auditoria PRD×techspec×ADRs + verificação contra código e produção; decisões D-09..D-20
+  travadas: contradição de deploy resolvida, traceparent obrigatório, SLOs travados, idempotência
+  natural de domínio + defesa em profundidade, dead-letter de poison, gate de carga sintética;
+  zero questões em aberto, zero ressalvas)
 
 ## Visão Geral
 
@@ -90,14 +94,60 @@ mensagens outbound vazias (deve ser 0).
 - **D-03 (RF-06/07):** confirmação honesta via **resultado tipado da tool** (persistido/duplicado/erro);
   sem query extra de releitura.
 - **D-04 (RF-12):** configuração de **rolling deploy seguro** faz parte do escopo deste PRD.
-- **D-05 (SLO):** lag webhook→publicação do outbox **p95 < 5s** (alerta em > 30s sustentado);
-  **duplicidade de lançamento = 0** (qualquer duplicata é bug e dispara alerta imediato).
+- **D-05 (SLO — travado, com justificativa):** lag webhook→publicação do outbox **p95 < 5s**
+  (headroom ≈1.6× sobre o round-trip do LLM ~3s), **alerta em > 30s sustentado**;
+  **duplicidade de lançamento = 0** (absoluto — qualquer duplicata é bug e dispara alerta imediato);
+  **onboarding_error < 2%** (baseline de 68% na janela do incidente). Estes números são metas
+  **verificadas** pelo gate de carga sintética (D-20), não parametrização adiada.
 - **D-06 (escala):** **escalonamento horizontal** de workers; o claim particionado suporta N workers
   sem quebrar a ordem por usuário; `default_pool_size`/`DB_MAX_CONNS` ajustados junto. Sem novo
   componente de infra.
 - **D-07 (RF-17):** processar **todas** as mensagens de um webhook em lote (não só a primeira).
 - **D-08 (RF-18):** ordenação FIFO por usuário por **timestamp da mensagem da Meta**, com `created_at`
   do outbox como desempate (robusto a skew entre server-1/2).
+
+### Decisões v3 (auditoria + verificação contra código e produção)
+
+- **D-09 (RF-13):** deploy usa **`order: stop-first`** + `stop_grace_period: 30s` (shutdown do app
+  ≈15s) + **gate de CI anti-storm**. Resolve a contradição da v2 (RF-13 dizia `start-first`, que o
+  ADR-004 rejeita por exigir 2 tasks transitórias no nó único). Ataca a causa (storm), não a janela
+  por-serviço; Caddy roteia para o outro server durante o update.
+- **D-10 (RF-14):** propagação do `traceparent` (W3C) no `metadata` (JSONB) do `outbox_events` é
+  **obrigatória**, não opcional — sem ela o hop assíncrono server→worker quebra o trace e a correlação
+  fim-a-fim por `run_id`/`thread_id` não é atingível.
+- **D-11 (D-05):** SLOs **travados agora** com justificativa (ver D-05); a antiga "Suposição Residual"
+  de parametrização adiada é **removida**.
+- **D-12 (rastreabilidade):** o relatório de diagnóstico de origem é **recriado e versionado** no
+  caminho citado, consolidando as evidências de código (file:line) e de produção (ledger vazio,
+  1 usuário, 118 eventos na janela do incidente).
+- **D-13 (RF-17):** um webhook com N mensagens gera **1 evento outbox por mensagem** (cada com seu
+  `wamid` e o timestamp da Meta); `item_seq` permanece como índice de escrita dentro do turno de uma
+  mensagem. Formalizado no **ADR-005**.
+- **D-14 (RF-01):** colisão do índice único em voo (`SQLSTATE 23505`) no claim particionado é
+  **capturada e adiada** para o próximo tick (o `UPDATE ... FROM claimable` é atômico por statement;
+  a colisão é rara sob `FOR UPDATE SKIP LOCKED` + `NOT EXISTS`). Não é erro fatal.
+- **D-15 (RF-11):** turnos de onboarding são persistidos na **mesma thread** do agente
+  (`resourceId=userID, threadId=peer`), para histórico único e diagnóstico de empty-reply.
+- **D-16 (RF-02):** D-01 permanece como **guardrail** (se algum lock advisory for reintroduzido, DEVE
+  ser xact-scoped); o design atual usa **zero lock** (claim particionado + UNIQUE do ledger).
+- **D-17 (RF-04/20) [corrigido v3 — falso-positivo removido]:** a idempotência de **escrita de
+  domínio** JÁ é garantida por **chave natural** nos módulos consumidores — verificado em produção:
+  `transactions_origin_uk` e `transactions_card_purchases_origin_uk` já existem, com `origin` cabeado
+  ponta-a-ponta nas 3 tools e reconciliação (`Reconciled`) no conflito. **Não é trabalho novo** (não
+  requer migration nova); o requisito é **preservar** essa proteção, mapear o conflito para
+  `ToolOutcomeReconciled`/replay, e exigir `origin`+UNIQUE em qualquer nova tool de escrita. O
+  `agents_write_ledger` continua registro de replay do agente. *(A alegação anterior da v3 de "duplo
+  write de domínio catastrófico" era falso-positivo por leitura incompleta do schema.)*
+- **D-18 (RF-21) [rebaixado v3]:** o timeout de **LLM/tool ≪ `STUCK_AFTER`** (ex.: 90s < 5m) é
+  **hardening de coerência** — impede re-pick concorrente pelo reaper que geraria 2ª resposta fora de
+  ordem — não correção de integridade financeira (D-17 já cobre). A reserva `ledger-first` é opcional
+  (redundante com a chave natural do domínio).
+- **D-19 (RF-22):** um evento inbound poison (falha permanente) faz **head-of-line blocking** no FIFO
+  do usuário; mitiga-se com `max_attempts`/backoff dos eventos inbound dimensionados para dead-letter
+  (`status=4`) rápido (~1 turno de conversa), preservando FIFO estrito; alerta em `status=4 > 0`.
+- **D-20 (RF-23):** a escala (10k) e os SLOs são validados por **gate de carga sintética por fase**
+  (prova CA-01 e CA-08 nas fronteiras 500/2.000/10.000) **antes** de captar usuários reais — produção
+  hoje tem 1 usuário, sem baseline; os SLOs de D-05 são metas verificadas por esse gate.
 
 ## Requisitos Funcionais
 
@@ -121,6 +171,21 @@ mensagens outbound vazias (deve ser 0).
   (persistido/duplicado/erro) ao agente (R-AGENT-WF-001.2 e R-ADAPTER-001), sem regra de negócio.
 - RF-08: O sistema NUNCA DEVE enviar mensagem outbound de conteúdo vazio ao WhatsApp; saída vazia do
   LLM DEVE ser convertida em resposta honesta de fallback (nunca um envio em branco).
+- RF-20: A idempotência da **escrita de domínio** (a mutação real) É garantida por **chave natural**
+  no módulo consumidor e DEVE ser **preservada**. Estado verificado em produção (2026-07-02): já
+  existem `transactions_origin_uk` e `transactions_card_purchases_origin_uk`
+  (UNIQUE `(origin_wamid, origin_item_seq, origin_operation) WHERE origin_wamid IS NOT NULL`), com o
+  `origin` cabeado ponta-a-ponta (tool → `RawTransaction`/`RawCardPurchase` → `SetOrigin` → persistido)
+  para as 3 tools do agente (expense/income/card); o usecase já devolve `Reconciled` no conflito. Logo,
+  o duplo `write()` de domínio sob corrida já é **prevenido e reconciliado** independente de lock/claim.
+  Requisito: o conflito da chave natural DEVE mapear para `ToolOutcomeReconciled`/replay (nunca
+  `usecaseError` nem confirmação de sucesso falsa), e **toda nova tool de escrita** DEVE carregar
+  `origin` e ter UNIQUE natural equivalente no alvo.
+- RF-21: **Hardening de coerência** (não correção de dinheiro — RF-20 já cobre a integridade): impor
+  **timeout de contexto na chamada de LLM/tool estritamente menor que `STUCK_AFTER`**, para o worker
+  original concluir/liberar antes de o reaper resetar o evento (`status=2→1`) e evitar re-pick
+  concorrente que gere 2ª resposta fora de ordem. Reserva ledger-first é opcional (redundante com a
+  chave natural do domínio).
 
 ### P1 — Estabilidade e visibilidade
 
@@ -133,8 +198,10 @@ mensagens outbound vazias (deve ser 0).
 - RF-12: Um usuário que já concluiu o onboarding (marcador de conclusão presente) NÃO DEVE ter o
   onboarding reiniciado; a mensagem segue para o agente.
 - RF-13: O rolling deploy DEVE ser configurado para não drenar runs em massa nem disparar reprocesso
-  concorrente (`order: start-first`, `max_parallelism: 1`, `stop-grace-period` suficiente para drain
-  cooperativo), aproveitando o outbox reaper existente (`STUCK_AFTER=5m`).
+  concorrente: **`order: stop-first`**, `max_parallelism: 1`, `stop_grace_period: 30s` (≥ shutdown
+  cooperativo do app, ≈15s) e **gate de CI anti-storm** que serializa/consolida releases, aproveitando
+  o outbox reaper existente (`STUCK_AFTER=5m`). É PROIBIDO `order: start-first` (exigiria 2 tasks
+  transitórias no nó único — ver ADR-004).
 - RF-14: O caminho crítico DEVE emitir spans de tracing em `whatsapp.handler.inbound`, no agent runtime
   e na chamada ao LLM, correlacionáveis por `run_id`/`thread_id`.
 - RF-15: DEVE existir um contador `workflow_version_conflict_total` (ou equivalente) expondo corridas
@@ -142,16 +209,25 @@ mensagens outbound vazias (deve ser 0).
   R-TXN-004 / R-WF-KERNEL-001.4).
 - RF-16: A versão de telemetria (`OTEL_SERVICE_VERSION`) DEVE refletir o binário efetivamente em
   execução, sem divergência de tag.
+- RF-22: Um evento inbound com falha permanente (poison) NÃO DEVE bloquear indefinidamente o FIFO do
+  usuário: `max_attempts`/backoff dos eventos inbound DEVEM ser dimensionados para dead-letter
+  (`status=4`) rápido (≈1 turno de conversa), preservando FIFO estrito; DEVE haver alerta em
+  `status=4 > 0`. O reaper (`STUCK_AFTER`) permanece como rede de segurança para leases órfãos.
 
 ### P2 — Robustez incremental e tuning
 
-- RF-17: A ingestão DEVE processar todas as mensagens de um webhook em lote (não apenas a primeira),
-  preservando a ordem real do usuário.
+- RF-17: A ingestão DEVE processar todas as mensagens de um webhook em lote (não apenas a primeira,
+  hoje `ExtractFirstMessage`), gerando **1 evento outbox por mensagem** (cada com seu `wamid` e o
+  timestamp da Meta), preservando a ordem real do usuário (ver ADR-005).
 - RF-18: A ordem FIFO por usuário DEVE usar o **timestamp da mensagem da Meta** como critério primário
   e o `created_at` do outbox como desempate, independente do agendamento de retry.
 - RF-19: Os parâmetros de vazão/capacidade (tamanho de lote do dispatcher, `default_pool_size` do
   pgbouncer, `DB_MAX_CONNS`, número de réplicas de worker) DEVEM ser dimensionados por fase para que a
   serialização por usuário não cause contenção de conexões, suportando escalonamento horizontal.
+- RF-23: A escala (0 → 10.000) e os SLOs (D-05) DEVEM ser validados por um **gate de carga sintética
+  por fase** que prove CA-01 e CA-08 nas fronteiras 500 / 2.000 / 10.000 **antes** de captar usuários
+  reais — produção hoje tem 1 usuário, sem baseline; o custo do `NOT EXISTS` por usuário e o
+  dimensionamento de pool só são verificáveis sinteticamente.
 
 ## Experiência do Usuário
 
@@ -198,6 +274,14 @@ mensagens outbound vazias (deve ser 0).
 - CA-07 (RF-17/18): webhook com múltiplas mensagens processa todas na ordem do timestamp da Meta.
 - CA-08 (D-05/RF-19): sob carga sintética escalada, lag p95 < 5s e 0 duplicidade mantidos ao adicionar
   réplicas de worker; pool de conexões não satura.
+- CA-09 (RF-20/21): teste que força dupla execução do mesmo `(origin_wamid, origin_item_seq,
+  origin_operation)` — inclusive simulando reset do reaper durante um `write()` lento — resulta em
+  **1** mutação de domínio (a chave natural `transactions_origin_uk`/`card_purchases_origin_uk` rejeita
+  a 2ª, retornando `Reconciled`), o outcome mapeia para `reconciled`/replay (nunca `usecaseError` nem
+  sucesso falso), e o timeout de LLM dispara antes do `STUCK_AFTER` (evita a 2ª resposta fora de ordem).
+- CA-10 (RF-22): um evento inbound poison vai a dead-letter (`status=4`) dentro do orçamento de
+  `max_attempts` sem bloquear indefinidamente os eventos seguintes do usuário; alerta de `status=4`
+  dispara; FIFO das mensagens não-poison é preservado.
 
 ## Fora de Escopo
 
@@ -219,5 +303,7 @@ mensagens outbound vazias (deve ser 0).
   (D-06), não reduzindo instâncias.
 - O timestamp da mensagem da Meta (RF-18) tem granularidade suficiente para ordenar turnos humanos;
   o `created_at` do outbox cobre empates dentro do mesmo segundo.
-- Nenhuma questão em aberto material permanece; SLOs numéricos definitivos de alerta (D-05) serão
-  parametrizados na techspec a partir do baseline de produção, sem alterar os requisitos acima.
+- Os SLOs de D-05 estão **travados** com justificativa e são verificados pelo gate de carga sintética
+  (D-20/RF-23); não há parametrização adiada. A escala de 10k é forward-looking (produção tem 1
+  usuário) e sua prova é sintética, não observação de baseline de produção.
+- Nenhuma questão em aberto material permanece; nenhuma ressalva pendente.

@@ -28,7 +28,7 @@ func (s *ClassifierSuite) TestClassifyCardOutcome_AllBranches() {
 		{name: "not_found direto", err: domain.ErrCardNotFound, want: "not_found"},
 		{name: "not_found embrulhado", err: fmt.Errorf("ctx: %w", domain.ErrCardNotFound), want: "not_found"},
 		{name: "conflict direto", err: domain.ErrNicknameConflict, want: "conflict"},
-		{name: "invalid card name", err: domain.ErrInvalidCardName, want: "invalid"},
+		{name: "invalid bank", err: domain.ErrInvalidBank, want: "invalid"},
 		{name: "invalid nickname", err: domain.ErrInvalidNickname, want: "invalid"},
 		{name: "invalid closing day", err: domain.ErrInvalidClosingDay, want: "invalid"},
 		{name: "invalid due day", err: domain.ErrInvalidDueDay, want: "invalid"},
@@ -46,7 +46,7 @@ func (s *ClassifierSuite) TestClassifyCardOutcome_AllBranches() {
 
 func (s *ClassifierSuite) TestIsCardValidationError_AllSentinels() {
 	sentinels := []error{
-		domain.ErrInvalidCardName,
+		domain.ErrInvalidBank,
 		domain.ErrInvalidNickname,
 		domain.ErrInvalidClosingDay,
 		domain.ErrInvalidDueDay,

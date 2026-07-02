@@ -40,27 +40,29 @@ var (
 
 func contractCard() output.Card {
 	return output.Card{
-		ID:         contractCardID,
-		UserID:     contractUserID,
-		Name:       "Nubank",
-		Nickname:   "Nu",
-		ClosingDay: 15,
-		DueDay:     22,
-		CreatedAt:  contractCreated,
-		UpdatedAt:  contractUpdated,
+		ID:              contractCardID,
+		UserID:          contractUserID,
+		Nickname:        "Nu",
+		Bank:            "nubank",
+		ClosingDay:      15,
+		DueDay:          22,
+		BestPurchaseDay: 16,
+		CreatedAt:       contractCreated,
+		UpdatedAt:       contractUpdated,
 	}
 }
 
 func contractUpdatedCard() output.Card {
 	return output.Card{
-		ID:         contractCardID,
-		UserID:     contractUserID,
-		Name:       "Nubank Gold",
-		Nickname:   "Nu Gold",
-		ClosingDay: 20,
-		DueDay:     27,
-		CreatedAt:  contractCreated,
-		UpdatedAt:  contractUpdated2,
+		ID:              contractCardID,
+		UserID:          contractUserID,
+		Nickname:        "Nu Gold",
+		Bank:            "nubank",
+		ClosingDay:      20,
+		DueDay:          27,
+		BestPurchaseDay: 21,
+		CreatedAt:       contractCreated,
+		UpdatedAt:       contractUpdated2,
 	}
 }
 
@@ -78,16 +80,16 @@ func hashBody(body string) string {
 
 type ContractSuite struct {
 	suite.Suite
-	router      chi.Router
-	idemStorage *idemocks.Storage
-	createUC    *mockCreateCard
-	listUC      *mockListCards
-	getUC       *mockGetCard
-	updateUC    *mockUpdateCard
-	updateLimUC *mockUpdateCardLimit
-	deleteUC    *mockSoftDeleteCard
-	invoiceUC   *mockInvoiceFor
-	goldenDir   string
+	router         chi.Router
+	idemStorage    *idemocks.Storage
+	createUC       *mockCreateCard
+	listUC         *mockListCards
+	getUC          *mockGetCard
+	updateUC       *mockUpdateCard
+	deleteUC       *mockSoftDeleteCard
+	invoiceUC      *mockInvoiceFor
+	bestPurchaseUC *mockBestPurchaseDay
+	goldenDir      string
 }
 
 func TestContract(t *testing.T) {
@@ -104,20 +106,20 @@ func (s *ContractSuite) SetupTest() {
 	s.listUC = &mockListCards{}
 	s.getUC = &mockGetCard{}
 	s.updateUC = &mockUpdateCard{}
-	s.updateLimUC = &mockUpdateCardLimit{}
 	s.deleteUC = &mockSoftDeleteCard{}
 	s.invoiceUC = &mockInvoiceFor{}
+	s.bestPurchaseUC = &mockBestPurchaseDay{}
 
 	createH := handlers.NewCreateCardHandler(s.createUC, o11y)
 	listH := handlers.NewListCardsHandler(s.listUC, o11y)
 	getH := handlers.NewGetCardHandler(s.getUC, o11y)
 	updateH := handlers.NewUpdateCardHandler(s.updateUC, o11y)
-	updateLimH := handlers.NewUpdateCardLimitHandler(s.updateLimUC, o11y)
 	deleteH := handlers.NewDeleteCardHandler(s.deleteUC, o11y)
 	invoiceH := handlers.NewInvoiceForHandler(s.invoiceUC, o11y)
+	bestPurchaseH := handlers.NewBestPurchaseDayHandler(s.bestPurchaseUC, o11y)
 
 	passthrough := func(next http.Handler) http.Handler { return next }
-	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, updateLimH, deleteH, invoiceH, s.idemStorage, o11y, passthrough, passthrough)
+	cardRouter := server.NewCardRouter(createH, listH, getH, updateH, deleteH, invoiceH, bestPurchaseH, s.idemStorage, o11y, passthrough, passthrough)
 	r := chi.NewRouter()
 	cardRouter.Register(r)
 	s.router = r
@@ -176,10 +178,10 @@ func (s *ContractSuite) TestContract_PostCards_201() {
 		Return(idempotency.Record{}, idempotency.ErrNotFound).Once()
 
 	s.createUC.On("Execute", mock.Anything, mock.MatchedBy(func(in input.CreateCard) bool {
-		return in.Name == "Nubank" && in.Nickname == "Nu" && in.ClosingDay == 15 && in.DueDay != nil && *in.DueDay == 22
+		return in.Nickname == "Nu" && in.DueDay == 22
 	})).Return(contractCard(), nil).Once()
 
-	body := `{"name":"Nubank","nickname":"Nu","closing_day":15,"due_day":22}`
+	body := `{"nickname":"Nu","bank":"nubank","due_day":22}`
 	rr := s.doRequest(http.MethodPost, "/api/v1/cards", body, s.mutHeaders("idem-post-001"))
 
 	s.Equal(http.StatusCreated, rr.Code, "POST /api/v1/cards deve retornar 201")
@@ -228,7 +230,7 @@ func (s *ContractSuite) TestContract_PutCard_200() {
 		return in.ID.String() == contractCardID
 	})).Return(contractUpdatedCard(), nil).Once()
 
-	body := `{"name":"Nubank Gold","nickname":"Nu Gold","closing_day":20,"due_day":27}`
+	body := `{"nickname":"Nu Gold","bank":"nubank","due_day":27}`
 	path := "/api/v1/cards/" + contractCardID
 	rr := s.doRequest(http.MethodPut, path, body, s.mutHeaders("idem-put-001"))
 
@@ -267,7 +269,7 @@ func (s *ContractSuite) TestContract_Replay_PostCards_201_ByteIdentical() {
 	cardJSON, err := json.Marshal(contractCard())
 	s.Require().NoError(err)
 
-	reqBody := `{"name":"Nubank","nickname":"Nu","closing_day":15,"due_day":22}`
+	reqBody := `{"nickname":"Nu","bank":"nubank","due_day":22}`
 
 	storedRecord := idempotency.Record{
 		Scope:          "card",
@@ -295,11 +297,12 @@ func (s *ContractSuite) TestContract_NoXUserID_Returns401() {
 		body   string
 	}{
 		{http.MethodGet, "/api/v1/cards", ""},
-		{http.MethodPost, "/api/v1/cards", `{"name":"X","nickname":"X","closing_day":1,"due_day":2}`},
+		{http.MethodPost, "/api/v1/cards", `{"nickname":"X","bank":"nubank","due_day":10}`},
 		{http.MethodGet, "/api/v1/cards/" + uuid.New().String(), ""},
-		{http.MethodPut, "/api/v1/cards/" + uuid.New().String(), `{"name":"X"}`},
+		{http.MethodPut, "/api/v1/cards/" + uuid.New().String(), `{"nickname":"X","bank":"nubank","due_day":10}`},
 		{http.MethodDelete, "/api/v1/cards/" + uuid.New().String(), ""},
 		{http.MethodGet, "/api/v1/cards/" + uuid.New().String() + "/invoices?for=2026-01-01", ""},
+		{http.MethodGet, "/api/v1/cards/best-purchase-day?bank=nubank&due_day=20", ""},
 	}
 
 	for _, ep := range endpoints {
@@ -314,8 +317,8 @@ func (s *ContractSuite) TestContract_MissingIdempotencyKey_Returns400() {
 		path   string
 		body   string
 	}{
-		{http.MethodPost, "/api/v1/cards", `{"name":"X","nickname":"X","closing_day":1,"due_day":2}`},
-		{http.MethodPut, "/api/v1/cards/" + uuid.New().String(), `{"name":"X"}`},
+		{http.MethodPost, "/api/v1/cards", `{"nickname":"X","bank":"nubank","due_day":10}`},
+		{http.MethodPut, "/api/v1/cards/" + uuid.New().String(), `{"nickname":"X","bank":"nubank","due_day":10}`},
 		{http.MethodDelete, "/api/v1/cards/" + uuid.New().String(), ""},
 	}
 
@@ -336,7 +339,7 @@ func (s *ContractSuite) TestContract_PostCards_NicknameConflict_409() {
 		return r.ResponseStatus == 409
 	})).Return(nil).Maybe()
 
-	body := `{"name":"Nubank","nickname":"Nu","closing_day":15,"due_day":22}`
+	body := `{"nickname":"Nu","bank":"nubank","due_day":22}`
 	rr := s.doRequest(http.MethodPost, "/api/v1/cards", body, s.mutHeaders("idem-conflict-001"))
 
 	s.Equal(http.StatusConflict, rr.Code, "POST com apelido em uso deve retornar 409")
@@ -352,4 +355,27 @@ func (s *ContractSuite) TestContract_GetInvoices_MissingForParam_400() {
 	path := "/api/v1/cards/" + contractCardID + "/invoices"
 	rr := s.doRequest(http.MethodGet, path, "", s.authHeaders())
 	s.Equal(http.StatusBadRequest, rr.Code, "param 'for' ausente deve retornar 400")
+}
+
+func (s *ContractSuite) TestContract_BestPurchaseDay_200() {
+	s.bestPurchaseUC.On("Execute", mock.Anything, mock.AnythingOfType("input.BestPurchaseDay")).
+		Return(output.BestPurchaseDay{ClosingDay: 13, BestPurchaseDay: 14}, nil).Once()
+
+	path := "/api/v1/cards/best-purchase-day?bank=nubank&due_day=20"
+	rr := s.doRequest(http.MethodGet, path, "", s.authHeaders())
+
+	s.Equal(http.StatusOK, rr.Code, "GET /api/v1/cards/best-purchase-day deve retornar 200")
+	s.assertJSONEqual("get_best_purchase_day_200.json", rr.Body.Bytes())
+}
+
+func (s *ContractSuite) TestContract_BestPurchaseDay_MissingBank_400() {
+	path := "/api/v1/cards/best-purchase-day?due_day=20"
+	rr := s.doRequest(http.MethodGet, path, "", s.authHeaders())
+	s.Equal(http.StatusBadRequest, rr.Code, "best-purchase-day sem bank deve retornar 400")
+}
+
+func (s *ContractSuite) TestContract_BestPurchaseDay_InvalidDueDay_400() {
+	path := "/api/v1/cards/best-purchase-day?bank=nubank&due_day=abc"
+	rr := s.doRequest(http.MethodGet, path, "", s.authHeaders())
+	s.Equal(http.StatusBadRequest, rr.Code, "best-purchase-day com due_day invalido deve retornar 400")
 }

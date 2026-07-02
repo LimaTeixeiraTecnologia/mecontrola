@@ -47,9 +47,39 @@ Tornar a confirmação **derivada do resultado tipado**, ponta a ponta:
    observável (métrica `no_reply`), mas jamais um envio em branco.
 5. Idempotência ligada **por padrão** (RF-04): remover o gate `AGENT_WRITE_ADVISORY_LOCK` **e deletar
    `advisory_key_locker.go`** (caminho `pg_advisory_lock` de sessão — redundante e inseguro sob
-   pgbouncer transaction-pool; decisão travada). A serialização por usuário passa a ser garantida pelo
-   claim particionado (ADR-001), e o `agents_write_ledger` (UNIQUE `(wamid,item_seq,operation)`)
-   continua a fonte de verdade de replay.
+   pgbouncer transaction-pool; decisão travada). O `agents_write_ledger` (UNIQUE
+   `(wamid,item_seq,operation)`) continua registro de replay do agente.
+
+## Emenda v3 (2026-07-02) — idempotência de domínio: estado verificado e requisitos [HARD]
+
+Verificação contra produção (`mastra-20260629`) corrige um falso-positivo de rascunho ("duplo write de
+domínio catastrófico"). A mutação de domínio **já é idempotente por chave natural**:
+
+- `transactions` e `transactions_card_purchases` têm `origin_wamid/origin_item_seq/origin_operation`
+  com UNIQUE parcial `transactions_origin_uk` / `transactions_card_purchases_origin_uk`
+  (`WHERE origin_wamid IS NOT NULL`).
+- O `origin` é cabeado ponta-a-ponta: tools `register_expense/income/card_purchase` →
+  `RawTransaction`/`RawCardPurchase` (`OriginWamid/OriginItemSeq/OriginOperation`) →
+  `Transaction.SetOrigin()`/`CardPurchase.SetOrigin()` → persistido.
+- `create_transaction`/`create_card_purchase` já retornam `Reconciled` no conflito de origem.
+
+Logo, mesmo removido o advisory lock e sob corrida (reaper reseta `status=2→1`; provider trava), um 2º
+`write()` do mesmo `origin` **não duplica** — bate no UNIQUE natural e reconcilia. O `IdempotentWrite`
+(check-then-insert + `agents_write_ledger` ON CONFLICT) é registro de replay do agente, **respaldado**
+pela chave natural do domínio; não é a única barreira. A `agents_write_ledger` vazia em produção reflete
+escrita **nunca concluída** na janela do incidente (usuário preso em onboarding), não duplicação.
+
+Decisão (D-17/D-18, RF-20/21):
+
+6. **Preservar a chave natural (primária, RF-20):** o conflito de `origin` DEVE mapear para
+   `agent.ToolOutcomeReconciled`/replay — **nunca** `usecaseError` nem confirmação de sucesso falsa.
+   Toda **nova** tool de escrita DEVE carregar `origin` e ter UNIQUE natural equivalente no alvo (gate
+   de revisão). **Sem migration nova** — a proteção já existe.
+7. **Timeout LLM/tool ≪ `STUCK_AFTER` (hardening de coerência, RF-21):** context timeout (ex.: 90s) < 5m
+   evita re-pick concorrente pelo reaper que geraria 2ª resposta fora de ordem — não é correção de
+   integridade financeira (o item 6 já cobre).
+8. **Ledger-first: opcional.** Redundante com a chave natural do domínio; só considerar para uma futura
+   tool cujo alvo não possa ter UNIQUE natural.
 
 ## Alternativas Consideradas
 
