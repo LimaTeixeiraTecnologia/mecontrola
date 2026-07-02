@@ -4,21 +4,24 @@
 
 ## Visão Geral
 
-Registrar as 15 tools novas no `mecontrola-agent` e atualizar as instruções do agente para
+Registrar as 16 tools novas no `mecontrola-agent` e atualizar as instruções do agente para
 seleção determinística de tool, anti-simulação e limites de domínio financeiro pessoal. Depende
-das tarefas 3.0, 4.0 e 5.0 (tools de leitura, `create_recurrence` e tools destrutivas já
-construídas). Ver techspec.md, seção "Sequenciamento de Desenvolvimento" (passo 6).
+das tarefas 3.0, 4.0, 5.0 e 9.0 (tools de leitura — incluindo `list_categories` RF-18e —,
+`create_recurrence`, tools destrutivas e clarificação de registro já construídas). Ver techspec.md,
+seção "Sequenciamento de Desenvolvimento" (passo 6).
 
 <requirements>
 - RF-20, RF-21, RF-24, RF-25, RF-31, RF-32.
-- Dependência: 3.0, 4.0, 5.0.
+- RF-18e — a tool `list_categories` é registrada e declarada nas instruções (pedido "quais categorias
+  disponíveis?" passa a ter instrumento).
+- Dependência: 3.0, 4.0, 5.0, 9.0.
 </requirements>
 
 ## Subtarefas
 
-- [ ] 6.1 Em `internal/agents/module.go`, estender `buildFinancialTools` para registrar todas as 15
-  tools novas (passando `RecurrenceManager`, writer, `confirmEngine`/def onde aplicável),
-  totalizando 24 tools.
+- [ ] 6.1 Em `internal/agents/module.go`, estender `buildFinancialTools` para registrar todas as 16
+  tools novas (passando `RecurrenceManager`, `CategoriesReader` estendido, writer, `confirmEngine`/def
+  onde aplicável), totalizando 25 tools.
 - [ ] 6.2 Em `internal/agents/application/agents/mecontrola_agent.go`, reescrever as instruções com o
   catálogo de tools e regras determinísticas, anti-simulação e de domínio: declarar cada tool e
   quando usá-la (seleção determinística, RF-21); pedir apenas o dado faltante; NUNCA simular sucesso
@@ -28,14 +31,14 @@ construídas). Ver techspec.md, seção "Sequenciamento de Desenvolvimento" (pas
 ## Detalhes de Implementação
 
 Ver techspec.md, seções "Arquitetura do Sistema", "Sequenciamento de Desenvolvimento" (passo 6) e
-"Conformidade com Padrões". As 9 tools atuais estão em `internal/agents/module.go:254-262`; as 15
+"Conformidade com Padrões". As 9 tools atuais estão em `internal/agents/module.go:254-262`; as 16
 novas seguem o mapeamento tool → capacidade da tabela em techspec.md. As instruções seguem o molde
 `internal/agents` sobre `internal/platform`, sem branching de domínio por kind (resolução por
 registry, R-AGENT-WF-001.1).
 
 ## Critérios de Sucesso
 
-- O agente registra 24 tools (9 atuais + 15 novas); build passa.
+- O agente registra 25 tools (9 atuais + 16 novas); build passa.
 - As instruções cobrem seleção determinística de tool, anti-simulação (sem sucesso alucinado) e
   limites de domínio financeiro pessoal.
 - Nenhuma capacidade de bucket 3 (jobs/consumers/infra) é exposta como tool.
@@ -57,7 +60,7 @@ registry, R-AGENT-WF-001.1).
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 
-Teste unitário verificando que o agente expõe as 24 tools esperadas. Integração N/A (a validação de
+Teste unitário verificando que o agente expõe as 25 tools esperadas. Integração N/A (a validação de
 comportamento com LLM real é escopo da tarefa 7.0).
 
 ## Arquivos Relevantes

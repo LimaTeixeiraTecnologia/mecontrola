@@ -4,9 +4,29 @@
 
 - **Título:** Estratégia de idempotência/concorrência das novas tools de escrita
 - **Data:** 2026-07-02
-- **Status:** Aceita
+- **Status:** Aceita (emenda spec-version 3 em 2026-07-02)
 - **Decisores:** Autor da techspec, time de plataforma
-- **Relacionados:** PRD (RF-15, RF-16, RF-17, RF-18, RF-35); techspec; ADR-001
+- **Relacionados:** PRD (RF-15, RF-16, RF-17, RF-18, RF-35, RF-37, RF-40); techspec; ADR-001; ADR-005
+
+## Emenda spec-version 3 (2026-07-02) — identidade/idempotência injetadas server-side [corrige premissa falsa]
+
+A versão original desta ADR assumia que `create_recurrence` receberia `wamid`/`itemSeq` "vindos do
+`InboundRequest` (já disponível às tools)" **via schema da tool**. Essa premissa está **incorreta** à
+luz da evidência de produção (PRD, seção `Evidência de Produção`, EP-01/EP-05): no código atual esses
+campos são **argumentos obrigatórios do LLM** — `internal/agents/application/tools/register_expense.go:52`
+lista `wamid`/`itemSeq`/`userId` como `required` com `Strict:true` — e o runtime **nunca os injeta**
+(`internal/platform/agent/runtime.go:173-193`, `buildMessages`, não propaga `in.ResourceID`/
+`in.MessageID`; `internal/platform/agent/agent.go:198-219`, `invokeToolCall`, marshalla `tc.ArgumentsJSON`
+crus). Resultado comprovado: o modelo não fornece esses valores corretamente e a escrita se perde,
+com sucesso alucinado.
+
+Correção (RF-37, alinhada à ADR-005): `userId`/`wamid`/`itemSeq` DEVEM ser injetados **server-side** no
+ponto de invocação da tool (`invokeToolCall`, `internal/platform/agent`), a partir do `InboundRequest`/
+contexto do Run, e **removidos do schema exposto ao LLM**. A idempotência (`IdempotentWrite`,
+`internal/agents/application/tools/idempotent_write.go`) permanece com a chave
+`(userID, wamid, itemSeq, operation)`, agora **alimentada pelos valores injetados**, não pelo modelo.
+Isto vale para toda tool de escrita/leitura por usuário, incluindo `create_recurrence`. Os trechos
+abaixo que citam esses campos no schema da tool devem ser lidos sob esta emenda.
 
 ## Contexto
 
@@ -46,19 +66,25 @@ idempotência não pode depender do DTO do módulo.
 
 ### Trade-offs e Custos
 
-- `create_recurrence` precisa de `wamid`/`itemSeq` no schema da tool (origem da mensagem WhatsApp).
+- `create_recurrence` depende de `wamid`/`itemSeq`/`userId` para a chave de idempotência, mas esses
+  valores **não** aparecem no schema da tool: são injetados server-side no `invokeToolCall` a partir do
+  `InboundRequest`/contexto do Run (emenda spec-version 3, RF-37, ADR-005). O closure de escrita segue
+  independente do DTO do módulo.
 
 ### Riscos e Mitigações
 
-- **Risco:** ausência de `wamid` no contexto. **Mitigação:** `wamid`/`itemSeq` vêm do
-  `InboundRequest` (já disponível às tools), como nas tools `register_*`.
+- **Risco:** ausência de `wamid`/`itemSeq`/`userId` no contexto do Run. **Mitigação:** a injeção
+  server-side (RF-37, ADR-005) garante esses valores a partir do `InboundRequest`; o guard
+  anti-simulação (RF-38, ADR-005) impede reportar sucesso quando a escrita não ocorre. Confiar no LLM
+  para fornecer esses valores é PROIBIDO.
 - **Rollback:** trocar o closure por chamada direta remove a idempotência sem afetar o resto.
 
 ## Plano de Implementação
 
-1. Schema de `create_recurrence` inclui `wamid` (string) e `itemSeq` (integer), além dos campos do
-   template.
-2. Exec usa `IdempotentWrite` com `operation="create_recurrence"`, `resourceKind="recurring_template"`.
+1. Schema de `create_recurrence` expõe ao LLM **apenas** os campos do template; `wamid`/`itemSeq`/
+   `userId` são removidos do schema e injetados server-side no `invokeToolCall` (RF-37, ADR-005).
+2. Exec usa `IdempotentWrite` com `operation="create_recurrence"`, `resourceKind="recurring_template"`,
+   com a chave `(userID, wamid, itemSeq, operation)` alimentada pelos valores injetados.
 3. `update/delete_recurrence` e `update_card` passam `version` no `ConfirmState` e efetivam no resume.
 
 ## Monitoramento e Validação

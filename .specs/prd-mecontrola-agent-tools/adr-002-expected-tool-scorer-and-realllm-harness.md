@@ -6,8 +6,20 @@
 - **Data:** 2026-07-02
 - **Status:** Aceita
 - **Decisores:** Autor da techspec, time de plataforma
-- **Relacionados:** PRD (RF-21, RF-29, RF-30, RF-33, M-04); techspec; memória
+- **Relacionados:** PRD (RF-21, RF-29, RF-30, RF-33, M-04, M-05); techspec; ADR-005; memória
   `feedback_realllm_validation_required`
+
+## Emenda spec-version 3 (2026-07-02) — assert de linhas reais no banco para cenários de escrita
+
+À luz da evidência de produção (PRD, `Evidência de Produção`, EP-01/EP-05: sucesso alucinado com 0
+linhas gravadas), o harness real-LLM passa a **exigir assert de linhas reais no banco** para todo
+cenário de escrita (RF-29/RF-33/M-05, D-10). Nem o Run marcar `succeeded`, nem o scorer indicar tool
+chamada, contam como prova de escrita: cada cenário de escrita DEVE verificar a existência das linhas
+correspondentes em `transactions`, `transactions_card_purchases`, `agents_write_ledger` e
+`transactions_recurring_templates`. O conjunto canônico do harness cobre os cenários da evidência de
+produção **EP-01..EP-05** (escrita perdida, leitura de orçamento inoperante, listar categorias, atrito
+de confirmação e Run que não discrimina), servindo de regressão determinística para a correção de
+substrato da ADR-005.
 
 ## Contexto
 

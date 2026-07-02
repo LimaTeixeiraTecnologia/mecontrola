@@ -10,18 +10,19 @@ Implementar os binding adapters finos que ligam os contratos da Tarefa 1.0 aos u
 - RF-02: nenhuma capacidade mapeada sem use case real por trás.
 - RF-05: distinção bound vs não-bound resolvida no wiring (só injetar use cases existentes).
 - RF-19: cada método delega a um único use case, sem branching de domínio.
-- Estender adapters `card_manager_adapter.go`, `transactions_ledger_adapter.go`, `budget_planner_adapter.go` com campos/construtores/métodos novos; criar `recurrence_manager_adapter.go`.
+- Estender adapters `card_manager_adapter.go`, `transactions_ledger_adapter.go`, `budget_planner_adapter.go`, `categories_reader_adapter.go` com campos/construtores/métodos novos; criar `recurrence_manager_adapter.go`.
+- RF-18e: estender `categories_reader_adapter.go` com o método de listagem delegando ao use case real `ListCategories` (`internal/categories/application/usecases/list_categories.go`), mapeando o retorno para o tipo agent-owned `Category`.
 - Idioma verificado por método: span `agents.binding.<x>.<op>`, mapear args→DTO de input, `Execute`, mapear retorno→tipo agent-owned, `fmt.Errorf("agents/binding/<x>: <ação>: %w", err)`.
 - R-ADAPTER-001.2: zero regra de negócio/SQL/branching de domínio nos adapters.
 - R-ADAPTER-001.1: zero comentários em Go de produção.
-- Wiring em `module.go` dos use cases reais (card: `GetCard`, `CountCards`, `BestPurchaseDay`, `UpdateCard`; transactions: `GetCardInvoice`, `SearchTransactions`, `GetTransaction`, `GetCardPurchase`, `ListCardPurchases`, `Create/Update/Delete/List RecurringTemplate`; budgets: `SuggestAllocation`).
+- Wiring em `module.go` dos use cases reais (card: `GetCard`, `CountCards`, `BestPurchaseDay`, `UpdateCard`; transactions: `GetCardInvoice`, `SearchTransactions`, `GetTransaction`, `GetCardPurchase`, `ListCardPurchases`, `Create/Update/Delete/List RecurringTemplate`; budgets: `SuggestAllocation`; categories: `ListCategories`).
 </requirements>
 
 ## Subtarefas
 
-- [ ] 2.1 Estender os 3 adapters (`card_manager_adapter.go`, `transactions_ledger_adapter.go`, `budget_planner_adapter.go`) com os campos, construtores e métodos novos seguindo o idioma verificado.
+- [ ] 2.1 Estender os 4 adapters (`card_manager_adapter.go`, `transactions_ledger_adapter.go`, `budget_planner_adapter.go`, `categories_reader_adapter.go`) com os campos, construtores e métodos novos seguindo o idioma verificado — incluindo o método de listagem de categorias delegando a `ListCategories` (RF-18e).
 - [ ] 2.2 Criar `recurrence_manager_adapter.go` implementando `RecurrenceManager` sobre os use cases de recurring template.
-- [ ] 2.3 Wiring em `internal/agents/module.go`: injetar os use cases reais nos adapters e construir a nova `RecurrenceManager`.
+- [ ] 2.3 Wiring em `internal/agents/module.go`: injetar os use cases reais nos adapters (incluindo `ListCategories`) e construir a nova `RecurrenceManager`.
 
 ## Detalhes de Implementação
 
@@ -56,5 +57,7 @@ Ver techspec.md seção "Design de Implementação → Interfaces Chave" (idioma
 - `internal/agents/infrastructure/binding/card_manager_adapter.go`
 - `internal/agents/infrastructure/binding/transactions_ledger_adapter.go`
 - `internal/agents/infrastructure/binding/budget_planner_adapter.go`
+- `internal/agents/infrastructure/binding/categories_reader_adapter.go` (estendido — RF-18e)
 - `internal/agents/infrastructure/binding/recurrence_manager_adapter.go` (novo)
+- `internal/categories/application/usecases/list_categories.go` (consumo)
 - `internal/agents/module.go`

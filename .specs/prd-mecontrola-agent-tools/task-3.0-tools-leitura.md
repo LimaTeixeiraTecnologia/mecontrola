@@ -1,10 +1,10 @@
-# Tarefa 3.0: Tools de leitura (11) sobre budgets/card/transactions
+# Tarefa 3.0: Tools de leitura (12) sobre budgets/card/categories/transactions
 
 <critical>Ler prd.md e techspec.md desta pasta — sua tarefa será invalidada se você pular</critical>
 
 ## Visão Geral
 
-Criar 11 tools de leitura em `internal/agents/application/tools/`, uma por arquivo, cada uma como
+Criar 12 tools de leitura em `internal/agents/application/tools/`, uma por arquivo, cada uma como
 um `tool.NewTool[I,O]` fino sobre o substrato `internal/platform`. Cada tool declara schema Strict,
 tem `exec` determinístico que parseia `userId`/UUID, aplica defaults de campos opcionais (ex.:
 `refMonth` corrente em `America/Sao_Paulo`, `limit` default), chama o binding correspondente e mapeia
@@ -12,8 +12,10 @@ o retorno para o output tipado. Zero comentários, zero regra de negócio, sem S
 domínio. As tools ainda **não** são registradas no agente — o registro em `buildFinancialTools` é
 escopo da tarefa 6.0.
 
-Depende da tarefa 2.0 (interfaces agent-owned + binding adapters + wiring dos use cases).
-Paralelizável com as tarefas 4.0 e 5.0.
+Depende da tarefa 2.0 (interfaces agent-owned + binding adapters + wiring dos use cases) e, por herança
+do DAG, da tarefa 0.0 (substrato confiável): para tools de leitura **por usuário**, o `userId` é
+injetado server-side a partir do `InboundRequest`/contexto do Run (RF-37/RTA-08), não fornecido pelo
+LLM. Paralelizável com as tarefas 4.0 e 5.0.
 
 <requirements>
 - RF-09 — `list_cards` (via `CardManager.ListCards`)
@@ -26,6 +28,7 @@ Paralelizável com as tarefas 4.0 e 5.0.
 - RF-18b — `list_card_purchases` (via `TransactionsLedger.ListCardPurchases`)
 - RF-18c — `count_cards` (via `CardManager.CountCards`)
 - RF-18d — `suggest_allocation` (via `BudgetPlanner.SuggestAllocation`)
+- RF-18e — `list_categories` (via `CategoriesReader.ListCategories` → use case real `ListCategories`), atendendo "quais categorias existem/disponíveis?"
 - RF-19 — `get_transaction` e `get_card_purchase` são tools distintas, cada uma delegando a um único use case de leitura, sem branching de domínio
 </requirements>
 
@@ -42,11 +45,12 @@ Paralelizável com as tarefas 4.0 e 5.0.
 - [ ] 3.9 `list_card_purchases.go` — delega a `TransactionsLedger.ListCardPurchases` (input `userId` + `cardId`, default `refMonth`/`cursor`/`limit`)
 - [ ] 3.10 `count_cards.go` — delega a `CardManager.CountCards` (input `userId`)
 - [ ] 3.11 `suggest_allocation.go` — delega a `BudgetPlanner.SuggestAllocation` (input `totalCents` + `allocations`)
+- [ ] 3.12 `list_categories.go` — delega a `CategoriesReader.ListCategories` (input `userId`), mapeando o retorno para o output tipado sem inventar categoria
 
 ## Detalhes de Implementação
 
-Ver `techspec.md` desta pasta: seção **Tools novas (15) — mapeamento tool → capacidade real** (tabela
-tool→binding→gate, com as 11 leituras); seção **Design de Implementação → Interfaces Chave** para as
+Ver `techspec.md` desta pasta: seção **Tools novas — mapeamento tool → capacidade real** (tabela
+tool→binding→gate, com as 12 leituras, incluindo `list_categories` — RF-18e); seção **Design de Implementação → Interfaces Chave** para as
 assinaturas dos métodos consumidos; seção **Sequenciamento de Desenvolvimento → Ordem de Build**
 (passo 3, "Tools de leitura (11)"); seção **Conformidade com Padrões** (R-ADAPTER-001, R-AGENT-WF-001).
 Cada tool segue o molde `tool.NewTool[I,O]` do consumidor de referência `internal/agents`, com schema
@@ -55,11 +59,11 @@ com wrapping de erro (`fmt.Errorf("...: %w", err)`).
 
 ## Critérios de Sucesso
 
-- Cada uma das 11 tools compila e é um `tool.NewTool[I,O]` fino, sem regra de negócio, sem SQL, sem branching de domínio, zero comentários.
+- Cada uma das 12 tools compila e é um `tool.NewTool[I,O]` fino, sem regra de negócio, sem SQL, sem branching de domínio, zero comentários.
 - Cada tool possui teste unitário cobrindo: sucesso (mapeamento correto args→binding e retorno→output), erro do use case com wrapping propagado, UUID/`userId` inválido, e defaults de campos opcionais.
 - Nenhuma tool inventa dado: o output contém exclusivamente o que o use case/binding retorna.
 - `get_transaction` e `get_card_purchase` permanecem tools distintas, cada uma delegando a um único use case (RF-19).
-- As 11 tools **não** estão registradas no agente (registro é escopo da tarefa 6.0).
+- As 12 tools **não** estão registradas no agente (registro é escopo da tarefa 6.0).
 
 ## Skills Necessárias
 
@@ -95,4 +99,5 @@ esta tarefa (tools de leitura sem gate nem escrita).
 - `internal/agents/application/tools/list_card_purchases.go`
 - `internal/agents/application/tools/count_cards.go`
 - `internal/agents/application/tools/suggest_allocation.go`
+- `internal/agents/application/tools/list_categories.go`
 - Testes `*_test.go` correspondentes a cada tool acima.

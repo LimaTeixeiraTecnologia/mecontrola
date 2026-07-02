@@ -1,12 +1,22 @@
 # Documento de Requisitos do Produto (PRD) — Superfície de Tools do MeControla Agent
 
-<!-- spec-version: 2 -->
+<!-- spec-version: 3 -->
 
 > Entrada canônica: `docs/prompts/2026-07-02-create-prd-prompt-mecontrola-agent-tools.md`.
 > Este PRD reflete estritamente o código real do workspace, verificado por inventário de código
 > (arquivo:linha). Nenhuma tool, API, handler, workflow, use case, contrato ou comportamento foi
 > inventado. Lacunas estão registradas em `Suposições e Questões em Aberto`.
 > Skills obrigatórias para a futura implementação: `go-implementation` e `mastra`.
+>
+> **spec-version 3 (2026-07-02) — correção de premissa falsa comprovada por evidência de produção.**
+> A confrontação do PRD com a conversa real do usuário `06edc407-4f63-42e8-b07c-946b9ef0a19c`
+> (WhatsApp +5511986896322) no ambiente remoto revelou que o substrato de escrita/leitura assumido
+> como funcional (bucket 1) está **quebrado**: o agente afirmou "Despesa registrada com sucesso ✅"
+> com **0 linhas** em `transactions`/`agents_write_ledger`, e disse não encontrar orçamento existindo
+> budget `2026-07` ativo. Ver seção `Evidência de Produção`. A spec-version 3 absorve a correção do
+> substrato como pré-requisito **P0 bloqueante** (RF-37..RF-40), reintroduz o fluxo de clarificação de
+> registro (RF-41..RF-43), adiciona a tool `list_categories` (RF-18e) e endurece o critério de aceite
+> de escrita para exigir linhas reais verificadas no banco (RF-29/RF-33/M-05). Decisões D-07..D-10.
 
 ## Visão Geral
 
@@ -58,6 +68,12 @@ código real e comportamento confiável em produção**.
   cardinalidade de métricas controlada.
 - **O-07 — Aderência estrita ao domínio.** O agente permanece dentro do domínio financeiro pessoal do
   MeControla; nenhuma tool habilita ação fora desse domínio.
+- **O-08 — Substrato de escrita/leitura confiável (P0 bloqueante).** A identidade e a idempotência das
+  operações (`userId`, `wamid`, `itemSeq`) são injetadas **server-side** a partir do `InboundRequest`/
+  contexto do Run, nunca fornecidas pelo LLM; nenhum "sucesso de escrita" é reportado ao usuário sem
+  retorno real de sucesso do use case; e o Run auditável evidencia a escrita real (mensagens de tool e
+  `resource_id` persistidos). Este objetivo corrige o defeito comprovado em produção e é pré-requisito
+  para a exposição de qualquer tool nova.
 
 ### Métricas-chave a acompanhar
 
@@ -69,9 +85,15 @@ código real e comportamento confiável em produção**.
   ambiente de validação) / (tools registradas). Meta: 100%.
 - **M-04 Taxa de acerto de seleção de tool** (via scorer de tool-call accuracy sobre um conjunto de
   cenários canônicos determinísticos, com uma tool esperada por cenário). Meta: **≥ 0.90**.
-- **M-05 Incidentes de sucesso simulado** (resposta afirmando execução sem retorno de sucesso real
-  do use case), medidos em suíte de validação. Meta: 0.
+- **M-05 Incidentes de sucesso simulado** (resposta afirmando execução sem escrita real). Medição
+  **determinística por assert de linhas no banco**: cada cenário de escrita do harness real-LLM DEVE
+  verificar a existência das linhas correspondentes em `transactions`/`transactions_card_purchases`/
+  `agents_write_ledger`/`transactions_recurring_templates`; texto de sucesso do agente NÃO conta como
+  evidência. Meta: 0.
 - **M-06 Operações destrutivas sem confirmação** observadas em validação. Meta: 0.
+- **M-07 Escritas com identidade injetada server-side** = (escritas cujo `userId`/`wamid`/`itemSeq`
+  vêm do `InboundRequest`/contexto) / (total de escritas). Nenhuma escrita pode depender de valores de
+  identidade/idempotência fornecidos pelo LLM. Meta: 100%.
 
 ## Histórias de Usuário
 
@@ -96,6 +118,14 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
   erro), para investigar comportamento e comprovar execução real.
 - **US-09** — Como operador, quero um mapa formal `capacidade → tool` e um relatório de gaps, para
   saber, a qualquer momento, o que está coberto e o que não está.
+- **US-10** — Como usuário, quero listar as categorias disponíveis ("quais categorias existem?"), para
+  saber como classificar meus gastos sem adivinhar.
+- **US-11** — Como usuário, quando registro uma despesa/receita, quero que o agente só me pergunte a
+  categoria quando ela estiver ausente ou ambígua e assuma a data por padrão (hoje/"ontem"), para não
+  ter atrito desnecessário — e quando confirmar sucesso, que a operação esteja de fato gravada.
+- **US-12** — Como operador, quero que "sucesso de escrita" reportado ao usuário seja sempre lastreado
+  por linha real no banco, e que a identidade/idempotência seja injetada pelo servidor, para eliminar
+  sucesso simulado e escrita perdida.
 
 ## Funcionalidades Core
 
@@ -113,6 +143,14 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
    sem retorno real do use case.
 7. **Gates anti-falso-positivo.** Critérios objetivos que bloqueiam "sucesso" enquanto houver gap
    aberto ou tool registrada não exercida.
+8. **Substrato de escrita/leitura confiável (P0 bloqueante).** Injeção server-side de identidade/
+   idempotência (`userId`/`wamid`/`itemSeq`), guard bloqueante que impede reportar sucesso de escrita
+   sem retorno real do use case, e Run auditável que persiste mensagens de tool e evidencia a escrita.
+9. **Clarificação de registro (categoria/data).** Fluxo que pergunta a categoria apenas quando ausente/
+   ambígua e resolve a data por default determinístico, reutilizando o substrato `ConfirmState` com um
+   `OperationKind` não-destrutivo, sem criar mecanismo HITL paralelo.
+10. **Listar categorias.** Tool de listagem das categorias disponíveis do usuário, mapeada ao use case
+    real `ListCategories`.
 
 ## Requisitos Funcionais
 
@@ -200,6 +238,12 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - **RF-18d** — O agente DEVE poder **sugerir a distribuição de alocação** do orçamento (use case
   `internal/budgets/application/usecases/suggest_allocation.go` — `SuggestAllocation`), como leitura/
   cálculo puro (sem escrita), hoje sem binding e sem tool.
+- **RF-18e** — O agente DEVE poder **listar as categorias disponíveis** do usuário (use case
+  `internal/categories/application/usecases/list_categories.go` — `ListCategories`), atendendo pedidos
+  como "quais categorias existem/estão disponíveis?". A interface `CategoriesReader`
+  (`internal/agents/application/interfaces/categories_reader.go`, hoje apenas `SearchDictionary`/
+  `ResolveRootsBySlug`) DEVE ser estendida com um método de listagem. Esta capacidade sai do Fora de
+  Escopo FE-08 (que permanece válido apenas para navegação de dicionário `GetCategory`/`ListDictionary`).
 - **RF-19** — Cada tool nova DEVE ser um adapter fino que delega a um único use case/binding real
   (R-ADAPTER-001 / R-AGENT-WF-001.2): sem regra de negócio, SQL direto ou branching de domínio na
   tool. (Restrição de produto derivada das regras hard do repositório; o desenho fica na techspec.)
@@ -236,6 +280,53 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - **RF-26** — O agente é PROIBIDO de contornar o gate de destrutivas simulando uma confirmação em
   nome do usuário.
 
+### Substrato de escrita/leitura confiável (P0 — bloqueante)
+
+> Corrige defeito comprovado em produção (ver seção `Evidência de Produção`). Estes requisitos são
+> pré-requisito bloqueante: nenhuma tool nova (RF-09..RF-18e) é considerada coberta enquanto o
+> substrato não estiver corrigido e verificado (RF-40).
+
+- **RF-37** — Injeção server-side de identidade/idempotência. As tools de escrita e de leitura por
+  usuário (`register_expense`, `register_income`, `register_card_purchase`, `query_month`,
+  `query_plan`, `create_recurrence`, e toda tool nova que precise de `userId`/`wamid`/`itemSeq`) NÃO
+  DEVEM receber `userId`, `wamid` ou `itemSeq` como argumentos fornecidos pelo LLM. Esses valores DEVEM
+  ser injetados **server-side** a partir do `InboundRequest`/contexto do Run no ponto de invocação da
+  tool (`internal/platform/agent`, `invokeToolCall`), e removidos do schema exposto ao modelo. (Defeito:
+  `internal/agents/application/tools/register_expense.go:52` marca `wamid`/`itemSeq`/`userId` como
+  `required` do LLM com `Strict:true`; `internal/platform/agent/runtime.go:173-193` — `buildMessages`
+  — nunca injeta `in.ResourceID`/`in.MessageID`, então o modelo não pode fornecê-los corretamente.)
+- **RF-38** — Guard bloqueante de anti-simulação. O runtime NÃO DEVE reportar sucesso de operação de
+  escrita ao usuário sem que a tool de escrita correspondente tenha retornado um `ToolOutcome` real de
+  sucesso (`routed`/`reconciled`/`replay`). É PROIBIDO marcar `RunStatusSucceeded`/`ToolOutcomeRouted`
+  apenas por `result.Content` não-vazio quando a intenção do usuário era uma escrita e nenhuma tool de
+  escrita retornou sucesso. (Defeito: `internal/platform/agent/runtime.go:155-162` marca sucesso por
+  qualquer conteúdo não-vazio; o `anyFinancialToolScorer` roda assíncrono e não bloqueia a resposta em
+  `internal/agents/infrastructure/messaging/database/consumers/whatsapp_inbound_consumer.go:163`.)
+- **RF-39** — Run auditável com evidência de escrita real. Cada execução DEVE persistir as mensagens de
+  tool (`memory.RoleTool`) e o `resource_id` retornado pela escrita, de modo que o Run distinga escrita
+  real de texto de sucesso. (Defeito: `internal/platform/agent/runtime.go:138-153` só persiste
+  `RoleUser`/`RoleAssistant`; `RoleTool` é definido mas nunca gravado.)
+- **RF-40** — Premissa corrigida (bucket 1 não é assumido funcional). A correção do substrato
+  (RF-37..RF-39) é pré-requisito **bloqueante** para a exposição das tools novas: nenhuma tool nova é
+  considerada "coberta"/"exercida" enquanto o substrato não for corrigido e verificado por escrita real
+  no banco (RF-29, RF-33). Isto substitui, para o eixo de plataforma, a premissa da spec-version 2 de
+  que as tools de escrita/leitura do bucket 1 já funcionavam.
+
+### Clarificação de registro (categoria/data)
+
+- **RF-41** — O agente DEVE clarificar a **categoria** de um lançamento antes de gravar **apenas quando**
+  ela estiver ausente ou ambígua (não resolvida com confiança por `classify_category`). Quando a
+  categoria é resolvida com confiança, o agente grava sem perguntar (RF-21 — pede apenas o dado
+  faltante).
+- **RF-42** — O agente DEVE resolver a **data** do lançamento por default determinístico (data corrente
+  em `America/Sao_Paulo`; inferindo "ontem"/data relativa/data explícita quando o usuário indicar) **sem
+  perguntar**; confirmação de data só quando genuinamente ambígua.
+- **RF-43** — O estado de espera da clarificação de registro DEVE reutilizar o substrato `ConfirmState`
+  (`internal/agents/application/workflows/confirm_state.go`) com um `OperationKind` **não-destrutivo**
+  dedicado (ex.: `OpConfirmRegister`), respeitando o contrato de pending step (persistir o estado antes
+  de perguntar, retomar por merge-patch antes de qualquer parse, concluir o Run deterministicamente —
+  R-AGENT-WF-001.7). PROIBIDO criar um mecanismo HITL paralelo ao existente.
+
 ### Observabilidade e auditabilidade
 
 - **RF-27** — Todo uso de tool DEVE ser observável como Run auditável contendo, no mínimo,
@@ -248,9 +339,13 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 ### Validação de uso efetivo (não apenas registro no runtime)
 
 - **RF-29** — A solução DEVE comprovar que cada tool registrada é **exercida em execução real** — não
-  basta estar presente no runtime. A evidência é o conjunto de Runs auditáveis e/ou o resultado de um
-  scorer de acurácia de tool-call (`internal/platform/scorer`, ex.: tool-call accuracy) sobre um
-  conjunto de cenários canônicos que cubra toda tool registrada.
+  basta estar presente no runtime. A evidência é o conjunto de Runs auditáveis e o resultado de um
+  scorer de acurácia de tool-call (`internal/platform/scorer`, tool esperada por cenário) sobre um
+  conjunto de cenários canônicos que cubra toda tool registrada. Para cenários de **escrita**, a
+  evidência DEVE incluir **assert de linhas reais** nas tabelas de destino (`transactions`,
+  `transactions_card_purchases`, `agents_write_ledger`, `transactions_recurring_templates`) executado
+  no harness real-LLM (`RUN_REAL_LLM=1` + `OPENROUTER_*`); nem o Run marcar sucesso, nem o scorer
+  indicar tool chamada, contam como prova de escrita.
 - **RF-30** — O critério de "sucesso" DEVE ser bloqueado enquanto: (a) existir capacidade relevante
   do módulo não refletida em nenhum bucket (RF-03); (b) existir tool do bucket 2 sem tool-alvo
   mapeada (RF-07); ou (c) existir tool registrada sem nenhuma execução real observada (RF-29). Estes
@@ -267,9 +362,11 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 ### Critérios objetivos de production-ready (do ponto de vista de produto)
 
 - **RF-33** — A solução só é classificável como production-ready quando, cumulativamente:
-  M-01 = 100%, M-02 = 0, M-03 = 100%, M-05 = 0, M-06 = 0, e M-04 atinge o alvo declarado no critério
-  de aceite; toda operação destrutiva tem gate de confirmação (RF-22); todo uso de tool é auditável
-  (RF-27); e o mapa capacidade→tool e o relatório de gaps estão atualizados contra o código real.
+  M-01 = 100%, M-02 = 0, M-03 = 100%, M-05 = 0 (verificado por assert de linhas no banco — RF-29),
+  M-06 = 0, M-07 = 100%, e M-04 atinge o alvo declarado no critério de aceite; o substrato P0
+  (RF-37..RF-40) está corrigido e verificado; toda operação destrutiva tem gate de confirmação (RF-22);
+  todo uso de tool é auditável com evidência de escrita real (RF-27/RF-39); e o mapa capacidade→tool e o
+  relatório de gaps estão atualizados contra o código real.
 - **RF-34** — "Ter mais tools" é explicitamente insuficiente: registrar uma tool sem uso efetivo
   comprovado, sem mapeamento a use case real, ou sem gate de destrutiva quando aplicável, NÃO conta
   como cobertura e mantém o critério de sucesso bloqueado.
@@ -325,6 +422,7 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 | `list_card_purchases` | `transactions/list_card_purchases.go` (`ListCardPurchases`) | Não | Não | RF-18b |
 | `count_cards` | `card/count_cards.go` (`CountCards`) | Não | Não | RF-18c |
 | `suggest_allocation` | `budgets/suggest_allocation.go` (`SuggestAllocation`) | Não | Não | RF-18d |
+| `list_categories` | `categories/list_categories.go` (`ListCategories`) | Não (estende `CategoriesReader`) | Não | RF-18e |
 
 ### Bucket 3 — Existentes e a NÃO expor como tool conversacional (jobs/consumers/infra)
 
@@ -337,6 +435,31 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 | `RecomputeMonthlySummary`, `ReconcileMonthlySummary`, `MaterializeRecurringForDay` | transactions | jobs/consumers |
 | `ResolveBySlug`, `ValidateSubcategory` | categories | infra cross-module, não conversacional |
 
+## Evidência de Produção (spec-version 3)
+
+> Fonte: conversa real do usuário `06edc407-4f63-42e8-b07c-946b9ef0a19c` (WhatsApp +5511986896322),
+> banco `mecontrola_db` no host remoto, thread `platform_threads`
+> `bbf7c466-83f4-45ef-b4a5-edc98358cf1c`, 2026-07-01. Fatos verificados por consulta ao banco; nenhum
+> valor inventado. Esta seção justifica os RFs P0 (RF-37..RF-40) e o endurecimento do aceite (RF-29/33).
+
+- **EP-01 — Sucesso alucinado (escrita perdida).** O agente respondeu "Despesa registrada com sucesso
+  ✅" para "compra no mercado R$150" e para "compra no mercado de R$1.500", mas
+  `select count(*) from transactions where user_id = '06edc407-…'` retornou **0** e
+  `agents_write_ledger` retornou **0**. Nenhuma escrita ocorreu. → RF-37, RF-38, RF-39, M-05, M-07.
+- **EP-02 — Leitura de orçamento inoperante.** O agente respondeu "não encontrei seu plano orçamentário
+  para julho de 2026" repetidamente, embora exista `budgets` `competence='2026-07'`,
+  `total_cents=800000`, `state=2` (ativo) para o usuário. A tool `query_plan` não foi efetivamente
+  exercida (mesma causa raiz de identidade não injetada). → RF-37, RF-40.
+- **EP-03 — Listar categorias sem instrumento.** O usuário pediu "Quais são as categorias disponíveis?"
+  e o agente respondeu com pergunta de mês/ano de orçamento (tool errada). Não havia tool de listagem. →
+  RF-18e (tool `list_categories`).
+- **EP-04 — Atrito de confirmação inconsistente.** No primeiro registro o agente pediu categoria e
+  confirmação de data; em outro registrou "instantâneo" sem categoria — comportamento inconsistente. →
+  RF-41 (categoria só quando ausente/ambígua), RF-42 (data por default), RF-43 (estado de espera único).
+- **EP-05 — Run auditável não discrimina.** 16 linhas em `platform_runs`, todas `status=succeeded`,
+  `outcome=routed`, sem erro, apesar de 0 escritas; `platform_messages` contém apenas `role=user`/
+  `assistant`, nenhuma `role=tool`. O Run marca sucesso por conteúdo não-vazio. → RF-38, RF-39.
+
 ## Experiência do Usuário
 
 - Canal: WhatsApp, **texto apenas**, respostas em PT-BR, formatação markdown do WhatsApp (regras já
@@ -344,6 +467,10 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - Uma pergunta por mensagem; o agente pede apenas o dado faltante para completar a ação.
 - Operações destrutivas produzem uma mensagem de confirmação com nota de impacto e aguardam
   `sim/não` (fluxo `destructive-confirm`, TTL 5 min, re-pergunta única).
+- No registro de lançamentos, o agente pergunta a categoria **apenas quando ausente/ambígua** e assume
+  a data por default (hoje/"ontem"/data explícita) **sem perguntar** (RF-41/RF-42).
+- Sucesso de escrita só é confirmado ao usuário quando o use case retornou sucesso real e a linha
+  existe no banco (RF-38); nunca há confirmação de gravação sem gravação.
 - Quando a capacidade não existe, resposta honesta de indisponibilidade — nunca sucesso simulado.
 
 ## Restrições Técnicas de Alto Nível
@@ -355,7 +482,11 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - **RTA-02** — Tools são adapters finos (R-ADAPTER-001.2 / R-AGENT-WF-001.2): zero regra de negócio,
   SQL direto ou branching de domínio; delegam a um único use case/binding.
 - **RTA-03** — Estados de fronteira (`ToolOutcome`/`RunStatus`/`ConfirmState`/`OperationKind`) são
-  tipos fechados (DMMF state-as-type); nunca string livre.
+  tipos fechados (DMMF state-as-type); nunca string livre. O `OperationKind` não-destrutivo
+  `OpConfirmRegister` (RF-43) é enumerado no mesmo tipo fechado, sem string solta.
+- **RTA-08** — Identidade e idempotência (`userId`/`wamid`/`itemSeq`) são injetadas server-side no ponto
+  de invocação de tool (`internal/platform/agent`, `invokeToolCall`) a partir do `InboundRequest`/
+  contexto do Run; PROIBIDO expô-las no schema de tool ou confiar em valor fornecido pelo LLM (RF-37).
 - **RTA-04** — LLM apenas nas call-sites sancionadas (loop do agent, step que chama `Stream`, scorer
   LLM-judged); OpenRouter é o único provider. Kernel `internal/platform/workflow` permanece sem
   domínio/LLM.
@@ -369,8 +500,12 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - **FE-01** — Desenho técnico, assinaturas, esquemas de I/O das tools, novos bindings, pseudocódigo,
   diffs ou refactor — pertencem à Especificação Técnica.
 - **FE-02** — Capacidades do bucket 3 (jobs/consumers/infra) como tool conversacional (RF-32).
-- **FE-03** — Novos use cases de negócio nos módulos: este PRD só expõe capacidades **já existentes**;
-  não cria capacidade nova de domínio.
+- **FE-03** — Novos use cases de negócio nos módulos de domínio: este PRD só expõe capacidades **já
+  existentes**; não cria capacidade nova de domínio. **Exceção de plataforma (spec-version 3):** a
+  correção do substrato de agent/runtime (injeção server-side de identidade/idempotência, guard
+  bloqueante de anti-simulação e persistência de mensagens de tool — RF-37..RF-40) está **dentro** do
+  escopo, pois é infraestrutura de plataforma de agent (`internal/platform/agent`), não capacidade de
+  domínio.
 - **FE-04** — Multi-canal/voz/imagem: mantém-se texto-WhatsApp.
 - **FE-05** — Reforma do fluxo de onboarding (`onboarding-workflow`) além do necessário para não
   regredir a superfície existente.
@@ -378,9 +513,12 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - **FE-07** — Excluir orçamento draft via conversa (`DeleteDraftBudget`): capacidade real existe, mas
   foi deliberadamente deixada fora desta iteração (operação destrutiva de baixa demanda
   conversacional; exclusão de draft continua disponível fora do agente). Decisão QA-01.
-- **FE-08** — Navegar catálogo/dicionário de categorias via tools próprias
-  (`GetCategory`/`ListCategories`/`ListDictionary`): deixado fora por já ser parcialmente atendido
-  por `classify_category` e por risco de redundância conversacional. Decisão QA-01.
+- **FE-08** — Navegar catálogo/dicionário de categorias via tools próprias de **dicionário**
+  (`GetCategory`/`ListDictionary`): permanece fora por já ser parcialmente atendido por
+  `classify_category` e por risco de redundância conversacional. **Alteração spec-version 3:**
+  **`ListCategories`** (listar as categorias disponíveis do usuário) sai deste Fora de Escopo e entra
+  como tool `list_categories` (RF-18e), pois o usuário real pediu explicitamente a listagem e o agente
+  não tinha instrumento. Decisão D-08.
 - **FE-09** — Expor o ciclo de vida de orçamento (`CreateBudget`/`ActivateBudget`/`CreateRecurrence`
   de budgets) como tools avulsas: permanece exclusivamente no `onboarding-workflow`; não vira tool
   conversacional avulsa nesta iteração.
@@ -406,3 +544,18 @@ WhatsApp, canal texto). Ator secundário: **operador/mantenedor** que audita com
 - **D-06 (QA-06 — relação com PRD amplo).** Este PRD é **complementar e independente** de
   `.specs/prd-mecontrola-agent/`; evolui com spec-version própria e não incrementa/regenera o PRD
   amplo nem seus artefatos downstream.
+- **D-07 (spec-version 3 — substrato quebrado).** A correção do substrato de escrita/leitura (injeção
+  server-side de `userId`/`wamid`/`itemSeq`, guard bloqueante de anti-simulação, Run auditável com
+  mensagens de tool) é **absorvida neste PRD como P0 bloqueante** (RF-37..RF-40), não separada em outro
+  documento. Motivo: sem ela, cada tool nova nasce com o mesmo defeito de sucesso alucinado comprovado
+  em produção.
+- **D-08 (spec-version 3 — listar categorias).** Adicionada a tool `list_categories` (RF-18e) mapeada
+  ao use case real `ListCategories`; FE-08 é estreitado para cobrir apenas navegação de dicionário.
+  Motivo: pedido explícito do usuário real ("quais categorias disponíveis?") ficou descoberto.
+- **D-09 (spec-version 3 — clarificação de registro).** Reintroduzido o fluxo de clarificação de
+  registro (RF-41..RF-43): categoria perguntada **apenas quando ausente/ambígua**, data por **default
+  determinístico sem perguntar**, estado de espera reutilizando `ConfirmState` com `OperationKind`
+  não-destrutivo (`OpConfirmRegister`), sem mecanismo HITL paralelo.
+- **D-10 (spec-version 3 — aceite de escrita).** O critério de aceite de escrita exige **assert de
+  linhas reais no banco** no harness real-LLM (RF-29/RF-33/M-05); texto de sucesso do agente não conta
+  como evidência.
