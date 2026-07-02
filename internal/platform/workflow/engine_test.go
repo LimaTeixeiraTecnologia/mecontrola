@@ -402,6 +402,56 @@ func (s *EngineTestSuite) TestVersionConflict_TriggersMetric() {
 	s.NotNil(conflictCounter)
 }
 
+func (s *EngineTestSuite) TestStart_InsertConflict_ResumeExisting() {
+	step := NewStepFunc("s1", func(_ context.Context, st engineTestState) (StepOutput[engineTestState], error) {
+		return StepOutput[engineTestState]{
+			State:   st,
+			Status:  StepStatusSuspended,
+			Suspend: &Suspension{Reason: SuspendAwaitingInput, Prompt: "aguardando"},
+		}, nil
+	})
+	def := Definition[engineTestState]{
+		ID:          "conflict-wf",
+		Root:        step,
+		Durable:     true,
+		MaxAttempts: 1,
+	}
+
+	s.store.SetInsertError(ErrRunAlreadyExists)
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	result, err := eng.Start(s.ctx, def, "key-conflict", engineTestState{Value: 42})
+
+	s.NoError(err)
+	s.Equal(RunStatusSuspended, result.Status)
+	s.NotNil(result.Suspend)
+	s.Equal("aguardando", result.Suspend.Prompt)
+}
+
+func (s *EngineTestSuite) TestStart_InsertConflict_IncrementsResumedOnConflictMetric() {
+	step := NewStepFunc("s1", func(_ context.Context, st engineTestState) (StepOutput[engineTestState], error) {
+		return StepOutput[engineTestState]{State: st, Status: StepStatusCompleted}, nil
+	})
+	def := Definition[engineTestState]{
+		ID:          "conflict-metric-wf",
+		Root:        step,
+		Durable:     true,
+		MaxAttempts: 1,
+	}
+
+	s.store.SetInsertError(ErrRunAlreadyExists)
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	_, err := eng.Start(s.ctx, def, "key-conflict-metric", engineTestState{Value: 1})
+
+	s.NoError(err)
+	fakeMetrics := s.obs.Metrics().(*fake.FakeMetrics)
+	conflictCounter := fakeMetrics.GetCounter("workflow_resumed_on_conflict_total")
+	s.NotNil(conflictCounter)
+	resumeCounter := fakeMetrics.GetCounter("workflow_resume_total")
+	s.NotNil(resumeCounter)
+}
+
 func (s *EngineTestSuite) TestSaveSnap_GenericError_Propagated() {
 	def := Definition[engineTestState]{
 		ID:      "save_error_workflow",
@@ -464,6 +514,9 @@ func (f *FakeStore) Insert(_ context.Context, snap Snapshot) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.insertErr != nil {
+		if errors.Is(f.insertErr, ErrRunAlreadyExists) {
+			f.snaps[f.storeKey(snap.Workflow, snap.CorrelationKey)] = snap
+		}
 		return f.insertErr
 	}
 	f.snaps[f.storeKey(snap.Workflow, snap.CorrelationKey)] = snap

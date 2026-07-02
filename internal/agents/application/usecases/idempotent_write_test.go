@@ -41,17 +41,6 @@ func (f *fakeLedger) Insert(_ context.Context, entry WriteLedgerEntry) error {
 	return nil
 }
 
-type fakeKeyLocker struct {
-	calls   int
-	lastKey string
-}
-
-func (f *fakeKeyLocker) WithKeyLock(ctx context.Context, key string, fn func(context.Context) error) error {
-	f.calls++
-	f.lastKey = key
-	return fn(ctx)
-}
-
 type IdempotentWriteSuite struct {
 	suite.Suite
 	ctx    context.Context
@@ -119,7 +108,7 @@ func (s *IdempotentWriteSuite) TestExecute() {
 			},
 		},
 		{
-			name: "miss reconciliado: escrita bateu em linha existente (ON CONFLICT) e grava no ledger",
+			name: "miss reconciliado: conflito de chave natural propaga como ToolOutcomeReconciled nunca usecaseError",
 			args: args{
 				userID:       s.userID,
 				wamid:        s.wamid,
@@ -142,7 +131,7 @@ func (s *IdempotentWriteSuite) TestExecute() {
 			},
 		},
 		{
-			name: "hit: retorna replay sem segunda mutação",
+			name: "hit: retorna replay sem segunda mutacao",
 			args: args{
 				userID:       s.userID,
 				wamid:        s.wamid,
@@ -150,7 +139,7 @@ func (s *IdempotentWriteSuite) TestExecute() {
 				operation:    "create_card_purchase",
 				resourceKind: "card_purchase",
 				write: func(_ context.Context) (uuid.UUID, bool, error) {
-					s.Fail("write não deve ser chamado no replay")
+					s.Fail("write nao deve ser chamado no replay")
 					return uuid.Nil, false, nil
 				},
 			},
@@ -195,7 +184,7 @@ func (s *IdempotentWriteSuite) TestExecute() {
 			},
 		},
 		{
-			name: "erro na escrita retorna erro e não grava ledger",
+			name: "erro na escrita retorna erro e nao grava ledger",
 			args: args{
 				userID:       s.userID,
 				wamid:        s.wamid,
@@ -254,46 +243,9 @@ func (s *IdempotentWriteSuite) TestExecute() {
 	}
 }
 
-func (s *IdempotentWriteSuite) TestExecuteWithKeyLocker() {
+func (s *IdempotentWriteSuite) TestNoAdvisoryLockRequired() {
 	newResourceID := uuid.New()
 	ledger := &fakeLedger{found: false}
-	locker := &fakeKeyLocker{}
-
-	uc := NewIdempotentWrite(ledger, s.obs, WithKeyLocker(locker))
-	result, err := uc.Execute(
-		s.ctx,
-		s.userID,
-		s.wamid,
-		3,
-		"create_transaction",
-		"transaction",
-		func(_ context.Context) (uuid.UUID, bool, error) { return newResourceID, false, nil },
-	)
-
-	s.NoError(err)
-	s.Equal(newResourceID, result.ResourceID)
-	s.Equal(agent.ToolOutcomeRouted, result.Outcome)
-	s.Equal(1, locker.calls)
-	s.Equal(s.wamid+"|3|create_transaction", locker.lastKey)
-	s.Len(ledger.inserted, 1)
-	s.Equal(newResourceID, ledger.inserted[0].ResourceID)
-}
-
-func (s *IdempotentWriteSuite) TestExecuteNilLockerPreservesBehavior() {
-	existingResourceID := uuid.New()
-	ledger := &fakeLedger{
-		found: true,
-		entry: WriteLedgerEntry{
-			ID:           uuid.New(),
-			UserID:       s.userID,
-			WAMID:        s.wamid,
-			ItemSeq:      0,
-			Operation:    "create_transaction",
-			ResourceID:   existingResourceID,
-			ResourceKind: "transaction",
-			CreatedAt:    time.Now().UTC(),
-		},
-	}
 
 	uc := NewIdempotentWrite(ledger, s.obs)
 	result, err := uc.Execute(
@@ -303,14 +255,11 @@ func (s *IdempotentWriteSuite) TestExecuteNilLockerPreservesBehavior() {
 		0,
 		"create_transaction",
 		"transaction",
-		func(_ context.Context) (uuid.UUID, bool, error) {
-			s.Fail("write não deve ser chamado no replay")
-			return uuid.Nil, false, nil
-		},
+		func(_ context.Context) (uuid.UUID, bool, error) { return newResourceID, false, nil },
 	)
 
 	s.NoError(err)
-	s.Equal(existingResourceID, result.ResourceID)
-	s.Equal(agent.ToolOutcomeReplay, result.Outcome)
-	s.Empty(ledger.inserted)
+	s.Equal(newResourceID, result.ResourceID)
+	s.Equal(agent.ToolOutcomeRouted, result.Outcome)
+	s.Len(ledger.inserted, 1)
 }

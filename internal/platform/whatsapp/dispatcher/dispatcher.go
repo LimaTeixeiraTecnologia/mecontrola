@@ -106,47 +106,50 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 	defer span.End()
 	span.SetAttributes(observability.String("outcome", string(OutcomeInvalid)))
 
-	msg, ok, err := payload.ExtractFirstMessage(raw)
-	if err != nil || !ok {
-		if err != nil {
-			if pubErr := d.publishAuthFailed(ctx, "", "invalid_payload"); pubErr != nil {
-				d.o11y.Logger().Error(
-					ctx,
-					"whatsapp.dispatcher.publish_failed",
-					observability.String("reason", "invalid_payload"),
-					observability.Error(pubErr),
-				)
-			}
+	msgs, err := payload.ExtractMessages(raw)
+	if err != nil {
+		if pubErr := d.publishAuthFailed(ctx, "", "invalid_payload"); pubErr != nil {
+			d.o11y.Logger().Error(
+				ctx,
+				"whatsapp.dispatcher.publish_failed",
+				observability.String("reason", "invalid_payload"),
+				observability.Error(pubErr),
+			)
 		}
 		return d.finish(ctx, span, OutcomeInvalid, false, false), nil
 	}
+	if len(msgs) == 0 {
+		return d.finish(ctx, span, OutcomeInvalid, false, false), nil
+	}
 
-	if staleReason, stale := d.checkTimestamp(msg.Timestamp); stale {
-		d.rejectStale(ctx, staleReason, msg.WAMID)
+	first := msgs[0]
+
+	if staleReason, stale := d.checkTimestamp(first.Timestamp); stale {
+		d.rejectStale(ctx, staleReason, first.WAMID)
 		return d.finish(ctx, span, OutcomeStaleTS, false, false), nil
 	}
 
-	inserted, dedupErr := d.dedup.InsertIfAbsent(ctx, msg.WAMID)
+	firstInserted, dedupErr := d.dedup.InsertIfAbsent(ctx, first.WAMID)
 	if dedupErr != nil {
 		d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.dedup_failed",
-			observability.String("wamid", msg.WAMID),
+			observability.String("wamid", first.WAMID),
 			observability.Error(dedupErr),
 		)
 		span.RecordError(dedupErr)
 		return d.finish(ctx, span, OutcomeInvalid, false, false), fmt.Errorf("whatsapp.dispatcher: dedup insert: %w", dedupErr)
 	}
-	if !inserted {
-		d.o11y.Logger().Info(ctx, "dispatcher.duplicate_wamid", observability.String("wamid", msg.WAMID))
+	if !firstInserted {
+		d.o11y.Logger().Info(ctx, "dispatcher.duplicate_wamid", observability.String("wamid", first.WAMID))
 		return d.finish(ctx, span, OutcomeDuplicate, false, true), nil
 	}
 
-	principal, establishErr := d.establish.Execute(ctx, input.EstablishPrincipalInput{WhatsAppNumber: msg.From})
+	principal, establishErr := d.establish.Execute(ctx, input.EstablishPrincipalInput{WhatsAppNumber: first.From})
 	if establishErr != nil {
 		if errors.Is(establishErr, application.ErrUnknownUser) {
-			return d.finish(ctx, span, d.activationRoute(ctx, msg), false, false), nil
+			return d.finish(ctx, span, d.activationRoute(ctx, first), false, false), nil
 		}
 		d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.establish_failed",
-			observability.String("wa_id_masked", payload.MaskMobile(msg.From)),
+			observability.String("wa_id_masked", payload.MaskMobile(first.From)),
 			observability.Error(establishErr),
 		)
 		span.RecordError(establishErr)
@@ -171,7 +174,27 @@ func (d *Dispatcher) Route(ctx context.Context, raw json.RawMessage) (RouteOutco
 	}
 
 	ctx = auth.WithPrincipal(ctx, principal)
-	return d.finish(ctx, span, d.agentRoute(ctx, msg), false, false), nil
+
+	lastOutcome := d.agentRoute(ctx, first)
+
+	for _, msg := range msgs[1:] {
+		inserted, dErr := d.dedup.InsertIfAbsent(ctx, msg.WAMID)
+		if dErr != nil {
+			d.o11y.Logger().Error(ctx, "whatsapp.dispatcher.dedup_failed",
+				observability.String("wamid", msg.WAMID),
+				observability.Error(dErr),
+			)
+			span.RecordError(dErr)
+			return d.finish(ctx, span, OutcomeInvalid, false, false), fmt.Errorf("whatsapp.dispatcher: dedup insert: %w", dErr)
+		}
+		if !inserted {
+			d.o11y.Logger().Info(ctx, "dispatcher.duplicate_wamid", observability.String("wamid", msg.WAMID))
+			continue
+		}
+		lastOutcome = d.agentRoute(ctx, msg)
+	}
+
+	return d.finish(ctx, span, lastOutcome, false, false), nil
 }
 
 func (d *Dispatcher) checkTimestamp(raw string) (string, bool) {

@@ -22,6 +22,7 @@ type DispatcherJob struct {
 	cfg             configs.OutboxConfig
 	logger          observability.Logger
 	deadLetterTotal observability.Counter
+	lagSeconds      observability.Histogram
 	mu              sync.Mutex
 	rng             *rand.Rand
 	instanceID      string
@@ -59,6 +60,11 @@ func NewObservableDispatcherJob(
 		"outbox_dead_letter_total",
 		"Total de eventos do outbox movidos para dead-letter por esgotamento de retries",
 		"1",
+	)
+	job.lagSeconds = o11y.Metrics().Histogram(
+		"outbox_lag_seconds",
+		"Lag entre occurred_at e published_at dos eventos do outbox",
+		"s",
 	)
 	return job
 }
@@ -147,6 +153,11 @@ func (d *DispatcherJob) mark(ctx context.Context, storage OutboxRepository, row 
 	if handlerErr == nil {
 		if err := storage.MarkPublished(ctx, row.ID); err != nil {
 			return fmt.Errorf("outbox: mark published: %w", err)
+		}
+		if d.lagSeconds != nil && !row.OccurredAt.IsZero() {
+			d.lagSeconds.Record(ctx, time.Since(row.OccurredAt).Seconds(),
+				observability.String("event_type", row.Type),
+			)
 		}
 		return nil
 	}

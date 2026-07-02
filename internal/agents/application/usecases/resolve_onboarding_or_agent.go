@@ -55,7 +55,7 @@ func NewResolveOnboardingOrAgent(
 	}
 }
 
-func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, message string) (OnboardingResult, error) {
+func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, peer, message string) (OnboardingResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.resolve_onboarding_or_agent")
 	defer span.End()
 
@@ -66,22 +66,7 @@ func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, message
 	}
 
 	if found && (snap.Status == workflow.RunStatusSuspended || snap.Status == workflow.RunStatusRunning) {
-		resumePayload, _ := json.Marshal(map[string]string{"resumeText": message})
-		result, err := uc.engine.Resume(ctx, uc.def, userID, resumePayload)
-		if err != nil {
-			span.RecordError(err)
-			return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: resume: %w", err)
-		}
-		if result.Status == workflow.RunStatusSucceeded {
-			uc.total.Add(ctx, 1, observability.String("outcome", "completed"))
-			return OnboardingResult{Handled: true, Done: true, Message: result.State.FinalMessage}, nil
-		}
-		msg := ""
-		if result.Suspend != nil {
-			msg = result.Suspend.Prompt
-		}
-		uc.total.Add(ctx, 1, observability.String("outcome", "resumed"))
-		return OnboardingResult{Handled: true, Message: msg}, nil
+		return uc.resume(ctx, span, userID, message)
 	}
 
 	wm, err := uc.workingMem.Get(ctx, userID)
@@ -95,9 +80,12 @@ func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, message
 		return OnboardingResult{Handled: false}, nil
 	}
 
-	initial := workflows.OnboardingState{Phase: workflows.PhaseWelcome, UserID: userID}
+	initial := workflows.OnboardingState{Phase: workflows.PhaseWelcome, UserID: userID, PeerID: peer}
 	result, err := uc.engine.Start(ctx, uc.def, userID, initial)
 	if err != nil {
+		if errors.Is(err, workflow.ErrRunAlreadyExists) {
+			return uc.resume(ctx, span, userID, message)
+		}
 		span.RecordError(err)
 		return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: start: %w", err)
 	}
@@ -106,5 +94,24 @@ func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, message
 		msg = result.Suspend.Prompt
 	}
 	uc.total.Add(ctx, 1, observability.String("outcome", "started"))
+	return OnboardingResult{Handled: true, Message: msg}, nil
+}
+
+func (uc *ResolveOnboardingOrAgent) resume(ctx context.Context, span observability.Span, userID, message string) (OnboardingResult, error) {
+	resumePayload, _ := json.Marshal(map[string]string{"resumeText": message})
+	result, err := uc.engine.Resume(ctx, uc.def, userID, resumePayload)
+	if err != nil {
+		span.RecordError(err)
+		return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: resume: %w", err)
+	}
+	if result.Status == workflow.RunStatusSucceeded {
+		uc.total.Add(ctx, 1, observability.String("outcome", "completed"))
+		return OnboardingResult{Handled: true, Done: true, Message: result.State.FinalMessage}, nil
+	}
+	msg := ""
+	if result.Suspend != nil {
+		msg = result.Suspend.Prompt
+	}
+	uc.total.Add(ctx, 1, observability.String("outcome", "resumed"))
 	return OnboardingResult{Handled: true, Message: msg}, nil
 }

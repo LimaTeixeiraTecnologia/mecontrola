@@ -140,11 +140,22 @@ jobs:
       - uses: ./.github/actions/setup-go-task
       - run: task ci:no-internal-agent
 
+  deploy-anti-storm:
+    name: Deploy Anti-Storm Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: ./.github/actions/setup-go-task
+      - run: task ci:deploy-anti-storm
+
   build-image:
     name: Build & Push Image
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    needs: [build, lint, unit, integration, vulncheck, agent-data-boundary, platform-gates, no-internal-agent]
+    needs: [build, lint, unit, integration, vulncheck, agent-data-boundary, platform-gates, no-internal-agent, deploy-anti-storm]
     permissions:
       contents: read
       packages: write

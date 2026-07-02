@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -29,28 +28,15 @@ type IdempotentWrite struct {
 	ledger idempotentWriteLedger
 	o11y   observability.Observability
 	total  observability.Counter
-	locker KeyLocker
 }
 
-type IdempotentWriteOption func(*IdempotentWrite)
-
-func WithKeyLocker(l KeyLocker) IdempotentWriteOption {
-	return func(uc *IdempotentWrite) {
-		uc.locker = l
-	}
-}
-
-func NewIdempotentWrite(ledger idempotentWriteLedger, o11y observability.Observability, opts ...IdempotentWriteOption) *IdempotentWrite {
+func NewIdempotentWrite(ledger idempotentWriteLedger, o11y observability.Observability) *IdempotentWrite {
 	total := o11y.Metrics().Counter(
 		"agents_write_total",
 		"Total de escritas do agente por operação e resultado",
 		"1",
 	)
-	uc := &IdempotentWrite{ledger: ledger, o11y: o11y, total: total}
-	for _, opt := range opts {
-		opt(uc)
-	}
-	return uc
+	return &IdempotentWrite{ledger: ledger, o11y: o11y, total: total}
 }
 
 func (uc *IdempotentWrite) Execute(
@@ -65,21 +51,7 @@ func (uc *IdempotentWrite) Execute(
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.idempotent_write")
 	defer span.End()
 
-	if uc.locker == nil {
-		return uc.executeLocked(ctx, span, userID, wamid, itemSeq, operation, resourceKind, write)
-	}
-
-	key := wamid + "|" + strconv.Itoa(itemSeq) + "|" + operation
-	var res IdempotentWriteResult
-	err := uc.locker.WithKeyLock(ctx, key, func(lockedCtx context.Context) error {
-		var e error
-		res, e = uc.executeLocked(lockedCtx, span, userID, wamid, itemSeq, operation, resourceKind, write)
-		return e
-	})
-	if err != nil {
-		return IdempotentWriteResult{}, err
-	}
-	return res, nil
+	return uc.executeLocked(ctx, span, userID, wamid, itemSeq, operation, resourceKind, write)
 }
 
 func (uc *IdempotentWrite) executeLocked(

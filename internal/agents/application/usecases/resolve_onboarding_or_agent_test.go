@@ -70,6 +70,7 @@ func (s *ResolveOnboardingOrAgentSuite) SetupTest() {
 func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 	type args struct {
 		userID  string
+		peer    string
 		message string
 	}
 	type dependencies struct {
@@ -86,7 +87,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 	}{
 		{
 			name: "run suspenso existente deve resumir e retornar handled com prompt",
-			args: args{userID: "user-1", message: "continuar"},
+			args: args{userID: "user-1", peer: "+5511111111111", message: "continuar"},
 			dependencies: dependencies{
 				engine: func() *mockOnboardingEngine {
 					s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-1", mock.Anything).
@@ -112,7 +113,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "resume que conclui workflow deve retornar handled done com finalMessage",
-			args: args{userID: "user-2", message: "sim"},
+			args: args{userID: "user-2", peer: "+5511111111111", message: "sim"},
 			dependencies: dependencies{
 				engine: func() *mockOnboardingEngine {
 					s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-2", mock.Anything).
@@ -138,7 +139,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "sem run ativo e WM tem objetivo deve retornar nao handled",
-			args: args{userID: "user-3", message: "oi"},
+			args: args{userID: "user-3", peer: "+5511111111111", message: "oi"},
 			dependencies: dependencies{
 				engine: s.engineMock,
 				store: func() *mockOnboardingStore {
@@ -159,7 +160,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "sem run ativo e sem objetivo deve iniciar workflow",
-			args: args{userID: "user-4", message: "oi"},
+			args: args{userID: "user-4", peer: "+5511111111111", message: "oi"},
 			dependencies: dependencies{
 				engine: func() *mockOnboardingEngine {
 					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-4", mock.Anything).
@@ -188,7 +189,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "sem run ativo e WM inexistente deve iniciar workflow",
-			args: args{userID: "user-9", message: "quero comecar"},
+			args: args{userID: "user-9", peer: "+5511111111111", message: "quero comecar"},
 			dependencies: dependencies{
 				engine: func() *mockOnboardingEngine {
 					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-9", mock.Anything).
@@ -217,8 +218,39 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 			},
 		},
 		{
+			name: "start com conflito de run ativo deve resumir em vez de erro (RF-09/RF-10)",
+			args: args{userID: "user-10", peer: "+5511111111111", message: "meu objetivo"},
+			dependencies: dependencies{
+				engine: func() *mockOnboardingEngine {
+					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-10", mock.Anything).
+						Return(workflow.RunResult[workflows.OnboardingState]{}, workflow.ErrRunAlreadyExists).Once()
+					s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-10", mock.Anything).
+						Return(workflow.RunResult[workflows.OnboardingState]{
+							Status:  workflow.RunStatusSuspended,
+							Suspend: &workflow.Suspension{Prompt: "vamos continuar"},
+						}, nil).Once()
+					return s.engineMock
+				}(),
+				store: func() *mockOnboardingStore {
+					s.storeMock.On("Load", mock.Anything, mock.Anything, "user-10").
+						Return(workflow.Snapshot{}, false, nil).Once()
+					return s.storeMock
+				}(),
+				wm: func() *memorymocks.WorkingMemory {
+					s.wmMock.EXPECT().Get(mock.Anything, "user-10").Return("", nil).Once()
+					return s.wmMock
+				}(),
+			},
+			expect: func(result OnboardingResult, err error) {
+				s.NoError(err, "conflito de run ativo deve virar resume, nunca onboarding_error")
+				s.True(result.Handled)
+				s.False(result.Done)
+				s.Equal("vamos continuar", result.Message)
+			},
+		},
+		{
 			name: "erro no load deve retornar erro",
-			args: args{userID: "user-5", message: "oi"},
+			args: args{userID: "user-5", peer: "+5511111111111", message: "oi"},
 			dependencies: dependencies{
 				engine: s.engineMock,
 				store: func() *mockOnboardingStore {
@@ -235,7 +267,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "erro no resume deve retornar erro",
-			args: args{userID: "user-6", message: "sim"},
+			args: args{userID: "user-6", peer: "+5511111111111", message: "sim"},
 			dependencies: dependencies{
 				engine: func() *mockOnboardingEngine {
 					s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-6", mock.Anything).
@@ -256,7 +288,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "erro no start deve retornar erro",
-			args: args{userID: "user-7", message: "oi"},
+			args: args{userID: "user-7", peer: "+5511111111111", message: "oi"},
 			dependencies: dependencies{
 				engine: func() *mockOnboardingEngine {
 					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-7", mock.Anything).
@@ -280,7 +312,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		},
 		{
 			name: "erro no get WM deve retornar erro",
-			args: args{userID: "user-8", message: "oi"},
+			args: args{userID: "user-8", peer: "+5511111111111", message: "oi"},
 			dependencies: dependencies{
 				engine: s.engineMock,
 				store: func() *mockOnboardingStore {
@@ -304,7 +336,7 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			uc := NewResolveOnboardingOrAgent(scenario.dependencies.engine, scenario.dependencies.store, scenario.dependencies.wm, s.emptyDef, s.obs)
-			result, err := uc.Execute(s.ctx, scenario.args.userID, scenario.args.message)
+			result, err := uc.Execute(s.ctx, scenario.args.userID, scenario.args.peer, scenario.args.message)
 			scenario.expect(result, err)
 		})
 	}

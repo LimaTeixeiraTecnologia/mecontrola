@@ -552,3 +552,52 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 	assert.Equal(t, testResourceID.String(), result.TargetRef)
 	assert.Equal(t, "card_purchase", result.TargetKind)
 }
+
+func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	writer := mocks.NewIdempotentWriter(t)
+
+	ledger.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
+		Return(interfaces.EntryRef{ID: testResourceID, Kind: "transaction"}, nil).Once()
+
+	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid1", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
+		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
+			id, _, err := write(ctx)
+			if err != nil {
+				return usecases.IdempotentWriteResult{}, err
+			}
+			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
+		}).Once()
+
+	handle := BuildRegisterExpenseTool(ledger, writer)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{
+		Wamid: "wamid1", UserID: testUserID.String(), AmountCents: 1000, Description: "café", PaymentMethod: "debit",
+	})
+	out, err := handle.Invoke(context.Background(), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterExpenseOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "routed", result.Outcome)
+	assert.False(t, result.IsReplay)
+}
+
+func TestRegisterIncomeOutput_OutcomeField_Replay(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	writer := mocks.NewIdempotentWriter(t)
+
+	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid2", 0, "create_income", "transaction", mock.AnythingOfType("usecases.WriteFn")).
+		Return(usecases.IdempotentWriteResult{ResourceID: testResourceID, Outcome: agent.ToolOutcomeReplay}, nil).Once()
+
+	handle := BuildRegisterIncomeTool(ledger, writer)
+	argsJSON, _ := json.Marshal(RegisterIncomeInput{
+		Wamid: "wamid2", UserID: testUserID.String(), AmountCents: 2000, Description: "salário", PaymentMethod: "pix",
+	})
+	out, err := handle.Invoke(context.Background(), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterIncomeOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "replay", result.Outcome)
+	assert.True(t, result.IsReplay)
+}

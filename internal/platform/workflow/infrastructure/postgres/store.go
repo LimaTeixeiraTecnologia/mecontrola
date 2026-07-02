@@ -9,6 +9,8 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -65,6 +67,10 @@ func (s *postgresStore) Insert(ctx context.Context, snap workflow.Snapshot) erro
 		nullableTime(snap.EndedAt),
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return workflow.ErrRunAlreadyExists
+		}
 		span.RecordError(err)
 		return fmt.Errorf("%s insert: %w", prefixWorkflowStore, err)
 	}

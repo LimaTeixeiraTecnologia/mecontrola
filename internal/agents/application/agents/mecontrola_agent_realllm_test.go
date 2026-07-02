@@ -4,6 +4,7 @@ package agents
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -275,4 +276,69 @@ func TestRealLLM_OnboardingSummary_UsesWhatsAppFormattingAndEmojis(t *testing.T)
 	require.Contains(t, normalized, "Você confirma")
 	t.Logf("resposta onboarding raw: %s", result.Content)
 	t.Logf("resposta onboarding normalized: %s", normalized)
+}
+
+func buildFailingRegisterExpenseTool() tool.ToolHandle {
+	in := llm.Schema{
+		Name:   "register_expense_input",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"wamid":         map[string]any{"type": "string"},
+				"itemSeq":       map[string]any{"type": "integer"},
+				"userId":        map[string]any{"type": "string"},
+				"amountCents":   map[string]any{"type": "integer"},
+				"description":   map[string]any{"type": "string"},
+				"paymentMethod": map[string]any{"type": "string"},
+				"occurredAt":    map[string]any{"type": "string"},
+				"categoryId":    map[string]any{"type": "string"},
+				"subcategoryId": map[string]any{"type": "string"},
+			},
+			"required":             []string{"wamid", "itemSeq", "userId", "amountCents", "description", "paymentMethod"},
+			"additionalProperties": false,
+		},
+	}
+	type input struct {
+		Wamid string `json:"wamid"`
+	}
+	return tool.NewTool[input, map[string]any]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário.", in, llm.Schema{},
+		func(_ context.Context, _ input) (map[string]any, error) {
+			return nil, fmt.Errorf("falha de persistência: banco de dados indisponível")
+		},
+	)
+}
+
+func TestRealLLM_ToolError_ProducesHonestResponse(t *testing.T) {
+	provider := buildRealLLMProvider(t)
+	obs := fake.NewProvider()
+	userID := uuid.New().String()
+
+	tools := []tool.ToolHandle{
+		buildFailingRegisterExpenseTool(),
+	}
+
+	a := BuildMeControlaAgent(provider, tools, nil, obs)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	result, err := a.Execute(ctx, agent.Request{
+		AgentID: MecontrolaAgentID,
+		Messages: []llm.Message{
+			{Role: "user", Content: "meu userId é " + userID + " e o wamid é wamid-fail-001, itemSeq 1. gastei 30 reais no cafe. paymentMethod: debit"},
+		},
+		MaxTokens: 512,
+	})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Content, "resposta nao pode ser vazia: tool com erro deve gerar resposta honesta")
+
+	lower := strings.ToLower(result.Content)
+	t.Logf("resposta do agente com tool em falha: %s", result.Content)
+
+	negativas := []string{"registrei com sucesso", "foi registrado com sucesso", "registrado com sucesso", "despesa registrada com sucesso"}
+	for _, n := range negativas {
+		require.NotContains(t, lower, n, "agente nao deve confirmar sucesso quando tool falhou")
+	}
 }

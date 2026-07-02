@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	gotel "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
@@ -41,8 +44,8 @@ type mockOnboardingResolver struct {
 	mock.Mock
 }
 
-func (m *mockOnboardingResolver) Execute(ctx context.Context, userID, message string) (usecases.OnboardingResult, error) {
-	args := m.Called(ctx, userID, message)
+func (m *mockOnboardingResolver) Execute(ctx context.Context, userID, peer, message string) (usecases.OnboardingResult, error) {
+	args := m.Called(ctx, userID, peer, message)
 	return args.Get(0).(usecases.OnboardingResult), args.Error(1)
 }
 
@@ -224,7 +227,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			},
 		},
 		{
-			name: "deve retornar nil sem enviar quando reply vazio",
+			name: "deve enviar fallback honesto quando reply vazio e nunca chamar gateway com vazio",
 			args: args{
 				event: &mockEvent{
 					eventType: "agents.whatsapp.inbound.v1",
@@ -247,7 +250,12 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 						}, nil).Once()
 					return m
 				}(),
-				senderMock: &mockWhatsAppSender{},
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511999999999", fallbackReply).
+						Return(nil).Once()
+					return m
+				}(),
 			},
 			expect: func(err error) {
 				s.NoError(err)
@@ -312,7 +320,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				}(),
 				onboardingMock: func() *mockOnboardingResolver {
 					m := &mockOnboardingResolver{}
-					m.On("Execute", mock.Anything, "user-new-456", "oi").
+					m.On("Execute", mock.Anything, "user-new-456", "+5511888888888", "oi").
 						Return(usecases.OnboardingResult{Handled: true, Message: "🎯 Bem-vindo ao MeControla!"}, nil).Once()
 					return m
 				}(),
@@ -352,7 +360,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				}(),
 				onboardingMock: func() *mockOnboardingResolver {
 					m := &mockOnboardingResolver{}
-					m.On("Execute", mock.Anything, "user-done-789", "quanto gastei esse mes").
+					m.On("Execute", mock.Anything, "user-done-789", "+5511777777777", "quanto gastei esse mes").
 						Return(usecases.OnboardingResult{Handled: false}, nil).Once()
 					return m
 				}(),
@@ -392,7 +400,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				}(),
 				onboardingMock: func() *mockOnboardingResolver {
 					m := &mockOnboardingResolver{}
-					m.On("Execute", mock.Anything, "user-format-321", "ative meu orçamento").
+					m.On("Execute", mock.Anything, "user-format-321", "+5511222222222", "ative meu orçamento").
 						Return(usecases.OnboardingResult{Handled: false}, nil).Once()
 					return m
 				}(),
@@ -419,7 +427,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				senderMock:  &mockWhatsAppSender{},
 				onboardingMock: func() *mockOnboardingResolver {
 					m := &mockOnboardingResolver{}
-					m.On("Execute", mock.Anything, "user-err-999", "oi").
+					m.On("Execute", mock.Anything, "user-err-999", "+5511666666666", "oi").
 						Return(usecases.OnboardingResult{}, errors.New("wm unavailable")).Once()
 					return m
 				}(),
@@ -490,7 +498,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				}(),
 				onboardingMock: func() *mockOnboardingResolver {
 					m := &mockOnboardingResolver{}
-					m.On("Execute", mock.Anything, "user-noconfirm-222", "oi").
+					m.On("Execute", mock.Anything, "user-noconfirm-222", "+5511444444444", "oi").
 						Return(usecases.OnboardingResult{Handled: true, Message: "🎯 Vamos começar!"}, nil).Once()
 					return m
 				}(),
@@ -556,4 +564,71 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			}
 		})
 	}
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleInboundTimeoutCancelsLLMCall() {
+	blockingInbound := &blockingHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID:    "user-timeout-001",
+			Peer:      "+5511111111111",
+			Text:      "quanto gastei?",
+			MessageID: "wamid-timeout-001",
+		}),
+	}
+
+	consumer := NewWhatsAppInboundConsumer(
+		blockingInbound,
+		senderMock,
+		s.obs,
+		WithInboundTimeout(5*time.Millisecond),
+	)
+
+	err := consumer.Handle(s.ctx, event)
+	s.Error(err)
+	s.Contains(err.Error(), "handle inbound")
+	s.True(errors.Is(err, context.DeadlineExceeded))
+}
+
+type blockingHandleInbound struct{}
+
+func (b *blockingHandleInbound) Execute(ctx context.Context, _ input.InboundInput) (agent.Outcome, error) {
+	<-ctx.Done()
+	return agent.Outcome{}, ctx.Err()
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandle_RestoresTraceparentFromMetadata() {
+	gotel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))
+	defer gotel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator())
+
+	const traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+
+	inboundMock.On("Execute", mock.Anything, mock.AnythingOfType("input.InboundInput")).
+		Return(agent.Outcome{Content: "ok"}, nil).Once()
+	senderMock.On("SendTextMessage", mock.Anything, "+5511999999999", "ok").
+		Return(nil).Once()
+
+	env := outbox.Envelope{
+		ID:       uuid.NewString(),
+		Metadata: map[string]string{"traceparent": traceParent},
+	}
+	payload, _ := json.Marshal(whatsAppInboundPayload{
+		UserID: "user-trace-001", Peer: "+5511999999999", Text: "olá", MessageID: "wamid-trace-001",
+	})
+	env.Payload = payload
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs)
+	err := consumer.Handle(s.ctx, &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload:   env,
+	})
+	s.NoError(err)
+	inboundMock.AssertExpectations(s.T())
+	senderMock.AssertExpectations(s.T())
 }

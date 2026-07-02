@@ -584,6 +584,83 @@ func (s *AgentTestSuite) TestStream_Success() {
 	}
 }
 
+func (s *AgentTestSuite) TestExecute_ToolError_StructuredMessageDeliveredToLLM() {
+	type args struct {
+		in Request
+	}
+	type dependencies struct {
+		provider *llmmocks.Provider
+	}
+
+	var capturedSecondReq llm.Request
+	errTool := tool.NewTool(
+		"failing_tool",
+		"always fails",
+		llm.Schema{Schema: map[string]any{"type": "object"}},
+		llm.Schema{},
+		func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			return nil, errors.New("persistência falhou")
+		},
+	)
+
+	scenarios := []struct {
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(result Result, err error)
+	}{
+		{
+			name: "deve entregar tool message de erro ao LLM e nao content vazio",
+			args: args{in: Request{
+				AgentID:  "agent-1",
+				Messages: []llm.Message{{Role: "user", Content: "registra despesa"}},
+			}},
+			dependencies: dependencies{
+				provider: func() *llmmocks.Provider {
+					s.providerMock.EXPECT().
+						Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+						Return(llm.Response{
+							ToolCalls: []llm.ToolCall{{
+								ID:            "tc-err",
+								FunctionName:  "failing_tool",
+								ArgumentsJSON: map[string]any{},
+							}},
+						}, nil).Once()
+					s.providerMock.EXPECT().
+						Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+						Run(func(_ context.Context, req llm.Request) {
+							capturedSecondReq = req
+						}).
+						Return(llm.Response{Content: "não consegui registrar, tente novamente."}, nil).Once()
+					return s.providerMock
+				}(),
+			},
+			expect: func(result Result, err error) {
+				s.NoError(err)
+				s.NotEmpty(result.Content)
+				s.Equal(ToolOutcomeUsecaseError, result.ToolOutcome,
+					"falha de tool deve marcar usecaseError deterministicamente, independente do texto do LLM")
+				var toolMsg llm.Message
+				for _, m := range capturedSecondReq.Messages {
+					if m.Role == roleTool && m.ToolCallID == "tc-err" {
+						toolMsg = m
+					}
+				}
+				s.NotEmpty(toolMsg.Content, "tool message de erro nao pode ser vazio")
+				s.Contains(toolMsg.Content, "persistência falhou")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			a := NewAgent("agent-1", "instr", scenario.dependencies.provider, s.obs, WithTools(errTool))
+			result, err := a.Execute(s.ctx, scenario.args.in)
+			scenario.expect(result, err)
+		})
+	}
+}
+
 type alwaysValidDecoder struct{}
 
 func (d *alwaysValidDecoder) Schema() llm.Schema      { return llm.Schema{Name: "test"} }

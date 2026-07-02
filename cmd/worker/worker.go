@@ -24,8 +24,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
-	agentpersistence "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -226,11 +224,6 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 
-	var agentKeyLocker usecases.KeyLocker
-	if r.cfg.AgentConfig.WriteAdvisoryLock {
-		agentKeyLocker = agentpersistence.NewAdvisoryKeyLocker(r.db, r.o11y)
-	}
-
 	agentsModule, err := agents.NewModule(agents.Deps{
 		DB:              r.db,
 		O11y:            r.o11y,
@@ -248,7 +241,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		BudgetsModule:      budgetsModule,
 		TransactionsModule: transactionsModule,
 		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
-		KeyLocker:          agentKeyLocker,
+		InboundTimeout:     r.cfg.AgentConfig.InboundTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo agents: %w", err)

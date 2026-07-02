@@ -7,13 +7,21 @@ import (
 )
 
 type repositoryFactory struct {
-	o11y observability.Observability
+	claimDeferredTotal observability.Counter
 }
 
 func NewRepositoryFactory(o11y observability.Observability) OutboxRepositoryFactory {
-	return &repositoryFactory{o11y: o11y}
+	f := &repositoryFactory{}
+	if o11y != nil {
+		f.claimDeferredTotal = o11y.Metrics().Counter(
+			"outbox_claim_deferred_total",
+			"Total de claim batches adiados por violação de índice único (23505)",
+			"1",
+		)
+	}
+	return f
 }
 
 func (f *repositoryFactory) OutboxRepository(db database.DBTX) OutboxRepository {
-	return NewPostgresStorage(db)
+	return NewObservablePostgresStorage(db, f.claimDeferredTotal)
 }

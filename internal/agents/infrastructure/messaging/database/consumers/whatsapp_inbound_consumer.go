@@ -3,9 +3,14 @@ package consumers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	gotel "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
@@ -22,7 +27,7 @@ type handleInboundUseCase interface {
 }
 
 type onboardingResolver interface {
-	Execute(ctx context.Context, userID, message string) (usecases.OnboardingResult, error)
+	Execute(ctx context.Context, userID, peer, message string) (usecases.OnboardingResult, error)
 }
 
 type destructiveConfirmResolver interface {
@@ -54,14 +59,22 @@ func WithDestructiveConfirmResolver(r destructiveConfirmResolver) ConsumerOption
 	}
 }
 
+func WithInboundTimeout(d time.Duration) ConsumerOption {
+	return func(c *WhatsAppInboundConsumer) {
+		c.inboundTimeout = d
+	}
+}
+
 type WhatsAppInboundConsumer struct {
 	handleInbound       handleInboundUseCase
 	gateway             whatsAppTextSender
 	o11y                observability.Observability
 	resolveOnboarding   onboardingResolver
 	continueDestructive destructiveConfirmResolver
+	inboundTimeout      time.Duration
 	inboundTotal        observability.Counter
 	decodeFails         observability.Counter
+	timeoutTotal        observability.Counter
 }
 
 func NewWhatsAppInboundConsumer(
@@ -80,12 +93,18 @@ func NewWhatsAppInboundConsumer(
 		"Total de falhas de decode do consumer de WhatsApp inbound",
 		"1",
 	)
+	timeoutTotal := o11y.Metrics().Counter(
+		"agents_whatsapp_inbound_timeout_total",
+		"Total de timeouts de LLM/tool no consumer de WhatsApp inbound",
+		"1",
+	)
 	c := &WhatsAppInboundConsumer{
 		handleInbound: handleInbound,
 		gateway:       gateway,
 		o11y:          o11y,
 		inboundTotal:  inboundTotal,
 		decodeFails:   decodeFails,
+		timeoutTotal:  timeoutTotal,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -94,14 +113,16 @@ func NewWhatsAppInboundConsumer(
 }
 
 func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event) error {
-	ctx, span := c.o11y.Tracer().Start(ctx, "agents.consumer.whatsapp_inbound.handle")
-	defer span.End()
-
 	rawPayload := event.GetPayload()
 	env, ok := rawPayload.(outbox.Envelope)
 	if !ok {
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: unexpected payload type %T", rawPayload)
 	}
+
+	ctx = gotel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(env.Metadata))
+
+	ctx, span := c.o11y.Tracer().Start(ctx, "agents.consumer.whatsapp_inbound.handle")
+	defer span.End()
 
 	var p whatsAppInboundPayload
 	if err := json.Unmarshal(env.Payload, &p); err != nil {
@@ -114,9 +135,16 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q", p.UserID, p.Peer, p.Text)
 	}
 
+	if c.inboundTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.inboundTimeout)
+		defer cancel()
+	}
+
 	if c.continueDestructive != nil {
 		handled, reply, err := c.continueDestructive.Continue(ctx, p.UserID, p.Text)
 		if err != nil {
+			c.recordInboundTimeout(ctx, err)
 			c.inboundTotal.Add(ctx, 1,
 				observability.String("channel", "whatsapp"),
 				observability.String("outcome", "destructive_confirm_error"),
@@ -130,8 +158,9 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 	}
 
 	if c.resolveOnboarding != nil {
-		result, err := c.resolveOnboarding.Execute(ctx, p.UserID, p.Text)
+		result, err := c.resolveOnboarding.Execute(ctx, p.UserID, p.Peer, p.Text)
 		if err != nil {
+			c.recordInboundTimeout(ctx, err)
 			c.inboundTotal.Add(ctx, 1,
 				observability.String("channel", "whatsapp"),
 				observability.String("outcome", "onboarding_error"),
@@ -144,6 +173,16 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		}
 	}
 
+	return c.handleAgentInbound(ctx, span, p)
+}
+
+func (c *WhatsAppInboundConsumer) recordInboundTimeout(ctx context.Context, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		c.timeoutTotal.Add(ctx, 1, observability.String("channel", "whatsapp"))
+	}
+}
+
+func (c *WhatsAppInboundConsumer) handleAgentInbound(ctx context.Context, span observability.Span, p whatsAppInboundPayload) error {
 	outcome, err := c.handleInbound.Execute(ctx, input.InboundInput{
 		ResourceID: p.UserID,
 		ThreadID:   p.Peer,
@@ -152,6 +191,7 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		MessageID:  p.MessageID,
 	})
 	if err != nil {
+		c.recordInboundTimeout(ctx, err)
 		c.inboundTotal.Add(ctx, 1,
 			observability.String("channel", "whatsapp"),
 			observability.String("outcome", "error"),
@@ -159,20 +199,20 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		span.RecordError(err)
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: handle inbound: %w", err)
 	}
-
 	return c.sendReply(ctx, p.Peer, outcome.Content)
 }
 
+const fallbackReply = "não consegui concluir agora, pode repetir?"
+
 func (c *WhatsAppInboundConsumer) sendReply(ctx context.Context, peer, content string) error {
-	if content == "" {
+	content = formatting.NormalizeOutboundText(content)
+	if strings.TrimSpace(content) == "" {
 		c.inboundTotal.Add(ctx, 1,
 			observability.String("channel", "whatsapp"),
 			observability.String("outcome", "no_reply"),
 		)
-		return nil
+		content = fallbackReply
 	}
-
-	content = formatting.NormalizeOutboundText(content)
 
 	if err := c.gateway.SendTextMessage(ctx, peer, content); err != nil {
 		c.inboundTotal.Add(ctx, 1,

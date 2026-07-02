@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-whatsapp-ordenacao-idempotencia/4.0_execution_report.md
+summary: "invokeToolCall propaga erro estruturado ao LLM; runtime deriva RunStatus/ToolOutcome; write tools expõem Outcome; sendReply envia fallback honesto; validação LLM real PASS"
+timestamp: 2026-07-02T15:10:00Z

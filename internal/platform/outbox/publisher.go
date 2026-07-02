@@ -7,6 +7,8 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
+	gotel "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 )
@@ -59,6 +61,11 @@ func (p *postgresPublisher) Publish(ctx context.Context, evt Event) error {
 	if evt.OccurredAt.IsZero() {
 		return ErrOccurredAtZero
 	}
+
+	if evt.Metadata == nil {
+		evt.Metadata = make(map[string]string)
+	}
+	gotel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier(evt.Metadata))
 
 	if err := p.storage.Insert(ctx, evt, p.cfg.RetryMaxAttempts); err != nil {
 		return err

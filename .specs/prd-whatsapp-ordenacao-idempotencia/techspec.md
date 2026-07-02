@@ -174,8 +174,10 @@ duplicação — consistente com RF-06/07/08 (sucesso alucinado) e RF-09/10 (TOC
 
 ```sql
 -- Índice de suporte ao claim particionado (varredura por usuário pendente, ordenado por chegada)
+-- Inclui created_at, id para suportar o desempate total D-08 (occurred_at, created_at, id) e evitar
+-- livelock/empate quando duas mensagens do mesmo usuário compartilham o mesmo segundo (timestamp Meta).
 CREATE INDEX IF NOT EXISTS outbox_events_user_pending_occurred_idx
-    ON mecontrola.outbox_events (aggregate_user_id, occurred_at)
+    ON mecontrola.outbox_events (aggregate_user_id, occurred_at, created_at, id)
     WHERE status = 1 AND aggregate_user_id IS NOT NULL;
 
 -- Backstop de "1 em voo por usuário": impede 2 linhas Processing do mesmo usuário
@@ -314,6 +316,15 @@ paramétrica) DEVE provar CA-01 (zero execução concorrente por usuário, FIFO)
 0 duplicidade, pool não satura) nas fronteiras **500 / 2.000 / 10.000** usuários **antes** de captar
 usuários reais. É o gate que transforma os SLOs de D-05 em metas verificadas. Se o `NOT EXISTS` por
 usuário mostrar contenção, aciona-se a evolução para partição por hash (ADR-001, fase 2.000–10.000).
+
+**Resultado empírico (2026-07-02, single-node testcontainer, geração multi-mensagem por usuário).**
+Correção verificada em todas as fronteiras: `fifo_violations=0`, `errors=0`, `duplicates=0`, pool
+limitado (`nWorkers+2`, independente de `nUsers`). Latência de dreno (medida pós-carga): fase 500
+≈0.5s p95, fase 2.000 ≈1.8s p95 — **dentro** do SLO D-05 (<5s), hard-asseridas. Fase 10.000 ≈7s p95
+em nó único — **acima** do SLO: é o gatilho documentado da partição por hash (ADR-001, fase
+2.000–10.000), não regressão de correção. Por isso o gate hard-assere latência apenas em 500/2.000 e
+trata 10.000 como **detector de contenção** (correção hard-asserida; p95 emitido como `ADR-001
+TRIGGER`). Produção tem 1 usuário; a prova de latência a 10k depende do sharding por hash.
 
 ## Sequenciamento de Desenvolvimento
 

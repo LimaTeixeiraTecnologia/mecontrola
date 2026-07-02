@@ -850,6 +850,63 @@ func (s *MigrationSuite) TestActivationJourneyThrottleTableConstraints() {
 	s.Contains(dupErr.Error(), "onboarding_activation_nomatch_throttle_pkey")
 }
 
+func (s *MigrationSuite) TestClaimParticionadoIndicesMigrationUpDownUp() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
+
+	var inflightCount int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.outbox_events WHERE status = 2
+	`).Scan(&inflightCount)
+	s.Require().NoError(err)
+	s.Equal(int64(0), inflightCount, "pre-condition: 0 linhas status=2 antes da migration")
+
+	s.downToVersion(migrator, 2)
+
+	s.assertIndexMissing("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexMissing("mecontrola", "outbox_events_user_inflight_uidx")
+
+	s.applyBaseline(migrator)
+
+	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
+}
+
+func (s *MigrationSuite) TestClaimParticionadoInflightUniqueBackstop() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	userID := uuid.New()
+
+	insertFirstErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.outbox_events (
+			id, event_type, aggregate_type, aggregate_id, aggregate_user_id,
+			payload, status, attempts, max_attempts, occurred_at, next_attempt_at,
+			created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), 'test.event', 'whatsapp', gen_random_uuid(), $1,
+			'{}', 2, 0, 3, now(), now(), now(), now()
+		)
+	`, userID)
+	s.Require().NoError(insertFirstErr)
+
+	insertDupErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.outbox_events (
+			id, event_type, aggregate_type, aggregate_id, aggregate_user_id,
+			payload, status, attempts, max_attempts, occurred_at, next_attempt_at,
+			created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), 'test.event', 'whatsapp', gen_random_uuid(), $1,
+			'{}', 2, 0, 3, now(), now(), now(), now()
+		)
+	`, userID)
+	s.Require().Error(insertDupErr)
+	s.Contains(insertDupErr.Error(), "outbox_events_user_inflight_uidx")
+}
+
 func (s *MigrationSuite) assertIndexPresent(schema, indexName string) {
 	var count int64
 	err := s.db.QueryRowContext(s.ctx, `

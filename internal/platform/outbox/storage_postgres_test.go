@@ -13,6 +13,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -156,7 +158,7 @@ func (s *StoragePostgresSuite) TestStorageMutations() {
 			setup: func(input args) outbox.OutboxRepository {
 				dbtx := dbmocks.NewMockDBTX(s.T())
 				rows := s.emptyRows()
-				dbtx.EXPECT().QueryContext(input.ctx, mock.AnythingOfType("string"), int(outbox.StatusPending), 50).Return(rows, nil).Once()
+				dbtx.EXPECT().QueryContext(input.ctx, mock.AnythingOfType("string"), "inst-1", 50).Return(rows, nil).Once()
 				return outbox.NewPostgresStorage(dbtx)
 			},
 			act: func(storage outbox.OutboxRepository, input args) (int64, error) {
@@ -267,4 +269,149 @@ func (s *StoragePostgresSuite) TestCountPending() {
 	s.NoError(err)
 	s.NoError(mockDB.ExpectationsWereMet())
 	s.Equal(int64(42), count)
+}
+
+func (s *StoragePostgresSuite) TestClaimBatchPartitioned() {
+	claimColumns := []string{
+		"id", "event_type", "aggregate_type", "aggregate_id", "aggregate_user_id",
+		"payload", "metadata", "attempts", "max_attempts", "occurred_at",
+	}
+
+	userID := uuid.NewString()
+	userID2 := uuid.NewString()
+	eventID := uuid.NewString()
+	eventID2 := uuid.NewString()
+	occurred := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	occurred2 := time.Date(2026, 7, 1, 10, 1, 0, 0, time.UTC)
+	meta := []byte(`{"traceparent":"00-abc"}`)
+
+	type scenario struct {
+		name   string
+		setup  func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func())
+		expect func([]outbox.Row, error)
+	}
+
+	scenarios := []scenario{
+		{
+			name: "deve adiar e retornar nil em colisao 23505",
+			setup: func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func()) {
+				db, mockDB, err := sqlmock.New()
+				s.Require().NoError(err)
+				mockDB.ExpectQuery("WITH claimable").
+					WithArgs("worker-1", 10).
+					WillReturnError(&pgconn.PgError{Code: pgerrcode.UniqueViolation})
+				return outbox.NewPostgresStorage(db), &mockDB, func() { _ = db.Close() }
+			},
+			expect: func(rows []outbox.Row, err error) {
+				s.NoError(err)
+				s.Nil(rows)
+			},
+		},
+		{
+			name: "deve retornar nil para batch vazio via sqlmock",
+			setup: func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func()) {
+				db, mockDB, err := sqlmock.New()
+				s.Require().NoError(err)
+				mockDB.ExpectQuery("WITH claimable").
+					WithArgs("worker-1", 10).
+					WillReturnRows(sqlmock.NewRows(claimColumns))
+				return outbox.NewPostgresStorage(db), &mockDB, func() { _ = db.Close() }
+			},
+			expect: func(rows []outbox.Row, err error) {
+				s.NoError(err)
+				s.Nil(rows)
+			},
+		},
+		{
+			name: "deve parsear evento com aggregate_user_id",
+			setup: func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func()) {
+				db, mockDB, err := sqlmock.New()
+				s.Require().NoError(err)
+				mockDB.ExpectQuery("WITH claimable").
+					WithArgs("worker-1", 10).
+					WillReturnRows(sqlmock.NewRows(claimColumns).AddRow(
+						eventID, "test.event", "Aggregate", "agg-1", userID,
+						[]byte(`{"k":"v"}`), meta, 0, 5, occurred,
+					))
+				return outbox.NewPostgresStorage(db), &mockDB, func() { _ = db.Close() }
+			},
+			expect: func(rows []outbox.Row, err error) {
+				s.NoError(err)
+				s.Require().Len(rows, 1)
+				r := rows[0]
+				s.Equal(eventID, r.ID)
+				s.Equal("test.event", r.Type)
+				s.Equal(userID, r.AggregateUserID)
+				s.Equal(occurred, r.OccurredAt)
+				s.Equal("00-abc", r.Metadata["traceparent"])
+			},
+		},
+		{
+			name: "deve parsear evento sistemico sem aggregate_user_id",
+			setup: func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func()) {
+				db, mockDB, err := sqlmock.New()
+				s.Require().NoError(err)
+				mockDB.ExpectQuery("WITH claimable").
+					WithArgs("worker-1", 10).
+					WillReturnRows(sqlmock.NewRows(claimColumns).AddRow(
+						eventID, "system.event", "System", "sys-1", nil,
+						[]byte(`{}`), []byte(`{}`), 0, 3, occurred,
+					))
+				return outbox.NewPostgresStorage(db), &mockDB, func() { _ = db.Close() }
+			},
+			expect: func(rows []outbox.Row, err error) {
+				s.NoError(err)
+				s.Require().Len(rows, 1)
+				s.Empty(rows[0].AggregateUserID)
+			},
+		},
+		{
+			name: "deve respeitar ordenacao por occurred_at com usuarios distintos",
+			setup: func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func()) {
+				db, mockDB, err := sqlmock.New()
+				s.Require().NoError(err)
+				mockDB.ExpectQuery("WITH claimable").
+					WithArgs("worker-1", 10).
+					WillReturnRows(sqlmock.NewRows(claimColumns).
+						AddRow(eventID, "test.event", "Agg", "agg-1", userID, []byte(`{}`), []byte(`{}`), 0, 5, occurred).
+						AddRow(eventID2, "test.event", "Agg", "agg-2", userID2, []byte(`{}`), []byte(`{}`), 0, 5, occurred2),
+					)
+				return outbox.NewPostgresStorage(db), &mockDB, func() { _ = db.Close() }
+			},
+			expect: func(rows []outbox.Row, err error) {
+				s.NoError(err)
+				s.Require().Len(rows, 2)
+				s.Equal(eventID, rows[0].ID)
+				s.Equal(eventID2, rows[1].ID)
+				s.True(rows[0].OccurredAt.Before(rows[1].OccurredAt))
+			},
+		},
+		{
+			name: "deve propagar erro nao 23505",
+			setup: func() (outbox.OutboxRepository, *sqlmock.Sqlmock, func()) {
+				db, mockDB, err := sqlmock.New()
+				s.Require().NoError(err)
+				mockDB.ExpectQuery("WITH claimable").
+					WithArgs("worker-1", 10).
+					WillReturnError(errors.New("connection reset"))
+				return outbox.NewPostgresStorage(db), &mockDB, func() { _ = db.Close() }
+			},
+			expect: func(rows []outbox.Row, err error) {
+				s.Error(err)
+				s.Nil(rows)
+			},
+		},
+	}
+
+	for _, sc := range scenarios {
+		s.Run(sc.name, func() {
+			storage, mockDB, cleanup := sc.setup()
+			defer cleanup()
+			rows, err := storage.ClaimBatch(context.Background(), "worker-1", 10)
+			sc.expect(rows, err)
+			if mockDB != nil {
+				s.NoError((*mockDB).ExpectationsWereMet())
+			}
+		})
+	}
 }

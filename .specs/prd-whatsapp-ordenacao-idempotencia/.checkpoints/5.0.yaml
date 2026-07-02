@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-whatsapp-ordenacao-idempotencia/5.0_execution_report.md
+summary: Advisory lock removido; idempotencia ativa por default; timeout 90s < STUCK_AFTER; conflito de origin mapeia para ToolOutcomeReconciled; 205 testes passando
+timestamp: 2026-07-02T14:30:00Z

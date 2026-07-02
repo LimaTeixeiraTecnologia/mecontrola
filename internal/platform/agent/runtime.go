@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -135,31 +136,46 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 		return Outcome{}, fmt.Errorf("agent.runtime.execute: agent.execute: %w", execErr)
 	}
 
-	_ = r.messages.Append(ctx, thread.ID, memory.Message{
+	return r.finishRun(ctx, run, thread.ID, in, result, start), nil
+}
+
+func (r *agentRuntime) finishRun(ctx context.Context, run Run, threadPK uuid.UUID, in InboundRequest, result Result, start time.Time) Outcome {
+	_ = r.messages.Append(ctx, threadPK, memory.Message{
 		ID:         uuid.New(),
-		ThreadPK:   thread.ID,
+		ThreadPK:   threadPK,
 		ResourceID: in.ResourceID,
 		Role:       memory.RoleUser,
 		Content:    in.Message,
 		CreatedAt:  time.Now().UTC(),
 	})
-	_ = r.messages.Append(ctx, thread.ID, memory.Message{
+	_ = r.messages.Append(ctx, threadPK, memory.Message{
 		ID:         uuid.New(),
-		ThreadPK:   thread.ID,
+		ThreadPK:   threadPK,
 		ResourceID: in.ResourceID,
 		Role:       memory.RoleAssistant,
 		Content:    result.Content,
 		CreatedAt:  time.Now().UTC(),
 	})
 
-	r.closeRun(ctx, run, RunStatusSucceeded, ToolOutcomeRouted, "", start)
+	toolOutcome := ToolOutcomeRouted
+	if result.ToolOutcome == ToolOutcomeUsecaseError {
+		toolOutcome = ToolOutcomeUsecaseError
+	}
+	runStatus := RunStatusSucceeded
+	if toolOutcome == ToolOutcomeUsecaseError || strings.TrimSpace(result.Content) == "" {
+		runStatus = RunStatusFailed
+		toolOutcome = ToolOutcomeUsecaseError
+	}
+
+	r.closeRun(ctx, run, runStatus, toolOutcome, "", start)
 
 	return Outcome{
-		RunID:   runID,
+		RunID:   run.ID,
 		Content: result.Content,
-		Status:  RunStatusSucceeded,
+		Status:  runStatus,
+		Outcome: toolOutcome,
 		Mode:    ExecutionModeSync,
-	}, nil
+	}
 }
 
 func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid.UUID, in InboundRequest) ([]llm.Message, error) {

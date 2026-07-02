@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-whatsapp-ordenacao-idempotencia/8.0_execution_report.md
+summary: "Testes de integração CA-01..CA-10 criados e verdes (443 passed) via testcontainers-go"
+timestamp: "2026-07-02T16:10:00Z"

@@ -37,24 +37,26 @@ type engine[S any] struct {
 }
 
 type engineMetrics struct {
-	runsTotal       observability.Counter
-	runDuration     observability.Histogram
-	stepsTotal      observability.Counter
-	stepDuration    observability.Histogram
-	suspendTotal    observability.Counter
-	resumeTotal     observability.Counter
-	versionConflict observability.Counter
+	runsTotal         observability.Counter
+	runDuration       observability.Histogram
+	stepsTotal        observability.Counter
+	stepDuration      observability.Histogram
+	suspendTotal      observability.Counter
+	resumeTotal       observability.Counter
+	versionConflict   observability.Counter
+	resumedOnConflict observability.Counter
 }
 
 func NewEngine[S any](store Store, o11y observability.Observability) Engine[S] {
 	m := engineMetrics{
-		runsTotal:       o11y.Metrics().Counter("workflow_runs_total", "Total workflow runs", "1"),
-		runDuration:     o11y.Metrics().Histogram("workflow_run_duration_seconds", "Workflow run duration", "s"),
-		stepsTotal:      o11y.Metrics().Counter("workflow_steps_total", "Total workflow steps executed", "1"),
-		stepDuration:    o11y.Metrics().Histogram("workflow_step_duration_seconds", "Workflow step duration", "s"),
-		suspendTotal:    o11y.Metrics().Counter("workflow_suspend_total", "Total workflow suspensions", "1"),
-		resumeTotal:     o11y.Metrics().Counter("workflow_resume_total", "Total workflow resumes", "1"),
-		versionConflict: o11y.Metrics().Counter("workflow_version_conflict_total", "Total CAS version conflicts", "1"),
+		runsTotal:         o11y.Metrics().Counter("workflow_runs_total", "Total workflow runs", "1"),
+		runDuration:       o11y.Metrics().Histogram("workflow_run_duration_seconds", "Workflow run duration", "s"),
+		stepsTotal:        o11y.Metrics().Counter("workflow_steps_total", "Total workflow steps executed", "1"),
+		stepDuration:      o11y.Metrics().Histogram("workflow_step_duration_seconds", "Workflow step duration", "s"),
+		suspendTotal:      o11y.Metrics().Counter("workflow_suspend_total", "Total workflow suspensions", "1"),
+		resumeTotal:       o11y.Metrics().Counter("workflow_resume_total", "Total workflow resumes", "1"),
+		versionConflict:   o11y.Metrics().Counter("workflow_version_conflict_total", "Total CAS version conflicts", "1"),
+		resumedOnConflict: o11y.Metrics().Counter("workflow_resumed_on_conflict_total", "Total Start idempotente-resume por unique_violation", "1"),
 	}
 	return &engine[S]{
 		store:   store,
@@ -110,6 +112,9 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 		}
 
 		if err := e.store.Insert(ctx, snap); err != nil {
+			if errors.Is(err, ErrRunAlreadyExists) {
+				return e.resumeOnConflict(ctx, span, def, key, err)
+			}
 			span.RecordError(err)
 			return RunResult[S]{}, fmt.Errorf("workflow.engine.start: insert snapshot: %w", err)
 		}
@@ -145,6 +150,32 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 	}
 
 	return result, nil
+}
+
+func (e *engine[S]) resumeOnConflict(ctx context.Context, span observability.Span, def Definition[S], key string, insertErr error) (RunResult[S], error) {
+	existing, found, loadErr := e.store.Load(ctx, def.ID, key)
+	if loadErr != nil {
+		span.RecordError(loadErr)
+		return RunResult[S]{}, fmt.Errorf("workflow.engine.start: load on conflict: %w", loadErr)
+	}
+	if !found {
+		span.RecordError(insertErr)
+		return RunResult[S]{}, fmt.Errorf("workflow.engine.start: conflict but run not found: %w", insertErr)
+	}
+	current, decodeErr := e.codec.Decode(existing.State)
+	if decodeErr != nil {
+		span.RecordError(decodeErr)
+		return RunResult[S]{}, fmt.Errorf("workflow.engine.start: decode on conflict: %w", decodeErr)
+	}
+	span.SetAttributes(observability.String("outcome", "resumed_on_conflict"))
+	e.metrics.resumedOnConflict.Add(ctx, 1,
+		observability.String("workflow", def.ID),
+	)
+	e.metrics.resumeTotal.Add(ctx, 1,
+		observability.String("workflow", def.ID),
+		observability.String("outcome", "resumed_on_conflict"),
+	)
+	return e.execute(ctx, def, existing, current, existing.Cursor)
 }
 
 func (e *engine[S]) Resume(ctx context.Context, def Definition[S], key string, resume []byte) (RunResult[S], error) {

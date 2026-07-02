@@ -254,13 +254,15 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_TRACE_SAMPLE_RATE: "0.1"
+      OTEL_TRACE_SAMPLE_RATE: "1"
+      OTEL_SERVICE_VERSION: ${IMAGE_TAG}
     networks:
       - backend
       - frontend
     depends_on:
       - postgres
       - pgbouncer
+    stop_grace_period: 30s
     deploy:
       <<: *default-deploy
       resources:
@@ -299,13 +301,15 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_TRACE_SAMPLE_RATE: "0.1"
+      OTEL_TRACE_SAMPLE_RATE: "1"
+      OTEL_SERVICE_VERSION: ${IMAGE_TAG}
     networks:
       - backend
       - frontend
     depends_on:
       - postgres
       - pgbouncer
+    stop_grace_period: 30s
     deploy:
       <<: *default-deploy
       resources:
@@ -344,12 +348,14 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_TRACE_SAMPLE_RATE: "0.1"
+      OTEL_TRACE_SAMPLE_RATE: "1"
+      OTEL_SERVICE_VERSION: ${IMAGE_TAG}
     networks:
       - backend
     depends_on:
       - postgres
       - pgbouncer
+    stop_grace_period: 30s
     deploy:
       <<: *default-deploy
       resources:
@@ -388,12 +394,14 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_TRACE_SAMPLE_RATE: "0.1"
+      OTEL_TRACE_SAMPLE_RATE: "1"
+      OTEL_SERVICE_VERSION: ${IMAGE_TAG}
     networks:
       - backend
     depends_on:
       - postgres
       - pgbouncer
+    stop_grace_period: 30s
     deploy:
       <<: *default-deploy
       resources:

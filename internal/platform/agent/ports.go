@@ -29,6 +29,7 @@ type Result struct {
 	Content           string
 	RawJSON           []byte
 	Mode              ExecutionMode
+	ToolOutcome       ToolOutcome
 	TruncatedByLength bool
 }
 
@@ -61,6 +62,7 @@ type Outcome struct {
 	RunID   uuid.UUID
 	Content string
 	Status  RunStatus
+	Outcome ToolOutcome
 	Mode    ExecutionMode
 }
 

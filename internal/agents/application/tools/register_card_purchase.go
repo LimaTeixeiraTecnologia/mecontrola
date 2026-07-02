@@ -31,6 +31,7 @@ type RegisterCardPurchaseOutput struct {
 	ResourceID string `json:"resourceId"`
 	Kind       string `json:"kind"`
 	IsReplay   bool   `json:"isReplay"`
+	Outcome    string `json:"outcome"`
 }
 
 func BuildRegisterCardPurchaseTool(ledger interfaces.TransactionsLedger, cardManager interfaces.CardManager, writer idempotentWriter) tool.ToolHandle {
@@ -64,8 +65,9 @@ func BuildRegisterCardPurchaseTool(ledger interfaces.TransactionsLedger, cardMan
 				"resourceId": map[string]any{"type": "string"},
 				"kind":       map[string]any{"type": "string"},
 				"isReplay":   map[string]any{"type": "boolean"},
+				"outcome":    map[string]any{"type": "string"},
 			},
-			"required":             []string{"resourceId", "kind", "isReplay"},
+			"required":             []string{"resourceId", "kind", "isReplay", "outcome"},
 			"additionalProperties": false,
 		},
 	}
@@ -138,6 +140,7 @@ func buildRegisterCardPurchaseExec(ledger interfaces.TransactionsLedger, cardMan
 			ResourceID: result.ResourceID.String(),
 			Kind:       "card_purchase",
 			IsReplay:   result.Outcome == agent.ToolOutcomeReplay,
+			Outcome:    result.Outcome.String(),
 		}, nil
 	}
 }

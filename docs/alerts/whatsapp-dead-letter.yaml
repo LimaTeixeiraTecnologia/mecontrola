@@ -1,0 +1,62 @@
+groups:
+  - name: mecontrola.whatsapp.dead_letter
+    interval: 1m
+    rules:
+      - alert: OutboxDeadLetter
+        expr: increase(outbox_dead_letter_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+          prd: prd-whatsapp-ordenacao-idempotencia
+        annotations:
+          summary: "Evento dead-letter detectado no outbox (status=4)"
+          description: |
+            Evento atingiu max_attempts sem sucesso e foi promovido para status=4 (dead-letter).
+            Isso bloqueia o FIFO do usuario correspondente.
+            Verificar: SELECT * FROM outbox_events WHERE status = 4 ORDER BY next_attempt_at DESC;
+            Runbook: docs/runbooks/deploy-anti-storm.md
+
+      - alert: OutboxLagP95High
+        expr: histogram_quantile(0.95, sum(rate(outbox_lag_seconds_bucket[5m])) by (le, event_type)) > 30
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+          prd: prd-whatsapp-ordenacao-idempotencia
+        annotations:
+          summary: "Lag p95 do outbox acima de 30s"
+          description: |
+            O percentil 95 do lag entre occurred_at e published_at ultrapassou 30s.
+            event_type: {{ $labels.event_type }}
+            Verificar: ritmo de despacho do dispatcher, backpressure do worker.
+            Runbook: docs/runbooks/deploy-anti-storm.md
+
+      - alert: WhatsAppOutboundEmpty
+        expr: increase(agents_whatsapp_inbound_total{outcome="no_reply"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: agents
+          prd: prd-whatsapp-ordenacao-idempotencia
+        annotations:
+          summary: "Resposta vazia (no_reply) no agente WhatsApp"
+          description: |
+            O agente processou uma mensagem inbound mas nao gerou reply.
+            Verificar: logs do consumer com outcome=no_reply, spans no Tempo (traceparent propagado).
+            Runbook: docs/runbooks/deploy-anti-storm.md
+
+      - alert: WhatsAppInboundTimeoutHigh
+        expr: increase(agents_whatsapp_inbound_timeout_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: agents
+          prd: prd-whatsapp-ordenacao-idempotencia
+        annotations:
+          summary: "Timeout de LLM/tool detectado no consumer WhatsApp"
+          description: |
+            context.DeadlineExceeded detectado no processamento inbound WhatsApp.
+            O timeout deve ser menor que STUCK_AFTER (5m) para que o reaper atue.
+            Verificar: AGENT_LLM_TIMEOUT vs STUCK_AFTER; latencia do OpenRouter.
+            Runbook: docs/runbooks/deploy-anti-storm.md

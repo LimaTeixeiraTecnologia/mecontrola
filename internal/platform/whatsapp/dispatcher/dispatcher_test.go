@@ -50,6 +50,18 @@ func validPayload(text string) json.RawMessage {
 	return payloadWithTimestamp(text, ts)
 }
 
+func multiMessagePayload(wamids []string) json.RawMessage {
+	ts := fmt.Sprintf("%d", time.Now().UTC().Unix())
+	msgs := ""
+	for i, wamid := range wamids {
+		if i > 0 {
+			msgs += ","
+		}
+		msgs += `{"from":"5511987654321","id":"` + wamid + `","timestamp":"` + ts + `","type":"text","text":{"body":"msg` + fmt.Sprintf("%d", i+1) + `"}}`
+	}
+	return json.RawMessage(`{"object":"whatsapp_business_account","entry":[{"id":"1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"5511999999999","phone_number_id":"123"},"messages":[` + msgs + `]}}]}]}`)
+}
+
 type DispatcherSuite struct {
 	suite.Suite
 	ctx  context.Context
@@ -416,4 +428,90 @@ func (s *DispatcherSuite) TestTimestampValidation() {
 			s.Equal(sc.expectedOutcome, outcome)
 		})
 	}
+}
+
+func (s *DispatcherSuite) TestRoute_MultiMessage_PublishesOneEventPerMessage() {
+	userID := uuid.MustParse("a0a0a0a0-0000-0000-0000-000000000001")
+	principal := auth.Principal{UserID: userID, Source: auth.SourceWhatsApp}
+
+	raw := multiMessagePayload([]string{"wamid-001", "wamid-002", "wamid-003"})
+
+	dedupMock := &mockDedup{}
+	dedupMock.On("InsertIfAbsent", mock.Anything, "wamid-001").Return(true, nil).Once()
+	dedupMock.On("InsertIfAbsent", mock.Anything, "wamid-002").Return(true, nil).Once()
+	dedupMock.On("InsertIfAbsent", mock.Anything, "wamid-003").Return(true, nil).Once()
+	defer dedupMock.AssertExpectations(s.T())
+
+	establishMock := &mockEstablish{}
+	establishMock.On("Execute", mock.Anything, mock.Anything).Return(principal, nil).Once()
+	defer establishMock.AssertExpectations(s.T())
+
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	var routedWAMIDs []string
+	agentRoute := func(_ context.Context, msg payload.Message) dispatcher.RouteOutcome {
+		routedWAMIDs = append(routedWAMIDs, msg.WAMID)
+		return dispatcher.OutcomeAgent
+	}
+	activationRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
+		return dispatcher.OutcomeNoRoute
+	}
+
+	limiter := s.newLimiter()
+	_ = limiter.Start(s.ctx)
+	s.T().Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ratelimit.DefaultShutdownTimeout)
+		defer cancel()
+		_ = limiter.Shutdown(ctx)
+	})
+
+	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, activationRoute, s.o11y)
+	outcome, err := sut.Route(s.ctx, raw)
+
+	s.NoError(err)
+	s.Equal(dispatcher.OutcomeAgent, outcome)
+	s.Equal([]string{"wamid-001", "wamid-002", "wamid-003"}, routedWAMIDs)
+}
+
+func (s *DispatcherSuite) TestRoute_MultiMessage_SecondIsDuplicate_RoutesOnlyNonDuplicates() {
+	userID := uuid.MustParse("a0a0a0a0-0000-0000-0000-000000000002")
+	principal := auth.Principal{UserID: userID, Source: auth.SourceWhatsApp}
+
+	raw := multiMessagePayload([]string{"wamid-A", "wamid-B", "wamid-C"})
+
+	dedupMock := &mockDedup{}
+	dedupMock.On("InsertIfAbsent", mock.Anything, "wamid-A").Return(true, nil).Once()
+	dedupMock.On("InsertIfAbsent", mock.Anything, "wamid-B").Return(false, nil).Once()
+	dedupMock.On("InsertIfAbsent", mock.Anything, "wamid-C").Return(true, nil).Once()
+	defer dedupMock.AssertExpectations(s.T())
+
+	establishMock := &mockEstablish{}
+	establishMock.On("Execute", mock.Anything, mock.Anything).Return(principal, nil).Once()
+	defer establishMock.AssertExpectations(s.T())
+
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	var routedWAMIDs []string
+	agentRoute := func(_ context.Context, msg payload.Message) dispatcher.RouteOutcome {
+		routedWAMIDs = append(routedWAMIDs, msg.WAMID)
+		return dispatcher.OutcomeAgent
+	}
+	activationRoute := func(_ context.Context, _ payload.Message) dispatcher.RouteOutcome {
+		return dispatcher.OutcomeNoRoute
+	}
+
+	limiter := s.newLimiter()
+	_ = limiter.Start(s.ctx)
+	s.T().Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ratelimit.DefaultShutdownTimeout)
+		defer cancel()
+		_ = limiter.Shutdown(ctx)
+	})
+
+	sut := dispatcher.New(dedupMock, establishMock, limiter, publisherMock, agentRoute, activationRoute, s.o11y)
+	outcome, err := sut.Route(s.ctx, raw)
+
+	s.NoError(err)
+	s.Equal(dispatcher.OutcomeAgent, outcome)
+	s.Equal([]string{"wamid-A", "wamid-C"}, routedWAMIDs, "wamid-B era duplicata e deve ser descartado silenciosamente")
 }

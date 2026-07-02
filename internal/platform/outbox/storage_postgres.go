@@ -4,18 +4,30 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
+
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 )
 
 type postgresStorage struct {
-	db database.DBTX
+	db                 database.DBTX
+	claimDeferredTotal observability.Counter
 }
 
 func NewPostgresStorage(db database.DBTX) OutboxRepository {
 	return &postgresStorage{db: db}
+}
+
+func NewObservablePostgresStorage(db database.DBTX, claimDeferredTotal observability.Counter) OutboxRepository {
+	return &postgresStorage{db: db, claimDeferredTotal: claimDeferredTotal}
 }
 
 func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int) error {
@@ -49,19 +61,46 @@ func (s *postgresStorage) Insert(ctx context.Context, evt Event, maxAttempts int
 }
 
 func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batchSize int) ([]Row, error) {
-	const selectQ = `
-		SELECT id, event_type, aggregate_type, aggregate_id, aggregate_user_id, payload, metadata,
-		       attempts, max_attempts, occurred_at
-		  FROM outbox_events
-		 WHERE status = $1
-		   AND next_attempt_at <= now()
-		 ORDER BY next_attempt_at
-		 LIMIT $2
-		   FOR UPDATE SKIP LOCKED`
+	const claimQ = `
+		WITH claimable AS (
+		  SELECT id
+		    FROM mecontrola.outbox_events o
+		   WHERE o.status = 1
+		     AND o.next_attempt_at <= now()
+		     AND (
+		          o.aggregate_user_id IS NULL
+		       OR NOT EXISTS (
+		            SELECT 1 FROM mecontrola.outbox_events p
+		             WHERE p.aggregate_user_id = o.aggregate_user_id
+		               AND p.status = 2)
+		     )
+		     AND NOT EXISTS (
+		            SELECT 1 FROM mecontrola.outbox_events e2
+		             WHERE e2.aggregate_user_id = o.aggregate_user_id
+		               AND e2.status = 1
+		               AND (e2.occurred_at, e2.created_at, e2.id) < (o.occurred_at, o.created_at, o.id))
+		   ORDER BY o.occurred_at, o.created_at, o.id
+		   LIMIT $2
+		   FOR UPDATE SKIP LOCKED
+		)
+		UPDATE mecontrola.outbox_events t
+		   SET status = 2, locked_at = now(), locked_by = $1, updated_at = now()
+		  FROM claimable c
+		 WHERE t.id = c.id
+		RETURNING t.id, t.event_type, t.aggregate_type, t.aggregate_id, t.aggregate_user_id,
+		          t.payload, t.metadata, t.attempts, t.max_attempts, t.occurred_at`
 
-	rows, err := s.db.QueryContext(ctx, selectQ, int(StatusPending), batchSize)
+	rows, err := s.db.QueryContext(ctx, claimQ, lockedBy, batchSize)
 	if err != nil {
-		return nil, fmt.Errorf("outbox: claim batch select: %w", err)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			slog.WarnContext(ctx, "outbox: claim batch deferred", slog.String("reason", "unique_violation"))
+			if s.claimDeferredTotal != nil {
+				s.claimDeferredTotal.Add(ctx, 1)
+			}
+			return nil, nil
+		}
+		return nil, fmt.Errorf("outbox: claim batch: %w", err)
 	}
 
 	var result []Row
@@ -100,22 +139,7 @@ func (s *postgresStorage) ClaimBatch(ctx context.Context, lockedBy string, batch
 		return nil, fmt.Errorf("outbox: claim batch rows: %w", err)
 	}
 	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("outbox: claim batch close rows: %w", err)
-	}
-
-	if len(result) == 0 {
-		return nil, nil
-	}
-
-	const updateQ = `
-		UPDATE outbox_events
-		   SET status = $1, locked_at = now(), locked_by = $2, updated_at = now()
-		 WHERE id = $3`
-
-	for _, r := range result {
-		if _, err := s.db.ExecContext(ctx, updateQ, int(StatusProcessing), lockedBy, r.ID); err != nil {
-			return nil, fmt.Errorf("outbox: claim batch update %s: %w", r.ID, err)
-		}
+		return nil, fmt.Errorf("outbox: claim batch close: %w", err)
 	}
 
 	return result, nil

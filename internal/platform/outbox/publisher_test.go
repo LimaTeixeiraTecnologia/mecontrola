@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	gotel "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	dbmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/mocks"
@@ -172,4 +175,28 @@ func (s *PublisherSuite) TestPublish() {
 			scenario.expect(err)
 		})
 	}
+}
+
+func (s *PublisherSuite) TestPublish_InjectTraceparent() {
+	gotel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))
+	defer gotel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator())
+
+	event := s.newValidEvent()
+
+	storage := outboxmocks.NewStorage(s.T())
+	dbtx := dbmocks.NewMockDBTX(s.T())
+	baseCtx := database.WithTx(context.Background(), dbtx)
+
+	carrier := propagation.MapCarrier{}
+	carrier.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	ctx := gotel.GetTextMapPropagator().Extract(baseCtx, carrier)
+
+	storage.EXPECT().Insert(mock.Anything, mock.MatchedBy(func(e outbox.Event) bool {
+		tp, hasTraceparent := e.Metadata["traceparent"]
+		return hasTraceparent && tp != ""
+	}), 3).Return(nil).Once()
+
+	publisher := outbox.NewPostgresPublisher(storage, configs.OutboxConfig{RetryMaxAttempts: 3})
+	err := publisher.Publish(ctx, event)
+	s.NoError(err)
 }

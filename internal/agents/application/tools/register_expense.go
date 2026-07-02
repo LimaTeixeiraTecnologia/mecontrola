@@ -29,6 +29,7 @@ type RegisterExpenseOutput struct {
 	ResourceID string `json:"resourceId"`
 	Kind       string `json:"kind"`
 	IsReplay   bool   `json:"isReplay"`
+	Outcome    string `json:"outcome"`
 }
 
 func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idempotentWriter) tool.ToolHandle {
@@ -61,8 +62,9 @@ func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idemp
 				"resourceId": map[string]any{"type": "string"},
 				"kind":       map[string]any{"type": "string"},
 				"isReplay":   map[string]any{"type": "boolean"},
+				"outcome":    map[string]any{"type": "string"},
 			},
-			"required":             []string{"resourceId", "kind", "isReplay"},
+			"required":             []string{"resourceId", "kind", "isReplay", "outcome"},
 			"additionalProperties": false,
 		},
 	}
@@ -112,6 +114,7 @@ func buildRegisterExpenseExec(ledger interfaces.TransactionsLedger, writer idemp
 			ResourceID: result.ResourceID.String(),
 			Kind:       "transaction",
 			IsReplay:   result.Outcome == agent.ToolOutcomeReplay,
+			Outcome:    result.Outcome.String(),
 		}, nil
 	}
 }

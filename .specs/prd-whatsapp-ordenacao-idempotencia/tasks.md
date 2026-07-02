@@ -21,15 +21,15 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Migration 000003: índices parciais do claim particionado | pending | — | — | — |
-| 2.0 | Claim particionado no ClaimBatch + captura de SQLSTATE 23505 | pending | 1.0 | Com 3.0, 4.0 | — |
-| 3.0 | Ingestão em lote do webhook + timestamp da Meta no OccurredAt | pending | — | Com 2.0, 4.0 | mastra |
-| 4.0 | Confirmação honesta no runtime do agente (fim do sucesso alucinado e envio vazio) | pending | — | Com 2.0, 3.0 | mastra |
-| 5.0 | Idempotência default + mapa reconciled + timeout de coerência + remoção do advisory lock | pending | 4.0 | Com 6.0 | mastra |
-| 6.0 | Onboarding Start idempotente-resume + persistência de turnos | pending | 2.0 | Com 5.0 | mastra |
-| 7.0 | Observabilidade do caminho crítico + deploy seguro + dead-letter | pending | 2.0, 6.0 | — | otel-grafana-dashboards |
-| 8.0 | Testes de integração (testcontainers): concorrência, idempotência, onboarding, poison | pending | 2.0, 3.0, 4.0, 5.0, 6.0 | — | mastra |
-| 9.0 | Gate de carga sintética por fase + ensaio de rolling deploy | pending | 7.0, 8.0 | — | otel-grafana-dashboards |
+| 1.0 | Migration 000003: índices parciais do claim particionado | done | — | — | — |
+| 2.0 | Claim particionado no ClaimBatch + captura de SQLSTATE 23505 | done | 1.0 | Com 3.0, 4.0 | — |
+| 3.0 | Ingestão em lote do webhook + timestamp da Meta no OccurredAt | done | — | Com 2.0, 4.0 | mastra |
+| 4.0 | Confirmação honesta no runtime do agente (fim do sucesso alucinado e envio vazio) | done | — | Com 2.0, 3.0 | mastra |
+| 5.0 | Idempotência default + mapa reconciled + timeout de coerência + remoção do advisory lock | done | 4.0 | Com 6.0 | mastra |
+| 6.0 | Onboarding Start idempotente-resume + persistência de turnos | done | 2.0 | Com 5.0 | mastra |
+| 7.0 | Observabilidade do caminho crítico + deploy seguro + dead-letter | done | 2.0, 6.0 | — | otel-grafana-dashboards |
+| 8.0 | Testes de integração (testcontainers): concorrência, idempotência, onboarding, poison | done | 2.0, 3.0, 4.0, 5.0, 6.0 | — | mastra |
+| 9.0 | Gate de carga sintética por fase + ensaio de rolling deploy | done | 7.0, 8.0 | — | otel-grafana-dashboards |
 
 ## Dependências Críticas
 - 1.0 → 2.0: o `ClaimBatch` particionado depende dos índices parciais (`outbox_events_user_pending_occurred_idx` e o backstop único `outbox_events_user_inflight_uidx`) criados em 1.0. Pré-condição: a tabela nasce com 0 linhas `status=2`, o índice único parcial é seguro (verificar com `SELECT count(*) FROM mecontrola.outbox_events WHERE status=2` antes de aplicar).

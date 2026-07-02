@@ -41,3 +41,11 @@ tasks:
       se o diretorio legado existir ou se qualquer import proibido for detectado.
     cmds:
       - task: :gates:no-internal-agent
+
+  deploy-anti-storm:
+    desc: |
+      Gate anti-storm de rolling deploy (RF-13/14/16, ADR-004). Bloqueia merge se o
+      compose.swarm.yml perder order: stop-first, stop_grace_period: 30s,
+      OTEL_SERVICE_VERSION=${IMAGE_TAG} ou OTEL_TRACE_SAMPLE_RATE="1", ou reintroduzir start-first.
+    cmds:
+      - bash scripts/ci/deploy-anti-storm.sh

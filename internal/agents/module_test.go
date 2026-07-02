@@ -4,14 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
+	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
+	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
@@ -79,4 +87,129 @@ func TestNewModule_RequiredDepsValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+type WhatsAppAgentRouteSuite struct {
+	suite.Suite
+	ctx context.Context
+}
+
+func TestWhatsAppAgentRouteSuite(t *testing.T) {
+	suite.Run(t, new(WhatsAppAgentRouteSuite))
+}
+
+func (s *WhatsAppAgentRouteSuite) SetupTest() {
+	s.ctx = context.Background()
+}
+
+func (s *WhatsAppAgentRouteSuite) ctxWithPrincipal() context.Context {
+	principal := auth.Principal{
+		UserID: uuid.MustParse("a0a0a0a0-0000-0000-0000-000000000001"),
+		Source: auth.SourceWhatsApp,
+	}
+	return auth.WithPrincipal(s.ctx, principal)
+}
+
+func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_ValidTimestamp_UsesMetaTimestamp() {
+	o11y := fake.NewProvider()
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	var capturedEvent outbox.Event
+	publisherMock.On("Publish", mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+		capturedEvent = evt
+		return true
+	})).Return(nil).Once()
+
+	route := buildWhatsAppAgentRoute(publisherMock, o11y)
+	ctx := s.ctxWithPrincipal()
+
+	msg := wapayload.Message{
+		From:      "+5511999999999",
+		WAMID:     "wamid-valid-ts",
+		Timestamp: "1686000000",
+		Text:      "oi",
+	}
+
+	outcome := route(ctx, msg)
+
+	s.Equal("agent", string(outcome))
+	expectedTS := time.Unix(1686000000, 0).UTC()
+	s.Equal(expectedTS, capturedEvent.OccurredAt, "OccurredAt deve refletir o timestamp da Meta")
+	s.Equal("wamid-valid-ts", capturedEvent.AggregateID)
+}
+
+func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_EmptyTimestamp_UsesFallback() {
+	o11y := fake.NewProvider()
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	before := time.Now().UTC()
+	var capturedEvent outbox.Event
+	publisherMock.On("Publish", mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+		capturedEvent = evt
+		return true
+	})).Return(nil).Once()
+
+	route := buildWhatsAppAgentRoute(publisherMock, o11y)
+	ctx := s.ctxWithPrincipal()
+
+	msg := wapayload.Message{
+		From:      "+5511999999999",
+		WAMID:     "wamid-no-ts",
+		Timestamp: "",
+		Text:      "oi",
+	}
+
+	outcome := route(ctx, msg)
+	after := time.Now().UTC()
+
+	s.Equal("agent", string(outcome))
+	s.True(!capturedEvent.OccurredAt.Before(before), "OccurredAt fallback deve ser >= before")
+	s.True(!capturedEvent.OccurredAt.After(after), "OccurredAt fallback deve ser <= after")
+}
+
+func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_InvalidTimestamp_UsesFallback() {
+	o11y := fake.NewProvider()
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	before := time.Now().UTC()
+	var capturedEvent outbox.Event
+	publisherMock.On("Publish", mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+		capturedEvent = evt
+		return true
+	})).Return(nil).Once()
+
+	route := buildWhatsAppAgentRoute(publisherMock, o11y)
+	ctx := s.ctxWithPrincipal()
+
+	msg := wapayload.Message{
+		From:      "+5511999999999",
+		WAMID:     "wamid-bad-ts",
+		Timestamp: "not-a-number",
+		Text:      "oi",
+	}
+
+	outcome := route(ctx, msg)
+	after := time.Now().UTC()
+
+	s.Equal("agent", string(outcome))
+	s.True(!capturedEvent.OccurredAt.Before(before), "OccurredAt fallback deve ser >= before")
+	s.True(!capturedEvent.OccurredAt.After(after), "OccurredAt fallback deve ser <= after")
+}
+
+func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_NoPrincipal_ReturnsInvalid() {
+	o11y := fake.NewProvider()
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	route := buildWhatsAppAgentRoute(publisherMock, o11y)
+
+	msg := wapayload.Message{
+		From:      "+5511999999999",
+		WAMID:     "wamid-no-principal",
+		Timestamp: "1686000000",
+		Text:      "oi",
+	}
+
+	outcome := route(s.ctx, msg)
+
+	s.Equal("invalid", string(outcome))
 }

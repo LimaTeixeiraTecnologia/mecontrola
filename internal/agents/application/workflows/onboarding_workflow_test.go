@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -13,17 +14,20 @@ import (
 	interfacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	agentpkg "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	agentmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory"
 	memorymocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type OnboardingWorkflowSuite struct {
 	suite.Suite
-	ctx         context.Context
-	agentMock   *agentmocks.Agent
-	cardsMock   *interfacemocks.CardManager
-	budgetsMock *interfacemocks.BudgetPlanner
-	wmMock      *memorymocks.WorkingMemory
+	ctx          context.Context
+	agentMock    *agentmocks.Agent
+	cardsMock    *interfacemocks.CardManager
+	budgetsMock  *interfacemocks.BudgetPlanner
+	wmMock       *memorymocks.WorkingMemory
+	threadsMock  *memorymocks.ThreadGateway
+	messagesMock *memorymocks.MessageStore
 }
 
 func TestOnboardingWorkflowSuite(t *testing.T) {
@@ -36,6 +40,8 @@ func (s *OnboardingWorkflowSuite) SetupTest() {
 	s.cardsMock = interfacemocks.NewCardManager(s.T())
 	s.budgetsMock = interfacemocks.NewBudgetPlanner(s.T())
 	s.wmMock = memorymocks.NewWorkingMemory(s.T())
+	s.threadsMock = memorymocks.NewThreadGateway(s.T())
+	s.messagesMock = memorymocks.NewMessageStore(s.T())
 }
 
 func (s *OnboardingWorkflowSuite) TestDecideGoal() {
@@ -738,11 +744,80 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_AffirmativeCreatesRecu
 
 func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_IDAndStructure() {
 	s.agentMock.EXPECT().ID().Return("onboarding-agent").Maybe()
-	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock)
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
 	s.Equal(OnboardingWorkflowID, def.ID)
 	s.NotNil(def.Root)
 	s.True(def.Durable)
 	s.Equal(3, def.MaxAttempts)
+}
+
+func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_AppendsOutboundOnSuspend() {
+	threadPK := uuid.New()
+	s.threadsMock.EXPECT().
+		GetOrCreate(mock.Anything, "user-x", "peer-x").
+		Return(memory.Thread{ID: threadPK, ResourceID: "user-x", ThreadID: "peer-x"}, nil).
+		Once()
+	s.messagesMock.EXPECT().
+		Append(mock.Anything, threadPK, mock.MatchedBy(func(m memory.Message) bool {
+			return m.Role == memory.RoleAssistant && m.Content == "ola!"
+		})).
+		Return(nil).
+		Once()
+
+	inner := func(_ context.Context, st OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		return workflow.StepOutput[OnboardingState]{
+			State:   st,
+			Status:  workflow.StepStatusSuspended,
+			Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: "ola!"},
+		}, nil
+	}
+	wrapped := wrapStepWithMessages(inner, s.threadsMock, s.messagesMock)
+
+	state := OnboardingState{UserID: "user-x", PeerID: "peer-x"}
+	out, err := wrapped(s.ctx, state)
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+}
+
+func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_AppendsInboundOnResume() {
+	threadPK := uuid.New()
+	s.threadsMock.EXPECT().
+		GetOrCreate(mock.Anything, "user-y", "peer-y").
+		Return(memory.Thread{ID: threadPK, ResourceID: "user-y", ThreadID: "peer-y"}, nil).
+		Once()
+	s.messagesMock.EXPECT().
+		Append(mock.Anything, threadPK, mock.MatchedBy(func(m memory.Message) bool {
+			return m.Role == memory.RoleUser && m.Content == "resposta do usuario"
+		})).
+		Return(nil).
+		Once()
+
+	inner := func(_ context.Context, st OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		st.ResumeText = ""
+		return workflow.StepOutput[OnboardingState]{State: st, Status: workflow.StepStatusCompleted}, nil
+	}
+	wrapped := wrapStepWithMessages(inner, s.threadsMock, s.messagesMock)
+
+	state := OnboardingState{UserID: "user-y", PeerID: "peer-y", ResumeText: "resposta do usuario"}
+	out, err := wrapped(s.ctx, state)
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+}
+
+func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_NoPeerID_NoAppend() {
+	inner := func(_ context.Context, st OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		return workflow.StepOutput[OnboardingState]{
+			State:   st,
+			Status:  workflow.StepStatusSuspended,
+			Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: "ola!"},
+		}, nil
+	}
+	wrapped := wrapStepWithMessages(inner, s.threadsMock, s.messagesMock)
+
+	state := OnboardingState{UserID: "user-z", PeerID: ""}
+	out, err := wrapped(s.ctx, state)
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
 }
 
 type fakeResultStream struct {

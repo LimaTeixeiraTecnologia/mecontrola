@@ -91,7 +91,7 @@ type Deps struct {
 	BudgetsModule      *budgets.BudgetsModule
 	TransactionsModule transactions.TransactionsModule
 	WhatsAppGateway    whatsAppGateway
-	KeyLocker          usecases.KeyLocker
+	InboundTimeout     time.Duration
 }
 
 type whatsAppInboundPayload struct {
@@ -135,11 +135,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	scoringHooks := agentapplication.NewScoringHooks(scorerRunner)
 
 	writeLedgerRepo := persistence.NewWriteLedgerRepository(deps.DB, deps.O11y)
-	var idemOpts []usecases.IdempotentWriteOption
-	if deps.KeyLocker != nil {
-		idemOpts = append(idemOpts, usecases.WithKeyLocker(deps.KeyLocker))
-	}
-	idempotentWrite := usecases.NewIdempotentWrite(writeLedgerRepo, deps.O11y, idemOpts...)
+	idempotentWrite := usecases.NewIdempotentWrite(writeLedgerRepo, deps.O11y)
 
 	categoriesReader := binding.NewCategoriesReaderAdapter(
 		deps.CategoriesModule.SearchDictionaryUC,
@@ -185,7 +181,6 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	semanticRecall := memorypostgres.NewEmbeddingRepository(deps.DB, deps.O11y)
 
 	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
-	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem)
 	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager)
 
 	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, confirmEngine, confirmDef, idempotentWrite)
@@ -206,6 +201,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		})
 	}
 
+	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore)
+
 	runStore := agentpostgres.NewRunStore(deps.DB)
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y)
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
@@ -218,12 +215,18 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
+		consumerOpts := []consumers.ConsumerOption{
+			consumers.WithOnboardingResolver(resolveOnboarding),
+			consumers.WithDestructiveConfirmResolver(continueDestructive),
+		}
+		if deps.InboundTimeout > 0 {
+			consumerOpts = append(consumerOpts, consumers.WithInboundTimeout(deps.InboundTimeout))
+		}
 		inboundConsumer := consumers.NewWhatsAppInboundConsumer(
 			handleInbound,
 			deps.WhatsAppGateway,
 			deps.O11y,
-			consumers.WithOnboardingResolver(resolveOnboarding),
-			consumers.WithDestructiveConfirmResolver(continueDestructive),
+			consumerOpts...,
 		)
 		eventHandlers = append(eventHandlers, EventHandlerRegistration{
 			EventType: EventTypeWhatsAppInbound,
@@ -269,6 +272,11 @@ func buildWhatsAppAgentRoute(publisher outbox.Publisher, o11y observability.Obse
 		"Total de mensagens roteadas para o agente via WhatsApp",
 		"1",
 	)
+	tsFailback := o11y.Metrics().Counter(
+		"agents_whatsapp_timestamp_fallback_total",
+		"Total de mensagens com timestamp ausente ou invalido que usaram fallback para time.Now",
+		"1",
+	)
 	return func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome {
 		ctx, span := o11y.Tracer().Start(ctx, "agents.route.whatsapp_inbound")
 		defer span.End()
@@ -278,6 +286,15 @@ func buildWhatsAppAgentRoute(publisher outbox.Publisher, o11y observability.Obse
 			o11y.Logger().Error(ctx, "agents.route.whatsapp_inbound: principal ausente no contexto")
 			routeTotal.Add(ctx, 1, observability.String("outcome", "no_principal"))
 			return wadispatcher.OutcomeInvalid
+		}
+
+		occurredAt, tsOK := wapayload.ParseEpochTimestamp(msg.Timestamp)
+		if !tsOK {
+			occurredAt = time.Now().UTC()
+			tsFailback.Add(ctx, 1)
+			o11y.Logger().Warn(ctx, "agents.route.whatsapp_inbound: timestamp ausente ou invalido; usando now",
+				observability.String("wamid", msg.WAMID),
+			)
 		}
 
 		p := whatsAppInboundPayload{
@@ -308,7 +325,7 @@ func buildWhatsAppAgentRoute(publisher outbox.Publisher, o11y observability.Obse
 			AggregateID:     msg.WAMID,
 			AggregateUserID: principal.UserID.String(),
 			Payload:         raw,
-			OccurredAt:      time.Now().UTC(),
+			OccurredAt:      occurredAt,
 		})
 		if err != nil {
 			o11y.Logger().Error(ctx, "agents.route.whatsapp_inbound: criar evento", observability.Error(err))

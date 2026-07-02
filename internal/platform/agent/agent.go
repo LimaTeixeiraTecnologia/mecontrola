@@ -17,6 +17,13 @@ const (
 	roleTool             = "tool"
 )
 
+type toolExecStatus int
+
+const (
+	toolExecOK toolExecStatus = iota + 1
+	toolExecError
+)
+
 type AgentOption func(*agentImpl)
 
 func WithTools(tools ...tool.ToolHandle) AgentOption {
@@ -108,7 +115,7 @@ func (a *agentImpl) Execute(ctx context.Context, in Request) (Result, error) {
 
 	ctx = a.hooks.BeforeExecute(ctx, a.id, in)
 
-	resp, exhausted, err := a.completeWithTools(ctx, &llmReq, toolMap)
+	resp, exhausted, toolStatus, err := a.completeWithTools(ctx, &llmReq, toolMap)
 	if err != nil {
 		span.RecordError(err)
 		a.hooks.AfterExecute(ctx, a.id, Result{}, err)
@@ -130,10 +137,16 @@ func (a *agentImpl) Execute(ctx context.Context, in Request) (Result, error) {
 		}
 	}
 
+	toolOutcome := ToolOutcomeRouted
+	if toolStatus == toolExecError {
+		toolOutcome = ToolOutcomeUsecaseError
+	}
+
 	result := Result{
 		Content:           resp.Content,
 		RawJSON:           resp.RawJSON,
 		Mode:              ExecutionModeSync,
+		ToolOutcome:       toolOutcome,
 		TruncatedByLength: resp.TruncatedByLength,
 	}
 
@@ -163,39 +176,46 @@ func (a *agentImpl) prepareTools() ([]llm.ToolSpec, map[string]tool.ToolHandle) 
 	return specs, toolMap
 }
 
-func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, toolMap map[string]tool.ToolHandle) (llm.Response, bool, error) {
+func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, toolMap map[string]tool.ToolHandle) (llm.Response, bool, toolExecStatus, error) {
 	var resp llm.Response
+	var lastToolStatus toolExecStatus
 	for round := 0; round < a.maxToolRounds; round++ {
 		var err error
 		resp, err = a.provider.Complete(ctx, *llmReq)
 		if err != nil {
-			return llm.Response{}, false, fmt.Errorf("agent.execute: complete: %w", err)
+			return llm.Response{}, false, lastToolStatus, fmt.Errorf("agent.execute: complete: %w", err)
 		}
 		if len(resp.ToolCalls) == 0 {
-			return resp, false, nil
+			return resp, false, lastToolStatus, nil
 		}
 		llmReq.Messages = append(llmReq.Messages, llm.Message{
 			Role:      roleAssistant,
 			Content:   resp.Content,
 			ToolCalls: resp.ToolCalls,
 		})
+		roundStatus := toolExecOK
 		for _, tc := range resp.ToolCalls {
-			if msg, ok := a.invokeToolCall(ctx, toolMap, tc); ok {
+			msg, status, ok := a.invokeToolCall(ctx, toolMap, tc)
+			if ok {
 				llmReq.Messages = append(llmReq.Messages, msg)
 			}
+			if status == toolExecError {
+				roundStatus = toolExecError
+			}
 		}
+		lastToolStatus = roundStatus
 	}
-	return resp, len(resp.ToolCalls) > 0 && resp.Content == "", nil
+	return resp, len(resp.ToolCalls) > 0 && resp.Content == "", lastToolStatus, nil
 }
 
-func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.ToolHandle, tc llm.ToolCall) (llm.Message, bool) {
+func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.ToolHandle, tc llm.ToolCall) (llm.Message, toolExecStatus, bool) {
 	h, ok := toolMap[tc.FunctionName]
 	if !ok {
-		return llm.Message{}, false
+		return llm.Message{}, toolExecError, false
 	}
 	argsBytes, marshalErr := json.Marshal(tc.ArgumentsJSON)
 	if marshalErr != nil {
-		return llm.Message{}, false
+		return llm.Message{}, toolExecError, false
 	}
 	tCtx := a.hooks.BeforeTool(ctx, a.id, h.ID())
 	result, invokeErr := h.Invoke(tCtx, argsBytes)
@@ -204,11 +224,11 @@ func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.
 		observability.String("agent_id", a.id),
 		observability.String("tool", h.ID()),
 	)
-	content := ""
-	if invokeErr == nil {
-		content = string(result)
+	if invokeErr != nil {
+		content := fmt.Errorf("tool %s: %w", h.ID(), invokeErr).Error()
+		return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: content}, toolExecError, true
 	}
-	return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: content}, true
+	return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: string(result)}, toolExecOK, true
 }
 
 func (a *agentImpl) Stream(ctx context.Context, in Request) (ResultStream, error) {

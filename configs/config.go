@@ -176,13 +176,13 @@ type WhatsAppConfig struct {
 }
 
 type AgentConfig struct {
-	OpenRouterBaseURL string  `mapstructure:"OPENROUTER_BASE_URL"`
-	OpenRouterAPIKey  string  `mapstructure:"OPENROUTER_API_KEY"`
-	PrimaryModel      string  `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
-	EmbedModel        string  `mapstructure:"AGENT_LLM_EMBED_MODEL"`
-	MaxTokens         int     `mapstructure:"AGENT_LLM_MAX_TOKENS"`
-	Temperature       float64 `mapstructure:"AGENT_LLM_TEMPERATURE"`
-	WriteAdvisoryLock bool    `mapstructure:"AGENT_WRITE_ADVISORY_LOCK"`
+	OpenRouterBaseURL string        `mapstructure:"OPENROUTER_BASE_URL"`
+	OpenRouterAPIKey  string        `mapstructure:"OPENROUTER_API_KEY"`
+	PrimaryModel      string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
+	EmbedModel        string        `mapstructure:"AGENT_LLM_EMBED_MODEL"`
+	MaxTokens         int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
+	InboundTimeout    time.Duration `mapstructure:"AGENT_INBOUND_TIMEOUT"`
 }
 
 type KiwifyConfig struct {
@@ -1239,7 +1239,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_EMBED_MODEL", "openai/text-embedding-3-small")
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 1536)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
-	l.v.SetDefault("AGENT_WRITE_ADVISORY_LOCK", true)
+	l.v.SetDefault("AGENT_INBOUND_TIMEOUT", 90*time.Second)
 }
 
 func (c *Config) validateWorkflowKernel() []string {

@@ -107,6 +107,7 @@ func ParseOnboardingPhase(s string) (OnboardingPhase, error) {
 type OnboardingState struct {
 	Phase        OnboardingPhase `json:"phase"`
 	UserID       string          `json:"userID"`
+	PeerID       string          `json:"peerID"`
 	Goal         string          `json:"goal"`
 	IncomeCents  int64           `json:"incomeCents"`
 	CardsDone    bool            `json:"cardsDone"`
@@ -697,23 +698,63 @@ func BuildConclusionStep(a agent.Agent, budgets interfaces.BudgetPlanner, workin
 	}
 }
 
+func appendOnboardingMsg(ctx context.Context, threads memory.ThreadGateway, messages memory.MessageStore, state OnboardingState, role memory.MessageRole, content string) {
+	if state.PeerID == "" || content == "" {
+		return
+	}
+	thread, err := threads.GetOrCreate(ctx, state.UserID, state.PeerID)
+	if err != nil {
+		return
+	}
+	_ = messages.Append(ctx, thread.ID, memory.Message{
+		ID:         uuid.New(),
+		ResourceID: state.UserID,
+		Role:       role,
+		Content:    content,
+		CreatedAt:  time.Now().UTC(),
+	})
+}
+
+func wrapStepWithMessages(
+	fn func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error),
+	threads memory.ThreadGateway,
+	messages memory.MessageStore,
+) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		inbound := state.ResumeText
+		if inbound != "" {
+			appendOnboardingMsg(ctx, threads, messages, state, memory.RoleUser, inbound)
+		}
+		out, err := fn(ctx, state)
+		if err == nil && out.Status == workflow.StepStatusSuspended && out.Suspend != nil && out.Suspend.Prompt != "" {
+			appendOnboardingMsg(ctx, threads, messages, out.State, memory.RoleAssistant, out.Suspend.Prompt)
+		}
+		return out, err
+	}
+}
+
 func BuildOnboardingWorkflow(
 	a agent.Agent,
 	cards interfaces.CardManager,
 	budgets interfaces.BudgetPlanner,
 	workingMem memory.WorkingMemory,
+	threads memory.ThreadGateway,
+	messages memory.MessageStore,
 ) workflow.Definition[OnboardingState] {
+	wrap := func(fn func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error)) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		return wrapStepWithMessages(fn, threads, messages)
+	}
 	return workflow.Definition[OnboardingState]{
 		ID: OnboardingWorkflowID,
 		Root: workflow.Sequence("root",
-			workflow.NewStepFunc(stepWelcomeID, BuildWelcomeStep(a)),
-			workflow.NewStepFunc(stepGoalID, BuildGoalStep(a)),
-			workflow.NewStepFunc(stepIncomeID, BuildIncomeStep(a)),
-			workflow.NewStepFunc(stepCardsID, BuildCardsStep(a, cards)),
-			workflow.NewStepFunc(stepMethodologyID, BuildMethodologyStep(a)),
+			workflow.NewStepFunc(stepWelcomeID, wrap(BuildWelcomeStep(a))),
+			workflow.NewStepFunc(stepGoalID, wrap(BuildGoalStep(a))),
+			workflow.NewStepFunc(stepIncomeID, wrap(BuildIncomeStep(a))),
+			workflow.NewStepFunc(stepCardsID, wrap(BuildCardsStep(a, cards))),
+			workflow.NewStepFunc(stepMethodologyID, wrap(BuildMethodologyStep(a))),
 			workflow.NewStepFunc(stepDistributionID, BuildDistributionStep(budgets)),
-			workflow.NewStepFunc(stepSummaryID, BuildSummaryStep(a)),
-			workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(a, budgets, workingMem)),
+			workflow.NewStepFunc(stepSummaryID, wrap(BuildSummaryStep(a))),
+			workflow.NewStepFunc(stepConclusionID, wrap(BuildConclusionStep(a, budgets, workingMem))),
 		),
 		Durable:     true,
 		MaxAttempts: 3,

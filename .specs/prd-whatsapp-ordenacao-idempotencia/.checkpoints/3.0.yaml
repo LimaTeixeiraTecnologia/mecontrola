@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-whatsapp-ordenacao-idempotencia/3.0_execution_report.md
+summary: "ExtractMessages + ParseEpochTimestamp implementados; dispatcher itera N mensagens; OccurredAt = timestamp Meta com fallback; 245 testes passando"
+timestamp: "2026-07-02T00:00:00Z"

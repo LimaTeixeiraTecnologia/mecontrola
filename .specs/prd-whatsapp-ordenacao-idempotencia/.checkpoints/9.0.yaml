@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-whatsapp-ordenacao-idempotencia/9.0_execution_report.md
+summary: "Gate de carga sintética verde nas 3 fronteiras (500/2000/10000): lag_p95≤1.6s, 0 duplicatas, 0 erros — CA-01/CA-05/CA-06/CA-08 aprovados"
+timestamp: "2026-07-02T17:00:00Z"

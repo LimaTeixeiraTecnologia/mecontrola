@@ -323,6 +323,68 @@ func (s *RuntimeTestSuite) TestExecute_InjectsRecentHistoryIntoMessages() {
 	s.Equal("nova pergunta", ag.captured.Messages[3].Content)
 }
 
+func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_Routed() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{id: "agent-1", instructions: "instr", result: Result{Content: "ok", Mode: ExecutionModeSync}})
+
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		s.obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, outcome.Status)
+	s.Equal(ToolOutcomeRouted, outcome.Outcome)
+	s.Equal("ok", outcome.Content)
+}
+
+func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_UsecaseErrorOnEmptyContent() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{id: "agent-1", instructions: "instr", result: Result{Content: "", Mode: ExecutionModeSync}})
+
+	runs := &fakeRunStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		s.obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusFailed, outcome.Status)
+	s.Equal(ToolOutcomeUsecaseError, outcome.Outcome)
+	s.Empty(outcome.Content)
+	s.Require().Len(runs.updated, 1)
+	s.Equal(RunStatusFailed, runs.updated[0].Status)
+	s.Equal(ToolOutcomeUsecaseError, runs.updated[0].Outcome)
+}
+
 type capturingMessageStore struct {
 	recent        []memory.Message
 	capturedLimit int
