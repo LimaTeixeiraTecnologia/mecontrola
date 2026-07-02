@@ -26,9 +26,10 @@ type Request struct {
 }
 
 type Result struct {
-	Content string
-	RawJSON []byte
-	Mode    ExecutionMode
+	Content           string
+	RawJSON           []byte
+	Mode              ExecutionMode
+	TruncatedByLength bool
 }
 
 type InboundRequest struct {

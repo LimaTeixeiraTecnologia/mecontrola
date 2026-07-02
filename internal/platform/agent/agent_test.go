@@ -330,6 +330,46 @@ func (s *AgentTestSuite) TestExecute_DefaultMaxTokensPrecedence() {
 	}
 }
 
+func (s *AgentTestSuite) TestExecute_TruncatedByLengthPropagation() {
+	scenarios := []struct {
+		name              string
+		response          llm.Response
+		expectedTruncated bool
+	}{
+		{
+			name:              "deve propagar truncated by length true sem erro",
+			response:          llm.Response{Content: "resposta cortada no mei", TruncatedByLength: true},
+			expectedTruncated: true,
+		},
+		{
+			name:              "deve manter truncated by length false quando resposta completa",
+			response:          llm.Response{Content: "resposta completa"},
+			expectedTruncated: false,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := llmmocks.NewProvider(s.T())
+			provider.EXPECT().
+				Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+				Return(scenario.response, nil).
+				Once()
+
+			a := NewAgent("agent-1", "instr", provider, s.obs)
+
+			result, err := a.Execute(s.ctx, Request{
+				AgentID:  "agent-1",
+				Messages: []llm.Message{{Role: "user", Content: "hi"}},
+			})
+
+			s.NoError(err)
+			s.Equal(scenario.response.Content, result.Content)
+			s.Equal(scenario.expectedTruncated, result.TruncatedByLength)
+		})
+	}
+}
+
 func (s *AgentTestSuite) TestStream_DefaultMaxTokensPrecedence() {
 	scenarios := []struct {
 		name              string

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -12,6 +13,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	llmmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/formatting"
 )
 
 type MecontrolaAgentBuilderSuite struct {
@@ -144,4 +146,55 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensA
 
 	s.NoError(err)
 	s.Equal("ok", result.Content)
+}
+
+func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensCoversOnboardingResponse() {
+	s.GreaterOrEqual(mecontrolaAgentDefaultMaxTokens, 1536)
+}
+
+func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_OnboardingSummaryNotTruncatedWithEmojis() {
+	fullResponse := "1. *Custo Fixo*: 💰 Esta categoria abrange todas as despesas que você tem todo mês e que não podem ser evitadas, como aluguel, contas de luz, água e internet.\n\n" +
+		"2. *Conhecimento*: 💡 Aqui você destina uma parte do seu orçamento para investir em sua educação e desenvolvimento pessoal, como cursos, livros e workshops.\n\n" +
+		"3. *Prazeres*: Esta categoria é dedicada ao seu bem-estar e lazer, como sair para jantar, viajar ou praticar hobbies.\n\n" +
+		"4. *Metas*: 🎯 Nesta categoria você define um percentual do seu orçamento para alcançar objetivos financeiros específicos, garantindo que você está progredindo.\n\n" +
+		"5. *Liberdade Financeira*: Aqui você constrói seu patrimônio e caminha para a independência financeira.\n\n" +
+		"*Resumo do Onboarding:*\n" +
+		"- *Renda Mensal:* R$8.000,00\n" +
+		"- *Distribuição de Despesas:*\n" +
+		"  - Conhecimento: 20%\n" +
+		"  - Custo Fixo: 30%\n" +
+		"  - Liberdade Financeira: 20%\n" +
+		"  - Metas: 10%\n" +
+		"  - Prazeres: 20%\n\n" +
+		"Por favor, confirme se deseja ativar o orçamento com as informações acima."
+
+	provider := llmmocks.NewProvider(s.T())
+	provider.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Run(func(_ context.Context, req llm.Request) {
+			s.GreaterOrEqual(req.MaxTokens, 1536)
+		}).
+		Return(llm.Response{Content: fullResponse}, nil).
+		Once()
+
+	obs := fake.NewProvider()
+	a := BuildMeControlaAgent(provider, nil, nil, obs)
+
+	result, err := a.Execute(s.ctx, agent.Request{
+		AgentID:  MecontrolaAgentID,
+		Messages: []llm.Message{{Role: "user", Content: "quero configurar meu orçamento"}},
+	})
+
+	s.NoError(err)
+	s.False(result.TruncatedByLength)
+
+	normalized := formatting.NormalizeOutboundText(result.Content)
+
+	s.NotContains(normalized, "**")
+	s.Contains(normalized, "📊")
+	s.True(strings.Contains(normalized, "✅") || strings.Contains(normalized, "🎯"))
+	for _, category := range []string{"*Custo Fixo*", "*Conhecimento*", "*Prazeres*", "*Metas*", "*Liberdade Financeira*"} {
+		s.Contains(normalized, category)
+	}
+	s.Contains(normalized, "✅ Por favor, confirme")
 }

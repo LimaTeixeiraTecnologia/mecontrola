@@ -1240,7 +1240,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("OPENROUTER_BASE_URL", "https://openrouter.ai")
 	l.v.SetDefault("AGENT_LLM_PRIMARY_MODEL", "openai/gpt-4o-mini")
 	l.v.SetDefault("AGENT_LLM_EMBED_MODEL", "openai/text-embedding-3-small")
-	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 768)
+	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 1536)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
 	l.v.SetDefault("AGENT_WRITE_ADVISORY_LOCK", true)
 }

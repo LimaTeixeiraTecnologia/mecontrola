@@ -10,13 +10,16 @@ func NormalizeOutboundText(text string) string {
 }
 
 func addOnboardingSummaryEmoji(text string) string {
-	if !strings.Contains(text, "Resumo de Onboarding") {
-		return text
+	for _, marker := range []string{"Resumo de Onboarding", "Resumo do Onboarding"} {
+		if !strings.Contains(text, marker) {
+			continue
+		}
+		if strings.Contains(text, "📊 "+marker) {
+			return text
+		}
+		return strings.Replace(text, marker, "📊 "+marker, 1)
 	}
-	if strings.Contains(text, "📊 Resumo de Onboarding") {
-		return text
-	}
-	return strings.Replace(text, "Resumo de Onboarding", "📊 Resumo de Onboarding", 1)
+	return text
 }
 
 func addBudgetConfirmationEmoji(text string) string {

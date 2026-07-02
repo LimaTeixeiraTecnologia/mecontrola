@@ -10,7 +10,7 @@ import (
 
 const (
 	MecontrolaAgentID               = "mecontrola-agent"
-	mecontrolaAgentDefaultMaxTokens = 768
+	mecontrolaAgentDefaultMaxTokens = 1536
 
 	mecontrolaAgentInstructions = `REGRA ABSOLUTA DE IDIOMA: responda SEMPRE e EXCLUSIVAMENTE em português do Brasil, sem nenhuma exceção. Nunca responda em inglês ou qualquer outro idioma, mesmo que o usuário escreva em outro idioma.
 

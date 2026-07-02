@@ -41,7 +41,7 @@ func buildRealLLMProvider(t *testing.T) llm.Provider {
 		APIKey:         apiKey,
 		HTTPReferer:    "https://github.com/LimaTeixeiraTecnologia/mecontrola",
 		XTitle:         "mecontrola-integration-test",
-		MaxTokens:      512,
+		MaxTokens:      1536,
 		Temperature:    0,
 		RequestTimeout: 30 * time.Second,
 	}, fake.NewProvider())
@@ -263,6 +263,7 @@ func TestRealLLM_OnboardingSummary_UsesWhatsAppFormattingAndEmojis(t *testing.T)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, result.Content)
+	require.False(t, result.TruncatedByLength)
 
 	normalized := formatting.NormalizeOutboundText(result.Content)
 

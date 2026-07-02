@@ -131,9 +131,17 @@ func (a *agentImpl) Execute(ctx context.Context, in Request) (Result, error) {
 	}
 
 	result := Result{
-		Content: resp.Content,
-		RawJSON: resp.RawJSON,
-		Mode:    ExecutionModeSync,
+		Content:           resp.Content,
+		RawJSON:           resp.RawJSON,
+		Mode:              ExecutionModeSync,
+		TruncatedByLength: resp.TruncatedByLength,
+	}
+
+	if resp.TruncatedByLength {
+		span.SetAttributes(observability.Bool("truncated_by_length", true))
+		a.o11y.Logger().Warn(ctx, "agent.execute.truncated_by_length",
+			observability.String("agent_id", a.id),
+		)
 	}
 
 	a.hooks.AfterExecute(ctx, a.id, result, nil)
