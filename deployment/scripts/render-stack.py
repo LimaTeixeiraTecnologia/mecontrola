@@ -45,6 +45,38 @@ def parse_env_file(path: str) -> dict[str, str]:
     return values
 
 
+def remove_empty_secrets(doc: dict, secrets_env: dict[str, str]) -> dict:
+    empty_keys = {name for name, value in secrets_env.items() if value == ""}
+    if not empty_keys:
+        return doc
+
+    stack = doc.get("secrets", {})
+    removed_stack_secrets: set[str] = set()
+    for secret_name in list(stack.keys()):
+        for empty_key in empty_keys:
+            if secret_name.endswith(f"_{empty_key}"):
+                del stack[secret_name]
+                removed_stack_secrets.add(secret_name)
+                break
+
+    if not removed_stack_secrets:
+        return doc
+
+    for svc in doc.get("services", {}).values():
+        svc_secrets = svc.get("secrets", [])
+        svc["secrets"] = [
+            s for s in svc_secrets
+            if not (
+                (isinstance(s, dict) and s.get("source") in removed_stack_secrets)
+                or (isinstance(s, str) and s in removed_stack_secrets)
+            )
+        ]
+        if not svc["secrets"]:
+            del svc["secrets"]
+
+    return doc
+
+
 def normalize_stack(doc: dict) -> dict:
     doc.pop("name", None)
 
@@ -85,8 +117,10 @@ def main() -> int:
         compose_args.extend(["--env-file", args.env_file])
         env.update(parse_env_file(args.env_file))
 
+    secrets_env: dict[str, str] = {}
     if args.secrets_env_file:
-        env.update(parse_env_file(args.secrets_env_file))
+        secrets_env = parse_env_file(args.secrets_env_file)
+        env.update(secrets_env)
 
     compose_args.append("config")
 
@@ -102,6 +136,7 @@ def main() -> int:
         return result.returncode
 
     rendered = yaml.safe_load(result.stdout)
+    rendered = remove_empty_secrets(rendered, secrets_env)
     normalized = normalize_stack(rendered)
     yaml.safe_dump(normalized, sys.stdout, default_flow_style=False, sort_keys=False)
     return 0
