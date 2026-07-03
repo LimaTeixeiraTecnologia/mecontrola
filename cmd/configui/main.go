@@ -34,14 +34,39 @@ type settings struct {
 	RepoDir      string
 	ListenAddr   string
 	PasswordHash string
+	AgeKeyFile   string
 }
 
 func loadSettings() settings {
-	return settings{
+	s := settings{
 		RepoDir:      cmp.Or(os.Getenv("CONFIG_UI_REPO_DIR"), "."),          //nolint:forbidigo // bootstrap de cmd entrypoint
 		ListenAddr:   cmp.Or(os.Getenv("CONFIG_UI_ADDR"), "127.0.0.1:8080"), //nolint:forbidigo // bootstrap de cmd entrypoint
 		PasswordHash: os.Getenv("CONFIG_UI_PASSWORD_HASH"),                  //nolint:forbidigo // bootstrap de cmd entrypoint
 	}
+	s.AgeKeyFile = resolveAgeKeyFile(s.RepoDir)
+	return s
+}
+
+func resolveAgeKeyFile(repoDir string) string {
+	if p := os.Getenv("SOPS_AGE_KEY_FILE"); p != "" { //nolint:forbidigo // bootstrap de cmd entrypoint
+		return p
+	}
+
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(repoDir, "key.txt"),
+		filepath.Join(repoDir, ".sops", "age", "key.txt"),
+	}
+	if home != "" {
+		candidates = append(candidates, filepath.Join(home, ".config", "sops", "age", "key.txt"))
+	}
+
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
 }
 
 type envLine interface {
@@ -161,16 +186,18 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	secretsEntries, secretsErr := loadSecrets()
 
 	data := struct {
-		Config       []viewRow
-		Secrets      []viewRow
-		ConfigError  string
-		SecretsError string
-		SaveMessage  string
-		SaveError    string
+		Config        []viewRow
+		Secrets       []viewRow
+		ConfigError   string
+		SecretsError  string
+		SaveMessage   string
+		SaveError     string
+		AgeKeyMissing bool
 	}{
-		Config:      toViewRows(configEntries),
-		Secrets:     toViewRows(secretsEntries),
-		ConfigError: errMsg(configErr),
+		Config:        toViewRows(configEntries),
+		Secrets:       toViewRows(secretsEntries),
+		ConfigError:   errMsg(configErr),
+		AgeKeyMissing: !ageKeyConfigured() && cfg.AgeKeyFile == "",
 	}
 
 	if secretsErr != nil {
@@ -263,9 +290,24 @@ func loadSecrets() ([]envLine, error) {
 	return parseEnv(out)
 }
 
+func ageKeyConfigured() bool {
+	for _, key := range []string{"SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_CMD", "SOPS_AGE_SSH_PRIVATE_KEY_FILE", "SOPS_AGE_SSH_PRIVATE_KEY_CMD"} {
+		if os.Getenv(key) != "" { //nolint:forbidigo // bootstrap de cmd entrypoint
+			return true
+		}
+	}
+	return false
+}
+
 func runSOPS(args ...string) (string, error) {
 	cmd := exec.Command("sops", args...)
 	cmd.Dir = cfg.RepoDir
+	cmd.Env = os.Environ()
+
+	if !ageKeyConfigured() && cfg.AgeKeyFile != "" {
+		cmd.Env = append(cmd.Env, "SOPS_AGE_KEY_FILE="+cfg.AgeKeyFile)
+	}
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
@@ -482,8 +524,9 @@ const defaultTemplate = `<!doctype html>
 
     {{if .SaveMessage}}<div class="mb-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 text-emerald-300 text-sm">{{.SaveMessage}}</div>{{end}}
     {{if .SaveError}}<div class="mb-6 rounded-lg bg-rose-500/10 border border-rose-500/20 p-4 text-rose-300 text-sm">{{.SaveError}}</div>{{end}}
+    {{if .AgeKeyMissing}}<div class="mb-6 rounded-lg bg-amber-500/10 border border-amber-500/20 p-4 text-amber-300 text-sm">Chave age não encontrada. Coloque <code>key.txt</code> na raiz do repositório ou defina <code>SOPS_AGE_KEY_FILE</code>.</div>{{end}}
 
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <div class="flex flex-col gap-6">
       <!-- Config -->
       <section class="rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
         <div class="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -555,7 +598,10 @@ const defaultTemplate = `<!doctype html>
             <input type="text" data-filter="secrets" placeholder="Buscar chave..." class="w-full sm:w-56 rounded-md bg-slate-950 border border-slate-700 px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
           </div>
         </div>
-        {{if .SecretsError}}<div class="mx-5 mt-5 rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 text-rose-300 text-sm">{{.SecretsError}}</div>{{end}}
+        {{if .SecretsError}}
+        <div class="mx-5 mt-5 rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 text-rose-300 text-sm">{{.SecretsError}}</div>
+        <div class="mx-5 mt-2 text-xs text-slate-500">Dica: coloque <code>key.txt</code> na raiz do repositório ou defina <code>SOPS_AGE_KEY_FILE</code>.</div>
+        {{end}}
         <form method="post" action="/save-secrets" class="p-5">
           <div class="overflow-x-auto rounded-lg border border-slate-800">
             <table class="w-full text-sm">
