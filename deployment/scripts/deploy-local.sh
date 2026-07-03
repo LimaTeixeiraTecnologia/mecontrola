@@ -130,7 +130,7 @@ fi
 
 echo "[vps] migrate via docker run --rm"
 trap 'rm -f /tmp/mecontrola-migrate.env.$$' EXIT
-grep '^DB_PASSWORD=' "$REMOTE_SECRETS_ENV" > /tmp/mecontrola-migrate.env.$$
+cat "$REMOTE_SECRETS_ENV" > /tmp/mecontrola-migrate.env.$$
 cat "$REMOTE_PROD_ENV" >> /tmp/mecontrola-migrate.env.$$
 docker run --rm \
   --network "${STACK}_backend" \

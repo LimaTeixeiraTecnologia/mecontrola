@@ -121,7 +121,7 @@ trap 'rm -f /tmp/mecontrola-migrate.env.$$' EXIT
 secrets_path='$REMOTE_SECRETS_ENV'
 prod_path='$REMOTE_PROD_ENV'
 migrate_env='/tmp/mecontrola-migrate.env.$$'
-grep '^DB_PASSWORD=' \"\$secrets_path\" > \"\$migrate_env\"
+cat \"\$secrets_path\" > \"\$migrate_env\"
 cat \"\$prod_path\" >> \"\$migrate_env\"
 docker run --rm \\
   --network ${STACK}_backend \\
