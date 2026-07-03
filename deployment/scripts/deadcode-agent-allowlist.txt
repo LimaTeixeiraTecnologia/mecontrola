@@ -1,12 +1,10 @@
-# Allowlist de simbolos intencionalmente preservados para o gate RF-40 (deadcode em internal/agents).
-# Formato: <arquivo>:<simbolo>  (um por linha). Vazia apos o cutover (ADR-004) que eliminou o modulo legado;
-# adicione entradas apenas para simbolos do consumidor internal/agents mantidos por simetria de API
-# (closed-type Parse*/String*), satisfacao de interface via registry, ou feature ainda nao 100% wired.
-internal/agents/domain/forecast.go:NewForecast
-internal/agents/domain/weather_condition.go:ParseWeatherCondition
-internal/agents/infrastructure/weather/client.go:WithHTTPClient
-internal/agents/infrastructure/weather/client.go:WithGeocodingBase
-internal/agents/infrastructure/weather/client.go:WithForecastBase
+# Simbolos em internal/agents intencionalmente preservados.
+# expectedToolScorer: scorer de validacao de tool calls ainda nao 100% wired no registry.
+internal/agents/application/scorers/mecontrola_scorers.go:expectedToolScorer.ID
+internal/agents/application/scorers/mecontrola_scorers.go:expectedToolScorer.Kind
+internal/agents/application/scorers/mecontrola_scorers.go:expectedToolScorer.Score
+internal/agents/application/scorers/mecontrola_scorers.go:NewExpectedToolScorer
+# Parse* functions: smart constructors de tipos fechados (DMMF) mantidos por simetria de API.
 internal/agents/application/workflows/confirm_state.go:ParseAwaitingKind
 internal/agents/application/workflows/confirm_state.go:ParseOperationKind
 internal/agents/application/workflows/onboarding_workflow.go:ParseOnboardingPhase
