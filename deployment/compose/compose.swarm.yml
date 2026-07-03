@@ -560,7 +560,7 @@ services:
     command: TCP-LISTEN:5432,fork,reuseaddr TCP:postgres:5432
     ports:
       - target: 5432
-        published: "127.0.0.1:15432"
+        published: 15432
         protocol: tcp
         mode: host
     networks:

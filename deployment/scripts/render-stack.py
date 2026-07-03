@@ -109,8 +109,7 @@ def normalize_stack(doc: dict) -> dict:
 
         for port in svc.get("ports", []):
             if isinstance(port, dict) and "published" in port:
-                v = str(port["published"])
-                port["published"] = v if ":" in v else int(v)
+                port["published"] = int(str(port["published"]).rsplit(":", 1)[-1])
 
     return doc
 
