@@ -9,7 +9,8 @@ version: "3.8"
 # Requisitos:
 #   - Docker Swarm inicializado no host de deploy.
 #   - Imagem da aplicação já publicada com tag imutável em IMAGE_TAG.
-#   - Arquivo .env presente na raiz do repositório (resolvido via ../../.env).
+#   - Arquivo deployment/config/prod.env presente no repositório (não contém secrets).
+#   - Secrets criptografados em deployment/config/prod.secrets.env (SOPS + age).
 #   - Para pgBackRest/PITR, usar POSTGRES_IMAGE=mecontrola-postgres:<tag>.
 #
 # Observação sobre ordem de startup:
@@ -17,6 +18,15 @@ version: "3.8"
 #   determinística (postgres → pgbouncer → migrate → server/worker → caddy)
 #   é garantida pelos healthchecks e pelas políticas de restart: services
 #   downstream falham e são reiniciados até os upstreams ficarem saudáveis.
+#
+# Segurança:
+#   - Secrets da aplicação (server/worker/migrate) são montados via docker secret
+#     em /run/secrets/<NOME> e lidos pelo código Go em produção.
+#   - Não há .env na VPS. O CI descriptografa prod.secrets.env no runner efêmero,
+#     cria/atualiza os docker secrets e renderiza o stack.
+#   - Serviços de infra (postgres, pgbouncer, otel-lgtm) recebem secrets via
+#     variáveis de ambiente injetadas pelo CI durante o render — esses containers
+#     não suportam /run/secrets nativamente sem imagem customizada.
 
 x-default-logging: &default-logging
   driver: json-file
@@ -38,6 +48,7 @@ x-default-deploy: &default-deploy
     max_attempts: 3
     window: 120s
 
+# Secrets disponibilizados para server/worker/migrate via /run/secrets/<NOME>.
 x-app-secrets: &app-secrets
   - source: mecontrola_DB_PASSWORD
     target: DB_PASSWORD
@@ -48,11 +59,26 @@ x-app-secrets: &app-secrets
   - source: mecontrola_META_APP_SECRET
     target: META_APP_SECRET
     mode: 0440
-  - source: mecontrola_KIWIFY_WEBHOOK_SECRET
-    target: KIWIFY_WEBHOOK_SECRET
+  - source: mecontrola_META_APP_SECRET_NEXT
+    target: META_APP_SECRET_NEXT
+    mode: 0440
+  - source: mecontrola_META_VERIFY_TOKEN
+    target: META_VERIFY_TOKEN
+    mode: 0440
+  - source: mecontrola_KIWIFY_CLIENT_ID
+    target: KIWIFY_CLIENT_ID
     mode: 0440
   - source: mecontrola_KIWIFY_CLIENT_SECRET
     target: KIWIFY_CLIENT_SECRET
+    mode: 0440
+  - source: mecontrola_KIWIFY_ACCOUNT_ID
+    target: KIWIFY_ACCOUNT_ID
+    mode: 0440
+  - source: mecontrola_KIWIFY_WEBHOOK_SECRET
+    target: KIWIFY_WEBHOOK_SECRET
+    mode: 0440
+  - source: mecontrola_KIWIFY_WEBHOOK_SECRET_NEXT
+    target: KIWIFY_WEBHOOK_SECRET_NEXT
     mode: 0440
   - source: mecontrola_OPENROUTER_API_KEY
     target: OPENROUTER_API_KEY
@@ -66,19 +92,35 @@ x-app-secrets: &app-secrets
   - source: mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_NEXT
     target: IDENTITY_GATEWAY_SHARED_SECRET_NEXT
     mode: 0440
+  - source: mecontrola_SMTP_USERNAME
+    target: SMTP_USERNAME
+    mode: 0440
+  - source: mecontrola_SMTP_PASSWORD
+    target: SMTP_PASSWORD
+    mode: 0440
+  - source: mecontrola_RESEND_API_KEY
+    target: RESEND_API_KEY
+    mode: 0440
+  - source: mecontrola_META_PHONE_NUMBER_ID
+    target: META_PHONE_NUMBER_ID
+    mode: 0440
+  - source: mecontrola_KIWIFY_PRODUCT_ID_MONTHLY
+    target: KIWIFY_PRODUCT_ID_MONTHLY
+    mode: 0440
+  - source: mecontrola_KIWIFY_PRODUCT_ID_QUARTERLY
+    target: KIWIFY_PRODUCT_ID_QUARTERLY
+    mode: 0440
+  - source: mecontrola_KIWIFY_PRODUCT_ID_ANNUAL
+    target: KIWIFY_PRODUCT_ID_ANNUAL
+    mode: 0440
 
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    env_file: ../config/prod.env
     environment:
-      POSTGRES_USER: ${DB_USER:-mecontrola}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      POSTGRES_DB: ${DB_NAME:-mecontrola_db}
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
-      PGBACKREST_REPO1_S3_ENDPOINT: ${PGBACKREST_S3_ENDPOINT:-}
-      PGBACKREST_REPO1_S3_BUCKET: ${PGBACKREST_S3_BUCKET:-}
-      PGBACKREST_REPO1_S3_REGION: ${PGBACKREST_S3_REGION:-us-east-1}
       PGBACKREST_REPO1_S3_KEY: ${PGBACKREST_S3_KEY:-}
       PGBACKREST_REPO1_S3_KEY_SECRET: ${PGBACKREST_S3_KEY_SECRET:-}
       PGBACKREST_REPO1_CIPHER_PASS: ${PGBACKREST_REPO1_CIPHER_PASS:-}
@@ -107,11 +149,10 @@ services:
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.25.2-p0
+    env_file: ../config/prod.env
     environment:
       DB_HOST: postgres
-      DB_USER: ${DB_USER:-mecontrola}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      DB_NAME: ${DB_NAME:-mecontrola_db}
       AUTH_TYPE: scram-sha-256
       LISTEN_PORT: "6432"
       POOL_MODE: transaction
@@ -149,6 +190,7 @@ services:
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
+    env_file: ../config/prod.env
     environment:
       DATA_SOURCE_NAME: "postgresql://${DB_USER:-mecontrola}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/${DB_NAME:-mecontrola_db}?sslmode=disable"
     networks:
@@ -205,7 +247,7 @@ services:
   migrate:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     command: ["migrate"]
-    env_file: ../../.env
+    env_file: ../config/prod.env
     environment:
       ENVIRONMENT: production
       DB_HOST: postgres
@@ -243,7 +285,7 @@ services:
   server-1:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     command: ["server"]
-    env_file: ../../.env
+    env_file: ../config/prod.env
     environment:
       APP_MODE: server
       ENVIRONMENT: production
@@ -290,7 +332,7 @@ services:
   server-2:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     command: ["server"]
-    env_file: ../../.env
+    env_file: ../config/prod.env
     environment:
       APP_MODE: server
       ENVIRONMENT: production
@@ -328,7 +370,7 @@ services:
     logging: *default-logging
     read_only: true
     tmpfs:
-      - /tmp:mode=1777,size=64m
+      - /tmp:mode=1777,size:64m
     user: "65532:65532"
     cap_drop:
       - ALL
@@ -337,7 +379,7 @@ services:
   worker-1:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     command: ["worker"]
-    env_file: ../../.env
+    env_file: ../config/prod.env
     environment:
       APP_MODE: worker
       ENVIRONMENT: production
@@ -374,7 +416,7 @@ services:
     logging: *default-logging
     read_only: true
     tmpfs:
-      - /tmp:mode=1777,size=64m
+      - /tmp:mode=1777,size:64m
     user: "65532:65532"
     cap_drop:
       - ALL
@@ -383,7 +425,7 @@ services:
   worker-2:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
     command: ["worker"]
-    env_file: ../../.env
+    env_file: ../config/prod.env
     environment:
       APP_MODE: worker
       ENVIRONMENT: production
@@ -420,7 +462,7 @@ services:
     logging: *default-logging
     read_only: true
     tmpfs:
-      - /tmp:mode=1777,size=64m
+      - /tmp:mode=1777,size:64m
     user: "65532:65532"
     cap_drop:
       - ALL
@@ -428,7 +470,7 @@ services:
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
-    env_file: ../../.env
+    env_file: ../config/prod.env
     ports:
       - target: 80
         published: 80
@@ -468,9 +510,9 @@ services:
 
   otel-lgtm:
     image: grafana/otel-lgtm:0.7.5
+    env_file: ../config/prod.env
     environment:
-      GF_SECURITY_ADMIN_USER: ${OTEL_LGTM_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${OTEL_LGTM_ADMIN_PASSWORD:?OTEL_LGTM_ADMIN_PASSWORD is required in production}
+      OTEL_LGTM_ADMIN_PASSWORD: ${OTEL_LGTM_ADMIN_PASSWORD:?OTEL_LGTM_ADMIN_PASSWORD is required in production}
       ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
       ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
     ports:
@@ -560,9 +602,19 @@ secrets:
     external: true
   mecontrola_META_APP_SECRET:
     external: true
-  mecontrola_KIWIFY_WEBHOOK_SECRET:
+  mecontrola_META_APP_SECRET_NEXT:
+    external: true
+  mecontrola_META_VERIFY_TOKEN:
+    external: true
+  mecontrola_KIWIFY_CLIENT_ID:
     external: true
   mecontrola_KIWIFY_CLIENT_SECRET:
+    external: true
+  mecontrola_KIWIFY_ACCOUNT_ID:
+    external: true
+  mecontrola_KIWIFY_WEBHOOK_SECRET:
+    external: true
+  mecontrola_KIWIFY_WEBHOOK_SECRET_NEXT:
     external: true
   mecontrola_OPENROUTER_API_KEY:
     external: true
@@ -571,6 +623,20 @@ secrets:
   mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_CURRENT:
     external: true
   mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_NEXT:
+    external: true
+  mecontrola_SMTP_USERNAME:
+    external: true
+  mecontrola_SMTP_PASSWORD:
+    external: true
+  mecontrola_RESEND_API_KEY:
+    external: true
+  mecontrola_META_PHONE_NUMBER_ID:
+    external: true
+  mecontrola_KIWIFY_PRODUCT_ID_MONTHLY:
+    external: true
+  mecontrola_KIWIFY_PRODUCT_ID_QUARTERLY:
+    external: true
+  mecontrola_KIWIFY_PRODUCT_ID_ANNUAL:
     external: true
 
 volumes:

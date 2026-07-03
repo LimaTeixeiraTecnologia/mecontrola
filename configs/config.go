@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -382,6 +384,7 @@ func (l *configLoader) load() (*Config, error) {
 	l.setEmailDefaults()
 	l.setAuthRateLimitDefaults()
 	l.setWorkflowKernelDefaults()
+	l.loadSecretsFromFiles()
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -558,6 +561,60 @@ func (l *configLoader) envKeys() []string {
 		"WORKFLOW_KERNEL_HOUSEKEEPING_RETENTION_DAYS",
 		"WORKFLOW_KERNEL_HOUSEKEEPING_SCHEDULE",
 		"WORKFLOW_KERNEL_HOUSEKEEPING_BATCH_SIZE",
+	}
+}
+
+func (l *configLoader) secretEnvKeys() []string {
+	return []string{
+		"DB_PASSWORD",
+		"META_ACCESS_TOKEN",
+		"META_APP_SECRET",
+		"META_APP_SECRET_NEXT",
+		"META_VERIFY_TOKEN",
+		"KIWIFY_CLIENT_ID",
+		"KIWIFY_CLIENT_SECRET",
+		"KIWIFY_ACCOUNT_ID",
+		"KIWIFY_WEBHOOK_SECRET",
+		"KIWIFY_WEBHOOK_SECRET_NEXT",
+		"KIWIFY_PRODUCT_ID_MONTHLY",
+		"KIWIFY_PRODUCT_ID_QUARTERLY",
+		"KIWIFY_PRODUCT_ID_ANNUAL",
+		"OPENROUTER_API_KEY",
+		"ONBOARDING_TOKEN_ENCRYPTION_KEY",
+		"META_PHONE_NUMBER_ID",
+		"IDENTITY_GATEWAY_SHARED_SECRET_CURRENT",
+		"IDENTITY_GATEWAY_SHARED_SECRET_NEXT",
+		"SMTP_USERNAME",
+		"SMTP_PASSWORD",
+		"RESEND_API_KEY",
+	}
+}
+
+func (l *configLoader) secretsPath() string {
+	if p := l.v.GetString("MECONTROLA_SECRETS_PATH"); p != "" {
+		return p
+	}
+	return "/run/secrets"
+}
+
+func (l *configLoader) loadSecretsFromFiles() {
+	if l.v.GetString("ENVIRONMENT") != "production" {
+		return
+	}
+
+	base := l.secretsPath()
+	for _, key := range l.secretEnvKeys() {
+		if l.v.GetString(key) != "" {
+			continue
+		}
+
+		path := filepath.Join(base, key)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		l.v.Set(key, strings.TrimSpace(string(data)))
 	}
 }
 

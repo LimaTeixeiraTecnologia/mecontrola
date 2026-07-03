@@ -2,7 +2,9 @@
 version: '3'
 
 # Operacoes Docker Swarm single-node para dev local e producao.
-# Comandos de producao leem credenciais de .env e usam ssh-agent para acesso a VPS.
+# Comandos de producao leem credenciais de deployment/config/prod.secrets.env
+# (descriptografado com sops/age) e usam ssh-agent para acesso a VPS.
+# NAO ha mais .env persistente na VPS.
 
 vars:
   COMPOSE_SWARM: deployment/compose/compose.swarm.yml
@@ -11,6 +13,14 @@ vars:
   VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
   VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
   VPS_DEPLOY_PATH: '{{.VPS_DEPLOY_PATH | default (env "VPS_DEPLOY_PATH") | default "/opt/mecontrola"}}'
+  SECRETS_ENV_FILE: '{{.SECRETS_ENV_FILE | default (env "SECRETS_ENV_FILE") | default "/tmp/mecontrola-secrets.env"}}'
+
+  _CHECK_SECRETS_FILE: |
+    if [ ! -f "{{.SECRETS_ENV_FILE}}" ]; then
+      echo "ERRO: SECRETS_ENV_FILE nao encontrado: {{.SECRETS_ENV_FILE}}"
+      echo "Descriptografe os secrets com: sops --decrypt deployment/config/prod.secrets.env > {{.SECRETS_ENV_FILE}}"
+      exit 1
+    fi
 
 tasks:
   local:config:
@@ -48,7 +58,7 @@ tasks:
       - docker stack rm {{.STACK_NAME}}
 
   prod:sync:
-    desc: Sincroniza codigo local para a VPS de producao (preserva .env).
+    desc: Sincroniza codigo local para a VPS de producao.
     cmds:
       - |
         rsync -avz --delete \
@@ -63,42 +73,67 @@ tasks:
       - echo "Codigo sincronizado para {{.VPS_USER}}@{{.VPS_HOST}}:{{.VPS_DEPLOY_PATH}}"
 
   prod:backup-env:
-    desc: Faz backup do .env da VPS para o S3.
+    desc: Faz backup dos arquivos de configuracao versionados para o S3.
     cmds:
-      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && bash deployment/scripts/backup-env-s3.sh .env"
+      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && bash deployment/scripts/backup-env-s3.sh"
 
   prod:secrets:
-    desc: Cria/atualiza Docker secrets na VPS a partir do .env.
+    desc: Cria/atualiza Docker secrets na VPS a partir do arquivo de secrets descriptografado.
     cmds:
-      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && bash deployment/scripts/create-secrets.sh .env"
+      - |
+        {{._CHECK_SECRETS_FILE}}
+        scp {{.SECRETS_ENV_FILE}} {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-secrets.env
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && bash deployment/scripts/create-secrets.sh /tmp/mecontrola-secrets.env && rm -f /tmp/mecontrola-secrets.env"
 
   prod:migrate:
     desc: Executa migrations na VPS (advisory lock protege concorrencia).
     cmds:
       - |
-        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
-          docker run --rm --env-file .env --network mecontrola_backend \
-            -e DB_HOST=postgres \
-            -e DB_PORT=5432 \
-            -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 \
-            -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
-            -e OTEL_EXPORTER_OTLP_INSECURE=true \
-            ghcr.io/limateixeiratecnologia/mecontrola:{{.IMAGE_TAG | default \"latest\"}} \
-            migrate"
+        {{._CHECK_SECRETS_FILE}}
+        scp deployment/config/prod.env {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-prod.env
+        scp {{.SECRETS_ENV_FILE}} {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-secrets.env
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; trap 'rm -f /tmp/mecontrola-*.env' EXIT; cd {{.VPS_DEPLOY_PATH}}; grep '^DB_PASSWORD=' /tmp/mecontrola-secrets.env > /tmp/mecontrola-migrate.env; cat /tmp/mecontrola-prod.env >> /tmp/mecontrola-migrate.env; docker run --rm --env-file /tmp/mecontrola-migrate.env --network mecontrola_backend -e DB_HOST=postgres -e DB_PORT=5432 -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc -e OTEL_EXPORTER_OTLP_INSECURE=true ghcr.io/limateixeiratecnologia/mecontrola:{{.IMAGE_TAG | default \"latest\"}} migrate"
 
   prod:deploy:
     desc: Deploy Swarm na VPS de producao (sobrescreva IMAGE_TAG com tag real).
     cmds:
       - |
-        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
-          IMAGE_TAG={{.IMAGE_TAG | default \"latest\"}} bash deployment/scripts/deploy-swarm.sh {{.IMAGE_TAG | default \"latest\"}}"
+        {{._CHECK_SECRETS_FILE}}
+        bash deployment/scripts/deploy-swarm.sh "{{.IMAGE_TAG | default "latest"}}" "{{.SECRETS_ENV_FILE}}"
 
-  prod:rollback:
-    desc: Rollback manual para tag anterior na VPS (executa deploy-swarm.sh com rollback).
+  prod:deploy:full:
+    desc: Deploy completo na VPS — descriptografa secrets, atualiza config/Docker secrets, migrations, deploy e health checks.
     cmds:
       - |
-        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
-          bash deployment/scripts/deploy-swarm.sh --rollback"
+        if [ -z "${AGE_PRIVATE_KEY:-}${SOPS_AGE_KEY:-}${SOPS_AGE_KEY_FILE:-}" ]; then
+          echo "ERRO: defina AGE_PRIVATE_KEY, SOPS_AGE_KEY ou SOPS_AGE_KEY_FILE"
+          exit 1
+        fi
+        bash deployment/scripts/deploy-full.sh "{{.IMAGE_TAG | default "latest"}}"
+
+  prod:deploy:full:local:
+    desc: Deploy completo local -> VPS (build + transferencia direta) com descriptografia automatica de secrets.
+    cmds:
+      - |
+        if [ -z "${AGE_PRIVATE_KEY:-}${SOPS_AGE_KEY:-}${SOPS_AGE_KEY_FILE:-}" ]; then
+          echo "ERRO: defina AGE_PRIVATE_KEY, SOPS_AGE_KEY ou SOPS_AGE_KEY_FILE"
+          exit 1
+        fi
+        bash deployment/scripts/deploy-full.sh --local "{{.IMAGE_TAG | default (env "IMAGE_TAG") | default "local"}}"
+
+  prod:rollback:
+    desc: Rollback manual para tag anterior na VPS (defina PREVIOUS_TAG e SECRETS_ENV_FILE).
+    cmds:
+      - |
+        {{._CHECK_SECRETS_FILE}}
+        : "${PREVIOUS_TAG:?PREVIOUS_TAG obrigatorio}"
+        python3 deployment/scripts/render-stack.py \
+          deployment/compose/compose.swarm.yml \
+          --env-file deployment/config/prod.env \
+          --secrets-env-file "{{.SECRETS_ENV_FILE}}" \
+          > /tmp/mecontrola-stack-rollback.yml
+        IMAGE_TAG="$PREVIOUS_TAG" docker stack deploy -c /tmp/mecontrola-stack-rollback.yml mecontrola
+        rm -f /tmp/mecontrola-stack-rollback.yml
 
   prod:ps:
     desc: Lista servicos da stack Swarm na VPS.
@@ -120,23 +155,21 @@ tasks:
   prod:pgbackrest:info:
     desc: Exibe informacoes dos backups pgBackRest na VPS.
     cmds:
-      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
           su - postgres -c 'pgbackrest --stanza=mecontrola info'"
 
   prod:pgbackrest:check:
     desc: Verifica configuracao do pgBackRest na VPS.
     cmds:
-      - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker exec \$(docker ps -q -f name=mecontrola_postgres) \
           su - postgres -c 'pgbackrest --stanza=mecontrola check'"
 
   prod:alert:test:
     desc: Dispara alerta de teste no Telegram via Bot API (valida credenciais e entrega).
     cmds:
       - |
-        ssh {{.VPS_USER}}@{{.VPS_HOST}} "cd {{.VPS_DEPLOY_PATH}} && \
-          bash deployment/scripts/setup-grafana-alerts.sh .env && \
-          BOT_TOKEN=\$(grep '^ALERT_TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2) && \
-          CHAT_ID=\$(grep '^ALERT_TELEGRAM_CHAT_ID=' .env | cut -d= -f2) && \
-          curl -s -X POST \"https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\" \
-            -d \"chat_id=\${CHAT_ID}\" \
-            -d \"text=Teste de alerta MeControla - \$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
+        {{._CHECK_SECRETS_FILE}}
+        scp {{.SECRETS_ENV_FILE}} {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-secrets.env
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; trap 'rm -f /tmp/mecontrola-secrets.env' EXIT; cd {{.VPS_DEPLOY_PATH}}; bash deployment/scripts/setup-grafana-alerts.sh /tmp/mecontrola-secrets.env; BOT_TOKEN=\$(grep '^ALERT_TELEGRAM_BOT_TOKEN=' /tmp/mecontrola-secrets.env | cut -d= -f2); CHAT_ID=\$(grep '^ALERT_TELEGRAM_CHAT_ID=' /tmp/mecontrola-secrets.env | cut -d= -f2); curl -s -X POST \"https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\" -d \"chat_id=\${CHAT_ID}\" -d \"text=Teste de alerta MeControla - \$(date -u +%Y-%m-%dT%H:%M:%SZ)\""

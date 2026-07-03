@@ -2,6 +2,7 @@ package configs_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1901,4 +1902,38 @@ func (s *ConfigSuite) TestValidateWorkflowKernel() {
 			scenario.expect(err)
 		})
 	}
+}
+
+func (s *ConfigSuite) TestLoadConfigReadsSecretsFromFiles() {
+	path := s.T().TempDir()
+	secretsPath := filepath.Join(path, "secrets")
+	s.Require().NoError(os.MkdirAll(secretsPath, 0700))
+
+	s.T().Setenv("MECONTROLA_SECRETS_PATH", secretsPath)
+	s.T().Setenv("ENVIRONMENT", "production")
+	s.T().Setenv("PORT", "8080")
+	s.T().Setenv("DB_HOST", "db")
+	s.T().Setenv("DB_PORT", "5432")
+	s.T().Setenv("DB_USER", "mecontrola")
+	s.T().Setenv("DB_NAME", "mecontrola_db")
+	s.T().Setenv("DB_SSL_MODE", "disable")
+	s.T().Setenv("OTEL_TRACE_SAMPLE_RATE", "0.1")
+	s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
+	s.T().Setenv("CORS_ALLOWED_ORIGINS", "https://app.mecontrola.com.br")
+	s.T().Setenv("IDENTITY_GATEWAY_SHARED_SECRET_CURRENT", strings.Repeat("a1", 32))
+	s.T().Setenv("META_ACCESS_TOKEN", "from-env-token")
+	s.T().Setenv("META_PHONE_NUMBER_ID", "1234567890123")
+	s.T().Setenv("META_APP_SECRET", "from-env-secret")
+	s.T().Setenv("META_VERIFY_TOKEN", "from-env-verify")
+	s.T().Setenv("ONBOARDING_TOKEN_ENCRYPTION_KEY", "testencryptionkey1234567890abcde")
+
+	s.Require().NoError(os.WriteFile(filepath.Join(secretsPath, "DB_PASSWORD"), []byte("from-secret-file\n"), 0600))
+	s.Require().NoError(os.WriteFile(filepath.Join(secretsPath, "OPENROUTER_API_KEY"), []byte("from-secret-file\n"), 0600))
+
+	cfg, err := configs.LoadConfig(path)
+	s.Require().NoError(err)
+	s.Require().NotNil(cfg)
+	s.Equal("from-secret-file", cfg.DBConfig.Password)
+	s.Equal("from-env-token", cfg.WhatsAppConfig.AccessToken)
+	s.Equal("from-secret-file", cfg.AgentConfig.OpenRouterAPIKey)
 }

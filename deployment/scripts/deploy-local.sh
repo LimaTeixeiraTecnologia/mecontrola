@@ -4,22 +4,25 @@ set -euo pipefail
 # deploy-local.sh — Deploy direto da máquina local para a VPS, sem registry (GHCR).
 #
 # Replica o fluxo manual: build local (linux/amd64) -> transferência da imagem via
-# `docker save | ssh docker load` -> sync do repo no host -> migrations -> server+worker
+# `docker save | gzip | ssh docker load` -> sync do repo no host -> migrations -> server+worker
 # -> healthcheck com rollback automático -> verificação pós-deploy.
 #
 # Uso:
-#   bash deployment/scripts/deploy-local.sh [IMAGE_TAG]
+#   bash deployment/scripts/deploy-local.sh [IMAGE_TAG] [SECRETS_ENV_FILE]
 #
 # IMAGE_TAG default = short SHA do HEAD. Overrides via env:
 #   VPS_HOST VPS_USER VPS_DEPLOY_PATH VPS_SSH_KEY IMAGE_NAME PLATFORM
 #   HEALTH_RETRIES HEALTH_INTERVAL ALLOW_DIRTY SKIP_BUILD
 #
 # Requer: docker local, git, acesso SSH por chave à VPS (BatchMode).
+# Os secrets devem estar descriptografados em SECRETS_ENV_FILE.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 IMAGE_TAG="${1:-${IMAGE_TAG:-$(git rev-parse --short HEAD)}}"
+SECRETS_ENV_FILE="${2:-${SECRETS_ENV_FILE:-}}"
+
 IMAGE_NAME="${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 DOCKERFILE="${DOCKERFILE:-deployment/docker/Dockerfile}"
@@ -29,6 +32,8 @@ VPS_HOST="${VPS_HOST:-187.77.45.48}"
 VPS_USER="${VPS_USER:-root}"
 VPS_DEPLOY_PATH="${VPS_DEPLOY_PATH:-/opt/mecontrola}"
 VPS_SSH_KEY="${VPS_SSH_KEY:-}"
+
+PROD_ENV_FILE="${PROD_ENV_FILE:-deployment/config/prod.env}"
 
 HEALTH_RETRIES="${HEALTH_RETRIES:-24}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
@@ -41,6 +46,18 @@ SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout
 log() { echo "[$(date -u +%H:%M:%SZ)] $*"; }
 die() { echo "[ERRO] $*" >&2; exit 1; }
 remote() { ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "$@"; }
+
+if [[ -z "$SECRETS_ENV_FILE" ]]; then
+  if [[ -f ".env" ]]; then
+    log "AVISO: usando .env local (legado). Prefira passar o arquivo de secrets descriptografado."
+    SECRETS_ENV_FILE=".env"
+  else
+    die "arquivo de secrets não informado e nenhum .env encontrado"
+  fi
+fi
+
+[[ -f "$SECRETS_ENV_FILE" ]] || die "arquivo de secrets não encontrado: $SECRETS_ENV_FILE"
+[[ -f "$PROD_ENV_FILE" ]] || die "arquivo de config não encontrado: $PROD_ENV_FILE"
 
 command -v docker >/dev/null || die "docker não encontrado localmente"
 command -v git >/dev/null || die "git não encontrado"
@@ -68,16 +85,29 @@ docker save "$IMAGE_REF" | gzip -1 | ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOS
 remote "docker image inspect ${IMAGE_REF} --format 'imagem na VPS: {{.Architecture}}'" \
   || die "imagem ${IMAGE_REF} não carregou na VPS"
 
-log "3/5 deploy Swarm no host"
+REMOTE_PROD_ENV="/tmp/mecontrola-prod.env.$$"
+REMOTE_SECRETS_ENV="/tmp/mecontrola-secrets.env.$$"
+REMOTE_RENDERED_STACK="/tmp/mecontrola-stack-rendered.yml.$$"
+export REMOTE_PROD_ENV REMOTE_SECRETS_ENV REMOTE_RENDERED_STACK
+
+log "3/5 enviando arquivos de configuração"
+scp "${SSH_OPTS[@]}" "$PROD_ENV_FILE" "${VPS_USER}@${VPS_HOST}:${REMOTE_PROD_ENV}"
+scp "${SSH_OPTS[@]}" "$SECRETS_ENV_FILE" "${VPS_USER}@${VPS_HOST}:${REMOTE_SECRETS_ENV}"
+remote "chmod 600 '${REMOTE_PROD_ENV}' '${REMOTE_SECRETS_ENV}'"
+
+log "4/5 deploy Swarm no host"
 ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
   STACK=mecontrola IMAGE_NAME="$IMAGE_NAME" IMAGE_TAG="$IMAGE_TAG" \
   VPS_HOST=localhost VPS_USER="$(whoami)" VPS_DEPLOY_PATH="$VPS_DEPLOY_PATH" \
   HEALTH_RETRIES="$HEALTH_RETRIES" HEALTH_INTERVAL="$HEALTH_INTERVAL" \
+  REMOTE_PROD_ENV="$REMOTE_PROD_ENV" REMOTE_SECRETS_ENV="$REMOTE_SECRETS_ENV" REMOTE_RENDERED_STACK="$REMOTE_RENDERED_STACK" \
   bash -s -- <<'REMOTE'
 set -euo pipefail
 DP="${VPS_DEPLOY_PATH}"
 TAG="${IMAGE_TAG}"
 STACK="${STACK:-mecontrola}"
+
+trap 'rm -f "${REMOTE_PROD_ENV}" "${REMOTE_SECRETS_ENV}" "${REMOTE_RENDERED_STACK}" /tmp/mecontrola-migrate.env.$$' EXIT
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
@@ -90,20 +120,21 @@ fi
 git config --global --add safe.directory "$DP" 2>/dev/null || true
 ( cd "$DP" && git pull --ff-only ) || { echo "[vps] ERRO: git pull falhou"; exit 1; }
 
-chmod 600 "$DP/.env"
-
 echo "[vps] criando/atualizando Docker secrets"
-( cd "$DP" && bash deployment/scripts/create-secrets.sh "$DP/.env" )
+( cd "$DP" && bash deployment/scripts/create-secrets.sh "$REMOTE_SECRETS_ENV" )
 
-if grep -qE '^AWS_ACCESS_KEY_ID=[^[:space:]]' "$DP/.env" && grep -qE '^AWS_SECRET_ACCESS_KEY=[^[:space:]]' "$DP/.env"; then
-  echo "[vps] backup do .env para S3"
-  ( cd "$DP" && bash deployment/scripts/backup-env-s3.sh "$DP/.env" )
+if grep -qE '^AWS_ACCESS_KEY_ID=[^[:space:]]' "$REMOTE_SECRETS_ENV" && grep -qE '^AWS_SECRET_ACCESS_KEY=[^[:space:]]' "$REMOTE_SECRETS_ENV"; then
+  echo "[vps] backup da config para S3"
+  ( cd "$DP" && bash deployment/scripts/backup-env-s3.sh )
 fi
 
 echo "[vps] migrate via docker run --rm"
+trap 'rm -f /tmp/mecontrola-migrate.env.$$' EXIT
+grep '^DB_PASSWORD=' "$REMOTE_SECRETS_ENV" > /tmp/mecontrola-migrate.env.$$
+cat "$REMOTE_PROD_ENV" >> /tmp/mecontrola-migrate.env.$$
 docker run --rm \
   --network "${STACK}_backend" \
-  --env-file "$DP/.env" \
+  --env-file /tmp/mecontrola-migrate.env.$$ \
   -e ENVIRONMENT=production \
   -e DB_HOST=postgres \
   -e DB_PORT=5432 \
@@ -115,10 +146,10 @@ docker run --rm \
   migrate || { echo "[vps] ERRO: migrations falharam — abortando"; exit 1; }
 
 echo "[vps] renderizando stack Swarm"
-( cd "$DP" && python3 deployment/scripts/render-stack.py "$DP/.env" deployment/compose/compose.swarm.yml > "/tmp/${STACK}-stack-rendered.yml" )
+( cd "$DP" && python3 deployment/scripts/render-stack.py deployment/compose/compose.swarm.yml --env-file "$REMOTE_PROD_ENV" --secrets-env-file "$REMOTE_SECRETS_ENV" > "$REMOTE_RENDERED_STACK" )
 
 echo "[vps] docker stack deploy"
-docker stack deploy -c "/tmp/${STACK}-stack-rendered.yml" "$STACK"
+docker stack deploy -c "$REMOTE_RENDERED_STACK" "$STACK"
 
 echo "[vps] aguardando health checks"
 ok=false
@@ -139,11 +170,6 @@ done
 if [ "$ok" != true ]; then
   echo "[vps] healthcheck FALHOU — consulte logs e execute rollback manual conforme deployment/runbooks/rollback.md"
   exit 1
-fi
-
-echo "[vps] alinhando IMAGE_TAG no .env"
-if grep -q '^IMAGE_TAG=' "$DP/.env"; then
-  sed -i.bak-deploylocal "s/^IMAGE_TAG=.*/IMAGE_TAG=$TAG/" "$DP/.env"
 fi
 
 echo "[vps] === verificação pós-deploy ==="

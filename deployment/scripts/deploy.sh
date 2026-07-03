@@ -1,172 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_TAG="${1:-${IMAGE_TAG:?IMAGE_TAG must be provided as argument or env var}}"
-LOCAL_DEPLOY="${LOCAL_DEPLOY:-false}"
-VPS_DEPLOY_PATH="${VPS_DEPLOY_PATH:-/opt/mecontrola}"
-GHCR_USER="${GHCR_USER:-}"
-GHCR_TOKEN="${GHCR_TOKEN:-}"
+# deploy.sh — Entrypoint de deploy compatível com a estratégia SOPS + age + Docker Swarm secrets.
+#
+# Uso:
+#   bash deployment/scripts/deploy.sh <IMAGE_TAG> [SECRETS_ENV_FILE]
+#
+# Este script apenas verifica se o Docker Swarm está ativo na VPS e delega para
+# deployment/scripts/deploy-swarm.sh. Não há mais deploy não-Swarm com .env
+# persistente na VPS.
+#
+# Variáveis de ambiente:
+#   VPS_HOST, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY
 
-if [[ "$LOCAL_DEPLOY" != "true" ]]; then
-  VPS_HOST="${VPS_HOST:?VPS_HOST is required}"
-  VPS_USER="${VPS_USER:-deploy}"
-  VPS_SSH_KEY="${VPS_SSH_KEY:-}"
-fi
+IMAGE_TAG="${1:-${IMAGE_TAG:?IMAGE_TAG obrigatorio}}"
+SECRETS_ENV_FILE="${2:-${SECRETS_ENV_FILE:-}}"
 
-HEALTHZ_RETRIES=24
-HEALTHZ_INTERVAL=5
-OTEL_RETRIES=18
-OTEL_INTERVAL=5
+VPS_HOST="${VPS_HOST:?VPS_HOST obrigatorio}"
+VPS_USER="${VPS_USER:?VPS_USER obrigatorio}"
+VPS_DEPLOY_PATH="${VPS_DEPLOY_PATH:?VPS_DEPLOY_PATH obrigatorio}"
+VPS_SSH_KEY="${VPS_SSH_KEY:-}"
 
-COMPOSE_FILES="-f ${VPS_DEPLOY_PATH}/deployment/compose/compose.yml -f ${VPS_DEPLOY_PATH}/deployment/compose/compose.prod.yml"
-COMPOSE_ENV="--env-file ${VPS_DEPLOY_PATH}/.env"
+SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+[[ -n "$VPS_SSH_KEY" ]] && SSH_OPTS+=(-i "$VPS_SSH_KEY")
 
-log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"; }
-
-ssh_exec() {
-  local key_args=()
-  [[ -n "${VPS_SSH_KEY:-}" ]] && key_args=(-i "$VPS_SSH_KEY")
-  ssh "${key_args[@]}" \
-    -o StrictHostKeyChecking=accept-new \
-    -o BatchMode=yes \
-    "${VPS_USER}@${VPS_HOST}" "$@"
-}
-
-run_cmd() {
-  if [[ "$LOCAL_DEPLOY" == "true" ]]; then
-    bash -c "$*"
-  else
-    ssh_exec "$@"
-  fi
-}
-
-# Atualiza o repositório de forma resiliente a problemas de ownership do .git.
-# O runner self-hosted pode executar como usuário diferente do dono do repo
-# (ex.: repo clonado como root). safe.directory resolve "dubious ownership",
-# mas NÃO concede escrita em .git/FETCH_HEAD — por isso a autocorreção de posse.
-update_code() {
-  run_cmd "git config --global --add safe.directory ${VPS_DEPLOY_PATH} 2>/dev/null || true"
-  if run_cmd "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"; then
-    return 0
-  fi
-
-  log "git pull falhou — tentando autocorreção de ownership do repositório"
-  run_cmd "sudo -n chown -R \$(id -un):\$(id -gn) ${VPS_DEPLOY_PATH} 2>/dev/null || chown -R \$(id -un):\$(id -gn) ${VPS_DEPLOY_PATH} 2>/dev/null || true"
-  run_cmd "git config --global --add safe.directory ${VPS_DEPLOY_PATH} 2>/dev/null || true"
-  if run_cmd "cd ${VPS_DEPLOY_PATH} && git pull --ff-only"; then
-    log "Autocorreção de ownership bem-sucedida"
-    return 0
-  fi
-
-  log "ERRO: não foi possível atualizar ${VPS_DEPLOY_PATH} (ownership do .git ou histórico divergente)."
-  log "Correção manual na VPS (como root): chown -R <usuario_do_runner> ${VPS_DEPLOY_PATH}"
-  return 1
-}
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
 log "Iniciando deploy — tag: ${IMAGE_TAG}"
 
-SWARM_STATE=$(run_cmd "docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo 'unknown'")
-if [[ "$SWARM_STATE" == "active" ]]; then
-  log "Docker Swarm ativo — delegando para deploy-swarm.sh"
-  if [[ "$LOCAL_DEPLOY" == "true" ]]; then
-    VPS_HOST="${VPS_HOST:-localhost}" VPS_USER="${VPS_USER:-$(whoami)}" \
-      bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG"
-  else
-    VPS_HOST="${VPS_HOST:?VPS_HOST is required}" VPS_USER="${VPS_USER:-deploy}" VPS_SSH_KEY="${VPS_SSH_KEY:-}" \
-      bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG"
-  fi
-  exit $?
-fi
-
-log "Atualizando código no servidor"
-update_code
-
-if [[ -n "${GHCR_TOKEN}" ]]; then
-  log "Autenticando no GHCR"
-  run_cmd "echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${GHCR_USER:-x-access-token}' --password-stdin"
-fi
-
-log "Garantindo permissões do .env"
-run_cmd "chmod 600 ${VPS_DEPLOY_PATH}/.env"
-
-SWARM_STATE=$(run_cmd "docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo 'unknown'")
-if [[ "$SWARM_STATE" == "active" ]]; then
-  log "Criando/atualizando Docker secrets"
-  run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/scripts/create-secrets.sh ${VPS_DEPLOY_PATH}/.env"
-else
-  log "AVISO: Docker Swarm não está ativo — pulando criação de secrets"
-fi
-
-if run_cmd "grep -qE '^AWS_ACCESS_KEY_ID=[^[:space:]]' ${VPS_DEPLOY_PATH}/.env 2>/dev/null && grep -qE '^AWS_SECRET_ACCESS_KEY=[^[:space:]]' ${VPS_DEPLOY_PATH}/.env 2>/dev/null"; then
-  log "Fazendo backup do .env para S3"
-  run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/scripts/backup-env-s3.sh ${VPS_DEPLOY_PATH}/.env"
-else
-  log "AVISO: AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY não configurados — pulando backup do .env"
-fi
-
-log "Capturando imagem anterior para rollback"
-PREVIOUS_TAG=$(run_cmd "docker inspect mecontrola-server-1 --format '{{index .Config.Image}}' 2>/dev/null | sed 's/.*://' || echo ''")
-log "Imagem anterior: ${PREVIOUS_TAG:-<nenhuma>}"
-
-log "Fazendo pull da nova imagem"
-run_cmd "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} pull server worker"
-
-log "Garantindo otel-lgtm ativo (remove containers de observabilidade legados)"
-run_cmd "docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --remove-orphans otel-lgtm"
-for i in $(seq 1 $OTEL_RETRIES); do
-  OTEL_HEALTH=$(run_cmd "docker inspect --format='{{.State.Health.Status}}' mecontrola-otel-lgtm-1 2>/dev/null || echo 'unknown'")
-  if [[ "$OTEL_HEALTH" == "healthy" ]]; then
-    log "otel-lgtm saudável após $((i * OTEL_INTERVAL))s"
-    break
-  fi
-  if [[ "$i" -eq "$OTEL_RETRIES" ]]; then
-    log "AVISO: otel-lgtm não ficou saudável após $((OTEL_RETRIES * OTEL_INTERVAL))s (status: ${OTEL_HEALTH}) — continuando deploy"
-    break
-  fi
-  log "Aguardando otel-lgtm... (${i}/${OTEL_RETRIES}) status: ${OTEL_HEALTH}"
-  sleep "$OTEL_INTERVAL"
-done
-
-log "Configurando alertas Telegram (idempotente; le .env e pula se ALERT_TELEGRAM_* vazios)"
-run_cmd "cd ${VPS_DEPLOY_PATH} && bash deployment/telemetry/grafana/setup-alerting-telegram.sh" || log "AVISO: setup de alertas Telegram falhou — seguindo deploy"
-
-log "Validando premissa da migration 000020"
-run_cmd "cd ${VPS_DEPLOY_PATH} && bash scripts/migrations/pre-deploy-000020.sh" || {
-  log "ERRO: pre-check da migration 000020 falhou — abortando deploy"
+SWARM_STATE=$(ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo 'unknown'")
+if [[ "$SWARM_STATE" != "active" ]]; then
+  log "ERRO: Docker Swarm não está ativo (estado: ${SWARM_STATE}). O deploy atual requer Swarm."
   exit 1
-}
+fi
 
-log "Executando migrações"
-run_cmd "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} run --rm --no-deps migrate" || {
-  log "ERRO: migrações falharam — abortando deploy"
-  exit 1
-}
-
-log "Atualizando containers server e worker"
-run_cmd "IMAGE_TAG=${IMAGE_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker"
-
-log "Aguardando healthcheck do container server"
-for i in $(seq 1 $HEALTHZ_RETRIES); do
-  HEALTH=$(run_cmd "docker inspect --format='{{.State.Health.Status}}' mecontrola-server-1 2>/dev/null || echo 'unknown'")
-  if [[ "$HEALTH" == "healthy" ]]; then
-    log "Healthcheck OK após $((i * HEALTHZ_INTERVAL))s"
-    break
-  fi
-  if [[ "$i" -eq "$HEALTHZ_RETRIES" ]]; then
-    log "ERRO: healthcheck falhou após $((HEALTHZ_RETRIES * HEALTHZ_INTERVAL))s (status: ${HEALTH}) — iniciando rollback"
-    if [[ -n "$PREVIOUS_TAG" && "$PREVIOUS_TAG" != "$IMAGE_TAG" ]]; then
-      log "Revertendo para imagem anterior: ${PREVIOUS_TAG}"
-      run_cmd "IMAGE_TAG=${PREVIOUS_TAG} docker compose ${COMPOSE_ENV} ${COMPOSE_FILES} up -d --no-deps server worker" || true
-    else
-      log "AVISO: sem imagem anterior para rollback — containers permanecem com tag atual"
-    fi
-    exit 1
-  fi
-  log "Aguardando... (${i}/${HEALTHZ_RETRIES}) status: ${HEALTH}"
-  sleep "$HEALTHZ_INTERVAL"
-done
-
-log "Limpando imagens antigas"
-run_cmd "docker image prune -f --filter 'until=72h'" || true
-
-log "Deploy concluído — ${IMAGE_TAG}"
+bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG" ${SECRETS_ENV_FILE:+"$SECRETS_ENV_FILE"}

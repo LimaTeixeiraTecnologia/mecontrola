@@ -145,7 +145,6 @@ func TestLoadSpecs_ValidatePaths(t *testing.T) {
 		"card": {
 			"/api/v1/cards":               {http.MethodGet, http.MethodPost},
 			"/api/v1/cards/{id}":          {http.MethodGet, http.MethodPut, http.MethodDelete},
-			"/api/v1/cards/{id}/limit":    {http.MethodPatch},
 			"/api/v1/cards/{id}/invoices": {http.MethodGet},
 		},
 		"budgets": {

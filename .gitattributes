@@ -1,0 +1,2 @@
+# Marca arquivos criptografados pelo SOPS como binários para evitar diff/merge problemáticos.
+deployment/config/*.secrets.env binary linguist-generated

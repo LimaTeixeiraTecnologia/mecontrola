@@ -14,7 +14,8 @@
 - Acesso SSH à VPS com usuário não-root e chave.
 - Docker Swarm ativo no host.
 - Tag da imagem anterior conhecida (registrada nos logs do deploy ou via `docker service inspect`).
-- `.env` e configs do Git disponíveis.
+- `deployment/config/prod.env` do Git disponível.
+- Secrets descriptografados (`deployment/config/prod.secrets.env` via SOPS + age) ou Docker Swarm secrets já presentes no nó.
 
 ## Identificar a imagem anterior
 
@@ -43,8 +44,20 @@ export VPS_DEPLOY_PATH=/opt/mecontrola
 export PREVIOUS_TAG=<tag-anterior>
 
 cd "$VPS_DEPLOY_PATH"
+
+sops --decrypt deployment/config/prod.secrets.env > /tmp/mecontrola-secrets.env
+chmod 600 /tmp/mecontrola-secrets.env
+
+python3 deployment/scripts/render-stack.py \
+  deployment/compose/compose.swarm.yml \
+  --env-file deployment/config/prod.env \
+  --secrets-env-file /tmp/mecontrola-secrets.env \
+  > /tmp/mecontrola-stack-rollback.yml
+
 IMAGE_TAG="${PREVIOUS_TAG}" \
-  docker stack deploy -c deployment/compose/compose.swarm.yml "${STACK}"
+  docker stack deploy -c /tmp/mecontrola-stack-rollback.yml "${STACK}"
+
+rm -f /tmp/mecontrola-secrets.env /tmp/mecontrola-stack-rollback.yml
 ```
 
 Para reversão mais rápida (força recriação imediata, sem rolling delay):

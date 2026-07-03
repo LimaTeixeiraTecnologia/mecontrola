@@ -2,7 +2,13 @@
 """Renderiza compose.swarm.yml para um YAML compatível com docker stack deploy.
 
 Uso:
-    python3 deployment/scripts/render-stack.py <env-file> <compose-file>
+    python3 deployment/scripts/render-stack.py <compose-file> [options]
+
+Opções:
+    --env-file <arquivo>         Arquivo .env com configuração não-secreta.
+    --secrets-env-file <arquivo> Arquivo .env descriptografado com secrets
+                                  (usado apenas para interpolação; não entra
+                                  no container além do declarado no compose).
 
 Saída no stdout.
 
@@ -15,9 +21,28 @@ Correções aplicadas sobre o output de `docker compose config`:
 - preserva nomes explícitos de networks/volumes.
 """
 
+import argparse
+import os
 import subprocess
 import sys
 import yaml
+
+
+def parse_env_file(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("\"'\"")
+            if key:
+                values[key] = value
+    return values
 
 
 def normalize_stack(doc: dict) -> dict:
@@ -47,22 +72,30 @@ def normalize_stack(doc: dict) -> dict:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("uso: render-stack.py <env-file> <compose-file>", file=sys.stderr)
-        return 1
+    parser = argparse.ArgumentParser(description="Renderiza compose para docker stack deploy")
+    parser.add_argument("compose_file", help="Caminho para o arquivo compose")
+    parser.add_argument("--env-file", help="Arquivo .env com configuração não-secreta")
+    parser.add_argument("--secrets-env-file", help="Arquivo .env descriptografado com secrets")
+    args = parser.parse_args()
 
-    env_file, compose_file = sys.argv[1], sys.argv[2]
+    env = os.environ.copy()
+    compose_args = ["docker", "compose", "-f", args.compose_file]
+
+    if args.env_file:
+        compose_args.extend(["--env-file", args.env_file])
+        env.update(parse_env_file(args.env_file))
+
+    if args.secrets_env_file:
+        env.update(parse_env_file(args.secrets_env_file))
+
+    compose_args.append("config")
 
     result = subprocess.run(
-        [
-            "docker", "compose",
-            "--env-file", env_file,
-            "-f", compose_file,
-            "config",
-        ],
+        compose_args,
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     if result.returncode != 0:
         print(result.stderr, file=sys.stderr)

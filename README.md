@@ -961,7 +961,7 @@ O script `deployment/scripts/deploy-local.sh` faz, em sequência:
 | Docker local | daemon ativo (build + `docker save`) |
 | Acesso SSH por chave à VPS | sem senha (`BatchMode`); a chave padrão ou `VPS_SSH_KEY` |
 | Árvore git limpa | a tag = short SHA do commit; suja é bloqueada (use `ALLOW_DIRTY=true` para burlar) |
-| `.env` na VPS | já presente em `VPS_DEPLOY_PATH/.env` |
+| Secrets na VPS | `deployment/config/prod.env` + `deployment/config/prod.secrets.env` (SOPS + age) presentes no repo da VPS |
 
 ### Passo a passo
 

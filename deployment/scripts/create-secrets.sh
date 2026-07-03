@@ -1,20 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="${1:-.env}"
+# create-secrets.sh — Cria/atualiza Docker Swarm secrets a partir de um arquivo .env
+# descriptografado ou de variáveis de ambiente.
+#
+# Uso:
+#   bash deployment/scripts/create-secrets.sh <arquivo-.env>
+#   MODE=rotate bash deployment/scripts/create-secrets.sh <arquivo-.env>
+#   CREATE_FROM_ENV=1 bash deployment/scripts/create-secrets.sh
+#
+# Variáveis:
+#   STACK         — nome da stack (padrão: mecontrola)
+#   MODE          — create (padrão) ou rotate
+#   CREATE_FROM_ENV — se "1", lê valores das variáveis de ambiente em vez de arquivo.
+
+ENV_FILE="${1:-}"
 STACK="${STACK:-mecontrola}"
 MODE="${MODE:-create}"
+CREATE_FROM_ENV="${CREATE_FROM_ENV:-0}"
 
 SECRETS=(
   DB_PASSWORD
   META_ACCESS_TOKEN
   META_APP_SECRET
-  KIWIFY_WEBHOOK_SECRET
+  META_APP_SECRET_NEXT
+  META_VERIFY_TOKEN
+  KIWIFY_CLIENT_ID
   KIWIFY_CLIENT_SECRET
+  KIWIFY_ACCOUNT_ID
+  KIWIFY_WEBHOOK_SECRET
+  KIWIFY_WEBHOOK_SECRET_NEXT
+  KIWIFY_PRODUCT_ID_MONTHLY
+  KIWIFY_PRODUCT_ID_QUARTERLY
+  KIWIFY_PRODUCT_ID_ANNUAL
+  META_PHONE_NUMBER_ID
   OPENROUTER_API_KEY
   ONBOARDING_TOKEN_ENCRYPTION_KEY
   IDENTITY_GATEWAY_SHARED_SECRET_CURRENT
   IDENTITY_GATEWAY_SHARED_SECRET_NEXT
+  SMTP_USERNAME
+  SMTP_PASSWORD
+  RESEND_API_KEY
 )
 
 log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"; }
@@ -27,9 +53,10 @@ if [[ "$SWARM_STATE" != "active" ]]; then
   exit 1
 fi
 
-[[ -f "$ENV_FILE" ]] || { log "ERRO: $ENV_FILE não encontrado"; exit 1; }
-
-chmod 600 "$ENV_FILE"
+if [[ "$CREATE_FROM_ENV" != "1" ]]; then
+  [[ -f "$ENV_FILE" ]] || { log "ERRO: arquivo de secrets não encontrado: ${ENV_FILE:-<não informado>}"; exit 1; }
+  chmod 600 "$ENV_FILE"
+fi
 
 sha256_value() {
   local value="$1"
@@ -42,6 +69,10 @@ sha256_value() {
 
 env_value() {
   local var="$1"
+  if [[ "$CREATE_FROM_ENV" == "1" ]]; then
+    printenv "$var" || true
+    return 0
+  fi
   grep -E "^${var}=" "$ENV_FILE" | cut -d= -f2- | tail -n1
 }
 

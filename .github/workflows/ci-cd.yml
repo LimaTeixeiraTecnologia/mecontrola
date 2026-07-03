@@ -259,6 +259,22 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Install SOPS and age
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age
+          curl -Lo sops.deb "https://github.com/getsops/sops/releases/download/v3.9.0/sops_3.9.0_amd64.deb"
+          sudo dpkg -i sops.deb
+          rm -f sops.deb
+      - name: Decrypt production secrets
+        env:
+          AGE_PRIVATE_KEY: ${{ secrets.AGE_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$HOME/.config/sops/age"
+          echo "$AGE_PRIVATE_KEY" > "$HOME/.config/sops/age/keys.txt"
+          chmod 600 "$HOME/.config/sops/age/keys.txt"
+          sops --decrypt deployment/config/prod.secrets.env > /tmp/mecontrola-secrets.env
+          chmod 600 /tmp/mecontrola-secrets.env
       - name: Deploy to Swarm
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -267,7 +283,10 @@ jobs:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.build-image.outputs.image-tag }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
-        run: bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG"
+        run: bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG" /tmp/mecontrola-secrets.env
+      - name: Cleanup decrypted secrets
+        if: always()
+        run: rm -f /tmp/mecontrola-secrets.env "$HOME/.config/sops/age/keys.txt"
 
   healthcheck:
     name: Healthcheck

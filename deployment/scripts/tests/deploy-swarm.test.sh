@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Testes funcionais para deployment/scripts/deploy-swarm.sh
-# Usam um mock de SSH para validar o fluxo sem acesso real à VPS.
+# Usam mocks de SSH/SCP para validar o fluxo sem acesso real à VPS.
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT="${ROOT_DIR}/scripts/deploy-swarm.sh"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT="${ROOT_DIR}/deployment/scripts/deploy-swarm.sh"
 TMP_DIR=""
 FAILS=0
 
@@ -14,7 +14,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-setup_mock_ssh() {
+setup_mocks() {
   TMP_DIR=$(mktemp -d)
   mkdir -p "${TMP_DIR}/bin"
 
@@ -23,7 +23,6 @@ setup_mock_ssh() {
 # Mock de SSH: ignora opções (-o ...) e host (user@host), usa o comando como chave.
 CMD_FILE="${MOCK_RESPONSES:-/dev/null}"
 
-# Extrai o comando: tudo após o argumento que contém '@'
 args=("$@")
 idx=0
 for i in "${!args[@]}"; do
@@ -47,7 +46,6 @@ if [[ ! -f "$CMD_FILE" ]]; then
   exit 1
 fi
 
-# Normaliza aspas simples/duplas, escapes e múltiplos espaços para matching
 cmd_norm=$(printf '%s' "$exec_line" | tr -d '\\"\047' | tr -s ' ')
 
 found=false
@@ -78,6 +76,15 @@ printf '%s\n' "$response"
 exit 0
 MOCK
   chmod +x "${TMP_DIR}/bin/ssh"
+
+  cat > "${TMP_DIR}/bin/scp" <<'MOCK'
+#!/usr/bin/env bash
+# Mock de SCP: no-op, apenas registra o comando.
+CMD_LOG="${MOCK_CMD_LOG:-/dev/null}"
+printf '%s\n' "$*" >> "$CMD_LOG"
+exit 0
+MOCK
+  chmod +x "${TMP_DIR}/bin/scp"
 }
 
 run_scenario() {
@@ -86,7 +93,7 @@ run_scenario() {
   local expected_exit="${3:-0}"
   local expect_rollback="${4:-false}"
 
-  setup_mock_ssh
+  setup_mocks
   export PATH="${TMP_DIR}/bin:${PATH}"
   export MOCK_RESPONSES="$fixture"
   export MOCK_CMD_LOG="${TMP_DIR}/commands.log"
@@ -99,8 +106,12 @@ run_scenario() {
   export HEALTH_INTERVAL="1"
   export MIGRATE_TIMEOUT="30"
 
+  local secrets_env_file="${TMP_DIR}/secrets.env"
+  printf 'DB_PASSWORD=dummy\n' > "$secrets_env_file"
+
   set +e
-  bash "$SCRIPT" "newtag" >"${TMP_DIR}/stdout.log" 2>"${TMP_DIR}/stderr.log"
+  cd "$ROOT_DIR"
+  bash "$SCRIPT" "newtag" "$secrets_env_file" >"${TMP_DIR}/stdout.log" 2>"${TMP_DIR}/stderr.log"
   local code=$?
   set -e
 
@@ -134,12 +145,15 @@ docker info --format {{.Swarm.LocalNodeState}}::active
 docker service inspect mecontrola_server-1 --format {{.Spec.TaskTemplate.ContainerSpec.Image}}::oldtag
 git config --global --add safe.directory::
 git pull --ff-only::Already up to date.
-chmod 600 /opt/mecontrola/.env::
-grep -qE '^AWS_ACCESS_KEY_ID::
+chmod 600 /tmp/mecontrola-prod.env::
+chmod 600 /tmp/mecontrola-secrets.env::
 deployment/scripts/create-secrets.sh::
-deployment/scripts/backup-env-s3.sh::
-docker run --rm --network mecontrola_backend --env-file /opt/mecontrola/.env::
-docker stack deploy -c deployment/compose/compose.swarm.yml mecontrola::
+deployment/scripts/setup-grafana-alerts.sh::
+docker run --rm::
+python3 deployment/scripts/render-stack.py::
+docker stack deploy -c::
+rm -f /tmp/mecontrola-prod.env::
+docker stack deploy -c /tmp/mecontrola-stack-rendered.yml mecontrola::
 docker service ps mecontrola_server-1 --format {{.CurrentState}}::Running 5 minutes ago
 docker service ps mecontrola_server-2 --format {{.CurrentState}}::Running 5 minutes ago
 docker service ps mecontrola_worker-1 --format {{.CurrentState}}::Running 5 minutes ago
@@ -161,19 +175,21 @@ docker info --format {{.Swarm.LocalNodeState}}::active
 docker service inspect mecontrola_server-1 --format {{.Spec.TaskTemplate.ContainerSpec.Image}}::oldtag
 git config --global --add safe.directory::
 git pull --ff-only::Already up to date.
-chmod 600 /opt/mecontrola/.env::
-grep -qE '^AWS_ACCESS_KEY_ID::
+chmod 600 /tmp/mecontrola-prod.env::
+chmod 600 /tmp/mecontrola-secrets.env::
 deployment/scripts/create-secrets.sh::
-deployment/scripts/backup-env-s3.sh::
-docker run --rm --network mecontrola_backend --env-file /opt/mecontrola/.env::
-docker stack deploy -c deployment/compose/compose.swarm.yml mecontrola::
+deployment/scripts/setup-grafana-alerts.sh::
+docker run --rm::
+python3 deployment/scripts/render-stack.py::
+docker stack deploy -c::
+rm -f /tmp/mecontrola-prod.env::
+docker stack deploy -c /tmp/mecontrola-stack-rendered.yml mecontrola::
 docker service ps mecontrola_server-1 --format {{.CurrentState}}::Running 5 minutes ago
 docker service ps mecontrola_server-2 --format {{.CurrentState}}::Running 5 minutes ago
 docker service ps mecontrola_worker-1 --format {{.CurrentState}}::Running 5 minutes ago
 docker service ps mecontrola_worker-2 --format {{.CurrentState}}::Running 5 minutes ago
 docker ps --filter name=mecontrola_server-1 --filter health=healthy --format {{.Names}}::
-docker ps --filter name=mecontrola_server-1 --filter health=healthy --format {{.Names}}::
-docker stack deploy -c deployment/compose/compose.swarm.yml mecontrola::
+IMAGE_TAG=oldtag python3 deployment/scripts/render-stack.py deployment/compose/compose.swarm.yml --env-file /tmp/mecontrola-prod.env --secrets-env-file /tmp/mecontrola-secrets.env::
 EOF
 
 run_scenario "rollback por falha de health check" "$fixture_rollback" 1 true

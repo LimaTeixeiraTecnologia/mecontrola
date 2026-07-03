@@ -16,6 +16,9 @@ coverage.out
 .env.test
 .env.local
 .env.bak
+.env.prod
+key.txt
+*.key
 # Testdata de configuração devem ser rastreados mesmo com extensão .env
 !configs/testdata/**/.env
 

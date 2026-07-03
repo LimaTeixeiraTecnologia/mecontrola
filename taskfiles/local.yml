@@ -50,3 +50,17 @@ tasks:
     desc: Reinicia apenas postgres e pgbouncer sem derrubar server/worker.
     cmds:
       - "{{.COMPOSE_CMD}} restart postgres pgbouncer"
+
+  configui:hash-password:
+    desc: Gera hash bcrypt para a senha do configui.
+    cmds:
+      - go run ./cmd/configui --hash-password
+
+  configui:run:
+    desc: Inicia a UI web de config/secrets em localhost:8080.
+    cmds:
+      - |
+        if [ -z "${CONFIG_UI_PASSWORD_HASH:-}" ]; then
+          echo "AVISO: CONFIG_UI_PASSWORD_HASH nao definido. Uma senha temporaria sera exibida."
+        fi
+        go run ./cmd/configui

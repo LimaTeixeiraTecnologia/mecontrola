@@ -25,18 +25,24 @@
 
 - Docker Swarm ativo na VPS.
 - Acesso SSH com usuário não-root e chave.
-- Credenciais S3 configuradas no `.env` da VPS:
+- Credenciais S3 disponíveis em `deployment/config/prod.secrets.env` (SOPS + age).
   - `PGBACKREST_S3_KEY`
   - `PGBACKREST_S3_KEY_SECRET`
   - `PGBACKREST_S3_BUCKET`
   - `PGBACKREST_S3_REGION`
 - Imagem `mecontrola-postgres` disponível (com pgBackRest embutido).
+- `sops` e `age` instalados na VPS.
 
 ```bash
 export STACK=mecontrola
 export STANZA=mecontrola
 export VPS_DEPLOY_PATH=/opt/mecontrola
 export PGBACKREST_CONF=/etc/pgbackrest/pgbackrest.conf
+
+# Descriptografar secrets
+sops --decrypt "${VPS_DEPLOY_PATH}/deployment/config/prod.secrets.env" > /tmp/mecontrola-secrets.env
+chmod 600 /tmp/mecontrola-secrets.env
+export $(grep -E '^(DB_PASSWORD|PGBACKREST_S3_KEY|PGBACKREST_S3_KEY_SECRET|PGBACKREST_S3_BUCKET|PGBACKREST_S3_REGION)=' /tmp/mecontrola-secrets.env | xargs)
 ```
 
 ## Passo a Passo
@@ -110,9 +116,16 @@ done
 ### 6. Executar migrations pós-restore
 
 ```bash
+set -euo pipefail
+trap 'rm -f /tmp/mecontrola-migrate.env' EXIT
+
+# Monta um env temporário com config não-secreta + DB_PASSWORD do secrets
+grep '^DB_PASSWORD=' /tmp/mecontrola-secrets.env > /tmp/mecontrola-migrate.env
+cat "${VPS_DEPLOY_PATH}/deployment/config/prod.env" >> /tmp/mecontrola-migrate.env
+
 docker run --rm \
   --network ${STACK}_backend \
-  --env-file ${VPS_DEPLOY_PATH}/.env \
+  --env-file /tmp/mecontrola-migrate.env \
   -e ENVIRONMENT=production \
   -e DB_HOST=postgres \
   -e DB_PORT=5432 \
@@ -121,6 +134,8 @@ docker run --rm \
   -e OTEL_EXPORTER_OTLP_INSECURE=true \
   ghcr.io/limateixeiratecnologia/mecontrola:${IMAGE_TAG} \
   migrate
+
+rm -f /tmp/mecontrola-secrets.env
 ```
 
 ### 7. Validar dados

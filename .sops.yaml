@@ -1,0 +1,21 @@
+# SOPS + age configuration for MeControla.
+# Docs: https://github.com/getsops/sops
+#
+# INSTRUÇÕES:
+#   1. Gere um par de chaves age:
+#        age-keygen -o key.txt
+#   2. Anote a chave privada (conteúdo de key.txt) como GitHub secret AGE_PRIVATE_KEY.
+#   3. Substitua o placeholder abaixo pela chave pública (AGE_RECIPIENT).
+#   4. Nunca commit a chave privada.
+#
+# Para editar secrets:
+#   sops deployment/config/prod.secrets.env
+#
+# Para encriptar o template após preenchê-lo:
+#   cp deployment/config/prod.secrets.env.example deployment/config/prod.secrets.env
+#   # preencha os valores
+#   sops --encrypt --in-place deployment/config/prod.secrets.env
+
+creation_rules:
+  - path_regex: deployment/config/.*\.secrets\.env$
+    age: age1ajmpj0nl30zcax7f8wcund3ygzlx6nhc5kfxhkr8ssljz226eepsma8j4y

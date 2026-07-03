@@ -33,6 +33,20 @@ repos:
         types: [go]
         pass_filenames: false
 
+      - id: lint-secrets-in-config
+        name: lint secrets in config
+        language: system
+        entry: bash deployment/scripts/lint-secrets-in-config.sh
+        pass_filenames: false
+        always_run: true
+
+      - id: check-sops-encryption
+        name: check SOPS encryption for prod.secrets.env
+        language: system
+        entry: bash -c 'grep -q sops deployment/config/prod.secrets.env || exit 1'
+        pass_filenames: false
+        files: ^deployment/config/prod\.secrets\.env$
+
       - id: ai-spec-lint
         name: ai-spec lint
         language: system
