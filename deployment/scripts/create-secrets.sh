@@ -105,12 +105,13 @@ rotate_secret_in_services() {
 
 for name in "${SECRETS[@]}"; do
   value=$(env_value "$name")
+  if [[ -z "$value" ]]; then
+    log "AVISO: $name está vazio — pulando"
+    continue
+  fi
+
   hash=$(sha256_value "$value")
   secret_name="${STACK}_${name}"
-
-  if [[ -z "$value" ]]; then
-    log "AVISO: $name está vazio — criando/atualizando secret vazio"
-  fi
 
   if ! secret_exists "$secret_name"; then
     log "Criando secret $secret_name"
