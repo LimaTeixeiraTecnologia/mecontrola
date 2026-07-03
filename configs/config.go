@@ -352,8 +352,9 @@ type WorkflowKernelConfig struct {
 }
 
 type configLoader struct {
-	v    *viper.Viper
-	path string
+	v                  *viper.Viper
+	path               string
+	skipFullValidation bool
 }
 
 func (l *configLoader) requiresLocalEnvFile() bool {
@@ -404,7 +405,11 @@ func (l *configLoader) load() (*Config, error) {
 		return nil, fmt.Errorf("deserializando configuração: %w", err)
 	}
 
-	if err := cfg.Validate(); err != nil {
+	validate := cfg.Validate
+	if l.skipFullValidation {
+		validate = cfg.ValidateForMigrate
+	}
+	if err := validate(); err != nil {
 		return nil, fmt.Errorf("validando configuração: %w", err)
 	}
 
@@ -759,6 +764,10 @@ func LoadConfig(path string) (*Config, error) {
 	return (&configLoader{v: viper.New(), path: path}).load()
 }
 
+func LoadConfigForMigrate(path string) (*Config, error) {
+	return (&configLoader{v: viper.New(), path: path, skipFullValidation: true}).load()
+}
+
 func (c *Config) Validate() error {
 	var errs []string
 
@@ -797,6 +806,34 @@ func (c *Config) Validate() error {
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
 	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("configuração inválida:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+
+	return nil
+}
+
+func (c *Config) ValidateForMigrate() error {
+	var errs []string
+
+	switch c.AppConfig.Environment {
+	case "local", "staging", "production":
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"ENVIRONMENT inválido %q: deve ser um de {local, staging, production}",
+			c.AppConfig.Environment,
+		))
+	}
+
+	if c.O11yConfig.TraceSampleRate < 0 || c.O11yConfig.TraceSampleRate > 1 {
+		errs = append(errs, fmt.Sprintf(
+			"OTEL_TRACE_SAMPLE_RATE inválido %.4f: deve estar no intervalo [0..1]",
+			c.O11yConfig.TraceSampleRate,
+		))
+	}
+
+	errs = append(errs, c.validatePoolTunables()...)
 
 	if len(errs) > 0 {
 		return fmt.Errorf("configuração inválida:\n  - %s", strings.Join(errs, "\n  - "))

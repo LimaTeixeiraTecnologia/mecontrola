@@ -175,6 +175,69 @@ func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
 	s.Require().NoError(validGatewayErr)
 }
 
+func (s *MigrationSuite) renamePlatformColumnsToLegacy() {
+	stmts := []string{
+		`ALTER INDEX mecontrola.platform_messages_platform_thread_id_created_idx RENAME TO platform_messages_thread_created_idx`,
+		`ALTER TABLE mecontrola.platform_messages RENAME CONSTRAINT platform_messages_platform_thread_id_fkey TO platform_messages_thread_fkey`,
+		`ALTER TABLE mecontrola.platform_messages RENAME COLUMN platform_thread_id TO thread_pk`,
+		`ALTER INDEX mecontrola.platform_runs_platform_thread_id_started_idx RENAME TO platform_runs_thread_started_idx`,
+		`ALTER TABLE mecontrola.platform_runs RENAME CONSTRAINT platform_runs_platform_thread_id_fkey TO platform_runs_thread_fkey`,
+		`ALTER TABLE mecontrola.platform_runs RENAME COLUMN platform_thread_id TO thread_pk`,
+		`ALTER TABLE mecontrola.platform_embeddings RENAME COLUMN source_message_id TO source_message_pk`,
+	}
+	for _, stmt := range stmts {
+		s.Require().NoError(execSQL(s.db, s.ctx, stmt))
+	}
+}
+
+func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.renamePlatformColumnsToLegacy()
+	s.Require().NoError(migrator.Force(1))
+
+	s.assertColumnPresent("mecontrola.platform_messages", "thread_pk")
+	s.assertColumnMissing("mecontrola.platform_messages", "platform_thread_id")
+	s.assertColumnPresent("mecontrola.platform_runs", "thread_pk")
+	s.assertColumnPresent("mecontrola.platform_embeddings", "source_message_pk")
+	s.assertIndexPresent("mecontrola", "platform_messages_thread_created_idx")
+
+	upErr := migrator.Up()
+	s.Require().True(upErr == nil || errors.Is(upErr, migrate.ErrNoChange), "up 000002: %v", upErr)
+
+	s.assertColumnPresent("mecontrola.platform_messages", "platform_thread_id")
+	s.assertColumnMissing("mecontrola.platform_messages", "thread_pk")
+	s.assertColumnPresent("mecontrola.platform_runs", "platform_thread_id")
+	s.assertColumnMissing("mecontrola.platform_runs", "thread_pk")
+	s.assertColumnPresent("mecontrola.platform_embeddings", "source_message_id")
+	s.assertColumnMissing("mecontrola.platform_embeddings", "source_message_pk")
+	s.assertIndexPresent("mecontrola", "platform_messages_platform_thread_id_created_idx")
+	s.assertIndexPresent("mecontrola", "platform_runs_platform_thread_id_started_idx")
+	s.assertIndexMissing("mecontrola", "platform_messages_thread_created_idx")
+
+	version, dirty, err := migrator.Version()
+	s.Require().NoError(err)
+	s.Equal(uint(2), version)
+	s.False(dirty)
+}
+
+func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertColumnPresent("mecontrola.platform_messages", "platform_thread_id")
+	s.assertColumnMissing("mecontrola.platform_messages", "thread_pk")
+	s.assertColumnPresent("mecontrola.platform_runs", "platform_thread_id")
+	s.assertColumnPresent("mecontrola.platform_embeddings", "source_message_id")
+	s.assertColumnMissing("mecontrola.platform_embeddings", "source_message_pk")
+
+	version, dirty, err := migrator.Version()
+	s.Require().NoError(err)
+	s.Equal(uint(2), version)
+	s.False(dirty)
+}
+
 func (s *MigrationSuite) TestChannelDedupAndUserIdentitiesConstraints() {
 	migrator := s.newMigrator()
 	s.applyBaseline(migrator)

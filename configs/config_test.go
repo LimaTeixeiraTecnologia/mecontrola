@@ -1657,6 +1657,39 @@ func (s *ConfigSuite) TestKiwifySafe() {
 	}
 }
 
+func (s *ConfigSuite) TestValidateForMigrate() {
+	s.Run("aceita production sem secrets de app que Validate rejeita", func() {
+		cfg := s.newBaseConfig()
+		cfg.AppConfig.Environment = "production"
+		cfg.O11yConfig.TraceSampleRate = 0.2
+
+		s.Error(cfg.Validate())
+		s.NoError(cfg.ValidateForMigrate())
+	})
+
+	s.Run("rejeita environment invalido", func() {
+		cfg := s.newBaseConfig()
+		cfg.AppConfig.Environment = "dev"
+
+		s.assertConfigError(cfg.ValidateForMigrate(), "ENVIRONMENT inválido")
+	})
+
+	s.Run("rejeita trace sample rate fora do intervalo", func() {
+		cfg := s.newBaseConfig()
+		cfg.O11yConfig.TraceSampleRate = 2
+
+		s.assertConfigError(cfg.ValidateForMigrate(), "OTEL_TRACE_SAMPLE_RATE inválido")
+	})
+
+	s.Run("rejeita pool tunables invalidos", func() {
+		cfg := s.newBaseConfig()
+		cfg.DBConfig.MaxConns = 5
+		cfg.DBConfig.MinConns = 10
+
+		s.assertConfigError(cfg.ValidateForMigrate(), "DB_MIN_CONNS não pode ser maior que DB_MAX_CONNS")
+	})
+}
+
 func (s *ConfigSuite) assertConfigError(err error, messages ...string) {
 	s.Require().Error(err)
 	for _, message := range messages {

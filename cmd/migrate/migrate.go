@@ -200,7 +200,7 @@ func (r *runtime) shutdown(ctx context.Context) error {
 }
 
 func bootstrap(ctx context.Context) (*runtime, error) {
-	cfg, err := configs.LoadConfig(".")
+	cfg, err := configs.LoadConfigForMigrate(".")
 	if err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
