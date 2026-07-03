@@ -16,6 +16,7 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp.
 - [Módulos e responsabilidades](#módulos-e-responsabilidades)
 - [Entrypoints](#entrypoints)
 - [Configuração (.env)](#configuração-env)
+- [Gestão de variáveis de ambiente e secrets](#gestão-de-variáveis-de-ambiente-e-secrets)
 - [Subir só a infra](#subir-só-a-infra)
 - [Subir tudo (infra + migrate + server + worker)](#subir-tudo-infra--migrate--server--worker)
 - [Debug no VS Code](#debug-no-vs-code)
@@ -411,6 +412,144 @@ EMAIL_HTTP_TIMEOUT=10s
 ```
 
 > **Produção:** defina `EMAIL_PROVIDER=resend` e preencha `RESEND_API_KEY`.
+
+---
+
+## Gestão de variáveis de ambiente e secrets
+
+Produção usa dois arquivos separados em `deployment/config/`:
+
+| Arquivo | Conteúdo | Criptografia | Commitado |
+|---|---|---|---|
+| `prod.env` | Variáveis não-secretas (ports, endpoints, feature flags, cron schedules) | Não | Sim |
+| `prod.secrets.env` | Segredos (tokens, senhas, chaves de API, gateway secret) | SOPS + age | Sim |
+
+O repositório **nunca** armazena a chave privada `age`. Ela fica em `key.txt` no disco local (já está no `.gitignore`).
+
+### Ferramentas necessárias
+
+- [sops](https://github.com/getsops/sops) — editor/encriptador de secrets
+- [age](https://github.com/FiloSottile/age) — criptografia assimétrica
+
+Verifique a chave pública configurada em `.sops.yaml`:
+
+```bash
+cat .sops.yaml
+```
+
+### 1. Gestão local (nesta máquina) — interface visual
+
+O projeto inclui uma UI terminal para visualizar e editar secrets e variáveis de ambiente sem manipular SOPS manualmente.
+
+```bash
+go run ./cmd/configui
+```
+
+A interface abre:
+
+- `deployment/config/prod.env` — leitura e edição direta.
+- `deployment/config/prod.secrets.env` — descriptografa ao abrir, re-criptografa ao salvar usando a chave `key.txt`.
+
+Fluxo recomendado para alterar um secret:
+
+```bash
+# 1. Abra a UI, edite o valor e salve
+go run ./cmd/configui
+
+# 2. Verifique que o arquivo de secrets ainda está criptografado
+head -5 deployment/config/prod.secrets.env
+# deve começar com sops/age headers, nunca valores em texto claro
+
+# 3. Commit + push das alterações
+git add deployment/config/prod.env deployment/config/prod.secrets.env
+git commit -m "chore(secrets): atualiza X"
+git push origin main
+
+# 4. Deploy para a VPS
+export VPS_HOST=187.77.45.48 VPS_USER=root VPS_DEPLOY_PATH=/opt/mecontrola
+export AGE_PRIVATE_KEY="$(cat key.txt)"
+bash deployment/scripts/deploy-full.sh --local "$(git rev-parse --short HEAD)"
+```
+
+> **Atenção:** `key.txt` não pode ser commitado. Se for perdida, os secrets em `prod.secrets.env` ficam irrecuperáveis.
+
+### 2. Gestão manual local (CLI)
+
+Se preferir não usar a UI:
+
+```bash
+# Editar variáveis não-secretas
+vim deployment/config/prod.env
+
+# Editar secrets (abre editor padrão com conteúdo descriptografado)
+SOPS_AGE_KEY_FILE=key.txt sops deployment/config/prod.secrets.env
+
+# Rotacionar um secret sem alterar seu valor (força recriação no Swarm)
+MODE=rotate SOPS_AGE_KEY_FILE=key.txt bash deployment/scripts/deploy-full.sh --local
+```
+
+### 3. Gestão diretamente na VPS
+
+Use apenas em emergência ou quando não tiver acesso ao repo local. Necessita SSH `root` e a chave privada `age`.
+
+```bash
+# Acesse a VPS
+ssh root@187.77.45.48
+cd /opt/mecontrola
+```
+
+Na VPS **não existe mais `.env` persistente**. Os secrets vivem como Docker Swarm secrets:
+
+```bash
+# Listar secrets atuais
+docker secret ls --filter name=mecontrola_
+
+# Inspecionar um secret (mostra apenas metadata, nunca o valor)
+docker secret inspect mecontrola_DB_PASSWORD
+```
+
+Para alterar um secret diretamente na VPS:
+
+```bash
+# 1. Crie um arquivo temporário com o novo valor
+cat > /tmp/new-secret.env <<EOF
+DB_PASSWORD=novo-valor-seguro-minimo-16-caracteres
+EOF
+chmod 600 /tmp/new-secret.env
+
+# 2. Atualize o Docker secret (rotaciona automaticamente nos services)
+MODE=rotate bash deployment/scripts/create-secrets.sh /tmp/new-secret.env
+
+# 3. Remova o arquivo temporário
+shred -u /tmp/new-secret.env
+```
+
+Para alterar variáveis não-secretas (que vêm de `prod.env`), edite o arquivo na VPS e faça redeploy:
+
+```bash
+vim deployment/config/prod.env
+
+# Redeploy com a tag atual
+export IMAGE_TAG=$(git rev-parse --short HEAD)
+python3 deployment/scripts/render-stack.py deployment/compose/compose.swarm.yml \
+  --env-file deployment/config/prod.env \
+  --secrets-env-file <(SOPS_AGE_KEY_FILE=/root/.config/sops/age/key.txt sops --decrypt deployment/config/prod.secrets.env) \
+  > /tmp/stack.yml
+docker stack deploy -c /tmp/stack.yml mecontrola
+rm -f /tmp/stack.yml
+```
+
+> **Preferência:** sempre que possível, edite localmente via `cmd/configui` e faça deploy pelo `deploy-full.sh`. As alterações manuais na VPS não são rastreadas pelo git e podem ser sobrescritas no próximo deploy.
+
+### 4. Onde fica a chave privada na VPS?
+
+A VPS precisa da chave privada `age` apenas para descriptografar durante o deploy. O local padrão é:
+
+```bash
+/root/.config/sops/age/key.txt
+```
+
+O `deploy-full.sh` (quando disparado da máquina local) não deixa a chave privada persistente na VPS: ela trafega por `/tmp` e é removida ao final. Para deploys manuais iniciados diretamente na VPS, mantenha `key.txt` protegido com permissão `0600`.
 
 ---
 
