@@ -423,6 +423,8 @@ func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_FailsWhenWriteToolErr
 	s.NoError(err)
 	s.Equal(RunStatusFailed, outcome.Status)
 	s.Equal(ToolOutcomeUsecaseError, outcome.Outcome)
+	s.Empty(outcome.Content)
+	s.False(outcome.Succeeded())
 }
 
 func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_SucceedsWhenWriteToolSucceeds() {
@@ -462,6 +464,8 @@ func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_SucceedsWhenWriteTool
 
 	s.NoError(err)
 	s.Equal(RunStatusSucceeded, outcome.Status)
+	s.True(outcome.Succeeded())
+	s.NotEmpty(outcome.Content)
 }
 
 func (s *RuntimeTestSuite) TestExecute_RF39_RoleToolMessagesArePersisted() {

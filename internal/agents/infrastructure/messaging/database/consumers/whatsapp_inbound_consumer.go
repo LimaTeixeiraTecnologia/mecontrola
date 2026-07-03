@@ -153,7 +153,7 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 			return fmt.Errorf("agents.consumer.whatsapp_inbound: confirmacao destrutiva: %w", err)
 		}
 		if handled {
-			return c.sendReply(ctx, p.Peer, reply)
+			return c.sendReply(ctx, p.Peer, reply, "success")
 		}
 	}
 
@@ -169,7 +169,7 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 			return fmt.Errorf("agents.consumer.whatsapp_inbound: onboarding: %w", err)
 		}
 		if result.Handled {
-			return c.sendReply(ctx, p.Peer, result.Message)
+			return c.sendReply(ctx, p.Peer, result.Message, "success")
 		}
 	}
 
@@ -199,18 +199,18 @@ func (c *WhatsAppInboundConsumer) handleAgentInbound(ctx context.Context, span o
 		span.RecordError(err)
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: handle inbound: %w", err)
 	}
-	return c.sendReply(ctx, p.Peer, outcome.Content)
+	if !outcome.Succeeded() {
+		return c.sendReply(ctx, p.Peer, fallbackReply, "not_confirmed")
+	}
+	return c.sendReply(ctx, p.Peer, outcome.Content, "success")
 }
 
 const fallbackReply = "não consegui concluir agora, pode repetir?"
 
-func (c *WhatsAppInboundConsumer) sendReply(ctx context.Context, peer, content string) error {
+func (c *WhatsAppInboundConsumer) sendReply(ctx context.Context, peer, content, deliveredOutcome string) error {
 	content = formatting.NormalizeOutboundText(content)
 	if strings.TrimSpace(content) == "" {
-		c.inboundTotal.Add(ctx, 1,
-			observability.String("channel", "whatsapp"),
-			observability.String("outcome", "no_reply"),
-		)
+		deliveredOutcome = "no_reply"
 		content = fallbackReply
 	}
 
@@ -224,7 +224,7 @@ func (c *WhatsAppInboundConsumer) sendReply(ctx context.Context, peer, content s
 
 	c.inboundTotal.Add(ctx, 1,
 		observability.String("channel", "whatsapp"),
-		observability.String("outcome", "success"),
+		observability.String("outcome", deliveredOutcome),
 	)
 	return nil
 }

@@ -262,6 +262,42 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			},
 		},
 		{
+			name: "deve suprimir confirmacao alucinada quando run falhou e enviar fallback honesto",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-uuid-123",
+						Peer:      "+5511999999999",
+						Text:      "gastei 150 no mercado",
+						MessageID: "wamid-halluc-001",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{
+							RunID:   uuid.New(),
+							Content: "Despesa registrada com sucesso ✅ R$150,00",
+							Status:  agent.RunStatusFailed,
+							Outcome: agent.ToolOutcomeUsecaseError,
+						}, nil).Once()
+					return m
+				}(),
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511999999999", fallbackReply).
+						Return(nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
 			name: "deve retornar erro quando gateway falha",
 			args: args{
 				event: &mockEvent{
@@ -610,7 +646,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle_RestoresTraceparentFromMetadat
 	senderMock := &mockWhatsAppSender{}
 
 	inboundMock.On("Execute", mock.Anything, mock.AnythingOfType("input.InboundInput")).
-		Return(agent.Outcome{Content: "ok"}, nil).Once()
+		Return(agent.Outcome{Content: "ok", Status: agent.RunStatusSucceeded}, nil).Once()
 	senderMock.On("SendTextMessage", mock.Anything, "+5511999999999", "ok").
 		Return(nil).Once()
 

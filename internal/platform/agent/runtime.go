@@ -196,9 +196,14 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, threadPK uuid.UUI
 
 	r.closeRun(ctx, run, runStatus, toolOutcome, "", start)
 
+	content := result.Content
+	if runStatus != RunStatusSucceeded {
+		content = ""
+	}
+
 	return Outcome{
 		RunID:   run.ID,
-		Content: result.Content,
+		Content: content,
 		Status:  runStatus,
 		Outcome: toolOutcome,
 		Mode:    ExecutionModeSync,

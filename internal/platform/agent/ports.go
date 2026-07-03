@@ -95,6 +95,10 @@ type Outcome struct {
 	Mode    ExecutionMode
 }
 
+func (o Outcome) Succeeded() bool {
+	return o.Status == RunStatusSucceeded
+}
+
 type Run struct {
 	ID             uuid.UUID
 	ThreadPK       uuid.UUID
