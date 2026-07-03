@@ -384,7 +384,9 @@ func (l *configLoader) load() (*Config, error) {
 	l.setEmailDefaults()
 	l.setAuthRateLimitDefaults()
 	l.setWorkflowKernelDefaults()
-	l.loadSecretsFromFiles()
+	if err := l.loadSecretsFromFiles(); err != nil {
+		return nil, fmt.Errorf("carregando secrets: %w", err)
+	}
 
 	if err := l.v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -597,9 +599,9 @@ func (l *configLoader) secretsPath() string {
 	return "/run/secrets"
 }
 
-func (l *configLoader) loadSecretsFromFiles() {
+func (l *configLoader) loadSecretsFromFiles() error {
 	if l.v.GetString("ENVIRONMENT") != "production" {
-		return
+		return nil
 	}
 
 	base := l.secretsPath()
@@ -611,11 +613,16 @@ func (l *configLoader) loadSecretsFromFiles() {
 		path := filepath.Join(base, key)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("lendo secret %q em %q: %w", key, path, err)
 		}
 
 		l.v.Set(key, strings.TrimSpace(string(data)))
 	}
+
+	return nil
 }
 
 func (l *configLoader) setKiwifyDefaults() {

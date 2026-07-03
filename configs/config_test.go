@@ -1937,3 +1937,36 @@ func (s *ConfigSuite) TestLoadConfigReadsSecretsFromFiles() {
 	s.Equal("from-env-token", cfg.WhatsAppConfig.AccessToken)
 	s.Equal("from-secret-file", cfg.AgentConfig.OpenRouterAPIKey)
 }
+
+func (s *ConfigSuite) TestLoadConfigFailsWhenSecretFileUnreadable() {
+	path := s.T().TempDir()
+	secretsPath := filepath.Join(path, "secrets")
+	s.Require().NoError(os.MkdirAll(secretsPath, 0700))
+
+	s.T().Setenv("MECONTROLA_SECRETS_PATH", secretsPath)
+	s.T().Setenv("ENVIRONMENT", "production")
+	s.T().Setenv("PORT", "8080")
+	s.T().Setenv("DB_HOST", "db")
+	s.T().Setenv("DB_PORT", "5432")
+	s.T().Setenv("DB_USER", "mecontrola")
+	s.T().Setenv("DB_NAME", "mecontrola_db")
+	s.T().Setenv("DB_SSL_MODE", "disable")
+	s.T().Setenv("OTEL_TRACE_SAMPLE_RATE", "0.1")
+	s.T().Setenv("SERVICE_NAME_API", "mecontrola-api")
+	s.T().Setenv("CORS_ALLOWED_ORIGINS", "https://app.mecontrola.com.br")
+	s.T().Setenv("IDENTITY_GATEWAY_SHARED_SECRET_CURRENT", strings.Repeat("a1", 32))
+	s.T().Setenv("META_ACCESS_TOKEN", "token")
+	s.T().Setenv("META_PHONE_NUMBER_ID", "1234567890123")
+	s.T().Setenv("META_APP_SECRET", "secret")
+	s.T().Setenv("META_VERIFY_TOKEN", "verify")
+	s.T().Setenv("ONBOARDING_TOKEN_ENCRYPTION_KEY", "testencryptionkey1234567890abcde")
+
+	// Força erro de leitura criando um diretório com o nome do secret.
+	s.Require().NoError(os.Mkdir(filepath.Join(secretsPath, "DB_PASSWORD"), 0700))
+
+	cfg, err := configs.LoadConfig(path)
+	s.Require().Error(err)
+	s.Nil(cfg)
+	s.ErrorContains(err, "carregando secrets")
+	s.ErrorContains(err, "DB_PASSWORD")
+}
