@@ -44,8 +44,6 @@ func loadSettings() settings {
 	}
 }
 
-// envLine é uma discriminated union (sealed interface) representando uma linha
-// de um arquivo .env: comentário, linha em branco ou variável. DMMF Princípio 3.
 type envLine interface {
 	isEnvLine()
 }
@@ -65,8 +63,6 @@ type variable struct {
 
 func (variable) isEnvLine() {}
 
-// newVariable é o smart constructor para variáveis de ambiente.
-// Rejeita chave vazia, garantindo estado ilegal irrepresentável.
 func newVariable(key, value string) (variable, error) {
 	k := strings.TrimSpace(key)
 	if k == "" {
@@ -393,7 +389,6 @@ func serialize(entries []envLine) string {
 		case commentLine:
 			b.WriteString(l.raw)
 		case blankLine:
-			// nada a serializar
 		case variable:
 			b.WriteString(l.key)
 			b.WriteString("=")
