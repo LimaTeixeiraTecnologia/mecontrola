@@ -25,11 +25,40 @@ type Request struct {
 	Temperature float64
 }
 
+type ToolCallOutcome int
+
+const (
+	ToolCallOutcomeSuccess ToolCallOutcome = iota + 1
+	ToolCallOutcomeError
+)
+
+func (o ToolCallOutcome) String() string {
+	switch o {
+	case ToolCallOutcomeSuccess:
+		return "success"
+	case ToolCallOutcomeError:
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+func (o ToolCallOutcome) IsValid() bool {
+	return o >= ToolCallOutcomeSuccess && o <= ToolCallOutcomeError
+}
+
+type ToolCallRecord struct {
+	Tool    string
+	Outcome ToolCallOutcome
+	Content string
+}
+
 type Result struct {
 	Content           string
 	RawJSON           []byte
 	Mode              ExecutionMode
 	ToolOutcome       ToolOutcome
+	ToolCalls         []ToolCallRecord
 	TruncatedByLength bool
 }
 

@@ -71,15 +71,17 @@ func (s *wfStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int)
 
 type DestructiveConfirmSuite struct {
 	suite.Suite
-	ctx      context.Context
-	store    *wfStore
-	engine   workflow.Engine[ConfirmState]
-	def      workflow.Definition[ConfirmState]
-	ledger   *imocks.TransactionsLedger
-	cards    *imocks.CardManager
-	targetID uuid.UUID
-	userID   string
-	key      string
+	ctx         context.Context
+	store       *wfStore
+	engine      workflow.Engine[ConfirmState]
+	def         workflow.Definition[ConfirmState]
+	ledger      *imocks.TransactionsLedger
+	cards       *imocks.CardManager
+	categories  *imocks.CategoriesReader
+	recurrences *imocks.RecurrenceManager
+	targetID    uuid.UUID
+	userID      string
+	key         string
 }
 
 func TestDestructiveConfirmSuite(t *testing.T) {
@@ -91,8 +93,10 @@ func (s *DestructiveConfirmSuite) SetupTest() {
 	s.store = newWfStore()
 	s.ledger = imocks.NewTransactionsLedger(s.T())
 	s.cards = imocks.NewCardManager(s.T())
+	s.categories = imocks.NewCategoriesReader(s.T())
+	s.recurrences = imocks.NewRecurrenceManager(s.T())
 	s.engine = workflow.NewEngine[ConfirmState](s.store, fake.NewProvider())
-	s.def = BuildDestructiveConfirmWorkflow(s.ledger, s.cards)
+	s.def = BuildDestructiveConfirmWorkflow(s.ledger, s.cards, s.categories, s.recurrences)
 	s.targetID = uuid.New()
 	s.userID = uuid.New().String()
 	s.key = DestructiveConfirmKey(s.userID)
@@ -397,4 +401,248 @@ func (s *DestructiveConfirmSuite) TestBindingError_ReturnsError() {
 	handled, _, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "sim")
 	s.True(handled)
 	s.Error(err)
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_StringIsValid() {
+	s.Equal("confirm_register", OpConfirmRegister.String())
+	s.True(OpConfirmRegister.IsValid())
+	op, err := ParseOperationKind("confirm_register")
+	s.NoError(err)
+	s.Equal(OpConfirmRegister, op)
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_SuspendsAndAskCategory() {
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   5000,
+		Description:   "padaria",
+		OccurredAt:    "2026-07-02",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	result, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Contains(result.State.ResponseText, "categoria")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_CategoryResolved_RegistersAndCompletes() {
+	categoryID := uuid.New()
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   5000,
+		Description:   "padaria",
+		OccurredAt:    "2026-07-02",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "alimentação", "expense").
+		Return([]ifaces.CategoryCandidate{{CategoryID: categoryID, RootCategoryID: categoryID}}, nil).
+		Once()
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.MatchedBy(func(r ifaces.RawTransaction) bool {
+			return r.CategoryID == categoryID && r.Description == "padaria"
+		})).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: "transaction"}, nil).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "alimentação")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "✅")
+	s.Contains(response, "registrado")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_CategoryNotFound_Reprompts() {
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   5000,
+		Description:   "padaria",
+		OccurredAt:    "2026-07-02",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "xyzxyz", "expense").
+		Return(nil, errors.New("não encontrado")).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "xyzxyz")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "categoria")
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "xyzxyz", "expense").
+		Return(nil, errors.New("não encontrado")).
+		Once()
+
+	handled2, response2, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "xyzxyz")
+	s.NoError(err)
+	s.True(handled2)
+	s.Contains(response2, "cancelado")
+}
+
+func (s *DestructiveConfirmSuite) TestParseOperationKind_NewKinds() {
+	cases := []struct {
+		str string
+		op  OperationKind
+	}{
+		{"update_recurrence", OpUpdateRecurrence},
+		{"delete_recurrence", OpDeleteRecurrence},
+		{"update_card", OpUpdateCard},
+	}
+	for _, c := range cases {
+		parsed, err := ParseOperationKind(c.str)
+		s.NoError(err)
+		s.Equal(c.op, parsed)
+		s.Equal(c.str, c.op.String())
+		s.True(c.op.IsValid())
+	}
+	_, err := ParseOperationKind("invalid_kind")
+	s.Error(err)
+}
+
+func (s *DestructiveConfirmSuite) TestOpUpdateRecurrence_Confirm_CallsUpdateRecurrence() {
+	templateID := uuid.New().String()
+	upd := ifaces.RawUpdateRecurrence{
+		AmountCents: func() *int64 { v := int64(8000); return &v }(),
+		Version:     1,
+	}
+	payload, _ := json.Marshal(upd)
+
+	s.recurrences.EXPECT().
+		UpdateRecurrence(mock.Anything, templateID, mock.AnythingOfType("interfaces.RawUpdateRecurrence")).
+		Return(ifaces.EntryRef{}, nil).
+		Once()
+
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpUpdateRecurrence,
+		TargetRef:     templateID,
+		TargetKind:    "recurring_template",
+		ImpactNote:    "Esta recorrência será atualizada.",
+		SuspendedAt:   time.Now().UTC(),
+		UpdatePayload: string(payload),
+		Version:       1,
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "sim")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "✅")
+	s.Contains(response, "Recorrência atualizada")
+}
+
+func (s *DestructiveConfirmSuite) TestOpDeleteRecurrence_Confirm_CallsDeleteRecurrence() {
+	templateID := uuid.New().String()
+
+	s.recurrences.EXPECT().
+		DeleteRecurrence(mock.Anything, templateID, int64(2)).
+		Return(nil).
+		Once()
+
+	state := ConfirmState{
+		Awaiting:    AwaitingConfirm,
+		Operation:   OpDeleteRecurrence,
+		TargetRef:   templateID,
+		TargetKind:  "recurring_template",
+		ImpactNote:  "Esta recorrência será removida permanentemente.",
+		SuspendedAt: time.Now().UTC(),
+		Version:     2,
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "sim")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "✅")
+	s.Contains(response, "Recorrência removida")
+}
+
+func (s *DestructiveConfirmSuite) TestOpUpdateCard_Confirm_CallsUpdateCard() {
+	cardID := uuid.New()
+	dueDay := 10
+	upd := ifaces.CardUpdate{
+		DueDay: &dueDay,
+	}
+	payload, _ := json.Marshal(upd)
+
+	s.cards.EXPECT().
+		UpdateCard(mock.Anything, mock.AnythingOfType("interfaces.CardUpdate")).
+		Return(ifaces.Card{}, nil).
+		Once()
+
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpUpdateCard,
+		TargetRef:     cardID.String(),
+		TargetKind:    "card",
+		ImpactNote:    "A alteração do dia de vencimento pode impactar parcelas em aberto.",
+		SuspendedAt:   time.Now().UTC(),
+		UpdatePayload: string(payload),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "sim")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "✅")
+	s.Contains(response, "Cartão atualizado")
+}
+
+func (s *DestructiveConfirmSuite) TestOpUpdateRecurrence_Cancel_NoEffect() {
+	templateID := uuid.New().String()
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpUpdateRecurrence,
+		TargetRef:     templateID,
+		TargetKind:    "recurring_template",
+		ImpactNote:    "Esta recorrência será atualizada.",
+		SuspendedAt:   time.Now().UTC(),
+		UpdatePayload: `{"version":1}`,
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "não")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "cancelada")
 }

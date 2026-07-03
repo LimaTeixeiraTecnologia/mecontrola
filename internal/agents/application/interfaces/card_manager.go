@@ -9,6 +9,10 @@ import (
 type CardManager interface {
 	CreateCard(ctx context.Context, in NewCard) (CardRef, error)
 	ListCards(ctx context.Context, userID uuid.UUID) ([]Card, error)
+	GetCard(ctx context.Context, cardID, userID uuid.UUID) (Card, error)
+	CountCards(ctx context.Context, userID uuid.UUID) (int64, error)
+	BestPurchaseDay(ctx context.Context, bank string, dueDay int) (BestPurchaseDay, error)
+	UpdateCard(ctx context.Context, in CardUpdate) (Card, error)
 	SoftDeleteCard(ctx context.Context, cardID, userID uuid.UUID) error
 	HasOpenInstallments(ctx context.Context, cardID, userID uuid.UUID) (bool, error)
 }

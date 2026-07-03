@@ -135,6 +135,7 @@ packages:
       BudgetPlanner: {}
       CardManager: {}
       CategoriesReader: {}
+      RecurrenceManager: {}
       TransactionsLedger: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow:
     interfaces:

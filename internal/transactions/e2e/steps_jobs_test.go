@@ -28,6 +28,7 @@ func (e *txE2ECtx) queExisteUmRecurringTemplateAtivoParaHoje(centavos int64, fre
 		"amount_cents":       centavos,
 		"description":        "e2e job test",
 		"category_id":        txE2EPrazerosRootCategoryUUID,
+		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"frequency":          frequencia,
 		"day_of_month":       time.Now().UTC().Day(),
 		"installments_total": 1,

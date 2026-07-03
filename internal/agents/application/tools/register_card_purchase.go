@@ -15,9 +15,6 @@ import (
 )
 
 type RegisterCardPurchaseInput struct {
-	Wamid             string     `json:"wamid"`
-	ItemSeq           int        `json:"itemSeq"`
-	UserID            string     `json:"userId"`
 	CardNickname      string     `json:"cardNickname"`
 	TotalAmountCents  int64      `json:"totalAmountCents"`
 	InstallmentsTotal int        `json:"installmentsTotal"`
@@ -41,9 +38,6 @@ func BuildRegisterCardPurchaseTool(ledger interfaces.TransactionsLedger, cardMan
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"wamid":             map[string]any{"type": "string"},
-				"itemSeq":           map[string]any{"type": "integer"},
-				"userId":            map[string]any{"type": "string"},
 				"cardNickname":      map[string]any{"type": "string"},
 				"totalAmountCents":  map[string]any{"type": "integer"},
 				"installmentsTotal": map[string]any{"type": "integer", "minimum": 1, "maximum": 24},
@@ -52,7 +46,7 @@ func BuildRegisterCardPurchaseTool(ledger interfaces.TransactionsLedger, cardMan
 				"categoryId":        map[string]any{"type": "string"},
 				"subcategoryId":     map[string]any{"type": "string"},
 			},
-			"required":             []string{"wamid", "itemSeq", "userId", "cardNickname", "totalAmountCents", "installmentsTotal", "description"},
+			"required":             []string{"cardNickname", "totalAmountCents", "installmentsTotal", "description"},
 			"additionalProperties": false,
 		},
 	}
@@ -79,7 +73,11 @@ func buildRegisterCardPurchaseExec(ledger interfaces.TransactionsLedger, cardMan
 		if in.InstallmentsTotal < 1 || in.InstallmentsTotal > 24 {
 			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: parcelas deve estar entre 1 e 24, recebido %d", in.InstallmentsTotal)
 		}
-		userID, err := uuid.Parse(in.UserID)
+		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: identidade não disponível no contexto")
+		}
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: userId inválido: %w", err)
 		}
@@ -95,7 +93,7 @@ func buildRegisterCardPurchaseExec(ledger interfaces.TransactionsLedger, cardMan
 		if in.CategoryID != nil {
 			catID = *in.CategoryID
 		}
-		result, writeErr := writer.Execute(ctx, userID, in.Wamid, in.ItemSeq, "create_card_purchase", "card_purchase", func(ctx context.Context) (uuid.UUID, bool, error) {
+		result, writeErr := writer.Execute(ctx, userID, wamid, itemSeq, "create_card_purchase", "card_purchase", func(ctx context.Context) (uuid.UUID, bool, error) {
 			cards, listErr := cardManager.ListCards(ctx, userID)
 			if listErr != nil {
 				return uuid.Nil, false, fmt.Errorf("listar cartões: %w", listErr)
@@ -124,8 +122,8 @@ func buildRegisterCardPurchaseExec(ledger interfaces.TransactionsLedger, cardMan
 				CategoryID:        catID,
 				SubcategoryID:     in.SubcategoryID,
 				PurchasedAt:       purchasedAt,
-				OriginWamid:       in.Wamid,
-				OriginItemSeq:     in.ItemSeq,
+				OriginWamid:       wamid,
+				OriginItemSeq:     itemSeq,
 				OriginOperation:   "create_card_purchase",
 			})
 			if err != nil {

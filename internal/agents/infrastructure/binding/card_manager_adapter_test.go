@@ -51,7 +51,7 @@ func (s *CardManagerAdapterSuite) buildAdapter() agentsifaces.CardManager {
 	o11y := fake.NewProvider()
 	createCard := cardusecases.NewCreateCard(s.uow, s.factory, s.idem, o11y)
 	listCards := cardusecases.NewListCards(s.cardRepo, o11y)
-	return NewCardManagerAdapter(createCard, listCards, nil, nil, o11y)
+	return NewCardManagerAdapter(createCard, listCards, nil, nil, nil, nil, nil, nil, o11y)
 }
 
 func (s *CardManagerAdapterSuite) existingCard(nickname string) cardentities.Card {

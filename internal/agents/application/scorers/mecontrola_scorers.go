@@ -13,12 +13,28 @@ var mecontrolaFinancialTools = []string{
 	"register_expense",
 	"register_income",
 	"register_card_purchase",
+	"create_recurrence",
 	"query_month",
+	"get_transaction",
+	"get_card_purchase",
+	"list_card_purchases",
+	"search_transactions",
+	"list_cards",
+	"get_card",
+	"count_cards",
+	"best_purchase_day",
+	"query_card_invoice",
+	"list_recurrences",
+	"update_recurrence",
+	"delete_recurrence",
+	"list_categories",
+	"classify_category",
 	"query_plan",
+	"adjust_allocation",
+	"suggest_allocation",
 	"edit_entry",
 	"delete_entry",
-	"adjust_allocation",
-	"classify_category",
+	"update_card",
 }
 
 var mecontrolaFinancialKeywords = []string{
@@ -72,6 +88,41 @@ func (s *anyFinancialToolScorer) Score(_ context.Context, sample scorer.RunSampl
 	}, nil
 }
 
+type expectedToolScorer struct {
+	id           string
+	expectedTool string
+}
+
+func (s *expectedToolScorer) ID() string              { return s.id }
+func (s *expectedToolScorer) Kind() scorer.ScorerKind { return scorer.ScorerKindCodeBased }
+
+func (s *expectedToolScorer) Score(_ context.Context, sample scorer.RunSample) (scorer.ScoreResult, error) {
+	for _, tc := range sample.ToolCalls {
+		if tc.Name == s.expectedTool {
+			return scorer.ScoreResult{
+				Score:  1.0,
+				Reason: fmt.Sprintf("chamou a tool esperada: %s", s.expectedTool),
+				Metadata: map[string]any{
+					"expected": s.expectedTool,
+					"called":   tc.Name,
+				},
+			}, nil
+		}
+	}
+	called := make([]string, len(sample.ToolCalls))
+	for i, tc := range sample.ToolCalls {
+		called[i] = tc.Name
+	}
+	return scorer.ScoreResult{
+		Score:  0.0,
+		Reason: fmt.Sprintf("tool esperada %q não foi chamada; chamadas: %v", s.expectedTool, called),
+		Metadata: map[string]any{
+			"expected": s.expectedTool,
+			"called":   called,
+		},
+	}, nil
+}
+
 type textKeywordsScorer struct {
 	id       string
 	keywords []string
@@ -104,6 +155,13 @@ func (s *textKeywordsScorer) Score(_ context.Context, sample scorer.RunSample) (
 
 func NewFinancialToolCallAccuracyScorer() scorer.Scorer {
 	return &anyFinancialToolScorer{id: "tool-call-accuracy", tools: mecontrolaFinancialTools}
+}
+
+func NewExpectedToolScorer(toolName string) scorer.Scorer {
+	return &expectedToolScorer{
+		id:           "expected-tool:" + toolName,
+		expectedTool: toolName,
+	}
 }
 
 func NewFinancialCompletenessScorer() scorer.Scorer {

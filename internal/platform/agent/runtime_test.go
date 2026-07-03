@@ -385,6 +385,145 @@ func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_UsecaseErrorOnEmptyCo
 	s.Equal(ToolOutcomeUsecaseError, runs.updated[0].Outcome)
 }
 
+func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_FailsWhenWriteToolErrors() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		result: Result{
+			Content: "Despesa registrada com sucesso",
+			Mode:    ExecutionModeSync,
+			ToolCalls: []ToolCallRecord{
+				{Tool: "register_expense", Outcome: ToolCallOutcomeError, Content: "ledger error"},
+			},
+		},
+	})
+
+	runs := &fakeRunStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		s.obs,
+		WithWriteToolSet("register_expense"),
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "registrar despesa",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusFailed, outcome.Status)
+	s.Equal(ToolOutcomeUsecaseError, outcome.Outcome)
+}
+
+func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_SucceedsWhenWriteToolSucceeds() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		result: Result{
+			Content: "Despesa registrada com sucesso",
+			Mode:    ExecutionModeSync,
+			ToolCalls: []ToolCallRecord{
+				{Tool: "register_expense", Outcome: ToolCallOutcomeSuccess, Content: `{"resourceId":"abc","kind":"transaction","isReplay":false,"outcome":"routed"}`},
+			},
+		},
+	})
+
+	runs := &fakeRunStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		s.obs,
+		WithWriteToolSet("register_expense"),
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "registrar despesa",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, outcome.Status)
+}
+
+func (s *RuntimeTestSuite) TestExecute_RF39_RoleToolMessagesArePersisted() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		result: Result{
+			Content: "ok",
+			Mode:    ExecutionModeSync,
+			ToolCalls: []ToolCallRecord{
+				{Tool: "register_expense", Outcome: ToolCallOutcomeSuccess, Content: `{"resourceId":"abc","kind":"transaction","isReplay":false,"outcome":"routed"}`},
+			},
+		},
+	})
+
+	msgs := &recordingMessageStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		msgs,
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		s.obs,
+	)
+
+	_, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "registrar despesa",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+
+	var toolMsgs []memory.Message
+	for _, m := range msgs.appended {
+		if m.Role == memory.RoleTool {
+			toolMsgs = append(toolMsgs, m)
+		}
+	}
+	s.Require().Len(toolMsgs, 1)
+	s.Equal(memory.RoleTool, toolMsgs[0].Role)
+	s.Contains(toolMsgs[0].Content, "transaction")
+}
+
+type recordingMessageStore struct {
+	appended []memory.Message
+}
+
+func (r *recordingMessageStore) Append(_ context.Context, _ uuid.UUID, m memory.Message) error {
+	r.appended = append(r.appended, m)
+	return nil
+}
+
+func (r *recordingMessageStore) Recent(_ context.Context, _ uuid.UUID, _ int) ([]memory.Message, error) {
+	return nil, nil
+}
+
 type capturingMessageStore struct {
 	recent        []memory.Message
 	capturedLimit int

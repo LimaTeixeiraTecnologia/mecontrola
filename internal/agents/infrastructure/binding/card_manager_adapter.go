@@ -10,6 +10,7 @@ import (
 
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	cardinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/input"
+	cardoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	cardusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases"
 	carddomain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
@@ -18,6 +19,10 @@ import (
 type cardManagerAdapter struct {
 	createCard          *cardusecases.CreateCard
 	listCards           *cardusecases.ListCards
+	getCard             *cardusecases.GetCard
+	countCards          *cardusecases.CountCards
+	bestPurchaseDay     *cardusecases.BestPurchaseDay
+	updateCard          *cardusecases.UpdateCard
 	softDeleteCard      *cardusecases.SoftDeleteCard
 	hasOpenInstallments *txusecases.HasOpenInstallments
 	o11y                observability.Observability
@@ -26,6 +31,10 @@ type cardManagerAdapter struct {
 func NewCardManagerAdapter(
 	createCard *cardusecases.CreateCard,
 	listCards *cardusecases.ListCards,
+	getCard *cardusecases.GetCard,
+	countCards *cardusecases.CountCards,
+	bestPurchaseDay *cardusecases.BestPurchaseDay,
+	updateCard *cardusecases.UpdateCard,
 	softDeleteCard *cardusecases.SoftDeleteCard,
 	hasOpenInstallments *txusecases.HasOpenInstallments,
 	o11y observability.Observability,
@@ -33,6 +42,10 @@ func NewCardManagerAdapter(
 	return &cardManagerAdapter{
 		createCard:          createCard,
 		listCards:           listCards,
+		getCard:             getCard,
+		countCards:          countCards,
+		bestPurchaseDay:     bestPurchaseDay,
+		updateCard:          updateCard,
 		softDeleteCard:      softDeleteCard,
 		hasOpenInstallments: hasOpenInstallments,
 		o11y:                o11y,
@@ -85,11 +98,12 @@ func (a *cardManagerAdapter) ListCards(ctx context.Context, userID uuid.UUID) ([
 	cards := make([]agentsifaces.Card, 0, len(out.Items))
 	for _, c := range out.Items {
 		cards = append(cards, agentsifaces.Card{
-			ID:         c.ID,
-			Nickname:   c.Nickname,
-			Bank:       c.Bank,
-			ClosingDay: c.ClosingDay,
-			DueDay:     c.DueDay,
+			ID:              c.ID,
+			Nickname:        c.Nickname,
+			Bank:            c.Bank,
+			ClosingDay:      c.ClosingDay,
+			DueDay:          c.DueDay,
+			BestPurchaseDay: c.BestPurchaseDay,
 		})
 	}
 	return cards, nil
@@ -107,6 +121,77 @@ func (a *cardManagerAdapter) SoftDeleteCard(ctx context.Context, cardID, userID 
 		return fmt.Errorf("agents/binding/card_manager: deletar cartão: %w", err)
 	}
 	return nil
+}
+
+func (a *cardManagerAdapter) GetCard(ctx context.Context, cardID, userID uuid.UUID) (agentsifaces.Card, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.card_manager.get_card")
+	defer span.End()
+
+	out, err := a.getCard.Execute(ctx, cardinput.GetCard{ID: cardID, UserID: userID})
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.Card{}, fmt.Errorf("agents/binding/card_manager: obter cartão: %w", err)
+	}
+	return mapCardOutput(out), nil
+}
+
+func (a *cardManagerAdapter) CountCards(ctx context.Context, userID uuid.UUID) (int64, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.card_manager.count_cards")
+	defer span.End()
+
+	out, err := a.countCards.Execute(ctx, cardinput.CountCards{UserID: userID})
+	if err != nil {
+		span.RecordError(err)
+		return 0, fmt.Errorf("agents/binding/card_manager: contar cartões: %w", err)
+	}
+	return out.Total, nil
+}
+
+func (a *cardManagerAdapter) BestPurchaseDay(ctx context.Context, bank string, dueDay int) (agentsifaces.BestPurchaseDay, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.card_manager.best_purchase_day")
+	defer span.End()
+
+	out, err := a.bestPurchaseDay.Execute(ctx, cardinput.BestPurchaseDay{Bank: bank, DueDay: dueDay})
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.BestPurchaseDay{}, fmt.Errorf("agents/binding/card_manager: melhor dia de compra: %w", err)
+	}
+	return agentsifaces.BestPurchaseDay{
+		ClosingDay:      out.ClosingDay,
+		BestPurchaseDay: out.BestPurchaseDay,
+	}, nil
+}
+
+func (a *cardManagerAdapter) UpdateCard(ctx context.Context, in agentsifaces.CardUpdate) (agentsifaces.Card, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.card_manager.update_card")
+	defer span.End()
+
+	out, err := a.updateCard.Execute(ctx, cardinput.UpdateCard{
+		ID:       in.ID,
+		UserID:   in.UserID,
+		Nickname: in.Nickname,
+		Bank:     in.Bank,
+		DueDay:   in.DueDay,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.Card{}, fmt.Errorf("agents/binding/card_manager: atualizar cartão: %w", err)
+	}
+	return mapCardOutput(out), nil
+}
+
+func mapCardOutput(c cardoutput.Card) agentsifaces.Card {
+	return agentsifaces.Card{
+		ID:              c.ID,
+		UserID:          c.UserID,
+		Nickname:        c.Nickname,
+		Bank:            c.Bank,
+		ClosingDay:      c.ClosingDay,
+		DueDay:          c.DueDay,
+		BestPurchaseDay: c.BestPurchaseDay,
+		CreatedAt:       c.CreatedAt,
+		UpdatedAt:       c.UpdatedAt,
+	}
 }
 
 func (a *cardManagerAdapter) HasOpenInstallments(ctx context.Context, cardID, userID uuid.UUID) (bool, error) {

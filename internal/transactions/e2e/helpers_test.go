@@ -193,15 +193,23 @@ func drainOutboxToConsumer(ctx context.Context, db *sqlx.DB, consumer interface 
 	Stop(ctx context.Context)
 }, debounce time.Duration) error {
 	storage := outbox.NewPostgresStorage(db)
-	rows, err := storage.ClaimBatch(ctx, "e2e-consumer-drain", 100)
-	if err != nil {
-		return fmt.Errorf("drainOutboxToConsumer ClaimBatch: %w", err)
-	}
+	for {
+		rows, err := storage.ClaimBatch(ctx, "e2e-consumer-drain", 100)
+		if err != nil {
+			return fmt.Errorf("drainOutboxToConsumer ClaimBatch: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
 
-	for _, row := range rows {
-		env := outbox.Pack(row)
-		if handleErr := consumer.Handle(ctx, outboxEventAdapter{env: env}); handleErr != nil {
-			return fmt.Errorf("drainOutboxToConsumer Handle: %w", handleErr)
+		for _, row := range rows {
+			env := outbox.Pack(row)
+			if handleErr := consumer.Handle(ctx, outboxEventAdapter{env: env}); handleErr != nil {
+				return fmt.Errorf("drainOutboxToConsumer Handle: %w", handleErr)
+			}
+			if markErr := storage.MarkPublished(ctx, row.ID); markErr != nil {
+				return fmt.Errorf("drainOutboxToConsumer MarkPublished: %w", markErr)
+			}
 		}
 	}
 

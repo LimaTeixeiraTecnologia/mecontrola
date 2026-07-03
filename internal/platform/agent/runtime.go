@@ -20,14 +20,15 @@ type runtimeMetrics struct {
 }
 
 type agentRuntime struct {
-	agents     AgentRegistry
-	threads    memory.ThreadGateway
-	messages   memory.MessageStore
-	workingMem memory.WorkingMemory
-	runs       RunStore
-	hooks      Hooks
-	o11y       observability.Observability
-	metrics    runtimeMetrics
+	agents       AgentRegistry
+	threads      memory.ThreadGateway
+	messages     memory.MessageStore
+	workingMem   memory.WorkingMemory
+	runs         RunStore
+	hooks        Hooks
+	o11y         observability.Observability
+	metrics      runtimeMetrics
+	writeToolSet map[string]struct{}
 }
 
 type RuntimeOption func(*agentRuntime)
@@ -35,6 +36,17 @@ type RuntimeOption func(*agentRuntime)
 func WithRuntimeHooks(h Hooks) RuntimeOption {
 	return func(r *agentRuntime) {
 		r.hooks = h
+	}
+}
+
+func WithWriteToolSet(names ...string) RuntimeOption {
+	return func(r *agentRuntime) {
+		if r.writeToolSet == nil {
+			r.writeToolSet = make(map[string]struct{}, len(names))
+		}
+		for _, n := range names {
+			r.writeToolSet[n] = struct{}{}
+		}
 	}
 }
 
@@ -102,6 +114,7 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 	}
 
 	ctx = WithRunID(workflow.WithRuntime(ctx, in), runID)
+	ctx = withToolIdentity(ctx, in)
 
 	a, err := r.agents.Resolve(in.AgentID)
 	if err != nil {
@@ -148,6 +161,16 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, threadPK uuid.UUI
 		Content:    in.Message,
 		CreatedAt:  time.Now().UTC(),
 	})
+	for _, tc := range result.ToolCalls {
+		_ = r.messages.Append(ctx, threadPK, memory.Message{
+			ID:         uuid.New(),
+			ThreadPK:   threadPK,
+			ResourceID: in.ResourceID,
+			Role:       memory.RoleTool,
+			Content:    tc.Content,
+			CreatedAt:  time.Now().UTC(),
+		})
+	}
 	_ = r.messages.Append(ctx, threadPK, memory.Message{
 		ID:         uuid.New(),
 		ThreadPK:   threadPK,
@@ -166,6 +189,10 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, threadPK uuid.UUI
 		runStatus = RunStatusFailed
 		toolOutcome = ToolOutcomeUsecaseError
 	}
+	if runStatus == RunStatusSucceeded && r.writeToolGuardFailed(result.ToolCalls) {
+		runStatus = RunStatusFailed
+		toolOutcome = ToolOutcomeUsecaseError
+	}
 
 	r.closeRun(ctx, run, runStatus, toolOutcome, "", start)
 
@@ -176,6 +203,22 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, threadPK uuid.UUI
 		Outcome: toolOutcome,
 		Mode:    ExecutionModeSync,
 	}
+}
+
+func (r *agentRuntime) writeToolGuardFailed(calls []ToolCallRecord) bool {
+	if len(r.writeToolSet) == 0 {
+		return false
+	}
+	wroteAtLeastOne := false
+	for _, c := range calls {
+		if _, ok := r.writeToolSet[c.Tool]; ok {
+			wroteAtLeastOne = true
+			if c.Outcome == ToolCallOutcomeSuccess {
+				return false
+			}
+		}
+	}
+	return wroteAtLeastOne
 }
 
 func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid.UUID, in InboundRequest) ([]llm.Message, error) {

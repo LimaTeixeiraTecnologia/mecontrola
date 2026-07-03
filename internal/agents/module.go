@@ -140,11 +140,16 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	categoriesReader := binding.NewCategoriesReaderAdapter(
 		deps.CategoriesModule.SearchDictionaryUC,
 		deps.CategoriesModule.ResolveBySlug,
+		deps.CategoriesModule.ListCategoriesUC,
 		deps.O11y,
 	)
 	cardManager := binding.NewCardManagerAdapter(
 		deps.CardModule.CreateCardUC,
 		deps.CardModule.ListCardsUC,
+		deps.CardModule.GetCardUC,
+		deps.CardModule.CountCardsUC,
+		deps.CardModule.BestPurchaseDayUC,
+		deps.CardModule.UpdateCardUC,
 		deps.CardModule.SoftDeleteCardUC,
 		deps.TransactionsModule.HasOpenInstallmentsUC,
 		deps.O11y,
@@ -157,6 +162,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.BudgetsModule.EditCategoryPercentageUC,
 		deps.BudgetsModule.GetMonthlySummaryUC,
 		deps.BudgetsModule.ListAlertsUC,
+		deps.BudgetsModule.SuggestAllocationUC,
 		deps.O11y,
 	)
 	txLedger := binding.NewTransactionsLedgerAdapter(
@@ -168,6 +174,18 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.TransactionsModule.DeleteCardPurchaseUC,
 		deps.TransactionsModule.ListMonthlyEntriesUC,
 		deps.TransactionsModule.GetMonthlySummaryUC,
+		deps.TransactionsModule.GetTransactionUC,
+		deps.TransactionsModule.GetCardPurchaseUC,
+		deps.TransactionsModule.ListCardPurchasesUC,
+		deps.TransactionsModule.GetCardInvoiceUC,
+		deps.TransactionsModule.SearchTransactionsUC,
+		deps.O11y,
+	)
+	recurrenceManager := binding.NewRecurrenceManagerAdapter(
+		deps.TransactionsModule.CreateRecurringTemplateUC,
+		deps.TransactionsModule.UpdateRecurringTemplateUC,
+		deps.TransactionsModule.DeleteRecurringTemplateUC,
+		deps.TransactionsModule.ListRecurringTemplatesUC,
 		deps.O11y,
 	)
 
@@ -181,9 +199,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	semanticRecall := memorypostgres.NewEmbeddingRepository(deps.DB, deps.O11y)
 
 	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
-	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager)
+	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager, categoriesReader, recurrenceManager)
 
-	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, confirmEngine, confirmDef, idempotentWrite)
+	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, idempotentWrite)
 	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y)
 
 	registry := agent.NewAgentRegistry()
@@ -204,7 +222,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore)
 
 	runStore := agentpostgres.NewRunStore(deps.DB)
-	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y)
+	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y,
+		agent.WithWriteToolSet("register_expense", "register_income", "register_card_purchase", "create_recurrence"),
+	)
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
 
 	resolveOnboarding := usecases.NewResolveOnboardingOrAgent(onboardingEngine, workflowStore, workingMem, onboardingDef, deps.O11y)
@@ -249,6 +269,7 @@ func buildFinancialTools(
 	cards interfaces.CardManager,
 	planner interfaces.BudgetPlanner,
 	reader interfaces.CategoriesReader,
+	recurrences interfaces.RecurrenceManager,
 	confirmEngine workflow.Engine[workflows.ConfirmState],
 	confirmDef workflow.Definition[workflows.ConfirmState],
 	writer *usecases.IdempotentWrite,
@@ -263,6 +284,22 @@ func buildFinancialTools(
 		agenttools.BuildDeleteEntryTool(confirmEngine, confirmDef, cards),
 		agenttools.BuildAdjustAllocationTool(planner),
 		agenttools.BuildClassifyCategoryTool(reader),
+		agenttools.BuildUpdateRecurrenceTool(confirmEngine, confirmDef),
+		agenttools.BuildDeleteRecurrenceTool(confirmEngine, confirmDef),
+		agenttools.BuildUpdateCardTool(confirmEngine, confirmDef, cards),
+		agenttools.BuildListCardsTool(cards),
+		agenttools.BuildGetCardTool(cards),
+		agenttools.BuildCountCardsTool(cards),
+		agenttools.BuildBestPurchaseDayTool(cards),
+		agenttools.BuildQueryCardInvoiceTool(ledger),
+		agenttools.BuildGetTransactionTool(ledger),
+		agenttools.BuildGetCardPurchaseTool(ledger),
+		agenttools.BuildListCardPurchasesTool(ledger),
+		agenttools.BuildSearchTransactionsTool(ledger),
+		agenttools.BuildListRecurrencesTool(recurrences),
+		agenttools.BuildCreateRecurrenceTool(recurrences, writer),
+		agenttools.BuildSuggestAllocationTool(planner),
+		agenttools.BuildListCategoriesTool(reader),
 	}
 }
 

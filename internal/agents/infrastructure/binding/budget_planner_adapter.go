@@ -23,6 +23,7 @@ type budgetPlannerAdapter struct {
 	editCategoryPercentage *budgetsusecases.EditCategoryPercentage
 	getMonthlySummary      *budgetsusecases.GetMonthlySummary
 	listAlerts             *budgetsusecases.ListAlerts
+	suggestAllocation      *budgetsusecases.SuggestAllocation
 	o11y                   observability.Observability
 }
 
@@ -34,6 +35,7 @@ func NewBudgetPlannerAdapter(
 	editCategoryPercentage *budgetsusecases.EditCategoryPercentage,
 	getMonthlySummary *budgetsusecases.GetMonthlySummary,
 	listAlerts *budgetsusecases.ListAlerts,
+	suggestAllocation *budgetsusecases.SuggestAllocation,
 	o11y observability.Observability,
 ) agentsifaces.BudgetPlanner {
 	return &budgetPlannerAdapter{
@@ -44,6 +46,7 @@ func NewBudgetPlannerAdapter(
 		editCategoryPercentage: editCategoryPercentage,
 		getMonthlySummary:      getMonthlySummary,
 		listAlerts:             listAlerts,
+		suggestAllocation:      suggestAllocation,
 		o11y:                   o11y,
 	}
 }
@@ -202,4 +205,36 @@ func (a *budgetPlannerAdapter) ListAlerts(ctx context.Context, userID uuid.UUID)
 		})
 	}
 	return alerts, nil
+}
+
+func (a *budgetPlannerAdapter) SuggestAllocation(ctx context.Context, totalCents int64, allocations []agentsifaces.AllocationBP) ([]agentsifaces.AllocationCents, error) {
+	_, span := a.o11y.Tracer().Start(ctx, "agents.binding.budget_planner.suggest_allocation")
+	defer span.End()
+
+	bps := make([]budgetsusecases.AllocationBP, 0, len(allocations))
+	for _, alloc := range allocations {
+		bps = append(bps, budgetsusecases.AllocationBP{
+			RootSlug:    alloc.RootSlug,
+			BasisPoints: alloc.BasisPoints,
+		})
+	}
+
+	result, err := a.suggestAllocation.Execute(ctx, budgetsusecases.SuggestAllocationInput{
+		TotalCents:  totalCents,
+		Allocations: bps,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("agents/binding/budget_planner: sugerir alocação: %w", err)
+	}
+
+	out := make([]agentsifaces.AllocationCents, 0, len(result.Allocations))
+	for _, r := range result.Allocations {
+		out = append(out, agentsifaces.AllocationCents{
+			RootSlug:     r.RootSlug,
+			BasisPoints:  r.BasisPoints,
+			PlannedCents: r.PlannedCents,
+		})
+	}
+	return out, nil
 }

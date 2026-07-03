@@ -133,7 +133,7 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
 
 	s.adapter = binding.NewTransactionsLedgerAdapter(
-		createTx, nil, nil, nil, nil, nil, listME, getMS, o11y,
+		createTx, nil, nil, nil, nil, nil, listME, getMS, nil, nil, nil, nil, nil, o11y,
 	)
 
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)

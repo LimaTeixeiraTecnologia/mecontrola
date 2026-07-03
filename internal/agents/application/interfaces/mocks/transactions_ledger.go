@@ -297,6 +297,144 @@ func (_c *TransactionsLedger_DeleteTransaction_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
+// GetCardInvoice provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) GetCardInvoice(ctx context.Context, cardID uuid.UUID, refMonth string) (interfaces.CardInvoice, error) {
+	ret := _mock.Called(ctx, cardID, refMonth)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCardInvoice")
+	}
+
+	var r0 interfaces.CardInvoice
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) (interfaces.CardInvoice, error)); ok {
+		return returnFunc(ctx, cardID, refMonth)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) interfaces.CardInvoice); ok {
+		r0 = returnFunc(ctx, cardID, refMonth)
+	} else {
+		r0 = ret.Get(0).(interfaces.CardInvoice)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string) error); ok {
+		r1 = returnFunc(ctx, cardID, refMonth)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_GetCardInvoice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCardInvoice'
+type TransactionsLedger_GetCardInvoice_Call struct {
+	*mock.Call
+}
+
+// GetCardInvoice is a helper method to define mock.On call
+//   - ctx context.Context
+//   - cardID uuid.UUID
+//   - refMonth string
+func (_e *TransactionsLedger_Expecter) GetCardInvoice(ctx any, cardID any, refMonth any) *TransactionsLedger_GetCardInvoice_Call {
+	return &TransactionsLedger_GetCardInvoice_Call{Call: _e.mock.On("GetCardInvoice", ctx, cardID, refMonth)}
+}
+
+func (_c *TransactionsLedger_GetCardInvoice_Call) Run(run func(ctx context.Context, cardID uuid.UUID, refMonth string)) *TransactionsLedger_GetCardInvoice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_GetCardInvoice_Call) Return(cardInvoice interfaces.CardInvoice, err error) *TransactionsLedger_GetCardInvoice_Call {
+	_c.Call.Return(cardInvoice, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_GetCardInvoice_Call) RunAndReturn(run func(ctx context.Context, cardID uuid.UUID, refMonth string) (interfaces.CardInvoice, error)) *TransactionsLedger_GetCardInvoice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetCardPurchase provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) GetCardPurchase(ctx context.Context, purchaseID uuid.UUID) (interfaces.Entry, error) {
+	ret := _mock.Called(ctx, purchaseID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCardPurchase")
+	}
+
+	var r0 interfaces.Entry
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) (interfaces.Entry, error)); ok {
+		return returnFunc(ctx, purchaseID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) interfaces.Entry); ok {
+		r0 = returnFunc(ctx, purchaseID)
+	} else {
+		r0 = ret.Get(0).(interfaces.Entry)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, purchaseID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_GetCardPurchase_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCardPurchase'
+type TransactionsLedger_GetCardPurchase_Call struct {
+	*mock.Call
+}
+
+// GetCardPurchase is a helper method to define mock.On call
+//   - ctx context.Context
+//   - purchaseID uuid.UUID
+func (_e *TransactionsLedger_Expecter) GetCardPurchase(ctx any, purchaseID any) *TransactionsLedger_GetCardPurchase_Call {
+	return &TransactionsLedger_GetCardPurchase_Call{Call: _e.mock.On("GetCardPurchase", ctx, purchaseID)}
+}
+
+func (_c *TransactionsLedger_GetCardPurchase_Call) Run(run func(ctx context.Context, purchaseID uuid.UUID)) *TransactionsLedger_GetCardPurchase_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_GetCardPurchase_Call) Return(entry interfaces.Entry, err error) *TransactionsLedger_GetCardPurchase_Call {
+	_c.Call.Return(entry, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_GetCardPurchase_Call) RunAndReturn(run func(ctx context.Context, purchaseID uuid.UUID) (interfaces.Entry, error)) *TransactionsLedger_GetCardPurchase_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetMonthlySummary provides a mock function for the type TransactionsLedger
 func (_mock *TransactionsLedger) GetMonthlySummary(ctx context.Context, userID uuid.UUID, refMonth string) (interfaces.MonthlySummary, error) {
 	ret := _mock.Called(ctx, userID, refMonth)
@@ -365,6 +503,158 @@ func (_c *TransactionsLedger_GetMonthlySummary_Call) Return(monthlySummary inter
 }
 
 func (_c *TransactionsLedger_GetMonthlySummary_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, refMonth string) (interfaces.MonthlySummary, error)) *TransactionsLedger_GetMonthlySummary_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetTransaction provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) GetTransaction(ctx context.Context, txID string) (interfaces.Entry, error) {
+	ret := _mock.Called(ctx, txID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetTransaction")
+	}
+
+	var r0 interfaces.Entry
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (interfaces.Entry, error)); ok {
+		return returnFunc(ctx, txID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) interfaces.Entry); ok {
+		r0 = returnFunc(ctx, txID)
+	} else {
+		r0 = ret.Get(0).(interfaces.Entry)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, txID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_GetTransaction_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetTransaction'
+type TransactionsLedger_GetTransaction_Call struct {
+	*mock.Call
+}
+
+// GetTransaction is a helper method to define mock.On call
+//   - ctx context.Context
+//   - txID string
+func (_e *TransactionsLedger_Expecter) GetTransaction(ctx any, txID any) *TransactionsLedger_GetTransaction_Call {
+	return &TransactionsLedger_GetTransaction_Call{Call: _e.mock.On("GetTransaction", ctx, txID)}
+}
+
+func (_c *TransactionsLedger_GetTransaction_Call) Run(run func(ctx context.Context, txID string)) *TransactionsLedger_GetTransaction_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_GetTransaction_Call) Return(entry interfaces.Entry, err error) *TransactionsLedger_GetTransaction_Call {
+	_c.Call.Return(entry, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_GetTransaction_Call) RunAndReturn(run func(ctx context.Context, txID string) (interfaces.Entry, error)) *TransactionsLedger_GetTransaction_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListCardPurchases provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) ListCardPurchases(ctx context.Context, cardID uuid.UUID, refMonth string, cursor string, limit int) ([]interfaces.Entry, error) {
+	ret := _mock.Called(ctx, cardID, refMonth, cursor, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListCardPurchases")
+	}
+
+	var r0 []interfaces.Entry
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string, int) ([]interfaces.Entry, error)); ok {
+		return returnFunc(ctx, cardID, refMonth, cursor, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string, int) []interfaces.Entry); ok {
+		r0 = returnFunc(ctx, cardID, refMonth, cursor, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]interfaces.Entry)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string, string, int) error); ok {
+		r1 = returnFunc(ctx, cardID, refMonth, cursor, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_ListCardPurchases_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListCardPurchases'
+type TransactionsLedger_ListCardPurchases_Call struct {
+	*mock.Call
+}
+
+// ListCardPurchases is a helper method to define mock.On call
+//   - ctx context.Context
+//   - cardID uuid.UUID
+//   - refMonth string
+//   - cursor string
+//   - limit int
+func (_e *TransactionsLedger_Expecter) ListCardPurchases(ctx any, cardID any, refMonth any, cursor any, limit any) *TransactionsLedger_ListCardPurchases_Call {
+	return &TransactionsLedger_ListCardPurchases_Call{Call: _e.mock.On("ListCardPurchases", ctx, cardID, refMonth, cursor, limit)}
+}
+
+func (_c *TransactionsLedger_ListCardPurchases_Call) Run(run func(ctx context.Context, cardID uuid.UUID, refMonth string, cursor string, limit int)) *TransactionsLedger_ListCardPurchases_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_ListCardPurchases_Call) Return(entrys []interfaces.Entry, err error) *TransactionsLedger_ListCardPurchases_Call {
+	_c.Call.Return(entrys, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_ListCardPurchases_Call) RunAndReturn(run func(ctx context.Context, cardID uuid.UUID, refMonth string, cursor string, limit int) ([]interfaces.Entry, error)) *TransactionsLedger_ListCardPurchases_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -451,6 +741,92 @@ func (_c *TransactionsLedger_ListMonthlyEntries_Call) Return(monthlyEntrys []int
 }
 
 func (_c *TransactionsLedger_ListMonthlyEntries_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, refMonth string, cursor string, limit int) ([]interfaces.MonthlyEntry, error)) *TransactionsLedger_ListMonthlyEntries_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SearchTransactions provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) SearchTransactions(ctx context.Context, userID uuid.UUID, query string, refMonth string, limit int) ([]interfaces.Entry, error) {
+	ret := _mock.Called(ctx, userID, query, refMonth, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SearchTransactions")
+	}
+
+	var r0 []interfaces.Entry
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string, int) ([]interfaces.Entry, error)); ok {
+		return returnFunc(ctx, userID, query, refMonth, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, string, int) []interfaces.Entry); ok {
+		r0 = returnFunc(ctx, userID, query, refMonth, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]interfaces.Entry)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string, string, int) error); ok {
+		r1 = returnFunc(ctx, userID, query, refMonth, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_SearchTransactions_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SearchTransactions'
+type TransactionsLedger_SearchTransactions_Call struct {
+	*mock.Call
+}
+
+// SearchTransactions is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - query string
+//   - refMonth string
+//   - limit int
+func (_e *TransactionsLedger_Expecter) SearchTransactions(ctx any, userID any, query any, refMonth any, limit any) *TransactionsLedger_SearchTransactions_Call {
+	return &TransactionsLedger_SearchTransactions_Call{Call: _e.mock.On("SearchTransactions", ctx, userID, query, refMonth, limit)}
+}
+
+func (_c *TransactionsLedger_SearchTransactions_Call) Run(run func(ctx context.Context, userID uuid.UUID, query string, refMonth string, limit int)) *TransactionsLedger_SearchTransactions_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_SearchTransactions_Call) Return(entrys []interfaces.Entry, err error) *TransactionsLedger_SearchTransactions_Call {
+	_c.Call.Return(entrys, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_SearchTransactions_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, query string, refMonth string, limit int) ([]interfaces.Entry, error)) *TransactionsLedger_SearchTransactions_Call {
 	_c.Call.Return(run)
 	return _c
 }

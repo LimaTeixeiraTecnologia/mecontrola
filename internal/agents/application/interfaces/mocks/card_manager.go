@@ -39,6 +39,144 @@ func (_m *CardManager) EXPECT() *CardManager_Expecter {
 	return &CardManager_Expecter{mock: &_m.Mock}
 }
 
+// BestPurchaseDay provides a mock function for the type CardManager
+func (_mock *CardManager) BestPurchaseDay(ctx context.Context, bank string, dueDay int) (interfaces.BestPurchaseDay, error) {
+	ret := _mock.Called(ctx, bank, dueDay)
+
+	if len(ret) == 0 {
+		panic("no return value specified for BestPurchaseDay")
+	}
+
+	var r0 interfaces.BestPurchaseDay
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) (interfaces.BestPurchaseDay, error)); ok {
+		return returnFunc(ctx, bank, dueDay)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) interfaces.BestPurchaseDay); ok {
+		r0 = returnFunc(ctx, bank, dueDay)
+	} else {
+		r0 = ret.Get(0).(interfaces.BestPurchaseDay)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int) error); ok {
+		r1 = returnFunc(ctx, bank, dueDay)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardManager_BestPurchaseDay_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BestPurchaseDay'
+type CardManager_BestPurchaseDay_Call struct {
+	*mock.Call
+}
+
+// BestPurchaseDay is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bank string
+//   - dueDay int
+func (_e *CardManager_Expecter) BestPurchaseDay(ctx any, bank any, dueDay any) *CardManager_BestPurchaseDay_Call {
+	return &CardManager_BestPurchaseDay_Call{Call: _e.mock.On("BestPurchaseDay", ctx, bank, dueDay)}
+}
+
+func (_c *CardManager_BestPurchaseDay_Call) Run(run func(ctx context.Context, bank string, dueDay int)) *CardManager_BestPurchaseDay_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CardManager_BestPurchaseDay_Call) Return(bestPurchaseDay interfaces.BestPurchaseDay, err error) *CardManager_BestPurchaseDay_Call {
+	_c.Call.Return(bestPurchaseDay, err)
+	return _c
+}
+
+func (_c *CardManager_BestPurchaseDay_Call) RunAndReturn(run func(ctx context.Context, bank string, dueDay int) (interfaces.BestPurchaseDay, error)) *CardManager_BestPurchaseDay_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CountCards provides a mock function for the type CardManager
+func (_mock *CardManager) CountCards(ctx context.Context, userID uuid.UUID) (int64, error) {
+	ret := _mock.Called(ctx, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountCards")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) (int64, error)); ok {
+		return returnFunc(ctx, userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) int64); ok {
+		r0 = returnFunc(ctx, userID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardManager_CountCards_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountCards'
+type CardManager_CountCards_Call struct {
+	*mock.Call
+}
+
+// CountCards is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+func (_e *CardManager_Expecter) CountCards(ctx any, userID any) *CardManager_CountCards_Call {
+	return &CardManager_CountCards_Call{Call: _e.mock.On("CountCards", ctx, userID)}
+}
+
+func (_c *CardManager_CountCards_Call) Run(run func(ctx context.Context, userID uuid.UUID)) *CardManager_CountCards_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *CardManager_CountCards_Call) Return(n int64, err error) *CardManager_CountCards_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *CardManager_CountCards_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID) (int64, error)) *CardManager_CountCards_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateCard provides a mock function for the type CardManager
 func (_mock *CardManager) CreateCard(ctx context.Context, in interfaces.NewCard) (interfaces.CardRef, error) {
 	ret := _mock.Called(ctx, in)
@@ -101,6 +239,78 @@ func (_c *CardManager_CreateCard_Call) Return(cardRef interfaces.CardRef, err er
 }
 
 func (_c *CardManager_CreateCard_Call) RunAndReturn(run func(ctx context.Context, in interfaces.NewCard) (interfaces.CardRef, error)) *CardManager_CreateCard_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetCard provides a mock function for the type CardManager
+func (_mock *CardManager) GetCard(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) (interfaces.Card, error) {
+	ret := _mock.Called(ctx, cardID, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCard")
+	}
+
+	var r0 interfaces.Card
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) (interfaces.Card, error)); ok {
+		return returnFunc(ctx, cardID, userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) interfaces.Card); ok {
+		r0 = returnFunc(ctx, cardID, userID)
+	} else {
+		r0 = ret.Get(0).(interfaces.Card)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, cardID, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardManager_GetCard_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCard'
+type CardManager_GetCard_Call struct {
+	*mock.Call
+}
+
+// GetCard is a helper method to define mock.On call
+//   - ctx context.Context
+//   - cardID uuid.UUID
+//   - userID uuid.UUID
+func (_e *CardManager_Expecter) GetCard(ctx any, cardID any, userID any) *CardManager_GetCard_Call {
+	return &CardManager_GetCard_Call{Call: _e.mock.On("GetCard", ctx, cardID, userID)}
+}
+
+func (_c *CardManager_GetCard_Call) Run(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID)) *CardManager_GetCard_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 uuid.UUID
+		if args[2] != nil {
+			arg2 = args[2].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CardManager_GetCard_Call) Return(card interfaces.Card, err error) *CardManager_GetCard_Call {
+	_c.Call.Return(card, err)
+	return _c
+}
+
+func (_c *CardManager_GetCard_Call) RunAndReturn(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) (interfaces.Card, error)) *CardManager_GetCard_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -304,6 +514,72 @@ func (_c *CardManager_SoftDeleteCard_Call) Return(err error) *CardManager_SoftDe
 }
 
 func (_c *CardManager_SoftDeleteCard_Call) RunAndReturn(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) error) *CardManager_SoftDeleteCard_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateCard provides a mock function for the type CardManager
+func (_mock *CardManager) UpdateCard(ctx context.Context, in interfaces.CardUpdate) (interfaces.Card, error) {
+	ret := _mock.Called(ctx, in)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateCard")
+	}
+
+	var r0 interfaces.Card
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.CardUpdate) (interfaces.Card, error)); ok {
+		return returnFunc(ctx, in)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.CardUpdate) interfaces.Card); ok {
+		r0 = returnFunc(ctx, in)
+	} else {
+		r0 = ret.Get(0).(interfaces.Card)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, interfaces.CardUpdate) error); ok {
+		r1 = returnFunc(ctx, in)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardManager_UpdateCard_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateCard'
+type CardManager_UpdateCard_Call struct {
+	*mock.Call
+}
+
+// UpdateCard is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in interfaces.CardUpdate
+func (_e *CardManager_Expecter) UpdateCard(ctx any, in any) *CardManager_UpdateCard_Call {
+	return &CardManager_UpdateCard_Call{Call: _e.mock.On("UpdateCard", ctx, in)}
+}
+
+func (_c *CardManager_UpdateCard_Call) Run(run func(ctx context.Context, in interfaces.CardUpdate)) *CardManager_UpdateCard_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 interfaces.CardUpdate
+		if args[1] != nil {
+			arg1 = args[1].(interfaces.CardUpdate)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *CardManager_UpdateCard_Call) Return(card interfaces.Card, err error) *CardManager_UpdateCard_Call {
+	_c.Call.Return(card, err)
+	return _c
+}
+
+func (_c *CardManager_UpdateCard_Call) RunAndReturn(run func(ctx context.Context, in interfaces.CardUpdate) (interfaces.Card, error)) *CardManager_UpdateCard_Call {
 	_c.Call.Return(run)
 	return _c
 }

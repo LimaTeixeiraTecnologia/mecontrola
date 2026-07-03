@@ -29,8 +29,9 @@ import (
 )
 
 const (
-	txE2ETestUserID               = "11111111-1111-1111-1111-111111111111"
-	txE2EPrazerosRootCategoryUUID = "ac535261-4060-56ef-b2e8-57c8cc7032d1"
+	txE2ETestUserID                    = "11111111-1111-1111-1111-111111111111"
+	txE2EPrazerosRootCategoryUUID      = "ac535261-4060-56ef-b2e8-57c8cc7032d1"
+	txE2EOutrosPrazeresSubcategoryUUID = "0016763e-655c-571a-90cb-bec5a18d4969"
 )
 
 type txE2ERuntime struct {
@@ -118,6 +119,12 @@ func buildTxE2EServer(t *testing.T, db *sqlx.DB, cfg *configs.Config, o11y obser
 	}
 
 	router := chi.NewRouter()
+	if cardModule.CardRouter != nil && txModule.GetCardInvoiceHandler != nil {
+		cardModule.CardRouter.WithInvoiceByMonthHandler(txModule.GetCardInvoiceHandler)
+	}
+	if cardModule.CardRouter != nil {
+		cardModule.CardRouter.Register(router)
+	}
 	if txModule.Router != nil {
 		txModule.Router.Register(router)
 	}

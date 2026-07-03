@@ -12,16 +12,16 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 0.0 | Substrato de escrita/leitura confiável (P0 bloqueante): identidade server-side, guard anti-simulação, Run com role=tool | pending | — | Não (raiz do DAG) | mastra, go-implementation |
-| 1.0 | Contratos: interfaces de consumidor (incl. CategoriesReader.ListCategories), tipos agent-owned e RecurrenceManager | pending | 0.0 | — | mastra |
-| 2.0 | Binding adapters + wiring dos use cases nos módulos (incl. ListCategories) | pending | 1.0 | Não | mastra |
-| 3.0 | Tools de leitura (12) sobre budgets/card/categories/transactions | pending | 2.0 | Com 4.0, 5.0, 9.0 | mastra |
-| 4.0 | Tool create_recurrence com IdempotentWrite | pending | 2.0 | Com 3.0, 5.0, 9.0 | mastra |
-| 5.0 | OperationKinds novos + gate destrutivo + 3 tools sensíveis | pending | 2.0 | Com 3.0, 4.0, 9.0 | mastra |
-| 9.0 | Clarificação de registro (categoria/data) via ConfirmState não-destrutivo | pending | 0.0, 1.0 | Com 3.0, 4.0, 5.0 | mastra |
-| 6.0 | Registro no agente (25 tools) + instruções determinísticas e anti-simulação | pending | 3.0, 4.0, 5.0, 9.0 | Não | mastra |
-| 7.0 | Scorer de tool esperada + harness real-LLM (assert de linhas no banco) + observabilidade | pending | 6.0 | Com 8.0 | mastra |
-| 8.0 | Mapa capacidade→tool, relatório de gaps e gate anti-falso-positivo | pending | 6.0 | Com 7.0 | mastra |
+| 0.0 | Substrato de escrita/leitura confiável (P0 bloqueante): identidade server-side, guard anti-simulação, Run com role=tool | done | — | Não | mastra, go-implementation |
+| 1.0 | Contratos: interfaces de consumidor (incl. CategoriesReader.ListCategories), tipos agent-owned e RecurrenceManager | done | 0.0 | — | mastra |
+| 2.0 | Binding adapters + wiring dos use cases nos módulos (incl. ListCategories) | done | 1.0 | Não | mastra |
+| 3.0 | Tools de leitura (12) sobre budgets/card/categories/transactions | done | 2.0 | Com 4.0, 5.0, 9.0 | mastra |
+| 4.0 | Tool create_recurrence com IdempotentWrite | done | 2.0 | Com 3.0, 5.0, 9.0 | mastra |
+| 5.0 | OperationKinds novos + gate destrutivo + 3 tools sensíveis | done | 2.0 | Com 3.0, 4.0, 9.0 | mastra |
+| 9.0 | Clarificação de registro (categoria/data) via ConfirmState não-destrutivo | done | 0.0, 1.0 | Com 3.0, 4.0, 5.0 | mastra |
+| 6.0 | Registro no agente (25 tools) + instruções determinísticas e anti-simulação | done | 3.0, 4.0, 5.0, 9.0 | Não | mastra |
+| 7.0 | Scorer de tool esperada + harness real-LLM (assert de linhas no banco) + observabilidade | done | 6.0 | Com 8.0 | mastra |
+| 8.0 | Mapa capacidade→tool, relatório de gaps e gate anti-falso-positivo | done | 6.0 | Com 7.0 | mastra |
 
 ## Dependências Críticas
 - 0.0 → tudo: **P0 bloqueante**. A correção do substrato (RF-37..RF-40) é raiz do DAG; enquanto não concluída e verificada por escrita real no banco (RF-40), nenhuma tool nova é considerada coberta/exercida — todas herdariam o defeito de sucesso alucinado comprovado em produção (EP-01..EP-05).

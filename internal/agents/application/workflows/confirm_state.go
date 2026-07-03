@@ -49,6 +49,10 @@ const (
 	OpDeleteEntry OperationKind = iota + 1
 	OpEditEntry
 	OpDeleteCard
+	OpConfirmRegister
+	OpUpdateRecurrence
+	OpDeleteRecurrence
+	OpUpdateCard
 )
 
 func (o OperationKind) String() string {
@@ -59,13 +63,21 @@ func (o OperationKind) String() string {
 		return "edit_entry"
 	case OpDeleteCard:
 		return "delete_card"
+	case OpConfirmRegister:
+		return "confirm_register"
+	case OpUpdateRecurrence:
+		return "update_recurrence"
+	case OpDeleteRecurrence:
+		return "delete_recurrence"
+	case OpUpdateCard:
+		return "update_card"
 	default:
 		return "unknown"
 	}
 }
 
 func (o OperationKind) IsValid() bool {
-	return o >= OpDeleteEntry && o <= OpDeleteCard
+	return o >= OpDeleteEntry && o <= OpUpdateCard
 }
 
 var errInvalidOperationKind = errors.New("workflows: operation kind inválido")
@@ -78,6 +90,14 @@ func ParseOperationKind(s string) (OperationKind, error) {
 		return OpEditEntry, nil
 	case "delete_card":
 		return OpDeleteCard, nil
+	case "confirm_register":
+		return OpConfirmRegister, nil
+	case "update_recurrence":
+		return OpUpdateRecurrence, nil
+	case "delete_recurrence":
+		return OpDeleteRecurrence, nil
+	case "update_card":
+		return OpUpdateCard, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", errInvalidOperationKind, s)
 	}

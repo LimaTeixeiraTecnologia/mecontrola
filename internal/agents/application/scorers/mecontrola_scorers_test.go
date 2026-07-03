@@ -210,6 +210,101 @@ func (s *MecontrolaScorersSuite) TestCategorizationScorer() {
 	}
 }
 
+func (s *MecontrolaScorersSuite) TestExpectedToolScorer() {
+	type args struct {
+		sample       scorer.RunSample
+		expectedTool string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(result scorer.ScoreResult, err error)
+	}{
+		{
+			name: "deve retornar score 1.0 quando tool esperada e invocada",
+			args: args{
+				expectedTool: "register_expense",
+				sample: scorer.RunSample{
+					ToolCalls: []scorer.ToolCallRecord{{ID: "1", Name: "register_expense"}},
+				},
+			},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0.0 quando tool diferente e invocada",
+			args: args{
+				expectedTool: "register_expense",
+				sample: scorer.RunSample{
+					ToolCalls: []scorer.ToolCallRecord{{ID: "1", Name: "query_month"}},
+				},
+			},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0.0 quando nenhuma tool e invocada",
+			args: args{
+				expectedTool: "list_cards",
+				sample:       scorer.RunSample{ToolCalls: nil},
+			},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 1.0 quando tool esperada e uma dentre multiplas",
+			args: args{
+				expectedTool: "query_plan",
+				sample: scorer.RunSample{
+					ToolCalls: []scorer.ToolCallRecord{
+						{ID: "1", Name: "list_cards"},
+						{ID: "2", Name: "query_plan"},
+					},
+				},
+			},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sc := NewExpectedToolScorer(scenario.args.expectedTool)
+			result, err := sc.Score(s.ctx, scenario.args.sample)
+			scenario.expect(result, err)
+		})
+	}
+}
+
+func (s *MecontrolaScorersSuite) TestExpectedToolScorer_Kind() {
+	sc := NewExpectedToolScorer("get_card")
+	s.Equal(scorer.ScorerKindCodeBased, sc.Kind())
+	s.Equal("expected-tool:get_card", sc.ID())
+}
+
+func (s *MecontrolaScorersSuite) TestFinancialToolCallAccuracyScorer_Covers25Tools() {
+	s.Len(mecontrolaFinancialTools, 25)
+	for _, toolName := range mecontrolaFinancialTools {
+		s.Run("deve reconhecer "+toolName, func() {
+			sc := NewFinancialToolCallAccuracyScorer()
+			result, err := sc.Score(s.ctx, scorer.RunSample{
+				ToolCalls: []scorer.ToolCallRecord{{ID: "1", Name: toolName}},
+			})
+			s.NoError(err)
+			s.InDelta(1.0, result.Score, 0.001)
+		})
+	}
+}
+
 func (s *MecontrolaScorersSuite) TestBuildMeControlaScorers_ReturnsThreeEntries() {
 	type dependencies struct{}
 

@@ -54,7 +54,12 @@ type TransactionsModule struct {
 	GetMonthlySummaryUC             *usecases.GetMonthlySummary
 	ListMonthlyEntriesUC            *usecases.ListMonthlyEntries
 	HasOpenInstallmentsUC           *usecases.HasOpenInstallments
+	GetCardPurchaseUC               *usecases.GetCardPurchase
+	ListCardPurchasesUC             *usecases.ListCardPurchases
+	GetCardInvoiceUC                *usecases.GetCardInvoice
 	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
+	UpdateRecurringTemplateUC       *usecases.UpdateRecurringTemplate
+	DeleteRecurringTemplateUC       *usecases.DeleteRecurringTemplate
 	ListRecurringTemplatesUC        *usecases.ListRecurringTemplates
 	GetCardInvoiceHandler           *handlers.GetCardInvoiceHandler
 }
@@ -325,6 +330,11 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		CreateCardPurchaseUC:            createCP,
 		UpdateCardPurchaseUC:            updateCP,
 		DeleteCardPurchaseUC:            deleteCP,
+		GetCardPurchaseUC:               getCP,
+		ListCardPurchasesUC:             listCP,
+		GetCardInvoiceUC:                getCI,
+		UpdateRecurringTemplateUC:       updateRT,
+		DeleteRecurringTemplateUC:       deleteRT,
 		GetMonthlySummaryUC:             getMS,
 		ListMonthlyEntriesUC:            listME,
 		HasOpenInstallmentsUC:           hasOpenInstallments,

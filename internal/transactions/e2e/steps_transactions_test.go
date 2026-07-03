@@ -44,6 +44,9 @@ func (e *txE2ECtx) oUsuarioCriaUmaTransacao(amountCents int64, paymentMethod, di
 		"category_id":    txE2EPrazerosRootCategoryUUID,
 		"occurred_at":    occurredAt + "T00:00:00Z",
 	}
+	if direction == "outcome" {
+		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
+	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/transactions", payload); err != nil {
 		return err
 	}
@@ -79,6 +82,9 @@ func (e *txE2ECtx) queExisteUmaTransacaoCriada(amountCents int64, paymentMethod,
 		"category_id":    txE2EPrazerosRootCategoryUUID,
 		"occurred_at":    occurredAt + "T00:00:00Z",
 	}
+	if direction == "outcome" {
+		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
+	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/transactions", payload); err != nil {
 		return err
 	}
@@ -113,6 +119,7 @@ func (e *txE2ECtx) existemNTransacoesCriadasParaOUsuario(n int, occurredMonth st
 			"amount_cents":   1000,
 			"description":    fmt.Sprintf("e2e setup %d", i+1),
 			"category_id":    txE2EPrazerosRootCategoryUUID,
+			"subcategory_id": txE2EOutrosPrazeresSubcategoryUUID,
 			"occurred_at":    occurredAt,
 		}
 		if err := e.makeRequest(http.MethodPost, "/api/v1/transactions", payload); err != nil {
@@ -156,6 +163,7 @@ func (e *txE2ECtx) oUsuarioAtualizaATransacao(amountCents int64) error {
 		"amount_cents":   amountCents,
 		"description":    "updated",
 		"category_id":    txE2EPrazerosRootCategoryUUID,
+		"subcategory_id": txE2EOutrosPrazeresSubcategoryUUID,
 		"occurred_at":    "2026-06-10T00:00:00Z",
 		"version":        version,
 	}
@@ -186,8 +194,9 @@ func (e *txE2ECtx) oUsuarioTentaAtualizarTransacaoComIDInexistente() error {
 		"amount_cents":   1000,
 		"description":    "updated",
 		"category_id":    txE2EPrazerosRootCategoryUUID,
+		"subcategory_id": txE2EOutrosPrazeresSubcategoryUUID,
 		"occurred_at":    "2026-06-10T00:00:00Z",
-		"version":        0,
+		"version":        1,
 	}
 	return e.makeRequest(http.MethodPatch, "/api/v1/transactions/"+uuid.NewString(), payload)
 }

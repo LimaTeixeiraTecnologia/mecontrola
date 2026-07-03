@@ -13,6 +13,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
@@ -20,6 +21,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
@@ -32,6 +34,11 @@ func (f *fakeDB) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows,
 }
 func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
 	return nil, nil
+}
+
+func TestBuildFinancialTools_ReturnsExactly25Tools(t *testing.T) {
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil)
+	assert.Len(t, tools, 25)
 }
 
 func TestNewModule_RequiredDepsValidation(t *testing.T) {

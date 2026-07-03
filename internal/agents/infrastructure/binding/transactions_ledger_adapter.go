@@ -10,6 +10,7 @@ import (
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	txinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	txoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
+	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 )
 
@@ -22,6 +23,11 @@ type transactionsLedgerAdapter struct {
 	deleteCP       *txusecases.DeleteCardPurchase
 	listMonthlyE   *txusecases.ListMonthlyEntries
 	getMonthlySumm *txusecases.GetMonthlySummary
+	getTx          *txusecases.GetTransaction
+	getCP          *txusecases.GetCardPurchase
+	listCP         *txusecases.ListCardPurchases
+	getCardInvoice *txusecases.GetCardInvoice
+	searchTx       *txusecases.SearchTransactions
 	o11y           observability.Observability
 }
 
@@ -34,6 +40,11 @@ func NewTransactionsLedgerAdapter(
 	deleteCP *txusecases.DeleteCardPurchase,
 	listMonthlyE *txusecases.ListMonthlyEntries,
 	getMonthlySumm *txusecases.GetMonthlySummary,
+	getTx *txusecases.GetTransaction,
+	getCP *txusecases.GetCardPurchase,
+	listCP *txusecases.ListCardPurchases,
+	getCardInvoice *txusecases.GetCardInvoice,
+	searchTx *txusecases.SearchTransactions,
 	o11y observability.Observability,
 ) agentsifaces.TransactionsLedger {
 	return &transactionsLedgerAdapter{
@@ -45,6 +56,11 @@ func NewTransactionsLedgerAdapter(
 		deleteCP:       deleteCP,
 		listMonthlyE:   listMonthlyE,
 		getMonthlySumm: getMonthlySumm,
+		getTx:          getTx,
+		getCP:          getCP,
+		listCP:         listCP,
+		getCardInvoice: getCardInvoice,
+		searchTx:       searchTx,
 		o11y:           o11y,
 	}
 }
@@ -182,6 +198,183 @@ func (a *transactionsLedgerAdapter) ListMonthlyEntries(ctx context.Context, _ uu
 			Direction:   e.Direction,
 			Description: e.Description,
 			CreatedAt:   e.CreatedAt,
+		})
+	}
+	return entries, nil
+}
+
+func (a *transactionsLedgerAdapter) GetTransaction(ctx context.Context, txID string) (agentsifaces.Entry, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_transaction")
+	defer span.End()
+
+	out, err := a.getTx.Execute(ctx, txID)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.Entry{}, fmt.Errorf("agents/binding/transactions_ledger: obter transação: %w", err)
+	}
+	var sub *string
+	if out.SubcategoryID != nil {
+		s := out.SubcategoryID.String()
+		sub = &s
+	}
+	return agentsifaces.Entry{
+		Kind:                    "transaction",
+		ID:                      out.ID.String(),
+		UserID:                  out.UserID.String(),
+		Direction:               out.Direction,
+		PaymentMethod:           out.PaymentMethod,
+		AmountCents:             out.AmountCents,
+		Description:             out.Description,
+		CategoryID:              out.CategoryID.String(),
+		SubcategoryID:           sub,
+		CategoryNameSnapshot:    out.CategoryNameSnapshot,
+		SubcategoryNameSnapshot: out.SubcategoryNameSnapshot,
+		RefMonth:                out.RefMonth,
+		OccurredAt:              out.OccurredAt,
+		Version:                 out.Version,
+		CreatedAt:               out.CreatedAt,
+		UpdatedAt:               out.UpdatedAt,
+	}, nil
+}
+
+func (a *transactionsLedgerAdapter) GetCardPurchase(ctx context.Context, purchaseID uuid.UUID) (agentsifaces.Entry, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_card_purchase")
+	defer span.End()
+
+	out, err := a.getCP.Execute(ctx, purchaseID)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.Entry{}, fmt.Errorf("agents/binding/transactions_ledger: obter compra cartão: %w", err)
+	}
+	var sub *string
+	if out.SubcategoryID != nil {
+		s := out.SubcategoryID.String()
+		sub = &s
+	}
+	return agentsifaces.Entry{
+		Kind:                    "card_purchase",
+		ID:                      out.ID.String(),
+		UserID:                  out.UserID.String(),
+		AmountCents:             out.TotalAmountCents,
+		Description:             out.Description,
+		CategoryID:              out.CategoryID.String(),
+		SubcategoryID:           sub,
+		CategoryNameSnapshot:    out.CategoryNameSnapshot,
+		SubcategoryNameSnapshot: out.SubcategoryNameSnapshot,
+		Version:                 out.Version,
+		CreatedAt:               out.CreatedAt,
+		UpdatedAt:               out.UpdatedAt,
+	}, nil
+}
+
+func (a *transactionsLedgerAdapter) ListCardPurchases(ctx context.Context, cardID uuid.UUID, refMonth, cursor string, limit int) ([]agentsifaces.Entry, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.list_card_purchases")
+	defer span.End()
+
+	page, err := a.listCP.Execute(ctx, txusecases.ListCardPurchasesInput{
+		CardID: cardID,
+		Cursor: txifaces.Cursor{Value: cursor},
+		Limit:  limit,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("agents/binding/transactions_ledger: listar compras cartão: %w", err)
+	}
+
+	entries := make([]agentsifaces.Entry, 0, len(page.Items))
+	for _, cp := range page.Items {
+		var sub *string
+		if cp.SubcategoryID != nil {
+			s := cp.SubcategoryID.String()
+			sub = &s
+		}
+		entries = append(entries, agentsifaces.Entry{
+			Kind:                    "card_purchase",
+			ID:                      cp.ID.String(),
+			UserID:                  cp.UserID.String(),
+			AmountCents:             cp.TotalAmountCents,
+			Description:             cp.Description,
+			CategoryID:              cp.CategoryID.String(),
+			SubcategoryID:           sub,
+			CategoryNameSnapshot:    cp.CategoryNameSnapshot,
+			SubcategoryNameSnapshot: cp.SubcategoryNameSnapshot,
+			Version:                 cp.Version,
+			CreatedAt:               cp.CreatedAt,
+			UpdatedAt:               cp.UpdatedAt,
+		})
+	}
+	return entries, nil
+}
+
+func (a *transactionsLedgerAdapter) GetCardInvoice(ctx context.Context, cardID uuid.UUID, refMonth string) (agentsifaces.CardInvoice, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_card_invoice")
+	defer span.End()
+
+	out, err := a.getCardInvoice.Execute(ctx, cardID, refMonth)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.CardInvoice{}, fmt.Errorf("agents/binding/transactions_ledger: obter fatura cartão: %w", err)
+	}
+
+	items := make([]agentsifaces.CardInvoiceItem, 0, len(out.Items))
+	for _, item := range out.Items {
+		items = append(items, agentsifaces.CardInvoiceItem{
+			ID:               item.ID,
+			InvoiceID:        item.InvoiceID,
+			RefMonth:         item.RefMonth,
+			InstallmentIndex: item.InstallmentIndex,
+			AmountCents:      item.AmountCents,
+		})
+	}
+	return agentsifaces.CardInvoice{
+		ID:              out.ID,
+		UserID:          out.UserID,
+		CardID:          out.CardID,
+		RefMonth:        out.RefMonth,
+		ClosingAt:       out.ClosingAt,
+		DueAt:           out.DueAt,
+		ItemsTotalCents: out.ItemsTotalCents,
+		Version:         out.Version,
+		Items:           items,
+		CreatedAt:       out.CreatedAt,
+		UpdatedAt:       out.UpdatedAt,
+	}, nil
+}
+
+func (a *transactionsLedgerAdapter) SearchTransactions(ctx context.Context, _ uuid.UUID, query, refMonth string, limit int) ([]agentsifaces.Entry, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.search_transactions")
+	defer span.End()
+
+	results, err := a.searchTx.Execute(ctx, query, refMonth, limit)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("agents/binding/transactions_ledger: buscar transações: %w", err)
+	}
+
+	entries := make([]agentsifaces.Entry, 0, len(results))
+	for _, tx := range results {
+		var sub *string
+		if tx.SubcategoryID != nil {
+			s := tx.SubcategoryID.String()
+			sub = &s
+		}
+		entries = append(entries, agentsifaces.Entry{
+			Kind:                    "transaction",
+			ID:                      tx.ID.String(),
+			UserID:                  tx.UserID.String(),
+			Direction:               tx.Direction,
+			PaymentMethod:           tx.PaymentMethod,
+			AmountCents:             tx.AmountCents,
+			Description:             tx.Description,
+			CategoryID:              tx.CategoryID.String(),
+			SubcategoryID:           sub,
+			CategoryNameSnapshot:    tx.CategoryNameSnapshot,
+			SubcategoryNameSnapshot: tx.SubcategoryNameSnapshot,
+			RefMonth:                tx.RefMonth,
+			OccurredAt:              tx.OccurredAt,
+			Version:                 tx.Version,
+			CreatedAt:               tx.CreatedAt,
+			UpdatedAt:               tx.UpdatedAt,
 		})
 	}
 	return entries, nil

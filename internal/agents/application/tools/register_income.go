@@ -14,9 +14,6 @@ import (
 )
 
 type RegisterIncomeInput struct {
-	Wamid         string     `json:"wamid"`
-	ItemSeq       int        `json:"itemSeq"`
-	UserID        string     `json:"userId"`
 	AmountCents   int64      `json:"amountCents"`
 	Description   string     `json:"description"`
 	PaymentMethod string     `json:"paymentMethod"`
@@ -39,9 +36,6 @@ func BuildRegisterIncomeTool(ledger interfaces.TransactionsLedger, writer idempo
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"wamid":         map[string]any{"type": "string"},
-				"itemSeq":       map[string]any{"type": "integer"},
-				"userId":        map[string]any{"type": "string"},
 				"amountCents":   map[string]any{"type": "integer"},
 				"description":   map[string]any{"type": "string"},
 				"paymentMethod": map[string]any{"type": "string"},
@@ -49,7 +43,7 @@ func BuildRegisterIncomeTool(ledger interfaces.TransactionsLedger, writer idempo
 				"categoryId":    map[string]any{"type": "string"},
 				"subcategoryId": map[string]any{"type": "string"},
 			},
-			"required":             []string{"wamid", "itemSeq", "userId", "amountCents", "description", "paymentMethod"},
+			"required":             []string{"amountCents", "description", "paymentMethod"},
 			"additionalProperties": false,
 		},
 	}
@@ -73,7 +67,11 @@ func BuildRegisterIncomeTool(ledger interfaces.TransactionsLedger, writer idempo
 
 func buildRegisterIncomeExec(ledger interfaces.TransactionsLedger, writer idempotentWriter) func(context.Context, RegisterIncomeInput) (RegisterIncomeOutput, error) {
 	return func(ctx context.Context, in RegisterIncomeInput) (RegisterIncomeOutput, error) {
-		userID, err := uuid.Parse(in.UserID)
+		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return RegisterIncomeOutput{}, fmt.Errorf("register_income: identidade não disponível no contexto")
+		}
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return RegisterIncomeOutput{}, fmt.Errorf("register_income: userId inválido: %w", err)
 		}
@@ -89,7 +87,7 @@ func buildRegisterIncomeExec(ledger interfaces.TransactionsLedger, writer idempo
 		if in.CategoryID != nil {
 			catID = *in.CategoryID
 		}
-		result, writeErr := writer.Execute(ctx, userID, in.Wamid, in.ItemSeq, "create_income", "transaction", func(ctx context.Context) (uuid.UUID, bool, error) {
+		result, writeErr := writer.Execute(ctx, userID, wamid, itemSeq, "create_income", "transaction", func(ctx context.Context) (uuid.UUID, bool, error) {
 			ref, err := ledger.CreateTransaction(ctx, interfaces.RawTransaction{
 				Direction:       "income",
 				PaymentMethod:   in.PaymentMethod,
@@ -98,8 +96,8 @@ func buildRegisterIncomeExec(ledger interfaces.TransactionsLedger, writer idempo
 				OccurredAt:      occurredAt,
 				CategoryID:      catID,
 				SubcategoryID:   in.SubcategoryID,
-				OriginWamid:     in.Wamid,
-				OriginItemSeq:   in.ItemSeq,
+				OriginWamid:     wamid,
+				OriginItemSeq:   itemSeq,
 				OriginOperation: "create_income",
 			})
 			if err != nil {

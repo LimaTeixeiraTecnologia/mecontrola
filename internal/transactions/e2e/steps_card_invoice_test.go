@@ -51,6 +51,7 @@ func (e *txE2ECtx) queExisteUmaCardPurchaseDeNParcelaNoCartaoEm(totalAmountCents
 		"installments_total": installmentsTotal,
 		"description":        "e2e invoice setup",
 		"category_id":        categoryUUID,
+		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"purchased_at":       purchasedAt + "T00:00:00Z",
 	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/card-purchases", payload); err != nil {

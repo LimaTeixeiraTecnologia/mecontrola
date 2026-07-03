@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-agent-tools/7.0_execution_report.md
+summary: "Task 7.0 (Scorer + harness real-LLM): mecontrolaFinancialTools expandida para 25 tools, NewExpectedToolScorer implementado e testado (48 tests scorer), harness E2E gated RUN_REAL_LLM=1 com 25 cenários + EP-01/EP-05. 297 tests passing."
+timestamp: "2026-07-02T20:30:00Z"

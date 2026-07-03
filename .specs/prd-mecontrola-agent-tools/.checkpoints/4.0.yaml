@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-agent-tools/4.0_execution_report.md
+summary: "Task 4.0: create_recurrence tool com IdempotentWrite criada — adapter fino, 4 testes passando, zero comentários"
+timestamp: "2026-07-02T00:00:00Z"

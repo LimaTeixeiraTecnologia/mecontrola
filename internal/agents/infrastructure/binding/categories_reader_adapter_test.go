@@ -43,7 +43,7 @@ func (s *CategoriesReaderAdapterSuite) buildAdapter() agentsifaces.CategoriesRea
 	resolver := services.NewCandidateResolver()
 	searchDictUC := catusecases.NewSearchDictionary(s.dictRepoMock, s.catRepoMock, s.versionMock, resolver, o11y)
 	resolveBySlugUC := catusecases.NewResolveBySlug(s.catRepoMock, o11y)
-	return NewCategoriesReaderAdapter(searchDictUC, resolveBySlugUC, o11y)
+	return NewCategoriesReaderAdapter(searchDictUC, resolveBySlugUC, nil, o11y)
 }
 
 func (s *CategoriesReaderAdapterSuite) TestResolveRootsBySlug_Success() {

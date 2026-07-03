@@ -14,9 +14,6 @@ import (
 )
 
 type RegisterExpenseInput struct {
-	Wamid         string     `json:"wamid"`
-	ItemSeq       int        `json:"itemSeq"`
-	UserID        string     `json:"userId"`
 	AmountCents   int64      `json:"amountCents"`
 	Description   string     `json:"description"`
 	PaymentMethod string     `json:"paymentMethod"`
@@ -39,9 +36,6 @@ func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idemp
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"wamid":         map[string]any{"type": "string"},
-				"itemSeq":       map[string]any{"type": "integer"},
-				"userId":        map[string]any{"type": "string"},
 				"amountCents":   map[string]any{"type": "integer"},
 				"description":   map[string]any{"type": "string"},
 				"paymentMethod": map[string]any{"type": "string"},
@@ -49,7 +43,7 @@ func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idemp
 				"categoryId":    map[string]any{"type": "string"},
 				"subcategoryId": map[string]any{"type": "string"},
 			},
-			"required":             []string{"wamid", "itemSeq", "userId", "amountCents", "description", "paymentMethod"},
+			"required":             []string{"amountCents", "description", "paymentMethod"},
 			"additionalProperties": false,
 		},
 	}
@@ -73,7 +67,11 @@ func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idemp
 
 func buildRegisterExpenseExec(ledger interfaces.TransactionsLedger, writer idempotentWriter) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
 	return func(ctx context.Context, in RegisterExpenseInput) (RegisterExpenseOutput, error) {
-		userID, err := uuid.Parse(in.UserID)
+		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: identidade não disponível no contexto")
+		}
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: userId inválido: %w", err)
 		}
@@ -89,7 +87,7 @@ func buildRegisterExpenseExec(ledger interfaces.TransactionsLedger, writer idemp
 		if in.CategoryID != nil {
 			catID = *in.CategoryID
 		}
-		result, writeErr := writer.Execute(ctx, userID, in.Wamid, in.ItemSeq, "create_expense", "transaction", func(ctx context.Context) (uuid.UUID, bool, error) {
+		result, writeErr := writer.Execute(ctx, userID, wamid, itemSeq, "create_expense", "transaction", func(ctx context.Context) (uuid.UUID, bool, error) {
 			ref, err := ledger.CreateTransaction(ctx, interfaces.RawTransaction{
 				Direction:       "outcome",
 				PaymentMethod:   in.PaymentMethod,
@@ -98,8 +96,8 @@ func buildRegisterExpenseExec(ledger interfaces.TransactionsLedger, writer idemp
 				OccurredAt:      occurredAt,
 				CategoryID:      catID,
 				SubcategoryID:   in.SubcategoryID,
-				OriginWamid:     in.Wamid,
-				OriginItemSeq:   in.ItemSeq,
+				OriginWamid:     wamid,
+				OriginItemSeq:   itemSeq,
 				OriginOperation: "create_expense",
 			})
 			if err != nil {

@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
 type QueryPlanInput struct {
-	UserID     string `json:"userId"`
 	Competence string `json:"competence,omitempty"`
 }
 
@@ -52,10 +52,9 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"userId":     map[string]any{"type": "string"},
 				"competence": map[string]any{"type": "string"},
 			},
-			"required":             []string{"userId"},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 	}
@@ -83,7 +82,11 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 
 func buildQueryPlanExec(planner interfaces.BudgetPlanner) func(context.Context, QueryPlanInput) (QueryPlanOutput, error) {
 	return func(ctx context.Context, in QueryPlanInput) (QueryPlanOutput, error) {
-		userID, err := uuid.Parse(in.UserID)
+		resourceID, _, _, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return QueryPlanOutput{}, fmt.Errorf("query_plan: identidade não disponível no contexto")
+		}
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return QueryPlanOutput{}, fmt.Errorf("query_plan: userId inválido: %w", err)
 		}

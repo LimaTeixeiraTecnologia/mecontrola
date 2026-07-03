@@ -40,6 +40,9 @@ func (e *txE2ECtx) oUsuarioCriaRecurringTemplate(amountCents int, frequency stri
 		"installments_total": 1,
 		"started_at":         "2026-06-01T00:00:00Z",
 	}
+	if direction == "outcome" {
+		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
+	}
 
 	if err := e.makeRequest(http.MethodPost, "/api/v1/recurring-templates", payload); err != nil {
 		return err
@@ -83,6 +86,9 @@ func (e *txE2ECtx) queExisteUmRecurringTemplateCriado(amountCents int, frequency
 		"installments_total": 1,
 		"started_at":         "2026-06-01T00:00:00Z",
 	}
+	if direction == "outcome" {
+		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
+	}
 
 	if err := e.makeRequest(http.MethodPost, "/api/v1/recurring-templates", payload); err != nil {
 		return fmt.Errorf("setup recurring-template: %w", err)
@@ -124,6 +130,7 @@ func (e *txE2ECtx) existemNRecurringTemplatesCriadosParaOUsuario(n int) error {
 			"amount_cents":       1000 + i*100,
 			"description":        fmt.Sprintf("e2e recorrente %d", i+1),
 			"category_id":        txE2EPrazerosRootCategoryUUID,
+			"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 			"frequency":          "monthly",
 			"day_of_month":       i + 1,
 			"installments_total": 1,
@@ -157,6 +164,7 @@ func (e *txE2ECtx) oUsuarioAtualizaRecurringTemplate(amountCents int) error {
 		"amount_cents":       amountCents,
 		"description":        "e2e recorrente atualizado",
 		"category_id":        txE2EPrazerosRootCategoryUUID,
+		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"frequency":          "monthly",
 		"day_of_month":       5,
 		"installments_total": 1,
@@ -184,6 +192,7 @@ func (e *txE2ECtx) oUsuarioTentaAtualizarRecurringTemplateInexistente() error {
 		"amount_cents":       1200,
 		"description":        "e2e recorrente atualizado",
 		"category_id":        txE2EPrazerosRootCategoryUUID,
+		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"frequency":          "monthly",
 		"day_of_month":       5,
 		"installments_total": 1,

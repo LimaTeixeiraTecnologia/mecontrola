@@ -514,3 +514,77 @@ func (_c *BudgetPlanner_ListAlerts_Call) RunAndReturn(run func(ctx context.Conte
 	_c.Call.Return(run)
 	return _c
 }
+
+// SuggestAllocation provides a mock function for the type BudgetPlanner
+func (_mock *BudgetPlanner) SuggestAllocation(ctx context.Context, totalCents int64, allocations []interfaces.AllocationBP) ([]interfaces.AllocationCents, error) {
+	ret := _mock.Called(ctx, totalCents, allocations)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SuggestAllocation")
+	}
+
+	var r0 []interfaces.AllocationCents
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, []interfaces.AllocationBP) ([]interfaces.AllocationCents, error)); ok {
+		return returnFunc(ctx, totalCents, allocations)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, []interfaces.AllocationBP) []interfaces.AllocationCents); ok {
+		r0 = returnFunc(ctx, totalCents, allocations)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]interfaces.AllocationCents)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, []interfaces.AllocationBP) error); ok {
+		r1 = returnFunc(ctx, totalCents, allocations)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// BudgetPlanner_SuggestAllocation_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SuggestAllocation'
+type BudgetPlanner_SuggestAllocation_Call struct {
+	*mock.Call
+}
+
+// SuggestAllocation is a helper method to define mock.On call
+//   - ctx context.Context
+//   - totalCents int64
+//   - allocations []interfaces.AllocationBP
+func (_e *BudgetPlanner_Expecter) SuggestAllocation(ctx any, totalCents any, allocations any) *BudgetPlanner_SuggestAllocation_Call {
+	return &BudgetPlanner_SuggestAllocation_Call{Call: _e.mock.On("SuggestAllocation", ctx, totalCents, allocations)}
+}
+
+func (_c *BudgetPlanner_SuggestAllocation_Call) Run(run func(ctx context.Context, totalCents int64, allocations []interfaces.AllocationBP)) *BudgetPlanner_SuggestAllocation_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 []interfaces.AllocationBP
+		if args[2] != nil {
+			arg2 = args[2].([]interfaces.AllocationBP)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *BudgetPlanner_SuggestAllocation_Call) Return(allocationCentss []interfaces.AllocationCents, err error) *BudgetPlanner_SuggestAllocation_Call {
+	_c.Call.Return(allocationCentss, err)
+	return _c
+}
+
+func (_c *BudgetPlanner_SuggestAllocation_Call) RunAndReturn(run func(ctx context.Context, totalCents int64, allocations []interfaces.AllocationBP) ([]interfaces.AllocationCents, error)) *BudgetPlanner_SuggestAllocation_Call {
+	_c.Call.Return(run)
+	return _c
+}

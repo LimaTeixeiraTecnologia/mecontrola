@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
 type QueryMonthInput struct {
-	UserID   string `json:"userId"`
 	RefMonth string `json:"refMonth,omitempty"`
 	Cursor   string `json:"cursor,omitempty"`
 	Limit    int    `json:"limit,omitempty"`
@@ -44,12 +44,11 @@ func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"userId":   map[string]any{"type": "string"},
 				"refMonth": map[string]any{"type": "string"},
 				"cursor":   map[string]any{"type": "string"},
 				"limit":    map[string]any{"type": "integer"},
 			},
-			"required":             []string{"userId"},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 	}
@@ -74,7 +73,11 @@ func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 
 func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Context, QueryMonthInput) (QueryMonthOutput, error) {
 	return func(ctx context.Context, in QueryMonthInput) (QueryMonthOutput, error) {
-		userID, err := uuid.Parse(in.UserID)
+		resourceID, _, _, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return QueryMonthOutput{}, fmt.Errorf("query_month: identidade não disponível no contexto")
+		}
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return QueryMonthOutput{}, fmt.Errorf("query_month: userId inválido: %w", err)
 		}

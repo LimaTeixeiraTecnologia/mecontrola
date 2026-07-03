@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-mecontrola-agent-tools/1.0_execution_report.md
+summary: "Contratos task-1.0: CardManager+4 métodos, TransactionsLedger+5, BudgetPlanner+SuggestAllocation, CategoriesReader+ListCategories (RF-18e), RecurrenceManager nova (ADR-004), 11 tipos agent-owned novos em types.go, .mockery.yml+RecurrenceManager, mocks regenerados; build OK."
+timestamp: "2026-07-02T18:10:00Z"
