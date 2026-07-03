@@ -153,6 +153,7 @@ func (s *TransactionToBudgetChainSuite) claimTransactionCreatedEnvelope(ctx cont
 
 	for _, row := range rows {
 		if row.Type == transactionCreatedType && row.AggregateID == aggregateID {
+			s.Require().NoError(storage.MarkPublished(ctx, row.ID), "marcar evento created como publicado")
 			return outbox.Pack(row)
 		}
 	}
@@ -363,14 +364,21 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 func (s *TransactionToBudgetChainSuite) claimTransactionDeletedEnvelope(ctx context.Context, mgr *sqlx.DB, aggregateID string) outbox.Envelope {
 	const deletedType = "transactions.transaction.deleted.v1"
 	storage := outbox.NewPostgresStorage(mgr)
-	rows, err := storage.ClaimBatch(ctx, consumerLockedBy+"-deleted", 100)
-	s.Require().NoError(err)
-	for _, row := range rows {
-		if row.Type == deletedType && row.AggregateID == aggregateID {
-			return outbox.Pack(row)
+
+	for i := 0; i < 10; i++ {
+		rows, err := storage.ClaimBatch(ctx, consumerLockedBy+"-deleted", 100)
+		s.Require().NoError(err)
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			if row.Type == deletedType && row.AggregateID == aggregateID {
+				return outbox.Pack(row)
+			}
+			s.Require().NoError(storage.MarkPublished(ctx, row.ID), "marcar evento intermediario como publicado")
 		}
 	}
-	s.FailNowf("evento deleted não encontrado no outbox", "aggregate=%s rows=%d", aggregateID, len(rows))
+	s.FailNowf("evento deleted não encontrado no outbox", "aggregate=%s", aggregateID)
 	return outbox.Envelope{}
 }
 
