@@ -99,6 +99,14 @@ if [[ "$SWARM_STATE" != "active" ]]; then
   exit 1
 fi
 
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  log "Autenticando VPS no GHCR com GITHUB_TOKEN"
+  ssh_exec "echo '${GITHUB_TOKEN}' | docker login ghcr.io -u '${GITHUB_ACTOR:-github-actions}' --password-stdin" || {
+    log "ERRO: docker login na VPS falhou"
+    exit 1
+  }
+fi
+
 log "Capturando imagem anterior para rollback"
 PREVIOUS_IMAGE=$(ssh_exec "docker service inspect ${STACK}_server-1 --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || echo")
 PREVIOUS_TAG=""

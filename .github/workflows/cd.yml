@@ -317,6 +317,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build-image.outputs.image-tag }}
           IMAGE_DIGEST: ${{ needs.build-image.outputs.image-digest }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           sops --decrypt deployment/config/prod.secrets.env > /tmp/mecontrola-secrets.env
