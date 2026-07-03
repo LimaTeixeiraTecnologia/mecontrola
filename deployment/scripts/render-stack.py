@@ -23,6 +23,7 @@ Correções aplicadas sobre o output de `docker compose config`:
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import yaml
@@ -115,12 +116,25 @@ def main() -> int:
 
     if args.env_file:
         compose_args.extend(["--env-file", args.env_file])
-        env.update(parse_env_file(args.env_file))
+        for key, value in parse_env_file(args.env_file).items():
+            env.setdefault(key, value)
 
     secrets_env: dict[str, str] = {}
     if args.secrets_env_file:
         secrets_env = parse_env_file(args.secrets_env_file)
-        env.update(secrets_env)
+        for key, value in secrets_env.items():
+            env.setdefault(key, value)
+
+    if env.get("ENVIRONMENT") == "production":
+        pg_image = env.get("POSTGRES_IMAGE", "")
+        if not pg_image or re.match(r"^postgres:[^/]+$", pg_image):
+            print(
+                f"ERRO: POSTGRES_IMAGE='{pg_image}' nao e a imagem custom com pgBackRest.\n"
+                "      Producao exige mecontrola-postgres:<tag>. "
+                "Configure POSTGRES_IMAGE no env de producao.",
+                file=sys.stderr,
+            )
+            return 1
 
     compose_args.append("config")
 
