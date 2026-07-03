@@ -454,80 +454,185 @@ func pageTemplate() string {
 }
 
 const defaultTemplate = `<!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MeControla Config UI</title>
+  <title>MeControla — Config UI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem; line-height: 1.5; }
-    h1, h2 { margin-top: 2rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #ccc; }
-    input[type="text"] { width: 100%; box-sizing: border-box; font-family: monospace; }
-    button { margin-top: 1rem; padding: .6rem 1.2rem; cursor: pointer; }
-    .msg { padding: .8rem; border-radius: .4rem; margin-top: 1rem; }
-    .msg.ok { background: #d4edda; color: #155724; }
-    .msg.err { background: #f8d7da; color: #721c24; }
-    .hint { color: #666; font-size: .9rem; margin-top: .5rem; }
-    .add-row td { padding-top: 1rem; }
+    [data-row][hidden] { display: none !important; }
   </style>
 </head>
-<body>
-  <h1>MeControla — Configuração e Secrets</h1>
-  {{if .SaveMessage}}<div class="msg ok">{{.SaveMessage}}</div>{{end}}
-  {{if .SaveError}}<div class="msg err">{{.SaveError}}</div>{{end}}
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <header class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">MeControla</h1>
+        <p class="text-slate-400 text-sm mt-1">Gestão de variáveis de ambiente e secrets de produção</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400 ring-1 ring-inset ring-emerald-500/20">Produção</span>
+        <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-inset ring-slate-700">SOPS + age</span>
+      </div>
+    </header>
 
-  <h2>Configuração (prod.env)</h2>
-  {{if .ConfigError}}<div class="msg err">{{.ConfigError}}</div>{{end}}
-  <form method="post" action="/save-config">
-    <table>
-      <thead><tr><th>Chave</th><th>Valor</th><th>Remover</th></tr></thead>
-      <tbody>
-        {{range .Config}}
-          {{if .IsComment}}
-            <tr><td colspan="3"><em>{{.Raw}}</em></td></tr>
-          {{else if .IsBlank}}
-            <tr><td colspan="3">&nbsp;</td></tr>
-          {{else}}
-            <tr>
-              <td>{{.Key}}</td>
-              <td><input type="text" name="val_{{.Key}}" value="{{.Value}}"></td>
-              <td><input type="checkbox" name="del_{{.Key}}" value="1"></td>
-            </tr>
-          {{end}}
-        {{end}}
-        <tr class="add-row"><td><input type="text" name="new_keys" placeholder="nova_chave"></td><td><input type="text" name="new_values" placeholder="valor"></td><td>—</td></tr>
-      </tbody>
-    </table>
-    <button type="submit">Salvar prod.env</button>
-  </form>
+    {{if .SaveMessage}}<div class="mb-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 text-emerald-300 text-sm">{{.SaveMessage}}</div>{{end}}
+    {{if .SaveError}}<div class="mb-6 rounded-lg bg-rose-500/10 border border-rose-500/20 p-4 text-rose-300 text-sm">{{.SaveError}}</div>{{end}}
 
-  <h2>Secrets (prod.secrets.env)</h2>
-  {{if .SecretsError}}<div class="msg err">{{.SecretsError}}</div>{{end}}
-  <form method="post" action="/save-secrets">
-    <table>
-      <thead><tr><th>Chave</th><th>Valor</th><th>Remover</th></tr></thead>
-      <tbody>
-        {{range .Secrets}}
-          {{if .IsComment}}
-            <tr><td colspan="3"><em>{{.Raw}}</em></td></tr>
-          {{else if .IsBlank}}
-            <tr><td colspan="3">&nbsp;</td></tr>
-          {{else}}
-            <tr>
-              <td>{{.Key}}</td>
-              <td><input type="text" name="val_{{.Key}}" value="{{.Value}}"></td>
-              <td><input type="checkbox" name="del_{{.Key}}" value="1"></td>
-            </tr>
-          {{end}}
-        {{end}}
-        <tr class="add-row"><td><input type="text" name="new_keys" placeholder="nova_chave"></td><td><input type="text" name="new_values" placeholder="valor"></td><td>—</td></tr>
-      </tbody>
-    </table>
-    <button type="submit">Salvar e criptografar prod.secrets.env</button>
-    <p class="hint">Ao salvar, o arquivo será re-criptografado com SOPS + age usando as regras de .sops.yaml.</p>
-  </form>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <!-- Config -->
+      <section class="rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
+        <div class="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-white">Configuração</h2>
+            <p class="text-xs text-slate-400 mt-0.5">deployment/config/prod.env</p>
+          </div>
+          <input type="text" data-filter="config" placeholder="Buscar chave..." class="w-full sm:w-56 rounded-md bg-slate-950 border border-slate-700 px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+        {{if .ConfigError}}<div class="mx-5 mt-5 rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 text-rose-300 text-sm">{{.ConfigError}}</div>{{end}}
+        <form method="post" action="/save-config" class="p-5">
+          <div class="overflow-x-auto rounded-lg border border-slate-800">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-950 text-slate-400 text-left">
+                <tr>
+                  <th class="px-4 py-2.5 font-medium">Chave</th>
+                  <th class="px-4 py-2.5 font-medium w-full">Valor</th>
+                  <th class="px-4 py-2.5 font-medium text-center">Remover</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800">
+                {{range .Config}}
+                  {{if .IsComment}}
+                    <tr><td colspan="3" class="px-4 py-2 text-slate-500 italic bg-slate-950/50">{{.Raw}}</td></tr>
+                  {{else if .IsBlank}}
+                    <tr><td colspan="3" class="h-2 bg-slate-950/30"></td></tr>
+                  {{else}}
+                    <tr data-row data-key="{{.Key}}" class="hover:bg-slate-800/50 transition-colors">
+                      <td class="px-4 py-2 align-top"><code class="text-indigo-300 text-xs">{{.Key}}</code></td>
+                      <td class="px-4 py-2 align-top">
+                        <input type="text" name="val_{{.Key}}" value="{{.Value}}" class="w-full rounded-md bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      </td>
+                      <td class="px-4 py-2 align-middle text-center">
+                        <input type="checkbox" name="del_{{.Key}}" value="1" class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-rose-500 focus:ring-rose-500 focus:ring-offset-slate-900">
+                      </td>
+                    </tr>
+                  {{end}}
+                {{end}}
+                <tr class="bg-slate-950/40">
+                  <td class="px-4 py-2 align-top">
+                    <input type="text" name="new_keys" placeholder="nova_chave" class="w-full rounded-md bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </td>
+                  <td class="px-4 py-2 align-top">
+                    <input type="text" name="new_values" placeholder="valor" class="w-full rounded-md bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </td>
+                  <td class="px-4 py-2 align-middle text-center text-slate-500 text-xs">novo</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-4 flex justify-end">
+            <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors">Salvar prod.env</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Secrets -->
+      <section class="rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
+        <div class="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-white">Secrets</h2>
+            <p class="text-xs text-slate-400 mt-0.5">deployment/config/prod.secrets.env</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input type="checkbox" id="toggle-secrets" checked class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900">
+              Mostrar valores
+            </label>
+            <input type="text" data-filter="secrets" placeholder="Buscar chave..." class="w-full sm:w-56 rounded-md bg-slate-950 border border-slate-700 px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          </div>
+        </div>
+        {{if .SecretsError}}<div class="mx-5 mt-5 rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 text-rose-300 text-sm">{{.SecretsError}}</div>{{end}}
+        <form method="post" action="/save-secrets" class="p-5">
+          <div class="overflow-x-auto rounded-lg border border-slate-800">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-950 text-slate-400 text-left">
+                <tr>
+                  <th class="px-4 py-2.5 font-medium">Chave</th>
+                  <th class="px-4 py-2.5 font-medium w-full">Valor</th>
+                  <th class="px-4 py-2.5 font-medium text-center">Remover</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800">
+                {{range .Secrets}}
+                  {{if .IsComment}}
+                    <tr><td colspan="3" class="px-4 py-2 text-slate-500 italic bg-slate-950/50">{{.Raw}}</td></tr>
+                  {{else if .IsBlank}}
+                    <tr><td colspan="3" class="h-2 bg-slate-950/30"></td></tr>
+                  {{else}}
+                    <tr data-row data-key="{{.Key}}" class="hover:bg-slate-800/50 transition-colors">
+                      <td class="px-4 py-2 align-top"><code class="text-amber-300 text-xs">{{.Key}}</code></td>
+                      <td class="px-4 py-2 align-top">
+                        <div class="relative">
+                          <input type="text" name="val_{{.Key}}" value="{{.Value}}" data-secret class="w-full rounded-md bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs font-mono text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 pr-8">
+                        </div>
+                      </td>
+                      <td class="px-4 py-2 align-middle text-center">
+                        <input type="checkbox" name="del_{{.Key}}" value="1" class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-rose-500 focus:ring-rose-500 focus:ring-offset-slate-900">
+                      </td>
+                    </tr>
+                  {{end}}
+                {{end}}
+                <tr class="bg-slate-950/40">
+                  <td class="px-4 py-2 align-top">
+                    <input type="text" name="new_keys" placeholder="nova_chave" class="w-full rounded-md bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </td>
+                  <td class="px-4 py-2 align-top">
+                    <input type="text" name="new_values" placeholder="valor" class="w-full rounded-md bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </td>
+                  <td class="px-4 py-2 align-middle text-center text-slate-500 text-xs">novo</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <p class="text-xs text-slate-500">Ao salvar, o arquivo será re-criptografado com SOPS + age usando as regras de <code>.sops.yaml</code>.</p>
+            <button type="submit" class="inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 transition-colors">Salvar e criptografar secrets</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <footer class="mt-8 text-center text-xs text-slate-600">
+      Não exponha esta interface em rede pública. Use apenas em <code>127.0.0.1</code>.
+    </footer>
+  </div>
+
+  <script>
+    function filterRows(input) {
+      const scope = input.closest('section');
+      const term = input.value.trim().toLowerCase();
+      scope.querySelectorAll('[data-row]').forEach(row => {
+        const key = (row.dataset.key || '').toLowerCase();
+        row.hidden = term && !key.includes(term);
+      });
+    }
+
+    document.querySelectorAll('[data-filter]').forEach(input => {
+      input.addEventListener('input', () => filterRows(input));
+    });
+
+    const toggle = document.getElementById('toggle-secrets');
+    if (toggle) {
+      toggle.addEventListener('change', () => {
+        document.querySelectorAll('[data-secret]').forEach(input => {
+          input.type = toggle.checked ? 'text' : 'password';
+        });
+      });
+    }
+  </script>
 </body>
 </html>`
