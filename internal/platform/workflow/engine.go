@@ -175,7 +175,11 @@ func (e *engine[S]) resumeOnConflict(ctx context.Context, span observability.Spa
 		observability.String("workflow", def.ID),
 		observability.String("outcome", "resumed_on_conflict"),
 	)
-	return e.execute(ctx, def, existing, current, existing.Cursor)
+	result, runErr := e.execute(ctx, def, existing, current, existing.Cursor)
+	if errors.Is(runErr, ErrRunConflict) {
+		return result, nil
+	}
+	return result, runErr
 }
 
 func (e *engine[S]) Resume(ctx context.Context, def Definition[S], key string, resume []byte) (RunResult[S], error) {
