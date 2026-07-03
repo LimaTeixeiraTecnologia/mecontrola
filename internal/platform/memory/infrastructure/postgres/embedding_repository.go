@@ -21,27 +21,27 @@ func NewEmbeddingRepository(db database.DBTX, o11y observability.Observability) 
 	return &embeddingRepository{db: db, o11y: o11y}
 }
 
-func (r *embeddingRepository) Index(ctx context.Context, resourceID, threadID string, sourceMessagePK uuid.UUID, content, model string, embedding []float32) error {
+func (r *embeddingRepository) Index(ctx context.Context, resourceID, threadID string, sourceMessageID uuid.UUID, content, model string, embedding []float32) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "platform.memory.repository.embedding.index")
 	defer span.End()
 
 	vec := formatVector(embedding)
 
 	const q = `
-		INSERT INTO mecontrola.platform_embeddings (id, resource_id, thread_id, source_message_pk, content, embedding, model, created_at)
+		INSERT INTO mecontrola.platform_embeddings (id, resource_id, thread_id, source_message_id, content, embedding, model, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6::vector, $7, now())
-		ON CONFLICT (source_message_pk, model) WHERE source_message_pk IS NOT NULL DO NOTHING`
+		ON CONFLICT (source_message_id, model) WHERE source_message_id IS NOT NULL DO NOTHING`
 
-	var srcMsgPK any
-	if sourceMessagePK != uuid.Nil {
-		srcMsgPK = sourceMessagePK
+	var sourceMsgID any
+	if sourceMessageID != uuid.Nil {
+		sourceMsgID = sourceMessageID
 	}
 
 	_, err := r.db.ExecContext(ctx, q,
 		uuid.New(),
 		resourceID,
 		threadID,
-		srcMsgPK,
+		sourceMsgID,
 		content,
 		vec,
 		model,

@@ -113,19 +113,19 @@ func (s *SemanticRecallIntegrationSuite) TestAsyncChainScopedRecall() {
 	store := memory.NewPublishingMessageStore(s.msgRepo, pub, embeddingModel, s.obs)
 
 	msg := memory.Message{
-		ID:         uuid.New(),
-		ThreadPK:   threadA.ID,
-		ResourceID: resourceA,
-		Role:       memory.RoleUser,
-		Content:    content,
-		CreatedAt:  time.Now().UTC(),
+		ID:               uuid.New(),
+		PlatformThreadID: threadA.ID,
+		ResourceID:       resourceA,
+		Role:             memory.RoleUser,
+		Content:          content,
+		CreatedAt:        time.Now().UTC(),
 	}
 	s.Require().NoError(store.Append(s.ctx, threadA.ID, msg))
 
 	s.Require().Len(pub.captured, 1)
 	s.Equal(resourceA, pub.captured[0].ResourceID)
 	s.Equal(content, pub.captured[0].Content)
-	s.Equal(msg.ID, pub.captured[0].MessagePK)
+	s.Equal(msg.ID, pub.captured[0].MessageID)
 	s.Equal(embeddingModel, pub.captured[0].Model)
 
 	handler := indexer.NewEmbeddingIndexHandler(stubEmbedder{}, s.embedRepo, s.obs)
@@ -153,7 +153,7 @@ func (s *SemanticRecallIntegrationSuite) TestReplayDoesNotDuplicateEmbedding() {
 	payload := memory.IndexMessagePayload{
 		ResourceID: resource,
 		ThreadID:   thread.ID.String(),
-		MessagePK:  msgPK,
+		MessageID:  msgPK,
 		Content:    content,
 		Model:      embeddingModel,
 	}
@@ -166,7 +166,7 @@ func (s *SemanticRecallIntegrationSuite) TestReplayDoesNotDuplicateEmbedding() {
 
 	var count int
 	err = s.db.QueryRowContext(s.ctx,
-		`SELECT count(*) FROM mecontrola.platform_embeddings WHERE source_message_pk=$1`, msgPK,
+		`SELECT count(*) FROM mecontrola.platform_embeddings WHERE source_message_id=$1`, msgPK,
 	).Scan(&count)
 	s.Require().NoError(err)
 	s.Equal(1, count)

@@ -3,49 +3,64 @@ name: Auto-merge Dependabot
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  check_suite:
+    types: [completed]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   auto-merge:
     name: Auto-merge minor/patch Dependabot PRs
     runs-on: ubuntu-24.04
     if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - name: Fetch Dependabot metadata
         id: meta
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Approve PR (minor/patch only)
+      - name: Verify required checks passed (minor/patch only)
+        id: checks
         if: >
           contains(github.event.pull_request.labels.*.name, 'dependencies') &&
           (steps.meta.outputs.update-type == 'version-update:semver-minor' ||
            steps.meta.outputs.update-type == 'version-update:semver-patch')
-        run: gh pr review --approve "${{ github.event.pull_request.html_url }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr_url="${{ github.event.pull_request.html_url }}"
+          echo "Verificando checks obrigatorios para ${pr_url}"
+          if ! gh pr checks --required "$pr_url" 2>/dev/null; then
+            echo "Checks obrigatorios nao passaram ou ainda nao foram concluidos. Auto-merge nao sera habilitado."
+            exit 0
+          fi
+          echo "checks_ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Enable auto-merge (minor/patch only)
         if: >
+          steps.checks.outputs.checks_ok == 'true' &&
           contains(github.event.pull_request.labels.*.name, 'dependencies') &&
           (steps.meta.outputs.update-type == 'version-update:semver-minor' ||
            steps.meta.outputs.update-type == 'version-update:semver-patch')
-        run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
 
       - name: Comment on major update (manual review required)
         if: >
           contains(github.event.pull_request.labels.*.name, 'dependencies') &&
           steps.meta.outputs.update-type == 'version-update:semver-major'
-        run: |
-          gh pr comment "${{ github.event.pull_request.html_url }}" \
-            --body "Este PR contém uma atualização **major** e requer revisão manual antes do merge."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.html_url }}" \
+            --body "Este PR contem uma atualizacao **major** e requer revisao manual antes do merge."

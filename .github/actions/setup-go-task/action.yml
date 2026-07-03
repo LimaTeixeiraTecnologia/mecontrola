@@ -3,7 +3,7 @@ description: Instala Go, Task e ferramentas opcionais (golangci-lint, govulnchec
 
 inputs:
   go-version-file:
-    description: Caminho para o arquivo de versão do Go
+    description: Caminho para o arquivo de versao do Go
     required: false
     default: go.mod
   install-golangci-lint:
@@ -18,42 +18,77 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
       with:
         go-version-file: ${{ inputs.go-version-file }}
         cache: true
 
-    - name: Cache .task/
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+    - name: Expose Go environment
+      id: goenv
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "gopath=$(go env GOPATH)" >> "$GITHUB_OUTPUT"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Cache Task binary
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
-        path: .task/
-        key: task-${{ runner.os }}-${{ hashFiles('Taskfile.yml', 'taskfiles/**') }}
+        path: ~/.local/bin/task
+        key: task-binary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('taskfiles/vars.yml') }}
 
     - name: Cache golangci-lint artifacts
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
-        path: ~/.cache/golangci-lint
-        key: golangci-${{ runner.os }}-${{ hashFiles('.golangci.yml') }}
+        path: |
+          ~/.cache/golangci-lint
+          ${{ steps.goenv.outputs.gopath }}/bin/golangci-lint
+        key: golangci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.golangci.yml', 'go.mod', 'taskfiles/vars.yml') }}
+
+    - name: Cache govulncheck database
+      if: inputs.install-govulncheck == 'true'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ~/.cache/vulncheck
+        key: govulncheck-db-${{ runner.os }}-${{ runner.arch }}-${{ github.run_attempt }}
+        restore-keys: |
+          govulncheck-db-${{ runner.os }}-${{ runner.arch }}-
+          govulncheck-db-${{ runner.os }}-
 
     - name: Install task
       shell: bash
       run: |
         set -euo pipefail
-        VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
+        if [ -x "$HOME/.local/bin/task" ]; then
+          echo "Task ja instalado em $HOME/.local/bin/task"
+          exit 0
+        fi
         mkdir -p "$HOME/.local/bin"
+        VER=$(grep 'TASK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
         sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/.local/bin" "v${VER}"
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Install golangci-lint
       if: inputs.install-golangci-lint == 'true'
       shell: bash
       run: |
+        set -euo pipefail
+        BIN="${{ steps.goenv.outputs.gopath }}/bin/golangci-lint"
+        if [ -x "$BIN" ]; then
+          echo "golangci-lint ja instalado em $BIN"
+          exit 0
+        fi
         VERSION=$(grep 'GOLANGCI_LINT_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-        go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${VERSION}
+        go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${VERSION}"
 
     - name: Install govulncheck
       if: inputs.install-govulncheck == 'true'
       shell: bash
       run: |
+        set -euo pipefail
+        BIN="${{ steps.goenv.outputs.gopath }}/bin/govulncheck"
+        if [ -x "$BIN" ]; then
+          echo "govulncheck ja instalado em $BIN"
+          exit 0
+        fi
         VERSION=$(grep 'GOVULNCHECK_VERSION:' taskfiles/vars.yml | awk '{print $2}' | tr -d "'\"")
-        go install golang.org/x/vuln/cmd/govulncheck@${VERSION}
+        go install "golang.org/x/vuln/cmd/govulncheck@${VERSION}"

@@ -23,10 +23,10 @@ func NewRunStore(db database.DBTX) agent.RunStore {
 func (s *runStore) Insert(ctx context.Context, run agent.Run) error {
 	const q = `
 		INSERT INTO mecontrola.platform_runs
-			(id, thread_pk, resource_id, thread_id, agent_id, workflow, correlation_key, status, outcome, error, started_at, ended_at, duration_ms)
+			(id, platform_thread_id, resource_id, thread_id, agent_id, workflow, correlation_key, status, outcome, error, started_at, ended_at, duration_ms)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
 	_, err := s.db.ExecContext(ctx, q,
-		run.ID, run.ThreadPK, run.ResourceID, run.ThreadID,
+		run.ID, run.PlatformThreadID, run.ResourceID, run.ThreadID,
 		run.AgentID, run.Workflow, run.CorrelationKey,
 		run.Status.String(), outcomeText(run.Outcome), run.Error,
 		run.StartedAt, run.EndedAt, run.DurationMs,
@@ -56,7 +56,7 @@ func (s *runStore) Update(ctx context.Context, run agent.Run) error {
 
 func (s *runStore) Load(ctx context.Context, id uuid.UUID) (agent.Run, error) {
 	const q = `
-		SELECT id, thread_pk, resource_id, thread_id, agent_id, workflow, correlation_key, status, outcome, error, started_at, ended_at, duration_ms
+		SELECT id, platform_thread_id, resource_id, thread_id, agent_id, workflow, correlation_key, status, outcome, error, started_at, ended_at, duration_ms
 		FROM mecontrola.platform_runs
 		WHERE id=$1`
 	row := s.db.QueryRowContext(ctx, q, id)
@@ -65,7 +65,7 @@ func (s *runStore) Load(ctx context.Context, id uuid.UUID) (agent.Run, error) {
 	var outcomeStr string
 	var endedAt sql.NullTime
 	if err := row.Scan(
-		&r.ID, &r.ThreadPK, &r.ResourceID, &r.ThreadID,
+		&r.ID, &r.PlatformThreadID, &r.ResourceID, &r.ThreadID,
 		&r.AgentID, &r.Workflow, &r.CorrelationKey,
 		&statusStr, &outcomeStr, &r.Error,
 		&r.StartedAt, &endedAt, &r.DurationMs,

@@ -537,3 +537,247 @@ groups:
                   operator: { type: and }
                   query: { params: [C] }
                   evaluator: { type: gt, params: [1] }
+
+  - orgId: 1
+    name: pool
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-pgbouncer-pool-saturation
+        title: Saturacao de pool pgBouncer
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Conexoes reais ao Postgres acima de 80% do MAX_DB_CONNECTIONS (30)."
+          description: "pgBouncer esta proximo do teto de conexoes reais. Pressao de pool sustentada pode causar timeouts de query. Verifique DB_MAX_CONNS dos processos, background jobs e queries lentas que seguram conexoes."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'pg_stat_database_numbackends{datname="mecontrola_db"}'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [24] }
+
+      - uid: mc-pgbouncer-client-queue
+        title: Espera no pool da aplicacao (app -> pgbouncer) alta
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Pool database/sql da aplicacao com espera acima de 2 por segundo por 3 minutos."
+          description: "Metrica database_pool_wait_count_total mede o pool database/sql da propria aplicacao (app -> pgbouncer), NAO o cl_waiting interno do pgBouncer. Processos da aplicacao aguardam conexao com frequencia elevada. Verifique DB_MAX_CONNS/pool da app, DEFAULT_POOL_SIZE do pgBouncer e queries longas. Gatilho de upgrade: pool wait > 5/s sustentado por 10 min."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(database_pool_wait_count_total{job=~"mecontrola-.+"}[5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [2] }
+
+  - orgId: 1
+    name: backup
+    folder: MeControla Alerts
+    interval: 5m
+    rules:
+      - uid: mc-backup-full-stale
+        title: Backup full pgBackRest desatualizado
+        condition: C
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Ultimo backup full do pgBackRest com mais de 8 dias."
+          description: "O full semanal (RF-01) nao ocorre ha mais de 8 dias, ou nenhum full existe (age sentinela 999999). PITR comprometido. Verifique cron de backup full, conectividade S3 e logs do pgBackRest. Runbook: deployment/runbooks/restore-pitr.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(pgbackrest_backup_age_seconds{type="full"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [691200] }
+
+      - uid: mc-backup-diff-stale
+        title: Backup diff pgBackRest desatualizado
+        condition: C
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Ultimo backup diff do pgBackRest com mais de 26 horas."
+          description: "O diff diario nao ocorre ha mais de 26h, ou nenhum diff existe (age sentinela 999999). Janela de PITR degradada. Verifique cron de backup diff e logs do pgBackRest."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(pgbackrest_backup_age_seconds{type="diff"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [93600] }
+
+      - uid: mc-backup-archive-push-failed
+        title: Archive-push do pgBackRest falhando
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "pgBackRest check detectou falha de archive-push."
+          description: "O archive-push de WAL esta falhando (pgbackrest check retornou erro). PITR comprometido; WAL nao esta chegando ao repositorio. Verifique conectividade S3, credenciais e processo de archive_command. Runbook: deployment/runbooks/restore-pitr.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(pgbackrest_archive_push_failed)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+  - orgId: 1
+    name: versao
+    folder: MeControla Alerts
+    interval: 1h
+    rules:
+      - uid: mc-version-skew
+        title: Drift de versao em producao
+        condition: C
+        for: 0m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Uma unica versao de mecontrola-server observada nas ultimas 25 horas."
+          description: "Nenhuma nova service_version apareceu em target_info nas ultimas 25h: producao parada na mesma versao (sem redeploy). Verifique drift entre main e a imagem em execucao. Runbook: deployment/runbooks/deploy.md"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 93600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'count(count by (service_version) (last_over_time(target_info{service_name="mecontrola-server"}[25h])))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: lt, params: [2] }
+
+  - orgId: 1
+    name: disco
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-disk-low-bytes
+        title: Disco com menos de 10 GiB livres
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Disco da VPS com menos de 10 GiB livres por 5 minutos."
+          description: "Espaco absoluto em disco critico. Execute docker-prune.sh imediatamente e verifique logs, build cache e imagens antigas. Referencia: deployment/scripts/docker-prune.sh."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: lt, params: [10737418240] }

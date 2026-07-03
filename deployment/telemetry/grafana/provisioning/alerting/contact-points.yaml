@@ -9,8 +9,10 @@ contactPoints:
         settings:
           bottoken: ${ALERT_TELEGRAM_BOT_TOKEN}
           chatid: "${ALERT_TELEGRAM_CHAT_ID}"
+          parse_mode: HTML
+          disable_web_page_preview: true
           message: |
-            {{ template "default.message" . }}
+            {{ template "mc.telegram.message" . }}
 
 policies:
   - orgId: 1
@@ -25,12 +27,39 @@ policies:
           - severity =~ "critical|warning"
 
 templates:
-  - name: default.message
+  - name: mc.telegram.message
     template: |
-      {{ define "default.message" }}
-      {{ range .Alerts }}
-      *{{ .Status }}: {{ .Labels.alertname }}*
-      {{ .Annotations.summary }}
-      {{ .Annotations.description }}
-      {{ end }}
-      {{ end }}
+      {{ define "mc.telegram.message" -}}
+      {{- range .Alerts.Firing }}
+      {{ template "mc.telegram.firing" . }}
+      {{- end }}
+      {{- range .Alerts.Resolved }}
+      {{ template "mc.telegram.resolved" . }}
+      {{- end }}
+      {{- end }}
+
+      {{ define "mc.telegram.firing" -}}
+      🚨 <b>Disparado</b>: <b>{{ .Labels.alertname }}</b>
+      <b>Severidade:</b> {{ template "mc.telegram.severity" . }}
+      <b>Resumo:</b> {{ .Annotations.summary }}
+      <b>Contexto:</b> {{ .Annotations.description }}
+      <b>Desde:</b> {{ .StartsAt.Format "02/01 15:04 UTC" }}
+
+      {{- end }}
+
+      {{ define "mc.telegram.resolved" -}}
+      ✅ <b>Resolvido</b>: <b>{{ .Labels.alertname }}</b>
+      <b>Severidade:</b> {{ template "mc.telegram.severity" . }}
+      <b>Resumo:</b> {{ .Annotations.summary }}
+      <b>Contexto:</b> {{ .Annotations.description }}
+      <b>Encerrado:</b> {{ .EndsAt.Format "02/01 15:04 UTC" }}
+
+      {{- end }}
+
+      {{ define "mc.telegram.severity" -}}
+      {{- if eq .Labels.severity "critical" -}}Critica
+      {{- else if eq .Labels.severity "warning" -}}Atencao
+      {{- else if .Labels.severity -}}{{ .Labels.severity }}
+      {{- else -}}Nao informada
+      {{- end -}}
+      {{- end }}

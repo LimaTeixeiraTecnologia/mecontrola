@@ -1,0 +1,386 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/limateixeiratecnologia/mecontrola
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+        with:
+          install-golangci-lint: "true"
+      - run: task lint:run
+      - run: task lint:fmt:check
+      - run: task lint:pci
+      - run: task lint:tidy
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - run: task test:unit
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - name: Create .env for integration tests
+        run: |
+          cat > .env << 'EOF'
+          ENVIRONMENT=local
+          APP_MODE=server
+          PORT=8080
+          SERVICE_NAME_API=mecontrola-api
+          CORS_ALLOWED_ORIGINS=http://localhost:3000
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_USER=mecontrola
+          DB_PASSWORD=mecontrola_password
+          DB_NAME=mecontrola_db
+          DB_SSL_MODE=disable
+          LOG_LEVEL=info
+          LOG_FORMAT=json
+          OTEL_TRACE_SAMPLE_RATE=0
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+          EOF
+      - run: task test:integration
+
+  vulncheck:
+    name: Vulnerability Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+        with:
+          install-govulncheck: "true"
+      - run: task security:vulncheck
+
+  gates:
+    name: Governance Gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - run: task ci:agent-boundary
+      - run: task ci:platform-gates
+      - run: task ci:no-internal-agent
+      - run: task ci:deploy-anti-storm
+
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - run: task build:build
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary
+          path: bin/mecontrola
+          retention-days: 1
+          if-no-files-found: error
+
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [quality, unit, integration, vulncheck, gates, build]
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Check required jobs
+        run: |
+          results='${{ toJson(needs) }}'
+          failed=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(k for k,v in d.items() if v.get('result')!='success'))" <<< "$results")
+          if [ -n "$failed" ]; then
+            echo "Falha nos jobs: $failed"
+            exit 1
+          fi
+          echo "Todos os quality gates passaram."
+
+  build-image:
+    name: Build & Push Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: quality-gates
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      actions: read
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Download binary artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: binary
+          path: bin/
+      - name: Make binary executable
+        run: chmod +x bin/mecontrola
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Determine image tags
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA::8}"
+          echo "image-tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tags=${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Build and push Docker image
+        id: build
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: deployment/docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          target: runtime
+          build-args: |
+            VERSION=${{ steps.meta.outputs.image-tag }}
+            BUILD_MODE=artifact
+          provenance: true
+          sbom: true
+          cache-from: |
+            type=gha,scope=mecontrola-${{ github.ref_name }}
+            type=gha,scope=mecontrola-main
+          cache-to: type=gha,mode=max,scope=mecontrola-${{ github.ref_name }}
+
+  scan-sign-image:
+    name: Scan & Sign Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: build-image
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Trivy cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ github.workspace }}/.cache/trivy
+          key: trivy-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: trivy-${{ runner.os }}-
+      - name: Run Trivy vulnerability scanner
+        id: trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.image-digest }}
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always() && steps.trivy.conclusion != 'skipped'
+        uses: github/codeql-action/upload-sarif@efffb483ec7bb162c4b7935f8b35ab6b94136c7b # v3
+        with:
+          sarif_file: trivy-results.sarif
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            ${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.image-digest }}
+
+  deploy:
+    name: Deploy Swarm Stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [build-image, scan-sign-image]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      - name: Verify image signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp '^https://github\.com/LimaTeixeiraTecnologia/mecontrola/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            ${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.image-digest }}
+      - name: Install SOPS and age
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y age
+          SOPS_SHA256="8aee355e3ded54d3421f245dd4ea3352f4849a0c409ce15b51529979256749ca"
+          curl -fsSL -o sops.deb "https://github.com/getsops/sops/releases/download/v3.9.0/sops_3.9.0_amd64.deb"
+          echo "${SOPS_SHA256}  sops.deb" | sha256sum -c -
+          sudo dpkg -i sops.deb
+          rm -f sops.deb
+      - name: Set up SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          echo "VPS_SSH_KEY=$HOME/.ssh/id_deploy" >> "$GITHUB_ENV"
+      - name: Decrypt production secrets and deploy
+        env:
+          SOPS_AGE_KEY: ${{ secrets.AGE_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          IMAGE_TAG: ${{ needs.build-image.outputs.image-tag }}
+          IMAGE_DIGEST: ${{ needs.build-image.outputs.image-digest }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          sops --decrypt deployment/config/prod.secrets.env > /tmp/mecontrola-secrets.env
+          chmod 600 /tmp/mecontrola-secrets.env
+          bash deployment/scripts/deploy-swarm.sh "$IMAGE_TAG" /tmp/mecontrola-secrets.env "$IMAGE_DIGEST"
+      - name: Cleanup secrets and SSH keys
+        if: always()
+        run: |
+          rm -f /tmp/mecontrola-secrets.env ~/.ssh/id_deploy ~/.ssh/known_hosts
+          rm -rf ~/.config/sops
+
+  healthcheck:
+    name: Healthcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - name: Check production health
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$HEALTH_URL" ]]; then
+            echo "HEALTH_URL nao configurado; healthcheck e obrigatorio em producao"
+            exit 1
+          fi
+          echo "==> Checking /healthz"
+          curl -fsS --retry 12 --retry-delay 5 --max-time 10 "${HEALTH_URL}/healthz"
+          echo "==> Checking /readyz"
+          curl -fsS --retry 12 --retry-delay 5 --max-time 10 "${HEALTH_URL}/readyz"
+          echo "==> Healthcheck OK"
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [quality-gates, build-image, scan-sign-image, deploy, healthcheck]
+    if: always() && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+            echo "Telegram secrets not configured; skipping notification"
+            exit 0
+          fi
+          if [[ "${{ needs.quality-gates.result }}" == "success" && \
+                "${{ needs.build-image.result }}" == "success" && \
+                "${{ needs.scan-sign-image.result }}" == "success" && \
+                "${{ needs.deploy.result }}" == "success" && \
+                "${{ needs.healthcheck.result }}" == "success" ]]; then
+            STATUS="✅ SUCESSO"
+          else
+            STATUS="❌ FALHA"
+          fi
+          MESSAGE="*${{ github.workflow }}*%0A*Repo:* ${{ github.repository }}*%0A*Ref:* ${{ github.ref_name }}*%0A*Commit:* ${{ github.sha }}*%0A*Status:* ${STATUS}%0A[Ver run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          curl -fsSL -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "parse_mode=Markdown" \
+            -d "text=${MESSAGE}"

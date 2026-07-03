@@ -5,7 +5,18 @@ Scripts de carga para validar capacidade do MVP antes do primeiro deploy e antes
 Cobertura:
 
 - **Webhook Kiwify** — `kiwify-webhook.js` (k6, 50 VUs × 2 min).
+- **WhatsApp inbound** — `whatsapp-inbound.js` (k6, envelopes A e B, HMAC-SHA256).
+- **Leitura de transações** — `transactions-read.js` (k6, envelopes A e B, monthly summary + entries).
 - **Outbox throughput** — `outbox-throughput.sh` (bash, N eventos sintéticos, mede drenagem).
+
+## Envelopes de carga
+
+| Envelope | Alvo | RPS médio | RPS burst (3×) | VUs padrão | Duração |
+|----------|------|-----------|----------------|------------|---------|
+| A | 10k msgs/mês | ~0.004 | ~0.012 | 2 | 5 min |
+| B | 10k msgs/dia | ~0.12 | ~0.35 | 5 | 10 min |
+
+Os VUs e a duração são os padrões dos scripts; sobreponha via `VUS=` e `DURATION=`.
 
 ## Pré-requisitos
 
@@ -34,7 +45,31 @@ task local:up   # postgres, mailpit, app
 | `VUS` | varia por script | número de virtual users |
 | `DURATION` | `2m` | duração do teste |
 
-## Executando
+## Executando via Taskfile (recomendado)
+
+```bash
+# WhatsApp webhook — envelope A (10k/mês)
+task loadtest:whatsapp ENVELOPE=a
+
+# WhatsApp webhook — envelope B (10k/dia)
+export WHATSAPP_APP_SECRET="<secret>"
+task loadtest:whatsapp ENVELOPE=b VUS=10 DURATION=5m
+
+# Leitura de transações — envelope B
+task loadtest:read ENVELOPE=b AUTH_TOKEN=<jwt>
+
+# Outbox drain — 333 eventos (envelope A)
+export DATABASE_URL="postgres://..."
+task loadtest:outbox EVENT_COUNT=333
+
+# Suite completa para envelope A
+task loadtest:suite:envelope-a
+
+# Suite completa para envelope B
+task loadtest:suite:envelope-b
+```
+
+## Executando diretamente
 
 ### Kiwify webhook
 
@@ -106,8 +141,43 @@ Possíveis causas:
 - **Antes de release major** (mudança de schema, novo broker, troca de LLM).
 - **Após mudança em** `internal/billing/infrastructure/http/server/middleware/rate_limit.go`, `internal/platform/outbox/`, `internal/platform/agent/` ou `internal/agents/`.
 
+## WhatsApp inbound
+
+```bash
+export WHATSAPP_APP_SECRET="<valor de WHATSAPP_APP_SECRET do .env do app>"
+
+# Envelope A (10k/mês) — 2 VUs, 5 min, think time 8 s
+k6 run --env BACKEND=http://localhost:8080 --env ENVELOPE=a \
+       --env WHATSAPP_APP_SECRET="$WHATSAPP_APP_SECRET" \
+       scripts/loadtest/whatsapp-inbound.js
+
+# Envelope B (10k/dia) — 5 VUs, 10 min, think time 2 s
+k6 run --env BACKEND=http://localhost:8080 --env ENVELOPE=b \
+       --env WHATSAPP_APP_SECRET="$WHATSAPP_APP_SECRET" \
+       scripts/loadtest/whatsapp-inbound.js
+```
+
+Thresholds:
+
+| Métrica | Limite |
+|---------|--------|
+| `http_req_duration{endpoint:whatsapp_inbound}` p95 | < 500 ms |
+| `http_req_failed` rate | < 1 % |
+
+A HMAC-SHA256 (`X-Hub-Signature-256`) é calculada automaticamente pelo script se `WHATSAPP_APP_SECRET` for definida. Sem o secret, o handler retorna 401.
+
+### Leitura de transações
+
+```bash
+# Envelope B, 3 VUs, 5 min
+k6 run --env BACKEND=http://localhost:8080 --env ENVELOPE=b \
+       --env AUTH_TOKEN="<jwt>" \
+       scripts/loadtest/transactions-read.js
+```
+
 ## Limitações conhecidas
 
-- Não cobre carga de leitura (queries de extrato/relatório). Pode ser adicionado quando esses endpoints saírem do MVP.
-- LLM rate-limit do OpenRouter é externo — testes longos podem ser barrados pelo provedor.
-- O script de outbox usa `aggregate_user_id=NULL`, o que é permitido pela allowlist de sistema (ADR-004); não usar em staging com alerta de `outbox.event.missing_aggregate_user_id` ativo.
+- WhatsApp inbound dispara processamento real do agente (LLM via OpenRouter) — usar staging separado, não produção com usuários reais.
+- Rate-limit do OpenRouter é externo — testes longos podem ser barrados pelo provedor.
+- O script de outbox usa `aggregate_user_id=NULL`, permitido pela allowlist de sistema (ADR-004); não usar em staging com alerta de `outbox.event.missing_aggregate_user_id` ativo.
+- `transactions-read.js` aceita 401 como resposta válida quando `AUTH_TOKEN` não é informado; use token real para medir latência de leitura autenticada.

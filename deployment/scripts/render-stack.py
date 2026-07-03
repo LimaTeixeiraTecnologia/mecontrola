@@ -23,7 +23,6 @@ Correções aplicadas sobre o output de `docker compose config`:
 
 import argparse
 import os
-import re
 import subprocess
 import sys
 import yaml
@@ -78,6 +77,17 @@ def remove_empty_secrets(doc: dict, secrets_env: dict[str, str]) -> dict:
     return doc
 
 
+def pin_images_to_digest(doc: dict, image_name: str, image_digest: str) -> dict:
+    if not image_digest:
+        return doc
+    target_ref = f"{image_name}@{image_digest}"
+    for svc in doc.get("services", {}).values():
+        img = svc.get("image", "")
+        if img.startswith(f"{image_name}:"):
+            svc["image"] = target_ref
+    return doc
+
+
 def normalize_stack(doc: dict) -> dict:
     doc.pop("name", None)
 
@@ -127,7 +137,7 @@ def main() -> int:
 
     if env.get("ENVIRONMENT") == "production":
         pg_image = env.get("POSTGRES_IMAGE", "")
-        if not pg_image or re.match(r"^postgres:[^/]+$", pg_image):
+        if "mecontrola-postgres:" not in pg_image:
             print(
                 f"ERRO: POSTGRES_IMAGE='{pg_image}' nao e a imagem custom com pgBackRest.\n"
                 "      Producao exige mecontrola-postgres:<tag>. "
@@ -151,6 +161,11 @@ def main() -> int:
 
     rendered = yaml.safe_load(result.stdout)
     rendered = remove_empty_secrets(rendered, secrets_env)
+    rendered = pin_images_to_digest(
+        rendered,
+        env.get("IMAGE_NAME", "ghcr.io/limateixeiratecnologia/mecontrola"),
+        env.get("IMAGE_DIGEST", ""),
+    )
     normalized = normalize_stack(rendered)
     yaml.safe_dump(normalized, sys.stdout, default_flow_style=False, sort_keys=False)
     return 0

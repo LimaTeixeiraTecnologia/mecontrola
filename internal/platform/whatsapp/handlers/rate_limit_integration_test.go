@@ -43,7 +43,7 @@ func TestWhatsAppRateLimitSuite(t *testing.T) {
 }
 
 func buildTestRouter(requestsPerMinute, burst int, onExceeded func()) (*httptest.Server, *middleware.RateLimiter) {
-	rateLimiter := middleware.NewRateLimiter(requestsPerMinute, burst, []string{"127.0.0.1/32", "::1/128"})
+	rateLimiter := middleware.NewRateLimiter(requestsPerMinute, burst, []string{"127.0.0.1/32", "::1/128"}, nil)
 
 	o11y := noop.NewProvider()
 	verifyHandler := handlers.NewVerifyHandler("test-token")

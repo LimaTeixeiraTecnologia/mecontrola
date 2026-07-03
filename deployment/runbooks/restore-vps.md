@@ -8,18 +8,28 @@
 - Necessidade de recriar toda a stack em um novo servidor.
 - PITR local não é suficiente ou o host original está comprometido.
 
+**SLO de Recuperação — Envelope B (10k ativos/dia, single-node):**
+- RPO: ≤ 10 min (derivado da configuração; idêntico ao restore-pitr.md; WAL contínuo, `archive_timeout = 600 s`)
+- RTO: ≤ 90 min em host equivalente ao KVM 2 — estimado (projeção analítica, pendente de restore real; ver `docs/runs/2026-07-03-evidencia-restore.md`)
+- RTO máximo declarado SLO: 120 min (margem para imprevistos de DNS/rede)
+
 ## RTO Alvo
 
-| Operação | Duração Estimada |
-|----------|-----------------|
-| Provisionar nova VPS (Ubuntu 24.04, Docker, AWS CLI) | 15–30 min |
-| Clonar repositório e configurar SOPS + age | 5 min |
-| Recriar Docker secrets e Swarm | 5 min |
-| Restore do PostgreSQL via pgBackRest | 10–30 min |
-| Subir stack Swarm e validar health checks | 10 min |
-| **RTO total** | **< 4 horas** |
+Valores abaixo são **estimativas (projeção analítica), não medições** — a confirmar em restore real.
 
-> Atualizar após primeiro restore real em staging.
+| Operação | Duração Estimada | Base da estimativa |
+|----------|-----------------|-----------|
+| Provisionar nova VPS (Ubuntu 24.04, Docker, AWS CLI) | 15–30 min | projeção analítica |
+| Clonar repositório e configurar SOPS + age | 5 min | projeção analítica |
+| Recriar Docker secrets e Swarm | 5 min | projeção analítica |
+| Restore do PostgreSQL via pgBackRest | 10–25 min | DB near-empty; escala com tamanho |
+| Subir stack Swarm e validar health checks | 10 min | projeção analítica |
+| Propagação de DNS (se IP mudou) | 0–15 min | depende do TTL registrado |
+| **RTO total (sem troca de DNS)** | **≤ 60 min** | estimado, não medido |
+| **RTO total (com troca de DNS TTL=300)** | **≤ 90 min** | estimado, não medido |
+
+**Gatilho de revisão do RTO:** quando o backup full exceder 5 GiB ou o provisionamento de VPS mudar de provedor.
+Enquanto não houver restore real, os valores permanecem estimativas a confirmar.
 
 ## Pré-requisitos
 

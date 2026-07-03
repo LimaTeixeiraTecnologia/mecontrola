@@ -34,7 +34,7 @@ func (p *outboxMessageIndexPublisher) PublishIndex(ctx context.Context, payload 
 		ID:              uuid.NewString(),
 		Type:            memory.EventTypeEmbeddingIndex,
 		AggregateType:   aggregateTypeMessage,
-		AggregateID:     payload.MessagePK.String(),
+		AggregateID:     payload.MessageID.String(),
 		AggregateUserID: payload.ResourceID,
 		Payload:         raw,
 		OccurredAt:      time.Now().UTC(),

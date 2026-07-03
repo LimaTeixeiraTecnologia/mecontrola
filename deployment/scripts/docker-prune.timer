@@ -1,0 +1,11 @@
+[Unit]
+Description=Docker prune semanal — recupera disco de imagens e cache antigos
+Requires=docker-prune.service
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

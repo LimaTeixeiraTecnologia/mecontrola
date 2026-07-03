@@ -89,19 +89,25 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 
 ### Notificação no Telegram (contém segredo → via API, não em arquivo)
 
-O contact point + notification policy do Telegram sao criados por
-`deployment/telemetry/grafana/setup-alerting-telegram.sh` (idempotente). O Grafana 11 coage
-`chatid` numérico a number quando interpolado de env em arquivo, então o segredo entra pela API
-(onde controlamos o tipo string). A mensagem usa o template `mc.telegram.message`, em portugues, com emoji, severidade, resumo, contexto e links de fonte/silenciamento. No deploy isso roda automatico se `ALERT_TELEGRAM_*` estiverem no `.env`.
+O contact point + notification policy do Telegram sao provisionados a partir de
+`deployment/telemetry/grafana/provisioning/alerting/contact-points.yaml`. O script
+`deployment/scripts/setup-grafana-alerts.sh` apenas renderiza as credenciais em
+`contact-points.rendered.yaml`, porque o Grafana coage `chatid` numerico para `number`
+quando interpolado direto do env no arquivo original.
+
+A mensagem usa o template `mc.telegram.message`, em PT-BR, com `parse_mode: HTML`,
+status humanizado, severidade, resumo, contexto e horario. O deploy ja monta o arquivo
+renderizado no container `otel-lgtm` quando `ALERT_TELEGRAM_*` estao presentes no `.env`.
 
 Manual (na VPS, com otel-lgtm no ar) — o script lê o `.env` sozinho:
 
 ```bash
 cd /opt/mecontrola
-bash deployment/telemetry/grafana/setup-alerting-telegram.sh
+bash deployment/scripts/setup-grafana-alerts.sh
 ```
 
 Variáveis no `.env`: `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID` (e `OTEL_LGTM_ADMIN_PASSWORD`
-para a senha do Grafana). O script envia uma mensagem de teste real via API do Telegram ao final.
-Sem as variáveis, ele pula com exit 0 e os alertas apenas avaliam no painel (Alerting).
+para a senha do Grafana). O script nao envia mensagem de teste; para validar entrega e formato use
+`task swarm:prod:alert:test`. Sem as variáveis, ele pula com exit 0 e os alertas apenas avaliam no painel
+do Alerting.
 Pré-requisito: dar `/start` no bot uma vez para ele poder te enviar mensagem.

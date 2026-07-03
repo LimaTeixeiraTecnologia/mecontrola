@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+vars:
+  BACKEND: '{{.BACKEND | default "http://localhost:8080"}}'
+  ENVELOPE: '{{.ENVELOPE | default "a"}}'
+  VUS: '{{.VUS | default ""}}'
+  DURATION: '{{.DURATION | default ""}}'
+
+tasks:
+  whatsapp:
+    desc: |
+      Carga no webhook WhatsApp /api/v1/whatsapp/inbound.
+      ENVELOPE=a (10k/mes) ou ENVELOPE=b (10k/dia). Requer WHATSAPP_APP_SECRET.
+      Exemplo: task loadtest:whatsapp ENVELOPE=b VUS=10 DURATION=5m
+    preconditions:
+      - sh: command -v k6 >/dev/null 2>&1
+        msg: "k6 ausente — brew install k6 (macOS) ou https://k6.io/docs/getting-started/installation"
+      - sh: '[ -n "${WHATSAPP_APP_SECRET:-}" ]'
+        msg: "WHATSAPP_APP_SECRET nao definida — exporte antes de rodar"
+    cmds:
+      - k6 run
+        --env BACKEND={{.BACKEND}}
+        --env ENVELOPE={{.ENVELOPE}}
+        {{if .VUS}}--env VUS={{.VUS}}{{end}}
+        {{if .DURATION}}--env DURATION={{.DURATION}}{{end}}
+        scripts/loadtest/whatsapp-inbound.js
+
+  read:
+    desc: |
+      Carga de leitura (monthly summary + entries).
+      ENVELOPE=a ou ENVELOPE=b. AUTH_TOKEN requerido para endpoints autenticados.
+      Exemplo: task loadtest:read ENVELOPE=b AUTH_TOKEN=<jwt> VUS=3
+    preconditions:
+      - sh: command -v k6 >/dev/null 2>&1
+        msg: "k6 ausente — brew install k6 (macOS) ou https://k6.io/docs/getting-started/installation"
+    cmds:
+      - k6 run
+        --env BACKEND={{.BACKEND}}
+        --env ENVELOPE={{.ENVELOPE}}
+        {{if .VUS}}--env VUS={{.VUS}}{{end}}
+        {{if .DURATION}}--env DURATION={{.DURATION}}{{end}}
+        scripts/loadtest/transactions-read.js
+
+  outbox:
+    desc: |
+      Throughput da drenagem do outbox (N eventos sinteticos).
+      Exemplo: task loadtest:outbox EVENT_COUNT=1000 TIMEOUT_SEC=300
+    preconditions:
+      - sh: command -v psql >/dev/null 2>&1
+        msg: "psql ausente — brew install postgresql (macOS)"
+      - sh: '[ -n "${DATABASE_URL:-}" ]'
+        msg: "DATABASE_URL nao definida"
+    cmds:
+      - EVENT_COUNT={{.EVENT_COUNT | default "1000"}} TIMEOUT_SEC={{.TIMEOUT_SEC | default "300"}}
+        bash scripts/loadtest/outbox-throughput.sh
+
+  suite:envelope-a:
+    desc: Suite completa para envelope A (10k/mes) — whatsapp + outbox + leitura.
+    cmds:
+      - task: whatsapp
+        vars: { ENVELOPE: a }
+      - task: outbox
+        vars: { EVENT_COUNT: 333 }
+      - task: read
+        vars: { ENVELOPE: a }
+
+  suite:envelope-b:
+    desc: Suite completa para envelope B (10k/dia) — whatsapp + outbox + leitura.
+    cmds:
+      - task: whatsapp
+        vars: { ENVELOPE: b }
+      - task: outbox
+        vars: { EVENT_COUNT: 10000 }
+      - task: read
+        vars: { ENVELOPE: b }

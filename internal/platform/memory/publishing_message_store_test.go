@@ -45,11 +45,11 @@ func (s *PublishingMessageStoreSuite) TestAppend() {
 
 	threadPK := uuid.New()
 	msg := memory.Message{
-		ID:         uuid.New(),
-		ThreadPK:   threadPK,
-		ResourceID: "res-1",
-		Role:       memory.RoleUser,
-		Content:    "hello world",
+		ID:               uuid.New(),
+		PlatformThreadID: threadPK,
+		ResourceID:       "res-1",
+		Role:             memory.RoleUser,
+		Content:          "hello world",
 	}
 
 	type args struct {
@@ -79,7 +79,7 @@ func (s *PublishingMessageStoreSuite) TestAppend() {
 					s.pubMck.On("PublishIndex", s.ctx, mock.MatchedBy(func(p memory.IndexMessagePayload) bool {
 						return p.ResourceID == msg.ResourceID &&
 							p.ThreadID == threadPK.String() &&
-							p.MessagePK == msg.ID &&
+							p.MessageID == msg.ID &&
 							p.Content == msg.Content &&
 							p.Model == model
 					})).Return(nil).Once()

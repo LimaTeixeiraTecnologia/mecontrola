@@ -51,10 +51,10 @@ func (s *AppendMessageSuite) TestExecute() {
 		{
 			name: "deve adicionar mensagem com sucesso",
 			args: args{in: input.AppendMessageInput{
-				ThreadPK:   threadPK,
-				ResourceID: "user-123",
-				Role:       "user",
-				Content:    "ola",
+				PlatformThreadID: threadPK,
+				ResourceID:       "user-123",
+				Role:             "user",
+				Content:          "ola",
 			}},
 			dependencies: dependencies{
 				storeMock: func() *mocks.MessageStore {
@@ -76,10 +76,10 @@ func (s *AppendMessageSuite) TestExecute() {
 		{
 			name: "deve retornar erro de validacao quando content vazio",
 			args: args{in: input.AppendMessageInput{
-				ThreadPK:   threadPK,
-				ResourceID: "user-123",
-				Role:       "user",
-				Content:    "",
+				PlatformThreadID: threadPK,
+				ResourceID:       "user-123",
+				Role:             "user",
+				Content:          "",
 			}},
 			dependencies: dependencies{storeMock: s.storeMock},
 			expect: func(msg memory.Message, err error) {
@@ -90,10 +90,10 @@ func (s *AppendMessageSuite) TestExecute() {
 		{
 			name: "deve retornar erro de validacao quando role invalido",
 			args: args{in: input.AppendMessageInput{
-				ThreadPK:   threadPK,
-				ResourceID: "user-123",
-				Role:       "invalid_role",
-				Content:    "hello",
+				PlatformThreadID: threadPK,
+				ResourceID:       "user-123",
+				Role:             "invalid_role",
+				Content:          "hello",
 			}},
 			dependencies: dependencies{storeMock: s.storeMock},
 			expect: func(msg memory.Message, err error) {
@@ -104,10 +104,10 @@ func (s *AppendMessageSuite) TestExecute() {
 		{
 			name: "deve propagar erro do store",
 			args: args{in: input.AppendMessageInput{
-				ThreadPK:   threadPK,
-				ResourceID: "user-123",
-				Role:       "assistant",
-				Content:    "resposta",
+				PlatformThreadID: threadPK,
+				ResourceID:       "user-123",
+				Role:             "assistant",
+				Content:          "resposta",
 			}},
 			dependencies: dependencies{
 				storeMock: func() *mocks.MessageStore {

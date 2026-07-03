@@ -47,13 +47,13 @@ type Thread struct {
 }
 
 type Message struct {
-	ID         uuid.UUID
-	ThreadPK   uuid.UUID
-	ResourceID string
-	Role       MessageRole
-	Content    string
-	Parts      []byte
-	CreatedAt  time.Time
+	ID               uuid.UUID
+	PlatformThreadID uuid.UUID
+	ResourceID       string
+	Role             MessageRole
+	Content          string
+	Parts            []byte
+	CreatedAt        time.Time
 }
 
 type RecallHit struct {
@@ -66,7 +66,7 @@ type RecallHit struct {
 type IndexMessagePayload struct {
 	ResourceID string    `json:"resource_id"`
 	ThreadID   string    `json:"thread_id"`
-	MessagePK  uuid.UUID `json:"message_pk"`
+	MessageID  uuid.UUID `json:"message_id"`
 	Content    string    `json:"content"`
 	Model      string    `json:"model"`
 }

@@ -1,8 +1,3 @@
-# Caddyfile com rate limiting via mholt/caddy-ratelimit.
-# Requer imagem xcaddy: docker build -f deployment/docker/Dockerfile.caddy -t mecontrola-caddy:latest .
-# Em producao: CADDY_IMAGE=mecontrola-caddy:latest
-# Em compose.prod.yml, override do volume: ../caddy/Caddyfile.ratelimit:/etc/caddy/Caddyfile:ro
-
 {
 	email {$CADDY_EMAIL}
 }
@@ -11,15 +6,30 @@
 	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
 	respond @admin 404
 
-	rate_limit {remote.ip} {$CADDY_RATE_LIMIT_REQUESTS:-100}r/m
+	@meta_webhook {
+		path /api/v1/whatsapp/*
+		remote_ip 31.13.24.0/21 31.13.64.0/18 45.64.40.0/22 66.220.144.0/20 69.63.176.0/20 69.171.224.0/19 74.119.76.0/22 103.4.96.0/22 129.134.0.0/17 157.240.0.0/17 173.252.64.0/18 179.60.192.0/22 185.60.216.0/22 204.15.20.0/22
+	}
 
-	@auth_endpoints path /api/v*/auth/* /api/v*/sessions/*
-	rate_limit @auth_endpoints {remote.ip} {$CADDY_RATE_LIMIT_AUTH:-20}r/m
+	handle @meta_webhook {
+		reverse_proxy server:{$PORT:-8080} {
+			header_up -X-User-ID
+			header_up -X-Gateway-Auth
+			header_up -X-Gateway-Timestamp
+		}
+	}
 
-	reverse_proxy server:{$PORT:-8080} {
-		header_up -X-User-ID
-		header_up -X-Gateway-Auth
-		header_up -X-Gateway-Timestamp
+	handle {
+		rate_limit {remote.ip} {$CADDY_RATE_LIMIT_REQUESTS:-100}r/m
+
+		@auth_endpoints path /api/v*/auth/* /api/v*/sessions/*
+		rate_limit @auth_endpoints {remote.ip} {$CADDY_RATE_LIMIT_AUTH:-20}r/m
+
+		reverse_proxy server:{$PORT:-8080} {
+			header_up -X-User-ID
+			header_up -X-Gateway-Auth
+			header_up -X-Gateway-Timestamp
+		}
 	}
 
 	header {

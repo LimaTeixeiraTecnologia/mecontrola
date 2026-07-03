@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# setup-grafana-alerts.sh — Substitui placeholders de Telegram no provisioning de alertas.
+# setup-grafana-alerts.sh — Renderiza credenciais do Telegram no provisioning de alertas.
 #
 # Uso:
 #   bash deployment/scripts/setup-grafana-alerts.sh <env-file>
@@ -10,6 +10,7 @@ set -euo pipefail
 # e ${ALERT_TELEGRAM_CHAT_ID} que sao substituidos pelos valores reais do .env.
 # O resultado e escrito em deployment/telemetry/grafana/provisioning/alerting/contact-points.rendered.yaml,
 # que deve ser montado no container otel-lgtm em vez do arquivo original.
+# Este script nao cria contact points via API e nao envia mensagem de teste.
 
 ENV_FILE="${1:-.env}"
 SRC="deployment/telemetry/grafana/provisioning/alerting/contact-points.yaml"

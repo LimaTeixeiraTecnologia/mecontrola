@@ -85,7 +85,7 @@ mecontrola/
 │
 ├── taskfiles/                        # build, test, lint, security, mocks, migrate, deploy
 ├── .specs/                           # PRD, ADRs, execution reports
-├── .github/workflows/                # ci-cd.yml, e2e.yml, auto-merge.yml
+├── .github/workflows/                # ci.yml, cd.yml, e2e.yml, auto-merge.yml
 └── .claude/                          # Skills, rules, hooks Claude Code
 ```
 
@@ -581,7 +581,7 @@ SemanticRecall.Index / Recall(resourceID, query, k)      → platform_embeddings
 ```
 NewPublishingMessageStore(next, publisher, model, o11y)
   → no Append, publica evento "platform.memory.embedding.index.v1"
-       IndexMessagePayload{ resource_id, thread_id, message_pk, content, model }
+       IndexMessagePayload{ resource_id, thread_id, message_id, content, model }
   → OutboxDispatcherJob → indexer.EmbeddingIndexHandler.Handle(ctx, event)
        → llm.Provider.Embed(content) → SemanticRecall.Index(...)
 ```
@@ -623,99 +623,142 @@ Embedded em `migrations/embed.go` via `//go:embed *.sql`. Aplicado com advisory 
 ```sql
 mecontrola.users (
   id UUID, whatsapp_number TEXT, email TEXT, display_name TEXT,
-  status TEXT CHECK('ACTIVE','DELETED'), deleted_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ
+  status TEXT CHECK('ACTIVE','DELETED'), created_at, updated_at, deleted_at
 )
-mecontrola.user_whatsapp_history (id, user_id, whatsapp_number, changed_at)
-mecontrola.user_identities (user_id, channel TEXT, external_id, created_at)
-mecontrola.auth_events (id, user_id, event_type, channel, created_at)
+mecontrola.user_whatsapp_history (id, user_id, number, active, linked_at, unlinked_at, reason)
+mecontrola.user_identities (id, user_id, channel CHECK('whatsapp'), external_id, verified_at, created_at, unlinked_at)
+mecontrola.auth_events (id, user_id, kind, source, reason, request_id, client_ip, occurred_at)
+mecontrola.identity_entitlements (user_id, subscription_id, status, period_end, grace_end, updated_at)
+mecontrola.identity_entitlements_pending (subscription_id, funnel_token, payload, received_at)
 ```
 
 **Billing**
 ```sql
-mecontrola.billing_plans (id, name, slug, price_cents, interval)
+mecontrola.billing_plans (kiwify_product_id, code, duration_days, currency)
 mecontrola.billing_subscriptions (
-  id, user_id, plan_id, status TEXT, gateway_subscription_id,
-  activated_at, expires_at, grace_expires_at, canceled_at,
+  id, funnel_token, user_id, kiwify_order_id, kiwify_subscription_id,
+  plan_code, status, period_start, period_end, grace_end, last_event_at,
+  customer_mobile_e164, customer_email, external_sale_id,
   created_at, updated_at
 )
+mecontrola.billing_processed_events (event_key, trigger, recurso_id, occurred_at, applied_at, status)
+mecontrola.billing_kiwify_events (envelope_id, trigger, raw_body, received_at, processed_at, signature_status)
+mecontrola.billing_reconciliation_checkpoints (name, watermark, updated_at)
 ```
 
 **Onboarding**
 ```sql
 mecontrola.onboarding_tokens (
-  id, user_id, token_hash, status TEXT, expires_at,
-  activated_at, created_at
+  id, token_hash, status, plan_id, expires_at, created_at,
+  paid_at, consumed_at, outreach_sent_at, activation_token_ciphertext,
+  subscription_id, customer_mobile_e164, customer_email, external_sale_id,
+  consumed_by_user_id, consumed_by_mobile_e164, activation_path, metadata,
+  email_sent_at, page_opened_at, activation_started_at, whatsapp_opened_at
 )
-mecontrola.onboarding_sessions (
-  id, user_id, channel, phase TEXT,
-  completed_at, abandoned_at, created_at, updated_at
-)
+mecontrola.onboarding_activation_nomatch_throttle (mobile_e164, window_start)
+mecontrola.onboarding_welcome_processed (event_id, processed_at)
+mecontrola.consumer_lookup_attempts (event_id, attempts, last_attempt_at)
+mecontrola.support_signals (id, kind, payload, occurred_at, resolved_at, resolved_by, notes)
 ```
 
 **Categories**
 ```sql
+mecontrola.category_editorial_version (version, updated_at)
 mecontrola.categories (
-  id, name, slug, percentage NUMERIC, parent_id,
-  is_system BOOL, created_at
+  id, slug, name, kind, parent_id, allocation_type, deprecated_at, created_at
 )
 mecontrola.category_dictionary (
-  id, category_id, term TEXT,
-  search_vector TSVECTOR   -- TriG index para busca textual
+  id, category_id, kind, term, term_normalized GENERATED,
+  signal_type, confidence, is_ambiguous, deprecated_at, created_at
 )
 ```
 
 **Card**
 ```sql
+mecontrola.banks (code, name, days_before_due, created_at, updated_at)
 mecontrola.cards (
-  id, user_id, nickname, name,
-  closing_day INT, due_day INT, limit_cents BIGINT,
-  created_at, updated_at, deleted_at
+  id, user_id, bank, nickname, closing_day, due_day,
+  version, created_at, updated_at, deleted_at
 )
-mecontrola.transactions_card_purchases (
-  id, user_id, card_id, category_id, description,
-  amount_cents BIGINT, installments INT,
-  purchase_date DATE, created_at
-)
-mecontrola.transactions_card_invoices (
-  id, card_id, user_id, reference_month DATE,
-  total_cents BIGINT, status TEXT, due_date DATE,
-  created_at, updated_at
-)
+mecontrola.card_invoice_alerts_sent (user_id, card_id, ref_due_date, sent_at, notified_at, notify_channel)
 ```
 
 **Transactions**
 ```sql
 mecontrola.transactions (
-  id, user_id, category_id, card_id,
-  direction TEXT CHECK('income','outcome'),
-  payment_method TEXT, amount_cents BIGINT,
-  description TEXT, tags TEXT[],
-  occurred_at DATE, frequency TEXT,
-  recurrence_rule JSONB, deleted_at,
-  created_at, updated_at
+  id, user_id, direction, payment_method, amount_cents,
+  description, category_id, subcategory_id,
+  category_name_snapshot, subcategory_name_snapshot,
+  ref_month, occurred_at, version, deleted_at,
+  created_at, updated_at, origin_wamid, origin_item_seq, origin_operation
+)
+mecontrola.transactions_card_purchases (
+  id, user_id, card_id, direction, total_amount_cents, installments_total,
+  description, category_id, subcategory_id,
+  category_name_snapshot, subcategory_name_snapshot,
+  purchased_at, card_closing_day, card_due_day,
+  version, deleted_at, created_at, updated_at,
+  origin_wamid, origin_item_seq, origin_operation
+)
+mecontrola.transactions_card_invoices (
+  id, user_id, card_id, ref_month, closing_at, due_at,
+  items_total_cents, version, created_at, updated_at
+)
+mecontrola.transactions_card_invoice_items (
+  id, invoice_id, purchase_id, user_id, ref_month,
+  installment_index, amount_cents, deleted_at, created_at, updated_at
+)
+mecontrola.transactions_recurring_templates (
+  id, user_id, direction, payment_method, card_id,
+  amount_cents, description, category_id, subcategory_id,
+  category_name_snapshot, subcategory_name_snapshot,
+  frequency, day_of_month, installments_total,
+  started_at, ended_at, version, deleted_at, created_at, updated_at
+)
+mecontrola.transactions_recurring_materializations (
+  template_id, ref_month, materialized_transaction_id,
+  materialized_purchase_id, materialized_at
+)
+mecontrola.transactions_monthly_summary (
+  user_id, ref_month, income_cents, outcome_cents, total_cents, version, updated_at
 )
 ```
 
 **Budgets**
 ```sql
 mecontrola.budgets (
-  id, user_id, total_cents BIGINT, status TEXT,
-  reference_month DATE, activated_at,
-  created_at, updated_at
+  id, user_id, competence, total_cents, state,
+  activated_at, auto_draft, created_at, updated_at
 )
 mecontrola.budgets_allocations (
-  id, budget_id, category_id, allocated_cents BIGINT,
-  spent_cents BIGINT, created_at, updated_at
+  budget_id, root_slug, basis_points, planned_cents
 )
 mecontrola.budgets_expenses (
-  id, budget_id, allocation_id, transaction_id,
-  amount_cents BIGINT, occurred_at, created_at
+  id, user_id, source, external_transaction_id, subcategory_id,
+  root_slug, competence, amount_cents, occurred_at,
+  version, tombstone_version, deleted_at, created_at, updated_at
 )
+mecontrola.budgets_threshold_states (
+  user_id, competence, root_slug, threshold,
+  currently_crossed, version, last_crossed_at, last_uncrossed_at, last_evaluated_committed_at
+)
+mecontrola.budgets_alerts (
+  id, user_id, competence, root_slug, threshold, state,
+  triggered_by_committed_at, spent_cents, planned_cents, created_at
+)
+mecontrola.budgets_expense_events_pending (
+  id, event_id, source, user_id, external_transaction_id,
+  expected_version, mutation_kind, payload, state, received_at, transitioned_at, reason
+)
+mecontrola.budgets_abandoned_draft_signals (budget_id, signaled_at)
+mecontrola.budget_alerts_sent (user_id, budget_id, kind, ref_day, sent_at, notified_at, notify_channel)
 ```
 
-**Platform Agent Substrate (migration 000003)**
+**Platform Agent Substrate**
 ```sql
+mecontrola.agents_write_ledger (
+  id, user_id, wamid, item_seq, operation, resource_id, resource_kind, created_at
+)
 mecontrola.platform_threads (
   id UUID PRIMARY KEY, resource_id TEXT, thread_id TEXT,
   title TEXT, metadata JSONB,
@@ -723,7 +766,7 @@ mecontrola.platform_threads (
   UNIQUE (resource_id, thread_id)
 )
 mecontrola.platform_messages (
-  id UUID PRIMARY KEY, thread_pk UUID REFERENCES platform_threads,
+  id UUID PRIMARY KEY, platform_thread_id UUID REFERENCES platform_threads,
   resource_id TEXT, role TEXT CHECK('user','assistant','tool','system'),
   content TEXT, parts JSONB, created_at
 )
@@ -732,7 +775,7 @@ mecontrola.platform_resources (
   working_memory TEXT, metadata JSONB, updated_at
 )
 mecontrola.platform_runs (
-  id UUID PRIMARY KEY, thread_pk UUID REFERENCES platform_threads,
+  id UUID PRIMARY KEY, platform_thread_id UUID REFERENCES platform_threads,
   resource_id TEXT, thread_id TEXT, agent_id TEXT,
   workflow TEXT, correlation_key TEXT,
   status TEXT CHECK('running','succeeded','failed'),
@@ -741,9 +784,9 @@ mecontrola.platform_runs (
 )
 mecontrola.platform_embeddings (
   id UUID PRIMARY KEY, resource_id TEXT, thread_id TEXT,
-  source_message_pk UUID, content TEXT,
+  source_message_id UUID, content TEXT,
   embedding VECTOR(1536), model TEXT, created_at,
-  UNIQUE (source_message_pk, model)
+  UNIQUE (source_message_id, model)
 )
 mecontrola.platform_scorer_results (
   id UUID PRIMARY KEY, run_id UUID REFERENCES platform_runs,
@@ -756,16 +799,15 @@ mecontrola.platform_scorer_results (
 **Workflow Kernel**
 ```sql
 mecontrola.workflow_runs (
-  run_id UUID PRIMARY KEY, workflow TEXT,
-  correlation_key TEXT, status TEXT,
-  cursor INT, state JSONB, attempts INT,
-  max_attempts INT, version INT,
+  id UUID PRIMARY KEY, workflow TEXT, correlation_key TEXT,
+  status TEXT, suspend_reason TEXT, cursor INT, state JSONB,
+  attempts INT, max_attempts INT, version INT,
   created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, ended_at TIMESTAMPTZ
 )
 mecontrola.workflow_steps (
   id UUID, run_id UUID REFERENCES workflow_runs,
-  step_id TEXT, seq INT, status TEXT,
-  duration_ms INT, error TEXT, created_at TIMESTAMPTZ
+  step_id TEXT, seq INT, status TEXT, attempt INT,
+  duration_ms INT, error TEXT, started_at TIMESTAMPTZ, ended_at TIMESTAMPTZ
 )
 ```
 
@@ -774,24 +816,28 @@ mecontrola.workflow_steps (
 mecontrola.outbox_events (
   id UUID PRIMARY KEY, event_type TEXT,
   aggregate_type TEXT, aggregate_id TEXT,
-  aggregate_user_id TEXT, payload JSONB,
+  aggregate_user_id UUID, payload JSONB,
   metadata JSONB,
   status INT,   -- 1=Pending, 2=Processing, 3=Published, 4=Failed
   attempts INT, max_attempts INT,
+  next_attempt_at TIMESTAMPTZ, occurred_at TIMESTAMPTZ,
+  locked_at TIMESTAMPTZ, locked_by TEXT, last_error TEXT,
   created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, published_at TIMESTAMPTZ
 )
 mecontrola.channel_processed_messages (
-  message_id TEXT PRIMARY KEY,   -- WAMID do WhatsApp
-  channel TEXT, processed_at TIMESTAMPTZ
+  channel TEXT, message_id TEXT, processed_at TIMESTAMPTZ,
+  PRIMARY KEY (channel, message_id)
 )
 mecontrola.whatsapp_message_status (
-  message_id TEXT PRIMARY KEY,
-  status TEXT, updated_at TIMESTAMPTZ
+  id UUID PRIMARY KEY, message_id TEXT,
+  status TEXT, recipient_id TEXT, error_code TEXT, error_title TEXT,
+  status_at TIMESTAMPTZ, created_at TIMESTAMPTZ
 )
 mecontrola.idempotency_keys (
-  key TEXT PRIMARY KEY,
-  response_body JSONB, status_code INT,
-  expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ
+  scope TEXT, key TEXT, user_id UUID,
+  request_hash TEXT, response_status INT, response_body BYTEA,
+  expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ,
+  PRIMARY KEY (scope, key, user_id)
 )
 ```
 
@@ -948,7 +994,7 @@ Stage builder:  golang:1.26.4-alpine
 Stage runtime: gcr.io/distroless/static-debian12:nonroot
   UID/GID: 65532 (nonroot)
   Zero shell, zero package manager
-  Entrypoint: /usr/local/bin/mecontrola
+  Entrypoint: /app/mecontrola
 ```
 
 ### 12.2 Compose Files
@@ -957,8 +1003,7 @@ Stage runtime: gcr.io/distroless/static-debian12:nonroot
 |---------|-----|-----------|
 | `compose.yml` | Base | postgres:16-alpine, pgBouncer, migrate, server, worker, caddy |
 | `compose.local.yml` | Dev local | + otel-lgtm, + mailpit (email), sem limits |
-| `compose.prod.yml` | Produção | read-only rootfs, resource limits, Docker secrets, sem LGTM stack |
-| `compose.swarm.yml` | Docker Swarm | replicas, update policy, placement constraints |
+| `compose.swarm.yml` | Produção e paridade local | replicas, update policy, resource limits, Docker secrets |
 
 Resource limits em produção: server 1 CPU/1GB, worker 0.5 CPU/512MB.
 Log driver: json-file, 100MB/arquivo, 10 arquivos, compressed.
@@ -1058,14 +1103,25 @@ Referência completa em `.env.example` (60+ variáveis).
 ```
 .github/workflows/
 
-ci-cd.yml → push main + PR:
-  lint      → golangci-lint (23KB ruleset)
-  test      → go test -race -short
-  security  → govulncheck + Trivy (imagem)
-  build     → docker build multi-stage
-  sign      → cosign (assinatura de imagem)
+ci.yml → pull_request + merge_group:
+  quality → golangci-lint + fmt + pci + tidy
+  unit    → go test -race
+  integration → go test de integração
+  vulncheck → govulncheck
+  gates   → agent-boundary + platform-gates + no-internal-agent + deploy-anti-storm
+  build   → go build
+  dependency-review → revisão de dependências
 
-e2e.yml → push main:
+cd.yml → push main + workflow_dispatch:
+  quality → mesmos gates do CI
+  build   → compila binário e sobe artifact
+  build-image → build/push Docker image com tag = SHA curto
+  scan-sign-image → Trivy CRITICAL/HIGH + cosign keyless
+  deploy  → SSH na VPS, SOPS + age, docker stack deploy
+  healthcheck → valida /healthz e /readyz
+  notify  → Telegram
+
+e2e.yml → workflow_dispatch manual:
   e2e → cucumber/godog (BDD por módulo)
 ```
 

@@ -412,16 +412,19 @@ func newPublicRouter(
 		cfg.CheckoutRateLimitPerMin,
 		cfg.CheckoutRateLimitBurst,
 		trustedProxies,
+		nil,
 	)
 	stateLimiter := middleware.NewRateLimiter(
 		cfg.StateRateLimitPerMin,
 		cfg.StateRateLimitBurst,
 		trustedProxies,
+		nil,
 	)
 	beaconLimiter := middleware.NewRateLimiter(
 		cfg.BeaconRateLimitPerMin,
 		cfg.BeaconRateLimitBurst,
 		trustedProxies,
+		nil,
 	)
 
 	checkoutHandler := handlers.NewCreateCheckoutHandler(

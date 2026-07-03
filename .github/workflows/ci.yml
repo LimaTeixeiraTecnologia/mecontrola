@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/limateixeiratecnologia/mecontrola
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+        with:
+          install-golangci-lint: "true"
+      - run: task lint:run
+      - run: task lint:fmt:check
+      - run: task lint:pci
+      - run: task lint:tidy
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - run: task test:unit
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - name: Create .env for integration tests
+        run: |
+          cat > .env << 'EOF'
+          ENVIRONMENT=local
+          APP_MODE=server
+          PORT=8080
+          SERVICE_NAME_API=mecontrola-api
+          CORS_ALLOWED_ORIGINS=http://localhost:3000
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_USER=mecontrola
+          DB_PASSWORD=mecontrola_password
+          DB_NAME=mecontrola_db
+          DB_SSL_MODE=disable
+          LOG_LEVEL=info
+          LOG_FORMAT=json
+          OTEL_TRACE_SAMPLE_RATE=0
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+          EOF
+      - run: task test:integration
+
+  vulncheck:
+    name: Vulnerability Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+        with:
+          install-govulncheck: "true"
+      - run: task security:vulncheck
+
+  gates:
+    name: Governance Gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - run: task ci:agent-boundary
+      - run: task ci:platform-gates
+      - run: task ci:no-internal-agent
+      - run: task ci:deploy-anti-storm
+
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - run: task build:build
+
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [quality, unit, integration, vulncheck, gates, build]
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Check required jobs
+        run: |
+          results='${{ toJson(needs) }}'
+          failed=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(k for k,v in d.items() if v.get('result')!='success'))" <<< "$results")
+          if [ -n "$failed" ]; then
+            echo "Falha nos jobs: $failed"
+            exit 1
+          fi
+          echo "Todos os quality gates passaram."
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0

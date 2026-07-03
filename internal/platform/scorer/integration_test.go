@@ -42,21 +42,21 @@ func (s *ScorerResultStoreIntegrationSuite) insertThread() uuid.UUID {
 	return id
 }
 
-func (s *ScorerResultStoreIntegrationSuite) insertRun(threadPK uuid.UUID) uuid.UUID {
+func (s *ScorerResultStoreIntegrationSuite) insertRun(platformThreadID uuid.UUID) uuid.UUID {
 	id := uuid.New()
 	_, err := s.db.ExecContext(s.ctx, `
 		INSERT INTO mecontrola.platform_runs
-			(id, thread_pk, resource_id, thread_id, status, started_at)
+			(id, platform_thread_id, resource_id, thread_id, status, started_at)
 		VALUES ($1, $2, $3, $4, $5, $6)`,
-		id, threadPK, "res-"+id.String(), "thr-"+id.String(), "running", time.Now().UTC(),
+		id, platformThreadID, "res-"+id.String(), "thr-"+id.String(), "running", time.Now().UTC(),
 	)
 	s.Require().NoError(err)
 	return id
 }
 
 func (s *ScorerResultStoreIntegrationSuite) TestInsert_Persists() {
-	threadPK := s.insertThread()
-	runID := s.insertRun(threadPK)
+	platformThreadID := s.insertThread()
+	runID := s.insertRun(platformThreadID)
 
 	store := scorerpostgres.NewResultStore(s.db)
 
@@ -84,8 +84,8 @@ func (s *ScorerResultStoreIntegrationSuite) TestInsert_Persists() {
 }
 
 func (s *ScorerResultStoreIntegrationSuite) TestInsert_LLMJudged() {
-	threadPK := s.insertThread()
-	runID := s.insertRun(threadPK)
+	platformThreadID := s.insertThread()
+	runID := s.insertRun(platformThreadID)
 
 	store := scorerpostgres.NewResultStore(s.db)
 

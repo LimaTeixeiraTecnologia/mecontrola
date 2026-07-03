@@ -51,6 +51,14 @@ tasks:
     cmds:
       - docker service logs -f {{.STACK_NAME}}_server-1 {{.STACK_NAME}}_server-2 {{.STACK_NAME}}_worker-1 {{.STACK_NAME}}_worker-2
 
+  local:up:
+    desc: Sobe ambiente local com paridade maxima de producao (Swarm single-node). Idempotente.
+    cmds:
+      - task: local:init
+      - task: local:deploy
+        vars:
+          IMAGE_TAG: '{{.IMAGE_TAG | default "local"}}'
+
   local:rm:
     desc: Remove a stack Swarm local.
     prompt: Isso derruba a stack local. Continuar?
@@ -145,6 +153,13 @@ tasks:
     cmds:
       - ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker ps --filter health=healthy --filter name=mecontrola"
 
+  prod:prune:
+    desc: Executa limpeza remota de imagens antigas, build cache e containers parados na VPS.
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} \
+          "cd {{.VPS_DEPLOY_PATH}} && MAX_DISK_PERCENT={{.MAX_DISK_PERCENT | default "80"}} PRUNE_UNTIL={{.PRUNE_UNTIL | default "72h"}} bash deployment/scripts/docker-prune.sh"
+
   prod:pgbackrest:backup:
     desc: Executa backup pgBackRest do tipo especificado (full|diff|incr) na VPS.
     cmds:
@@ -167,9 +182,9 @@ tasks:
           su - postgres -c 'pgbackrest --stanza=mecontrola check'"
 
   prod:alert:test:
-    desc: Dispara alerta de teste no Telegram via Bot API (valida credenciais e entrega).
+    desc: Dispara mensagem de teste no Telegram com o mesmo parse mode usado nos alertas.
     cmds:
       - |
         {{._CHECK_SECRETS_FILE}}
         scp {{.SECRETS_ENV_FILE}} {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-secrets.env
-        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; trap 'rm -f /tmp/mecontrola-secrets.env' EXIT; cd {{.VPS_DEPLOY_PATH}}; bash deployment/scripts/setup-grafana-alerts.sh /tmp/mecontrola-secrets.env; BOT_TOKEN=\$(grep '^ALERT_TELEGRAM_BOT_TOKEN=' /tmp/mecontrola-secrets.env | cut -d= -f2); CHAT_ID=\$(grep '^ALERT_TELEGRAM_CHAT_ID=' /tmp/mecontrola-secrets.env | cut -d= -f2); curl -s -X POST \"https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\" -d \"chat_id=\${CHAT_ID}\" -d \"text=Teste de alerta MeControla - \$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; trap 'rm -f /tmp/mecontrola-secrets.env' EXIT; cd {{.VPS_DEPLOY_PATH}}; bash deployment/scripts/setup-grafana-alerts.sh /tmp/mecontrola-secrets.env; BOT_TOKEN=\$(grep '^ALERT_TELEGRAM_BOT_TOKEN=' /tmp/mecontrola-secrets.env | cut -d= -f2); CHAT_ID=\$(grep '^ALERT_TELEGRAM_CHAT_ID=' /tmp/mecontrola-secrets.env | cut -d= -f2); MESSAGE=\$(printf '<b>Teste MeControla</b>\n<b>Status:</b> Disparado\n<b>Resumo:</b> Validacao do template de alertas\n<b>Horario:</b> %s' \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"); curl -s -X POST \"https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\" --data-urlencode \"chat_id=\${CHAT_ID}\" --data-urlencode \"parse_mode=HTML\" --data-urlencode \"disable_web_page_preview=true\" --data-urlencode \"text=\${MESSAGE}\""

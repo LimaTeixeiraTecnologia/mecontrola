@@ -100,13 +100,13 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 
 	runID := uuid.New()
 	run := Run{
-		ID:         runID,
-		ThreadPK:   thread.ID,
-		ResourceID: in.ResourceID,
-		ThreadID:   in.ThreadID,
-		AgentID:    in.AgentID,
-		Status:     RunStatusRunning,
-		StartedAt:  time.Now().UTC(),
+		ID:               runID,
+		PlatformThreadID: thread.ID,
+		ResourceID:       in.ResourceID,
+		ThreadID:         in.ThreadID,
+		AgentID:          in.AgentID,
+		Status:           RunStatusRunning,
+		StartedAt:        time.Now().UTC(),
 	}
 	if err := r.runs.Insert(ctx, run); err != nil {
 		span.RecordError(err)
@@ -152,32 +152,32 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 	return r.finishRun(ctx, run, thread.ID, in, result, start), nil
 }
 
-func (r *agentRuntime) finishRun(ctx context.Context, run Run, threadPK uuid.UUID, in InboundRequest, result Result, start time.Time) Outcome {
-	_ = r.messages.Append(ctx, threadPK, memory.Message{
-		ID:         uuid.New(),
-		ThreadPK:   threadPK,
-		ResourceID: in.ResourceID,
-		Role:       memory.RoleUser,
-		Content:    in.Message,
-		CreatedAt:  time.Now().UTC(),
+func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID uuid.UUID, in InboundRequest, result Result, start time.Time) Outcome {
+	_ = r.messages.Append(ctx, platformThreadID, memory.Message{
+		ID:               uuid.New(),
+		PlatformThreadID: platformThreadID,
+		ResourceID:       in.ResourceID,
+		Role:             memory.RoleUser,
+		Content:          in.Message,
+		CreatedAt:        time.Now().UTC(),
 	})
 	for _, tc := range result.ToolCalls {
-		_ = r.messages.Append(ctx, threadPK, memory.Message{
-			ID:         uuid.New(),
-			ThreadPK:   threadPK,
-			ResourceID: in.ResourceID,
-			Role:       memory.RoleTool,
-			Content:    tc.Content,
-			CreatedAt:  time.Now().UTC(),
+		_ = r.messages.Append(ctx, platformThreadID, memory.Message{
+			ID:               uuid.New(),
+			PlatformThreadID: platformThreadID,
+			ResourceID:       in.ResourceID,
+			Role:             memory.RoleTool,
+			Content:          tc.Content,
+			CreatedAt:        time.Now().UTC(),
 		})
 	}
-	_ = r.messages.Append(ctx, threadPK, memory.Message{
-		ID:         uuid.New(),
-		ThreadPK:   threadPK,
-		ResourceID: in.ResourceID,
-		Role:       memory.RoleAssistant,
-		Content:    result.Content,
-		CreatedAt:  time.Now().UTC(),
+	_ = r.messages.Append(ctx, platformThreadID, memory.Message{
+		ID:               uuid.New(),
+		PlatformThreadID: platformThreadID,
+		ResourceID:       in.ResourceID,
+		Role:             memory.RoleAssistant,
+		Content:          result.Content,
+		CreatedAt:        time.Now().UTC(),
 	})
 
 	toolOutcome := ToolOutcomeRouted

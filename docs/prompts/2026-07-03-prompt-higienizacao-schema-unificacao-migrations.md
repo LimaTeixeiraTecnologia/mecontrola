@@ -1,5 +1,7 @@
 # 2026-07-03 — Prompt enriquecido para higienização do schema e unificação de migrations
 
+> Nota histórica: este documento registra o contexto pré-squash usado no pedido original de 2026-07-03. O working tree atual já foi consolidado para baseline único `000001_initial_schema`, então referências abaixo a `000002_card_simplification` e `000003_claim_particionado_indices` descrevem o estado anterior do repositório, não a trilha vigente.
+
 ## Prompt original
 
 > Eu quero higienizar todas as tabelas de banco de dados unificar migrations, seguir nomenclaruturas corretas de coluna que realmente represente o dado com base em: https://www.postgresql.org/docs/16/index.html e https://www.postgresql.org/docs/current/ddl.html , analisar no codebase o que realmente são utilizadas e remover as legadas de forma efetiva, robusto, economico, eficiente, 0 gaps, 0 falso positivo, 0 ressalvas, 0 lacunas.

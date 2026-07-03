@@ -1,0 +1,10 @@
+[Unit]
+Description=Docker prune controlado — remove imagens e cache antigos
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mecontrola/scripts/docker-prune.sh
+StandardOutput=journal
+StandardError=journal

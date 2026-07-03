@@ -25,13 +25,7 @@
 	}
 }
 
-:80 {
-	import mecontrola-headers
-	import rate-limit
-
-	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
-	respond @admin 404
-
+(backend) {
 	reverse_proxy server-1:8080 server-2:8080 {
 		lb_policy round_robin
 		health_uri /healthz
@@ -40,6 +34,27 @@
 		health_status 200
 		fail_duration 30s
 		max_fails 3
+	}
+}
+
+:80 {
+	import mecontrola-headers
+
+	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
+	respond @admin 404
+
+	@meta_webhook {
+		path /api/v1/whatsapp/*
+		remote_ip 31.13.24.0/21 31.13.64.0/18 45.64.40.0/22 66.220.144.0/20 69.63.176.0/20 69.171.224.0/19 74.119.76.0/22 103.4.96.0/22 129.134.0.0/17 157.240.0.0/17 173.252.64.0/18 179.60.192.0/22 185.60.216.0/22 204.15.20.0/22
+	}
+
+	handle @meta_webhook {
+		import backend
+	}
+
+	handle {
+		import rate-limit
+		import backend
 	}
 
 	encode gzip zstd
@@ -53,19 +68,22 @@
 
 {$APP_DOMAIN}:443 {
 	import mecontrola-headers
-	import rate-limit
 
 	@admin path /admin /admin/* /debug/pprof /debug/pprof/* /metrics /metrics/*
 	respond @admin 404
 
-	reverse_proxy server-1:8080 server-2:8080 {
-		lb_policy round_robin
-		health_uri /healthz
-		health_interval 10s
-		health_timeout 5s
-		health_status 200
-		fail_duration 30s
-		max_fails 3
+	@meta_webhook {
+		path /api/v1/whatsapp/*
+		remote_ip 31.13.24.0/21 31.13.64.0/18 45.64.40.0/22 66.220.144.0/20 69.63.176.0/20 69.171.224.0/19 74.119.76.0/22 103.4.96.0/22 129.134.0.0/17 157.240.0.0/17 173.252.64.0/18 179.60.192.0/22 185.60.216.0/22 204.15.20.0/22
+	}
+
+	handle @meta_webhook {
+		import backend
+	}
+
+	handle {
+		import rate-limit
+		import backend
 	}
 
 	encode gzip zstd

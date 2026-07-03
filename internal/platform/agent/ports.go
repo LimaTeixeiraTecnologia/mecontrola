@@ -100,19 +100,19 @@ func (o Outcome) Succeeded() bool {
 }
 
 type Run struct {
-	ID             uuid.UUID
-	ThreadPK       uuid.UUID
-	ResourceID     string
-	ThreadID       string
-	AgentID        string
-	Workflow       string
-	CorrelationKey string
-	Status         RunStatus
-	Outcome        ToolOutcome
-	Error          string
-	StartedAt      time.Time
-	EndedAt        *time.Time
-	DurationMs     int64
+	ID               uuid.UUID
+	PlatformThreadID uuid.UUID
+	ResourceID       string
+	ThreadID         string
+	AgentID          string
+	Workflow         string
+	CorrelationKey   string
+	Status           RunStatus
+	Outcome          ToolOutcome
+	Error            string
+	StartedAt        time.Time
+	EndedAt          *time.Time
+	DurationMs       int64
 }
 
 type Agent interface {

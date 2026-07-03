@@ -1,0 +1,92 @@
+name: Version Drift Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  DRIFT_THRESHOLD_HOURS: "24"
+
+jobs:
+  drift-check:
+    name: Check Version Drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Get main HEAD SHA
+        id: main-head
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          SHORT="${SHA::8}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHORT}" >> "$GITHUB_OUTPUT"
+          echo "Main HEAD: ${SHORT}"
+
+      - name: Get last successfully deployed SHA
+        id: last-deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DEPLOYED_SHA="$(gh run list \
+            --workflow=cd.yml \
+            --branch=main \
+            --status=success \
+            --limit=1 \
+            --json headSha \
+            --jq '.[0].headSha // "unknown"')"
+          SHORT="${DEPLOYED_SHA::8}"
+          echo "sha=${DEPLOYED_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHORT}" >> "$GITHUB_OUTPUT"
+          echo "Last deployed SHA: ${SHORT}"
+
+      - name: Check drift
+        env:
+          MAIN_SHA: ${{ steps.main-head.outputs.sha }}
+          MAIN_SHORT: ${{ steps.main-head.outputs.short }}
+          DEPLOYED_SHA: ${{ steps.last-deploy.outputs.sha }}
+          DEPLOYED_SHORT: ${{ steps.last-deploy.outputs.short }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [[ "$DEPLOYED_SHA" == "unknown" || -z "$DEPLOYED_SHA" ]]; then
+            echo "WARNING: could not determine last deployed SHA — skipping drift check"
+            exit 0
+          fi
+
+          if [[ "$MAIN_SHA" == "$DEPLOYED_SHA" ]]; then
+            echo "OK: production is up-to-date (${MAIN_SHORT})"
+            exit 0
+          fi
+
+          COMMIT_TS="$(git log -1 --format="%ct" "$DEPLOYED_SHA" 2>/dev/null || echo "0")"
+          NOW="$(date +%s)"
+          AGE_H=$(( (NOW - COMMIT_TS) / 3600 ))
+
+          echo "Drift: deployed=${DEPLOYED_SHORT} main=${MAIN_SHORT} age=${AGE_H}h threshold=${DRIFT_THRESHOLD_HOURS}h"
+
+          if [[ "$AGE_H" -le "$DRIFT_THRESHOLD_HOURS" ]]; then
+            echo "OK: within threshold (${AGE_H}h <= ${DRIFT_THRESHOLD_HOURS}h)"
+            exit 0
+          fi
+
+          echo "ALERT: deployment is ${AGE_H}h behind main (threshold=${DRIFT_THRESHOLD_HOURS}h)"
+
+          if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
+            MSG="*Drift de versão em produção*%0ADeployado: ${DEPLOYED_SHORT} (${AGE_H}h atrás)%0AMain: ${MAIN_SHORT}%0ALimiar: ${DRIFT_THRESHOLD_HOURS}h%0A[Disparar deploy](${{ github.server_url }}/${{ github.repository }}/actions/workflows/cd.yml)"
+            curl -fsSL -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "parse_mode=Markdown" \
+              -d "text=${MSG}" || true
+          fi
+          exit 1

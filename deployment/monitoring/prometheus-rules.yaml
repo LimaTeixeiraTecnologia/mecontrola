@@ -88,10 +88,28 @@ groups:
     interval: 1h
     rules:
       - alert: BackupTooOld
-        expr: (time() - backup_last_success_timestamp_seconds) > 25 * 3600
+        expr: max(pgbackrest_backup_age_seconds{type="diff"}) > 26 * 3600
         for: 30m
         labels:
           severity: critical
         annotations:
-          summary: "Último backup bem-sucedido há mais de 25 horas"
-          description: "Último sucesso: {{ $value | humanizeDuration }} atrás. Verifique cron de backup e logs do pgBackRest."
+          summary: "Último backup diff bem-sucedido há mais de 26 horas"
+          description: "Idade do último diff: {{ $value | humanizeDuration }}. Verifique cron de backup e logs do pgBackRest."
+
+      - alert: BackupFullTooOld
+        expr: max(pgbackrest_backup_age_seconds{type="full"}) > 8 * 24 * 3600
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Último backup full bem-sucedido há mais de 8 dias"
+          description: "Idade do último full: {{ $value | humanizeDuration }}. Verifique cron de backup full e logs do pgBackRest."
+
+      - alert: BackupArchivePushFailed
+        expr: max(pgbackrest_archive_push_failed) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "archive-push do pgBackRest falhando"
+          description: "pgBackRest check detectou falha de archive-push. WAL não está chegando ao repositório; PITR comprometido. Verifique conectividade S3 e archive_command."

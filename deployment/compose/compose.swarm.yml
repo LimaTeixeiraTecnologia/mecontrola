@@ -1,7 +1,7 @@
 version: "3.8"
 
 # Stack de produção no Docker Swarm single-node.
-# Substitui compose.yml + compose.prod.yml em produção.
+# Arquivo canônico de produção e de paridade local com produção.
 #
 # Uso:
 #   docker stack deploy -c deployment/compose/compose.swarm.yml mecontrola
@@ -52,67 +52,67 @@ x-default-deploy: &default-deploy
 x-app-secrets: &app-secrets
   - source: mecontrola_DB_PASSWORD
     target: DB_PASSWORD
-    mode: 0444
+    mode: 0400
   - source: mecontrola_META_ACCESS_TOKEN
     target: META_ACCESS_TOKEN
-    mode: 0444
+    mode: 0400
   - source: mecontrola_META_APP_SECRET
     target: META_APP_SECRET
-    mode: 0444
+    mode: 0400
   - source: mecontrola_META_APP_SECRET_NEXT
     target: META_APP_SECRET_NEXT
-    mode: 0444
+    mode: 0400
   - source: mecontrola_META_VERIFY_TOKEN
     target: META_VERIFY_TOKEN
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_CLIENT_ID
     target: KIWIFY_CLIENT_ID
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_CLIENT_SECRET
     target: KIWIFY_CLIENT_SECRET
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_ACCOUNT_ID
     target: KIWIFY_ACCOUNT_ID
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_WEBHOOK_SECRET
     target: KIWIFY_WEBHOOK_SECRET
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_WEBHOOK_SECRET_NEXT
     target: KIWIFY_WEBHOOK_SECRET_NEXT
-    mode: 0444
+    mode: 0400
   - source: mecontrola_OPENROUTER_API_KEY
     target: OPENROUTER_API_KEY
-    mode: 0444
+    mode: 0400
   - source: mecontrola_ONBOARDING_TOKEN_ENCRYPTION_KEY
     target: ONBOARDING_TOKEN_ENCRYPTION_KEY
-    mode: 0444
+    mode: 0400
   - source: mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_CURRENT
     target: IDENTITY_GATEWAY_SHARED_SECRET_CURRENT
-    mode: 0444
+    mode: 0400
   - source: mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_NEXT
     target: IDENTITY_GATEWAY_SHARED_SECRET_NEXT
-    mode: 0444
+    mode: 0400
   - source: mecontrola_SMTP_USERNAME
     target: SMTP_USERNAME
-    mode: 0444
+    mode: 0400
   - source: mecontrola_SMTP_PASSWORD
     target: SMTP_PASSWORD
-    mode: 0444
+    mode: 0400
   - source: mecontrola_RESEND_API_KEY
     target: RESEND_API_KEY
-    mode: 0444
+    mode: 0400
   - source: mecontrola_META_PHONE_NUMBER_ID
     target: META_PHONE_NUMBER_ID
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_PRODUCT_ID_MONTHLY
     target: KIWIFY_PRODUCT_ID_MONTHLY
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_PRODUCT_ID_QUARTERLY
     target: KIWIFY_PRODUCT_ID_QUARTERLY
-    mode: 0444
+    mode: 0400
   - source: mecontrola_KIWIFY_PRODUCT_ID_ANNUAL
     target: KIWIFY_PRODUCT_ID_ANNUAL
-    mode: 0444
+    mode: 0400
 
 services:
   postgres:
@@ -186,7 +186,7 @@ services:
     secrets:
       - source: mecontrola_DB_PASSWORD
         target: DB_PASSWORD
-        mode: 0444
+        mode: 0400
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
@@ -280,7 +280,7 @@ services:
     secrets:
       - source: mecontrola_DB_PASSWORD
         target: DB_PASSWORD
-        mode: 0444
+        mode: 0400
 
   server-1:
     image: ${IMAGE_NAME:-ghcr.io/limateixeiratecnologia/mecontrola}:${IMAGE_TAG:?IMAGE_TAG must be set for production}
@@ -556,11 +556,11 @@ services:
     logging: *default-logging
 
   pg-tunnel:
-    image: alpine/socat:latest
+    image: alpine/socat@sha256:b991911ea370c3b6409ade77746b81eb97bf715d87f7dde2a45832d6bee34872
     command: TCP-LISTEN:5432,fork,reuseaddr TCP:postgres:5432
     ports:
       - target: 5432
-        published: 15432
+        published: "127.0.0.1:15432"
         protocol: tcp
         mode: host
     networks:

@@ -23,12 +23,12 @@ includes:
     taskfile: ./taskfiles/local.yml
   ngrok:
     taskfile: ./taskfiles/ngrok.yml
-  deploy:
-    taskfile: ./taskfiles/deploy.yml
   swarm:
     taskfile: ./taskfiles/swarm.yml
   gates:
     taskfile: ./taskfiles/gates.yml
+  loadtest:
+    taskfile: ./taskfiles/loadtest.yml
 silent: true
 
 vars:

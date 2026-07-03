@@ -12,14 +12,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Backup pgBackRest agendado, alertado e com guard de imagem | pending | — | Com 7.0 | taskfile-production, otel-grafana-dashboards |
-| 2.0 | Ensaio de restore PITR e restore de VPS com evidência | pending | 1.0 | Não | — |
-| 3.0 | Remover runner do host de produção e migrar deploy para GitHub-hosted via SSH | pending | 7.0 | Não | taskfile-production |
-| 4.0 | Sampling de traces proporcional e ajuste do gate anti-storm | pending | — | Não | otel-grafana-dashboards |
-| 5.0 | Orçamento de recursos, pool de conexões e alerta de saturação | pending | — | Não | otel-grafana-dashboards |
-| 6.0 | Harness de carga k6 e prova dos envelopes A e B | pending | 4.0, 5.0 | Não | taskfile-production, otel-grafana-dashboards |
-| 7.0 | Deploy da main em produção e alerta de drift de versão | pending | — | Com 1.0 | otel-grafana-dashboards |
-| 8.0 | Endurecimento de superfície: rate-limit Meta e bind do pg-tunnel | pending | — | Não | — |
+| 1.0 | Backup pgBackRest agendado, alertado e com guard de imagem | done | — | Com 7.0 | taskfile-production, otel-grafana-dashboards |
+| 2.0 | Ensaio de restore PITR e restore de VPS com evidência | done | 1.0 | Não | — |
+| 3.0 | Remover runner do host de produção e migrar deploy para GitHub-hosted via SSH | done | 7.0 | Não | taskfile-production |
+| 4.0 | Sampling de traces proporcional e ajuste do gate anti-storm | done | — | Não | otel-grafana-dashboards |
+| 5.0 | Orçamento de recursos, pool de conexões e alerta de saturação | done | — | Não | otel-grafana-dashboards |
+| 6.0 | Harness de carga k6 e prova dos envelopes A e B | done | 4.0, 5.0 | Não | taskfile-production, otel-grafana-dashboards |
+| 7.0 | Deploy da main em produção e alerta de drift de versão | done | — | Com 1.0 | otel-grafana-dashboards |
+| 8.0 | Endurecimento de superfície: rate-limit Meta e bind do pg-tunnel | done | — | Não | — |
 
 ## Dependências Críticas
 - **2.0 depende de 1.0**: o ensaio de restore valida a cadeia de backup (imagem custom + agendamento + WAL) — sem o guard de imagem e o agendamento confirmados, o restore testaria um estado inconsistente.

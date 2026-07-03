@@ -58,7 +58,7 @@ func (s *EmbeddingIndexHandlerSuite) TestHandle_WithOutboxEnvelope() {
 	payload := memory.IndexMessagePayload{
 		ResourceID: "res-1",
 		ThreadID:   "thr-1",
-		MessagePK:  msgPK,
+		MessageID:  msgPK,
 		Content:    "hello world",
 		Model:      "text-embedding-3-small",
 	}
@@ -86,7 +86,7 @@ func (s *EmbeddingIndexHandlerSuite) TestHandle_EmptyContent_Skips() {
 	payload := memory.IndexMessagePayload{
 		ResourceID: "res-1",
 		ThreadID:   "thr-1",
-		MessagePK:  uuid.New(),
+		MessageID:  uuid.New(),
 		Content:    "",
 		Model:      "text-embedding-3-small",
 	}
@@ -104,7 +104,7 @@ func (s *EmbeddingIndexHandlerSuite) TestHandle_EmbedError_ReturnsError() {
 	payload := memory.IndexMessagePayload{
 		ResourceID: "res-1",
 		ThreadID:   "thr-1",
-		MessagePK:  uuid.New(),
+		MessageID:  uuid.New(),
 		Content:    "hello",
 		Model:      "text-embedding-3-small",
 	}
@@ -125,7 +125,7 @@ func (s *EmbeddingIndexHandlerSuite) TestHandle_IndexError_ReturnsError() {
 	payload := memory.IndexMessagePayload{
 		ResourceID: "res-1",
 		ThreadID:   "thr-1",
-		MessagePK:  msgPK,
+		MessageID:  msgPK,
 		Content:    "hello",
 		Model:      "text-embedding-3-small",
 	}
@@ -143,12 +143,12 @@ func (s *EmbeddingIndexHandlerSuite) TestHandle_IndexError_ReturnsError() {
 	s.Error(err)
 }
 
-func (s *EmbeddingIndexHandlerSuite) TestHandle_IdempotentBySourceMessagePK() {
+func (s *EmbeddingIndexHandlerSuite) TestHandle_IdempotentBySourceMessageID() {
 	msgPK := uuid.New()
 	payload := memory.IndexMessagePayload{
 		ResourceID: "res-1",
 		ThreadID:   "thr-1",
-		MessagePK:  msgPK,
+		MessageID:  msgPK,
 		Content:    "hello world",
 		Model:      "text-embedding-3-small",
 	}

@@ -1,10 +1,10 @@
 name: mecontrola
 
 # Arquivo base.
-# Local:  docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.local.yml up
-# Prod:   docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml up -d
+# Local (compose completo): docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.local.yml up
+# Prod (Swarm):             task swarm:prod:deploy:full IMAGE_TAG=<tag>  (via deployment/scripts/deploy-swarm.sh)
 # Obs:    o stack de observabilidade (metrics, traces, logs) e o container unico
-#         grafana/otel-lgtm, definido nos arquivos de override (local e prod).
+#         grafana/otel-lgtm, definido no arquivo de override local.
 
 services:
   postgres:

@@ -14,7 +14,7 @@ tasks:
     desc: Reverte todas as migrations aplicadas.
     dotenv: ['.env']
     cmds:
-      - go run ./cmd/... migrate-down
+      - go run ./cmd/... migrate-down --steps -1
 
   create:
     desc: Cria um novo arquivo de migration (uso task migrate:create -- nome).

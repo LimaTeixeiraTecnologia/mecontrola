@@ -70,7 +70,7 @@ func (h *EmbeddingIndexHandler) Handle(ctx context.Context, event events.Event) 
 		return fmt.Errorf("indexer.handler: empty embedding returned")
 	}
 
-	if err := h.recall.Index(ctx, p.ResourceID, p.ThreadID, p.MessagePK, p.Content, p.Model, embeddings[0]); err != nil {
+	if err := h.recall.Index(ctx, p.ResourceID, p.ThreadID, p.MessageID, p.Content, p.Model, embeddings[0]); err != nil {
 		h.failed.Add(ctx, 1, observability.String("reason", "index"))
 		h.o11y.Logger().Error(ctx, "platform.memory.indexer.handler.index.failed",
 			observability.String("resource_id", p.ResourceID),

@@ -90,19 +90,26 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTablePresent("mecontrola.category_dictionary")
 	s.assertTablePresent("mecontrola.idempotency_keys")
 	s.assertTablePresent("mecontrola.cards")
+	s.assertTablePresent("mecontrola.banks")
 	s.assertTablePresent("mecontrola.budgets")
 	s.assertTablePresent("mecontrola.transactions")
 	s.assertTablePresent("mecontrola.user_identities")
 	s.assertTablePresent("mecontrola.channel_processed_messages")
 	s.assertTablePresent("mecontrola.budget_alerts_sent")
 	s.assertTablePresent("mecontrola.onboarding_tokens")
+	s.assertTablePresent("mecontrola.onboarding_activation_nomatch_throttle")
+	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
 	s.assertTableMissing("mecontrola.onboarding_sessions")
 	s.assertTablePresent("mecontrola.agents_write_ledger")
+	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
 
 	s.assertTableMissing("mecontrola.meta_processed_messages")
 	s.assertTableMissing("mecontrola.telegram_processed_updates")
 
 	s.assertSeededPlans()
+	s.assertBanksSeed()
 	s.assertExpenseCategoriesCount()
 	s.assertIncomeCategoriesCount()
 	s.assertDictionaryCanonicalsCount()
@@ -115,14 +122,23 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 
 	s.assertTablePresent("mecontrola.schema_migrations")
 	s.assertTableMissing("mecontrola.billing_plans")
+	s.assertTableMissing("mecontrola.banks")
 	s.assertTableMissing("mecontrola.categories")
 	s.assertTableMissing("mecontrola.transactions")
 	s.assertTableMissing("mecontrola.users")
+	s.assertTableMissing("mecontrola.onboarding_activation_nomatch_throttle")
+	s.assertTableMissing("mecontrola.onboarding_welcome_processed")
+	s.assertIndexMissing("mecontrola", "onboarding_tokens_mobile_activable_idx")
+	s.assertIndexMissing("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexMissing("mecontrola", "outbox_events_user_inflight_uidx")
 
 	s.applyBaseline(migrator)
 
 	s.assertTablePresent("mecontrola.billing_plans")
+	s.assertTablePresent("mecontrola.banks")
 	s.assertTablePresent("mecontrola.channel_processed_messages")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
 }
 
 func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
@@ -137,6 +153,13 @@ func (s *MigrationSuite) TestFinalSchemaColumnsAndConstraints() {
 	s.assertColumnPresent("mecontrola.cards", "bank")
 	s.assertColumnPresent("mecontrola.cards", "version")
 	s.assertColumnMissing("mecontrola.onboarding_tokens", "telegram_external_id")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "email_sent_at")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "page_opened_at")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "activation_started_at")
+	s.assertColumnPresent("mecontrola.onboarding_tokens", "whatsapp_opened_at")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
+	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
+	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
 
 	invalidSourceErr := execSQL(s.db, s.ctx, `
 		INSERT INTO mecontrola.auth_events (id, kind, source, occurred_at)
@@ -732,32 +755,6 @@ func (s *MigrationSuite) assertBudgetsPendingEventIdempotency() {
 	s.Contains(dupErr.Error(), "budgets_expense_events_pending_event_uk")
 }
 
-func (s *MigrationSuite) TestCardSimplificationMigrationUpDownUp() {
-	migrator := s.newMigrator()
-	s.applyBaseline(migrator)
-
-	s.assertTablePresent("mecontrola.banks")
-	s.assertColumnPresent("mecontrola.cards", "bank")
-	s.assertColumnMissing("mecontrola.cards", "limit_cents")
-	s.assertColumnMissing("mecontrola.cards", "name")
-	s.assertIndexPresent("mecontrola", "cards_user_nickname_active_uniq_idx")
-	s.assertBanksSeed()
-
-	s.downToVersion(migrator, 1)
-
-	s.assertTableMissing("mecontrola.banks")
-	s.assertColumnMissing("mecontrola.cards", "bank")
-	s.assertColumnPresent("mecontrola.cards", "limit_cents")
-	s.assertColumnPresent("mecontrola.cards", "name")
-
-	s.applyBaseline(migrator)
-
-	s.assertTablePresent("mecontrola.banks")
-	s.assertColumnPresent("mecontrola.cards", "bank")
-	s.assertColumnMissing("mecontrola.cards", "limit_cents")
-	s.assertBanksSeed()
-}
-
 func (s *MigrationSuite) assertBanksSeed() {
 	type bankRow struct {
 		code          string
@@ -800,36 +797,6 @@ func (s *MigrationSuite) assertBanksSeed() {
 	}
 }
 
-func (s *MigrationSuite) TestActivationJourneyMigrationUpDown() {
-	migrator := s.newMigrator()
-	s.applyBaseline(migrator)
-
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "email_sent_at")
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "page_opened_at")
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "activation_started_at")
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "whatsapp_opened_at")
-	s.assertTablePresent("mecontrola.onboarding_activation_nomatch_throttle")
-	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
-	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
-
-	s.downToVersion(migrator, 0)
-
-	s.assertColumnMissing("mecontrola.onboarding_tokens", "email_sent_at")
-	s.assertColumnMissing("mecontrola.onboarding_tokens", "page_opened_at")
-	s.assertColumnMissing("mecontrola.onboarding_tokens", "activation_started_at")
-	s.assertColumnMissing("mecontrola.onboarding_tokens", "whatsapp_opened_at")
-	s.assertTableMissing("mecontrola.onboarding_activation_nomatch_throttle")
-	s.assertTableMissing("mecontrola.onboarding_welcome_processed")
-	s.assertIndexMissing("mecontrola", "onboarding_tokens_mobile_activable_idx")
-
-	s.applyBaseline(migrator)
-
-	s.assertColumnPresent("mecontrola.onboarding_tokens", "email_sent_at")
-	s.assertTablePresent("mecontrola.onboarding_activation_nomatch_throttle")
-	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
-	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
-}
-
 func (s *MigrationSuite) TestActivationJourneyThrottleTableConstraints() {
 	migrator := s.newMigrator()
 	s.applyBaseline(migrator)
@@ -848,31 +815,6 @@ func (s *MigrationSuite) TestActivationJourneyThrottleTableConstraints() {
 	`, fixedWindow)
 	s.Require().Error(dupErr)
 	s.Contains(dupErr.Error(), "onboarding_activation_nomatch_throttle_pkey")
-}
-
-func (s *MigrationSuite) TestClaimParticionadoIndicesMigrationUpDownUp() {
-	migrator := s.newMigrator()
-	s.applyBaseline(migrator)
-
-	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
-	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
-
-	var inflightCount int64
-	err := s.db.QueryRowContext(s.ctx, `
-		SELECT COUNT(*) FROM mecontrola.outbox_events WHERE status = 2
-	`).Scan(&inflightCount)
-	s.Require().NoError(err)
-	s.Equal(int64(0), inflightCount, "pre-condition: 0 linhas status=2 antes da migration")
-
-	s.downToVersion(migrator, 2)
-
-	s.assertIndexMissing("mecontrola", "outbox_events_user_pending_occurred_idx")
-	s.assertIndexMissing("mecontrola", "outbox_events_user_inflight_uidx")
-
-	s.applyBaseline(migrator)
-
-	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
-	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
 }
 
 func (s *MigrationSuite) TestClaimParticionadoInflightUniqueBackstop() {

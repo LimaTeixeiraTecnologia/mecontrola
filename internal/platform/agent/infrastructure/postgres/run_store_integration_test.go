@@ -52,15 +52,15 @@ func (s *RunStoreIntegrationSuite) TestRunAuditRoundTrip() {
 	runID := uuid.New()
 	started := time.Now().UTC()
 	running := agent.Run{
-		ID:             runID,
-		ThreadPK:       threadPK,
-		ResourceID:     resourceID,
-		ThreadID:       threadID,
-		AgentID:        "weather-agent",
-		Workflow:       "weather",
-		CorrelationKey: "corr-" + runID.String(),
-		Status:         agent.RunStatusRunning,
-		StartedAt:      started,
+		ID:               runID,
+		PlatformThreadID: threadPK,
+		ResourceID:       resourceID,
+		ThreadID:         threadID,
+		AgentID:          "weather-agent",
+		Workflow:         "weather",
+		CorrelationKey:   "corr-" + runID.String(),
+		Status:           agent.RunStatusRunning,
+		StartedAt:        started,
 	}
 	s.Require().NoError(s.store.Insert(s.ctx, running))
 

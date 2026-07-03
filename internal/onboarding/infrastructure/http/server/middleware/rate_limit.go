@@ -23,17 +23,20 @@ type RateLimiter struct {
 	rps            rate.Limit
 	burst          int
 	trustedProxies []*net.IPNet
+	allowlist      []*net.IPNet
 	cleanupTicker  *time.Ticker
 	done           chan struct{}
 }
 
-func NewRateLimiter(requestsPerMinute int, burst int, trustedCIDRs []string) *RateLimiter {
-	nets := parseCIDRs(trustedCIDRs)
+func NewRateLimiter(requestsPerMinute int, burst int, trustedCIDRs []string, allowlistCIDRs []string) *RateLimiter {
+	proxies := parseCIDRs(trustedCIDRs)
+	allowNets := parseCIDRs(allowlistCIDRs)
 	rl := &RateLimiter{
 		limiters:       make(map[string]*ipLimiter),
 		rps:            rate.Limit(float64(requestsPerMinute) / 60.0),
 		burst:          burst,
-		trustedProxies: nets,
+		trustedProxies: proxies,
+		allowlist:      allowNets,
 		cleanupTicker:  time.NewTicker(5 * time.Minute),
 		done:           make(chan struct{}),
 	}
@@ -115,9 +118,26 @@ func (rl *RateLimiter) isTrustedProxy(ipStr string) bool {
 	return false
 }
 
+func (rl *RateLimiter) isAllowlisted(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, n := range rl.allowlist {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := rl.realIP(r)
+		if rl.isAllowlisted(ip) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !rl.limiterFor(ip).Allow() {
 			responses.Error(w, http.StatusTooManyRequests, "rate limit exceeded")
 			return

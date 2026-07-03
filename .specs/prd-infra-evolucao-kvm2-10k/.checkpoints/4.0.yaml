@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-infra-evolucao-kvm2-10k/4.0_execution_report.md
+summary: tail-sampling adicionado ao otelcol (100% erros + 10% normal); gate anti-storm atualizado e verde (6/6); SPOF/retention documentado
+timestamp: 2026-07-03T14:03:48Z

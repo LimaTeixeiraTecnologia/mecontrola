@@ -32,16 +32,16 @@ func (uc *AppendMessage) Execute(ctx context.Context, in input.AppendMessageInpu
 	role, _ := memory.ParseMessageRole(in.Role)
 
 	msg := memory.Message{
-		ID:         uuid.New(),
-		ThreadPK:   in.ThreadPK,
-		ResourceID: in.ResourceID,
-		Role:       role,
-		Content:    in.Content,
-		Parts:      in.Parts,
-		CreatedAt:  time.Now().UTC(),
+		ID:               uuid.New(),
+		PlatformThreadID: in.PlatformThreadID,
+		ResourceID:       in.ResourceID,
+		Role:             role,
+		Content:          in.Content,
+		Parts:            in.Parts,
+		CreatedAt:        time.Now().UTC(),
 	}
 
-	if err := uc.store.Append(ctx, in.ThreadPK, msg); err != nil {
+	if err := uc.store.Append(ctx, in.PlatformThreadID, msg); err != nil {
 		span.RecordError(err)
 		uc.o11y.Logger().Error(ctx, "platform.memory.usecase.append_message.failed",
 			observability.String("resource_id", in.ResourceID),

@@ -48,12 +48,7 @@ die() { echo "[ERRO] $*" >&2; exit 1; }
 remote() { ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "$@"; }
 
 if [[ -z "$SECRETS_ENV_FILE" ]]; then
-  if [[ -f ".env" ]]; then
-    log "AVISO: usando .env local (legado). Prefira passar o arquivo de secrets descriptografado."
-    SECRETS_ENV_FILE=".env"
-  else
-    die "arquivo de secrets não informado e nenhum .env encontrado"
-  fi
+  die "SECRETS_ENV_FILE obrigatorio. Descriptografe os secrets com: sops --decrypt deployment/config/prod.secrets.env > /tmp/mecontrola-secrets.env"
 fi
 
 [[ -f "$SECRETS_ENV_FILE" ]] || die "arquivo de secrets não encontrado: $SECRETS_ENV_FILE"

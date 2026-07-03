@@ -1,8 +1,9 @@
 # MeControla
 
-[![CI/CD](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
-[![Image Signed](https://img.shields.io/badge/image-cosign%20keyless-blue)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
-[![SBOM](https://img.shields.io/badge/SBOM-SPDX--JSON-green)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci-cd.yml)
+[![CI](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci.yml/badge.svg)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/ci.yml)
+[![CD](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/cd.yml/badge.svg)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/cd.yml)
+[![Image Signed](https://img.shields.io/badge/image-cosign%20keyless-blue)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/cd.yml)
+[![SBOM](https://img.shields.io/badge/SBOM-SPDX--JSON-green)](https://github.com/LimaTeixeiraTecnologia/mecontrola/actions/workflows/cd.yml)
 [![Governance](https://img.shields.io/badge/governance-AGENTS.md-orange)](./AGENTS.md)
 
 Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp.
@@ -30,6 +31,16 @@ Monolito modular em Go para fluxos financeiros conversacionais via WhatsApp.
 - [skills-lock.json](#skills-lockjson)
 - [Contribuição](#contribuição)
 - [Governance](#governance)
+
+---
+
+## Três ambientes canônicos
+
+| Objetivo | Comando | Arquivo base |
+|---|---|---|
+| Paridade com produção localmente | `task swarm:local:up` | `compose.swarm.yml` (mesmo da VPS) |
+| Desenvolvimento completo (Compose) | `task local:up` | `compose.yml` + `compose.local.yml` |
+| Só infra + debug VS Code | `task local:infra` → F5 | `compose.yml` + `compose.local.yml` (serviços de infra) |
 
 ---
 
@@ -102,7 +113,7 @@ O binário `mecontrola` expõe quatro subcomandos via Cobra:
 mecontrola server          # HTTP server (Chi, porta configurada em PORT)
 mecontrola worker          # Worker de background (outbox dispatcher, jobs agendados)
 mecontrola migrate         # Aplica todas as migrations pendentes e sai
-mecontrola migrate-down    # Reverte migrations (flag --steps N opcional)
+mecontrola migrate-down    # Reverte migrations (default: 1 step; use --steps -1 para reset total)
 ```
 
 Migrações disponíveis:
@@ -279,7 +290,6 @@ BUDGETS_THRESHOLD_ALERTS_MODE=legacy
 BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT=500
 BUDGETS_THRESHOLD_CATEGORY_RATIO=0.80
 BUDGETS_THRESHOLD_GOAL_RATIO=0.50
-BUDGETS_THRESHOLD_CARD_RATIO=0.85
 ```
 
 ### Card
@@ -356,9 +366,9 @@ ALERT_TELEGRAM_CHAT_ID=
 ```env
 OPENROUTER_BASE_URL=https://openrouter.ai
 OPENROUTER_API_KEY=CHANGE_ME_openrouter_api_key
-AGENT_LLM_PRIMARY_MODEL=google/gemini-2.5-flash-lite
+AGENT_LLM_PRIMARY_MODEL=openai/gpt-4o-mini
 AGENT_LLM_EMBED_MODEL=openai/text-embedding-3-small
-AGENT_LLM_MAX_TOKENS=768
+AGENT_LLM_MAX_TOKENS=1536
 AGENT_LLM_TEMPERATURE=0
 RUN_REAL_LLM=   # defina como "1" para testes de conformidade com LLM real
 ```
@@ -695,7 +705,7 @@ O projeto usa [Task v3.51.1](https://taskfile.dev). Execute `task --list-all` pa
 | Task | Objetivo |
 |---|---|
 | `task migrate:up` | Aplica todas as migrations pendentes (lê `.env`) |
-| `task migrate:down` | Reverte todas as migrations |
+| `task migrate:down` | Reverte todas as migrations (`--steps -1`) |
 | `task migrate:create -- <nome>` | Cria novo par de arquivos SQL numerado em `migrations/` |
 
 ### Testes
@@ -784,7 +794,10 @@ Use para testar integrações Meta/WhatsApp e Kiwify apontando para `localhost`.
 
 | Task | Objetivo |
 |---|---|
-| `task deploy:local` | Deploy da máquina local direto na VPS, sem GHCR (build amd64 + `docker save\|load` + migrate + server/worker + healthcheck/rollback). Aceita `-- <tag>`. |
+| `task swarm:local:up` | Paridade com produção localmente — init + deploy Swarm com `compose.swarm.yml` |
+| `task swarm:prod:deploy:full IMAGE_TAG=<tag>` | Deploy completo na VPS — descriptografa secrets SOPS, migrations, deploy Swarm, healthcheck |
+| `task swarm:prod:deploy:full:local` | Build local + transferência direta para VPS sem GHCR (build amd64 + `docker save\|load`) |
+| `task swarm:prod:rollback PREVIOUS_TAG=<tag>` | Rollback manual para tag anterior |
 
 ---
 
@@ -902,10 +915,10 @@ docker run --rm \
 STACK=mecontrola
 POSTGRES_CONTAINER=$(docker ps --filter name="${STACK}_postgres." --format '{{.Names}}' | head -n1)
 
-# Confirma schema_migrations consistente (1 versão, dirty = false)
+# Confirma mecontrola.schema_migrations consistente (1 versão, dirty = false)
 docker exec "${POSTGRES_CONTAINER}" \
   psql -U "${DB_USER:-mecontrola}" -d "${DB_NAME:-mecontrola_db}" \
-  -c 'SELECT version, dirty FROM schema_migrations ORDER BY version;'
+  -c 'SELECT version, dirty FROM mecontrola.schema_migrations ORDER BY version;'
 
 # Confirma seed do dicionário
 docker exec "${POSTGRES_CONTAINER}" \
@@ -914,7 +927,7 @@ docker exec "${POSTGRES_CONTAINER}" \
 ```
 
 Resultado esperado:
-- última versão em `schema_migrations` = `1`
+- última versão em `mecontrola.schema_migrations` = `1`
 - `dirty = false`
 - `category_dictionary` com dados seedados
 
@@ -957,25 +970,40 @@ task local:up
 
 ## CI/CD
 
-O fluxo principal está centralizado em `.github/workflows/ci-cd.yml`. Ativado em `push` na `main` e manualmente via `workflow_dispatch`.
+O fluxo de CI roda em `.github/workflows/ci.yml` (pull requests e merge group) e o fluxo de CD roda em `.github/workflows/cd.yml` (push na `main` e `workflow_dispatch`).
 
-### Pipeline principal
+### CI (`.github/workflows/ci.yml`)
+
+Roda em todo pull request e merge group.
+
+| Job | O que faz |
+|---|---|
+| `quality` | `task lint:run` + `lint:fmt:check` + `lint:pci` + `lint:tidy` |
+| `unit` | `task test:unit` |
+| `integration` | `task test:integration` com Docker/testcontainers |
+| `vulncheck` | `task security:vulncheck` |
+| `gates` | `task ci:agent-boundary`, `ci:platform-gates`, `ci:no-internal-agent`, `ci:deploy-anti-storm` |
+| `build` | `task build:build` |
+| `quality-gates` | agregador — bloqueia merge se qualquer job acima falhar |
+| `dependency-review` | análise de dependências do PR |
+
+### CD (`.github/workflows/cd.yml`)
+
+Roda em `push` na `main` e manualmente via `workflow_dispatch`.
 
 | Job | Quando | O que faz |
 |---|---|---|
-| `build` | sempre | `task build:build` |
-| `lint` | sempre | `task lint:run` + `task lint:deadcode` + `task lint:fmt:check` + `task lint:pci` |
-| `unit` | sempre | `task test:unit` + upload de cobertura unitária |
-| `integration` | sempre | `task test:integration` com Docker/testcontainers |
+| `quality` | sempre | mesmas verificações do CI |
+| `unit` | sempre | `task test:unit` |
+| `integration` | sempre | `task test:integration` |
 | `vulncheck` | sempre | `task security:vulncheck` |
-| `agent-data-boundary` | sempre | `task ci:agent-boundary` — gate RF-40: fronteira de dados do `internal/agents` |
-| `platform-gates` | sempre | `task ci:platform-gates` — R-WF-KERNEL-001 e R-AGENT-WF-001 |
-| `no-internal-agent` | sempre | `task ci:no-internal-agent` — ADR-004 cutover: confirma que `internal/agent` foi removido |
-| `build-image` | após todos os gates verdes | build + push da imagem GHCR com tag = SHA curto + provenance + SBOM |
-| `scan-image` | após build da imagem | Trivy image scan e upload SARIF |
-| `sign-image` | após build da imagem | assinatura cosign keyless |
-| `deploy` | `main`, após scan + sign | deploy Swarm em produção via runner self-hosted |
-| `healthcheck` | após deploy | valida `/health` e `/ready` do servidor com retry |
+| `gates` | sempre | governance gates consolidados |
+| `build` | sempre | `task build:build` + upload do binário como artifact |
+| `quality-gates` | após jobs de qualidade | agregador |
+| `build-image` | após quality-gates | build + push da imagem GHCR com tag = SHA curto + provenance + SBOM |
+| `scan-sign-image` | após build-image | Trivy image scan + assinatura cosign keyless |
+| `deploy` | `main`, após scan + sign | deploy Swarm em produção via runner GitHub-hosted usando SSH + SOPS + age |
+| `healthcheck` | após deploy | valida `/healthz` e `/readyz` com retry |
 | `notify` | `main` | notificação Telegram com status da run |
 
 ### E2E manual (`.github/workflows/e2e.yml`)
@@ -984,7 +1012,7 @@ Workflow manual para testes E2E BDD com Godog (`task test:e2e`) e upload de `cov
 
 ### Dependabot (`.github/workflows/auto-merge.yml`)
 
-Dependabot atualiza semanalmente (gomod, github-actions, docker). PRs de minor/patch são aprovados e mergeados automaticamente via squash. PRs de major ficam abertos para revisão manual.
+Dependabot atualiza semanalmente (gomod, github-actions, docker). PRs de minor/patch habilitam auto-merge automaticamente após checks passarem. PRs de major ficam abertos para revisão manual.
 
 ---
 
@@ -1001,8 +1029,8 @@ A arquitetura de produção usa Docker Swarm single-node com 2 réplicas de `ser
 | `postgres-exporter` | 1 | — | — | Métricas Prometheus |
 | `node-exporter` | 1 | — | — | Métricas de nó |
 | `migrate` | 1 | — | — | One-shot (`restart: none`) |
-| `server-1`, `server-2` | 1 cada | 0.75 / — | 768 M / — | UID 65532, read-only fs |
-| `worker-1`, `worker-2` | 1 cada | 0.50 / — | 384 M / — | UID 65532, read-only fs |
+| `server-1`, `server-2` | 1 cada | 0.75 / — | 512 M / 128 M | UID 65532, read-only fs |
+| `worker-1`, `worker-2` | 1 cada | 0.50 / — | 256 M / 64 M | UID 65532, read-only fs |
 | `caddy` | 1 | 0.25 / — | 128 M / — | Reverse proxy |
 | `otel-lgtm` | 1 | 0.50 / — | 512 M / — | Observabilidade |
 
@@ -1020,12 +1048,11 @@ mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_CURRENT
 mecontrola_IDENTITY_GATEWAY_SHARED_SECRET_NEXT
 ```
 
-### Swarm local (desenvolvimento/teste)
+### Swarm local (paridade com produção)
 
 ```bash
+task swarm:local:up                      # comando canônico: init + deploy (idempotente)
 task swarm:local:config                  # valida compose.swarm.yml
-task swarm:local:init                    # inicializa Swarm (idempotente)
-task swarm:local:deploy IMAGE_TAG=local  # deploy local da stack
 task swarm:local:ps                      # lista services
 task swarm:local:logs                    # segue logs
 task swarm:local:rm                      # remove stack local
@@ -1034,9 +1061,8 @@ task swarm:local:rm                      # remove stack local
 ### Deploy Swarm em produção
 
 ```bash
-# Etapas individuais
-task swarm:prod:sync                           # rsync código para VPS (preserva .env remoto)
-task swarm:prod:backup-env                     # backup .env para S3
+# Etapas individuais (não usa .env persistente na VPS)
+task swarm:prod:sync                           # rsync código para VPS
 task swarm:prod:secrets                        # cria/atualiza Docker secrets
 task swarm:prod:migrate                        # migrations com advisory lock
 task swarm:prod:deploy IMAGE_TAG=<tag>         # deploy + health check + rollback automático
@@ -1044,7 +1070,7 @@ task swarm:prod:ps                             # verifica services
 task swarm:prod:health                         # verifica healthchecks
 
 # Ou em um único comando:
-IMAGE_TAG=<tag> task swarm:prod:sync swarm:prod:backup-env swarm:prod:secrets swarm:prod:migrate swarm:prod:deploy swarm:prod:health
+IMAGE_TAG=<tag> task swarm:prod:sync swarm:prod:secrets swarm:prod:migrate swarm:prod:deploy swarm:prod:health
 ```
 
 ### Rollback
@@ -1070,7 +1096,7 @@ Para restore PITR e recuperação completa da VPS, siga os runbooks:
 ### Alertas e observabilidade
 
 ```bash
-task swarm:prod:alert:test   # configura alertas Grafana + dispara teste no Telegram
+task swarm:prod:alert:test   # renderiza o provisioning do Grafana + dispara teste no Telegram
 ```
 
 | Sinal | Retenção |
@@ -1132,7 +1158,7 @@ Saída esperada ao final:
 [vps] up server worker
 [vps] healthy após 10s
 [vps] === verificação pós-deploy ===
-[vps] schema_migrations (version dirty): 1|f
+[vps] mecontrola.schema_migrations (version dirty): 1|f
 [vps] mecontrola-server-1 ...:<tag> Up 5 seconds (healthy)
 [vps] mecontrola-worker-1 ...:<tag> Up 5 seconds (healthy)
 [vps] HEAD host: <tag>

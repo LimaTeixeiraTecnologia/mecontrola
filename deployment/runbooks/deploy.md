@@ -4,7 +4,7 @@
 
 ## Visão Geral
 
-O deploy é executado automaticamente pelo workflow `.github/workflows/ci-cd.yml` a cada push bem-sucedido em `main`.
+O deploy é executado automaticamente pelo workflow `.github/workflows/cd.yml` a cada push bem-sucedido em `main`.
 Este runbook documenta o fluxo manual equivalente para execução em emergências ou validação local.
 
 A gestão de configuração e secrets segue o modelo **SOPS + age + Git + Docker Swarm secrets**:
@@ -20,14 +20,53 @@ A gestão de configuração e secrets segue o modelo **SOPS + age + Git + Docker
 ```
 push main
   → build + lint + unit + integration + vulncheck + agent-data-boundary
-  → build-image + scan-image + sign-image
-  → deploy (self-hosted staging):
-      - instala sops/age
+  → build-image (ubuntu-24.04, GitHub-hosted, cache GHA)
+  → scan-image (Trivy CRITICAL/HIGH — bloqueante)
+  → sign-image (cosign keyless OIDC — bloqueante)
+  → deploy (ubuntu-24.04, GitHub-hosted, SSH → VPS):
+      - instala sops/age no runner efêmero
+      - escreve DEPLOY_SSH_KEY em ~/.ssh/id_deploy (600)
+      - fixa VPS_HOST_KEY em ~/.ssh/known_hosts (StrictHostKeyChecking=yes)
       - descriptografa deployment/config/prod.secrets.env com AGE_PRIVATE_KEY
-      - SSH → cria/atualiza docker secrets
-      - SSH → migrations → docker stack deploy
+      - deploy-swarm.sh via SSH:
+          → git pull --ff-only na VPS
+          → cria/atualiza docker secrets (create-secrets.sh)
+          → migrations via docker run --rm (advisory lock)
+          → docker stack deploy
+          → health waiters: server-1/2, worker-1/2
+          → rollback automático para tag anterior em caso de falha
+      - limpa id_deploy e keys.txt no runner
   → healthcheck
   → notify
+```
+
+### Secrets necessários (GitHub Actions)
+
+| Secret | Descrição |
+|--------|-----------|
+| `DEPLOY_SSH_KEY` | Chave privada SSH para acesso ao VPS (conteúdo de `id_ed25519`) |
+| `VPS_HOST_KEY` | Linha de known_hosts do VPS (`ssh-keyscan -H <host>` com tipo preferido) |
+| `VPS_HOST` | Hostname ou IP da VPS |
+| `VPS_USER` | Usuário SSH na VPS (ex.: `deploy`) |
+| `VPS_DEPLOY_PATH` | Caminho do repositório na VPS (ex.: `/opt/mecontrola`) |
+| `AGE_PRIVATE_KEY` | Chave age para descriptografar `prod.secrets.env` |
+| `HEALTH_URL` | URL base para healthcheck pós-deploy (ex.: `https://api.exemplo.com`) |
+| `TELEGRAM_BOT_TOKEN` | Token do bot Telegram para notificações (opcional) |
+| `TELEGRAM_CHAT_ID` | ID do chat Telegram para notificações (opcional) |
+
+Para gerar `VPS_HOST_KEY`:
+```sh
+ssh-keyscan -H <vps-host>
+```
+Cole a saída como valor do secret `VPS_HOST_KEY`.
+
+### Remoção do runner self-hosted
+
+O runner de CI self-hosted que existia em `/home/github-runner` na VPS foi removido.
+Para remover em um host novo (se necessário):
+```sh
+sudo GITHUB_TOKEN=<token> GITHUB_REPOSITORY=LimaTeixeiraTecnologia/mecontrola \
+  bash deployment/scripts/remove-runner.sh
 ```
 
 ## Pré-requisitos para deploy manual
@@ -173,19 +212,17 @@ formal; mitigue o risco com backup S3 e configs versionadas no Git.
 
 1. Notificar usuários pelo canal oficial.
 2. Realizar backup do banco e dos arquivos de config (`deployment/config/prod.env` e `deployment/config/prod.secrets.env`).
-3. Parar a stack Compose atual:
+3. Parar a stack Swarm atual (se já rodando):
    ```sh
-   cd <deploy-path>
-   docker compose -f deployment/compose/compose.yml \
-     -f deployment/compose/compose.prod.yml down
+   docker stack rm mecontrola
    ```
-4. Inicializar o Swarm:
+4. Inicializar o Swarm (se ainda não estiver ativo):
    ```sh
    docker swarm init --advertise-addr <ip-da-vps>
    ```
 5. Garantir que a imagem da aplicação está publicada em GHCR com tag imutável.
 6. Fazer deploy da stack conforme seção 6.
-7. Acompanhar a ordem de startup: `postgres` → `pgbouncer` → `migrate` →
+7. Acompanhar a ordem de startup: `postgres` → `pgbouncer` → `migrate` (baseline único `000001_initial_schema`) →
    `server-1`/`server-2`/`worker-1`/`worker-2` → `caddy`.
 8. Validar health checks e métricas no Grafana.
 9. Em caso de falha grave, derrubar a stack e recriar a partir do último
@@ -251,3 +288,19 @@ Requisitos: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e bucket configurados
 | Worker não inicia | `docker service logs mecontrola_worker-1` |
 | Migração falha | `docker logs <container-migrate>`; seguir `restore-pitr.md` se necessário |
 | Secret vazado em prod.env | CI bloqueia via `deployment/scripts/lint-secrets-in-config.sh` |
+| Secret vazado em prod.env | CI bloqueia via `deployment/scripts/lint-secrets-in-config.sh` |
+
+## Higiene de Disco — Prune Agendado
+
+Instalar o timer systemd de prune semanal no host de produção (executar uma vez após remoção do runner):
+
+```sh
+install -m 755 deployment/scripts/docker-prune.sh /opt/mecontrola/scripts/docker-prune.sh
+install -m 644 deployment/scripts/docker-prune.service /etc/systemd/system/docker-prune.service
+install -m 644 deployment/scripts/docker-prune.timer   /etc/systemd/system/docker-prune.timer
+systemctl daemon-reload
+systemctl enable --now docker-prune.timer
+systemctl list-timers docker-prune.timer
+```
+
+O timer executa todo domingo às 03:00 UTC (±30 min aleatório). Abaixo de 80% de uso faz prune leve; acima faz prune agressivo. O alerta `mc-disk-low-bytes` dispara quando `/` ficar abaixo de 10 GiB.

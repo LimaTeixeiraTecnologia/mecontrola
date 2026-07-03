@@ -44,6 +44,7 @@ func composeWhatsAppWebhookRouter(
 		cfg.WhatsAppConfig.WebhookRateLimitPerMin,
 		cfg.WhatsAppConfig.WebhookRateLimitBurst,
 		stringsutil.ParseCSV(cfg.OnboardingConfig.TrustedProxies),
+		stringsutil.ParseCSV(cfg.WhatsAppConfig.WebhookMetaAllowlistCIDRs),
 	)
 
 	waRateLimitExceededTotal := o11y.Metrics().Counter(

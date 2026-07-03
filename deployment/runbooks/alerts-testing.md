@@ -5,10 +5,9 @@ dispara corretamente e chega ao destinatário via AlertManager.
 
 ## Pré-requisito
 
-Stack de observabilidade rodando:
+Stack Swarm rodando na VPS (já inclui otel-lgtm, postgres-exporter e node-exporter):
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  --profile observability up -d
+task swarm:prod:deploy:full IMAGE_TAG=<tag>
 ```
 
 Verificar:
@@ -39,14 +38,13 @@ Limpar: `kill %1`
 
 ## 3. PostgreSQLDown
 
-Parar o container postgres:
+Parar o serviço postgres no Swarm:
 ```bash
-docker compose -f deployment/compose/compose.yml -f deployment/compose/compose.prod.yml \
-  stop postgres
+docker service update --replicas 0 mecontrola_postgres
 ```
 
 Aguardar 1 minuto. Verificar alerta `PostgreSQLDown` no Prometheus e e-mail no destinatário.
-Restaurar: `docker compose ... start postgres`
+Restaurar: `docker service update --replicas 1 mecontrola_postgres`
 
 ## 4. HighErrorRate (5xx > 1%)
 
@@ -101,7 +99,7 @@ curl -s http://localhost:9187/metrics | grep pg_stat_database_blks
 
 Se vazio, verificar permissões do usuário (exige `pg_monitor` role):
 ```bash
-docker exec mecontrola-postgres-1 psql -U mecontrola mecontrola_db \
+docker exec $(docker ps -q -f name=mecontrola_postgres) psql -U mecontrola mecontrola_db \
   -c "GRANT pg_monitor TO mecontrola;"
 ```
 

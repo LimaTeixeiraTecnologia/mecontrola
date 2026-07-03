@@ -21,7 +21,7 @@ func NewMessageRepository(db database.DBTX, o11y observability.Observability) me
 	return &messageRepository{db: db, o11y: o11y}
 }
 
-func (r *messageRepository) Append(ctx context.Context, threadPK uuid.UUID, m memory.Message) error {
+func (r *messageRepository) Append(ctx context.Context, platformThreadID uuid.UUID, m memory.Message) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "platform.memory.repository.message.append")
 	defer span.End()
 
@@ -31,12 +31,12 @@ func (r *messageRepository) Append(ctx context.Context, threadPK uuid.UUID, m me
 	}
 
 	const q = `
-		INSERT INTO mecontrola.platform_messages (id, thread_pk, resource_id, role, content, parts, created_at)
+		INSERT INTO mecontrola.platform_messages (id, platform_thread_id, resource_id, role, content, parts, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err := r.db.ExecContext(ctx, q,
 		m.ID,
-		threadPK,
+		platformThreadID,
 		m.ResourceID,
 		m.Role.String(),
 		m.Content,
@@ -46,7 +46,7 @@ func (r *messageRepository) Append(ctx context.Context, threadPK uuid.UUID, m me
 	if err != nil {
 		span.RecordError(err)
 		r.o11y.Logger().Error(ctx, "platform.memory.repository.message.append.failed",
-			observability.String("thread_pk", threadPK.String()),
+			observability.String("platform_thread_id", platformThreadID.String()),
 			observability.Error(err),
 		)
 		return fmt.Errorf("platform.memory.repository.message.append: %w", err)
@@ -55,18 +55,18 @@ func (r *messageRepository) Append(ctx context.Context, threadPK uuid.UUID, m me
 	return nil
 }
 
-func (r *messageRepository) Recent(ctx context.Context, threadPK uuid.UUID, limit int) ([]memory.Message, error) {
+func (r *messageRepository) Recent(ctx context.Context, platformThreadID uuid.UUID, limit int) ([]memory.Message, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "platform.memory.repository.message.recent")
 	defer span.End()
 
 	const q = `
-		SELECT id, thread_pk, resource_id, role, content, parts, created_at
+		SELECT id, platform_thread_id, resource_id, role, content, parts, created_at
 		  FROM mecontrola.platform_messages
-		 WHERE thread_pk = $1
+		 WHERE platform_thread_id = $1
 		 ORDER BY created_at DESC
 		 LIMIT $2`
 
-	rows, err := r.db.QueryContext(ctx, q, threadPK, limit)
+	rows, err := r.db.QueryContext(ctx, q, platformThreadID, limit)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("platform.memory.repository.message.recent: %w", err)
@@ -76,26 +76,26 @@ func (r *messageRepository) Recent(ctx context.Context, threadPK uuid.UUID, limi
 	var msgs []memory.Message
 	for rows.Next() {
 		var (
-			id         uuid.UUID
-			thrPK      uuid.UUID
-			resourceID string
-			role       string
-			content    string
-			parts      []byte
-			createdAt  time.Time
+			id               uuid.UUID
+			platformThreadID uuid.UUID
+			resourceID       string
+			role             string
+			content          string
+			parts            []byte
+			createdAt        time.Time
 		)
-		if err := rows.Scan(&id, &thrPK, &resourceID, &role, &content, &parts, &createdAt); err != nil {
+		if err := rows.Scan(&id, &platformThreadID, &resourceID, &role, &content, &parts, &createdAt); err != nil {
 			return nil, fmt.Errorf("platform.memory.repository.message.recent.scan: %w", err)
 		}
 		parsedRole, _ := memory.ParseMessageRole(role)
 		msgs = append(msgs, memory.Message{
-			ID:         id,
-			ThreadPK:   thrPK,
-			ResourceID: resourceID,
-			Role:       parsedRole,
-			Content:    content,
-			Parts:      parts,
-			CreatedAt:  createdAt,
+			ID:               id,
+			PlatformThreadID: platformThreadID,
+			ResourceID:       resourceID,
+			Role:             parsedRole,
+			Content:          content,
+			Parts:            parts,
+			CreatedAt:        createdAt,
 		})
 	}
 	if err := rows.Err(); err != nil {

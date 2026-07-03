@@ -99,10 +99,10 @@ Todos os services devem ter ao menos um container `healthy` e `Running`.
 Se o rollback for necessário por causa de migration corrompida:
 
 1. Não execute rollback de imagem antes de avaliar o estado do schema.
-2. Consulte `schema_migrations`:
+2. Consulte `mecontrola.schema_migrations`:
    ```sh
    docker exec "${STACK}_postgres.1.$(docker service ps "${STACK}_postgres" -q | head -n1)" \
-     psql -U "${DB_USER}" -d "${DB_NAME}" -c 'SELECT version, dirty FROM schema_migrations;'
+     psql -U "${DB_USER}" -d "${DB_NAME}" -c 'SELECT version, dirty FROM mecontrola.schema_migrations;'
    ```
 3. Se `dirty=true`, siga o runbook `restore-pitr.md` para restaurar o banco para um ponto antes da migration problemática.
 4. Após o banco consistente, reimplante a tag anterior conforme a seção acima.

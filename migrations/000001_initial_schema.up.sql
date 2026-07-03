@@ -63,6 +63,14 @@ CREATE INDEX IF NOT EXISTS outbox_events_aggregate_user_id_idx
     ON mecontrola.outbox_events (aggregate_user_id)
     WHERE aggregate_user_id IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS outbox_events_user_pending_occurred_idx
+    ON mecontrola.outbox_events (aggregate_user_id, occurred_at, created_at, id)
+    WHERE status = 1 AND aggregate_user_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS outbox_events_user_inflight_uidx
+    ON mecontrola.outbox_events (aggregate_user_id)
+    WHERE status = 2 AND aggregate_user_id IS NOT NULL;
+
 -- ============================================================
 -- Identity
 -- ============================================================
@@ -533,14 +541,36 @@ CREATE INDEX IF NOT EXISTS idempotency_keys_expires_idx
 SET LOCAL lock_timeout    = '5s';
 SET LOCAL statement_timeout = '120s';
 
+CREATE TABLE IF NOT EXISTS mecontrola.banks (
+    code            TEXT        NOT NULL,
+    name            TEXT        NOT NULL,
+    days_before_due SMALLINT    NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT banks_pkey         PRIMARY KEY (code),
+    CONSTRAINT banks_code_len_chk CHECK (char_length(code) BETWEEN 1 AND 64),
+    CONSTRAINT banks_name_len_chk CHECK (char_length(name) BETWEEN 1 AND 128),
+    CONSTRAINT banks_days_chk     CHECK (days_before_due BETWEEN 1 AND 28)
+);
+
+INSERT INTO mecontrola.banks (code, name, days_before_due) VALUES
+    ('nubank',          'Nubank',          7),
+    ('itau',            'Itaú',            8),
+    ('santander',       'Santander',       8),
+    ('bradesco',        'Bradesco',        7),
+    ('banco-do-brasil', 'Banco do Brasil', 7),
+    ('caixa',           'Caixa',           7),
+    ('inter',           'Inter',           7),
+    ('c6-bank',         'C6 Bank',         7)
+ON CONFLICT (code) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS mecontrola.cards (
     id          UUID        NOT NULL,
     user_id     UUID        NOT NULL,
-    name        TEXT        NOT NULL,
+    bank        TEXT        NOT NULL,
     nickname    TEXT        NOT NULL,
     closing_day SMALLINT    NOT NULL,
     due_day     SMALLINT    NOT NULL,
-    limit_cents BIGINT      NOT NULL DEFAULT 0,
     version     BIGINT      NOT NULL DEFAULT 1,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -548,11 +578,10 @@ CREATE TABLE IF NOT EXISTS mecontrola.cards (
     CONSTRAINT cards_pkey             PRIMARY KEY (id),
     CONSTRAINT cards_user_fk          FOREIGN KEY (user_id)
         REFERENCES mecontrola.users(id) ON DELETE RESTRICT,
+    CONSTRAINT cards_bank_len_chk     CHECK (char_length(bank)     BETWEEN 1 AND 64),
     CONSTRAINT cards_closing_day_chk  CHECK (closing_day BETWEEN 1 AND 31),
     CONSTRAINT cards_due_day_chk      CHECK (due_day     BETWEEN 1 AND 31),
-    CONSTRAINT cards_name_len_chk     CHECK (char_length(name)     BETWEEN 1 AND 64),
-    CONSTRAINT cards_nickname_len_chk CHECK (char_length(nickname) BETWEEN 1 AND 32),
-    CONSTRAINT cards_limit_cents_chk  CHECK (limit_cents >= 0 AND limit_cents <= 100000000)
+    CONSTRAINT cards_nickname_len_chk CHECK (char_length(nickname) BETWEEN 1 AND 32)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS cards_user_nickname_active_uniq_idx
@@ -939,15 +968,6 @@ CREATE INDEX IF NOT EXISTS user_identities_user_channel_idx
 CREATE INDEX IF NOT EXISTS user_identities_channel_external_unlinked_idx
     ON mecontrola.user_identities (channel, external_id)
     WHERE unlinked_at IS NOT NULL;
-
--- ============================================================
--- Cards: limit index (consolidated from 000005)
--- ============================================================
-
-CREATE INDEX IF NOT EXISTS cards_user_limit_positive_idx
-    ON mecontrola.cards (user_id)
-    WHERE limit_cents > 0 AND deleted_at IS NULL;
-
 
 -- ============================================================
 -- Budget Alerts Sent — final state (consolidated from 000003 + 000006)
@@ -2237,40 +2257,40 @@ CREATE TABLE IF NOT EXISTS mecontrola.platform_resources (
 );
 
 CREATE TABLE IF NOT EXISTS mecontrola.platform_messages (
-    id          UUID        NOT NULL,
-    thread_pk   UUID        NOT NULL,
-    resource_id TEXT        NOT NULL,
-    role        TEXT        NOT NULL,
-    content     TEXT        NOT NULL DEFAULT '',
-    parts       JSONB       NOT NULL DEFAULT '[]'::jsonb,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id                 UUID        NOT NULL,
+    platform_thread_id UUID        NOT NULL,
+    resource_id        TEXT        NOT NULL,
+    role               TEXT        NOT NULL,
+    content            TEXT        NOT NULL DEFAULT '',
+    parts              JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT platform_messages_pkey PRIMARY KEY (id),
-    CONSTRAINT platform_messages_thread_fkey
-        FOREIGN KEY (thread_pk) REFERENCES mecontrola.platform_threads(id) ON DELETE CASCADE,
+    CONSTRAINT platform_messages_platform_thread_id_fkey
+        FOREIGN KEY (platform_thread_id) REFERENCES mecontrola.platform_threads(id) ON DELETE CASCADE,
     CONSTRAINT platform_messages_resource_len_chk CHECK (char_length(resource_id) BETWEEN 1 AND 256),
     CONSTRAINT platform_messages_role_chk CHECK (role = ANY (ARRAY['user'::text, 'assistant'::text, 'tool'::text, 'system'::text]))
 );
 
-CREATE INDEX IF NOT EXISTS platform_messages_thread_created_idx
-    ON mecontrola.platform_messages (thread_pk, created_at);
+CREATE INDEX IF NOT EXISTS platform_messages_platform_thread_id_created_idx
+    ON mecontrola.platform_messages (platform_thread_id, created_at);
 
 CREATE TABLE IF NOT EXISTS mecontrola.platform_runs (
-    id              UUID        NOT NULL,
-    thread_pk       UUID        NOT NULL,
-    resource_id     TEXT        NOT NULL,
-    thread_id       TEXT        NOT NULL,
-    agent_id        TEXT        NOT NULL DEFAULT '',
-    workflow        TEXT        NOT NULL DEFAULT '',
-    correlation_key TEXT        NOT NULL DEFAULT '',
-    status          TEXT        NOT NULL,
-    outcome         TEXT        NOT NULL DEFAULT '',
-    error           TEXT        NOT NULL DEFAULT '',
-    started_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ended_at        TIMESTAMPTZ,
-    duration_ms     BIGINT      NOT NULL DEFAULT 0,
+    id                 UUID        NOT NULL,
+    platform_thread_id UUID        NOT NULL,
+    resource_id        TEXT        NOT NULL,
+    thread_id          TEXT        NOT NULL,
+    agent_id           TEXT        NOT NULL DEFAULT '',
+    workflow           TEXT        NOT NULL DEFAULT '',
+    correlation_key    TEXT        NOT NULL DEFAULT '',
+    status             TEXT        NOT NULL,
+    outcome            TEXT        NOT NULL DEFAULT '',
+    error              TEXT        NOT NULL DEFAULT '',
+    started_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at           TIMESTAMPTZ,
+    duration_ms        BIGINT      NOT NULL DEFAULT 0,
     CONSTRAINT platform_runs_pkey PRIMARY KEY (id),
-    CONSTRAINT platform_runs_thread_fkey
-        FOREIGN KEY (thread_pk) REFERENCES mecontrola.platform_threads(id) ON DELETE CASCADE,
+    CONSTRAINT platform_runs_platform_thread_id_fkey
+        FOREIGN KEY (platform_thread_id) REFERENCES mecontrola.platform_threads(id) ON DELETE CASCADE,
     CONSTRAINT platform_runs_duration_chk CHECK (duration_ms >= 0),
     CONSTRAINT platform_runs_resource_len_chk CHECK (char_length(resource_id) BETWEEN 1 AND 256),
     CONSTRAINT platform_runs_status_chk CHECK (status = ANY (ARRAY['running'::text, 'succeeded'::text, 'failed'::text])),
@@ -2280,14 +2300,14 @@ CREATE TABLE IF NOT EXISTS mecontrola.platform_runs (
 CREATE INDEX IF NOT EXISTS platform_runs_resource_started_idx
     ON mecontrola.platform_runs (resource_id, started_at DESC);
 
-CREATE INDEX IF NOT EXISTS platform_runs_thread_started_idx
-    ON mecontrola.platform_runs (thread_pk, started_at DESC);
+CREATE INDEX IF NOT EXISTS platform_runs_platform_thread_id_started_idx
+    ON mecontrola.platform_runs (platform_thread_id, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS mecontrola.platform_embeddings (
     id                UUID                     NOT NULL,
     resource_id       TEXT                     NOT NULL,
     thread_id         TEXT                     NOT NULL,
-    source_message_pk UUID,
+    source_message_id UUID,
     content           TEXT                     NOT NULL,
     embedding         mecontrola.vector(1536)  NOT NULL,
     model             TEXT                     NOT NULL DEFAULT '',
@@ -2304,8 +2324,8 @@ CREATE INDEX IF NOT EXISTS platform_embeddings_resource_idx
     ON mecontrola.platform_embeddings (resource_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS platform_embeddings_source_model_uniq
-    ON mecontrola.platform_embeddings (source_message_pk, model)
-    WHERE source_message_pk IS NOT NULL;
+    ON mecontrola.platform_embeddings (source_message_id, model)
+    WHERE source_message_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS mecontrola.platform_scorer_results (
     id         UUID             NOT NULL,

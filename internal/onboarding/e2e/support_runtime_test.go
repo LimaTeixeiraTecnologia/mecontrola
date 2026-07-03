@@ -331,9 +331,9 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		o11y,
 	)
 
-	checkoutLimiter := httpmiddleware.NewRateLimiter(60, 10, nil)
-	stateLimiter := httpmiddleware.NewRateLimiter(60, 10, nil)
-	beaconLimiter := httpmiddleware.NewRateLimiter(60, 10, nil)
+	checkoutLimiter := httpmiddleware.NewRateLimiter(60, 10, nil, nil)
+	stateLimiter := httpmiddleware.NewRateLimiter(60, 10, nil, nil)
+	beaconLimiter := httpmiddleware.NewRateLimiter(60, 10, nil, nil)
 	recordJourneyTimestamp := usecases.NewRecordJourneyTimestamp(factory.MagicTokenRepository(db), o11y)
 	publicRouter := onboardingserver.NewPublicRouter(
 		httphandlers.NewCreateCheckoutHandler(createCheckout, func(string) {}, func() {}, o11y),

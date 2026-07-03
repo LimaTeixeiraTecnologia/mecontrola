@@ -2,6 +2,12 @@
 
 **Referências:** `deployment/pgbackrest/pgbackrest.conf`, `deployment/postgres/postgresql.conf`, `deployment/runbooks/restore-vps.md`
 
+**SLO de Recuperação — Envelope B (10k ativos/dia, single-node):**
+- RPO: ≤ 10 min (derivado da configuração `archive_timeout = 600 s` em `deployment/postgres/postgresql.conf`)
+- RTO: ≤ 45 min (estimado — projeção analítica sobre DB near-empty, pendente de restore real; ver `docs/runs/2026-07-03-evidencia-restore.md`)
+
+**Base da estimativa de RPO:** `archive_timeout = 600` força a rotação e push de segmento WAL a cada 10 min mesmo sem atividade de escrita. Com WAL arquivado de forma assíncrona (`archive-async=y`), a janela máxima de perda é 10 min. Sob carga (escritas frequentes), segmentos de 16 MB são rotacionados antes do timeout e o RPO efetivo é menor.
+
 ## Quando Usar
 
 - Corrupção de dados causada por bug ou operação humana incorreta.
@@ -10,16 +16,19 @@
 
 ## RTO Alvo
 
-| Operação | Duração Estimada |
-|----------|-----------------|
-| Stop da aplicação e containers dependentes | < 2 min |
-| Listar backups e escolher ponto de restore | 2 min |
-| Restore full + aplicar WAL até o PITR | 10–30 min |
-| Start do postgres e validações | 5 min |
-| Migrations pós-restore e reativação da stack | 5 min |
-| **RTO total** | **< 45 min** |
+Valores abaixo são **estimativas (projeção analítica), não medições** — a confirmar em restore real.
 
-> Atualizar após primeiro restore real em staging/produção.
+| Operação | Duração Estimada | Base da estimativa |
+|----------|-----------------|-----------|
+| Stop da aplicação e containers dependentes | < 2 min | projeção analítica |
+| Listar backups e escolher ponto de restore | 2 min | projeção analítica |
+| Restore full + aplicar WAL até o PITR | 10–25 min | DB near-empty; escala com tamanho |
+| Start do postgres e validações | 3 min | projeção analítica |
+| Migrations pós-restore e reativação da stack | 5 min | projeção analítica |
+| **RTO total** | **< 45 min** | estimado, não medido |
+
+**Gatilho de revisão do RTO:** quando o backup full exceder 5 GiB, re-medir e atualizar esta tabela.
+Enquanto não houver restore real, os valores permanecem estimativas a confirmar.
 
 ## Pré-requisitos
 
@@ -143,7 +152,7 @@ rm -f /tmp/mecontrola-secrets.env
 ```bash
 docker exec "${STACK}_postgres.1.$(docker service ps ${STACK}_postgres -q | head -n1)" \
   psql -U ${DB_USER:-mecontrola} -d ${DB_NAME:-mecontrola_db} \
-  -c "SELECT COUNT(*) FROM schema_migrations;"
+  -c "SELECT COUNT(*) FROM mecontrola.schema_migrations;"
 ```
 
 Verifique também tabelas críticas conforme o incidente.
@@ -174,7 +183,7 @@ done
 ## Pós-Restore
 
 - Documentar: timestamp do restore, causa raiz, dados perdidos (se houver).
-- Atualizar RTO medido na tabela acima.
+- Atualizar a tabela de RTO com o valor real medido, substituindo a estimativa atual.
 - Criar novo backup full imediatamente após o restore:
   ```bash
   docker exec "${STACK}_postgres.1.$(docker service ps ${STACK}_postgres -q | head -n1)" \

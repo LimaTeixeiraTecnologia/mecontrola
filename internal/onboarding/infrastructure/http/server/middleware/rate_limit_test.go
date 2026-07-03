@@ -20,6 +20,93 @@ func TestRateLimitSuite(t *testing.T) {
 
 func (s *RateLimitSuite) SetupTest() {}
 
+func (s *RateLimitSuite) TestAllowlist() {
+	type args struct {
+		allowlistCIDRs []string
+		remoteAddr     string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(*middleware.RateLimiter)
+	}{
+		{
+			name: "deve permitir ip em allowlist mesmo apos limite",
+			args: args{
+				allowlistCIDRs: []string{"157.240.0.0/17"},
+				remoteAddr:     "157.240.1.1:443",
+			},
+			expect: func(limiter *middleware.RateLimiter) {
+				next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				})
+				for range 20 {
+					req := httptest.NewRequest(http.MethodPost, "/api/v1/whatsapp/inbound", nil)
+					req.RemoteAddr = "157.240.1.1:443"
+					rec := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(rec, req)
+					s.Equal(http.StatusOK, rec.Code)
+				}
+			},
+		},
+		{
+			name: "deve limitar ip fora da allowlist normalmente",
+			args: args{
+				allowlistCIDRs: []string{"157.240.0.0/17"},
+				remoteAddr:     "8.8.8.8:1234",
+			},
+			expect: func(limiter *middleware.RateLimiter) {
+				next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				})
+				for range 10 {
+					req := httptest.NewRequest(http.MethodPost, "/api/v1/whatsapp/inbound", nil)
+					req.RemoteAddr = "8.8.8.8:1234"
+					rec := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(rec, req)
+				}
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/whatsapp/inbound", nil)
+				req.RemoteAddr = "8.8.8.8:1234"
+				rec := httptest.NewRecorder()
+				limiter.Middleware(next).ServeHTTP(rec, req)
+				s.Equal(http.StatusTooManyRequests, rec.Code)
+			},
+		},
+		{
+			name: "deve funcionar sem allowlist configurada",
+			args: args{
+				allowlistCIDRs: nil,
+				remoteAddr:     "157.240.1.1:443",
+			},
+			expect: func(limiter *middleware.RateLimiter) {
+				next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				})
+				for range 10 {
+					req := httptest.NewRequest(http.MethodPost, "/", nil)
+					req.RemoteAddr = "157.240.1.1:443"
+					rec := httptest.NewRecorder()
+					limiter.Middleware(next).ServeHTTP(rec, req)
+				}
+				req := httptest.NewRequest(http.MethodPost, "/", nil)
+				req.RemoteAddr = "157.240.1.1:443"
+				rec := httptest.NewRecorder()
+				limiter.Middleware(next).ServeHTTP(rec, req)
+				s.Equal(http.StatusTooManyRequests, rec.Code)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			limiter := middleware.NewRateLimiter(10, 10, nil, scenario.args.allowlistCIDRs)
+			defer limiter.Stop()
+			scenario.expect(limiter)
+		})
+	}
+}
+
 func (s *RateLimitSuite) TestRateLimiter() {
 	type args struct {
 		remoteAddrs    []string
@@ -124,7 +211,7 @@ func (s *RateLimitSuite) TestRateLimiter() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			limiter := middleware.NewRateLimiter(10, 10, scenario.args.trustedProxies)
+			limiter := middleware.NewRateLimiter(10, 10, scenario.args.trustedProxies, nil)
 			defer limiter.Stop()
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

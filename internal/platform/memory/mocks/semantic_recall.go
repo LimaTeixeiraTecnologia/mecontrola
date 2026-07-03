@@ -37,8 +37,8 @@ func (_m *SemanticRecall) EXPECT() *SemanticRecall_Expecter {
 	return &SemanticRecall_Expecter{mock: &_m.Mock}
 }
 
-func (_mock *SemanticRecall) Index(ctx context.Context, resourceID string, threadID string, sourceMessagePK uuid.UUID, content string, model string, embedding []float32) error {
-	ret := _mock.Called(ctx, resourceID, threadID, sourceMessagePK, content, model, embedding)
+func (_mock *SemanticRecall) Index(ctx context.Context, resourceID string, threadID string, sourceMessageID uuid.UUID, content string, model string, embedding []float32) error {
+	ret := _mock.Called(ctx, resourceID, threadID, sourceMessageID, content, model, embedding)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Index")
@@ -46,7 +46,7 @@ func (_mock *SemanticRecall) Index(ctx context.Context, resourceID string, threa
 
 	var r0 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, uuid.UUID, string, string, []float32) error); ok {
-		r0 = returnFunc(ctx, resourceID, threadID, sourceMessagePK, content, model, embedding)
+		r0 = returnFunc(ctx, resourceID, threadID, sourceMessageID, content, model, embedding)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -57,11 +57,11 @@ type SemanticRecall_Index_Call struct {
 	*mock.Call
 }
 
-func (_e *SemanticRecall_Expecter) Index(ctx any, resourceID any, threadID any, sourceMessagePK any, content any, model any, embedding any) *SemanticRecall_Index_Call {
-	return &SemanticRecall_Index_Call{Call: _e.mock.On("Index", ctx, resourceID, threadID, sourceMessagePK, content, model, embedding)}
+func (_e *SemanticRecall_Expecter) Index(ctx any, resourceID any, threadID any, sourceMessageID any, content any, model any, embedding any) *SemanticRecall_Index_Call {
+	return &SemanticRecall_Index_Call{Call: _e.mock.On("Index", ctx, resourceID, threadID, sourceMessageID, content, model, embedding)}
 }
 
-func (_c *SemanticRecall_Index_Call) Run(run func(ctx context.Context, resourceID string, threadID string, sourceMessagePK uuid.UUID, content string, model string, embedding []float32)) *SemanticRecall_Index_Call {
+func (_c *SemanticRecall_Index_Call) Run(run func(ctx context.Context, resourceID string, threadID string, sourceMessageID uuid.UUID, content string, model string, embedding []float32)) *SemanticRecall_Index_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {

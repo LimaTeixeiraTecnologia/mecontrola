@@ -27,7 +27,7 @@ func (uc *RecentMessages) Execute(ctx context.Context, in input.RecentMessagesIn
 		return nil, err
 	}
 
-	msgs, err := uc.store.Recent(ctx, in.ThreadPK, in.Limit)
+	msgs, err := uc.store.Recent(ctx, in.PlatformThreadID, in.Limit)
 	if err != nil {
 		span.RecordError(err)
 		uc.o11y.Logger().Error(ctx, "platform.memory.usecase.recent_messages.failed",

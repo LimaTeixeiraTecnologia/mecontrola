@@ -21,7 +21,7 @@ type WorkingMemory interface {
 }
 
 type SemanticRecall interface {
-	Index(ctx context.Context, resourceID, threadID string, sourceMessagePK uuid.UUID, content, model string, embedding []float32) error
+	Index(ctx context.Context, resourceID, threadID string, sourceMessageID uuid.UUID, content, model string, embedding []float32) error
 	Recall(ctx context.Context, resourceID, query string, embedding []float32, k int) ([]RecallHit, error)
 }
 

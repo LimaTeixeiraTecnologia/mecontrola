@@ -48,7 +48,7 @@ func (s *publishingMessageStore) Append(ctx context.Context, threadPK uuid.UUID,
 	p := IndexMessagePayload{
 		ResourceID: m.ResourceID,
 		ThreadID:   threadPK.String(),
-		MessagePK:  m.ID,
+		MessageID:  m.ID,
 		Content:    m.Content,
 		Model:      s.model,
 	}

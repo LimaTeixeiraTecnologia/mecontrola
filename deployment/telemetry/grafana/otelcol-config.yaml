@@ -13,8 +13,21 @@ extensions:
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: 200
-    spike_limit_mib: 50
+    limit_mib: 512
+    spike_limit_mib: 128
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 10000
+    expected_new_traces_per_sec: 200
+    policies:
+      - name: errors-policy
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: probabilistic-policy
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
   batch:
     timeout: 10s
     send_batch_size: 512
@@ -39,7 +52,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, tail_sampling, batch]
       exporters: [otlphttp/traces]
     metrics:
       receivers: [otlp]

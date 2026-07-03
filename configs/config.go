@@ -151,26 +151,27 @@ type OnboardingConfig struct {
 }
 
 type WhatsAppConfig struct {
-	PhoneNumberID          string `mapstructure:"META_PHONE_NUMBER_ID"`
-	AccessToken            string `mapstructure:"META_ACCESS_TOKEN"`
-	AppSecret              string `mapstructure:"META_APP_SECRET"`
-	AppSecretNext          string `mapstructure:"META_APP_SECRET_NEXT"`
-	VerifyToken            string `mapstructure:"META_VERIFY_TOKEN"`
-	OutreachTemplateName   string `mapstructure:"META_OUTREACH_TEMPLATE_NAME"`
-	BotNumberE164          string `mapstructure:"META_BOT_NUMBER_E164"`
-	BotNumberDisplay       string `mapstructure:"META_BOT_NUMBER_DISPLAY"`
-	WelcomeActivated       string `mapstructure:"WA_MSG_WELCOME_ACTIVATED"`
-	AlreadyActive          string `mapstructure:"WA_MSG_ALREADY_ACTIVE"`
-	CodeAlreadyUsed        string `mapstructure:"WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
-	PaymentProcessing      string `mapstructure:"WA_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
-	CodeExpired            string `mapstructure:"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
-	CodeInvalid            string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
-	SystemUnavailable      string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
-	InvalidCountry         string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
-	OnboardingIntro        string `mapstructure:"WA_MSG_ONBOARDING_INTRO"`
-	ActivationNotFound     string `mapstructure:"WA_MSG_ACTIVATION_NOT_FOUND"`
-	WebhookRateLimitPerMin int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
-	WebhookRateLimitBurst  int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
+	PhoneNumberID             string `mapstructure:"META_PHONE_NUMBER_ID"`
+	AccessToken               string `mapstructure:"META_ACCESS_TOKEN"`
+	AppSecret                 string `mapstructure:"META_APP_SECRET"`
+	AppSecretNext             string `mapstructure:"META_APP_SECRET_NEXT"`
+	VerifyToken               string `mapstructure:"META_VERIFY_TOKEN"`
+	OutreachTemplateName      string `mapstructure:"META_OUTREACH_TEMPLATE_NAME"`
+	BotNumberE164             string `mapstructure:"META_BOT_NUMBER_E164"`
+	BotNumberDisplay          string `mapstructure:"META_BOT_NUMBER_DISPLAY"`
+	WelcomeActivated          string `mapstructure:"WA_MSG_WELCOME_ACTIVATED"`
+	AlreadyActive             string `mapstructure:"WA_MSG_ALREADY_ACTIVE"`
+	CodeAlreadyUsed           string `mapstructure:"WA_MSG_CODE_ALREADY_USED_OTHER_ACCOUNT"`
+	PaymentProcessing         string `mapstructure:"WA_MSG_PAYMENT_STILL_PROCESSING_RETRY"`
+	CodeExpired               string `mapstructure:"WA_MSG_CODE_EXPIRED_CONTACT_SUPPORT"`
+	CodeInvalid               string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
+	SystemUnavailable         string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
+	InvalidCountry            string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
+	OnboardingIntro           string `mapstructure:"WA_MSG_ONBOARDING_INTRO"`
+	ActivationNotFound        string `mapstructure:"WA_MSG_ACTIVATION_NOT_FOUND"`
+	WebhookRateLimitPerMin    int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
+	WebhookRateLimitBurst     int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
+	WebhookMetaAllowlistCIDRs string `mapstructure:"WHATSAPP_WEBHOOK_META_ALLOWLIST_CIDRS"`
 
 	DedupHousekeepingSchedule      string `mapstructure:"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE"`
 	DedupHousekeepingRetentionDays int    `mapstructure:"WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS"`
@@ -470,6 +471,8 @@ func (l *configLoader) envKeys() []string {
 		"ONBOARDING_CHECKOUT_RATE_LIMIT_BURST",
 		"ONBOARDING_STATE_RATE_LIMIT_PER_MIN",
 		"ONBOARDING_STATE_RATE_LIMIT_BURST",
+		"ONBOARDING_BEACON_RATE_LIMIT_PER_MIN",
+		"ONBOARDING_BEACON_RATE_LIMIT_BURST",
 		"ONBOARDING_KIWIFY_CHECKOUT_URLS",
 		"ONBOARDING_KIWIFY_ALLOWED_HOSTS",
 		"ONBOARDING_META_RETENTION_DAYS",
@@ -506,6 +509,7 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_ACTIVATION_NOT_FOUND",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
+		"WHATSAPP_WEBHOOK_META_ALLOWLIST_CIDRS",
 		"WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE",
 		"WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS",
 		"WHATSAPP_DEDUP_HOUSEKEEPING_BATCH",
@@ -536,6 +540,7 @@ func (l *configLoader) envKeys() []string {
 		"AGENT_LLM_EMBED_MODEL",
 		"AGENT_LLM_MAX_TOKENS",
 		"AGENT_LLM_TEMPERATURE",
+		"AGENT_INBOUND_TIMEOUT",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH",
 		"IDENTITY_AUTH_EVENTS_RETENTION_DAYS",
@@ -1292,6 +1297,7 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_ACTIVATION_NOT_FOUND", "Nao encontramos nenhuma ativacao pendente para seu numero. Acesse o link enviado por e-mail para ativar sua conta ou entre em contato com o suporte.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)
+	l.v.SetDefault("WHATSAPP_WEBHOOK_META_ALLOWLIST_CIDRS", "31.13.24.0/21,31.13.64.0/18,45.64.40.0/22,66.220.144.0/20,69.63.176.0/20,69.171.224.0/19,74.119.76.0/22,103.4.96.0/22,129.134.0.0/17,157.240.0.0/17,173.252.64.0/18,179.60.192.0/22,185.60.216.0/22,204.15.20.0/22")
 	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_SCHEDULE", "@daily")
 	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_RETENTION_DAYS", 30)
 	l.v.SetDefault("WHATSAPP_DEDUP_HOUSEKEEPING_BATCH", 10000)
