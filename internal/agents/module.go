@@ -147,6 +147,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.CardModule.CreateCardUC,
 		deps.CardModule.ListCardsUC,
 		deps.CardModule.GetCardUC,
+		deps.CardModule.ResolveCardByNicknameUC,
 		deps.CardModule.CountCardsUC,
 		deps.CardModule.BestPurchaseDayUC,
 		deps.CardModule.UpdateCardUC,
@@ -188,6 +189,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.TransactionsModule.ListRecurringTemplatesUC,
 		deps.O11y,
 	)
+	registerEntry := usecases.NewRegisterEntry(categoriesReader, txLedger, idempotentWrite, deps.O11y)
 
 	workflowStore := workflowpostgres.NewPostgresStore(deps.O11y, deps.DB)
 	onboardingEngine := workflow.NewEngine[workflows.OnboardingState](workflowStore, deps.O11y)
@@ -201,7 +203,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
 	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager, categoriesReader, recurrenceManager)
 
-	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, idempotentWrite)
+	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, idempotentWrite, registerEntry)
 	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y)
 
 	registry := agent.NewAgentRegistry()
@@ -273,11 +275,12 @@ func buildFinancialTools(
 	confirmEngine workflow.Engine[workflows.ConfirmState],
 	confirmDef workflow.Definition[workflows.ConfirmState],
 	writer *usecases.IdempotentWrite,
+	registerEntry *usecases.RegisterEntry,
 ) []tool.ToolHandle {
 	return []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(ledger, writer),
-		agenttools.BuildRegisterIncomeTool(ledger, writer),
-		agenttools.BuildRegisterCardPurchaseTool(ledger, cards, writer),
+		agenttools.BuildRegisterExpenseTool(registerEntry),
+		agenttools.BuildRegisterIncomeTool(registerEntry),
+		agenttools.BuildRegisterCardPurchaseTool(registerEntry),
 		agenttools.BuildQueryMonthTool(ledger),
 		agenttools.BuildQueryPlanTool(planner),
 		agenttools.BuildEditEntryTool(confirmEngine, confirmDef),
@@ -289,6 +292,7 @@ func buildFinancialTools(
 		agenttools.BuildUpdateCardTool(confirmEngine, confirmDef, cards),
 		agenttools.BuildListCardsTool(cards),
 		agenttools.BuildGetCardTool(cards),
+		agenttools.BuildResolveCardTool(cards),
 		agenttools.BuildCountCardsTool(cards),
 		agenttools.BuildBestPurchaseDayTool(cards),
 		agenttools.BuildQueryCardInvoiceTool(ledger),

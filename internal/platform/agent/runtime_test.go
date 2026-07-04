@@ -468,7 +468,7 @@ func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_SucceedsWhenWriteTool
 	s.NotEmpty(outcome.Content)
 }
 
-func (s *RuntimeTestSuite) TestExecute_RF39_RoleToolMessagesArePersisted() {
+func (s *RuntimeTestSuite) TestExecute_RF39_RoleToolMessagesAreNotPersisted() {
 	threadID := uuid.New()
 
 	reg := NewAgentRegistry()
@@ -504,15 +504,56 @@ func (s *RuntimeTestSuite) TestExecute_RF39_RoleToolMessagesArePersisted() {
 
 	s.NoError(err)
 
-	var toolMsgs []memory.Message
 	for _, m := range msgs.appended {
-		if m.Role == memory.RoleTool {
-			toolMsgs = append(toolMsgs, m)
-		}
+		s.NotEqual(memory.RoleTool, m.Role)
 	}
-	s.Require().Len(toolMsgs, 1)
-	s.Equal(memory.RoleTool, toolMsgs[0].Role)
-	s.Contains(toolMsgs[0].Content, "transaction")
+
+	var roles []memory.MessageRole
+	for _, m := range msgs.appended {
+		roles = append(roles, m.Role)
+	}
+	s.Equal([]memory.MessageRole{memory.RoleUser, memory.RoleAssistant}, roles)
+	s.Equal("registrar despesa", msgs.appended[0].Content)
+	s.Equal("ok", msgs.appended[1].Content)
+}
+
+func (s *RuntimeTestSuite) TestBuildMessages_SkipsLegacyRoleToolHistory() {
+	threadID := uuid.New()
+	history := []memory.Message{
+		{Role: memory.RoleUser, Content: "pergunta anterior"},
+		{Role: memory.RoleTool, Content: `{"resourceId":"abc","kind":"transaction"}`},
+		{Role: memory.RoleAssistant, Content: "resposta anterior"},
+	}
+	msgStore := &capturingMessageStore{recent: history}
+	ag := &capturingAgent{id: "agent-1", instructions: "instr", result: Result{Content: "ok", Mode: ExecutionModeSync}}
+
+	reg := NewAgentRegistry()
+	reg.Register(ag)
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		msgStore,
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		s.obs,
+	)
+
+	in := InboundRequest{AgentID: "agent-1", ResourceID: "res-1", ThreadID: "thr-1", Message: "nova pergunta", MessageID: "msg-1"}
+	_, err := rt.Execute(s.ctx, in)
+	s.NoError(err)
+
+	for _, m := range ag.captured.Messages {
+		s.NotEqual("tool", m.Role)
+	}
+
+	var roles []string
+	for _, m := range ag.captured.Messages {
+		roles = append(roles, m.Role)
+	}
+	s.Equal([]string{"system", "user", "assistant", "user"}, roles)
+	s.Equal("pergunta anterior", ag.captured.Messages[1].Content)
+	s.Equal("resposta anterior", ag.captured.Messages[2].Content)
+	s.Equal("nova pergunta", ag.captured.Messages[3].Content)
 }
 
 type recordingMessageStore struct {

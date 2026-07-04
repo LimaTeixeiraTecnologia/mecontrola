@@ -121,14 +121,6 @@ func NewOnboardingModule(
 	paidWithoutTokenConsumer := consumers.NewPaidWithoutTokenConsumer(useCases.handlePaidWithoutToken, o11y)
 	activationEmailConsumer := consumers.NewActivationEmailConsumer(useCases.sendActivationEmail, o11y)
 	activationAttemptConsumer := consumers.NewActivationAttemptConsumer(useCases.activateFromInbound, o11y)
-	welcomeConsumer := consumers.NewWelcomeConsumer(
-		deps.whatsAppGateway,
-		postgres.NewWelcomeDedupRepository(o11y, db),
-		deps.runtimeCfg.Messages["welcome_activated"],
-		deps.runtimeCfg.Messages["onboarding_intro"],
-		time.Duration(cfg.ActivationWindowHours)*time.Hour,
-		o11y,
-	)
 
 	return OnboardingModule{
 		PublicRouter:                 newPublicRouter(cfg, deps.runtimeCfg, useCases.createCheckout, useCases.getTokenState, useCases.recordJourneyTimestamp, o11y),
@@ -146,7 +138,6 @@ func NewOnboardingModule(
 			{EventType: "billing.subscription.activated", Handler: activationEmailConsumer},
 			{EventType: "billing.subscription.activated_without_token", Handler: paidWithoutTokenConsumer},
 			{EventType: "onboarding.activation.attempted.v1", Handler: activationAttemptConsumer},
-			{EventType: "onboarding.subscription_bound", Handler: welcomeConsumer},
 		},
 	}, nil
 }

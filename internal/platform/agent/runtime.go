@@ -161,16 +161,6 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 		Content:          in.Message,
 		CreatedAt:        time.Now().UTC(),
 	})
-	for _, tc := range result.ToolCalls {
-		_ = r.messages.Append(ctx, platformThreadID, memory.Message{
-			ID:               uuid.New(),
-			PlatformThreadID: platformThreadID,
-			ResourceID:       in.ResourceID,
-			Role:             memory.RoleTool,
-			Content:          tc.Content,
-			CreatedAt:        time.Now().UTC(),
-		})
-	}
 	_ = r.messages.Append(ctx, platformThreadID, memory.Message{
 		ID:               uuid.New(),
 		PlatformThreadID: platformThreadID,
@@ -241,6 +231,9 @@ func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid
 
 	recent, _ := r.messages.Recent(ctx, threadPK, 20)
 	for _, m := range recent {
+		if m.Role == memory.RoleTool {
+			continue
+		}
 		msgs = append(msgs, llm.Message{Role: m.Role.String(), Content: m.Content})
 	}
 

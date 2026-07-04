@@ -455,6 +455,78 @@ func (_c *CardManager_ListCards_Call) RunAndReturn(run func(ctx context.Context,
 	return _c
 }
 
+// ResolveCardByNickname provides a mock function for the type CardManager
+func (_mock *CardManager) ResolveCardByNickname(ctx context.Context, userID uuid.UUID, nickname string) (interfaces.Card, error) {
+	ret := _mock.Called(ctx, userID, nickname)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResolveCardByNickname")
+	}
+
+	var r0 interfaces.Card
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) (interfaces.Card, error)); ok {
+		return returnFunc(ctx, userID, nickname)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) interfaces.Card); ok {
+		r0 = returnFunc(ctx, userID, nickname)
+	} else {
+		r0 = ret.Get(0).(interfaces.Card)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string) error); ok {
+		r1 = returnFunc(ctx, userID, nickname)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardManager_ResolveCardByNickname_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResolveCardByNickname'
+type CardManager_ResolveCardByNickname_Call struct {
+	*mock.Call
+}
+
+// ResolveCardByNickname is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - nickname string
+func (_e *CardManager_Expecter) ResolveCardByNickname(ctx any, userID any, nickname any) *CardManager_ResolveCardByNickname_Call {
+	return &CardManager_ResolveCardByNickname_Call{Call: _e.mock.On("ResolveCardByNickname", ctx, userID, nickname)}
+}
+
+func (_c *CardManager_ResolveCardByNickname_Call) Run(run func(ctx context.Context, userID uuid.UUID, nickname string)) *CardManager_ResolveCardByNickname_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CardManager_ResolveCardByNickname_Call) Return(card interfaces.Card, err error) *CardManager_ResolveCardByNickname_Call {
+	_c.Call.Return(card, err)
+	return _c
+}
+
+func (_c *CardManager_ResolveCardByNickname_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, nickname string) (interfaces.Card, error)) *CardManager_ResolveCardByNickname_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SoftDeleteCard provides a mock function for the type CardManager
 func (_mock *CardManager) SoftDeleteCard(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) error {
 	ret := _mock.Called(ctx, cardID, userID)

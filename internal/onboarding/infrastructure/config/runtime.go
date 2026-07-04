@@ -38,7 +38,6 @@ func NewOnboardingRuntimeConfig(cfg configs.OnboardingConfig, waCfg configs.What
 		"code_invalid_check_again":        waCfg.CodeInvalid,
 		"system_unavailable_retry":        waCfg.SystemUnavailable,
 		"invalid_country":                 waCfg.InvalidCountry,
-		"onboarding_intro":                waCfg.OnboardingIntro,
 	}
 
 	return OnboardingRuntimeConfig{

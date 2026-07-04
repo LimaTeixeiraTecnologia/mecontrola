@@ -167,7 +167,6 @@ type WhatsAppConfig struct {
 	CodeInvalid               string `mapstructure:"WA_MSG_CODE_INVALID_CHECK_AGAIN"`
 	SystemUnavailable         string `mapstructure:"WA_MSG_SYSTEM_UNAVAILABLE_RETRY"`
 	InvalidCountry            string `mapstructure:"WA_MSG_INVALID_COUNTRY"`
-	OnboardingIntro           string `mapstructure:"WA_MSG_ONBOARDING_INTRO"`
 	ActivationNotFound        string `mapstructure:"WA_MSG_ACTIVATION_NOT_FOUND"`
 	WebhookRateLimitPerMin    int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN"`
 	WebhookRateLimitBurst     int    `mapstructure:"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST"`
@@ -510,7 +509,6 @@ func (l *configLoader) envKeys() []string {
 		"WA_MSG_CODE_INVALID_CHECK_AGAIN",
 		"WA_MSG_SYSTEM_UNAVAILABLE_RETRY",
 		"WA_MSG_INVALID_COUNTRY",
-		"WA_MSG_ONBOARDING_INTRO",
 		"WA_MSG_ACTIVATION_NOT_FOUND",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN",
 		"WHATSAPP_WEBHOOK_RATE_LIMIT_BURST",
@@ -1330,7 +1328,6 @@ func (l *configLoader) setWhatsAppDefaults() {
 	l.v.SetDefault("WA_MSG_CODE_INVALID_CHECK_AGAIN", "Codigo invalido. Verifique o link de ativacao e tente novamente.")
 	l.v.SetDefault("WA_MSG_SYSTEM_UNAVAILABLE_RETRY", "Sistema temporariamente indisponivel. Tente novamente em alguns minutos.")
 	l.v.SetDefault("WA_MSG_INVALID_COUNTRY", "Numero de telefone nao suportado. Apenas numeros brasileiros sao aceitos.")
-	l.v.SetDefault("WA_MSG_ONBOARDING_INTRO", "Sou seu assistente financeiro. Vou ajudar você a controlar seus gastos, cartões e orçamento. Vamos começar?")
 	l.v.SetDefault("WA_MSG_ACTIVATION_NOT_FOUND", "Nao encontramos nenhuma ativacao pendente para seu numero. Acesse o link enviado por e-mail para ativar sua conta ou entre em contato com o suporte.")
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MIN", 600)
 	l.v.SetDefault("WHATSAPP_WEBHOOK_RATE_LIMIT_BURST", 100)

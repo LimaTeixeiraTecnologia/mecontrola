@@ -79,6 +79,25 @@ func (s *stubLedger) ListCardPurchases(_ context.Context, _ uuid.UUID, _, _ stri
 	return nil, nil
 }
 
+type stubCategoriesReader struct {
+	rootID uuid.UUID
+	leafID uuid.UUID
+}
+
+func (r *stubCategoriesReader) SearchDictionary(_ context.Context, _, _ string) ([]interfaces.CategoryCandidate, error) {
+	return []interfaces.CategoryCandidate{
+		{CategoryID: r.leafID, RootCategoryID: r.rootID, Path: "Alimentação > Restaurante", Score: 0.95},
+	}, nil
+}
+
+func (r *stubCategoriesReader) ResolveRootsBySlug(_ context.Context, _ []string) (map[string]uuid.UUID, error) {
+	return map[string]uuid.UUID{}, nil
+}
+
+func (r *stubCategoriesReader) ListCategories(_ context.Context, _ uuid.UUID) ([]interfaces.Category, error) {
+	return nil, nil
+}
+
 type toolInvokingAgent struct {
 	id     string
 	handle tool.ToolHandle
@@ -91,7 +110,7 @@ func (a *toolInvokingAgent) Execute(ctx context.Context, _ agent.Request) (agent
 	args, _ := json.Marshal(RegisterExpenseInput{
 		AmountCents:   5000,
 		Description:   "Almoço",
-		PaymentMethod: "credit",
+		PaymentMethod: "debit_card",
 		OccurredAt:    "2026-07-02",
 	})
 	raw, err := a.handle.Invoke(ctx, args)
@@ -129,7 +148,9 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndWrittenToLedger
 	obs := fake.NewProvider()
 	repo := persistence.NewWriteLedgerRepository(s.db, obs)
 	writer := usecases.NewIdempotentWrite(repo, obs)
-	handle := BuildRegisterExpenseTool(&stubLedger{createdID: uuid.New()}, writer)
+	reader := &stubCategoriesReader{rootID: uuid.New(), leafID: uuid.New()}
+	registrar := usecases.NewRegisterEntry(reader, &stubLedger{createdID: uuid.New()}, writer, obs)
+	handle := BuildRegisterExpenseTool(registrar)
 
 	agentID := "agent-expense-" + uuid.NewString()
 	ag := &toolInvokingAgent{id: agentID, handle: handle}
@@ -167,11 +188,11 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndWrittenToLedger
 	s.Require().NoError(err)
 	s.Greater(ledgerCount, 0, "RF-37/EP-01: agents_write_ledger deve conter linha com identidade injetada server-side")
 
-	var msgCount int
+	var toolMsgCount int
 	err = s.db.QueryRowContext(s.ctx,
 		`SELECT COUNT(*) FROM mecontrola.platform_messages WHERE resource_id = $1 AND role = $2`,
 		userID.String(), string(memory.RoleTool),
-	).Scan(&msgCount)
+	).Scan(&toolMsgCount)
 	s.Require().NoError(err)
-	s.Greater(msgCount, 0, "RF-39/EP-05: platform_messages deve conter role=tool após escrita real")
+	s.Equal(0, toolMsgCount, "RF-39: mensagens role=tool NÃO devem ser persistidas no histórico (evita órfão tool → HTTP 400)")
 }

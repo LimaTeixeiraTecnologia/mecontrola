@@ -20,6 +20,7 @@ type cardManagerAdapter struct {
 	createCard          *cardusecases.CreateCard
 	listCards           *cardusecases.ListCards
 	getCard             *cardusecases.GetCard
+	resolveByNickname   *cardusecases.ResolveCardByNickname
 	countCards          *cardusecases.CountCards
 	bestPurchaseDay     *cardusecases.BestPurchaseDay
 	updateCard          *cardusecases.UpdateCard
@@ -32,6 +33,7 @@ func NewCardManagerAdapter(
 	createCard *cardusecases.CreateCard,
 	listCards *cardusecases.ListCards,
 	getCard *cardusecases.GetCard,
+	resolveByNickname *cardusecases.ResolveCardByNickname,
 	countCards *cardusecases.CountCards,
 	bestPurchaseDay *cardusecases.BestPurchaseDay,
 	updateCard *cardusecases.UpdateCard,
@@ -43,6 +45,7 @@ func NewCardManagerAdapter(
 		createCard:          createCard,
 		listCards:           listCards,
 		getCard:             getCard,
+		resolveByNickname:   resolveByNickname,
 		countCards:          countCards,
 		bestPurchaseDay:     bestPurchaseDay,
 		updateCard:          updateCard,
@@ -131,6 +134,21 @@ func (a *cardManagerAdapter) GetCard(ctx context.Context, cardID, userID uuid.UU
 	if err != nil {
 		span.RecordError(err)
 		return agentsifaces.Card{}, fmt.Errorf("agents/binding/card_manager: obter cartão: %w", err)
+	}
+	return mapCardOutput(out), nil
+}
+
+func (a *cardManagerAdapter) ResolveCardByNickname(ctx context.Context, userID uuid.UUID, nickname string) (agentsifaces.Card, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.card_manager.resolve_card_by_nickname")
+	defer span.End()
+
+	out, err := a.resolveByNickname.Execute(ctx, cardinput.ResolveCardByNickname{UserID: userID, Nickname: nickname})
+	if err != nil {
+		if errors.Is(err, carddomain.ErrCardNotFound) {
+			return agentsifaces.Card{}, agentsifaces.ErrCardNotFound
+		}
+		span.RecordError(err)
+		return agentsifaces.Card{}, fmt.Errorf("agents/binding/card_manager: resolver cartão por apelido: %w", err)
 	}
 	return mapCardOutput(out), nil
 }

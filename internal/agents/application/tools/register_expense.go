@@ -3,23 +3,20 @@ package tools
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
 type RegisterExpenseInput struct {
-	AmountCents   int64      `json:"amountCents"`
-	Description   string     `json:"description"`
-	PaymentMethod string     `json:"paymentMethod"`
-	OccurredAt    string     `json:"occurredAt,omitempty"`
-	CategoryID    *uuid.UUID `json:"categoryId,omitempty"`
-	SubcategoryID *uuid.UUID `json:"subcategoryId,omitempty"`
+	AmountCents   int64  `json:"amountCents"`
+	Description   string `json:"description"`
+	PaymentMethod string `json:"paymentMethod"`
+	OccurredAt    string `json:"occurredAt,omitempty"`
 }
 
 type RegisterExpenseOutput struct {
@@ -29,7 +26,7 @@ type RegisterExpenseOutput struct {
 	Outcome    string `json:"outcome"`
 }
 
-func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idempotentWriter) tool.ToolHandle {
+func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "register_expense_input",
 		Strict: true,
@@ -38,10 +35,8 @@ func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idemp
 			"properties": map[string]any{
 				"amountCents":   map[string]any{"type": "integer"},
 				"description":   map[string]any{"type": "string"},
-				"paymentMethod": map[string]any{"type": "string"},
+				"paymentMethod": map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted"}},
 				"occurredAt":    map[string]any{"type": "string"},
-				"categoryId":    map[string]any{"type": "string"},
-				"subcategoryId": map[string]any{"type": "string"},
 			},
 			"required":             []string{"amountCents", "description", "paymentMethod"},
 			"additionalProperties": false,
@@ -62,10 +57,10 @@ func BuildRegisterExpenseTool(ledger interfaces.TransactionsLedger, writer idemp
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[RegisterExpenseInput, RegisterExpenseOutput]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário.", in, out, buildRegisterExpenseExec(ledger, writer))
+	return tool.NewTool[RegisterExpenseInput, RegisterExpenseOutput]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente.", in, out, buildRegisterExpenseExec(registrar))
 }
 
-func buildRegisterExpenseExec(ledger interfaces.TransactionsLedger, writer idempotentWriter) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
+func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
 	return func(ctx context.Context, in RegisterExpenseInput) (RegisterExpenseOutput, error) {
 		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
 		if !ok {
@@ -75,42 +70,25 @@ func buildRegisterExpenseExec(ledger interfaces.TransactionsLedger, writer idemp
 		if err != nil {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: userId inválido: %w", err)
 		}
-		occurredAt := in.OccurredAt
-		if occurredAt == "" {
-			loc, locErr := time.LoadLocation("America/Sao_Paulo")
-			if locErr != nil {
-				loc = time.UTC
-			}
-			occurredAt = time.Now().In(loc).Format("2006-01-02")
-		}
-		catID := uuid.Nil
-		if in.CategoryID != nil {
-			catID = *in.CategoryID
-		}
-		result, writeErr := writer.Execute(ctx, userID, wamid, itemSeq, "create_expense", "transaction", func(ctx context.Context) (uuid.UUID, bool, error) {
-			ref, err := ledger.CreateTransaction(ctx, interfaces.RawTransaction{
-				Direction:       "outcome",
-				PaymentMethod:   in.PaymentMethod,
-				AmountCents:     in.AmountCents,
-				Description:     in.Description,
-				OccurredAt:      occurredAt,
-				CategoryID:      catID,
-				SubcategoryID:   in.SubcategoryID,
-				OriginWamid:     wamid,
-				OriginItemSeq:   itemSeq,
-				OriginOperation: "create_expense",
-			})
-			if err != nil {
-				return uuid.Nil, false, err
-			}
-			return ref.ID, ref.Reconciled, nil
+		result, err := registrar.RegisterExpense(ctx, usecases.RegisterExpenseCommand{
+			UserID:        userID,
+			WAMID:         wamid,
+			ItemSeq:       itemSeq,
+			AmountCents:   in.AmountCents,
+			Description:   in.Description,
+			PaymentMethod: in.PaymentMethod,
+			OccurredAt:    in.OccurredAt,
 		})
-		if writeErr != nil {
-			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: %w", writeErr)
+		if err != nil {
+			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: %w", err)
+		}
+		resource := ""
+		if result.Outcome != agent.ToolOutcomeClarify {
+			resource = result.ResourceID.String()
 		}
 		return RegisterExpenseOutput{
-			ResourceID: result.ResourceID.String(),
-			Kind:       "transaction",
+			ResourceID: resource,
+			Kind:       result.Kind,
 			IsReplay:   result.Outcome == agent.ToolOutcomeReplay,
 			Outcome:    result.Outcome.String(),
 		}, nil

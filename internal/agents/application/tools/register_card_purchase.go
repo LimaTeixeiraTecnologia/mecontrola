@@ -3,25 +3,21 @@ package tools
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
 type RegisterCardPurchaseInput struct {
-	CardNickname      string     `json:"cardNickname"`
-	TotalAmountCents  int64      `json:"totalAmountCents"`
-	InstallmentsTotal int        `json:"installmentsTotal"`
-	Description       string     `json:"description"`
-	PurchasedAt       string     `json:"purchasedAt,omitempty"`
-	CategoryID        *uuid.UUID `json:"categoryId,omitempty"`
-	SubcategoryID     *uuid.UUID `json:"subcategoryId,omitempty"`
+	CardID            string `json:"cardId"`
+	TotalAmountCents  int64  `json:"totalAmountCents"`
+	InstallmentsTotal int    `json:"installmentsTotal"`
+	Description       string `json:"description"`
+	PurchasedAt       string `json:"purchasedAt,omitempty"`
 }
 
 type RegisterCardPurchaseOutput struct {
@@ -31,22 +27,20 @@ type RegisterCardPurchaseOutput struct {
 	Outcome    string `json:"outcome"`
 }
 
-func BuildRegisterCardPurchaseTool(ledger interfaces.TransactionsLedger, cardManager interfaces.CardManager, writer idempotentWriter) tool.ToolHandle {
+func BuildRegisterCardPurchaseTool(registrar entryRegistrar) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "register_card_purchase_input",
 		Strict: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"cardNickname":      map[string]any{"type": "string"},
+				"cardId":            map[string]any{"type": "string"},
 				"totalAmountCents":  map[string]any{"type": "integer"},
 				"installmentsTotal": map[string]any{"type": "integer", "minimum": 1, "maximum": 24},
 				"description":       map[string]any{"type": "string"},
 				"purchasedAt":       map[string]any{"type": "string"},
-				"categoryId":        map[string]any{"type": "string"},
-				"subcategoryId":     map[string]any{"type": "string"},
 			},
-			"required":             []string{"cardNickname", "totalAmountCents", "installmentsTotal", "description"},
+			"required":             []string{"cardId", "totalAmountCents", "installmentsTotal", "description"},
 			"additionalProperties": false,
 		},
 	}
@@ -65,14 +59,11 @@ func BuildRegisterCardPurchaseTool(ledger interfaces.TransactionsLedger, cardMan
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[RegisterCardPurchaseInput, RegisterCardPurchaseOutput]("register_card_purchase", "Registra uma compra no cartão de crédito no ledger financeiro do usuário.", in, out, buildRegisterCardPurchaseExec(ledger, cardManager, writer))
+	return tool.NewTool[RegisterCardPurchaseInput, RegisterCardPurchaseOutput]("register_card_purchase", "Registra uma compra no cartão de crédito no ledger financeiro do usuário; a categoria é resolvida automaticamente.", in, out, buildRegisterCardPurchaseExec(registrar))
 }
 
-func buildRegisterCardPurchaseExec(ledger interfaces.TransactionsLedger, cardManager interfaces.CardManager, writer idempotentWriter) func(context.Context, RegisterCardPurchaseInput) (RegisterCardPurchaseOutput, error) {
+func buildRegisterCardPurchaseExec(registrar entryRegistrar) func(context.Context, RegisterCardPurchaseInput) (RegisterCardPurchaseOutput, error) {
 	return func(ctx context.Context, in RegisterCardPurchaseInput) (RegisterCardPurchaseOutput, error) {
-		if in.InstallmentsTotal < 1 || in.InstallmentsTotal > 24 {
-			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: parcelas deve estar entre 1 e 24, recebido %d", in.InstallmentsTotal)
-		}
 		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
 		if !ok {
 			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: identidade não disponível no contexto")
@@ -81,62 +72,30 @@ func buildRegisterCardPurchaseExec(ledger interfaces.TransactionsLedger, cardMan
 		if err != nil {
 			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: userId inválido: %w", err)
 		}
-		purchasedAt := in.PurchasedAt
-		if purchasedAt == "" {
-			loc, locErr := time.LoadLocation("America/Sao_Paulo")
-			if locErr != nil {
-				loc = time.UTC
-			}
-			purchasedAt = time.Now().In(loc).Format("2006-01-02")
+		cardID, err := uuid.Parse(in.CardID)
+		if err != nil {
+			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: cardId inválido: %w", err)
 		}
-		catID := uuid.Nil
-		if in.CategoryID != nil {
-			catID = *in.CategoryID
-		}
-		result, writeErr := writer.Execute(ctx, userID, wamid, itemSeq, "create_card_purchase", "card_purchase", func(ctx context.Context) (uuid.UUID, bool, error) {
-			cards, listErr := cardManager.ListCards(ctx, userID)
-			if listErr != nil {
-				return uuid.Nil, false, fmt.Errorf("listar cartões: %w", listErr)
-			}
-			var cardID uuid.UUID
-			found := false
-			for _, c := range cards {
-				if strings.EqualFold(c.Nickname, in.CardNickname) {
-					parsed, parseErr := uuid.Parse(c.ID)
-					if parseErr != nil {
-						return uuid.Nil, false, fmt.Errorf("register_card_purchase: id de cartão inválido: %w", parseErr)
-					}
-					cardID = parsed
-					found = true
-					break
-				}
-			}
-			if !found {
-				return uuid.Nil, false, fmt.Errorf("register_card_purchase: cartão não encontrado: %q", in.CardNickname)
-			}
-			ref, err := ledger.CreateCardPurchase(ctx, interfaces.RawCardPurchase{
-				CardID:            cardID,
-				TotalAmountCents:  in.TotalAmountCents,
-				InstallmentsTotal: in.InstallmentsTotal,
-				Description:       in.Description,
-				CategoryID:        catID,
-				SubcategoryID:     in.SubcategoryID,
-				PurchasedAt:       purchasedAt,
-				OriginWamid:       wamid,
-				OriginItemSeq:     itemSeq,
-				OriginOperation:   "create_card_purchase",
-			})
-			if err != nil {
-				return uuid.Nil, false, err
-			}
-			return ref.ID, ref.Reconciled, nil
+		result, err := registrar.RegisterCardPurchase(ctx, usecases.RegisterCardPurchaseCommand{
+			UserID:            userID,
+			WAMID:             wamid,
+			ItemSeq:           itemSeq,
+			CardID:            cardID,
+			TotalAmountCents:  in.TotalAmountCents,
+			InstallmentsTotal: in.InstallmentsTotal,
+			Description:       in.Description,
+			PurchasedAt:       in.PurchasedAt,
 		})
-		if writeErr != nil {
-			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: %w", writeErr)
+		if err != nil {
+			return RegisterCardPurchaseOutput{}, fmt.Errorf("register_card_purchase: %w", err)
+		}
+		resource := ""
+		if result.Outcome != agent.ToolOutcomeClarify {
+			resource = result.ResourceID.String()
 		}
 		return RegisterCardPurchaseOutput{
-			ResourceID: result.ResourceID.String(),
-			Kind:       "card_purchase",
+			ResourceID: resource,
+			Kind:       result.Kind,
 			IsReplay:   result.Outcome == agent.ToolOutcomeReplay,
 			Outcome:    result.Outcome.String(),
 		}, nil

@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	txinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	txoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
 	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
@@ -65,9 +67,30 @@ func NewTransactionsLedgerAdapter(
 	}
 }
 
+func (a *transactionsLedgerAdapter) principalCtx(ctx context.Context) (context.Context, error) {
+	if _, ok := auth.FromContext(ctx); ok {
+		return ctx, nil
+	}
+	resourceID, _, _, ok := agent.InboundIdentityFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("agents/binding/transactions_ledger: identidade inbound ausente")
+	}
+	userID, err := uuid.Parse(resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("agents/binding/transactions_ledger: userId inválido: %w", err)
+	}
+	return auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp}), nil
+}
+
 func (a *transactionsLedgerAdapter) CreateTransaction(ctx context.Context, in agentsifaces.RawTransaction) (agentsifaces.EntryRef, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.create_transaction")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
 
 	out, err := a.createTx.Execute(ctx, txinput.RawCreateTransaction{
 		Direction:       in.Direction,
@@ -92,6 +115,12 @@ func (a *transactionsLedgerAdapter) CreateCardPurchase(ctx context.Context, in a
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.create_card_purchase")
 	defer span.End()
 
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
+
 	out, err := a.createCP.Execute(ctx, txinput.RawCreateCardPurchase{
 		CardID:            in.CardID,
 		TotalAmountCents:  in.TotalAmountCents,
@@ -115,6 +144,12 @@ func (a *transactionsLedgerAdapter) UpdateTransaction(ctx context.Context, in ag
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.update_transaction")
 	defer span.End()
 
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
+
 	out, err := a.updateTx.Execute(ctx, in.ID.String(), txinput.RawUpdateTransaction{
 		Direction:     in.Direction,
 		PaymentMethod: in.PaymentMethod,
@@ -136,6 +171,12 @@ func (a *transactionsLedgerAdapter) DeleteTransaction(ctx context.Context, ref a
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.delete_transaction")
 	defer span.End()
 
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
 	if err := a.deleteTx.Execute(ctx, ref.ID.String(), version); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("agents/binding/transactions_ledger: deletar transação: %w", err)
@@ -146,6 +187,12 @@ func (a *transactionsLedgerAdapter) DeleteTransaction(ctx context.Context, ref a
 func (a *transactionsLedgerAdapter) UpdateCardPurchase(ctx context.Context, in agentsifaces.RawUpdateCardPurchase) (agentsifaces.EntryRef, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.update_card_purchase")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
 
 	out, err := a.updateCP.Execute(ctx, in.ID, txinput.RawUpdateCardPurchase{
 		TotalAmountCents:  in.TotalAmountCents,
@@ -167,6 +214,12 @@ func (a *transactionsLedgerAdapter) DeleteCardPurchase(ctx context.Context, ref 
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.delete_card_purchase")
 	defer span.End()
 
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
 	if err := a.deleteCP.Execute(ctx, ref.ID, version); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("agents/binding/transactions_ledger: deletar compra cartão: %w", err)
@@ -177,6 +230,12 @@ func (a *transactionsLedgerAdapter) DeleteCardPurchase(ctx context.Context, ref 
 func (a *transactionsLedgerAdapter) ListMonthlyEntries(ctx context.Context, _ uuid.UUID, refMonth string, cursor string, limit int) ([]agentsifaces.MonthlyEntry, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.list_monthly_entries")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
 
 	page, err := a.listMonthlyE.Execute(ctx, refMonth, cursor, limit)
 	if err != nil {
@@ -206,6 +265,12 @@ func (a *transactionsLedgerAdapter) ListMonthlyEntries(ctx context.Context, _ uu
 func (a *transactionsLedgerAdapter) GetTransaction(ctx context.Context, txID string) (agentsifaces.Entry, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_transaction")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.Entry{}, err
+	}
 
 	out, err := a.getTx.Execute(ctx, txID)
 	if err != nil {
@@ -241,6 +306,12 @@ func (a *transactionsLedgerAdapter) GetCardPurchase(ctx context.Context, purchas
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_card_purchase")
 	defer span.End()
 
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.Entry{}, err
+	}
+
 	out, err := a.getCP.Execute(ctx, purchaseID)
 	if err != nil {
 		span.RecordError(err)
@@ -270,6 +341,12 @@ func (a *transactionsLedgerAdapter) GetCardPurchase(ctx context.Context, purchas
 func (a *transactionsLedgerAdapter) ListCardPurchases(ctx context.Context, cardID uuid.UUID, refMonth, cursor string, limit int) ([]agentsifaces.Entry, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.list_card_purchases")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
 
 	page, err := a.listCP.Execute(ctx, txusecases.ListCardPurchasesInput{
 		CardID: cardID,
@@ -310,6 +387,12 @@ func (a *transactionsLedgerAdapter) GetCardInvoice(ctx context.Context, cardID u
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_card_invoice")
 	defer span.End()
 
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.CardInvoice{}, err
+	}
+
 	out, err := a.getCardInvoice.Execute(ctx, cardID, refMonth)
 	if err != nil {
 		span.RecordError(err)
@@ -344,6 +427,12 @@ func (a *transactionsLedgerAdapter) GetCardInvoice(ctx context.Context, cardID u
 func (a *transactionsLedgerAdapter) SearchTransactions(ctx context.Context, _ uuid.UUID, query, refMonth string, limit int) ([]agentsifaces.Entry, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.search_transactions")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
 
 	results, err := a.searchTx.Execute(ctx, query, refMonth, limit)
 	if err != nil {
@@ -383,6 +472,12 @@ func (a *transactionsLedgerAdapter) SearchTransactions(ctx context.Context, _ uu
 func (a *transactionsLedgerAdapter) GetMonthlySummary(ctx context.Context, _ uuid.UUID, refMonth string) (agentsifaces.MonthlySummary, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_monthly_summary")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.MonthlySummary{}, err
+	}
 
 	out, err := a.getMonthlySumm.Execute(ctx, refMonth)
 	if err != nil {

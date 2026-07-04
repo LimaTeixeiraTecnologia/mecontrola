@@ -77,6 +77,25 @@ func (v *e2eStubCategoryValidator) Validate(_ context.Context, _ uuid.UUID, _ *u
 	return txifaces.CategorySnapshot{ID: v.catID, Name: "Alimentação"}, nil
 }
 
+type e2eStubCategoriesReader struct {
+	rootID uuid.UUID
+	leafID uuid.UUID
+}
+
+func (r *e2eStubCategoriesReader) SearchDictionary(_ context.Context, _, _ string) ([]agentsifaces.CategoryCandidate, error) {
+	return []agentsifaces.CategoryCandidate{
+		{CategoryID: r.leafID, RootCategoryID: r.rootID, Path: "Alimentação > Restaurante", Score: 0.95},
+	}, nil
+}
+
+func (r *e2eStubCategoriesReader) ResolveRootsBySlug(_ context.Context, _ []string) (map[string]uuid.UUID, error) {
+	return map[string]uuid.UUID{}, nil
+}
+
+func (r *e2eStubCategoriesReader) ListCategories(_ context.Context, _ uuid.UUID) ([]agentsifaces.Category, error) {
+	return nil, nil
+}
+
 type MeControlaAgentE2ESuite struct {
 	suite.Suite
 	ctx           context.Context
@@ -139,20 +158,34 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)
 	s.idem = agentusecases.NewIdempotentWrite(s.ledgerRepo, o11y)
 
+	reader := &e2eStubCategoriesReader{rootID: s.categoryID, leafID: s.subcategoryID}
+	registerEntry := agentusecases.NewRegisterEntry(reader, s.adapter, s.idem, o11y)
+
 	s.tools = []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(s.adapter, s.idem),
+		agenttools.BuildRegisterExpenseTool(registerEntry),
 		agenttools.BuildQueryMonthTool(s.adapter),
 	}
 }
 
 func (s *MeControlaAgentE2ESuite) authedCtx() context.Context {
-	return auth.WithPrincipal(s.ctx, auth.Principal{UserID: s.userID, Source: auth.SourceWhatsApp})
+	ctx := auth.WithPrincipal(s.ctx, auth.Principal{UserID: s.userID, Source: auth.SourceWhatsApp})
+	return agent.WithToolInvocationContext(ctx, s.userID.String(), "wamid-e2e-expense-1", 0)
 }
 
 func (s *MeControlaAgentE2ESuite) countTransactions() int {
 	var n int
 	err := s.db.QueryRowContext(s.ctx,
 		`SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1 AND deleted_at IS NULL`,
+		s.userID,
+	).Scan(&n)
+	s.Require().NoError(err)
+	return n
+}
+
+func (s *MeControlaAgentE2ESuite) countTransactionsWithCategory() int {
+	var n int
+	err := s.db.QueryRowContext(s.ctx,
+		`SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1 AND deleted_at IS NULL AND category_id IS NOT NULL`,
 		s.userID,
 	).Scan(&n)
 	s.Require().NoError(err)
@@ -184,11 +217,7 @@ func (s *MeControlaAgentE2ESuite) TestE2E1_RegistrarDespesaViaLLMPersisteNoBanco
 	result, err := a.Execute(ctx, agent.Request{
 		AgentID: MecontrolaAgentID,
 		Messages: []llm.Message{
-			{Role: "user", Content: "Registre esta despesa agora chamando a ferramenta register_expense com estes valores EXATOS: " +
-				"userId=" + s.userID.String() + ", wamid=wamid-e2e-expense-1, itemSeq=0, amountCents=5000, " +
-				"description=almoço, paymentMethod=debit_card, categoryId=" + s.categoryID.String() + ", " +
-				"subcategoryId=" + s.subcategoryID.String() + ", " +
-				"occurredAt=" + time.Now().Format("2006-01-02") + ". Não peça confirmação, apenas registre."},
+			{Role: "user", Content: "Registre a despesa de almoço de 50 reais no débito. Não peça confirmação, apenas registre."},
 		},
 		MaxTokens: 512,
 	})
@@ -198,6 +227,8 @@ func (s *MeControlaAgentE2ESuite) TestE2E1_RegistrarDespesaViaLLMPersisteNoBanco
 
 	s.Require().Equal(1, s.countTransactions(),
 		"deve existir exatamente 1 transação persistida para o usuário após o registro via LLM")
+	s.Require().Equal(1, s.countTransactionsWithCategory(),
+		"a transação persistida deve ter categoria resolvida deterministicamente (category_id não nulo)")
 
 	wamid, itemSeq, operation, resourceID, found := s.findLedgerRow()
 	s.Require().True(found, "deve existir uma entrada no write ledger para o usuário")

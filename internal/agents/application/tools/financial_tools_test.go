@@ -14,7 +14,6 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
@@ -60,32 +59,54 @@ var testUserID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 var testResourceID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 var testCategoryID = uuid.MustParse("00000000-0000-0000-0000-000000000003")
 
-func TestBuildRegisterExpenseToolSuccess(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
+type fakeRegistrar struct {
+	expenseResult usecases.RegisterResult
+	expenseErr    error
+	incomeResult  usecases.RegisterResult
+	incomeErr     error
+	cardResult    usecases.RegisterResult
+	cardErr       error
+	lastExpense   usecases.RegisterExpenseCommand
+	lastIncome    usecases.RegisterIncomeCommand
+	lastCard      usecases.RegisterCardPurchaseCommand
+	expenseCalls  int
+	incomeCalls   int
+	cardCalls     int
+}
 
-	ledger.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-		Return(interfaces.EntryRef{ID: testResourceID, Kind: "transaction"}, nil).Once()
+func (f *fakeRegistrar) RegisterExpense(_ context.Context, cmd usecases.RegisterExpenseCommand) (usecases.RegisterResult, error) {
+	f.expenseCalls++
+	f.lastExpense = cmd
+	return f.expenseResult, f.expenseErr
+}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid1", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			id, _, err := write(ctx)
-			if err != nil {
-				return usecases.IdempotentWriteResult{}, err
-			}
-			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
-		}).Once()
+func (f *fakeRegistrar) RegisterIncome(_ context.Context, cmd usecases.RegisterIncomeCommand) (usecases.RegisterResult, error) {
+	f.incomeCalls++
+	f.lastIncome = cmd
+	return f.incomeResult, f.incomeErr
+}
 
-	handle := BuildRegisterExpenseTool(ledger, writer)
+func (f *fakeRegistrar) RegisterCardPurchase(_ context.Context, cmd usecases.RegisterCardPurchaseCommand) (usecases.RegisterResult, error) {
+	f.cardCalls++
+	f.lastCard = cmd
+	return f.cardResult, f.cardErr
+}
+
+func TestBuildRegisterExpenseToolDelegatesAndMapsOutput(t *testing.T) {
+	registrar := &fakeRegistrar{
+		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
+	}
+
+	handle := BuildRegisterExpenseTool(registrar)
 	assert.Equal(t, "register_expense", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{
 		AmountCents:   5000,
 		Description:   "Almoço",
-		PaymentMethod: "debit",
+		PaymentMethod: "debit_card",
 	})
-	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
+	out, err := handle.Invoke(identityCtx("wamid1", 2), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
@@ -93,155 +114,86 @@ func TestBuildRegisterExpenseToolSuccess(t *testing.T) {
 	assert.Equal(t, testResourceID.String(), result.ResourceID)
 	assert.Equal(t, "transaction", result.Kind)
 	assert.False(t, result.IsReplay)
+	assert.Equal(t, "routed", result.Outcome)
+
+	assert.Equal(t, 1, registrar.expenseCalls)
+	assert.Equal(t, testUserID, registrar.lastExpense.UserID)
+	assert.Equal(t, "wamid1", registrar.lastExpense.WAMID)
+	assert.Equal(t, 2, registrar.lastExpense.ItemSeq)
+	assert.Equal(t, int64(5000), registrar.lastExpense.AmountCents)
+	assert.Equal(t, "Almoço", registrar.lastExpense.Description)
+	assert.Equal(t, "debit_card", registrar.lastExpense.PaymentMethod)
 }
 
 func TestBuildRegisterExpenseToolReplay(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
+	registrar := &fakeRegistrar{
+		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeReplay},
+	}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid1", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		Return(usecases.IdempotentWriteResult{ResourceID: testResourceID, Outcome: agent.ToolOutcomeReplay}, nil).Once()
-
-	handle := BuildRegisterExpenseTool(ledger, writer)
-	argsJSON, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents:   5000,
-		Description:   "Almoço",
-		PaymentMethod: "debit",
-	})
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.True(t, result.IsReplay)
+	assert.Equal(t, "replay", result.Outcome)
+}
+
+func TestBuildRegisterExpenseToolClarifyOmitsResource(t *testing.T) {
+	registrar := &fakeRegistrar{
+		expenseResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify},
+	}
+
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "algo ambíguo", PaymentMethod: "pix"})
+	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterExpenseOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.Empty(t, result.ResourceID)
+	assert.False(t, result.IsReplay)
 }
 
 func TestBuildRegisterExpenseToolInvalidUserID(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
-
-	handle := BuildRegisterExpenseTool(ledger, writer)
-	argsJSON, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents:   5000,
-		Description:   "Almoço",
-		PaymentMethod: "debit",
-	})
+	registrar := &fakeRegistrar{}
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	invalidCtx := agent.WithToolInvocationContext(context.Background(), "not-a-uuid", "wamid1", 0)
 	_, err := handle.Invoke(invalidCtx, argsJSON)
 	require.Error(t, err)
+	assert.Equal(t, 0, registrar.expenseCalls)
 }
 
-func TestBuildRegisterExpenseToolWriterError(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
+func TestBuildRegisterExpenseToolMissingIdentity(t *testing.T) {
+	registrar := &fakeRegistrar{}
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
+	_, err := handle.Invoke(context.Background(), argsJSON)
+	require.Error(t, err)
+	assert.Equal(t, 0, registrar.expenseCalls)
+}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid1", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		Return(usecases.IdempotentWriteResult{}, errors.New("ledger error")).Once()
-
-	handle := BuildRegisterExpenseTool(ledger, writer)
-	argsJSON, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents:   5000,
-		Description:   "Almoço",
-		PaymentMethod: "debit",
-	})
+func TestBuildRegisterExpenseToolDelegateError(t *testing.T) {
+	registrar := &fakeRegistrar{expenseErr: errors.New("ledger error")}
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	_, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.Error(t, err)
 }
 
-func TestBuildRegisterExpenseToolDefaultsOccurredAtToToday(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
-
-	var captured interfaces.RawTransaction
-	ledger.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-		RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
-			captured = raw
-			return interfaces.EntryRef{ID: testResourceID, Kind: "transaction"}, nil
-		}).Once()
-
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-default", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			id, _, err := write(ctx)
-			if err != nil {
-				return usecases.IdempotentWriteResult{}, err
-			}
-			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
-		}).Once()
-
-	handle := BuildRegisterExpenseTool(ledger, writer)
-	argsJSON, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents:   5000,
-		Description:   "Almoço sem data",
-		PaymentMethod: "debit",
-	})
-	_, err := handle.Invoke(identityCtx("wamid-default", 0), argsJSON)
-	require.NoError(t, err)
-
-	loc, locErr := time.LoadLocation("America/Sao_Paulo")
-	require.NoError(t, locErr)
-	today := time.Now().In(loc).Format("2006-01-02")
-	assert.Equal(t, today, captured.OccurredAt)
-}
-
-func TestBuildRegisterExpenseToolMultipleItemSeq(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
-
-	ledger.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-		Return(interfaces.EntryRef{ID: testResourceID, Kind: "transaction"}, nil).Twice()
-
-	writeReturn := func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-		id, _, err := write(ctx)
-		if err != nil {
-			return usecases.IdempotentWriteResult{}, err
-		}
-		return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
+func TestBuildRegisterIncomeToolDelegatesWithoutPaymentMethod(t *testing.T) {
+	registrar := &fakeRegistrar{
+		incomeResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
 	}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-multi", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(writeReturn).Once()
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-multi", 1, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(writeReturn).Once()
-
-	handle := BuildRegisterExpenseTool(ledger, writer)
-
-	first, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents: 5000, Description: "Item 0", PaymentMethod: "debit",
-	})
-	_, err := handle.Invoke(identityCtx("wamid-multi", 0), first)
-	require.NoError(t, err)
-
-	second, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents: 7000, Description: "Item 1", PaymentMethod: "debit",
-	})
-	_, err = handle.Invoke(identityCtx("wamid-multi", 1), second)
-	require.NoError(t, err)
-}
-
-func TestBuildRegisterIncomeToolSuccess(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
-
-	ledger.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-		Return(interfaces.EntryRef{ID: testResourceID, Kind: "transaction"}, nil).Once()
-
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid2", 0, "create_income", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			id, _, err := write(ctx)
-			if err != nil {
-				return usecases.IdempotentWriteResult{}, err
-			}
-			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
-		}).Once()
-
-	handle := BuildRegisterIncomeTool(ledger, writer)
+	handle := BuildRegisterIncomeTool(registrar)
 	assert.Equal(t, "register_income", handle.ID())
 
-	argsJSON, _ := json.Marshal(RegisterIncomeInput{
-		AmountCents:   100000,
-		Description:   "Salário",
-		PaymentMethod: "transfer",
-	})
+	argsJSON, _ := json.Marshal(RegisterIncomeInput{AmountCents: 100000, Description: "Salário"})
 	out, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
 	require.NoError(t, err)
 
@@ -250,35 +202,36 @@ func TestBuildRegisterIncomeToolSuccess(t *testing.T) {
 	assert.Equal(t, testResourceID.String(), result.ResourceID)
 	assert.Equal(t, "transaction", result.Kind)
 	assert.False(t, result.IsReplay)
+
+	assert.Equal(t, 1, registrar.incomeCalls)
+	assert.Equal(t, int64(100000), registrar.lastIncome.AmountCents)
+	assert.Equal(t, "Salário", registrar.lastIncome.Description)
 }
 
-func TestBuildRegisterCardPurchaseToolSuccess(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	cardMgr := imocks.NewCardManager(t)
-	writer := mocks.NewIdempotentWriter(t)
+func TestBuildRegisterIncomeToolClarify(t *testing.T) {
+	registrar := &fakeRegistrar{incomeResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	handle := BuildRegisterIncomeTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterIncomeInput{AmountCents: 100000, Description: "algo"})
+	out, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
+	require.NoError(t, err)
 
+	var result RegisterIncomeOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.Empty(t, result.ResourceID)
+}
+
+func TestBuildRegisterCardPurchaseToolDelegatesCardID(t *testing.T) {
 	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	registrar := &fakeRegistrar{
+		cardResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "card_purchase", Outcome: agent.ToolOutcomeRouted},
+	}
 
-	cardMgr.EXPECT().ListCards(mock.Anything, testUserID).
-		Return([]interfaces.Card{{ID: cardID.String(), Nickname: "Nubank"}}, nil).Once()
-
-	ledger.EXPECT().CreateCardPurchase(mock.Anything, mock.AnythingOfType("interfaces.RawCardPurchase")).
-		Return(interfaces.EntryRef{ID: testResourceID, Kind: "card_purchase"}, nil).Once()
-
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid3", 0, "create_card_purchase", "card_purchase", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			id, _, err := write(ctx)
-			if err != nil {
-				return usecases.IdempotentWriteResult{}, err
-			}
-			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
-		}).Once()
-
-	handle := BuildRegisterCardPurchaseTool(ledger, cardMgr, writer)
+	handle := BuildRegisterCardPurchaseTool(registrar)
 	assert.Equal(t, "register_card_purchase", handle.ID())
 
 	argsJSON, _ := json.Marshal(RegisterCardPurchaseInput{
-		CardNickname:      "Nubank",
+		CardID:            cardID.String(),
 		TotalAmountCents:  30000,
 		InstallmentsTotal: 3,
 		Description:       "Notebook",
@@ -290,48 +243,44 @@ func TestBuildRegisterCardPurchaseToolSuccess(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.Equal(t, testResourceID.String(), result.ResourceID)
 	assert.Equal(t, "card_purchase", result.Kind)
-	assert.False(t, result.IsReplay)
+
+	assert.Equal(t, 1, registrar.cardCalls)
+	assert.Equal(t, cardID, registrar.lastCard.CardID)
+	assert.Equal(t, 3, registrar.lastCard.InstallmentsTotal)
+	assert.Equal(t, int64(30000), registrar.lastCard.TotalAmountCents)
 }
 
-func TestBuildRegisterCardPurchaseToolInstallmentsTooHigh(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	cardMgr := imocks.NewCardManager(t)
-	writer := mocks.NewIdempotentWriter(t)
-
-	handle := BuildRegisterCardPurchaseTool(ledger, cardMgr, writer)
+func TestBuildRegisterCardPurchaseToolClarify(t *testing.T) {
+	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	registrar := &fakeRegistrar{cardResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	handle := BuildRegisterCardPurchaseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterCardPurchaseInput{
-		CardNickname:      "Nubank",
-		TotalAmountCents:  100000,
-		InstallmentsTotal: 25,
-		Description:       "Compra inválida",
+		CardID:            cardID.String(),
+		TotalAmountCents:  30000,
+		InstallmentsTotal: 1,
+		Description:       "algo ambíguo",
 	})
-	_, err := handle.Invoke(identityCtx("wamid-h3", 0), argsJSON)
-	require.Error(t, err)
+	out, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterCardPurchaseOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.Empty(t, result.ResourceID)
 }
 
-func TestBuildRegisterCardPurchaseToolCardNotFound(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	cardMgr := imocks.NewCardManager(t)
-	writer := mocks.NewIdempotentWriter(t)
-
-	cardMgr.EXPECT().ListCards(mock.Anything, testUserID).
-		Return([]interfaces.Card{}, nil).Once()
-
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid3", 0, "create_card_purchase", "card_purchase", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			_, _, err := write(ctx)
-			return usecases.IdempotentWriteResult{}, err
-		}).Once()
-
-	handle := BuildRegisterCardPurchaseTool(ledger, cardMgr, writer)
+func TestBuildRegisterCardPurchaseToolInvalidCardID(t *testing.T) {
+	registrar := &fakeRegistrar{}
+	handle := BuildRegisterCardPurchaseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterCardPurchaseInput{
-		CardNickname:      "CartaoInexistente",
+		CardID:            "not-a-uuid",
 		TotalAmountCents:  30000,
 		InstallmentsTotal: 1,
 		Description:       "Compra",
 	})
 	_, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.Error(t, err)
+	assert.Equal(t, 0, registrar.cardCalls)
 }
 
 func TestBuildQueryMonthToolSuccess(t *testing.T) {
@@ -456,9 +405,10 @@ func TestBuildAdjustAllocationToolError(t *testing.T) {
 func TestBuildClassifyCategoryToolSuccess(t *testing.T) {
 	reader := imocks.NewCategoriesReader(t)
 
+	rootID := uuid.New()
 	reader.EXPECT().SearchDictionary(mock.Anything, "restaurante", "outcome").
 		Return([]interfaces.CategoryCandidate{
-			{CategoryID: testCategoryID, Path: "alimentacao/restaurante", Score: 0.95, IsAmbiguous: false},
+			{CategoryID: testCategoryID, RootCategoryID: rootID, Path: "alimentacao/restaurante", Score: 0.95, IsAmbiguous: false},
 		}, nil).Once()
 
 	handle := BuildClassifyCategoryTool(reader)
@@ -470,8 +420,9 @@ func TestBuildClassifyCategoryToolSuccess(t *testing.T) {
 
 	var result ClassifyCategoryOutput
 	require.NoError(t, json.Unmarshal(out, &result))
-	assert.Equal(t, testCategoryID.String(), result.TopCategoryID)
-	assert.Equal(t, "alimentacao/restaurante", result.TopPath)
+	assert.Equal(t, rootID.String(), result.CategoryID)
+	assert.Equal(t, testCategoryID.String(), result.SubcategoryID)
+	assert.Equal(t, "alimentacao/restaurante", result.Path)
 	assert.False(t, result.IsAmbiguous)
 	assert.Len(t, result.Candidates, 1)
 }
@@ -538,25 +489,12 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 }
 
 func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
+	registrar := &fakeRegistrar{
+		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
+	}
 
-	ledger.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-		Return(interfaces.EntryRef{ID: testResourceID, Kind: "transaction"}, nil).Once()
-
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid1", 0, "create_expense", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			id, _, err := write(ctx)
-			if err != nil {
-				return usecases.IdempotentWriteResult{}, err
-			}
-			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
-		}).Once()
-
-	handle := BuildRegisterExpenseTool(ledger, writer)
-	argsJSON, _ := json.Marshal(RegisterExpenseInput{
-		AmountCents: 1000, Description: "café", PaymentMethod: "debit",
-	})
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 1000, Description: "café", PaymentMethod: "debit_card"})
 	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
 
@@ -702,16 +640,12 @@ func TestBuildUpdateCardTool_AlreadyExists(t *testing.T) {
 }
 
 func TestRegisterIncomeOutput_OutcomeField_Replay(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	writer := mocks.NewIdempotentWriter(t)
+	registrar := &fakeRegistrar{
+		incomeResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeReplay},
+	}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid2", 0, "create_income", "transaction", mock.AnythingOfType("usecases.WriteFn")).
-		Return(usecases.IdempotentWriteResult{ResourceID: testResourceID, Outcome: agent.ToolOutcomeReplay}, nil).Once()
-
-	handle := BuildRegisterIncomeTool(ledger, writer)
-	argsJSON, _ := json.Marshal(RegisterIncomeInput{
-		AmountCents: 2000, Description: "salário", PaymentMethod: "pix",
-	})
+	handle := BuildRegisterIncomeTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterIncomeInput{AmountCents: 2000, Description: "salário"})
 	out, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
 	require.NoError(t, err)
 
@@ -719,4 +653,57 @@ func TestRegisterIncomeOutput_OutcomeField_Replay(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.Equal(t, "replay", result.Outcome)
 	assert.True(t, result.IsReplay)
+}
+
+func TestRegisterExpenseOutput_OutcomeField_Reconciled(t *testing.T) {
+	registrar := &fakeRegistrar{
+		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeReconciled},
+	}
+
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "café", PaymentMethod: "pix"})
+	out, err := handle.Invoke(identityCtx("wamid-rec", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterExpenseOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "reconciled", result.Outcome)
+	assert.False(t, result.IsReplay)
+	assert.Equal(t, testResourceID.String(), result.ResourceID)
+}
+
+func TestBuildResolveCardToolFound(t *testing.T) {
+	cardMgr := imocks.NewCardManager(t)
+	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	cardMgr.EXPECT().ResolveCardByNickname(mock.Anything, testUserID, "Nubank").
+		Return(interfaces.Card{ID: cardID.String(), Nickname: "Nubank", Bank: "Nubank", DueDay: 10}, nil).Once()
+
+	handle := BuildResolveCardTool(cardMgr)
+	assert.Equal(t, "resolve_card", handle.ID())
+
+	argsJSON, _ := json.Marshal(ResolveCardInput{Nickname: "Nubank"})
+	out, err := handle.Invoke(identityCtx("wamid-rc", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result ResolveCardOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.True(t, result.Found)
+	assert.Equal(t, cardID.String(), result.CardID)
+	assert.Equal(t, 10, result.DueDay)
+}
+
+func TestBuildResolveCardToolNotFound(t *testing.T) {
+	cardMgr := imocks.NewCardManager(t)
+	cardMgr.EXPECT().ResolveCardByNickname(mock.Anything, testUserID, "Inexistente").
+		Return(interfaces.Card{}, interfaces.ErrCardNotFound).Once()
+
+	handle := BuildResolveCardTool(cardMgr)
+	argsJSON, _ := json.Marshal(ResolveCardInput{Nickname: "Inexistente"})
+	out, err := handle.Invoke(identityCtx("wamid-rc", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result ResolveCardOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.False(t, result.Found)
+	assert.Empty(t, result.CardID)
 }

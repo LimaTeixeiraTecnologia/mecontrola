@@ -1,7 +1,7 @@
 # language: pt
 Funcionalidade: Jornada completa de ativação via WhatsApp
 
-  Cenário: Jornada feliz — billing PAID → state retorna mensagem de ativação → ativação via inbound → subscription_bound → 2 boas-vindas
+  Cenário: Jornada feliz — billing PAID → state retorna mensagem de ativação → ativação via inbound → subscription_bound sem boas-vindas do consumer
     Dado que o ambiente de teste para onboarding está pronto
     E existe um token pendente com assinatura billing associada
     Quando o evento "billing.subscription.activated" é enfileirado na outbox de integração
@@ -13,10 +13,10 @@ Funcionalidade: Jornada completa de ativação via WhatsApp
     Quando o evento de tentativa de ativação é enfileirado para o número do cliente
     E o dispatcher do outbox é executado com handlers reais e handlers da jornada completa
     Então o token atual deve estar consumido pelo usuário corrente
-    E deve ter sido enviadas 2 mensagens de boas-vindas para o número do cliente
+    E deve ter sido enviadas 0 mensagens de boas-vindas para o número do cliente
     E deve existir 1 evento(s) outbox do tipo "onboarding.subscription_bound"
 
-  Cenário: Idempotência — reentrega do mesmo WAMID não duplica boas-vindas
+  Cenário: Idempotência — reentrega do mesmo WAMID não gera boas-vindas do consumer
     Dado que o ambiente de teste para onboarding está pronto
     E existe um token pendente com assinatura billing associada
     Quando o evento "billing.subscription.activated" é enfileirado na outbox de integração
@@ -27,7 +27,7 @@ Funcionalidade: Jornada completa de ativação via WhatsApp
     Então o token atual deve estar consumido pelo usuário corrente
     Quando o mesmo evento de tentativa de ativação é reenviado
     E o dispatcher do outbox é executado com handlers reais e handlers da jornada completa
-    Então deve ter sido enviadas 2 mensagens de boas-vindas para o número do cliente
+    Então deve ter sido enviadas 0 mensagens de boas-vindas para o número do cliente
 
   Cenário: No-match throttle — número sem sessão PAID recebe resposta única
     Dado que o ambiente de teste para onboarding está pronto

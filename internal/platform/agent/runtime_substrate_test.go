@@ -170,7 +170,7 @@ func (s *SubstrateSuite) TestRF38_AntiSimGuard_WriteToolSucceeded_StatusSucceede
 	s.Equal(ToolOutcomeRouted, outcome.Outcome)
 }
 
-func (s *SubstrateSuite) TestRF39_RoleToolPersisted() {
+func (s *SubstrateSuite) TestRF39_RoleToolNotPersisted() {
 	threadID := uuid.New()
 
 	ag := &fakeAgent{
@@ -212,16 +212,8 @@ func (s *SubstrateSuite) TestRF39_RoleToolPersisted() {
 	for i, m := range msgStore.appended {
 		roles[i] = m.Role
 	}
-	s.Contains(roles, memory.RoleTool)
-
-	var toolMsg memory.Message
-	for _, m := range msgStore.appended {
-		if m.Role == memory.RoleTool {
-			toolMsg = m
-			break
-		}
-	}
-	s.Equal(`{"resourceId":"tx-1"}`, toolMsg.Content)
+	s.NotContains(roles, memory.RoleTool)
+	s.Equal([]memory.MessageRole{memory.RoleUser, memory.RoleAssistant}, roles)
 }
 
 type appendingMessageStore struct {

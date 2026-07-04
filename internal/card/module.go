@@ -36,19 +36,20 @@ type EventHandlerRegistration struct {
 }
 
 type CardModule struct {
-	RepositoryFactory   interfaces.RepositoryFactory
-	CardRouter          *httpserver.CardRouter
-	CardLookup          *usecases.GetCardForUser
-	ListCardsUC         *usecases.ListCards
-	CountCardsUC        *usecases.CountCards
-	CreateCardUC        *usecases.CreateCard
-	GetCardUC           *usecases.GetCard
-	UpdateCardUC        *usecases.UpdateCard
-	SoftDeleteCardUC    *usecases.SoftDeleteCard
-	InvoiceForUC        *usecases.InvoiceFor
-	BestPurchaseDayUC   *usecases.BestPurchaseDay
-	InvoiceDueAlertsJob worker.Job
-	EventHandlers       []EventHandlerRegistration
+	RepositoryFactory       interfaces.RepositoryFactory
+	CardRouter              *httpserver.CardRouter
+	CardLookup              *usecases.GetCardForUser
+	ListCardsUC             *usecases.ListCards
+	CountCardsUC            *usecases.CountCards
+	CreateCardUC            *usecases.CreateCard
+	GetCardUC               *usecases.GetCard
+	ResolveCardByNicknameUC *usecases.ResolveCardByNickname
+	UpdateCardUC            *usecases.UpdateCard
+	SoftDeleteCardUC        *usecases.SoftDeleteCard
+	InvoiceForUC            *usecases.InvoiceFor
+	BestPurchaseDayUC       *usecases.BestPurchaseDay
+	InvoiceDueAlertsJob     worker.Job
+	EventHandlers           []EventHandlerRegistration
 }
 
 func NewCardModule(
@@ -75,6 +76,7 @@ func NewCardModule(
 
 	createCard := usecases.NewCreateCard(createUoW, factory, idemStorage, o11y)
 	getCard := usecases.NewGetCard(cardRepo, o11y)
+	resolveCardByNickname := usecases.NewResolveCardByNickname(cardRepo, o11y)
 	listCards := usecases.NewListCards(cardRepo, o11y)
 	countCards := usecases.NewCountCards(cardRepo, o11y)
 	updateCard := usecases.NewUpdateCard(updateUoW, factory, idemStorage, o11y)
@@ -114,19 +116,20 @@ func NewCardModule(
 	eventHandlers = append(eventHandlers, invoiceDueEventHandlers...)
 
 	return CardModule{
-		RepositoryFactory:   factory,
-		CardRouter:          router,
-		CardLookup:          getCardForUser,
-		ListCardsUC:         listCards,
-		CountCardsUC:        countCards,
-		CreateCardUC:        createCard,
-		GetCardUC:           getCard,
-		UpdateCardUC:        updateCard,
-		SoftDeleteCardUC:    softDelete,
-		InvoiceForUC:        invoiceFor,
-		BestPurchaseDayUC:   bestPurchaseDay,
-		InvoiceDueAlertsJob: invoiceDueAlertsJob,
-		EventHandlers:       eventHandlers,
+		RepositoryFactory:       factory,
+		CardRouter:              router,
+		CardLookup:              getCardForUser,
+		ListCardsUC:             listCards,
+		CountCardsUC:            countCards,
+		CreateCardUC:            createCard,
+		GetCardUC:               getCard,
+		ResolveCardByNicknameUC: resolveCardByNickname,
+		UpdateCardUC:            updateCard,
+		SoftDeleteCardUC:        softDelete,
+		InvoiceForUC:            invoiceFor,
+		BestPurchaseDayUC:       bestPurchaseDay,
+		InvoiceDueAlertsJob:     invoiceDueAlertsJob,
+		EventHandlers:           eventHandlers,
 	}, nil
 }
 

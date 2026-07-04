@@ -466,7 +466,7 @@ func BuildMethodologyStep(a agent.Agent) func(context.Context, OnboardingState) 
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseMethodology
-			msg, err := agentStream(ctx, a, "Explique brevemente a metodologia de distribuicao de orcamento do MeControla com 5 categorias: Custo Fixo, Conhecimento, Prazeres, Metas e Liberdade Financeira. Depois peca ao usuario para definir o percentual de cada categoria (a soma deve ser 100%). Seja didatico.")
+			msg, err := agentStream(ctx, a, "Explique brevemente a metodologia de distribuicao de orcamento do MeControla com 5 categorias, iniciando cada categoria com seu emoji oficial: 💰 Custo Fixo, 🎓 Conhecimento, 🎉 Prazeres, 🎯 Metas e 🏦 Liberdade Financeira. Depois peca ao usuario para definir o percentual de cada categoria (a soma deve ser 100%). Use sempre os emojis oficiais de cada categoria. Seja didatico.")
 			if err != nil {
 				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
 					fmt.Errorf("agents.onboarding.methodology: stream: %w", err)

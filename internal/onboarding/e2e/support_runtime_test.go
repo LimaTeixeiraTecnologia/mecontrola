@@ -87,7 +87,6 @@ type onboardingDependencies struct {
 	activationEmailConsumer   events.Handler
 	paidWithoutTokenConsumer  events.Handler
 	activationAttemptConsumer events.Handler
-	welcomeConsumer           events.Handler
 	outreachJob               worker.Job
 	expirationJob             worker.Job
 	cleanupJob                worker.Job
@@ -135,7 +134,6 @@ func buildOnboardingRuntime(t *testing.T, db *sqlx.DB) *onboardingRuntime {
 			mustRegisterHandler(t, registry, "billing.subscription.activated", deps.activationEmailConsumer)
 			mustRegisterHandler(t, registry, "billing.subscription.activated_without_token", deps.paidWithoutTokenConsumer)
 			mustRegisterHandler(t, registry, "onboarding.activation.attempted.v1", deps.activationAttemptConsumer)
-			mustRegisterHandler(t, registry, "onboarding.subscription_bound", deps.welcomeConsumer)
 			return registry
 		},
 	}
@@ -306,14 +304,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		"wa-not-found",
 		o11y,
 	)
-	welcomeConsumer := consumers.NewWelcomeConsumer(
-		metaGateway,
-		onboardingpostgres.NewWelcomeDedupRepository(o11y, db),
-		"wa-welcome",
-		"wa-onboarding-intro",
-		24*time.Hour,
-		o11y,
-	)
 	activationAttemptConsumer := consumers.NewActivationAttemptConsumer(activateFromInbound, o11y)
 	sendOutreach := usecases.NewSendOutreach(
 		factory.MagicTokenRepository(db),
@@ -382,7 +372,6 @@ func buildOnboardingDependencies(t *testing.T, db *sqlx.DB) *onboardingDependenc
 		activationEmailConsumer:   consumers.NewActivationEmailConsumer(sendActivationEmail, o11y),
 		paidWithoutTokenConsumer:  consumers.NewPaidWithoutTokenConsumer(handlePaidWithoutToken, o11y),
 		activationAttemptConsumer: activationAttemptConsumer,
-		welcomeConsumer:           welcomeConsumer,
 		outreachJob:               jobhandlers.NewOutreachJob(sendOutreach, true),
 		expirationJob:             jobhandlers.NewTokenExpirationJob(expireTokens, "@daily"),
 		cleanupJob:                jobhandlers.NewMetaProcessedMessagesCleanupJob(cleanupTables, "@daily"),

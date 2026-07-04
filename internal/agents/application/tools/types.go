@@ -11,3 +11,9 @@ import (
 type idempotentWriter interface {
 	Execute(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error)
 }
+
+type entryRegistrar interface {
+	RegisterExpense(ctx context.Context, cmd usecases.RegisterExpenseCommand) (usecases.RegisterResult, error)
+	RegisterIncome(ctx context.Context, cmd usecases.RegisterIncomeCommand) (usecases.RegisterResult, error)
+	RegisterCardPurchase(ctx context.Context, cmd usecases.RegisterCardPurchaseCommand) (usecases.RegisterResult, error)
+}
