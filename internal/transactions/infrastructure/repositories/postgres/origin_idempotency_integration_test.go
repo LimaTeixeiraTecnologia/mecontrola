@@ -22,9 +22,8 @@ import (
 
 type OriginIdempotencySuite struct {
 	suite.Suite
-	db           database.DBTX
-	txRepo       interfaces.TransactionRepository
-	purchaseRepo interfaces.CardPurchaseRepository
+	db     database.DBTX
+	txRepo interfaces.TransactionRepository
 }
 
 func TestOriginIdempotencySuite(t *testing.T) {
@@ -35,7 +34,6 @@ func (s *OriginIdempotencySuite) SetupSuite() {
 	s.db, _ = testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
 	s.txRepo = txpostgres.NewTransactionRepository(o11y, s.db)
-	s.purchaseRepo = txpostgres.NewCardPurchaseRepository(o11y, s.db)
 }
 
 func (s *OriginIdempotencySuite) prepareCard(userID, cardID uuid.UUID) {
@@ -75,38 +73,34 @@ func (s *OriginIdempotencySuite) newTransactionWithOrigin(userID uuid.UUID, wami
 	return &tx
 }
 
-func (s *OriginIdempotencySuite) newPurchaseWithOrigin(userID, cardID uuid.UUID, wamid string) *entities.CardPurchase {
-	snap, _ := valueobjects.NewCardBillingSnapshot(10, 20)
-	amt, _ := valueobjects.NewMoney(9000)
-	inst, _ := valueobjects.NewInstallmentCount(3)
+func (s *OriginIdempotencySuite) newCreditTransactionWithOrigin(userID, cardID uuid.UUID, wamid string) *entities.Transaction {
+	amount, _ := valueobjects.NewMoney(9000)
 	desc, _ := valueobjects.NewDescription("Notebook")
-	catVo, _ := valueobjects.ParseCategoryID(uuid.New().String())
-	p := entities.NewCardPurchase(
+	catID := valueobjects.CategoryIDFromUUID(uuid.New())
+	rm, _ := valueobjects.NewRefMonth("2026-06")
+	now := time.Now().UTC()
+	tx := entities.NewTransaction(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
-		valueobjects.CardIDFromUUID(cardID),
-		amt, inst, desc, catVo,
+		valueobjects.DirectionOutcome, valueobjects.PaymentMethodCreditCard,
+		amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
 		"Eletrônicos", "",
-		time.Now(), snap, time.Now(),
+		rm, now, now,
 	)
+	inst, _ := valueobjects.NewInstallmentCount(3)
+	snap, _ := valueobjects.NewCardBillingSnapshot(10, 20)
+	tx.SetCardBilling(valueobjects.CardIDFromUUID(cardID), inst, snap)
 	if wamid != "" {
-		p.SetOrigin(wamid, 0, "create_card_purchase")
+		tx.SetOrigin(wamid, 0, "create_transaction")
 	}
-	return &p
+	return &tx
 }
 
 func (s *OriginIdempotencySuite) countTransactions(userID uuid.UUID) int {
 	var n int
 	s.Require().NoError(s.db.QueryRowContext(context.Background(),
 		`SELECT count(*) FROM mecontrola.transactions WHERE user_id = $1`, userID).Scan(&n))
-	return n
-}
-
-func (s *OriginIdempotencySuite) countPurchases(userID uuid.UUID) int {
-	var n int
-	s.Require().NoError(s.db.QueryRowContext(context.Background(),
-		`SELECT count(*) FROM mecontrola.transactions_card_purchases WHERE user_id = $1`, userID).Scan(&n))
 	return n
 }
 
@@ -130,25 +124,25 @@ func (s *OriginIdempotencySuite) TestOriginRef_CrashRedelivery_NoDuplicate() {
 	s.Equal(1, s.countTransactions(userID), "deve existir exatamente 1 lançamento")
 }
 
-func (s *OriginIdempotencySuite) TestOriginRef_CardPurchase_Idempotent() {
+func (s *OriginIdempotencySuite) TestOriginRef_CreditTransaction_Idempotent() {
 	ctx := context.Background()
 	userID := uuid.New()
 	cardID := uuid.New()
 	s.prepareCard(userID, cardID)
 	wamid := "wamid." + uuid.New().String()
 
-	first := s.newPurchaseWithOrigin(userID, cardID, wamid)
-	id1, created1, err1 := s.purchaseRepo.Create(ctx, first)
+	first := s.newCreditTransactionWithOrigin(userID, cardID, wamid)
+	id1, created1, err1 := s.txRepo.Create(ctx, first)
 	s.Require().NoError(err1)
 	s.True(created1)
 
-	second := s.newPurchaseWithOrigin(userID, cardID, wamid)
-	id2, created2, err2 := s.purchaseRepo.Create(ctx, second)
+	second := s.newCreditTransactionWithOrigin(userID, cardID, wamid)
+	id2, created2, err2 := s.txRepo.Create(ctx, second)
 	s.Require().NoError(err2)
 	s.False(created2)
 	s.Equal(id1, id2)
 
-	s.Equal(1, s.countPurchases(userID), "deve existir exatamente 1 compra de cartão")
+	s.Equal(1, s.countTransactions(userID), "deve existir exatamente 1 lançamento de crédito")
 }
 
 func (s *OriginIdempotencySuite) TestOriginRef_WithoutOrigin_DoesNotConflict() {

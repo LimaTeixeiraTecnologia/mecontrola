@@ -56,7 +56,7 @@ func (s *GetTransactionSuite) makeTransaction(txID uuid.UUID) *entities.Transact
 	tx := entities.Reconstitute(
 		txID, userID, dir, pm, amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
-		"Custo Fixo", "", rm, now, 1, nil, now, now,
+		"Custo Fixo", "", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	return &tx
 }

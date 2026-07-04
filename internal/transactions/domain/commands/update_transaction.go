@@ -19,6 +19,8 @@ type RawUpdateTransaction struct {
 	Description   string
 	CategoryID    string
 	SubcategoryID string
+	CardID        string
+	Installments  int
 	OccurredAt    time.Time
 	Version       int64
 }
@@ -32,6 +34,8 @@ type UpdateTransaction struct {
 	Description   valueobjects.Description
 	CategoryID    valueobjects.CategoryID
 	SubcategoryID option.Option[valueobjects.SubcategoryID]
+	CardID        option.Option[valueobjects.CardID]
+	Installments  option.Option[valueobjects.InstallmentCount]
 	OccurredAt    time.Time
 	Version       int64
 }
@@ -44,14 +48,14 @@ func NewUpdateTransaction(raw RawUpdateTransaction, userID uuid.UUID) (UpdateTra
 		errs = append(errs, fmt.Errorf("transaction_id: %w", err))
 	}
 
-	direction, err := valueobjects.ParseDirection(raw.Direction)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("direction: %w", err))
+	direction, dirErr := valueobjects.ParseDirection(raw.Direction)
+	if dirErr != nil {
+		errs = append(errs, fmt.Errorf("direction: %w", dirErr))
 	}
 
-	pm, err := valueobjects.ParsePaymentMethodForCreate(raw.PaymentMethod)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("payment_method: %w", err))
+	pm, pmErr := valueobjects.ParsePaymentMethodForCreate(raw.PaymentMethod)
+	if pmErr != nil {
+		errs = append(errs, fmt.Errorf("payment_method: %w", pmErr))
 	}
 
 	amount, err := valueobjects.NewMoney(raw.AmountCents)
@@ -73,15 +77,10 @@ func NewUpdateTransaction(raw RawUpdateTransaction, userID uuid.UUID) (UpdateTra
 		errs = append(errs, ErrCommandMissingOccurredAt)
 	}
 
-	var subID option.Option[valueobjects.SubcategoryID]
-	if raw.SubcategoryID != "" {
-		sid, sidErr := valueobjects.ParseSubcategoryID(raw.SubcategoryID)
-		if sidErr != nil {
-			errs = append(errs, fmt.Errorf("subcategory_id: %w", sidErr))
-		} else {
-			subID = option.Some(sid)
-		}
-	}
+	subID := parseOptionalSubcategoryID(raw.SubcategoryID, &errs)
+	cardID := parseOptionalCardID(raw.CardID, &errs)
+	installments := parseOptionalInstallmentCount(raw.Installments, &errs)
+	validateCreditCardConstraints(pm, pmErr, cardID, direction, dirErr, &errs)
 
 	if len(errs) > 0 {
 		return UpdateTransaction{}, fmt.Errorf("commands/update_transaction: %w", errors.Join(errs...))
@@ -96,6 +95,8 @@ func NewUpdateTransaction(raw RawUpdateTransaction, userID uuid.UUID) (UpdateTra
 		Description:   desc,
 		CategoryID:    catID,
 		SubcategoryID: subID,
+		CardID:        cardID,
+		Installments:  installments,
 		OccurredAt:    raw.OccurredAt,
 		Version:       raw.Version,
 	}, nil

@@ -9,6 +9,7 @@ type Cursor struct {
 type CategorySnapshot struct {
 	ID         uuid.UUID
 	Name       string
+	Kind       string
 	ParentID   *uuid.UUID
 	ParentName string
 }

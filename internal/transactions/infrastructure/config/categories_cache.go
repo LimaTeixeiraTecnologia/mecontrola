@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"maps"
 	"sync"
 	"time"
 
@@ -35,20 +34,26 @@ var OfficialIncomeRootSlugs = []string{
 
 type subcategoryEntry struct {
 	name       string
+	kind       string
 	parentName string
 	parentID   uuid.UUID
 	cachedAt   time.Time
 }
 
+type rootEntry struct {
+	id   uuid.UUID
+	kind string
+}
+
 type CategoriesReader interface {
 	ResolveRootsBySlug(ctx context.Context, slugs []string) (map[string]uuid.UUID, error)
-	ValidateSubcategory(ctx context.Context, id uuid.UUID) (interfaces.CategorySnapshot, error)
+	ValidateSubcategory(ctx context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error)
 	EditorialVersion(ctx context.Context) (int64, error)
 }
 
 type CategoriesCache struct {
 	reader      CategoriesReader
-	roots       map[string]uuid.UUID
+	roots       map[string]rootEntry
 	mu          sync.Mutex
 	subcache    map[uuid.UUID]subcategoryEntry
 	lastVersion int64
@@ -85,9 +90,13 @@ func (c *CategoriesCache) Boot(ctx context.Context) error {
 		return fmt.Errorf("transactions/categories_cache: ler versão editorial no boot: %w", err)
 	}
 
-	merged := make(map[string]uuid.UUID, len(roots)+len(incomeRoots))
-	maps.Copy(merged, roots)
-	maps.Copy(merged, incomeRoots)
+	merged := make(map[string]rootEntry, len(roots)+len(incomeRoots))
+	for slug, id := range roots {
+		merged[slug] = rootEntry{id: id, kind: "expense"}
+	}
+	for slug, id := range incomeRoots {
+		merged[slug] = rootEntry{id: id, kind: "income"}
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -100,22 +109,18 @@ func (c *CategoriesCache) Boot(ctx context.Context) error {
 func (c *CategoriesCache) RootID(slug string) (uuid.UUID, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	id, ok := c.roots[slug]
-	return id, ok
+	entry, ok := c.roots[slug]
+	return entry.id, ok
 }
 
 func (c *CategoriesCache) Validate(ctx context.Context, categoryID uuid.UUID, subcategoryID *uuid.UUID) (interfaces.CategorySnapshot, error) {
-	if subcategoryID == nil {
-		c.mu.Lock()
-		roots := c.roots
-		c.mu.Unlock()
+	rootKind, isRoot := c.rootKind(categoryID)
+	if !isRoot {
+		return interfaces.CategorySnapshot{}, fmt.Errorf("transactions/categories_cache: categoria %s não é raiz: %w", categoryID, interfaces.ErrCategoryNotFound)
+	}
 
-		for _, rootID := range roots {
-			if rootID == categoryID {
-				return interfaces.CategorySnapshot{ID: categoryID}, nil
-			}
-		}
-		return interfaces.CategorySnapshot{}, fmt.Errorf("transactions/categories_cache: categoria %s não encontrada: %w", categoryID, interfaces.ErrCategoryNotFound)
+	if subcategoryID == nil {
+		return interfaces.CategorySnapshot{ID: categoryID, Kind: rootKind}, nil
 	}
 
 	c.mu.Lock()
@@ -128,19 +133,21 @@ func (c *CategoriesCache) Validate(ctx context.Context, categoryID uuid.UUID, su
 		return interfaces.CategorySnapshot{}, fmt.Errorf("transactions/categories_cache: ler versão editorial: %w", err)
 	}
 
-	if cached && currentVersion == lastVersion && time.Since(entry.cachedAt) < categoriesCacheTTL {
+	if cached && entry.parentID == categoryID && currentVersion == lastVersion && time.Since(entry.cachedAt) < categoriesCacheTTL {
 		return interfaces.CategorySnapshot{
 			ID:         *subcategoryID,
 			Name:       entry.name,
+			Kind:       entry.kind,
 			ParentID:   &entry.parentID,
 			ParentName: entry.parentName,
 		}, nil
 	}
 
-	snapshot, err := c.reader.ValidateSubcategory(ctx, *subcategoryID)
+	snapshot, err := c.reader.ValidateSubcategory(ctx, *subcategoryID, categoryID)
 	if err != nil {
 		return interfaces.CategorySnapshot{}, err
 	}
+	snapshot.Kind = rootKind
 
 	c.mu.Lock()
 	if currentVersion != c.lastVersion {
@@ -153,6 +160,7 @@ func (c *CategoriesCache) Validate(ctx context.Context, categoryID uuid.UUID, su
 	}
 	c.subcache[*subcategoryID] = subcategoryEntry{
 		name:       snapshot.Name,
+		kind:       snapshot.Kind,
 		parentName: snapshot.ParentName,
 		parentID:   parentID,
 		cachedAt:   time.Now().UTC(),
@@ -160,4 +168,15 @@ func (c *CategoriesCache) Validate(ctx context.Context, categoryID uuid.UUID, su
 	c.mu.Unlock()
 
 	return snapshot, nil
+}
+
+func (c *CategoriesCache) rootKind(categoryID uuid.UUID) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, entry := range c.roots {
+		if entry.id == categoryID {
+			return entry.kind, true
+		}
+	}
+	return "", false
 }

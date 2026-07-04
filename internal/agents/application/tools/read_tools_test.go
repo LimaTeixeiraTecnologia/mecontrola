@@ -17,13 +17,12 @@ import (
 )
 
 var (
-	testCardID     = uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	testPurchaseID = uuid.MustParse("00000000-0000-0000-0000-000000000011")
-	testRecID      = uuid.MustParse("00000000-0000-0000-0000-000000000012")
-	testCatID      = uuid.MustParse("00000000-0000-0000-0000-000000000013")
-	testInvoiceID  = uuid.MustParse("00000000-0000-0000-0000-000000000014")
-	testItemID     = uuid.MustParse("00000000-0000-0000-0000-000000000015")
-	errBinding     = errors.New("binding error")
+	testCardID    = uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	testRecID     = uuid.MustParse("00000000-0000-0000-0000-000000000012")
+	testCatID     = uuid.MustParse("00000000-0000-0000-0000-000000000013")
+	testInvoiceID = uuid.MustParse("00000000-0000-0000-0000-000000000014")
+	testItemID    = uuid.MustParse("00000000-0000-0000-0000-000000000015")
+	errBinding    = errors.New("binding error")
 )
 
 func noIdentityCtx() context.Context {
@@ -339,102 +338,6 @@ func TestGetTransactionTool_BindingError(t *testing.T) {
 
 	h := BuildGetTransactionTool(ledger)
 	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-abc"}))
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errBinding)
-}
-
-func TestGetCardPurchaseTool_Success(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	ledger.EXPECT().GetCardPurchase(mock.Anything, testPurchaseID).Return(interfaces.Entry{
-		Kind:                 "card_purchase",
-		ID:                   testPurchaseID.String(),
-		UserID:               testUserID.String(),
-		Direction:            "outcome",
-		PaymentMethod:        "credit",
-		AmountCents:          15000,
-		Description:          "Notebook",
-		CategoryID:           testCatID.String(),
-		CategoryNameSnapshot: "Tecnologia",
-		RefMonth:             "2026-01",
-		OccurredAt:           time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC),
-		Version:              1,
-	}, nil).Once()
-
-	h := BuildGetCardPurchaseTool(ledger)
-	assert.Equal(t, "get_card_purchase", h.ID())
-
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardPurchaseInput{PurchaseID: testPurchaseID.String()}))
-	require.NoError(t, err)
-
-	var res GetCardPurchaseOutput
-	require.NoError(t, json.Unmarshal(out, &res))
-	assert.Equal(t, testPurchaseID.String(), res.ID)
-	assert.Equal(t, "card_purchase", res.Kind)
-	assert.Equal(t, int64(15000), res.AmountCents)
-}
-
-func TestGetCardPurchaseTool_InvalidPurchaseID(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	h := BuildGetCardPurchaseTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardPurchaseInput{PurchaseID: "not-uuid"}))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "purchaseId inválido")
-}
-
-func TestGetCardPurchaseTool_BindingError(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	ledger.EXPECT().GetCardPurchase(mock.Anything, testPurchaseID).Return(interfaces.Entry{}, errBinding).Once()
-
-	h := BuildGetCardPurchaseTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardPurchaseInput{PurchaseID: testPurchaseID.String()}))
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errBinding)
-}
-
-func TestListCardPurchasesTool_Success(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	ledger.EXPECT().ListCardPurchases(mock.Anything, testCardID, "2026-01", "", 20).Return([]interfaces.Entry{
-		{Kind: "card_purchase", ID: testPurchaseID.String(), RefMonth: "2026-01", AmountCents: 5000, Direction: "outcome", Description: "Supermercado", CategoryID: testCatID.String()},
-	}, nil).Once()
-
-	h := BuildListCardPurchasesTool(ledger)
-	assert.Equal(t, "list_card_purchases", h.ID())
-
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardPurchasesInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
-	require.NoError(t, err)
-
-	var res ListCardPurchasesOutput
-	require.NoError(t, json.Unmarshal(out, &res))
-	assert.Len(t, res.Entries, 1)
-	assert.Equal(t, testPurchaseID.String(), res.Entries[0].ID)
-}
-
-func TestListCardPurchasesTool_DefaultRefMonthAndLimit(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	ledger.EXPECT().ListCardPurchases(mock.Anything, testCardID, mock.AnythingOfType("string"), "", 20).Return(nil, nil).Once()
-
-	h := BuildListCardPurchasesTool(ledger)
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardPurchasesInput{CardID: testCardID.String()}))
-	require.NoError(t, err)
-	var res ListCardPurchasesOutput
-	require.NoError(t, json.Unmarshal(out, &res))
-	assert.Empty(t, res.Entries)
-}
-
-func TestListCardPurchasesTool_InvalidCardID(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	h := BuildListCardPurchasesTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardPurchasesInput{CardID: "bad-uuid"}))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cardId inválido")
-}
-
-func TestListCardPurchasesTool_BindingError(t *testing.T) {
-	ledger := imocks.NewTransactionsLedger(t)
-	ledger.EXPECT().ListCardPurchases(mock.Anything, testCardID, "2026-01", "", 20).Return(nil, errBinding).Once()
-
-	h := BuildListCardPurchasesTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardPurchasesInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }

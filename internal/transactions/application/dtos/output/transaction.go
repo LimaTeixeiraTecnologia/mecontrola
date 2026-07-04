@@ -25,6 +25,9 @@ type Transaction struct {
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
 	Reconciled              bool       `json:"reconciled,omitempty"`
+
+	CardID            *uuid.UUID `json:"card_id,omitempty"`
+	InstallmentsTotal int        `json:"installments_total,omitempty"`
 }
 
 func TransactionFrom(t *entities.Transaction) Transaction {
@@ -47,6 +50,13 @@ func TransactionFrom(t *entities.Transaction) Transaction {
 	if sub, ok := t.SubcategoryID().Get(); ok {
 		v := sub.UUID()
 		out.SubcategoryID = &v
+	}
+	if card, ok := t.CardID().Get(); ok {
+		v := card.UUID()
+		out.CardID = &v
+	}
+	if inst, ok := t.InstallmentsTotal().Get(); ok {
+		out.InstallmentsTotal = inst.Value()
 	}
 	return out
 }

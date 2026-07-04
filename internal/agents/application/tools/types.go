@@ -15,5 +15,4 @@ type idempotentWriter interface {
 type entryRegistrar interface {
 	RegisterExpense(ctx context.Context, cmd usecases.RegisterExpenseCommand) (usecases.RegisterResult, error)
 	RegisterIncome(ctx context.Context, cmd usecases.RegisterIncomeCommand) (usecases.RegisterResult, error)
-	RegisterCardPurchase(ctx context.Context, cmd usecases.RegisterCardPurchaseCommand) (usecases.RegisterResult, error)
 }

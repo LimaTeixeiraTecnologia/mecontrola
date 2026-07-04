@@ -107,7 +107,7 @@ func (r *cardInvoiceRepository) GetByMonth(
 	}
 
 	const itemsQ = `
-		SELECT id, invoice_id, purchase_id, user_id, ref_month, installment_index, amount_cents, created_at, updated_at
+		SELECT id, invoice_id, transaction_id, user_id, ref_month, installment_index, amount_cents, created_at, updated_at
 		  FROM mecontrola.transactions_card_invoice_items
 		 WHERE invoice_id=$1 AND deleted_at IS NULL
 		 ORDER BY installment_index
@@ -200,7 +200,7 @@ func scanCardInvoiceItem(s itemScanner) (*entities.CardInvoiceItem, error) {
 	var (
 		id               uuid.UUID
 		invoiceID        uuid.UUID
-		purchaseID       uuid.UUID
+		transactionID    uuid.UUID
 		userID           uuid.UUID
 		refMonthStr      string
 		installmentIndex int
@@ -208,7 +208,7 @@ func scanCardInvoiceItem(s itemScanner) (*entities.CardInvoiceItem, error) {
 		createdAt        time.Time
 		updatedAt        time.Time
 	)
-	err := s.Scan(&id, &invoiceID, &purchaseID, &userID, &refMonthStr, &installmentIndex, &amountCents, &createdAt, &updatedAt)
+	err := s.Scan(&id, &invoiceID, &transactionID, &userID, &refMonthStr, &installmentIndex, &amountCents, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func scanCardInvoiceItem(s itemScanner) (*entities.CardInvoiceItem, error) {
 	}
 
 	item := entities.NewCardInvoiceItem(
-		id, invoiceID, purchaseID,
+		id, invoiceID, transactionID,
 		valueobjects.UserIDFromUUID(userID),
 		refMonth, installmentIndex, amount, createdAt,
 	)

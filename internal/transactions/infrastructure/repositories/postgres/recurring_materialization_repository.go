@@ -55,12 +55,12 @@ func (r *recurringMaterializationRepository) InsertIfAbsent(ctx context.Context,
 
 	const q = `
 		INSERT INTO mecontrola.transactions_recurring_materializations
-			(template_id, ref_month, materialized_transaction_id, materialized_purchase_id, materialized_at)
-		VALUES ($1, $2, $3, $4, $5)
+			(template_id, ref_month, materialized_transaction_id, materialized_at)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (template_id, ref_month) DO NOTHING
 	`
 
-	res, err := r.db.ExecContext(ctx, q, templateID, refMonth.String(), materializedTransactionID, materializedPurchaseID, now)
+	res, err := r.db.ExecContext(ctx, q, templateID, refMonth.String(), materializedTransactionID, now)
 	if err != nil {
 		span.RecordError(err)
 		return false, fmt.Errorf("transactions/repository: insert materialização: %w", err)
@@ -80,7 +80,7 @@ func (r *recurringMaterializationRepository) IsCompleted(ctx context.Context, te
 	defer span.End()
 
 	const q = `
-		SELECT materialized_transaction_id IS NOT NULL OR materialized_purchase_id IS NOT NULL
+		SELECT materialized_transaction_id IS NOT NULL
 		FROM mecontrola.transactions_recurring_materializations
 		WHERE template_id = $1 AND ref_month = $2
 	`
@@ -108,12 +108,12 @@ func (r *recurringMaterializationRepository) MarkCompleted(ctx context.Context, 
 
 	const q = `
 		UPDATE mecontrola.transactions_recurring_materializations
-		SET materialized_transaction_id = $3, materialized_purchase_id = $4
+		SET materialized_transaction_id = $3
 		WHERE template_id = $1 AND ref_month = $2
-		  AND materialized_transaction_id IS NULL AND materialized_purchase_id IS NULL
+		  AND materialized_transaction_id IS NULL
 	`
 
-	_, err := r.db.ExecContext(ctx, q, templateID, refMonth.String(), transactionID, purchaseID)
+	_, err := r.db.ExecContext(ctx, q, templateID, refMonth.String(), transactionID)
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("transactions/repository: mark_completed: %w", err)

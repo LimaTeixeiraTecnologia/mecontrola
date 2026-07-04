@@ -14,7 +14,7 @@ import (
 
 func registerCardInvoiceSteps(sc *godog.ScenarioContext, e *txE2ECtx) {
 	sc.Step(`^que existe um cartão configurado para o usuário com fechamento no dia (\d+)$`, e.queExisteUmCartaoConfiguradoParaOUsuarioComFechamentoNoDia)
-	sc.Step(`^que existe uma card-purchase de (\d+) centavos em (\d+) parcela no cartão em "([^"]*)"$`, e.queExisteUmaCardPurchaseDeNParcelaNoCartaoEm)
+	sc.Step(`^que existe uma compra no crédito de (\d+) centavos em (\d+) parcela no cartão em "([^"]*)"$`, e.queExisteUmaCompraNoCreditoParaFatura)
 	sc.Step(`^o usuário obtém a fatura do cartão para "([^"]*)"$`, e.oUsuarioObtemAFaturaDoCartaoPara)
 }
 
@@ -33,9 +33,9 @@ func (e *txE2ECtx) queExisteUmCartaoConfiguradoParaOUsuarioComFechamentoNoDia(cl
 	return nil
 }
 
-func (e *txE2ECtx) queExisteUmaCardPurchaseDeNParcelaNoCartaoEm(totalAmountCents, installmentsTotal int, purchasedAt string) error {
+func (e *txE2ECtx) queExisteUmaCompraNoCreditoParaFatura(amountCents, installments int, occurredAt string) error {
 	if e.cardID == "" {
-		return fmt.Errorf("cardID não capturado — crie o cartão antes da card-purchase")
+		return fmt.Errorf("cardID não capturado — crie o cartão antes da compra no crédito")
 	}
 	cardUUID, err := uuid.Parse(e.cardID)
 	if err != nil {
@@ -46,25 +46,27 @@ func (e *txE2ECtx) queExisteUmaCardPurchaseDeNParcelaNoCartaoEm(totalAmountCents
 		return fmt.Errorf("parse category uuid: %w", err)
 	}
 	payload := map[string]any{
-		"card_id":            cardUUID,
-		"total_amount_cents": int64(totalAmountCents),
-		"installments_total": installmentsTotal,
-		"description":        "e2e invoice setup",
-		"category_id":        categoryUUID,
-		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
-		"purchased_at":       purchasedAt + "T00:00:00Z",
+		"direction":      "outcome",
+		"payment_method": "credit_card",
+		"amount_cents":   int64(amountCents),
+		"installments":   installments,
+		"description":    "e2e invoice setup",
+		"category_id":    categoryUUID,
+		"subcategory_id": txE2EOutrosPrazeresSubcategoryUUID,
+		"card_id":        cardUUID,
+		"occurred_at":    occurredAt + "T00:00:00Z",
 	}
-	if err := e.makeRequest(http.MethodPost, "/api/v1/card-purchases", payload); err != nil {
+	if err := e.makeRequest(http.MethodPost, "/api/v1/transactions", payload); err != nil {
 		return err
 	}
 	if e.lastResp == nil {
-		return fmt.Errorf("nenhuma resposta HTTP registrada ao criar card-purchase")
+		return fmt.Errorf("nenhuma resposta HTTP registrada ao criar compra no crédito")
 	}
 	if e.lastResp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("status esperado 201 ao criar card-purchase, recebido %d: %s", e.lastResp.StatusCode, e.lastBodyText)
+		return fmt.Errorf("status esperado 201 ao criar compra no crédito, recebido %d: %s", e.lastResp.StatusCode, e.lastBodyText)
 	}
 	if id, ok := e.lastBody["id"].(string); ok && id != "" {
-		e.capturedCPID = id
+		e.capturedTxID = id
 	}
 	return nil
 }

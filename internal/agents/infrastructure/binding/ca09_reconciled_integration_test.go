@@ -19,7 +19,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
@@ -74,26 +73,16 @@ func (s *CA09ReconciledIntegrationSuite) SetupSuite() {
 		VALUES ($1, '+5511900000002', 'ACTIVE', now(), now())`, userID)
 	s.Require().NoError(err)
 
+	snapshot, err := valueobjects.NewCardBillingSnapshot(20, 25)
+	s.Require().NoError(err)
+
 	createTx := txusecases.NewCreateTransaction(
 		factory,
 		uow.NewUnitOfWork(db),
+		&stubCardLookup{snapshot: snapshot},
 		&ca09CategoryValidator{catID: catID},
 		services.TransactionWorkflow{},
 		&ca09TxPublisher{},
-		o11y,
-	)
-
-	snapshot, err := valueobjects.NewCardBillingSnapshot(20, 25)
-	s.Require().NoError(err)
-	cpWorkflow := services.NewCardPurchaseWorkflow()
-	createCP := txusecases.NewCreateCardPurchase(
-		factory,
-		&stubCardLookup{snapshot: snapshot},
-		&stubCategoryValidator{catID: catID},
-		&cpWorkflow,
-		&noopCPPublisher{},
-		uow.NewUnitOfWork(db),
-		id.NewUUIDGenerator(),
 		o11y,
 	)
 
@@ -101,7 +90,7 @@ func (s *CA09ReconciledIntegrationSuite) SetupSuite() {
 	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
 
 	s.adapter = binding.NewTransactionsLedgerAdapter(
-		createTx, createCP, nil, nil, nil, nil, listME, getMS, nil, nil, nil, nil, nil, o11y,
+		createTx, nil, nil, listME, getMS, nil, nil, nil, o11y,
 	)
 
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)

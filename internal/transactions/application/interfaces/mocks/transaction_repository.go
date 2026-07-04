@@ -117,6 +117,78 @@ func (_c *TransactionRepository_Create_Call) RunAndReturn(run func(ctx context.C
 	return _c
 }
 
+// ExistsActiveCreditByCard provides a mock function for the type TransactionRepository
+func (_mock *TransactionRepository) ExistsActiveCreditByCard(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) (bool, error) {
+	ret := _mock.Called(ctx, cardID, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExistsActiveCreditByCard")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) (bool, error)); ok {
+		return returnFunc(ctx, cardID, userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) bool); ok {
+		r0 = returnFunc(ctx, cardID, userID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, cardID, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionRepository_ExistsActiveCreditByCard_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExistsActiveCreditByCard'
+type TransactionRepository_ExistsActiveCreditByCard_Call struct {
+	*mock.Call
+}
+
+// ExistsActiveCreditByCard is a helper method to define mock.On call
+//   - ctx context.Context
+//   - cardID uuid.UUID
+//   - userID uuid.UUID
+func (_e *TransactionRepository_Expecter) ExistsActiveCreditByCard(ctx any, cardID any, userID any) *TransactionRepository_ExistsActiveCreditByCard_Call {
+	return &TransactionRepository_ExistsActiveCreditByCard_Call{Call: _e.mock.On("ExistsActiveCreditByCard", ctx, cardID, userID)}
+}
+
+func (_c *TransactionRepository_ExistsActiveCreditByCard_Call) Run(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID)) *TransactionRepository_ExistsActiveCreditByCard_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 uuid.UUID
+		if args[2] != nil {
+			arg2 = args[2].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionRepository_ExistsActiveCreditByCard_Call) Return(b bool, err error) *TransactionRepository_ExistsActiveCreditByCard_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *TransactionRepository_ExistsActiveCreditByCard_Call) RunAndReturn(run func(ctx context.Context, cardID uuid.UUID, userID uuid.UUID) (bool, error)) *TransactionRepository_ExistsActiveCreditByCard_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetByID provides a mock function for the type TransactionRepository
 func (_mock *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*entities.Transaction, error) {
 	ret := _mock.Called(ctx, id, userID)
@@ -187,6 +259,74 @@ func (_c *TransactionRepository_GetByID_Call) Return(transaction *entities.Trans
 }
 
 func (_c *TransactionRepository_GetByID_Call) RunAndReturn(run func(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*entities.Transaction, error)) *TransactionRepository_GetByID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetItemsByTransactionID provides a mock function for the type TransactionRepository
+func (_mock *TransactionRepository) GetItemsByTransactionID(ctx context.Context, txID uuid.UUID) ([]*entities.CardInvoiceItem, error) {
+	ret := _mock.Called(ctx, txID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetItemsByTransactionID")
+	}
+
+	var r0 []*entities.CardInvoiceItem
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) ([]*entities.CardInvoiceItem, error)); ok {
+		return returnFunc(ctx, txID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) []*entities.CardInvoiceItem); ok {
+		r0 = returnFunc(ctx, txID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*entities.CardInvoiceItem)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, txID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionRepository_GetItemsByTransactionID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetItemsByTransactionID'
+type TransactionRepository_GetItemsByTransactionID_Call struct {
+	*mock.Call
+}
+
+// GetItemsByTransactionID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - txID uuid.UUID
+func (_e *TransactionRepository_Expecter) GetItemsByTransactionID(ctx any, txID any) *TransactionRepository_GetItemsByTransactionID_Call {
+	return &TransactionRepository_GetItemsByTransactionID_Call{Call: _e.mock.On("GetItemsByTransactionID", ctx, txID)}
+}
+
+func (_c *TransactionRepository_GetItemsByTransactionID_Call) Run(run func(ctx context.Context, txID uuid.UUID)) *TransactionRepository_GetItemsByTransactionID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionRepository_GetItemsByTransactionID_Call) Return(cardInvoiceItems []*entities.CardInvoiceItem, err error) *TransactionRepository_GetItemsByTransactionID_Call {
+	_c.Call.Return(cardInvoiceItems, err)
+	return _c
+}
+
+func (_c *TransactionRepository_GetItemsByTransactionID_Call) RunAndReturn(run func(ctx context.Context, txID uuid.UUID) ([]*entities.CardInvoiceItem, error)) *TransactionRepository_GetItemsByTransactionID_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -279,6 +419,69 @@ func (_c *TransactionRepository_ListByMonth_Call) Return(transactions []*entitie
 }
 
 func (_c *TransactionRepository_ListByMonth_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth, cursor interfaces.Cursor, limit int) ([]*entities.Transaction, interfaces.Cursor, error)) *TransactionRepository_ListByMonth_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReplaceItems provides a mock function for the type TransactionRepository
+func (_mock *TransactionRepository) ReplaceItems(ctx context.Context, txID uuid.UUID, items []*entities.CardInvoiceItem) error {
+	ret := _mock.Called(ctx, txID, items)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReplaceItems")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, []*entities.CardInvoiceItem) error); ok {
+		r0 = returnFunc(ctx, txID, items)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// TransactionRepository_ReplaceItems_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReplaceItems'
+type TransactionRepository_ReplaceItems_Call struct {
+	*mock.Call
+}
+
+// ReplaceItems is a helper method to define mock.On call
+//   - ctx context.Context
+//   - txID uuid.UUID
+//   - items []*entities.CardInvoiceItem
+func (_e *TransactionRepository_Expecter) ReplaceItems(ctx any, txID any, items any) *TransactionRepository_ReplaceItems_Call {
+	return &TransactionRepository_ReplaceItems_Call{Call: _e.mock.On("ReplaceItems", ctx, txID, items)}
+}
+
+func (_c *TransactionRepository_ReplaceItems_Call) Run(run func(ctx context.Context, txID uuid.UUID, items []*entities.CardInvoiceItem)) *TransactionRepository_ReplaceItems_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 []*entities.CardInvoiceItem
+		if args[2] != nil {
+			arg2 = args[2].([]*entities.CardInvoiceItem)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionRepository_ReplaceItems_Call) Return(err error) *TransactionRepository_ReplaceItems_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *TransactionRepository_ReplaceItems_Call) RunAndReturn(run func(ctx context.Context, txID uuid.UUID, items []*entities.CardInvoiceItem) error) *TransactionRepository_ReplaceItems_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -444,12 +647,12 @@ func (_c *TransactionRepository_SoftDelete_Call) RunAndReturn(run func(ctx conte
 	return _c
 }
 
-// SumByMonth provides a mock function for the type TransactionRepository
-func (_mock *TransactionRepository) SumByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error) {
+// SumByMonthExcludingCredit provides a mock function for the type TransactionRepository
+func (_mock *TransactionRepository) SumByMonthExcludingCredit(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error) {
 	ret := _mock.Called(ctx, userID, refMonth)
 
 	if len(ret) == 0 {
-		panic("no return value specified for SumByMonth")
+		panic("no return value specified for SumByMonthExcludingCredit")
 	}
 
 	var r0 int64
@@ -476,20 +679,20 @@ func (_mock *TransactionRepository) SumByMonth(ctx context.Context, userID uuid.
 	return r0, r1, r2
 }
 
-// TransactionRepository_SumByMonth_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SumByMonth'
-type TransactionRepository_SumByMonth_Call struct {
+// TransactionRepository_SumByMonthExcludingCredit_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SumByMonthExcludingCredit'
+type TransactionRepository_SumByMonthExcludingCredit_Call struct {
 	*mock.Call
 }
 
-// SumByMonth is a helper method to define mock.On call
+// SumByMonthExcludingCredit is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID uuid.UUID
 //   - refMonth valueobjects.RefMonth
-func (_e *TransactionRepository_Expecter) SumByMonth(ctx any, userID any, refMonth any) *TransactionRepository_SumByMonth_Call {
-	return &TransactionRepository_SumByMonth_Call{Call: _e.mock.On("SumByMonth", ctx, userID, refMonth)}
+func (_e *TransactionRepository_Expecter) SumByMonthExcludingCredit(ctx any, userID any, refMonth any) *TransactionRepository_SumByMonthExcludingCredit_Call {
+	return &TransactionRepository_SumByMonthExcludingCredit_Call{Call: _e.mock.On("SumByMonthExcludingCredit", ctx, userID, refMonth)}
 }
 
-func (_c *TransactionRepository_SumByMonth_Call) Run(run func(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth)) *TransactionRepository_SumByMonth_Call {
+func (_c *TransactionRepository_SumByMonthExcludingCredit_Call) Run(run func(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth)) *TransactionRepository_SumByMonthExcludingCredit_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -512,12 +715,12 @@ func (_c *TransactionRepository_SumByMonth_Call) Run(run func(ctx context.Contex
 	return _c
 }
 
-func (_c *TransactionRepository_SumByMonth_Call) Return(incomeCents int64, outcomeCents int64, err error) *TransactionRepository_SumByMonth_Call {
+func (_c *TransactionRepository_SumByMonthExcludingCredit_Call) Return(incomeCents int64, outcomeCents int64, err error) *TransactionRepository_SumByMonthExcludingCredit_Call {
 	_c.Call.Return(incomeCents, outcomeCents, err)
 	return _c
 }
 
-func (_c *TransactionRepository_SumByMonth_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error)) *TransactionRepository_SumByMonth_Call {
+func (_c *TransactionRepository_SumByMonthExcludingCredit_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error)) *TransactionRepository_SumByMonthExcludingCredit_Call {
 	_c.Call.Return(run)
 	return _c
 }

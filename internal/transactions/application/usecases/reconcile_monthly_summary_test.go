@@ -56,7 +56,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_NoDrift_NoUpdate() {
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
 	s.txRepo.EXPECT().
-		SumByMonth(mock.Anything, userID, rm).
+		SumByMonthExcludingCredit(mock.Anything, userID, rm).
 		Return(int64(50000), int64(20000), nil).Once()
 
 	s.invoiceRepo.EXPECT().
@@ -83,7 +83,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_WithDrift_Corrects() {
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
 	s.txRepo.EXPECT().
-		SumByMonth(mock.Anything, userID, rm).
+		SumByMonthExcludingCredit(mock.Anything, userID, rm).
 		Return(int64(60000), int64(20000), nil).Once()
 
 	s.invoiceRepo.EXPECT().
@@ -114,7 +114,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_SummaryAbsent_Upserts() {
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
 	s.txRepo.EXPECT().
-		SumByMonth(mock.Anything, userID, rm).
+		SumByMonthExcludingCredit(mock.Anything, userID, rm).
 		Return(int64(30000), int64(10000), nil).Once()
 
 	s.invoiceRepo.EXPECT().
@@ -157,7 +157,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_TxRepoError_ReturnsError() {
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
 	s.txRepo.EXPECT().
-		SumByMonth(mock.Anything, userID, rm).
+		SumByMonthExcludingCredit(mock.Anything, userID, rm).
 		Return(int64(0), int64(0), errors.New("db error")).Once()
 
 	uc := NewReconcileMonthlySummary(s.txRepo, s.invoiceRepo, s.summaryRepo, 48, fake.NewProvider())
@@ -175,7 +175,7 @@ func (s *ReconcileMonthlySummarySuite) TestExecute_CardInvoiceRepoError_ReturnsE
 		Return([]interfaces.MonthlySummaryKey{key}, interfaces.Cursor{}, nil).Once()
 
 	s.txRepo.EXPECT().
-		SumByMonth(mock.Anything, userID, rm).
+		SumByMonthExcludingCredit(mock.Anything, userID, rm).
 		Return(int64(50000), int64(10000), nil).Once()
 
 	s.invoiceRepo.EXPECT().

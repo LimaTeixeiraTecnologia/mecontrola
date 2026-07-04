@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-crud-unificado/5.0_execution_report.md
+summary: Validação de categorias (raiz RF-17, filha direta RF-18, kind↔direction RF-19/20/21) implementada; snapshot com Kind/ParentID e Name real; guards no use case; cache-hit RF-18 corrigido.
+timestamp: 2026-07-04T11:00:22Z

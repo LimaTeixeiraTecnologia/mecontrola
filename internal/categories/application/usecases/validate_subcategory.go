@@ -13,10 +13,14 @@ import (
 )
 
 var ErrSubcategoryNotRoot = errors.New("categories: subcategoria é uma raiz, não uma subcategoria")
+var ErrSubcategoryNotDirectChild = errors.New("categories: subcategoria não é filha direta da categoria raiz")
 
 type ValidateSubcategoryResult struct {
-	ParentSlug string
-	Deprecated bool
+	ParentSlug   string
+	CategoryName string
+	ParentName   string
+	Kind         string
+	Deprecated   bool
 }
 
 type ValidateSubcategory struct {
@@ -28,7 +32,7 @@ func NewValidateSubcategory(repo interfaces.CategoryRepository, o11y observabili
 	return &ValidateSubcategory{repo: repo, o11y: o11y}
 }
 
-func (uc *ValidateSubcategory) Execute(ctx context.Context, id uuid.UUID) (ValidateSubcategoryResult, error) {
+func (uc *ValidateSubcategory) Execute(ctx context.Context, id uuid.UUID, expectedParentID uuid.UUID) (ValidateSubcategoryResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "categories.usecase.validate_subcategory")
 	defer span.End()
 
@@ -45,6 +49,10 @@ func (uc *ValidateSubcategory) Execute(ctx context.Context, id uuid.UUID) (Valid
 		return ValidateSubcategoryResult{}, ErrSubcategoryNotRoot
 	}
 
+	if expectedParentID != uuid.Nil && *category.ParentID != expectedParentID {
+		return ValidateSubcategoryResult{}, ErrSubcategoryNotDirectChild
+	}
+
 	parent, err := uc.repo.GetByID(ctx, *category.ParentID)
 	if err != nil {
 		span.RecordError(err)
@@ -52,8 +60,11 @@ func (uc *ValidateSubcategory) Execute(ctx context.Context, id uuid.UUID) (Valid
 	}
 
 	return ValidateSubcategoryResult{
-		ParentSlug: uc.buildRootSlug(parent),
-		Deprecated: !category.IsActive(),
+		ParentSlug:   uc.buildRootSlug(parent),
+		CategoryName: category.Name,
+		ParentName:   parent.Name,
+		Kind:         category.Kind.String(),
+		Deprecated:   !category.IsActive(),
 	}, nil
 }
 

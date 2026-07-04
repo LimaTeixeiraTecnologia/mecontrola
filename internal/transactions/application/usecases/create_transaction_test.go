@@ -24,14 +24,16 @@ import (
 
 type CreateTransactionSuite struct {
 	suite.Suite
-	ctx       context.Context
-	userID    uuid.UUID
-	factory   *mockInterfaces.RepositoryFactory
-	repo      *mockInterfaces.TransactionRepository
-	catVal    *mockInterfaces.CategoryValidator
-	publisher *mockInterfaces.TransactionEventPublisher
-	uow       *uowMocks.UnitOfWorkTransaction
-	useCase   *CreateTransaction
+	ctx         context.Context
+	userID      uuid.UUID
+	factory     *mockInterfaces.RepositoryFactory
+	repo        *mockInterfaces.TransactionRepository
+	catVal      *mockInterfaces.CategoryValidator
+	cardLookup  *mockInterfaces.CardLookup
+	invoiceRepo *mockInterfaces.CardInvoiceRepository
+	publisher   *mockInterfaces.TransactionEventPublisher
+	uow         *uowMocks.UnitOfWorkTransaction
+	useCase     *CreateTransaction
 }
 
 func TestCreateTransactionSuite(t *testing.T) {
@@ -44,11 +46,14 @@ func (s *CreateTransactionSuite) SetupTest() {
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewTransactionRepository(s.T())
 	s.factory.EXPECT().TransactionRepository(mock.Anything).Return(s.repo).Maybe()
+	s.invoiceRepo = mockInterfaces.NewCardInvoiceRepository(s.T())
+	s.factory.EXPECT().CardInvoiceRepository(mock.Anything).Return(s.invoiceRepo).Maybe()
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
+	s.cardLookup = mockInterfaces.NewCardLookup(s.T())
 	s.publisher = mockInterfaces.NewTransactionEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkTransaction(s.T())
 	s.useCase = NewCreateTransaction(
-		s.factory, s.uow, s.catVal,
+		s.factory, s.uow, s.cardLookup, s.catVal,
 		services.TransactionWorkflow{}, s.publisher,
 		fake.NewProvider(),
 	)
@@ -209,6 +214,98 @@ func (s *CreateTransactionSuite) TestExecute_Replay_DoesNotPublish() {
 	s.Require().NoError(err)
 	s.Equal(canonicalID, result.ID)
 	s.publisher.AssertNotCalled(s.T(), "PublishCreated", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *CreateTransactionSuite) TestExecute_CreditCard_CreatesInvoiceItems() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	cardID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Eletrônicos", ParentName: "Compras"}
+	snapshot, _ := valueobjects.NewCardBillingSnapshot(10, 20)
+
+	rm, _ := valueobjects.NewRefMonth("2026-07")
+	userIDVO := valueobjects.UserIDFromUUID(s.userID)
+	cardIDVO := valueobjects.CardIDFromUUID(cardID)
+	now := time.Now().UTC()
+	inv := entities.NewCardInvoice(uuid.New(), userIDVO, cardIDVO, rm, now, now, now)
+
+	s.cardLookup.EXPECT().GetForUser(mock.Anything, cardID, s.userID).Return(snapshot, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
+	s.invoiceRepo.EXPECT().
+		UpsertByMonth(mock.Anything, s.userID, cardID, mock.Anything, mock.Anything, mock.Anything).
+		Return(&inv, nil).Times(3)
+	s.invoiceRepo.EXPECT().
+		ApplyDelta(mock.Anything, inv.ID(), mock.AnythingOfType("int64"), int64(1)).
+		Return(nil).Times(3)
+	s.repo.EXPECT().ReplaceItems(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	s.publisher.EXPECT().
+		PublishCreated(mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ database.DBTX, evt entities.TransactionCreated) {
+			s.Len(evt.Installments, 3)
+		}).
+		Return(nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "credit_card",
+		AmountCents:   30000,
+		Description:   "Notebook",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		CardID:        &cardID,
+		Installments:  3,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().NoError(err)
+	s.Equal("credit_card", result.PaymentMethod)
+	s.Equal(int64(30000), result.AmountCents)
+}
+
+func (s *CreateTransactionSuite) TestExecute_NonCreditCard_DoesNotLookupCard() {
+	catID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Salário"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
+	s.publisher.EXPECT().PublishCreated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "income",
+		PaymentMethod: "pix",
+		AmountCents:   50000,
+		Description:   "Renda",
+		CategoryID:    catID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().NoError(err)
+	s.cardLookup.AssertNotCalled(s.T(), "GetForUser", mock.Anything, mock.Anything, mock.Anything)
+	s.invoiceRepo.AssertNotCalled(s.T(), "UpsertByMonth", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *CreateTransactionSuite) TestExecute_CreditCard_LookupError() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	cardID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Eletrônicos", ParentName: "Compras"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.cardLookup.EXPECT().GetForUser(mock.Anything, cardID, s.userID).Return(valueobjects.CardBillingSnapshot{}, interfaces.ErrCardNotFound).Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "credit_card",
+		AmountCents:   30000,
+		Description:   "Notebook",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		CardID:        &cardID,
+		Installments:  3,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().Error(err)
+	s.repo.AssertNotCalled(s.T(), "Create", mock.Anything, mock.Anything)
 }
 
 func (s *CreateTransactionSuite) newPersistedTransaction(id, catID uuid.UUID) *entities.Transaction {

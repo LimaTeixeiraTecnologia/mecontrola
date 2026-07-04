@@ -21,8 +21,6 @@ func mapError(w http.ResponseWriter, span observability.Span, err error, _ ...er
 	case errors.Is(err, interfaces.ErrTransactionNotFound),
 		errors.Is(err, usecases.ErrTransactionNotFound),
 		errors.Is(err, usecases.ErrCardInvoiceNotFound),
-		errors.Is(err, usecases.ErrCardPurchaseNotFound),
-		errors.Is(err, repopkg.ErrCardPurchaseNotFound),
 		errors.Is(err, repopkg.ErrRecurringTemplateNotFound),
 		errors.Is(err, interfaces.ErrCardNotFound):
 		span.SetAttributes(observability.String("outcome", "not_found"))
@@ -33,17 +31,14 @@ func mapError(w http.ResponseWriter, span observability.Span, err error, _ ...er
 	case errors.Is(err, usecases.ErrOutcomeTransactionRequiresSubcategory):
 		span.SetAttributes(observability.String("outcome", "validation_error"))
 		responses.ErrorWithDetails(w, http.StatusBadRequest, err.Error(), map[string]string{"code": "validation_error"})
+	case errors.Is(err, usecases.ErrPaymentMethodMigrationNotAllowed):
+		span.SetAttributes(observability.String("outcome", "unprocessable"))
+		responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, err.Error(), map[string]string{"code": "payment_migration_forbidden"})
 	case errors.Is(err, interfaces.ErrTransactionVersionConflict),
-		errors.Is(err, usecases.ErrTransactionVersionConflict):
+		errors.Is(err, usecases.ErrTransactionVersionConflict),
+		errors.Is(err, repopkg.ErrRecurringTemplateVersionConflict):
 		span.SetAttributes(observability.String("outcome", "conflict"))
-		responses.ErrorWithDetails(w, http.StatusConflict, "conflito de versão no lançamento", map[string]string{"code": "transaction_version_conflict"})
-	case errors.Is(err, repopkg.ErrCardPurchaseVersionConflict),
-		errors.Is(err, usecases.ErrCardPurchaseConflict):
-		span.SetAttributes(observability.String("outcome", "conflict"))
-		responses.ErrorWithDetails(w, http.StatusConflict, "conflito de versão na compra de cartão", map[string]string{"code": "card_purchase_version_conflict"})
-	case errors.Is(err, repopkg.ErrRecurringTemplateVersionConflict):
-		span.SetAttributes(observability.String("outcome", "conflict"))
-		responses.ErrorWithDetails(w, http.StatusConflict, "conflito de versão no template recorrente", map[string]string{"code": "conflict"})
+		responses.ErrorWithDetails(w, http.StatusConflict, "conflito de versão", map[string]string{"code": "version_conflict"})
 	case errors.Is(err, client.ErrCardLookupFailed):
 		span.SetAttributes(observability.String("outcome", "card_lookup_failed"))
 		responses.ErrorWithDetails(w, http.StatusBadGateway, "falha ao consultar cartão", map[string]string{"code": "card_lookup_failed"})

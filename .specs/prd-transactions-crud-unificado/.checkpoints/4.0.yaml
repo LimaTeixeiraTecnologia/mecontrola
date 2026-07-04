@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-crud-unificado/4.0_execution_report.md
+summary: Use cases create/update/delete unificados com fluxo credit_card atômico no UoW; fonte única do resumo; APPROVED_WITH_REMARKS
+timestamp: 2026-07-04T11:41:40Z

@@ -205,7 +205,7 @@ func (s *TransactionRepositorySuite) TestSumByMonth() {
 	s.Require().NoError(createTx(repo, ctx, &txOut))
 	s.Require().NoError(createTx(repo, ctx, &txIn))
 
-	income, outcome, err := repo.SumByMonth(ctx, userID, rm)
+	income, outcome, err := repo.SumByMonthExcludingCredit(ctx, userID, rm)
 	s.Require().NoError(err)
 	s.Equal(int64(10000), income)
 	s.Equal(int64(3000), outcome)

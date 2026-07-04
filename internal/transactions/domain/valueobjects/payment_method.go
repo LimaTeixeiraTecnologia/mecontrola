@@ -19,6 +19,8 @@ const (
 	PaymentMethodBoleto
 	PaymentMethodCreditCard
 	PaymentMethodDoc
+	PaymentMethodMealVoucher
+	PaymentMethodFoodVoucher
 )
 
 func ParsePaymentMethod(s string) (PaymentMethod, error) {
@@ -39,6 +41,10 @@ func ParsePaymentMethod(s string) (PaymentMethod, error) {
 		return PaymentMethodCreditCard, nil
 	case "doc":
 		return PaymentMethodDoc, nil
+	case "vale_refeicao":
+		return PaymentMethodMealVoucher, nil
+	case "vale_alimentacao":
+		return PaymentMethodFoodVoucher, nil
 	default:
 		return 0, fmt.Errorf("transactions: %q: %w", s, ErrPaymentMethodUnknown)
 	}
@@ -52,10 +58,14 @@ func ParsePaymentMethodForCreate(s string) (PaymentMethod, error) {
 }
 
 func PaymentMethodFromInt(v int) (PaymentMethod, error) {
-	if v < 1 || v > 8 {
+	if v < 1 || v > 10 {
 		return 0, fmt.Errorf("transactions: payment method int %d: %w", v, ErrPaymentMethodUnknown)
 	}
 	return PaymentMethod(v), nil
+}
+
+func (p PaymentMethod) IsCreditCard() bool {
+	return p == PaymentMethodCreditCard
 }
 
 func (p PaymentMethod) String() string {
@@ -76,6 +86,10 @@ func (p PaymentMethod) String() string {
 		return "credit_card"
 	case PaymentMethodDoc:
 		return "doc"
+	case PaymentMethodMealVoucher:
+		return "vale_refeicao"
+	case PaymentMethodFoodVoucher:
+		return "vale_alimentacao"
 	default:
 		return ""
 	}

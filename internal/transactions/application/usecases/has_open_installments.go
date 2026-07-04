@@ -36,8 +36,8 @@ func (uc *HasOpenInstallments) Execute(ctx context.Context, cardID, userID uuid.
 	defer span.End()
 
 	result, err := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (bool, error) {
-		repo := uc.factory.CardPurchaseRepository(db)
-		exists, checkErr := repo.ExistsActiveByCardAndUser(ctx, cardID, userID)
+		repo := uc.factory.TransactionRepository(db)
+		exists, checkErr := repo.ExistsActiveCreditByCard(ctx, cardID, userID)
 		if checkErr != nil {
 			return false, fmt.Errorf("transactions/has_open_installments: verificar parcelas: %w", checkErr)
 		}

@@ -62,34 +62,6 @@ func (d *dummyListTxUC) Execute(_ context.Context, _, _ string, _ int) (usecases
 	return usecases.TransactionPage{}, nil
 }
 
-type dummyCreateCPUC struct{}
-
-func (d *dummyCreateCPUC) Execute(_ context.Context, _ dtoinput.RawCreateCardPurchase) (dtooutput.CardPurchase, error) {
-	return dtooutput.CardPurchase{}, nil
-}
-
-type dummyUpdateCPUC struct{}
-
-func (d *dummyUpdateCPUC) Execute(_ context.Context, _ uuid.UUID, _ dtoinput.RawUpdateCardPurchase) (dtooutput.CardPurchase, error) {
-	return dtooutput.CardPurchase{}, nil
-}
-
-type dummyDeleteCPUC struct{}
-
-func (d *dummyDeleteCPUC) Execute(_ context.Context, _ uuid.UUID, _ int64) error { return nil }
-
-type dummyGetCPUC struct{}
-
-func (d *dummyGetCPUC) Execute(_ context.Context, _ uuid.UUID) (dtooutput.CardPurchase, error) {
-	return dtooutput.CardPurchase{}, nil
-}
-
-type dummyListCPUC struct{}
-
-func (d *dummyListCPUC) Execute(_ context.Context, _ usecases.ListCardPurchasesInput) (usecases.ListCardPurchasesOutput, error) {
-	return usecases.ListCardPurchasesOutput{}, nil
-}
-
 type dummyCreateRTUC struct{}
 
 func (d *dummyCreateRTUC) Execute(_ context.Context, _ dtoinput.RawCreateRecurringTemplate) (dtooutput.RecurringTemplate, error) {
@@ -143,11 +115,6 @@ func buildRouter(t *testing.T) *txserver.TransactionsRouter {
 		handlers.NewDeleteTransactionHandler(&dummyDeleteTxUC{}, o11y),
 		handlers.NewGetTransactionHandler(&dummyGetTxUC{}, o11y),
 		handlers.NewListTransactionsHandler(&dummyListTxUC{}, o11y),
-		handlers.NewCreateCardPurchaseHandler(&dummyCreateCPUC{}, o11y),
-		handlers.NewUpdateCardPurchaseHandler(&dummyUpdateCPUC{}, o11y),
-		handlers.NewDeleteCardPurchaseHandler(&dummyDeleteCPUC{}, o11y),
-		handlers.NewGetCardPurchaseHandler(&dummyGetCPUC{}, o11y),
-		handlers.NewListCardPurchasesHandler(&dummyListCPUC{}, o11y),
 		handlers.NewCreateRecurringTemplateHandler(&dummyCreateRTUC{}, o11y),
 		handlers.NewUpdateRecurringTemplateHandler(&dummyUpdateRTUC{}, o11y),
 		handlers.NewDeleteRecurringTemplateHandler(&dummyDeleteRTUC{}, o11y),
@@ -181,11 +148,6 @@ func TestRouterRegistersAllTransactionRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/transactions/" + uuid.New().String()},
 		{http.MethodPatch, "/api/v1/transactions/" + uuid.New().String()},
 		{http.MethodDelete, "/api/v1/transactions/" + uuid.New().String()},
-		{http.MethodPost, "/api/v1/card-purchases"},
-		{http.MethodGet, "/api/v1/card-purchases"},
-		{http.MethodGet, "/api/v1/card-purchases/" + uuid.New().String()},
-		{http.MethodPatch, "/api/v1/card-purchases/" + uuid.New().String()},
-		{http.MethodDelete, "/api/v1/card-purchases/" + uuid.New().String()},
 		{http.MethodPost, "/api/v1/recurring-templates"},
 		{http.MethodGet, "/api/v1/recurring-templates"},
 		{http.MethodGet, "/api/v1/recurring-templates/" + uuid.New().String()},
@@ -199,6 +161,28 @@ func TestRouterRegistersAllTransactionRoutes(t *testing.T) {
 		mux.ServeHTTP(rec, req)
 		assert.NotEqual(t, http.StatusNotFound, rec.Code, "route not registered: %s %s", tc.method, tc.path)
 		assert.NotEqual(t, http.StatusMethodNotAllowed, rec.Code, "method not allowed: %s %s", tc.method, tc.path)
+	}
+}
+
+func TestRouterCardPurchaseRoutesRemoved(t *testing.T) {
+	router := buildRouter(t)
+	mux := chi.NewRouter()
+	router.Register(mux)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/card-purchases"},
+		{http.MethodGet, "/api/v1/card-purchases"},
+		{http.MethodGet, "/api/v1/card-purchases/" + uuid.New().String()},
+		{http.MethodPatch, "/api/v1/card-purchases/" + uuid.New().String()},
+		{http.MethodDelete, "/api/v1/card-purchases/" + uuid.New().String()},
+	} {
+		req := withAuthPrincipal(httptest.NewRequest(tc.method, tc.path, nil))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusNotFound, rec.Code, "route should be removed: %s %s", tc.method, tc.path)
 	}
 }
 

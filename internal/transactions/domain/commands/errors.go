@@ -14,3 +14,4 @@ var ErrCommandInvalidFrequency = errors.New("transactions/commands: frequency in
 var ErrCommandInvalidDayOfMonth = errors.New("transactions/commands: day_of_month inválido")
 var ErrCommandMissingOccurredAt = errors.New("transactions/commands: occurred_at obrigatório")
 var ErrCommandCreditCardRequiresCardID = errors.New("transactions/commands: credit_card requer card_id")
+var ErrCommandCreditCardRequiresOutcome = errors.New("transactions/commands: credit_card requer direction outcome")

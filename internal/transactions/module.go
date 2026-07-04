@@ -15,7 +15,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
@@ -48,14 +47,9 @@ type TransactionsModule struct {
 	UpdateTransactionUC             *usecases.UpdateTransaction
 	DeleteTransactionUC             *usecases.DeleteTransaction
 	GetTransactionUC                *usecases.GetTransaction
-	CreateCardPurchaseUC            *usecases.CreateCardPurchase
-	UpdateCardPurchaseUC            *usecases.UpdateCardPurchase
-	DeleteCardPurchaseUC            *usecases.DeleteCardPurchase
 	GetMonthlySummaryUC             *usecases.GetMonthlySummary
 	ListMonthlyEntriesUC            *usecases.ListMonthlyEntries
 	HasOpenInstallmentsUC           *usecases.HasOpenInstallments
-	GetCardPurchaseUC               *usecases.GetCardPurchase
-	ListCardPurchasesUC             *usecases.ListCardPurchases
 	GetCardInvoiceUC                *usecases.GetCardInvoice
 	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
 	UpdateRecurringTemplateUC       *usecases.UpdateRecurringTemplate
@@ -104,7 +98,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 
 	factory := repositories.NewRepositoryFactory(b.o11y)
 	outboxFactory := outbox.NewRepositoryFactory(b.o11y)
-	idGen := id.NewUUIDGenerator()
 	idemStorage := idempotency.NewPostgresStorage(b.db)
 
 	categoriesCache, err := b.buildCategoriesCache()
@@ -115,10 +108,8 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	cardLookup := client.NewCardLookupAdapter(b.cardModule.CardLookup, b.o11y)
 
 	txPublisher := producers.NewTransactionEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
-	cpPublisher := producers.NewCardPurchaseEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
 
 	txWorkflow := services.TransactionWorkflow{}
-	cpWorkflow := services.NewCardPurchaseWorkflow()
 	recurringWorkflow := services.RecurringWorkflow{}
 
 	db := b.db
@@ -126,6 +117,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	createTx := usecases.NewCreateTransaction(
 		factory,
 		uow.NewUnitOfWork(b.db),
+		cardLookup,
 		categoriesCache,
 		txWorkflow,
 		txPublisher,
@@ -142,6 +134,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	deleteTx := usecases.NewDeleteTransaction(
 		factory,
 		uow.NewUnitOfWork(b.db),
+		txWorkflow,
 		txPublisher,
 		b.o11y,
 	)
@@ -162,43 +155,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		b.o11y,
 	)
 
-	createCP := usecases.NewCreateCardPurchase(
-		factory,
-		cardLookup,
-		categoriesCache,
-		&cpWorkflow,
-		cpPublisher,
-		uow.NewUnitOfWork(b.db),
-		idGen,
-		b.o11y,
-	)
-	updateCP := usecases.NewUpdateCardPurchase(
-		factory,
-		categoriesCache,
-		&cpWorkflow,
-		cpPublisher,
-		uow.NewUnitOfWork(b.db),
-		idGen,
-		b.o11y,
-	)
-	deleteCP := usecases.NewDeleteCardPurchase(
-		factory,
-		&cpWorkflow,
-		cpPublisher,
-		uow.NewUnitOfWork(b.db),
-		idGen,
-		b.o11y,
-	)
-	getCP := usecases.NewGetCardPurchase(
-		factory,
-		uow.NewUnitOfWork(b.db),
-		b.o11y,
-	)
-	listCP := usecases.NewListCardPurchases(
-		factory,
-		uow.NewUnitOfWork(b.db),
-		b.o11y,
-	)
 	getCI := usecases.NewGetCardInvoice(
 		factory,
 		uow.NewUnitOfWork(b.db),
@@ -272,7 +228,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		uow.NewUnitOfWork(b.db),
 		recurringWorkflow,
 		createTx,
-		createCP,
 		brazilLoc,
 		b.o11y,
 	)
@@ -293,11 +248,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		handlers.NewDeleteTransactionHandler(deleteTx, b.o11y),
 		handlers.NewGetTransactionHandler(getTx, b.o11y),
 		handlers.NewListTransactionsHandler(listTx, b.o11y),
-		handlers.NewCreateCardPurchaseHandler(createCP, b.o11y),
-		handlers.NewUpdateCardPurchaseHandler(updateCP, b.o11y),
-		handlers.NewDeleteCardPurchaseHandler(deleteCP, b.o11y),
-		handlers.NewGetCardPurchaseHandler(getCP, b.o11y),
-		handlers.NewListCardPurchasesHandler(listCP, b.o11y),
 		handlers.NewCreateRecurringTemplateHandler(createRT, b.o11y),
 		handlers.NewUpdateRecurringTemplateHandler(updateRT, b.o11y),
 		handlers.NewDeleteRecurringTemplateHandler(deleteRT, b.o11y),
@@ -327,11 +277,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		UpdateTransactionUC:             updateTx,
 		DeleteTransactionUC:             deleteTx,
 		GetTransactionUC:                getTx,
-		CreateCardPurchaseUC:            createCP,
-		UpdateCardPurchaseUC:            updateCP,
-		DeleteCardPurchaseUC:            deleteCP,
-		GetCardPurchaseUC:               getCP,
-		ListCardPurchasesUC:             listCP,
 		GetCardInvoiceUC:                getCI,
 		UpdateRecurringTemplateUC:       updateRT,
 		DeleteRecurringTemplateUC:       deleteRT,
@@ -345,9 +290,6 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 			{EventType: "transactions.transaction.created.v1", Handler: recomputeConsumer},
 			{EventType: "transactions.transaction.updated.v1", Handler: recomputeConsumer},
 			{EventType: "transactions.transaction.deleted.v1", Handler: recomputeConsumer},
-			{EventType: "transactions.card_purchase.created.v1", Handler: recomputeConsumer},
-			{EventType: "transactions.card_purchase.updated.v1", Handler: recomputeConsumer},
-			{EventType: "transactions.card_purchase.deleted.v1", Handler: recomputeConsumer},
 		},
 	}, nil
 }

@@ -168,16 +168,11 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	)
 	txLedger := binding.NewTransactionsLedgerAdapter(
 		deps.TransactionsModule.CreateTransactionUC,
-		deps.TransactionsModule.CreateCardPurchaseUC,
 		deps.TransactionsModule.UpdateTransactionUC,
 		deps.TransactionsModule.DeleteTransactionUC,
-		deps.TransactionsModule.UpdateCardPurchaseUC,
-		deps.TransactionsModule.DeleteCardPurchaseUC,
 		deps.TransactionsModule.ListMonthlyEntriesUC,
 		deps.TransactionsModule.GetMonthlySummaryUC,
 		deps.TransactionsModule.GetTransactionUC,
-		deps.TransactionsModule.GetCardPurchaseUC,
-		deps.TransactionsModule.ListCardPurchasesUC,
 		deps.TransactionsModule.GetCardInvoiceUC,
 		deps.TransactionsModule.SearchTransactionsUC,
 		deps.O11y,
@@ -225,7 +220,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	runStore := agentpostgres.NewRunStore(deps.DB)
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y,
-		agent.WithWriteToolSet("register_expense", "register_income", "register_card_purchase", "create_recurrence"),
+		agent.WithWriteToolSet("register_expense", "register_income", "create_recurrence"),
 	)
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
 
@@ -280,7 +275,6 @@ func buildFinancialTools(
 	return []tool.ToolHandle{
 		agenttools.BuildRegisterExpenseTool(registerEntry),
 		agenttools.BuildRegisterIncomeTool(registerEntry),
-		agenttools.BuildRegisterCardPurchaseTool(registerEntry),
 		agenttools.BuildQueryMonthTool(ledger),
 		agenttools.BuildQueryPlanTool(planner),
 		agenttools.BuildEditEntryTool(confirmEngine, confirmDef),
@@ -297,8 +291,6 @@ func buildFinancialTools(
 		agenttools.BuildBestPurchaseDayTool(cards),
 		agenttools.BuildQueryCardInvoiceTool(ledger),
 		agenttools.BuildGetTransactionTool(ledger),
-		agenttools.BuildGetCardPurchaseTool(ledger),
-		agenttools.BuildListCardPurchasesTool(ledger),
 		agenttools.BuildSearchTransactionsTool(ledger),
 		agenttools.BuildListRecurrencesTool(recurrences),
 		agenttools.BuildCreateRecurrenceTool(recurrences, writer),

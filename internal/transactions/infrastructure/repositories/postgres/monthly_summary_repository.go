@@ -231,7 +231,7 @@ func buildEntriesQuery(userID uuid.UUID, refMonth valueobjects.RefMonth, cursor 
 		q := `
 			SELECT 'transaction' AS kind, id::text, user_id, ref_month, amount_cents, direction, description, created_at
 			  FROM mecontrola.transactions
-			 WHERE user_id = $1 AND ref_month = $2 AND deleted_at IS NULL
+			 WHERE user_id = $1 AND ref_month = $2 AND payment_method <> 7 AND deleted_at IS NULL
 			UNION ALL
 			SELECT 'card_invoice_item', i.id::text, i.user_id, i.ref_month, i.amount_cents, 2, '', i.created_at
 			  FROM mecontrola.transactions_card_invoice_items i
@@ -244,7 +244,7 @@ func buildEntriesQuery(userID uuid.UUID, refMonth valueobjects.RefMonth, cursor 
 	q := `
 		SELECT 'transaction' AS kind, id::text, user_id, ref_month, amount_cents, direction, description, created_at
 		  FROM mecontrola.transactions
-		 WHERE user_id = $1 AND ref_month = $2 AND deleted_at IS NULL AND (created_at, id::text) < ($3, $4)
+		 WHERE user_id = $1 AND ref_month = $2 AND payment_method <> 7 AND deleted_at IS NULL AND (created_at, id::text) < ($3, $4)
 		UNION ALL
 		SELECT 'card_invoice_item', i.id::text, i.user_id, i.ref_month, i.amount_cents, 2, '', i.created_at
 		  FROM mecontrola.transactions_card_invoice_items i

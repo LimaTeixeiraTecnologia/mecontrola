@@ -82,10 +82,6 @@ func (f *integrationRepositoryFactory) TransactionRepository(db database.DBTX) i
 	return txpostgres.NewTransactionRepository(f.o11y, db)
 }
 
-func (f *integrationRepositoryFactory) CardPurchaseRepository(db database.DBTX) interfaces.CardPurchaseRepository {
-	return txpostgres.NewCardPurchaseRepository(f.o11y, db)
-}
-
 func (f *integrationRepositoryFactory) CardInvoiceRepository(db database.DBTX) interfaces.CardInvoiceRepository {
 	return txpostgres.NewCardInvoiceRepository(f.o11y, db)
 }

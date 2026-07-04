@@ -18,22 +18,31 @@ import (
 )
 
 const (
-	transactionExpenseSource = "transactions"
-	directionOutcome         = 2
+	transactionExpenseSource     = "transactions"
+	transactionCardExpenseSource = "transactions_card"
+	directionOutcome             = 2
 )
 
 type upsertExpenseUseCase interface {
 	Execute(ctx context.Context, in input.UpsertExpenseInput) (output.ExpenseOutput, error)
 }
 
+type transactionInstallmentPayload struct {
+	ItemID      string `json:"item_id"`
+	RefMonth    string `json:"ref_month"`
+	AmountCents int64  `json:"amount_cents"`
+	Index       int    `json:"index"`
+}
+
 type transactionCreatedPayload struct {
-	AggregateID   string    `json:"aggregate_id"`
-	UserID        string    `json:"user_id"`
-	OccurredAt    time.Time `json:"occurred_at"`
-	Direction     int       `json:"direction"`
-	AmountCents   int64     `json:"amount_cents"`
-	RefMonth      string    `json:"ref_month"`
-	SubcategoryID string    `json:"subcategory_id"`
+	AggregateID   string                          `json:"aggregate_id"`
+	UserID        string                          `json:"user_id"`
+	OccurredAt    time.Time                       `json:"occurred_at"`
+	Direction     int                             `json:"direction"`
+	AmountCents   int64                           `json:"amount_cents"`
+	RefMonth      string                          `json:"ref_month"`
+	SubcategoryID string                          `json:"subcategory_id"`
+	Installments  []transactionInstallmentPayload `json:"installments"`
 }
 
 type TransactionCreatedConsumer struct {
@@ -95,6 +104,10 @@ func (c *TransactionCreatedConsumer) Handle(ctx context.Context, event platforme
 		return nil
 	}
 
+	if len(p.Installments) > 0 {
+		return c.applyInstallments(ctx, p)
+	}
+
 	_, err := c.upsert.Execute(ctx, input.UpsertExpenseInput{
 		UserID:                p.UserID,
 		Source:                transactionExpenseSource,
@@ -113,4 +126,27 @@ func (c *TransactionCreatedConsumer) Handle(ctx context.Context, event platforme
 	}
 
 	return nil
+}
+
+func (c *TransactionCreatedConsumer) applyInstallments(ctx context.Context, p transactionCreatedPayload) error {
+	var errs []error
+	for _, inst := range p.Installments {
+		_, err := c.upsert.Execute(ctx, input.UpsertExpenseInput{
+			UserID:                p.UserID,
+			Source:                transactionCardExpenseSource,
+			ExternalTransactionID: inst.ItemID,
+			SubcategoryID:         p.SubcategoryID,
+			Competence:            inst.RefMonth,
+			AmountCents:           inst.AmountCents,
+			OccurredAt:            p.OccurredAt,
+		})
+		if err != nil {
+			if errors.Is(err, appinterfaces.ErrExpenseTombstoneConflict) {
+				c.skipped.Add(ctx, 1, observability.String("reason", "tombstone"))
+				continue
+			}
+			errs = append(errs, fmt.Errorf("budgets.consumer.transaction_created: upsert installment %s: %w", inst.ItemID, err))
+		}
+	}
+	return errors.Join(errs...)
 }

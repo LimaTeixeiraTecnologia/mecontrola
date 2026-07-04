@@ -366,9 +366,9 @@ func (s *DestructiveConfirmSuite) TestCancel_DeterministicCleanup() {
 	s.Equal(workflow.RunStatusSucceeded, snap.Status, "run deve estar Succeeded após cancelamento")
 }
 
-func (s *DestructiveConfirmSuite) TestDeleteCardPurchase_Confirm_CallsDeleteCardPurchase() {
+func (s *DestructiveConfirmSuite) TestDeleteEntry_CreditCardKind_RoutesToDeleteTransaction() {
 	s.ledger.EXPECT().
-		DeleteCardPurchase(mock.Anything, mock.AnythingOfType("interfaces.EntryRef"), int64(0)).
+		DeleteTransaction(mock.Anything, mock.AnythingOfType("interfaces.EntryRef"), int64(0)).
 		Return(nil).
 		Once()
 
@@ -377,7 +377,7 @@ func (s *DestructiveConfirmSuite) TestDeleteCardPurchase_Confirm_CallsDeleteCard
 		Awaiting:    AwaitingConfirm,
 		Operation:   OpDeleteEntry,
 		TargetRef:   entryID.String(),
-		TargetKind:  "card_purchase",
+		TargetKind:  "transaction",
 		ImpactNote:  "⚠️ Todas as parcelas serão removidas.",
 		SuspendedAt: time.Now().UTC(),
 	}

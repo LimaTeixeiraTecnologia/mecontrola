@@ -1,6 +1,9 @@
 package usecases
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
@@ -20,6 +23,10 @@ func toCommandRawCreate(raw input.RawCreateTransaction) commands.RawCreateTransa
 	if raw.SubcategoryID != nil {
 		subStr = raw.SubcategoryID.String()
 	}
+	cardStr := ""
+	if raw.CardID != nil {
+		cardStr = raw.CardID.String()
+	}
 	return commands.RawCreateTransaction{
 		Direction:     raw.Direction,
 		PaymentMethod: raw.PaymentMethod,
@@ -27,6 +34,8 @@ func toCommandRawCreate(raw input.RawCreateTransaction) commands.RawCreateTransa
 		Description:   raw.Description,
 		CategoryID:    catStr,
 		SubcategoryID: subStr,
+		CardID:        cardStr,
+		Installments:  raw.Installments,
 		OccurredAt:    occAt,
 	}
 }
@@ -41,6 +50,10 @@ func toCommandRawUpdate(raw input.RawUpdateTransaction, id string) commands.RawU
 	if raw.SubcategoryID != nil {
 		subStr = raw.SubcategoryID.String()
 	}
+	cardStr := ""
+	if raw.CardID != nil {
+		cardStr = raw.CardID.String()
+	}
 	return commands.RawUpdateTransaction{
 		TransactionID: id,
 		Direction:     raw.Direction,
@@ -49,6 +62,8 @@ func toCommandRawUpdate(raw input.RawUpdateTransaction, id string) commands.RawU
 		Description:   raw.Description,
 		CategoryID:    catStr,
 		SubcategoryID: subStr,
+		CardID:        cardStr,
+		Installments:  raw.Installments,
 		OccurredAt:    occAt,
 		Version:       raw.Version,
 	}
@@ -70,4 +85,34 @@ func snapSubName(subID *uuid.UUID, snap interfaces.CategorySnapshot) string {
 		return snap.ParentName
 	}
 	return snap.Name
+}
+
+func guardSubcategoryRequired(dir valueobjects.Direction, subcategoryPresent bool) error {
+	var errs []error
+	if dir == valueobjects.DirectionOutcome && !subcategoryPresent {
+		errs = append(errs, fmt.Errorf("subcategory_id: %w", ErrOutcomeTransactionRequiresSubcategory))
+	}
+	return errors.Join(errs...)
+}
+
+func guardPaymentMethodMigration(current, next valueobjects.PaymentMethod) error {
+	if current.IsCreditCard() != next.IsCreditCard() {
+		return ErrPaymentMethodMigrationNotAllowed
+	}
+	return nil
+}
+
+func guardCategoryKindDirection(dir valueobjects.Direction, categoryKind string) error {
+	var errs []error
+	if categoryKind != "" && categoryKind != kindForDirection(dir) {
+		errs = append(errs, fmt.Errorf("category_id: %w", ErrCategoryKindDirectionMismatch))
+	}
+	return errors.Join(errs...)
+}
+
+func kindForDirection(dir valueobjects.Direction) string {
+	if dir == valueobjects.DirectionIncome {
+		return "income"
+	}
+	return "expense"
 }

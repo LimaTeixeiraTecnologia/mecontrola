@@ -1,0 +1,50 @@
+groups:
+  - name: mecontrola.transactions.unified
+    interval: 1m
+    rules:
+      - alert: TransactionsMonthlySummaryCoalesceFactorHigh
+        expr: avg_over_time(transactions_monthly_summary_coalesce_factor[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          prd: prd-transactions-crud-unificado
+        annotations:
+          summary: "Fator de coalescing do recompute mensal elevado"
+          description: |
+            O consumer de resumo mensal esta coalescendo muitas mensagens por janela, indicando
+            backlog de eventos transactions.transaction.* (ref_months_affected).
+            Verificar: ritmo do dispatcher/outbox e latencia do RecomputeMonthlySummary.
+            Runbook: docs/runbooks/transactions.md
+
+      - alert: TransactionsOutboxLagP95High
+        expr: histogram_quantile(0.95, sum(rate(outbox_lag_seconds_bucket{event_type=~"transactions.transaction..*"}[5m])) by (le, event_type)) > 30
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+          prd: prd-transactions-crud-unificado
+        annotations:
+          summary: "Lag p95 do outbox de transações acima de 30s"
+          description: |
+            O percentil 95 do lag entre occurred_at e published_at para eventos
+            transactions.transaction.* ultrapassou 30s.
+            event_type: {{ $labels.event_type }}
+            Verificar: dispatcher, backpressure do worker, OCC de fatura em compras parceladas.
+            Runbook: docs/runbooks/transactions.md
+
+      - alert: TransactionsCardPurchaseLegacyEventSeen
+        expr: increase(outbox_published_total{event_type=~"transactions.card_purchase..*"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+          prd: prd-transactions-crud-unificado
+        annotations:
+          summary: "Evento legado transactions.card_purchase.* publicado após o corte"
+          description: |
+            A superficie card-purchase foi removida (RF-24). Nenhum evento
+            transactions.card_purchase.* deveria ser publicado. Presenca indica codigo/deploy
+            residual da superficie legada.
+            Verificar: versao em producao, rotas /api/v1/card-purchases (devem retornar 404).
+            Runbook: docs/runbooks/transactions.md

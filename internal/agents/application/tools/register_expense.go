@@ -16,6 +16,8 @@ type RegisterExpenseInput struct {
 	AmountCents   int64  `json:"amountCents"`
 	Description   string `json:"description"`
 	PaymentMethod string `json:"paymentMethod"`
+	CardID        string `json:"cardId,omitempty"`
+	Installments  int    `json:"installments,omitempty"`
 	OccurredAt    string `json:"occurredAt,omitempty"`
 }
 
@@ -35,7 +37,9 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 			"properties": map[string]any{
 				"amountCents":   map[string]any{"type": "integer"},
 				"description":   map[string]any{"type": "string"},
-				"paymentMethod": map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted"}},
+				"paymentMethod": map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "vale_refeicao", "vale_alimentacao"}},
+				"cardId":        map[string]any{"type": "string"},
+				"installments":  map[string]any{"type": "integer", "minimum": 1, "maximum": 24},
 				"occurredAt":    map[string]any{"type": "string"},
 			},
 			"required":             []string{"amountCents", "description", "paymentMethod"},
@@ -57,7 +61,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[RegisterExpenseInput, RegisterExpenseOutput]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente.", in, out, buildRegisterExpenseExec(registrar))
+	return tool.NewTool[RegisterExpenseInput, RegisterExpenseOutput]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente. Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar))
 }
 
 func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
@@ -70,6 +74,18 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 		if err != nil {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: userId inválido: %w", err)
 		}
+		var cardID *uuid.UUID
+		if in.CardID != "" {
+			parsed, parseErr := uuid.Parse(in.CardID)
+			if parseErr != nil {
+				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: cardId inválido: %w", parseErr)
+			}
+			cardID = &parsed
+		}
+		installments := in.Installments
+		if installments <= 0 {
+			installments = 1
+		}
 		result, err := registrar.RegisterExpense(ctx, usecases.RegisterExpenseCommand{
 			UserID:        userID,
 			WAMID:         wamid,
@@ -77,6 +93,8 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 			AmountCents:   in.AmountCents,
 			Description:   in.Description,
 			PaymentMethod: in.PaymentMethod,
+			CardID:        cardID,
+			Installments:  installments,
 			OccurredAt:    in.OccurredAt,
 		})
 		if err != nil {

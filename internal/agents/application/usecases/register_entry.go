@@ -18,8 +18,6 @@ const (
 	registerDirectionOutcome    = "outcome"
 	registerDirectionIncome     = "income"
 	registerIncomePaymentMethod = "pix"
-	registerMinInstallments     = 1
-	registerMaxInstallments     = 24
 )
 
 type registerWriter interface {
@@ -39,6 +37,8 @@ type RegisterExpenseCommand struct {
 	AmountCents   int64
 	Description   string
 	PaymentMethod string
+	CardID        *uuid.UUID
+	Installments  int
 	OccurredAt    string
 }
 
@@ -49,17 +49,6 @@ type RegisterIncomeCommand struct {
 	AmountCents int64
 	Description string
 	OccurredAt  string
-}
-
-type RegisterCardPurchaseCommand struct {
-	UserID            uuid.UUID
-	WAMID             string
-	ItemSeq           int
-	CardID            uuid.UUID
-	TotalAmountCents  int64
-	InstallmentsTotal int
-	Description       string
-	PurchasedAt       string
 }
 
 type RegisterEntry struct {
@@ -102,6 +91,8 @@ func (uc *RegisterEntry) RegisterExpense(ctx context.Context, cmd RegisterExpens
 			OccurredAt:      occurredAt,
 			CategoryID:      category.RootCategoryID,
 			SubcategoryID:   &subcategoryID,
+			CardID:          cmd.CardID,
+			Installments:    cmd.Installments,
 			OriginWamid:     cmd.WAMID,
 			OriginItemSeq:   cmd.ItemSeq,
 			OriginOperation: "create_expense",
@@ -156,52 +147,6 @@ func (uc *RegisterEntry) RegisterIncome(ctx context.Context, cmd RegisterIncomeC
 		return RegisterResult{}, fmt.Errorf("agents.usecase.register_income: %w", err)
 	}
 	return RegisterResult{ResourceID: result.ResourceID, Kind: "transaction", Outcome: result.Outcome}, nil
-}
-
-func (uc *RegisterEntry) RegisterCardPurchase(ctx context.Context, cmd RegisterCardPurchaseCommand) (RegisterResult, error) {
-	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.register_card_purchase")
-	defer span.End()
-
-	if cmd.InstallmentsTotal < registerMinInstallments || cmd.InstallmentsTotal > registerMaxInstallments {
-		err := fmt.Errorf("agents.usecase.register_card_purchase: installments_total: fora do intervalo %d..%d, recebido %d", registerMinInstallments, registerMaxInstallments, cmd.InstallmentsTotal)
-		span.RecordError(err)
-		return RegisterResult{}, err
-	}
-
-	category, outcome, err := uc.classify(ctx, cmd.Description, registerCategoryKindExpense)
-	if err != nil {
-		span.RecordError(err)
-		return RegisterResult{}, fmt.Errorf("agents.usecase.register_card_purchase: %w", err)
-	}
-	if outcome == agent.ToolOutcomeClarify {
-		return RegisterResult{Outcome: agent.ToolOutcomeClarify}, nil
-	}
-
-	purchasedAt := resolveEntryDate(cmd.PurchasedAt)
-	subcategoryID := category.CategoryID
-	result, err := uc.writer.Execute(ctx, cmd.UserID, cmd.WAMID, cmd.ItemSeq, "create_card_purchase", "card_purchase", func(innerCtx context.Context) (uuid.UUID, bool, error) {
-		ref, writeErr := uc.ledger.CreateCardPurchase(innerCtx, interfaces.RawCardPurchase{
-			CardID:            cmd.CardID,
-			TotalAmountCents:  cmd.TotalAmountCents,
-			InstallmentsTotal: cmd.InstallmentsTotal,
-			Description:       cmd.Description,
-			CategoryID:        category.RootCategoryID,
-			SubcategoryID:     &subcategoryID,
-			PurchasedAt:       purchasedAt,
-			OriginWamid:       cmd.WAMID,
-			OriginItemSeq:     cmd.ItemSeq,
-			OriginOperation:   "create_card_purchase",
-		})
-		if writeErr != nil {
-			return uuid.Nil, false, writeErr
-		}
-		return ref.ID, ref.Reconciled, nil
-	})
-	if err != nil {
-		span.RecordError(err)
-		return RegisterResult{}, fmt.Errorf("agents.usecase.register_card_purchase: %w", err)
-	}
-	return RegisterResult{ResourceID: result.ResourceID, Kind: "card_purchase", Outcome: result.Outcome}, nil
 }
 
 func (uc *RegisterEntry) classify(ctx context.Context, description, kind string) (interfaces.CategoryCandidate, agent.ToolOutcome, error) {

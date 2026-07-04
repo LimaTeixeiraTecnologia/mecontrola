@@ -298,12 +298,12 @@ func (s *RegisterEntrySuite) TestRegisterIncome() {
 	}
 }
 
-func (s *RegisterEntrySuite) TestRegisterCardPurchase() {
+func (s *RegisterEntrySuite) TestRegisterExpenseCreditCard() {
 	type dependencies struct {
 		catMock    *imocks.CategoriesReader
 		ledgerMock *imocks.TransactionsLedger
 		writer     *stubRegisterWriter
-		captured   *interfaces.RawCardPurchase
+		captured   *interfaces.RawTransaction
 	}
 
 	cardID := uuid.New()
@@ -315,10 +315,10 @@ func (s *RegisterEntrySuite) TestRegisterCardPurchase() {
 		expect       func(d dependencies, result RegisterResult, err error)
 	}{
 		{
-			name:         "deve classificar com kind expense e gravar compra no cartão",
+			name:         "deve rotear compra parcelada no crédito via CreateTransaction unificado",
 			installments: 3,
 			dependencies: func() dependencies {
-				captured := &interfaces.RawCardPurchase{}
+				captured := &interfaces.RawTransaction{}
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Notebook", "expense").
@@ -326,10 +326,10 @@ func (s *RegisterEntrySuite) TestRegisterCardPurchase() {
 						return s.catMock
 					}(),
 					ledgerMock: func() *imocks.TransactionsLedger {
-						s.ledgerMock.EXPECT().CreateCardPurchase(mock.Anything, mock.AnythingOfType("interfaces.RawCardPurchase")).
-							RunAndReturn(func(_ context.Context, raw interfaces.RawCardPurchase) (interfaces.EntryRef, error) {
+						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
+							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
 								*captured = raw
-								return interfaces.EntryRef{ID: s.resourceID, Kind: "card_purchase"}, nil
+								return interfaces.EntryRef{ID: s.resourceID, Kind: "transaction"}, nil
 							}).Once()
 						return s.ledgerMock
 					}(),
@@ -340,49 +340,47 @@ func (s *RegisterEntrySuite) TestRegisterCardPurchase() {
 			expect: func(d dependencies, result RegisterResult, err error) {
 				s.NoError(err)
 				s.Equal(agent.ToolOutcomeRouted, result.Outcome)
-				s.Equal("card_purchase", result.Kind)
-				s.Equal(cardID, d.captured.CardID)
+				s.Equal("transaction", result.Kind)
+				s.Equal("outcome", d.captured.Direction)
+				s.Equal("credit_card", d.captured.PaymentMethod)
+				s.Require().NotNil(d.captured.CardID)
+				s.Equal(cardID, *d.captured.CardID)
+				s.Equal(3, d.captured.Installments)
 				s.Equal(s.rootID, d.captured.CategoryID)
 				s.Require().NotNil(d.captured.SubcategoryID)
 				s.Equal(s.leafID, *d.captured.SubcategoryID)
 			},
 		},
 		{
-			name:         "deve retornar clarify quando ambíguo sem gravar",
+			name:         "deve rotear compra à vista no crédito com installments=1",
 			installments: 1,
 			dependencies: func() dependencies {
+				captured := &interfaces.RawTransaction{}
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Notebook", "expense").
-							Return([]interfaces.CategoryCandidate{
-								{CategoryID: uuid.New(), RootCategoryID: uuid.New()},
-								{CategoryID: uuid.New(), RootCategoryID: uuid.New()},
-							}, nil).Once()
+							Return(s.confidentCandidate(), nil).Once()
 						return s.catMock
 					}(),
-					ledgerMock: s.ledgerMock,
-					writer:     &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
+					ledgerMock: func() *imocks.TransactionsLedger {
+						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
+							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
+								*captured = raw
+								return interfaces.EntryRef{ID: s.resourceID, Kind: "transaction"}, nil
+							}).Once()
+						return s.ledgerMock
+					}(),
+					writer:   &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
+					captured: captured,
 				}
 			},
 			expect: func(d dependencies, result RegisterResult, err error) {
 				s.NoError(err)
-				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
-				s.Equal(0, d.writer.called)
-			},
-		},
-		{
-			name:         "deve rejeitar parcelas fora do intervalo sem classificar",
-			installments: 25,
-			dependencies: func() dependencies {
-				return dependencies{
-					catMock:    s.catMock,
-					ledgerMock: s.ledgerMock,
-					writer:     &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
-				}
-			},
-			expect: func(d dependencies, result RegisterResult, err error) {
-				s.Error(err)
-				s.Equal(0, d.writer.called)
+				s.Equal(agent.ToolOutcomeRouted, result.Outcome)
+				s.Equal("credit_card", d.captured.PaymentMethod)
+				s.Equal(1, d.captured.Installments)
+				s.Require().NotNil(d.captured.CardID)
+				s.Equal(cardID, *d.captured.CardID)
 			},
 		},
 	}
@@ -391,15 +389,17 @@ func (s *RegisterEntrySuite) TestRegisterCardPurchase() {
 		s.Run(scenario.name, func() {
 			d := scenario.dependencies()
 			uc := NewRegisterEntry(d.catMock, d.ledgerMock, d.writer, s.obs)
-			result, err := uc.RegisterCardPurchase(s.ctx, RegisterCardPurchaseCommand{
-				UserID:            s.userID,
-				WAMID:             "wamid-card",
-				ItemSeq:           0,
-				CardID:            cardID,
-				TotalAmountCents:  300000,
-				InstallmentsTotal: scenario.installments,
-				Description:       "Notebook",
-				PurchasedAt:       "2026-07-03",
+			cid := cardID
+			result, err := uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+				UserID:        s.userID,
+				WAMID:         "wamid-credit",
+				ItemSeq:       0,
+				AmountCents:   300000,
+				Description:   "Notebook",
+				PaymentMethod: "credit_card",
+				CardID:        &cid,
+				Installments:  scenario.installments,
+				OccurredAt:    "2026-07-03",
 			})
 			scenario.expect(d, result, err)
 		})

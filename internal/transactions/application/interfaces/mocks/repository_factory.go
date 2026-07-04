@@ -90,59 +90,6 @@ func (_c *RepositoryFactory_CardInvoiceRepository_Call) RunAndReturn(run func(db
 	return _c
 }
 
-// CardPurchaseRepository provides a mock function for the type RepositoryFactory
-func (_mock *RepositoryFactory) CardPurchaseRepository(db database.DBTX) interfaces.CardPurchaseRepository {
-	ret := _mock.Called(db)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CardPurchaseRepository")
-	}
-
-	var r0 interfaces.CardPurchaseRepository
-	if returnFunc, ok := ret.Get(0).(func(database.DBTX) interfaces.CardPurchaseRepository); ok {
-		r0 = returnFunc(db)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(interfaces.CardPurchaseRepository)
-		}
-	}
-	return r0
-}
-
-// RepositoryFactory_CardPurchaseRepository_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CardPurchaseRepository'
-type RepositoryFactory_CardPurchaseRepository_Call struct {
-	*mock.Call
-}
-
-// CardPurchaseRepository is a helper method to define mock.On call
-//   - db database.DBTX
-func (_e *RepositoryFactory_Expecter) CardPurchaseRepository(db any) *RepositoryFactory_CardPurchaseRepository_Call {
-	return &RepositoryFactory_CardPurchaseRepository_Call{Call: _e.mock.On("CardPurchaseRepository", db)}
-}
-
-func (_c *RepositoryFactory_CardPurchaseRepository_Call) Run(run func(db database.DBTX)) *RepositoryFactory_CardPurchaseRepository_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 database.DBTX
-		if args[0] != nil {
-			arg0 = args[0].(database.DBTX)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *RepositoryFactory_CardPurchaseRepository_Call) Return(cardPurchaseRepository interfaces.CardPurchaseRepository) *RepositoryFactory_CardPurchaseRepository_Call {
-	_c.Call.Return(cardPurchaseRepository)
-	return _c
-}
-
-func (_c *RepositoryFactory_CardPurchaseRepository_Call) RunAndReturn(run func(db database.DBTX) interfaces.CardPurchaseRepository) *RepositoryFactory_CardPurchaseRepository_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // MonthlySummaryRepository provides a mock function for the type RepositoryFactory
 func (_mock *RepositoryFactory) MonthlySummaryRepository(db database.DBTX) interfaces.MonthlySummaryRepository {
 	ret := _mock.Called(db)

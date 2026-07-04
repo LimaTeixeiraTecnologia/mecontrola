@@ -44,25 +44,3 @@ func TestTransactionCreated_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, categoryID, decoded.CategoryID)
 	assert.Equal(t, subcategoryID, decoded.SubcategoryID)
 }
-
-func TestCardPurchaseUpdated_HasInvoiceDeltas(t *testing.T) {
-	refMonth1, _ := valueobjects.NewRefMonth("2026-06")
-	refMonth2, _ := valueobjects.NewRefMonth("2026-07")
-
-	evt := entities.CardPurchaseUpdated{
-		EventID:           uuid.New(),
-		AggregateID:       uuid.New(),
-		UserID:            uuid.New(),
-		OccurredAt:        time.Now().UTC(),
-		CardID:            uuid.New(),
-		TotalAmountCents:  9000,
-		InstallmentsTotal: 3,
-		RefMonthsAffected: []valueobjects.RefMonth{refMonth1, refMonth2},
-		InvoiceDeltas:     map[string]int64{"2026-06": 3000, "2026-07": 3000},
-	}
-
-	data, err := json.Marshal(evt)
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "invoice_deltas")
-	assert.Contains(t, string(data), "ref_months_affected")
-}

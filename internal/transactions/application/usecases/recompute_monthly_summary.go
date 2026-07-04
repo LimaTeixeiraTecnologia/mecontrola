@@ -47,7 +47,7 @@ func (uc *RecomputeMonthlySummary) Execute(ctx context.Context, in RecomputeMont
 		invRepo := uc.factory.CardInvoiceRepository(db)
 		summRepo := uc.factory.MonthlySummaryRepository(db)
 
-		txIncome, txOutcome, err := txRepo.SumByMonth(ctx, in.UserID, in.RefMonth)
+		txIncome, txOutcome, err := txRepo.SumByMonthExcludingCredit(ctx, in.UserID, in.RefMonth)
 		if err != nil {
 			return struct{}{}, fmt.Errorf("transactions/recompute_monthly_summary: somar lançamentos: %w", err)
 		}

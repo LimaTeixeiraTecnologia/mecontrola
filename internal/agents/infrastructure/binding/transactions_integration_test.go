@@ -18,7 +18,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
@@ -114,25 +113,13 @@ func (s *TransactionsIntegrationSuite) SetupSuite() {
 	snapshot, err := valueobjects.NewCardBillingSnapshot(20, 25)
 	s.Require().NoError(err)
 
-	cpWorkflow := services.NewCardPurchaseWorkflow()
-
 	createTx := txusecases.NewCreateTransaction(
 		factory,
 		uow.NewUnitOfWork(db),
+		&stubCardLookup{snapshot: snapshot},
 		&stubCategoryValidator{catID: catID},
 		services.TransactionWorkflow{},
 		&noopTxPublisher{},
-		o11y,
-	)
-
-	createCP := txusecases.NewCreateCardPurchase(
-		factory,
-		&stubCardLookup{snapshot: snapshot},
-		&stubCategoryValidator{catID: catID},
-		&cpWorkflow,
-		&noopCPPublisher{},
-		uow.NewUnitOfWork(db),
-		id.NewUUIDGenerator(),
 		o11y,
 	)
 
@@ -140,7 +127,7 @@ func (s *TransactionsIntegrationSuite) SetupSuite() {
 	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
 
 	s.adapter = binding.NewTransactionsLedgerAdapter(
-		createTx, createCP, nil, nil, nil, nil, listME, getMS, nil, nil, nil, nil, nil, o11y,
+		createTx, nil, nil, listME, getMS, nil, nil, nil, o11y,
 	)
 
 	s.recompute = txusecases.NewRecomputeMonthlySummary(factory, uow.NewUnitOfWork(db), o11y)
@@ -294,17 +281,20 @@ func (s *TransactionsIntegrationSuite) TestCenario3_CartaoParceladoRefleteSoUmaP
 	ctx := s.authedCtx(userID)
 	catID := uuid.New()
 
-	ref, err := s.adapter.CreateCardPurchase(ctx, agentsifaces.RawCardPurchase{
-		CardID:            s.cardID,
-		TotalAmountCents:  30000,
-		InstallmentsTotal: 3,
-		Description:       "Eletrodoméstico parcelado",
-		CategoryID:        catID,
-		PurchasedAt:       "2026-07-01",
+	cardID := s.cardID
+	ref, err := s.adapter.CreateTransaction(ctx, agentsifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "credit_card",
+		AmountCents:   30000,
+		Description:   "Eletrodoméstico parcelado",
+		CategoryID:    catID,
+		CardID:        &cardID,
+		Installments:  3,
+		OccurredAt:    "2026-07-01",
 	})
 	s.Require().NoError(err)
 	s.Require().NotEqual(uuid.Nil, ref.ID)
-	s.Equal("card_purchase", ref.Kind)
+	s.Equal("transaction", ref.Kind)
 
 	s.doRecompute(userID, "2026-07")
 

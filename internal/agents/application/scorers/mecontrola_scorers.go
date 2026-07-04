@@ -12,12 +12,9 @@ import (
 var mecontrolaFinancialTools = []string{
 	"register_expense",
 	"register_income",
-	"register_card_purchase",
 	"create_recurrence",
 	"query_month",
 	"get_transaction",
-	"get_card_purchase",
-	"list_card_purchases",
 	"search_transactions",
 	"list_cards",
 	"get_card",

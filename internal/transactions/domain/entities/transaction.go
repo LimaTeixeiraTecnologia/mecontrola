@@ -26,6 +26,9 @@ type Transaction struct {
 	subcategoryNameSnapshot string
 	refMonth                valueobjects.RefMonth
 	occurredAt              time.Time
+	cardID                  option.Option[valueobjects.CardID]
+	installmentsTotal       option.Option[valueobjects.InstallmentCount]
+	billingSnapshot         option.Option[valueobjects.CardBillingSnapshot]
 	version                 int64
 	deletedAt               *time.Time
 	createdAt               time.Time
@@ -83,6 +86,9 @@ func Reconstitute(
 	subcategoryNameSnapshot string,
 	refMonth valueobjects.RefMonth,
 	occurredAt time.Time,
+	cardID option.Option[valueobjects.CardID],
+	installmentsTotal option.Option[valueobjects.InstallmentCount],
+	billingSnapshot option.Option[valueobjects.CardBillingSnapshot],
 	version int64,
 	deletedAt *time.Time,
 	createdAt time.Time,
@@ -101,6 +107,9 @@ func Reconstitute(
 		subcategoryNameSnapshot: subcategoryNameSnapshot,
 		refMonth:                refMonth,
 		occurredAt:              occurredAt,
+		cardID:                  cardID,
+		installmentsTotal:       installmentsTotal,
+		billingSnapshot:         billingSnapshot,
 		version:                 version,
 		deletedAt:               deletedAt,
 		createdAt:               createdAt,
@@ -122,10 +131,19 @@ func (t *Transaction) CategoryNameSnapshot() string    { return t.categoryNameSn
 func (t *Transaction) SubcategoryNameSnapshot() string { return t.subcategoryNameSnapshot }
 func (t *Transaction) RefMonth() valueobjects.RefMonth { return t.refMonth }
 func (t *Transaction) OccurredAt() time.Time           { return t.occurredAt }
-func (t *Transaction) Version() int64                  { return t.version }
-func (t *Transaction) DeletedAt() *time.Time           { return t.deletedAt }
-func (t *Transaction) CreatedAt() time.Time            { return t.createdAt }
-func (t *Transaction) UpdatedAt() time.Time            { return t.updatedAt }
+func (t *Transaction) CardID() option.Option[valueobjects.CardID] {
+	return t.cardID
+}
+func (t *Transaction) InstallmentsTotal() option.Option[valueobjects.InstallmentCount] {
+	return t.installmentsTotal
+}
+func (t *Transaction) BillingSnapshot() option.Option[valueobjects.CardBillingSnapshot] {
+	return t.billingSnapshot
+}
+func (t *Transaction) Version() int64        { return t.version }
+func (t *Transaction) DeletedAt() *time.Time { return t.deletedAt }
+func (t *Transaction) CreatedAt() time.Time  { return t.createdAt }
+func (t *Transaction) UpdatedAt() time.Time  { return t.updatedAt }
 
 func (t *Transaction) Update(
 	direction valueobjects.Direction,
@@ -152,6 +170,16 @@ func (t *Transaction) Update(
 	t.occurredAt = occurredAt
 	t.version++
 	t.updatedAt = now
+}
+
+func (t *Transaction) SetCardBilling(
+	cardID valueobjects.CardID,
+	installmentsTotal valueobjects.InstallmentCount,
+	billingSnapshot valueobjects.CardBillingSnapshot,
+) {
+	t.cardID = option.Some(cardID)
+	t.installmentsTotal = option.Some(installmentsTotal)
+	t.billingSnapshot = option.Some(billingSnapshot)
 }
 
 func (t *Transaction) SetCategorySnapshots(categoryName, subcategoryName string) {

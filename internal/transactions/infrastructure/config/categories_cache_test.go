@@ -14,7 +14,7 @@ import (
 
 type mockCategoriesReader struct {
 	resolveRootsFunc        func(ctx context.Context, slugs []string) (map[string]uuid.UUID, error)
-	validateSubcategoryFunc func(ctx context.Context, id uuid.UUID) (interfaces.CategorySnapshot, error)
+	validateSubcategoryFunc func(ctx context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error)
 	editorialVersionFunc    func(ctx context.Context) (int64, error)
 }
 
@@ -22,8 +22,8 @@ func (m *mockCategoriesReader) ResolveRootsBySlug(ctx context.Context, slugs []s
 	return m.resolveRootsFunc(ctx, slugs)
 }
 
-func (m *mockCategoriesReader) ValidateSubcategory(ctx context.Context, id uuid.UUID) (interfaces.CategorySnapshot, error) {
-	return m.validateSubcategoryFunc(ctx, id)
+func (m *mockCategoriesReader) ValidateSubcategory(ctx context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error) {
+	return m.validateSubcategoryFunc(ctx, id, expectedParentID)
 }
 
 func (m *mockCategoriesReader) EditorialVersion(ctx context.Context) (int64, error) {
@@ -131,15 +131,17 @@ func (s *CategoriesCacheSuite) TestValidate_NilSubcategoryID_RootFound() {
 	cache := config.NewCategoriesCache(reader)
 	s.Require().NoError(cache.Boot(context.Background()))
 
-	var targetID uuid.UUID
-	for _, id := range roots {
-		targetID = id
-		break
-	}
+	targetID := roots["expense.custo_fixo"]
 
 	snapshot, err := cache.Validate(context.Background(), targetID, nil)
 	s.Require().NoError(err)
 	s.Equal(targetID, snapshot.ID)
+	s.Equal("expense", snapshot.Kind)
+
+	incomeID := roots["income.salario"]
+	incomeSnap, err := cache.Validate(context.Background(), incomeID, nil)
+	s.Require().NoError(err)
+	s.Equal("income", incomeSnap.Kind)
 }
 
 func (s *CategoriesCacheSuite) TestValidate_NilSubcategoryID_RootNotFound() {
@@ -163,9 +165,9 @@ func (s *CategoriesCacheSuite) TestValidate_NilSubcategoryID_RootNotFound() {
 func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_CacheMiss_ThenCacheHit() {
 	roots := s.buildRoots()
 	subID := uuid.New()
-	parentID := uuid.New()
 	versionCallCount := 0
 	subcategoryCallCount := 0
+	var seenParent uuid.UUID
 
 	reader := &mockCategoriesReader{
 		resolveRootsFunc: resolveSubset(roots),
@@ -173,12 +175,13 @@ func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_CacheMiss_ThenCacheHit
 			versionCallCount++
 			return 1, nil
 		},
-		validateSubcategoryFunc: func(_ context.Context, id uuid.UUID) (interfaces.CategorySnapshot, error) {
+		validateSubcategoryFunc: func(_ context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error) {
 			subcategoryCallCount++
+			seenParent = expectedParentID
 			return interfaces.CategorySnapshot{
 				ID:         id,
 				Name:       "sub-name",
-				ParentID:   &parentID,
+				ParentID:   &expectedParentID,
 				ParentName: "parent-name",
 			}, nil
 		},
@@ -187,15 +190,84 @@ func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_CacheMiss_ThenCacheHit
 	cache := config.NewCategoriesCache(reader)
 	s.Require().NoError(cache.Boot(context.Background()))
 
-	snapshot1, err := cache.Validate(context.Background(), uuid.New(), &subID)
+	rootID := roots["expense.custo_fixo"]
+
+	snapshot1, err := cache.Validate(context.Background(), rootID, &subID)
 	s.Require().NoError(err)
 	s.Equal(subID, snapshot1.ID)
+	s.Equal("sub-name", snapshot1.Name)
+	s.Equal("expense", snapshot1.Kind)
+	s.Equal(rootID, seenParent)
 	s.Equal(1, subcategoryCallCount)
 
-	snapshot2, err := cache.Validate(context.Background(), uuid.New(), &subID)
+	snapshot2, err := cache.Validate(context.Background(), rootID, &subID)
 	s.Require().NoError(err)
 	s.Equal(subID, snapshot2.ID)
+	s.Equal("expense", snapshot2.Kind)
 	s.Equal(1, subcategoryCallCount, "segunda chamada deve usar o cache")
+}
+
+func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_CacheHit_DoesNotBypassParentCheck() {
+	roots := s.buildRoots()
+	subID := uuid.New()
+	rootA := roots["expense.custo_fixo"]
+	rootB := roots["expense.prazeres"]
+	subcategoryCallCount := 0
+
+	reader := &mockCategoriesReader{
+		resolveRootsFunc: resolveSubset(roots),
+		editorialVersionFunc: func(_ context.Context) (int64, error) {
+			return 1, nil
+		},
+		validateSubcategoryFunc: func(_ context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error) {
+			subcategoryCallCount++
+			if expectedParentID != rootA {
+				return interfaces.CategorySnapshot{}, interfaces.ErrCategoryNotFound
+			}
+			parent := rootA
+			return interfaces.CategorySnapshot{
+				ID:         id,
+				Name:       "sub-name",
+				ParentID:   &parent,
+				ParentName: "parent-name",
+			}, nil
+		},
+	}
+
+	cache := config.NewCategoriesCache(reader)
+	s.Require().NoError(cache.Boot(context.Background()))
+
+	_, err := cache.Validate(context.Background(), rootA, &subID)
+	s.Require().NoError(err)
+	s.Equal(1, subcategoryCallCount)
+
+	_, err = cache.Validate(context.Background(), rootB, &subID)
+	s.Require().Error(err)
+	s.True(errors.Is(err, interfaces.ErrCategoryNotFound))
+	s.Equal(2, subcategoryCallCount, "cache-hit sob raiz diferente deve revalidar via reader")
+}
+
+func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_NonRootCategory_Error() {
+	roots := s.buildRoots()
+	subID := uuid.New()
+
+	reader := &mockCategoriesReader{
+		resolveRootsFunc: resolveSubset(roots),
+		editorialVersionFunc: func(_ context.Context) (int64, error) {
+			return 1, nil
+		},
+		validateSubcategoryFunc: func(_ context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error) {
+			s.Fail("validate subcategory não deve ser chamado quando category_id não é raiz")
+			return interfaces.CategorySnapshot{}, nil
+		},
+	}
+
+	cache := config.NewCategoriesCache(reader)
+	s.Require().NoError(cache.Boot(context.Background()))
+
+	_, err := cache.Validate(context.Background(), uuid.New(), &subID)
+	s.Require().Error(err)
+	s.True(errors.Is(err, interfaces.ErrCategoryNotFound))
 }
 
 func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_VersionChange_InvalidatesCache() {
@@ -209,7 +281,7 @@ func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_VersionChange_Invalida
 		editorialVersionFunc: func(_ context.Context) (int64, error) {
 			return version, nil
 		},
-		validateSubcategoryFunc: func(_ context.Context, id uuid.UUID) (interfaces.CategorySnapshot, error) {
+		validateSubcategoryFunc: func(_ context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error) {
 			subcategoryCallCount++
 			return interfaces.CategorySnapshot{ID: id, Name: "sub-name"}, nil
 		},
@@ -218,13 +290,15 @@ func (s *CategoriesCacheSuite) TestValidate_SubcategoryID_VersionChange_Invalida
 	cache := config.NewCategoriesCache(reader)
 	s.Require().NoError(cache.Boot(context.Background()))
 
-	_, err := cache.Validate(context.Background(), uuid.New(), &subID)
+	rootID := roots["expense.custo_fixo"]
+
+	_, err := cache.Validate(context.Background(), rootID, &subID)
 	s.Require().NoError(err)
 	s.Equal(1, subcategoryCallCount)
 
 	version = 2
 
-	_, err = cache.Validate(context.Background(), uuid.New(), &subID)
+	_, err = cache.Validate(context.Background(), rootID, &subID)
 	s.Require().NoError(err)
 	s.Equal(2, subcategoryCallCount, "nova versão deve invalidar cache e reconsultar")
 }

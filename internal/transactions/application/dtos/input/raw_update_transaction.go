@@ -13,6 +13,8 @@ type RawUpdateTransaction struct {
 	Description   string     `json:"description"`
 	CategoryID    uuid.UUID  `json:"category_id"`
 	SubcategoryID *uuid.UUID `json:"subcategory_id,omitempty"`
+	CardID        *uuid.UUID `json:"card_id,omitempty"`
+	Installments  int        `json:"installments,omitempty"`
 	OccurredAt    string     `json:"occurred_at"`
 	Version       int64      `json:"version"`
 }
@@ -39,6 +41,14 @@ func (i *RawUpdateTransaction) Validate() error {
 	}
 	if i.Version <= 0 {
 		errs = append(errs, ErrInputVersionRequired)
+	}
+	if i.PaymentMethod == "credit_card" {
+		if i.CardID == nil {
+			errs = append(errs, ErrInputCardIDRequired)
+		}
+		if i.Installments < 1 || i.Installments > 24 {
+			errs = append(errs, ErrInputInstallmentsOutOfRange)
+		}
 	}
 	return errors.Join(errs...)
 }
