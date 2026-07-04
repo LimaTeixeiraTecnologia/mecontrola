@@ -49,6 +49,7 @@ Depois acesse:
 - [Rodando localmente](#rodando-localmente)
 - [Configuração e secrets](#configuração-e-secrets)
 - [Comandos do dia a dia](#comandos-do-dia-a-dia)
+- [Zerar o banco e reaplicar migrations](#zerar-o-banco-e-reaplicar-migrations) (local Cenário A/C · VPS Cenário B)
 - [Debug no VS Code](#debug-no-vs-code)
 - [Webhooks locais com ngrok](#webhooks-locais-com-ngrok)
 - [Deploy e operação](#deploy-e-operação)
@@ -421,6 +422,167 @@ Rode `task --list-all` para a lista completa. Os comandos abaixo são os mais ú
 | `task ngrok:caddy` | Sobe ambiente com Caddy e abre túnel para `127.0.0.1:80` |
 | `task ngrok:urls` | Imprime URLs públicas dos webhooks |
 | `task ngrok:stop:tips` | Mostra como encerrar túnel e containers |
+
+## Zerar o banco e reaplicar migrations
+
+Use quando precisar começar do zero — banco limpo, todas as migrations reaplicadas.
+
+### Cenário A — via Docker Compose (fluxo padrão)
+
+1. Parar os containers:
+
+```bash
+task local:down
+```
+
+2. Remover containers e volumes (apaga todos os dados do postgres):
+
+```bash
+task local:destroy
+```
+
+Confirme com `y` quando solicitado.
+
+3. Subir só a infra (postgres + otel-lgtm):
+
+```bash
+task local:infra
+```
+
+4. Aguardar o postgres ficar pronto:
+
+```bash
+docker compose --env-file .env \
+  -f deployment/compose/compose.yml \
+  -f deployment/compose/compose.local.yml \
+  exec postgres pg_isready -U mecontrola
+```
+
+Repita até retornar `mecontrola:5432 - accepting connections`.
+
+5. Aplicar todas as migrations:
+
+```bash
+go run ./cmd migrate
+```
+
+Validação:
+
+```bash
+docker compose --env-file .env \
+  -f deployment/compose/compose.yml \
+  -f deployment/compose/compose.local.yml \
+  exec postgres psql -U mecontrola -d mecontrola_db \
+  -c "SELECT version FROM schema_migrations ORDER BY version;" \
+  -c "\dt mecontrola.*"
+```
+
+Deve mostrar `version = 2` e listar as 51 tabelas do schema `mecontrola`.
+
+### Cenário B — VPS (produção via SSH)
+
+Usado para recriar o schema em produção sem parar o Postgres.
+
+1. Escalar server e worker para 0 (interrompe tráfego de leitura/escrita):
+
+```bash
+ssh root@187.77.45.48 "docker service scale \
+  mecontrola_server-1=0 \
+  mecontrola_server-2=0 \
+  mecontrola_worker-1=0 \
+  mecontrola_worker-2=0"
+```
+
+2. Dropar e recriar o schema `mecontrola` (destrói todas as tabelas):
+
+```bash
+ssh root@187.77.45.48 "
+  PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres \
+    --format '{{.Names}}' | grep -v exporter | head -1)
+  docker exec \$PGCONTAINER psql -U mecontrola -d mecontrola_db \
+    -c 'DROP SCHEMA mecontrola CASCADE;' \
+    -c 'CREATE SCHEMA mecontrola;'
+"
+```
+
+3. Executar o serviço de migrate do Swarm:
+
+```bash
+ssh root@187.77.45.48 "docker service update --force mecontrola_migrate"
+```
+
+> **Nota:** o `--force` inicia um novo task com todas as secrets do Swarm (`DB_PASSWORD`, `META_*`, etc.) já configuradas no serviço. O container de migrate sai com exit 0 após aplicar as migrations; o Swarm tentará reiniciá-lo e falhará (secrets `META_*` indisponíveis no retry), mas as migrations **já foram aplicadas**. Confirme com o passo 5.
+
+4. Validar schema e reverter o migrate para o estado estável:
+
+```bash
+ssh root@187.77.45.48 "docker service rollback mecontrola_migrate"
+```
+
+5. Confirmar que as migrations foram aplicadas:
+
+```bash
+ssh root@187.77.45.48 "
+  PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres \
+    --format '{{.Names}}' | grep -v exporter | head -1)
+  docker exec \$PGCONTAINER psql -U mecontrola -d mecontrola_db \
+    -c 'SELECT version FROM schema_migrations ORDER BY version;' \
+    -c \"SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';\"
+"
+```
+
+Resultado esperado: `version = 2`, `total_tables = 51`.
+
+6. Escalar server e worker de volta:
+
+```bash
+ssh root@187.77.45.48 "docker service scale \
+  mecontrola_server-1=1 \
+  mecontrola_server-2=1 \
+  mecontrola_worker-1=1 \
+  mecontrola_worker-2=1"
+```
+
+7. Validar health:
+
+```bash
+curl -sf http://187.77.45.48/health
+```
+
+### Cenário C — dropar e recriar o banco sem destruir volumes (local)
+
+Use quando quiser zerar apenas os dados sem remover os volumes Docker.
+
+1. Parar os containers:
+
+```bash
+task local:down
+```
+
+2. Subir só a infra:
+
+```bash
+task local:infra
+```
+
+3. Dropar e recriar o banco:
+
+```bash
+docker compose --env-file .env \
+  -f deployment/compose/compose.yml \
+  -f deployment/compose/compose.local.yml \
+  exec postgres psql -U mecontrola \
+  -c "DROP DATABASE IF EXISTS mecontrola_db;" \
+  -c "CREATE DATABASE mecontrola_db;"
+```
+
+4. Aplicar todas as migrations:
+
+```bash
+go run ./cmd migrate
+```
+
+> **Nota:** a migration `000001` exige a extensão `vector` (pgvector). Certifique-se de que `POSTGRES_IMAGE` no `.env` aponte para uma imagem com pgvector instalado, como `pgvector/pgvector:pg16`.
 
 ## Debug no VS Code
 

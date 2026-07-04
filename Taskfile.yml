@@ -107,6 +107,44 @@ tasks:
     cmds:
       - go test -race -count=1 -tags=integration ./internal/agents/...
 
+  vps:health:
+    desc: Saude completa da VPS — servicos Swarm, health endpoints, Postgres e recursos do host.
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+      VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+    cmds:
+      - |
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} bash << 'ENDSSH'
+          echo "=== SWARM SERVICES ==="
+          docker service ls
+
+          echo ""
+          echo "=== CONTAINERS ==="
+          docker ps --no-trunc=false | awk '{printf "%-55s %-30s %s\n", $NF, $(NF-1), $4}' | head -20
+
+          echo ""
+          echo "=== HEALTH ENDPOINTS ==="
+          for ep in health healthz readyz livez; do
+            STATUS=$(curl -so /dev/null -w "%{http_code}" http://localhost:80/$ep 2>/dev/null)
+            echo "  /$ep -> HTTP $STATUS"
+          done
+
+          echo ""
+          echo "=== POSTGRES ==="
+          PGCONTAINER=$(docker ps --filter name=mecontrola_postgres | grep -v exporter | grep -v "CONTAINER" | awk '{print $NF}' | head -1)
+          docker exec "$PGCONTAINER" psql -U mecontrola -d mecontrola_db \
+            -c "SELECT pg_size_pretty(pg_database_size('mecontrola_db')) AS db_size;" \
+            -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'mecontrola_db' GROUP BY state ORDER BY count DESC;" \
+            -c "SELECT version FROM schema_migrations ORDER BY version;" \
+            -c "SELECT status, count(*) FROM mecontrola.outbox_events GROUP BY status;"
+
+          echo ""
+          echo "=== HOST ==="
+          uptime
+          free -h | grep Mem
+          df -h / | tail -1
+        ENDSSH
+
   card:audit:
     desc: Auditoria R0-R7 do modulo card — gates de init, panic, clock, interface-assertion e zero-comentarios.
     cmds:
