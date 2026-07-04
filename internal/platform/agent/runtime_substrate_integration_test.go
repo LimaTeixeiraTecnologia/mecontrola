@@ -68,7 +68,7 @@ func (s *SubstrateIntegrationSuite) buildRuntime(agentID string, result agent.Re
 	return rt, uuid.NewString()
 }
 
-func (s *SubstrateIntegrationSuite) TestRF39_RoleToolPersistedInPlatformMessages() {
+func (s *SubstrateIntegrationSuite) TestRF39_RoleToolNotPersistedInPlatformMessages() {
 	rt, resourceID := s.buildRuntime("agent-rf39", agent.Result{
 		Content: "Despesa registrada!",
 		ToolCalls: []agent.ToolCallRecord{
@@ -86,13 +86,21 @@ func (s *SubstrateIntegrationSuite) TestRF39_RoleToolPersistedInPlatformMessages
 	s.Require().NoError(err)
 	s.Equal(agent.RunStatusSucceeded, outcome.Status)
 
-	var count int
+	var toolCount int
 	err = s.db.QueryRowContext(s.ctx,
 		`SELECT COUNT(*) FROM mecontrola.platform_messages WHERE resource_id = $1 AND role = $2`,
 		resourceID, string(memory.RoleTool),
-	).Scan(&count)
+	).Scan(&toolCount)
 	s.Require().NoError(err)
-	s.Greater(count, 0, "EP-05 corrigido: platform_messages deve conter role=tool após escrita real")
+	s.Equal(0, toolCount, "role=tool NÃO deve ser persistido no histórico (evita órfão tool → HTTP 400)")
+
+	var convCount int
+	err = s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.platform_messages WHERE resource_id = $1 AND role IN ($2, $3)`,
+		resourceID, string(memory.RoleUser), string(memory.RoleAssistant),
+	).Scan(&convCount)
+	s.Require().NoError(err)
+	s.Greater(convCount, 0, "histórico conversacional (user/assistant) deve ser persistido")
 }
 
 func (s *SubstrateIntegrationSuite) TestRF38_WriteToolFailed_RunStatusFailedInDB() {
