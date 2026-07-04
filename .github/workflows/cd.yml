@@ -352,36 +352,3 @@ jobs:
           echo "==> Checking /readyz"
           curl -fsS --retry 12 --retry-delay 5 --max-time 10 "${HEALTH_URL}/readyz"
           echo "==> Healthcheck OK"
-
-  notify:
-    name: Notify
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    needs: [quality-gates, build-image, scan-sign-image, deploy, healthcheck]
-    if: always() && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-    steps:
-      - name: Send Telegram notification
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
-            echo "Telegram secrets not configured; skipping notification"
-            exit 0
-          fi
-          if [[ "${{ needs.quality-gates.result }}" == "success" && \
-                "${{ needs.build-image.result }}" == "success" && \
-                "${{ needs.scan-sign-image.result }}" == "success" && \
-                "${{ needs.deploy.result }}" == "success" && \
-                "${{ needs.healthcheck.result }}" == "success" ]]; then
-            STATUS="✅ SUCESSO"
-          else
-            STATUS="❌ FALHA"
-          fi
-          MESSAGE="*${{ github.workflow }}*%0A*Repo:* ${{ github.repository }}*%0A*Ref:* ${{ github.ref_name }}*%0A*Commit:* ${{ github.sha }}*%0A*Status:* ${STATUS}%0A[Ver run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          curl -fsSL -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TELEGRAM_CHAT_ID}" \
-            -d "parse_mode=Markdown" \
-            -d "text=${MESSAGE}"
