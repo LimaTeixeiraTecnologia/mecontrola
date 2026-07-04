@@ -1281,14 +1281,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":1990,\"description\":\"Compra no mercado\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"occurred_at\":\"{{now_iso_u1}}\"}",
+                  "raw": "{\"direction\": \"outcome\", \"payment_method\": \"pix\", \"amount_cents\": 1990, \"description\": \"Compra no mercado\", \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\"}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "Cria um lancamento de saida (pix). category_id/subcategory_id encadeados; occurred_at do pre-request."
+                "description": "Cria um lancamento de saida (pix) para u1."
               },
               "event": [
                 {
@@ -1306,7 +1306,319 @@
               ]
             },
             {
-              "name": "16 — GET /transactions/:id",
+              "name": "16 — POST /transactions — TED",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\", \"payment_method\": \"ted\", \"description\": \"Compra no mercado (TED)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: TED."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_ted_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_ted_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "17 — POST /transactions — debito em conta",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\", \"payment_method\": \"debit_in_account\", \"description\": \"Compra no mercado (debito em conta)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: debito em conta."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_debit_in_account_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_debit_in_account_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "18 — POST /transactions — cartao de debito",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\", \"payment_method\": \"debit_card\", \"description\": \"Compra no mercado (cartao de debito)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: cartao de debito."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_debit_card_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_debit_card_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "19 — POST /transactions — dinheiro",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\", \"payment_method\": \"cash\", \"description\": \"Compra no mercado (dinheiro)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: dinheiro."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_cash_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_cash_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "20 — POST /transactions — boleto",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\", \"payment_method\": \"boleto\", \"description\": \"Compra no mercado (boleto)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: boleto."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_boleto_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_boleto_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "21 — POST /transactions — income salario (TED)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"income\", \"payment_method\": \"ted\", \"amount_cents\": 500000, \"description\": \"Salario\", \"category_id\": \"{{category_id_u1}}\", \"occurred_at\": \"{{now_iso_u1}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: income salario (TED)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_income_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_income_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "22 — GET /transactions/:id",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1337,7 +1649,7 @@
               ]
             },
             {
-              "name": "17 — PATCH /transactions/:id",
+              "name": "23 — PATCH /transactions/:id",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -1387,7 +1699,7 @@
               ]
             },
             {
-              "name": "18 — GET /transactions (lista por competencia)",
+              "name": "24 — GET /transactions (lista por competencia)",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1424,7 +1736,7 @@
               ]
             },
             {
-              "name": "19 — GET /months/:ref_month",
+              "name": "25 — GET /months/:ref_month",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1455,7 +1767,7 @@
               ]
             },
             {
-              "name": "20 — GET /months/:ref_month/entries",
+              "name": "26 — GET /months/:ref_month/entries",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1487,7 +1799,7 @@
               ]
             },
             {
-              "name": "21 — DELETE /transactions/:id",
+              "name": "27 — DELETE /transactions/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -1536,7 +1848,7 @@
               ]
             },
             {
-              "name": "22 — POST /cards",
+              "name": "28 — POST /cards",
               "request": {
                 "method": "POST",
                 "header": [
@@ -1586,7 +1898,111 @@
               ]
             },
             {
-              "name": "23 — GET /cards",
+              "name": "29 — POST /transactions — cartao de credito a vista",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"payment_method\": \"credit_card\", \"card_id\": \"{{card_id_u1}}\", \"amount_cents\": 120000, \"description\": \"Compra no cartao a vista\", \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"installments\": 1, \"occurred_at\": \"{{now_iso_u1}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: cartao de credito a vista."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_credit_card_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_credit_card_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "30 — POST /transactions — cartao de credito parcelado 3x",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"payment_method\": \"credit_card\", \"card_id\": \"{{card_id_u1}}\", \"amount_cents\": 120000, \"description\": \"Compra parcelada no cartao\", \"category_id\": \"{{category_id_u1}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"installments\": 3, \"occurred_at\": \"{{now_iso_u1}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: cartao de credito parcelado 3x."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_credit_card_parcelado_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_credit_card_parcelado_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "31 — GET /cards",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1617,7 +2033,7 @@
               ]
             },
             {
-              "name": "24 — GET /cards/best-purchase-day",
+              "name": "32 — GET /cards/best-purchase-day",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1658,7 +2074,7 @@
               ]
             },
             {
-              "name": "25 — GET /cards/:id",
+              "name": "33 — GET /cards/:id",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1689,7 +2105,7 @@
               ]
             },
             {
-              "name": "26 — PUT /cards/:id",
+              "name": "34 — PUT /cards/:id",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -1738,7 +2154,7 @@
               ]
             },
             {
-              "name": "27 — GET /cards/:id/invoices?for=",
+              "name": "35 — GET /cards/:id/invoices?for=",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1776,7 +2192,7 @@
               ]
             },
             {
-              "name": "28 — GET /cards/:id/invoices/:ref_month",
+              "name": "36 — GET /cards/:id/invoices/:ref_month",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -1809,220 +2225,7 @@
               ]
             },
             {
-              "name": "29 — POST /card-purchases",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    ""
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\"card_id\":\"{{card_id_u1}}\",\"total_amount_cents\":120000,\"installments_total\":3,\"description\":\"Compra parcelada\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"purchased_at\":\"{{now_iso_u1}}\"}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "description": "Cria uma compra parcelada no cartao (gera itens de fatura por competencia)."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                      "const b = pm.response.json();",
-                      "pm.collectionVariables.set(\"card_purchase_id_u1\", b.id);",
-                      "pm.collectionVariables.set(\"card_purchase_version_u1\", b.version);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "30 — GET /card-purchases/:id",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u1}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    "{{card_purchase_id_u1}}"
-                  ]
-                },
-                "description": "Obtem a compra no cartao."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "31 — GET /card-purchases (lista)",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    ""
-                  ]
-                },
-                "description": "Lista as compras no cartao."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "32 — PATCH /card-purchases/:id",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u1}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    "{{card_purchase_id_u1}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\"total_amount_cents\":150000,\"installments_total\":5,\"description\":\"Compra parcelada (ajuste)\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"purchased_at\":\"{{now_iso_u1}}\",\"version\":{{card_purchase_version_u1}}}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "description": "Atualiza a compra no cartao (version)."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                      "pm.collectionVariables.set(\"card_purchase_version_u1\", pm.response.json().version);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "33 — DELETE /card-purchases/:id",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u1}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    "{{card_purchase_id_u1}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\"version\":{{card_purchase_version_u1}}}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "description": "Remove a compra no cartao (version)."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "34 — DELETE /cards/:id",
+              "name": "37 — DELETE /cards/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -2058,7 +2261,7 @@
               ]
             },
             {
-              "name": "35 — POST /recurring-templates",
+              "name": "38 — POST /recurring-templates",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2110,7 +2313,7 @@
               ]
             },
             {
-              "name": "36 — GET /recurring-templates/:id",
+              "name": "39 — GET /recurring-templates/:id",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -2141,7 +2344,7 @@
               ]
             },
             {
-              "name": "37 — GET /recurring-templates (lista)",
+              "name": "40 — GET /recurring-templates (lista)",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -2178,7 +2381,7 @@
               ]
             },
             {
-              "name": "38 — PATCH /recurring-templates/:id",
+              "name": "41 — PATCH /recurring-templates/:id",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -2228,7 +2431,7 @@
               ]
             },
             {
-              "name": "39 — DELETE /recurring-templates/:id",
+              "name": "42 — DELETE /recurring-templates/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -2277,7 +2480,7 @@
               ]
             },
             {
-              "name": "40 — POST /budgets (rascunho ativavel)",
+              "name": "43 — POST /budgets (rascunho ativavel)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2322,7 +2525,7 @@
               ]
             },
             {
-              "name": "41 — POST /budgets/recurrence",
+              "name": "44 — POST /budgets/recurrence",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2367,7 +2570,7 @@
               ]
             },
             {
-              "name": "42 — POST /budgets/:competence/activate",
+              "name": "45 — POST /budgets/:competence/activate",
               "request": {
                 "method": "POST",
                 "header": [],
@@ -2399,7 +2602,7 @@
               ]
             },
             {
-              "name": "43 — GET /budgets/:competence/summary",
+              "name": "46 — GET /budgets/:competence/summary",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -2431,7 +2634,7 @@
               ]
             },
             {
-              "name": "44 — GET /budgets/alerts",
+              "name": "47 — GET /budgets/alerts",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -2468,7 +2671,7 @@
               ]
             },
             {
-              "name": "45 — POST /budgets/expenses",
+              "name": "48 — POST /budgets/expenses",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2491,7 +2694,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"competence\":\"{{competence_active_u1}}\",\"amount_cents\":2500}",
+                  "raw": "{\"external_transaction_id\": \"{{$guid}}\", \"subcategory_id\": \"{{subcategory_id_u1}}\", \"competence\": \"{{competence_active_u1}}\", \"amount_cents\": 2500, \"occurred_at\": \"{{now_iso_u1}}\"}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2516,7 +2719,7 @@
               ]
             },
             {
-              "name": "46 — PATCH /budgets/expenses/:id",
+              "name": "49 — PATCH /budgets/expenses/:id",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -2540,7 +2743,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"competence\":\"{{competence_active_u1}}\",\"amount_cents\":3000,\"expected_version\":{{expense_version_u1}}}",
+                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"competence\":\"{{competence_active_u1}}\",\"amount_cents\":3000,\"occurred_at\":\"{{now_iso_u1}}\",\"expected_version\":{{expense_version_u1}}}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2563,7 +2766,7 @@
               ]
             },
             {
-              "name": "47 — DELETE /budgets/expenses/:id",
+              "name": "50 — DELETE /budgets/expenses/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -2609,7 +2812,7 @@
               ]
             },
             {
-              "name": "48 — POST /budgets (competencia rascunho p/ exclusao)",
+              "name": "51 — POST /budgets (competencia rascunho p/ exclusao)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2654,7 +2857,7 @@
               ]
             },
             {
-              "name": "49 — DELETE /budgets/:competence (rascunho)",
+              "name": "52 — DELETE /budgets/:competence (rascunho)",
               "request": {
                 "method": "DELETE",
                 "header": [],
@@ -3492,14 +3695,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":1990,\"description\":\"Compra no mercado\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"occurred_at\":\"{{now_iso_u2}}\"}",
+                  "raw": "{\"direction\": \"outcome\", \"payment_method\": \"pix\", \"amount_cents\": 1990, \"description\": \"Compra no mercado\", \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\"}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "Cria um lancamento de saida (pix). category_id/subcategory_id encadeados; occurred_at do pre-request."
+                "description": "Cria um lancamento de saida (pix) para u2."
               },
               "event": [
                 {
@@ -3517,7 +3720,319 @@
               ]
             },
             {
-              "name": "16 — GET /transactions/:id",
+              "name": "16 — POST /transactions — TED",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\", \"payment_method\": \"ted\", \"description\": \"Compra no mercado (TED)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: TED."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_ted_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_ted_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "17 — POST /transactions — debito em conta",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\", \"payment_method\": \"debit_in_account\", \"description\": \"Compra no mercado (debito em conta)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: debito em conta."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_debit_in_account_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_debit_in_account_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "18 — POST /transactions — cartao de debito",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\", \"payment_method\": \"debit_card\", \"description\": \"Compra no mercado (cartao de debito)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: cartao de debito."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_debit_card_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_debit_card_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "19 — POST /transactions — dinheiro",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\", \"payment_method\": \"cash\", \"description\": \"Compra no mercado (dinheiro)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: dinheiro."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_cash_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_cash_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "20 — POST /transactions — boleto",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"amount_cents\": 1990, \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\", \"payment_method\": \"boleto\", \"description\": \"Compra no mercado (boleto)\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: boleto."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_boleto_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_boleto_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "21 — POST /transactions — income salario (TED)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"income\", \"payment_method\": \"ted\", \"amount_cents\": 500000, \"description\": \"Salario\", \"category_id\": \"{{category_id_u2}}\", \"occurred_at\": \"{{now_iso_u2}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: income salario (TED)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_income_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_income_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "22 — GET /transactions/:id",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3548,7 +4063,7 @@
               ]
             },
             {
-              "name": "17 — PATCH /transactions/:id",
+              "name": "23 — PATCH /transactions/:id",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -3598,7 +4113,7 @@
               ]
             },
             {
-              "name": "18 — GET /transactions (lista por competencia)",
+              "name": "24 — GET /transactions (lista por competencia)",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3635,7 +4150,7 @@
               ]
             },
             {
-              "name": "19 — GET /months/:ref_month",
+              "name": "25 — GET /months/:ref_month",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3666,7 +4181,7 @@
               ]
             },
             {
-              "name": "20 — GET /months/:ref_month/entries",
+              "name": "26 — GET /months/:ref_month/entries",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3698,7 +4213,7 @@
               ]
             },
             {
-              "name": "21 — DELETE /transactions/:id",
+              "name": "27 — DELETE /transactions/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -3747,7 +4262,7 @@
               ]
             },
             {
-              "name": "22 — POST /cards",
+              "name": "28 — POST /cards",
               "request": {
                 "method": "POST",
                 "header": [
@@ -3797,7 +4312,111 @@
               ]
             },
             {
-              "name": "23 — GET /cards",
+              "name": "29 — POST /transactions — cartao de credito a vista",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"payment_method\": \"credit_card\", \"card_id\": \"{{card_id_u2}}\", \"amount_cents\": 120000, \"description\": \"Compra no cartao a vista\", \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"installments\": 1, \"occurred_at\": \"{{now_iso_u2}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: cartao de credito a vista."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_credit_card_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_credit_card_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "30 — POST /transactions — cartao de credito parcelado 3x",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\": \"outcome\", \"payment_method\": \"credit_card\", \"card_id\": \"{{card_id_u2}}\", \"amount_cents\": 120000, \"description\": \"Compra parcelada no cartao\", \"category_id\": \"{{category_id_u2}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"installments\": 3, \"occurred_at\": \"{{now_iso_u2}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria lancamento: cartao de credito parcelado 3x."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_credit_card_parcelado_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_credit_card_parcelado_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "31 — GET /cards",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3828,7 +4447,7 @@
               ]
             },
             {
-              "name": "24 — GET /cards/best-purchase-day",
+              "name": "32 — GET /cards/best-purchase-day",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3869,7 +4488,7 @@
               ]
             },
             {
-              "name": "25 — GET /cards/:id",
+              "name": "33 — GET /cards/:id",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3900,7 +4519,7 @@
               ]
             },
             {
-              "name": "26 — PUT /cards/:id",
+              "name": "34 — PUT /cards/:id",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -3949,7 +4568,7 @@
               ]
             },
             {
-              "name": "27 — GET /cards/:id/invoices?for=",
+              "name": "35 — GET /cards/:id/invoices?for=",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3987,7 +4606,7 @@
               ]
             },
             {
-              "name": "28 — GET /cards/:id/invoices/:ref_month",
+              "name": "36 — GET /cards/:id/invoices/:ref_month",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -4020,220 +4639,7 @@
               ]
             },
             {
-              "name": "29 — POST /card-purchases",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    ""
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\"card_id\":\"{{card_id_u2}}\",\"total_amount_cents\":120000,\"installments_total\":3,\"description\":\"Compra parcelada\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"purchased_at\":\"{{now_iso_u2}}\"}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "description": "Cria uma compra parcelada no cartao (gera itens de fatura por competencia)."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                      "const b = pm.response.json();",
-                      "pm.collectionVariables.set(\"card_purchase_id_u2\", b.id);",
-                      "pm.collectionVariables.set(\"card_purchase_version_u2\", b.version);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "30 — GET /card-purchases/:id",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u2}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    "{{card_purchase_id_u2}}"
-                  ]
-                },
-                "description": "Obtem a compra no cartao."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "31 — GET /card-purchases (lista)",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    ""
-                  ]
-                },
-                "description": "Lista as compras no cartao."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "32 — PATCH /card-purchases/:id",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u2}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    "{{card_purchase_id_u2}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\"total_amount_cents\":150000,\"installments_total\":5,\"description\":\"Compra parcelada (ajuste)\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"purchased_at\":\"{{now_iso_u2}}\",\"version\":{{card_purchase_version_u2}}}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "description": "Atualiza a compra no cartao (version)."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                      "pm.collectionVariables.set(\"card_purchase_version_u2\", pm.response.json().version);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "33 — DELETE /card-purchases/:id",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u2}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "card-purchases",
-                    "{{card_purchase_id_u2}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\"version\":{{card_purchase_version_u2}}}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "description": "Remove a compra no cartao (version)."
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "34 — DELETE /cards/:id",
+              "name": "37 — DELETE /cards/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -4269,7 +4675,7 @@
               ]
             },
             {
-              "name": "35 — POST /recurring-templates",
+              "name": "38 — POST /recurring-templates",
               "request": {
                 "method": "POST",
                 "header": [
@@ -4321,7 +4727,7 @@
               ]
             },
             {
-              "name": "36 — GET /recurring-templates/:id",
+              "name": "39 — GET /recurring-templates/:id",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -4352,7 +4758,7 @@
               ]
             },
             {
-              "name": "37 — GET /recurring-templates (lista)",
+              "name": "40 — GET /recurring-templates (lista)",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -4389,7 +4795,7 @@
               ]
             },
             {
-              "name": "38 — PATCH /recurring-templates/:id",
+              "name": "41 — PATCH /recurring-templates/:id",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -4439,7 +4845,7 @@
               ]
             },
             {
-              "name": "39 — DELETE /recurring-templates/:id",
+              "name": "42 — DELETE /recurring-templates/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -4488,7 +4894,7 @@
               ]
             },
             {
-              "name": "40 — POST /budgets (rascunho ativavel)",
+              "name": "43 — POST /budgets (rascunho ativavel)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -4533,7 +4939,7 @@
               ]
             },
             {
-              "name": "41 — POST /budgets/recurrence",
+              "name": "44 — POST /budgets/recurrence",
               "request": {
                 "method": "POST",
                 "header": [
@@ -4578,7 +4984,7 @@
               ]
             },
             {
-              "name": "42 — POST /budgets/:competence/activate",
+              "name": "45 — POST /budgets/:competence/activate",
               "request": {
                 "method": "POST",
                 "header": [],
@@ -4610,7 +5016,7 @@
               ]
             },
             {
-              "name": "43 — GET /budgets/:competence/summary",
+              "name": "46 — GET /budgets/:competence/summary",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -4642,7 +5048,7 @@
               ]
             },
             {
-              "name": "44 — GET /budgets/alerts",
+              "name": "47 — GET /budgets/alerts",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -4679,7 +5085,7 @@
               ]
             },
             {
-              "name": "45 — POST /budgets/expenses",
+              "name": "48 — POST /budgets/expenses",
               "request": {
                 "method": "POST",
                 "header": [
@@ -4702,7 +5108,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"competence\":\"{{competence_active_u2}}\",\"amount_cents\":2500}",
+                  "raw": "{\"external_transaction_id\": \"{{$guid}}\", \"subcategory_id\": \"{{subcategory_id_u2}}\", \"competence\": \"{{competence_active_u2}}\", \"amount_cents\": 2500, \"occurred_at\": \"{{now_iso_u2}}\"}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -4727,7 +5133,7 @@
               ]
             },
             {
-              "name": "46 — PATCH /budgets/expenses/:id",
+              "name": "49 — PATCH /budgets/expenses/:id",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -4751,7 +5157,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"competence\":\"{{competence_active_u2}}\",\"amount_cents\":3000,\"expected_version\":{{expense_version_u2}}}",
+                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"competence\":\"{{competence_active_u2}}\",\"amount_cents\":3000,\"occurred_at\":\"{{now_iso_u2}}\",\"expected_version\":{{expense_version_u2}}}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -4774,7 +5180,7 @@
               ]
             },
             {
-              "name": "47 — DELETE /budgets/expenses/:id",
+              "name": "50 — DELETE /budgets/expenses/:id",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -4820,7 +5226,7 @@
               ]
             },
             {
-              "name": "48 — POST /budgets (competencia rascunho p/ exclusao)",
+              "name": "51 — POST /budgets (competencia rascunho p/ exclusao)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -4865,7 +5271,7 @@
               ]
             },
             {
-              "name": "49 — DELETE /budgets/:competence (rascunho)",
+              "name": "52 — DELETE /budgets/:competence (rascunho)",
               "request": {
                 "method": "DELETE",
                 "header": [],
@@ -5045,16 +5451,6 @@
       "type": "string"
     },
     {
-      "key": "card_purchase_id_u1",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "card_purchase_version_u1",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "recurring_id_u1",
       "value": "",
       "type": "string"
@@ -5141,16 +5537,6 @@
     },
     {
       "key": "transaction_version_u2",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "card_purchase_id_u2",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "card_purchase_version_u2",
       "value": "",
       "type": "string"
     },

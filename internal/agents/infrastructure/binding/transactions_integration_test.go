@@ -41,20 +41,6 @@ func (p *noopTxPublisher) PublishDeleted(_ context.Context, _ database.DBTX, _ e
 	return nil
 }
 
-type noopCPPublisher struct{}
-
-func (p *noopCPPublisher) PublishCreated(_ context.Context, _ database.DBTX, _ entities.CardPurchaseCreated) error {
-	return nil
-}
-
-func (p *noopCPPublisher) PublishUpdated(_ context.Context, _ database.DBTX, _ entities.CardPurchaseUpdated) error {
-	return nil
-}
-
-func (p *noopCPPublisher) PublishDeleted(_ context.Context, _ database.DBTX, _ entities.CardPurchaseDeleted) error {
-	return nil
-}
-
 type stubCategoryValidator struct{ catID uuid.UUID }
 
 func (v *stubCategoryValidator) Validate(_ context.Context, _ uuid.UUID, _ *uuid.UUID) (txifaces.CategorySnapshot, error) {
@@ -280,6 +266,7 @@ func (s *TransactionsIntegrationSuite) TestCenario3_CartaoParceladoRefleteSoUmaP
 	userID := s.cardOwner
 	ctx := s.authedCtx(userID)
 	catID := uuid.New()
+	subCatID := uuid.New()
 
 	cardID := s.cardID
 	ref, err := s.adapter.CreateTransaction(ctx, agentsifaces.RawTransaction{
@@ -288,6 +275,7 @@ func (s *TransactionsIntegrationSuite) TestCenario3_CartaoParceladoRefleteSoUmaP
 		AmountCents:   30000,
 		Description:   "Eletrodoméstico parcelado",
 		CategoryID:    catID,
+		SubcategoryID: &subCatID,
 		CardID:        &cardID,
 		Installments:  3,
 		OccurredAt:    "2026-07-01",
