@@ -36,9 +36,9 @@ func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 	return nil, nil
 }
 
-func TestBuildFinancialTools_ReturnsExactly26Tools(t *testing.T) {
+func TestBuildFinancialTools_ReturnsExactly23Tools(t *testing.T) {
 	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil)
-	assert.Len(t, tools, 26)
+	assert.Len(t, tools, 23)
 }
 
 func TestNewModule_RequiredDepsValidation(t *testing.T) {

@@ -20,12 +20,14 @@ import (
 type fakeUpsertExpense struct {
 	calls         int
 	capturedInput input.UpsertExpenseInput
+	allInputs     []input.UpsertExpenseInput
 	err           error
 }
 
 func (f *fakeUpsertExpense) Execute(_ context.Context, in input.UpsertExpenseInput) (output.ExpenseOutput, error) {
 	f.calls++
 	f.capturedInput = in
+	f.allInputs = append(f.allInputs, in)
 	return output.ExpenseOutput{}, f.err
 }
 
@@ -69,6 +71,49 @@ func (s *transactionCreatedConsumerSuite) TestOutcome_CreatesExpense() {
 	s.Equal(subcategoryID, upsert.capturedInput.SubcategoryID)
 	s.Equal("2026-06", upsert.capturedInput.Competence)
 	s.Equal(int64(5000), upsert.capturedInput.AmountCents)
+}
+
+func (s *transactionCreatedConsumerSuite) TestCreditCard_SpreadsInstallmentsPerMonth() {
+	userID := uuid.New().String()
+	subcategoryID := uuid.New().String()
+	item1 := uuid.New().String()
+	item2 := uuid.New().String()
+	item3 := uuid.New().String()
+	raw, _ := json.Marshal(map[string]any{
+		"aggregate_id":   uuid.New().String(),
+		"user_id":        userID,
+		"occurred_at":    time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC),
+		"direction":      2,
+		"amount_cents":   9000,
+		"ref_month":      "2026-06",
+		"subcategory_id": subcategoryID,
+		"installments": []map[string]any{
+			{"item_id": item1, "ref_month": "2026-06", "amount_cents": 3000, "index": 1},
+			{"item_id": item2, "ref_month": "2026-07", "amount_cents": 3000, "index": 2},
+			{"item_id": item3, "ref_month": "2026-08", "amount_cents": 3000, "index": 3},
+		},
+	})
+	env := outbox.Envelope{ID: uuid.New().String(), Payload: raw}
+
+	upsert := &fakeUpsertExpense{}
+	consumer := consumers.NewTransactionCreatedConsumer(upsert, noop.NewProvider())
+
+	err := consumer.Handle(context.Background(), stubEvent{eventType: "transactions.transaction.created.v1", payload: env})
+	s.Require().NoError(err)
+
+	s.Require().Equal(3, upsert.calls)
+	for _, in := range upsert.allInputs {
+		s.Equal("transactions_card", in.Source)
+		s.Equal(userID, in.UserID)
+		s.Equal(subcategoryID, in.SubcategoryID)
+		s.Equal(int64(3000), in.AmountCents)
+	}
+	s.Equal(item1, upsert.allInputs[0].ExternalTransactionID)
+	s.Equal("2026-06", upsert.allInputs[0].Competence)
+	s.Equal(item2, upsert.allInputs[1].ExternalTransactionID)
+	s.Equal("2026-07", upsert.allInputs[1].Competence)
+	s.Equal(item3, upsert.allInputs[2].ExternalTransactionID)
+	s.Equal("2026-08", upsert.allInputs[2].Competence)
 }
 
 func (s *transactionCreatedConsumerSuite) TestIncome_NoOp() {

@@ -27,6 +27,7 @@ import (
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 	txrepos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/infrastructure/repositories"
 	"github.com/jmoiron/sqlx"
 )
@@ -75,6 +76,14 @@ type e2eStubCategoryValidator struct{ catID uuid.UUID }
 
 func (v *e2eStubCategoryValidator) Validate(_ context.Context, _ uuid.UUID, _ *uuid.UUID) (txifaces.CategorySnapshot, error) {
 	return txifaces.CategorySnapshot{ID: v.catID, Name: "Alimentação"}, nil
+}
+
+type e2eStubCardLookup struct {
+	snapshot valueobjects.CardBillingSnapshot
+}
+
+func (l *e2eStubCardLookup) GetForUser(_ context.Context, _, _ uuid.UUID) (valueobjects.CardBillingSnapshot, error) {
+	return l.snapshot, nil
 }
 
 type e2eStubCategoriesReader struct {
@@ -139,9 +148,13 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	)
 	s.Require().NoError(err)
 
+	snapshot, err := valueobjects.NewCardBillingSnapshot(20, 25)
+	s.Require().NoError(err)
+
 	createTx := txusecases.NewCreateTransaction(
 		factory,
 		uow.NewUnitOfWork(db),
+		&e2eStubCardLookup{snapshot: snapshot},
 		&e2eStubCategoryValidator{catID: catID},
 		services.TransactionWorkflow{},
 		&e2eTxPublisher{},
@@ -152,7 +165,7 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
 
 	s.adapter = binding.NewTransactionsLedgerAdapter(
-		createTx, nil, nil, nil, nil, nil, listME, getMS, nil, nil, nil, nil, nil, o11y,
+		createTx, nil, nil, listME, getMS, nil, nil, nil, o11y,
 	)
 
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)

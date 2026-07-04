@@ -31,23 +31,11 @@ func (s *stubLedger) CreateTransaction(_ context.Context, _ interfaces.RawTransa
 	return interfaces.EntryRef{ID: s.createdID, Kind: "transaction", Reconciled: false}, nil
 }
 
-func (s *stubLedger) CreateCardPurchase(_ context.Context, _ interfaces.RawCardPurchase) (interfaces.EntryRef, error) {
-	return interfaces.EntryRef{}, nil
-}
-
 func (s *stubLedger) UpdateTransaction(_ context.Context, _ interfaces.RawUpdateTransaction) (interfaces.EntryRef, error) {
 	return interfaces.EntryRef{}, nil
 }
 
 func (s *stubLedger) DeleteTransaction(_ context.Context, _ interfaces.EntryRef, _ int64) error {
-	return nil
-}
-
-func (s *stubLedger) UpdateCardPurchase(_ context.Context, _ interfaces.RawUpdateCardPurchase) (interfaces.EntryRef, error) {
-	return interfaces.EntryRef{}, nil
-}
-
-func (s *stubLedger) DeleteCardPurchase(_ context.Context, _ interfaces.EntryRef, _ int64) error {
 	return nil
 }
 
@@ -69,14 +57,6 @@ func (s *stubLedger) SearchTransactions(_ context.Context, _ uuid.UUID, _, _ str
 
 func (s *stubLedger) GetTransaction(_ context.Context, _ string) (interfaces.Entry, error) {
 	return interfaces.Entry{}, nil
-}
-
-func (s *stubLedger) GetCardPurchase(_ context.Context, _ uuid.UUID) (interfaces.Entry, error) {
-	return interfaces.Entry{}, nil
-}
-
-func (s *stubLedger) ListCardPurchases(_ context.Context, _ uuid.UUID, _, _ string, _ int) ([]interfaces.Entry, error) {
-	return nil, nil
 }
 
 type stubCategoriesReader struct {

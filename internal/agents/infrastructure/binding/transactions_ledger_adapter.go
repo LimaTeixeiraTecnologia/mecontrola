@@ -12,22 +12,16 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	txinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	txoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/output"
-	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 )
 
 type transactionsLedgerAdapter struct {
 	createTx       *txusecases.CreateTransaction
-	createCP       *txusecases.CreateCardPurchase
 	updateTx       *txusecases.UpdateTransaction
 	deleteTx       *txusecases.DeleteTransaction
-	updateCP       *txusecases.UpdateCardPurchase
-	deleteCP       *txusecases.DeleteCardPurchase
 	listMonthlyE   *txusecases.ListMonthlyEntries
 	getMonthlySumm *txusecases.GetMonthlySummary
 	getTx          *txusecases.GetTransaction
-	getCP          *txusecases.GetCardPurchase
-	listCP         *txusecases.ListCardPurchases
 	getCardInvoice *txusecases.GetCardInvoice
 	searchTx       *txusecases.SearchTransactions
 	o11y           observability.Observability
@@ -35,32 +29,22 @@ type transactionsLedgerAdapter struct {
 
 func NewTransactionsLedgerAdapter(
 	createTx *txusecases.CreateTransaction,
-	createCP *txusecases.CreateCardPurchase,
 	updateTx *txusecases.UpdateTransaction,
 	deleteTx *txusecases.DeleteTransaction,
-	updateCP *txusecases.UpdateCardPurchase,
-	deleteCP *txusecases.DeleteCardPurchase,
 	listMonthlyE *txusecases.ListMonthlyEntries,
 	getMonthlySumm *txusecases.GetMonthlySummary,
 	getTx *txusecases.GetTransaction,
-	getCP *txusecases.GetCardPurchase,
-	listCP *txusecases.ListCardPurchases,
 	getCardInvoice *txusecases.GetCardInvoice,
 	searchTx *txusecases.SearchTransactions,
 	o11y observability.Observability,
 ) agentsifaces.TransactionsLedger {
 	return &transactionsLedgerAdapter{
 		createTx:       createTx,
-		createCP:       createCP,
 		updateTx:       updateTx,
 		deleteTx:       deleteTx,
-		updateCP:       updateCP,
-		deleteCP:       deleteCP,
 		listMonthlyE:   listMonthlyE,
 		getMonthlySumm: getMonthlySumm,
 		getTx:          getTx,
-		getCP:          getCP,
-		listCP:         listCP,
 		getCardInvoice: getCardInvoice,
 		searchTx:       searchTx,
 		o11y:           o11y,
@@ -99,6 +83,8 @@ func (a *transactionsLedgerAdapter) CreateTransaction(ctx context.Context, in ag
 		Description:     in.Description,
 		CategoryID:      in.CategoryID,
 		SubcategoryID:   in.SubcategoryID,
+		CardID:          in.CardID,
+		Installments:    in.Installments,
 		OccurredAt:      in.OccurredAt,
 		OriginWamid:     in.OriginWamid,
 		OriginItemSeq:   in.OriginItemSeq,
@@ -109,35 +95,6 @@ func (a *transactionsLedgerAdapter) CreateTransaction(ctx context.Context, in ag
 		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/transactions_ledger: criar transação: %w", err)
 	}
 	return agentsifaces.EntryRef{ID: out.ID, Kind: "transaction", Reconciled: out.Reconciled}, nil
-}
-
-func (a *transactionsLedgerAdapter) CreateCardPurchase(ctx context.Context, in agentsifaces.RawCardPurchase) (agentsifaces.EntryRef, error) {
-	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.create_card_purchase")
-	defer span.End()
-
-	ctx, err := a.principalCtx(ctx)
-	if err != nil {
-		span.RecordError(err)
-		return agentsifaces.EntryRef{}, err
-	}
-
-	out, err := a.createCP.Execute(ctx, txinput.RawCreateCardPurchase{
-		CardID:            in.CardID,
-		TotalAmountCents:  in.TotalAmountCents,
-		InstallmentsTotal: in.InstallmentsTotal,
-		Description:       in.Description,
-		CategoryID:        in.CategoryID,
-		SubcategoryID:     in.SubcategoryID,
-		PurchasedAt:       in.PurchasedAt,
-		OriginWamid:       in.OriginWamid,
-		OriginItemSeq:     in.OriginItemSeq,
-		OriginOperation:   in.OriginOperation,
-	})
-	if err != nil {
-		span.RecordError(err)
-		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/transactions_ledger: criar compra cartão: %w", err)
-	}
-	return agentsifaces.EntryRef{ID: out.ID, Kind: "card_purchase", Reconciled: out.Reconciled}, nil
 }
 
 func (a *transactionsLedgerAdapter) UpdateTransaction(ctx context.Context, in agentsifaces.RawUpdateTransaction) (agentsifaces.EntryRef, error) {
@@ -180,49 +137,6 @@ func (a *transactionsLedgerAdapter) DeleteTransaction(ctx context.Context, ref a
 	if err := a.deleteTx.Execute(ctx, ref.ID.String(), version); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("agents/binding/transactions_ledger: deletar transação: %w", err)
-	}
-	return nil
-}
-
-func (a *transactionsLedgerAdapter) UpdateCardPurchase(ctx context.Context, in agentsifaces.RawUpdateCardPurchase) (agentsifaces.EntryRef, error) {
-	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.update_card_purchase")
-	defer span.End()
-
-	ctx, err := a.principalCtx(ctx)
-	if err != nil {
-		span.RecordError(err)
-		return agentsifaces.EntryRef{}, err
-	}
-
-	out, err := a.updateCP.Execute(ctx, in.ID, txinput.RawUpdateCardPurchase{
-		TotalAmountCents:  in.TotalAmountCents,
-		InstallmentsTotal: in.InstallmentsTotal,
-		Description:       in.Description,
-		CategoryID:        in.CategoryID,
-		SubcategoryID:     in.SubcategoryID,
-		PurchasedAt:       in.PurchasedAt,
-		Version:           in.Version,
-	})
-	if err != nil {
-		span.RecordError(err)
-		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/transactions_ledger: atualizar compra cartão: %w", err)
-	}
-	return agentsifaces.EntryRef{ID: out.ID, Kind: "card_purchase"}, nil
-}
-
-func (a *transactionsLedgerAdapter) DeleteCardPurchase(ctx context.Context, ref agentsifaces.EntryRef, version int64) error {
-	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.delete_card_purchase")
-	defer span.End()
-
-	ctx, err := a.principalCtx(ctx)
-	if err != nil {
-		span.RecordError(err)
-		return err
-	}
-
-	if err := a.deleteCP.Execute(ctx, ref.ID, version); err != nil {
-		span.RecordError(err)
-		return fmt.Errorf("agents/binding/transactions_ledger: deletar compra cartão: %w", err)
 	}
 	return nil
 }
@@ -300,87 +214,6 @@ func (a *transactionsLedgerAdapter) GetTransaction(ctx context.Context, txID str
 		CreatedAt:               out.CreatedAt,
 		UpdatedAt:               out.UpdatedAt,
 	}, nil
-}
-
-func (a *transactionsLedgerAdapter) GetCardPurchase(ctx context.Context, purchaseID uuid.UUID) (agentsifaces.Entry, error) {
-	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_card_purchase")
-	defer span.End()
-
-	ctx, err := a.principalCtx(ctx)
-	if err != nil {
-		span.RecordError(err)
-		return agentsifaces.Entry{}, err
-	}
-
-	out, err := a.getCP.Execute(ctx, purchaseID)
-	if err != nil {
-		span.RecordError(err)
-		return agentsifaces.Entry{}, fmt.Errorf("agents/binding/transactions_ledger: obter compra cartão: %w", err)
-	}
-	var sub *string
-	if out.SubcategoryID != nil {
-		s := out.SubcategoryID.String()
-		sub = &s
-	}
-	return agentsifaces.Entry{
-		Kind:                    "card_purchase",
-		ID:                      out.ID.String(),
-		UserID:                  out.UserID.String(),
-		AmountCents:             out.TotalAmountCents,
-		Description:             out.Description,
-		CategoryID:              out.CategoryID.String(),
-		SubcategoryID:           sub,
-		CategoryNameSnapshot:    out.CategoryNameSnapshot,
-		SubcategoryNameSnapshot: out.SubcategoryNameSnapshot,
-		Version:                 out.Version,
-		CreatedAt:               out.CreatedAt,
-		UpdatedAt:               out.UpdatedAt,
-	}, nil
-}
-
-func (a *transactionsLedgerAdapter) ListCardPurchases(ctx context.Context, cardID uuid.UUID, refMonth, cursor string, limit int) ([]agentsifaces.Entry, error) {
-	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.list_card_purchases")
-	defer span.End()
-
-	ctx, err := a.principalCtx(ctx)
-	if err != nil {
-		span.RecordError(err)
-		return nil, err
-	}
-
-	page, err := a.listCP.Execute(ctx, txusecases.ListCardPurchasesInput{
-		CardID: cardID,
-		Cursor: txifaces.Cursor{Value: cursor},
-		Limit:  limit,
-	})
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("agents/binding/transactions_ledger: listar compras cartão: %w", err)
-	}
-
-	entries := make([]agentsifaces.Entry, 0, len(page.Items))
-	for _, cp := range page.Items {
-		var sub *string
-		if cp.SubcategoryID != nil {
-			s := cp.SubcategoryID.String()
-			sub = &s
-		}
-		entries = append(entries, agentsifaces.Entry{
-			Kind:                    "card_purchase",
-			ID:                      cp.ID.String(),
-			UserID:                  cp.UserID.String(),
-			AmountCents:             cp.TotalAmountCents,
-			Description:             cp.Description,
-			CategoryID:              cp.CategoryID.String(),
-			SubcategoryID:           sub,
-			CategoryNameSnapshot:    cp.CategoryNameSnapshot,
-			SubcategoryNameSnapshot: cp.SubcategoryNameSnapshot,
-			Version:                 cp.Version,
-			CreatedAt:               cp.CreatedAt,
-			UpdatedAt:               cp.UpdatedAt,
-		})
-	}
-	return entries, nil
 }
 
 func (a *transactionsLedgerAdapter) GetCardInvoice(ctx context.Context, cardID uuid.UUID, refMonth string) (agentsifaces.CardInvoice, error) {

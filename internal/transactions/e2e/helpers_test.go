@@ -72,42 +72,17 @@ func isTransactionSoftDeleted(ctx context.Context, db *sqlx.DB, txID string) (bo
 	return deletedAt != nil, nil
 }
 
-func countCardPurchasesForUser(ctx context.Context, db *sqlx.DB, userID uuid.UUID) (int, error) {
-	var n int
-	err := db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		  FROM mecontrola.transactions_card_purchases
-		 WHERE user_id = $1
-		   AND deleted_at IS NULL
-	`, userID.String()).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("countCardPurchasesForUser: %w", err)
-	}
-	return n, nil
-}
-
-func countCardInvoiceItemsForPurchase(ctx context.Context, db *sqlx.DB, purchaseID string) (int, error) {
+func countCardInvoiceItemsForTransaction(ctx context.Context, db *sqlx.DB, transactionID string) (int, error) {
 	var n int
 	err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		  FROM mecontrola.transactions_card_invoice_items
-		 WHERE purchase_id = $1
-	`, purchaseID).Scan(&n)
+		 WHERE transaction_id = $1
+	`, transactionID).Scan(&n)
 	if err != nil {
-		return 0, fmt.Errorf("countCardInvoiceItemsForPurchase: %w", err)
+		return 0, fmt.Errorf("countCardInvoiceItemsForTransaction: %w", err)
 	}
 	return n, nil
-}
-
-func isCardPurchaseSoftDeleted(ctx context.Context, db *sqlx.DB, cpID string) (bool, error) {
-	var deletedAt *time.Time
-	err := db.QueryRowContext(ctx, `
-		SELECT deleted_at FROM mecontrola.transactions_card_purchases WHERE id = $1
-	`, cpID).Scan(&deletedAt)
-	if err != nil {
-		return false, fmt.Errorf("isCardPurchaseSoftDeleted %s: %w", cpID, err)
-	}
-	return deletedAt != nil, nil
 }
 
 func countRecurringTemplatesForUser(ctx context.Context, db *sqlx.DB, userID uuid.UUID) (int, error) {

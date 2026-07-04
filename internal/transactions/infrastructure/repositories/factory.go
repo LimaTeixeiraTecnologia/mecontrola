@@ -21,10 +21,6 @@ func (f *repositoryFactory) TransactionRepository(db database.DBTX) interfaces.T
 	return postgres.NewTransactionRepository(f.o11y, db)
 }
 
-func (f *repositoryFactory) CardPurchaseRepository(db database.DBTX) interfaces.CardPurchaseRepository {
-	return postgres.NewCardPurchaseRepository(f.o11y, db)
-}
-
 func (f *repositoryFactory) CardInvoiceRepository(db database.DBTX) interfaces.CardInvoiceRepository {
 	return postgres.NewCardInvoiceRepository(f.o11y, db)
 }

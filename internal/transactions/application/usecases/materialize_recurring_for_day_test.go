@@ -29,7 +29,6 @@ type MaterializeRecurringForDaySuite struct {
 	materializeRepo *mockInterfaces.RecurringMaterializationRepository
 	uow             *uowMocks.UnitOfWorkVoid
 	txCreator       *uowMocks.TransactionCreator
-	cardCreator     *uowMocks.CardPurchaseCreator
 	brazilLoc       *time.Location
 }
 
@@ -48,7 +47,6 @@ func (s *MaterializeRecurringForDaySuite) SetupTest() {
 	s.brazilLoc = loc
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 	s.txCreator = uowMocks.NewTransactionCreator(s.T())
-	s.cardCreator = uowMocks.NewCardPurchaseCreator(s.T())
 }
 
 func (s *MaterializeRecurringForDaySuite) referenceToday() time.Time {
@@ -88,7 +86,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_NoTemplatesForDay_ReturnsN
 		Return(nil, interfaces.Cursor{}, nil).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, nil, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())
@@ -111,7 +109,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_LockNotAcquired_SkipsTempl
 		Return(false, func() {}, nil).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, nil, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())
@@ -142,7 +140,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_AlreadyMaterialized_SkipsC
 		Return(true, nil).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, nil, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())
@@ -177,7 +175,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsTransaction(
 		Return(nil).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, s.txCreator, nil, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, s.txCreator, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())
@@ -207,14 +205,14 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_TransactionCreatorError_Re
 		Return(output.Transaction{}, errors.New("create failed")).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, s.txCreator, nil, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, s.txCreator, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())
 	s.Require().Error(err)
 }
 
-func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCardPurchase() {
+func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCreditTransaction() {
 	today := s.referenceToday()
 	day := today.Day()
 
@@ -255,23 +253,23 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCardPurchase
 		InsertIfAbsent(mock.Anything, template.ID(), refMonth, (*uuid.UUID)(nil), (*uuid.UUID)(nil), mock.Anything).
 		Return(true, nil).Once()
 
-	purchaseID := uuid.New()
-	s.cardCreator.On("Execute", mock.Anything, mock.Anything).
-		Return(output.CardPurchase{ID: purchaseID}, nil).Once()
+	txID := uuid.New()
+	s.txCreator.On("Execute", mock.Anything, mock.Anything).
+		Return(output.Transaction{ID: txID}, nil).Once()
 
 	s.materializeRepo.EXPECT().
-		MarkCompleted(mock.Anything, template.ID(), refMonth, (*uuid.UUID)(nil), mock.Anything).
+		MarkCompleted(mock.Anything, template.ID(), refMonth, mock.Anything, (*uuid.UUID)(nil)).
 		Return(nil).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, s.cardCreator, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, s.txCreator, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())
 	s.Require().NoError(err)
 }
 
-func (s *MaterializeRecurringForDaySuite) TestExecute_CardPurchaseCreatorError() {
+func (s *MaterializeRecurringForDaySuite) TestExecute_CreditTransactionCreatorError() {
 	today := s.referenceToday()
 	day := today.Day()
 
@@ -312,11 +310,11 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_CardPurchaseCreatorError()
 		InsertIfAbsent(mock.Anything, template.ID(), refMonth, (*uuid.UUID)(nil), (*uuid.UUID)(nil), mock.Anything).
 		Return(true, nil).Once()
 
-	s.cardCreator.On("Execute", mock.Anything, mock.Anything).
-		Return(output.CardPurchase{}, errors.New("card create failed")).Once()
+	s.txCreator.On("Execute", mock.Anything, mock.Anything).
+		Return(output.Transaction{}, errors.New("create failed")).Once()
 
 	uc := NewMaterializeRecurringForDay(
-		nil, s.factory, s.uow, services.RecurringWorkflow{}, nil, s.cardCreator, s.brazilLoc, fake.NewProvider(),
+		nil, s.factory, s.uow, services.RecurringWorkflow{}, s.txCreator, s.brazilLoc, fake.NewProvider(),
 	)
 
 	err := uc.Execute(s.ctx, today.UTC())

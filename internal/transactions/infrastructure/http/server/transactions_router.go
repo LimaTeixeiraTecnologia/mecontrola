@@ -19,11 +19,6 @@ type TransactionsRouter struct {
 	deleteTransaction       *handlers.DeleteTransactionHandler
 	getTransaction          *handlers.GetTransactionHandler
 	listTransactions        *handlers.ListTransactionsHandler
-	createCardPurchase      *handlers.CreateCardPurchaseHandler
-	updateCardPurchase      *handlers.UpdateCardPurchaseHandler
-	deleteCardPurchase      *handlers.DeleteCardPurchaseHandler
-	getCardPurchase         *handlers.GetCardPurchaseHandler
-	listCardPurchases       *handlers.ListCardPurchasesHandler
 	createRecurringTemplate *handlers.CreateRecurringTemplateHandler
 	updateRecurringTemplate *handlers.UpdateRecurringTemplateHandler
 	deleteRecurringTemplate *handlers.DeleteRecurringTemplateHandler
@@ -43,11 +38,6 @@ func NewTransactionsRouter(
 	deleteTx *handlers.DeleteTransactionHandler,
 	getTx *handlers.GetTransactionHandler,
 	listTx *handlers.ListTransactionsHandler,
-	createCP *handlers.CreateCardPurchaseHandler,
-	updateCP *handlers.UpdateCardPurchaseHandler,
-	deleteCP *handlers.DeleteCardPurchaseHandler,
-	getCP *handlers.GetCardPurchaseHandler,
-	listCP *handlers.ListCardPurchasesHandler,
 	createRT *handlers.CreateRecurringTemplateHandler,
 	updateRT *handlers.UpdateRecurringTemplateHandler,
 	deleteRT *handlers.DeleteRecurringTemplateHandler,
@@ -66,11 +56,6 @@ func NewTransactionsRouter(
 		deleteTransaction:       deleteTx,
 		getTransaction:          getTx,
 		listTransactions:        listTx,
-		createCardPurchase:      createCP,
-		updateCardPurchase:      updateCP,
-		deleteCardPurchase:      deleteCP,
-		getCardPurchase:         getCP,
-		listCardPurchases:       listCP,
 		createRecurringTemplate: createRT,
 		updateRecurringTemplate: updateRT,
 		deleteRecurringTemplate: deleteRT,
@@ -99,14 +84,6 @@ func (rt *TransactionsRouter) Register(r chi.Router) {
 			sub.Get("/{id}", rt.getTransaction.Handle)
 			sub.With(idem).Patch("/{id}", rt.updateTransaction.Handle)
 			sub.With(idem).Delete("/{id}", rt.deleteTransaction.Handle)
-		})
-
-		g.Route("/api/v1/card-purchases", func(sub chi.Router) {
-			sub.With(idem).Post("/", rt.createCardPurchase.Handle)
-			sub.Get("/", rt.listCardPurchases.Handle)
-			sub.Get("/{id}", rt.getCardPurchase.Handle)
-			sub.With(idem).Patch("/{id}", rt.updateCardPurchase.Handle)
-			sub.With(idem).Delete("/{id}", rt.deleteCardPurchase.Handle)
 		})
 
 		g.Route("/api/v1/recurring-templates", func(sub chi.Router) {

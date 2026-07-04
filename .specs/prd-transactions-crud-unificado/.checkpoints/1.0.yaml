@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-crud-unificado/1.0_execution_report.md
+summary: PaymentMethod VR/VA + commands CardID/Installments invariantes credit_card
+timestamp: 2026-07-04T10:43:35Z

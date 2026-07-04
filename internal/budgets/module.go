@@ -38,27 +38,26 @@ type BudgetsEventHandlerRegistration struct {
 }
 
 type BudgetsModule struct {
-	BudgetsRouter               *budgetsserver.BudgetsRouter
-	AbandonedDraftReaper        *budgetsjobs.AbandonedDraftReaper
-	PendingEventsReaper         *budgetsjobs.PendingEventsReaper
-	RetentionPurge              *budgetsjobs.RetentionPurge
-	ThresholdAlertsJob          *budgetsjobs.ThresholdAlertsJob
-	ExpenseCommittedConsumer    *consumers.ExpenseCommittedConsumer
-	ThresholdAlertNotifier      *consumers.ThresholdAlertNotifier
-	TransactionCreatedConsumer  *consumers.TransactionCreatedConsumer
-	TransactionDeletedConsumer  *consumers.TransactionDeletedConsumer
-	CardPurchaseCreatedConsumer *consumers.CardPurchaseCreatedConsumer
-	EventHandlers               []BudgetsEventHandlerRegistration
-	CreateBudgetUC              *usecases.CreateBudget
-	ActivateBudgetUC            *usecases.ActivateBudget
-	CreateRecurrenceUC          *usecases.CreateRecurrence
-	DeleteDraftBudgetUC         *usecases.DeleteDraftBudget
-	DeleteExpenseUC             *usecases.DeleteExpense
-	ListAlertsUC                *usecases.ListAlerts
-	GetMonthlySummaryUC         *usecases.GetMonthlySummary
-	UpsertExpenseUC             *usecases.UpsertExpense
-	EditCategoryPercentageUC    *usecases.EditCategoryPercentage
-	SuggestAllocationUC         *usecases.SuggestAllocation
+	BudgetsRouter              *budgetsserver.BudgetsRouter
+	AbandonedDraftReaper       *budgetsjobs.AbandonedDraftReaper
+	PendingEventsReaper        *budgetsjobs.PendingEventsReaper
+	RetentionPurge             *budgetsjobs.RetentionPurge
+	ThresholdAlertsJob         *budgetsjobs.ThresholdAlertsJob
+	ExpenseCommittedConsumer   *consumers.ExpenseCommittedConsumer
+	ThresholdAlertNotifier     *consumers.ThresholdAlertNotifier
+	TransactionCreatedConsumer *consumers.TransactionCreatedConsumer
+	TransactionDeletedConsumer *consumers.TransactionDeletedConsumer
+	EventHandlers              []BudgetsEventHandlerRegistration
+	CreateBudgetUC             *usecases.CreateBudget
+	ActivateBudgetUC           *usecases.ActivateBudget
+	CreateRecurrenceUC         *usecases.CreateRecurrence
+	DeleteDraftBudgetUC        *usecases.DeleteDraftBudget
+	DeleteExpenseUC            *usecases.DeleteExpense
+	ListAlertsUC               *usecases.ListAlerts
+	GetMonthlySummaryUC        *usecases.GetMonthlySummary
+	UpsertExpenseUC            *usecases.UpsertExpense
+	EditCategoryPercentageUC   *usecases.EditCategoryPercentage
+	SuggestAllocationUC        *usecases.SuggestAllocation
 }
 
 type moduleBuilder struct {
@@ -133,7 +132,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
 	transactionCreatedConsumer := consumers.NewTransactionCreatedConsumer(useCases.upsertExpense, b.o11y)
 	transactionDeletedConsumer := consumers.NewTransactionDeletedConsumer(useCases.deleteExpense, b.o11y)
-	cardPurchaseCreatedConsumer := consumers.NewCardPurchaseCreatedConsumer(useCases.upsertExpense, b.o11y)
 
 	mode := strings.ToLower(strings.TrimSpace(b.cfg.BudgetsConfig.ThresholdAlertsMode))
 	if mode == "" {
@@ -145,7 +143,6 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	eventHandlers := []BudgetsEventHandlerRegistration{
 		{EventType: "transactions.transaction.created.v1", Handler: transactionCreatedConsumer},
 		{EventType: "transactions.transaction.deleted.v1", Handler: transactionDeletedConsumer},
-		{EventType: "transactions.card_purchase.created.v1", Handler: cardPurchaseCreatedConsumer},
 	}
 	if legacyEnabled {
 		eventHandlers = append([]BudgetsEventHandlerRegistration{
@@ -169,27 +166,26 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 	}
 
 	return &BudgetsModule{
-		BudgetsRouter:               b.buildRouter(useCases),
-		AbandonedDraftReaper:        budgetsjobs.NewAbandonedDraftReaper(useCases.signalAbandonedDrafts, b.cfg.BudgetsConfig),
-		PendingEventsReaper:         budgetsjobs.NewPendingEventsReaper(useCases.runPendingEventsReaper, b.cfg.BudgetsConfig),
-		RetentionPurge:              budgetsjobs.NewRetentionPurge(useCases.purgeRetention, b.cfg.BudgetsConfig),
-		ThresholdAlertsJob:          thresholdAlertsJob,
-		ExpenseCommittedConsumer:    expenseCommittedConsumer,
-		ThresholdAlertNotifier:      thresholdAlertNotifier,
-		TransactionCreatedConsumer:  transactionCreatedConsumer,
-		TransactionDeletedConsumer:  transactionDeletedConsumer,
-		CardPurchaseCreatedConsumer: cardPurchaseCreatedConsumer,
-		EventHandlers:               eventHandlers,
-		CreateBudgetUC:              useCases.createBudget,
-		ActivateBudgetUC:            useCases.activateBudget,
-		CreateRecurrenceUC:          useCases.createRecurrence,
-		DeleteDraftBudgetUC:         useCases.deleteDraftBudget,
-		DeleteExpenseUC:             useCases.deleteExpense,
-		ListAlertsUC:                useCases.listAlerts,
-		GetMonthlySummaryUC:         useCases.getMonthlySummary,
-		UpsertExpenseUC:             useCases.upsertExpense,
-		EditCategoryPercentageUC:    useCases.editCategoryPercentage,
-		SuggestAllocationUC:         usecases.NewSuggestAllocation(),
+		BudgetsRouter:              b.buildRouter(useCases),
+		AbandonedDraftReaper:       budgetsjobs.NewAbandonedDraftReaper(useCases.signalAbandonedDrafts, b.cfg.BudgetsConfig),
+		PendingEventsReaper:        budgetsjobs.NewPendingEventsReaper(useCases.runPendingEventsReaper, b.cfg.BudgetsConfig),
+		RetentionPurge:             budgetsjobs.NewRetentionPurge(useCases.purgeRetention, b.cfg.BudgetsConfig),
+		ThresholdAlertsJob:         thresholdAlertsJob,
+		ExpenseCommittedConsumer:   expenseCommittedConsumer,
+		ThresholdAlertNotifier:     thresholdAlertNotifier,
+		TransactionCreatedConsumer: transactionCreatedConsumer,
+		TransactionDeletedConsumer: transactionDeletedConsumer,
+		EventHandlers:              eventHandlers,
+		CreateBudgetUC:             useCases.createBudget,
+		ActivateBudgetUC:           useCases.activateBudget,
+		CreateRecurrenceUC:         useCases.createRecurrence,
+		DeleteDraftBudgetUC:        useCases.deleteDraftBudget,
+		DeleteExpenseUC:            useCases.deleteExpense,
+		ListAlertsUC:               useCases.listAlerts,
+		GetMonthlySummaryUC:        useCases.getMonthlySummary,
+		UpsertExpenseUC:            useCases.upsertExpense,
+		EditCategoryPercentageUC:   useCases.editCategoryPercentage,
+		SuggestAllocationUC:        usecases.NewSuggestAllocation(),
 	}, nil
 }
 

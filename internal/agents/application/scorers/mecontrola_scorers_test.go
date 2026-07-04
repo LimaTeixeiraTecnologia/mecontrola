@@ -291,8 +291,8 @@ func (s *MecontrolaScorersSuite) TestExpectedToolScorer_Kind() {
 	s.Equal("expected-tool:get_card", sc.ID())
 }
 
-func (s *MecontrolaScorersSuite) TestFinancialToolCallAccuracyScorer_Covers25Tools() {
-	s.Len(mecontrolaFinancialTools, 25)
+func (s *MecontrolaScorersSuite) TestFinancialToolCallAccuracyScorer_Covers22Tools() {
+	s.Len(mecontrolaFinancialTools, 22)
 	for _, toolName := range mecontrolaFinancialTools {
 		s.Run("deve reconhecer "+toolName, func() {
 			sc := NewFinancialToolCallAccuracyScorer()

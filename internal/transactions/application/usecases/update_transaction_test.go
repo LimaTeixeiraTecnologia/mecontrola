@@ -25,14 +25,15 @@ import (
 
 type UpdateTransactionSuite struct {
 	suite.Suite
-	ctx       context.Context
-	userID    uuid.UUID
-	factory   *mockInterfaces.RepositoryFactory
-	repo      *mockInterfaces.TransactionRepository
-	catVal    *mockInterfaces.CategoryValidator
-	publisher *mockInterfaces.TransactionEventPublisher
-	uow       *uowMocks.UnitOfWorkTransaction
-	useCase   *UpdateTransaction
+	ctx         context.Context
+	userID      uuid.UUID
+	factory     *mockInterfaces.RepositoryFactory
+	repo        *mockInterfaces.TransactionRepository
+	invoiceRepo *mockInterfaces.CardInvoiceRepository
+	catVal      *mockInterfaces.CategoryValidator
+	publisher   *mockInterfaces.TransactionEventPublisher
+	uow         *uowMocks.UnitOfWorkTransaction
+	useCase     *UpdateTransaction
 }
 
 func TestUpdateTransactionSuite(t *testing.T) {
@@ -45,6 +46,8 @@ func (s *UpdateTransactionSuite) SetupTest() {
 	s.factory = mockInterfaces.NewRepositoryFactory(s.T())
 	s.repo = mockInterfaces.NewTransactionRepository(s.T())
 	s.factory.EXPECT().TransactionRepository(mock.Anything).Return(s.repo).Maybe()
+	s.invoiceRepo = mockInterfaces.NewCardInvoiceRepository(s.T())
+	s.factory.EXPECT().CardInvoiceRepository(mock.Anything).Return(s.invoiceRepo).Maybe()
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
 	s.publisher = mockInterfaces.NewTransactionEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkTransaction(s.T())
@@ -69,7 +72,7 @@ func (s *UpdateTransactionSuite) makeExistingTransaction(txID uuid.UUID) *entiti
 		txID, userID, dir, pm, amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
 		"Custo Fixo", "",
-		rm, now, 1, nil, now, now,
+		rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	return &tx
 }
@@ -77,11 +80,13 @@ func (s *UpdateTransactionSuite) makeExistingTransaction(txID uuid.UUID) *entiti
 func (s *UpdateTransactionSuite) TestExecute_Success() {
 	txID := uuid.New()
 	catID := uuid.New()
+	subID := uuid.New()
 	existing := s.makeExistingTransaction(txID)
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Metas"}
 
 	s.repo.EXPECT().GetByID(mock.Anything, txID, s.userID).Return(existing, nil).Once()
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.repo.EXPECT().GetItemsByTransactionID(mock.Anything, txID).Return(nil, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subID).Return(catSnap, nil).Once()
 	s.repo.EXPECT().UpdateWithVersion(mock.Anything, mock.Anything, int64(1)).Return(nil).Once()
 	s.publisher.EXPECT().PublishUpdated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -91,6 +96,7 @@ func (s *UpdateTransactionSuite) TestExecute_Success() {
 		AmountCents:   2000,
 		Description:   "Supermercado",
 		CategoryID:    catID,
+		SubcategoryID: &subID,
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 		Version:       1,
 	})
@@ -116,12 +122,14 @@ func (s *UpdateTransactionSuite) TestExecute_RefMonthChange_TwoCompetencias() {
 	existing := entities.Reconstitute(
 		txID, userID, dir, pm, amount, desc, catIDVO,
 		option.None[valueobjects.SubcategoryID](),
-		"Cat", "", rm, now, 1, nil, now, now,
+		"Cat", "", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 
+	subID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Cat"}
 	s.repo.EXPECT().GetByID(mock.Anything, txID, s.userID).Return(&existing, nil).Once()
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.repo.EXPECT().GetItemsByTransactionID(mock.Anything, txID).Return(nil, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subID).Return(catSnap, nil).Once()
 	s.repo.EXPECT().UpdateWithVersion(mock.Anything, mock.Anything, int64(1)).Return(nil).Once()
 	s.publisher.EXPECT().PublishUpdated(mock.Anything, mock.Anything, mock.Anything).Run(func(_ context.Context, _ database.DBTX, evt entities.TransactionUpdated) {
 		s.Len(evt.RefMonthsAffected, 2, "deve conter old e new ref_month")
@@ -134,9 +142,82 @@ func (s *UpdateTransactionSuite) TestExecute_RefMonthChange_TwoCompetencias() {
 		AmountCents:   1500,
 		Description:   "Supermercado",
 		CategoryID:    catID,
+		SubcategoryID: &subID,
 		OccurredAt:    juneDate.Format(time.RFC3339),
 		Version:       1,
 	})
+	s.Require().NoError(err)
+}
+
+func (s *UpdateTransactionSuite) TestExecute_OutcomeWithoutSubcategory_ReturnsValidationError() {
+	txID := uuid.New()
+	catID := uuid.New()
+
+	_, err := s.useCase.Execute(s.ctx, txID.String(), input.RawUpdateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   1000,
+		Description:   "Mercado",
+		CategoryID:    catID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+		Version:       1,
+	})
+
+	s.Require().ErrorIs(err, ErrOutcomeTransactionRequiresSubcategory)
+}
+
+func (s *UpdateTransactionSuite) TestExecute_CreditCard_RecomposesDeltas() {
+	txID := uuid.New()
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	cardID := uuid.New()
+	userIDVO := valueobjects.UserIDFromUUID(s.userID)
+	cardIDVO := valueobjects.CardIDFromUUID(cardID)
+	amount, _ := valueobjects.NewMoney(20000)
+	desc, _ := valueobjects.NewDescription("Notebook")
+	catIDVO := valueobjects.CategoryIDFromUUID(catID)
+	rm, _ := valueobjects.NewRefMonth("2026-07")
+	snapshot, _ := valueobjects.NewCardBillingSnapshot(10, 20)
+	installments, _ := valueobjects.NewInstallmentCount(2)
+	now := time.Now().UTC()
+
+	existing := entities.Reconstitute(
+		txID, userIDVO, valueobjects.DirectionOutcome, valueobjects.PaymentMethodCreditCard,
+		amount, desc, catIDVO, option.Some(valueobjects.SubcategoryIDFromUUID(subcategoryID)),
+		"Compras", "Eletrônicos", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
+	)
+	existing.SetCardBilling(cardIDVO, installments, snapshot)
+
+	oldAmount, _ := valueobjects.NewMoney(10000)
+	oldItem := entities.NewCardInvoiceItem(uuid.New(), uuid.New(), txID, userIDVO, rm, 1, oldAmount, now)
+	inv := entities.NewCardInvoice(uuid.New(), userIDVO, cardIDVO, rm, now, now, now)
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Eletrônicos", ParentName: "Compras"}
+
+	s.repo.EXPECT().GetByID(mock.Anything, txID, s.userID).Return(&existing, nil).Once()
+	s.repo.EXPECT().GetItemsByTransactionID(mock.Anything, txID).Return([]*entities.CardInvoiceItem{&oldItem}, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.repo.EXPECT().UpdateWithVersion(mock.Anything, mock.Anything, int64(1)).Return(nil).Once()
+	s.invoiceRepo.EXPECT().
+		UpsertByMonth(mock.Anything, s.userID, cardID, mock.Anything, mock.Anything, mock.Anything).
+		Return(&inv, nil).Times(2)
+	s.repo.EXPECT().ReplaceItems(mock.Anything, txID, mock.Anything).Return(nil).Once()
+	s.invoiceRepo.EXPECT().GetByMonth(mock.Anything, s.userID, cardID, mock.Anything).Return(&inv, nil, nil).Maybe()
+	s.invoiceRepo.EXPECT().ApplyDelta(mock.Anything, inv.ID(), mock.AnythingOfType("int64"), int64(1)).Return(nil).Maybe()
+	s.publisher.EXPECT().PublishUpdated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := s.useCase.Execute(s.ctx, txID.String(), input.RawUpdateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "credit_card",
+		AmountCents:   20000,
+		Description:   "Notebook",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		CardID:        &cardID,
+		Installments:  2,
+		OccurredAt:    now.Format(time.RFC3339),
+		Version:       1,
+	})
+
 	s.Require().NoError(err)
 }
 
@@ -153,7 +234,7 @@ func (s *UpdateTransactionSuite) TestExecute_GetByIDError() {
 	s.repo.EXPECT().GetByID(mock.Anything, txID, s.userID).Return(nil, interfaces.ErrTransactionNotFound).Once()
 
 	_, err := s.useCase.Execute(s.ctx, txID.String(), input.RawUpdateTransaction{
-		Direction:     "outcome",
+		Direction:     "income",
 		PaymentMethod: "pix",
 		AmountCents:   1000,
 		Description:   "Mercado",
@@ -170,7 +251,7 @@ func (s *UpdateTransactionSuite) TestExecute_CatValidatorError() {
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(interfaces.CategorySnapshot{}, interfaces.ErrCategoryNotFound).Once()
 
 	_, err := s.useCase.Execute(s.ctx, txID.String(), input.RawUpdateTransaction{
-		Direction:     "outcome",
+		Direction:     "income",
 		PaymentMethod: "pix",
 		AmountCents:   1000,
 		Description:   "Mercado",
@@ -188,11 +269,12 @@ func (s *UpdateTransactionSuite) TestExecute_VersionConflict() {
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Cat"}
 
 	s.repo.EXPECT().GetByID(mock.Anything, txID, s.userID).Return(existing, nil).Once()
+	s.repo.EXPECT().GetItemsByTransactionID(mock.Anything, txID).Return(nil, nil).Once()
 	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
 	s.repo.EXPECT().UpdateWithVersion(mock.Anything, mock.Anything, int64(1)).Return(interfaces.ErrTransactionVersionConflict).Once()
 
 	_, err := s.useCase.Execute(s.ctx, txID.String(), input.RawUpdateTransaction{
-		Direction:     "outcome",
+		Direction:     "income",
 		PaymentMethod: "pix",
 		AmountCents:   1000,
 		Description:   "Mercado",

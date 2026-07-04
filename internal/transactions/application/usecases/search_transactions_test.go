@@ -55,7 +55,7 @@ func (s *SearchTransactionsSuite) makeTransaction(desc string) *entities.Transac
 	tx := entities.Reconstitute(
 		uuid.New(), userID, dir, pm, amount, d, catID,
 		option.None[valueobjects.SubcategoryID](),
-		"Cat", "", rm, now, 1, nil, now, now,
+		"Cat", "", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	return &tx
 }

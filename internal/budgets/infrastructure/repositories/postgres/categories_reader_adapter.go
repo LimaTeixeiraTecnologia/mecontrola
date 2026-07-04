@@ -68,7 +68,7 @@ func (a *categoriesReaderAdapter) ValidateExpenseSubcategory(ctx context.Context
 	ctx, span := a.o11y.Tracer().Start(ctx, "budgets.categories_reader.validate_expense_subcategory")
 	defer span.End()
 
-	result, err := a.validateSubcategory.Execute(ctx, id)
+	result, err := a.validateSubcategory.Execute(ctx, id, uuid.Nil)
 	if err != nil {
 		span.RecordError(err)
 		return "", false, fmt.Errorf("budgets/categories_reader: validar subcategoria: %w", budgetsinterfaces.ErrCategoriesReaderUnavailable)

@@ -19,23 +19,12 @@ type RawTransaction struct {
 	Description     string
 	CategoryID      uuid.UUID
 	SubcategoryID   *uuid.UUID
+	CardID          *uuid.UUID
+	Installments    int
 	OccurredAt      string
 	OriginWamid     string
 	OriginItemSeq   int
 	OriginOperation string
-}
-
-type RawCardPurchase struct {
-	CardID            uuid.UUID
-	TotalAmountCents  int64
-	InstallmentsTotal int
-	Description       string
-	CategoryID        uuid.UUID
-	SubcategoryID     *uuid.UUID
-	PurchasedAt       string
-	OriginWamid       string
-	OriginItemSeq     int
-	OriginOperation   string
 }
 
 type RawUpdateTransaction struct {
@@ -48,17 +37,6 @@ type RawUpdateTransaction struct {
 	SubcategoryID *uuid.UUID
 	OccurredAt    string
 	Version       int64
-}
-
-type RawUpdateCardPurchase struct {
-	ID                uuid.UUID
-	TotalAmountCents  int64
-	InstallmentsTotal int
-	Description       string
-	CategoryID        uuid.UUID
-	SubcategoryID     *uuid.UUID
-	PurchasedAt       string
-	Version           int64
 }
 
 type MonthlyEntry struct {

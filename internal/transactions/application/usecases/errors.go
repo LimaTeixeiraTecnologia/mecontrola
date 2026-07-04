@@ -9,10 +9,10 @@ import (
 var ErrUsecaseUnauthorized = errors.New("transactions: não autorizado")
 var ErrTransactionNotFound = errors.New("transactions: lançamento não encontrado")
 var ErrTransactionVersionConflict = errors.New("transactions: conflito de versão")
-var ErrCardPurchaseNotFound = errors.New("transactions: compra de cartão não encontrada")
 var ErrCardInvoiceNotFound = errors.New("transactions: fatura de cartão não encontrada")
-var ErrCardPurchaseConflict = errors.New("transactions: conflito de versão na compra de cartão")
+var ErrPaymentMethodMigrationNotAllowed = errors.New("transactions: forma de pagamento não pode migrar de/para cartão de crédito")
 var ErrOutcomeTransactionRequiresSubcategory = errors.New("transactions: outcome exige subcategory_id")
+var ErrCategoryKindDirectionMismatch = errors.New("transactions: kind da categoria diverge da direction")
 
 func parseISO8601(s string) (time.Time, error) {
 	if s == "" {

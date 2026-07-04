@@ -43,8 +43,10 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		       (id, user_id, direction, payment_method, amount_cents, description,
 		        category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
 		        ref_month, occurred_at, version, deleted_at, created_at, updated_at,
-		        origin_wamid, origin_item_seq, origin_operation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		        origin_wamid, origin_item_seq, origin_operation,
+		        card_id, installments_total, card_closing_day, card_due_day)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+		        $20, $21, $22, $23)
 		ON CONFLICT (origin_wamid, origin_item_seq, origin_operation) WHERE origin_wamid IS NOT NULL DO NOTHING
 		RETURNING id
 	`
@@ -64,6 +66,8 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		originWamid, originOperation, originItemSeq = &w, &op, &seq
 	}
 
+	cardID, installmentsTotal, closingDay, dueDay := cardColumns(tx)
+
 	var returnedID uuid.UUID
 	err := r.db.QueryRowContext(ctx, query,
 		tx.ID(), tx.UserID().UUID(), int(tx.Direction()), int(tx.PaymentMethod()),
@@ -74,6 +78,7 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		tx.Version(), tx.DeletedAt(),
 		tx.CreatedAt(), tx.UpdatedAt(),
 		originWamid, originItemSeq, originOperation,
+		cardID, installmentsTotal, closingDay, dueDay,
 	).Scan(&returnedID)
 	if errors.Is(err, sql.ErrNoRows) {
 		const existingQuery = `
@@ -111,7 +116,11 @@ func (r *transactionRepository) UpdateWithVersion(ctx context.Context, tx *entit
 		       ref_month                = $9,
 		       occurred_at              = $10,
 		       version                  = $11,
-		       updated_at               = $12
+		       updated_at               = $12,
+		       card_id                  = $16,
+		       installments_total       = $17,
+		       card_closing_day         = $18,
+		       card_due_day             = $19
 		 WHERE id = $13 AND user_id = $14 AND version = $15 AND deleted_at IS NULL
 	`
 
@@ -121,6 +130,8 @@ func (r *transactionRepository) UpdateWithVersion(ctx context.Context, tx *entit
 		subID = &u
 	}
 
+	cardID, installmentsTotal, closingDay, dueDay := cardColumns(tx)
+
 	result, err := r.db.ExecContext(ctx, query,
 		int(tx.Direction()), int(tx.PaymentMethod()),
 		tx.Amount().Cents(), tx.Description().String(),
@@ -129,6 +140,7 @@ func (r *transactionRepository) UpdateWithVersion(ctx context.Context, tx *entit
 		tx.RefMonth().String(), tx.OccurredAt(),
 		tx.Version(), tx.UpdatedAt(),
 		tx.ID(), tx.UserID().UUID(), expectedVersion,
+		cardID, installmentsTotal, closingDay, dueDay,
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -184,7 +196,8 @@ func (r *transactionRepository) GetByID(ctx context.Context, id, userID uuid.UUI
 	const query = `
 		SELECT id, user_id, direction, payment_method, amount_cents, description,
 		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
-		       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+		       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+		       card_id, installments_total, card_closing_day, card_due_day
 		  FROM mecontrola.transactions
 		 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`
@@ -230,7 +243,8 @@ func (r *transactionRepository) ListByMonth(ctx context.Context, userID uuid.UUI
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
-			       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
 			 WHERE user_id = $1 AND ref_month = $2 AND deleted_at IS NULL
 			 ORDER BY created_at DESC, id DESC
@@ -241,7 +255,8 @@ func (r *transactionRepository) ListByMonth(ctx context.Context, userID uuid.UUI
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
-			       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
 			 WHERE user_id = $1 AND ref_month = $2 AND deleted_at IS NULL
 			   AND (created_at, id) < ($3, $4)
@@ -294,7 +309,8 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
-			       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
 			 WHERE user_id = $1 AND deleted_at IS NULL
 			   AND ref_month = $2
@@ -307,7 +323,8 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
-			       ref_month, occurred_at, version, deleted_at, created_at, updated_at
+			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
 			 WHERE user_id = $1 AND deleted_at IS NULL
 			   AND description ILIKE '%' || $2 || '%'
@@ -332,8 +349,8 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 	return txs, nil
 }
 
-func (r *transactionRepository) SumByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error) {
-	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.sum_by_month")
+func (r *transactionRepository) SumByMonthExcludingCredit(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.sum_by_month_excluding_credit")
 	defer span.End()
 
 	const query = `
@@ -341,7 +358,7 @@ func (r *transactionRepository) SumByMonth(ctx context.Context, userID uuid.UUID
 		    COALESCE(SUM(CASE WHEN direction = 1 THEN amount_cents ELSE 0 END), 0) AS income_cents,
 		    COALESCE(SUM(CASE WHEN direction = 2 THEN amount_cents ELSE 0 END), 0) AS outcome_cents
 		  FROM mecontrola.transactions
-		 WHERE user_id = $1 AND ref_month = $2 AND deleted_at IS NULL
+		 WHERE user_id = $1 AND ref_month = $2 AND payment_method <> 7 AND deleted_at IS NULL
 	`
 
 	var income, outcome int64
@@ -396,12 +413,17 @@ func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, err
 		deletedAt               *time.Time
 		createdAt               time.Time
 		updatedAt               time.Time
+		cardID                  *uuid.UUID
+		installmentsTotal       *int
+		cardClosingDay          *int
+		cardDueDay              *int
 	)
 
 	if err := rows.Scan(
 		&id, &userID, &direction, &paymentMethod, &amountCents, &description,
 		&categoryID, &subcategoryID, &categoryNameSnapshot, &subcategoryNameSnapshot,
 		&refMonth, &occurredAt, &version, &deletedAt, &createdAt, &updatedAt,
+		&cardID, &installmentsTotal, &cardClosingDay, &cardDueDay,
 	); err != nil {
 		return nil, fmt.Errorf("transactions/repository: scan: %w", err)
 	}
@@ -418,6 +440,25 @@ func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, err
 		subOpt = option.Some(valueobjects.SubcategoryIDFromUUID(*subcategoryID))
 	}
 
+	var cardOpt option.Option[valueobjects.CardID]
+	if cardID != nil {
+		cardOpt = option.Some(valueobjects.CardIDFromUUID(*cardID))
+	}
+
+	var installmentsOpt option.Option[valueobjects.InstallmentCount]
+	if installmentsTotal != nil {
+		if ic, icErr := valueobjects.NewInstallmentCount(*installmentsTotal); icErr == nil {
+			installmentsOpt = option.Some(ic)
+		}
+	}
+
+	var billingOpt option.Option[valueobjects.CardBillingSnapshot]
+	if cardClosingDay != nil && cardDueDay != nil {
+		if snap, snapErr := valueobjects.NewCardBillingSnapshot(*cardClosingDay, *cardDueDay); snapErr == nil {
+			billingOpt = option.Some(snap)
+		}
+	}
+
 	tx := entities.Reconstitute(
 		id,
 		valueobjects.UserIDFromUUID(userID),
@@ -431,10 +472,125 @@ func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, err
 		subcategoryNameSnapshot,
 		rm,
 		occurredAt,
+		cardOpt,
+		installmentsOpt,
+		billingOpt,
 		version,
 		deletedAt,
 		createdAt,
 		updatedAt,
 	)
 	return &tx, nil
+}
+
+func cardColumns(tx *entities.Transaction) (*uuid.UUID, *int, *int, *int) {
+	var cardID *uuid.UUID
+	if v, ok := tx.CardID().Get(); ok {
+		u := v.UUID()
+		cardID = &u
+	}
+
+	var installmentsTotal *int
+	if v, ok := tx.InstallmentsTotal().Get(); ok {
+		n := v.Value()
+		installmentsTotal = &n
+	}
+
+	var closingDay, dueDay *int
+	if v, ok := tx.BillingSnapshot().Get(); ok {
+		c := v.ClosingDay().Value()
+		d := v.DueDay().Value()
+		closingDay = &c
+		dueDay = &d
+	}
+
+	return cardID, installmentsTotal, closingDay, dueDay
+}
+
+func (r *transactionRepository) GetItemsByTransactionID(ctx context.Context, txID uuid.UUID) ([]*entities.CardInvoiceItem, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.get_items_by_transaction_id")
+	defer span.End()
+
+	const query = `
+		SELECT id, invoice_id, transaction_id, user_id, ref_month, installment_index, amount_cents, created_at, updated_at
+		  FROM mecontrola.transactions_card_invoice_items
+		 WHERE transaction_id = $1 AND deleted_at IS NULL
+		 ORDER BY installment_index
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, txID)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("transactions/repository: listar itens por transação: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var items []*entities.CardInvoiceItem
+	for rows.Next() {
+		item, scanErr := scanCardInvoiceItem(rows)
+		if scanErr != nil {
+			span.RecordError(scanErr)
+			return nil, fmt.Errorf("transactions/repository: scan item por transação: %w", scanErr)
+		}
+		items = append(items, item)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("transactions/repository: rows itens por transação: %w", rowsErr)
+	}
+	return items, nil
+}
+
+func (r *transactionRepository) ReplaceItems(ctx context.Context, txID uuid.UUID, items []*entities.CardInvoiceItem) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.replace_items")
+	defer span.End()
+
+	now := time.Now().UTC()
+	const deleteQuery = `
+		UPDATE mecontrola.transactions_card_invoice_items
+		   SET deleted_at = $1, updated_at = $1
+		 WHERE transaction_id = $2 AND deleted_at IS NULL
+	`
+	if _, err := r.db.ExecContext(ctx, deleteQuery, now, txID); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("transactions/repository: remover itens: %w", err)
+	}
+
+	const insertQuery = `
+		INSERT INTO mecontrola.transactions_card_invoice_items
+			(id, invoice_id, transaction_id, user_id, ref_month,
+			 installment_index, amount_cents, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (transaction_id, installment_index) DO UPDATE
+		   SET invoice_id = $2, amount_cents = $7, deleted_at = NULL, updated_at = $9
+	`
+	for _, item := range items {
+		_, err := r.db.ExecContext(ctx, insertQuery,
+			item.ID(), item.InvoiceID(), txID, item.UserID().UUID(),
+			item.RefMonth().String(), item.InstallmentIndex(), item.Amount().Cents(),
+			item.CreatedAt(), now,
+		)
+		if err != nil {
+			span.RecordError(err)
+			return fmt.Errorf("transactions/repository: inserir item [%d]: %w", item.InstallmentIndex(), err)
+		}
+	}
+	return nil
+}
+
+func (r *transactionRepository) ExistsActiveCreditByCard(ctx context.Context, cardID, userID uuid.UUID) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.exists_active_credit_by_card")
+	defer span.End()
+
+	const query = `
+		SELECT EXISTS(
+			SELECT 1 FROM mecontrola.transactions
+			 WHERE card_id = $1 AND user_id = $2 AND payment_method = 7 AND deleted_at IS NULL
+		)
+	`
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, query, cardID, userID).Scan(&exists); err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("transactions/repository: verificar crédito ativo por cartão: %w", err)
+	}
+	return exists, nil
 }

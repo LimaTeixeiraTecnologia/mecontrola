@@ -73,7 +73,7 @@ func (uc *ReconcileMonthlySummary) reconcileKey(ctx context.Context, key interfa
 
 	userID := key.UserID
 
-	income, outcome, err := uc.txRepo.SumByMonth(ctx, userID, refMonth)
+	income, outcome, err := uc.txRepo.SumByMonthExcludingCredit(ctx, userID, refMonth)
 	if err != nil {
 		return fmt.Errorf("transactions/reconcile: soma transações: %w", err)
 	}

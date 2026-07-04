@@ -65,19 +65,23 @@ func (a *categoriesReaderAdapter) ResolveRootsBySlug(ctx context.Context, slugs 
 	return result, nil
 }
 
-func (a *categoriesReaderAdapter) ValidateSubcategory(ctx context.Context, id uuid.UUID) (interfaces.CategorySnapshot, error) {
+func (a *categoriesReaderAdapter) ValidateSubcategory(ctx context.Context, id uuid.UUID, expectedParentID uuid.UUID) (interfaces.CategorySnapshot, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "transactions.categories_reader.validate_subcategory")
 	defer span.End()
 
-	result, err := a.validateSubcategory.Execute(ctx, id)
+	result, err := a.validateSubcategory.Execute(ctx, id, expectedParentID)
 	if err != nil {
 		span.RecordError(err)
 		return interfaces.CategorySnapshot{}, fmt.Errorf("transactions/categories_reader: validar subcategoria: %w", interfaces.ErrCategoryNotFound)
 	}
 
+	parentID := expectedParentID
 	return interfaces.CategorySnapshot{
-		ID:   id,
-		Name: result.ParentSlug,
+		ID:         id,
+		Name:       result.CategoryName,
+		Kind:       result.Kind,
+		ParentID:   &parentID,
+		ParentName: result.ParentName,
 	}, nil
 }
 

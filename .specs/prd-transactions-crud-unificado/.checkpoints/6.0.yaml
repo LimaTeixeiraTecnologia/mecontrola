@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-transactions-crud-unificado/6.0_execution_report.md
+summary: HTTP unificado + card-purchase removido (5 rotas/handlers/usecases/producer), guard de migração credit_card, OpenAPI if/then; build/vet/test verdes
+timestamp: 2026-07-04T12:08:52Z

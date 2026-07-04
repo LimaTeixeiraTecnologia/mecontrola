@@ -14,12 +14,14 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type DeleteTransaction struct {
 	factory   interfaces.RepositoryFactory
 	uow       uow.UnitOfWork
+	workflow  services.TransactionWorkflow
 	publisher interfaces.TransactionEventPublisher
 	o11y      observability.Observability
 }
@@ -27,12 +29,14 @@ type DeleteTransaction struct {
 func NewDeleteTransaction(
 	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork,
+	workflow services.TransactionWorkflow,
 	publisher interfaces.TransactionEventPublisher,
 	o11y observability.Observability,
 ) *DeleteTransaction {
 	return &DeleteTransaction{
 		factory:   factory,
 		uow:       u,
+		workflow:  workflow,
 		publisher: publisher,
 		o11y:      o11y,
 	}
@@ -64,19 +68,40 @@ func (uc *DeleteTransaction) Execute(ctx context.Context, txID string, version i
 			return struct{}{}, fmt.Errorf("transactions/delete_transaction: buscar lançamento: %w", getErr)
 		}
 
+		itemPtrs, itemsErr := repo.GetItemsByTransactionID(ctx, parsedID)
+		if itemsErr != nil {
+			return struct{}{}, fmt.Errorf("transactions/delete_transaction: buscar itens: %w", itemsErr)
+		}
+		currentItems := derefInvoiceItems(itemPtrs)
+
+		decision, decideErr := uc.workflow.DecideDelete(*current, currentItems, eventID, now)
+		if decideErr != nil {
+			return struct{}{}, fmt.Errorf("transactions/delete_transaction: decidir: %w", decideErr)
+		}
+		span.SetAttributes(
+			observability.Int("installments_total", len(currentItems)),
+			observability.Int("ref_months_affected_count", refMonthsAffectedCount(decision.Event)),
+		)
+
 		if softDelErr := repo.SoftDelete(ctx, parsedID, userID.UUID(), version, now); softDelErr != nil {
 			return struct{}{}, fmt.Errorf("transactions/delete_transaction: soft-delete: %w", softDelErr)
 		}
 
-		evt := entities.TransactionDeleted{
-			EventID:           eventID,
-			AggregateID:       parsedID,
-			UserID:            userID.UUID(),
-			OccurredAt:        now,
-			RefMonth:          current.RefMonth(),
-			RefMonthsAffected: []valueobjects.RefMonth{current.RefMonth()},
+		if len(currentItems) > 0 {
+			invoiceRepo := uc.factory.CardInvoiceRepository(db)
+			cardID, _ := current.CardID().Get()
+			if deltaErr := applyInvoiceDeltasByMonth(ctx, invoiceRepo, userID.UUID(), cardID.UUID(), decision.InvoiceDeltas); deltaErr != nil {
+				return struct{}{}, deltaErr
+			}
+			if replaceErr := repo.ReplaceItems(ctx, parsedID, nil); replaceErr != nil {
+				return struct{}{}, fmt.Errorf("transactions/delete_transaction: remover itens: %w", replaceErr)
+			}
 		}
 
+		evt, evtOk := decision.Event.(entities.TransactionDeleted)
+		if !evtOk {
+			return struct{}{}, fmt.Errorf("transactions/delete_transaction: tipo de evento inesperado")
+		}
 		if publishErr := uc.publisher.PublishDeleted(ctx, db, evt); publishErr != nil {
 			return struct{}{}, fmt.Errorf("transactions/delete_transaction: publicar evento: %w", publishErr)
 		}

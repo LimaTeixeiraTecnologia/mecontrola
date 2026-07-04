@@ -20,7 +20,10 @@ type TransactionRepository interface {
 	UpdateWithVersion(ctx context.Context, tx *entities.Transaction, expectedVersion int64) error
 	SoftDelete(ctx context.Context, id uuid.UUID, userID uuid.UUID, expectedVersion int64, now time.Time) error
 	GetByID(ctx context.Context, id, userID uuid.UUID) (*entities.Transaction, error)
+	GetItemsByTransactionID(ctx context.Context, txID uuid.UUID) ([]*entities.CardInvoiceItem, error)
+	ReplaceItems(ctx context.Context, txID uuid.UUID, items []*entities.CardInvoiceItem) error
+	ExistsActiveCreditByCard(ctx context.Context, cardID, userID uuid.UUID) (bool, error)
 	ListByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth, cursor Cursor, limit int) ([]*entities.Transaction, Cursor, error)
 	SearchByDescription(ctx context.Context, userID uuid.UUID, q valueobjects.SearchQuery, refMonth option.Option[valueobjects.RefMonth], limit int) ([]*entities.Transaction, error)
-	SumByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (incomeCents, outcomeCents int64, err error)
+	SumByMonthExcludingCredit(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (incomeCents, outcomeCents int64, err error)
 }

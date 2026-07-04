@@ -8,6 +8,14 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 )
 
+type CardInvoiceItemOutput struct {
+	ID               uuid.UUID `json:"id"`
+	InvoiceID        uuid.UUID `json:"invoice_id"`
+	RefMonth         string    `json:"ref_month"`
+	InstallmentIndex int       `json:"installment_index"`
+	AmountCents      int64     `json:"amount_cents"`
+}
+
 type CardInvoice struct {
 	ID              uuid.UUID               `json:"id"`
 	UserID          uuid.UUID               `json:"user_id"`

@@ -69,6 +69,63 @@ func (s *CategoriesReaderAdapterSuite) TestResolveRootsBySlug_Error() {
 	s.True(errors.Is(err, interfaces.ErrCategoryNotFound))
 }
 
+func (s *CategoriesReaderAdapterSuite) TestValidateSubcategory_MapsRealNames() {
+	catRepo := catifacemocks.NewCategoryRepository(s.T())
+	versionRepo := catifacemocks.NewVersionReader(s.T())
+
+	rootID := uuid.New()
+	subID := uuid.New()
+
+	catRepo.EXPECT().GetByID(mock.Anything, subID).Return(entities.Category{
+		ID:       subID,
+		ParentID: &rootID,
+		Slug:     "aluguel",
+		Name:     "Aluguel",
+		Kind:     catvos.KindExpense,
+	}, nil).Once()
+
+	catRepo.EXPECT().GetByID(mock.Anything, rootID).Return(entities.Category{
+		ID:   rootID,
+		Slug: "custo-fixo",
+		Name: "Custo Fixo",
+		Kind: catvos.KindExpense,
+	}, nil).Once()
+
+	adapter := s.buildAdapter(catRepo, versionRepo)
+
+	snapshot, err := adapter.ValidateSubcategory(context.Background(), subID, rootID)
+	s.Require().NoError(err)
+	s.Equal(subID, snapshot.ID)
+	s.Equal("Aluguel", snapshot.Name)
+	s.Equal("Custo Fixo", snapshot.ParentName)
+	s.Equal("expense", snapshot.Kind)
+	s.Require().NotNil(snapshot.ParentID)
+	s.Equal(rootID, *snapshot.ParentID)
+}
+
+func (s *CategoriesReaderAdapterSuite) TestValidateSubcategory_NotDirectChild() {
+	catRepo := catifacemocks.NewCategoryRepository(s.T())
+	versionRepo := catifacemocks.NewVersionReader(s.T())
+
+	rootID := uuid.New()
+	otherRootID := uuid.New()
+	subID := uuid.New()
+
+	catRepo.EXPECT().GetByID(mock.Anything, subID).Return(entities.Category{
+		ID:       subID,
+		ParentID: &otherRootID,
+		Slug:     "aluguel",
+		Name:     "Aluguel",
+		Kind:     catvos.KindExpense,
+	}, nil).Once()
+
+	adapter := s.buildAdapter(catRepo, versionRepo)
+
+	_, err := adapter.ValidateSubcategory(context.Background(), subID, rootID)
+	s.Require().Error(err)
+	s.True(errors.Is(err, interfaces.ErrCategoryNotFound))
+}
+
 func (s *CategoriesReaderAdapterSuite) TestEditorialVersion_Success() {
 	catRepo := catifacemocks.NewCategoryRepository(s.T())
 	versionRepo := catifacemocks.NewVersionReader(s.T())

@@ -160,8 +160,6 @@ func TestLoadSpecs_ValidatePaths(t *testing.T) {
 		"transactions": {
 			"/api/v1/transactions":                         {http.MethodGet, http.MethodPost},
 			"/api/v1/transactions/{id}":                    {http.MethodGet, http.MethodPatch, http.MethodDelete},
-			"/api/v1/card-purchases":                       {http.MethodGet, http.MethodPost},
-			"/api/v1/card-purchases/{id}":                  {http.MethodGet, http.MethodPatch, http.MethodDelete},
 			"/api/v1/cards/{card_id}/invoices/{ref_month}": {http.MethodGet},
 			"/api/v1/recurring-templates":                  {http.MethodGet, http.MethodPost},
 			"/api/v1/recurring-templates/{id}":             {http.MethodGet, http.MethodPatch, http.MethodDelete},

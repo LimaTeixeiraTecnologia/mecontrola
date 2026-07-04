@@ -52,7 +52,7 @@ func (s *RecomputeMonthlySummarySuite) SetupTest() {
 }
 
 func (s *RecomputeMonthlySummarySuite) TestExecute_Success() {
-	s.txRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(10000), int64(5000), nil).Once()
+	s.txRepo.EXPECT().SumByMonthExcludingCredit(mock.Anything, s.userID, s.refMonth).Return(int64(10000), int64(5000), nil).Once()
 	s.invRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(3000), nil).Once()
 	s.summRepo.EXPECT().Upsert(mock.Anything, s.userID, s.refMonth, int64(10000), int64(8000), mock.Anything).Return(nil).Once()
 
@@ -64,7 +64,7 @@ func (s *RecomputeMonthlySummarySuite) TestExecute_Success() {
 }
 
 func (s *RecomputeMonthlySummarySuite) TestExecute_SoftDeleteFiltered() {
-	s.txRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(0), int64(0), nil).Once()
+	s.txRepo.EXPECT().SumByMonthExcludingCredit(mock.Anything, s.userID, s.refMonth).Return(int64(0), int64(0), nil).Once()
 	s.invRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(0), nil).Once()
 	s.summRepo.EXPECT().Upsert(mock.Anything, s.userID, s.refMonth, int64(0), int64(0), mock.Anything).Return(nil).Once()
 
@@ -76,7 +76,7 @@ func (s *RecomputeMonthlySummarySuite) TestExecute_SoftDeleteFiltered() {
 }
 
 func (s *RecomputeMonthlySummarySuite) TestExecute_SumByMonthError() {
-	s.txRepo.EXPECT().SumByMonth(mock.Anything, s.userID, s.refMonth).Return(int64(0), int64(0), errors.New("db error")).Once()
+	s.txRepo.EXPECT().SumByMonthExcludingCredit(mock.Anything, s.userID, s.refMonth).Return(int64(0), int64(0), errors.New("db error")).Once()
 
 	err := s.useCase.Execute(s.ctx, RecomputeMonthlySummaryInput{
 		UserID:   s.userID,

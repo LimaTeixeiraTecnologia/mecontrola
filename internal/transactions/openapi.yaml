@@ -9,7 +9,6 @@ servers:
   - url: /
 tags:
   - name: Transactions
-  - name: Card Purchases
   - name: Recurring Templates
   - name: Monthly Views
 paths:
@@ -154,152 +153,6 @@ paths:
       responses:
         '204':
           description: Lançamento removido
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/card-purchases:
-    post:
-      operationId: createCardPurchase
-      tags: [Card Purchases]
-      summary: Criar compra no cartão
-      parameters: *auth_mutation
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RawCreateCardPurchase'
-      responses:
-        '201':
-          description: Compra criada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CardPurchase'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-    get:
-      operationId: listCardPurchases
-      tags: [Card Purchases]
-      summary: Listar compras no cartão
-      parameters:
-        - $ref: '#/components/parameters/XUserID'
-        - $ref: '#/components/parameters/XGatewayAuth'
-        - $ref: '#/components/parameters/XGatewayTimestamp'
-        - name: card_id
-          in: query
-          schema:
-            type: string
-            format: uuid
-        - name: ref_month
-          in: query
-          schema:
-            type: string
-            pattern: '^\d{4}-\d{2}$'
-        - name: cursor
-          in: query
-          schema:
-            type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-      responses:
-        '200':
-          description: Página de compras
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CardPurchasePage'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/card-purchases/{id}:
-    parameters:
-      - $ref: '#/components/parameters/ResourceID'
-    get:
-      operationId: getCardPurchase
-      tags: [Card Purchases]
-      summary: Obter compra no cartão
-      parameters: *auth_with_id
-      responses:
-        '200':
-          description: Compra encontrada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CardPurchase'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    patch:
-      operationId: updateCardPurchase
-      tags: [Card Purchases]
-      summary: Atualizar compra no cartão
-      parameters: *auth_mutation
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RawUpdateCardPurchase'
-      responses:
-        '200':
-          description: Compra atualizada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CardPurchase'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    delete:
-      operationId: deleteCardPurchase
-      tags: [Card Purchases]
-      summary: Remover compra no cartão
-      parameters: *auth_mutation
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DeleteRequest'
-      responses:
-        '204':
-          description: Compra removida
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -643,9 +496,25 @@ components:
           type: string
           format: uuid
           description: Obrigatório quando `direction` for `outcome`.
+        card_id:
+          type: string
+          format: uuid
+          description: Obrigatório quando `payment_method` for `credit_card`.
+        installments:
+          type: integer
+          minimum: 1
+          maximum: 24
+          default: 1
+          description: Número de parcelas (1..24) quando `payment_method` for `credit_card`.
         occurred_at:
           type: string
           format: date-time
+      if:
+        properties:
+          payment_method:
+            const: credit_card
+      then:
+        required: [card_id]
     RawUpdateTransaction:
       allOf:
         - $ref: '#/components/schemas/RawCreateTransaction'
@@ -660,12 +529,6 @@ components:
       properties:
         version:
           type: integer
-    RawCreateCardPurchase:
-      type: object
-      additionalProperties: true
-    RawUpdateCardPurchase:
-      type: object
-      additionalProperties: true
     RawCreateRecurringTemplate:
       type: object
       additionalProperties: true
@@ -675,9 +538,14 @@ components:
     Transaction:
       type: object
       additionalProperties: true
-    CardPurchase:
-      type: object
-      additionalProperties: true
+      properties:
+        card_id:
+          type: string
+          format: uuid
+          description: Presente apenas para `payment_method` `credit_card`.
+        installments_total:
+          type: integer
+          description: Presente apenas para `credit_card`.
     CardInvoice:
       type: object
       additionalProperties: true
@@ -697,16 +565,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Transaction'
-        next_cursor:
-          type: string
-      additionalProperties: false
-    CardPurchasePage:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CardPurchase'
         next_cursor:
           type: string
       additionalProperties: false

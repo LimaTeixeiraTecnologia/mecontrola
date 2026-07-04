@@ -90,7 +90,7 @@ func TestE2ETransactions(t *testing.T) {
 func registerAllSteps(sc *godog.ScenarioContext, e *txE2ECtx) {
 	registerSharedSteps(sc, e)
 	registerTransactionSteps(sc, e)
-	registerCardPurchaseSteps(sc, e)
+	registerCreditCardSteps(sc, e)
 	registerRecurringTemplateSteps(sc, e)
 	registerMonthlySteps(sc, e)
 	registerCardInvoiceSteps(sc, e)

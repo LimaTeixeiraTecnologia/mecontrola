@@ -136,23 +136,11 @@ func buildUpdatePayload(in EditEntryInput) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse entry uuid: %w", err)
 	}
-	var payload any
-	switch in.EntryKind {
-	case "card_purchase":
-		payload = interfaces.RawUpdateCardPurchase{
-			ID:                entryID,
-			TotalAmountCents:  in.AmountCents,
-			InstallmentsTotal: in.InstallmentsTotal,
-			Description:       in.Description,
-			PurchasedAt:       in.OccurredAt,
-		}
-	default:
-		payload = interfaces.RawUpdateTransaction{
-			ID:          entryID,
-			AmountCents: in.AmountCents,
-			Description: in.Description,
-			OccurredAt:  in.OccurredAt,
-		}
+	payload := interfaces.RawUpdateTransaction{
+		ID:          entryID,
+		AmountCents: in.AmountCents,
+		Description: in.Description,
+		OccurredAt:  in.OccurredAt,
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {

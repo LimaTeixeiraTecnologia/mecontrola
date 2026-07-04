@@ -45,6 +45,7 @@ func (s *ValidateSubcategorySuite) TestExecute_SubcategoriaAtiva() {
 		ID:             subID,
 		ParentID:       &rootID,
 		Slug:           "aluguel",
+		Name:           "Aluguel",
 		Kind:           valueobjects.KindExpense,
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}, nil).Once()
@@ -52,15 +53,66 @@ func (s *ValidateSubcategorySuite) TestExecute_SubcategoriaAtiva() {
 	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(entities.Category{
 		ID:             rootID,
 		Slug:           "custo-fixo",
+		Name:           "Custo Fixo",
 		Kind:           valueobjects.KindExpense,
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}, nil).Once()
 
-	result, err := s.useCase.Execute(s.ctx, subID)
+	result, err := s.useCase.Execute(s.ctx, subID, rootID)
 
 	s.NoError(err)
 	s.Equal("expense.custo_fixo", result.ParentSlug)
+	s.Equal("Aluguel", result.CategoryName)
+	s.Equal("Custo Fixo", result.ParentName)
+	s.Equal("expense", result.Kind)
 	s.False(result.Deprecated)
+}
+
+func (s *ValidateSubcategorySuite) TestExecute_FilhaDireta_ExpectedParentNil() {
+	subID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	s.repo.EXPECT().GetByID(mock.Anything, subID).Return(entities.Category{
+		ID:             subID,
+		ParentID:       &rootID,
+		Slug:           "aluguel",
+		Name:           "Aluguel",
+		Kind:           valueobjects.KindExpense,
+		AllocationType: valueobjects.AllocationTypeConsumption,
+	}, nil).Once()
+
+	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(entities.Category{
+		ID:             rootID,
+		Slug:           "custo-fixo",
+		Name:           "Custo Fixo",
+		Kind:           valueobjects.KindExpense,
+		AllocationType: valueobjects.AllocationTypeConsumption,
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, subID, uuid.Nil)
+
+	s.NoError(err)
+	s.Equal("expense.custo_fixo", result.ParentSlug)
+}
+
+func (s *ValidateSubcategorySuite) TestExecute_SubcategoriaDeOutraRaiz() {
+	subID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	rootID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	otherRootID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+
+	s.repo.EXPECT().GetByID(mock.Anything, subID).Return(entities.Category{
+		ID:             subID,
+		ParentID:       &rootID,
+		Slug:           "aluguel",
+		Name:           "Aluguel",
+		Kind:           valueobjects.KindExpense,
+		AllocationType: valueobjects.AllocationTypeConsumption,
+	}, nil).Once()
+
+	result, err := s.useCase.Execute(s.ctx, subID, otherRootID)
+
+	s.ErrorIs(err, ErrSubcategoryNotDirectChild)
+	s.Equal(ValidateSubcategoryResult{}, result)
 }
 
 func (s *ValidateSubcategorySuite) TestExecute_SubcategoriaDeprecada() {
@@ -72,6 +124,7 @@ func (s *ValidateSubcategorySuite) TestExecute_SubcategoriaDeprecada() {
 		ID:             subID,
 		ParentID:       &rootID,
 		Slug:           "aluguel",
+		Name:           "Aluguel",
 		Kind:           valueobjects.KindExpense,
 		AllocationType: valueobjects.AllocationTypeConsumption,
 		DeprecatedAt:   &deprecatedAt,
@@ -80,11 +133,12 @@ func (s *ValidateSubcategorySuite) TestExecute_SubcategoriaDeprecada() {
 	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(entities.Category{
 		ID:             rootID,
 		Slug:           "custo-fixo",
+		Name:           "Custo Fixo",
 		Kind:           valueobjects.KindExpense,
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}, nil).Once()
 
-	result, err := s.useCase.Execute(s.ctx, subID)
+	result, err := s.useCase.Execute(s.ctx, subID, rootID)
 
 	s.NoError(err)
 	s.True(result.Deprecated)
@@ -100,7 +154,7 @@ func (s *ValidateSubcategorySuite) TestExecute_CategoriaEhRaiz() {
 		AllocationType: valueobjects.AllocationTypeConsumption,
 	}, nil).Once()
 
-	result, err := s.useCase.Execute(s.ctx, id)
+	result, err := s.useCase.Execute(s.ctx, id, uuid.Nil)
 
 	s.ErrorIs(err, ErrSubcategoryNotRoot)
 	s.Equal(ValidateSubcategoryResult{}, result)
@@ -111,7 +165,7 @@ func (s *ValidateSubcategorySuite) TestExecute_CategoriaNaoEncontrada() {
 
 	s.repo.EXPECT().GetByID(mock.Anything, id).Return(entities.Category{}, interfaces.ErrNotFound).Once()
 
-	_, err := s.useCase.Execute(s.ctx, id)
+	_, err := s.useCase.Execute(s.ctx, id, uuid.Nil)
 
 	s.ErrorIs(err, ErrCategoryNotFound)
 }
@@ -130,7 +184,7 @@ func (s *ValidateSubcategorySuite) TestExecute_PaiNaoEncontrado() {
 
 	s.repo.EXPECT().GetByID(mock.Anything, rootID).Return(entities.Category{}, errors.New("db error")).Once()
 
-	_, err := s.useCase.Execute(s.ctx, subID)
+	_, err := s.useCase.Execute(s.ctx, subID, rootID)
 
 	s.Error(err)
 	s.Contains(err.Error(), "buscar categoria pai")
@@ -141,7 +195,7 @@ func (s *ValidateSubcategorySuite) TestExecute_ErroBuscarCategoria() {
 
 	s.repo.EXPECT().GetByID(mock.Anything, id).Return(entities.Category{}, errors.New("db error")).Once()
 
-	_, err := s.useCase.Execute(s.ctx, id)
+	_, err := s.useCase.Execute(s.ctx, id, uuid.Nil)
 
 	s.Error(err)
 	s.Contains(err.Error(), "buscar categoria")

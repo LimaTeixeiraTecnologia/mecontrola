@@ -251,24 +251,13 @@ func executeRegister(ctx context.Context, state ConfirmState, ledger interfaces.
 	if err != nil || len(candidates) == 0 {
 		return fmt.Errorf("workflows.destructive_confirm.register: categoria não encontrada para %q: %w", state.ResumeText, err)
 	}
-	switch state.TargetKind {
-	case "card_purchase":
-		var draft interfaces.RawCardPurchase
-		if err := json.Unmarshal([]byte(state.UpdatePayload), &draft); err != nil {
-			return fmt.Errorf("workflows.destructive_confirm.register: decode card_purchase: %w", err)
-		}
-		draft.CategoryID = candidates[0].CategoryID
-		_, err = ledger.CreateCardPurchase(ctx, draft)
-		return err
-	default:
-		var draft interfaces.RawTransaction
-		if err := json.Unmarshal([]byte(state.UpdatePayload), &draft); err != nil {
-			return fmt.Errorf("workflows.destructive_confirm.register: decode transaction: %w", err)
-		}
-		draft.CategoryID = candidates[0].CategoryID
-		_, err = ledger.CreateTransaction(ctx, draft)
-		return err
+	var draft interfaces.RawTransaction
+	if err := json.Unmarshal([]byte(state.UpdatePayload), &draft); err != nil {
+		return fmt.Errorf("workflows.destructive_confirm.register: decode transaction: %w", err)
 	}
+	draft.CategoryID = candidates[0].CategoryID
+	_, err = ledger.CreateTransaction(ctx, draft)
+	return err
 }
 
 func executeDeleteEntry(ctx context.Context, state ConfirmState, ledger interfaces.TransactionsLedger) error {
@@ -277,12 +266,7 @@ func executeDeleteEntry(ctx context.Context, state ConfirmState, ledger interfac
 		return fmt.Errorf("workflows.destructive_confirm.delete_entry: parse uuid: %w", err)
 	}
 	ref := interfaces.EntryRef{ID: id, Kind: state.TargetKind}
-	switch state.TargetKind {
-	case "card_purchase":
-		return ledger.DeleteCardPurchase(ctx, ref, state.Version)
-	default:
-		return ledger.DeleteTransaction(ctx, ref, state.Version)
-	}
+	return ledger.DeleteTransaction(ctx, ref, state.Version)
 }
 
 func executeEditEntry(ctx context.Context, state ConfirmState, ledger interfaces.TransactionsLedger) error {
@@ -293,26 +277,14 @@ func executeEditEntry(ctx context.Context, state ConfirmState, ledger interfaces
 	if state.UpdatePayload == "" {
 		return fmt.Errorf("workflows.destructive_confirm.edit_entry: update payload ausente")
 	}
-	switch state.TargetKind {
-	case "card_purchase":
-		var upd interfaces.RawUpdateCardPurchase
-		if err := json.Unmarshal([]byte(state.UpdatePayload), &upd); err != nil {
-			return fmt.Errorf("workflows.destructive_confirm.edit_entry: decode card_purchase payload: %w", err)
-		}
-		upd.ID = id
-		upd.Version = state.Version
-		_, err = ledger.UpdateCardPurchase(ctx, upd)
-		return err
-	default:
-		var upd interfaces.RawUpdateTransaction
-		if err := json.Unmarshal([]byte(state.UpdatePayload), &upd); err != nil {
-			return fmt.Errorf("workflows.destructive_confirm.edit_entry: decode transaction payload: %w", err)
-		}
-		upd.ID = id
-		upd.Version = state.Version
-		_, err = ledger.UpdateTransaction(ctx, upd)
-		return err
+	var upd interfaces.RawUpdateTransaction
+	if err := json.Unmarshal([]byte(state.UpdatePayload), &upd); err != nil {
+		return fmt.Errorf("workflows.destructive_confirm.edit_entry: decode transaction payload: %w", err)
 	}
+	upd.ID = id
+	upd.Version = state.Version
+	_, err = ledger.UpdateTransaction(ctx, upd)
+	return err
 }
 
 func executeDeleteCard(ctx context.Context, state ConfirmState, cards interfaces.CardManager) error {
@@ -369,8 +341,6 @@ func BuildImpactNote(ctx context.Context, targetRef, targetKind string, userID u
 			return "Remoção permanente do cartão."
 		}
 		return "⚠️ Este cartão possui compras parceladas em aberto. Removê-lo deixará as parcelas sem cartão associado."
-	case "card_purchase":
-		return "⚠️ Todas as parcelas desta compra serão removidas."
 	default:
 		return "Este lançamento será removido permanentemente."
 	}

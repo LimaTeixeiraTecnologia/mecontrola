@@ -64,14 +64,10 @@ type fakeRegistrar struct {
 	expenseErr    error
 	incomeResult  usecases.RegisterResult
 	incomeErr     error
-	cardResult    usecases.RegisterResult
-	cardErr       error
 	lastExpense   usecases.RegisterExpenseCommand
 	lastIncome    usecases.RegisterIncomeCommand
-	lastCard      usecases.RegisterCardPurchaseCommand
 	expenseCalls  int
 	incomeCalls   int
-	cardCalls     int
 }
 
 func (f *fakeRegistrar) RegisterExpense(_ context.Context, cmd usecases.RegisterExpenseCommand) (usecases.RegisterResult, error) {
@@ -84,12 +80,6 @@ func (f *fakeRegistrar) RegisterIncome(_ context.Context, cmd usecases.RegisterI
 	f.incomeCalls++
 	f.lastIncome = cmd
 	return f.incomeResult, f.incomeErr
-}
-
-func (f *fakeRegistrar) RegisterCardPurchase(_ context.Context, cmd usecases.RegisterCardPurchaseCommand) (usecases.RegisterResult, error) {
-	f.cardCalls++
-	f.lastCard = cmd
-	return f.cardResult, f.cardErr
 }
 
 func TestBuildRegisterExpenseToolDelegatesAndMapsOutput(t *testing.T) {
@@ -221,66 +211,70 @@ func TestBuildRegisterIncomeToolClarify(t *testing.T) {
 	assert.Empty(t, result.ResourceID)
 }
 
-func TestBuildRegisterCardPurchaseToolDelegatesCardID(t *testing.T) {
+func TestBuildRegisterExpenseToolCreditCardDelegatesCardIDAndInstallments(t *testing.T) {
 	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
 	registrar := &fakeRegistrar{
-		cardResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "card_purchase", Outcome: agent.ToolOutcomeRouted},
+		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
 	}
 
-	handle := BuildRegisterCardPurchaseTool(registrar)
-	assert.Equal(t, "register_card_purchase", handle.ID())
+	handle := BuildRegisterExpenseTool(registrar)
 
-	argsJSON, _ := json.Marshal(RegisterCardPurchaseInput{
-		CardID:            cardID.String(),
-		TotalAmountCents:  30000,
-		InstallmentsTotal: 3,
-		Description:       "Notebook",
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{
+		AmountCents:   30000,
+		Description:   "Notebook",
+		PaymentMethod: "credit_card",
+		CardID:        cardID.String(),
+		Installments:  3,
 	})
 	out, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.NoError(t, err)
 
-	var result RegisterCardPurchaseOutput
+	var result RegisterExpenseOutput
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.Equal(t, testResourceID.String(), result.ResourceID)
-	assert.Equal(t, "card_purchase", result.Kind)
+	assert.Equal(t, "transaction", result.Kind)
 
-	assert.Equal(t, 1, registrar.cardCalls)
-	assert.Equal(t, cardID, registrar.lastCard.CardID)
-	assert.Equal(t, 3, registrar.lastCard.InstallmentsTotal)
-	assert.Equal(t, int64(30000), registrar.lastCard.TotalAmountCents)
+	assert.Equal(t, 1, registrar.expenseCalls)
+	assert.Equal(t, "credit_card", registrar.lastExpense.PaymentMethod)
+	require.NotNil(t, registrar.lastExpense.CardID)
+	assert.Equal(t, cardID, *registrar.lastExpense.CardID)
+	assert.Equal(t, 3, registrar.lastExpense.Installments)
+	assert.Equal(t, int64(30000), registrar.lastExpense.AmountCents)
 }
 
-func TestBuildRegisterCardPurchaseToolClarify(t *testing.T) {
+func TestBuildRegisterExpenseToolCreditCardDefaultsInstallmentsToOne(t *testing.T) {
 	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	registrar := &fakeRegistrar{cardResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
-	handle := BuildRegisterCardPurchaseTool(registrar)
-	argsJSON, _ := json.Marshal(RegisterCardPurchaseInput{
-		CardID:            cardID.String(),
-		TotalAmountCents:  30000,
-		InstallmentsTotal: 1,
-		Description:       "algo ambíguo",
+	registrar := &fakeRegistrar{
+		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
+	}
+
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{
+		AmountCents:   30000,
+		Description:   "Compra à vista",
+		PaymentMethod: "credit_card",
+		CardID:        cardID.String(),
 	})
-	out, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
+	_, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.NoError(t, err)
 
-	var result RegisterCardPurchaseOutput
-	require.NoError(t, json.Unmarshal(out, &result))
-	assert.Equal(t, "clarify", result.Outcome)
-	assert.Empty(t, result.ResourceID)
+	assert.Equal(t, 1, registrar.expenseCalls)
+	assert.Equal(t, 1, registrar.lastExpense.Installments)
 }
 
-func TestBuildRegisterCardPurchaseToolInvalidCardID(t *testing.T) {
+func TestBuildRegisterExpenseToolInvalidCardID(t *testing.T) {
 	registrar := &fakeRegistrar{}
-	handle := BuildRegisterCardPurchaseTool(registrar)
-	argsJSON, _ := json.Marshal(RegisterCardPurchaseInput{
-		CardID:            "not-a-uuid",
-		TotalAmountCents:  30000,
-		InstallmentsTotal: 1,
-		Description:       "Compra",
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{
+		AmountCents:   30000,
+		Description:   "Compra",
+		PaymentMethod: "credit_card",
+		CardID:        "not-a-uuid",
+		Installments:  1,
 	})
 	_, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.Error(t, err)
-	assert.Equal(t, 0, registrar.cardCalls)
+	assert.Equal(t, 0, registrar.expenseCalls)
 }
 
 func TestBuildQueryMonthToolSuccess(t *testing.T) {

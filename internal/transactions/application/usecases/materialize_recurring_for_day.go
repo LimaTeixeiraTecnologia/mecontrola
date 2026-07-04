@@ -25,19 +25,14 @@ type transactionCreator interface {
 	Execute(ctx context.Context, raw input.RawCreateTransaction) (output.Transaction, error)
 }
 
-type cardPurchaseCreator interface {
-	Execute(ctx context.Context, raw input.RawCreateCardPurchase) (output.CardPurchase, error)
-}
-
 type MaterializeRecurringForDay struct {
-	db                 database.DBTX
-	factory            interfaces.RepositoryFactory
-	uow                uow.UnitOfWork
-	workflow           services.RecurringWorkflow
-	createTransaction  transactionCreator
-	createCardPurchase cardPurchaseCreator
-	brazilLoc          *time.Location
-	o11y               observability.Observability
+	db                database.DBTX
+	factory           interfaces.RepositoryFactory
+	uow               uow.UnitOfWork
+	workflow          services.RecurringWorkflow
+	createTransaction transactionCreator
+	brazilLoc         *time.Location
+	o11y              observability.Observability
 }
 
 func NewMaterializeRecurringForDay(
@@ -46,19 +41,17 @@ func NewMaterializeRecurringForDay(
 	u uow.UnitOfWork,
 	workflow services.RecurringWorkflow,
 	createTransaction transactionCreator,
-	createCardPurchase cardPurchaseCreator,
 	brazilLoc *time.Location,
 	o11y observability.Observability,
 ) *MaterializeRecurringForDay {
 	return &MaterializeRecurringForDay{
-		db:                 db,
-		factory:            factory,
-		uow:                u,
-		workflow:           workflow,
-		createTransaction:  createTransaction,
-		createCardPurchase: createCardPurchase,
-		brazilLoc:          brazilLoc,
-		o11y:               o11y,
+		db:                db,
+		factory:           factory,
+		uow:               u,
+		workflow:          workflow,
+		createTransaction: createTransaction,
+		brazilLoc:         brazilLoc,
+		o11y:              o11y,
 	}
 }
 
@@ -160,12 +153,12 @@ func (uc *MaterializeRecurringForDay) materializeOne(
 		return materializationRepo.MarkCompleted(ctx, decision.TemplateID, decision.RefMonth, &entityID, nil)
 	}
 
-	entityID, err := uc.materializeAsCardPurchase(userCtx, template, occurredAt)
+	entityID, err := uc.materializeAsCreditTransaction(userCtx, template, occurredAt)
 	if err != nil {
 		return err
 	}
 	materializationRepo := uc.factory.RecurringMaterializationRepository(uc.db)
-	return materializationRepo.MarkCompleted(ctx, decision.TemplateID, decision.RefMonth, nil, &entityID)
+	return materializationRepo.MarkCompleted(ctx, decision.TemplateID, decision.RefMonth, &entityID, nil)
 }
 
 func (uc *MaterializeRecurringForDay) materializeAsTransaction(
@@ -193,7 +186,7 @@ func (uc *MaterializeRecurringForDay) materializeAsTransaction(
 	return result.ID, nil
 }
 
-func (uc *MaterializeRecurringForDay) materializeAsCardPurchase(
+func (uc *MaterializeRecurringForDay) materializeAsCreditTransaction(
 	ctx context.Context,
 	template *entities.RecurringTemplate,
 	occurredAt time.Time,
@@ -203,22 +196,25 @@ func (uc *MaterializeRecurringForDay) materializeAsCardPurchase(
 		return uuid.Nil, fmt.Errorf("transactions/materialize: template de crédito sem card_id: %s", template.ID())
 	}
 
-	raw := input.RawCreateCardPurchase{
-		CardID:            cardID.UUID(),
-		TotalAmountCents:  template.Amount().Cents(),
-		InstallmentsTotal: template.InstallmentsTotal().Value(),
-		Description:       template.Description().String(),
-		CategoryID:        template.CategoryID().UUID(),
-		PurchasedAt:       occurredAt.Format(time.RFC3339),
+	cardUUID := cardID.UUID()
+	raw := input.RawCreateTransaction{
+		Direction:     template.Direction().String(),
+		PaymentMethod: template.PaymentMethod().String(),
+		AmountCents:   template.Amount().Cents(),
+		Description:   template.Description().String(),
+		CategoryID:    template.CategoryID().UUID(),
+		CardID:        &cardUUID,
+		Installments:  template.InstallmentsTotal().Value(),
+		OccurredAt:    occurredAt.Format(time.RFC3339),
 	}
 	if sub, ok := template.SubcategoryID().Get(); ok {
 		u := sub.UUID()
 		raw.SubcategoryID = &u
 	}
 
-	result, err := uc.createCardPurchase.Execute(ctx, raw)
+	result, err := uc.createTransaction.Execute(ctx, raw)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("transactions/materialize: criar card purchase: %w", err)
+		return uuid.Nil, fmt.Errorf("transactions/materialize: criar transação de crédito: %w", err)
 	}
 	return result.ID, nil
 }

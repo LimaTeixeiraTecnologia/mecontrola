@@ -116,7 +116,6 @@ packages:
     interfaces:
       RepositoryFactory: {}
       TransactionRepository: {}
-      CardPurchaseRepository: {}
       CardInvoiceRepository: {}
       RecurringTemplateRepository: {}
       MonthlySummaryRepository: {}
@@ -124,7 +123,6 @@ packages:
       CardLookup: {}
       CategoryValidator: {}
       TransactionEventPublisher: {}
-      CardPurchaseEventPublisher: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces:
     interfaces:
       CategoryRepository: {}
