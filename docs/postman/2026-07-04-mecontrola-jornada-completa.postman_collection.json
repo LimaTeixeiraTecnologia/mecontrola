@@ -1,0 +1,5203 @@
+{
+  "info": {
+    "_postman_id": "mecontrola-jornada-completa-2026-07-04",
+    "name": "MeControla — Jornada Completa + Todos os Endpoints [2026-07-04]",
+    "description": "Cobertura 100% das rotas montadas + jornada encadeada (landing/checkout -> pagamento Kiwify -> ativacao/onboarding WhatsApp -> API autenticada) para 2 perfis. Assinaturas: Kiwify HMAC-SHA1, WhatsApp/Meta HMAC-SHA256 (X-Hub-Signature-256), Gateway HMAC-SHA256 (chave hex). Todos os campos, headers e scripts derivados do codigo-fonte.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 — Infra & Health",
+      "item": [
+        {
+          "name": "GET /healthz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "GET /healthz — liveness probe (sempre 200)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /livez",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/livez",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "livez"
+              ]
+            },
+            "description": "GET /livez — liveness probe (sempre 200)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/readiness",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "readiness"
+              ]
+            },
+            "description": "GET /readiness — readiness probe (200 no ar, 503 em shutdown)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /readyz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/readyz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            },
+            "description": "GET /readyz — readiness probe (200 no ar, 503 em shutdown)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /__docs/",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/__docs/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "__docs",
+                ""
+              ]
+            },
+            "description": "Serve o catalogo OpenAPI. Requer ENVIRONMENT=local (senao 404)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 quando ENVIRONMENT=local (senao 404)\", () => pm.expect([200,404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /__docs/openapi/index.json",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/__docs/openapi/index.json",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "__docs",
+                "openapi",
+                "index.json"
+              ]
+            },
+            "description": "Serve o catalogo OpenAPI. Requer ENVIRONMENT=local (senao 404)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 quando ENVIRONMENT=local (senao 404)\", () => pm.expect([200,404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /__docs/openapi/{module}.yaml",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/__docs/openapi/transactions.yaml",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "__docs",
+                "openapi",
+                "transactions.yaml"
+              ]
+            },
+            "description": "Serve o catalogo OpenAPI. Requer ENVIRONMENT=local (senao 404). Modulos: identity, billing, categories, onboarding, card, budgets, transactions."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 quando ENVIRONMENT=local (senao 404)\", () => pm.expect([200,404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Probes de liveness/readiness e catalogo OpenAPI (local)."
+    },
+    {
+      "name": "01 — Webhooks & Verificacao",
+      "item": [
+        {
+          "name": "GET /api/v1/whatsapp/verify",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/verify?hub.mode=subscribe&hub.verify_token={{meta_verify_token}}&hub.challenge=1234567890",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "verify"
+              ],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "subscribe"
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{meta_verify_token}}"
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "1234567890"
+                }
+              ]
+            },
+            "description": "Handshake de verificacao do webhook Meta. Ecoa hub.challenge quando hub.verify_token confere."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 (requer meta_verify_token correto; senao 403)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"echo do hub.challenge\", () => pm.expect(pm.response.text()).to.eql(\"1234567890\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/whatsapp/inbound (verify alias)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/inbound?hub.mode=subscribe&hub.verify_token={{meta_verify_token}}&hub.challenge=1234567890",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "inbound"
+              ],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "subscribe"
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{meta_verify_token}}"
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "1234567890"
+                }
+              ]
+            },
+            "description": "Mesmo handshake Meta no path /inbound (alias de verificacao)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200 (requer meta_verify_token correto; senao 403)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"echo do hub.challenge\", () => pm.expect(pm.response.text()).to.eql(\"1234567890\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/whatsapp/status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/whatsapp/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "whatsapp",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Webhook de status de entrega (sent/delivered/read/failed) da Meta. Assinado com X-Hub-Signature-256 (HMAC-SHA256)."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts  = String(Math.floor(Date.now()/1000));",
+                  "const uid = Math.random().toString(36).substr(2,8);",
+                  "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                  "const payload = {",
+                  "  object: 'whatsapp_business_account',",
+                  "  entry: [{ id: 'entry-status-'+uid, changes: [{ field: 'messages', value: {",
+                  "    messaging_product: 'whatsapp',",
+                  "    statuses: [{ id: 'wamid.status.'+ts+'.'+uid, status: 'delivered', timestamp: ts, recipient_id: '5511986896322', errors: [] }]",
+                  "  } }] }]",
+                  "};",
+                  "const rawBody = JSON.stringify(payload);",
+                  "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                  "pm.request.body.raw = rawBody;",
+                  "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Setup dos webhooks Meta (verify + status). O inbound de mensagens fica nas jornadas."
+    },
+    {
+      "name": "02 — CORS Preflight",
+      "item": [
+        {
+          "name": "OPTIONS /onboarding/checkout",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{cors_origin}}"
+              },
+              {
+                "key": "Access-Control-Request-Method",
+                "value": "POST"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/checkout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "checkout"
+              ]
+            },
+            "description": "Preflight CORS do checkout."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /onboarding/tokens/:token/state",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{cors_origin}}"
+              },
+              {
+                "key": "Access-Control-Request-Method",
+                "value": "POST"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "tokens",
+                "{{onboarding_token_u1}}",
+                "state"
+              ]
+            },
+            "description": "Preflight CORS da consulta de estado do token."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /onboarding/tokens/:token/opened",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{cors_origin}}"
+              },
+              {
+                "key": "Access-Control-Request-Method",
+                "value": "POST"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/opened",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "tokens",
+                "{{onboarding_token_u1}}",
+                "opened"
+              ]
+            },
+            "description": "Preflight CORS do beacon de jornada."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Requisicoes OPTIONS de preflight registradas no modulo onboarding (retornam 204)."
+    },
+    {
+      "name": "10 — Jailton (+5511986896322)",
+      "item": [
+        {
+          "name": "A — Funil (landing -> checkout -> pagamento)",
+          "item": [
+            {
+              "name": "1 — POST /onboarding/checkout",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/checkout",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "checkout"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"plan_id\":\"{{plan_id}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Landing/checkout: cria a sessao de checkout do plano e devolve checkout_url com ?sck=<token>."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"tem checkout_url\", () => pm.expect(body).to.have.property(\"checkout_url\"));",
+                      "let token = \"\";",
+                      "try { token = new URL(body.checkout_url).searchParams.get(\"sck\") || \"\"; } catch(e) {}",
+                      "pm.test(\"checkout_url contem sck\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
+                      "pm.collectionVariables.set(\"onboarding_token_u1\", token);",
+                      "pm.collectionVariables.set(\"funnel_token_u1\", token);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "2 — POST /onboarding/tokens/:token/opened (page_opened)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/opened",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u1}}",
+                    "opened"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"event\":\"page_opened\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Beacon de funil: usuario abriu a pagina de checkout (evento page_opened)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3 — GET /onboarding/tokens/:token/state (PENDING)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/state",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u1}}",
+                    "state"
+                  ]
+                },
+                "description": "Consulta o estado do token antes do pagamento: ready_to_activate=false."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"ready_to_activate=false\", () => pm.expect(pm.response.json().ready_to_activate).to.equal(false));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4 — POST /billing/webhooks/kiwify (order_approved)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "billing",
+                    "webhooks",
+                    "kiwify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Evento de pagamento aprovado da Kiwify. Body + assinatura HMAC-SHA1 gerados no pre-request; provisiona o usuario."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const funnelToken = pm.collectionVariables.get('funnel_token_u1') || '';",
+                      "const productId = pm.environment.get('kiwify_product_id_monthly') || '';",
+                      "const email = pm.environment.get('user_email_u1');",
+                      "const mobile = pm.environment.get('user_whatsapp_u1');",
+                      "const now = new Date();",
+                      "const isoNow  = now.toISOString().replace('T',' ').split('.')[0];",
+                      "const isoNext = new Date(now.getTime()+30*24*3600*1000).toISOString().replace('T',' ').split('.')[0];",
+                      "const payload = {",
+                      "  order_id: 'order-u1-'+ts+'-'+uid,",
+                      "  order_ref: 'ref-u1-'+ts+'-'+uid,",
+                      "  order_status: 'paid',",
+                      "  webhook_event_type: 'order_approved',",
+                      "  subscription_id: 'sub-u1-'+ts+'-'+uid,",
+                      "  Product: { product_id: productId, product_name: 'MeControla Mensal' },",
+                      "  Customer: { email: email, mobile: mobile, CPF: '00000000000' },",
+                      "  Subscription: { status: 'active', start_date: isoNow, next_payment: isoNext },",
+                      "  TrackingParameters: { sck: funnelToken, s1: null, src: null },",
+                      "  approved_date: isoNow, updated_at: isoNow, created_at: isoNow",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = CryptoJS.HmacSHA1(rawBody, pm.environment.get('kiwify_webhook_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Kiwify-Signature', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                      "pm.test(\"received=true\", () => pm.expect(pm.response.json().received).to.be.true);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "5 — GET /onboarding/tokens/:token/state (PAID)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/state",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u1}}",
+                    "state"
+                  ]
+                },
+                "description": "Apos o pagamento: ready_to_activate=true e wa_me_url preenchido."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"ready_to_activate=true\", () => pm.expect(body.ready_to_activate).to.equal(true));",
+                      "if (body.wa_me_url) pm.collectionVariables.set(\"wa_me_url_u1\", body.wa_me_url);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "6 — POST /onboarding/tokens/:token/opened (whatsapp_opened)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u1}}/opened",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u1}}",
+                    "opened"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"event\":\"whatsapp_opened\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Beacon de funil: usuario clicou no wa.me e abriu o WhatsApp (evento whatsapp_opened)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "B — Ativacao + onboarding (WhatsApp)",
+          "item": [
+            {
+              "name": "7 — POST /whatsapp/inbound — ATIVAR <token>",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "whatsapp",
+                    "inbound"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Ativacao da conta: usuario envia 'ATIVAR <token>' no WhatsApp. Inbound assinado com X-Hub-Signature-256."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const fromNum = pm.environment.get('user_whatsapp_from_u1');",
+                      "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                      "const msgBody = 'ATIVAR ' + (pm.collectionVariables.get('onboarding_token_u1') || '');",
+                      "const payload = {",
+                      "  object: 'whatsapp_business_account',",
+                      "  entry: [{ id: 'entry-u1-'+uid, changes: [{ field: 'messages', value: {",
+                      "    messaging_product: 'whatsapp',",
+                      "    metadata: { display_phone_number: fromNum, phone_number_id: phoneNumberId },",
+                      "    messages: [{ from: fromNum, id: 'wamid.'+ts+'.'+uid, timestamp: ts, type: 'text', text: { body: msgBody } }]",
+                      "  } }] }]",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "8 — POST /whatsapp/inbound — turno de onboarding (nome)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "whatsapp",
+                    "inbound"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Turno de onboarding (texto livre do usuario). Resposta do bot e assincrona (Send API); aqui so validamos 200."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const fromNum = pm.environment.get('user_whatsapp_from_u1');",
+                      "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                      "const msgBody = 'Jailton';",
+                      "const payload = {",
+                      "  object: 'whatsapp_business_account',",
+                      "  entry: [{ id: 'entry-u1-'+uid, changes: [{ field: 'messages', value: {",
+                      "    messaging_product: 'whatsapp',",
+                      "    metadata: { display_phone_number: fromNum, phone_number_id: phoneNumberId },",
+                      "    messages: [{ from: fromNum, id: 'wamid.'+ts+'.'+uid, timestamp: ts, type: 'text', text: { body: msgBody } }]",
+                      "  } }] }]",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "9 — POST /whatsapp/inbound — turno de onboarding (lancamento)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "whatsapp",
+                    "inbound"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Turno de onboarding/uso (texto livre). Turnos adicionais seguem o mesmo envelope."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const fromNum = pm.environment.get('user_whatsapp_from_u1');",
+                      "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                      "const msgBody = 'gastei 50 no mercado';",
+                      "const payload = {",
+                      "  object: 'whatsapp_business_account',",
+                      "  entry: [{ id: 'entry-u1-'+uid, changes: [{ field: 'messages', value: {",
+                      "    messaging_product: 'whatsapp',",
+                      "    metadata: { display_phone_number: fromNum, phone_number_id: phoneNumberId },",
+                      "    messages: [{ from: fromNum, id: 'wamid.'+ts+'.'+uid, timestamp: ts, type: 'text', text: { body: msgBody } }]",
+                      "  } }] }]",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "C1 — Identidade (ponte X-User-ID)",
+          "item": [
+            {
+              "name": "10 — POST /identity/users (ponte X-User-ID)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/identity/users",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "identity",
+                    "users"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"whatsapp\":\"{{user_whatsapp_u1}}\",\"email\":\"{{user_email_u1}}\",\"display_name\":\"Jailton\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Resolve o usuario provisionado (idempotente por whatsapp) e captura o id para assinar as chamadas autenticadas. Sem gateway auth."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"tem id\", () => pm.expect(b).to.have.property(\"id\"));",
+                      "pm.collectionVariables.set(\"user_id_u1\", b.id);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "C — App autenticado (gateway auth)",
+          "item": [
+            {
+              "name": "11 — GET /categories",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories",
+                    ""
+                  ]
+                },
+                "description": "Catalogo de categorias. Captura uma categoria de despesa com subcategoria para encadear os lancamentos."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));",
+                      "if (pm.response.code === 200) {",
+                      "  const cats = (pm.response.json().categories) || [];",
+                      "  const exp = cats.find(c => c.kind === \"expense\" && Array.isArray(c.subcategories) && c.subcategories.length > 0);",
+                      "  pm.test(\"achou categoria expense com subcategoria\", () => pm.expect(exp, \"expense w/ subcategory\").to.exist);",
+                      "  if (exp) {",
+                      "    pm.collectionVariables.set(\"category_id_u1\", exp.id);",
+                      "    pm.collectionVariables.set(\"subcategory_id_u1\", exp.subcategories[0].id);",
+                      "  }",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "12 — GET /categories/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories/{{category_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories",
+                    "{{category_id_u1}}"
+                  ]
+                },
+                "description": "Detalhe de uma categoria pelo id capturado."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "13 — GET /category-dictionary",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/category-dictionary/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "category-dictionary",
+                    ""
+                  ]
+                },
+                "description": "Dicionario de categorias (termos, aliases, merchants)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "14 — GET /category-dictionary/search",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/category-dictionary/search?q=mercado&kind=expense",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "category-dictionary",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "q",
+                      "value": "mercado"
+                    },
+                    {
+                      "key": "kind",
+                      "value": "expense"
+                    }
+                  ]
+                },
+                "description": "Busca um termo no dicionario (q>=3 chars, kind obrigatorio)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "15 — POST /transactions",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":1990,\"description\":\"Compra no mercado\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"occurred_at\":\"{{now_iso_u1}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um lancamento de saida (pix). category_id/subcategory_id encadeados; occurred_at do pre-request."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "16 — GET /transactions/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/{{transaction_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "{{transaction_id_u1}}"
+                  ]
+                },
+                "description": "Obtem o lancamento criado."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "17 — PATCH /transactions/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/{{transaction_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "{{transaction_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":2490,\"description\":\"Compra no mercado (ajuste)\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"occurred_at\":\"{{now_iso_u1}}\",\"version\":{{transaction_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza o lancamento (optimistic locking via version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"transaction_version_u1\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "18 — GET /transactions (lista por competencia)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/?ref_month={{ref_month_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "ref_month",
+                      "value": "{{ref_month_u1}}"
+                    }
+                  ]
+                },
+                "description": "Lista lancamentos da competencia corrente."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "19 — GET /months/:ref_month",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/months/{{ref_month_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "months",
+                    "{{ref_month_u1}}"
+                  ]
+                },
+                "description": "Resumo mensal (income/outcome/total)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "20 — GET /months/:ref_month/entries",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/months/{{ref_month_u1}}/entries",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "months",
+                    "{{ref_month_u1}}",
+                    "entries"
+                  ]
+                },
+                "description": "Entradas do mes (transacoes + itens de fatura)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "21 — DELETE /transactions/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/{{transaction_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "{{transaction_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"version\":{{transaction_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove o lancamento (soft-delete via version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "22 — POST /cards",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"nickname\":\"Cartao Teste\",\"bank\":\"Nubank\",\"due_day\":10}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um cartao de credito (calcula closing_day/best_purchase_day)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "pm.collectionVariables.set(\"card_id_u1\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "23 — GET /cards",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    ""
+                  ]
+                },
+                "description": "Lista os cartoes."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "24 — GET /cards/best-purchase-day",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/best-purchase-day?bank=Nubank&due_day=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "best-purchase-day"
+                  ],
+                  "query": [
+                    {
+                      "key": "bank",
+                      "value": "Nubank"
+                    },
+                    {
+                      "key": "due_day",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "Calcula o melhor dia de compra para banco+dia de vencimento."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "25 — GET /cards/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u1}}"
+                  ]
+                },
+                "description": "Obtem o cartao pelo id."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "26 — PUT /cards/:id",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"nickname\":\"Cartao Renomeado\",\"bank\":\"Nubank\",\"due_day\":15}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza o cartao."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "27 — GET /cards/:id/invoices?for=",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u1}}/invoices?for={{purchase_date_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u1}}",
+                    "invoices"
+                  ],
+                  "query": [
+                    {
+                      "key": "for",
+                      "value": "{{purchase_date_u1}}"
+                    }
+                  ]
+                },
+                "description": "Calcula as datas de fatura para uma data de compra."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "28 — GET /cards/:id/invoices/:ref_month",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u1}}/invoices/{{ref_month_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u1}}",
+                    "invoices",
+                    "{{ref_month_u1}}"
+                  ]
+                },
+                "description": "Fatura consolidada do cartao por competencia."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 404 (sem itens na competencia)\", () => pm.expect([200,404]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "29 — POST /card-purchases",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"card_id\":\"{{card_id_u1}}\",\"total_amount_cents\":120000,\"installments_total\":3,\"description\":\"Compra parcelada\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"purchased_at\":\"{{now_iso_u1}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria uma compra parcelada no cartao (gera itens de fatura por competencia)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"card_purchase_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"card_purchase_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "30 — GET /card-purchases/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    "{{card_purchase_id_u1}}"
+                  ]
+                },
+                "description": "Obtem a compra no cartao."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "31 — GET /card-purchases (lista)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    ""
+                  ]
+                },
+                "description": "Lista as compras no cartao."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "32 — PATCH /card-purchases/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    "{{card_purchase_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"total_amount_cents\":150000,\"installments_total\":5,\"description\":\"Compra parcelada (ajuste)\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"purchased_at\":\"{{now_iso_u1}}\",\"version\":{{card_purchase_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza a compra no cartao (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"card_purchase_version_u1\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "33 — DELETE /card-purchases/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    "{{card_purchase_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"version\":{{card_purchase_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove a compra no cartao (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "34 — DELETE /cards/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u1}}"
+                  ]
+                },
+                "description": "Remove o cartao (apos remover as compras vinculadas)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "35 — POST /recurring-templates",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":5000,\"description\":\"Assinatura mensal\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"frequency\":\"monthly\",\"day_of_month\":5,\"installments_total\":1,\"started_at\":\"{{now_iso_u1}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um template recorrente (mensal, pix — sem cartao)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"recurring_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"recurring_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "36 — GET /recurring-templates/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/{{recurring_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    "{{recurring_id_u1}}"
+                  ]
+                },
+                "description": "Obtem o template recorrente."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "37 — GET /recurring-templates (lista)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/?active=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "active",
+                      "value": "true"
+                    }
+                  ]
+                },
+                "description": "Lista os templates recorrentes."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "38 — PATCH /recurring-templates/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/{{recurring_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    "{{recurring_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":6000,\"description\":\"Assinatura mensal (ajuste)\",\"category_id\":\"{{category_id_u1}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"frequency\":\"monthly\",\"day_of_month\":8,\"installments_total\":1,\"started_at\":\"{{now_iso_u1}}\",\"version\":{{recurring_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza o template recorrente (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"recurring_version_u1\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "39 — DELETE /recurring-templates/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/{{recurring_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    "{{recurring_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"version\":{{recurring_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove o template recorrente (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "40 — POST /budgets (rascunho ativavel)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"competence\":\"{{competence_active_u1}}\",\"total_cents\":500000,\"allocations\":[{\"root_slug\":\"expense.custo_fixo\",\"basis_points\":5000},{\"root_slug\":\"expense.conhecimento\",\"basis_points\":2000},{\"root_slug\":\"expense.prazeres\",\"basis_points\":1500},{\"root_slug\":\"expense.metas\",\"basis_points\":1000},{\"root_slug\":\"expense.liberdade_financeira\",\"basis_points\":500}]}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria orcamento da competencia corrente (soma de basis_points = 10000, exigido para ativar)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "41 — POST /budgets/recurrence",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/recurrence",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "recurrence"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"source_competence\":\"{{competence_active_u1}}\",\"months\":3}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Replica o orcamento da competencia fonte para os proximos meses."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 2xx\", () => pm.expect([200,201,207]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "42 — POST /budgets/:competence/activate",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/{{competence_active_u1}}/activate",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "{{competence_active_u1}}",
+                    "activate"
+                  ]
+                },
+                "description": "Ativa o orcamento da competencia corrente."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "43 — GET /budgets/:competence/summary",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/{{competence_active_u1}}/summary",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "{{competence_active_u1}}",
+                    "summary"
+                  ]
+                },
+                "description": "Resumo mensal do orcamento (planejado x gasto por root)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "44 — GET /budgets/alerts",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/alerts?competence={{competence_active_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "alerts"
+                  ],
+                  "query": [
+                    {
+                      "key": "competence",
+                      "value": "{{competence_active_u1}}"
+                    }
+                  ]
+                },
+                "description": "Lista alertas de estouro por competencia."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "45 — POST /budgets/expenses",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/expenses",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "expenses"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"competence\":\"{{competence_active_u1}}\",\"amount_cents\":2500}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Registra uma despesa no orcamento (source=api; subcategoria encadeada)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"expense_id_u1\", b.id);",
+                      "pm.collectionVariables.set(\"expense_version_u1\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "46 — PATCH /budgets/expenses/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/expenses/{{expense_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "expenses",
+                    "{{expense_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u1}}\",\"competence\":\"{{competence_active_u1}}\",\"amount_cents\":3000,\"expected_version\":{{expense_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza a despesa (expected_version obrigatorio)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"expense_version_u1\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "47 — DELETE /budgets/expenses/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/expenses/{{expense_id_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "expenses",
+                    "{{expense_id_u1}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"expected_version\":{{expense_version_u1}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove a despesa (expected_version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "48 — POST /budgets (competencia rascunho p/ exclusao)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"competence\":\"{{competence_draft_u1}}\",\"total_cents\":300000,\"allocations\":[{\"root_slug\":\"expense.custo_fixo\",\"basis_points\":5000},{\"root_slug\":\"expense.conhecimento\",\"basis_points\":2000},{\"root_slug\":\"expense.prazeres\",\"basis_points\":1500},{\"root_slug\":\"expense.metas\",\"basis_points\":1000},{\"root_slug\":\"expense.liberdade_financeira\",\"basis_points\":500}]}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um orcamento rascunho em competencia futura, para exercitar o DELETE (permitido apenas em rascunho)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "49 — DELETE /budgets/:competence (rascunho)",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/{{competence_draft_u1}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "{{competence_draft_u1}}"
+                  ]
+                },
+                "description": "Remove o orcamento rascunho (delete permitido apenas em rascunho)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "description": "Recursos autenticados. O pre-request desta pasta assina cada request (X-Gateway-Auth = HMAC-SHA256 de lower(user_id)+'.'+ts, chave hex) e calcula datas/competencias.",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const S = 'u1';",
+                  "const userId = pm.collectionVariables.get('user_id_'+S) || '';",
+                  "if (userId) {",
+                  "  const ts = String(Math.floor(Date.now()/1000));",
+                  "  const msg = userId.toLowerCase() + '.' + ts;",
+                  "  const key = CryptoJS.enc.Hex.parse(pm.environment.get('gateway_secret'));",
+                  "  const sig = CryptoJS.HmacSHA256(msg, key).toString(CryptoJS.enc.Hex);",
+                  "  pm.request.headers.upsert({ key: 'X-User-ID', value: userId });",
+                  "  pm.request.headers.upsert({ key: 'X-Gateway-Timestamp', value: ts });",
+                  "  pm.request.headers.upsert({ key: 'X-Gateway-Auth', value: sig });",
+                  "}",
+                  "const now = new Date();",
+                  "const pad = n => String(n).padStart(2,'0');",
+                  "const ym = now.getFullYear() + '-' + pad(now.getMonth()+1);",
+                  "pm.collectionVariables.set('ref_month_'+S, ym);",
+                  "pm.collectionVariables.set('competence_active_'+S, ym);",
+                  "const d6 = new Date(now.getFullYear(), now.getMonth()+6, 1);",
+                  "pm.collectionVariables.set('competence_draft_'+S, d6.getFullYear() + '-' + pad(d6.getMonth()+1));",
+                  "pm.collectionVariables.set('now_iso_'+S, now.toISOString());",
+                  "pm.collectionVariables.set('purchase_date_'+S, ym + '-' + pad(now.getDate()));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Jornada completa do perfil Jailton."
+    },
+    {
+      "name": "20 — Stefany (+5511930111763)",
+      "item": [
+        {
+          "name": "A — Funil (landing -> checkout -> pagamento)",
+          "item": [
+            {
+              "name": "1 — POST /onboarding/checkout",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/checkout",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "checkout"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"plan_id\":\"{{plan_id}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Landing/checkout: cria a sessao de checkout do plano e devolve checkout_url com ?sck=<token>."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"tem checkout_url\", () => pm.expect(body).to.have.property(\"checkout_url\"));",
+                      "let token = \"\";",
+                      "try { token = new URL(body.checkout_url).searchParams.get(\"sck\") || \"\"; } catch(e) {}",
+                      "pm.test(\"checkout_url contem sck\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
+                      "pm.collectionVariables.set(\"onboarding_token_u2\", token);",
+                      "pm.collectionVariables.set(\"funnel_token_u2\", token);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "2 — POST /onboarding/tokens/:token/opened (page_opened)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u2}}/opened",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u2}}",
+                    "opened"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"event\":\"page_opened\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Beacon de funil: usuario abriu a pagina de checkout (evento page_opened)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3 — GET /onboarding/tokens/:token/state (PENDING)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u2}}/state",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u2}}",
+                    "state"
+                  ]
+                },
+                "description": "Consulta o estado do token antes do pagamento: ready_to_activate=false."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"ready_to_activate=false\", () => pm.expect(pm.response.json().ready_to_activate).to.equal(false));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4 — POST /billing/webhooks/kiwify (order_approved)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "billing",
+                    "webhooks",
+                    "kiwify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Evento de pagamento aprovado da Kiwify. Body + assinatura HMAC-SHA1 gerados no pre-request; provisiona o usuario."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const funnelToken = pm.collectionVariables.get('funnel_token_u2') || '';",
+                      "const productId = pm.environment.get('kiwify_product_id_monthly') || '';",
+                      "const email = pm.environment.get('user_email_u2');",
+                      "const mobile = pm.environment.get('user_whatsapp_u2');",
+                      "const now = new Date();",
+                      "const isoNow  = now.toISOString().replace('T',' ').split('.')[0];",
+                      "const isoNext = new Date(now.getTime()+30*24*3600*1000).toISOString().replace('T',' ').split('.')[0];",
+                      "const payload = {",
+                      "  order_id: 'order-u2-'+ts+'-'+uid,",
+                      "  order_ref: 'ref-u2-'+ts+'-'+uid,",
+                      "  order_status: 'paid',",
+                      "  webhook_event_type: 'order_approved',",
+                      "  subscription_id: 'sub-u2-'+ts+'-'+uid,",
+                      "  Product: { product_id: productId, product_name: 'MeControla Mensal' },",
+                      "  Customer: { email: email, mobile: mobile, CPF: '00000000000' },",
+                      "  Subscription: { status: 'active', start_date: isoNow, next_payment: isoNext },",
+                      "  TrackingParameters: { sck: funnelToken, s1: null, src: null },",
+                      "  approved_date: isoNow, updated_at: isoNow, created_at: isoNow",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = CryptoJS.HmacSHA1(rawBody, pm.environment.get('kiwify_webhook_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Kiwify-Signature', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 202\", () => pm.response.to.have.status(202));",
+                      "pm.test(\"received=true\", () => pm.expect(pm.response.json().received).to.be.true);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "5 — GET /onboarding/tokens/:token/state (PAID)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u2}}/state",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u2}}",
+                    "state"
+                  ]
+                },
+                "description": "Apos o pagamento: ready_to_activate=true e wa_me_url preenchido."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test(\"ready_to_activate=true\", () => pm.expect(body.ready_to_activate).to.equal(true));",
+                      "if (body.wa_me_url) pm.collectionVariables.set(\"wa_me_url_u2\", body.wa_me_url);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "6 — POST /onboarding/tokens/:token/opened (whatsapp_opened)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{cors_origin}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/onboarding/tokens/{{onboarding_token_u2}}/opened",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding",
+                    "tokens",
+                    "{{onboarding_token_u2}}",
+                    "opened"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"event\":\"whatsapp_opened\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Beacon de funil: usuario clicou no wa.me e abriu o WhatsApp (evento whatsapp_opened)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "B — Ativacao + onboarding (WhatsApp)",
+          "item": [
+            {
+              "name": "7 — POST /whatsapp/inbound — ATIVAR <token>",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "whatsapp",
+                    "inbound"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Ativacao da conta: usuario envia 'ATIVAR <token>' no WhatsApp. Inbound assinado com X-Hub-Signature-256."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const fromNum = pm.environment.get('user_whatsapp_from_u2');",
+                      "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                      "const msgBody = 'ATIVAR ' + (pm.collectionVariables.get('onboarding_token_u2') || '');",
+                      "const payload = {",
+                      "  object: 'whatsapp_business_account',",
+                      "  entry: [{ id: 'entry-u2-'+uid, changes: [{ field: 'messages', value: {",
+                      "    messaging_product: 'whatsapp',",
+                      "    metadata: { display_phone_number: fromNum, phone_number_id: phoneNumberId },",
+                      "    messages: [{ from: fromNum, id: 'wamid.'+ts+'.'+uid, timestamp: ts, type: 'text', text: { body: msgBody } }]",
+                      "  } }] }]",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "8 — POST /whatsapp/inbound — turno de onboarding (nome)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "whatsapp",
+                    "inbound"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Turno de onboarding (texto livre do usuario). Resposta do bot e assincrona (Send API); aqui so validamos 200."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const fromNum = pm.environment.get('user_whatsapp_from_u2');",
+                      "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                      "const msgBody = 'Stefany';",
+                      "const payload = {",
+                      "  object: 'whatsapp_business_account',",
+                      "  entry: [{ id: 'entry-u2-'+uid, changes: [{ field: 'messages', value: {",
+                      "    messaging_product: 'whatsapp',",
+                      "    metadata: { display_phone_number: fromNum, phone_number_id: phoneNumberId },",
+                      "    messages: [{ from: fromNum, id: 'wamid.'+ts+'.'+uid, timestamp: ts, type: 'text', text: { body: msgBody } }]",
+                      "  } }] }]",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "9 — POST /whatsapp/inbound — turno de onboarding (lancamento)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/whatsapp/inbound",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "whatsapp",
+                    "inbound"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Turno de onboarding/uso (texto livre). Turnos adicionais seguem o mesmo envelope."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const ts  = String(Math.floor(Date.now()/1000));",
+                      "const uid = Math.random().toString(36).substr(2,8);",
+                      "const fromNum = pm.environment.get('user_whatsapp_from_u2');",
+                      "const phoneNumberId = pm.environment.get('whatsapp_phone_number_id') || '';",
+                      "const msgBody = 'gastei 50 no mercado';",
+                      "const payload = {",
+                      "  object: 'whatsapp_business_account',",
+                      "  entry: [{ id: 'entry-u2-'+uid, changes: [{ field: 'messages', value: {",
+                      "    messaging_product: 'whatsapp',",
+                      "    metadata: { display_phone_number: fromNum, phone_number_id: phoneNumberId },",
+                      "    messages: [{ from: fromNum, id: 'wamid.'+ts+'.'+uid, timestamp: ts, type: 'text', text: { body: msgBody } }]",
+                      "  } }] }]",
+                      "};",
+                      "const rawBody = JSON.stringify(payload);",
+                      "const sig = 'sha256=' + CryptoJS.HmacSHA256(rawBody, pm.environment.get('meta_app_secret')).toString(CryptoJS.enc.Hex);",
+                      "pm.request.body.raw = rawBody;",
+                      "pm.request.headers.upsert({ key: 'X-Hub-Signature-256', value: sig });",
+                      "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "C1 — Identidade (ponte X-User-ID)",
+          "item": [
+            {
+              "name": "10 — POST /identity/users (ponte X-User-ID)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/identity/users",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "identity",
+                    "users"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"whatsapp\":\"{{user_whatsapp_u2}}\",\"email\":\"{{user_email_u2}}\",\"display_name\":\"Stefany\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Resolve o usuario provisionado (idempotente por whatsapp) e captura o id para assinar as chamadas autenticadas. Sem gateway auth."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "const b = pm.response.json();",
+                      "pm.test(\"tem id\", () => pm.expect(b).to.have.property(\"id\"));",
+                      "pm.collectionVariables.set(\"user_id_u2\", b.id);"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "C — App autenticado (gateway auth)",
+          "item": [
+            {
+              "name": "11 — GET /categories",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories",
+                    ""
+                  ]
+                },
+                "description": "Catalogo de categorias. Captura uma categoria de despesa com subcategoria para encadear os lancamentos."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));",
+                      "if (pm.response.code === 200) {",
+                      "  const cats = (pm.response.json().categories) || [];",
+                      "  const exp = cats.find(c => c.kind === \"expense\" && Array.isArray(c.subcategories) && c.subcategories.length > 0);",
+                      "  pm.test(\"achou categoria expense com subcategoria\", () => pm.expect(exp, \"expense w/ subcategory\").to.exist);",
+                      "  if (exp) {",
+                      "    pm.collectionVariables.set(\"category_id_u2\", exp.id);",
+                      "    pm.collectionVariables.set(\"subcategory_id_u2\", exp.subcategories[0].id);",
+                      "  }",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "12 — GET /categories/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories/{{category_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories",
+                    "{{category_id_u2}}"
+                  ]
+                },
+                "description": "Detalhe de uma categoria pelo id capturado."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "13 — GET /category-dictionary",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/category-dictionary/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "category-dictionary",
+                    ""
+                  ]
+                },
+                "description": "Dicionario de categorias (termos, aliases, merchants)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "14 — GET /category-dictionary/search",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/category-dictionary/search?q=mercado&kind=expense",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "category-dictionary",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "q",
+                      "value": "mercado"
+                    },
+                    {
+                      "key": "kind",
+                      "value": "expense"
+                    }
+                  ]
+                },
+                "description": "Busca um termo no dicionario (q>=3 chars, kind obrigatorio)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 304\", () => pm.expect([200,304]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "15 — POST /transactions",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":1990,\"description\":\"Compra no mercado\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"occurred_at\":\"{{now_iso_u2}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um lancamento de saida (pix). category_id/subcategory_id encadeados; occurred_at do pre-request."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"transaction_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"transaction_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "16 — GET /transactions/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/{{transaction_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "{{transaction_id_u2}}"
+                  ]
+                },
+                "description": "Obtem o lancamento criado."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "17 — PATCH /transactions/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/{{transaction_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "{{transaction_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":2490,\"description\":\"Compra no mercado (ajuste)\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"occurred_at\":\"{{now_iso_u2}}\",\"version\":{{transaction_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza o lancamento (optimistic locking via version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"transaction_version_u2\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "18 — GET /transactions (lista por competencia)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/?ref_month={{ref_month_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "ref_month",
+                      "value": "{{ref_month_u2}}"
+                    }
+                  ]
+                },
+                "description": "Lista lancamentos da competencia corrente."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "19 — GET /months/:ref_month",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/months/{{ref_month_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "months",
+                    "{{ref_month_u2}}"
+                  ]
+                },
+                "description": "Resumo mensal (income/outcome/total)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "20 — GET /months/:ref_month/entries",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/months/{{ref_month_u2}}/entries",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "months",
+                    "{{ref_month_u2}}",
+                    "entries"
+                  ]
+                },
+                "description": "Entradas do mes (transacoes + itens de fatura)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "21 — DELETE /transactions/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/{{transaction_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "{{transaction_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"version\":{{transaction_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove o lancamento (soft-delete via version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "22 — POST /cards",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"nickname\":\"Cartao Teste\",\"bank\":\"Nubank\",\"due_day\":10}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um cartao de credito (calcula closing_day/best_purchase_day)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "pm.collectionVariables.set(\"card_id_u2\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "23 — GET /cards",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    ""
+                  ]
+                },
+                "description": "Lista os cartoes."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "24 — GET /cards/best-purchase-day",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/best-purchase-day?bank=Nubank&due_day=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "best-purchase-day"
+                  ],
+                  "query": [
+                    {
+                      "key": "bank",
+                      "value": "Nubank"
+                    },
+                    {
+                      "key": "due_day",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "Calcula o melhor dia de compra para banco+dia de vencimento."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "25 — GET /cards/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u2}}"
+                  ]
+                },
+                "description": "Obtem o cartao pelo id."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "26 — PUT /cards/:id",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"nickname\":\"Cartao Renomeado\",\"bank\":\"Nubank\",\"due_day\":15}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza o cartao."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "27 — GET /cards/:id/invoices?for=",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u2}}/invoices?for={{purchase_date_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u2}}",
+                    "invoices"
+                  ],
+                  "query": [
+                    {
+                      "key": "for",
+                      "value": "{{purchase_date_u2}}"
+                    }
+                  ]
+                },
+                "description": "Calcula as datas de fatura para uma data de compra."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "28 — GET /cards/:id/invoices/:ref_month",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u2}}/invoices/{{ref_month_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u2}}",
+                    "invoices",
+                    "{{ref_month_u2}}"
+                  ]
+                },
+                "description": "Fatura consolidada do cartao por competencia."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200 ou 404 (sem itens na competencia)\", () => pm.expect([200,404]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "29 — POST /card-purchases",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"card_id\":\"{{card_id_u2}}\",\"total_amount_cents\":120000,\"installments_total\":3,\"description\":\"Compra parcelada\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"purchased_at\":\"{{now_iso_u2}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria uma compra parcelada no cartao (gera itens de fatura por competencia)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"card_purchase_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"card_purchase_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "30 — GET /card-purchases/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    "{{card_purchase_id_u2}}"
+                  ]
+                },
+                "description": "Obtem a compra no cartao."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "31 — GET /card-purchases (lista)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    ""
+                  ]
+                },
+                "description": "Lista as compras no cartao."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "32 — PATCH /card-purchases/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    "{{card_purchase_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"total_amount_cents\":150000,\"installments_total\":5,\"description\":\"Compra parcelada (ajuste)\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"purchased_at\":\"{{now_iso_u2}}\",\"version\":{{card_purchase_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza a compra no cartao (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"card_purchase_version_u2\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "33 — DELETE /card-purchases/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/card-purchases/{{card_purchase_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "card-purchases",
+                    "{{card_purchase_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"version\":{{card_purchase_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove a compra no cartao (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "34 — DELETE /cards/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/cards/{{card_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "cards",
+                    "{{card_id_u2}}"
+                  ]
+                },
+                "description": "Remove o cartao (apos remover as compras vinculadas)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "35 — POST /recurring-templates",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":5000,\"description\":\"Assinatura mensal\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"frequency\":\"monthly\",\"day_of_month\":5,\"installments_total\":1,\"started_at\":\"{{now_iso_u2}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um template recorrente (mensal, pix — sem cartao)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"recurring_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"recurring_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "36 — GET /recurring-templates/:id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/{{recurring_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    "{{recurring_id_u2}}"
+                  ]
+                },
+                "description": "Obtem o template recorrente."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "37 — GET /recurring-templates (lista)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/?active=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "active",
+                      "value": "true"
+                    }
+                  ]
+                },
+                "description": "Lista os templates recorrentes."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "38 — PATCH /recurring-templates/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/{{recurring_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    "{{recurring_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"direction\":\"outcome\",\"payment_method\":\"pix\",\"amount_cents\":6000,\"description\":\"Assinatura mensal (ajuste)\",\"category_id\":\"{{category_id_u2}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"frequency\":\"monthly\",\"day_of_month\":8,\"installments_total\":1,\"started_at\":\"{{now_iso_u2}}\",\"version\":{{recurring_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza o template recorrente (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"recurring_version_u2\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "39 — DELETE /recurring-templates/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/recurring-templates/{{recurring_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recurring-templates",
+                    "{{recurring_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"version\":{{recurring_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove o template recorrente (version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "40 — POST /budgets (rascunho ativavel)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"competence\":\"{{competence_active_u2}}\",\"total_cents\":500000,\"allocations\":[{\"root_slug\":\"expense.custo_fixo\",\"basis_points\":5000},{\"root_slug\":\"expense.conhecimento\",\"basis_points\":2000},{\"root_slug\":\"expense.prazeres\",\"basis_points\":1500},{\"root_slug\":\"expense.metas\",\"basis_points\":1000},{\"root_slug\":\"expense.liberdade_financeira\",\"basis_points\":500}]}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria orcamento da competencia corrente (soma de basis_points = 10000, exigido para ativar)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "41 — POST /budgets/recurrence",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/recurrence",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "recurrence"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"source_competence\":\"{{competence_active_u2}}\",\"months\":3}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Replica o orcamento da competencia fonte para os proximos meses."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 2xx\", () => pm.expect([200,201,207]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "42 — POST /budgets/:competence/activate",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/{{competence_active_u2}}/activate",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "{{competence_active_u2}}",
+                    "activate"
+                  ]
+                },
+                "description": "Ativa o orcamento da competencia corrente."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "43 — GET /budgets/:competence/summary",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/{{competence_active_u2}}/summary",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "{{competence_active_u2}}",
+                    "summary"
+                  ]
+                },
+                "description": "Resumo mensal do orcamento (planejado x gasto por root)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "44 — GET /budgets/alerts",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/alerts?competence={{competence_active_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "alerts"
+                  ],
+                  "query": [
+                    {
+                      "key": "competence",
+                      "value": "{{competence_active_u2}}"
+                    }
+                  ]
+                },
+                "description": "Lista alertas de estouro por competencia."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "45 — POST /budgets/expenses",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/expenses",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "expenses"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"competence\":\"{{competence_active_u2}}\",\"amount_cents\":2500}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Registra uma despesa no orcamento (source=api; subcategoria encadeada)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "const b = pm.response.json();",
+                      "pm.collectionVariables.set(\"expense_id_u2\", b.id);",
+                      "pm.collectionVariables.set(\"expense_version_u2\", b.version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "46 — PATCH /budgets/expenses/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/expenses/{{expense_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "expenses",
+                    "{{expense_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"external_transaction_id\":\"{{$guid}}\",\"subcategory_id\":\"{{subcategory_id_u2}}\",\"competence\":\"{{competence_active_u2}}\",\"amount_cents\":3000,\"expected_version\":{{expense_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Atualiza a despesa (expected_version obrigatorio)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"expense_version_u2\", pm.response.json().version);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "47 — DELETE /budgets/expenses/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/expenses/{{expense_id_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "expenses",
+                    "{{expense_id_u2}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"expected_version\":{{expense_version_u2}}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Remove a despesa (expected_version)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "48 — POST /budgets (competencia rascunho p/ exclusao)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    ""
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"competence\":\"{{competence_draft_u2}}\",\"total_cents\":300000,\"allocations\":[{\"root_slug\":\"expense.custo_fixo\",\"basis_points\":5000},{\"root_slug\":\"expense.conhecimento\",\"basis_points\":2000},{\"root_slug\":\"expense.prazeres\",\"basis_points\":1500},{\"root_slug\":\"expense.metas\",\"basis_points\":1000},{\"root_slug\":\"expense.liberdade_financeira\",\"basis_points\":500}]}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Cria um orcamento rascunho em competencia futura, para exercitar o DELETE (permitido apenas em rascunho)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "49 — DELETE /budgets/:competence (rascunho)",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/budgets/{{competence_draft_u2}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "budgets",
+                    "{{competence_draft_u2}}"
+                  ]
+                },
+                "description": "Remove o orcamento rascunho (delete permitido apenas em rascunho)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "description": "Recursos autenticados. O pre-request desta pasta assina cada request (X-Gateway-Auth = HMAC-SHA256 de lower(user_id)+'.'+ts, chave hex) e calcula datas/competencias.",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const S = 'u2';",
+                  "const userId = pm.collectionVariables.get('user_id_'+S) || '';",
+                  "if (userId) {",
+                  "  const ts = String(Math.floor(Date.now()/1000));",
+                  "  const msg = userId.toLowerCase() + '.' + ts;",
+                  "  const key = CryptoJS.enc.Hex.parse(pm.environment.get('gateway_secret'));",
+                  "  const sig = CryptoJS.HmacSHA256(msg, key).toString(CryptoJS.enc.Hex);",
+                  "  pm.request.headers.upsert({ key: 'X-User-ID', value: userId });",
+                  "  pm.request.headers.upsert({ key: 'X-Gateway-Timestamp', value: ts });",
+                  "  pm.request.headers.upsert({ key: 'X-Gateway-Auth', value: sig });",
+                  "}",
+                  "const now = new Date();",
+                  "const pad = n => String(n).padStart(2,'0');",
+                  "const ym = now.getFullYear() + '-' + pad(now.getMonth()+1);",
+                  "pm.collectionVariables.set('ref_month_'+S, ym);",
+                  "pm.collectionVariables.set('competence_active_'+S, ym);",
+                  "const d6 = new Date(now.getFullYear(), now.getMonth()+6, 1);",
+                  "pm.collectionVariables.set('competence_draft_'+S, d6.getFullYear() + '-' + pad(d6.getMonth()+1));",
+                  "pm.collectionVariables.set('now_iso_'+S, now.toISOString());",
+                  "pm.collectionVariables.set('purchase_date_'+S, ym + '-' + pad(now.getDate()));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Jornada completa do perfil Stefany."
+    },
+    {
+      "name": "99 — Regressao negativa",
+      "item": [
+        {
+          "name": "POST /billing/webhooks/kiwify (assinatura invalida)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/billing/webhooks/kiwify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "webhooks",
+                "kiwify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Assinatura HMAC gerada com secret errado deve ser rejeitada."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = { order_id: 'neg-'+Date.now(), order_status: 'paid', webhook_event_type: 'order_approved', Customer: { email: 'x@x.com', mobile: '+550000000000' }, TrackingParameters: { sck: 'invalid' } };",
+                  "const rawBody = JSON.stringify(payload);",
+                  "const sig = CryptoJS.HmacSHA1(rawBody, 'segredo-errado-proposital').toString(CryptoJS.enc.Hex);",
+                  "pm.request.body.raw = rawBody;",
+                  "pm.request.headers.upsert({ key: 'X-Kiwify-Signature', value: sig });",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Checagens de seguranca (assinatura invalida)."
+    }
+  ],
+  "variable": [
+    {
+      "key": "onboarding_token_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "funnel_token_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wa_me_url_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subcategory_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_version_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_purchase_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_purchase_version_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recurring_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recurring_version_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_id_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_version_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ref_month_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "competence_active_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "competence_draft_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "now_iso_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "purchase_date_u1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "onboarding_token_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "funnel_token_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wa_me_url_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subcategory_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_version_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_purchase_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_purchase_version_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recurring_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recurring_version_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_id_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expense_version_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ref_month_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "competence_active_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "competence_draft_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "now_iso_u2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "purchase_date_u2",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
