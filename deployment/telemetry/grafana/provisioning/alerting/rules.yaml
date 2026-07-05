@@ -253,7 +253,15 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'pg_stat_archiver_last_archive_age > 900'
+              expr: '(
+  pg_stat_archiver_last_archive_age > 900
+  and on()
+  (
+    rate(pg_stat_database_xact_commit[10m]) > 0
+    or
+    rate(pg_stat_database_blks_written[10m]) > 0
+  )
+)'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -662,7 +670,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'max(pgbackrest_backup_age_seconds{type="diff"})'
+              expr: 'max(pgbackrest_backup_age_seconds{type="diff"}) > 93600 and max(pgbackrest_backup_last_success_timestamp_seconds{type="diff"}) > 0'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -731,7 +739,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'count(count by (service_version) (last_over_time(target_info{service_name="mecontrola-server"}[25h])))'
+              expr: 'count(count by (service_version) (last_over_time(target_info{job="mecontrola-api"}[25h])))'
           - refId: C
             datasourceUid: __expr__
             model:
