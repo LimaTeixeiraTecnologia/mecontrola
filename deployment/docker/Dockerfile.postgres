@@ -5,7 +5,7 @@
 #        (executar da raiz do repositório — COPY usa path relativo ao repo root)
 # Uso: POSTGRES_IMAGE=mecontrola-postgres:latest no .env de produção.
 
-FROM postgres:16
+FROM postgres:18
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends pgbackrest ca-certificates postgresql-16-pgvector \
