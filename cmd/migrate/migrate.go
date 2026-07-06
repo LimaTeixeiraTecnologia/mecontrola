@@ -51,6 +51,15 @@ func NewDown() *cobra.Command {
 
 const migrationAdvisoryLockID int64 = 424242
 
+var ErrDestructiveMigrationInProduction = errors.New("migrate-down: reset destrutivo bloqueado em producao; a esteira aplica apenas migrate incremental (up)")
+
+func GuardDownEnvironment(environment string) error {
+	if environment == "production" {
+		return ErrDestructiveMigrationInProduction
+	}
+	return nil
+}
+
 func acquireMigrationLock(ctx context.Context, db *sql.DB) (func(), error) {
 	var acquired bool
 	err := db.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", migrationAdvisoryLockID).Scan(&acquired)
@@ -128,6 +137,10 @@ func RunDown(writer io.Writer, steps int) (retErr error) {
 	defer func() {
 		retErr = errors.Join(retErr, rt.shutdown(shutdownCtx))
 	}()
+
+	if err := GuardDownEnvironment(rt.cfg.AppConfig.Environment); err != nil {
+		return err
+	}
 
 	unlock, err := acquireMigrationLock(ctx, rt.dbManager.DB())
 	if err != nil {

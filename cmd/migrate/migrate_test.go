@@ -104,3 +104,41 @@ func (s *MigrateSuite) TestRunDown() {
 		})
 	}
 }
+
+func (s *MigrateSuite) TestGuardDownEnvironment() {
+	type args struct {
+		environment string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(err error)
+	}{
+		{
+			name: "deve bloquear reset destrutivo em producao",
+			args: args{environment: "production"},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.ErrorIs(err, migrate.ErrDestructiveMigrationInProduction)
+			},
+		},
+		{
+			name:   "deve permitir em staging",
+			args:   args{environment: "staging"},
+			expect: func(err error) { s.NoError(err) },
+		},
+		{
+			name:   "deve permitir em local",
+			args:   args{environment: "local"},
+			expect: func(err error) { s.NoError(err) },
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			err := migrate.GuardDownEnvironment(scenario.args.environment)
+			scenario.expect(err)
+		})
+	}
+}
