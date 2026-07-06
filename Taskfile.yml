@@ -145,6 +145,58 @@ tasks:
           df -h / | tail -1
         ENDSSH
 
+  vps:db:drop:
+    desc: Zera o banco na VPS (drop schema mecontrola e schema_migrations). Destrutivo, manual e sem backup.
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+      VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+    prompt: |
+      ATENCAO: esta acao destroi todos os dados do banco na VPS ({{.VPS_HOST}}).
+      Nenhum backup sera feito. Os servicos server/worker serao escalados para zero.
+      Continuar?
+    cmds:
+      - |
+        echo "==> Escalando servicos para zero na VPS ({{.VPS_HOST}})..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; \
+          docker service scale \
+            mecontrola_server-1=0 \
+            mecontrola_server-2=0 \
+            mecontrola_worker-1=0 \
+            mecontrola_worker-2=0"
+      - |
+        echo "==> Dropando schema mecontrola e tabela schema_migrations..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; \
+          PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres | grep -v exporter | grep -v 'CONTAINER' | awk '{print \$NF}' | head -1); \
+          docker exec \"\$PGCONTAINER\" psql -U mecontrola -d mecontrola_db \
+            -c 'DROP SCHEMA IF EXISTS mecontrola CASCADE;' \
+            -c 'CREATE SCHEMA mecontrola;' \
+            -c 'DROP TABLE IF EXISTS schema_migrations;'"
+      - |
+        echo ""
+        echo "==> Banco zerado na VPS ({{.VPS_HOST}})."
+        echo "    Proximos passos:"
+        echo "      1. Conecte o DBeaver pelo tunel:"
+        echo "         ssh -N -L 15432:127.0.0.1:15432 {{.VPS_USER}}@{{.VPS_HOST}}"
+        echo "      2. Verifique que o schema mecontrola esta vazio."
+        echo "      3. Aplique as migrations com:"
+        echo "         task swarm:prod:migrate IMAGE_TAG=<tag>"
+        echo "      4. Valide com:"
+        echo "         task vps:db:validate"
+
+  vps:db:validate:
+    desc: Valida migrations na VPS (schema_migrations e contagem de tabelas).
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+      VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+    cmds:
+      - |
+        echo "==> Validando migrations na VPS ({{.VPS_HOST}})..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; \
+          PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres | grep -v exporter | grep -v 'CONTAINER' | awk '{print \$NF}' | head -1); \
+          docker exec \"\$PGCONTAINER\" psql -U mecontrola -d mecontrola_db \
+            -c 'SELECT version, dirty FROM schema_migrations ORDER BY version;' \
+            -c \"SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';\""
+
   card:audit:
     desc: Auditoria R0-R7 do modulo card — gates de init, panic, clock, interface-assertion e zero-comentarios.
     cmds:

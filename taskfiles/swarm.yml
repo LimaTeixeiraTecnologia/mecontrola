@@ -100,7 +100,7 @@ tasks:
         {{._CHECK_SECRETS_FILE}}
         scp deployment/config/prod.env {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-prod.env
         scp {{.SECRETS_ENV_FILE}} {{.VPS_USER}}@{{.VPS_HOST}}:/tmp/mecontrola-secrets.env
-        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; trap 'rm -f /tmp/mecontrola-*.env' EXIT; cd {{.VPS_DEPLOY_PATH}}; grep '^DB_PASSWORD=' /tmp/mecontrola-secrets.env > /tmp/mecontrola-migrate.env; cat /tmp/mecontrola-prod.env >> /tmp/mecontrola-migrate.env; docker run --rm --env-file /tmp/mecontrola-migrate.env --network mecontrola_backend -e DB_HOST=postgres -e DB_PORT=5432 -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc -e OTEL_EXPORTER_OTLP_INSECURE=true ghcr.io/limateixeiratecnologia/mecontrola:{{.IMAGE_TAG | default \"latest\"}} migrate"
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; trap 'rm -f /tmp/mecontrola-*.env' EXIT; cd {{.VPS_DEPLOY_PATH}}; grep '^DB_PASSWORD=' /tmp/mecontrola-secrets.env > /tmp/mecontrola-migrate.env; cat /tmp/mecontrola-prod.env >> /tmp/mecontrola-migrate.env; docker run --rm --env-file /tmp/mecontrola-migrate.env --network mecontrola_backend -e DB_HOST=postgres -e DB_PORT=5432 -e OTEL_EXPORTER_OTLP_ENDPOINT=otel-lgtm:4317 -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc -e OTEL_EXPORTER_OTLP_INSECURE=true ghcr.io/limateixeiratecnologia/mecontrola:{{.IMAGE_TAG | default "latest"}} migrate"
 
   prod:deploy:
     desc: Deploy Swarm na VPS de producao (sobrescreva IMAGE_TAG com tag real).

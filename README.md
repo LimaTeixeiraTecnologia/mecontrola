@@ -49,7 +49,7 @@ Depois acesse:
 - [Rodando localmente](#rodando-localmente)
 - [Configuração e secrets](#configuração-e-secrets)
 - [Comandos do dia a dia](#comandos-do-dia-a-dia)
-- [Zerar o banco e reaplicar migrations](#zerar-o-banco-e-reaplicar-migrations) (local Cenário A/C · VPS Cenário B)
+- [Zerar o banco e reaplicar migrations](#zerar-o-banco-e-reaplicar-migrations) (local Cenário A/C · VPS Cenário B/D)
 - [Debug no VS Code](#debug-no-vs-code)
 - [Webhooks locais com ngrok](#webhooks-locais-com-ngrok)
 - [Deploy e operação](#deploy-e-operação)
@@ -428,6 +428,8 @@ Rode `task --list-all` para a lista completa. Os comandos abaixo são os mais ú
 Use quando precisar começar do zero — banco limpo, todas as migrations reaplicadas.
 
 > ⚠️ **Atenção:** todos os cenários abaixo destroem dados. Em produção/VPS, recomenda-se fazer backup antes (`pgbackrest backup --type=full`) e confirmar que consegue restaurar.
+>
+> 🚫 **Produção com dados reais:** o reset é **manual e irreversível** e **NÃO faz parte do deploy**. A esteira de CD executa apenas `migrate` incremental (`Up()`), que nunca dropa schema ou dados. O comando `mecontrola migrate-down` (incluindo `--steps -1`) é **bloqueado quando `ENVIRONMENT=production`**. Só execute `DROP SCHEMA`/`DROP DATABASE` abaixo se tiver certeza absoluta e um backup restaurável.
 
 ---
 
@@ -626,6 +628,96 @@ docker compose --env-file .env \
 
 Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
 
+### Cenário D — VPS com pausa para DBeaver (sem backup)
+
+Use quando quiser zerar o banco na VPS e reaplicar as migrations manualmente, inspecionando o estado pelo DBeaver entre os passos. Tudo é executado da sua máquina local.
+
+> ⚠️ **Atenção:** este cenário destroi todos os dados da VPS. Nenhum backup será feito automaticamente. Certifique-se de que pode perder os dados antes de continuar.
+
+#### Pré-requisitos
+
+- Acesso SSH à VPS (`root@187.77.45.48` ou via `VPS_HOST`/`VPS_USER`).
+- Secrets descriptografados em `SECRETS_ENV_FILE` (padrão `/tmp/mecontrola-secrets.env`) para usar `task swarm:prod:migrate`.
+- DBeaver ou outro cliente PostgreSQL configurado com o túnel SSH para a VPS.
+
+#### 1. Resetar o banco
+
+Execute da máquina local:
+
+```bash
+task vps:db:drop
+```
+
+O comando:
+
+1. escala `server-1`, `server-2`, `worker-1` e `worker-2` para zero;
+2. dropa o schema `mecontrola` e a tabela `schema_migrations`;
+3. exibe as instruções para conectar o DBeaver e aplicar as migrations.
+
+Confirme com `y` quando solicitado.
+
+#### 2. Acessar o DBeaver
+
+Abra o túnel SSH em um terminal separado:
+
+```bash
+ssh -N -L 15432:127.0.0.1:15432 root@187.77.45.48
+```
+
+Conecte o DBeaver com:
+
+| Campo | Valor |
+|---|---|
+| Host | `localhost` |
+| Porta | `15432` |
+| Database | `mecontrola_db` |
+| User | `mecontrola` |
+| Password | valor atual de `DB_PASSWORD` |
+| SSL | `disable` |
+
+Verifique que o schema `mecontrola` está vazio ou inexistente.
+
+#### 3. Aplicar todas as migrations
+
+Da máquina local, execute:
+
+```bash
+task swarm:prod:migrate IMAGE_TAG=<tag>
+```
+
+Use a tag da imagem que está deployada na VPS (ex.: `latest` ou o hash curto do commit).
+
+#### 4. Acessar o DBeaver novamente
+
+Com o túnel ainda aberto, atualize o DBeaver e verifique:
+
+- as tabelas foram criadas no schema `mecontrola`;
+- a tabela `schema_migrations` contém as versões aplicadas.
+
+#### 5. Validar via linha de comando
+
+```bash
+task vps:db:validate
+```
+
+Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
+
+#### 6. Escalar server e worker de volta
+
+```bash
+ssh root@187.77.45.48 "docker service scale \
+  mecontrola_server-1=1 \
+  mecontrola_server-2=1 \
+  mecontrola_worker-1=1 \
+  mecontrola_worker-2=1"
+```
+
+Aguarde os containers ficarem saudáveis e valide o health:
+
+```bash
+curl -sf http://187.77.45.48/health
+```
+
 ## Debug no VS Code
 
 O repositório já traz `.vscode/launch.json` e `.vscode/tasks.json`.
@@ -733,6 +825,8 @@ bash deployment/scripts/deploy-local.sh
 | `task swarm:prod:sync` | Sincroniza código com a VPS |
 | `task swarm:prod:secrets` | Atualiza Docker secrets |
 | `task swarm:prod:migrate` | Executa migrations na VPS |
+| `task vps:db:drop` | Zera o banco na VPS (manual, destrutivo, sem backup) |
+| `task vps:db:validate` | Valida migrations na VPS |
 | `task swarm:prod:deploy IMAGE_TAG=<tag>` | Deploy Swarm usando `SECRETS_ENV_FILE` já descriptografado |
 | `task swarm:prod:ps` | Lista services na VPS |
 | `task swarm:prod:health` | Verifica health checks na VPS |
