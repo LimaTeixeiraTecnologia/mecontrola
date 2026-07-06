@@ -427,7 +427,11 @@ Rode `task --list-all` para a lista completa. Os comandos abaixo são os mais ú
 
 Use quando precisar começar do zero — banco limpo, todas as migrations reaplicadas.
 
-### Cenário A — via Docker Compose (fluxo padrão)
+> ⚠️ **Atenção:** todos os cenários abaixo destroem dados. Em produção/VPS, faça backup antes (`pgbackrest backup --type=full`) e confirme que consegue restaurar.
+
+---
+
+### Cenário A — via Docker Compose (fluxo padrão local)
 
 1. Parar os containers:
 
@@ -466,24 +470,37 @@ Repita até retornar `mecontrola:5432 - accepting connections`.
 go run ./cmd migrate
 ```
 
-Validação:
+6. Validação:
 
 ```bash
 docker compose --env-file .env \
   -f deployment/compose/compose.yml \
   -f deployment/compose/compose.local.yml \
   exec postgres psql -U mecontrola -d mecontrola_db \
-  -c "SELECT version FROM schema_migrations ORDER BY version;" \
-  -c "\dt mecontrola.*"
+  -c "SELECT version, dirty FROM schema_migrations ORDER BY version;" \
+  -c "SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';"
 ```
 
-Deve mostrar `version = 2` e listar as 51 tabelas do schema `mecontrola`.
+Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
 
 ### Cenário B — VPS (produção via SSH)
 
-Usado para recriar o schema em produção sem parar o Postgres.
+Procedimento completo para recriar o schema em produção, do zero, sem parar o Postgres. Execute da máquina local.
 
-1. Escalar server e worker para 0 (interrompe tráfego de leitura/escrita):
+#### 1. Backup obrigatório
+
+O ambiente usa pgBackRest. Antes de apagar qualquer coisa, gere um backup full:
+
+```bash
+ssh root@187.77.45.48 "
+  docker exec -i \$(docker ps --filter name=mecontrola_postgres --format '{{.Names}}' | grep -v exporter | head -1) \
+    pgbackrest --stanza=mecontrola backup --type=full
+"
+```
+
+Confirme que o backup terminou com `completed successfully` e anote o label (ex.: `20260706-193032F`).
+
+#### 2. Parar server e worker
 
 ```bash
 ssh root@187.77.45.48 "docker service scale \
@@ -493,47 +510,53 @@ ssh root@187.77.45.48 "docker service scale \
   mecontrola_worker-2=0"
 ```
 
-2. Dropar e recriar o schema `mecontrola` (destrói todas as tabelas):
+#### 3. Dropar e recriar o schema `mecontrola`
 
 ```bash
 ssh root@187.77.45.48 "
-  PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres \
-    --format '{{.Names}}' | grep -v exporter | head -1)
+  set -e
+  PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres --format '{{.Names}}' | grep -v exporter | head -1)
   docker exec \$PGCONTAINER psql -U mecontrola -d mecontrola_db \
-    -c 'DROP SCHEMA mecontrola CASCADE;' \
-    -c 'CREATE SCHEMA mecontrola;'
+    -c 'DROP SCHEMA IF EXISTS mecontrola CASCADE;' \
+    -c 'CREATE SCHEMA mecontrola;' \
+    -c 'DROP TABLE IF EXISTS schema_migrations;'
 "
 ```
 
-3. Executar o serviço de migrate do Swarm:
+> `DROP TABLE IF EXISTS schema_migrations` é seguro aqui porque a tabela fica dentro do schema `mecontrola` e já foi removida pelo `CASCADE`. O comando extra garante que o migrator comece do zero caso a tabela esteja em outro lugar.
+
+#### 4. Aplicar todas as migrations via serviço Swarm
+
+O serviço `mecontrola_migrate` já possui todas as secrets e variáveis de ambiente necessárias:
 
 ```bash
 ssh root@187.77.45.48 "docker service update --force mecontrola_migrate"
 ```
 
-> **Nota:** o `--force` inicia um novo task com todas as secrets do Swarm (`DB_PASSWORD`, `META_*`, etc.) já configuradas no serviço. O container de migrate sai com exit 0 após aplicar as migrations; o Swarm tentará reiniciá-lo e falhará (secrets `META_*` indisponíveis no retry), mas as migrations **já foram aplicadas**. Confirme com o passo 5.
+Aguarde até que um novo task apareça com estado `Complete`. O Swarm pode pausar o update após a conclusão (o container de migrate sai com exit 0); isso é esperado — a migration já foi aplicada.
 
-4. Validar schema e reverter o migrate para o estado estável:
+Acompanhe:
 
 ```bash
-ssh root@187.77.45.48 "docker service rollback mecontrola_migrate"
+ssh root@187.77.45.48 "docker service logs mecontrola_migrate --tail 20"
 ```
 
-5. Confirmar que as migrations foram aplicadas:
+Você deve ver `migrations applied`.
+
+#### 5. Validar migrations
 
 ```bash
 ssh root@187.77.45.48 "
-  PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres \
-    --format '{{.Names}}' | grep -v exporter | head -1)
+  PGCONTAINER=\$(docker ps --filter name=mecontrola_postgres --format '{{.Names}}' | grep -v exporter | head -1)
   docker exec \$PGCONTAINER psql -U mecontrola -d mecontrola_db \
-    -c 'SELECT version FROM schema_migrations ORDER BY version;' \
+    -c 'SELECT version, dirty FROM schema_migrations ORDER BY version;' \
     -c \"SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';\"
 "
 ```
 
-Resultado esperado: `version = 2`, `total_tables = 51`.
+Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
 
-6. Escalar server e worker de volta:
+#### 6. Escalar server e worker de volta
 
 ```bash
 ssh root@187.77.45.48 "docker service scale \
@@ -543,11 +566,22 @@ ssh root@187.77.45.48 "docker service scale \
   mecontrola_worker-2=1"
 ```
 
-7. Validar health:
+#### 7. Validar health
 
 ```bash
 curl -sf http://187.77.45.48/health
 ```
+
+E confirme que os containers estão saudáveis:
+
+```bash
+ssh root@187.77.45.48 "
+  docker ps --filter name=mecontrola_server-1 --format '{{.Status}}'
+  docker ps --filter name=mecontrola_worker-1 --format '{{.Status}}'
+"
+```
+
+Deve retornar `Up ... (healthy)`.
 
 ### Cenário C — dropar e recriar o banco sem destruir volumes (local)
 
@@ -582,7 +616,20 @@ docker compose --env-file .env \
 go run ./cmd migrate
 ```
 
-> **Nota:** a migration `000001` exige a extensão `vector` (pgvector). Certifique-se de que `POSTGRES_IMAGE` no `.env` aponte para uma imagem com pgvector instalado, como `pgvector/pgvector:pg16`.
+> **Nota:** a migration `000001` exige a extensão `vector` (pgvector). Certifique-se de que `POSTGRES_IMAGE` no `.env` aponte para uma imagem com pgvector instalado, como `ghcr.io/limateixeiratecnologia/mecontrola-postgres:mastra-20260629-191935`.
+
+5. Validação:
+
+```bash
+docker compose --env-file .env \
+  -f deployment/compose/compose.yml \
+  -f deployment/compose/compose.local.yml \
+  exec postgres psql -U mecontrola -d mecontrola_db \
+  -c "SELECT version, dirty FROM schema_migrations ORDER BY version;" \
+  -c "SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';"
+```
+
+Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
 
 ## Debug no VS Code
 
