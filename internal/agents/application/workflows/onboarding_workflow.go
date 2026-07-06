@@ -130,23 +130,6 @@ const (
 
 var errInvalidAllocationInput = errors.New("distribution: tipo de entrada invalido")
 
-func (k allocationInputKind) String() string {
-	switch k {
-	case allocationInputConfirm:
-		return "confirm"
-	case allocationInputPercent:
-		return "percent"
-	case allocationInputReais:
-		return "reais"
-	default:
-		return "unknown"
-	}
-}
-
-func (k allocationInputKind) IsValid() bool {
-	return k >= allocationInputConfirm && k <= allocationInputReais
-}
-
 func ParseAllocationInputKind(s string) (allocationInputKind, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "confirm":
