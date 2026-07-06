@@ -39,9 +39,13 @@ func (r *recurringTemplateRepository) Create(ctx context.Context, t *entities.Re
 		INSERT INTO mecontrola.transactions_recurring_templates
 			(id, user_id, direction, payment_method, card_id, amount_cents, description,
 			 category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			 category_kind, category_path, category_outcome, category_score,
+			 category_confidence, category_match_quality, category_signal_type,
+			 category_matched_term, category_match_reason, category_decision_source,
+			 category_editorial_version, category_decided_at,
 			 frequency, day_of_month, installments_total, started_at, ended_at,
 			 version, deleted_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
 	`
 
 	var cardID *uuid.UUID
@@ -50,11 +54,8 @@ func (r *recurringTemplateRepository) Create(ctx context.Context, t *entities.Re
 		cardID = &v
 	}
 
-	var subID *uuid.UUID
-	if sub, ok := t.SubcategoryID().Get(); ok {
-		v := sub.UUID()
-		subID = &v
-	}
+	ev := t.Evidence()
+	subID := ev.SubcategoryID()
 
 	var endedAt *time.Time
 	if ea, ok := t.EndedAt().Get(); ok {
@@ -66,6 +67,10 @@ func (r *recurringTemplateRepository) Create(ctx context.Context, t *entities.Re
 		cardID, t.Amount().Cents(), t.Description().String(),
 		t.CategoryID().UUID(), subID,
 		t.CategoryNameSnapshot(), t.SubcategoryNameSnapshot(),
+		ev.Kind(), ev.Path(), ev.Outcome(), ev.Score(),
+		ev.Confidence(), ev.Quality(), ev.SignalType(),
+		ev.MatchedTerm(), ev.MatchReason(), ev.Source().String(),
+		ev.EditorialVersion(), ev.DecidedAt(),
 		int(t.Frequency()), t.DayOfMonth().Value(), t.InstallmentsTotal().Value(),
 		t.StartedAt(), endedAt,
 		t.Version(), t.DeletedAt(), t.CreatedAt(), t.UpdatedAt(),
@@ -85,9 +90,13 @@ func (r *recurringTemplateRepository) UpdateWithVersion(ctx context.Context, t *
 		UPDATE mecontrola.transactions_recurring_templates
 		   SET direction=$1, payment_method=$2, card_id=$3, amount_cents=$4, description=$5,
 		       category_id=$6, subcategory_id=$7, category_name_snapshot=$8, subcategory_name_snapshot=$9,
-		       frequency=$10, day_of_month=$11, installments_total=$12, started_at=$13, ended_at=$14,
-		       version=$15, updated_at=$16
-		 WHERE id=$17 AND user_id=$18 AND version=$19 AND deleted_at IS NULL
+		       category_kind=$10, category_path=$11, category_outcome=$12, category_score=$13,
+		       category_confidence=$14, category_match_quality=$15, category_signal_type=$16,
+		       category_matched_term=$17, category_match_reason=$18, category_decision_source=$19,
+		       category_editorial_version=$20, category_decided_at=$21,
+		       frequency=$22, day_of_month=$23, installments_total=$24, started_at=$25, ended_at=$26,
+		       version=$27, updated_at=$28
+		 WHERE id=$29 AND user_id=$30 AND version=$31 AND deleted_at IS NULL
 	`
 
 	var cardID *uuid.UUID
@@ -96,11 +105,8 @@ func (r *recurringTemplateRepository) UpdateWithVersion(ctx context.Context, t *
 		cardID = &v
 	}
 
-	var subID *uuid.UUID
-	if sub, ok := t.SubcategoryID().Get(); ok {
-		v := sub.UUID()
-		subID = &v
-	}
+	ev := t.Evidence()
+	subID := ev.SubcategoryID()
 
 	var endedAt *time.Time
 	if ea, ok := t.EndedAt().Get(); ok {
@@ -110,6 +116,10 @@ func (r *recurringTemplateRepository) UpdateWithVersion(ctx context.Context, t *
 	res, err := r.db.ExecContext(ctx, q,
 		int(t.Direction()), int(t.PaymentMethod()), cardID, t.Amount().Cents(), t.Description().String(),
 		t.CategoryID().UUID(), subID, t.CategoryNameSnapshot(), t.SubcategoryNameSnapshot(),
+		ev.Kind(), ev.Path(), ev.Outcome(), ev.Score(),
+		ev.Confidence(), ev.Quality(), ev.SignalType(),
+		ev.MatchedTerm(), ev.MatchReason(), ev.Source().String(),
+		ev.EditorialVersion(), ev.DecidedAt(),
 		int(t.Frequency()), t.DayOfMonth().Value(), t.InstallmentsTotal().Value(),
 		t.StartedAt(), endedAt,
 		t.Version(), t.UpdatedAt(),
@@ -175,6 +185,10 @@ func (r *recurringTemplateRepository) GetByID(ctx context.Context, id, userID uu
 	const q = `
 		SELECT id, user_id, direction, payment_method, card_id, amount_cents, description,
 		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+		       category_kind, category_path, category_outcome, category_score,
+		       category_confidence, category_match_quality, category_signal_type,
+		       category_matched_term, category_match_reason, category_decision_source,
+		       category_editorial_version, category_decided_at,
 		       frequency, day_of_month, installments_total, started_at, ended_at,
 		       version, deleted_at, created_at, updated_at
 		  FROM mecontrola.transactions_recurring_templates
@@ -209,6 +223,10 @@ func (r *recurringTemplateRepository) List(ctx context.Context, userID uuid.UUID
 	base := `
 		SELECT id, user_id, direction, payment_method, card_id, amount_cents, description,
 		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+		       category_kind, category_path, category_outcome, category_score,
+		       category_confidence, category_match_quality, category_signal_type,
+		       category_matched_term, category_match_reason, category_decision_source,
+		       category_editorial_version, category_decided_at,
 		       frequency, day_of_month, installments_total, started_at, ended_at,
 		       version, deleted_at, created_at, updated_at
 		  FROM mecontrola.transactions_recurring_templates
@@ -270,6 +288,10 @@ func (r *recurringTemplateRepository) FindActiveByDayOfMonth(ctx context.Context
 	base := `
 		SELECT id, user_id, direction, payment_method, card_id, amount_cents, description,
 		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+		       category_kind, category_path, category_outcome, category_score,
+		       category_confidence, category_match_quality, category_signal_type,
+		       category_matched_term, category_match_reason, category_decision_source,
+		       category_editorial_version, category_decided_at,
 		       frequency, day_of_month, installments_total, started_at, ended_at,
 		       version, deleted_at, created_at, updated_at
 		  FROM mecontrola.transactions_recurring_templates
@@ -325,31 +347,47 @@ func (r *recurringTemplateRepository) FindActiveByDayOfMonth(ctx context.Context
 
 func (r *recurringTemplateRepository) scan(rows *sql.Rows) (*entities.RecurringTemplate, error) {
 	var (
-		id                      uuid.UUID
-		userID                  uuid.UUID
-		direction               int
-		paymentMethod           int
-		cardIDPtr               *uuid.UUID
-		amountCents             int64
-		description             string
-		categoryID              uuid.UUID
-		subcategoryIDPtr        *uuid.UUID
-		categoryNameSnapshot    string
-		subcategoryNameSnapshot string
-		frequency               int
-		dayOfMonth              int
-		installmentsTotal       int
-		startedAt               time.Time
-		endedAtPtr              *time.Time
-		version                 int64
-		deletedAt               *time.Time
-		createdAt               time.Time
-		updatedAt               time.Time
+		id                       uuid.UUID
+		userID                   uuid.UUID
+		direction                int
+		paymentMethod            int
+		cardIDPtr                *uuid.UUID
+		amountCents              int64
+		description              string
+		categoryID               uuid.UUID
+		subcategoryID            uuid.UUID
+		categoryNameSnapshot     string
+		subcategoryNameSnapshot  string
+		categoryKind             string
+		categoryPath             string
+		categoryOutcome          string
+		categoryScore            float64
+		categoryConfidence       string
+		categoryMatchQuality     string
+		categorySignalType       string
+		categoryMatchedTerm      string
+		categoryMatchReason      string
+		categoryDecisionSource   string
+		categoryEditorialVersion int64
+		categoryDecidedAt        time.Time
+		frequency                int
+		dayOfMonth               int
+		installmentsTotal        int
+		startedAt                time.Time
+		endedAtPtr               *time.Time
+		version                  int64
+		deletedAt                *time.Time
+		createdAt                time.Time
+		updatedAt                time.Time
 	)
 
 	if err := rows.Scan(
 		&id, &userID, &direction, &paymentMethod, &cardIDPtr, &amountCents, &description,
-		&categoryID, &subcategoryIDPtr, &categoryNameSnapshot, &subcategoryNameSnapshot,
+		&categoryID, &subcategoryID, &categoryNameSnapshot, &subcategoryNameSnapshot,
+		&categoryKind, &categoryPath, &categoryOutcome, &categoryScore,
+		&categoryConfidence, &categoryMatchQuality, &categorySignalType,
+		&categoryMatchedTerm, &categoryMatchReason, &categoryDecisionSource,
+		&categoryEditorialVersion, &categoryDecidedAt,
 		&frequency, &dayOfMonth, &installmentsTotal, &startedAt, &endedAtPtr,
 		&version, &deletedAt, &createdAt, &updatedAt,
 	); err != nil {
@@ -373,10 +411,25 @@ func (r *recurringTemplateRepository) scan(rows *sql.Rows) (*entities.RecurringT
 		cardIDOpt = option.Some(valueobjects.CardIDFromUUID(*cardIDPtr))
 	}
 
-	var subOpt option.Option[valueobjects.SubcategoryID]
-	if subcategoryIDPtr != nil {
-		subOpt = option.Some(valueobjects.SubcategoryIDFromUUID(*subcategoryIDPtr))
-	}
+	subOpt := option.Some(valueobjects.SubcategoryIDFromUUID(subcategoryID))
+
+	src, _ := valueobjects.ParseCategoryDecisionSource(categoryDecisionSource)
+	evidence := valueobjects.ReconstituteEvidence(
+		categoryID,
+		subcategoryID,
+		categoryKind,
+		categoryPath,
+		categoryOutcome,
+		categoryScore,
+		categoryConfidence,
+		categoryMatchQuality,
+		categorySignalType,
+		categoryMatchedTerm,
+		categoryMatchReason,
+		src,
+		categoryEditorialVersion,
+		categoryDecidedAt,
+	)
 
 	var endedAtOpt option.Option[time.Time]
 	if endedAtPtr != nil {
@@ -391,6 +444,7 @@ func (r *recurringTemplateRepository) scan(rows *sql.Rows) (*entities.RecurringT
 		amount, desc, catID,
 		subOpt,
 		categoryNameSnapshot, subcategoryNameSnapshot,
+		evidence,
 		freq, dom, inst,
 		startedAt, endedAtOpt,
 		version, deletedAt, createdAt, updatedAt,

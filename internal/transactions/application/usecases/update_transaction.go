@@ -18,6 +18,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type UpdateTransaction struct {
@@ -123,7 +124,7 @@ func (uc *UpdateTransaction) persist(
 	currentItems := derefInvoiceItems(itemPtrs)
 
 	itemIDs := newInvoiceItemIDs(cmd.PaymentMethod, cmd.Installments)
-	decision := uc.workflow.DecideUpdate(*current, currentItems, cmd, eventID, itemIDs, now)
+	decision := uc.workflow.DecideUpdate(*current, currentItems, cmd, valueobjects.CategoryWriteEvidence{}, eventID, itemIDs, now)
 	span.SetAttributes(
 		observability.Int("installments_total", len(decision.Items)),
 		observability.Int("ref_months_affected_count", refMonthsAffectedCount(decision.Event)),

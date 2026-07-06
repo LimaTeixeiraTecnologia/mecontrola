@@ -16,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type UpdateRecurringTemplate struct {
@@ -111,6 +112,7 @@ func (uc *UpdateRecurringTemplate) Execute(ctx context.Context, templateID strin
 			cmd.Direction, cmd.PaymentMethod, cmd.CardID,
 			cmd.Amount, cmd.Description, cmd.CategoryID, cmd.SubcategoryID,
 			catSnap.Name, snapSubName(catSubID, catSnap),
+			valueobjects.CategoryWriteEvidence{},
 			cmd.Frequency, cmd.DayOfMonth, cmd.InstallmentsTotal,
 			cmd.StartedAt, cmd.EndedAt, now,
 		)

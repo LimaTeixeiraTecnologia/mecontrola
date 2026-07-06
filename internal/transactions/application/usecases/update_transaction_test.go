@@ -72,6 +72,7 @@ func (s *UpdateTransactionSuite) makeExistingTransaction(txID uuid.UUID) *entiti
 		txID, userID, dir, pm, amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
 		"Custo Fixo", "",
+		valueobjects.CategoryWriteEvidence{},
 		rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	return &tx
@@ -122,7 +123,7 @@ func (s *UpdateTransactionSuite) TestExecute_RefMonthChange_TwoCompetencias() {
 	existing := entities.Reconstitute(
 		txID, userID, dir, pm, amount, desc, catIDVO,
 		option.None[valueobjects.SubcategoryID](),
-		"Cat", "", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
+		"Cat", "", valueobjects.CategoryWriteEvidence{}, rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 
 	subID := uuid.New()
@@ -184,7 +185,7 @@ func (s *UpdateTransactionSuite) TestExecute_CreditCard_RecomposesDeltas() {
 	existing := entities.Reconstitute(
 		txID, userIDVO, valueobjects.DirectionOutcome, valueobjects.PaymentMethodCreditCard,
 		amount, desc, catIDVO, option.Some(valueobjects.SubcategoryIDFromUUID(subcategoryID)),
-		"Compras", "Eletrônicos", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
+		"Compras", "Eletrônicos", valueobjects.CategoryWriteEvidence{}, rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	existing.SetCardBilling(cardIDVO, installments, snapshot)
 

@@ -58,7 +58,7 @@ func (s *ListRecurringTemplatesSuite) buildTemplate() *entities.RecurringTemplat
 		uuid.New(), valueobjects.UserIDFromUUID(s.userID),
 		dir, pm, option.None[valueobjects.CardID](),
 		amount, desc, catID, option.None[valueobjects.SubcategoryID](),
-		"Receita", "", freq, dom, inst,
+		"Receita", "", valueobjects.CategoryWriteEvidence{}, freq, dom, inst,
 		now, option.None[time.Time](), now,
 	)
 	return &t

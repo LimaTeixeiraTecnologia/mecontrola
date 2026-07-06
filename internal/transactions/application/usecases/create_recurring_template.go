@@ -17,6 +17,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type CreateRecurringTemplate struct {
@@ -110,6 +111,7 @@ func (uc *CreateRecurringTemplate) Execute(ctx context.Context, raw input.RawCre
 		cmd.CategoryID,
 		cmd.SubcategoryID,
 		catSnap.Name, snapSubName(catSubID, catSnap),
+		valueobjects.CategoryWriteEvidence{},
 		cmd.Frequency,
 		cmd.DayOfMonth,
 		cmd.InstallmentsTotal,

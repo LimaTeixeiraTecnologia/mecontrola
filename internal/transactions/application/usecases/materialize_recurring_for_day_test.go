@@ -71,6 +71,7 @@ func (s *MaterializeRecurringForDaySuite) buildTemplate(userID uuid.UUID, day in
 		amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
 		"Receita", "",
+		valueobjects.CategoryWriteEvidence{},
 		freq, dom, inst,
 		today.Add(-24*time.Hour), option.None[time.Time](), now,
 	)
@@ -235,6 +236,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_MaterializesAsCreditTransa
 		amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
 		"Despesa", "",
+		valueobjects.CategoryWriteEvidence{},
 		freq, dom, inst,
 		today.Add(-24*time.Hour), option.None[time.Time](), now,
 	)
@@ -292,6 +294,7 @@ func (s *MaterializeRecurringForDaySuite) TestExecute_CreditTransactionCreatorEr
 		amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
 		"Despesa", "",
+		valueobjects.CategoryWriteEvidence{},
 		freq, dom, inst,
 		today.Add(-24*time.Hour), option.None[time.Time](), now,
 	)

@@ -24,6 +24,7 @@ type Transaction struct {
 	subcategoryID           option.Option[valueobjects.SubcategoryID]
 	categoryNameSnapshot    string
 	subcategoryNameSnapshot string
+	evidence                valueobjects.CategoryWriteEvidence
 	refMonth                valueobjects.RefMonth
 	occurredAt              time.Time
 	cardID                  option.Option[valueobjects.CardID]
@@ -50,6 +51,7 @@ func NewTransaction(
 	subcategoryID option.Option[valueobjects.SubcategoryID],
 	categoryNameSnapshot string,
 	subcategoryNameSnapshot string,
+	evidence valueobjects.CategoryWriteEvidence,
 	refMonth valueobjects.RefMonth,
 	occurredAt time.Time,
 	now time.Time,
@@ -65,6 +67,7 @@ func NewTransaction(
 		subcategoryID:           subcategoryID,
 		categoryNameSnapshot:    categoryNameSnapshot,
 		subcategoryNameSnapshot: subcategoryNameSnapshot,
+		evidence:                evidence,
 		refMonth:                refMonth,
 		occurredAt:              occurredAt,
 		version:                 1,
@@ -84,6 +87,7 @@ func Reconstitute(
 	subcategoryID option.Option[valueobjects.SubcategoryID],
 	categoryNameSnapshot string,
 	subcategoryNameSnapshot string,
+	evidence valueobjects.CategoryWriteEvidence,
 	refMonth valueobjects.RefMonth,
 	occurredAt time.Time,
 	cardID option.Option[valueobjects.CardID],
@@ -105,6 +109,7 @@ func Reconstitute(
 		subcategoryID:           subcategoryID,
 		categoryNameSnapshot:    categoryNameSnapshot,
 		subcategoryNameSnapshot: subcategoryNameSnapshot,
+		evidence:                evidence,
 		refMonth:                refMonth,
 		occurredAt:              occurredAt,
 		cardID:                  cardID,
@@ -127,10 +132,11 @@ func (t *Transaction) CategoryID() valueobjects.CategoryID       { return t.cate
 func (t *Transaction) SubcategoryID() option.Option[valueobjects.SubcategoryID] {
 	return t.subcategoryID
 }
-func (t *Transaction) CategoryNameSnapshot() string    { return t.categoryNameSnapshot }
-func (t *Transaction) SubcategoryNameSnapshot() string { return t.subcategoryNameSnapshot }
-func (t *Transaction) RefMonth() valueobjects.RefMonth { return t.refMonth }
-func (t *Transaction) OccurredAt() time.Time           { return t.occurredAt }
+func (t *Transaction) CategoryNameSnapshot() string                 { return t.categoryNameSnapshot }
+func (t *Transaction) SubcategoryNameSnapshot() string              { return t.subcategoryNameSnapshot }
+func (t *Transaction) Evidence() valueobjects.CategoryWriteEvidence { return t.evidence }
+func (t *Transaction) RefMonth() valueobjects.RefMonth              { return t.refMonth }
+func (t *Transaction) OccurredAt() time.Time                        { return t.occurredAt }
 func (t *Transaction) CardID() option.Option[valueobjects.CardID] {
 	return t.cardID
 }
@@ -154,6 +160,7 @@ func (t *Transaction) Update(
 	subcategoryID option.Option[valueobjects.SubcategoryID],
 	categoryNameSnapshot string,
 	subcategoryNameSnapshot string,
+	evidence valueobjects.CategoryWriteEvidence,
 	refMonth valueobjects.RefMonth,
 	occurredAt time.Time,
 	now time.Time,
@@ -166,6 +173,7 @@ func (t *Transaction) Update(
 	t.subcategoryID = subcategoryID
 	t.categoryNameSnapshot = categoryNameSnapshot
 	t.subcategoryNameSnapshot = subcategoryNameSnapshot
+	t.evidence = evidence
 	t.refMonth = refMonth
 	t.occurredAt = occurredAt
 	t.version++

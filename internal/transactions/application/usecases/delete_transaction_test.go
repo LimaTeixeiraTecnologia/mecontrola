@@ -62,7 +62,7 @@ func (s *DeleteTransactionSuite) makeExistingTransaction(txID uuid.UUID) *entiti
 	tx := entities.Reconstitute(
 		txID, userID, dir, pm, amount, desc, catID,
 		option.None[valueobjects.SubcategoryID](),
-		"Cat", "", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
+		"Cat", "", valueobjects.CategoryWriteEvidence{}, rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	return &tx
 }
@@ -126,7 +126,7 @@ func (s *DeleteTransactionSuite) TestExecute_CreditCard_RevertsDeltas() {
 	existing := entities.Reconstitute(
 		txID, userIDVO, valueobjects.DirectionOutcome, valueobjects.PaymentMethodCreditCard,
 		amount, desc, catID, option.None[valueobjects.SubcategoryID](),
-		"Compras", "Eletrônicos", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
+		"Compras", "Eletrônicos", valueobjects.CategoryWriteEvidence{}, rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 	)
 	existing.SetCardBilling(cardIDVO, installments, snapshot)
 

@@ -114,7 +114,7 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_Income_NoCardArtifacts() {
 	txID := uuid.New()
 	eventID := uuid.New()
 
-	decision := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), txID, eventID, s.createItemIDs(cmd), s.now)
+	decision := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, txID, eventID, s.createItemIDs(cmd), s.now)
 
 	s.Nil(decision.Items)
 	s.Nil(decision.InvoiceDeltas)
@@ -133,7 +133,7 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_Income_NoCardArtifacts() {
 func (s *TransactionWorkflowSuite) TestDecideCreate_OutcomeSimple_NoCardArtifacts() {
 	cmd := s.simpleCreateCmd("outcome", "debit_card", 2500, s.now)
 
-	decision := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
+	decision := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
 
 	s.Nil(decision.Items)
 	s.Nil(decision.InvoiceDeltas)
@@ -149,7 +149,7 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_CreditCardSingleInstallment(
 	snap := s.snapshot(15, 25)
 	txID := uuid.New()
 
-	decision := s.sut.DecideCreate(cmd, option.Some(snap), txID, uuid.New(), s.createItemIDs(cmd), s.now)
+	decision := s.sut.DecideCreate(cmd, option.Some(snap), valueobjects.CategoryWriteEvidence{}, txID, uuid.New(), s.createItemIDs(cmd), s.now)
 
 	s.Require().Len(decision.Items, 1)
 	s.Equal(int64(1000), decision.Items[0].Amount().Cents())
@@ -175,7 +175,7 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_CreditCard12x_SumEqualsTotal
 	cmd := s.cardCreateCmd(10000, 12, purchasedAt)
 	snap := s.snapshot(15, 25)
 
-	decision := s.sut.DecideCreate(cmd, option.Some(snap), uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
+	decision := s.sut.DecideCreate(cmd, option.Some(snap), valueobjects.CategoryWriteEvidence{}, uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
 
 	s.Require().Len(decision.Items, 12)
 
@@ -208,7 +208,7 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_CreditCard12x_SumEqualsTotal
 func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_SameRefMonth() {
 	cmd := s.simpleCreateCmd("income", "pix", 1000, s.now)
 	txID := uuid.New()
-	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), txID, uuid.New(), s.createItemIDs(cmd), s.now)
+	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, txID, uuid.New(), s.createItemIDs(cmd), s.now)
 
 	desc, _ := valueobjects.NewDescription("Updated")
 	updateCmd := commands.UpdateTransaction{
@@ -224,7 +224,7 @@ func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_SameRefMonth() {
 		Version:       1,
 	}
 
-	decision := s.sut.DecideUpdate(create.Transaction, nil, updateCmd, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
+	decision := s.sut.DecideUpdate(create.Transaction, nil, updateCmd, valueobjects.CategoryWriteEvidence{}, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
 
 	s.Nil(decision.Items)
 	s.Nil(decision.InvoiceDeltas)
@@ -237,7 +237,7 @@ func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_SameRefMonth() {
 func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_ChangedRefMonth() {
 	cmd := s.simpleCreateCmd("income", "pix", 1000, s.now)
 	txID := uuid.New()
-	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), txID, uuid.New(), s.createItemIDs(cmd), s.now)
+	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, txID, uuid.New(), s.createItemIDs(cmd), s.now)
 
 	desc, _ := valueobjects.NewDescription("Updated")
 	updateCmd := commands.UpdateTransaction{
@@ -253,7 +253,7 @@ func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_ChangedRefMonth() {
 		Version:       1,
 	}
 
-	decision := s.sut.DecideUpdate(create.Transaction, nil, updateCmd, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
+	decision := s.sut.DecideUpdate(create.Transaction, nil, updateCmd, valueobjects.CategoryWriteEvidence{}, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
 
 	evt, ok := decision.Event.(entities.TransactionUpdated)
 	s.Require().True(ok)
@@ -268,7 +268,7 @@ func (s *TransactionWorkflowSuite) TestDecideUpdate_CreditCard_RecomputesDeltas_
 	snap := s.snapshot(15, 25)
 	createCmd := s.cardCreateCmd(12000, 12, purchasedAt)
 	txID := uuid.New()
-	create := s.sut.DecideCreate(createCmd, option.Some(snap), txID, uuid.New(), s.createItemIDs(createCmd), s.now)
+	create := s.sut.DecideCreate(createCmd, option.Some(snap), valueobjects.CategoryWriteEvidence{}, txID, uuid.New(), s.createItemIDs(createCmd), s.now)
 
 	desc, _ := valueobjects.NewDescription("Updated card")
 	updateCmd := commands.UpdateTransaction{
@@ -286,7 +286,7 @@ func (s *TransactionWorkflowSuite) TestDecideUpdate_CreditCard_RecomputesDeltas_
 		Version:       1,
 	}
 
-	decision := s.sut.DecideUpdate(create.Transaction, create.Items, updateCmd, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
+	decision := s.sut.DecideUpdate(create.Transaction, create.Items, updateCmd, valueobjects.CategoryWriteEvidence{}, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
 
 	s.Require().Len(decision.Items, 3)
 
@@ -316,7 +316,7 @@ func (s *TransactionWorkflowSuite) TestDecideDelete_CreditCard_ReversesDeltas() 
 	purchasedAt := time.Date(2024, 11, 10, 0, 0, 0, 0, time.UTC)
 	snap := s.snapshot(15, 25)
 	createCmd := s.cardCreateCmd(3000, 3, purchasedAt)
-	create := s.sut.DecideCreate(createCmd, option.Some(snap), uuid.New(), uuid.New(), s.createItemIDs(createCmd), s.now)
+	create := s.sut.DecideCreate(createCmd, option.Some(snap), valueobjects.CategoryWriteEvidence{}, uuid.New(), uuid.New(), s.createItemIDs(createCmd), s.now)
 
 	decision, err := s.sut.DecideDelete(create.Transaction, create.Items, uuid.New(), s.now.Add(time.Hour))
 	s.Require().NoError(err)
@@ -339,7 +339,7 @@ func (s *TransactionWorkflowSuite) TestDecideDelete_CreditCard_ReversesDeltas() 
 
 func (s *TransactionWorkflowSuite) TestDecideDelete_NonCard_SingleRefMonth() {
 	cmd := s.simpleCreateCmd("income", "pix", 1000, s.now)
-	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
+	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
 
 	decision, err := s.sut.DecideDelete(create.Transaction, nil, uuid.New(), s.now.Add(time.Hour))
 	s.Require().NoError(err)
@@ -353,7 +353,7 @@ func (s *TransactionWorkflowSuite) TestDecideDelete_NonCard_SingleRefMonth() {
 
 func (s *TransactionWorkflowSuite) TestDecideDelete_AlreadyDeleted_ReturnsError() {
 	cmd := s.simpleCreateCmd("income", "pix", 1000, s.now)
-	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
+	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
 
 	first, err := s.sut.DecideDelete(create.Transaction, nil, uuid.New(), s.now.Add(time.Hour))
 	s.Require().NoError(err)
@@ -371,8 +371,8 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_Deterministic() {
 	eventID := uuid.New()
 	itemIDs := s.createItemIDs(cmd)
 
-	first := s.sut.DecideCreate(cmd, option.Some(snap), txID, eventID, itemIDs, s.now)
-	second := s.sut.DecideCreate(cmd, option.Some(snap), txID, eventID, itemIDs, s.now)
+	first := s.sut.DecideCreate(cmd, option.Some(snap), valueobjects.CategoryWriteEvidence{}, txID, eventID, itemIDs, s.now)
+	second := s.sut.DecideCreate(cmd, option.Some(snap), valueobjects.CategoryWriteEvidence{}, txID, eventID, itemIDs, s.now)
 
 	s.Require().Len(first.Items, len(second.Items))
 	for i := range first.Items {

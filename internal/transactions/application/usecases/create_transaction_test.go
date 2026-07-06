@@ -322,6 +322,7 @@ func (s *CreateTransactionSuite) newPersistedTransaction(id, catID uuid.UUID) *e
 		valueobjects.CategoryIDFromUUID(catID),
 		option.None[valueobjects.SubcategoryID](),
 		"Custo Fixo", "Delivery",
+		valueobjects.CategoryWriteEvidence{},
 		rm, now, now,
 	)
 	return &tx

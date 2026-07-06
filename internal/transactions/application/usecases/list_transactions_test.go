@@ -57,7 +57,7 @@ func (s *ListTransactionsSuite) makeTransactions(count int) []*entities.Transact
 		tx := entities.Reconstitute(
 			uuid.New(), userID, dir, pm, amount, desc, catID,
 			option.None[valueobjects.SubcategoryID](),
-			"Cat", "", rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
+			"Cat", "", valueobjects.CategoryWriteEvidence{}, rm, now, option.None[valueobjects.CardID](), option.None[valueobjects.InstallmentCount](), option.None[valueobjects.CardBillingSnapshot](), 1, nil, now, now,
 		)
 		result[i] = &tx
 	}

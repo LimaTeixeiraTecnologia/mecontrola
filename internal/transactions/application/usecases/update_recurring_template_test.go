@@ -69,6 +69,7 @@ func (s *UpdateRecurringTemplateSuite) buildTemplate(catID uuid.UUID) *entities.
 		amount, desc, catIDVo,
 		option.None[valueobjects.SubcategoryID](),
 		"Receita", "",
+		valueobjects.CategoryWriteEvidence{},
 		freq, dom, inst,
 		now, option.None[time.Time](), now,
 	)

@@ -24,6 +24,7 @@ type RecurringTemplate struct {
 	subcategoryID           option.Option[valueobjects.SubcategoryID]
 	categoryNameSnapshot    string
 	subcategoryNameSnapshot string
+	evidence                valueobjects.CategoryWriteEvidence
 	frequency               valueobjects.Frequency
 	dayOfMonth              valueobjects.DayOfMonth
 	installmentsTotal       valueobjects.InstallmentCount
@@ -47,6 +48,7 @@ func NewRecurringTemplate(
 	subcategoryID option.Option[valueobjects.SubcategoryID],
 	categoryNameSnapshot string,
 	subcategoryNameSnapshot string,
+	evidence valueobjects.CategoryWriteEvidence,
 	frequency valueobjects.Frequency,
 	dayOfMonth valueobjects.DayOfMonth,
 	installmentsTotal valueobjects.InstallmentCount,
@@ -66,6 +68,7 @@ func NewRecurringTemplate(
 		subcategoryID:           subcategoryID,
 		categoryNameSnapshot:    categoryNameSnapshot,
 		subcategoryNameSnapshot: subcategoryNameSnapshot,
+		evidence:                evidence,
 		frequency:               frequency,
 		dayOfMonth:              dayOfMonth,
 		installmentsTotal:       installmentsTotal,
@@ -88,10 +91,11 @@ func (r *RecurringTemplate) CategoryID() valueobjects.CategoryID        { return
 func (r *RecurringTemplate) SubcategoryID() option.Option[valueobjects.SubcategoryID] {
 	return r.subcategoryID
 }
-func (r *RecurringTemplate) CategoryNameSnapshot() string        { return r.categoryNameSnapshot }
-func (r *RecurringTemplate) SubcategoryNameSnapshot() string     { return r.subcategoryNameSnapshot }
-func (r *RecurringTemplate) Frequency() valueobjects.Frequency   { return r.frequency }
-func (r *RecurringTemplate) DayOfMonth() valueobjects.DayOfMonth { return r.dayOfMonth }
+func (r *RecurringTemplate) CategoryNameSnapshot() string                 { return r.categoryNameSnapshot }
+func (r *RecurringTemplate) SubcategoryNameSnapshot() string              { return r.subcategoryNameSnapshot }
+func (r *RecurringTemplate) Evidence() valueobjects.CategoryWriteEvidence { return r.evidence }
+func (r *RecurringTemplate) Frequency() valueobjects.Frequency            { return r.frequency }
+func (r *RecurringTemplate) DayOfMonth() valueobjects.DayOfMonth          { return r.dayOfMonth }
 func (r *RecurringTemplate) InstallmentsTotal() valueobjects.InstallmentCount {
 	return r.installmentsTotal
 }
@@ -112,6 +116,7 @@ func (r *RecurringTemplate) Update(
 	subcategoryID option.Option[valueobjects.SubcategoryID],
 	categoryNameSnapshot string,
 	subcategoryNameSnapshot string,
+	evidence valueobjects.CategoryWriteEvidence,
 	frequency valueobjects.Frequency,
 	dayOfMonth valueobjects.DayOfMonth,
 	installmentsTotal valueobjects.InstallmentCount,
@@ -128,6 +133,7 @@ func (r *RecurringTemplate) Update(
 	r.subcategoryID = subcategoryID
 	r.categoryNameSnapshot = categoryNameSnapshot
 	r.subcategoryNameSnapshot = subcategoryNameSnapshot
+	r.evidence = evidence
 	r.frequency = frequency
 	r.dayOfMonth = dayOfMonth
 	r.installmentsTotal = installmentsTotal
@@ -164,6 +170,7 @@ func ReconstituteRecurringTemplate(
 	subcategoryID option.Option[valueobjects.SubcategoryID],
 	categoryNameSnapshot string,
 	subcategoryNameSnapshot string,
+	evidence valueobjects.CategoryWriteEvidence,
 	frequency valueobjects.Frequency,
 	dayOfMonth valueobjects.DayOfMonth,
 	installmentsTotal valueobjects.InstallmentCount,
@@ -186,6 +193,7 @@ func ReconstituteRecurringTemplate(
 		subcategoryID:           subcategoryID,
 		categoryNameSnapshot:    categoryNameSnapshot,
 		subcategoryNameSnapshot: subcategoryNameSnapshot,
+		evidence:                evidence,
 		frequency:               frequency,
 		dayOfMonth:              dayOfMonth,
 		installmentsTotal:       installmentsTotal,

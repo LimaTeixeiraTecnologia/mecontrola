@@ -42,20 +42,21 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		INSERT INTO mecontrola.transactions
 		       (id, user_id, direction, payment_method, amount_cents, description,
 		        category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+		        category_kind, category_path, category_outcome, category_score,
+		        category_confidence, category_match_quality, category_signal_type,
+		        category_matched_term, category_match_reason, category_decision_source,
+		        category_editorial_version, category_decided_at,
 		        ref_month, occurred_at, version, deleted_at, created_at, updated_at,
 		        origin_wamid, origin_item_seq, origin_operation,
 		        card_id, installments_total, card_closing_day, card_due_day)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-		        $20, $21, $22, $23)
+		        $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
 		ON CONFLICT (origin_wamid, origin_item_seq, origin_operation) WHERE origin_wamid IS NOT NULL DO NOTHING
 		RETURNING id
 	`
 
-	var subID *uuid.UUID
-	if v, ok := tx.SubcategoryID().Get(); ok {
-		u := v.UUID()
-		subID = &u
-	}
+	ev := tx.Evidence()
+	subID := ev.SubcategoryID()
 
 	var originWamid, originOperation *string
 	var originItemSeq *int
@@ -74,6 +75,10 @@ func (r *transactionRepository) Create(ctx context.Context, tx *entities.Transac
 		tx.Amount().Cents(), tx.Description().String(),
 		tx.CategoryID().UUID(), subID,
 		tx.CategoryNameSnapshot(), tx.SubcategoryNameSnapshot(),
+		ev.Kind(), ev.Path(), ev.Outcome(), ev.Score(),
+		ev.Confidence(), ev.Quality(), ev.SignalType(),
+		ev.MatchedTerm(), ev.MatchReason(), ev.Source().String(),
+		ev.EditorialVersion(), ev.DecidedAt(),
 		tx.RefMonth().String(), tx.OccurredAt(),
 		tx.Version(), tx.DeletedAt(),
 		tx.CreatedAt(), tx.UpdatedAt(),
@@ -105,30 +110,39 @@ func (r *transactionRepository) UpdateWithVersion(ctx context.Context, tx *entit
 
 	const query = `
 		UPDATE mecontrola.transactions
-		   SET direction                 = $1,
-		       payment_method           = $2,
-		       amount_cents             = $3,
-		       description              = $4,
-		       category_id              = $5,
-		       subcategory_id           = $6,
-		       category_name_snapshot   = $7,
-		       subcategory_name_snapshot = $8,
-		       ref_month                = $9,
-		       occurred_at              = $10,
-		       version                  = $11,
-		       updated_at               = $12,
-		       card_id                  = $16,
-		       installments_total       = $17,
-		       card_closing_day         = $18,
-		       card_due_day             = $19
-		 WHERE id = $13 AND user_id = $14 AND version = $15 AND deleted_at IS NULL
+		   SET direction                  = $1,
+		       payment_method             = $2,
+		       amount_cents               = $3,
+		       description                = $4,
+		       category_id                = $5,
+		       subcategory_id             = $6,
+		       category_name_snapshot     = $7,
+		       subcategory_name_snapshot  = $8,
+		       category_kind              = $9,
+		       category_path              = $10,
+		       category_outcome           = $11,
+		       category_score             = $12,
+		       category_confidence        = $13,
+		       category_match_quality     = $14,
+		       category_signal_type       = $15,
+		       category_matched_term      = $16,
+		       category_match_reason      = $17,
+		       category_decision_source   = $18,
+		       category_editorial_version = $19,
+		       category_decided_at        = $20,
+		       ref_month                  = $21,
+		       occurred_at                = $22,
+		       version                    = $23,
+		       updated_at                 = $24,
+		       card_id                    = $28,
+		       installments_total         = $29,
+		       card_closing_day           = $30,
+		       card_due_day               = $31
+		 WHERE id = $25 AND user_id = $26 AND version = $27 AND deleted_at IS NULL
 	`
 
-	var subID *uuid.UUID
-	if v, ok := tx.SubcategoryID().Get(); ok {
-		u := v.UUID()
-		subID = &u
-	}
+	ev := tx.Evidence()
+	subID := ev.SubcategoryID()
 
 	cardID, installmentsTotal, closingDay, dueDay := cardColumns(tx)
 
@@ -137,6 +151,10 @@ func (r *transactionRepository) UpdateWithVersion(ctx context.Context, tx *entit
 		tx.Amount().Cents(), tx.Description().String(),
 		tx.CategoryID().UUID(), subID,
 		tx.CategoryNameSnapshot(), tx.SubcategoryNameSnapshot(),
+		ev.Kind(), ev.Path(), ev.Outcome(), ev.Score(),
+		ev.Confidence(), ev.Quality(), ev.SignalType(),
+		ev.MatchedTerm(), ev.MatchReason(), ev.Source().String(),
+		ev.EditorialVersion(), ev.DecidedAt(),
 		tx.RefMonth().String(), tx.OccurredAt(),
 		tx.Version(), tx.UpdatedAt(),
 		tx.ID(), tx.UserID().UUID(), expectedVersion,
@@ -196,6 +214,10 @@ func (r *transactionRepository) GetByID(ctx context.Context, id, userID uuid.UUI
 	const query = `
 		SELECT id, user_id, direction, payment_method, amount_cents, description,
 		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+		       category_kind, category_path, category_outcome, category_score,
+		       category_confidence, category_match_quality, category_signal_type,
+		       category_matched_term, category_match_reason, category_decision_source,
+		       category_editorial_version, category_decided_at,
 		       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
 		       card_id, installments_total, card_closing_day, card_due_day
 		  FROM mecontrola.transactions
@@ -243,6 +265,10 @@ func (r *transactionRepository) ListByMonth(ctx context.Context, userID uuid.UUI
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			       category_kind, category_path, category_outcome, category_score,
+			       category_confidence, category_match_quality, category_signal_type,
+			       category_matched_term, category_match_reason, category_decision_source,
+			       category_editorial_version, category_decided_at,
 			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
 			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
@@ -255,6 +281,10 @@ func (r *transactionRepository) ListByMonth(ctx context.Context, userID uuid.UUI
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			       category_kind, category_path, category_outcome, category_score,
+			       category_confidence, category_match_quality, category_signal_type,
+			       category_matched_term, category_match_reason, category_decision_source,
+			       category_editorial_version, category_decided_at,
 			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
 			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
@@ -309,6 +339,10 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			       category_kind, category_path, category_outcome, category_score,
+			       category_confidence, category_match_quality, category_signal_type,
+			       category_matched_term, category_match_reason, category_decision_source,
+			       category_editorial_version, category_decided_at,
 			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
 			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
@@ -323,6 +357,10 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 		query = `
 			SELECT id, user_id, direction, payment_method, amount_cents, description,
 			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+			       category_kind, category_path, category_outcome, category_score,
+			       category_confidence, category_match_quality, category_signal_type,
+			       category_matched_term, category_match_reason, category_decision_source,
+			       category_editorial_version, category_decided_at,
 			       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
 			       card_id, installments_total, card_closing_day, card_due_day
 			  FROM mecontrola.transactions
@@ -397,31 +435,47 @@ func (r *transactionRepository) scanRows(rows *sql.Rows) ([]*entities.Transactio
 
 func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, error) {
 	var (
-		id                      uuid.UUID
-		userID                  uuid.UUID
-		direction               int
-		paymentMethod           int
-		amountCents             int64
-		description             string
-		categoryID              uuid.UUID
-		subcategoryID           *uuid.UUID
-		categoryNameSnapshot    string
-		subcategoryNameSnapshot string
-		refMonth                string
-		occurredAt              time.Time
-		version                 int64
-		deletedAt               *time.Time
-		createdAt               time.Time
-		updatedAt               time.Time
-		cardID                  *uuid.UUID
-		installmentsTotal       *int
-		cardClosingDay          *int
-		cardDueDay              *int
+		id                       uuid.UUID
+		userID                   uuid.UUID
+		direction                int
+		paymentMethod            int
+		amountCents              int64
+		description              string
+		categoryID               uuid.UUID
+		subcategoryID            uuid.UUID
+		categoryNameSnapshot     string
+		subcategoryNameSnapshot  string
+		categoryKind             string
+		categoryPath             string
+		categoryOutcome          string
+		categoryScore            float64
+		categoryConfidence       string
+		categoryMatchQuality     string
+		categorySignalType       string
+		categoryMatchedTerm      string
+		categoryMatchReason      string
+		categoryDecisionSource   string
+		categoryEditorialVersion int64
+		categoryDecidedAt        time.Time
+		refMonth                 string
+		occurredAt               time.Time
+		version                  int64
+		deletedAt                *time.Time
+		createdAt                time.Time
+		updatedAt                time.Time
+		cardID                   *uuid.UUID
+		installmentsTotal        *int
+		cardClosingDay           *int
+		cardDueDay               *int
 	)
 
 	if err := rows.Scan(
 		&id, &userID, &direction, &paymentMethod, &amountCents, &description,
 		&categoryID, &subcategoryID, &categoryNameSnapshot, &subcategoryNameSnapshot,
+		&categoryKind, &categoryPath, &categoryOutcome, &categoryScore,
+		&categoryConfidence, &categoryMatchQuality, &categorySignalType,
+		&categoryMatchedTerm, &categoryMatchReason, &categoryDecisionSource,
+		&categoryEditorialVersion, &categoryDecidedAt,
 		&refMonth, &occurredAt, &version, &deletedAt, &createdAt, &updatedAt,
 		&cardID, &installmentsTotal, &cardClosingDay, &cardDueDay,
 	); err != nil {
@@ -435,10 +489,25 @@ func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, err
 	catID := valueobjects.CategoryIDFromUUID(categoryID)
 	rm, _ := valueobjects.NewRefMonth(refMonth)
 
-	var subOpt option.Option[valueobjects.SubcategoryID]
-	if subcategoryID != nil {
-		subOpt = option.Some(valueobjects.SubcategoryIDFromUUID(*subcategoryID))
-	}
+	subOpt := option.Some(valueobjects.SubcategoryIDFromUUID(subcategoryID))
+
+	src, _ := valueobjects.ParseCategoryDecisionSource(categoryDecisionSource)
+	evidence := valueobjects.ReconstituteEvidence(
+		categoryID,
+		subcategoryID,
+		categoryKind,
+		categoryPath,
+		categoryOutcome,
+		categoryScore,
+		categoryConfidence,
+		categoryMatchQuality,
+		categorySignalType,
+		categoryMatchedTerm,
+		categoryMatchReason,
+		src,
+		categoryEditorialVersion,
+		categoryDecidedAt,
+	)
 
 	var cardOpt option.Option[valueobjects.CardID]
 	if cardID != nil {
@@ -470,6 +539,7 @@ func (r *transactionRepository) scan(rows *sql.Rows) (*entities.Transaction, err
 		subOpt,
 		categoryNameSnapshot,
 		subcategoryNameSnapshot,
+		evidence,
 		rm,
 		occurredAt,
 		cardOpt,
