@@ -427,7 +427,7 @@ Rode `task --list-all` para a lista completa. Os comandos abaixo são os mais ú
 
 Use quando precisar começar do zero — banco limpo, todas as migrations reaplicadas.
 
-> ⚠️ **Atenção:** todos os cenários abaixo destroem dados. Em produção/VPS, faça backup antes (`pgbackrest backup --type=full`) e confirme que consegue restaurar.
+> ⚠️ **Atenção:** todos os cenários abaixo destroem dados. Em produção/VPS, recomenda-se fazer backup antes (`pgbackrest backup --type=full`) e confirmar que consegue restaurar.
 
 ---
 
@@ -487,20 +487,7 @@ Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
 
 Procedimento completo para recriar o schema em produção, do zero, sem parar o Postgres. Execute da máquina local.
 
-#### 1. Backup obrigatório
-
-O ambiente usa pgBackRest. Antes de apagar qualquer coisa, gere um backup full:
-
-```bash
-ssh root@187.77.45.48 "
-  docker exec -i \$(docker ps --filter name=mecontrola_postgres --format '{{.Names}}' | grep -v exporter | head -1) \
-    pgbackrest --stanza=mecontrola backup --type=full
-"
-```
-
-Confirme que o backup terminou com `completed successfully` e anote o label (ex.: `20260706-193032F`).
-
-#### 2. Parar server e worker
+#### 1. Parar server e worker
 
 ```bash
 ssh root@187.77.45.48 "docker service scale \
@@ -510,7 +497,7 @@ ssh root@187.77.45.48 "docker service scale \
   mecontrola_worker-2=0"
 ```
 
-#### 3. Dropar e recriar o schema `mecontrola`
+#### 2. Dropar e recriar o schema `mecontrola`
 
 ```bash
 ssh root@187.77.45.48 "
@@ -525,7 +512,7 @@ ssh root@187.77.45.48 "
 
 > `DROP TABLE IF EXISTS schema_migrations` é seguro aqui porque a tabela fica dentro do schema `mecontrola` e já foi removida pelo `CASCADE`. O comando extra garante que o migrator comece do zero caso a tabela esteja em outro lugar.
 
-#### 4. Aplicar todas as migrations via serviço Swarm
+#### 3. Aplicar todas as migrations via serviço Swarm
 
 O serviço `mecontrola_migrate` já possui todas as secrets e variáveis de ambiente necessárias:
 
@@ -543,7 +530,7 @@ ssh root@187.77.45.48 "docker service logs mecontrola_migrate --tail 20"
 
 Você deve ver `migrations applied`.
 
-#### 5. Validar migrations
+#### 4. Validar migrations
 
 ```bash
 ssh root@187.77.45.48 "
@@ -556,7 +543,7 @@ ssh root@187.77.45.48 "
 
 Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
 
-#### 6. Escalar server e worker de volta
+#### 5. Escalar server e worker de volta
 
 ```bash
 ssh root@187.77.45.48 "docker service scale \
@@ -566,7 +553,7 @@ ssh root@187.77.45.48 "docker service scale \
   mecontrola_worker-2=1"
 ```
 
-#### 7. Validar health
+#### 6. Validar health
 
 ```bash
 curl -sf http://187.77.45.48/health
@@ -582,6 +569,14 @@ ssh root@187.77.45.48 "
 ```
 
 Deve retornar `Up ... (healthy)`.
+
+> **Nota sobre backup:** se quiser preservar um ponto de restauração antes do reset, execute um backup pgBackRest manual antes do passo 1:
+> ```bash
+> ssh root@187.77.45.48 "
+>   docker exec -i \$(docker ps --filter name=mecontrola_postgres --format '{{.Names}}' | grep -v exporter | head -1) \
+>     pgbackrest --stanza=mecontrola backup --type=full
+> "
+> ```
 
 ### Cenário C — dropar e recriar o banco sem destruir volumes (local)
 
