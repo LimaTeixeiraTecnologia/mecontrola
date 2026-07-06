@@ -26,7 +26,7 @@ func TestBuildCreateRecurrenceToolSuccess(t *testing.T) {
 
 	recurrences.EXPECT().
 		CreateRecurrence(mock.Anything, mock.AnythingOfType("interfaces.RawRecurrence")).
-		Return(interfaces.EntryRef{ID: testRecurrenceID, Kind: "recurring_template"}, nil).Once()
+		Return(interfaces.EntryRef{ID: testRecurrenceID, Kind: interfaces.EntryKindRecurringTemplate}, nil).Once()
 
 	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-recur", 1, "create_recurrence", "recurring_template", mock.AnythingOfType("usecases.WriteFn")).
 		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {

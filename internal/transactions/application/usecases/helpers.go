@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -89,8 +90,8 @@ func snapSubName(subID *uuid.UUID, snap interfaces.CategorySnapshot) string {
 
 func guardSubcategoryRequired(dir valueobjects.Direction, subcategoryPresent bool) error {
 	var errs []error
-	if dir == valueobjects.DirectionOutcome && !subcategoryPresent {
-		errs = append(errs, fmt.Errorf("subcategory_id: %w", ErrOutcomeTransactionRequiresSubcategory))
+	if !subcategoryPresent {
+		errs = append(errs, fmt.Errorf("subcategory_id: %w", ErrTransactionRequiresSubcategory))
 	}
 	return errors.Join(errs...)
 }
@@ -100,6 +101,73 @@ func guardPaymentMethodMigration(current, next valueobjects.PaymentMethod) error
 		return ErrPaymentMethodMigrationNotAllowed
 	}
 	return nil
+}
+
+type categoryEvidence struct {
+	Source      string
+	Outcome     string
+	Score       float64
+	Confidence  string
+	Quality     string
+	SignalType  string
+	MatchedTerm string
+	MatchReason string
+	Version     int64
+}
+
+func evidenceFromRawCreate(raw input.RawCreateTransaction) categoryEvidence {
+	return categoryEvidence{
+		Source:      raw.CategorySource,
+		Outcome:     raw.CategoryOutcome,
+		Score:       raw.CategoryScore,
+		Confidence:  raw.CategoryConfidence,
+		Quality:     raw.CategoryQuality,
+		SignalType:  raw.CategorySignalType,
+		MatchedTerm: raw.CategoryMatchedTerm,
+		MatchReason: raw.CategoryMatchReason,
+		Version:     raw.CategoryVersion,
+	}
+}
+
+func evidenceFromRawUpdate(raw input.RawUpdateTransaction) categoryEvidence {
+	return categoryEvidence{
+		Source:      raw.CategorySource,
+		Outcome:     raw.CategoryOutcome,
+		Score:       raw.CategoryScore,
+		Confidence:  raw.CategoryConfidence,
+		Quality:     raw.CategoryQuality,
+		SignalType:  raw.CategorySignalType,
+		MatchedTerm: raw.CategoryMatchedTerm,
+		MatchReason: raw.CategoryMatchReason,
+		Version:     raw.CategoryVersion,
+	}
+}
+
+func approveUpdateCategory(ctx context.Context, gate interfaces.CategoryWriteGate, ev categoryEvidence, direction, surface string, rootID uuid.UUID, subID *uuid.UUID) (valueobjects.CategoryWriteEvidence, error) {
+	if subID == nil {
+		return valueobjects.CategoryWriteEvidence{}, valueobjects.ErrCategoryEvidenceRequired
+	}
+	source := valueobjects.CategoryDecisionSourceManualCanonicalID
+	if ev.Source != "" {
+		if parsed, parseErr := valueobjects.ParseCategoryDecisionSource(ev.Source); parseErr == nil {
+			source = parsed
+		}
+	}
+	return gate.Approve(ctx, interfaces.CategoryWriteGateInput{
+		Direction:       direction,
+		RootCategoryID:  rootID,
+		SubcategoryID:   *subID,
+		Source:          source,
+		Outcome:         ev.Outcome,
+		Score:           ev.Score,
+		Confidence:      ev.Confidence,
+		Quality:         ev.Quality,
+		SignalType:      ev.SignalType,
+		MatchedTerm:     ev.MatchedTerm,
+		MatchReason:     ev.MatchReason,
+		ExpectedVersion: ev.Version,
+		Surface:         surface,
+	})
 }
 
 func guardCategoryKindDirection(dir valueobjects.Direction, categoryKind string) error {

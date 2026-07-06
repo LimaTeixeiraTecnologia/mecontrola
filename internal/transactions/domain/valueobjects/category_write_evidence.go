@@ -10,7 +10,6 @@ import (
 
 var (
 	ErrCategoryWriteBlocked          = errors.New("transactions: category write blocked")
-	ErrCategoryNeedsClarification    = errors.New("transactions: category needs clarification")
 	ErrCategoryVersionChanged        = errors.New("transactions: category editorial version changed")
 	ErrCategoryEvidenceRequired      = errors.New("transactions: category write evidence required")
 	ErrCategoryRootWithoutLeaf       = errors.New("transactions: category root without leaf subcategory")

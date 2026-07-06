@@ -7,7 +7,7 @@ import (
 )
 
 type CategoriesReader interface {
-	SearchDictionary(ctx context.Context, term, kind string) ([]CategoryCandidate, error)
-	ResolveRootsBySlug(ctx context.Context, slugs []string) (map[string]uuid.UUID, error)
+	SearchDictionary(ctx context.Context, term, kind string) (CategorySearchResult, error)
+	ResolveForWrite(ctx context.Context, input CategoryWriteRequest) (CategoryWriteDecision, error)
 	ListCategories(ctx context.Context, userID uuid.UUID) ([]Category, error)
 }

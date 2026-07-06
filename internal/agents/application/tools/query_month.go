@@ -104,7 +104,7 @@ func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Cont
 		mapped := make([]QueryMonthEntryOutput, len(entries))
 		for i, e := range entries {
 			mapped[i] = QueryMonthEntryOutput{
-				Kind:        e.Kind,
+				Kind:        e.Kind.String(),
 				ID:          e.ID,
 				RefMonth:    e.RefMonth,
 				AmountCents: e.AmountCents,

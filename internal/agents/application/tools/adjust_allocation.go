@@ -7,12 +7,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
 type AdjustAllocationInput struct {
-	UserID     string `json:"userId"`
 	Competence string `json:"competence"`
 	RootSlug   string `json:"rootSlug"`
 	Percentage int    `json:"percentage"`
@@ -32,12 +32,11 @@ func BuildAdjustAllocationTool(planner interfaces.BudgetPlanner) tool.ToolHandle
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"userId":     map[string]any{"type": "string"},
 				"competence": map[string]any{"type": "string"},
 				"rootSlug":   map[string]any{"type": "string"},
 				"percentage": map[string]any{"type": "integer"},
 			},
-			"required":             []string{"userId", "competence", "rootSlug", "percentage"},
+			"required":             []string{"competence", "rootSlug", "percentage"},
 			"additionalProperties": false,
 		},
 	}
@@ -61,7 +60,11 @@ func BuildAdjustAllocationTool(planner interfaces.BudgetPlanner) tool.ToolHandle
 
 func buildAdjustAllocationExec(planner interfaces.BudgetPlanner) func(context.Context, AdjustAllocationInput) (AdjustAllocationOutput, error) {
 	return func(ctx context.Context, in AdjustAllocationInput) (AdjustAllocationOutput, error) {
-		userID, err := uuid.Parse(in.UserID)
+		resourceID, _, _, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return AdjustAllocationOutput{}, fmt.Errorf("adjust_allocation: identidade inbound ausente")
+		}
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return AdjustAllocationOutput{}, fmt.Errorf("adjust_allocation: userId inválido: %w", err)
 		}

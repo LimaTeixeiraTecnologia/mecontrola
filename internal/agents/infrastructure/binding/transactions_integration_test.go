@@ -5,6 +5,7 @@ package binding_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
@@ -55,16 +56,45 @@ func (l *stubCardLookup) GetForUser(_ context.Context, _, _ uuid.UUID) (valueobj
 	return l.snapshot, nil
 }
 
+type stubCategoryWriteGate struct{ version int64 }
+
+func (g *stubCategoryWriteGate) Approve(_ context.Context, in txifaces.CategoryWriteGateInput) (valueobjects.CategoryWriteEvidence, error) {
+	kind := "income"
+	if in.Direction == "outcome" {
+		kind = "expense"
+	}
+	return valueobjects.ReconstituteEvidence(
+		in.RootCategoryID,
+		in.SubcategoryID,
+		kind,
+		"stub/categoria",
+		"matched",
+		1.0,
+		"high",
+		"exact",
+		"canonical_name",
+		"stub",
+		"matched canonical_name stub",
+		valueobjects.CategoryDecisionSourceAutoMatched,
+		g.version,
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	), nil
+}
+
 type TransactionsIntegrationSuite struct {
 	suite.Suite
-	ctx        context.Context
-	db         database.DBTX
-	cardID     uuid.UUID
-	cardOwner  uuid.UUID
-	adapter    agentsifaces.TransactionsLedger
-	recompute  *txusecases.RecomputeMonthlySummary
-	ledgerRepo agentusecases.WriteLedgerRepository
-	idemUC     *agentusecases.IdempotentWrite
+	ctx           context.Context
+	db            database.DBTX
+	cardID        uuid.UUID
+	cardOwner     uuid.UUID
+	rootCatID     uuid.UUID
+	leafCatID     uuid.UUID
+	expenseRootID uuid.UUID
+	expenseLeafID uuid.UUID
+	adapter       agentsifaces.TransactionsLedger
+	recompute     *txusecases.RecomputeMonthlySummary
+	ledgerRepo    agentusecases.WriteLedgerRepository
+	idemUC        *agentusecases.IdempotentWrite
 }
 
 func TestTransactionsIntegrationSuite(t *testing.T) {
@@ -80,9 +110,28 @@ func (s *TransactionsIntegrationSuite) SetupSuite() {
 	s.db = db
 	o11y := fake.NewProvider()
 	factory := txrepos.NewRepositoryFactory(o11y)
-	catID := uuid.New()
+	s.rootCatID = uuid.New()
+	s.leafCatID = uuid.New()
+	s.expenseRootID = uuid.New()
+	s.expenseLeafID = uuid.New()
+	catID := s.leafCatID
 
 	_, err := db.ExecContext(s.ctx, `
+		INSERT INTO mecontrola.categories (id, slug, name, kind, parent_id, allocation_type)
+		VALUES ($1, 'integ-salario', 'Salário', 'income', NULL, 'consumption'),
+		       ($2, 'integ-bonus', 'Bônus', 'income', $1, 'consumption'),
+		       ($3, 'integ-alimentacao', 'Alimentação', 'expense', NULL, 'consumption'),
+		       ($4, 'integ-restaurante', 'Restaurante', 'expense', $3, 'consumption')`,
+		s.rootCatID, s.leafCatID, s.expenseRootID, s.expenseLeafID,
+	)
+	s.Require().NoError(err)
+
+	var editorialVersion int64
+	s.Require().NoError(
+		db.QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version LIMIT 1`).Scan(&editorialVersion),
+	)
+
+	_, err = db.ExecContext(s.ctx, `
 		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		VALUES ($1, '+5511999990001', 'ACTIVE', now(), now())`,
 		s.cardOwner,
@@ -104,6 +153,7 @@ func (s *TransactionsIntegrationSuite) SetupSuite() {
 		uow.NewUnitOfWork(db),
 		&stubCardLookup{snapshot: snapshot},
 		&stubCategoryValidator{catID: catID},
+		&stubCategoryWriteGate{version: editorialVersion},
 		services.TransactionWorkflow{},
 		&noopTxPublisher{},
 		o11y,
@@ -137,19 +187,19 @@ func (s *TransactionsIntegrationSuite) doRecompute(userID uuid.UUID, refMonth st
 func (s *TransactionsIntegrationSuite) TestCenario1_ExpensaRefleteNoResumoSemDuplaContagem() {
 	userID := uuid.New()
 	ctx := s.authedCtx(userID)
-	catID := uuid.New()
 
 	ref, err := s.adapter.CreateTransaction(ctx, agentsifaces.RawTransaction{
 		Direction:     "income",
 		PaymentMethod: "pix",
 		AmountCents:   5000,
 		Description:   "Salário teste",
-		CategoryID:    catID,
+		CategoryID:    s.rootCatID,
+		SubcategoryID: &s.leafCatID,
 		OccurredAt:    "2026-07-01",
 	})
 	s.Require().NoError(err)
 	s.Require().NotEqual(uuid.Nil, ref.ID)
-	s.Equal("transaction", ref.Kind)
+	s.Equal(agentsifaces.EntryKindTransaction, ref.Kind)
 
 	s.doRecompute(userID, "2026-07")
 
@@ -167,7 +217,6 @@ func (s *TransactionsIntegrationSuite) TestCenario1_ExpensaRefleteNoResumoSemDup
 func (s *TransactionsIntegrationSuite) TestCenario2_IdempotenciaMesmoWamidNaoDuplica() {
 	userID := uuid.New()
 	ctx := s.authedCtx(userID)
-	catID := uuid.New()
 	wamid := "wamid-idem-" + uuid.NewString()
 
 	var firstID uuid.UUID
@@ -178,7 +227,8 @@ func (s *TransactionsIntegrationSuite) TestCenario2_IdempotenciaMesmoWamidNaoDup
 				PaymentMethod: "pix",
 				AmountCents:   3000,
 				Description:   "Renda idempotente",
-				CategoryID:    catID,
+				CategoryID:    s.rootCatID,
+				SubcategoryID: &s.leafCatID,
 				OccurredAt:    "2026-07-01",
 			})
 			if createErr != nil {
@@ -199,7 +249,8 @@ func (s *TransactionsIntegrationSuite) TestCenario2_IdempotenciaMesmoWamidNaoDup
 				PaymentMethod: "pix",
 				AmountCents:   3000,
 				Description:   "Renda idempotente",
-				CategoryID:    catID,
+				CategoryID:    s.rootCatID,
+				SubcategoryID: &s.leafCatID,
 				OccurredAt:    "2026-07-01",
 			})
 			if createErr != nil {
@@ -226,7 +277,6 @@ func (s *TransactionsIntegrationSuite) TestCenario2_IdempotenciaMesmoWamidNaoDup
 func (s *TransactionsIntegrationSuite) TestOriginRef_BindingReprocess_NoDuplicate() {
 	userID := uuid.New()
 	ctx := s.authedCtx(userID)
-	catID := uuid.New()
 	wamid := "wamid-m1"
 
 	raw := agentsifaces.RawTransaction{
@@ -234,7 +284,8 @@ func (s *TransactionsIntegrationSuite) TestOriginRef_BindingReprocess_NoDuplicat
 		PaymentMethod:   "pix",
 		AmountCents:     4200,
 		Description:     "Renda reentregue",
-		CategoryID:      catID,
+		CategoryID:      s.rootCatID,
+		SubcategoryID:   &s.leafCatID,
 		OccurredAt:      "2026-07-01",
 		OriginWamid:     wamid,
 		OriginItemSeq:   0,
@@ -265,8 +316,6 @@ func (s *TransactionsIntegrationSuite) TestOriginRef_BindingReprocess_NoDuplicat
 func (s *TransactionsIntegrationSuite) TestCenario3_CartaoParceladoRefleteSoUmaParcela() {
 	userID := s.cardOwner
 	ctx := s.authedCtx(userID)
-	catID := uuid.New()
-	subCatID := uuid.New()
 
 	cardID := s.cardID
 	ref, err := s.adapter.CreateTransaction(ctx, agentsifaces.RawTransaction{
@@ -274,15 +323,15 @@ func (s *TransactionsIntegrationSuite) TestCenario3_CartaoParceladoRefleteSoUmaP
 		PaymentMethod: "credit_card",
 		AmountCents:   30000,
 		Description:   "Eletrodoméstico parcelado",
-		CategoryID:    catID,
-		SubcategoryID: &subCatID,
+		CategoryID:    s.expenseRootID,
+		SubcategoryID: &s.expenseLeafID,
 		CardID:        &cardID,
 		Installments:  3,
 		OccurredAt:    "2026-07-01",
 	})
 	s.Require().NoError(err)
 	s.Require().NotEqual(uuid.Nil, ref.ID)
-	s.Equal("transaction", ref.Kind)
+	s.Equal(agentsifaces.EntryKindTransaction, ref.Kind)
 
 	s.doRecompute(userID, "2026-07")
 

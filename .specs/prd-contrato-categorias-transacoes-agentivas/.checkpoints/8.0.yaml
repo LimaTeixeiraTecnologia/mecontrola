@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-contrato-categorias-transacoes-agentivas/8.0_execution_report.md
+summary: "Fechar matriz production-ready: 1164 testes passam, 4 métricas de observabilidade implementadas, gates Go limpos, LLM/scorer confirmado fora do caminho de escrita"
+timestamp: "2026-07-06T15:17:14Z"

@@ -61,9 +61,22 @@ func (s *RegisterEntrySuite) SetupTest() {
 	s.resourceID = uuid.New()
 }
 
-func (s *RegisterEntrySuite) confidentCandidate() []interfaces.CategoryCandidate {
-	return []interfaces.CategoryCandidate{
-		{CategoryID: s.leafID, RootCategoryID: s.rootID, Path: "Alimentação > Restaurante", Score: 0.95},
+func (s *RegisterEntrySuite) confidentResult() interfaces.CategorySearchResult {
+	return interfaces.CategorySearchResult{
+		Outcome: interfaces.ClassifyOutcomeMatched,
+		Version: 1,
+		Candidates: []interfaces.CategoryCandidate{
+			{
+				CategoryID:     s.leafID,
+				RootCategoryID: s.rootID,
+				Path:           "Alimentação > Restaurante",
+				Score:          0.95,
+				SignalType:     "alias",
+				Confidence:     "high",
+				MatchQuality:   "exact",
+				MatchReason:    "alias match",
+			},
+		},
 	}
 }
 
@@ -87,14 +100,14 @@ func (s *RegisterEntrySuite) TestRegisterExpense() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
-							Return(s.confidentCandidate(), nil).Once()
+							Return(s.confidentResult(), nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: func() *imocks.TransactionsLedger {
 						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
 							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
 								*captured = raw
-								return interfaces.EntryRef{ID: s.resourceID, Kind: "transaction"}, nil
+								return interfaces.EntryRef{ID: s.resourceID, Kind: interfaces.EntryKindTransaction}, nil
 							}).Once()
 						return s.ledgerMock
 					}(),
@@ -120,9 +133,13 @@ func (s *RegisterEntrySuite) TestRegisterExpense() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
-							Return([]interfaces.CategoryCandidate{
-								{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "A"},
-								{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "B"},
+							Return(interfaces.CategorySearchResult{
+								Outcome: interfaces.ClassifyOutcomeAmbiguous,
+								Version: 1,
+								Candidates: []interfaces.CategoryCandidate{
+									{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "A"},
+									{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "B"},
+								},
 							}, nil).Once()
 						return s.catMock
 					}(),
@@ -143,7 +160,7 @@ func (s *RegisterEntrySuite) TestRegisterExpense() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
-							Return([]interfaces.CategoryCandidate{}, nil).Once()
+							Return(interfaces.CategorySearchResult{Outcome: interfaces.ClassifyOutcomeNoMatch, Version: 1}, nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: s.ledgerMock,
@@ -157,12 +174,30 @@ func (s *RegisterEntrySuite) TestRegisterExpense() {
 			},
 		},
 		{
+			name: "deve retornar erro quando version editorial ausente",
+			dependencies: func() dependencies {
+				return dependencies{
+					catMock: func() *imocks.CategoriesReader {
+						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
+							Return(interfaces.CategorySearchResult{Outcome: interfaces.ClassifyOutcomeMatched, Version: 0, Candidates: []interfaces.CategoryCandidate{{CategoryID: s.leafID, RootCategoryID: s.rootID}}}, nil).Once()
+						return s.catMock
+					}(),
+					ledgerMock: s.ledgerMock,
+					writer:     &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
+				}
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.Error(err)
+				s.Equal(0, d.writer.called)
+			},
+		},
+		{
 			name: "deve propagar erro do dicionário de categorias",
 			dependencies: func() dependencies {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
-							Return(nil, errors.New("dictionary down")).Once()
+							Return(interfaces.CategorySearchResult{}, errors.New("dictionary down")).Once()
 						return s.catMock
 					}(),
 					ledgerMock: s.ledgerMock,
@@ -180,7 +215,7 @@ func (s *RegisterEntrySuite) TestRegisterExpense() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
-							Return(s.confidentCandidate(), nil).Once()
+							Return(s.confidentResult(), nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: func() *imocks.TransactionsLedger {
@@ -235,14 +270,14 @@ func (s *RegisterEntrySuite) TestRegisterIncome() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Salário", "income").
-							Return(s.confidentCandidate(), nil).Once()
+							Return(s.confidentResult(), nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: func() *imocks.TransactionsLedger {
 						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
 							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
 								*captured = raw
-								return interfaces.EntryRef{ID: s.resourceID, Kind: "transaction"}, nil
+								return interfaces.EntryRef{ID: s.resourceID, Kind: interfaces.EntryKindTransaction}, nil
 							}).Once()
 						return s.ledgerMock
 					}(),
@@ -266,7 +301,13 @@ func (s *RegisterEntrySuite) TestRegisterIncome() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Salário", "income").
-							Return([]interfaces.CategoryCandidate{{CategoryID: s.leafID, RootCategoryID: s.rootID, IsAmbiguous: true}}, nil).Once()
+							Return(interfaces.CategorySearchResult{
+								Outcome: interfaces.ClassifyOutcomeMatched,
+								Version: 1,
+								Candidates: []interfaces.CategoryCandidate{
+									{CategoryID: s.leafID, RootCategoryID: s.rootID, IsAmbiguous: true},
+								},
+							}, nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: s.ledgerMock,
@@ -322,14 +363,14 @@ func (s *RegisterEntrySuite) TestRegisterExpenseCreditCard() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Notebook", "expense").
-							Return(s.confidentCandidate(), nil).Once()
+							Return(s.confidentResult(), nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: func() *imocks.TransactionsLedger {
 						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
 							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
 								*captured = raw
-								return interfaces.EntryRef{ID: s.resourceID, Kind: "transaction"}, nil
+								return interfaces.EntryRef{ID: s.resourceID, Kind: interfaces.EntryKindTransaction}, nil
 							}).Once()
 						return s.ledgerMock
 					}(),
@@ -359,14 +400,14 @@ func (s *RegisterEntrySuite) TestRegisterExpenseCreditCard() {
 				return dependencies{
 					catMock: func() *imocks.CategoriesReader {
 						s.catMock.EXPECT().SearchDictionary(mock.Anything, "Notebook", "expense").
-							Return(s.confidentCandidate(), nil).Once()
+							Return(s.confidentResult(), nil).Once()
 						return s.catMock
 					}(),
 					ledgerMock: func() *imocks.TransactionsLedger {
 						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
 							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
 								*captured = raw
-								return interfaces.EntryRef{ID: s.resourceID, Kind: "transaction"}, nil
+								return interfaces.EntryRef{ID: s.resourceID, Kind: interfaces.EntryKindTransaction}, nil
 							}).Once()
 						return s.ledgerMock
 					}(),
@@ -400,6 +441,122 @@ func (s *RegisterEntrySuite) TestRegisterExpenseCreditCard() {
 				CardID:        &cid,
 				Installments:  scenario.installments,
 				OccurredAt:    "2026-07-03",
+			})
+			scenario.expect(d, result, err)
+		})
+	}
+}
+
+func (s *RegisterEntrySuite) TestClassifyBlocking() {
+	type dependencies struct {
+		catMock    *imocks.CategoriesReader
+		ledgerMock *imocks.TransactionsLedger
+		writer     *stubRegisterWriter
+	}
+
+	scenarios := []struct {
+		name         string
+		searchResult interfaces.CategorySearchResult
+		expect       func(d dependencies, result RegisterResult, err error)
+	}{
+		{
+			name: "candidato unico com outcome nao matched bloqueia",
+			searchResult: interfaces.CategorySearchResult{
+				Outcome: interfaces.ClassifyOutcomeAmbiguous,
+				Version: 1,
+				Candidates: []interfaces.CategoryCandidate{
+					{CategoryID: s.leafID, RootCategoryID: s.rootID, Score: 0.7, Confidence: "low", MatchQuality: "fuzzy"},
+				},
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+				s.Equal(0, d.writer.called)
+			},
+		},
+		{
+			name: "root igual a leaf bloqueia",
+			searchResult: interfaces.CategorySearchResult{
+				Outcome: interfaces.ClassifyOutcomeMatched,
+				Version: 1,
+				Candidates: []interfaces.CategoryCandidate{
+					{CategoryID: s.rootID, RootCategoryID: s.rootID, Score: 0.9, Confidence: "high", MatchQuality: "exact"},
+				},
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+				s.Equal(0, d.writer.called)
+			},
+		},
+		{
+			name: "evidencia incompleta sem confidence bloqueia",
+			searchResult: interfaces.CategorySearchResult{
+				Outcome: interfaces.ClassifyOutcomeMatched,
+				Version: 1,
+				Candidates: []interfaces.CategoryCandidate{
+					{CategoryID: s.leafID, RootCategoryID: s.rootID, Score: 0.9, Confidence: "", MatchQuality: "exact"},
+				},
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+				s.Equal(0, d.writer.called)
+			},
+		},
+		{
+			name: "evidencia incompleta sem match quality bloqueia",
+			searchResult: interfaces.CategorySearchResult{
+				Outcome: interfaces.ClassifyOutcomeMatched,
+				Version: 1,
+				Candidates: []interfaces.CategoryCandidate{
+					{CategoryID: s.leafID, RootCategoryID: s.rootID, Score: 0.9, Confidence: "high", MatchQuality: ""},
+				},
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+				s.Equal(0, d.writer.called)
+			},
+		},
+		{
+			name: "multi-candidato bloqueia mesmo com primeiro valido",
+			searchResult: interfaces.CategorySearchResult{
+				Outcome: interfaces.ClassifyOutcomeMatched,
+				Version: 1,
+				Candidates: []interfaces.CategoryCandidate{
+					{CategoryID: s.leafID, RootCategoryID: s.rootID, Score: 0.9, Confidence: "high", MatchQuality: "exact"},
+					{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Score: 0.8, Confidence: "medium", MatchQuality: "token"},
+				},
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+				s.Equal(0, d.writer.called)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			d := dependencies{
+				catMock: func() *imocks.CategoriesReader {
+					s.catMock.EXPECT().SearchDictionary(mock.Anything, "Almoço", "expense").
+						Return(scenario.searchResult, nil).Once()
+					return s.catMock
+				}(),
+				ledgerMock: s.ledgerMock,
+				writer:     &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
+			}
+			uc := NewRegisterEntry(d.catMock, d.ledgerMock, d.writer, s.obs)
+			result, err := uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+				UserID:        s.userID,
+				WAMID:         "wamid-block",
+				ItemSeq:       0,
+				AmountCents:   5000,
+				Description:   "Almoço",
+				PaymentMethod: "debit_card",
+				OccurredAt:    "2026-07-06",
 			})
 			scenario.expect(d, result, err)
 		})

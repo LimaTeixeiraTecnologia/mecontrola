@@ -71,21 +71,19 @@ func (uc *ReconcileMonthlySummary) reconcileKey(ctx context.Context, key interfa
 		return fmt.Errorf("transactions/reconcile: ref_month inválido %s: %w", key.RefMonth, err)
 	}
 
-	userID := key.UserID
-
-	income, outcome, err := uc.txRepo.SumByMonthExcludingCredit(ctx, userID, refMonth)
+	income, outcome, err := uc.txRepo.SumByMonthExcludingCredit(ctx, key.UserID, refMonth)
 	if err != nil {
 		return fmt.Errorf("transactions/reconcile: soma transações: %w", err)
 	}
 
-	cardOutcome, err := uc.invoiceRepo.SumByMonth(ctx, userID, refMonth)
+	cardOutcome, err := uc.invoiceRepo.SumByMonth(ctx, key.UserID, refMonth)
 	if err != nil {
 		return fmt.Errorf("transactions/reconcile: soma card invoice: %w", err)
 	}
 
 	totalOutcome := outcome + cardOutcome
 
-	current, getErr := uc.summaryRepo.Get(ctx, userID, refMonth)
+	current, getErr := uc.summaryRepo.Get(ctx, key.UserID, refMonth)
 	if getErr != nil {
 		return fmt.Errorf("transactions/reconcile: buscar summary: %w", getErr)
 	}
@@ -96,8 +94,7 @@ func (uc *ReconcileMonthlySummary) reconcileKey(ctx context.Context, key interfa
 		}
 	}
 
-	now := time.Now().UTC()
-	if upsertErr := uc.summaryRepo.Upsert(ctx, userID, refMonth, income, totalOutcome, now); upsertErr != nil {
+	if upsertErr := uc.summaryRepo.Upsert(ctx, key.UserID, refMonth, income, totalOutcome, time.Now().UTC()); upsertErr != nil {
 		return fmt.Errorf("transactions/reconcile: upsert summary: %w", upsertErr)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -934,6 +935,1003 @@ func (s *MigrationSuite) assertIndexMissing(schema, indexName string) {
 	`, schema, indexName).Scan(&count)
 	s.Require().NoError(err)
 	s.Equal(int64(0), count, "index %s.%s should be absent", schema, indexName)
+}
+
+func (s *MigrationSuite) TestCategoryWriteGateBaseline() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	var expenseRootID, expenseLeafID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id IS NULL LIMIT 1`,
+	).Scan(&expenseRootID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id=$1::uuid LIMIT 1`,
+		expenseRootID,
+	).Scan(&expenseLeafID))
+
+	var incomeRootID, incomeLeafID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='income' AND parent_id IS NULL LIMIT 1`,
+	).Scan(&incomeRootID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='income' AND parent_id=$1::uuid LIMIT 1`,
+		incomeRootID,
+	).Scan(&incomeLeafID))
+
+	var expenseRoot2ID, expenseLeaf2ID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id IS NULL AND id<>$1::uuid LIMIT 1`,
+		expenseRootID,
+	).Scan(&expenseRoot2ID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id=$1::uuid LIMIT 1`,
+		expenseRoot2ID,
+	).Scan(&expenseLeaf2ID))
+
+	var currentVersion int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT version FROM mecontrola.category_editorial_version`,
+	).Scan(&currentVersion))
+
+	userID := "bb222222-2222-2222-2222-222222222222"
+	s.Require().NoError(execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511988880200', 'ACTIVE', now(), now())
+		ON CONFLICT (id) DO NOTHING
+	`, userID))
+
+	err1 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'despesa valida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().NoError(err1)
+
+	err2 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 1, 1, 2000, 'receita valida',
+			$2::uuid, $3::uuid,
+			'renda', 'salario cat',
+			'income', 'income/root', 'matched', 1.0,
+			'high', 'exact', 'canonical_name',
+			'salario', 'canonical match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, incomeRootID, incomeLeafID, currentVersion)
+	s.Require().NoError(err2)
+
+	err3 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'subcategoria igual raiz',
+			$2::uuid, $2::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$3, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, currentVersion)
+	s.Require().Error(err3)
+
+	err4 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'outcome invalido',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'no_match', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err4)
+	s.Contains(err4.Error(), "transactions_category_outcome_chk")
+
+	err5 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'score invalido',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 1.5,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err5)
+	s.Contains(err5.Error(), "transactions_category_score_chk")
+
+	err6 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'confidence invalida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'invalid', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err6)
+	s.Contains(err6.Error(), "transactions_category_confidence_chk")
+
+	err7 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'match_quality invalida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'invalid', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err7)
+	s.Contains(err7.Error(), "transactions_category_match_quality_chk")
+
+	err8 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'signal_type invalido',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'invalid',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err8)
+	s.Contains(err8.Error(), "transactions_category_signal_type_chk")
+
+	err9 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'decision_source invalida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'invalid',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err9)
+	s.Contains(err9.Error(), "transactions_category_decision_source_chk")
+
+	err10 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'editorial_version zero',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			0, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID)
+	s.Require().Error(err10)
+	s.Contains(err10.Error(), "category_editorial_version")
+
+	err11 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'matched_term vazio',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err11)
+	s.Contains(err11.Error(), "transactions_category_matched_term_chk")
+
+	err12 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'match_reason vazio',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', '', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err12)
+	s.Contains(err12.Error(), "transactions_category_match_reason_chk")
+
+	err13 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_path vazio',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', '', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err13)
+	s.Contains(err13.Error(), "transactions_category_path_chk")
+
+	err14 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_id eh folha',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseLeafID, expenseRootID, currentVersion)
+	s.Require().Error(err14)
+	s.Contains(err14.Error(), "category_must_be_root")
+
+	err15 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'subcategory de raiz diferente',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeaf2ID, currentVersion)
+	s.Require().Error(err15)
+	s.Contains(err15.Error(), "subcategory_must_be_direct_leaf")
+
+	err16 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'income com direction expense',
+			$2::uuid, $3::uuid,
+			'renda', 'salario cat',
+			'income', 'income/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'salario', 'canonical match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, incomeRootID, incomeLeafID, currentVersion)
+	s.Require().Error(err16)
+	s.Contains(err16.Error(), "category_direction_kind_mismatch")
+
+	err17 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'editorial version errada',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion+1)
+	s.Require().Error(err17)
+	s.Contains(err17.Error(), "category_editorial_version_drift")
+
+	err18 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_kind drift',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'income', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err18)
+	s.Contains(err18.Error(), "category_kind_column_drift")
+
+	err22 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_name_snapshot vazio',
+			$2::uuid, $3::uuid,
+			'', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err22)
+	s.Contains(err22.Error(), "transactions_category_name_snapshot_chk")
+
+	err23 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'subcategory_name_snapshot vazio',
+			$2::uuid, $3::uuid,
+			'categoria', '',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err23)
+	s.Contains(err23.Error(), "subcategory_name_snapshot_chk")
+
+	err24 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 3, 1, 1000, 'direction invalida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err24)
+	s.Contains(err24.Error(), "transactions_direction_chk")
+
+	_, errDepRoot := s.db.ExecContext(s.ctx,
+		`UPDATE mecontrola.categories SET deprecated_at = now() WHERE id = $1::uuid`,
+		expenseRootID,
+	)
+	s.Require().NoError(errDepRoot)
+	defer func() {
+		_, _ = s.db.ExecContext(s.ctx,
+			`UPDATE mecontrola.categories SET deprecated_at = NULL WHERE id = $1::uuid`,
+			expenseRootID,
+		)
+	}()
+	err19 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'raiz deprecated',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(err19)
+	s.Contains(err19.Error(), "root_category_deprecated")
+
+	_, errDepLeaf := s.db.ExecContext(s.ctx,
+		`UPDATE mecontrola.categories SET deprecated_at = now() WHERE id = $1::uuid`,
+		incomeLeafID,
+	)
+	s.Require().NoError(errDepLeaf)
+	defer func() {
+		_, _ = s.db.ExecContext(s.ctx,
+			`UPDATE mecontrola.categories SET deprecated_at = NULL WHERE id = $1::uuid`,
+			incomeLeafID,
+		)
+	}()
+	err20 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 1, 1, 2000, 'folha deprecated',
+			$2::uuid, $3::uuid,
+			'renda', 'salario cat',
+			'income', 'income/root', 'matched', 1.0,
+			'high', 'exact', 'canonical_name',
+			'salario', 'canonical match', 'auto_matched',
+			$4, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, incomeRootID, incomeLeafID, currentVersion)
+	s.Require().Error(err20)
+	s.Contains(err20.Error(), "leaf_category_deprecated")
+
+	err21 := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'fk inexistente',
+			gen_random_uuid(), $2::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$3, now(), '2026-06', now(), now(), now()
+		)
+	`, userID, expenseLeafID, currentVersion)
+	s.Require().Error(err21)
+	s.True(
+		strings.Contains(err21.Error(), "category_must_be_root") || strings.Contains(err21.Error(), "foreign key"),
+		"expected trigger or FK to reject non-existent category UUID, got: %s", err21.Error(),
+	)
+}
+
+func (s *MigrationSuite) TestCategoryWriteGateRecurringTemplates() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	var expenseRootID, expenseLeafID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id IS NULL LIMIT 1`,
+	).Scan(&expenseRootID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id=$1::uuid LIMIT 1`,
+		expenseRootID,
+	).Scan(&expenseLeafID))
+
+	var expenseRoot2ID, expenseLeaf2ID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id IS NULL AND id<>$1::uuid LIMIT 1`,
+		expenseRootID,
+	).Scan(&expenseRoot2ID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id=$1::uuid LIMIT 1`,
+		expenseRoot2ID,
+	).Scan(&expenseLeaf2ID))
+
+	var incomeRootID, incomeLeafID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='income' AND parent_id IS NULL LIMIT 1`,
+	).Scan(&incomeRootID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='income' AND parent_id=$1::uuid LIMIT 1`,
+		incomeRootID,
+	).Scan(&incomeLeafID))
+
+	var currentVersion int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT version FROM mecontrola.category_editorial_version`,
+	).Scan(&currentVersion))
+
+	userID := "cc333333-3333-3333-3333-333333333333"
+	s.Require().NoError(execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
+		VALUES ($1, '+5511988880300', 'ACTIVE', now(), now())
+		ON CONFLICT (id) DO NOTHING
+	`, userID))
+
+	errValid := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'recorrencia valida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().NoError(errValid)
+
+	errCrossRoot := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'subcategory raiz diferente',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeaf2ID, currentVersion)
+	s.Require().Error(errCrossRoot)
+	s.Contains(errCrossRoot.Error(), "subcategory_must_be_direct_leaf")
+
+	errOutcome := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'outcome invalido',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'no_match', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(errOutcome)
+	s.Contains(errOutcome.Error(), "transactions_rt_category_outcome_chk")
+
+	errVersionDrift := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'editorial version errada',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion+1)
+	s.Require().Error(errVersionDrift)
+	s.Contains(errVersionDrift.Error(), "category_editorial_version_drift")
+
+	errKindMismatch := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'income com direction expense',
+			$2::uuid, $3::uuid,
+			'renda', 'salario cat',
+			'income', 'income/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'salario', 'canonical match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, incomeRootID, incomeLeafID, currentVersion)
+	s.Require().Error(errKindMismatch)
+	s.Contains(errKindMismatch.Error(), "category_direction_kind_mismatch")
+
+	errKindDrift := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_kind drift',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'income', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(errKindDrift)
+	s.Contains(errKindDrift.Error(), "category_kind_column_drift")
+
+	errMustBeRoot := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_id eh folha',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseLeafID, expenseRootID, currentVersion)
+	s.Require().Error(errMustBeRoot)
+	s.Contains(errMustBeRoot.Error(), "category_must_be_root")
+
+	errNameSnapshot := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'category_name_snapshot vazio',
+			$2::uuid, $3::uuid,
+			'', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(errNameSnapshot)
+	s.Contains(errNameSnapshot.Error(), "transactions_rt_category_name_snapshot_chk")
+
+	errSubNameSnapshot := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'subcategory_name_snapshot vazio',
+			$2::uuid, $3::uuid,
+			'categoria', '',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(errSubNameSnapshot)
+	s.Contains(errSubNameSnapshot.Error(), "transactions_rt_subcategory_name_snapshot_chk")
+
+	errDirection := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 3, 1, 1000, 'direction invalida',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(errDirection)
+	s.Contains(errDirection.Error(), "transactions_rt_direction_chk")
+
+	_, errDepRoot := s.db.ExecContext(s.ctx,
+		`UPDATE mecontrola.categories SET deprecated_at = now() WHERE id = $1::uuid`,
+		expenseRootID,
+	)
+	s.Require().NoError(errDepRoot)
+	defer func() {
+		_, _ = s.db.ExecContext(s.ctx,
+			`UPDATE mecontrola.categories SET deprecated_at = NULL WHERE id = $1::uuid`,
+			expenseRootID,
+		)
+	}()
+	errRootDeprecated := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 2, 1, 1000, 'raiz deprecated',
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense/root', 'matched', 0.9,
+			'high', 'exact', 'canonical_name',
+			'ifood', 'exact match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
+	s.Require().Error(errRootDeprecated)
+	s.Contains(errRootDeprecated.Error(), "root_category_deprecated")
+
+	_, errDepLeaf := s.db.ExecContext(s.ctx,
+		`UPDATE mecontrola.categories SET deprecated_at = now() WHERE id = $1::uuid`,
+		incomeLeafID,
+	)
+	s.Require().NoError(errDepLeaf)
+	defer func() {
+		_, _ = s.db.ExecContext(s.ctx,
+			`UPDATE mecontrola.categories SET deprecated_at = NULL WHERE id = $1::uuid`,
+			incomeLeafID,
+		)
+	}()
+	errLeafDeprecated := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.transactions_recurring_templates (
+			id, user_id, direction, payment_method, amount_cents, description,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			frequency, day_of_month, installments_total,
+			started_at, created_at, updated_at
+		) VALUES (
+			gen_random_uuid(), $1, 1, 1, 2000, 'folha deprecated',
+			$2::uuid, $3::uuid,
+			'renda', 'salario cat',
+			'income', 'income/root', 'matched', 1.0,
+			'high', 'exact', 'canonical_name',
+			'salario', 'canonical match', 'auto_matched',
+			$4, now(),
+			1, 1, 1,
+			now(), now(), now()
+		)
+	`, userID, incomeRootID, incomeLeafID, currentVersion)
+	s.Require().Error(errLeafDeprecated)
+	s.Contains(errLeafDeprecated.Error(), "leaf_category_deprecated")
 }
 
 func splitTableName(qualified string) [2]string {

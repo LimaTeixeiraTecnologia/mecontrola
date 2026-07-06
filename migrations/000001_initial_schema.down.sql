@@ -12,6 +12,7 @@ BEGIN
     END LOOP;
 END $$;
 
+DROP FUNCTION IF EXISTS mecontrola.validate_category_write_gate() CASCADE;
 DROP FUNCTION IF EXISTS mecontrola.categories_parent_kind_change_blocks_children() CASCADE;
 DROP FUNCTION IF EXISTS mecontrola.categories_parent_same_kind() CASCADE;
 DROP FUNCTION IF EXISTS mecontrola.immutable_unaccent(text) CASCADE;

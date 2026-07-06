@@ -59,6 +59,8 @@ func WithDestructiveConfirmResolver(r destructiveConfirmResolver) ConsumerOption
 	}
 }
 
+const defaultInboundTimeout = 60 * time.Second
+
 func WithInboundTimeout(d time.Duration) ConsumerOption {
 	return func(c *WhatsAppInboundConsumer) {
 		c.inboundTimeout = d
@@ -109,6 +111,9 @@ func NewWhatsAppInboundConsumer(
 	for _, opt := range opts {
 		opt(c)
 	}
+	if c.inboundTimeout <= 0 {
+		c.inboundTimeout = defaultInboundTimeout
+	}
 	return c
 }
 
@@ -130,9 +135,9 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: deserializar payload: %w", err)
 	}
 
-	if p.UserID == "" || p.Peer == "" || p.Text == "" {
+	if p.UserID == "" || p.Peer == "" || p.Text == "" || p.MessageID == "" {
 		c.decodeFails.Add(ctx, 1, observability.String("channel", "whatsapp"))
-		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q", p.UserID, p.Peer, p.Text)
+		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q message_id=%q", p.UserID, p.Peer, p.Text, p.MessageID)
 	}
 
 	if c.inboundTimeout > 0 {

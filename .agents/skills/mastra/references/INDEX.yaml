@@ -2,7 +2,7 @@ schema: 1
 skill: mastra
 purpose: >-
   Matriz deterministica de carregamento de referencias por tarefa no substrato internal/platform/*
-  e no consumidor internal/agents. Carregue apenas required_refs + optional_refs pertinentes.
+  e no consumidor financeiro real internal/agents. Carregue apenas required_refs + optional_refs pertinentes.
   Maximo 4 simultaneas; se conflito, priorize as 3 mais criticas e registre as demais como contexto
   nao carregado.
 
@@ -19,20 +19,25 @@ defaults:
     - agent-governance
 
 task_types:
-  build-new-agent:
-    trigger: "criar um novo agente igual a internal/agents (port weather)"
+  build-agent-consumer:
+    trigger: "criar ou alterar consumidor agentivo no padrao real de internal/agents"
     required_refs: [build-new-agent.md, core-concepts.md]
     optional_refs: [thread-run-runtime.md, scorer-evals.md, memory-recall.md, rules-checklist.md]
 
-  add-tool:
-    trigger: "adicionar/alterar uma tool tipada (NewTool[I,O])"
+  add-financial-tool:
+    trigger: "adicionar/alterar uma tool financeira tipada em internal/agents/application/tools"
     required_refs: [build-new-agent.md]
-    optional_refs: [llm-structured-output.md, rules-checklist.md]
+    optional_refs: [llm-structured-output.md, thread-run-runtime.md, rules-checklist.md]
 
   add-workflow:
-    trigger: "adicionar/alterar workflow duravel (Engine/Step/combinators/suspend-resume)"
+    trigger: "adicionar/alterar workflow duravel, onboarding ou confirmacao destrutiva"
     required_refs: [workflow-engine.md]
     optional_refs: [state-as-type.md, build-new-agent.md, rules-checklist.md]
+
+  confirmed-write:
+    trigger: "alterar escrita idempotente ou operacao que exige confirmacao"
+    required_refs: [build-new-agent.md, workflow-engine.md, thread-run-runtime.md]
+    optional_refs: [state-as-type.md, rules-checklist.md]
 
   memory-recall:
     trigger: "Thread, Message, WorkingMemory, Semantic Recall, indexer de embedding"
@@ -40,7 +45,7 @@ task_types:
     optional_refs: [thread-run-runtime.md, llm-structured-output.md, rules-checklist.md]
 
   scorer-evals:
-    trigger: "adicionar/alterar scorers (code-based ou LLM-judged), sampling, hooks"
+    trigger: "adicionar/alterar scorers financeiros, LLM-judged, sampling ou hooks"
     required_refs: [scorer-evals.md]
     optional_refs: [llm-structured-output.md, state-as-type.md, rules-checklist.md]
 

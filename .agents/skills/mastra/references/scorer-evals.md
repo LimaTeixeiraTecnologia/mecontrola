@@ -57,20 +57,28 @@ runner.Shutdown(ctx)                                 // drena workers
 
 Não altera o caminho principal: scoring é best-effort e assíncrono.
 
-## Construir os scorers do consumidor (`application/scorers/scorers.go`)
+## Construir os scorers do consumidor (`application/scorers/mecontrola_scorers.go`)
 
 ```go
-func BuildWeatherScorers(provider llm.Provider) []scorer.ScorerEntry {
+func BuildMeControlaScorers(provider llm.Provider) []scorer.ScorerEntry {
     return []scorer.ScorerEntry{
-        scorer.NewScorerEntry(scorer.NewToolCallAccuracyScorer("tool-call-accuracy", []string{"get-weather"}), scorer.AlwaysSample()),
-        scorer.NewScorerEntry(scorer.NewCompletenessScorer("completeness", []string{"temperature", ...}), scorer.AlwaysSample()),
-        scorer.NewScorerEntry(scorer.NewLLMJudgedScorer("translation", provider, instructions), scorer.AlwaysSample()),
+        scorer.NewScorerEntry(NewFinancialToolCallAccuracyScorer(), scorer.AlwaysSample()),
+        scorer.NewScorerEntry(NewFinancialCompletenessScorer(), scorer.AlwaysSample()),
+        scorer.NewScorerEntry(NewCategorizationScorer(provider), scorer.AlwaysSample()),
     }
 }
 ```
 
-No `module.go`: `scorerRunner := scorer.NewScorerRunner(BuildWeatherScorers(provider), resultStore, o11y)` →
-`scoringHooks := NewScoringHooks(scorerRunner)` → passado a `BuildXAgent(..., scoringHooks, ...)`. O
-`Module.Shutdown` chama `scorerRunner.Shutdown(ctx)`.
+No `module.go`: `scorerEntries := agentscorers.BuildMeControlaScorers(provider)` →
+`scorerRunner := scorer.NewScorerRunner(scorerEntries, resultStore, o11y)` →
+`scoringHooks := agentapplication.NewScoringHooks(scorerRunner)` → passado a `BuildMeControlaAgent`.
+O `Module.Shutdown` chama `scorerRunner.Shutdown(ctx)`.
+
+## Scorers reais do MeControla
+
+- `NewFinancialToolCallAccuracyScorer`: considera correto quando ao menos uma tool financeira esperada foi chamada.
+- `NewExpectedToolScorer(toolName)`: útil para testes direcionados de seleção determinística de ferramenta.
+- `NewFinancialCompletenessScorer`: avalia keywords financeiras no output.
+- `NewCategorizationScorer(provider)`: usa `NewLLMJudgedScorer` com instruções de categorização financeira.
 
 Ver `build-new-agent.md` para o wiring completo e `llm-structured-output.md` para o contrato do LLM-judged.

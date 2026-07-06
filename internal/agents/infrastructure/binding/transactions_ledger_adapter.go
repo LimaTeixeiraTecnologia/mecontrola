@@ -77,24 +77,33 @@ func (a *transactionsLedgerAdapter) CreateTransaction(ctx context.Context, in ag
 	}
 
 	out, err := a.createTx.Execute(ctx, txinput.RawCreateTransaction{
-		Direction:       in.Direction,
-		PaymentMethod:   in.PaymentMethod,
-		AmountCents:     in.AmountCents,
-		Description:     in.Description,
-		CategoryID:      in.CategoryID,
-		SubcategoryID:   in.SubcategoryID,
-		CardID:          in.CardID,
-		Installments:    in.Installments,
-		OccurredAt:      in.OccurredAt,
-		OriginWamid:     in.OriginWamid,
-		OriginItemSeq:   in.OriginItemSeq,
-		OriginOperation: in.OriginOperation,
+		Direction:           in.Direction,
+		PaymentMethod:       in.PaymentMethod,
+		AmountCents:         in.AmountCents,
+		Description:         in.Description,
+		CategoryID:          in.CategoryID,
+		SubcategoryID:       in.SubcategoryID,
+		CardID:              in.CardID,
+		Installments:        in.Installments,
+		OccurredAt:          in.OccurredAt,
+		OriginWamid:         in.OriginWamid,
+		OriginItemSeq:       in.OriginItemSeq,
+		OriginOperation:     in.OriginOperation,
+		CategorySource:      in.CategorySource,
+		CategoryOutcome:     in.CategoryOutcome,
+		CategoryScore:       in.CategoryScore,
+		CategoryConfidence:  in.CategoryConfidence,
+		CategoryQuality:     in.CategoryQuality,
+		CategorySignalType:  in.CategorySignalType,
+		CategoryMatchedTerm: in.CategoryMatchedTerm,
+		CategoryMatchReason: in.CategoryMatchReason,
+		CategoryVersion:     in.CategoryVersion,
 	})
 	if err != nil {
 		span.RecordError(err)
 		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/transactions_ledger: criar transação: %w", err)
 	}
-	return agentsifaces.EntryRef{ID: out.ID, Kind: "transaction", Reconciled: out.Reconciled}, nil
+	return agentsifaces.EntryRef{ID: out.ID, Kind: agentsifaces.EntryKindTransaction, Reconciled: out.Reconciled}, nil
 }
 
 func (a *transactionsLedgerAdapter) UpdateTransaction(ctx context.Context, in agentsifaces.RawUpdateTransaction) (agentsifaces.EntryRef, error) {
@@ -108,20 +117,29 @@ func (a *transactionsLedgerAdapter) UpdateTransaction(ctx context.Context, in ag
 	}
 
 	out, err := a.updateTx.Execute(ctx, in.ID.String(), txinput.RawUpdateTransaction{
-		Direction:     in.Direction,
-		PaymentMethod: in.PaymentMethod,
-		AmountCents:   in.AmountCents,
-		Description:   in.Description,
-		CategoryID:    in.CategoryID,
-		SubcategoryID: in.SubcategoryID,
-		OccurredAt:    in.OccurredAt,
-		Version:       in.Version,
+		Direction:           in.Direction,
+		PaymentMethod:       in.PaymentMethod,
+		AmountCents:         in.AmountCents,
+		Description:         in.Description,
+		CategoryID:          in.CategoryID,
+		SubcategoryID:       in.SubcategoryID,
+		OccurredAt:          in.OccurredAt,
+		Version:             in.Version,
+		CategorySource:      in.CategorySource,
+		CategoryOutcome:     in.CategoryOutcome,
+		CategoryScore:       in.CategoryScore,
+		CategoryConfidence:  in.CategoryConfidence,
+		CategoryQuality:     in.CategoryQuality,
+		CategorySignalType:  in.CategorySignalType,
+		CategoryMatchedTerm: in.CategoryMatchedTerm,
+		CategoryMatchReason: in.CategoryMatchReason,
+		CategoryVersion:     in.CategoryVersion,
 	})
 	if err != nil {
 		span.RecordError(err)
 		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/transactions_ledger: atualizar transação: %w", err)
 	}
-	return agentsifaces.EntryRef{ID: out.ID, Kind: "transaction"}, nil
+	return agentsifaces.EntryRef{ID: out.ID, Kind: agentsifaces.EntryKindTransaction}, nil
 }
 
 func (a *transactionsLedgerAdapter) DeleteTransaction(ctx context.Context, ref agentsifaces.EntryRef, version int64) error {
@@ -161,10 +179,17 @@ func (a *transactionsLedgerAdapter) ListMonthlyEntries(ctx context.Context, _ uu
 	for _, item := range page.Items {
 		e, ok := item.(txoutput.MonthlyEntry)
 		if !ok {
-			continue
+			err := fmt.Errorf("agents/binding/transactions_ledger: item de entrada mensal com tipo inesperado %T", item)
+			span.RecordError(err)
+			return nil, err
+		}
+		kind, err := agentsifaces.ParseEntryKind(e.Kind)
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("agents/binding/transactions_ledger: kind inválido %q: %w", e.Kind, err)
 		}
 		entries = append(entries, agentsifaces.MonthlyEntry{
-			Kind:        e.Kind,
+			Kind:        kind,
 			ID:          e.ID,
 			RefMonth:    e.RefMonth,
 			AmountCents: e.AmountCents,
@@ -197,7 +222,7 @@ func (a *transactionsLedgerAdapter) GetTransaction(ctx context.Context, txID str
 		sub = &s
 	}
 	return agentsifaces.Entry{
-		Kind:                    "transaction",
+		Kind:                    agentsifaces.EntryKindTransaction,
 		ID:                      out.ID.String(),
 		UserID:                  out.UserID.String(),
 		Direction:               out.Direction,
@@ -281,7 +306,7 @@ func (a *transactionsLedgerAdapter) SearchTransactions(ctx context.Context, _ uu
 			sub = &s
 		}
 		entries = append(entries, agentsifaces.Entry{
-			Kind:                    "transaction",
+			Kind:                    agentsifaces.EntryKindTransaction,
 			ID:                      tx.ID.String(),
 			UserID:                  tx.UserID.String(),
 			Direction:               tx.Direction,

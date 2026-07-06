@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-contrato-categorias-transacoes-agentivas/2.0_execution_report.md
+summary: VOs CategoryDecisionSource e CategoryWriteEvidence criados com DMMF, smart constructor, zero value invalido e 159 testes passando
+timestamp: 2026-07-06T00:00:00Z

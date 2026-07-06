@@ -3,8 +3,10 @@ package usecases
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -13,6 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/dtos/output"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/mappers"
+	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
@@ -109,7 +112,15 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 
 		c := u.decider.Decide(cmd, cardID, now)
 		if insertErr := repo.Insert(ctx, c); insertErr != nil {
-			return insertErr
+			if !errors.Is(insertErr, domain.ErrNicknameConflict) {
+				return insertErr
+			}
+			existing, findErr := u.findExistingByNickname(ctx, repo, in.UserID.String(), nickname)
+			if findErr != nil {
+				return findErr
+			}
+			card = existing
+			return nil
 		}
 
 		if hasIdem {
@@ -155,4 +166,23 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 		observability.String("user_id", card.UserID.String()),
 	)
 	return mappers.M.ToCardOutput(card), nil
+}
+
+func (u *CreateCard) findExistingByNickname(ctx context.Context, repo interfaces.CardRepository, userID string, nickname valueobjects.Nickname) (entities.Card, error) {
+	cards, _, err := repo.ListByUser(ctx, userID, "", resolveCardByNicknameLimit)
+	if err != nil {
+		return entities.Card{}, fmt.Errorf("card/create: lookup existing: %w", err)
+	}
+
+	target := strings.TrimSpace(nickname.String())
+	for _, c := range cards {
+		if c.IsDeleted() {
+			continue
+		}
+		if strings.EqualFold(c.Nickname.String(), target) {
+			return c, nil
+		}
+	}
+
+	return entities.Card{}, fmt.Errorf("card/create: %w", domain.ErrNicknameConflict)
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
 
@@ -50,4 +51,34 @@ func (s *CategoriesReaderAdapterIntegrationSuite) TestEditorialVersion() {
 
 	s.Require().NoError(err)
 	s.GreaterOrEqual(v, int64(0))
+}
+
+func (s *CategoriesReaderAdapterIntegrationSuite) TestResolveAndValidateFullFields() {
+	ctx := context.Background()
+
+	roots, err := s.adapter.ResolveRootsBySlug(ctx, []string{"expense.custo_fixo"})
+	s.Require().NoError(err)
+	rootID, ok := roots["expense.custo_fixo"]
+	s.Require().True(ok)
+	s.Require().NotEqual(uuid.Nil, rootID)
+
+	var leafIDStr string
+	s.Require().NoError(s.db.QueryRowContext(ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE parent_id=$1::uuid AND deprecated_at IS NULL LIMIT 1`,
+		rootID,
+	).Scan(&leafIDStr))
+	leafID := uuid.MustParse(leafIDStr)
+
+	snapshot, err := s.adapter.ValidateSubcategory(ctx, leafID, rootID)
+	s.Require().NoError(err)
+	s.Equal(leafID, snapshot.ID)
+	s.Equal("expense", snapshot.Kind)
+	s.NotEmpty(snapshot.Name)
+	s.Require().NotNil(snapshot.ParentID)
+	s.Equal(rootID, *snapshot.ParentID)
+	s.NotEmpty(snapshot.ParentName)
+
+	version, err := s.adapter.EditorialVersion(ctx)
+	s.Require().NoError(err)
+	s.Greater(version, int64(0))
 }

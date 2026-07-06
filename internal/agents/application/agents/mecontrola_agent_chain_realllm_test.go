@@ -75,16 +75,31 @@ func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
 
 			catMock := imocks.NewCategoriesReader(t)
 			catMock.EXPECT().SearchDictionary(mock.Anything, mock.Anything, "expense").
-				RunAndReturn(func(_ context.Context, _, _ string) ([]agentsifaces.CategoryCandidate, error) {
+				RunAndReturn(func(_ context.Context, _, _ string) (agentsifaces.CategorySearchResult, error) {
 					searchCalled = true
-					return []agentsifaces.CategoryCandidate{{CategoryID: leafID, RootCategoryID: rootID, Path: "Custo Fixo > Eletrônicos", Score: 0.95}}, nil
+					return agentsifaces.CategorySearchResult{
+						Outcome: agentsifaces.ClassifyOutcomeMatched,
+						Version: 1,
+						HasMore: false,
+						Candidates: []agentsifaces.CategoryCandidate{{
+							CategoryID:     leafID,
+							RootCategoryID: rootID,
+							Path:           "Custo Fixo > Eletrônicos",
+							Score:          0.95,
+							Confidence:     "high",
+							MatchQuality:   "exact",
+							SignalType:     "canonical_name",
+							MatchedTerm:    "eletrônicos",
+							IsAmbiguous:    false,
+						}},
+					}, nil
 				}).Maybe()
 
 			ledgerMock := imocks.NewTransactionsLedger(t)
 			ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
 				RunAndReturn(func(_ context.Context, in agentsifaces.RawTransaction) (agentsifaces.EntryRef, error) {
 					captured = in
-					return agentsifaces.EntryRef{ID: uuid.New(), Kind: "transaction"}, nil
+					return agentsifaces.EntryRef{ID: uuid.New(), Kind: agentsifaces.EntryKindTransaction}, nil
 				}).Maybe()
 
 			registrar := agentusecases.NewRegisterEntry(catMock, ledgerMock, chainFakeWriter{}, obs)

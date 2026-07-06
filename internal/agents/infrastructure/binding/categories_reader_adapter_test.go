@@ -42,86 +42,8 @@ func (s *CategoriesReaderAdapterSuite) buildAdapter() agentsifaces.CategoriesRea
 	o11y := fake.NewProvider()
 	resolver := services.NewCandidateResolver()
 	searchDictUC := catusecases.NewSearchDictionary(s.dictRepoMock, s.catRepoMock, s.versionMock, resolver, o11y)
-	resolveBySlugUC := catusecases.NewResolveBySlug(s.catRepoMock, o11y)
-	return NewCategoriesReaderAdapter(searchDictUC, resolveBySlugUC, nil, o11y)
-}
-
-func (s *CategoriesReaderAdapterSuite) TestResolveRootsBySlug_Success() {
-	type args struct {
-		slugs []string
-	}
-	type dependencies struct {
-		catRepo *catifacemocks.CategoryRepository
-	}
-
-	rootID := uuid.New()
-
-	scenarios := []struct {
-		name         string
-		args         args
-		dependencies dependencies
-		expect       func(result map[string]uuid.UUID, err error)
-	}{
-		{
-			name: "deve resolver slug com sucesso",
-			args: args{slugs: []string{"custo-fixo"}},
-			dependencies: dependencies{
-				catRepo: func() *catifacemocks.CategoryRepository {
-					s.catRepoMock.EXPECT().
-						List(mock.Anything, mock.Anything).
-						Return([]entities.Category{{ID: rootID, Slug: "custo-fixo", Kind: valueobjects.KindExpense}}, nil).
-						Once()
-					return s.catRepoMock
-				}(),
-			},
-			expect: func(result map[string]uuid.UUID, err error) {
-				s.NoError(err)
-				s.Equal(rootID, result["custo-fixo"])
-			},
-		},
-		{
-			name: "deve retornar erro quando slug não encontrado",
-			args: args{slugs: []string{"inexistente"}},
-			dependencies: dependencies{
-				catRepo: func() *catifacemocks.CategoryRepository {
-					s.catRepoMock.EXPECT().
-						List(mock.Anything, mock.Anything).
-						Return([]entities.Category{}, nil).
-						Once()
-					return s.catRepoMock
-				}(),
-			},
-			expect: func(result map[string]uuid.UUID, err error) {
-				s.Error(err)
-				s.Nil(result)
-			},
-		},
-		{
-			name: "deve retornar erro quando repositório falha",
-			args: args{slugs: []string{"custo-fixo"}},
-			dependencies: dependencies{
-				catRepo: func() *catifacemocks.CategoryRepository {
-					s.catRepoMock.EXPECT().
-						List(mock.Anything, mock.Anything).
-						Return(nil, errors.New("db error")).
-						Once()
-					return s.catRepoMock
-				}(),
-			},
-			expect: func(result map[string]uuid.UUID, err error) {
-				s.Error(err)
-				s.Nil(result)
-			},
-		},
-	}
-
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			adapter := s.buildAdapter()
-			result, err := adapter.ResolveRootsBySlug(s.ctx, scenario.args.slugs)
-			scenario.expect(result, err)
-		})
-	}
+	resolveCategoryForWriteUC := catusecases.NewResolveCategoryForWrite(s.catRepoMock, s.versionMock, o11y)
+	return NewCategoriesReaderAdapter(searchDictUC, resolveCategoryForWriteUC, nil, o11y)
 }
 
 func (s *CategoriesReaderAdapterSuite) TestSearchDictionary_InvalidKind() {
@@ -129,4 +51,101 @@ func (s *CategoriesReaderAdapterSuite) TestSearchDictionary_InvalidKind() {
 	_, err := adapter.SearchDictionary(s.ctx, "mercado", "invalid_kind")
 	s.Error(err)
 	s.ErrorIs(err, agentsifaces.ErrCategoriesReaderUnavailable)
+}
+
+func (s *CategoriesReaderAdapterSuite) TestSearchDictionary_PreservesAllFields() {
+	rootID := uuid.New()
+	leafID := uuid.New()
+
+	s.versionMock.EXPECT().Current(mock.Anything).Return(int64(3), nil).Once()
+	s.dictRepoMock.EXPECT().
+		Search(mock.Anything, mock.Anything).
+		Return([]entities.DictionaryEntry{
+			{
+				CategoryID:  leafID,
+				Term:        "restaurante",
+				SignalType:  valueobjects.SignalTypeAlias,
+				Confidence:  valueobjects.ConfidenceHigh,
+				IsAmbiguous: false,
+			},
+		}, nil).Once()
+	s.catRepoMock.EXPECT().
+		ListByIDs(mock.Anything, mock.Anything).
+		Return([]entities.Category{
+			{ID: leafID, Slug: "restaurante", Kind: valueobjects.KindExpense, ParentID: &rootID},
+			{ID: rootID, Slug: "alimentacao", Kind: valueobjects.KindExpense},
+		}, nil).Once()
+
+	adapter := s.buildAdapter()
+	result, err := adapter.SearchDictionary(s.ctx, "restaurante", "expense")
+
+	s.NoError(err)
+	s.Equal(agentsifaces.ClassifyOutcomeMatched, result.Outcome)
+	s.Equal(int64(3), result.Version)
+	s.Require().Len(result.Candidates, 1)
+	c := result.Candidates[0]
+	s.Equal(leafID, c.CategoryID)
+	s.Equal(rootID, c.RootCategoryID)
+	s.NotEmpty(c.SignalType)
+	s.NotEmpty(c.Confidence)
+	s.NotEmpty(c.MatchQuality)
+}
+
+func (s *CategoriesReaderAdapterSuite) TestResolveForWrite_Success() {
+	rootID := uuid.New()
+	leafID := uuid.New()
+
+	s.versionMock.EXPECT().Current(mock.Anything).Return(int64(2), nil).Once()
+	s.catRepoMock.EXPECT().
+		GetByID(mock.Anything, rootID).
+		Return(entities.Category{ID: rootID, Slug: "custo-fixo", Kind: valueobjects.KindExpense}, nil).Once()
+	s.catRepoMock.EXPECT().
+		GetByID(mock.Anything, leafID).
+		Return(entities.Category{ID: leafID, Slug: "aluguel", Kind: valueobjects.KindExpense, ParentID: &rootID}, nil).Once()
+
+	adapter := s.buildAdapter()
+	decision, err := adapter.ResolveForWrite(s.ctx, agentsifaces.CategoryWriteRequest{
+		RootCategoryID:  rootID,
+		SubcategoryID:   leafID,
+		Kind:            agentsifaces.CategoryKindExpense,
+		ExpectedVersion: 2,
+	})
+
+	s.NoError(err)
+	s.Equal(rootID, decision.RootCategoryID)
+	s.Equal(leafID, decision.SubcategoryID)
+	s.Equal(agentsifaces.CategoryKindExpense, decision.Kind)
+	s.NotEmpty(decision.Path)
+	s.Equal(int64(2), decision.EditorialVersion)
+	s.False(decision.Deprecated)
+}
+
+func (s *CategoriesReaderAdapterSuite) TestResolveForWrite_InvalidKind() {
+	adapter := s.buildAdapter()
+	_, err := adapter.ResolveForWrite(s.ctx, agentsifaces.CategoryWriteRequest{
+		RootCategoryID:  uuid.New(),
+		SubcategoryID:   uuid.New(),
+		ExpectedVersion: 1,
+	})
+	s.Error(err)
+	s.ErrorIs(err, agentsifaces.ErrCategoriesReaderUnavailable)
+}
+
+func (s *CategoriesReaderAdapterSuite) TestResolveForWrite_RepoError() {
+	rootID := uuid.New()
+	leafID := uuid.New()
+
+	s.versionMock.EXPECT().Current(mock.Anything).Return(int64(1), nil).Once()
+	s.catRepoMock.EXPECT().
+		GetByID(mock.Anything, rootID).
+		Return(entities.Category{}, errors.New("db error")).Once()
+
+	adapter := s.buildAdapter()
+	_, err := adapter.ResolveForWrite(s.ctx, agentsifaces.CategoryWriteRequest{
+		RootCategoryID:  rootID,
+		SubcategoryID:   leafID,
+		Kind:            agentsifaces.CategoryKindExpense,
+		ExpectedVersion: 1,
+	})
+	s.Error(err)
 }

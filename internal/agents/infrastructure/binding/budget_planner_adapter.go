@@ -12,7 +12,6 @@ import (
 	budgetsinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/dtos/input"
 	budgetsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 	budgetsusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
-	budgetsentities "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 )
 
 type budgetPlannerAdapter struct {
@@ -104,7 +103,7 @@ func (a *budgetPlannerAdapter) ActivateBudget(ctx context.Context, userID uuid.U
 	})
 	if err != nil {
 		span.RecordError(err)
-		if errors.Is(err, budgetsentities.ErrBudgetAlreadyActive) {
+		if errors.Is(err, budgetsifaces.ErrBudgetAlreadyActive) {
 			return agentsifaces.ErrBudgetAlreadyActive
 		}
 		return fmt.Errorf("agents/binding/budget_planner: ativar orçamento: %w", err)

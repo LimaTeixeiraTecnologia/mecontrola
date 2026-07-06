@@ -59,7 +59,6 @@ func (s *TransactionCardItemsSuite) seedUserAndCard() (uuid.UUID, uuid.UUID) {
 func (s *TransactionCardItemsSuite) newCreditTransaction(userID, cardID uuid.UUID, installments int) *entities.Transaction {
 	amount, _ := valueobjects.NewMoney(int64(installments) * 1000)
 	desc, _ := valueobjects.NewDescription("Compra parcelada")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	now := time.Now().UTC()
 
@@ -68,9 +67,11 @@ func (s *TransactionCardItemsSuite) newCreditTransaction(userID, cardID uuid.UUI
 		valueobjects.UserIDFromUUID(userID),
 		valueobjects.DirectionOutcome,
 		valueobjects.PaymentMethodCreditCard,
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Custo Fixo", "",
+		"Custo Fixo", "Aluguel",
+		expenseEvidence(),
 		rm, now, now,
 	)
 	inst, _ := valueobjects.NewInstallmentCount(installments)
@@ -171,14 +172,16 @@ func (s *TransactionCardItemsSuite) TestSumByMonthExcludesCredit() {
 
 	amount, _ := valueobjects.NewMoney(5000)
 	desc, _ := valueobjects.NewDescription("Mercado pix")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	now := time.Now().UTC()
 	pixTx := entities.NewTransaction(
 		uuid.New(), valueobjects.UserIDFromUUID(userID),
 		valueobjects.DirectionOutcome, valueobjects.PaymentMethodPix,
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Custo Fixo", "", rm, now, now,
+		"Custo Fixo", "Aluguel",
+		expenseEvidence(),
+		rm, now, now,
 	)
 	_, _, pixErr := s.txRepo.Create(s.ctx, &pixTx)
 	s.Require().NoError(pixErr)

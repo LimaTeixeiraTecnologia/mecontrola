@@ -201,7 +201,7 @@ func TestBestPurchaseDayTool_BindingError(t *testing.T) {
 func TestSearchTransactionsTool_Success(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
 	ledger.EXPECT().SearchTransactions(mock.Anything, testUserID, "almoço", "2026-01", 20).Return([]interfaces.Entry{
-		{Kind: "transaction", ID: "tx-1", RefMonth: "2026-01", AmountCents: 3000, Direction: "outcome", Description: "Almoço"},
+		{Kind: interfaces.EntryKindTransaction, ID: "tx-1", RefMonth: "2026-01", AmountCents: 3000, Direction: "outcome", Description: "Almoço"},
 	}, nil).Once()
 
 	h := BuildSearchTransactionsTool(ledger)
@@ -304,7 +304,7 @@ func TestListRecurrencesTool_BindingError(t *testing.T) {
 func TestGetTransactionTool_Success(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
 	ledger.EXPECT().GetTransaction(mock.Anything, "tx-abc").Return(interfaces.Entry{
-		Kind:                 "transaction",
+		Kind:                 interfaces.EntryKindTransaction,
 		ID:                   "tx-abc",
 		UserID:               testUserID.String(),
 		Direction:            "outcome",

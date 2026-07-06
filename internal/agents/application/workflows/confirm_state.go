@@ -117,4 +117,5 @@ type ConfirmState struct {
 	ResponseText  string        `json:"responseText"`
 	UserID        uuid.UUID     `json:"userId"`
 	Version       int64         `json:"version"`
+	Expired       bool          `json:"expired"`
 }

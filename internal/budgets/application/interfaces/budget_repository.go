@@ -14,6 +14,8 @@ var ErrBudgetNotFound = errors.New("budgets: orçamento não encontrado")
 
 var ErrBudgetConflict = errors.New("budgets: conflito de orçamento")
 
+var ErrBudgetAlreadyActive = entities.ErrBudgetAlreadyActive
+
 type BudgetRepository interface {
 	GetByUserCompetence(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error)
 	CreateDraft(ctx context.Context, b entities.Budget) error

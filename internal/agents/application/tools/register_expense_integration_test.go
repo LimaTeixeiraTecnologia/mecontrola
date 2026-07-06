@@ -28,7 +28,7 @@ type stubLedger struct {
 }
 
 func (s *stubLedger) CreateTransaction(_ context.Context, _ interfaces.RawTransaction) (interfaces.EntryRef, error) {
-	return interfaces.EntryRef{ID: s.createdID, Kind: "transaction", Reconciled: false}, nil
+	return interfaces.EntryRef{ID: s.createdID, Kind: interfaces.EntryKindTransaction, Reconciled: false}, nil
 }
 
 func (s *stubLedger) UpdateTransaction(_ context.Context, _ interfaces.RawUpdateTransaction) (interfaces.EntryRef, error) {
@@ -64,14 +64,18 @@ type stubCategoriesReader struct {
 	leafID uuid.UUID
 }
 
-func (r *stubCategoriesReader) SearchDictionary(_ context.Context, _, _ string) ([]interfaces.CategoryCandidate, error) {
-	return []interfaces.CategoryCandidate{
-		{CategoryID: r.leafID, RootCategoryID: r.rootID, Path: "Alimentação > Restaurante", Score: 0.95},
+func (r *stubCategoriesReader) SearchDictionary(_ context.Context, _, _ string) (interfaces.CategorySearchResult, error) {
+	return interfaces.CategorySearchResult{
+		Outcome: interfaces.ClassifyOutcomeMatched,
+		Version: 1,
+		Candidates: []interfaces.CategoryCandidate{
+			{CategoryID: r.leafID, RootCategoryID: r.rootID, Path: "Alimentação > Restaurante", Score: 0.95, SignalType: "alias", Confidence: "high", MatchQuality: "exact", MatchReason: "alias match"},
+		},
 	}, nil
 }
 
-func (r *stubCategoriesReader) ResolveRootsBySlug(_ context.Context, _ []string) (map[string]uuid.UUID, error) {
-	return map[string]uuid.UUID{}, nil
+func (r *stubCategoriesReader) ResolveForWrite(_ context.Context, _ interfaces.CategoryWriteRequest) (interfaces.CategoryWriteDecision, error) {
+	return interfaces.CategoryWriteDecision{}, nil
 }
 
 func (r *stubCategoriesReader) ListCategories(_ context.Context, _ uuid.UUID) ([]interfaces.Category, error) {

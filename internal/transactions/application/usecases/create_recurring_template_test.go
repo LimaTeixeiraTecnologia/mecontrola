@@ -16,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	mockInterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces/mocks"
 	uowMocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type CreateRecurringTemplateSuite struct {
@@ -25,6 +26,7 @@ type CreateRecurringTemplateSuite struct {
 	factory *mockInterfaces.RepositoryFactory
 	repo    *mockInterfaces.RecurringTemplateRepository
 	catVal  *mockInterfaces.CategoryValidator
+	catGate *mockInterfaces.CategoryWriteGate
 	uow     *uowMocks.UnitOfWorkRecurringTemplate
 	useCase *CreateRecurringTemplate
 }
@@ -40,16 +42,19 @@ func (s *CreateRecurringTemplateSuite) SetupTest() {
 	s.repo = mockInterfaces.NewRecurringTemplateRepository(s.T())
 	s.factory.EXPECT().RecurringTemplateRepository(mock.Anything).Return(s.repo).Maybe()
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
+	s.catGate = mockInterfaces.NewCategoryWriteGate(s.T())
 	s.uow = uowMocks.NewUnitOfWorkRecurringTemplate(s.T())
 	s.useCase = NewCreateRecurringTemplate(
-		s.factory, s.uow, s.catVal, fake.NewProvider(),
+		s.factory, s.uow, s.catVal, s.catGate, fake.NewProvider(),
 	)
 }
 
 func (s *CreateRecurringTemplateSuite) TestExecute_Success() {
 	catID := uuid.New()
+	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Receita"}
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(nil).Once()
 
 	result, err := s.useCase.Execute(s.ctx, input.RawCreateRecurringTemplate{
@@ -58,6 +63,7 @@ func (s *CreateRecurringTemplateSuite) TestExecute_Success() {
 		AmountCents:   300000,
 		Description:   "Salário",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		Frequency:     "monthly",
 		DayOfMonth:    5,
 		StartedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -68,6 +74,23 @@ func (s *CreateRecurringTemplateSuite) TestExecute_Success() {
 	s.Equal("pix", result.PaymentMethod)
 	s.Equal(int64(300000), result.AmountCents)
 	s.Equal(5, result.DayOfMonth)
+}
+
+func (s *CreateRecurringTemplateSuite) TestExecute_IncomeWithoutSubcategory_ReturnsValidationError() {
+	catID := uuid.New()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateRecurringTemplate{
+		Direction:     "income",
+		PaymentMethod: "pix",
+		AmountCents:   300000,
+		Description:   "Salário",
+		CategoryID:    catID,
+		Frequency:     "monthly",
+		DayOfMonth:    5,
+		StartedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().ErrorIs(err, ErrTransactionRequiresSubcategory)
 }
 
 func (s *CreateRecurringTemplateSuite) TestExecute_Unauthorized() {
@@ -108,7 +131,8 @@ func (s *CreateRecurringTemplateSuite) TestExecute_InvalidStartedAt() {
 
 func (s *CreateRecurringTemplateSuite) TestExecute_CategoryValidationError() {
 	catID := uuid.New()
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).
+	subcategoryID := uuid.New()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).
 		Return(interfaces.CategorySnapshot{}, errors.New("category not found")).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateRecurringTemplate{
@@ -117,6 +141,7 @@ func (s *CreateRecurringTemplateSuite) TestExecute_CategoryValidationError() {
 		AmountCents:   300000,
 		Description:   "Salário",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		Frequency:     "monthly",
 		DayOfMonth:    5,
 		StartedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -126,8 +151,10 @@ func (s *CreateRecurringTemplateSuite) TestExecute_CategoryValidationError() {
 
 func (s *CreateRecurringTemplateSuite) TestExecute_CreateRepoError() {
 	catID := uuid.New()
+	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Receita"}
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(errors.New("db error")).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateRecurringTemplate{
@@ -136,6 +163,7 @@ func (s *CreateRecurringTemplateSuite) TestExecute_CreateRepoError() {
 		AmountCents:   300000,
 		Description:   "Salário",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		Frequency:     "monthly",
 		DayOfMonth:    5,
 		StartedAt:     time.Now().UTC().Format(time.RFC3339),

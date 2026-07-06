@@ -28,23 +28,24 @@ func TestRecurringMaterializationRepositorySuite(t *testing.T) {
 }
 
 func (s *RecurringMaterializationRepositorySuite) buildRecurringTemplate(userID uuid.UUID) *entities.RecurringTemplate {
-	dir := valueobjects.DirectionIncome
 	pm := valueobjects.PaymentMethodPix
 	amount, _ := valueobjects.NewMoney(5000)
 	desc, _ := valueobjects.NewDescription("Salário")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	freq := valueobjects.FrequencyMonthly
 	dom, _ := valueobjects.NewDayOfMonth(5)
 	inst, _ := valueobjects.NewInstallmentCount(1)
 	now := time.Now().UTC()
+	ev := incomeEvidence()
 	t := entities.NewRecurringTemplate(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
-		dir, pm,
+		valueobjects.DirectionIncome, pm,
 		option.None[valueobjects.CardID](),
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedIncomeRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Receita", "",
+		"Salário", "Décimo Terceiro",
+		ev,
 		freq, dom, inst,
 		now, option.None[time.Time](), now,
 	)

@@ -1,97 +1,66 @@
-# Core concepts — primitivos do substrato e o layering
+# Core Concepts — Substrato e Consumidor Real
 
-Situa cada primitivo Mastra no código Go real. Duas camadas: **substrato** `internal/platform/*`
-(genérico, reutilizável) e **consumidor** `internal/agents` (port weather, molde a copiar).
+Use esta referência para escolher onde uma mudança agentiva deve entrar. O código atual tem duas camadas:
 
-## Layering unidirecional (ADR-002)
+- `internal/platform/{agent,llm,memory,workflow,tool,scorer}`: substrato genérico reutilizável.
+- `internal/agents`: consumidor financeiro real `mecontrola`, integrado ao WhatsApp, módulos financeiros, onboarding, confirmação destrutiva, memory, tools e scorers.
 
+## Layering
+
+```text
+internal/agents
+  -> internal/platform/agent
+     -> internal/platform/tool
+     -> internal/platform/memory
+     -> internal/platform/scorer
+     -> internal/platform/llm
+     -> internal/platform/workflow
 ```
-consumidor (internal/agents, test/conformance/weather)
-        │
-        ▼
-internal/platform/agent ──► internal/platform/tool
-        │      │      └────► internal/platform/memory ──► internal/platform/llm (Embed)
-        │      └───────────► internal/platform/scorer ──► internal/platform/llm (Complete)
-        │
-        ├──► internal/platform/llm        (Complete | Stream | Embed via OpenRouter)
-        └──► internal/platform/workflow   (KERNEL — Engine[S], Step[S], Store, Codec)
-```
 
-Regra dura: o **kernel** `internal/platform/workflow` não importa nenhuma camada superior nem domínio
-(R-WF-KERNEL-001.1). Camadas superiores consomem o kernel; nunca o contrário.
+`internal/platform/workflow` é kernel genérico. Ele não importa `internal/agents`, módulos de domínio, `platform/agent`, `platform/memory` ou LLM. Consumidores montam `Engine[S]` com o próprio estado.
 
-## Agent — `internal/platform/agent`
+## Agent
 
-- `Agent` (`ports.go`): `ID()`, `Instructions()`, `Execute(ctx, Request) (Result, error)`,
-  `Stream(ctx, Request) (ResultStream, error)`.
-- `NewAgent(id, instructions, provider, o11y, opts...)` (`agent.go`) com `WithTools(...)` e `WithHooks(...)`.
-  `Execute` roda o loop de tool-calling (`completeWithTools`, máx. `maxToolRounds = 5`); se houver
-  `Decoder`, valida `resp.RawJSON` contra o contrato (`ErrContractNotMet`).
-- `AgentRuntime` (`runtime.go`): fronteira de inbound. `Execute(ctx, InboundRequest) (Outcome, error)`
-  resolve Thread, abre Run, monta mensagens (system+working memory+recent+user), chama `Agent.Execute`,
-  persiste turnos e fecha o Run. Único ponto que orquestra Thread→Run.
-- `AgentRegistry` (`registry.go`): `Register`/`Resolve(id)`.
-- `WorkflowRegistry[S]`/`MutableWorkflowRegistry[S]` (`registry.go`): resolve `workflow.Definition[S]` por agentId.
+- Plataforma: `agent.Agent`, `agent.AgentRuntime`, `agent.AgentRegistry`, `agent.RunStore`.
+- Consumidor: `BuildMeControlaAgent(provider, tools, hooks, o11y)`.
+- Runtime: resolve Thread, abre Run auditável, injeta WorkingMemory no system prompt, recupera `Recent(20)`, executa agente, persiste mensagens e fecha Run.
+- Hook real: `NewScoringHooks` observa input, tool calls e output de forma assíncrona.
 
-## Tool — `internal/platform/tool`
+## Tool
 
-- `ToolHandle` (`tool.go`): `ID()`, `Description()`, `Parameters()`, `Invoke(ctx, argsJSON) ([]byte, error)`.
-- `NewTool[I, O any](id, desc string, in, out llm.Schema, exec func(ctx, I) (O, error)) ToolHandle` —
-  valida o input contra o JSON Schema (lazy, `sync.Once`), faz unmarshal tipado, chama `exec`, marshal do output.
-- `Registry` (`registry.go`): `Register`/`Resolve(id)`, erro `ErrToolNotFound`.
-- A Tool é **adapter fino**: o `exec` delega a um client/usecase; sem regra/SQL/branching de domínio.
+- Plataforma: `tool.NewTool[I,O](id, desc, inSchema, outSchema, exec)`.
+- Consumidor: arquivos em `internal/agents/application/tools`.
+- Regra: tool é adapter fino. O `exec` pode ler `agent.InboundIdentityFromContext`, validar IDs, delegar para use case/interface e traduzir resultado. Não faça SQL, regra financeira complexa ou chamada direta a módulo externo dentro da tool.
+- Escritas financeiras usam idempotência e devem estar em `agent.WithWriteToolSet`.
 
-## Workflow / Step (kernel) — `internal/platform/workflow`
+## Workflow
 
-- `Step[S]` (`step.go`): `ID()`, `Execute(ctx, state S) (StepOutput[S], error)`. `StepOutput[S]` carrega
-  `State`, `Status` (`StepStatus`) e `*Suspension`. Helper `NewStepFunc[S](id, fn)`.
-- `Definition[S]` (`engine.go`): `ID`, `Root Step[S]`, `Durable bool`, `MaxAttempts int`.
-- `Engine[S]` (`engine.go`): `Start(ctx, def, key, initial) (RunResult[S], error)` e
-  `Resume(ctx, def, key, resume []byte)`. `NewEngine[S](store, o11y)`. Durável → `Snapshot`+`StepRecord`
-  no `Store`; CAS por `Version` (`ErrVersionConflict`/`ErrRunConflict`); `ErrRunAlreadyExists` se já há run ativo.
-- Combinators (`combinators.go`): `Sequence`, `Branch`, `Parallel(merge,...)`, `Retry(step, RetryPolicy)`.
-- `Codec[S]` (`codec.go`): `Encode`/`Decode` JSON e `MergePatch(base, patch)` (RFC 7386 — `null` remove chave,
-  arrays substituídos). O resume aplica o patch sobre `Snapshot.State` — nunca substitui o estado inteiro.
+- Plataforma: `workflow.Engine[S]`, `Definition[S]`, `Step[S]`, `Sequence`, `Branch`, `Parallel`, `Retry`, `MergePatch`.
+- Consumidor real:
+  - `BuildOnboardingWorkflow`: coleta objetivo, renda, cartões, distribuição e grava WorkingMemory.
+  - `BuildDestructiveConfirmWorkflow`: suspende operações destrutivas ou sensíveis e retoma com confirmação.
+- Use workflow quando o fluxo é definido, multi-step, retomável ou precisa de suspensão. Use agent quando a decisão de ferramenta é aberta.
 
-## Memory — `internal/platform/memory`
+## Memory e Recall
 
-- `ThreadGateway.GetOrCreate(ctx, resourceID, threadID) (Thread, error)` — identidade opaca `(resourceId, threadId)`.
-- `MessageStore.Append`/`Recent(ctx, threadPK, limit)` — turnos por thread; janela configurável (runtime usa 20).
-- `WorkingMemory.Get`/`Upsert(ctx, resourceID, content)` — markdown por `resourceId`, injetado no system prompt.
-- `SemanticRecall.Index`/`Recall(ctx, resourceID, query, embedding, k)` — RAG via pgvector.
-- `MessageRole` (`types.go`): `RoleUser`/`RoleAssistant`/`RoleTool`/`RoleSystem` (tipo fechado).
-- Indexação assíncrona: `NewPublishingMessageStore` publica `IndexMessagePayload` (evento
-  `EventTypeEmbeddingIndex`); `infrastructure/indexer.EmbeddingIndexHandler` consome, gera embedding via
-  `llm.Embed` e chama `SemanticRecall.Index`. Idempotência por `event_id` do outbox.
+- `ThreadGateway.GetOrCreate(resourceID, threadID)`: identidade opaca.
+- `MessageStore.Append/Recent`: histórico por thread.
+- `WorkingMemory.Get/Upsert`: memória persistida por resource; o runtime injeta no prompt.
+- `SemanticRecall.Index/Recall`: pgvector via embeddings; o `PublishingMessageStore` publica evento para indexação assíncrona quando há outbox.
 
-## Scorer / Evals — `internal/platform/scorer`
+## Scorer / Evals
 
-- `Scorer` (`scorer.go`): `ID()`, `Kind() ScorerKind`, `Score(ctx, RunSample) (ScoreResult, error)`.
-- Code-based (`code_based.go`): `NewToolCallAccuracyScorer(id, expectedTools)`, `NewCompletenessScorer(id, fields)`.
-- LLM-judged (`llm_judged.go`): `NewLLMJudgedScorer(id, provider, instructions)` — usa `judgeContract`
-  com `llm.Schema` strict (score 0..1 + reason).
-- `ScorerRunner` (`runner.go`): `Observe(ctx, runID, RunSample)` assíncrono (pool de workers), `Shutdown`.
-  Persiste `ScorerResult` via `ResultStore`. Sampling: `AlwaysSample`/`NeverSample`/`RatioSample`.
+- Plataforma: `Scorer`, `ScorerRunner`, `ScorerEntry`, sampling e `ResultStore`.
+- Consumidor real: `BuildMeControlaScorers(provider)` registra tool-call accuracy financeiro, completeness por keywords e categorization LLM-judged.
+- Scoring é best-effort e assíncrono; não deve bloquear o caminho principal.
 
-## LLM Provider — `internal/platform/llm`
+## LLM e Structured Output
 
-- `Provider` (`provider.go`): `Slug()`, `Complete(ctx, Request) (Response, error)`,
-  `Stream(ctx, Request) (TokenStream, error)`, `Embed(ctx, texts) ([][]float32, error)`.
-- OpenRouter é o **único** provider oficial (`NewOpenRouterProvider`, `openrouter.go`). Não há mais
-  FallbackChain nem CircuitBreaker.
-- `Request`/`Response`/`Schema`/`StructuredContract[T]`/`ToolSpec`/`ToolCall` em `types.go`.
+- `llm.Provider` expõe `Complete`, `Stream` e `Embed`.
+- OpenRouter é o provider oficial local.
+- Structured output usa `llm.Schema`, `llm.StructuredContract[T]` e `agent.NewDecoder[T]`.
+- LLM só aparece nas call-sites sancionadas: agent loop, step consumidor que chama `Stream`/`Complete`, embeddings/indexer e scorer LLM-judged. Nunca no kernel.
 
-## Run auditável — `internal/platform/agent`
+## Fonte de Verdade
 
-- `Run` (`ports.go`): `ID`, `ThreadPK`, `ResourceID`, `ThreadID`, `AgentID`, `Status` (`RunStatus`),
-  `Outcome` (`ToolOutcome`), `Error`, `StartedAt`, `EndedAt`, `DurationMs`.
-- `RunStore`: `Insert`/`Update`/`Load`. Persistência em `agent/infrastructure/postgres/run_store.go`
-  (tabela `platform_runs`).
-
-## Structured output — `internal/platform/agent` + `internal/platform/llm`
-
-- `StructuredDecoder` (`decoder.go`): `Schema()` + `Validate(raw)`. `NewDecoder[T](StructuredContract[T])`.
-- Sync: `Agent.Execute` valida no fim (`ErrContractNotMet`). Stream: validação na **conclusão** do stream
-  (ADR-003), nunca durante.
-
-Ver as referências específicas por tarefa no `INDEX.yaml`.
+Verifique assinaturas no código antes de implementar. Esta referência orienta o mapa; o working tree decide nomes, construtores e campos atuais.

@@ -27,6 +27,7 @@ type CreateTransaction struct {
 	uow               uow.UnitOfWork
 	cardLookup        interfaces.CardLookup
 	categoryValidator interfaces.CategoryValidator
+	categoryGate      interfaces.CategoryWriteGate
 	workflow          services.TransactionWorkflow
 	publisher         interfaces.TransactionEventPublisher
 	o11y              observability.Observability
@@ -37,6 +38,7 @@ func NewCreateTransaction(
 	u uow.UnitOfWork,
 	cardLookup interfaces.CardLookup,
 	categoryValidator interfaces.CategoryValidator,
+	categoryGate interfaces.CategoryWriteGate,
 	workflow services.TransactionWorkflow,
 	publisher interfaces.TransactionEventPublisher,
 	o11y observability.Observability,
@@ -46,6 +48,7 @@ func NewCreateTransaction(
 		uow:               u,
 		cardLookup:        cardLookup,
 		categoryValidator: categoryValidator,
+		categoryGate:      categoryGate,
 		workflow:          workflow,
 		publisher:         publisher,
 		o11y:              o11y,
@@ -124,18 +127,31 @@ func (uc *CreateTransaction) prepareDecision(
 		return services.TransactionDecision{}, valueobjects.CardBillingSnapshot{}, uuid.Nil, lookupErr
 	}
 
+	evidence, gateErr := uc.approveCategory(ctx, raw, cmd.Direction.String(), cmd.CategoryID.UUID(), catSubID)
+	if gateErr != nil {
+		return services.TransactionDecision{}, valueobjects.CardBillingSnapshot{}, uuid.Nil, gateErr
+	}
+
 	txID := uuid.New()
 	eventID := uuid.New()
 	now := time.Now().UTC()
 
 	itemIDs := newInvoiceItemIDs(cmd.PaymentMethod, cmd.Installments)
-	decision := uc.workflow.DecideCreate(cmd, snap, valueobjects.CategoryWriteEvidence{}, txID, eventID, itemIDs, now)
+	decision := uc.workflow.DecideCreate(cmd, snap, evidence, txID, eventID, itemIDs, now)
 	decision.Transaction.SetCategorySnapshots(catSnap.Name, snapSubName(catSubID, catSnap))
 	if raw.OriginWamid != "" {
 		decision.Transaction.SetOrigin(raw.OriginWamid, raw.OriginItemSeq, raw.OriginOperation)
 	}
 
 	return decision, billing, cardUUID, nil
+}
+
+func (uc *CreateTransaction) approveCategory(ctx context.Context, raw input.RawCreateTransaction, direction string, rootID uuid.UUID, subID *uuid.UUID) (valueobjects.CategoryWriteEvidence, error) {
+	evidence, err := approveUpdateCategory(ctx, uc.categoryGate, evidenceFromRawCreate(raw), direction, "create_transaction", rootID, subID)
+	if err != nil {
+		return valueobjects.CategoryWriteEvidence{}, fmt.Errorf("transactions/create_transaction: gate de categoria: %w", err)
+	}
+	return evidence, nil
 }
 
 func (uc *CreateTransaction) resolveBilling(

@@ -37,9 +37,10 @@ func (s *TransactionSearchSuite) newTransactionWithDescription(userID uuid.UUID,
 		valueobjects.DirectionOutcome,
 		valueobjects.PaymentMethodPix,
 		amount, d,
-		valueobjects.CategoryIDFromUUID(uuid.New()),
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Custo Fixo", "",
+		"Custo Fixo", "Aluguel",
+		expenseEvidence(),
 		rm, now, now,
 	)
 	return &tx

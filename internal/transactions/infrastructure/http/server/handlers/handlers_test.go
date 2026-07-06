@@ -136,7 +136,7 @@ func (s *HandlersSuite) TestCreateTransaction_OutcomeWithoutSubcategory() {
 	uc := new(mockCreateTransactionUC)
 	h := handlers.NewCreateTransactionHandler(uc, s.o11y)
 
-	uc.On("Execute", mock.Anything, mock.Anything).Return(dtooutput.Transaction{}, usecases.ErrOutcomeTransactionRequiresSubcategory)
+	uc.On("Execute", mock.Anything, mock.Anything).Return(dtooutput.Transaction{}, usecases.ErrTransactionRequiresSubcategory)
 	body, _ := json.Marshal(dtoinput.RawCreateTransaction{})
 	req := s.withPrincipal(httptest.NewRequest(http.MethodPost, "/api/v1/transactions", bytes.NewReader(body)))
 	rec := httptest.NewRecorder()

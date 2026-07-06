@@ -27,5 +27,8 @@ func (i *InboundInput) Validate() error {
 	if i.Message == "" {
 		errs = append(errs, fmt.Errorf("message: required"))
 	}
+	if i.MessageID == "" {
+		errs = append(errs, fmt.Errorf("message_id: required"))
+	}
 	return errors.Join(errs...)
 }

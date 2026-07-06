@@ -791,23 +791,38 @@ SET LOCAL lock_timeout    = '5s';
 SET LOCAL statement_timeout = '120s';
 
 CREATE TABLE IF NOT EXISTS mecontrola.transactions (
-    id                          UUID        NOT NULL,
-    user_id                     UUID        NOT NULL,
-    direction                   SMALLINT    NOT NULL,
-    payment_method              SMALLINT    NOT NULL,
-    amount_cents                BIGINT      NOT NULL CONSTRAINT transactions_amount_cents_chk CHECK (amount_cents > 0),
-    description                 TEXT        NOT NULL,
-    category_id                 UUID        NOT NULL,
-    subcategory_id              UUID        NULL,
-    category_name_snapshot      TEXT        NOT NULL,
-    subcategory_name_snapshot   TEXT        NULL,
-    ref_month                   TEXT     NOT NULL CONSTRAINT transactions_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
-    occurred_at                 TIMESTAMPTZ NOT NULL,
-    version                     BIGINT      NOT NULL DEFAULT 1,
-    deleted_at                  TIMESTAMPTZ NULL,
-    created_at                  TIMESTAMPTZ NOT NULL,
-    updated_at                  TIMESTAMPTZ NOT NULL,
-    CONSTRAINT transactions_pkey PRIMARY KEY (id)
+    id                          UUID         NOT NULL,
+    user_id                     UUID         NOT NULL,
+    direction                   SMALLINT     NOT NULL CONSTRAINT transactions_direction_chk CHECK (direction IN (1,2)),
+    payment_method              SMALLINT     NOT NULL,
+    amount_cents                BIGINT       NOT NULL CONSTRAINT transactions_amount_cents_chk CHECK (amount_cents > 0),
+    description                 TEXT         NOT NULL,
+    category_id                 UUID         NOT NULL,
+    subcategory_id              UUID         NOT NULL,
+    category_name_snapshot      TEXT         NOT NULL CONSTRAINT transactions_category_name_snapshot_chk CHECK (length(category_name_snapshot) > 0),
+    subcategory_name_snapshot   TEXT         NOT NULL CONSTRAINT transactions_subcategory_name_snapshot_chk CHECK (length(subcategory_name_snapshot) > 0),
+    category_kind               TEXT         NOT NULL CONSTRAINT transactions_category_kind_chk CHECK (category_kind IN ('expense','income')),
+    category_path               TEXT         NOT NULL CONSTRAINT transactions_category_path_chk CHECK (length(category_path) > 0),
+    category_outcome            TEXT         NOT NULL CONSTRAINT transactions_category_outcome_chk CHECK (category_outcome = 'matched'),
+    category_score              NUMERIC(5,4) NOT NULL CONSTRAINT transactions_category_score_chk CHECK (category_score >= 0 AND category_score <= 1),
+    category_confidence         TEXT         NOT NULL CONSTRAINT transactions_category_confidence_chk CHECK (category_confidence IN ('high','medium','low','manual_confirmed')),
+    category_match_quality      TEXT         NOT NULL CONSTRAINT transactions_category_match_quality_chk CHECK (category_match_quality IN ('exact','token','fuzzy','manual_canonical')),
+    category_signal_type        TEXT         NOT NULL CONSTRAINT transactions_category_signal_type_chk CHECK (category_signal_type IN ('canonical_name','alias','phrase','merchant','segment','manual_canonical')),
+    category_matched_term       TEXT         NOT NULL CONSTRAINT transactions_category_matched_term_chk CHECK (length(category_matched_term) > 0),
+    category_match_reason       TEXT         NOT NULL CONSTRAINT transactions_category_match_reason_chk CHECK (length(category_match_reason) > 0),
+    category_decision_source    TEXT         NOT NULL CONSTRAINT transactions_category_decision_source_chk CHECK (category_decision_source IN ('auto_matched','user_selected_candidate','manual_canonical_id','system_migration')),
+    category_editorial_version  BIGINT       NOT NULL CONSTRAINT transactions_category_editorial_version_chk CHECK (category_editorial_version > 0),
+    category_decided_at         TIMESTAMPTZ  NOT NULL,
+    ref_month                   TEXT         NOT NULL CONSTRAINT transactions_ref_month_chk CHECK (ref_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+    occurred_at                 TIMESTAMPTZ  NOT NULL,
+    version                     BIGINT       NOT NULL DEFAULT 1,
+    deleted_at                  TIMESTAMPTZ  NULL,
+    created_at                  TIMESTAMPTZ  NOT NULL,
+    updated_at                  TIMESTAMPTZ  NOT NULL,
+    CONSTRAINT transactions_pkey PRIMARY KEY (id),
+    CONSTRAINT transactions_subcategory_ne_category_chk CHECK (subcategory_id <> category_id),
+    CONSTRAINT transactions_category_fk FOREIGN KEY (category_id) REFERENCES mecontrola.categories(id) ON DELETE RESTRICT,
+    CONSTRAINT transactions_subcategory_fk FOREIGN KEY (subcategory_id) REFERENCES mecontrola.categories(id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS transactions_user_month_idx
@@ -881,36 +896,111 @@ CREATE INDEX IF NOT EXISTS transactions_card_invoice_items_user_month_idx
     WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS mecontrola.transactions_recurring_templates (
-    id                          UUID        NOT NULL,
-    user_id                     UUID        NOT NULL,
-    direction                   SMALLINT    NOT NULL,
-    payment_method              SMALLINT    NOT NULL,
-    card_id                     UUID        NULL,
-    amount_cents                BIGINT      NOT NULL CONSTRAINT transactions_rt_amount_cents_chk CHECK (amount_cents > 0),
-    description                 TEXT        NOT NULL,
-    category_id                 UUID        NOT NULL,
-    subcategory_id              UUID        NULL,
-    category_name_snapshot      TEXT        NOT NULL,
-    subcategory_name_snapshot   TEXT        NULL,
-    frequency                   SMALLINT    NOT NULL,
-    day_of_month                SMALLINT    NOT NULL CONSTRAINT transactions_rt_day_of_month_chk CHECK (day_of_month BETWEEN 1 AND 28),
-    installments_total          SMALLINT    NOT NULL DEFAULT 1 CONSTRAINT transactions_rt_installments_chk CHECK (installments_total BETWEEN 1 AND 24),
-    started_at                  TIMESTAMPTZ NOT NULL,
-    ended_at                    TIMESTAMPTZ NULL,
-    version                     BIGINT      NOT NULL DEFAULT 1,
-    deleted_at                  TIMESTAMPTZ NULL,
-    created_at                  TIMESTAMPTZ NOT NULL,
-    updated_at                  TIMESTAMPTZ NOT NULL,
+    id                          UUID         NOT NULL,
+    user_id                     UUID         NOT NULL,
+    direction                   SMALLINT     NOT NULL CONSTRAINT transactions_rt_direction_chk CHECK (direction IN (1,2)),
+    payment_method              SMALLINT     NOT NULL,
+    card_id                     UUID         NULL,
+    amount_cents                BIGINT       NOT NULL CONSTRAINT transactions_rt_amount_cents_chk CHECK (amount_cents > 0),
+    description                 TEXT         NOT NULL,
+    category_id                 UUID         NOT NULL,
+    subcategory_id              UUID         NOT NULL,
+    category_name_snapshot      TEXT         NOT NULL CONSTRAINT transactions_rt_category_name_snapshot_chk CHECK (length(category_name_snapshot) > 0),
+    subcategory_name_snapshot   TEXT         NOT NULL CONSTRAINT transactions_rt_subcategory_name_snapshot_chk CHECK (length(subcategory_name_snapshot) > 0),
+    category_kind               TEXT         NOT NULL CONSTRAINT transactions_rt_category_kind_chk CHECK (category_kind IN ('expense','income')),
+    category_path               TEXT         NOT NULL CONSTRAINT transactions_rt_category_path_chk CHECK (length(category_path) > 0),
+    category_outcome            TEXT         NOT NULL CONSTRAINT transactions_rt_category_outcome_chk CHECK (category_outcome = 'matched'),
+    category_score              NUMERIC(5,4) NOT NULL CONSTRAINT transactions_rt_category_score_chk CHECK (category_score >= 0 AND category_score <= 1),
+    category_confidence         TEXT         NOT NULL CONSTRAINT transactions_rt_category_confidence_chk CHECK (category_confidence IN ('high','medium','low','manual_confirmed')),
+    category_match_quality      TEXT         NOT NULL CONSTRAINT transactions_rt_category_match_quality_chk CHECK (category_match_quality IN ('exact','token','fuzzy','manual_canonical')),
+    category_signal_type        TEXT         NOT NULL CONSTRAINT transactions_rt_category_signal_type_chk CHECK (category_signal_type IN ('canonical_name','alias','phrase','merchant','segment','manual_canonical')),
+    category_matched_term       TEXT         NOT NULL CONSTRAINT transactions_rt_category_matched_term_chk CHECK (length(category_matched_term) > 0),
+    category_match_reason       TEXT         NOT NULL CONSTRAINT transactions_rt_category_match_reason_chk CHECK (length(category_match_reason) > 0),
+    category_decision_source    TEXT         NOT NULL CONSTRAINT transactions_rt_category_decision_source_chk CHECK (category_decision_source IN ('auto_matched','user_selected_candidate','manual_canonical_id','system_migration')),
+    category_editorial_version  BIGINT       NOT NULL CONSTRAINT transactions_rt_category_editorial_version_chk CHECK (category_editorial_version > 0),
+    category_decided_at         TIMESTAMPTZ  NOT NULL,
+    frequency                   SMALLINT     NOT NULL,
+    day_of_month                SMALLINT     NOT NULL CONSTRAINT transactions_rt_day_of_month_chk CHECK (day_of_month BETWEEN 1 AND 28),
+    installments_total          SMALLINT     NOT NULL DEFAULT 1 CONSTRAINT transactions_rt_installments_chk CHECK (installments_total BETWEEN 1 AND 24),
+    started_at                  TIMESTAMPTZ  NOT NULL,
+    ended_at                    TIMESTAMPTZ  NULL,
+    version                     BIGINT       NOT NULL DEFAULT 1,
+    deleted_at                  TIMESTAMPTZ  NULL,
+    created_at                  TIMESTAMPTZ  NOT NULL,
+    updated_at                  TIMESTAMPTZ  NOT NULL,
     CONSTRAINT transactions_recurring_templates_pkey        PRIMARY KEY (id),
     CONSTRAINT transactions_recurring_templates_credit_chk
         CHECK ((payment_method <> 7) OR (card_id IS NOT NULL)),
     CONSTRAINT transactions_recurring_templates_card_fk
-        FOREIGN KEY (card_id) REFERENCES mecontrola.cards(id) ON DELETE RESTRICT
+        FOREIGN KEY (card_id) REFERENCES mecontrola.cards(id) ON DELETE RESTRICT,
+    CONSTRAINT transactions_rt_subcategory_ne_category_chk CHECK (subcategory_id <> category_id),
+    CONSTRAINT transactions_rt_category_fk FOREIGN KEY (category_id) REFERENCES mecontrola.categories(id) ON DELETE RESTRICT,
+    CONSTRAINT transactions_rt_subcategory_fk FOREIGN KEY (subcategory_id) REFERENCES mecontrola.categories(id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS transactions_recurring_templates_user_day_idx
     ON mecontrola.transactions_recurring_templates (user_id, day_of_month)
     WHERE deleted_at IS NULL;
+
+CREATE OR REPLACE FUNCTION mecontrola.validate_category_write_gate()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_root    mecontrola.categories%ROWTYPE;
+    v_leaf    mecontrola.categories%ROWTYPE;
+    v_version BIGINT;
+BEGIN
+    SELECT * INTO v_root FROM mecontrola.categories WHERE id = NEW.category_id;
+    IF NOT FOUND OR v_root.parent_id IS NOT NULL THEN
+        RAISE EXCEPTION 'category_must_be_root: category_id=% is not a root category', NEW.category_id;
+    END IF;
+
+    SELECT * INTO v_leaf FROM mecontrola.categories WHERE id = NEW.subcategory_id;
+    IF NOT FOUND OR v_leaf.parent_id IS DISTINCT FROM NEW.category_id THEN
+        RAISE EXCEPTION 'subcategory_must_be_direct_leaf: subcategory_id=% is not direct child of category_id=%', NEW.subcategory_id, NEW.category_id;
+    END IF;
+
+    IF v_root.kind <> v_leaf.kind THEN
+        RAISE EXCEPTION 'category_kind_mismatch: root kind=% leaf kind=%', v_root.kind, v_leaf.kind;
+    END IF;
+
+    IF NEW.direction = 1 AND v_root.kind <> 'income' THEN
+        RAISE EXCEPTION 'category_direction_kind_mismatch: direction=income requires kind=income got=%', v_root.kind;
+    END IF;
+
+    IF NEW.direction = 2 AND v_root.kind <> 'expense' THEN
+        RAISE EXCEPTION 'category_direction_kind_mismatch: direction=expense requires kind=expense got=%', v_root.kind;
+    END IF;
+
+    IF v_root.deprecated_at IS NOT NULL THEN
+        RAISE EXCEPTION 'root_category_deprecated: category_id=%', NEW.category_id;
+    END IF;
+
+    IF v_leaf.deprecated_at IS NOT NULL THEN
+        RAISE EXCEPTION 'leaf_category_deprecated: subcategory_id=%', NEW.subcategory_id;
+    END IF;
+
+    IF NEW.category_kind <> v_root.kind THEN
+        RAISE EXCEPTION 'category_kind_column_drift: persisted=% real=%', NEW.category_kind, v_root.kind;
+    END IF;
+
+    SELECT version INTO v_version FROM mecontrola.category_editorial_version;
+    IF NEW.category_editorial_version <> v_version THEN
+        RAISE EXCEPTION 'category_editorial_version_drift: persisted=% current=%', NEW.category_editorial_version, v_version;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER transactions_category_write_gate_trg
+    BEFORE INSERT OR UPDATE ON mecontrola.transactions
+    FOR EACH ROW EXECUTE FUNCTION mecontrola.validate_category_write_gate();
+
+CREATE TRIGGER transactions_recurring_templates_category_write_gate_trg
+    BEFORE INSERT OR UPDATE ON mecontrola.transactions_recurring_templates
+    FOR EACH ROW EXECUTE FUNCTION mecontrola.validate_category_write_gate();
 
 CREATE TABLE IF NOT EXISTS mecontrola.transactions_recurring_materializations (
     template_id                 UUID        NOT NULL REFERENCES mecontrola.transactions_recurring_templates(id),

@@ -153,22 +153,32 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 }
 
 func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID uuid.UUID, in InboundRequest, result Result, start time.Time) Outcome {
-	_ = r.messages.Append(ctx, platformThreadID, memory.Message{
+	if err := r.messages.Append(ctx, platformThreadID, memory.Message{
 		ID:               uuid.New(),
 		PlatformThreadID: platformThreadID,
 		ResourceID:       in.ResourceID,
 		Role:             memory.RoleUser,
 		Content:          in.Message,
 		CreatedAt:        time.Now().UTC(),
-	})
-	_ = r.messages.Append(ctx, platformThreadID, memory.Message{
+	}); err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.runtime.finish_run: append user message falhou",
+			observability.String("agent_id", in.AgentID),
+			observability.Error(err),
+		)
+	}
+	if err := r.messages.Append(ctx, platformThreadID, memory.Message{
 		ID:               uuid.New(),
 		PlatformThreadID: platformThreadID,
 		ResourceID:       in.ResourceID,
 		Role:             memory.RoleAssistant,
 		Content:          result.Content,
 		CreatedAt:        time.Now().UTC(),
-	})
+	}); err != nil {
+		r.o11y.Logger().Warn(ctx, "agent.runtime.finish_run: append assistant message falhou",
+			observability.String("agent_id", in.AgentID),
+			observability.Error(err),
+		)
+	}
 
 	toolOutcome := ToolOutcomeRouted
 	if result.ToolOutcome == ToolOutcomeUsecaseError {

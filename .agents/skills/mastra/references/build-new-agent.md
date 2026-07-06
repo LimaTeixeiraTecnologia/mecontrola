@@ -1,154 +1,145 @@
-# Construir um novo agente (molde `internal/agents`)
+# Construir ou Estender Consumidor Agentivo
 
-Receita para criar um agente novo igual ao consumidor de referência `internal/agents` (port weather),
-montando os primitivos de `internal/platform/*`. Carregar `go-implementation` antes de qualquer `.go`.
+Use `internal/agents` como molde real. Ele é o consumidor financeiro `mecontrola`, não um exemplo histórico externo. Crie comportamento novo montando primitivos do substrato e preservando DI manual explícita.
 
-## Estrutura de pastas (espelhe `internal/agents`)
+## Estrutura Real
 
-```
-internal/<modulo>/
-  domain/                          tipos puros, sem IO (ex.: forecast.go, weather_condition.go + *_test.go)
+```text
+internal/agents/
   application/
-    agents/    agent.go            BuildXAgent (+ scoring_hooks.go se houver evals)
-    tools/     tool.go             BuildXTool (NewTool[I,O])
-    workflows/ workflow.go         BuildXWorkflow (Definition[S] durável) — opcional
-    scorers/   scorers.go          BuildXScorers — opcional
-    usecases/  handle_inbound.go   fronteira fina sobre AgentRuntime
-    dtos/input/                    InboundInput com Validate()
+    agents/       BuildMeControlaAgent, scoring hooks
+    tools/        BuildXTool com tool.NewTool[I,O]
+    workflows/    onboarding e confirmação destrutiva
+    scorers/      BuildMeControlaScorers
+    usecases/     HandleInbound, onboarding resolver, idempotent write
+    interfaces/   portas consumidas pelas tools/use cases
+    dtos/input/   input DTOs com Validate()
   infrastructure/
-    <client>/                      clients externos (ex.: weather/client.go)
-    messaging/database/consumers/  consumer do evento de entrada
-  module.go                        DI manual (NewModule)
+    binding/      adapters para módulos financeiros
+    messaging/database/consumers/
+    jobs/handlers/
+    persistence/
+  module.go       composition root
 ```
 
-## 1. Tool (`application/tools/tool.go`)
+Para outro consumidor, replique o padrão de camadas e DI, mas não copie dependências financeiras que não existam no novo contexto.
 
-`NewTool[I, O]` gera o `ToolHandle`. Schemas `llm.Schema` strict; `exec` é adapter fino que delega ao client.
+## Tool Financeira
+
+Modelo real: `BuildRegisterExpenseTool`.
 
 ```go
-func BuildWeatherTool(client weather.Client) tool.ToolHandle {
-    in := llm.Schema{Name: "weather_tool_input", Strict: true, Schema: map[string]any{ ... }}
-    out := llm.Schema{Name: "weather_tool_output", Strict: true, Schema: map[string]any{ ... }}
-    exec := func(ctx context.Context, in WeatherInput) (WeatherOutput, error) {
-        lat, lon, name, err := client.Geocode(ctx, in.Location)
-        if err != nil {
-            return WeatherOutput{}, fmt.Errorf("agents.tool.get_weather: geocode: %w", err)
-        }
-        forecast, err := client.Forecast(ctx, lat, lon)
-        if err != nil {
-            return WeatherOutput{}, fmt.Errorf("agents.tool.get_weather: forecast: %w", err)
-        }
-        return WeatherOutput{ ... Conditions: forecast.Condition.String(), Location: name}, nil
-    }
-    return tool.NewTool[WeatherInput, WeatherOutput]("get-weather", "Get current weather for a location", in, out, exec)
+func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
+    in := llm.Schema{Name: "register_expense_input", Strict: true, Schema: map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "amountCents": map[string]any{"type": "integer"},
+            "description": map[string]any{"type": "string"},
+            "paymentMethod": map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "credit_card"}},
+        },
+        "required": []string{"amountCents", "description", "paymentMethod"},
+        "additionalProperties": false,
+    }}
+    out := llm.Schema{Name: "register_expense_output", Strict: true, Schema: map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "resourceId": map[string]any{"type": "string"},
+            "kind": map[string]any{"type": "string"},
+            "isReplay": map[string]any{"type": "boolean"},
+            "outcome": map[string]any{"type": "string"},
+        },
+        "required": []string{"resourceId", "kind", "isReplay", "outcome"},
+        "additionalProperties": false,
+    }}
+    return tool.NewTool[RegisterExpenseInput, RegisterExpenseOutput]("register_expense", "Registra uma despesa no ledger financeiro do usuário.", in, out, buildRegisterExpenseExec(registrar))
 }
 ```
 
-Regra: zero regra de negócio, SQL ou branching de domínio na tool (R-ADAPTER-001.2). Cálculo puro fica em `domain/`.
+Regras obrigatórias:
 
-## 2. Agent (`application/agents/agent.go`)
+- Use schema estrito e descrição curta, focada no uso correto pelo agente.
+- Delegue para use case ou interface da aplicação.
+- Para escrita, leia `agent.InboundIdentityFromContext(ctx)` e preserve idempotência.
+- Traduza erro com contexto e `%w`.
+- Registre tools de escrita no `agent.WithWriteToolSet`.
+
+## Agent
+
+Modelo real: `BuildMeControlaAgent`.
 
 ```go
-func BuildWeatherAgent(provider llm.Provider, weatherTool tool.ToolHandle, hooks agent.Hooks, o11y observability.Observability) agent.Agent {
-    opts := []agent.AgentOption{agent.WithTools(weatherTool)}
+func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks agent.Hooks, o11y observability.Observability) agent.Agent {
+    opts := []agent.AgentOption{
+        agent.WithMaxToolRounds(12),
+        agent.WithDefaultMaxTokens(1536),
+    }
+    if len(tools) > 0 {
+        opts = append(opts, agent.WithTools(tools...))
+    }
     if hooks != nil {
         opts = append(opts, agent.WithHooks(hooks))
     }
-    return agent.NewAgent(weatherAgentID, weatherAgentInstructions, provider, o11y, opts...)
+    return agent.NewAgent(MecontrolaAgentID, mecontrolaAgentInstructions, provider, o11y, opts...)
 }
 ```
 
-As `instructions` são o system prompt base; o runtime concatena WorkingMemory automaticamente.
+Atualize instructions com extremo cuidado: elas são contrato de comportamento para WhatsApp, seleção determinística de ferramentas, idioma, confirmação e anti-simulação.
 
-## 3. Usecase de inbound (`application/usecases/handle_inbound.go`)
+## Workflows do Consumidor
 
-Fronteira fina: abre span, valida o input DTO (R-DTO-VALIDATE-001) e delega ao `AgentRuntime`.
+Use o kernel para fluxos definidos e retomáveis:
 
-```go
-func (uc *HandleInbound) Execute(ctx context.Context, in input.InboundInput) (agent.Outcome, error) {
-    ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.handle_inbound")
-    defer span.End()
-    if err := in.Validate(); err != nil {
-        return agent.Outcome{}, err
-    }
-    outcome, err := uc.runtime.Execute(ctx, agent.InboundRequest{
-        ResourceID: in.ResourceID, ThreadID: in.ThreadID, AgentID: in.AgentID,
-        Message: in.Message, MessageID: in.MessageID,
-    })
-    if err != nil {
-        span.RecordError(err)
-        return agent.Outcome{}, fmt.Errorf("agents.usecase.handle_inbound: %w", err)
-    }
-    return outcome, nil
-}
+- Onboarding: `BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore)`.
+- Confirmação destrutiva: `BuildDestructiveConfirmWorkflow(txLedger, cardManager, categoriesReader, recurrenceManager)`.
+
+Não implemente confirmação destrutiva no prompt, handler ou consumer. A tool inicia/sinaliza workflow; o consumer retoma com `Resume` e merge-patch de `resumeText`.
+
+## Wiring Real em `module.go`
+
+Sequência mandatória para `internal/agents`:
+
+```text
+validar deps
+-> httpclient.NewClient(target=openrouter)
+-> llm.NewOpenRouterProvider
+-> scorerpostgres.NewResultStore
+-> agentscorers.BuildMeControlaScorers
+-> scorer.NewScorerRunner
+-> agentapplication.NewScoringHooks
+-> persistence.NewWriteLedgerRepository
+-> usecases.NewIdempotentWrite
+-> binding.New*Adapter para categories/card/budgets/transactions/recurrences
+-> usecases.NewRegisterEntry
+-> workflowpostgres.NewPostgresStore
+-> workflow.NewEngine[OnboardingState]
+-> workflow.NewEngine[ConfirmState]
+-> memorypostgres repositories
+-> BuildMeControlaAgent sem tools para onboarding
+-> BuildDestructiveConfirmWorkflow
+-> buildFinancialTools
+-> BuildMeControlaAgent com tools financeiras
+-> agent.NewAgentRegistry().Register(meControlaAgent)
+-> memory.NewPublishingMessageStore + EmbeddingIndexHandler quando houver outbox
+-> BuildOnboardingWorkflow
+-> agentpostgres.NewRunStore
+-> agent.NewAgentRuntime(..., agent.WithWriteToolSet(...))
+-> usecases.NewHandleInbound
+-> onboarding/destructive resolvers
+-> WhatsApp consumer e route quando houver outbox + gateway
 ```
 
-## 4. Wiring (`module.go` — `NewModule`)
+Antes de adicionar dependência ao `Deps`, confirme que o módulo/provedor/use case existe. Não crie placeholders para satisfazer wiring.
 
-Sequência real do consumidor (`internal/agents/module.go`):
+## Scorers
 
-```go
-provider := llm.NewOpenRouterProvider(httpClient, llm.Config{Model, EmbedModel, APIKey, BaseURL, MaxTokens, Temperature}, o11y)
+Use `BuildMeControlaScorers(provider)` como padrão:
 
-scorerResultStore := scorerpostgres.NewResultStore(db)
-scorerEntries := agentscorers.BuildWeatherScorers(provider)
-scorerRunner := scorer.NewScorerRunner(scorerEntries, scorerResultStore, o11y)
-scoringHooks := agentapplication.NewScoringHooks(scorerRunner)
+- `NewFinancialToolCallAccuracyScorer`: exige ao menos uma tool financeira quando aplicável.
+- `NewFinancialCompletenessScorer`: mede presença de linguagem financeira esperada.
+- `NewCategorizationScorer`: LLM-judged com JSON estruturado.
 
-weatherTool := agenttools.BuildWeatherTool(deps.WeatherClient)
-weatherAgent := agentapplication.BuildWeatherAgent(provider, weatherTool, scoringHooks, o11y)
+Conecte via `NewScoringHooks(scorerRunner)` e chame `Module.Shutdown(ctx)` para drenar workers.
 
-registry := agent.NewAgentRegistry()
-registry.Register(weatherAgent)
+## Persistência
 
-threadGateway := memorypostgres.NewThreadRepository(db, o11y)
-rawMessageStore := memorypostgres.NewMessageRepository(db, o11y)
-workingMem := memorypostgres.NewWorkingMemoryRepository(db, o11y)
-semanticRecall := memorypostgres.NewEmbeddingRepository(db, o11y)
-
-messageStore := rawMessageStore
-if deps.OutboxPublisher != nil {
-    indexPublisher := indexer.NewOutboxMessageIndexPublisher(deps.OutboxPublisher)
-    messageStore = memory.NewPublishingMessageStore(rawMessageStore, indexPublisher, deps.LLM.EmbedModel, o11y)
-    indexHandler := indexer.NewEmbeddingIndexHandler(provider, semanticRecall, o11y)
-    // registrar indexHandler para EventType memory.EventTypeEmbeddingIndex
-}
-
-runStore := agentpostgres.NewRunStore(db)
-runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, o11y)
-handleInbound := usecases.NewHandleInbound(runtime, o11y)
-```
-
-O consumer de entrada (`infrastructure/messaging/database/consumers/`) recebe o evento, monta o
-`InboundInput` e chama `handleInbound.Execute`. O `Shutdown` do módulo chama `scorerRunner.Shutdown`.
-
-## 5. Workflow durável (opcional) — `application/workflows/workflow.go`
-
-Use o kernel quando precisar de multi-step com estado/suspend/resume. Ver `workflow-engine.md`.
-
-```go
-func BuildWeatherWorkflow(a agent.Agent, client weather.Client, forecastBase string) workflow.Definition[WeatherState] {
-    fetchStep := workflow.NewStepFunc[WeatherState](StepFetchWeatherID, BuildFetchWeatherStep(client, forecastBase))
-    planStep := workflow.NewStepFunc[WeatherState](StepPlanActivities, BuildPlanActivitiesStep(a))
-    return workflow.Definition[WeatherState]{
-        ID: WeatherWorkflowID, Root: workflow.Sequence("root", fetchStep, planStep), Durable: true, MaxAttempts: 3,
-    }
-}
-```
-
-Um step pode chamar `a.Stream(...)` (ex.: plan-activities consome o deltas e lê `stream.Result`).
-
-## 6. Persistência
-
-Reuse a migration `000003` (`platform_threads`, `platform_messages`, `platform_resources`,
-`platform_runs`, `platform_embeddings`, `platform_scorer_results`). Não crie schema novo de agente;
-o substrato já modela tudo de forma genérica.
-
-## Checklist
-- Tool fina (zero regra/SQL/branching); cálculo em `domain/`.
-- Input DTO com `Validate()` chamado após `defer span.End()`.
-- Zero comentários em `.go` (R-ADAPTER-001.1).
-- Não tocar o kernel `internal/platform/workflow`.
-- Validar com `rules-checklist.md`.
-
-Ver também `scorer-evals.md`, `memory-recall.md`, `llm-structured-output.md`.
+Reuse tabelas `platform_*`: threads, messages, resources, runs, embeddings, workflow snapshots/steps e scorer results. Não crie schema novo para agente sem requisito explícito e aprovação arquitetural.

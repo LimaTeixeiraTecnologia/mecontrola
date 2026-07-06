@@ -50,6 +50,8 @@ type CA09ReconciledIntegrationSuite struct {
 	suite.Suite
 	ctx        context.Context
 	db         database.DBTX
+	rootCatID  uuid.UUID
+	leafCatID  uuid.UUID
 	adapter    agentsifaces.TransactionsLedger
 	ledgerRepo agentusecases.WriteLedgerRepository
 	idemUC     *agentusecases.IdempotentWrite
@@ -65,10 +67,25 @@ func (s *CA09ReconciledIntegrationSuite) SetupSuite() {
 	s.db = db
 	o11y := fake.NewProvider()
 	factory := txrepos.NewRepositoryFactory(o11y)
-	catID := uuid.New()
+	s.rootCatID = uuid.New()
+	s.leafCatID = uuid.New()
+	catID := s.leafCatID
+
+	_, err := db.ExecContext(s.ctx, `
+		INSERT INTO mecontrola.categories (id, slug, name, kind, parent_id, allocation_type)
+		VALUES ($1, 'ca09-salario', 'Salário', 'income', NULL, 'consumption'),
+		       ($2, 'ca09-bonus', 'Bônus', 'income', $1, 'consumption')`,
+		s.rootCatID, s.leafCatID,
+	)
+	s.Require().NoError(err)
+
+	var editorialVersion int64
+	s.Require().NoError(
+		db.QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version LIMIT 1`).Scan(&editorialVersion),
+	)
 
 	userID := uuid.New()
-	_, err := db.ExecContext(s.ctx, `
+	_, err = db.ExecContext(s.ctx, `
 		INSERT INTO mecontrola.users (id, whatsapp_number, status, created_at, updated_at)
 		VALUES ($1, '+5511900000002', 'ACTIVE', now(), now())`, userID)
 	s.Require().NoError(err)
@@ -81,6 +98,7 @@ func (s *CA09ReconciledIntegrationSuite) SetupSuite() {
 		uow.NewUnitOfWork(db),
 		&stubCardLookup{snapshot: snapshot},
 		&ca09CategoryValidator{catID: catID},
+		&stubCategoryWriteGate{version: editorialVersion},
 		services.TransactionWorkflow{},
 		&ca09TxPublisher{},
 		o11y,
@@ -109,7 +127,6 @@ func (s *CA09ReconciledIntegrationSuite) TestCA09_ConcurrentSameOriginReturnsRec
 	s.Require().NoError(err)
 
 	ctx := s.authedCtx(userID)
-	catID := uuid.New()
 	wamid := "wamid-ca09-" + uuid.NewString()
 
 	const goroutines = 5
@@ -128,7 +145,8 @@ func (s *CA09ReconciledIntegrationSuite) TestCA09_ConcurrentSameOriginReturnsRec
 						PaymentMethod:   "pix",
 						AmountCents:     1000,
 						Description:     "renda ca09",
-						CategoryID:      catID,
+						CategoryID:      s.rootCatID,
+						SubcategoryID:   &s.leafCatID,
 						OccurredAt:      "2026-07-01",
 						OriginWamid:     wamid,
 						OriginItemSeq:   0,
@@ -177,7 +195,6 @@ func (s *CA09ReconciledIntegrationSuite) TestCA09_ReconciledOutcomeMapsCorrectly
 	s.Require().NoError(err)
 
 	ctx := s.authedCtx(userID)
-	catID := uuid.New()
 	wamid := "wamid-ca09-rec-" + uuid.NewString()
 
 	write := func() (agentusecases.IdempotentWriteResult, error) {
@@ -188,7 +205,8 @@ func (s *CA09ReconciledIntegrationSuite) TestCA09_ReconciledOutcomeMapsCorrectly
 					PaymentMethod:   "pix",
 					AmountCents:     2000,
 					Description:     "renda rec",
-					CategoryID:      catID,
+					CategoryID:      s.rootCatID,
+					SubcategoryID:   &s.leafCatID,
 					OccurredAt:      "2026-07-01",
 					OriginWamid:     wamid,
 					OriginItemSeq:   0,

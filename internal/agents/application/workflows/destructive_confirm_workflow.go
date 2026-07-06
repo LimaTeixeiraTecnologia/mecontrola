@@ -81,8 +81,9 @@ func buildEvalStep(ledger interfaces.TransactionsLedger, cards interfaces.CardMa
 		}
 
 		if time.Since(state.SuspendedAt) > confirmTTL {
-			state.ResponseText = "⏱️ O tempo para confirmação expirou. Operação cancelada."
+			state.ResponseText = ""
 			state.Awaiting = AwaitingNone
+			state.Expired = true
 			return workflow.StepOutput[ConfirmState]{State: state, Status: workflow.StepStatusCompleted}, nil
 		}
 
@@ -138,8 +139,9 @@ func evalRegisterClarification(ctx context.Context, state ConfirmState, execMap 
 	}
 
 	if time.Since(state.SuspendedAt) > confirmTTL {
-		state.ResponseText = "⏱️ O tempo para confirmação expirou. Lançamento cancelado."
+		state.ResponseText = ""
 		state.Awaiting = AwaitingNone
+		state.Expired = true
 		return workflow.StepOutput[ConfirmState]{State: state, Status: workflow.StepStatusCompleted}, nil
 	}
 
@@ -186,6 +188,10 @@ func ContinueDestructiveConfirm(
 
 	if resumeErr != nil {
 		return true, result.State.ResponseText, fmt.Errorf("workflows.destructive_confirm: resume: %w", resumeErr)
+	}
+
+	if result.State.Expired {
+		return false, "", nil
 	}
 
 	return true, result.State.ResponseText, nil
@@ -247,17 +253,48 @@ func executeRegister(ctx context.Context, state ConfirmState, ledger interfaces.
 	if state.UpdatePayload == "" {
 		return fmt.Errorf("workflows.destructive_confirm.register: update payload ausente")
 	}
-	candidates, err := categories.SearchDictionary(ctx, state.ResumeText, "expense")
-	if err != nil || len(candidates) == 0 {
-		return fmt.Errorf("workflows.destructive_confirm.register: categoria não encontrada para %q: %w", state.ResumeText, err)
-	}
 	var draft interfaces.RawTransaction
 	if err := json.Unmarshal([]byte(state.UpdatePayload), &draft); err != nil {
 		return fmt.Errorf("workflows.destructive_confirm.register: decode transaction: %w", err)
 	}
-	draft.CategoryID = candidates[0].CategoryID
+	kind := directionToKind(draft.Direction)
+	searchResult, err := categories.SearchDictionary(ctx, state.ResumeText, kind)
+	if err != nil {
+		return fmt.Errorf("workflows.destructive_confirm.register: categoria não encontrada para %q: %w", state.ResumeText, err)
+	}
+	if !isValidClassifyResult(searchResult) {
+		return fmt.Errorf("workflows.destructive_confirm.register: categoria ambígua ou inválida para %q", state.ResumeText)
+	}
+	candidate := searchResult.Candidates[0]
+	subcategoryID := candidate.CategoryID
+	draft.CategoryID = candidate.RootCategoryID
+	draft.SubcategoryID = &subcategoryID
+	draft.CategorySource = "user_selected_candidate"
+	draft.CategoryOutcome = "matched"
+	draft.CategoryScore = candidate.Score
+	draft.CategoryConfidence = candidate.Confidence
+	draft.CategoryQuality = candidate.MatchQuality
+	draft.CategorySignalType = candidate.SignalType
+	draft.CategoryMatchedTerm = candidate.MatchedTerm
+	draft.CategoryMatchReason = candidate.MatchReason
+	draft.CategoryVersion = searchResult.Version
+	if draft.OriginWamid == "" {
+		draft.OriginWamid = state.MessageID
+		draft.OriginOperation = "confirm_register"
+	}
 	_, err = ledger.CreateTransaction(ctx, draft)
 	return err
+}
+
+func directionToKind(direction string) string {
+	if direction == "income" {
+		return "income"
+	}
+	return "expense"
+}
+
+func isValidClassifyResult(result interfaces.CategorySearchResult) bool {
+	return result.IsWriteEligible()
 }
 
 func executeDeleteEntry(ctx context.Context, state ConfirmState, ledger interfaces.TransactionsLedger) error {
@@ -265,7 +302,11 @@ func executeDeleteEntry(ctx context.Context, state ConfirmState, ledger interfac
 	if err != nil {
 		return fmt.Errorf("workflows.destructive_confirm.delete_entry: parse uuid: %w", err)
 	}
-	ref := interfaces.EntryRef{ID: id, Kind: state.TargetKind}
+	kind, err := interfaces.ParseEntryKind(state.TargetKind)
+	if err != nil {
+		return fmt.Errorf("workflows.destructive_confirm.delete_entry: kind inválido: %w", err)
+	}
+	ref := interfaces.EntryRef{ID: id, Kind: kind}
 	return ledger.DeleteTransaction(ctx, ref, state.Version)
 }
 

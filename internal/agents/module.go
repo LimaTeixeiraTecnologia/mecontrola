@@ -139,7 +139,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	categoriesReader := binding.NewCategoriesReaderAdapter(
 		deps.CategoriesModule.SearchDictionaryUC,
-		deps.CategoriesModule.ResolveBySlug,
+		deps.CategoriesModule.ResolveCategoryForWriteUC,
 		deps.CategoriesModule.ListCategoriesUC,
 		deps.O11y,
 	)
@@ -230,6 +230,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	purgeLedger := usecases.NewPurgeLedger(writeLedgerRepo, 0, 0, deps.O11y)
 	ledgerRetentionJob := jobhandlers.NewLedgerRetentionJob(purgeLedger, "")
 
+	confirmReaper := workflow.NewStaleSuspendedReaper(workflowStore, workflows.DestructiveConfirmWorkflowID, 10*time.Minute, 100, deps.O11y)
+	confirmReaperJob := jobhandlers.NewConfirmReaperJob(confirmReaper, "")
+
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
 		consumerOpts := []consumers.ConsumerOption{
@@ -256,7 +259,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		HandleInbound:      handleInbound,
 		WhatsAppAgentRoute: whatsAppRoute,
 		EventHandlers:      eventHandlers,
-		Jobs:               []worker.Job{ledgerRetentionJob},
+		Jobs:               []worker.Job{ledgerRetentionJob, confirmReaperJob},
 		scorerRunner:       scorerRunner,
 	}, nil
 }

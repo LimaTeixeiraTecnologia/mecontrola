@@ -29,6 +29,7 @@ type CreateTransactionSuite struct {
 	factory     *mockInterfaces.RepositoryFactory
 	repo        *mockInterfaces.TransactionRepository
 	catVal      *mockInterfaces.CategoryValidator
+	catGate     *mockInterfaces.CategoryWriteGate
 	cardLookup  *mockInterfaces.CardLookup
 	invoiceRepo *mockInterfaces.CardInvoiceRepository
 	publisher   *mockInterfaces.TransactionEventPublisher
@@ -49,11 +50,12 @@ func (s *CreateTransactionSuite) SetupTest() {
 	s.invoiceRepo = mockInterfaces.NewCardInvoiceRepository(s.T())
 	s.factory.EXPECT().CardInvoiceRepository(mock.Anything).Return(s.invoiceRepo).Maybe()
 	s.catVal = mockInterfaces.NewCategoryValidator(s.T())
+	s.catGate = mockInterfaces.NewCategoryWriteGate(s.T())
 	s.cardLookup = mockInterfaces.NewCardLookup(s.T())
 	s.publisher = mockInterfaces.NewTransactionEventPublisher(s.T())
 	s.uow = uowMocks.NewUnitOfWorkTransaction(s.T())
 	s.useCase = NewCreateTransaction(
-		s.factory, s.uow, s.cardLookup, s.catVal,
+		s.factory, s.uow, s.cardLookup, s.catVal, s.catGate,
 		services.TransactionWorkflow{}, s.publisher,
 		fake.NewProvider(),
 	)
@@ -64,6 +66,7 @@ func (s *CreateTransactionSuite) TestExecute_Success() {
 	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Delivery", ParentName: "Custo Fixo"}
 	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
 	s.publisher.EXPECT().
 		PublishCreated(mock.Anything, mock.Anything, mock.Anything).
@@ -102,7 +105,22 @@ func (s *CreateTransactionSuite) TestExecute_OutcomeWithoutSubcategory_ReturnsVa
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 
-	s.Require().ErrorIs(err, ErrOutcomeTransactionRequiresSubcategory)
+	s.Require().ErrorIs(err, ErrTransactionRequiresSubcategory)
+}
+
+func (s *CreateTransactionSuite) TestExecute_IncomeWithoutSubcategory_ReturnsValidationError() {
+	catID := uuid.New()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "income",
+		PaymentMethod: "pix",
+		AmountCents:   50000,
+		Description:   "Salário",
+		CategoryID:    catID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().ErrorIs(err, ErrTransactionRequiresSubcategory)
 }
 
 func (s *CreateTransactionSuite) TestExecute_Unauthorized() {
@@ -139,7 +157,8 @@ func (s *CreateTransactionSuite) TestExecute_DocPaymentMethodRejected() {
 
 func (s *CreateTransactionSuite) TestExecute_CategoryValidatorError() {
 	catID := uuid.New()
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(interfaces.CategorySnapshot{}, interfaces.ErrCategoryNotFound).Once()
+	subcategoryID := uuid.New()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(interfaces.CategorySnapshot{}, interfaces.ErrCategoryNotFound).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
 		Direction:     "income",
@@ -147,6 +166,7 @@ func (s *CreateTransactionSuite) TestExecute_CategoryValidatorError() {
 		AmountCents:   1000,
 		Description:   "Mercado",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 	s.Require().Error(err)
@@ -154,8 +174,10 @@ func (s *CreateTransactionSuite) TestExecute_CategoryValidatorError() {
 
 func (s *CreateTransactionSuite) TestExecute_RepositoryError() {
 	catID := uuid.New()
+	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Cat"}
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.Nil, false, interfaces.ErrTransactionNotFound).Once()
 
 	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
@@ -164,6 +186,7 @@ func (s *CreateTransactionSuite) TestExecute_RepositoryError() {
 		AmountCents:   1000,
 		Description:   "Renda",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 	s.Require().Error(err)
@@ -171,8 +194,10 @@ func (s *CreateTransactionSuite) TestExecute_RepositoryError() {
 
 func (s *CreateTransactionSuite) TestExecute_IdempotencyPublisher() {
 	catID := uuid.New()
+	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Test"}
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
 	s.publisher.EXPECT().PublishCreated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -182,6 +207,7 @@ func (s *CreateTransactionSuite) TestExecute_IdempotencyPublisher() {
 		AmountCents:   50000,
 		Description:   "Salário",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 	s.Require().NoError(err)
@@ -193,6 +219,7 @@ func (s *CreateTransactionSuite) TestExecute_Replay_DoesNotPublish() {
 	canonicalID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Delivery", ParentName: "Custo Fixo"}
 	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(canonicalID, false, nil).Once()
 
 	existing := s.newPersistedTransaction(canonicalID, catID)
@@ -231,6 +258,7 @@ func (s *CreateTransactionSuite) TestExecute_CreditCard_CreatesInvoiceItems() {
 
 	s.cardLookup.EXPECT().GetForUser(mock.Anything, cardID, s.userID).Return(snapshot, nil).Once()
 	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
 	s.invoiceRepo.EXPECT().
 		UpsertByMonth(mock.Anything, s.userID, cardID, mock.Anything, mock.Anything, mock.Anything).
@@ -265,8 +293,10 @@ func (s *CreateTransactionSuite) TestExecute_CreditCard_CreatesInvoiceItems() {
 
 func (s *CreateTransactionSuite) TestExecute_NonCreditCard_DoesNotLookupCard() {
 	catID := uuid.New()
+	subcategoryID := uuid.New()
 	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Salário"}
-	s.catVal.EXPECT().Validate(mock.Anything, catID, (*uuid.UUID)(nil)).Return(catSnap, nil).Once()
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).Return(valueobjects.CategoryWriteEvidence{}, nil).Once()
 	s.repo.EXPECT().Create(mock.Anything, mock.Anything).Return(uuid.New(), true, nil).Once()
 	s.publisher.EXPECT().PublishCreated(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -276,6 +306,7 @@ func (s *CreateTransactionSuite) TestExecute_NonCreditCard_DoesNotLookupCard() {
 		AmountCents:   50000,
 		Description:   "Renda",
 		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
 		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
 	})
 
@@ -306,6 +337,91 @@ func (s *CreateTransactionSuite) TestExecute_CreditCard_LookupError() {
 
 	s.Require().Error(err)
 	s.repo.AssertNotCalled(s.T(), "Create", mock.Anything, mock.Anything)
+}
+
+func (s *CreateTransactionSuite) TestExecute_GateBlocks_ReturnsError() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Despesa", Kind: "expense"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).
+		Return(valueobjects.CategoryWriteEvidence{}, valueobjects.ErrCategoryKindDirectionMismatch).Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   1000,
+		Description:   "Mercado",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().ErrorIs(err, valueobjects.ErrCategoryKindDirectionMismatch)
+	s.repo.AssertNotCalled(s.T(), "Create", mock.Anything, mock.Anything)
+}
+
+func (s *CreateTransactionSuite) TestExecute_GateBlocks_DeprecatedCategory() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Despesa", Kind: "expense"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).
+		Return(valueobjects.CategoryWriteEvidence{}, valueobjects.ErrCategoryDeprecated).Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   1000,
+		Description:   "Mercado",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().ErrorIs(err, valueobjects.ErrCategoryDeprecated)
+}
+
+func (s *CreateTransactionSuite) TestExecute_GateBlocks_VersionDrift() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Despesa", Kind: "expense"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).
+		Return(valueobjects.CategoryWriteEvidence{}, valueobjects.ErrCategoryVersionChanged).Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   1000,
+		Description:   "Mercado",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().ErrorIs(err, valueobjects.ErrCategoryVersionChanged)
+}
+
+func (s *CreateTransactionSuite) TestExecute_GateBlocks_RootWithoutLeaf() {
+	catID := uuid.New()
+	subcategoryID := uuid.New()
+	catSnap := interfaces.CategorySnapshot{ID: catID, Name: "Despesa", Kind: "expense"}
+	s.catVal.EXPECT().Validate(mock.Anything, catID, &subcategoryID).Return(catSnap, nil).Once()
+	s.catGate.EXPECT().Approve(mock.Anything, mock.Anything).
+		Return(valueobjects.CategoryWriteEvidence{}, valueobjects.ErrCategoryRootWithoutLeaf).Once()
+
+	_, err := s.useCase.Execute(s.ctx, input.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   1000,
+		Description:   "Mercado",
+		CategoryID:    catID,
+		SubcategoryID: &subcategoryID,
+		OccurredAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+
+	s.Require().ErrorIs(err, valueobjects.ErrCategoryRootWithoutLeaf)
 }
 
 func (s *CreateTransactionSuite) newPersistedTransaction(id, catID uuid.UUID) *entities.Transaction {

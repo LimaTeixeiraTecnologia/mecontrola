@@ -122,6 +122,7 @@ packages:
       RecurringMaterializationRepository: {}
       CardLookup: {}
       CategoryValidator: {}
+      CategoryWriteGate: {}
       TransactionEventPublisher: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/interfaces:
     interfaces:

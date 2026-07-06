@@ -105,6 +105,12 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		return TransactionsModule{}, err
 	}
 
+	categoryWriteGate := txrepo.NewCategoryWriteGateAdapter(
+		b.categoriesModule.ResolveCategoryForWriteUC,
+		b.categoriesModule.VersionReader,
+		b.o11y,
+	)
+
 	cardLookup := client.NewCardLookupAdapter(b.cardModule.CardLookup, b.o11y)
 
 	txPublisher := producers.NewTransactionEventPublisher(outboxFactory, b.cfg.OutboxConfig, b.o11y)
@@ -119,6 +125,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		uow.NewUnitOfWork(b.db),
 		cardLookup,
 		categoriesCache,
+		categoryWriteGate,
 		txWorkflow,
 		txPublisher,
 		b.o11y,
@@ -127,6 +134,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		factory,
 		uow.NewUnitOfWork(b.db),
 		categoriesCache,
+		categoryWriteGate,
 		txWorkflow,
 		txPublisher,
 		b.o11y,
@@ -166,12 +174,14 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		factory,
 		uow.NewUnitOfWork(b.db),
 		categoriesCache,
+		categoryWriteGate,
 		b.o11y,
 	)
 	updateRT := usecases.NewUpdateRecurringTemplate(
 		factory,
 		uow.NewUnitOfWork(b.db),
 		categoriesCache,
+		categoryWriteGate,
 		b.o11y,
 	)
 	deleteRT := usecases.NewDeleteRecurringTemplate(

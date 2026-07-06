@@ -29,23 +29,31 @@ func TestRecurringMaterializerJobIntegrationSuite(t *testing.T) {
 }
 
 func (s *RecurringMaterializerJobIntegrationSuite) buildTemplate(userID uuid.UUID, day int) *entities.RecurringTemplate {
-	dir := valueobjects.DirectionIncome
 	pm := valueobjects.PaymentMethodPix
 	amount, _ := valueobjects.NewMoney(5000)
 	desc, _ := valueobjects.NewDescription("Salário")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
+	seedIncomeRootID := uuid.MustParse("86dd34b0-7342-525a-9a30-b1b5a76b109f")
+	seedIncomeLeafID := uuid.MustParse("98455e74-b1f3-5b9c-a8d8-05db0cdb465d")
 	freq := valueobjects.FrequencyMonthly
 	dom, _ := valueobjects.NewDayOfMonth(day)
 	inst, _ := valueobjects.NewInstallmentCount(1)
 	now := time.Now().UTC()
+	ev := valueobjects.ReconstituteEvidence(
+		seedIncomeRootID, seedIncomeLeafID, "income", "salario/decimo-terceiro",
+		"matched", 1.0, "high", "exact", "canonical_name", "salário",
+		"matched canonical_name salário", valueobjects.CategoryDecisionSourceAutoMatched,
+		7, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	)
 	t := entities.NewRecurringTemplate(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
-		dir, pm,
+		valueobjects.DirectionIncome, pm,
 		option.None[valueobjects.CardID](),
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedIncomeRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Receita", "",
+		"Salário", "Décimo Terceiro",
+		ev,
 		freq, dom, inst,
 		now.Add(-24*time.Hour), option.None[time.Time](), now,
 	)

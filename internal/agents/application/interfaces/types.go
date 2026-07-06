@@ -8,39 +8,57 @@ import (
 
 type EntryRef struct {
 	ID         uuid.UUID
-	Kind       string
+	Kind       EntryKind
 	Reconciled bool
 }
 
 type RawTransaction struct {
-	Direction       string
-	PaymentMethod   string
-	AmountCents     int64
-	Description     string
-	CategoryID      uuid.UUID
-	SubcategoryID   *uuid.UUID
-	CardID          *uuid.UUID
-	Installments    int
-	OccurredAt      string
-	OriginWamid     string
-	OriginItemSeq   int
-	OriginOperation string
+	Direction           string
+	PaymentMethod       string
+	AmountCents         int64
+	Description         string
+	CategoryID          uuid.UUID
+	SubcategoryID       *uuid.UUID
+	CardID              *uuid.UUID
+	Installments        int
+	OccurredAt          string
+	OriginWamid         string
+	OriginItemSeq       int
+	OriginOperation     string
+	CategorySource      string
+	CategoryOutcome     string
+	CategoryScore       float64
+	CategoryConfidence  string
+	CategoryQuality     string
+	CategorySignalType  string
+	CategoryMatchedTerm string
+	CategoryMatchReason string
+	CategoryVersion     int64
 }
 
 type RawUpdateTransaction struct {
-	ID            uuid.UUID
-	Direction     string
-	PaymentMethod string
-	AmountCents   int64
-	Description   string
-	CategoryID    uuid.UUID
-	SubcategoryID *uuid.UUID
-	OccurredAt    string
-	Version       int64
+	ID                  uuid.UUID
+	Direction           string
+	PaymentMethod       string
+	AmountCents         int64
+	Description         string
+	CategoryID          uuid.UUID
+	SubcategoryID       *uuid.UUID
+	OccurredAt          string
+	Version             int64
+	CategorySource      string
+	CategoryOutcome     string
+	CategoryScore       float64
+	CategoryConfidence  string
+	CategoryQuality     string
+	CategorySignalType  string
+	CategoryMatchedTerm string
+	CategoryMatchReason string
+	CategoryVersion     int64
 }
 
 type MonthlyEntry struct {
-	Kind        string
+	Kind        EntryKind
 	ID          string
 	RefMonth    string
 	AmountCents int64
@@ -161,7 +179,7 @@ type CardInvoice struct {
 }
 
 type Entry struct {
-	Kind                    string
+	Kind                    EntryKind
 	ID                      string
 	UserID                  string
 	Direction               string
@@ -254,6 +272,33 @@ type CategoryCandidate struct {
 	RootCategoryID uuid.UUID
 	Path           string
 	MatchedTerm    string
+	SignalType     string
+	Confidence     string
+	MatchQuality   string
 	Score          float64
 	IsAmbiguous    bool
+	MatchReason    string
+}
+
+type CategorySearchResult struct {
+	Outcome    ClassifyOutcome
+	Version    int64
+	HasMore    bool
+	Candidates []CategoryCandidate
+}
+
+type CategoryWriteRequest struct {
+	RootCategoryID  uuid.UUID
+	SubcategoryID   uuid.UUID
+	Kind            CategoryKind
+	ExpectedVersion int64
+}
+
+type CategoryWriteDecision struct {
+	RootCategoryID   uuid.UUID
+	SubcategoryID    uuid.UUID
+	Kind             CategoryKind
+	Path             string
+	EditorialVersion int64
+	Deprecated       bool
 }

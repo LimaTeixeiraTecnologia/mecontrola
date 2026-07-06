@@ -207,8 +207,8 @@ func (s *DestructiveConfirmSuite) TestTTL_Expired_Cancels() {
 
 	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "sim")
 	s.NoError(err)
-	s.True(handled)
-	s.Contains(response, "expirou")
+	s.False(handled)
+	s.Empty(response)
 }
 
 func (s *DestructiveConfirmSuite) TestDeleteCard_WithOpenInstallments_ImpactNote() {
@@ -263,7 +263,7 @@ func (s *DestructiveConfirmSuite) TestEditEntry_Confirm_CallsUpdateTransaction()
 	entryID := uuid.New()
 	s.ledger.EXPECT().
 		UpdateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawUpdateTransaction")).
-		Return(ifaces.EntryRef{ID: entryID, Kind: "transaction"}, nil).
+		Return(ifaces.EntryRef{ID: entryID, Kind: ifaces.EntryKindTransaction}, nil).
 		Once()
 
 	upd := map[string]any{"amountCents": int64(5000), "description": "Almoço"}
@@ -435,7 +435,8 @@ func (s *DestructiveConfirmSuite) TestOpConfirmRegister_SuspendsAndAskCategory()
 }
 
 func (s *DestructiveConfirmSuite) TestOpConfirmRegister_CategoryResolved_RegistersAndCompletes() {
-	categoryID := uuid.New()
+	rootID := uuid.New()
+	leafID := uuid.New()
 	draft := ifaces.RawTransaction{
 		Direction:     "outcome",
 		PaymentMethod: "debit",
@@ -457,13 +458,29 @@ func (s *DestructiveConfirmSuite) TestOpConfirmRegister_CategoryResolved_Registe
 
 	s.categories.EXPECT().
 		SearchDictionary(mock.Anything, "alimentação", "expense").
-		Return([]ifaces.CategoryCandidate{{CategoryID: categoryID, RootCategoryID: categoryID}}, nil).
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: 1,
+			Candidates: []ifaces.CategoryCandidate{{
+				CategoryID:     leafID,
+				RootCategoryID: rootID,
+				Score:          0.9,
+				Confidence:     "high",
+				MatchQuality:   "exact",
+				SignalType:     "alias",
+				MatchedTerm:    "alimentação",
+				MatchReason:    "alias match",
+			}},
+		}, nil).
 		Once()
 	s.ledger.EXPECT().
 		CreateTransaction(mock.Anything, mock.MatchedBy(func(r ifaces.RawTransaction) bool {
-			return r.CategoryID == categoryID && r.Description == "padaria"
+			return r.CategoryID == rootID &&
+				r.SubcategoryID != nil && *r.SubcategoryID == leafID &&
+				r.Description == "padaria" &&
+				r.CategorySource == "user_selected_candidate"
 		})).
-		Return(ifaces.EntryRef{ID: uuid.New(), Kind: "transaction"}, nil).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
 		Once()
 
 	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "alimentação")
@@ -495,7 +512,7 @@ func (s *DestructiveConfirmSuite) TestOpConfirmRegister_CategoryNotFound_Repromp
 
 	s.categories.EXPECT().
 		SearchDictionary(mock.Anything, "xyzxyz", "expense").
-		Return(nil, errors.New("não encontrado")).
+		Return(ifaces.CategorySearchResult{}, errors.New("não encontrado")).
 		Once()
 
 	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "xyzxyz")
@@ -505,7 +522,7 @@ func (s *DestructiveConfirmSuite) TestOpConfirmRegister_CategoryNotFound_Repromp
 
 	s.categories.EXPECT().
 		SearchDictionary(mock.Anything, "xyzxyz", "expense").
-		Return(nil, errors.New("não encontrado")).
+		Return(ifaces.CategorySearchResult{}, errors.New("não encontrado")).
 		Once()
 
 	handled2, response2, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "xyzxyz")
@@ -645,4 +662,228 @@ func (s *DestructiveConfirmSuite) TestOpUpdateRecurrence_Cancel_NoEffect() {
 	s.NoError(err)
 	s.True(handled)
 	s.Contains(response, "cancelada")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_IncomeDirection_UsesIncomeKind() {
+	rootID := uuid.New()
+	leafID := uuid.New()
+	draft := ifaces.RawTransaction{
+		Direction:     "income",
+		PaymentMethod: "pix",
+		AmountCents:   100000,
+		Description:   "salário",
+		OccurredAt:    "2026-07-06",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "emprego", "income").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: 1,
+			Candidates: []ifaces.CategoryCandidate{{
+				CategoryID:     leafID,
+				RootCategoryID: rootID,
+				Score:          0.95,
+				Confidence:     "high",
+				MatchQuality:   "exact",
+				SignalType:     "canonical_name",
+				MatchedTerm:    "emprego",
+				MatchReason:    "canonical match",
+			}},
+		}, nil).
+		Once()
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.MatchedBy(func(r ifaces.RawTransaction) bool {
+			return r.CategoryID == rootID &&
+				r.SubcategoryID != nil && *r.SubcategoryID == leafID &&
+				r.CategorySource == "user_selected_candidate"
+		})).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "emprego")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "✅")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_AmbiguousResult_Reprompts() {
+	leafID := uuid.New()
+	rootID := uuid.New()
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   3000,
+		Description:   "farmácia",
+		OccurredAt:    "2026-07-06",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "saúde", "expense").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: 1,
+			Candidates: []ifaces.CategoryCandidate{
+				{CategoryID: leafID, RootCategoryID: rootID, IsAmbiguous: true, Score: 0.6, Confidence: "low", MatchQuality: "fuzzy"},
+			},
+		}, nil).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "saúde")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "categoria")
+	s.NotContains(response, "✅")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_MultipleCandidate_Reprompts() {
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   1500,
+		Description:   "mercado",
+		OccurredAt:    "2026-07-06",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "alimentação", "expense").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeAmbiguous,
+			Version: 1,
+			Candidates: []ifaces.CategoryCandidate{
+				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Score: 0.8, Confidence: "medium", MatchQuality: "token"},
+				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Score: 0.75, Confidence: "low", MatchQuality: "fuzzy"},
+			},
+		}, nil).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "alimentação")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "categoria")
+	s.NotContains(response, "✅")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_RootEqualsLeaf_Reprompts() {
+	sameID := uuid.New()
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   2000,
+		Description:   "compra",
+		OccurredAt:    "2026-07-06",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "geral", "expense").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: 1,
+			Candidates: []ifaces.CategoryCandidate{
+				{CategoryID: sameID, RootCategoryID: sameID, Score: 0.9, Confidence: "high", MatchQuality: "exact"},
+			},
+		}, nil).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "geral")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "categoria")
+	s.NotContains(response, "✅")
+}
+
+func (s *DestructiveConfirmSuite) TestOpConfirmRegister_FreetextDispatchesNewResolution() {
+	rootID := uuid.New()
+	leafID := uuid.New()
+	draft := ifaces.RawTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "debit",
+		AmountCents:   5000,
+		Description:   "supermercado",
+		OccurredAt:    "2026-07-06",
+	}
+	payload, _ := json.Marshal(draft)
+	state := ConfirmState{
+		Awaiting:      AwaitingConfirm,
+		Operation:     OpConfirmRegister,
+		TargetKind:    "transaction",
+		UpdatePayload: string(payload),
+		SuspendedAt:   time.Now().UTC(),
+		UserID:        uuid.New(),
+	}
+	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
+	s.Require().NoError(err)
+
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "texto livre qualquer", "expense").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: 1,
+			Candidates: []ifaces.CategoryCandidate{{
+				CategoryID:     leafID,
+				RootCategoryID: rootID,
+				Score:          0.85,
+				Confidence:     "high",
+				MatchQuality:   "exact",
+				SignalType:     "phrase",
+				MatchedTerm:    "texto livre qualquer",
+				MatchReason:    "phrase match",
+			}},
+		}, nil).
+		Once()
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.MatchedBy(func(r ifaces.RawTransaction) bool {
+			return r.CategoryID == rootID && r.SubcategoryID != nil && *r.SubcategoryID == leafID
+		})).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	handled, response, err := ContinueDestructiveConfirm(s.ctx, s.engine, s.def, s.key, "texto livre qualquer")
+	s.NoError(err)
+	s.True(handled)
+	s.Contains(response, "✅")
 }

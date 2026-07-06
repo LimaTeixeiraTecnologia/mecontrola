@@ -28,24 +28,25 @@ func TestRecurringTemplateRepositorySuite(t *testing.T) {
 }
 
 func (s *RecurringTemplateRepositorySuite) newTemplate(userID uuid.UUID, day int) *entities.RecurringTemplate {
-	dir := valueobjects.DirectionIncome
 	pm := valueobjects.PaymentMethodPix
 	amount, _ := valueobjects.NewMoney(300000)
 	desc, _ := valueobjects.NewDescription("Salário")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	freq := valueobjects.FrequencyMonthly
 	dom, _ := valueobjects.NewDayOfMonth(day)
 	inst, _ := valueobjects.NewInstallmentCount(1)
 	now := time.Now().UTC()
+	ev := incomeEvidence()
 
 	t := entities.NewRecurringTemplate(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
-		dir, pm,
+		valueobjects.DirectionIncome, pm,
 		option.None[valueobjects.CardID](),
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedIncomeRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Receita", "",
+		"Salário", "Décimo Terceiro",
+		ev,
 		freq, dom, inst,
 		now, option.None[time.Time](), now,
 	)
@@ -68,6 +69,20 @@ func (s *RecurringTemplateRepositorySuite) TestCreateAndGetByID() {
 	s.Equal(template.ID(), found.ID())
 	s.Equal(5, found.DayOfMonth().Value())
 	s.Equal(int64(300000), found.Amount().Cents())
+
+	want := incomeEvidence()
+	got := found.Evidence()
+	s.Equal(want.Score(), got.Score())
+	s.Equal(want.Confidence(), got.Confidence())
+	s.Equal(want.Quality(), got.Quality())
+	s.Equal(want.SignalType(), got.SignalType())
+	s.Equal(want.MatchedTerm(), got.MatchedTerm())
+	s.Equal(want.MatchReason(), got.MatchReason())
+	s.Equal(want.EditorialVersion(), got.EditorialVersion())
+	s.Equal(want.Source(), got.Source())
+	s.Equal(want.Path(), got.Path())
+	s.Equal(want.Kind(), got.Kind())
+	s.False(got.DecidedAt().IsZero())
 }
 
 func (s *RecurringTemplateRepositorySuite) TestGetByID_NotFound() {
@@ -96,7 +111,8 @@ func (s *RecurringTemplateRepositorySuite) TestUpdateWithVersion_Success() {
 	template.Update(
 		template.Direction(), template.PaymentMethod(), template.CardID(),
 		amount2, desc2, template.CategoryID(), template.SubcategoryID(),
-		"Receita", "",
+		"Salário", "Décimo Terceiro",
+		incomeEvidence(),
 		template.Frequency(), template.DayOfMonth(), template.InstallmentsTotal(),
 		template.StartedAt(), template.EndedAt(), now,
 	)
@@ -125,7 +141,9 @@ func (s *RecurringTemplateRepositorySuite) TestUpdateWithVersion_Conflict() {
 	template.Update(
 		template.Direction(), template.PaymentMethod(), template.CardID(),
 		amount2, desc2, template.CategoryID(), template.SubcategoryID(),
-		"Receita", "", template.Frequency(), template.DayOfMonth(), template.InstallmentsTotal(),
+		"Salário", "Décimo Terceiro",
+		incomeEvidence(),
+		template.Frequency(), template.DayOfMonth(), template.InstallmentsTotal(),
 		template.StartedAt(), template.EndedAt(), now,
 	)
 

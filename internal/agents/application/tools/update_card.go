@@ -91,7 +91,7 @@ func buildUpdateCardExec(engine wf.Engine[workflows.ConfirmState], def wf.Defini
 			return UpdateCardOutput{}, fmt.Errorf("agents.tool.update_card: parse card uuid: %w", err)
 		}
 
-		if in.DueDay == nil {
+		if !cardUpdateNeedsConfirmation(in) {
 			upd := interfaces.CardUpdate{
 				ID:       cardID,
 				UserID:   userID,
@@ -159,4 +159,8 @@ func buildUpdateCardExec(engine wf.Engine[workflows.ConfirmState], def wf.Defini
 			TargetKind:        "card",
 		}, nil
 	}
+}
+
+func cardUpdateNeedsConfirmation(in UpdateCardInput) bool {
+	return in.DueDay != nil
 }

@@ -15,14 +15,15 @@ import (
 )
 
 type CategoriesModule struct {
-	CategoryRouter      *server.CategoryRouter
-	GetCategoryUC       *usecases.GetCategory
-	ListDictionaryUC    *usecases.ListDictionary
-	ResolveBySlug       *usecases.ResolveBySlug
-	ValidateSubcategory *usecases.ValidateSubcategory
-	VersionReader       interfaces.VersionReader
-	ListCategoriesUC    *usecases.ListCategories
-	SearchDictionaryUC  *usecases.SearchDictionary
+	CategoryRouter            *server.CategoryRouter
+	GetCategoryUC             *usecases.GetCategory
+	ListDictionaryUC          *usecases.ListDictionary
+	ResolveBySlug             *usecases.ResolveBySlug
+	ValidateSubcategory       *usecases.ValidateSubcategory
+	VersionReader             interfaces.VersionReader
+	ListCategoriesUC          *usecases.ListCategories
+	SearchDictionaryUC        *usecases.SearchDictionary
+	ResolveCategoryForWriteUC *usecases.ResolveCategoryForWrite
 }
 
 func NewCategoriesModule(db *sqlx.DB, o11y observability.Observability, gatewayAuth func(http.Handler) http.Handler) *CategoriesModule {
@@ -38,6 +39,7 @@ func NewCategoriesModule(db *sqlx.DB, o11y observability.Observability, gatewayA
 	searchDictionary := usecases.NewSearchDictionary(dictionaryRepo, categoryRepo, versionReader, resolver, o11y)
 	resolveBySlug := usecases.NewResolveBySlug(categoryRepo, o11y)
 	validateSubcategory := usecases.NewValidateSubcategory(categoryRepo, o11y)
+	resolveCategoryForWrite := usecases.NewResolveCategoryForWrite(categoryRepo, versionReader, o11y)
 
 	listCategoriesHandler := handlers.NewListCategoriesHandler(listCategories, versionReader, o11y)
 	getCategoryHandler := handlers.NewGetCategoryHandler(getCategory, versionReader, o11y)
@@ -53,13 +55,14 @@ func NewCategoriesModule(db *sqlx.DB, o11y observability.Observability, gatewayA
 	)
 
 	return &CategoriesModule{
-		CategoryRouter:      categoryRouter,
-		GetCategoryUC:       getCategory,
-		ListDictionaryUC:    listDictionary,
-		ResolveBySlug:       resolveBySlug,
-		ValidateSubcategory: validateSubcategory,
-		VersionReader:       versionReader,
-		ListCategoriesUC:    listCategories,
-		SearchDictionaryUC:  searchDictionary,
+		CategoryRouter:            categoryRouter,
+		GetCategoryUC:             getCategory,
+		ListDictionaryUC:          listDictionary,
+		ResolveBySlug:             resolveBySlug,
+		ValidateSubcategory:       validateSubcategory,
+		VersionReader:             versionReader,
+		ListCategoriesUC:          listCategories,
+		SearchDictionaryUC:        searchDictionary,
+		ResolveCategoryForWriteUC: resolveCategoryForWrite,
 	}
 }

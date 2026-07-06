@@ -149,6 +149,22 @@ func (s *HandleInboundSuite) TestExecute() {
 			},
 		},
 		{
+			name: "deve retornar erro quando message_id ausente",
+			args: args{
+				in: input.InboundInput{
+					ResourceID: "user-123",
+					ThreadID:   "thread-abc",
+					AgentID:    "mecontrola-agent",
+					Message:    "Qual o clima?",
+				},
+			},
+			dependencies: dependencies{runtimeMock: s.runtimeMock},
+			expect: func(outcome agent.Outcome, err error) {
+				s.Error(err)
+				s.Equal(agent.Outcome{}, outcome)
+			},
+		},
+		{
 			name: "deve retornar erro quando runtime falha",
 			args: args{
 				in: input.InboundInput{
@@ -156,6 +172,7 @@ func (s *HandleInboundSuite) TestExecute() {
 					ThreadID:   "thread-abc",
 					AgentID:    "mecontrola-agent",
 					Message:    "Qual o clima?",
+					MessageID:  "msg-500",
 				},
 			},
 			dependencies: dependencies{
@@ -166,6 +183,7 @@ func (s *HandleInboundSuite) TestExecute() {
 							ThreadID:   "thread-abc",
 							AgentID:    "mecontrola-agent",
 							Message:    "Qual o clima?",
+							MessageID:  "msg-500",
 						}).
 						Return(agent.Outcome{}, errors.New("runtime failure")).
 						Once()

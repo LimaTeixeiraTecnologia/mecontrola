@@ -11,7 +11,7 @@ var ErrTransactionNotFound = errors.New("transactions: lançamento não encontra
 var ErrTransactionVersionConflict = errors.New("transactions: conflito de versão")
 var ErrCardInvoiceNotFound = errors.New("transactions: fatura de cartão não encontrada")
 var ErrPaymentMethodMigrationNotAllowed = errors.New("transactions: forma de pagamento não pode migrar de/para cartão de crédito")
-var ErrOutcomeTransactionRequiresSubcategory = errors.New("transactions: outcome exige subcategory_id")
+var ErrTransactionRequiresSubcategory = errors.New("transactions: transação exige subcategory_id folha")
 var ErrCategoryKindDirectionMismatch = errors.New("transactions: kind da categoria diverge da direction")
 
 func parseISO8601(s string) (time.Time, error) {

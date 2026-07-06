@@ -82,5 +82,10 @@ Labels permitidos: `workflow`, `step`, `status`, `outcome`. **Proibido** `user_i
 - Substituir `Snapshot.State` inteiro no resume (use `MergePatch`).
 
 ## Uso pelo consumidor
-Ver `BuildWeatherWorkflow` em `internal/agents/application/workflows/workflow.go` e o exemplo em
-`build-new-agent.md`. O estado `S` é a struct do consumidor (ex.: `WeatherState`), serializada por `Codec[S]`.
+
+Ver os workflows reais em `internal/agents/application/workflows/`:
+
+- `BuildOnboardingWorkflow`: fluxo definido de onboarding financeiro, com estado `OnboardingState`, steps de coleta, chamadas ao agente quando necessário e persistência de WorkingMemory.
+- `BuildDestructiveConfirmWorkflow`: fluxo de confirmação para operações destrutivas/sensíveis, com estado `ConfirmState`, suspensão por `SuspendAwaitingInput` e retomada por merge-patch de `resumeText`.
+
+O estado `S` é sempre struct do consumidor e é serializado por `Codec[S]`. Não coloque tipos financeiros no kernel; coloque-os no consumidor.

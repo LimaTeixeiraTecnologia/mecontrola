@@ -6,8 +6,11 @@ import (
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/google/uuid"
 
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	txinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/dtos/input"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 )
@@ -36,9 +39,30 @@ func NewRecurrenceManagerAdapter(
 	}
 }
 
+func (a *recurrenceManagerAdapter) principalCtx(ctx context.Context) (context.Context, error) {
+	if _, ok := auth.FromContext(ctx); ok {
+		return ctx, nil
+	}
+	resourceID, _, _, ok := agent.InboundIdentityFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("agents/binding/recurrence_manager: identidade inbound ausente")
+	}
+	userID, err := uuid.Parse(resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("agents/binding/recurrence_manager: userId inválido: %w", err)
+	}
+	return auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp}), nil
+}
+
 func (a *recurrenceManagerAdapter) CreateRecurrence(ctx context.Context, in agentsifaces.RawRecurrence) (agentsifaces.EntryRef, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.recurrence_manager.create_recurrence")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
 
 	out, err := a.createRT.Execute(ctx, txinput.RawCreateRecurringTemplate{
 		Direction:     in.Direction,
@@ -56,12 +80,18 @@ func (a *recurrenceManagerAdapter) CreateRecurrence(ctx context.Context, in agen
 		span.RecordError(err)
 		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/recurrence_manager: criar recorrência: %w", err)
 	}
-	return agentsifaces.EntryRef{ID: out.ID, Kind: "recurring_template"}, nil
+	return agentsifaces.EntryRef{ID: out.ID, Kind: agentsifaces.EntryKindRecurringTemplate}, nil
 }
 
 func (a *recurrenceManagerAdapter) UpdateRecurrence(ctx context.Context, templateID string, in agentsifaces.RawUpdateRecurrence) (agentsifaces.EntryRef, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.recurrence_manager.update_recurrence")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
 
 	raw := txinput.RawUpdateRecurringTemplate{
 		Version: in.Version,
@@ -95,12 +125,18 @@ func (a *recurrenceManagerAdapter) UpdateRecurrence(ctx context.Context, templat
 		span.RecordError(err)
 		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/recurrence_manager: atualizar recorrência: %w", err)
 	}
-	return agentsifaces.EntryRef{ID: out.ID, Kind: "recurring_template"}, nil
+	return agentsifaces.EntryRef{ID: out.ID, Kind: agentsifaces.EntryKindRecurringTemplate}, nil
 }
 
 func (a *recurrenceManagerAdapter) DeleteRecurrence(ctx context.Context, templateID string, version int64) error {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.recurrence_manager.delete_recurrence")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
 
 	if err := a.deleteRT.Execute(ctx, templateID, version); err != nil {
 		span.RecordError(err)
@@ -112,6 +148,12 @@ func (a *recurrenceManagerAdapter) DeleteRecurrence(ctx context.Context, templat
 func (a *recurrenceManagerAdapter) ListRecurrences(ctx context.Context, activeOnly bool, cursor string, limit int) ([]agentsifaces.Recurrence, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.recurrence_manager.list_recurrences")
 	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
 
 	page, err := a.listRT.Execute(ctx, activeOnly, cursor, limit)
 	if err != nil {

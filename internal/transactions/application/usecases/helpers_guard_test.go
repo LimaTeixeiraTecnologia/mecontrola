@@ -28,7 +28,7 @@ func (s *CategoryGuardSuite) TestGuardSubcategoryRequired() {
 			direction: valueobjects.DirectionOutcome,
 			present:   false,
 			expect: func(err error) {
-				s.ErrorIs(err, ErrOutcomeTransactionRequiresSubcategory)
+				s.ErrorIs(err, ErrTransactionRequiresSubcategory)
 			},
 		},
 		{
@@ -40,9 +40,17 @@ func (s *CategoryGuardSuite) TestGuardSubcategoryRequired() {
 			},
 		},
 		{
-			name:      "income sem subcategory ok (RF-20)",
+			name:      "income sem subcategory falha (RF-20)",
 			direction: valueobjects.DirectionIncome,
 			present:   false,
+			expect: func(err error) {
+				s.ErrorIs(err, ErrTransactionRequiresSubcategory)
+			},
+		},
+		{
+			name:      "income com subcategory ok",
+			direction: valueobjects.DirectionIncome,
+			present:   true,
 			expect: func(err error) {
 				s.NoError(err)
 			},

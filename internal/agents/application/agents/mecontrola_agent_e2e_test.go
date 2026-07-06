@@ -86,19 +86,49 @@ func (l *e2eStubCardLookup) GetForUser(_ context.Context, _, _ uuid.UUID) (value
 	return l.snapshot, nil
 }
 
-type e2eStubCategoriesReader struct {
-	rootID uuid.UUID
-	leafID uuid.UUID
+type e2eStubCategoryGate struct{ version int64 }
+
+func (g *e2eStubCategoryGate) Approve(_ context.Context, in txifaces.CategoryWriteGateInput) (valueobjects.CategoryWriteEvidence, error) {
+	kind := "expense"
+	if in.Direction == "income" {
+		kind = "income"
+	}
+	return valueobjects.NewCategoryWriteEvidence(valueobjects.CategoryWriteEvidenceInput{
+		RootCategoryID:   in.RootCategoryID,
+		SubcategoryID:    in.SubcategoryID,
+		Kind:             kind,
+		Path:             "Alimentação > Restaurante",
+		Outcome:          "matched",
+		Score:            0.95,
+		Confidence:       "high",
+		Quality:          "exact",
+		SignalType:       "alias",
+		MatchedTerm:      "almoço",
+		MatchReason:      "alias match",
+		Source:           valueobjects.CategoryDecisionSourceAutoMatched,
+		EditorialVersion: g.version,
+		DecidedAt:        time.Now().UTC(),
+	})
 }
 
-func (r *e2eStubCategoriesReader) SearchDictionary(_ context.Context, _, _ string) ([]agentsifaces.CategoryCandidate, error) {
-	return []agentsifaces.CategoryCandidate{
-		{CategoryID: r.leafID, RootCategoryID: r.rootID, Path: "Alimentação > Restaurante", Score: 0.95},
+type e2eStubCategoriesReader struct {
+	rootID  uuid.UUID
+	leafID  uuid.UUID
+	version int64
+}
+
+func (r *e2eStubCategoriesReader) SearchDictionary(_ context.Context, _, _ string) (agentsifaces.CategorySearchResult, error) {
+	return agentsifaces.CategorySearchResult{
+		Outcome: agentsifaces.ClassifyOutcomeMatched,
+		Version: r.version,
+		Candidates: []agentsifaces.CategoryCandidate{
+			{CategoryID: r.leafID, RootCategoryID: r.rootID, Path: "Alimentação > Restaurante", Score: 0.95, SignalType: "alias", Confidence: "high", MatchQuality: "exact", MatchReason: "alias match"},
+		},
 	}, nil
 }
 
-func (r *e2eStubCategoriesReader) ResolveRootsBySlug(_ context.Context, _ []string) (map[string]uuid.UUID, error) {
-	return map[string]uuid.UUID{}, nil
+func (r *e2eStubCategoriesReader) ResolveForWrite(_ context.Context, _ agentsifaces.CategoryWriteRequest) (agentsifaces.CategoryWriteDecision, error) {
+	return agentsifaces.CategoryWriteDecision{}, nil
 }
 
 func (r *e2eStubCategoriesReader) ListCategories(_ context.Context, _ uuid.UUID) ([]agentsifaces.Category, error) {
@@ -107,20 +137,21 @@ func (r *e2eStubCategoriesReader) ListCategories(_ context.Context, _ uuid.UUID)
 
 type MeControlaAgentE2ESuite struct {
 	suite.Suite
-	ctx           context.Context
-	db            *sqlx.DB
-	userID        uuid.UUID
-	categoryID    uuid.UUID
-	subcategoryID uuid.UUID
-	adapter       agentsifaces.TransactionsLedger
-	ledgerRepo    agentusecases.WriteLedgerRepository
-	idem          *agentusecases.IdempotentWrite
-	provider      llm.Provider
-	tools         []tool.ToolHandle
-	firstWamid    string
-	firstSeq      int
-	firstTxID     uuid.UUID
-	firstOpName   string
+	ctx              context.Context
+	db               *sqlx.DB
+	userID           uuid.UUID
+	categoryID       uuid.UUID
+	subcategoryID    uuid.UUID
+	editorialVersion int64
+	adapter          agentsifaces.TransactionsLedger
+	ledgerRepo       agentusecases.WriteLedgerRepository
+	idem             *agentusecases.IdempotentWrite
+	provider         llm.Provider
+	tools            []tool.ToolHandle
+	firstWamid       string
+	firstSeq         int
+	firstTxID        uuid.UUID
+	firstOpName      string
 }
 
 func TestMeControlaAgentE2ESuite(t *testing.T) {
@@ -148,6 +179,18 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	)
 	s.Require().NoError(err)
 
+	_, err = db.ExecContext(s.ctx, `
+		INSERT INTO mecontrola.categories (id, slug, name, kind, parent_id, allocation_type)
+		VALUES ($1, 'e2e-alimentacao', 'Alimentação', 'expense', NULL, 'consumption'),
+		       ($2, 'e2e-restaurante', 'Restaurante', 'expense', $1, 'consumption')`,
+		s.categoryID, s.subcategoryID,
+	)
+	s.Require().NoError(err)
+
+	s.Require().NoError(
+		db.QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version LIMIT 1`).Scan(&s.editorialVersion),
+	)
+
 	snapshot, err := valueobjects.NewCardBillingSnapshot(20, 25)
 	s.Require().NoError(err)
 
@@ -156,6 +199,7 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 		uow.NewUnitOfWork(db),
 		&e2eStubCardLookup{snapshot: snapshot},
 		&e2eStubCategoryValidator{catID: catID},
+		&e2eStubCategoryGate{version: s.editorialVersion},
 		services.TransactionWorkflow{},
 		&e2eTxPublisher{},
 		o11y,
@@ -171,7 +215,7 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)
 	s.idem = agentusecases.NewIdempotentWrite(s.ledgerRepo, o11y)
 
-	reader := &e2eStubCategoriesReader{rootID: s.categoryID, leafID: s.subcategoryID}
+	reader := &e2eStubCategoriesReader{rootID: s.categoryID, leafID: s.subcategoryID, version: s.editorialVersion}
 	registerEntry := agentusecases.NewRegisterEntry(reader, s.adapter, s.idem, o11y)
 
 	s.tools = []tool.ToolHandle{

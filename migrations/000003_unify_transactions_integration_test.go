@@ -106,18 +106,44 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 }
 
 func (s *Unify000003Suite) assertCompletenessCheckRejectsPartialCard() {
+	var expenseRootID, expenseLeafID string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id IS NULL LIMIT 1`,
+	).Scan(&expenseRootID))
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT id::text FROM mecontrola.categories WHERE kind='expense' AND parent_id=$1::uuid LIMIT 1`,
+		expenseRootID,
+	).Scan(&expenseLeafID))
+
+	var currentVersion int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT version FROM mecontrola.category_editorial_version`,
+	).Scan(&currentVersion))
+
 	userID := "aaaaaaaa-2222-2222-2222-aaaaaaaaaaaa"
 	_, err := s.db.ExecContext(s.ctx, `
 		INSERT INTO mecontrola.transactions (
 			id, user_id, direction, payment_method, amount_cents, description,
-			category_id, category_name_snapshot, ref_month, occurred_at,
+			category_id, subcategory_id,
+			category_name_snapshot, subcategory_name_snapshot,
+			category_kind, category_path, category_outcome, category_score,
+			category_confidence, category_match_quality, category_signal_type,
+			category_matched_term, category_match_reason, category_decision_source,
+			category_editorial_version, category_decided_at,
+			ref_month, occurred_at,
 			card_id, created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, 2, 7, 1000, 'compra incompleta',
-			gen_random_uuid(), 'cat', '2026-06', now(),
+			$2::uuid, $3::uuid,
+			'categoria', 'subcategoria',
+			'expense', 'expense.root/leaf', 'matched', 1.0,
+			'high', 'exact', 'canonical_name',
+			'term', 'exact match', 'auto_matched',
+			$4, now(),
+			'2026-06', now(),
 			gen_random_uuid(), now(), now()
 		)
-	`, userID)
+	`, userID, expenseRootID, expenseLeafID, currentVersion)
 	s.Require().Error(err)
 	s.Contains(err.Error(), "transactions_card_completeness_chk")
 }

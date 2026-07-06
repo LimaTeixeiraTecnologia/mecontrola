@@ -18,13 +18,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/commands"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/services"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 type UpdateTransaction struct {
 	factory           interfaces.RepositoryFactory
 	uow               uow.UnitOfWork
 	categoryValidator interfaces.CategoryValidator
+	categoryGate      interfaces.CategoryWriteGate
 	workflow          services.TransactionWorkflow
 	publisher         interfaces.TransactionEventPublisher
 	o11y              observability.Observability
@@ -34,6 +34,7 @@ func NewUpdateTransaction(
 	factory interfaces.RepositoryFactory,
 	u uow.UnitOfWork,
 	categoryValidator interfaces.CategoryValidator,
+	categoryGate interfaces.CategoryWriteGate,
 	workflow services.TransactionWorkflow,
 	publisher interfaces.TransactionEventPublisher,
 	o11y observability.Observability,
@@ -42,6 +43,7 @@ func NewUpdateTransaction(
 		factory:           factory,
 		uow:               u,
 		categoryValidator: categoryValidator,
+		categoryGate:      categoryGate,
 		workflow:          workflow,
 		publisher:         publisher,
 		o11y:              o11y,
@@ -85,8 +87,9 @@ func (uc *UpdateTransaction) Execute(ctx context.Context, txID string, raw input
 	eventID := uuid.New()
 	now := time.Now().UTC()
 
+	ev := evidenceFromRawUpdate(raw)
 	tx, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.Transaction, error) {
-		return uc.persist(ctx, span, db, cmd, catSnap, catSubID, eventID, now)
+		return uc.persist(ctx, span, db, ev, cmd, catSnap, catSubID, eventID, now)
 	})
 	if execErr != nil {
 		span.RecordError(execErr)
@@ -100,6 +103,7 @@ func (uc *UpdateTransaction) persist(
 	ctx context.Context,
 	span observability.Span,
 	db database.DBTX,
+	ev categoryEvidence,
 	cmd commands.UpdateTransaction,
 	catSnap interfaces.CategorySnapshot,
 	catSubID *uuid.UUID,
@@ -123,8 +127,13 @@ func (uc *UpdateTransaction) persist(
 	}
 	currentItems := derefInvoiceItems(itemPtrs)
 
+	evidence, gateErr := approveUpdateCategory(ctx, uc.categoryGate, ev, cmd.Direction.String(), "update_transaction", cmd.CategoryID.UUID(), catSubID)
+	if gateErr != nil {
+		return entities.Transaction{}, fmt.Errorf("transactions/update_transaction: gate de categoria: %w", gateErr)
+	}
+
 	itemIDs := newInvoiceItemIDs(cmd.PaymentMethod, cmd.Installments)
-	decision := uc.workflow.DecideUpdate(*current, currentItems, cmd, valueobjects.CategoryWriteEvidence{}, eventID, itemIDs, now)
+	decision := uc.workflow.DecideUpdate(*current, currentItems, cmd, evidence, eventID, itemIDs, now)
 	span.SetAttributes(
 		observability.Int("installments_total", len(decision.Items)),
 		observability.Int("ref_months_affected_count", refMonthsAffectedCount(decision.Event)),

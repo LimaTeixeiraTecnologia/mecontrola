@@ -11,38 +11,37 @@ import (
 	catinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	catoutput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/output"
 	catusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
-	catvos "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/domain/valueobjects"
 )
 
 type categoriesReaderAdapter struct {
-	searchDictionary *catusecases.SearchDictionary
-	resolveBySlug    *catusecases.ResolveBySlug
-	listCategories   *catusecases.ListCategories
-	o11y             observability.Observability
+	searchDictionary        *catusecases.SearchDictionary
+	resolveCategoryForWrite *catusecases.ResolveCategoryForWrite
+	listCategories          *catusecases.ListCategories
+	o11y                    observability.Observability
 }
 
 func NewCategoriesReaderAdapter(
 	searchDictionary *catusecases.SearchDictionary,
-	resolveBySlug *catusecases.ResolveBySlug,
+	resolveCategoryForWrite *catusecases.ResolveCategoryForWrite,
 	listCategories *catusecases.ListCategories,
 	o11y observability.Observability,
 ) agentsifaces.CategoriesReader {
 	return &categoriesReaderAdapter{
-		searchDictionary: searchDictionary,
-		resolveBySlug:    resolveBySlug,
-		listCategories:   listCategories,
-		o11y:             o11y,
+		searchDictionary:        searchDictionary,
+		resolveCategoryForWrite: resolveCategoryForWrite,
+		listCategories:          listCategories,
+		o11y:                    o11y,
 	}
 }
 
-func (a *categoriesReaderAdapter) SearchDictionary(ctx context.Context, term, kind string) ([]agentsifaces.CategoryCandidate, error) {
+func (a *categoriesReaderAdapter) SearchDictionary(ctx context.Context, term, kind string) (agentsifaces.CategorySearchResult, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.categories_reader.search_dictionary")
 	defer span.End()
 
-	k, err := catvos.ParseKind(kind)
+	k, err := catusecases.ParseKind(kind)
 	if err != nil {
 		span.RecordError(err)
-		return nil, fmt.Errorf("agents/binding/categories_reader: kind inválido %q: %w", kind, agentsifaces.ErrCategoriesReaderUnavailable)
+		return agentsifaces.CategorySearchResult{}, fmt.Errorf("agents/binding/categories_reader: kind inválido %q: %w", kind, agentsifaces.ErrCategoriesReaderUnavailable)
 	}
 
 	out, err := a.searchDictionary.Execute(ctx, &catinput.SearchDictionaryInput{
@@ -51,7 +50,7 @@ func (a *categoriesReaderAdapter) SearchDictionary(ctx context.Context, term, ki
 	})
 	if err != nil {
 		span.RecordError(err)
-		return nil, fmt.Errorf("agents/binding/categories_reader: buscar dicionário: %w", err)
+		return agentsifaces.CategorySearchResult{}, fmt.Errorf("agents/binding/categories_reader: buscar dicionário: %w", err)
 	}
 
 	candidates := make([]agentsifaces.CategoryCandidate, 0, len(out.Candidates))
@@ -61,23 +60,61 @@ func (a *categoriesReaderAdapter) SearchDictionary(ctx context.Context, term, ki
 			RootCategoryID: c.RootCategoryID,
 			Path:           c.Path,
 			MatchedTerm:    c.MatchedTerm,
+			SignalType:     c.SignalType,
+			Confidence:     c.Confidence,
+			MatchQuality:   c.MatchQuality,
 			Score:          c.Score,
 			IsAmbiguous:    c.IsAmbiguous,
+			MatchReason:    c.MatchReason,
 		})
 	}
-	return candidates, nil
-}
-
-func (a *categoriesReaderAdapter) ResolveRootsBySlug(ctx context.Context, slugs []string) (map[string]uuid.UUID, error) {
-	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.categories_reader.resolve_roots_by_slug")
-	defer span.End()
-
-	result, err := a.resolveBySlug.Execute(ctx, slugs)
+	outcome, err := agentsifaces.ParseClassifyOutcome(out.Outcome.String())
 	if err != nil {
 		span.RecordError(err)
-		return nil, fmt.Errorf("agents/binding/categories_reader: resolver slugs: %w", err)
+		return agentsifaces.CategorySearchResult{}, fmt.Errorf("agents/binding/categories_reader: outcome inválido %q: %w", out.Outcome.String(), err)
 	}
-	return result, nil
+	return agentsifaces.CategorySearchResult{
+		Outcome:    outcome,
+		Version:    out.Version,
+		HasMore:    out.HasMore,
+		Candidates: candidates,
+	}, nil
+}
+
+func (a *categoriesReaderAdapter) ResolveForWrite(ctx context.Context, input agentsifaces.CategoryWriteRequest) (agentsifaces.CategoryWriteDecision, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.categories_reader.resolve_for_write")
+	defer span.End()
+
+	kind, err := catusecases.ParseKind(input.Kind.String())
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.CategoryWriteDecision{}, fmt.Errorf("agents/binding/categories_reader: kind inválido %q: %w", input.Kind.String(), agentsifaces.ErrCategoriesReaderUnavailable)
+	}
+
+	out, err := a.resolveCategoryForWrite.Execute(ctx, &catinput.ResolveCategoryForWriteInput{
+		RootCategoryID:  input.RootCategoryID,
+		SubcategoryID:   input.SubcategoryID,
+		Kind:            kind,
+		ExpectedVersion: input.ExpectedVersion,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.CategoryWriteDecision{}, fmt.Errorf("agents/binding/categories_reader: resolver para escrita: %w", err)
+	}
+
+	decisionKind, err := agentsifaces.ParseCategoryKind(out.Kind)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.CategoryWriteDecision{}, fmt.Errorf("agents/binding/categories_reader: kind de decisão inválido %q: %w", out.Kind, err)
+	}
+	return agentsifaces.CategoryWriteDecision{
+		RootCategoryID:   out.RootCategoryID,
+		SubcategoryID:    out.SubcategoryID,
+		Kind:             decisionKind,
+		Path:             out.Path,
+		EditorialVersion: out.EditorialVersion,
+		Deprecated:       out.Deprecated,
+	}, nil
 }
 
 func (a *categoriesReaderAdapter) ListCategories(ctx context.Context, _ uuid.UUID) ([]agentsifaces.Category, error) {

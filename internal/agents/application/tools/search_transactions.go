@@ -94,7 +94,7 @@ func buildSearchTransactionsExec(ledger interfaces.TransactionsLedger) func(cont
 		out := make([]SearchTransactionsEntryOutput, len(entries))
 		for i, e := range entries {
 			out[i] = SearchTransactionsEntryOutput{
-				Kind:        e.Kind,
+				Kind:        e.Kind.String(),
 				ID:          e.ID,
 				RefMonth:    e.RefMonth,
 				AmountCents: e.AmountCents,

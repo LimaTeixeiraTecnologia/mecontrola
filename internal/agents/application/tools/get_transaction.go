@@ -79,7 +79,7 @@ func buildGetTransactionExec(ledger interfaces.TransactionsLedger) func(context.
 			return GetTransactionOutput{}, fmt.Errorf("get_transaction: %w", err)
 		}
 		return GetTransactionOutput{
-			Kind:                 entry.Kind,
+			Kind:                 entry.Kind.String(),
 			ID:                   entry.ID,
 			UserID:               entry.UserID,
 			Direction:            entry.Direction,

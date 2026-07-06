@@ -290,7 +290,7 @@ func TestBuildQueryMonthToolSuccess(t *testing.T) {
 
 	ledger.EXPECT().ListMonthlyEntries(mock.Anything, testUserID, "2026-06", "", 50).
 		Return([]interfaces.MonthlyEntry{
-			{Kind: "transaction", ID: testResourceID.String(), RefMonth: "2026-06", AmountCents: 5000, Direction: "outcome", Description: "Almoço", CreatedAt: time.Now()},
+			{Kind: interfaces.EntryKindTransaction, ID: testResourceID.String(), RefMonth: "2026-06", AmountCents: 5000, Direction: "outcome", Description: "Almoço", CreatedAt: time.Now()},
 		}, nil).Once()
 
 	handle := BuildQueryMonthTool(ledger)
@@ -364,12 +364,12 @@ func TestBuildAdjustAllocationToolSuccess(t *testing.T) {
 	assert.Equal(t, "adjust_allocation", handle.ID())
 
 	argsJSON, _ := json.Marshal(AdjustAllocationInput{
-		UserID:     testUserID.String(),
 		Competence: "2026-06",
 		RootSlug:   "moradia",
 		Percentage: 30,
 	})
-	out, err := handle.Invoke(context.Background(), argsJSON)
+	ctx := agent.WithToolInvocationContext(context.Background(), testUserID.String(), "wamid-adjust", 0)
+	out, err := handle.Invoke(ctx, argsJSON)
 	require.NoError(t, err)
 
 	var result AdjustAllocationOutput
@@ -387,12 +387,12 @@ func TestBuildAdjustAllocationToolError(t *testing.T) {
 
 	handle := BuildAdjustAllocationTool(planner)
 	argsJSON, _ := json.Marshal(AdjustAllocationInput{
-		UserID:     testUserID.String(),
 		Competence: "2026-06",
 		RootSlug:   "moradia",
 		Percentage: 30,
 	})
-	_, err := handle.Invoke(context.Background(), argsJSON)
+	ctx := agent.WithToolInvocationContext(context.Background(), testUserID.String(), "wamid-adjust", 0)
+	_, err := handle.Invoke(ctx, argsJSON)
 	require.Error(t, err)
 }
 
@@ -401,8 +401,12 @@ func TestBuildClassifyCategoryToolSuccess(t *testing.T) {
 
 	rootID := uuid.New()
 	reader.EXPECT().SearchDictionary(mock.Anything, "restaurante", "outcome").
-		Return([]interfaces.CategoryCandidate{
-			{CategoryID: testCategoryID, RootCategoryID: rootID, Path: "alimentacao/restaurante", Score: 0.95, IsAmbiguous: false},
+		Return(interfaces.CategorySearchResult{
+			Outcome: interfaces.ClassifyOutcomeMatched,
+			Version: 1,
+			Candidates: []interfaces.CategoryCandidate{
+				{CategoryID: testCategoryID, RootCategoryID: rootID, Path: "alimentacao/restaurante", Score: 0.95, IsAmbiguous: false, SignalType: "alias", Confidence: "high", MatchQuality: "exact"},
+			},
 		}, nil).Once()
 
 	handle := BuildClassifyCategoryTool(reader)
@@ -425,9 +429,13 @@ func TestBuildClassifyCategoryToolAmbiguous(t *testing.T) {
 	reader := imocks.NewCategoriesReader(t)
 
 	reader.EXPECT().SearchDictionary(mock.Anything, "mercado", "outcome").
-		Return([]interfaces.CategoryCandidate{
-			{CategoryID: testCategoryID, Path: "alimentacao/mercado", Score: 0.8, IsAmbiguous: false},
-			{CategoryID: uuid.New(), Path: "lazer/mercado", Score: 0.75, IsAmbiguous: false},
+		Return(interfaces.CategorySearchResult{
+			Outcome: interfaces.ClassifyOutcomeAmbiguous,
+			Version: 1,
+			Candidates: []interfaces.CategoryCandidate{
+				{CategoryID: testCategoryID, Path: "alimentacao/mercado", Score: 0.8, IsAmbiguous: false},
+				{CategoryID: uuid.New(), Path: "lazer/mercado", Score: 0.75, IsAmbiguous: false},
+			},
 		}, nil).Once()
 
 	handle := BuildClassifyCategoryTool(reader)

@@ -55,16 +55,17 @@ func (s *OriginIdempotencySuite) prepareCard(userID, cardID uuid.UUID) {
 func (s *OriginIdempotencySuite) newTransactionWithOrigin(userID uuid.UUID, wamid string) *entities.Transaction {
 	amount, _ := valueobjects.NewMoney(5000)
 	desc, _ := valueobjects.NewDescription("Supermercado")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	now := time.Now().UTC()
 	tx := entities.NewTransaction(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
 		valueobjects.DirectionOutcome, valueobjects.PaymentMethodPix,
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Custo Fixo", "",
+		"Custo Fixo", "Aluguel",
+		expenseEvidence(),
 		rm, now, now,
 	)
 	if wamid != "" {
@@ -76,16 +77,17 @@ func (s *OriginIdempotencySuite) newTransactionWithOrigin(userID uuid.UUID, wami
 func (s *OriginIdempotencySuite) newCreditTransactionWithOrigin(userID, cardID uuid.UUID, wamid string) *entities.Transaction {
 	amount, _ := valueobjects.NewMoney(9000)
 	desc, _ := valueobjects.NewDescription("Notebook")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	now := time.Now().UTC()
 	tx := entities.NewTransaction(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
 		valueobjects.DirectionOutcome, valueobjects.PaymentMethodCreditCard,
-		amount, desc, catID,
+		amount, desc,
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Eletrônicos", "",
+		"Custo Fixo", "Aluguel",
+		expenseEvidence(),
 		rm, now, now,
 	)
 	inst, _ := valueobjects.NewInstallmentCount(3)

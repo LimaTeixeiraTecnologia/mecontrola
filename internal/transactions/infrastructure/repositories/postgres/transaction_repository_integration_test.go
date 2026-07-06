@@ -29,20 +29,21 @@ func TestTransactionRepositorySuite(t *testing.T) {
 }
 
 func (s *TransactionRepositorySuite) newTransaction(userID uuid.UUID) *entities.Transaction {
-	dir := valueobjects.DirectionOutcome
 	pm := valueobjects.PaymentMethodPix
 	amount, _ := valueobjects.NewMoney(5000)
 	desc, _ := valueobjects.NewDescription("Supermercado")
-	catID := valueobjects.CategoryIDFromUUID(uuid.New())
 	rm, _ := valueobjects.NewRefMonth("2026-06")
 	now := time.Now().UTC()
+	ev := expenseEvidence()
 
 	tx := entities.NewTransaction(
 		uuid.New(),
 		valueobjects.UserIDFromUUID(userID),
-		dir, pm, amount, desc, catID,
+		valueobjects.DirectionOutcome, pm, amount, desc,
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Custo Fixo", "",
+		"Custo Fixo", "Aluguel",
+		ev,
 		rm, now, now,
 	)
 	return &tx
@@ -64,6 +65,20 @@ func (s *TransactionRepositorySuite) TestCreateAndGetByID() {
 	s.Equal(tx.ID(), found.ID())
 	s.Equal(int64(5000), found.Amount().Cents())
 	s.Equal("2026-06", found.RefMonth().String())
+
+	want := expenseEvidence()
+	got := found.Evidence()
+	s.Equal(want.Score(), got.Score())
+	s.Equal(want.Confidence(), got.Confidence())
+	s.Equal(want.Quality(), got.Quality())
+	s.Equal(want.SignalType(), got.SignalType())
+	s.Equal(want.MatchedTerm(), got.MatchedTerm())
+	s.Equal(want.MatchReason(), got.MatchReason())
+	s.Equal(want.EditorialVersion(), got.EditorialVersion())
+	s.Equal(want.Source(), got.Source())
+	s.Equal(want.Path(), got.Path())
+	s.Equal(want.Kind(), got.Kind())
+	s.False(got.DecidedAt().IsZero())
 }
 
 func (s *TransactionRepositorySuite) TestGetByID_NotFound_OtherUser() {
@@ -94,7 +109,8 @@ func (s *TransactionRepositorySuite) TestUpdateWithVersion_Success() {
 	tx.Update(
 		tx.Direction(), tx.PaymentMethod(), amount2, desc2,
 		tx.CategoryID(), tx.SubcategoryID(),
-		"Custo Fixo", "",
+		"Custo Fixo", "Aluguel",
+		expenseEvidence(),
 		rm, now, now,
 	)
 
@@ -117,7 +133,8 @@ func (s *TransactionRepositorySuite) TestUpdateWithVersion_VersionConflict() {
 	s.Require().NoError(createTx(repo, ctx, tx))
 
 	tx.Update(tx.Direction(), tx.PaymentMethod(), tx.Amount(), tx.Description(),
-		tx.CategoryID(), tx.SubcategoryID(), "", "",
+		tx.CategoryID(), tx.SubcategoryID(), "Custo Fixo", "Aluguel",
+		expenseEvidence(),
 		tx.RefMonth(), tx.OccurredAt(), time.Now().UTC())
 
 	err := repo.UpdateWithVersion(ctx, tx, 999)
@@ -190,17 +207,17 @@ func (s *TransactionRepositorySuite) TestSumByMonth() {
 		uuid.New(), valueobjects.UserIDFromUUID(userID),
 		valueobjects.DirectionOutcome, valueobjects.PaymentMethodPix,
 		mustMoney(s.T(), 3000), mustDesc(s.T(), "Saída"),
-		valueobjects.CategoryIDFromUUID(uuid.New()),
+		valueobjects.CategoryIDFromUUID(seedExpenseRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Cat", "", rm, now, now,
+		"Custo Fixo", "Aluguel", expenseEvidence(), rm, now, now,
 	)
 	txIn := entities.NewTransaction(
 		uuid.New(), valueobjects.UserIDFromUUID(userID),
 		valueobjects.DirectionIncome, valueobjects.PaymentMethodTED,
 		mustMoney(s.T(), 10000), mustDesc(s.T(), "Salário"),
-		valueobjects.CategoryIDFromUUID(uuid.New()),
+		valueobjects.CategoryIDFromUUID(seedIncomeRootID),
 		option.None[valueobjects.SubcategoryID](),
-		"Renda", "", rm, now, now,
+		"Salário", "Décimo Terceiro", incomeEvidence(), rm, now, now,
 	)
 	s.Require().NoError(createTx(repo, ctx, &txOut))
 	s.Require().NoError(createTx(repo, ctx, &txIn))
