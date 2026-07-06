@@ -291,11 +291,11 @@ func (s *RuntimeTestSuite) TestExecute_AgentExecuteError() {
 	}
 }
 
-func (s *RuntimeTestSuite) TestExecute_InjectsRecentHistoryIntoMessages() {
+func (s *RuntimeTestSuite) TestExecute_InjectsRecentHistoryChronologically() {
 	threadID := uuid.New()
 	history := []memory.Message{
-		{Role: memory.RoleUser, Content: "primeira pergunta"},
 		{Role: memory.RoleAssistant, Content: "primeira resposta"},
+		{Role: memory.RoleUser, Content: "primeira pergunta"},
 	}
 	msgStore := &capturingMessageStore{recent: history}
 	ag := &capturingAgent{id: "agent-1", instructions: "Be helpful", result: Result{Content: "ok", Mode: ExecutionModeSync}}
@@ -520,9 +520,9 @@ func (s *RuntimeTestSuite) TestExecute_RF39_RoleToolMessagesAreNotPersisted() {
 func (s *RuntimeTestSuite) TestBuildMessages_SkipsLegacyRoleToolHistory() {
 	threadID := uuid.New()
 	history := []memory.Message{
-		{Role: memory.RoleUser, Content: "pergunta anterior"},
-		{Role: memory.RoleTool, Content: `{"resourceId":"abc","kind":"transaction"}`},
 		{Role: memory.RoleAssistant, Content: "resposta anterior"},
+		{Role: memory.RoleTool, Content: `{"resourceId":"abc","kind":"transaction"}`},
+		{Role: memory.RoleUser, Content: "pergunta anterior"},
 	}
 	msgStore := &capturingMessageStore{recent: history}
 	ag := &capturingAgent{id: "agent-1", instructions: "instr", result: Result{Content: "ok", Mode: ExecutionModeSync}}

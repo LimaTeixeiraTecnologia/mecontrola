@@ -240,7 +240,8 @@ func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid
 	}
 
 	recent, _ := r.messages.Recent(ctx, threadPK, 20)
-	for _, m := range recent {
+	for i := len(recent) - 1; i >= 0; i-- {
+		m := recent[i]
 		if m.Role == memory.RoleTool {
 			continue
 		}
