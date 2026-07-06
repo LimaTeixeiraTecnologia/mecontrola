@@ -562,3 +562,106 @@ func (s *RegisterEntrySuite) TestClassifyBlocking() {
 		})
 	}
 }
+
+func (s *RegisterEntrySuite) TestRegisterExpenseExplicitCategory() {
+	type dependencies struct {
+		catMock    *imocks.CategoriesReader
+		ledgerMock *imocks.TransactionsLedger
+		writer     *stubRegisterWriter
+		captured   *interfaces.RawTransaction
+	}
+
+	scenarios := []struct {
+		name         string
+		dependencies func() dependencies
+		expect       func(d dependencies, result RegisterResult, err error)
+	}{
+		{
+			name: "deve gravar via ResolveForWrite com subcategoria explícita sem consultar dicionário",
+			dependencies: func() dependencies {
+				captured := &interfaces.RawTransaction{}
+				return dependencies{
+					catMock: func() *imocks.CategoriesReader {
+						s.catMock.EXPECT().ResolveForWrite(mock.Anything, interfaces.CategoryWriteRequest{
+							RootCategoryID:  s.rootID,
+							SubcategoryID:   s.leafID,
+							Kind:            interfaces.CategoryKindExpense,
+							ExpectedVersion: 7,
+						}).Return(interfaces.CategoryWriteDecision{
+							RootCategoryID:   s.rootID,
+							SubcategoryID:    s.leafID,
+							Kind:             interfaces.CategoryKindExpense,
+							Path:             "Custo Fixo > Supermercado",
+							EditorialVersion: 7,
+						}, nil).Once()
+						return s.catMock
+					}(),
+					ledgerMock: func() *imocks.TransactionsLedger {
+						s.ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
+							RunAndReturn(func(_ context.Context, raw interfaces.RawTransaction) (interfaces.EntryRef, error) {
+								*captured = raw
+								return interfaces.EntryRef{ID: s.resourceID, Kind: interfaces.EntryKindTransaction}, nil
+							}).Once()
+						return s.ledgerMock
+					}(),
+					writer:   &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
+					captured: captured,
+				}
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeRouted, result.Outcome)
+				s.Equal(s.resourceID, result.ResourceID)
+				s.Equal(1, d.writer.called)
+				s.Equal(s.rootID, d.captured.CategoryID)
+				s.Require().NotNil(d.captured.SubcategoryID)
+				s.Equal(s.leafID, *d.captured.SubcategoryID)
+				s.Equal("user_selected_candidate", d.captured.CategorySource)
+				s.Equal("matched", d.captured.CategoryOutcome)
+				s.Equal("high", d.captured.CategoryConfidence)
+				s.Equal("exact", d.captured.CategoryQuality)
+				s.Equal("canonical_name", d.captured.CategorySignalType)
+				s.Equal(int64(7), d.captured.CategoryVersion)
+			},
+		},
+		{
+			name: "deve retornar clarify quando ResolveForWrite falha sem gravar",
+			dependencies: func() dependencies {
+				return dependencies{
+					catMock: func() *imocks.CategoriesReader {
+						s.catMock.EXPECT().ResolveForWrite(mock.Anything, mock.AnythingOfType("interfaces.CategoryWriteRequest")).
+							Return(interfaces.CategoryWriteDecision{}, errors.New("version drift")).Once()
+						return s.catMock
+					}(),
+					ledgerMock: s.ledgerMock,
+					writer:     &stubRegisterWriter{outcome: agent.ToolOutcomeRouted},
+				}
+			},
+			expect: func(d dependencies, result RegisterResult, err error) {
+				s.NoError(err)
+				s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+				s.Equal(0, d.writer.called)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			d := scenario.dependencies()
+			uc := NewRegisterEntry(d.catMock, d.ledgerMock, d.writer, s.obs)
+			result, err := uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+				UserID:          s.userID,
+				WAMID:           "wamid-explicit",
+				ItemSeq:         0,
+				AmountCents:     15000,
+				Description:     "mercado",
+				PaymentMethod:   "pix",
+				OccurredAt:      "2026-07-06",
+				CategoryID:      s.rootID,
+				SubcategoryID:   s.leafID,
+				CategoryVersion: 7,
+			})
+			scenario.expect(d, result, err)
+		})
+	}
+}

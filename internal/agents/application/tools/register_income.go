@@ -13,9 +13,12 @@ import (
 )
 
 type RegisterIncomeInput struct {
-	AmountCents int64  `json:"amountCents"`
-	Description string `json:"description"`
-	OccurredAt  string `json:"occurredAt,omitempty"`
+	AmountCents     int64  `json:"amountCents"`
+	Description     string `json:"description"`
+	OccurredAt      string `json:"occurredAt,omitempty"`
+	CategoryID      string `json:"categoryId,omitempty"`
+	SubcategoryID   string `json:"subcategoryId,omitempty"`
+	CategoryVersion int64  `json:"categoryVersion,omitempty"`
 }
 
 type RegisterIncomeOutput struct {
@@ -32,9 +35,12 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"amountCents": map[string]any{"type": "integer"},
-				"description": map[string]any{"type": "string"},
-				"occurredAt":  map[string]any{"type": "string"},
+				"amountCents":     map[string]any{"type": "integer"},
+				"description":     map[string]any{"type": "string"},
+				"occurredAt":      map[string]any{"type": "string"},
+				"categoryId":      map[string]any{"type": "string"},
+				"subcategoryId":   map[string]any{"type": "string"},
+				"categoryVersion": map[string]any{"type": "integer"},
 			},
 			"required":             []string{"amountCents", "description"},
 			"additionalProperties": false,
@@ -68,13 +74,32 @@ func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, Reg
 		if err != nil {
 			return RegisterIncomeOutput{}, fmt.Errorf("register_income: userId inválido: %w", err)
 		}
+		var categoryID uuid.UUID
+		if in.CategoryID != "" {
+			parsed, parseErr := uuid.Parse(in.CategoryID)
+			if parseErr != nil {
+				return RegisterIncomeOutput{}, fmt.Errorf("register_income: categoryId inválido: %w", parseErr)
+			}
+			categoryID = parsed
+		}
+		var subcategoryID uuid.UUID
+		if in.SubcategoryID != "" {
+			parsed, parseErr := uuid.Parse(in.SubcategoryID)
+			if parseErr != nil {
+				return RegisterIncomeOutput{}, fmt.Errorf("register_income: subcategoryId inválido: %w", parseErr)
+			}
+			subcategoryID = parsed
+		}
 		result, err := registrar.RegisterIncome(ctx, usecases.RegisterIncomeCommand{
-			UserID:      userID,
-			WAMID:       wamid,
-			ItemSeq:     itemSeq,
-			AmountCents: in.AmountCents,
-			Description: in.Description,
-			OccurredAt:  in.OccurredAt,
+			UserID:          userID,
+			WAMID:           wamid,
+			ItemSeq:         itemSeq,
+			AmountCents:     in.AmountCents,
+			Description:     in.Description,
+			OccurredAt:      in.OccurredAt,
+			CategoryID:      categoryID,
+			SubcategoryID:   subcategoryID,
+			CategoryVersion: in.CategoryVersion,
 		})
 		if err != nil {
 			return RegisterIncomeOutput{}, fmt.Errorf("register_income: %w", err)

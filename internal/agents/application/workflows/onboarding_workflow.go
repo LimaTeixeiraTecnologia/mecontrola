@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"time"
@@ -21,7 +22,6 @@ import (
 const OnboardingWorkflowID = "onboarding-workflow"
 
 const (
-	stepWelcomeID      = "step-welcome"
 	stepGoalID         = "step-goal"
 	stepIncomeID       = "step-income"
 	stepCardsID        = "step-cards"
@@ -37,6 +37,22 @@ var canonicalSlugs = []string{
 	"expense.prazeres",
 	"expense.metas",
 	"expense.liberdade_financeira",
+}
+
+var categoryLabels = map[string]string{
+	"expense.custo_fixo":           "💰 Custo Fixo",
+	"expense.conhecimento":         "🎓 Conhecimento",
+	"expense.prazeres":             "🎉 Prazeres",
+	"expense.metas":                "🎯 Metas",
+	"expense.liberdade_financeira": "🏦 Liberdade Financeira",
+}
+
+var _defaultDistributionBP = map[string]int{
+	"expense.custo_fixo":           4000,
+	"expense.conhecimento":         1000,
+	"expense.prazeres":             1000,
+	"expense.metas":                1000,
+	"expense.liberdade_financeira": 3000,
 }
 
 type OnboardingPhase int
@@ -104,6 +120,46 @@ func ParseOnboardingPhase(s string) (OnboardingPhase, error) {
 	}
 }
 
+type allocationInputKind int
+
+const (
+	allocationInputConfirm allocationInputKind = iota + 1
+	allocationInputPercent
+	allocationInputReais
+)
+
+var errInvalidAllocationInput = errors.New("distribution: tipo de entrada invalido")
+
+func (k allocationInputKind) String() string {
+	switch k {
+	case allocationInputConfirm:
+		return "confirm"
+	case allocationInputPercent:
+		return "percent"
+	case allocationInputReais:
+		return "reais"
+	default:
+		return "unknown"
+	}
+}
+
+func (k allocationInputKind) IsValid() bool {
+	return k >= allocationInputConfirm && k <= allocationInputReais
+}
+
+func ParseAllocationInputKind(s string) (allocationInputKind, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "confirm":
+		return allocationInputConfirm, nil
+	case "percent":
+		return allocationInputPercent, nil
+	case "reais":
+		return allocationInputReais, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", errInvalidAllocationInput, s)
+	}
+}
+
 type OnboardingState struct {
 	Phase        OnboardingPhase `json:"phase"`
 	UserID       string          `json:"userID"`
@@ -134,24 +190,105 @@ func DecideIncomeCents(amountBRL float64) (int64, error) {
 	return int64(math.Round(amountBRL * 100)), nil
 }
 
-func DecideDistribution(allocs map[string]int) error {
+func DecideDistribution(allocsBP map[string]int) error {
 	var errs []error
 	total := 0
 	for _, slug := range canonicalSlugs {
-		v, ok := allocs[slug]
+		v, ok := allocsBP[slug]
 		if !ok {
 			errs = append(errs, fmt.Errorf("distribution: categoria ausente: %s", slug))
 			continue
+		}
+		if v < 0 {
+			errs = append(errs, fmt.Errorf("distribution: %s nao pode ser negativo", slug))
 		}
 		total += v
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	if total != 100 {
-		return fmt.Errorf("distribution: soma deve ser 100, recebido %d", total)
+	if total != 10000 {
+		return fmt.Errorf("distribution: soma dos basis points deve ser 10000, recebido %d", total)
 	}
 	return nil
+}
+
+func DecideAllocationsBP(kind allocationInputKind, valuesBySlug map[string]float64, incomeCents int64) (map[string]int, error) {
+	switch kind {
+	case allocationInputConfirm:
+		return maps.Clone(_defaultDistributionBP), nil
+	case allocationInputPercent:
+		bp := make(map[string]int, len(canonicalSlugs))
+		totalPct := 0
+		for _, slug := range canonicalSlugs {
+			pct := int(math.Round(valuesBySlug[slug]))
+			if pct < 0 {
+				return nil, fmt.Errorf("o percentual de %s não pode ser negativo", categoryLabels[slug])
+			}
+			bp[slug] = pct * 100
+			totalPct += pct
+		}
+		if totalPct != 100 {
+			return nil, fmt.Errorf("a soma dos percentuais precisa ser 100%%, mas você informou %d%%", totalPct)
+		}
+		return bp, nil
+	case allocationInputReais:
+		if incomeCents <= 0 {
+			return nil, errors.New("não consegui usar sua renda para converter os valores")
+		}
+		cents := make([]int64, len(canonicalSlugs))
+		var sum int64
+		for i, slug := range canonicalSlugs {
+			v := valuesBySlug[slug]
+			if v < 0 {
+				return nil, fmt.Errorf("o valor de %s não pode ser negativo", categoryLabels[slug])
+			}
+			cents[i] = int64(math.Round(v * 100))
+			sum += cents[i]
+		}
+		if sum != incomeCents {
+			return nil, fmt.Errorf("a soma dos valores (%s) precisa ser igual à sua renda (%s)", formatBRL(sum), formatBRL(incomeCents))
+		}
+		bpSlice := centsToBasisPoints(cents, incomeCents)
+		bp := make(map[string]int, len(canonicalSlugs))
+		for i, slug := range canonicalSlugs {
+			bp[slug] = bpSlice[i]
+		}
+		if err := DecideDistribution(bp); err != nil {
+			return nil, err
+		}
+		return bp, nil
+	default:
+		return nil, errInvalidAllocationInput
+	}
+}
+
+func centsToBasisPoints(cents []int64, totalCents int64) []int {
+	bp := make([]int, len(cents))
+	remainders := make([]int64, len(cents))
+	assigned := 0
+	for i, c := range cents {
+		raw := c * 10000
+		bp[i] = int(raw / totalCents)
+		remainders[i] = raw % totalCents
+		assigned += bp[i]
+	}
+	for leftover := 10000 - assigned; leftover > 0; leftover-- {
+		best := -1
+		var bestRem int64 = -1
+		for i := range cents {
+			if remainders[i] > bestRem {
+				bestRem = remainders[i]
+				best = i
+			}
+		}
+		if best < 0 {
+			break
+		}
+		bp[best]++
+		remainders[best] = -1
+	}
+	return bp
 }
 
 func DecideCardEntry(nickname, bank string, dueDay int) error {
@@ -166,6 +303,46 @@ func DecideCardEntry(nickname, bank string, dueDay int) error {
 		errs = append(errs, fmt.Errorf("card_entry: dueDay deve estar entre 1 e 31, recebido %d", dueDay))
 	}
 	return errors.Join(errs...)
+}
+
+func formatBRL(cents int64) string {
+	negative := cents < 0
+	if negative {
+		cents = -cents
+	}
+	reais := cents / 100
+	subunit := cents % 100
+	sign := ""
+	if negative {
+		sign = "-"
+	}
+	return fmt.Sprintf("%sR$ %d,%02d", sign, reais, subunit)
+}
+
+func allocationBPList(bpBySlug map[string]int) []interfaces.AllocationBP {
+	out := make([]interfaces.AllocationBP, 0, len(canonicalSlugs))
+	for _, slug := range canonicalSlugs {
+		out = append(out, interfaces.AllocationBP{RootSlug: slug, BasisPoints: bpBySlug[slug]})
+	}
+	return out
+}
+
+func allocationCentsBySlug(items []interfaces.AllocationCents) map[string]interfaces.AllocationCents {
+	out := make(map[string]interfaces.AllocationCents, len(items))
+	for _, it := range items {
+		out[it.RootSlug] = it
+	}
+	return out
+}
+
+func renderAllocationLines(items []interfaces.AllocationCents) string {
+	bySlug := allocationCentsBySlug(items)
+	var b strings.Builder
+	for _, slug := range canonicalSlugs {
+		it := bySlug[slug]
+		fmt.Fprintf(&b, "%s: %s (%d%%)\n", categoryLabels[slug], formatBRL(it.PlannedCents), it.BasisPoints/100)
+	}
+	return b.String()
 }
 
 type goalExtract struct {
@@ -183,12 +360,13 @@ type cardExtract struct {
 	DueDay    int    `json:"dueDay"`
 }
 
-type distributionExtract struct {
-	CustoFixo           int `json:"custo_fixo"`
-	Conhecimento        int `json:"conhecimento"`
-	Prazeres            int `json:"prazeres"`
-	Metas               int `json:"metas"`
-	LiberdadeFinanceira int `json:"liberdade_financeira"`
+type allocationInputExtract struct {
+	Action              string  `json:"action"`
+	CustoFixo           float64 `json:"custo_fixo"`
+	Conhecimento        float64 `json:"conhecimento"`
+	Prazeres            float64 `json:"prazeres"`
+	Metas               float64 `json:"metas"`
+	LiberdadeFinanceira float64 `json:"liberdade_financeira"`
 }
 
 type yesNoExtract struct {
@@ -225,16 +403,17 @@ var cardSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-var distributionSchema = map[string]any{
+var allocationInputSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"custo_fixo":           map[string]any{"type": "integer"},
-		"conhecimento":         map[string]any{"type": "integer"},
-		"prazeres":             map[string]any{"type": "integer"},
-		"metas":                map[string]any{"type": "integer"},
-		"liberdade_financeira": map[string]any{"type": "integer"},
+		"action":               map[string]any{"type": "string", "enum": []any{"confirm", "percent", "reais"}},
+		"custo_fixo":           map[string]any{"type": "number"},
+		"conhecimento":         map[string]any{"type": "number"},
+		"prazeres":             map[string]any{"type": "number"},
+		"metas":                map[string]any{"type": "number"},
+		"liberdade_financeira": map[string]any{"type": "number"},
 	},
-	"required":             []any{"custo_fixo", "conhecimento", "prazeres", "metas", "liberdade_financeira"},
+	"required":             []any{"action", "custo_fixo", "conhecimento", "prazeres", "metas", "liberdade_financeira"},
 	"additionalProperties": false,
 }
 
@@ -247,69 +426,91 @@ var recurrenceSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-func agentStream(ctx context.Context, a agent.Agent, prompt string) (string, error) {
-	stream, err := a.Stream(ctx, agent.Request{
-		AgentID:  a.ID(),
-		Messages: []llm.Message{{Role: "user", Content: prompt}},
-	})
-	if err != nil {
-		return "", err
+const _welcomeGoalPrompt = "🎉 Bem-vindo ao MeControla! 🎉\n\n" +
+	"Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰\n\n" +
+	"Vamos começar? Qual é o seu principal objetivo financeiro para este mês?\n" +
+	"(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva)"
+
+const _goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva."
+
+const _incomePrompt = "Perfeito! Agora me conta: qual é a sua renda mensal líquida em reais? (por exemplo: R$ 3.500,00)"
+
+const _incomeReprompt = "Não consegui identificar o valor. Qual é a sua renda mensal líquida em reais? Por exemplo: R$ 3.500,00."
+
+const _cardsReprompt = "Para adicionar o cartão, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\"."
+
+const _summaryReprompt = "Sem problema! Quando estiver tudo certo, responda \"sim\" para eu ativar o seu orçamento."
+
+const _conclusionRecurrencePrompt = "🎉 Seu orçamento foi ativado com sucesso! Deseja que ele se repita automaticamente pelos próximos 12 meses? Responda \"sim\" ou \"não\"."
+
+const _allocationInputSystemPrompt = "Você classifica a resposta do usuário sobre a distribuição do orçamento em 5 categorias: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. " +
+	"Defina action='confirm' quando o usuário aceitar a sugestão sem informar novos valores (ex.: sim, aceito, pode confirmar, ok). " +
+	"Defina action='percent' quando ele informar percentuais (números pequenos que somam cerca de 100). " +
+	"Defina action='reais' quando ele informar valores em reais (R$). " +
+	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada."
+
+func cardsPrompt(existing int) string {
+	if existing > 0 {
+		return fmt.Sprintf("Você já tem %d cartão(ões) cadastrado(s). Deseja adicionar outro cartão de crédito agora? Se sim, informe o apelido, o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não, responda \"não\".", existing)
 	}
-	for range stream.Deltas() {
-	}
-	result, err := stream.Result(ctx)
-	if err != nil {
-		return "", err
-	}
-	return result.Content, nil
+	return "Você deseja adicionar um cartão de crédito agora? Se sim, informe o apelido, o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não, responda \"não\"."
 }
 
-func BuildWelcomeStep(a agent.Agent) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
-	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
-		if state.ResumeText == "" {
-			state.Phase = PhaseWelcome
-			msg, err := agentStream(ctx, a, "Gere uma mensagem de boas-vindas calorosa para um novo usuario do MeControla, aplicativo de controle financeiro pessoal. Seja breve, animador e convide-o a comecar sua jornada financeira.")
-			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.welcome: stream: %w", err)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
-		}
-		state.ResumeText = ""
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
-	}
+func methodologyPrompt(items []interfaces.AllocationCents) string {
+	var b strings.Builder
+	b.WriteString("Agora vamos distribuir seu orçamento. O MeControla organiza tudo em 5 categorias. Esta é a sugestão com base na sua renda:\n\n")
+	b.WriteString(renderAllocationLines(items))
+	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, ou envie novos valores para cada categoria — pode ser em reais (R$) ou em porcentagem (%).")
+	return b.String()
 }
 
-func repromptInput(ctx context.Context, a agent.Agent, state OnboardingState, instruction, fallback string) workflow.StepOutput[OnboardingState] {
-	msg, err := agentStream(ctx, a, instruction)
-	if err != nil || strings.TrimSpace(msg) == "" {
-		msg = fallback
+func methodologyReprompt(reason string, items []interfaces.AllocationCents) string {
+	return "Ops, não consegui aplicar essa distribuição: " + reason + "\n\n" + methodologyPrompt(items)
+}
+
+func summaryPrompt(state OnboardingState, items []interfaces.AllocationCents) string {
+	var b strings.Builder
+	b.WriteString("Vamos revisar tudo antes de ativar seu orçamento:\n\n")
+	fmt.Fprintf(&b, "🎯 Objetivo: %s\n", state.Goal)
+	fmt.Fprintf(&b, "💵 Renda mensal: %s\n", formatBRL(state.IncomeCents))
+	if state.CardNickname != "" {
+		fmt.Fprintf(&b, "💳 Cartão: %s (vencimento dia %d)\n", state.CardNickname, state.CardDueDay)
 	}
+	b.WriteString("\nDistribuição:\n")
+	b.WriteString(renderAllocationLines(items))
+	b.WriteString("\nPosso ativar seu orçamento com esses dados? Responda \"sim\" para confirmar ou \"não\" para revisar.")
+	return b.String()
+}
+
+func conclusionFinalMessage(goal string) string {
+	return fmt.Sprintf(
+		"Tudo pronto! 🚀 Seu objetivo \"%s\" está registrado.\n\n"+
+			"Agora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 200 de freela\") que eu registro tudo pra você. Vamos juntos! 💪",
+		goal,
+	)
+}
+
+func suspendStep(state OnboardingState, prompt string) workflow.StepOutput[OnboardingState] {
 	return workflow.StepOutput[OnboardingState]{
 		State:   state,
 		Status:  workflow.StepStatusSuspended,
-		Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
+		Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: prompt},
 	}
+}
+
+func completeStep(state OnboardingState) workflow.StepOutput[OnboardingState] {
+	return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}
+}
+
+func failStep(state OnboardingState, err error) (workflow.StepOutput[OnboardingState], error) {
+	return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed}, err
 }
 
 func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseGoal
-			msg, err := agentStream(ctx, a, "Pergunte ao usuario qual e o seu principal objetivo financeiro para este mes. Seja direto e encorajador. De exemplos curtos.")
-			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.goal: stream: %w", err)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
+			return suspendStep(state, _welcomeGoalPrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -321,23 +522,18 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 			Schema: &llm.Schema{Name: "goal_extract", Strict: true, Schema: goalSchema},
 		})
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.goal: parse: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.goal: parse: %w", err))
 		}
 		var extract goalExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.goal: unmarshal: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.goal: unmarshal: %w", err))
 		}
 		goal, err := DecideGoal(extract.Goal)
 		if err != nil {
-			return repromptInput(ctx, a, state,
-				"O usuario nao informou um objetivo financeiro claro. Peca gentilmente que ele diga qual e o principal objetivo financeiro dele para este mes, com um exemplo curto.",
-				"Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva.",
-			), nil
+			return suspendStep(state, _goalReprompt), nil
 		}
 		state.Goal = goal
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return completeStep(state), nil
 	}
 }
 
@@ -345,16 +541,7 @@ func BuildIncomeStep(a agent.Agent) func(context.Context, OnboardingState) (work
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseMonthlyIncome
-			msg, err := agentStream(ctx, a, "Pergunte ao usuario qual e a sua renda mensal liquida em reais. Seja direto e amigavel.")
-			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.income: stream: %w", err)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
+			return suspendStep(state, _incomePrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -366,23 +553,18 @@ func BuildIncomeStep(a agent.Agent) func(context.Context, OnboardingState) (work
 			Schema: &llm.Schema{Name: "income_extract", Strict: true, Schema: incomeSchema},
 		})
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.income: parse: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.income: parse: %w", err))
 		}
 		var extract incomeExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.income: unmarshal: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.income: unmarshal: %w", err))
 		}
 		cents, err := DecideIncomeCents(extract.AmountBRL)
 		if err != nil {
-			return repromptInput(ctx, a, state,
-				"O valor de renda informado nao foi valido. Peca novamente a renda mensal liquida em reais, com um exemplo curto.",
-				"Não consegui identificar o valor. Qual é a sua renda mensal líquida em reais? Por exemplo: R$ 3.500,00.",
-			), nil
+			return suspendStep(state, _incomeReprompt), nil
 		}
 		state.IncomeCents = cents
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return completeStep(state), nil
 	}
 }
 
@@ -392,28 +574,13 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 			state.Phase = PhaseCards
 			userUUID, err := uuid.Parse(state.UserID)
 			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.cards: parse_user_id: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.cards: parse_user_id: %w", err))
 			}
 			existingCards, err := cards.ListCards(ctx, userUUID)
 			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.cards: list_cards: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.cards: list_cards: %w", err))
 			}
-			prompt := fmt.Sprintf(
-				"O usuario tem %d cartao(oes) cadastrado(s). Pergunte se ele deseja adicionar um cartao de credito agora. Se sim, peca o apelido do cartao, o banco emissor e o dia de vencimento da fatura (numero entre 1 e 31).",
-				len(existingCards),
-			)
-			msg, err := agentStream(ctx, a, prompt)
-			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.cards: stream: %w", err)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
+			return suspendStep(state, cardsPrompt(len(existingCards))), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -425,25 +592,19 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 			Schema: &llm.Schema{Name: "card_extract", Strict: true, Schema: cardSchema},
 		})
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.cards: parse: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.cards: parse: %w", err))
 		}
 		var extract cardExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.cards: unmarshal: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.cards: unmarshal: %w", err))
 		}
 		if extract.WantsCard {
 			if err := DecideCardEntry(extract.Nickname, extract.Bank, extract.DueDay); err != nil {
-				return repromptInput(ctx, a, state,
-					"O usuario quer adicionar um cartao mas nao informou o apelido, o banco e/ou o dia de vencimento validos. Peca o apelido do cartao, o banco emissor e o dia de vencimento da fatura (numero entre 1 e 31), com um exemplo curto.",
-					"Para adicionar o cartão, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\".",
-				), nil
+				return suspendStep(state, _cardsReprompt), nil
 			}
 			userUUID, err := uuid.Parse(state.UserID)
 			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.cards: parse_user_id_create: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.cards: parse_user_id_create: %w", err))
 			}
 			if _, err := cards.CreateCard(ctx, interfaces.NewCard{
 				UserID:   userUUID,
@@ -451,72 +612,59 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 				Bank:     extract.Bank,
 				DueDay:   extract.DueDay,
 			}); err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.cards: create_card: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.cards: create_card: %w", err))
 			}
 			state.CardNickname = extract.Nickname
 			state.CardDueDay = extract.DueDay
 		}
 		state.CardsDone = true
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return completeStep(state), nil
 	}
 }
 
-func BuildMethodologyStep(a agent.Agent) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+func BuildMethodologyStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		preview, previewErr := budgets.SuggestAllocation(ctx, state.IncomeCents, allocationBPList(_defaultDistributionBP))
+		if previewErr != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.methodology: suggest_allocation: %w", previewErr))
+		}
 		if state.ResumeText == "" {
 			state.Phase = PhaseMethodology
-			msg, err := agentStream(ctx, a, "Explique brevemente a metodologia de distribuicao de orcamento do MeControla com 5 categorias, iniciando cada categoria com seu emoji oficial: 💰 Custo Fixo, 🎓 Conhecimento, 🎉 Prazeres, 🎯 Metas e 🏦 Liberdade Financeira. Depois peca ao usuario para definir o percentual de cada categoria (a soma deve ser 100%). Use sempre os emojis oficiais de cada categoria. Seja didatico.")
-			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.methodology: stream: %w", err)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
+			return suspendStep(state, methodologyPrompt(preview)), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
 		extracted, err := a.Execute(ctx, agent.Request{
 			Messages: []llm.Message{
-				{Role: "system", Content: "Extraia do texto do usuario os percentuais para cada categoria: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. Todos devem ser inteiros e somar 100."},
+				{Role: "system", Content: _allocationInputSystemPrompt},
 				{Role: "user", Content: resumeText},
 			},
-			Schema: &llm.Schema{Name: "distribution_extract", Strict: true, Schema: distributionSchema},
+			Schema: &llm.Schema{Name: "allocation_input", Strict: true, Schema: allocationInputSchema},
 		})
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.methodology: parse: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.methodology: parse: %w", err))
 		}
-		var extract distributionExtract
-		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.methodology: unmarshal: %w", err)
+		var input allocationInputExtract
+		if err := json.Unmarshal(extracted.RawJSON, &input); err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.methodology: unmarshal: %w", err))
 		}
-		allocs := map[string]int{
-			"expense.custo_fixo":           extract.CustoFixo,
-			"expense.conhecimento":         extract.Conhecimento,
-			"expense.prazeres":             extract.Prazeres,
-			"expense.metas":                extract.Metas,
-			"expense.liberdade_financeira": extract.LiberdadeFinanceira,
+		kind, kindErr := ParseAllocationInputKind(input.Action)
+		if kindErr != nil {
+			return suspendStep(state, methodologyReprompt("não entendi sua resposta.", preview)), nil
 		}
-		if distErr := DecideDistribution(allocs); distErr != nil {
-			reaskMsg, streamErr := agentStream(ctx, a,
-				fmt.Sprintf("O usuario informou percentuais invalidos para a distribuicao do orcamento. Problema: %s. Peca que ele informe novamente os percentuais para as 5 categorias, garantindo que a soma seja 100%%.", distErr.Error()))
-			if streamErr != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.methodology: reask_stream: %w", streamErr)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: reaskMsg},
-			}, nil
+		values := map[string]float64{
+			"expense.custo_fixo":           input.CustoFixo,
+			"expense.conhecimento":         input.Conhecimento,
+			"expense.prazeres":             input.Prazeres,
+			"expense.metas":                input.Metas,
+			"expense.liberdade_financeira": input.LiberdadeFinanceira,
 		}
-		state.Allocations = allocs
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		bp, decErr := DecideAllocationsBP(kind, values, state.IncomeCents)
+		if decErr != nil {
+			return suspendStep(state, methodologyReprompt(decErr.Error(), preview)), nil
+		}
+		state.Allocations = bp
+		return completeStep(state), nil
 	}
 }
 
@@ -525,16 +673,15 @@ func BuildDistributionStep(budgets interfaces.BudgetPlanner) func(context.Contex
 		state.Phase = PhaseDistribution
 		userUUID, err := uuid.Parse(state.UserID)
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.distribution: parse_user_id: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.distribution: parse_user_id: %w", err))
 		}
 		loc, _ := time.LoadLocation("America/Sao_Paulo")
 		competence := time.Now().In(loc).Format("2006-01")
 		allocations := make([]interfaces.AllocationDraft, 0, len(state.Allocations))
-		for slug, pct := range state.Allocations {
+		for _, slug := range canonicalSlugs {
 			allocations = append(allocations, interfaces.AllocationDraft{
 				RootSlug:    slug,
-				BasisPoints: pct * 100,
+				BasisPoints: state.Allocations[slug],
 			})
 		}
 		draft := interfaces.DraftBudget{
@@ -547,47 +694,33 @@ func BuildDistributionStep(budgets interfaces.BudgetPlanner) func(context.Contex
 		switch {
 		case errors.Is(sumErr, interfaces.ErrBudgetNotFound):
 			if _, err := budgets.CreateBudget(ctx, draft); err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.distribution: create_budget: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.distribution: create_budget: %w", err))
 			}
 		case sumErr != nil:
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.distribution: get_monthly_summary: %w", sumErr)
+			return failStep(state, fmt.Errorf("agents.onboarding.distribution: get_monthly_summary: %w", sumErr))
 		case summary.State == "active":
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+			return completeStep(state), nil
 		default:
 			if err := budgets.DeleteDraftBudget(ctx, userUUID, competence); err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.distribution: delete_draft_budget: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.distribution: delete_draft_budget: %w", err))
 			}
 			if _, err := budgets.CreateBudget(ctx, draft); err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.distribution: create_budget: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.distribution: create_budget: %w", err))
 			}
 		}
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return completeStep(state), nil
 	}
 }
 
-func BuildSummaryStep(a agent.Agent) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+func BuildSummaryStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseSummary
-			allocJSON, _ := json.Marshal(state.Allocations)
-			prompt := fmt.Sprintf(
-				"Gere um resumo do onboarding: objetivo='%s', renda=R$%.2f, cartao='%s' dia %d, distribuicao=%s. Peca confirmacao para ativar o orcamento.",
-				state.Goal, float64(state.IncomeCents)/100.0, state.CardNickname, state.CardDueDay, string(allocJSON),
-			)
-			msg, err := agentStream(ctx, a, prompt)
+			preview, err := budgets.SuggestAllocation(ctx, state.IncomeCents, allocationBPList(state.Allocations))
 			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.summary: stream: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.summary: suggest_allocation: %w", err))
 			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
+			return suspendStep(state, summaryPrompt(state, preview)), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -599,27 +732,16 @@ func BuildSummaryStep(a agent.Agent) func(context.Context, OnboardingState) (wor
 			Schema: &llm.Schema{Name: "summary_confirm", Strict: true, Schema: recurrenceSchema},
 		})
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.summary: parse: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.summary: parse: %w", err))
 		}
 		var extract yesNoExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.summary: unmarshal: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.summary: unmarshal: %w", err))
 		}
 		if !extract.Confirmed {
-			reaskMsg, streamErr := agentStream(ctx, a, "O usuario nao confirmou o resumo. Pergunte se ele deseja revisar alguma informacao ou confirmar os dados para ativar o orcamento.")
-			if streamErr != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.summary: reask_stream: %w", streamErr)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: reaskMsg},
-			}, nil
+			return suspendStep(state, _summaryReprompt), nil
 		}
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return completeStep(state), nil
 	}
 }
 
@@ -629,25 +751,14 @@ func BuildConclusionStep(a agent.Agent, budgets interfaces.BudgetPlanner, workin
 			state.Phase = PhaseConclusion
 			userUUID, err := uuid.Parse(state.UserID)
 			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.conclusion: parse_user_id: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.conclusion: parse_user_id: %w", err))
 			}
 			loc, _ := time.LoadLocation("America/Sao_Paulo")
 			competence := time.Now().In(loc).Format("2006-01")
 			if err := budgets.ActivateBudget(ctx, userUUID, competence); err != nil && !errors.Is(err, interfaces.ErrBudgetAlreadyActive) {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.conclusion: activate_budget: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.conclusion: activate_budget: %w", err))
 			}
-			msg, err := agentStream(ctx, a, "Informe ao usuario que o orcamento foi ativado com sucesso. Pergunte se ele deseja que o orcamento se repita automaticamente por 12 meses (responda sim ou nao).")
-			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.conclusion: stream: %w", err)
-			}
-			return workflow.StepOutput[OnboardingState]{
-				State:   state,
-				Status:  workflow.StepStatusSuspended,
-				Suspend: &workflow.Suspension{Reason: workflow.SuspendAwaitingInput, Prompt: msg},
-			}, nil
+			return suspendStep(state, _conclusionRecurrencePrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -659,42 +770,29 @@ func BuildConclusionStep(a agent.Agent, budgets interfaces.BudgetPlanner, workin
 			Schema: &llm.Schema{Name: "recurrence_extract", Strict: true, Schema: recurrenceSchema},
 		})
 		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.conclusion: parse: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: parse: %w", err))
 		}
 		var extract yesNoExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.conclusion: unmarshal: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: unmarshal: %w", err))
 		}
 		if extract.Confirmed {
 			userUUID, err := uuid.Parse(state.UserID)
 			if err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.conclusion: parse_user_id_recurrence: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.conclusion: parse_user_id_recurrence: %w", err))
 			}
 			loc, _ := time.LoadLocation("America/Sao_Paulo")
 			competence := time.Now().In(loc).Format("2006-01")
 			if err := budgets.CreateRecurrence(ctx, userUUID, competence, 12); err != nil {
-				return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-					fmt.Errorf("agents.onboarding.conclusion: create_recurrence: %w", err)
+				return failStep(state, fmt.Errorf("agents.onboarding.conclusion: create_recurrence: %w", err))
 			}
 			state.Recurrence = true
 		}
 		if err := workingMem.Upsert(ctx, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal); err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.conclusion: upsert_wm: %w", err)
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_wm: %w", err))
 		}
-		finalMsg, err := agentStream(ctx, a, fmt.Sprintf(
-			"Parabenize o usuario por completar o onboarding do MeControla! Objetivo registrado: '%s'. De exemplos praticos de como comecara a registrar gastos e receitas no app. Seja animador.",
-			state.Goal,
-		))
-		if err != nil {
-			return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed},
-				fmt.Errorf("agents.onboarding.conclusion: final_stream: %w", err)
-		}
-		state.FinalMessage = finalMsg
-		return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		state.FinalMessage = conclusionFinalMessage(state.Goal)
+		return completeStep(state), nil
 	}
 }
 
@@ -747,13 +845,12 @@ func BuildOnboardingWorkflow(
 	return workflow.Definition[OnboardingState]{
 		ID: OnboardingWorkflowID,
 		Root: workflow.Sequence("root",
-			workflow.NewStepFunc(stepWelcomeID, wrap(BuildWelcomeStep(a))),
 			workflow.NewStepFunc(stepGoalID, wrap(BuildGoalStep(a))),
 			workflow.NewStepFunc(stepIncomeID, wrap(BuildIncomeStep(a))),
 			workflow.NewStepFunc(stepCardsID, wrap(BuildCardsStep(a, cards))),
-			workflow.NewStepFunc(stepMethodologyID, wrap(BuildMethodologyStep(a))),
+			workflow.NewStepFunc(stepMethodologyID, wrap(BuildMethodologyStep(a, budgets))),
 			workflow.NewStepFunc(stepDistributionID, BuildDistributionStep(budgets)),
-			workflow.NewStepFunc(stepSummaryID, wrap(BuildSummaryStep(a))),
+			workflow.NewStepFunc(stepSummaryID, wrap(BuildSummaryStep(a, budgets))),
 			workflow.NewStepFunc(stepConclusionID, wrap(BuildConclusionStep(a, budgets, workingMem))),
 		),
 		Durable:     true,

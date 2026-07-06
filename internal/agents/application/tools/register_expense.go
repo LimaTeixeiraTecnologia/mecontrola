@@ -13,12 +13,15 @@ import (
 )
 
 type RegisterExpenseInput struct {
-	AmountCents   int64  `json:"amountCents"`
-	Description   string `json:"description"`
-	PaymentMethod string `json:"paymentMethod"`
-	CardID        string `json:"cardId,omitempty"`
-	Installments  int    `json:"installments,omitempty"`
-	OccurredAt    string `json:"occurredAt,omitempty"`
+	AmountCents     int64  `json:"amountCents"`
+	Description     string `json:"description"`
+	PaymentMethod   string `json:"paymentMethod"`
+	CardID          string `json:"cardId,omitempty"`
+	Installments    int    `json:"installments,omitempty"`
+	OccurredAt      string `json:"occurredAt,omitempty"`
+	CategoryID      string `json:"categoryId,omitempty"`
+	SubcategoryID   string `json:"subcategoryId,omitempty"`
+	CategoryVersion int64  `json:"categoryVersion,omitempty"`
 }
 
 type RegisterExpenseOutput struct {
@@ -35,12 +38,15 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"amountCents":   map[string]any{"type": "integer"},
-				"description":   map[string]any{"type": "string"},
-				"paymentMethod": map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "vale_refeicao", "vale_alimentacao"}},
-				"cardId":        map[string]any{"type": "string"},
-				"installments":  map[string]any{"type": "integer", "minimum": 1, "maximum": 24},
-				"occurredAt":    map[string]any{"type": "string"},
+				"amountCents":     map[string]any{"type": "integer"},
+				"description":     map[string]any{"type": "string"},
+				"paymentMethod":   map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "vale_refeicao", "vale_alimentacao"}},
+				"cardId":          map[string]any{"type": "string"},
+				"installments":    map[string]any{"type": "integer", "minimum": 1, "maximum": 24},
+				"occurredAt":      map[string]any{"type": "string"},
+				"categoryId":      map[string]any{"type": "string"},
+				"subcategoryId":   map[string]any{"type": "string"},
+				"categoryVersion": map[string]any{"type": "integer"},
 			},
 			"required":             []string{"amountCents", "description", "paymentMethod"},
 			"additionalProperties": false,
@@ -82,20 +88,39 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 			}
 			cardID = &parsed
 		}
+		var categoryID uuid.UUID
+		if in.CategoryID != "" {
+			parsed, parseErr := uuid.Parse(in.CategoryID)
+			if parseErr != nil {
+				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: categoryId inválido: %w", parseErr)
+			}
+			categoryID = parsed
+		}
+		var subcategoryID uuid.UUID
+		if in.SubcategoryID != "" {
+			parsed, parseErr := uuid.Parse(in.SubcategoryID)
+			if parseErr != nil {
+				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: subcategoryId inválido: %w", parseErr)
+			}
+			subcategoryID = parsed
+		}
 		installments := in.Installments
 		if installments <= 0 {
 			installments = 1
 		}
 		result, err := registrar.RegisterExpense(ctx, usecases.RegisterExpenseCommand{
-			UserID:        userID,
-			WAMID:         wamid,
-			ItemSeq:       itemSeq,
-			AmountCents:   in.AmountCents,
-			Description:   in.Description,
-			PaymentMethod: in.PaymentMethod,
-			CardID:        cardID,
-			Installments:  installments,
-			OccurredAt:    in.OccurredAt,
+			UserID:          userID,
+			WAMID:           wamid,
+			ItemSeq:         itemSeq,
+			AmountCents:     in.AmountCents,
+			Description:     in.Description,
+			PaymentMethod:   in.PaymentMethod,
+			CardID:          cardID,
+			Installments:    installments,
+			OccurredAt:      in.OccurredAt,
+			CategoryID:      categoryID,
+			SubcategoryID:   subcategoryID,
+			CategoryVersion: in.CategoryVersion,
 		})
 		if err != nil {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: %w", err)

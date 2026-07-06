@@ -137,3 +137,92 @@ func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
 		})
 	}
 }
+
+func TestRealLLM_ClarifyClassifyRegisterChain(t *testing.T) {
+	provider := buildRealLLMProvider(t)
+
+	obs := fake.NewProvider()
+	userID := uuid.New()
+	rootID := uuid.New()
+	leafID := uuid.New()
+	const editorialVersion = int64(9)
+
+	var resolveCalled bool
+	var captured agentsifaces.RawTransaction
+
+	catMock := imocks.NewCategoriesReader(t)
+	catMock.EXPECT().SearchDictionary(mock.Anything, mock.Anything, "expense").
+		Return(agentsifaces.CategorySearchResult{
+			Outcome: agentsifaces.ClassifyOutcomeAmbiguous,
+			Version: editorialVersion,
+			Candidates: []agentsifaces.CategoryCandidate{
+				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Custo Fixo > Supermercado", IsAmbiguous: true},
+				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Prazeres > Delivery", IsAmbiguous: true},
+			},
+		}, nil).Once()
+	catMock.EXPECT().SearchDictionary(mock.Anything, mock.Anything, "expense").
+		Return(agentsifaces.CategorySearchResult{
+			Outcome: agentsifaces.ClassifyOutcomeMatched,
+			Version: editorialVersion,
+			Candidates: []agentsifaces.CategoryCandidate{{
+				CategoryID:     leafID,
+				RootCategoryID: rootID,
+				Path:           "Custo Fixo > Supermercado",
+				Score:          0.95,
+				Confidence:     "high",
+				MatchQuality:   "exact",
+				SignalType:     "canonical_name",
+				MatchedTerm:    "supermercado",
+			}},
+		}, nil)
+	catMock.EXPECT().ResolveForWrite(mock.Anything, mock.MatchedBy(func(req agentsifaces.CategoryWriteRequest) bool {
+		return req.RootCategoryID == rootID && req.SubcategoryID == leafID
+	})).RunAndReturn(func(_ context.Context, _ agentsifaces.CategoryWriteRequest) (agentsifaces.CategoryWriteDecision, error) {
+		resolveCalled = true
+		return agentsifaces.CategoryWriteDecision{
+			RootCategoryID:   rootID,
+			SubcategoryID:    leafID,
+			Kind:             agentsifaces.CategoryKindExpense,
+			Path:             "Custo Fixo > Supermercado",
+			EditorialVersion: editorialVersion,
+		}, nil
+	}).Maybe()
+
+	ledgerMock := imocks.NewTransactionsLedger(t)
+	ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
+		RunAndReturn(func(_ context.Context, in agentsifaces.RawTransaction) (agentsifaces.EntryRef, error) {
+			captured = in
+			return agentsifaces.EntryRef{ID: uuid.New(), Kind: agentsifaces.EntryKindTransaction}, nil
+		}).Maybe()
+
+	registrar := agentusecases.NewRegisterEntry(catMock, ledgerMock, chainFakeWriter{}, obs)
+
+	tools := []tool.ToolHandle{
+		agenttools.BuildRegisterExpenseTool(registrar),
+		agenttools.BuildClassifyCategoryTool(catMock),
+	}
+	a := BuildMeControlaAgent(provider, tools, nil, obs)
+
+	ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-clarify-chain", 0)
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	result, err := a.Execute(ctx, agent.Request{
+		AgentID: MecontrolaAgentID,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Gastei R$ 150,00 no mercado hoje, no pix. Registre esse lançamento."},
+		},
+		MaxTokens: 1024,
+	})
+	require.NoError(t, err)
+	t.Logf("resposta do agente: %s", result.Content)
+
+	require.True(t, resolveCalled, "após clarify o agente deve resolver via classify_category e re-chamar register_expense com os ids")
+	require.Equal(t, rootID, captured.CategoryID, "category_id gravado deve ser a raiz resolvida por classify_category")
+	require.NotNil(t, captured.SubcategoryID, "subcategory_id é obrigatório")
+	require.Equal(t, leafID, *captured.SubcategoryID, "subcategory_id gravado deve ser a folha resolvida por classify_category")
+	require.Equal(t, "user_selected_candidate", captured.CategorySource, "evidência deve marcar seleção explícita")
+	require.Equal(t, editorialVersion, captured.CategoryVersion, "versão editorial deve vir do resolve explícito")
+	require.Equal(t, "pix", captured.PaymentMethod, "forma de pagamento original deve ser preservada")
+	require.Equal(t, int64(15000), captured.AmountCents, "valor original deve ser preservado após o clarify")
+}

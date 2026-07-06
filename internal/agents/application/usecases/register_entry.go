@@ -19,6 +19,13 @@ const (
 	registerDirectionIncome     = "income"
 	registerIncomePaymentMethod = "pix"
 	registerCategorySource      = "auto_matched"
+
+	registerUserSelectedSource      = "user_selected_candidate"
+	registerUserSelectedScore       = 1.0
+	registerUserSelectedConfidence  = "high"
+	registerUserSelectedQuality     = "exact"
+	registerUserSelectedSignalType  = "canonical_name"
+	registerUserSelectedMatchReason = "seleção explícita do usuário via classify_category"
 )
 
 type registerWriter interface {
@@ -32,29 +39,36 @@ type RegisterResult struct {
 }
 
 type RegisterExpenseCommand struct {
-	UserID        uuid.UUID
-	WAMID         string
-	ItemSeq       int
-	AmountCents   int64
-	Description   string
-	PaymentMethod string
-	CardID        *uuid.UUID
-	Installments  int
-	OccurredAt    string
+	UserID          uuid.UUID
+	WAMID           string
+	ItemSeq         int
+	AmountCents     int64
+	Description     string
+	PaymentMethod   string
+	CardID          *uuid.UUID
+	Installments    int
+	OccurredAt      string
+	CategoryID      uuid.UUID
+	SubcategoryID   uuid.UUID
+	CategoryVersion int64
 }
 
 type RegisterIncomeCommand struct {
-	UserID      uuid.UUID
-	WAMID       string
-	ItemSeq     int
-	AmountCents int64
-	Description string
-	OccurredAt  string
+	UserID          uuid.UUID
+	WAMID           string
+	ItemSeq         int
+	AmountCents     int64
+	Description     string
+	OccurredAt      string
+	CategoryID      uuid.UUID
+	SubcategoryID   uuid.UUID
+	CategoryVersion int64
 }
 
 type classifyResult struct {
 	Candidate interfaces.CategoryCandidate
 	Version   int64
+	Source    string
 }
 
 type RegisterEntry struct {
@@ -88,7 +102,7 @@ func (uc *RegisterEntry) RegisterExpense(ctx context.Context, cmd RegisterExpens
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.register_expense")
 	defer span.End()
 
-	cr, outcome, err := uc.classify(ctx, cmd.Description, registerCategoryKindExpense)
+	cr, outcome, err := uc.resolveCategory(ctx, cmd.Description, registerCategoryKindExpense, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
 	if err != nil {
 		span.RecordError(err)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.register_expense: %w", err)
@@ -113,7 +127,7 @@ func (uc *RegisterEntry) RegisterExpense(ctx context.Context, cmd RegisterExpens
 			OriginWamid:         cmd.WAMID,
 			OriginItemSeq:       cmd.ItemSeq,
 			OriginOperation:     "create_expense",
-			CategorySource:      registerCategorySource,
+			CategorySource:      cr.Source,
 			CategoryOutcome:     "matched",
 			CategoryScore:       cr.Candidate.Score,
 			CategoryConfidence:  cr.Candidate.Confidence,
@@ -139,7 +153,7 @@ func (uc *RegisterEntry) RegisterIncome(ctx context.Context, cmd RegisterIncomeC
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.register_income")
 	defer span.End()
 
-	cr, outcome, err := uc.classify(ctx, cmd.Description, registerCategoryKindIncome)
+	cr, outcome, err := uc.resolveCategory(ctx, cmd.Description, registerCategoryKindIncome, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
 	if err != nil {
 		span.RecordError(err)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.register_income: %w", err)
@@ -162,7 +176,7 @@ func (uc *RegisterEntry) RegisterIncome(ctx context.Context, cmd RegisterIncomeC
 			OriginWamid:         cmd.WAMID,
 			OriginItemSeq:       cmd.ItemSeq,
 			OriginOperation:     "create_income",
-			CategorySource:      registerCategorySource,
+			CategorySource:      cr.Source,
 			CategoryOutcome:     "matched",
 			CategoryScore:       cr.Candidate.Score,
 			CategoryConfidence:  cr.Candidate.Confidence,
@@ -233,7 +247,50 @@ func (uc *RegisterEntry) classify(ctx context.Context, description, kind string)
 		)
 		return classifyResult{}, agent.ToolOutcomeClarify, nil
 	}
-	return classifyResult{Candidate: candidate, Version: result.Version}, agent.ToolOutcomeRouted, nil
+	return classifyResult{Candidate: candidate, Version: result.Version, Source: registerCategorySource}, agent.ToolOutcomeRouted, nil
+}
+
+func (uc *RegisterEntry) resolveCategory(ctx context.Context, description, kind string, rootID, subcategoryID uuid.UUID, version int64) (classifyResult, agent.ToolOutcome, error) {
+	if subcategoryID == uuid.Nil {
+		return uc.classify(ctx, description, kind)
+	}
+	return uc.resolveExplicit(ctx, kind, rootID, subcategoryID, version)
+}
+
+func (uc *RegisterEntry) resolveExplicit(ctx context.Context, kind string, rootID, subcategoryID uuid.UUID, version int64) (classifyResult, agent.ToolOutcome, error) {
+	categoryKind, err := interfaces.ParseCategoryKind(kind)
+	if err != nil {
+		return classifyResult{}, agent.ToolOutcomeUsecaseError, fmt.Errorf("resolve explicit %q: %w", kind, err)
+	}
+	decision, err := uc.categories.ResolveForWrite(ctx, interfaces.CategoryWriteRequest{
+		RootCategoryID:  rootID,
+		SubcategoryID:   subcategoryID,
+		Kind:            categoryKind,
+		ExpectedVersion: version,
+	})
+	if err != nil {
+		uc.clarifTotal.Add(ctx, 1,
+			observability.String("reason", "explicit_resolve_failed"),
+			observability.String("kind", kind),
+			observability.String("surface", "register_entry"),
+		)
+		return classifyResult{}, agent.ToolOutcomeClarify, nil
+	}
+	return classifyResult{
+		Candidate: interfaces.CategoryCandidate{
+			CategoryID:     decision.SubcategoryID,
+			RootCategoryID: decision.RootCategoryID,
+			Path:           decision.Path,
+			Score:          registerUserSelectedScore,
+			Confidence:     registerUserSelectedConfidence,
+			MatchQuality:   registerUserSelectedQuality,
+			SignalType:     registerUserSelectedSignalType,
+			MatchedTerm:    decision.Path,
+			MatchReason:    registerUserSelectedMatchReason,
+		},
+		Version: decision.EditorialVersion,
+		Source:  registerUserSelectedSource,
+	}, agent.ToolOutcomeRouted, nil
 }
 
 func resolveEntryDate(raw string) string {
