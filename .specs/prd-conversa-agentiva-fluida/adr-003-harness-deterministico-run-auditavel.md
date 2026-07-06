@@ -38,12 +38,12 @@ Usar harness determinístico como fonte oficial de aceite para M-01 e M-06. O ha
 ### Riscos e Mitigações
 
 - Risco de harness divergir do runtime real. Mitigação: incluir testes que passam por `AgentRuntime` quando aplicável e integração com workflow store.
-- Risco de cenários incompletos. Mitigação: mapear CA-01..CA-12 diretamente no harness.
+- Risco de cenários incompletos. Mitigação: mapear CA-01..CA-17 diretamente no harness.
 
 ## Plano de Implementação
 
 1. Criar doubles determinísticos de provider, categories, ledger e gateway.
-2. Implementar cenários CA-01..CA-12.
+2. Implementar cenários CA-01..CA-17.
 3. Verificar Run, tool calls, estado, snapshots e escrita real.
 4. Incluir gate nos comandos de validação da tarefa.
 

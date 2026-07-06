@@ -13,7 +13,7 @@ import (
 
 const (
 	e2eSubcategoryDeliveryID = "ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c"
-	e2eRootSlugPrazeres      = "prazeres"
+	e2eRootSlugPrazeres      = "expense.prazeres"
 )
 
 func registerExpenseSteps(sc *godog.ScenarioContext, e *budgetsE2ECtx) {

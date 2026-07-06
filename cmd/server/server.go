@@ -27,6 +27,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
+	onboardingpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/health"
 	openapidocs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/openapi"
@@ -231,6 +232,7 @@ func Run() error {
 		BudgetsModule:      budgetsModule,
 		TransactionsModule: transactionsModule,
 		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
+		WelcomeDedup:       onboardingpostgres.NewWelcomeDedupRepository(o11y, db),
 		InboundTimeout:     cfg.AgentConfig.InboundTimeout,
 	})
 	if err != nil {

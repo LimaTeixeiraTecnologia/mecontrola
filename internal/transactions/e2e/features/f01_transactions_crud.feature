@@ -22,7 +22,7 @@ Funcionalidade: CRUD de transactions via HTTP
 
   Cenário: obter transação existente retorna 200 com dados corretos
     Dado que o ambiente E2E de transactions está pronto
-    E que existe uma transação criada de 3000 centavos com método "credit_card" e direção "outcome" em "2026-06-10"
+    E que existe uma transação criada de 3000 centavos com método "pix" e direção "outcome" em "2026-06-10"
     Quando o usuário obtém a transação pelo ID
     Então a resposta HTTP deve ter status 200
     E o corpo da resposta deve conter o campo "id"

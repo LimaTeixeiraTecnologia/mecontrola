@@ -18,6 +18,7 @@ type MessageStore interface {
 type WorkingMemory interface {
 	Get(ctx context.Context, resourceID string) (string, error)
 	Upsert(ctx context.Context, resourceID, content string) error
+	UpsertMetadata(ctx context.Context, resourceID string, metadata map[string]any) error
 }
 
 type SemanticRecall interface {

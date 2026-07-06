@@ -341,3 +341,124 @@ func (s *ResolveOnboardingOrAgentSuite) TestExecute() {
 		})
 	}
 }
+
+func (s *ResolveOnboardingOrAgentSuite) TestStartOnboarding() {
+	type args struct {
+		userID string
+		peer   string
+	}
+	type dependencies struct {
+		engine *mockOnboardingEngine
+		store  *mockOnboardingStore
+		wm     *memorymocks.WorkingMemory
+	}
+
+	scenarios := []struct {
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(result OnboardingResult, err error)
+	}{
+		{
+			name: "start fresco deve iniciar workflow e retornar welcome",
+			args: args{userID: "user-1", peer: "+5511986896322"},
+			dependencies: dependencies{
+				engine: func() *mockOnboardingEngine {
+					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-1", mock.Anything).
+						Return(workflow.RunResult[workflows.OnboardingState]{
+							Status:  workflow.RunStatusSuspended,
+							Suspend: &workflow.Suspension{Prompt: "🎉 Bem-vindo"},
+						}, nil).Once()
+					return s.engineMock
+				}(),
+				store: func() *mockOnboardingStore {
+					s.storeMock.On("Load", mock.Anything, mock.Anything, "user-1").
+						Return(workflow.Snapshot{}, false, nil).Once()
+					return s.storeMock
+				}(),
+				wm: func() *memorymocks.WorkingMemory {
+					s.wmMock.EXPECT().Get(mock.Anything, "user-1").
+						Return("", memory.ErrWorkingMemoryNotFound).Once()
+					return s.wmMock
+				}(),
+			},
+			expect: func(result OnboardingResult, err error) {
+				s.NoError(err)
+				s.True(result.Handled)
+				s.Equal("🎉 Bem-vindo", result.Message)
+			},
+		},
+		{
+			name: "run suspenso existente nao reenvia welcome",
+			args: args{userID: "user-2", peer: "+5511986896322"},
+			dependencies: dependencies{
+				engine: s.engineMock,
+				store: func() *mockOnboardingStore {
+					s.storeMock.On("Load", mock.Anything, mock.Anything, "user-2").
+						Return(workflow.Snapshot{Status: workflow.RunStatusSuspended}, true, nil).Once()
+					return s.storeMock
+				}(),
+				wm: s.wmMock,
+			},
+			expect: func(result OnboardingResult, err error) {
+				s.NoError(err)
+				s.False(result.Handled)
+				s.Empty(result.Message)
+			},
+		},
+		{
+			name: "ja onboarded via working memory nao inicia workflow",
+			args: args{userID: "user-3", peer: "+5511986896322"},
+			dependencies: dependencies{
+				engine: s.engineMock,
+				store: func() *mockOnboardingStore {
+					s.storeMock.On("Load", mock.Anything, mock.Anything, "user-3").
+						Return(workflow.Snapshot{}, false, nil).Once()
+					return s.storeMock
+				}(),
+				wm: func() *memorymocks.WorkingMemory {
+					s.wmMock.EXPECT().Get(mock.Anything, "user-3").
+						Return("## Objetivo Financeiro\n\nComprar casa", nil).Once()
+					return s.wmMock
+				}(),
+			},
+			expect: func(result OnboardingResult, err error) {
+				s.NoError(err)
+				s.False(result.Handled)
+			},
+		},
+		{
+			name: "ErrRunAlreadyExists no Start retorna handled false sem erro",
+			args: args{userID: "user-4", peer: "+5511986896322"},
+			dependencies: dependencies{
+				engine: func() *mockOnboardingEngine {
+					s.engineMock.On("Start", mock.Anything, mock.Anything, "user-4", mock.Anything).
+						Return(workflow.RunResult[workflows.OnboardingState]{}, workflow.ErrRunAlreadyExists).Once()
+					return s.engineMock
+				}(),
+				store: func() *mockOnboardingStore {
+					s.storeMock.On("Load", mock.Anything, mock.Anything, "user-4").
+						Return(workflow.Snapshot{}, false, nil).Once()
+					return s.storeMock
+				}(),
+				wm: func() *memorymocks.WorkingMemory {
+					s.wmMock.EXPECT().Get(mock.Anything, "user-4").
+						Return("", memory.ErrWorkingMemoryNotFound).Once()
+					return s.wmMock
+				}(),
+			},
+			expect: func(result OnboardingResult, err error) {
+				s.NoError(err)
+				s.False(result.Handled)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			uc := NewResolveOnboardingOrAgent(scenario.dependencies.engine, scenario.dependencies.store, scenario.dependencies.wm, s.emptyDef, s.obs)
+			result, err := uc.StartOnboarding(s.ctx, scenario.args.userID, scenario.args.peer)
+			scenario.expect(result, err)
+		})
+	}
+}

@@ -97,6 +97,48 @@ func (uc *ResolveOnboardingOrAgent) Execute(ctx context.Context, userID, peer, m
 	return OnboardingResult{Handled: true, Message: msg}, nil
 }
 
+func (uc *ResolveOnboardingOrAgent) StartOnboarding(ctx context.Context, userID, peer string) (OnboardingResult, error) {
+	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.resolve_onboarding_or_agent.start")
+	defer span.End()
+
+	snap, found, err := uc.store.Load(ctx, uc.def.ID, userID)
+	if err != nil {
+		span.RecordError(err)
+		return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: start: load: %w", err)
+	}
+	if found && (snap.Status == workflow.RunStatusSuspended || snap.Status == workflow.RunStatusRunning) {
+		uc.total.Add(ctx, 1, observability.String("outcome", "already_started"))
+		return OnboardingResult{Handled: false}, nil
+	}
+
+	wm, err := uc.workingMem.Get(ctx, userID)
+	if err != nil && !errors.Is(err, memory.ErrWorkingMemoryNotFound) {
+		span.RecordError(err)
+		return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: start: get_wm: %w", err)
+	}
+	if strings.Contains(wm, "## Objetivo Financeiro") {
+		uc.total.Add(ctx, 1, observability.String("outcome", "already_onboarded"))
+		return OnboardingResult{Handled: false}, nil
+	}
+
+	initial := workflows.OnboardingState{Phase: workflows.PhaseWelcome, UserID: userID, PeerID: peer}
+	result, err := uc.engine.Start(ctx, uc.def, userID, initial)
+	if err != nil {
+		if errors.Is(err, workflow.ErrRunAlreadyExists) {
+			uc.total.Add(ctx, 1, observability.String("outcome", "already_started"))
+			return OnboardingResult{Handled: false}, nil
+		}
+		span.RecordError(err)
+		return OnboardingResult{}, fmt.Errorf("agents.usecase.resolve_onboarding_or_agent: start: %w", err)
+	}
+	msg := ""
+	if result.Suspend != nil {
+		msg = result.Suspend.Prompt
+	}
+	uc.total.Add(ctx, 1, observability.String("outcome", "started"))
+	return OnboardingResult{Handled: true, Message: msg}, nil
+}
+
 func (uc *ResolveOnboardingOrAgent) resume(ctx context.Context, span observability.Span, userID, message string) (OnboardingResult, error) {
 	resumePayload, _ := json.Marshal(map[string]string{"resumeText": message})
 	result, err := uc.engine.Resume(ctx, uc.def, userID, resumePayload)

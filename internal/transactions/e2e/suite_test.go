@@ -32,6 +32,8 @@ const (
 	txE2ETestUserID                    = "11111111-1111-1111-1111-111111111111"
 	txE2EPrazerosRootCategoryUUID      = "ac535261-4060-56ef-b2e8-57c8cc7032d1"
 	txE2EOutrosPrazeresSubcategoryUUID = "0016763e-655c-571a-90cb-bec5a18d4969"
+	txE2ESalarioRootCategoryUUID       = "86dd34b0-7342-525a-9a30-b1b5a76b109f"
+	txE2EDecimoTerceiroSubcategoryUUID = "98455e74-b1f3-5b9c-a8d8-05db0cdb465d"
 )
 
 type txE2ERuntime struct {

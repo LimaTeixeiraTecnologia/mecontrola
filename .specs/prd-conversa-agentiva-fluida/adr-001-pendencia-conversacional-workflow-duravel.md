@@ -16,6 +16,8 @@ O agente perde contexto quando uma tool de registro retorna necessidade de clari
 
 Criar um workflow durável `pending-entry` no consumidor `internal/agents`, com estado próprio `PendingEntryState`, key `<resourceID>:<threadID>:pending-entry`, TTL funcional de 30 minutos e resolução antes do agente aberto no consumer de WhatsApp. O kernel de workflow permanece genérico e sem semântica financeira.
 
+Emenda `spec-version 3`: toda escrita financeira originada da conversa (registro, edição, recorrência) passa por este workflow, inclusive lançamentos totalmente especificados e sem ambiguidade, que abrem diretamente no estado terminal `AwaitingSlotConfirmation`. Nenhuma tool escreve de forma síncrona; a persistência só ocorre no resume que carrega o aceite humano explícito (ver ADR-004).
+
 ## Alternativas Consideradas
 
 - Prompt-only: menor custo inicial, mas não preserva estado durável nem garante 0 falso positivo.

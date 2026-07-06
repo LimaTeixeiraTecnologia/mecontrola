@@ -87,6 +87,9 @@ func testConfig() *configs.Config {
 		BudgetsConfig: configs.BudgetsConfig{
 			ThresholdAlertsMode: configs.ThresholdAlertsModeLegacy,
 		},
+		OutboxConfig: configs.OutboxConfig{
+			RetryMaxAttempts: 3,
+		},
 	}
 }
 

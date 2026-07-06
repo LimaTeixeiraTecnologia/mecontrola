@@ -821,6 +821,9 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_AffirmativeCreatesRecu
 	s.wmMock.EXPECT().
 		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
 		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
+		Return(nil).Once()
 
 	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
 	out, err := step.Execute(s.ctx, state)

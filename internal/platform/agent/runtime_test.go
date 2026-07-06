@@ -635,6 +635,10 @@ func (f *fakeWorkingMemory) Upsert(_ context.Context, _, _ string) error {
 	return nil
 }
 
+func (f *fakeWorkingMemory) UpsertMetadata(_ context.Context, _ string, _ map[string]any) error {
+	return nil
+}
+
 type fakeRunStore struct {
 	insertErr error
 	updateErr error

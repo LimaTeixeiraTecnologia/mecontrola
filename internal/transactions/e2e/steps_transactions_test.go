@@ -12,6 +12,13 @@ import (
 	"github.com/google/uuid"
 )
 
+func txE2ECategoryFor(direction string) (rootCategoryID, subcategoryID string) {
+	if direction == "income" {
+		return txE2ESalarioRootCategoryUUID, txE2EDecimoTerceiroSubcategoryUUID
+	}
+	return txE2EPrazerosRootCategoryUUID, txE2EOutrosPrazeresSubcategoryUUID
+}
+
 func registerTransactionSteps(sc *godog.ScenarioContext, e *txE2ECtx) {
 	sc.Step(`^que não existe nenhuma transação para o usuário em "([^"]*)"$`, e.naoExisteNenhumaTransacaoParaOUsuarioEm)
 	sc.Step(`^o usuário cria uma transação de (\d+) centavos com método "([^"]*)" e direção "([^"]*)" em "([^"]*)"$`, e.oUsuarioCriaUmaTransacao)
@@ -36,16 +43,15 @@ func (e *txE2ECtx) naoExisteNenhumaTransacaoParaOUsuarioEm(_ string) error {
 }
 
 func (e *txE2ECtx) oUsuarioCriaUmaTransacao(amountCents int64, paymentMethod, direction, occurredAt string) error {
+	rootCat, subCat := txE2ECategoryFor(direction)
 	payload := map[string]any{
 		"direction":      direction,
 		"payment_method": paymentMethod,
 		"amount_cents":   amountCents,
 		"description":    "e2e test",
-		"category_id":    txE2EPrazerosRootCategoryUUID,
+		"category_id":    rootCat,
+		"subcategory_id": subCat,
 		"occurred_at":    occurredAt + "T00:00:00Z",
-	}
-	if direction == "outcome" {
-		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
 	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/transactions", payload); err != nil {
 		return err
@@ -74,16 +80,15 @@ func (e *txE2ECtx) oBancoDeveConterExatamenteTransacaoParaOUsuario(expected int,
 }
 
 func (e *txE2ECtx) queExisteUmaTransacaoCriada(amountCents int64, paymentMethod, direction, occurredAt string) error {
+	rootCat, subCat := txE2ECategoryFor(direction)
 	payload := map[string]any{
 		"direction":      direction,
 		"payment_method": paymentMethod,
 		"amount_cents":   amountCents,
 		"description":    "e2e setup",
-		"category_id":    txE2EPrazerosRootCategoryUUID,
+		"category_id":    rootCat,
+		"subcategory_id": subCat,
 		"occurred_at":    occurredAt + "T00:00:00Z",
-	}
-	if direction == "outcome" {
-		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
 	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/transactions", payload); err != nil {
 		return err

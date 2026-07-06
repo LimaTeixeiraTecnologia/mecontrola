@@ -35,13 +35,11 @@ func (e *txE2ECtx) oUsuarioCriaRecurringTemplate(amountCents int, frequency stri
 		"amount_cents":       amountCents,
 		"description":        "e2e recorrente",
 		"category_id":        txE2EPrazerosRootCategoryUUID,
+		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"frequency":          frequency,
 		"day_of_month":       dayOfMonth,
 		"installments_total": 1,
 		"started_at":         "2026-06-01T00:00:00Z",
-	}
-	if direction == "outcome" {
-		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
 	}
 
 	if err := e.makeRequest(http.MethodPost, "/api/v1/recurring-templates", payload); err != nil {
@@ -81,13 +79,11 @@ func (e *txE2ECtx) queExisteUmRecurringTemplateCriado(amountCents int, frequency
 		"amount_cents":       amountCents,
 		"description":        "e2e recorrente",
 		"category_id":        txE2EPrazerosRootCategoryUUID,
+		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"frequency":          frequency,
 		"day_of_month":       dayOfMonth,
 		"installments_total": 1,
 		"started_at":         "2026-06-01T00:00:00Z",
-	}
-	if direction == "outcome" {
-		payload["subcategory_id"] = txE2EOutrosPrazeresSubcategoryUUID
 	}
 
 	if err := e.makeRequest(http.MethodPost, "/api/v1/recurring-templates", payload); err != nil {

@@ -144,3 +144,56 @@ func (_c *WorkingMemory_Upsert_Call) RunAndReturn(run func(context.Context, stri
 	_c.Call.Return(run)
 	return _c
 }
+
+func (_mock *WorkingMemory) UpsertMetadata(ctx context.Context, resourceID string, metadata map[string]any) error {
+	ret := _mock.Called(ctx, resourceID, metadata)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpsertMetadata")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, map[string]any) error); ok {
+		r0 = returnFunc(ctx, resourceID, metadata)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+type WorkingMemory_UpsertMetadata_Call struct {
+	*mock.Call
+}
+
+func (_e *WorkingMemory_Expecter) UpsertMetadata(ctx any, resourceID any, metadata any) *WorkingMemory_UpsertMetadata_Call {
+	return &WorkingMemory_UpsertMetadata_Call{Call: _e.mock.On("UpsertMetadata", ctx, resourceID, metadata)}
+}
+
+func (_c *WorkingMemory_UpsertMetadata_Call) Run(run func(ctx context.Context, resourceID string, metadata map[string]any)) *WorkingMemory_UpsertMetadata_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 map[string]any
+		if args[2] != nil {
+			arg2 = args[2].(map[string]any)
+		}
+		run(arg0, arg1, arg2)
+	})
+	return _c
+}
+
+func (_c *WorkingMemory_UpsertMetadata_Call) Return(err error) *WorkingMemory_UpsertMetadata_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *WorkingMemory_UpsertMetadata_Call) RunAndReturn(run func(context.Context, string, map[string]any) error) *WorkingMemory_UpsertMetadata_Call {
+	_c.Call.Return(run)
+	return _c
+}

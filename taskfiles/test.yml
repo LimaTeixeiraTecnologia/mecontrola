@@ -58,7 +58,7 @@ tasks:
         msg: "Docker nao esta disponivel; necessario para testes E2E."
     cmds:
       - mkdir -p {{.COVERAGE_DIR}}
-      - go test -race -covermode=atomic -coverprofile={{.COVERAGE_DIR}}/e2e.out -tags=e2e -timeout=15m ./internal/categories/e2e/...
+      - go test -race -covermode=atomic -coverprofile={{.COVERAGE_DIR}}/e2e.out -tags=e2e -timeout=15m ./internal/transactions/e2e/... ./internal/card/e2e/... ./internal/budgets/e2e/... ./internal/categories/e2e/... ./internal/identity/e2e/... ./internal/onboarding/e2e/... ./internal/billing/e2e/...
 
   conformance:real:
     desc: |

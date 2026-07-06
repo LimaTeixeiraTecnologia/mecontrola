@@ -13,6 +13,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 )
 
+const e2ePrazeresRootSlug = "expense.prazeres"
+
 func registerSharedBudgetSteps(sc *godog.ScenarioContext, e *budgetsE2ECtx) {
 	sc.Step(`^que o ambiente de teste para budgets está pronto$`, e.givenEnvReady)
 	sc.Step(`^a resposta HTTP deve ter status (\d+)$`, e.thenStatusIs)
@@ -168,6 +170,14 @@ func (e *budgetsE2ECtx) insertDraftBudget(competence string) error {
 	if err != nil {
 		return fmt.Errorf("inserir orçamento rascunho: %w", err)
 	}
+	if _, err := e.db.ExecContext(ctx,
+		`INSERT INTO mecontrola.budgets_allocations (budget_id, root_slug, basis_points, planned_cents)
+		 VALUES ($1, $2, 10000, 100000)
+		 ON CONFLICT DO NOTHING`,
+		budgetID, e2ePrazeresRootSlug,
+	); err != nil {
+		return fmt.Errorf("inserir allocations do orçamento rascunho: %w", err)
+	}
 
 	e.lastBudgetID = budgetID.String()
 	e.lastCompetence = competence
@@ -187,6 +197,14 @@ func (e *budgetsE2ECtx) insertActiveBudget(competence string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("inserir orçamento ativo: %w", err)
+	}
+	if _, err := e.db.ExecContext(ctx,
+		`INSERT INTO mecontrola.budgets_allocations (budget_id, root_slug, basis_points, planned_cents)
+		 VALUES ($1, $2, 10000, 100000)
+		 ON CONFLICT DO NOTHING`,
+		budgetID, e2ePrazeresRootSlug,
+	); err != nil {
+		return fmt.Errorf("inserir allocations do orçamento ativo: %w", err)
 	}
 
 	e.lastBudgetID = budgetID.String()

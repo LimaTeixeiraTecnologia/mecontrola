@@ -46,3 +46,15 @@ func (r *welcomeDedupRepository) InsertIfAbsent(ctx context.Context, eventID str
 	}
 	return rows > 0, nil
 }
+
+func (r *welcomeDedupRepository) Delete(ctx context.Context, eventID string) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.welcome_dedup.delete")
+	defer span.End()
+
+	const query = `DELETE FROM mecontrola.onboarding_welcome_processed WHERE event_id = $1`
+
+	if _, err := r.conn(ctx).ExecContext(ctx, query, eventID); err != nil {
+		return fmt.Errorf("onboarding: welcome_dedup_repository.delete: %w", err)
+	}
+	return nil
+}

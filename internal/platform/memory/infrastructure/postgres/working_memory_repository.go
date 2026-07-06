@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -66,6 +67,35 @@ func (r *workingMemoryRepository) Upsert(ctx context.Context, resourceID, conten
 			observability.Error(err),
 		)
 		return fmt.Errorf("platform.memory.repository.working_memory.upsert: %w", err)
+	}
+
+	return nil
+}
+
+func (r *workingMemoryRepository) UpsertMetadata(ctx context.Context, resourceID string, metadata map[string]any) error {
+	ctx, span := r.o11y.Tracer().Start(ctx, "platform.memory.repository.working_memory.upsert_metadata")
+	defer span.End()
+
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("platform.memory.repository.working_memory.upsert_metadata: marshal: %w", err)
+	}
+
+	const q = `
+		INSERT INTO mecontrola.platform_resources (resource_id, working_memory, metadata, updated_at)
+		VALUES ($1, '', $2::jsonb, now())
+		ON CONFLICT (resource_id) DO UPDATE
+			SET metadata   = mecontrola.platform_resources.metadata || EXCLUDED.metadata,
+			    updated_at = now()`
+
+	if _, err := r.db.ExecContext(ctx, q, resourceID, raw); err != nil {
+		span.RecordError(err)
+		r.o11y.Logger().Error(ctx, "platform.memory.repository.working_memory.upsert_metadata.failed",
+			observability.String("resource_id", resourceID),
+			observability.Error(err),
+		)
+		return fmt.Errorf("platform.memory.repository.working_memory.upsert_metadata: %w", err)
 	}
 
 	return nil

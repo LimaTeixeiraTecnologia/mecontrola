@@ -46,6 +46,7 @@ import (
 )
 
 const EventTypeWhatsAppInbound = "agents.whatsapp.inbound.v1"
+const eventTypeSubscriptionBound = "onboarding.subscription_bound"
 
 var errLLMAPIKeyRequired = errors.New("agents.module: llm api_key is required")
 
@@ -91,6 +92,7 @@ type Deps struct {
 	BudgetsModule      *budgets.BudgetsModule
 	TransactionsModule transactions.TransactionsModule
 	WhatsAppGateway    whatsAppGateway
+	WelcomeDedup       consumers.WelcomeDedupStore
 	InboundTimeout     time.Duration
 }
 
@@ -253,6 +255,19 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 			Handler:   inboundConsumer,
 		})
 		whatsAppRoute = buildWhatsAppAgentRoute(deps.OutboxPublisher, deps.O11y)
+
+		if deps.WelcomeDedup != nil {
+			welcomeConsumer := consumers.NewSubscriptionBoundWelcomeConsumer(
+				resolveOnboarding,
+				deps.WelcomeDedup,
+				deps.WhatsAppGateway,
+				deps.O11y,
+			)
+			eventHandlers = append(eventHandlers, EventHandlerRegistration{
+				EventType: eventTypeSubscriptionBound,
+				Handler:   welcomeConsumer,
+			})
+		}
 	}
 
 	return Module{

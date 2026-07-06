@@ -1,4 +1,4 @@
-<!-- spec-hash-prd: 5803d0ee6e93bc94a2f77388400d40b7efb4ba149b78be0b52535de08f447855 -->
+<!-- spec-hash-prd: 1134ba7717b0f9dea2a79fc428631ad01153d5f0275fafff4d883e26ddc2765d -->
 
 # Especificação Técnica — Conversa Agentiva Fluida para Registro Financeiro
 
@@ -8,6 +8,8 @@ A solução evolui a conversa financeira do `mecontrola-agent` criando uma camad
 
 O fluxo de escrita continua delegado aos use cases reais por meio das interfaces existentes `CategoriesReader` e `TransactionsLedger`. A decisão crítica é separar três responsabilidades: o agente extrai intenção e chama tools; a pendência tipada preserva slots e decide retomada/cancelamento/substituição; `internal/categories` e `internal/transactions` continuam sendo as autoridades para categoria e persistência. O critério de produção é 0 falso positivo: nenhuma escrita sem raiz + subcategoria folha canônicas, nenhuma resposta de sucesso sem retorno real da tool/use case, e nenhum aceite de retomada sem harness determinístico com Run auditável.
 
+A partir da `spec-version 3` do PRD, quatro invariantes adicionais moldam o desenho: (1) **gate de confirmação obrigatório antes de toda escrita** — nenhuma tool de escrita persiste de forma síncrona; toda operação (registro, edição, recorrência) abre a pendência durável e só persiste após aceite humano explícito no passo `aguardando confirmação`, inclusive quando o lançamento já está totalmente especificado e sem ambiguidade; isso revoga a política anterior de escrita "report-only sem confirmação"; (2) a criação de recorrência é atendida **estendendo a interface `TransactionsLedger`** consumida pelo agente para expor criação de template recorrente, delegando a `internal/transactions/application/usecases/create_recurring_template.go`; (3) a edição preserva `TargetTransactionID` e `TargetVersion` no snapshot da pendência; (4) a seleção entre múltiplos candidatos aceita índice numérico ou nome, resolvido pela decisão pura antes da revalidação canônica.
+
 ## Arquitetura do Sistema
 
 ### Componentes Novos ou Modificados
@@ -15,10 +17,11 @@ O fluxo de escrita continua delegado aos use cases reais por meio das interfaces
 - `internal/agents/application/workflows/pending_entry_state.go`: novos tipos fechados para pendência conversacional, operação financeira, slot aguardado, status de pendência e decisão de retomada.
 - `internal/agents/application/workflows/pending_entry_workflow.go`: workflow durável `PendingEntryWorkflowID = "pending-entry"` para iniciar, retomar, substituir, cancelar, expirar e concluir pendências de registro/edição/recorrência.
 - `internal/agents/application/usecases/pending_entry_continuer.go`: use case fino que carrega/retoma a pendência antes do agente aberto, análogo ao `DestructiveConfirmContinuer`.
-- `internal/platform/agent/identity_context.go`: deve expor `ThreadID` no contexto de tool invocation para permitir correlação por thread sem depender do LLM.
-- `internal/agents/application/usecases/register_entry.go`: deve passar a retornar payload suficiente para abrir pendência quando `RegisterExpense`/`RegisterIncome` resultarem em `agent.ToolOutcomeClarify`.
-- `internal/agents/application/usecases/register_attempt.go`: novo use case de aplicação para orquestrar tentativa de registro; quando houver `clarify`, inicia `pending-entry` antes de devolver resposta à tool.
-- `internal/agents/application/tools/register_expense.go` e `register_income.go`: continuam adapters finos; delegam ao use case de tentativa de registro e só retornam `clarify` se a pendência durável tiver sido criada com sucesso.
+- `internal/platform/agent/identity_context.go`: hoje `InboundIdentityFromContext(ctx) (resourceID, messageID string, itemSeq int, ok bool)` NÃO expõe `ThreadID`, embora `InboundRequest` já o carregue. Deve ser estendido para persistir `threadID` no contexto de tool invocation via novo `WithToolInvocationContext`/`InboundExecutionFromContext(ctx) (resourceID, threadID, messageID string, itemSeq int, ok bool)`, mantendo `InboundIdentityFromContext` como wrapper legado. Extensão genérica de chave opaca; não introduz semântica de domínio no substrato.
+- `internal/agents/application/usecases/register_entry.go`: deve passar a retornar payload suficiente para abrir pendência tanto no caminho `agent.ToolOutcomeClarify` (slot faltante) quanto no caminho totalmente resolvido (que agora também abre pendência no estado `aguardando confirmação` em vez de escrever).
+- `internal/agents/application/usecases/register_attempt.go`: novo use case de aplicação para orquestrar a tentativa de registro/edição/recorrência; SEMPRE inicia `pending-entry` antes de devolver resposta à tool — no estado `aguardando categoria`/`pagamento`/`cartão`/`data` quando faltar slot, ou diretamente em `aguardando confirmação` quando tudo já estiver resolvido. Nunca escreve de forma síncrona.
+- `internal/agents/application/tools/register_expense.go`, `register_income.go`, e as tools de edição e de recorrência: continuam adapters finos; delegam ao use case de tentativa e retornam um outcome de "pendência aberta" (clarify/confirmação) somente após a pendência durável ter sido criada com sucesso. A tool de edição resolve e repassa a transação alvo; a tool de recorrência repassa os campos de recorrência.
+- `internal/agents/application/interfaces/transactions_ledger.go`: deve ganhar um método de criação de template recorrente (ex.: `CreateRecurringTemplate(ctx, RawRecurringTemplate) (EntryRef, error)`), com o adapter em `infrastructure/binding` delegando a `internal/transactions` `CreateRecurringTemplate`. Este é o único ponto que amplia a superfície da autoridade de persistência.
 - `internal/agents/infrastructure/messaging/database/consumers/whatsapp_inbound_consumer.go`: deve chamar `PendingEntryContinuer` antes do onboarding e antes de `HandleInbound`, mantendo ordem explícita de resolução.
 - `internal/agents/module.go`: deve montar `workflow.Engine[PendingEntryState]`, definição do workflow, continuer, reaper de pendências e injetar o resolver no consumer.
 - `internal/agents/application/interfaces/types.go`: deve expor tipos de candidato categorial com `rootCategoryId`, `rootSlug`, `subcategoryId`, `subcategorySlug`, path e versão editorial quando necessário para resposta/auditoria.
@@ -87,9 +90,20 @@ const (
 	AwaitingSlotConfirmation
 	AwaitingSlotCorrection
 )
+
+type PendingOperationKind int
+
+const (
+	PendingOpRegisterExpense PendingOperationKind = iota + 1
+	PendingOpRegisterIncome
+	PendingOpEditEntry
+	PendingOpCreateRecurrence
+)
 ```
 
 Cada tipo deve seguir o padrão local: `iota + 1`, `String()`, `IsValid()`, `Parse*`, erro sentinel e testes de ida/volta. Não usar string livre como estado público.
+
+`AwaitingSlotConfirmation` é o **gate terminal obrigatório** antes de qualquer escrita: toda operação transita para este estado após os demais slots estarem preenchidos e válidos, e a persistência só ocorre quando o resume traz aceite humano explícito. Não existe caminho de escrita que pule este estado.
 
 ### Estado Durável
 
@@ -119,8 +133,16 @@ type PendingEntryState struct {
 	ResponseText    string              `json:"responseText"`
 	ResourceID      uuid.UUID           `json:"resourceId"`
 	ErrorCode       string              `json:"errorCode"`
+	OperationKind     PendingOperationKind `json:"operationKind"`
+	TargetTransactionID *uuid.UUID         `json:"targetTransactionId"`
+	TargetVersion       int64              `json:"targetVersion"`
+	Frequency           string             `json:"frequency"`
+	RecurrenceDayOfMonth int               `json:"recurrenceDayOfMonth"`
+	ConfirmRepromptCount int               `json:"confirmRepromptCount"`
 }
 ```
+
+`OperationKind` discrimina registro/edição/recorrência sem `switch` de domínio no roteamento (resolução por mapa fechado). `TargetTransactionID`/`TargetVersion` só são preenchidos em edição, resolvidos server-side pela tool de edição, nunca fornecidos pelo LLM. `Frequency`/`RecurrenceDayOfMonth` só em recorrência. `ConfirmRepromptCount` isola o reprompt único do gate de confirmação do `RepromptCount` de coleta de slot.
 
 O estado deve evitar dados sensíveis desnecessários. Ele contém apenas dados já presentes no inbound financeiro e necessários para retomar a operação. `ThreadID` é opaco; não usar como label de métrica.
 
@@ -182,6 +204,7 @@ Criar funções puras no consumidor:
 - `DecidePendingResume(state PendingEntryState, msg PendingMessage, now time.Time) (PendingDecision, error)`
 - `DecideCategoryChoice(state PendingEntryState, candidates []PendingCategoryCandidate, text string) (CategoryChoiceDecision, error)`
 - `DecideNewOperationReplacement(state PendingEntryState, msg PendingMessage) PendingDecision`
+- `DecideConfirmation(state PendingEntryState, msg PendingMessage, now time.Time) (ConfirmDecision, error)` — gate terminal de escrita; determinístico, sem IO/LLM.
 
 Essas funções não devem fazer IO, chamar LLM, acessar banco ou usar `context.Context`. Elas recebem `now` por parâmetro para testes determinísticos e retornam tipos fechados.
 
@@ -197,7 +220,13 @@ Qualquer caso ambíguo que não seja nova operação completa nem slot compatív
 
 ### Abertura de Pendência
 
-Quando `RegisterEntry.classify` retornar `agent.ToolOutcomeClarify`, a ferramenta de registro deve retornar estrutura com `outcome=clarify` e dados do lançamento sem `resourceId`. A resposta final do agente não deve tentar registrar. Antes de devolver `clarify`, o use case de tentativa de registro deve abrir a pendência com key `<resourceID>:<threadID>:pending-entry` usando `workflow.Engine.Start`.
+Toda tentativa de escrita (registro, edição, recorrência) abre a pendência antes de qualquer persistência. O use case de tentativa (`register_attempt`) decide o estado inicial:
+
+- Se `RegisterEntry.classify` retornar `agent.ToolOutcomeClarify` (slot categorial faltante/ambíguo), abre em `AwaitingSlotCategory` com `outcome=clarify`.
+- Se faltar pagamento/cartão/data, abre no slot correspondente.
+- Se todos os slots já estiverem preenchidos e válidos (inclusive categoria inequívoca), abre **diretamente em `AwaitingSlotConfirmation`** — nunca escreve de forma síncrona.
+
+A tool retorna sempre um outcome de "pendência aberta" (clarify ou pedido de confirmação) e nunca `success` no mesmo turno da tentativa. A abertura usa key `<resourceID>:<threadID>:pending-entry` via `workflow.Engine.Start`.
 
 Se a abertura da pendência falhar, a tool deve retornar erro e o runtime não pode emitir sucesso. Se a pendência já existir, `ErrRunAlreadyExists` deve ser tratado como retomada ou substituição conforme decisão determinística. Não criar schema paralelo.
 
@@ -214,11 +243,33 @@ O step do workflow deve:
 1. Validar expiração de 30 minutos usando `SuspendedAt`.
 2. Decidir cancelamento, substituição, slot preenchido ou reprompt.
 3. Resolver categoria via `SearchDictionary`.
-4. Apresentar opções quando houver múltiplos candidatos plausíveis.
-5. Validar escolha por `ResolveForWrite`.
-6. Montar `interfaces.RawTransaction` com evidência categorial completa.
-7. Chamar `TransactionsLedger.CreateTransaction` ou operação equivalente, deixando `CategoryWriteGate` em `internal/transactions` como defesa final.
-8. Confirmar sucesso somente com retorno real.
+4. Apresentar opções quando houver múltiplos candidatos plausíveis, como lista numerada.
+5. Aceitar a escolha por índice numérico OU nome (via `DecideCategoryChoice`, pura) e validar por `ResolveForWrite`.
+6. Transicionar para `AwaitingSlotConfirmation` e apresentar a confirmação final única quando todos os slots estiverem resolvidos.
+7. Somente no resume seguinte, com aceite explícito, montar `interfaces.RawTransaction`/`RawUpdateTransaction`/`RawRecurringTemplate` com evidência categorial completa.
+8. Chamar `TransactionsLedger.CreateTransaction`/`UpdateTransaction`/`CreateRecurringTemplate` conforme `OperationKind`, deixando `CategoryWriteGate` em `internal/transactions` como defesa final.
+9. Confirmar sucesso somente com retorno real.
+
+### Gate de Confirmação de Escrita
+
+O passo `AwaitingSlotConfirmation` reutiliza o **contrato semântico** já validado no `destructive-confirm`, sem reusar o workflow destrutivo (a techspec rejeita expandir `destructive-confirm`). A decisão pura `DecideConfirmation(state, msg, now)` retorna:
+
+- aceite explícito (`sim`/`confirmar`/`ok`/`pode`) → transição para escrita real;
+- cancelamento explícito (`não`/`cancela`/`deixa pra lá`) → fecha `PendingStatusCancelled`, sem escrita;
+- resposta ambígua (1ª vez) → `ConfirmRepromptCount` 0→1, re-suspende com re-pergunta única;
+- resposta ambígua (2ª vez) → fecha `PendingStatusCancelled`, sem escrita;
+- nova frase completa de lançamento → substituição (`PendingStatusReplaced`), `handled=false`;
+- expiração (TTL 30 min via `SuspendedAt`) → fecha `PendingStatusExpired`, sem escrita.
+
+O gate nunca invoca LLM (R-AGENT-WF-001.4) e é 100% determinístico. A escrita só ocorre no resume que carrega o aceite; `M-07` (escrita sem confirmação) é comprovado 0 pelo harness verificando a ordem confirm→write no Run auditável.
+
+### Detecção de Escolha de Candidato por Número ou Nome
+
+`DecideCategoryChoice(state, candidates, text)` deve, de forma pura:
+
+- Se `text` for um índice válido (`1..len(candidates)`), selecionar o candidato correspondente.
+- Caso contrário, casar `text` normalizado contra `SubcategorySlug`/nome legível dos candidatos; match único → selecionado; nenhum ou múltiplos → devolver ambiguidade para reprompt único.
+- Nunca escolher automaticamente o primeiro candidato (RF-27/RF-35).
 
 ### Expiração e Reaper
 
@@ -288,6 +339,11 @@ Cenários mínimos:
 - CA-10: cartão crédito sem cartão -> resolver cartão antes de write.
 - CA-11: texto compatível com pendência substituída -> no write.
 - CA-12: harness valida Run, tool calls e escrita real.
+- CA-13: lançamento inequívoco -> abre direto em `AwaitingSlotConfirmation` -> "sim" -> write; sem "sim" -> no write.
+- CA-14: confirmação ambígua -> reprompt único -> ambiguidade persistente -> cancel sem write.
+- CA-15: múltiplos candidatos -> escolha por número e escolha por nome resolvem o mesmo par canônico -> confirm -> write.
+- CA-16: recorrência com categoria válida -> confirm -> `CreateRecurringTemplate` real, idempotente, sem write antes do "sim".
+- CA-17: edição com clarify -> confirm -> `UpdateTransaction` na transação alvo preservada, respeitando versão, sem criar nova.
 
 ### Gates de Validação
 
@@ -303,14 +359,16 @@ Além dos gates da skill `mastra`, rodar os greps de pureza do kernel, SQL em to
 
 ## Sequenciamento de Desenvolvimento
 
-1. Tipos fechados e decisões puras de pendência no consumidor `internal/agents/application/workflows`.
-2. Workflow `pending-entry` com start/resume/cancel/expire/replaced sem chamadas reais de ledger.
-3. Integração com `CategoriesReader` para candidatos raiz+folha e `ResolveForWrite`.
-4. Integração com `TransactionsLedger` e idempotência.
-5. Abertura de pendência a partir de `register_expense/register_income` com `outcome=clarify`.
-6. Wiring em `module.go` e `WhatsAppInboundConsumer`.
-7. Harness determinístico e integração Postgres.
-8. Reforço de prompt/instruções apenas para refletir o novo contrato, sem depender dele como autoridade.
+1. Tipos fechados (incluindo `PendingOperationKind`) e decisões puras de pendência — `DecidePendingResume`, `DecideCategoryChoice`, `DecideNewOperationReplacement`, `DecideConfirmation` — no consumidor `internal/agents/application/workflows`.
+2. Workflow `pending-entry` com start/resume/cancel/expire/replaced e gate terminal `AwaitingSlotConfirmation`, sem chamadas reais de ledger.
+3. Extensão de `internal/platform/agent/identity_context.go` para expor `threadID` (`InboundExecutionFromContext`), mantendo wrapper legado.
+4. Extensão de `TransactionsLedger` com `CreateRecurringTemplate` e adapter de binding para `internal/transactions`.
+5. Integração com `CategoriesReader` para candidatos raiz+folha, escolha por número/nome e `ResolveForWrite`.
+6. Integração com `TransactionsLedger` (create/update/recurring) e idempotência.
+7. `register_attempt` abrindo pendência sempre (clarify ou confirmação) a partir das tools de registro, edição e recorrência; nenhuma escrita síncrona.
+8. Wiring em `module.go` (engine `PendingEntryState`, reaper) e ordem de resolvers no `WhatsAppInboundConsumer`.
+9. Harness determinístico (CA-01..CA-17) e integração Postgres.
+10. Reforço de prompt/instruções apenas para refletir o novo contrato e o gate de confirmação, sem depender dele como autoridade.
 
 ## Monitoramento e Observabilidade
 
@@ -330,6 +388,7 @@ Proibido label com `user_id`, `thread_id`, `resource_id`, `category_id`, `subcat
 - ADR-001: Pendência conversacional como workflow durável no consumidor `internal/agents`.
 - ADR-002: Contrato categorial raiz + subcategoria folha com IDs/slugs canônicos.
 - ADR-003: Harness determinístico como gate primário de produção.
+- ADR-004: Confirmação humana obrigatória antes de toda escrita, como gate terminal da pendência reutilizando o contrato semântico de confirmação.
 
 ### Alternativas Rejeitadas
 
@@ -338,6 +397,10 @@ Proibido label com `user_id`, `thread_id`, `resource_id`, `category_id`, `subcat
 - Reutilizar `ConfirmState` ampliando `destructive-confirm`: rejeitado porque mistura confirmação destrutiva com coleta categorial e aumenta risco de regressão em operações sensíveis.
 - Permitir categoria raiz sem folha: rejeitado pelo PRD e pelo contrato de transações.
 - Scorer LLM como gate de aceite: rejeitado porque é probabilístico e não prova ausência de falso positivo.
+- Escrita "report-only" sem gate de confirmação (política anterior): revogada na `spec-version 3`; toda escrita agora exige aceite humano explícito antes de persistir.
+- Escrever de forma síncrona na tool quando o lançamento é inequívoco: rejeitado porque violaria o gate de confirmação obrigatório e removeria a evidência auditável de aceite.
+- Reusar o workflow `destructive-confirm` para confirmar registros: rejeitado por misturar confirmação de escrita normal com operações destrutivas; reutiliza-se apenas o contrato semântico dentro de `pending-entry`.
+- Adicionar template recorrente no consumidor: rejeitado; recorrência é responsabilidade de `internal/transactions`, exposta por extensão fina de `TransactionsLedger`.
 
 ### Riscos e Mitigações
 
@@ -368,6 +431,9 @@ Proibido label com `user_id`, `thread_id`, `resource_id`, `category_id`, `subcat
 | RF-25..RF-26 | uma pendência ativa por `<resourceID>:<threadID>:pending-entry` | concurrency/idempotency tests |
 | RF-33..RF-34 | harness determinístico + Run auditável | harness CA-12 |
 | RF-36..RF-37 | aderência `go-implementation`/`mastra` | gates build/vet/race + checklist |
+| RF-38..RF-41 | gate `AwaitingSlotConfirmation` terminal + `DecideConfirmation` puro; toda escrita via pendência | `pending_entry_confirmation_test.go`, harness CA-13/CA-14, M-07 |
+| RF-42 | `DecideCategoryChoice` aceita índice ou nome | decision unit + harness CA-15 |
+| RF-43 | recorrência/edição via ledger estendido, idempotência e gate de confirmação | binding integration + harness CA-16/CA-17 |
 
 ### Arquivos Relevantes e Dependentes
 
@@ -391,3 +457,7 @@ Proibido label com `user_id`, `thread_id`, `resource_id`, `category_id`, `subcat
 - `internal/transactions/application/interfaces/category_write_gate.go`
 - `internal/transactions/domain/valueobjects/category_write_evidence.go`
 - `internal/transactions/application/usecases/create_transaction.go`
+- `internal/transactions/application/usecases/update_transaction.go`
+- `internal/transactions/application/usecases/create_recurring_template.go`
+- `internal/agents/application/interfaces/transactions_ledger.go`
+- `internal/agents/application/interfaces/discriminators.go`

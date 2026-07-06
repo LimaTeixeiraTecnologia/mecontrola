@@ -17,7 +17,6 @@ import (
 	ucmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/usecases/mocks"
 	domain "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/entities"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency"
 	idemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/idempotency/mocks"
 )
@@ -201,50 +200,13 @@ func (s *CreateCardSuite) TestExecute_WithIdempotency() {
 	s.Require().NoError(err)
 }
 
-func (s *CreateCardSuite) makeExistingCard(in input.CreateCard) entities.Card {
-	nickname, err := valueobjects.NewNickname(in.Nickname)
-	s.Require().NoError(err)
-	bank, err := valueobjects.NewBankCode(in.Bank)
-	s.Require().NoError(err)
-	cycle, err := valueobjects.NewBillingCycle(15, in.DueDay)
-	s.Require().NoError(err)
-
-	return entities.NewCard(entities.NewCardInput{
-		UserID:   in.UserID,
-		Nickname: nickname,
-		Bank:     bank,
-		Cycle:    cycle,
-	})
-}
-
-func (s *CreateCardSuite) TestExecute_NicknameConflict_ReturnsExistingIdempotently() {
-	in := s.makeInput()
-	existing := s.makeExistingCard(in)
-
-	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
-	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
-	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
-	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(domain.ErrNicknameConflict).Once()
-	s.repoMock.EXPECT().ListByUser(mock.Anything, in.UserID.String(), "", resolveCardByNicknameLimit).
-		Return([]entities.Card{existing}, "", nil).Once()
-
-	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
-	out, err := sut.Execute(s.ctx, in)
-
-	s.Require().NoError(err)
-	s.Equal(existing.ID.String(), out.ID)
-	s.Equal(in.Nickname, out.Nickname)
-}
-
-func (s *CreateCardSuite) TestExecute_NicknameConflict_NoMatchPropagatesError() {
+func (s *CreateCardSuite) TestExecute_NicknameConflict_ReturnsError() {
 	in := s.makeInput()
 
 	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
 	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
 	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
 	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(domain.ErrNicknameConflict).Once()
-	s.repoMock.EXPECT().ListByUser(mock.Anything, in.UserID.String(), "", resolveCardByNicknameLimit).
-		Return([]entities.Card{}, "", nil).Once()
 
 	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
 	_, err := sut.Execute(s.ctx, in)

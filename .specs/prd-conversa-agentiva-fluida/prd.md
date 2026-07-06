@@ -1,4 +1,4 @@
-<!-- spec-version: 2 -->
+<!-- spec-version: 3 -->
 
 # Documento de Requisitos do Produto (PRD) — Conversa Agentiva Fluida para Registro Financeiro
 
@@ -12,6 +12,8 @@ O objetivo de produto não é "perguntar menos a qualquer custo". O objetivo é 
 
 Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa de lançamento substitui a pendência anterior e inicia nova operação; toda escolha categorial persistível exige categoria raiz canônica e subcategoria folha canônica, ambas com `id` e `slug`; e a medição oficial de retomada/confusão usa harness determinístico com evidência em Run auditável.
 
+A partir da `spec-version 3`, quatro decisões adicionais estão fechadas: (1) toda escrita financeira originada da conversa — registro, edição e recorrência — DEVE passar por um gate de confirmação humana explícita antes de persistir, mesmo quando o lançamento estiver totalmente especificado e sem ambiguidade; este gate substitui explicitamente a política anterior de escrita "report-only sem confirmação"; (2) a criação de recorrência entra no escopo e é atendida estendendo a autoridade de persistência já consumida pelo agente, sem reimplementar template recorrente no consumidor; (3) a edição de lançamento entra no fluxo de pendência preservando o identificador e a versão da transação alvo; (4) quando houver múltiplos candidatos de categoria, o agente apresenta uma lista numerada curta e aceita tanto o número quanto o nome da categoria, revalidando o par raiz + folha antes de persistir.
+
 ## Objetivos
 
 - **O-01 — Continuidade conversacional.** O agente deve preservar uma operação financeira pendente entre turnos quando precisar de clarificação de categoria, pagamento, cartão, data ou confirmação.
@@ -20,6 +22,7 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - **O-04 — Clarificação categorial segura.** Ambiguidade ou ausência de categoria deve bloquear escrita até que uma categoria canônica seja resolvida e validada.
 - **O-05 — Fluidez em português natural.** Respostas curtas como "custo fixo", "sim", "pix", "essa mesmo", "não, era farmácia" ou "cancela" devem ser interpretadas dentro do contexto pendente quando houver uma operação aguardando input.
 - **O-06 — Auditabilidade.** O produto deve permitir investigar por que o agente perguntou, retomou, registrou, cancelou ou expirou um fluxo pendente.
+- **O-07 — Confirmação humana antes da escrita.** Nenhuma escrita financeira (registro, edição ou recorrência) deve ser persistida sem uma confirmação humana explícita no turno imediatamente anterior à persistência.
 
 ### Métricas-chave
 
@@ -29,6 +32,7 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - **M-04 Escrita com categoria insegura:** transações persistidas sem categoria canônica validada e evidência mínima. Meta: 0.
 - **M-05 Perguntas por pendência:** número de perguntas adicionais para concluir um registro parcialmente informado. Meta: no máximo uma pergunta por dado realmente faltante.
 - **M-06 Confusão entre pendências:** casos em que resposta do usuário é aplicada a lançamento errado, medidos por harness determinístico com evidência em Run auditável. Meta: 0 nos cenários canônicos.
+- **M-07 Escrita sem confirmação explícita:** escritas financeiras persistidas sem uma confirmação humana explícita registrada no Run auditável. Meta: 0.
 
 ## Histórias de Usuário
 
@@ -50,6 +54,9 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 7. **Resposta final objetiva.** Ao concluir, o agente deve confirmar valor, categoria e período/data quando aplicável, usando linguagem pronta para WhatsApp e sem detalhes internos.
 8. **Substituição explícita por nova operação completa.** Quando o usuário enviar uma nova frase completa de lançamento durante uma pendência, o produto deve encerrar a pendência anterior como substituída e processar a nova operação.
 9. **Escolha categorial canônica completa.** Toda opção de categoria apresentada para escrita deve conter raiz canônica e subcategoria folha canônica, com `id` e `slug` de ambas.
+10. **Gate de confirmação obrigatório.** Toda escrita financeira originada da conversa deve exigir confirmação humana explícita antes de persistir, com semântica estrita de aceite/cancelamento, reprompt único em resposta ambígua e expiração previsível.
+11. **Seleção de candidato por número ou nome.** Quando o agente apresentar múltiplos candidatos de categoria numerados, o usuário pode responder com o número ou com o nome da categoria, e o sistema revalida o par raiz + folha antes de persistir.
+12. **Edição e recorrência no mesmo pipeline.** Edição de lançamento e criação de recorrência usam o mesmo mecanismo de pendência durável, preservando alvo/versão na edição e delegando a persistência às autoridades reais.
 
 ## Requisitos Funcionais
 
@@ -77,7 +84,7 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - **RF-22:** Em caso de erro de tool/use case, o agente DEVE informar falha sem declarar sucesso e sem perder a pendência quando ainda for possível corrigir o input.
 - **RF-23:** O produto DEVE registrar evidência auditável do motivo da clarificação, do slot respondido, da decisão tomada e do desfecho da pendência.
 - **RF-24:** O agente DEVE manter respostas finais compatíveis com WhatsApp: português do Brasil, texto curto, sem markdown incompatível e sem mencionar infraestrutura interna.
-- **RF-25:** O produto DEVE cobrir pelo menos os fluxos de despesa via pix/débito/dinheiro/boleto, despesa em cartão de crédito, receita, edição de lançamento e criação de recorrência quando houver categoria.
+- **RF-25:** O produto DEVE cobrir pelo menos os fluxos de despesa via pix/débito/dinheiro/boleto, despesa em cartão de crédito, receita, edição de lançamento e criação de recorrência quando houver categoria. A criação de recorrência DEVE ser atendida estendendo a autoridade de persistência já consumida pelo agente (`internal/transactions`) para expor criação de template recorrente, sem reimplementar template no consumidor. A edição DEVE preservar o identificador e a versão da transação alvo ao longo da pendência.
 - **RF-26:** A experiência DEVE impedir que uma resposta do usuário seja aplicada a uma pendência diferente da operação mais recente da mesma thread, salvo se houver identificação explícita.
 - **RF-27:** O produto DEVE permitir listar ou apresentar opções de categoria quando houver múltiplos candidatos plausíveis, sem escolher automaticamente o primeiro candidato.
 - **RF-28:** Toda opção categorial apresentada para destravar uma escrita DEVE conter categoria raiz canônica com `id` e `slug` e subcategoria folha canônica com `id` e `slug`; exemplo de contrato: raiz `66cb85a0-3266-5900-b8e3-13cdcd00ab62` + `custo-fixo` e subcategoria `c2fda6a3-c329-52c8-81ea-771b6ea4f365` + `aluguel`.
@@ -90,6 +97,12 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - **RF-35:** O produto DEVE rejeitar fallback para categoria genérica, categoria raiz sem folha, primeira categoria da lista ou categoria estimada pelo LLM.
 - **RF-36:** A futura implementação DEVE usar as skills obrigatórias `go-implementation` e `mastra`, respeitando as regras DMMF do repositório para state-as-type, smart constructors, decisões puras e workflow pipeline.
 - **RF-37:** A solução NÃO DEVE reimplementar primitivos de thread, run, working memory, workflow ou tool fora de `internal/platform/{agent,memory,workflow,tool}` e do consumidor `internal/agents`.
+- **RF-38:** Toda escrita financeira originada da conversa (registro, edição e recorrência) DEVE exigir uma confirmação humana explícita no turno imediatamente anterior à persistência, inclusive quando o lançamento estiver totalmente especificado e sem ambiguidade categorial. A persistência só pode ocorrer após aceite explícito real do usuário; esta regra substitui a política anterior de escrita sem gate de confirmação.
+- **RF-39:** O gate de confirmação DEVE usar semântica estrita: aceite explícito (ex.: "sim", "confirmar", "ok", "pode") efetiva a operação; cancelamento explícito (ex.: "não", "cancela") descarta sem efeito; resposta ambígua gera um único reprompt e, persistindo a ambiguidade, cancela sem efeito; e a expiração da janela de inatividade cancela sem efeito.
+- **RF-40:** O gate de confirmação de escrita DEVE ser um estado fechado da própria pendência de registro (`aguardando confirmação`), reutilizando o contrato semântico de confirmação já existente no repositório, sem misturar-se ao fluxo de confirmação de operações destrutivas/sensíveis.
+- **RF-41:** A confirmação de escrita NÃO DEVE reintroduzir perguntas por dados já preservados; ela é um passo único e final adicional aos slots realmente faltantes, e não conta como pergunta de coleta para efeito de M-05.
+- **RF-42:** Quando o agente apresentar múltiplos candidatos de categoria, DEVE apresentá-los como lista numerada curta e aceitar como resposta válida tanto o número da opção quanto o nome legível da categoria, resolvendo qualquer um dos dois para o par raiz + folha canônico e revalidando por contrato antes de persistir.
+- **RF-43:** A escrita de recorrência e de edição originadas da conversa DEVEM preservar idempotência e passar pelas mesmas defesas categoriais e pelo mesmo gate de confirmação das demais escritas.
 
 ## Experiência do Usuário
 
@@ -99,8 +112,11 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 2. Agente identifica despesa, valor, descrição, data e pagamento.
 3. Se a categoria estiver insegura, agente pergunta uma única coisa: "Qual categoria você quer usar para essa despesa no mercado?"
 4. Usuário: "custo fixo".
-5. Agente interpreta como resposta à categoria pendente, resolve de forma canônica e, se válida, registra sem pedir valor/pagamento novamente.
-6. Agente confirma de forma curta: "Despesa de R$ 150,00 registrada em *Custo Fixo* para hoje no pix ✅".
+5. Agente interpreta como resposta à categoria pendente, resolve de forma canônica e, se válida, pede uma confirmação final única sem repetir valor/pagamento: "Confirma? Despesa de R$ 150,00 em *Custo Fixo*, hoje, no pix".
+6. Usuário: "sim".
+7. Só então o agente registra e confirma de forma curta com evidência real: "Despesa de R$ 150,00 registrada em *Custo Fixo* para hoje no pix ✅".
+
+Observação: no caminho totalmente especificado e sem ambiguidade (categoria inequívoca já na primeira frase), o agente pula a pergunta de categoria e vai direto ao passo 5 (confirmação final única), preservando o gate de confirmação obrigatório.
 
 ### Fluxo com correção
 
@@ -119,9 +135,9 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 ### Fluxo com múltiplos candidatos de categoria
 
 1. Usuário informa um lançamento que gera múltiplos candidatos plausíveis.
-2. Agente apresenta opções persistíveis contendo raiz e subcategoria folha canônicas.
+2. Agente apresenta uma lista numerada curta de opções persistíveis contendo raiz e subcategoria folha canônicas.
 3. Cada opção possui internamente `rootCategoryId`, `rootSlug`, `subcategoryId` e `subcategorySlug`.
-4. O usuário escolhe uma opção e o sistema revalida o par raiz + folha antes de persistir.
+4. O usuário escolhe respondendo com o número (ex.: "2") ou com o nome da categoria, o sistema resolve a escolha para o par canônico, pede a confirmação final única e só revalida e persiste após o aceite explícito.
 
 ### Fluxo com cancelamento
 
@@ -155,14 +171,16 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - Mudança de canal além de WhatsApp/texto conversacional.
 - Correção retroativa de conversas históricas já encerradas.
 - Definição final de nomes de structs, campos, tabelas ou APIs, que pertence à especificação técnica.
+- Confirmação assíncrona multi-dispositivo, aprovação por terceiros ou fluxo de aprovação hierárquica: o gate de confirmação é sempre no mesmo thread e usuário da operação.
+- Manutenção da política anterior de escrita sem confirmação: fica revogada a partir da `spec-version 3`.
 
 ## Critérios de Aceite
 
-- **CA-01:** Dado um registro de despesa com valor, descrição, data e pix, quando a categoria exigir clarificação e o usuário responder "custo fixo", então o agente deve retomar a pendência original sem pedir valor ou pagamento novamente.
+- **CA-01:** Dado um registro de despesa com valor, descrição, data e pix, quando a categoria exigir clarificação e o usuário responder "custo fixo", então o agente deve retomar a pendência original, pedir uma única confirmação final sem repetir valor ou pagamento e persistir somente após o usuário confirmar explicitamente.
 - **CA-02:** Dada uma pendência de categoria para "mercado", quando o usuário iniciar uma nova frase completa "Gastei R$ 150,00 na farmácia hoje, no pix", então o agente deve encerrar a pendência anterior como substituída e tratar a frase como nova operação explícita.
 - **CA-03:** Dada uma pendência ativa, quando o usuário responder "sim e pix", então o agente deve preencher apenas os slots compatíveis com a pendência e pedir esclarecimento se "sim" não for uma confirmação válida naquele estado.
 - **CA-04:** Dada uma categoria ambígua com múltiplos candidatos, quando o agente apresentar opções, então cada opção deve conter raiz canônica e subcategoria folha canônica com `id` e `slug`, e o sistema deve revalidar o par escolhido antes de persistir.
-- **CA-05:** Dado cancelamento explícito, quando o usuário disser "cancela", então nenhuma escrita deve ocorrer depois desse turno.
+- **CA-05:** Dado cancelamento explícito em qualquer estado da pendência, incluindo no turno de confirmação final, quando o usuário disser "cancela" ou "não", então nenhuma escrita deve ocorrer depois desse turno e a pendência deve fechar sem efeito.
 - **CA-06:** Dada uma tool de escrita retornando erro, quando o agente responder, então a resposta não pode afirmar sucesso.
 - **CA-07:** Dado replay idempotente da mesma operação, quando o usuário repetir a confirmação, então o sistema não deve duplicar a transação.
 - **CA-08:** Dada expiração da pendência, quando o usuário responder tarde demais, então o agente deve explicar que precisa começar de novo.
@@ -170,6 +188,11 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - **CA-10:** Dado um fluxo de cartão de crédito sem cartão identificado, quando o usuário responde com o apelido do cartão, então o agente deve resolver o cartão e retomar o registro sem pedir novamente valor/descrição.
 - **CA-11:** Dada uma pendência substituída por nova operação completa, quando o usuário responder depois com texto compatível com a pendência antiga, então nenhuma escrita da pendência antiga deve ocorrer.
 - **CA-12:** Dado o harness determinístico de conversa, quando executar cenários de retomada, substituição e ambiguidade, então deve validar estado, tool calls, escrita real quando aplicável e Run auditável.
+- **CA-13:** Dado um lançamento totalmente especificado e sem ambiguidade categorial, quando o usuário enviar a frase, então o agente deve pedir uma confirmação final única antes de qualquer escrita e só persistir após o aceite explícito; sem aceite, nenhuma escrita ocorre.
+- **CA-14:** Dada uma resposta ambígua no turno de confirmação, quando o usuário não aceitar nem cancelar de forma inequívoca, então o agente deve repromptar uma única vez e, persistindo a ambiguidade, cancelar sem efeito.
+- **CA-15:** Dada a apresentação de múltiplos candidatos numerados, quando o usuário responder com o número ou com o nome da categoria, então o sistema deve resolver a mesma opção canônica, pedir confirmação e revalidar o par raiz + folha antes de persistir.
+- **CA-16:** Dado um fluxo de criação de recorrência com categoria válida, quando o usuário confirmar, então o sistema deve criar o template recorrente pela autoridade real de persistência, com idempotência preservada e sem escrita antes da confirmação.
+- **CA-17:** Dada uma edição de lançamento com clarificação de categoria, quando o usuário resolver a categoria e confirmar, então o sistema deve editar exatamente a transação alvo preservada na pendência, respeitando sua versão, sem criar nova transação.
 
 ## Decisões Funcionais Fechadas
 
@@ -181,4 +204,8 @@ Esta versão fixa todas as decisões funcionais abertas: uma nova frase completa
 - **D-06:** A janela de expiração da pendência é de 30 minutos de inatividade; toda pendência expirada deve ter status fechado e resposta clara ao usuário.
 - **D-07:** A fonte oficial para M-01 e M-06 é harness determinístico com verificação de estado, tool calls, escrita real quando aplicável e Run auditável.
 - **D-08:** Scorers LLM-judged são permitidos apenas como observabilidade complementar, nunca como gate primário de aceite funcional.
-- **D-09:** Não há questões de produto em aberto para este PRD; qualquer nova dúvida deve ser tratada como mudança de escopo com incremento de `spec-version`.
+- **D-10:** Toda escrita financeira originada da conversa exige confirmação humana explícita antes de persistir, inclusive no caminho totalmente especificado e sem ambiguidade. Esta decisão substitui explicitamente a política anterior de escrita "report-only sem gate de confirmação".
+- **D-11:** O gate de confirmação vive como estado fechado `aguardando confirmação` da própria pendência de registro e reutiliza o contrato semântico de confirmação existente (aceite/cancelamento estrito, reprompt único, expiração), sem se fundir ao fluxo de confirmação de operações destrutivas/sensíveis.
+- **D-12:** A criação de recorrência é atendida estendendo a autoridade `internal/transactions` (consumida via a interface de ledger do agente) para expor criação de template recorrente; o consumidor não reimplementa template recorrente.
+- **D-13:** A edição de lançamento entra no fluxo de pendência preservando identificador e versão da transação alvo; a seleção entre múltiplos candidatos de categoria aceita número ou nome, sempre revalidada por contrato canônico antes de persistir.
+- **D-14:** Não há questões de produto em aberto para este PRD após a `spec-version 3`; qualquer nova dúvida deve ser tratada como mudança de escopo com incremento de `spec-version`.

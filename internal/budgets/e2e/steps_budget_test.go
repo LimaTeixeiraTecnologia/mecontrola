@@ -8,6 +8,16 @@ import (
 	"github.com/cucumber/godog"
 )
 
+func e2eBudgetPayload(competence string, total int64) map[string]any {
+	return map[string]any{
+		"competence":  competence,
+		"total_cents": total,
+		"allocations": []map[string]any{
+			{"root_slug": e2ePrazeresRootSlug, "basis_points": 10000},
+		},
+	}
+}
+
 func registerBudgetSteps(sc *godog.ScenarioContext, e *budgetsE2ECtx) {
 	sc.Step(`^que já existe um orçamento para o usuário na competência "([^"]*)"$`, e.givenBudgetExists)
 	sc.Step(`^que existe um orçamento rascunho para o usuário na competência "([^"]*)"$`, e.givenDraftBudgetExists)
@@ -41,19 +51,11 @@ func (e *budgetsE2ECtx) whenCreateBudget(competence, totalStr string) error {
 		return fmt.Errorf("parsear total: %w", err)
 	}
 
-	return e.post("/api/v1/budgets", map[string]any{
-		"competence":  competence,
-		"total_cents": total,
-		"allocations": []map[string]any{},
-	})
+	return e.post("/api/v1/budgets", e2eBudgetPayload(competence, total))
 }
 
 func (e *budgetsE2ECtx) whenCreateBudgetWithoutAuth() error {
-	return e.postWithoutAuth("/api/v1/budgets", map[string]any{
-		"competence":  "2099-01",
-		"total_cents": 100000,
-		"allocations": []map[string]any{},
-	})
+	return e.postWithoutAuth("/api/v1/budgets", e2eBudgetPayload("2099-01", 100000))
 }
 
 func (e *budgetsE2ECtx) whenActivateBudget(competence string) error {

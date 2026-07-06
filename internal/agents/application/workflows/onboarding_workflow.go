@@ -774,6 +774,9 @@ func BuildConclusionStep(a agent.Agent, budgets interfaces.BudgetPlanner, workin
 		if err := workingMem.Upsert(ctx, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_wm: %w", err))
 		}
+		if err := workingMem.UpsertMetadata(ctx, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}); err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_metadata: %w", err))
+		}
 		state.FinalMessage = conclusionFinalMessage(state.Goal)
 		return completeStep(state), nil
 	}
