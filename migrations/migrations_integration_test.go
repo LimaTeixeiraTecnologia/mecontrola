@@ -219,7 +219,7 @@ func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(3), version)
+	s.Equal(uint(4), version)
 	s.False(dirty)
 }
 
@@ -235,7 +235,7 @@ func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(3), version)
+	s.Equal(uint(4), version)
 	s.False(dirty)
 }
 
