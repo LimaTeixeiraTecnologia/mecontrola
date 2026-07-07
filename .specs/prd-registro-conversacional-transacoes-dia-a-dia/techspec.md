@@ -7,7 +7,7 @@
 
 ## Resumo Executivo
 
-Esta especificação evolui o fluxo de registro conversacional já existente em `internal/agents` para fechar os gaps reais confirmados no código, sem recriar o que já existe. As mudanças são **cirúrgicas e aditivas**, concentradas em quatro superfícies do consumidor agentivo `mecontrola`, consumindo o substrato `internal/platform/{agent,tool,workflow}` (regra de ouro da skill `mastra`: consumir, não recriar) e respeitando DMMF (pure core / IO shell, state-as-type, smart constructors) e R-ADAPTER-001/R-AGENT-WF-001.
+Esta especificação evolui o fluxo de registro conversacional já existente em `internal/agents` para fechar os gaps reais confirmados no código, sem recriar o que já existe. As mudanças são **cirúrgicas e aditivas**, concentradas em quatro superfícies do consumidor agentivo `mecontrola`, consumindo o substrato `internal/platform/{agent,tool,workflow}` (regra de ouro da skill `mastra`: consumir, não recriar) e respeitando `.agents/skills/domain-modeling-production/` (DMMF: pure core / IO shell, state-as-type, smart constructors, Decide* puro) e R-ADAPTER-001/R-AGENT-WF-001.
 
 Quatro entregas:
 

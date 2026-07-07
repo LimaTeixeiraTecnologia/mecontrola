@@ -6,7 +6,7 @@
 > Fonte: `docs/us/2026-07-07-us-registro-conversacional-transacoes-dia-a-dia.md`
 > Data: 2026-07-07
 > Módulos: `internal/agents` (consumidor agentivo), `internal/transactions`, `internal/categories`, `internal/card`, `internal/budgets`
-> Skills obrigatórias na implementação: `@.agents/skills/go-implementation/`, `@.agents/skills/mastra/`, e **Domain Modeling Made Functional (DDD + F#)**.
+> Skills obrigatórias na implementação: `@.agents/skills/go-implementation/`, `@.agents/skills/mastra/`, e `@.agents/skills/domain-modeling-production/` (DMMF: state-as-type, smart constructors, Decide* puro, pipeline parse→validate→decide→persist→publish).
 
 ## Visão Geral
 

@@ -54,5 +54,10 @@ backups/
 mecontrola-unify-*
 .claude/worktrees/
 
+# Artefatos gerados pelas skills (bundles de decisao, descoberta e secrets de deployment)
+pattern-decisions/
+discoveries/
+.stack-secrets/
+
 # Go compiled test binaries
 *.test

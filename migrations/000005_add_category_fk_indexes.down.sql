@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS mecontrola.transactions_category_id_idx;
+DROP INDEX IF EXISTS mecontrola.transactions_subcategory_id_idx;
+DROP INDEX IF EXISTS mecontrola.transactions_recurring_templates_category_id_idx;
+DROP INDEX IF EXISTS mecontrola.transactions_recurring_templates_subcategory_id_idx;

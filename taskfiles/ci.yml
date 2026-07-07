@@ -49,3 +49,18 @@ tasks:
       OTEL_SERVICE_VERSION=${IMAGE_TAG} ou OTEL_TRACE_SAMPLE_RATE="1", ou reintroduzir start-first.
     cmds:
       - bash scripts/ci/deploy-anti-storm.sh
+
+  init-prohibited:
+    desc: "Gate R0 global: proibe func init() em codigo Go de producao."
+    cmds:
+      - task: :gates:init-prohibited
+
+  zero-comments:
+    desc: "Gate R-ADAPTER-001.1 global: zero comentarios em Go de producao."
+    cmds:
+      - task: :gates:zero-comments
+
+  skills-valid:
+    desc: "Gate de integridade das skills obrigatorias instaladas."
+    cmds:
+      - task: :gates:skills-valid

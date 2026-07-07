@@ -7,8 +7,8 @@
 
 > PRD consumido: `.specs/prd-consulta-conversacional-financeira/prd.md` (spec-version 3).
 > Skills obrigatórias: `.claude/skills/go-implementation/` (R0–R7 `[HARD]`), `.agents/skills/mastra/`
-> (substrato `internal/platform/{agent,tool,llm,memory,scorer}`), e Domain Modeling Made Functional
-> (state-as-type, núcleo puro / casca de IO, tornar estados ilegais irrepresentáveis).
+> (substrato `internal/platform/{agent,tool,llm,memory,scorer}`), e `.agents/skills/domain-modeling-production/`
+> (DMMF: state-as-type, smart constructors, Decide* puro, pipeline parse→validate→decide→persist→publish).
 
 ## Resumo Executivo
 

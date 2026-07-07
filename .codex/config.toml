@@ -43,5 +43,17 @@ path = ".agents/skills/go-implementation"
 enabled = true
 
 [[skills.config]]
+path = ".agents/skills/design-patterns-mandatory"
+enabled = true
+
+[[skills.config]]
+path = ".agents/skills/domain-modeling-production"
+enabled = true
+
+[[skills.config]]
+path = ".agents/skills/postgresql-production-standards"
+enabled = true
+
+[[skills.config]]
 path = ".agents/skills/object-calisthenics-go"
 enabled = true

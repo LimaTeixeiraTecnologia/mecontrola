@@ -120,3 +120,50 @@ tasks:
         fi
         echo "PASS: sem import de internal/agent em producao"
         echo "==> GATE-CUTOVER: internal/agent ausente e sem imports proibidos"
+
+  init-prohibited:
+    desc: |
+      Gate R0 global: proibe func init() em qualquer arquivo Go de producao.
+      Exclui arquivos de teste (*_test.go) e codigo gerado (*.pb.go, mocks/).
+    cmds:
+      - |
+        set -eu
+        echo "==> [GATE-R0] Verificando ausencia de init() em Go de producao..."
+        HITS=$(grep -rn --include="*.go" --exclude-dir=mocks --exclude="*_test.go" --exclude="*.pb.go" '^func init()' . 2>/dev/null \
+          | grep -vE '^\./(\.git|\.claude|\.tools|vendor)/' || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: init() encontrado em codigo de producao — violacao R0"
+          echo "$HITS"
+          exit 1
+        fi
+        echo "PASS GATE-R0: sem init() em producao"
+
+  zero-comments:
+    desc: |
+      Gate R-ADAPTER-001.1 global: zero comentarios em Go de producao.
+      Exclui testes, mocks, .pb.go, diretivas //go:, supressoes //nolint: e cabecalho // Code generated.
+    cmds:
+      - |
+        set -eu
+        echo "==> [GATE-COMMENTS] Verificando zero comentarios em Go de producao..."
+        HITS=$(find . -path ./vendor -prune -o -path ./.git -prune -o -path ./.claude -prune -o -path ./.tools -prune -o -name 'tools.go' -prune -o -name '*.go' ! -name '*_test.go' ! -name '*.pb.go' -print 2>/dev/null \
+          | xargs grep -n '^[[:space:]]*//' 2>/dev/null \
+          | grep -vE '/mocks/|:.*//(go:|nolint:| Code generated|nolint\b|goland:|cspell:|noinspection)' || true)
+        if [ -n "$HITS" ]; then
+          echo "FAIL: comentarios proibidos encontrados em codigo de producao — violacao R-ADAPTER-001.1"
+          echo "$HITS"
+          exit 1
+        fi
+        echo "PASS GATE-COMMENTS: zero comentarios em producao"
+
+  skills-valid:
+    desc: |
+      Gate de integridade das skills instaladas: valida URLs oficiais e metadata
+      das skills Python obrigatorias.
+    cmds:
+      - |
+        set -eu
+        echo "==> [GATE-SKILLS] Validando skills Python obrigatorias..."
+        cd .agents/skills/postgresql-production-standards
+        python3 scripts/validate-doc-map.py . >/dev/null
+        echo "PASS GATE-SKILLS: skills validadas"

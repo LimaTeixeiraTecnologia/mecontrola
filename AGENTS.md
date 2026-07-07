@@ -24,10 +24,44 @@ Objetivo: manter consistencia, seguranca, economia de contexto e qualidade em ta
 5. Se um entrypoint mencionar pacote ausente ou assinatura antiga, registrar drift em vez de mascarar com placeholder.
 6. Nao criar campos, adapters, routers, jobs, consumers ou providers ficticios apenas para preencher estrutura.
 
+## Prompt Engineering, Tool Use e Agentes
+
+Esta secao traduz para o repositorio as praticas oficiais do [Claude Platform](https://platform.claude.com/docs/pt-BR/home) e [OpenAI Developers](https://developers.openai.com/) em 2026. Sao regras duras para todo agente/claude/codex que operar neste codebase.
+
+### Prompt Engineering
+
+1. **XML tags para prompts complexos** `[HARD]`: toda instrucao multi-parte deve usar tags explicitas (`<context>`, `<task>`, `<rules>`, `<example>`, `<format>`, `<output>`). Multi-parte = qualquer prompt com duas ou mais dimensoes distintas (contexto + tarefa, tarefa + regras, formato + exemplo, etc.). Prompts de uma unica dimensao (ex.: "qual a capital da Franca?") nao exigem XML. Nunca misturar contexto, constraints e formato em prosa solta.
+2. **Goal-statement primeiro**: o objetivo vem antes de qualquer contexto; a descricao de "done" deve caber em uma frase.
+3. **Constraints explicitos em bullets**: regras negativas e positivas como lista, nao como paragrafo.
+4. **Exemplos quando o formato importa**: incluir 1-2 exemplos de input/output quando a saida for nao trivial.
+5. **Uncertainty rule**: "se incerto, diga explicitamente" — proibido inventar resposta quando a evidencia for insuficiente.
+6. **Chain-of-thought explicito**: para raciocinio critico, instruir o modelo a expor o raciocinio antes da conclusao. Raciocinio critico = decisoes de arquitetura, seguranca, concorrencia, persistencia, API publica, transacao, modelagem de dominio ou escolha de pattern.
+7. **Prompts pequenos e encadeados**: decompor workflows grandes em prompts focados (parse → validate → decide → persist → publish), nao um mega-prompt. Mega-prompt = qualquer prompt com mais de 5 dimensoes instrucionais distintas ou que exija mais de uma decisao de saida.
+
+### Tool Use / Function Calling
+
+1. **JSON Schema estrito** `[HARD]`: toda tool/functao exposta a um LLM deve ter schema JSON com `additionalProperties: false` e todos os campos em `required`.
+2. **Strict mode obrigatorio**: usar `strict: true` sempre que a API/modelo suportar (OpenAI function calling / structured outputs).
+3. **Descricoes precisas**: nome, descricao e parametros da tool devem passar no "intern test" — um humano deve conseguir usa-la so com o que foi fornecido.
+4. **Namespaces quando >10 funcoes**: agrupar tools por dominio (`crm`, `billing`, `shipping`) e usar tool search/deferred loading quando disponivel.
+5. **Validar input da tool**: antes de delegar ao use case/client, validar o payload contra o schema.
+6. **Tool e adapter fino**: herda R-ADAPTER-001.2 — toda tool delega para use case/client; nunca contem regra de negocio, SQL direto ou branching de dominio.
+
+### Agent Design e Observabilidade
+
+1. **Subagentes para economia de contexto**: investigacao que leia >=10 arquivos ou >20 tool calls deve ser delegada a subagente (`Agent`, `Explore`, `Plan`) — apenas a conclusao retorna a sessao principal.
+2. **Registry em vez de switch**: comportamento novo entra como nova tool/agente/workflow registrado; proibido `switch case intent.Kind` (herda R-AGENT-WF-001.1).
+3. **Cada run e rastreavel** `[HARD]`: todo tool call/agent run deve registrar `run_id`, `thread_id`, `agent_id`, `status`, `duration_ms` e `error` quando houver.
+4. **Golden sets e thresholds**: mudancas em agentes/workflows so passam quando houver eval com golden set e thresholds por axis (corretude, regressao, seguranca).
+5. **Verificacao antes de parar**: o agente deve ter um check pass/fail (teste, build, linter, diff contra fixture) antes de declarar a tarefa concluida.
+
 ## Skills Obrigatorias
 
 - Para qualquer tarefa que altere codigo: carregar `.agents/skills/agent-governance/SKILL.md`.
 - Para qualquer implementacao, alteracao ou revisao de codigo Go: carregar tambem `.agents/skills/go-implementation/SKILL.md`.
+- Para escolha, aplicacao ou revisao de design patterns: carregar `.agents/skills/design-patterns-mandatory/SKILL.md`.
+- Para modelagem de dominio, discovery de fluxo ou revisao de agregados/eventos/comandos: carregar `.agents/skills/domain-modeling-production/SKILL.md`.
+- `[HARD]` Para criacao, revisao ou correcao de uso de PostgreSQL estrutural ou de acesso: carregar `.agents/skills/postgresql-production-standards/SKILL.md` e inegociavel. Gatilhos obrigatorios: migration, nova tabela, nova coluna, novo indice, novo constraint, alteracao de role/grant ou mudanca de schema. Queries ad-hoc, tuning ou transacoes isoladas entram apenas quando houver evidencia de impacto estrutural ou de desempenho critico; fora dos gatilhos, o uso e proibido.
 - Para bugfix com remediacao e teste de regressao: carregar `.agents/skills/bugfix/SKILL.md`.
 - Para refatoracao incremental de design Go por object calisthenics: carregar `.agents/skills/object-calisthenics-go/SKILL.md`.
 - Para governanca do projeto: usar `.agents/skills/analyze-project/SKILL.md`.
@@ -128,7 +162,7 @@ Regras:
 
 ## Regra Obrigatoria para Handlers, Consumers, Jobs e Producers
 
-Nos bounded contexts `internal/identity` e `internal/billing`, os diretórios abaixo sao tratados como portas de entrada ou adapters outbound e devem permanecer finos:
+Em todos os bounded contexts (`internal/identity`, `internal/billing`, `internal/card`, `internal/agents`, `internal/categories`, `internal/budgets`, `internal/transactions` e futuros), os diretorios abaixo sao tratados como portas de entrada ou adapters outbound e devem permanecer finos:
 
 - `infrastructure/http/server/handlers`
 - `infrastructure/messaging/database/consumers`
@@ -138,10 +172,14 @@ Nos bounded contexts `internal/identity` e `internal/billing`, os diretórios ab
 Regras obrigatorias:
 1. Handlers HTTP, consumers de eventos e jobs sao apenas porta de entrada: decodificam input, chamam use case, traduzem erro/saida e encerram.
 2. O fluxo permitido e sempre `handler -> usecase -> repository/service/client`.
-3. Proibido implementar regra de negocio, branching de negocio, query SQL, decisao de persistencia, calculo de janela/default, orchestration cross-repository ou chamada direta a repository/client dentro desses handlers/consumers/jobs.
+3. Proibido implementar regra de negocio, branching de negocio, query SQL, decisao de persistencia, calculo de janela de tempo/paginacao/default, orchestration cross-repository ou chamada direta a repository/client dentro desses handlers/consumers/jobs.
 4. `producers` sao adapters outbound: podem serializar e publicar um evento ja decidido pela aplicacao, mas nao podem decidir regra de negocio, trigger, payload semantico ou branching de dominio.
 5. Em novos desenvolvimentos, nao injetar `RepositoryFactory`, `manager.Manager`, `database.DBTX`, clients externos ou services de dominio diretamente em handlers/consumers/jobs quando o use case correspondente puder receber essa responsabilidade.
 6. Em use cases e services, e proibido criar interfaces locais apenas para expor `DBTX(ctx)`; quando a dependencia for somente o handle de banco, injetar `database.DBTX` concreto na struct consumidora.
+
+Verificacao:
+- Gates existentes cobrem `internal/identity`, `internal/billing`, `internal/card`, `internal/agents` e `internal/platform`.
+- Novos bounded contexts devem adicionar seus proprios gates antes de expor handlers/consumers/jobs/producers.
 
 ## Padrao de Agent — substrato `internal/platform/agent` + consumidor `internal/agents`
 
@@ -203,9 +241,13 @@ Outbox:
 3. Preservar arquitetura, convencoes e fronteiras existentes.
 4. Nao introduzir abstracoes, camadas ou dependencias sem demanda concreta.
 5. Atualizar/adicionar testes quando houver mudanca de comportamento.
-6. Rodar validacoes proporcionais ao risco.
+6. Rodar validacoes proporcionais ao risco. Matriz obrigatoria:
+   - `domain/` ou mudanca de API publica/contrato: `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...`, `golangci-lint run ./...`, gates de governanca.
+   - `application/` ou `infrastructure/` (sem API publica): `go build ./...`, `go vet ./...`, `go test -race -count=1 ./<modulo-alterado>/...`, `golangci-lint run ./<modulo-alterado>/...`.
+   - Adapter (handlers/consumers/jobs/producers): build/vet do pacote + lint + gates R-ADAPTER-001.
+   - Scripts, docs, configs (sem codigo Go): `gofmt -l`, `task lint:fmt:check` e validacao sintatica quando aplicavel.
 7. Registrar bloqueios, drift e suposicoes explicitamente.
-8. Zero comentarios em codigo Go de producao [HARD] — inegociavel. Excecoes: `// Code generated` (gerado por ferramenta), diretivas `//go:` e `//nolint:` com justificativa na mesma linha.
+8. Zero comentarios em codigo Go de producao [HARD] — inegociavel. Codigo Go de producao = arquivos `.go` em `cmd/`, `internal/`, `configs/` e pacotes equivalentes, excluindo `*_test.go`, `*.pb.go`, diretorios `mocks/`, `vendor/`, `.tools/` e `tools.go`. Excecoes permitidas: `// Code generated` (gerado por ferramenta), diretivas `//go:` e `//nolint:` com justificativa na mesma linha. Comentarios inline (`x := 1 // explicacao`) tambem sao proibidos; extrair para nome de variavel/funcao.
 
 ## Validacao
 
@@ -225,6 +267,20 @@ Comandos Go detectados:
 - Copilot: `.github/copilot-instructions.md` so pode reforcar este arquivo.
 - Gemini: `GEMINI.md`/commands so podem reforcar este arquivo.
 - Ferramentas sem enforcement automatico continuam obrigadas a cumprir estas regras de forma procedural.
+
+## Referencias Oficiais
+
+As regras de prompt engineering, tool use, agent design e structured outputs deste documento refletem as documentacoes oficiais abaixo, consultadas em 2026:
+
+- [Claude Platform Docs](https://platform.claude.com/docs/pt-BR/home)
+- [Claude Code Best Practices](https://code.claude.com/docs/en/best-practices)
+- [Claude Code Common Workflows](https://code.claude.com/docs/en/common-workflows)
+- [Anthropic Prompt Engineering Best Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices)
+- [Anthropic MCP](https://docs.anthropic.com/en/docs/agents-and-tools/mcp)
+- [OpenAI Function Calling Guide](https://platform.openai.com/docs/guides/function-calling)
+- [OpenAI Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs)
+- [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents)
+- [OpenAI Agents SDK — Tools](https://openai.github.io/openai-agents-python/tools/)
 
 ## Restricoes Finais
 

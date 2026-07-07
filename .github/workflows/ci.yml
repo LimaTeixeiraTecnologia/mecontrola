@@ -110,6 +110,9 @@ jobs:
       - run: task ci:platform-gates
       - run: task ci:no-internal-agent
       - run: task ci:deploy-anti-storm
+      - run: task ci:init-prohibited
+      - run: task ci:zero-comments
+      - run: task ci:skills-valid
 
   build:
     name: Build

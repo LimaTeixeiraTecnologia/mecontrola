@@ -4,6 +4,8 @@ Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 
 Claude deve respeitar TODAS as regras, skills, references, validacoes, restricoes de arquitetura, economia de contexto e politicas de comentarios definidas em `AGENTS.md` de forma igualitaria ao Codex. Isso e obrigatorio e inegociavel.
 
+Este `CLAUDE.md` segue as recomendacoes oficiais do Claude Code: manter o arquivo enxuto, colocar regras genericas em `AGENTS.md`, e usar `.claude/skills/` e `.claude/agents/` para conhecimento especifico carregado sob demanda.
+
 ## Instrucoes
 
 1. Ler `AGENTS.md` no inicio da sessao.
@@ -17,18 +19,40 @@ Claude deve respeitar TODAS as regras, skills, references, validacoes, restricoe
 9. Nao flexibilizar nenhuma regra por diferenca de ferramenta, hook, agente pre-carregado ou conveniencia operacional.
 10. Para `internal/identity` e `internal/billing`, seguir o "Padrao Obrigatorio de Modulo" em `AGENTS.md`; nao inventar wiring, routers, jobs, consumers ou adapters ausentes.
 
+## Praticas Oficiais do Claude Code
+
+### Prompts internos
+
+- Usar XML tags (`<context>`, `<task>`, `<rules>`, `<format>`, `<example>`) para instrucoes multi-parte.
+- Preferir prompts curtos e encadeados a um mega-prompt.
+- Incluir regra de uncertainty: "se incerto, diga explicitamente".
+- Fornecer um check pass/fail (teste, build, linter) antes de encerrar uma tarefa.
+
+### Subagentes e economia de contexto
+
+- Delegar investigacao que leia >=10 arquivos ou exceda ~20 tool calls a um subagente (`Explore`, `Plan` ou custom).
+- Usar subagentes para revisao adversarial do diff antes de declarar pronto.
+- Manter a sessao principal focada na implementacao; apenas conclusoes voltam dela.
+
+### CLAUDE.md, Skills e Hooks
+
+- `CLAUDE.md` e o contrato raiz; regras genericas e transversais ficam em `AGENTS.md`.
+- Skills em `.claude/skills/` (fonte `.agents/skills/`) carregam conhecimento sob demanda.
+- Hooks garantem acoes deterministicas (ex.: formatacao apos edit, lint antes de commit).
+- Para novas capacidades, preferir criar uma skill a aumentar o tamanho deste arquivo.
+
 ## Go — Regra Mandatória e Inegociável
 
 Toda implementação, alteração ou revisão de código Go DEVE obrigatoriamente:
 
 1. Carregar `.agents/skills/go-implementation/SKILL.md` antes de qualquer edição.
 2. Verificar a versão declarada em `go.mod` antes de introduzir APIs da linguagem ou dependências.
-3. Executar as **Etapas 1 a 5** do SKILL.md na íntegra:
-   - **Etapa 1** — carregar `references/architecture.md` e as Regras Estritas R0–R7 (todas `[HARD]`).
-   - **Etapa 2** — selecionar apenas as referências pertinentes ao escopo da mudança (máximo 4 simultâneas); carregar exemplos concretos (`examples-domain-flow.md`, `examples-testing.md`, `examples-infrastructure.md`) sempre que a tarefa envolver fluxo end-to-end, estratégia de testes ou lifecycle.
-   - **Etapa 3** — modelar a alteração respeitando fronteiras arquiteturais antes de escrever código.
-   - **Etapa 4** — implementar adaptando os exemplos ao contexto real; nunca replicar literalmente.
-   - **Etapa 5** — executar o Checklist de Validação R0–R7 de `references/build.md` e reportar resultado.
+3. Executar as **Etapas 1 a 5** do SKILL.md na integra.
+4. Aplicar a matriz de validacao de `AGENTS.md` (secao `## Validacao` e item 6 de `## Modo de Trabalho`) conforme o risco da mudanca:
+   - `domain/` ou API publica/contrato: build, vet, test race, lint e gates de governanca em todo o projeto.
+   - `application/` ou `infrastructure/` sem API publica: build, vet, test race, lint no modulo alterado.
+   - adapters (handlers/consumers/jobs/producers): build/vet do pacote + lint + gates R-ADAPTER-001.
+   - scripts/docs/configs: `gofmt -l` e validacao sintatica.
 
 **Economia de contexto obrigatória:**
 - Carregar somente as referências exigidas pelos gatilhos da tarefa — cada referência desnecessária consome tokens sem benefício.
@@ -60,13 +84,13 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 - Ver `.claude/rules/agent-workflows-tools.md` (R-AGENT-WF-001.1–001.8 + addendum .6-A/.8-A) para contrato completo.
 
 **R-WF-KERNEL-001 (hard) — Kernel genérico de workflow em `internal/platform/workflow`:**
-- Proibido import de pacote de domínio (`intent`, `agent`, `transactions`, `billing`, `identity`).
-- Proibido regra de negócio, branching de domínio e LLM no kernel.
+- Proibido import de pacote de dominio (`internal/transactions`, `internal/billing`, `internal/identity`) ou de camada superior que consome o kernel (`internal/platform/agent`, `internal/platform/memory`, `internal/platform/llm`, `internal/platform/scorer`, `internal/platform/tool`), bem como qualquer tipo semantico (`intent`, `pendingexpense`, `category`, `agent`).
+- Proibido regra de negocio, branching de dominio e LLM no kernel.
 - SQL apenas no adapter Postgres (`infrastructure/postgres/`).
-- Estados (`RunStatus`/`StepStatus`/`SuspendReason`) são tipos fechados — nunca string livre.
-- Métricas com cardinalidade controlada: sem `user_id`/`correlation_key`/`category_id` como label.
-- Gate bloqueante: regra redigida antes de qualquer código do kernel (ADR-004).
-- Ver `.claude/rules/workflow-kernel.md` para contrato completo e gates de verificação.
+- Estados (`RunStatus`/`StepStatus`/`SuspendReason`) sao tipos fechados — nunca string livre.
+- Metricas com cardinalidade controlada: labels permitidos `workflow`, `step`, `status`, `outcome`; proibido `user_id`/`correlation_key`/`category_id` como label.
+- Gate bloqueante: regra redigida antes de qualquer codigo do kernel (ADR-004).
+- Ver `.claude/rules/workflow-kernel.md` para contrato completo e gates de verificacao.
 
 ## DMMF e Mastra
 
@@ -81,3 +105,13 @@ Ver secoes "DMMF — Domain Modeling Made Functional" e "Padrao de Agent — sub
 ## Outbox
 
 Ver secao "Outbox" em `AGENTS.md` para o contrato completo do `outbox.Publisher` e a regra obrigatoria de idempotencia por `event_id`.
+
+## Referencias Oficiais
+
+- [Claude Code Best Practices](https://code.claude.com/docs/en/best-practices)
+- [Claude Code Common Workflows](https://code.claude.com/docs/en/common-workflows)
+- [Claude Platform Docs](https://platform.claude.com/docs/pt-BR/home)
+- [Anthropic Prompt Engineering Best Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices)
+- [OpenAI Function Calling Guide](https://platform.openai.com/docs/guides/function-calling)
+- [OpenAI Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs)
+- [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents)
