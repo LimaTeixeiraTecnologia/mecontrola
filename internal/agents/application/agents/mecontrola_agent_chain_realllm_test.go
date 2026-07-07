@@ -4,6 +4,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,19 +17,29 @@ import (
 	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	agenttools "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
 	agentusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
-type chainFakeWriter struct{}
+func chainGatedRegistrar(cat agentsifaces.CategoriesReader, ledger agentsifaces.TransactionsLedger, obs *fake.Provider) (*agentusecases.RegisterAttempt, *harnessStore) {
+	store := newHarnessStore()
+	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
+	def := workflows.BuildPendingEntryWorkflow(ledger, nil, cat)
+	return agentusecases.NewRegisterAttempt(cat, ledger, engine, def, obs), store
+}
 
-func (chainFakeWriter) Execute(ctx context.Context, _ uuid.UUID, _ string, _ int, _, _ string, write agentusecases.WriteFn) (agentusecases.IdempotentWriteResult, error) {
-	id, _, err := write(ctx)
-	if err != nil {
-		return agentusecases.IdempotentWriteResult{}, err
-	}
-	return agentusecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
+func chainLoadPending(t *testing.T, store *harnessStore, userID uuid.UUID) workflows.PendingEntryState {
+	t.Helper()
+	key := workflows.PendingEntryKey(userID.String(), "")
+	snap, found, err := store.Load(context.Background(), workflows.PendingEntryWorkflowID, key)
+	require.NoError(t, err)
+	require.True(t, found, "register deve abrir pendência durável (gate de confirmação), sem escrita síncrona")
+	st, decErr := workflow.NewCodec[workflows.PendingEntryState]().Decode(snap.State)
+	require.NoError(t, decErr)
+	return st
 }
 
 func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
@@ -64,7 +75,6 @@ func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
 			leafID := uuid.New()
 
 			var resolveCalled, searchCalled bool
-			var captured agentsifaces.RawTransaction
 
 			cardMock := imocks.NewCardManager(t)
 			cardMock.EXPECT().ResolveCardByNickname(mock.Anything, mock.Anything, mock.Anything).
@@ -80,7 +90,6 @@ func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
 					return agentsifaces.CategorySearchResult{
 						Outcome: agentsifaces.ClassifyOutcomeMatched,
 						Version: 1,
-						HasMore: false,
 						Candidates: []agentsifaces.CategoryCandidate{{
 							CategoryID:     leafID,
 							RootCategoryID: rootID,
@@ -90,19 +99,22 @@ func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
 							MatchQuality:   "exact",
 							SignalType:     "canonical_name",
 							MatchedTerm:    "eletrônicos",
-							IsAmbiguous:    false,
 						}},
 					}, nil
 				}).Maybe()
+			catMock.EXPECT().ResolveForWrite(mock.Anything, mock.Anything).
+				Return(agentsifaces.CategoryWriteDecision{
+					RootCategoryID:   rootID,
+					SubcategoryID:    leafID,
+					Path:             "Custo Fixo > Eletrônicos",
+					RootSlug:         "custo-fixo",
+					SubcategorySlug:  "eletronicos",
+					EditorialVersion: 1,
+				}, nil).Maybe()
 
 			ledgerMock := imocks.NewTransactionsLedger(t)
-			ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-				RunAndReturn(func(_ context.Context, in agentsifaces.RawTransaction) (agentsifaces.EntryRef, error) {
-					captured = in
-					return agentsifaces.EntryRef{ID: uuid.New(), Kind: agentsifaces.EntryKindTransaction}, nil
-				}).Maybe()
 
-			registrar := agentusecases.NewRegisterEntry(catMock, ledgerMock, chainFakeWriter{}, obs)
+			registrar, store := chainGatedRegistrar(catMock, ledgerMock, obs)
 
 			tools := []tool.ToolHandle{
 				agenttools.BuildResolveCardTool(cardMock),
@@ -127,43 +139,33 @@ func TestRealLLM_CardPurchaseChain_ResolveClassifyRegister(t *testing.T) {
 
 			require.True(t, resolveCalled, "agente deve consultar os cartões do usuário via resolve_card")
 			require.True(t, searchCalled, "a categoria deve ser classificada deterministicamente pela ferramenta, não pelo LLM")
-			require.Equal(t, "credit_card", captured.PaymentMethod, "compra no crédito deve rotear via register_expense com paymentMethod=credit_card")
-			require.NotNil(t, captured.CardID, "register_expense deve receber o cardId resolvido pelo resolve_card")
-			require.Equal(t, cardID, *captured.CardID, "cardId gravado deve ser o resolvido pelo resolve_card")
-			require.Equal(t, sc.wantInstallments, captured.Installments, "installments deve refletir o parcelamento informado")
-			require.Equal(t, rootID, captured.CategoryID, "category_id gravado deve ser a raiz classificada deterministicamente")
-			require.NotNil(t, captured.SubcategoryID, "subcategory_id (detalhe) é obrigatório na persistência")
-			require.Equal(t, leafID, *captured.SubcategoryID, "subcategory_id gravado deve ser a folha classificada deterministicamente")
+
+			st := chainLoadPending(t, store, userID)
+			require.Equal(t, workflows.PendingOpRegisterExpense, st.OperationKind)
+			require.Equal(t, "credit_card", st.PaymentMethod, "compra no crédito deve rotear via register_expense com paymentMethod=credit_card")
+			require.NotNil(t, st.CardID, "register_expense deve receber o cardId resolvido pelo resolve_card")
+			require.Equal(t, cardID, *st.CardID, "cardId deve ser o resolvido pelo resolve_card")
+			require.Equal(t, sc.wantInstallments, st.Installments, "installments deve refletir o parcelamento informado")
+			require.Len(t, st.Candidates, 1)
+			require.Equal(t, rootID, st.Candidates[0].RootCategoryID, "raiz classificada deterministicamente")
+			require.Equal(t, leafID, st.Candidates[0].SubcategoryID, "folha classificada deterministicamente")
 		})
 	}
 }
 
-func TestRealLLM_ClarifyClassifyRegisterChain(t *testing.T) {
+func TestRealLLM_RegisterOpensConfirmationGate(t *testing.T) {
 	provider := buildRealLLMProvider(t)
 
 	obs := fake.NewProvider()
 	userID := uuid.New()
 	rootID := uuid.New()
 	leafID := uuid.New()
-	const editorialVersion = int64(9)
-
-	var resolveCalled bool
-	var captured agentsifaces.RawTransaction
 
 	catMock := imocks.NewCategoriesReader(t)
 	catMock.EXPECT().SearchDictionary(mock.Anything, mock.Anything, "expense").
 		Return(agentsifaces.CategorySearchResult{
-			Outcome: agentsifaces.ClassifyOutcomeAmbiguous,
-			Version: editorialVersion,
-			Candidates: []agentsifaces.CategoryCandidate{
-				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Custo Fixo > Supermercado", IsAmbiguous: true},
-				{CategoryID: uuid.New(), RootCategoryID: uuid.New(), Path: "Prazeres > Delivery", IsAmbiguous: true},
-			},
-		}, nil).Once()
-	catMock.EXPECT().SearchDictionary(mock.Anything, mock.Anything, "expense").
-		Return(agentsifaces.CategorySearchResult{
 			Outcome: agentsifaces.ClassifyOutcomeMatched,
-			Version: editorialVersion,
+			Version: 9,
 			Candidates: []agentsifaces.CategoryCandidate{{
 				CategoryID:     leafID,
 				RootCategoryID: rootID,
@@ -174,28 +176,20 @@ func TestRealLLM_ClarifyClassifyRegisterChain(t *testing.T) {
 				SignalType:     "canonical_name",
 				MatchedTerm:    "supermercado",
 			}},
-		}, nil)
-	catMock.EXPECT().ResolveForWrite(mock.Anything, mock.MatchedBy(func(req agentsifaces.CategoryWriteRequest) bool {
-		return req.RootCategoryID == rootID && req.SubcategoryID == leafID
-	})).RunAndReturn(func(_ context.Context, _ agentsifaces.CategoryWriteRequest) (agentsifaces.CategoryWriteDecision, error) {
-		resolveCalled = true
-		return agentsifaces.CategoryWriteDecision{
+		}, nil).Maybe()
+	catMock.EXPECT().ResolveForWrite(mock.Anything, mock.Anything).
+		Return(agentsifaces.CategoryWriteDecision{
 			RootCategoryID:   rootID,
 			SubcategoryID:    leafID,
-			Kind:             agentsifaces.CategoryKindExpense,
 			Path:             "Custo Fixo > Supermercado",
-			EditorialVersion: editorialVersion,
-		}, nil
-	}).Maybe()
+			RootSlug:         "custo-fixo",
+			SubcategorySlug:  "supermercado",
+			EditorialVersion: 9,
+		}, nil).Maybe()
 
 	ledgerMock := imocks.NewTransactionsLedger(t)
-	ledgerMock.EXPECT().CreateTransaction(mock.Anything, mock.AnythingOfType("interfaces.RawTransaction")).
-		RunAndReturn(func(_ context.Context, in agentsifaces.RawTransaction) (agentsifaces.EntryRef, error) {
-			captured = in
-			return agentsifaces.EntryRef{ID: uuid.New(), Kind: agentsifaces.EntryKindTransaction}, nil
-		}).Maybe()
 
-	registrar := agentusecases.NewRegisterEntry(catMock, ledgerMock, chainFakeWriter{}, obs)
+	registrar, store := chainGatedRegistrar(catMock, ledgerMock, obs)
 
 	tools := []tool.ToolHandle{
 		agenttools.BuildRegisterExpenseTool(registrar),
@@ -203,7 +197,7 @@ func TestRealLLM_ClarifyClassifyRegisterChain(t *testing.T) {
 	}
 	a := BuildMeControlaAgent(provider, tools, nil, obs)
 
-	ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-clarify-chain", 0)
+	ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-gate-chain", 0)
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
@@ -217,12 +211,13 @@ func TestRealLLM_ClarifyClassifyRegisterChain(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("resposta do agente: %s", result.Content)
 
-	require.True(t, resolveCalled, "após clarify o agente deve resolver via classify_category e re-chamar register_expense com os ids")
-	require.Equal(t, rootID, captured.CategoryID, "category_id gravado deve ser a raiz resolvida por classify_category")
-	require.NotNil(t, captured.SubcategoryID, "subcategory_id é obrigatório")
-	require.Equal(t, leafID, *captured.SubcategoryID, "subcategory_id gravado deve ser a folha resolvida por classify_category")
-	require.Equal(t, "user_selected_candidate", captured.CategorySource, "evidência deve marcar seleção explícita")
-	require.Equal(t, editorialVersion, captured.CategoryVersion, "versão editorial deve vir do resolve explícito")
-	require.Equal(t, "pix", captured.PaymentMethod, "forma de pagamento original deve ser preservada")
-	require.Equal(t, int64(15000), captured.AmountCents, "valor original deve ser preservado após o clarify")
+	lower := strings.ToLower(result.Content)
+	require.Contains(t, lower, "confirma", "o agente deve relayar a pergunta de confirmação ao usuário, não improvisar erro")
+	require.NotContains(t, lower, "dificuldade", "não deve reportar falha quando o gate apenas abriu a confirmação")
+
+	st := chainLoadPending(t, store, userID)
+	require.Equal(t, workflows.PendingOpRegisterExpense, st.OperationKind)
+	require.Equal(t, int64(15000), st.AmountCents, "valor original deve ser preservado no gate")
+	require.Equal(t, "pix", st.PaymentMethod, "forma de pagamento original deve ser preservada")
+	require.Equal(t, workflows.PendingStatusActive, st.Status, "O-07/RF-38: escrita não persiste antes da confirmação")
 }

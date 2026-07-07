@@ -16,15 +16,16 @@ import (
 )
 
 type transactionsLedgerAdapter struct {
-	createTx       *txusecases.CreateTransaction
-	updateTx       *txusecases.UpdateTransaction
-	deleteTx       *txusecases.DeleteTransaction
-	listMonthlyE   *txusecases.ListMonthlyEntries
-	getMonthlySumm *txusecases.GetMonthlySummary
-	getTx          *txusecases.GetTransaction
-	getCardInvoice *txusecases.GetCardInvoice
-	searchTx       *txusecases.SearchTransactions
-	o11y           observability.Observability
+	createTx          *txusecases.CreateTransaction
+	updateTx          *txusecases.UpdateTransaction
+	deleteTx          *txusecases.DeleteTransaction
+	listMonthlyE      *txusecases.ListMonthlyEntries
+	getMonthlySumm    *txusecases.GetMonthlySummary
+	getTx             *txusecases.GetTransaction
+	getCardInvoice    *txusecases.GetCardInvoice
+	searchTx          *txusecases.SearchTransactions
+	createRecurringTx *txusecases.CreateRecurringTemplate
+	o11y              observability.Observability
 }
 
 func NewTransactionsLedgerAdapter(
@@ -36,18 +37,20 @@ func NewTransactionsLedgerAdapter(
 	getTx *txusecases.GetTransaction,
 	getCardInvoice *txusecases.GetCardInvoice,
 	searchTx *txusecases.SearchTransactions,
+	createRecurringTx *txusecases.CreateRecurringTemplate,
 	o11y observability.Observability,
 ) agentsifaces.TransactionsLedger {
 	return &transactionsLedgerAdapter{
-		createTx:       createTx,
-		updateTx:       updateTx,
-		deleteTx:       deleteTx,
-		listMonthlyE:   listMonthlyE,
-		getMonthlySumm: getMonthlySumm,
-		getTx:          getTx,
-		getCardInvoice: getCardInvoice,
-		searchTx:       searchTx,
-		o11y:           o11y,
+		createTx:          createTx,
+		updateTx:          updateTx,
+		deleteTx:          deleteTx,
+		listMonthlyE:      listMonthlyE,
+		getMonthlySumm:    getMonthlySumm,
+		getTx:             getTx,
+		getCardInvoice:    getCardInvoice,
+		searchTx:          searchTx,
+		createRecurringTx: createRecurringTx,
+		o11y:              o11y,
 	}
 }
 
@@ -325,6 +328,35 @@ func (a *transactionsLedgerAdapter) SearchTransactions(ctx context.Context, _ uu
 		})
 	}
 	return entries, nil
+}
+
+func (a *transactionsLedgerAdapter) CreateRecurringTemplate(ctx context.Context, in agentsifaces.RawRecurringTemplate) (agentsifaces.EntryRef, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.create_recurring_template")
+	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, err
+	}
+
+	out, err := a.createRecurringTx.Execute(ctx, txinput.RawCreateRecurringTemplate{
+		Direction:     in.Direction,
+		PaymentMethod: in.PaymentMethod,
+		CardID:        in.CardID,
+		AmountCents:   in.AmountCents,
+		Description:   in.Description,
+		CategoryID:    in.CategoryID,
+		SubcategoryID: in.SubcategoryID,
+		Frequency:     in.Frequency,
+		DayOfMonth:    in.DayOfMonth,
+		StartedAt:     in.StartedAt,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/transactions_ledger: criar template recorrente: %w", err)
+	}
+	return agentsifaces.EntryRef{ID: out.ID, Kind: agentsifaces.EntryKindRecurringTemplate}, nil
 }
 
 func (a *transactionsLedgerAdapter) GetMonthlySummary(ctx context.Context, _ uuid.UUID, refMonth string) (agentsifaces.MonthlySummary, error) {

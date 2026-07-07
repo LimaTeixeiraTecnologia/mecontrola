@@ -29,6 +29,7 @@ type RegisterExpenseOutput struct {
 	Kind       string `json:"kind"`
 	IsReplay   bool   `json:"isReplay"`
 	Outcome    string `json:"outcome"`
+	Message    string `json:"message"`
 }
 
 func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
@@ -62,8 +63,9 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 				"kind":       map[string]any{"type": "string"},
 				"isReplay":   map[string]any{"type": "boolean"},
 				"outcome":    map[string]any{"type": "string"},
+				"message":    map[string]any{"type": "string"},
 			},
-			"required":             []string{"resourceId", "kind", "isReplay", "outcome"},
+			"required":             []string{"resourceId", "kind", "isReplay", "outcome", "message"},
 			"additionalProperties": false,
 		},
 	}
@@ -72,7 +74,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 
 func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
 	return func(ctx context.Context, in RegisterExpenseInput) (RegisterExpenseOutput, error) {
-		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
+		resourceID, threadID, wamid, itemSeq, ok := agent.InboundExecutionFromContext(ctx)
 		if !ok {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: identidade não disponível no contexto")
 		}
@@ -110,6 +112,7 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 		}
 		result, err := registrar.RegisterExpense(ctx, usecases.RegisterExpenseCommand{
 			UserID:          userID,
+			ThreadID:        threadID,
 			WAMID:           wamid,
 			ItemSeq:         itemSeq,
 			AmountCents:     in.AmountCents,
@@ -134,6 +137,7 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 			Kind:       result.Kind,
 			IsReplay:   result.Outcome == agent.ToolOutcomeReplay,
 			Outcome:    result.Outcome.String(),
+			Message:    result.Message,
 		}, nil
 	}
 }

@@ -105,6 +105,72 @@ func (_c *TransactionsLedger_CreateTransaction_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
+// CreateRecurringTemplate provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) CreateRecurringTemplate(ctx context.Context, in interfaces.RawRecurringTemplate) (interfaces.EntryRef, error) {
+	ret := _mock.Called(ctx, in)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateRecurringTemplate")
+	}
+
+	var r0 interfaces.EntryRef
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.RawRecurringTemplate) (interfaces.EntryRef, error)); ok {
+		return returnFunc(ctx, in)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.RawRecurringTemplate) interfaces.EntryRef); ok {
+		r0 = returnFunc(ctx, in)
+	} else {
+		r0 = ret.Get(0).(interfaces.EntryRef)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, interfaces.RawRecurringTemplate) error); ok {
+		r1 = returnFunc(ctx, in)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_CreateRecurringTemplate_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateRecurringTemplate'
+type TransactionsLedger_CreateRecurringTemplate_Call struct {
+	*mock.Call
+}
+
+// CreateRecurringTemplate is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in interfaces.RawRecurringTemplate
+func (_e *TransactionsLedger_Expecter) CreateRecurringTemplate(ctx any, in any) *TransactionsLedger_CreateRecurringTemplate_Call {
+	return &TransactionsLedger_CreateRecurringTemplate_Call{Call: _e.mock.On("CreateRecurringTemplate", ctx, in)}
+}
+
+func (_c *TransactionsLedger_CreateRecurringTemplate_Call) Run(run func(ctx context.Context, in interfaces.RawRecurringTemplate)) *TransactionsLedger_CreateRecurringTemplate_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 interfaces.RawRecurringTemplate
+		if args[1] != nil {
+			arg1 = args[1].(interfaces.RawRecurringTemplate)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_CreateRecurringTemplate_Call) Return(entryRef interfaces.EntryRef, err error) *TransactionsLedger_CreateRecurringTemplate_Call {
+	_c.Call.Return(entryRef, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_CreateRecurringTemplate_Call) RunAndReturn(run func(ctx context.Context, in interfaces.RawRecurringTemplate) (interfaces.EntryRef, error)) *TransactionsLedger_CreateRecurringTemplate_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteTransaction provides a mock function for the type TransactionsLedger
 func (_mock *TransactionsLedger) DeleteTransaction(ctx context.Context, ref interfaces.EntryRef, version int64) error {
 	ret := _mock.Called(ctx, ref, version)

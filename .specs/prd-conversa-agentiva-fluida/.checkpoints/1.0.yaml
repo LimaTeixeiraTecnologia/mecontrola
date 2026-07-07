@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-conversa-agentiva-fluida/1.0_execution_report.md
+summary: Tipos fechados PendingStatus/AwaitingSlot/PendingOperationKind e decisões puras DecidePendingResume/DecideConfirmation/DecideCategoryChoice/DecideNewOperationReplacement implementados com 136 testes passando, zero comentários e zero falha nos gates.
+timestamp: "2026-07-06T00:00:00Z"

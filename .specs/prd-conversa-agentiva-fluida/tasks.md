@@ -37,14 +37,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Tipos Fechados e Decisões Puras (incl. `DecideConfirmation`, `PendingOperationKind`, alvo de edição) | pending | — | — | mastra |
-| 2.0 | Workflow `pending-entry`: Start/Resume/Cancel/Expire/Replaced + gate `AwaitingSlotConfirmation` + Reaper + `InboundExecutionFromContext` | pending | 1.0 | Não | mastra |
-| 3.0 | Integração CategoriesReader: candidatos raiz+folha, escolha por número/nome e ResolveForWrite | pending | 1.0 | Com 2.0 | mastra |
-| 4.0 | Integração TransactionsLedger (create/update/`CreateRecurringTemplate`), Idempotência e CategoryWriteGate | pending | 2.0, 3.0 | Não | mastra |
-| 5.0 | Tools de Registro/Edição/Recorrência: abertura de pendência sempre (clarify/confirmação), sem escrita síncrona, alvo de edição e CardManager | pending | 2.0, 3.0 | Com 4.0 | mastra |
-| 6.0 | PendingEntryContinuer, Consumer (ordem de resolvers), Wiring e Métricas | pending | 4.0, 5.0 | Não | mastra |
-| 7.0 | Harness Determinístico: G7+G10+G12 + Integração Postgres (CA-01..CA-17, M-07=0) | pending | 6.0 | Não | mastra |
-| 8.0 | Prompt, Resposta Final WhatsApp e Validação RUN_REAL_LLM | pending | 6.0 | Com 7.0 | — |
+| 1.0 | Tipos Fechados e Decisões Puras (incl. `DecideConfirmation`, `PendingOperationKind`, alvo de edição) | done | — | — | mastra |
+| 2.0 | Workflow `pending-entry`: Start/Resume/Cancel/Expire/Replaced + gate `AwaitingSlotConfirmation` + Reaper + `InboundExecutionFromContext` | done | 1.0 | Não | mastra |
+| 3.0 | Integração CategoriesReader: candidatos raiz+folha, escolha por número/nome e ResolveForWrite | done | 1.0 | Com 2.0 | mastra |
+| 4.0 | Integração TransactionsLedger (create/update/`CreateRecurringTemplate`), Idempotência e CategoryWriteGate | done | 2.0, 3.0 | Não | mastra |
+| 5.0 | Tools de Registro/Edição/Recorrência: abertura de pendência sempre (clarify/confirmação), sem escrita síncrona, alvo de edição e CardManager | done | 2.0, 3.0 | Com 4.0 | mastra |
+| 6.0 | PendingEntryContinuer, Consumer (ordem de resolvers), Wiring e Métricas | done | 4.0, 5.0 | Não | mastra |
+| 7.0 | Harness Determinístico: G7+G10+G12 + Integração Postgres (CA-01..CA-17, M-07=0) | done | 6.0 | Não | mastra |
+| 8.0 | Prompt, Resposta Final WhatsApp e Validação RUN_REAL_LLM | done | 6.0 | Com 7.0 | — |
 
 ## Dependências Críticas
 

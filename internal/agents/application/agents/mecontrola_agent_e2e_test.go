@@ -4,6 +4,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	agenttools "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
 	agentusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/binding"
 	agentpersistence "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
@@ -23,6 +25,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	workflowpg "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
 	txifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/entities"
@@ -128,7 +132,15 @@ func (r *e2eStubCategoriesReader) SearchDictionary(_ context.Context, _, _ strin
 }
 
 func (r *e2eStubCategoriesReader) ResolveForWrite(_ context.Context, _ agentsifaces.CategoryWriteRequest) (agentsifaces.CategoryWriteDecision, error) {
-	return agentsifaces.CategoryWriteDecision{}, nil
+	return agentsifaces.CategoryWriteDecision{
+		RootCategoryID:   r.rootID,
+		SubcategoryID:    r.leafID,
+		Kind:             agentsifaces.CategoryKindExpense,
+		Path:             "Alimentação > Restaurante",
+		RootSlug:         "e2e-alimentacao",
+		SubcategorySlug:  "e2e-restaurante",
+		EditorialVersion: r.version,
+	}, nil
 }
 
 func (r *e2eStubCategoriesReader) ListCategories(_ context.Context, _ uuid.UUID) ([]agentsifaces.Category, error) {
@@ -148,6 +160,8 @@ type MeControlaAgentE2ESuite struct {
 	idem             *agentusecases.IdempotentWrite
 	provider         llm.Provider
 	tools            []tool.ToolHandle
+	pendingEngine    workflow.Engine[workflows.PendingEntryState]
+	pendingDef       workflow.Definition[workflows.PendingEntryState]
 	firstWamid       string
 	firstSeq         int
 	firstTxID        uuid.UUID
@@ -209,19 +223,28 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
 
 	s.adapter = binding.NewTransactionsLedgerAdapter(
-		createTx, nil, nil, listME, getMS, nil, nil, nil, o11y,
+		createTx, nil, nil, listME, getMS, nil, nil, nil, nil, o11y,
 	)
 
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(db, o11y)
 	s.idem = agentusecases.NewIdempotentWrite(s.ledgerRepo, o11y)
 
 	reader := &e2eStubCategoriesReader{rootID: s.categoryID, leafID: s.subcategoryID, version: s.editorialVersion}
-	registerEntry := agentusecases.NewRegisterEntry(reader, s.adapter, s.idem, o11y)
+	store := workflowpg.NewPostgresStore(o11y, db)
+	s.pendingEngine = workflow.NewEngine[workflows.PendingEntryState](store, o11y)
+	s.pendingDef = workflows.BuildPendingEntryWorkflow(s.adapter, nil, reader)
+	registerAttempt := agentusecases.NewRegisterAttempt(reader, s.adapter, s.pendingEngine, s.pendingDef, o11y)
 
 	s.tools = []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(registerEntry),
+		agenttools.BuildRegisterExpenseTool(registerAttempt),
 		agenttools.BuildQueryMonthTool(s.adapter),
 	}
+}
+
+func (s *MeControlaAgentE2ESuite) confirmPending() (workflow.RunResult[workflows.PendingEntryState], error) {
+	key := workflows.PendingEntryKey(s.userID.String(), "")
+	patch, _ := json.Marshal(map[string]string{"resumeText": "sim", "incomingMessageId": "wamid-e2e-confirm"})
+	return s.pendingEngine.Resume(s.authedCtx(), s.pendingDef, key, patch)
 }
 
 func (s *MeControlaAgentE2ESuite) authedCtx() context.Context {
@@ -274,7 +297,7 @@ func (s *MeControlaAgentE2ESuite) TestE2E1_RegistrarDespesaViaLLMPersisteNoBanco
 	result, err := a.Execute(ctx, agent.Request{
 		AgentID: MecontrolaAgentID,
 		Messages: []llm.Message{
-			{Role: "user", Content: "Registre a despesa de almoço de 50 reais no débito. Não peça confirmação, apenas registre."},
+			{Role: "user", Content: "Registre a despesa de almoço de 50 reais no débito."},
 		},
 		MaxTokens: 512,
 	})
@@ -282,53 +305,28 @@ func (s *MeControlaAgentE2ESuite) TestE2E1_RegistrarDespesaViaLLMPersisteNoBanco
 	s.T().Logf("resposta do agente E2E-1: %s", result.Content)
 	s.T().Logf("tool calls=%d tool errs=%d lastTool=%s", hooks.calls, hooks.errs, hooks.lastID)
 
+	s.Require().Equal(0, s.countTransactions(),
+		"O-07/RF-38: nenhuma transação deve ser persistida antes da confirmação humana explícita")
+
+	runResult, confirmErr := s.confirmPending()
+	s.Require().NoError(confirmErr)
+	s.Equal(workflows.PendingStatusCompleted, runResult.State.Status)
+
 	s.Require().Equal(1, s.countTransactions(),
-		"deve existir exatamente 1 transação persistida para o usuário após o registro via LLM")
+		"deve existir exatamente 1 transação persistida após a confirmação explícita")
 	s.Require().Equal(1, s.countTransactionsWithCategory(),
 		"a transação persistida deve ter categoria resolvida deterministicamente (category_id não nulo)")
-
-	wamid, itemSeq, operation, resourceID, found := s.findLedgerRow()
-	s.Require().True(found, "deve existir uma entrada no write ledger para o usuário")
-	s.Equal("create_expense", operation, "operação do ledger deve ser create_expense")
-
-	ledgerEntry, err := s.ledgerRepo.FindByKey(s.ctx, wamid, itemSeq, operation)
-	s.Require().NoError(err, "ledger deve ser localizável pela chave real usada pelo agente")
-	s.Equal(resourceID, ledgerEntry.ResourceID)
-
-	s.firstWamid = wamid
-	s.firstSeq = itemSeq
-	s.firstOpName = operation
-	s.firstTxID = resourceID
 }
 
-func (s *MeControlaAgentE2ESuite) TestE2E2_ReprocessarMesmoWamidNaoDuplica() {
-	s.Require().NotEmpty(s.firstWamid, "E2E1 deve ter registrado a despesa e populado a chave do ledger")
-
+func (s *MeControlaAgentE2ESuite) TestE2E2_ReconfirmarNaoDuplica() {
 	before := s.countTransactions()
-	s.Require().Equal(1, before, "estado inicial deve ter exatamente 1 transação")
+	s.Require().Equal(1, before, "estado inicial deve ter exatamente 1 transação (confirmada em E2E1)")
 
-	res, err := s.idem.Execute(s.authedCtx(), s.userID, s.firstWamid, s.firstSeq, s.firstOpName, "transaction",
-		func(innerCtx context.Context) (uuid.UUID, bool, error) {
-			ref, createErr := s.adapter.CreateTransaction(innerCtx, agentsifaces.RawTransaction{
-				Direction:     "outcome",
-				PaymentMethod: "debit",
-				AmountCents:   5000,
-				Description:   "almoço duplicado",
-				CategoryID:    s.categoryID,
-				SubcategoryID: &s.subcategoryID,
-				OccurredAt:    time.Now().Format("2006-01-02"),
-			})
-			if createErr != nil {
-				return uuid.Nil, false, createErr
-			}
-			return ref.ID, ref.Reconciled, nil
-		},
-	)
+	runResult, err := s.confirmPending()
 	s.Require().NoError(err)
-	s.Equal(agent.ToolOutcomeReplay, res.Outcome,
-		"reexecutar com o mesmo wamid+itemSeq+operation deve ser replay, sem nova escrita")
-	s.Equal(s.firstTxID, res.ResourceID, "replay deve retornar o resourceID original")
+	s.Equal(workflow.RunStatus(0), runResult.Status,
+		"CA-07: reconfirmar um run já concluído é no-op (idempotência pelo ciclo de vida do Run)")
 
 	s.Equal(1, s.countTransactions(),
-		"não deve duplicar a transação após replay idempotente ponta-a-ponta")
+		"não deve duplicar a transação após reconfirmação idempotente ponta-a-ponta")
 }

@@ -114,6 +114,63 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 				s.Contains(instructions, "Toda pergunta final de confirmação deve usar ✅ ou 🎯")
 			},
 		},
+		{
+			name:         "deve conter regra de pendencia conversacional",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA ABSOLUTA DE PENDÊNCIA CONVERSACIONAL")
+				s.Contains(instructions, "outcome=clarify")
+				s.Contains(instructions, "APENAS UMA pergunta")
+			},
+		},
+		{
+			name:         "deve conter template de cancelamento",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "Tudo certo, o registro foi cancelado.")
+			},
+		},
+		{
+			name:         "deve conter template de expiracao",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "O registro expirou. Para registrar, envie a informação completa novamente.")
+			},
+		},
+		{
+			name:         "deve conter template de erro de registro",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "Não consegui registrar. Tente novamente em breve.")
+			},
+		},
+		{
+			name:         "deve proibir mencao a infraestrutura interna",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "NUNCA mencione")
+				s.NotContains(instructions, "workflow_id")
+				s.NotContains(instructions, "correlation_key")
+				s.NotContains(instructions, "resource_id")
+				s.NotContains(instructions, "thread_id")
+			},
+		},
+		{
+			name:         "deve orientar multiplos candidatos com lista numerada",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "lista numerada com NOMES de categoria")
+				s.Contains(instructions, "Qual se encaixa melhor?")
+			},
+		},
+		{
+			name:         "deve exigir confirmacao para toda escrita financeira",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "Toda escrita financeira")
+				s.Contains(instructions, "exige confirmação humana explícita")
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {

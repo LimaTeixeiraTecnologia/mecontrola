@@ -8,121 +8,89 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
-	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
-var testRecurrenceID = uuid.MustParse("00000000-0000-0000-0000-000000000010")
+var testRecurrenceSubID = uuid.MustParse("00000000-0000-0000-0000-000000000011")
 
-func TestBuildCreateRecurrenceToolSuccess(t *testing.T) {
-	recurrences := imocks.NewRecurrenceManager(t)
-	writer := mocks.NewIdempotentWriter(t)
+type fakeRecurrenceRegistrar struct {
+	result usecases.RegisterResult
+	err    error
+	called bool
+	lastAt usecases.CreateRecurrenceCommand
+}
 
-	recurrences.EXPECT().
-		CreateRecurrence(mock.Anything, mock.AnythingOfType("interfaces.RawRecurrence")).
-		Return(interfaces.EntryRef{ID: testRecurrenceID, Kind: interfaces.EntryKindRecurringTemplate}, nil).Once()
+func (f *fakeRecurrenceRegistrar) CreateRecurrence(_ context.Context, cmd usecases.CreateRecurrenceCommand) (usecases.RegisterResult, error) {
+	f.called = true
+	f.lastAt = cmd
+	return f.result, f.err
+}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-recur", 1, "create_recurrence", "recurring_template", mock.AnythingOfType("usecases.WriteFn")).
-		RunAndReturn(func(ctx context.Context, userID uuid.UUID, wamid string, itemSeq int, operation, resourceKind string, write usecases.WriteFn) (usecases.IdempotentWriteResult, error) {
-			id, _, err := write(ctx)
-			if err != nil {
-				return usecases.IdempotentWriteResult{}, err
-			}
-			return usecases.IdempotentWriteResult{ResourceID: id, Outcome: agent.ToolOutcomeRouted}, nil
-		}).Once()
+func recurrenceInput() CreateRecurrenceInput {
+	return CreateRecurrenceInput{
+		Direction:     "outcome",
+		PaymentMethod: "debit_card",
+		AmountCents:   15000,
+		Description:   "Aluguel",
+		CategoryID:    testCategoryID.String(),
+		SubcategoryID: testRecurrenceSubID.String(),
+		Frequency:     "monthly",
+		DayOfMonth:    5,
+	}
+}
 
-	handle := BuildCreateRecurrenceTool(recurrences, writer)
+func TestBuildCreateRecurrenceTool_OpensPendingNoSyncWrite_CA16(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+
+	handle := BuildCreateRecurrenceTool(registrar)
 	assert.Equal(t, "create_recurrence", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
-	argsJSON, _ := json.Marshal(CreateRecurrenceInput{
-		Direction:     "outcome",
-		PaymentMethod: "debit",
-		AmountCents:   15000,
-		Description:   "Aluguel",
-		CategoryID:    testCategoryID.String(),
-		Frequency:     "monthly",
-		DayOfMonth:    5,
-	})
+	argsJSON, _ := json.Marshal(recurrenceInput())
 	out, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
 	require.NoError(t, err)
 
 	var result CreateRecurrenceOutput
 	require.NoError(t, json.Unmarshal(out, &result))
-	assert.Equal(t, testRecurrenceID.String(), result.ResourceID)
-	assert.Equal(t, "recurring_template", result.Kind)
-	assert.False(t, result.IsReplay)
-	assert.Equal(t, agent.ToolOutcomeRouted.String(), result.Outcome)
+	assert.Equal(t, agent.ToolOutcomeClarify.String(), result.Outcome)
+	assert.Empty(t, result.ResourceID)
+	assert.True(t, registrar.called)
+	assert.Equal(t, testCategoryID, registrar.lastAt.CategoryID)
+	assert.Equal(t, testRecurrenceSubID, registrar.lastAt.SubcategoryID)
+	assert.Equal(t, "monthly", registrar.lastAt.Frequency)
+	assert.Equal(t, 5, registrar.lastAt.DayOfMonth)
 }
 
-func TestBuildCreateRecurrenceToolReplay(t *testing.T) {
-	recurrences := imocks.NewRecurrenceManager(t)
-	writer := mocks.NewIdempotentWriter(t)
+func TestBuildCreateRecurrenceTool_MissingSubcategory_Errors(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-recur", 1, "create_recurrence", "recurring_template", mock.AnythingOfType("usecases.WriteFn")).
-		Return(usecases.IdempotentWriteResult{ResourceID: testRecurrenceID, Outcome: agent.ToolOutcomeReplay}, nil).Once()
-
-	handle := BuildCreateRecurrenceTool(recurrences, writer)
-	argsJSON, _ := json.Marshal(CreateRecurrenceInput{
-		Direction:     "outcome",
-		PaymentMethod: "debit",
-		AmountCents:   15000,
-		Description:   "Aluguel",
-		CategoryID:    testCategoryID.String(),
-		Frequency:     "monthly",
-		DayOfMonth:    5,
-	})
-	out, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
-	require.NoError(t, err)
-
-	var result CreateRecurrenceOutput
-	require.NoError(t, json.Unmarshal(out, &result))
-	assert.True(t, result.IsReplay)
-	assert.Equal(t, testRecurrenceID.String(), result.ResourceID)
+	handle := BuildCreateRecurrenceTool(registrar)
+	in := recurrenceInput()
+	in.SubcategoryID = ""
+	argsJSON, _ := json.Marshal(in)
+	_, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	require.Error(t, err)
+	assert.False(t, registrar.called)
 }
 
-func TestBuildCreateRecurrenceToolInvalidUserID(t *testing.T) {
-	recurrences := imocks.NewRecurrenceManager(t)
-	writer := mocks.NewIdempotentWriter(t)
+func TestBuildCreateRecurrenceTool_InvalidUserID(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
 
-	handle := BuildCreateRecurrenceTool(recurrences, writer)
-	argsJSON, _ := json.Marshal(CreateRecurrenceInput{
-		Direction:     "outcome",
-		PaymentMethod: "debit",
-		AmountCents:   15000,
-		Description:   "Aluguel",
-		CategoryID:    testCategoryID.String(),
-		Frequency:     "monthly",
-		DayOfMonth:    5,
-	})
+	handle := BuildCreateRecurrenceTool(registrar)
+	argsJSON, _ := json.Marshal(recurrenceInput())
 	invalidCtx := agent.WithToolInvocationContext(context.Background(), "not-a-uuid", "wamid-recur", 1)
 	_, err := handle.Invoke(invalidCtx, argsJSON)
 	require.Error(t, err)
 }
 
-func TestBuildCreateRecurrenceToolWriterError(t *testing.T) {
-	recurrences := imocks.NewRecurrenceManager(t)
-	writer := mocks.NewIdempotentWriter(t)
+func TestBuildCreateRecurrenceTool_RegistrarError(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{err: errors.New("start error")}
 
-	writer.EXPECT().Execute(mock.Anything, mock.AnythingOfType("uuid.UUID"), "wamid-recur", 1, "create_recurrence", "recurring_template", mock.AnythingOfType("usecases.WriteFn")).
-		Return(usecases.IdempotentWriteResult{}, errors.New("write error")).Once()
-
-	handle := BuildCreateRecurrenceTool(recurrences, writer)
-	argsJSON, _ := json.Marshal(CreateRecurrenceInput{
-		Direction:     "outcome",
-		PaymentMethod: "debit",
-		AmountCents:   15000,
-		Description:   "Aluguel",
-		CategoryID:    testCategoryID.String(),
-		Frequency:     "monthly",
-		DayOfMonth:    5,
-	})
+	handle := BuildCreateRecurrenceTool(registrar)
+	argsJSON, _ := json.Marshal(recurrenceInput())
 	_, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
 	require.Error(t, err)
 }

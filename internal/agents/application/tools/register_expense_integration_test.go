@@ -14,13 +14,15 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	agentpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/infrastructure/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory"
 	mempostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/infrastructure/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	workflowpg "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow/infrastructure/postgres"
 )
 
 type stubLedger struct {
@@ -57,6 +59,10 @@ func (s *stubLedger) SearchTransactions(_ context.Context, _ uuid.UUID, _, _ str
 
 func (s *stubLedger) GetTransaction(_ context.Context, _ string) (interfaces.Entry, error) {
 	return interfaces.Entry{}, nil
+}
+
+func (s *stubLedger) CreateRecurringTemplate(_ context.Context, _ interfaces.RawRecurringTemplate) (interfaces.EntryRef, error) {
+	return interfaces.EntryRef{}, nil
 }
 
 type stubCategoriesReader struct {
@@ -128,12 +134,13 @@ func (s *RegisterExpenseIntegrationSuite) SetupSuite() {
 	s.db, _ = testcontainer.Postgres(s.T())
 }
 
-func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndWrittenToLedger() {
+func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndPendingOpened() {
 	obs := fake.NewProvider()
-	repo := persistence.NewWriteLedgerRepository(s.db, obs)
-	writer := usecases.NewIdempotentWrite(repo, obs)
 	reader := &stubCategoriesReader{rootID: uuid.New(), leafID: uuid.New()}
-	registrar := usecases.NewRegisterEntry(reader, &stubLedger{createdID: uuid.New()}, writer, obs)
+	store := workflowpg.NewPostgresStore(obs, s.db)
+	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
+	def := workflows.BuildPendingEntryWorkflow(&stubLedger{createdID: uuid.New()}, nil, reader)
+	registrar := usecases.NewRegisterAttempt(reader, &stubLedger{createdID: uuid.New()}, engine, def, obs)
 	handle := BuildRegisterExpenseTool(registrar)
 
 	agentID := "agent-expense-" + uuid.NewString()
@@ -142,6 +149,7 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndWrittenToLedger
 	reg.Register(ag)
 
 	userID := uuid.New()
+	threadID := "thr-" + uuid.NewString()
 	wamid := "wamid-" + uuid.NewString()
 
 	rt := agent.NewAgentRuntime(
@@ -157,20 +165,18 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndWrittenToLedger
 	outcome, err := rt.Execute(s.ctx, agent.InboundRequest{
 		AgentID:    agentID,
 		ResourceID: userID.String(),
-		ThreadID:   "thr-" + uuid.NewString(),
+		ThreadID:   threadID,
 		Message:    "registrar despesa",
 		MessageID:  wamid,
 	})
 	s.Require().NoError(err)
 	s.Equal(agent.RunStatusSucceeded, outcome.Status)
 
-	var ledgerCount int
-	err = s.db.QueryRowContext(s.ctx,
-		`SELECT COUNT(*) FROM mecontrola.agents_write_ledger WHERE wamid = $1 AND item_seq = 0 AND operation = 'create_expense'`,
-		wamid,
-	).Scan(&ledgerCount)
-	s.Require().NoError(err)
-	s.Greater(ledgerCount, 0, "RF-37/EP-01: agents_write_ledger deve conter linha com identidade injetada server-side")
+	key := workflows.PendingEntryKey(userID.String(), threadID)
+	snap, found, loadErr := store.Load(s.ctx, workflows.PendingEntryWorkflowID, key)
+	s.Require().NoError(loadErr)
+	s.Require().True(found, "RF-38/O-07: register deve abrir pendência durável (gate de confirmação), não escrever de forma síncrona")
+	s.Equal(workflow.RunStatusSuspended, snap.Status)
 
 	var toolMsgCount int
 	err = s.db.QueryRowContext(s.ctx,

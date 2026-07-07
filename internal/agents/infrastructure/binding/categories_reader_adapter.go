@@ -112,6 +112,8 @@ func (a *categoriesReaderAdapter) ResolveForWrite(ctx context.Context, input age
 		SubcategoryID:    out.SubcategoryID,
 		Kind:             decisionKind,
 		Path:             out.Path,
+		RootSlug:         out.RootSlug,
+		SubcategorySlug:  out.SubcategorySlug,
 		EditorialVersion: out.EditorialVersion,
 		Deprecated:       out.Deprecated,
 	}, nil

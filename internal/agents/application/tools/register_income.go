@@ -26,6 +26,7 @@ type RegisterIncomeOutput struct {
 	Kind       string `json:"kind"`
 	IsReplay   bool   `json:"isReplay"`
 	Outcome    string `json:"outcome"`
+	Message    string `json:"message"`
 }
 
 func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
@@ -56,8 +57,9 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 				"kind":       map[string]any{"type": "string"},
 				"isReplay":   map[string]any{"type": "boolean"},
 				"outcome":    map[string]any{"type": "string"},
+				"message":    map[string]any{"type": "string"},
 			},
-			"required":             []string{"resourceId", "kind", "isReplay", "outcome"},
+			"required":             []string{"resourceId", "kind", "isReplay", "outcome", "message"},
 			"additionalProperties": false,
 		},
 	}
@@ -66,7 +68,7 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 
 func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, RegisterIncomeInput) (RegisterIncomeOutput, error) {
 	return func(ctx context.Context, in RegisterIncomeInput) (RegisterIncomeOutput, error) {
-		resourceID, wamid, itemSeq, ok := agent.InboundIdentityFromContext(ctx)
+		resourceID, threadID, wamid, itemSeq, ok := agent.InboundExecutionFromContext(ctx)
 		if !ok {
 			return RegisterIncomeOutput{}, fmt.Errorf("register_income: identidade não disponível no contexto")
 		}
@@ -92,6 +94,7 @@ func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, Reg
 		}
 		result, err := registrar.RegisterIncome(ctx, usecases.RegisterIncomeCommand{
 			UserID:          userID,
+			ThreadID:        threadID,
 			WAMID:           wamid,
 			ItemSeq:         itemSeq,
 			AmountCents:     in.AmountCents,
@@ -113,6 +116,7 @@ func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, Reg
 			Kind:       result.Kind,
 			IsReplay:   result.Outcome == agent.ToolOutcomeReplay,
 			Outcome:    result.Outcome.String(),
+			Message:    result.Message,
 		}, nil
 	}
 }

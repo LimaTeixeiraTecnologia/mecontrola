@@ -118,6 +118,8 @@ func (s *CategoriesReaderAdapterSuite) TestResolveForWrite_Success() {
 	s.NotEmpty(decision.Path)
 	s.Equal(int64(2), decision.EditorialVersion)
 	s.False(decision.Deprecated)
+	s.NotEmpty(decision.RootSlug)
+	s.NotEmpty(decision.SubcategorySlug)
 }
 
 func (s *CategoriesReaderAdapterSuite) TestResolveForWrite_InvalidKind() {

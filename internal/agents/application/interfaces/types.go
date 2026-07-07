@@ -299,6 +299,25 @@ type CategoryWriteDecision struct {
 	SubcategoryID    uuid.UUID
 	Kind             CategoryKind
 	Path             string
+	RootSlug         string
+	SubcategorySlug  string
 	EditorialVersion int64
 	Deprecated       bool
+}
+
+type RawRecurringTemplate struct {
+	Direction       string
+	PaymentMethod   string
+	CardID          *uuid.UUID
+	AmountCents     int64
+	Description     string
+	CategoryID      uuid.UUID
+	SubcategoryID   *uuid.UUID
+	Frequency       string
+	DayOfMonth      int
+	StartedAt       string
+	OriginWamid     string
+	OriginOperation string
+	CategorySource  string
+	CategoryVersion int64
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -28,6 +29,10 @@ type handleInboundUseCase interface {
 
 type onboardingResolver interface {
 	Execute(ctx context.Context, userID, peer, message string) (usecases.OnboardingResult, error)
+}
+
+type pendingEntryContinuerResolver interface {
+	Continue(ctx context.Context, userID, peer, message, messageID string) (workflows.PendingEntryResult, error)
 }
 
 type destructiveConfirmResolver interface {
@@ -46,6 +51,12 @@ type whatsAppInboundPayload struct {
 }
 
 type ConsumerOption func(*WhatsAppInboundConsumer)
+
+func WithPendingEntryContinuer(r pendingEntryContinuerResolver) ConsumerOption {
+	return func(c *WhatsAppInboundConsumer) {
+		c.continuePendingEntry = r
+	}
+}
 
 func WithOnboardingResolver(r onboardingResolver) ConsumerOption {
 	return func(c *WhatsAppInboundConsumer) {
@@ -68,15 +79,16 @@ func WithInboundTimeout(d time.Duration) ConsumerOption {
 }
 
 type WhatsAppInboundConsumer struct {
-	handleInbound       handleInboundUseCase
-	gateway             whatsAppTextSender
-	o11y                observability.Observability
-	resolveOnboarding   onboardingResolver
-	continueDestructive destructiveConfirmResolver
-	inboundTimeout      time.Duration
-	inboundTotal        observability.Counter
-	decodeFails         observability.Counter
-	timeoutTotal        observability.Counter
+	handleInbound        handleInboundUseCase
+	gateway              whatsAppTextSender
+	o11y                 observability.Observability
+	continuePendingEntry pendingEntryContinuerResolver
+	resolveOnboarding    onboardingResolver
+	continueDestructive  destructiveConfirmResolver
+	inboundTimeout       time.Duration
+	inboundTotal         observability.Counter
+	decodeFails          observability.Counter
+	timeoutTotal         observability.Counter
 }
 
 func NewWhatsAppInboundConsumer(
@@ -146,39 +158,77 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		defer cancel()
 	}
 
-	if c.continueDestructive != nil {
-		handled, reply, err := c.continueDestructive.Continue(ctx, p.UserID, p.Text)
-		if err != nil {
-			c.recordInboundTimeout(ctx, err)
-			c.inboundTotal.Add(ctx, 1,
-				observability.String("channel", "whatsapp"),
-				observability.String("outcome", "destructive_confirm_error"),
-			)
-			span.RecordError(err)
-			return fmt.Errorf("agents.consumer.whatsapp_inbound: confirmacao destrutiva: %w", err)
-		}
-		if handled {
-			return c.sendReply(ctx, p.Peer, reply, "success")
-		}
+	if handled, err := c.tryContinuePendingEntry(ctx, span, p); handled || err != nil {
+		return err
 	}
-
-	if c.resolveOnboarding != nil {
-		result, err := c.resolveOnboarding.Execute(ctx, p.UserID, p.Peer, p.Text)
-		if err != nil {
-			c.recordInboundTimeout(ctx, err)
-			c.inboundTotal.Add(ctx, 1,
-				observability.String("channel", "whatsapp"),
-				observability.String("outcome", "onboarding_error"),
-			)
-			span.RecordError(err)
-			return fmt.Errorf("agents.consumer.whatsapp_inbound: onboarding: %w", err)
-		}
-		if result.Handled {
-			return c.sendReply(ctx, p.Peer, result.Message, "success")
-		}
+	if handled, err := c.tryContinueDestructive(ctx, span, p); handled || err != nil {
+		return err
+	}
+	if handled, err := c.tryResolveOnboarding(ctx, span, p); handled || err != nil {
+		return err
 	}
 
 	return c.handleAgentInbound(ctx, span, p)
+}
+
+func (c *WhatsAppInboundConsumer) tryContinuePendingEntry(ctx context.Context, span observability.Span, p whatsAppInboundPayload) (bool, error) {
+	if c.continuePendingEntry == nil {
+		return false, nil
+	}
+	result, err := c.continuePendingEntry.Continue(ctx, p.UserID, p.Peer, p.Text, p.MessageID)
+	if err != nil {
+		c.recordInboundTimeout(ctx, err)
+		c.inboundTotal.Add(ctx, 1,
+			observability.String("channel", "whatsapp"),
+			observability.String("outcome", "pending_entry_error"),
+		)
+		span.RecordError(err)
+		return false, fmt.Errorf("agents.consumer.whatsapp_inbound: pendencia de lancamento: %w", err)
+	}
+	if result.Handled {
+		return true, c.sendReply(ctx, p.Peer, result.Message, "success")
+	}
+	return false, nil
+}
+
+func (c *WhatsAppInboundConsumer) tryContinueDestructive(ctx context.Context, span observability.Span, p whatsAppInboundPayload) (bool, error) {
+	if c.continueDestructive == nil {
+		return false, nil
+	}
+	handled, reply, err := c.continueDestructive.Continue(ctx, p.UserID, p.Text)
+	if err != nil {
+		c.recordInboundTimeout(ctx, err)
+		c.inboundTotal.Add(ctx, 1,
+			observability.String("channel", "whatsapp"),
+			observability.String("outcome", "destructive_confirm_error"),
+		)
+		span.RecordError(err)
+		return false, fmt.Errorf("agents.consumer.whatsapp_inbound: confirmacao destrutiva: %w", err)
+	}
+	if handled {
+		return true, c.sendReply(ctx, p.Peer, reply, "success")
+	}
+	return false, nil
+}
+
+func (c *WhatsAppInboundConsumer) tryResolveOnboarding(ctx context.Context, span observability.Span, p whatsAppInboundPayload) (bool, error) {
+	if c.resolveOnboarding == nil {
+		return false, nil
+	}
+	result, err := c.resolveOnboarding.Execute(ctx, p.UserID, p.Peer, p.Text)
+	if err != nil {
+		c.recordInboundTimeout(ctx, err)
+		c.inboundTotal.Add(ctx, 1,
+			observability.String("channel", "whatsapp"),
+			observability.String("outcome", "onboarding_error"),
+		)
+		span.RecordError(err)
+		return false, fmt.Errorf("agents.consumer.whatsapp_inbound: onboarding: %w", err)
+	}
+	if result.Handled {
+		return true, c.sendReply(ctx, p.Peer, result.Message, "success")
+	}
+	return false, nil
 }
 
 func (c *WhatsAppInboundConsumer) recordInboundTimeout(ctx context.Context, err error) {

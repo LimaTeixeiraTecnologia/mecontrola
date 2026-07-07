@@ -37,7 +37,7 @@ func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 }
 
 func TestBuildFinancialTools_ReturnsExactly23Tools(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil)
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil)
 	assert.Len(t, tools, 23)
 }
 

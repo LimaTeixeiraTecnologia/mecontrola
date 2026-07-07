@@ -2,54 +2,43 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
-	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type EditEntryInput struct {
-	EntryID           string `json:"entryId"`
-	EntryKind         string `json:"entryKind"`
-	Version           int64  `json:"version"`
-	AmountCents       int64  `json:"amountCents,omitempty"`
-	Description       string `json:"description,omitempty"`
-	OccurredAt        string `json:"occurredAt,omitempty"`
-	InstallmentsTotal int    `json:"installmentsTotal,omitempty"`
+	EntryID     string `json:"entryId"`
+	AmountCents int64  `json:"amountCents,omitempty"`
+	Description string `json:"description,omitempty"`
+	OccurredAt  string `json:"occurredAt,omitempty"`
 }
 
 type EditEntryOutput struct {
 	NeedsConfirmation bool   `json:"needsConfirmation"`
 	ImpactNote        string `json:"impactNote"`
 	TargetRef         string `json:"targetRef"`
-	TargetKind        string `json:"targetKind"`
+	Outcome           string `json:"outcome"`
 }
 
-func BuildEditEntryTool(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) tool.ToolHandle {
+func BuildEditEntryTool(editor entryEditor) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "edit_entry_input",
 		Strict: false,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"entryId":           map[string]any{"type": "string"},
-				"entryKind":         map[string]any{"type": "string"},
-				"version":           map[string]any{"type": "integer"},
-				"amountCents":       map[string]any{"type": "integer"},
-				"description":       map[string]any{"type": "string"},
-				"occurredAt":        map[string]any{"type": "string"},
-				"installmentsTotal": map[string]any{"type": "integer"},
+				"entryId":     map[string]any{"type": "string"},
+				"amountCents": map[string]any{"type": "integer"},
+				"description": map[string]any{"type": "string"},
+				"occurredAt":  map[string]any{"type": "string"},
 			},
-			"required":             []string{"entryId", "entryKind", "version"},
+			"required":             []string{"entryId"},
 			"additionalProperties": false,
 		},
 	}
@@ -62,89 +51,55 @@ func BuildEditEntryTool(engine wf.Engine[workflows.ConfirmState], def wf.Definit
 				"needsConfirmation": map[string]any{"type": "boolean"},
 				"impactNote":        map[string]any{"type": "string"},
 				"targetRef":         map[string]any{"type": "string"},
-				"targetKind":        map[string]any{"type": "string"},
+				"outcome":           map[string]any{"type": "string"},
 			},
-			"required":             []string{"needsConfirmation", "impactNote", "targetRef", "targetKind"},
+			"required":             []string{"needsConfirmation", "impactNote", "targetRef", "outcome"},
 			"additionalProperties": false,
 		},
 	}
-	exec := buildEditEntryExec(engine, def)
-	return tool.NewTool[EditEntryInput, EditEntryOutput]("edit_entry", "Solicita confirmação do usuário para editar um lançamento financeiro.", in, out, exec)
+	return tool.NewTool[EditEntryInput, EditEntryOutput]("edit_entry", "Solicita a edição de um lançamento financeiro; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildEditEntryExec(editor))
 }
 
-func buildEditEntryExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) func(context.Context, EditEntryInput) (EditEntryOutput, error) {
+func buildEditEntryExec(editor entryEditor) func(context.Context, EditEntryInput) (EditEntryOutput, error) {
 	return func(ctx context.Context, in EditEntryInput) (EditEntryOutput, error) {
-		rc, ok := wf.RuntimeFrom(ctx)
+		resourceID, threadID, wamid, itemSeq, ok := agent.InboundExecutionFromContext(ctx)
 		if !ok {
-			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: inbound request ausente no contexto")
-		}
-		req, ok := rc.(agent.InboundRequest)
-		if !ok {
-			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: tipo de runtime inválido")
+			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: identidade não disponível no contexto")
 		}
 
-		userID, err := uuid.Parse(req.ResourceID)
+		userID, err := uuid.Parse(resourceID)
 		if err != nil {
 			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: parse resource uuid: %w", err)
 		}
 
-		updatePayload, err := buildUpdatePayload(in)
+		targetID, err := uuid.Parse(in.EntryID)
 		if err != nil {
-			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: build payload: %w", err)
+			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: parse entry uuid: %w", err)
 		}
 
-		impactNote := "Este lançamento será atualizado com os novos dados."
-
-		state := workflows.ConfirmState{
-			Awaiting:      workflows.AwaitingConfirm,
-			Operation:     workflows.OpEditEntry,
-			TargetRef:     in.EntryID,
-			TargetKind:    in.EntryKind,
-			ImpactNote:    impactNote,
-			MessageID:     req.MessageID,
-			SuspendedAt:   time.Now().UTC(),
-			UpdatePayload: updatePayload,
-			UserID:        userID,
-			Version:       in.Version,
+		result, err := editor.EditEntry(ctx, usecases.EditEntryCommand{
+			UserID:              userID,
+			ThreadID:            threadID,
+			WAMID:               wamid,
+			ItemSeq:             itemSeq,
+			TargetTransactionID: targetID,
+			AmountCents:         in.AmountCents,
+			Description:         in.Description,
+			OccurredAt:          in.OccurredAt,
+		})
+		if err != nil {
+			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: %w", err)
 		}
 
-		key := workflows.DestructiveConfirmKey(req.ResourceID)
-		_, err = engine.Start(ctx, def, key, state)
-		if err != nil && !errors.Is(err, wf.ErrRunAlreadyExists) {
-			return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: iniciar confirmação: %w", err)
+		impact := result.Message
+		if impact == "" {
+			impact = "Este lançamento será atualizado com os novos dados. Por favor confirme."
 		}
-		if errors.Is(err, wf.ErrRunAlreadyExists) {
-			return EditEntryOutput{
-				NeedsConfirmation: true,
-				ImpactNote:        "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outra operação.",
-				TargetRef:         in.EntryID,
-				TargetKind:        in.EntryKind,
-			}, nil
-		}
-
 		return EditEntryOutput{
 			NeedsConfirmation: true,
-			ImpactNote:        impactNote,
+			ImpactNote:        impact,
 			TargetRef:         in.EntryID,
-			TargetKind:        in.EntryKind,
+			Outcome:           result.Outcome.String(),
 		}, nil
 	}
-}
-
-func buildUpdatePayload(in EditEntryInput) (string, error) {
-	entryID, err := uuid.Parse(in.EntryID)
-	if err != nil {
-		return "", fmt.Errorf("parse entry uuid: %w", err)
-	}
-	payload := interfaces.RawUpdateTransaction{
-		ID:          entryID,
-		AmountCents: in.AmountCents,
-		Description: in.Description,
-		OccurredAt:  in.OccurredAt,
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal payload: %w", err)
-	}
-	return string(b), nil
 }

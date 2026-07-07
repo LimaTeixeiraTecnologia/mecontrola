@@ -449,22 +449,34 @@ func TestBuildClassifyCategoryToolAmbiguous(t *testing.T) {
 	assert.Len(t, result.Candidates, 2)
 }
 
+type fakeEntryEditor struct {
+	result usecases.RegisterResult
+	err    error
+	called bool
+	lastID uuid.UUID
+}
+
+func (f *fakeEntryEditor) EditEntry(_ context.Context, cmd usecases.EditEntryCommand) (usecases.RegisterResult, error) {
+	f.called = true
+	f.lastID = cmd.TargetTransactionID
+	return f.result, f.err
+}
+
 func TestBuildEditEntryTool(t *testing.T) {
-	engine := &fakeConfirmEngine{
-		startResult: wf.RunResult[workflows.ConfirmState]{Status: wf.RunStatusSuspended},
-	}
-	handle := BuildEditEntryTool(engine, fakeConfirmDef())
+	editor := &fakeEntryEditor{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	handle := BuildEditEntryTool(editor)
 	assert.Equal(t, "edit_entry", handle.ID())
 
-	argsJSON, _ := json.Marshal(EditEntryInput{EntryID: testResourceID.String(), EntryKind: "transaction"})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	argsJSON, _ := json.Marshal(EditEntryInput{EntryID: testResourceID.String(), AmountCents: 15000})
+	out, err := handle.Invoke(identityCtx("wamid-edit-001", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result EditEntryOutput
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.True(t, result.NeedsConfirmation)
 	assert.Equal(t, testResourceID.String(), result.TargetRef)
-	assert.Equal(t, "transaction", result.TargetKind)
+	assert.True(t, editor.called)
+	assert.Equal(t, testResourceID, editor.lastID)
 }
 
 func TestBuildDeleteEntryTool(t *testing.T) {
