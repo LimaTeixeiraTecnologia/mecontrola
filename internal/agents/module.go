@@ -235,9 +235,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	ledgerRetentionJob := jobhandlers.NewLedgerRetentionJob(purgeLedger, "")
 
 	confirmReaper := workflow.NewStaleSuspendedReaper(workflowStore, workflows.DestructiveConfirmWorkflowID, 10*time.Minute, 100, deps.O11y)
-	confirmReaperJob := jobhandlers.NewConfirmReaperJob(confirmReaper, "")
+	confirmReaperJob := jobhandlers.NewConfirmReaperJob("agents-confirm-reaper", confirmReaper, "")
 	pendingEntryReaper := workflows.BuildPendingEntryReaper(workflowStore, deps.O11y)
-	pendingEntryReaperJob := jobhandlers.NewConfirmReaperJob(pendingEntryReaper, "")
+	pendingEntryReaperJob := jobhandlers.NewConfirmReaperJob("agents-pending-entry-reaper", pendingEntryReaper, "")
 
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {

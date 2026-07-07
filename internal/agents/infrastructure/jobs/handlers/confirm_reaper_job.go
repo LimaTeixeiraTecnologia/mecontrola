@@ -10,15 +10,21 @@ type staleSuspendedReaper interface {
 }
 
 type ConfirmReaperJob struct {
+	name     string
 	reaper   staleSuspendedReaper
 	schedule string
 }
 
-func NewConfirmReaperJob(reaper staleSuspendedReaper, schedule string) *ConfirmReaperJob {
-	return &ConfirmReaperJob{reaper: reaper, schedule: schedule}
+func NewConfirmReaperJob(name string, reaper staleSuspendedReaper, schedule string) *ConfirmReaperJob {
+	return &ConfirmReaperJob{name: name, reaper: reaper, schedule: schedule}
 }
 
-func (j *ConfirmReaperJob) Name() string           { return "agents-confirm-reaper" }
+func (j *ConfirmReaperJob) Name() string {
+	if j.name != "" {
+		return j.name
+	}
+	return "agents-confirm-reaper"
+}
 func (j *ConfirmReaperJob) Timeout() time.Duration { return 2 * time.Minute }
 
 func (j *ConfirmReaperJob) Schedule() string {
