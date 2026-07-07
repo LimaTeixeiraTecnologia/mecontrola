@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent-tools/3.0_execution_report.md
-summary: "Task 3.0: 12 read tools criadas em internal/agents/application/tools/ — list_cards, get_card, query_card_invoice, best_purchase_day, search_transactions, list_recurrences, get_transaction, get_card_purchase, list_card_purchases, count_cards, suggest_allocation, list_categories — com 62 testes passando, zero comentários, sem SQL, sem regra de negócio"
-timestamp: "2026-07-02T00:00:00Z"

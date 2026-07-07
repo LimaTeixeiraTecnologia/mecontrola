@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-simplificacao-card-melhor-dia-compra/5.0_execution_report.md
-summary: "Handlers, router e wiring do módulo card adaptados ao novo contrato (BestPurchaseDay handler, rota antes de /{id}, /limit removida)"
-timestamp: 2026-07-02T10:52:18Z

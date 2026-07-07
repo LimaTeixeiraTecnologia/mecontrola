@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-simplificacao-card-melhor-dia-compra/7.0_execution_report.md
-summary: "openapi.yaml atualizado, testes de contrato e e2e verdes, RF-14 gate verde (zero diff em internal/transactions)"
-timestamp: "2026-07-02T00:00:00Z"

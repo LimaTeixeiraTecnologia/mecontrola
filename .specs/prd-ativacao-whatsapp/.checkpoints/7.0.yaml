@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-ativacao-whatsapp/7.0_execution_report.md
-summary: Dispatcher event-driven wired; activationRoute injected; ATIVAR branch removed; WA_MSG_PLEASE_USE_ATIVAR_COMMAND removed; all tests pass
-timestamp: 2026-06-30T16:40:00Z

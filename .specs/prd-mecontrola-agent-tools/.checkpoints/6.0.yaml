@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent-tools/6.0_execution_report.md
-summary: "Task 6.0 (Wiring + Instrução do Agente): 25 tools conectadas em buildFinancialTools, instruções reescritas com REGRA ABSOLUTA ANTI-SIMULAÇÃO (RF-38) + catálogo completo, teste TestBuildFinancialTools_ReturnsExactly25Tools adicionado. 265 tests passing."
-timestamp: "2026-07-02T20:00:00Z"

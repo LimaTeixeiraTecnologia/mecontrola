@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent-tools/0.0_execution_report.md
-summary: "RF-37/38/39 implementados no substrato internal/platform/agent: identidade server-side via context carrier, guard anti-simulação writeToolGuardFailed, persistência de memory.RoleTool; 287 testes passam; integration test criado para EP-01/EP-05."
-timestamp: "2026-07-02T17:55:53Z"

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-platform-mastra/2.0_execution_report.md
-summary: "Migration 000003 criada: DROP 7 agent_*, CREATE 6 platform_* + vector(1536)/HNSW, down simétrico, testcontainers pgvector/pgvector:pg16, teste de integração validado"
-timestamp: "2026-06-29T07:45:00Z"

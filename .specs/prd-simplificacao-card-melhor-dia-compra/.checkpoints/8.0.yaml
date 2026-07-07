@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-simplificacao-card-melhor-dia-compra/8.0_execution_report.md
-summary: budgets card_limit_near removido cirurgicamente; ThresholdAlertCardLimit apagado; suíte verde
-timestamp: 2026-07-02T12:00:00Z

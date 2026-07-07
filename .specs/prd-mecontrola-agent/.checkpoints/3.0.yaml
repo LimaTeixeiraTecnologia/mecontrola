@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent/3.0_execution_report.md
-summary: "Ledger de idempotência agent-owned implementado: migration, repositório Postgres, IdempotentWrite helper e job de retenção; build/testes verdes"
-timestamp: "2026-06-30T00:00:00Z"

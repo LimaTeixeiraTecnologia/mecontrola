@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent/6.0_execution_report.md
-summary: "Onboarding workflow durável de 8 etapas com OnboardingPhase fechado, Decide* puros, suspend/resume merge-patch e ResolveOnboardingOrAgent implementados; build e testes verdes"
-timestamp: "2026-07-01T01:13:21Z"

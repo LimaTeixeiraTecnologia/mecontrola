@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-transactions-crud-unificado/7.0_execution_report.md
-summary: Agente unificado - register_expense aceita credit_card+cardId+installments via CreateTransaction; superficie card-purchase removida (3 tools/5 metodos binding/interface); build/vet/test verdes + real-LLM parcelada e a vista PASS
-timestamp: 2026-07-04T12:31:00Z

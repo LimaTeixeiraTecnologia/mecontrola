@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent/4.0_execution_report.md
-summary: 9 tools implementadas + teste integração testcontainers 3 cenários PASS (lançamento→resumo sem dupla contagem, idempotência wamid, parcela única cartão)
-timestamp: 2026-07-01T06:16:30Z

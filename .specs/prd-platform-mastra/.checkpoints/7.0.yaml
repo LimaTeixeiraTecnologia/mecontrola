@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-platform-mastra/7.0_execution_report.md
-summary: "Scorer/Evals package criado com ScorerKind/SamplingType fechados, code-based (ToolCallAccuracy/Completeness), LLM-judged com structured output validado, runner assíncrono com shutdown cooperativo, persistência Postgres e 32 testes unitários passando."
-timestamp: "2026-06-29T12:00:00Z"

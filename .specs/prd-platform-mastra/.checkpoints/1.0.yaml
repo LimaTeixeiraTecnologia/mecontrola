@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-platform-mastra/1_execution_report.md
-summary: "Provider OpenRouter genérico (Complete/Stream/Embed) em internal/platform/llm criado; 18 testes pass; gates vazio; APPROVED_WITH_REMARKS sem tag crítica"
-timestamp: "2026-06-29T10:00:00Z"

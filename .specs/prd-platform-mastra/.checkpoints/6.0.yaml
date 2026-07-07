@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-platform-mastra/6.0_execution_report.md
-summary: "Primitivo Agent em internal/platform/agent implementado: tipos fechados, AgentRegistry/WorkflowRegistry, AgentRuntime Thread→Run, Agent.Execute+Stream, hooks, structured output, métricas — 36 testes passando"
-timestamp: "2026-06-29T00:00:00Z"

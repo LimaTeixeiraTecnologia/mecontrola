@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-infra-evolucao-kvm2-10k/1.0_execution_report.md
-summary: "Agendamento pgBackRest instalado (systemd-timer/cron idempotente), métricas de staleness exportadas, alertas provisionados e guard de imagem adicionado ao deploy"
-timestamp: "2026-07-03T14:00:00Z"

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent/9.0_execution_report.md
-summary: "Cutover concluído: weather removido cirurgicamente, zero resíduo, build e testes verdes, gates R-ADAPTER-001 e R-AGENT-WF-001 verdes"
-timestamp: "2026-06-30T00:00:00Z"

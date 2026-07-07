@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-infra-evolucao-kvm2-10k/5.0_execution_report.md
-summary: Orçamento de memória reduzido para 5.34 GB (margem 1.29 GB), pool pgBouncer redimensionado (DEFAULT_POOL_SIZE=20, MAX_DB_CONNECTIONS=30), alertas de saturação mc-pgbouncer-pool-saturation e mc-pgbouncer-client-queue provisionados, documento de orçamento e gatilho KVM2→KVM4 publicado.
-timestamp: 2026-07-03T15:30:00Z

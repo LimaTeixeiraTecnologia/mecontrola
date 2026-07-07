@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-simplificacao-card-melhor-dia-compra/6.0_execution_report.md
-summary: Cadeia invoice_due validada — LimitCents removido, card_name→card_nickname, todos os testes passando
-timestamp: 2026-07-02T00:00:00Z

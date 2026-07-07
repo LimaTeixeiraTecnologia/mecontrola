@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-transactions-crud-unificado/8.0_execution_report.md
-summary: wiring+integração+e2e+observabilidade+gates concluídos; build/vet/test verdes
-timestamp: 2026-07-04T13:26:04Z

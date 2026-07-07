@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-mecontrola-agent/8.0_execution_report.md
-summary: module.go reescrito com MeControlaAgent + 4 módulos de domínio + wiring cmd/server e cmd/worker; build e testes verdes
-timestamp: 2026-07-01T01:44:09Z

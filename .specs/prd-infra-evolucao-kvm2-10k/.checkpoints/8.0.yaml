@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-infra-evolucao-kvm2-10k/8.0_execution_report.md
-summary: "Allowlist IPs Meta no rate-limit (Caddy+Go) e pg-tunnel bind 127.0.0.1:15432 implementados"
-timestamp: 2026-07-03T00:00:00Z
