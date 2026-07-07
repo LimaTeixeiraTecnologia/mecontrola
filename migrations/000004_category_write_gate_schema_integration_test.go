@@ -58,7 +58,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 	migrator := s.newMigrator()
 	s.applyUp(migrator)
 
-	s.assertVersion(migrator, 4)
+	s.assertVersion(migrator, 5)
 
 	s.assertColumnPresent("transactions", "category_kind")
 	s.assertColumnPresent("transactions", "category_path")
@@ -126,9 +126,14 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 
 	s.assertTriggerPresent("mecontrola", "transactions_recurring_templates", "transactions_recurring_templates_category_write_gate_trg")
 
+	s.assertIndexPresent("mecontrola", "transactions_category_id_idx")
+	s.assertIndexPresent("mecontrola", "transactions_subcategory_id_idx")
+	s.assertIndexPresent("mecontrola", "transactions_recurring_templates_category_id_idx")
+	s.assertIndexPresent("mecontrola", "transactions_recurring_templates_subcategory_id_idx")
+
 	s.assertFunctionPresent("mecontrola", "validate_category_write_gate")
 
-	s.Require().NoError(migrator.Steps(-1))
+	s.Require().NoError(migrator.Steps(-2))
 	s.assertVersion(migrator, 3)
 
 	s.assertColumnMissing("transactions", "category_kind")
@@ -164,6 +169,11 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 
 	s.assertTriggerMissing("mecontrola", "transactions", "transactions_category_write_gate_trg")
 
+	s.assertIndexMissing("mecontrola", "transactions_category_id_idx")
+	s.assertIndexMissing("mecontrola", "transactions_subcategory_id_idx")
+	s.assertIndexMissing("mecontrola", "transactions_recurring_templates_category_id_idx")
+	s.assertIndexMissing("mecontrola", "transactions_recurring_templates_subcategory_id_idx")
+
 	s.assertColumnMissing("transactions_recurring_templates", "category_kind")
 	s.assertColumnMissing("transactions_recurring_templates", "category_path")
 	s.assertColumnMissing("transactions_recurring_templates", "category_outcome")
@@ -198,7 +208,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 	s.assertTriggerMissing("mecontrola", "transactions_recurring_templates", "transactions_recurring_templates_category_write_gate_trg")
 
 	s.applyUp(migrator)
-	s.assertVersion(migrator, 4)
+	s.assertVersion(migrator, 5)
 	s.assertColumnPresent("transactions", "category_kind")
 	s.assertConstraintPresent("transactions_category_fk")
 	s.assertTriggerPresent("mecontrola", "transactions", "transactions_category_write_gate_trg")
@@ -408,6 +418,24 @@ func (s *CategoryWriteGate000004Suite) countTrigger(schema, table, trigger strin
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1 AND c.relname = $2 AND t.tgname = $3 AND NOT t.tgisinternal
 	`, schema, table, trigger).Scan(&count)
+	s.Require().NoError(err)
+	return count
+}
+
+func (s *CategoryWriteGate000004Suite) assertIndexPresent(schema, index string) {
+	s.Equal(int64(1), s.countIndex(schema, index), "indice %s.%s ausente", schema, index)
+}
+
+func (s *CategoryWriteGate000004Suite) assertIndexMissing(schema, index string) {
+	s.Equal(int64(0), s.countIndex(schema, index), "indice %s.%s presente", schema, index)
+}
+
+func (s *CategoryWriteGate000004Suite) countIndex(schema, index string) int64 {
+	var count int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM pg_indexes
+		WHERE schemaname = $1 AND indexname = $2
+	`, schema, index).Scan(&count)
 	s.Require().NoError(err)
 	return count
 }
