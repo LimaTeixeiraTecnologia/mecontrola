@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-consulta-conversacional-financeira/1.0_execution_report.md
-summary: "Extensão aditiva get_transaction: SubcategoryNameSnapshot exposto na struct, schema e exec; 2 testes novos verdes"
-timestamp: "2026-07-07T00:00:00Z"

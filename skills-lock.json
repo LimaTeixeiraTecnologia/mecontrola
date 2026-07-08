@@ -36,6 +36,12 @@
       "sourceType": "github",
       "skillPath": "skills/tracker-to-prd/SKILL.md",
       "computedHash": "59bb6eade09e9c74881b6850cec4096e53135d6cb9cf7432c3b400dcef7f39ce"
+    },
+    "user-stories": {
+      "source": "JailtonJunior94/skills",
+      "sourceType": "github",
+      "skillPath": "skills/user-stories/SKILL.md",
+      "computedHash": "ff0528e55fe826de77fcd60ac5d2d12c772ea56b5bd47d88c3b5ed24d0c7c49b"
     }
   }
 }

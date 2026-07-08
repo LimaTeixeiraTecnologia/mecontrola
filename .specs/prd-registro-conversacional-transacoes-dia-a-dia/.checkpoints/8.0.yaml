@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-registro-conversacional-transacoes-dia-a-dia/8.0_execution_report.md
-summary: "Testes harness 8.1+8.2 verdes; real-LLM M-04=100% (21/21); build/vet/race/lint limpos"
-timestamp: "2026-07-07T14:00:00Z"

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-consulta-conversacional-financeira/3.0_execution_report.md
-summary: "C1–C7 adicionados ao harness real-LLM; allToolsScorer para C1 (multi-tool); M-04=1.00 (29/29); cadeias C4 (RF-32a cardId) e C5 (subcategoria) asseveradas; lint+build+tests passando"
-timestamp: "2026-07-07T21:40:42Z"
