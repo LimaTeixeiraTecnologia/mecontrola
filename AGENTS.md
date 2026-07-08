@@ -26,7 +26,7 @@ Objetivo: manter consistencia, seguranca, economia de contexto e qualidade em ta
 
 ## Prompt Engineering, Tool Use e Agentes
 
-Esta secao traduz para o repositorio as praticas oficiais do [Claude Platform](https://platform.claude.com/docs/pt-BR/home) e [OpenAI Developers](https://developers.openai.com/) em 2026. Sao regras duras para todo agente/claude/codex que operar neste codebase.
+Esta secao traduz para o repositorio as praticas oficiais do [Claude Platform](https://platform.claude.com/docs/en/overview) e [OpenAI Developers](https://developers.openai.com/) em 2026. Sao regras duras para todo agente/claude/codex que operar neste codebase.
 
 ### Prompt Engineering
 
@@ -37,15 +37,23 @@ Esta secao traduz para o repositorio as praticas oficiais do [Claude Platform](h
 5. **Uncertainty rule**: "se incerto, diga explicitamente" — proibido inventar resposta quando a evidencia for insuficiente.
 6. **Chain-of-thought explicito**: para raciocinio critico, instruir o modelo a expor o raciocinio antes da conclusao. Raciocinio critico = decisoes de arquitetura, seguranca, concorrencia, persistencia, API publica, transacao, modelagem de dominio ou escolha de pattern.
 7. **Prompts pequenos e encadeados**: decompor workflows grandes em prompts focados (parse → validate → decide → persist → publish), nao um mega-prompt. Mega-prompt = qualquer prompt com mais de 5 dimensoes instrucionais distintas ou que exija mais de uma decisao de saida.
+8. **Diga o que fazer, nao o que evitar**: instrucao positiva ("responda em prosa corrida") supera a negativa ("nao use markdown") para steering de formato e comportamento.
+9. **Ordem para long-context**: em entradas grandes (>=20k tokens), colocar os dados longos no topo e a instrucao/pergunta no fim — melhora a qualidade em ate 30% em entradas multi-documento; pedir ao modelo para ancorar em quotes relevantes antes de agir.
+10. **Papel no system prompt**: definir papel/persona no system prompt foca comportamento e tom, mesmo em uma unica frase.
 
 ### Tool Use / Function Calling
 
 1. **JSON Schema estrito** `[HARD]`: toda tool/functao exposta a um LLM deve ter schema JSON com `additionalProperties: false` e todos os campos em `required`.
 2. **Strict mode obrigatorio**: usar `strict: true` sempre que a API/modelo suportar (OpenAI function calling / structured outputs).
 3. **Descricoes precisas**: nome, descricao e parametros da tool devem passar no "intern test" — um humano deve conseguir usa-la so com o que foi fornecido.
-4. **Namespaces quando >10 funcoes**: agrupar tools por dominio (`crm`, `billing`, `shipping`) e usar tool search/deferred loading quando disponivel.
+4. **Poucas tools por turno**: manter menos de 20 tools ativas por turno; a partir de ~10, agrupar por dominio (`crm`, `billing`, `shipping`) e usar tool search / deferred loading para carregar sob demanda.
 5. **Validar input da tool**: antes de delegar ao use case/client, validar o payload contra o schema.
 6. **Tool e adapter fino**: herda R-ADAPTER-001.2 — toda tool delega para use case/client; nunca contem regra de negocio, SQL direto ou branching de dominio.
+7. **Structured Outputs para saida conformada** `[HARD]`: quando o contrato LLM↔porta exige JSON estruturado, usar Structured Outputs (schema estrito) — nao prefill. Prefill de resposta foi descontinuado nos modelos Claude 4.6+; migrar para Structured Outputs ou tools com enum, pedindo conformidade + retry.
+8. **Enums fechados para estados ilegais irrepresentaveis** `[HARD]`: campos de decisao ou label no schema da tool devem ser enums, nunca `string` livre — sinergia direta com DMMF state-as-type e smart constructors. Estado ilegal nao deve caber no schema.
+9. **Valores conhecidos via codigo, nao via modelo**: nunca pedir ao LLM para preencher parametro que o sistema ja conhece (session id, principal, tenant); injeta-los no `exec` da tool. Reduz custo, erro e superficie de alucinacao.
+10. **Tratar refusal e stop_reason** `[HARD]`: checar `refusal` (OpenAI) e `stop_reason`/`finish_reason=length` (Claude) antes de consumir o payload; degradar com erro tipado. Proibido assumir resposta completa sem verificar o motivo de parada.
+11. **`tool_choice` e chamadas paralelas**: forcar tool via `tool_choice` quando a tarefa exige ferramenta; permitir tool calls paralelas quando as chamadas forem independentes entre si.
 
 ### Agent Design e Observabilidade
 
@@ -54,17 +62,32 @@ Esta secao traduz para o repositorio as praticas oficiais do [Claude Platform](h
 3. **Cada run e rastreavel** `[HARD]`: todo tool call/agent run deve registrar `run_id`, `thread_id`, `agent_id`, `status`, `duration_ms` e `error` quando houver.
 4. **Golden sets e thresholds**: mudancas em agentes/workflows so passam quando houver eval com golden set e thresholds por axis (corretude, regressao, seguranca).
 5. **Verificacao antes de parar**: o agente deve ter um check pass/fail (teste, build, linter, diff contra fixture) antes de declarar a tarefa concluida.
+6. **Economia de tokens e custo**: preferir prefixos de prompt estaveis para habilitar prompt caching quando o provider suportar; manter saida concisa; reservar Structured Outputs para o contrato LLM↔porta; usar processamento batch/flex para cargas nao interativas quando o provider oferecer.
 
 ## Skills Obrigatorias
 
 - Para qualquer tarefa que altere codigo: carregar `.agents/skills/agent-governance/SKILL.md`.
 - Para qualquer implementacao, alteracao ou revisao de codigo Go: carregar tambem `.agents/skills/go-implementation/SKILL.md`.
-- Para escolha, aplicacao ou revisao de design patterns: carregar `.agents/skills/design-patterns-mandatory/SKILL.md`.
-- Para modelagem de dominio, discovery de fluxo ou revisao de agregados/eventos/comandos: carregar `.agents/skills/domain-modeling-production/SKILL.md`.
+- Para escolha, aplicacao ou revisao de design patterns: carregar `.agents/skills/design-patterns-mandatory/SKILL.md` (parte do Trio Obrigatorio de Desenvolvimento Go).
+- Para modelagem de dominio, discovery de fluxo ou revisao de agregados/eventos/comandos: carregar `.agents/skills/domain-modeling-production/SKILL.md` (parte do Trio Obrigatorio de Desenvolvimento Go).
 - `[HARD]` Para criacao, revisao ou correcao de uso de PostgreSQL estrutural ou de acesso: carregar `.agents/skills/postgresql-production-standards/SKILL.md` e inegociavel. Gatilhos obrigatorios: migration, nova tabela, nova coluna, novo indice, novo constraint, alteracao de role/grant ou mudanca de schema. Queries ad-hoc, tuning ou transacoes isoladas entram apenas quando houver evidencia de impacto estrutural ou de desempenho critico; fora dos gatilhos, o uso e proibido.
 - Para bugfix com remediacao e teste de regressao: carregar `.agents/skills/bugfix/SKILL.md`.
 - Para refatoracao incremental de design Go por object calisthenics: carregar `.agents/skills/object-calisthenics-go/SKILL.md`.
 - Para governanca do projeto: usar `.agents/skills/analyze-project/SKILL.md`.
+
+### Trio Obrigatorio de Desenvolvimento Go `[HARD]`
+
+Toda feature nova e toda manutencao em Go DEVE ser governada, sem flexibilidade, pelo trio abaixo. As tres skills ja estao instaladas em `.agents/skills/` e espelhadas em `.claude/skills/`. Modelo de uso: **consultar sempre, materializar por gatilho** — o trio nunca e pulado por diferenca de ferramenta, deadline ou conveniencia; a materializacao pesada (seletor, bundle, rodadas de clarificacao) so ocorre quando o gatilho correspondente e atingido, preservando a economia de contexto.
+
+1. `go-implementation` — SEMPRE carregada em qualquer alteracao Go (Etapas 1-5 + R0-R7). E o entrypoint canonico; as outras duas orbitam em torno dela.
+2. `design-patterns-mandatory` — consulta obrigatoria como gate de desenho. Em toda mudanca responde primeiro "aplicar padrao vs. `nao aplicar padrao`": quando codigo direto, funcao simples ou refactor localizado resolvem, a resposta obrigatoria e `nao aplicar padrao` (gate anti-overengineering de custo zero). O seletor deterministico (`scripts/select_pattern.py`) e o bundle so sao materializados quando houver decisao real de introduzir, trocar ou revisar um pattern.
+3. `domain-modeling-production` — consulta obrigatoria sempre que a mudanca tocar dominio (linguagem ubiqua, agregados, comandos, eventos, invariantes, estados, fronteiras) ou discovery de novo fluxo. As rodadas de clarificacao e o bundle rodam na fase de planejamento/modelagem; edits mecanicos que nao alteram semantica de dominio consomem apenas os principios DMMF (state-as-type, smart constructor, `Decide*` puro).
+
+Gatilhos de materializacao (quando a skill roda o fluxo completo, nao apenas os principios) — alinhados 1:1 com a "Carga forcada por arquivo de modelagem" de `go-implementation`:
+- `design-patterns-mandatory`: introducao ou substituicao de abstracao, nova composicao estrutural, coordenacao entre objetos, variacao de algoritmo/estado, ou revisao explicita de pattern.
+- `domain-modeling-production`: diff em `**/domain/entities/**`, `**/domain/valueobjects/**`, `**/domain/commands/**`, `**/application/events/**`, novo bounded context, ou novo workflow de negocio.
+
+Fora dos gatilhos, aplicar apenas os principios do trio (sem carga adicional de referencias) e respeitar a economia abaixo. O trio reforca — nunca afrouxa — os gates existentes (R-ADAPTER-001, R-AGENT-WF-001, R-WF-KERNEL-001 e DMMF state-as-type).
 
 Economia obrigatoria:
 - Classificar complexidade antes de carregar referencias.
@@ -272,15 +295,18 @@ Comandos Go detectados:
 
 As regras de prompt engineering, tool use, agent design e structured outputs deste documento refletem as documentacoes oficiais abaixo, consultadas em 2026:
 
-- [Claude Platform Docs](https://platform.claude.com/docs/pt-BR/home)
-- [Claude Code Best Practices](https://code.claude.com/docs/en/best-practices)
-- [Claude Code Common Workflows](https://code.claude.com/docs/en/common-workflows)
-- [Anthropic Prompt Engineering Best Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices)
-- [Anthropic MCP](https://docs.anthropic.com/en/docs/agents-and-tools/mcp)
-- [OpenAI Function Calling Guide](https://platform.openai.com/docs/guides/function-calling)
-- [OpenAI Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs)
-- [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents)
-- [OpenAI Agents SDK — Tools](https://openai.github.io/openai-agents-python/tools/)
+- [Claude Platform Docs — Intro](https://platform.claude.com/docs/en/overview)
+- [Claude — Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-4-best-practices)
+- [Claude — Tool use overview](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)
+- [Claude — Structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+- [Claude — MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector)
+- [Claude Code — Best Practices](https://code.claude.com/docs/en/best-practices)
+- [Claude Code — Common Workflows](https://code.claude.com/docs/en/common-workflows)
+- [OpenAI — Function calling](https://developers.openai.com/api/docs/guides/function-calling)
+- [OpenAI — Structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [OpenAI — Agents SDK](https://developers.openai.com/api/docs/guides/agents)
+- [OpenAI — Cost optimization](https://developers.openai.com/api/docs/guides/cost-optimization)
+- [OpenAI — Deployment checklist](https://developers.openai.com/api/docs/guides/deployment-checklist)
 
 ## Restricoes Finais
 

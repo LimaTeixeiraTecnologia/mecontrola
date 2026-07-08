@@ -15,9 +15,10 @@ Use `AGENTS.md` como fonte canonica das regras deste repositorio.
 
 ## Stack
 
-- Projeto com contexto Go detectado: carregar `.agents/skills/go-implementation/SKILL.md` ao alterar codigo Go.
-- Escolha, aplicacao ou revisao de design patterns: carregar `.agents/skills/design-patterns-mandatory/SKILL.md`.
-- Modelagem de dominio, discovery de fluxo ou revisao de agregados/eventos/comandos: carregar `.agents/skills/domain-modeling-production/SKILL.md`.
+- **Trio Obrigatorio de Desenvolvimento Go** (ver `AGENTS.md` > `## Skills Obrigatorias`), modelo consultar-sempre / materializar-por-gatilho:
+  - `go-implementation` — SEMPRE ao alterar codigo Go (Etapas 1-5 + R0-R7).
+  - `design-patterns-mandatory` — gate de desenho `aplicar` vs. `nao aplicar padrao`; seletor/bundle so sob gatilho de pattern.
+  - `domain-modeling-production` — quando a mudanca toca dominio (entities/valueobjects/commands/events) ou discovery de fluxo.
 - Criacao, revisao ou correcao de uso de PostgreSQL estrutural ou de acesso: carregar `.agents/skills/postgresql-production-standards/SKILL.md`.
 - Validar a versao declarada em `go.mod` antes de introduzir APIs da linguagem ou novas dependencias.
 

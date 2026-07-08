@@ -9,7 +9,7 @@ Este `CLAUDE.md` segue as recomendacoes oficiais do Claude Code: manter o arquiv
 ## Instrucoes
 
 1. Ler `AGENTS.md` no inicio da sessao.
-2. `.claude/skills/` sao symlinks para `.agents/skills/` — a fonte de verdade e sempre `.agents/skills/`.
+2. `.claude/skills/` referenciam `.agents/skills/` (por symlink ou copia sincronizada) — a fonte de verdade e sempre `.agents/skills/`.
 3. `.claude/agents/` sao wrappers leves que delegam para a habilidade canonica.
 4. Em tarefas de execucao, carregar apenas `AGENTS.md`, `agent-governance` e a skill operacional da linguagem ou atividade afetada.
 5. Skills de planejamento (`analyze-project`, `create-prd`, `create-technical-specification`, `create-tasks`) entram apenas quando a tarefa pedir esse fluxo explicitamente.
@@ -27,6 +27,9 @@ Este `CLAUDE.md` segue as recomendacoes oficiais do Claude Code: manter o arquiv
 - Preferir prompts curtos e encadeados a um mega-prompt.
 - Incluir regra de uncertainty: "se incerto, diga explicitamente".
 - Fornecer um check pass/fail (teste, build, linter) antes de encerrar uma tarefa.
+- Preferir Structured Outputs (schema estrito) a prefill para saida conformada — prefill foi descontinuado nos modelos Claude 4.6+.
+- Tratar refusal e stop_reason (`refusal`, `stop_reason`/`finish_reason=length`) antes de consumir o payload do modelo.
+- Usar enums fechados no schema para tornar estados ilegais irrepresentaveis (sinergia direta com DMMF state-as-type).
 
 ### Subagentes e economia de contexto
 
@@ -45,7 +48,7 @@ Este `CLAUDE.md` segue as recomendacoes oficiais do Claude Code: manter o arquiv
 
 Toda implementação, alteração ou revisão de código Go DEVE obrigatoriamente:
 
-1. Carregar `.agents/skills/go-implementation/SKILL.md` antes de qualquer edição.
+1. Carregar o **Trio Obrigatorio de Desenvolvimento Go** definido em `AGENTS.md` (secao `## Skills Obrigatorias`), no modelo consultar-sempre / materializar-por-gatilho: `go-implementation` (SEMPRE, antes de qualquer edição), `design-patterns-mandatory` (gate de desenho `aplicar` vs. `nao aplicar padrao`; seletor/bundle so sob gatilho de pattern) e `domain-modeling-production` (quando a mudança toca domínio ou discovery de fluxo).
 2. Verificar a versão declarada em `go.mod` antes de introduzir APIs da linguagem ou dependências.
 3. Executar as **Etapas 1 a 5** do SKILL.md na integra.
 4. Aplicar a matriz de validacao de `AGENTS.md` (secao `## Validacao` e item 6 de `## Modo de Trabalho`) conforme o risco da mudanca:
@@ -108,10 +111,15 @@ Ver secao "Outbox" em `AGENTS.md` para o contrato completo do `outbox.Publisher`
 
 ## Referencias Oficiais
 
-- [Claude Code Best Practices](https://code.claude.com/docs/en/best-practices)
-- [Claude Code Common Workflows](https://code.claude.com/docs/en/common-workflows)
-- [Claude Platform Docs](https://platform.claude.com/docs/pt-BR/home)
-- [Anthropic Prompt Engineering Best Practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices)
-- [OpenAI Function Calling Guide](https://platform.openai.com/docs/guides/function-calling)
-- [OpenAI Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs)
-- [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents)
+- [Claude Platform Docs — Intro](https://platform.claude.com/docs/en/overview)
+- [Claude — Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-4-best-practices)
+- [Claude — Tool use overview](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)
+- [Claude — Structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+- [Claude — MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector)
+- [Claude Code — Best Practices](https://code.claude.com/docs/en/best-practices)
+- [Claude Code — Common Workflows](https://code.claude.com/docs/en/common-workflows)
+- [OpenAI — Function calling](https://developers.openai.com/api/docs/guides/function-calling)
+- [OpenAI — Structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [OpenAI — Agents SDK](https://developers.openai.com/api/docs/guides/agents)
+- [OpenAI — Cost optimization](https://developers.openai.com/api/docs/guides/cost-optimization)
+- [OpenAI — Deployment checklist](https://developers.openai.com/api/docs/guides/deployment-checklist)
